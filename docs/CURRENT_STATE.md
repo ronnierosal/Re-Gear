@@ -1,5 +1,30 @@
 # Current state
 
+## Failed shutdown and detached recovery — 2026-09-03
+
+The supervised ordinary shutdown on installed 0.3.0 `9571a5ca3e5b` again left
+fan/power LEDs on after SSH closed. The player used a forced power-button hold,
+confirmed poweroff, disconnected G1, and booted detached. Player confirmed Ally
+picture/audio/controls; read-only capture confirms Idle, internal display active,
+only internal GPU present, and the same installed version.
+
+The shutdown-window journal shows HDM unload_started, Steam stopping in about
+2.54 seconds, Gamescope stopping in about 1.42 seconds, then a Decky SIGKILL
+entry naming HDM about 5.01 seconds after its unload start. No subsequent HDM
+cleanup checkpoint was retained. This establishes incomplete HDM cleanup in
+this shutdown, not the cause of final machine poweroff failure. No final
+poweroff-stage evidence was retained. Whole-boot PCIe AER/xHCI counts were not
+in the shutdown window and must not be attributed to it.
+
+Current-boot logs show observation.events_ready, completion.portable_released,
+and completion.idle. Fresh automatic attach is now eligible for supervised
+testing after normal readiness gates; this is not proof of successful docking.
+Next local shutdown investigation: identify the HDM observer await that prevents
+cleanup, reproduce it, and fix only that lifecycle path. Do not widen process
+termination or driver-reset authority. Local evidence: out/shutdown-failed-20260904-*.json,
+out/shutdown-20260904-window.json, out/shutdown-hdm-and-detached-events.json,
+and remote-captures/capture-20260904T045931Z.json.
+
 ## Shutdown capture repair — 2026-09-03
 
 Developer-only capture now handles bounded journal byte messages and reports
