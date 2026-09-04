@@ -1,4 +1,5 @@
 import unittest
+import threading
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -11,6 +12,7 @@ from hdm.adapters.steamos.gamescope_performance_target import PerformanceTargetR
 from hdm.application.tdp_control import TdpControlService
 from hdm.delivery.auto_tdp_evidence import AutoTdpEligibility
 from hdm.delivery.auto_tdp_factory import AutoTdpSessionFactory
+from hdm.delivery.auto_tdp_benchmark import benchmark_auto_tdp
 from hdm.domain.auto_tdp import AutoTdpPolicy
 from hdm.domain.models import GameState
 from hdm.domain.telemetry import TelemetryCollectionContract, TelemetryConsumer, TelemetryMetric
@@ -57,6 +59,18 @@ class AutoFactoryTests(unittest.TestCase):
         session.tick()
         self.assertEqual(self.reads, 0)
         self.assertEqual(self.provider.writes, [])
+
+    def test_factory_benchmark_uses_real_window_without_creating_a_session_or_writer(self):
+        evidence = AutoTdpSessionFactory(**self.args).create_evidence(self.provider)
+        def advance(seconds):
+            self.now += seconds
+            return False
+        result = benchmark_auto_tdp(evidence, cancel=threading.Event(),
+                                   clock=lambda: self.now, wait=advance)
+        self.assertEqual(result.code, "auto_tdp.benchmark_within_budget")
+        self.assertEqual(result.usable_samples, 8)
+        self.assertEqual(self.provider.writes, [])
+        self.assertIsNone(self.journal.record)
 
     def test_composed_samples_drive_verified_transaction_then_rewarm(self):
         session = self.create()

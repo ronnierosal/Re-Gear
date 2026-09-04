@@ -46,15 +46,19 @@ class AutoTdpSessionFactory:
         self._frame_policy, self._clock = frame_policy, clock
         self._reader, self._sensors = performance_reader, sensors
 
-    def __call__(self, actuator: AutoTdpActuator, provider: TdpProvider) -> AutoTdpSession:
+    def create_evidence(self, provider: TdpProvider) -> AutoTdpEvidenceCollector:
+        """Use the same complete composition for read-only benchmarking."""
         frames = GameFrameCollector(resolve=self._resolve,
             reader=self._reader or GamescopePerformanceReader(clock=self._clock),
             clock=self._clock, policy=self._frame_policy)
-        evidence = AutoTdpEvidenceCollector(provider=provider, frames=frames,
+        return AutoTdpEvidenceCollector(provider=provider, frames=frames,
             resolve=self._resolve,
             sensors=self._sensors or TdpSensorDiscovery(clock=self._clock).scan,
             eligibility=self._eligibility, sensor_config=self._sensor_config,
             clock=self._clock, maximum_frame_age_ms=self._frame_policy.maximum_sample_age_ms)
+
+    def __call__(self, actuator: AutoTdpActuator, provider: TdpProvider) -> AutoTdpSession:
+        evidence = self.create_evidence(provider)
         return AutoTdpSession(service=actuator, collect=evidence.collect,
             revalidate=evidence.revalidate, reset_collection=evidence.reset,
             game_state=lambda: self._eligibility().game_state,

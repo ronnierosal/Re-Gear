@@ -60,6 +60,9 @@ The composed Auto evidence collector now checks workload/power context around
 every retained frame and resets history across setting/source changes; the
 session factory is implemented and integration-tested. Host configuration, Decky
 RPC/UI wiring, justified thermal profile and measured admission remain.
+The complete-path read-only benchmark is implemented and fixture-tested, including
+context changes, expiry, cancellation, time/cadence bounds and no-write behavior.
+Actual device measurement and binding its evidence to host configuration remain.
 
 | Priority | Work item and owner | Status | Acceptance evidence |
 | --- | --- | --- | --- |
