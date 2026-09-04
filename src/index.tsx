@@ -3,6 +3,8 @@ import {
   ButtonItem,
   ConfirmModal,
   DropdownItem,
+  Focusable,
+  ToggleField,
   PanelSection,
   PanelSectionRow,
   ScrollPanel,
@@ -57,6 +59,7 @@ import {
 import { createDeckySteamSuspendAdapter } from "./decky-steam-suspend";
 import { deliverBlockedAttempt } from "./blocked-attempt-delivery";
 import { diagnosticOverlayRows } from "./diagnostics-overlay";
+import { StatusCard } from "./status-card";
 import { healthAttentionMessages, healthStatusLabel } from "./health-ui";
 import { decideLinkHealthNotification } from "./link-health-notification";
 import { sanitizeJourneyStatus } from "./journey-status-delivery";
@@ -456,6 +459,7 @@ function preflightObservation(payload: SnapshotPayload): PreflightObservation {
 function Content({ preflight }: { preflight: SleepPreflightCoordinator }) {
   const quickAccessVisible = useQuickAccessVisible();
   const statusAnchor = useRef<HTMLDivElement | null>(null);
+  const statusFocusAnchor = useRef<HTMLDivElement | null>(null);
   const primaryControlAnchor = useRef<HTMLDivElement | null>(null);
   const journeyDetailsAnchor = useRef<HTMLDivElement | null>(null);
   const [payload, setPayload] = useState<SnapshotPayload | null>(null);
@@ -1319,7 +1323,7 @@ function Content({ preflight }: { preflight: SleepPreflightCoordinator }) {
       if (!anchor) return;
       scrollToTopOfOwningPanel(anchor);
       restoreQuickAccessFocus(() =>
-        primaryControlAnchor.current?.querySelector<HTMLElement>(
+        statusFocusAnchor.current ?? primaryControlAnchor.current?.querySelector<HTMLElement>(
           "button, [role='button'], input, select",
         ) ?? null,
       );
@@ -1349,37 +1353,40 @@ function Content({ preflight }: { preflight: SleepPreflightCoordinator }) {
     <>
       <div ref={statusAnchor} tabIndex={-1}>
       <PanelSection title="At a glance">
+        <Focusable
+          ref={statusFocusAnchor}
+          aria-label="HDM status summary"
+          onGamepadFocus={() => {
+            if (statusAnchor.current) scrollToTopOfOwningPanel(statusAnchor.current);
+          }}
+        >
         {atAGlanceRows({
           mode: loading ? "Reading…" : label(payload?.inference.mode ?? "unknown"),
           health: healthStatusLabel(payload?.health, loading),
           connection: progress.label,
           game: label(snapshot?.game_state ?? "unknown"),
         }).map(([name, value]) => (
-          <DiagnosticRow key={name} name={name} value={value} />
+          <StatusCard key={name} name={name} value={value} />
         ))}
         <PanelSectionRow>{progress.detail}</PanelSectionRow>
+        </Focusable>
       </PanelSection>
 
       <PanelSection title="Safety & actions">
         <div ref={primaryControlAnchor}>
-          <PanelSectionRow>
-            <ButtonItem
-              layout="below"
-              onClick={toggleAutomaticDock}
-              disabled={automaticDockBusy}
-            >
-              {automaticDockBusy
-                ? "Saving…"
-                : automaticDockStatus?.enabled
-                  ? "Disable automatic TV docking"
-                  : "Enable automatic TV docking"}
-            </ButtonItem>
-          </PanelSectionRow>
-          <DiagnosticRow
-            name="Automatic TV docking"
-            value={automaticDockStatus?.enabled
-              ? label(automaticDockStatus.code)
-              : "Off"}
+          <ToggleField
+            label="Automatic TV docking"
+            description={automaticDockBusy
+              ? "Saving…"
+              : !automaticDockStatus
+                ? "Status unavailable"
+                : automaticDockStatus.enabled
+                  ? label(automaticDockStatus.code)
+                  : "Off · Ask before enabling"}
+            checked={automaticDockStatus?.enabled === true}
+            disabled={automaticDockBusy || !automaticDockStatus}
+            highlightOnFocus={true}
+            onChange={toggleAutomaticDock}
           />
           {automaticDockMessage && (
             <PanelSectionRow>{automaticDockMessage}</PanelSectionRow>
@@ -1444,8 +1451,14 @@ function Content({ preflight }: { preflight: SleepPreflightCoordinator }) {
             </PanelSectionRow>
           )}
           <PanelSectionRow>
-            <ButtonItem layout="below" onClick={toggleTroubleshooting}>
-              {showDiagnostics ? "Hide troubleshooting" : "Troubleshoot"}
+            <ButtonItem
+              label="Troubleshoot"
+              description="Connection checks, safety details, and support"
+              layout="inline"
+              childrenContainerWidth="min"
+              onClick={toggleTroubleshooting}
+            >
+              {showDiagnostics ? "Hide" : "Show"}
             </ButtonItem>
           </PanelSectionRow>
         </div>

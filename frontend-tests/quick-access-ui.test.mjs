@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFileSync } from "node:fs";
 
 import {
   atAGlanceRows,
@@ -10,6 +11,16 @@ import {
   journeyStatusRows,
   restoreQuickAccessFocus,
 } from "../src/quick-access-ui.ts";
+
+test("upward navigation reaches the native status focus stop before leaving HDM", () => {
+  const source = readFileSync(new URL("../src/index.tsx", import.meta.url), "utf8");
+  const summary = source.slice(source.indexOf('<PanelSection title="At a glance">'), source.indexOf('<PanelSection title="Safety & actions">'));
+  assert.match(summary, /<Focusable[\s\S]*ref=\{statusFocusAnchor\}/);
+  assert.match(summary, /onGamepadFocus=\{[\s\S]*scrollToTopOfOwningPanel\(statusAnchor.current\)/);
+  assert.match(summary, /atAGlanceRows\([\s\S]*<\/Focusable>/);
+  assert.doesNotMatch(summary, /onActivate|onCancel|onGamepadDirection/);
+  assert.match(source, /statusFocusAnchor.current \?\? primaryControlAnchor.current/);
+});
 
 test("secondary sections stay hidden until the player opens Troubleshoot", () => {
   assert.deepEqual(quickAccessSectionVisibility(false), {
@@ -28,6 +39,16 @@ test("secondary sections stay hidden until the player opens Troubleshoot", () =>
     diagnostics: true,
     navigation: true,
   });
+});
+
+test("dashboard uses native preference controls without bypassing confirmation", () => {
+  const source = readFileSync(new URL("../src/index.tsx", import.meta.url), "utf8");
+  assert.match(source, /<StatusCard key=\{name\} name=\{name\} value=\{value\}/);
+  assert.match(source, /<ToggleField[\s\S]*?checked=\{automaticDockStatus\?\.enabled === true\}/);
+  assert.match(source, /disabled=\{automaticDockBusy \|\| !automaticDockStatus\}/);
+  assert.match(source, /onChange=\{toggleAutomaticDock\}/);
+  assert.match(source, /automaticDockModal.current = showAutomaticDockConfirmation\(/);
+  assert.match(source, /label="Troubleshoot"[\s\S]*?layout="inline"/);
 });
 
 test("at-a-glance UI remains compact and preserves progressive state labels", () => {

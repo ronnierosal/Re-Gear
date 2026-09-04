@@ -357,6 +357,23 @@ function diagnosticLoggingLabel(status) {
     return `on · ${countdown}`;
 }
 
+/** Decorative icons never substitute for the independent, text-labelled facts. */
+const ICONS = {
+    Mode: { color: "#9baeff", path: "M3 5h18v12H3z M8 21h8 M12 17v4" },
+    Health: { color: "#7edbd2", path: "M12 3l8 3v6c0 5-8 9-8 9s-8-4-8-9V6z M7 12h3l2-4 2 8 2-4h2" },
+    Connection: { color: "#82caff", path: "M8 3v5 M16 3v5 M6 8h12v4a6 6 0 0 1-12 0z M12 18v4" },
+    Game: { color: "#c6adff", path: "M6 7h12l3 11h-5l-2-3h-4l-2 3H3z M6 11h5 M8.5 8.5v5 M16 10h.1 M18 12h.1" },
+};
+function StatusCard({ name, value }) {
+    const icon = ICONS[name] ?? ICONS.Mode;
+    return (SP_JSX.jsxs("div", { style: {
+            display: "flex", alignItems: "center", gap: 12, minWidth: 0,
+            padding: "12px", marginBottom: 8, borderRadius: 12,
+            border: "1px solid rgba(135, 164, 224, 0.32)",
+            background: "linear-gradient(120deg, rgba(62, 82, 128, 0.30), rgba(28, 39, 65, 0.35))",
+        }, children: [SP_JSX.jsx("svg", { width: "24", height: "24", viewBox: "0 0 24 24", "aria-hidden": "true", style: { color: icon.color, flexShrink: 0 }, fill: "none", stroke: "currentColor", strokeWidth: "1.8", strokeLinecap: "round", strokeLinejoin: "round", children: SP_JSX.jsx("path", { d: icon.path }) }), SP_JSX.jsxs("div", { style: { minWidth: 0, lineHeight: 1.4 }, children: [SP_JSX.jsx("div", { style: { fontSize: 12, opacity: 0.8 }, children: name }), SP_JSX.jsx("div", { style: { fontSize: 15, fontWeight: 600, overflowWrap: "anywhere" }, children: value })] })] }));
+}
+
 const HEALTH_BLOCKER_MESSAGES = {
     "health.placement_degraded": "Current mode needs attention.",
     "health.placement_unknown": "Current mode needs verification.",
@@ -1191,6 +1208,7 @@ function preflightObservation(payload) {
 function Content({ preflight }) {
     const quickAccessVisible = useQuickAccessVisible();
     const statusAnchor = SP_REACT.useRef(null);
+    const statusFocusAnchor = SP_REACT.useRef(null);
     const primaryControlAnchor = SP_REACT.useRef(null);
     const journeyDetailsAnchor = SP_REACT.useRef(null);
     const [payload, setPayload] = SP_REACT.useState(null);
@@ -1959,7 +1977,7 @@ function Content({ preflight }) {
             if (!anchor)
                 return;
             scrollToTopOfOwningPanel(anchor);
-            restoreQuickAccessFocus(() => primaryControlAnchor.current?.querySelector("button, [role='button'], input, select") ?? null);
+            restoreQuickAccessFocus(() => statusFocusAnchor.current ?? primaryControlAnchor.current?.querySelector("button, [role='button'], input, select") ?? null);
         }, 0);
     }, []);
     const toggleTroubleshooting = SP_REACT.useCallback(() => {
@@ -1978,18 +1996,21 @@ function Content({ preflight }) {
         });
     }, []);
     const sectionVisibility = quickAccessSectionVisibility(showDiagnostics);
-    return (SP_JSX.jsx(SP_JSX.Fragment, { children: SP_JSX.jsxs("div", { ref: statusAnchor, tabIndex: -1, children: [SP_JSX.jsxs(DFL.PanelSection, { title: "At a glance", children: [atAGlanceRows({
-                            mode: loading ? "Reading…" : label(payload?.inference.mode ?? "unknown"),
-                            health: healthStatusLabel(payload?.health, loading),
-                            connection: progress.label,
-                            game: label(snapshot?.game_state ?? "unknown"),
-                        }).map(([name, value]) => (SP_JSX.jsx(DiagnosticRow, { name: name, value: value }, name))), SP_JSX.jsx(DFL.PanelSectionRow, { children: progress.detail })] }), SP_JSX.jsxs(DFL.PanelSection, { title: "Safety & actions", children: [SP_JSX.jsxs("div", { ref: primaryControlAnchor, children: [SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", onClick: toggleAutomaticDock, disabled: automaticDockBusy, children: automaticDockBusy
-                                            ? "Saving…"
-                                            : automaticDockStatus?.enabled
-                                                ? "Disable automatic TV docking"
-                                                : "Enable automatic TV docking" }) }), SP_JSX.jsx(DiagnosticRow, { name: "Automatic TV docking", value: automaticDockStatus?.enabled
-                                        ? label(automaticDockStatus.code)
-                                        : "Off" }), automaticDockMessage && (SP_JSX.jsx(DFL.PanelSectionRow, { children: automaticDockMessage })), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", onClick: () => void executeTvSwitch(), disabled: tvSwitchBusy
+    return (SP_JSX.jsx(SP_JSX.Fragment, { children: SP_JSX.jsxs("div", { ref: statusAnchor, tabIndex: -1, children: [SP_JSX.jsx(DFL.PanelSection, { title: "At a glance", children: SP_JSX.jsxs(DFL.Focusable, { ref: statusFocusAnchor, "aria-label": "HDM status summary", onGamepadFocus: () => {
+                            if (statusAnchor.current)
+                                scrollToTopOfOwningPanel(statusAnchor.current);
+                        }, children: [atAGlanceRows({
+                                mode: loading ? "Reading…" : label(payload?.inference.mode ?? "unknown"),
+                                health: healthStatusLabel(payload?.health, loading),
+                                connection: progress.label,
+                                game: label(snapshot?.game_state ?? "unknown"),
+                            }).map(([name, value]) => (SP_JSX.jsx(StatusCard, { name: name, value: value }, name))), SP_JSX.jsx(DFL.PanelSectionRow, { children: progress.detail })] }) }), SP_JSX.jsxs(DFL.PanelSection, { title: "Safety & actions", children: [SP_JSX.jsxs("div", { ref: primaryControlAnchor, children: [SP_JSX.jsx(DFL.ToggleField, { label: "Automatic TV docking", description: automaticDockBusy
+                                        ? "Saving…"
+                                        : !automaticDockStatus
+                                            ? "Status unavailable"
+                                            : automaticDockStatus.enabled
+                                                ? label(automaticDockStatus.code)
+                                                : "Off · Ask before enabling", checked: automaticDockStatus?.enabled === true, disabled: automaticDockBusy || !automaticDockStatus, highlightOnFocus: true, onChange: toggleAutomaticDock }), automaticDockMessage && (SP_JSX.jsx(DFL.PanelSectionRow, { children: automaticDockMessage })), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", onClick: () => void executeTvSwitch(), disabled: tvSwitchBusy
                                             || Boolean(tvSwitchAcknowledgementId)
                                             || Boolean(journalStatus && journalStatus.code !== "journal.idle"), children: tvSwitchBusy ? "Switching…" : "Switch to TV now" }) }), tvSwitchMessage && SP_JSX.jsx(DFL.PanelSectionRow, { children: tvSwitchMessage }), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", onClick: requestSafeDisconnect, disabled: safeDisconnectBusy
                                             || !disconnect?.applicable
@@ -2000,7 +2021,7 @@ function Content({ preflight }) {
                                                 ? "Request shutdown for G1 disconnect"
                                                 : "Prepare G1 disconnect" }) }), safeDisconnectMessage && (SP_JSX.jsx(DFL.PanelSectionRow, { children: safeDisconnectMessage })), journalStatus && journalStatus.code !== "journal.idle" && (SP_JSX.jsx(DiagnosticRow, { name: "Safety journal", value: label(journalStatus.owner) })), journalMessage && SP_JSX.jsx(DFL.PanelSectionRow, { children: journalMessage }), journalStatus?.owner === "sleep"
                                     && journalStatus.acknowledgement_required
-                                    && journalStatus.acknowledgement_id && (SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", onClick: () => void acknowledgePriorSleep(), disabled: journalBusy, children: journalBusy ? "Acknowledging…" : "Acknowledge prior sleep result" }) })), tvSwitchAcknowledgementId && (SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", onClick: () => void acknowledgeTvSwitch(), disabled: tvSwitchBusy, children: "Acknowledge prior display transition result" }) })), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", onClick: toggleTroubleshooting, children: showDiagnostics ? "Hide troubleshooting" : "Troubleshoot" }) })] }), needsAttention && (SP_JSX.jsx(DFL.PanelSectionRow, { children: error || healthAttention[0] || `${snapshot?.blockers.length} safety check${snapshot?.blockers.length === 1 ? "" : "s"} needs attention.` })), sectionVisibility.diagnostics && (SP_JSX.jsx(DFL.PanelSectionRow, { children: "Read-only status refreshes while this panel is open." })), sectionVisibility.diagnostics && sleepGuard?.required && sleepWarningHidden && (SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", onClick: showSleepWarning, children: "Show sleep warning again" }) }))] }), sectionVisibility.journey && (SP_JSX.jsxs(SP_JSX.Fragment, { children: [SP_JSX.jsxs(DFL.PanelSection, { title: "Journey status", children: [journeyRows.map((row) => (SP_JSX.jsx(DiagnosticRow, { name: row.name, value: row.value }, row.name))), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", onClick: toggleJourneyDetails, children: showJourneyDetails ? "Hide journey details" : "Open journey details" }) })] }), showJourneyDetails && (SP_JSX.jsx("div", { ref: journeyDetailsAnchor, children: SP_JSX.jsxs(DFL.PanelSection, { title: "Journey details", children: [SP_JSX.jsx(DFL.PanelSectionRow, { children: "Read-only local policy status. It does not perform dock, undock, recovery, or game actions." }), journeyDetailRows.map((row) => (SP_JSX.jsx(DiagnosticRow, { name: row.name, value: row.detail }, row.name)))] }) }))] })), sectionVisibility.sleepProtection && SP_JSX.jsxs(DFL.PanelSection, { title: "Sleep protection", children: [SP_JSX.jsx(DiagnosticRow, { name: "System inhibitor", value: loading
+                                    && journalStatus.acknowledgement_id && (SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", onClick: () => void acknowledgePriorSleep(), disabled: journalBusy, children: journalBusy ? "Acknowledging…" : "Acknowledge prior sleep result" }) })), tvSwitchAcknowledgementId && (SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", onClick: () => void acknowledgeTvSwitch(), disabled: tvSwitchBusy, children: "Acknowledge prior display transition result" }) })), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { label: "Troubleshoot", description: "Connection checks, safety details, and support", layout: "inline", childrenContainerWidth: "min", onClick: toggleTroubleshooting, children: showDiagnostics ? "Hide" : "Show" }) })] }), needsAttention && (SP_JSX.jsx(DFL.PanelSectionRow, { children: error || healthAttention[0] || `${snapshot?.blockers.length} safety check${snapshot?.blockers.length === 1 ? "" : "s"} needs attention.` })), sectionVisibility.diagnostics && (SP_JSX.jsx(DFL.PanelSectionRow, { children: "Read-only status refreshes while this panel is open." })), sectionVisibility.diagnostics && sleepGuard?.required && sleepWarningHidden && (SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", onClick: showSleepWarning, children: "Show sleep warning again" }) }))] }), sectionVisibility.journey && (SP_JSX.jsxs(SP_JSX.Fragment, { children: [SP_JSX.jsxs(DFL.PanelSection, { title: "Journey status", children: [journeyRows.map((row) => (SP_JSX.jsx(DiagnosticRow, { name: row.name, value: row.value }, row.name))), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", onClick: toggleJourneyDetails, children: showJourneyDetails ? "Hide journey details" : "Open journey details" }) })] }), showJourneyDetails && (SP_JSX.jsx("div", { ref: journeyDetailsAnchor, children: SP_JSX.jsxs(DFL.PanelSection, { title: "Journey details", children: [SP_JSX.jsx(DFL.PanelSectionRow, { children: "Read-only local policy status. It does not perform dock, undock, recovery, or game actions." }), journeyDetailRows.map((row) => (SP_JSX.jsx(DiagnosticRow, { name: row.name, value: row.detail }, row.name)))] }) }))] })), sectionVisibility.sleepProtection && SP_JSX.jsxs(DFL.PanelSection, { title: "Sleep protection", children: [SP_JSX.jsx(DiagnosticRow, { name: "System inhibitor", value: loading
                                 ? "Checking…"
                                 : sleepGuard?.required
                                     ? sleepGuard.active
