@@ -1,4 +1,4 @@
-import { callable } from "@decky/api";
+import { callable, routerHook } from "@decky/api";
 import { Router } from "@decky/ui";
 import { OfflineDetailsSession } from "./offline-details-session";
 import { offlineReportBadge } from "./offline-badge-state";
@@ -47,6 +47,25 @@ export function startOfflineFocusChecks(): { stop(): void } {
       while (cache.size > CACHE_LIMIT) cache.delete(cache.keys().next().value!); show(saved);
     }, SETTLE_MS);
   };
-  const views = libraryWindows(); for (const view of views) view.document.addEventListener("focusin", focus, true);
-  return { stop() { cancel(); for (const view of views) view.document.removeEventListener("focusin", focus, true); } };
+  const views = new Set<Window>();
+  const syncViews = () => {
+    for (const view of libraryWindows()) {
+      if (views.has(view)) continue;
+      view.document.addEventListener("focusin", focus, true);
+      views.add(view);
+    }
+  };
+  // Steam may not expose navigation windows when Decky first loads. Route
+  // patches provide an event-driven retry without a timer or document scan.
+  const routePatch = <T,>(route: T): T => { syncViews(); return route; };
+  const libraryPatch = routerHook.addPatch("/library", routePatch);
+  const searchPatch = routerHook.addPatch("/search", routePatch);
+  syncViews();
+  return { stop() {
+    cancel();
+    routerHook.removePatch("/library", libraryPatch);
+    routerHook.removePatch("/search", searchPatch);
+    for (const view of views) view.document.removeEventListener("focusin", focus, true);
+    views.clear();
+  } };
 }

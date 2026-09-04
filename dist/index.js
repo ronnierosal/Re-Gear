@@ -19,6 +19,7 @@ if (api._version != API_VERSION) {
     console.warn(`[@decky/api] Requested API version ${API_VERSION} but the running loader only supports version ${api._version}. Some features may not work.`);
 }
 const callable = api.callable;
+const routerHook = api.routerHook;
 const toaster = api.toaster;
 const useQuickAccessVisible = api.useQuickAccessVisible;
 const definePlugin = (fn) => {
@@ -468,11 +469,29 @@ function startOfflineFocusChecks() {
             show(saved);
         }, SETTLE_MS);
     };
-    const views = libraryWindows();
-    for (const view of views)
-        view.document.addEventListener("focusin", focus, true);
-    return { stop() { cancel(); for (const view of views)
-            view.document.removeEventListener("focusin", focus, true); } };
+    const views = new Set();
+    const syncViews = () => {
+        for (const view of libraryWindows()) {
+            if (views.has(view))
+                continue;
+            view.document.addEventListener("focusin", focus, true);
+            views.add(view);
+        }
+    };
+    // Steam may not expose navigation windows when Decky first loads. Route
+    // patches provide an event-driven retry without a timer or document scan.
+    const routePatch = (route) => { syncViews(); return route; };
+    const libraryPatch = routerHook.addPatch("/library", routePatch);
+    const searchPatch = routerHook.addPatch("/search", routePatch);
+    syncViews();
+    return { stop() {
+            cancel();
+            routerHook.removePatch("/library", libraryPatch);
+            routerHook.removePatch("/search", searchPatch);
+            for (const view of views)
+                view.document.removeEventListener("focusin", focus, true);
+            views.clear();
+        } };
 }
 
 const classify = callable("classify_offline_details");
