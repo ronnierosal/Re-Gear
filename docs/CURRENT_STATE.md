@@ -1,5 +1,16 @@
 # Current state
 
+## Local automatic-lifecycle candidate — 2026-09-03 late session
+
+The maintainer confirmed TV picture/audio and a Prepare G1 disconnect return to
+Ally picture/audio/controls on installed `1981259840ce`. This proves one watched
+software cycle, not repeated reconnect or physical removal. The
+[automation plan](G1_AUTOMATION_PLAN_2026-09-03.md) tracks local completion receipts,
+durable Portable suppression, PCI/DRM event wakeups with fallback, and categorical
+logs. Local verification: 873 backend tests (six skipped), 69 frontend tests,
+architecture, compile, typecheck, build, package and diff checks passed. These
+changes are not installed or hardware-validated. Older state below is historical.
+
 ## Shutdown follow-up — 2026-09-03
 
 The latest maintainer report is an incomplete attached-G1 shutdown (fan and LEDs

@@ -18,7 +18,8 @@ from hdm.application.automatic_dock import (  # noqa: E402
     AutomaticDockCoordinator,
     AutomaticDockStage,
 )
-from hdm.domain.models import Confidence, EgpuLinkObservation, EgpuLinkState  # noqa: E402
+from hdm.domain.models import Confidence, EgpuLinkObservation, EgpuLinkState, GpuRole  # noqa: E402
+from hdm.profiles.registry import ProfileResolutionStatus, resolve_runtime_profiles  # noqa: E402
 from hdm.domain.serialization import snapshot_from_dict  # noqa: E402
 from hdm.ports.transition import VersionedObservation  # noqa: E402
 
@@ -47,6 +48,60 @@ def readiness(stage: AttachReadinessStage, code: str) -> AttachReadinessStatus:
 
 
 class AutomaticDockCoordinatorTests(unittest.TestCase):
+    def test_partial_identity_does_not_rearm_attempt_or_portable_suppression(self):
+        ready = readiness(AttachReadinessStage.READY_IDLE, "attach.ready_idle")
+        attached = current("connected-internal.json")
+        # A present GPU with incomplete identity and a transport-only snapshot
+        # must not count as a completed physical disconnect.
+        partial_gpu = replace(
+            attached.snapshot,
+            gpus=tuple(
+                replace(gpu, confidence=Confidence.UNKNOWN)
+                if gpu.role is GpuRole.EXTERNAL else gpu
+                for gpu in attached.snapshot.gpus
+            ),
+        )
+        transport_only = replace(
+            fixture("portable.json"), egpu_link=attached.snapshot.egpu_link
+        )
+        cases = {
+            "partial_gpu": partial_gpu,
+            "transport_only": transport_only,
+            "client_evidence": replace(
+                fixture("portable.json"),
+                disconnect_readiness=attached.snapshot.disconnect_readiness,
+            ),
+            "sleep_presence": replace(
+                fixture("portable.json"),
+                sleep_guard=replace(fixture("portable.json").sleep_guard, required=True),
+            ),
+            "unknown_host": replace(fixture("portable.json"), host_profile="unknown"),
+            "missing_inventory": replace(fixture("portable.json"), gpus=()),
+        }
+        for name, snapshot in cases.items():
+            for suppress in (False, True):
+                with self.subTest(evidence=name, suppress=suppress):
+                    if snapshot is partial_gpu:
+                        self.assertEqual(
+                            resolve_runtime_profiles(snapshot).egpu_status,
+                            ProfileResolutionStatus.UNKNOWN,
+                        )
+                    coordinator = AutomaticDockCoordinator()
+                    if suppress:
+                        coordinator.suppress_current_attachment_after_portable_return()
+                    else:
+                        self.assertTrue(coordinator.update(
+                            enabled=True, readiness=ready, current=attached
+                        ).should_switch)
+                        coordinator.record_result("transition.failed", succeeded=False)
+                    partial = VersionedObservation("partial", snapshot, "partial-sample")
+                    self.assertFalse(coordinator.update(
+                        enabled=True, readiness=ready, current=partial
+                    ).should_switch)
+                    self.assertFalse(coordinator.update(
+                        enabled=True, readiness=ready, current=attached
+                    ).should_switch)
+
     def test_disabled_or_partial_hardware_never_requests_a_switch(self):
         coordinator = AutomaticDockCoordinator()
         ready = readiness(AttachReadinessStage.READY_IDLE, "attach.ready_idle")

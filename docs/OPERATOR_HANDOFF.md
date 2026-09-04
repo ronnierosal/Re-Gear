@@ -1,5 +1,20 @@
 # Maintainer and agent handoff
 
+## Active local goal — event observation and successful completion
+
+See [automation plan](G1_AUTOMATION_PLAN_2026-09-03.md). The maintainer confirmed
+TV picture/audio and return-to-Ally picture/audio/controls on `1981259840ce`.
+New completion receipts and event wakeups are local work only. No new installation
+or hardware proof is implied; follow the plan's supervised acceptance gates.
+
+## Research follow-up — partial identity latch
+
+See [G1 research application](G1_RESEARCH_APPLICATION_2026-09-03.md) for the
+installed `1981259840ce` journal blocker, Cardwire review, and locally tested
+one-shot/safe-disconnect latch correction. Unknown identity no longer counts as
+removal for re-arming. No remote changes, new package or hardware validation were
+performed for this follow-up; the current pending journal remains untouched.
+
 ## Combined runtime/UI candidate — 2026-09-03 evening
 
 The maintainer reports a detached reboot restored built-in controls. SSH became

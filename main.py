@@ -20,6 +20,7 @@ if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
 from hdm.adapters.steamos.discovery import SteamOsDiscovery  # noqa: E402
+from hdm.adapters.steamos.topology_wakeup import LinuxTopologyWakeup  # noqa: E402
 from hdm.adapters.steamos.drm import DrmDiscovery  # noqa: E402
 from hdm.adapters.steamos.pci import PciUsb4Discovery  # noqa: E402
 from hdm.adapters.steamos.wake_diagnostics import WakeDiagnosticsDiscovery  # noqa: E402
@@ -206,6 +207,9 @@ class Plugin:
         self._sleep_guard_task: asyncio.Task[None] | None = None
         self._automatic_dock_task: asyncio.Task[None] | None = None
         self._automatic_dock_retry_seconds = 1.0
+        self._topology_wakeup = None
+        self._topology_wakeup_was_available = False
+        self._last_completion_code = ""
         self._automatic_dock = AutomaticDockCoordinator()
         self._native_recovery_task: asyncio.Task[None] | None = None
         self._native_recovery = NativePortableRecoverySupervisor()
@@ -453,6 +457,8 @@ class Plugin:
                 "automatic_dock.preference_unavailable"
             )
         code = "automatic_dock.enabled" if enabled else "automatic_dock.disabled"
+        if self._topology_wakeup is not None:
+            self._topology_wakeup.invalidate()
         self._events.append(
             severity="info",
             code=code,
@@ -1081,6 +1087,8 @@ class Plugin:
                 self._automatic_dock.suppress_current_attachment_after_portable_return()
             else:
                 self._automatic_dock.reset_after_acknowledgement()
+            if self._topology_wakeup is not None:
+                self._topology_wakeup.invalidate()
         return {"schema_version": 1, "acknowledged": acknowledged}
 
     async def get_supervised_tv_switch_status(
@@ -1316,6 +1324,14 @@ class Plugin:
                 component="discovery",
                 stage="startup",
             )
+        self._topology_wakeup = LinuxTopologyWakeup()
+        monitor_ready = self._topology_wakeup.start()
+        self._topology_wakeup_was_available = monitor_ready
+        self._append_journey_event(
+            severity="info" if monitor_ready else "warning",
+            code="observation.events_ready" if monitor_ready else "observation.poll_fallback",
+            component="connection", stage="observer_start", create_timeline=False,
+        )
         self._sleep_guard_task = asyncio.create_task(self._sleep_guard_loop())
         self._automatic_dock_task = asyncio.create_task(self._automatic_dock_loop())
         self._native_recovery_task = asyncio.create_task(
@@ -1402,6 +1418,20 @@ class Plugin:
                     self._automatic_dock_preferences().load
                 )
                 current = await asyncio.to_thread(observations.observe)
+                completion = await asyncio.to_thread(
+                    self._presentation_transition_service().reconcile_completion, current
+                )
+                if completion.hold_portable:
+                    self._automatic_dock.suppress_current_attachment_after_portable_return()
+                if completion.code != self._last_completion_code:
+                    self._last_completion_code = completion.code
+                    self._append_journey_event(
+                        severity="warning" if completion.code in {
+                            "completion.storage_unavailable", "completion.receipt_unverified"
+                        } else "info",
+                        code=completion.code, component="presentation", stage="completion",
+                        create_timeline=False,
+                    )
                 if _can_remember_portable_audio(current.snapshot):
                     resolution = await asyncio.to_thread(
                         lambda: resolve_gamescope_user(GamescopeDiscovery().scan())
@@ -1413,7 +1443,7 @@ class Plugin:
                         )
                 if not enabled:
                     delay_seconds = 5.0
-                    await asyncio.sleep(delay_seconds)
+                    await self._wait_for_topology(delay_seconds)
                     continue
                 readiness = await asyncio.to_thread(
                     self._record_topology_observation, current.snapshot
@@ -1437,6 +1467,12 @@ class Plugin:
                 delay_seconds = min(
                     delay_seconds, readiness.poll_after_ms / 1_000
                 )
+                if (
+                    self._topology_wakeup is not None
+                    and self._topology_wakeup.available
+                    and readiness.stage is not AttachReadinessStage.SETTLING
+                ):
+                    delay_seconds = 5.0
                 if decision.status.stage is AutomaticDockStage.DOCKED:
                     delay_seconds = 15.0
                 elif readiness.stage is AttachReadinessStage.GAME_RUNNING:
@@ -1513,7 +1549,22 @@ class Plugin:
                     component="presentation",
                     stage="automatic_dock",
                 )
+            await self._wait_for_topology(delay_seconds)
+
+    async def _wait_for_topology(self, delay_seconds: float) -> None:
+        """Events are invalidations only; the next iteration re-collects evidence."""
+        monitor = self._topology_wakeup
+        if monitor is None:
             await asyncio.sleep(delay_seconds)
+            return
+        was_available = self._topology_wakeup_was_available or monitor.available
+        await monitor.wait(delay_seconds)
+        self._topology_wakeup_was_available = monitor.available
+        if was_available and not monitor.available:
+            self._append_journey_event(
+                severity="warning", code="observation.poll_fallback",
+                component="connection", stage="observer_degraded", create_timeline=False,
+            )
 
     async def _start_docked_igpu_lifecycle(self) -> None:
         if self._docked_igpu_task is not None:
@@ -1672,6 +1723,12 @@ class Plugin:
             except Exception:
                 self._record_shutdown_checkpoint("observer_stop_failed", started_ns)
         self._docked_igpu_scheduler = None
+        if self._topology_wakeup is not None:
+            try:
+                self._topology_wakeup.close()
+            except Exception:
+                self._record_shutdown_checkpoint("observer_stop_failed", started_ns)
+            self._topology_wakeup = None
         self._record_shutdown_checkpoint("observers_stopped", started_ns)
         self._record_shutdown_checkpoint("sleep_guard_release_started", started_ns)
         try:
