@@ -1,7 +1,8 @@
 """One cancellable Auto TDP worker; no startup activation or implicit restore.
 
-The owning delivery runtime must retain its writer lease until running is false.
-After stop has drained, it may explicitly restore through the shared service.
+The owning delivery runtime retains its writer lease through active transactions.
+After cancellation a read-only collector may drain without further write admission.
+Restoration is serialized through that runtime's shared transaction service.
 """
 
 from __future__ import annotations
