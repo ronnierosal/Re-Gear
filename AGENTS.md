@@ -1,8 +1,9 @@
-# Handheld Dock Mode Instructions
+# Re-Gear Instructions
 
 ## Project identity
 
-HDM is a SteamOS-first, safety-critical dock-mode controller. It is a new
+Re-Gear (formerly Handheld Dock Mode / HDM) is a SteamOS-first, safety-critical
+dock-mode controller. Branding and compatibility rules: `docs/BRANDING.md`. It is a new
 project; eGPUBridge is reference evidence, not the architecture to reproduce.
 
 ## Sources of truth

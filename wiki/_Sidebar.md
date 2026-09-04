@@ -1,4 +1,4 @@
-**Handheld Dock Mode**
+**Re-Gear**
 
 - [Home](Home)
 - [Project Overview](Project-Overview)
@@ -6,7 +6,7 @@
 - [Issues Fixed](Issues-Fixed)
 - [Ally X + GPD G1 Incident](Ally-X-and-GPD-G1-Docking-Incident)
 - [Getting Started](Getting-Started)
-- [How HDM Works](How-HDM-Works)
+- [How Re-Gear Works](How-HDM-Works)
 - [Supported Hardware](Supported-Hardware)
 - [Safety and eGPU Handling](Safety-and-eGPU-Handling)
 - [Diagnostics and Privacy](Diagnostics-and-Privacy)

@@ -1,10 +1,10 @@
-# Handheld Dock Mode
+# Re-Gear
 
 **Audience:** players, testers, and contributors<br>
 **Evidence reviewed:** 2026-09-02<br>
 **Maturity:** early development; no general public release
 
-Handheld Dock Mode (HDM) is a SteamOS-first, safety-focused Decky Loader plugin
+Re-Gear (formerly Handheld Dock Mode / HDM) is a SteamOS-first, safety-focused Decky Loader plugin
 for console-like handheld, eGPU, dock, and external-display workflows. It aims
 to detect current state, block unsafe operations, explain what is happening in
 player language, and recover to a known-good state when a verified transition
@@ -25,7 +25,7 @@ and [safety invariants](https://github.com/ronnierosal/Handheld-Docked-Mode-Stea
 | Docked-iGPU | Internal GPU to external display | Research path; not an implemented product claim |
 | TV Docked / Docked-eGPU | Verified eGPU to its external display | Automatic exact-profile path hardware tested once; repeated journey validation remains |
 
-HDM keeps physical connection, render GPU, active display, Gamescope state, and
+Re-Gear keeps physical connection, render GPU, active display, Gamescope state, and
 running-game state separate. A cable or connector reported as `connected` does
 not prove that the display is active or usable.
 
@@ -38,5 +38,5 @@ behaves the same way.
 
 Start with [Current State](Current-State), [Getting Started](Getting-Started),
 the [Ally X and GPD G1 incident](Ally-X-and-GPD-G1-Docking-Incident), or
-[How HDM Works](How-HDM-Works). Before touching an eGPU, read
+[How Re-Gear Works](How-HDM-Works). Before touching an eGPU, read
 [Safety and eGPU Handling](Safety-and-eGPU-Handling).

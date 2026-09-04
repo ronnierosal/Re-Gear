@@ -1,5 +1,8 @@
 # Documentation and authority
 
+The product is now **Re-Gear**, formerly Handheld Dock Mode (HDM). See
+[branding and compatibility](BRANDING.md) before changing names or paths.
+
 The repository is HDM's engineering memory. Chats, Codex notes, issues, pull
 requests, and the GitHub Wiki may explain or propose work, but they do not own
 critical engineering contracts.

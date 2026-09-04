@@ -1,0 +1,46 @@
+# Re-Gear branding and compatibility
+
+The public product name is **Re-Gear**. Use this exact spelling and capitalization
+in current UI, product introductions, contributor-facing titles and new prose.
+Handheld Dock Mode (HDM) is the former name of the same project, not a separate
+application. Dated hardware evidence, quoted logs and historical records retain
+their original wording.
+
+## Presentation assets
+
+`src/branding.ts` owns the UI display name. `docs/images/re-gear-icon.png` is the
+maintainer-approved original artwork; the UI workstream owns its bundled use.
+Do not redraw or silently replace the supplied image. Generated `dist` assets
+must be built with the runtime and UI from the same clean source revision.
+
+## Keep these identifiers stable
+
+This rebrand does not migrate installed data or change runtime behavior:
+
+| Surface | Compatibility value retained |
+| --- | --- |
+| Decky manifest identity | `Handheld Dock Mode` |
+| Installed plugin/archive directory | `HandheldDockMode` |
+| npm and Python distribution name | `handheld-dock-mode-steamos` |
+| Python package and diagnostic command | `hdm`, `hdm-diagnose` |
+| Helper/state paths | existing `handheld-dock-mode` paths |
+| Settings, managed markers and diagnostic codes | existing keys and HDM identifiers |
+
+Consequently Decky's plugin list, installer ZIPs and technical logs can still
+display legacy names while the product panel displays Re-Gear. Changing the
+manifest identity or paths risks duplicate installations, lost preferences,
+broken launcher paths or bypassed safety state. Any such migration needs its
+own upgrade/rollback design and tests, not a search-and-replace.
+
+## GitHub and checkout rename — pending maintainer action
+
+The maintainer will rename the GitHub repository when ready. Do not change the
+remote URL, badges, repository links, Wiki publication target, checkout folder
+or worktree paths in advance. No new repository slug has been assumed here.
+After the maintainer supplies the final name, update links and remote mappings
+in a focused follow-up and verify redirects, CI and Wiki access. Keep existing
+Wiki page filenames/slugs stable unless links are migrated together.
+
+Local source edits do not publish the GitHub README/Wiki, rename the repository,
+or install a new build on the Ally. The product name change adds no hardware
+support or live-removal claim, and does not change licensing terms.
