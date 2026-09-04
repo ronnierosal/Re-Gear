@@ -3,11 +3,11 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 const config = deckyPlugin({});
-const offlineBadgeNames = new Set(["offline-ready", "offline-attention", "offline-verify", "offline-required"]);
+const offlineBadgeNames = new Set(["offline-ready", "offline-attention", "offline-verify", "offline-required", "offline-ready-gear", "offline-attention-gear", "offline-verify-gear", "offline-required-gear"]);
 config.plugins.unshift({
   name: "re-gear-offline-badges",
   resolveId(source) {
-    const match = /^\.\/assets\/offline-readiness\/(offline-[a-z]+)\.svg$/.exec(source);
+    const match = /^\.\/assets\/offline-readiness\/(offline-[a-z-]+)\.svg$/.exec(source);
     return match && offlineBadgeNames.has(match[1]) ? `\0re-gear-badge:${match[1]}` : null;
   },
   load(id) {
