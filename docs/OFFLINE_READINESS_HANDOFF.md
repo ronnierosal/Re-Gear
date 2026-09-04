@@ -128,12 +128,27 @@ local tests or enable collection merely by setting admission flags to true.
 
 ## Resume
 
+Latest remote sample (2026-09-04): the user is away from the Ally and asked us to
+continue remotely. Source validation does not require the user to select a game;
+we can inspect a bounded sample without claiming it is the selected-game UI.
+The normal MobX map iterator was rejected under `throwOnSideEffect`. Keeping
+that safeguard enabled, inspection of its native backing map found one locally
+installed base game in the first entry (maximum 16 entries, 16 clients each).
+Categorical output: local client, installed, platform available, not streaming,
+display status 19 (UpdateQueued), cloud status unavailable. No game identity was
+exported. This is current cache content, not verified source age, cloud sync, or
+offline readiness. No game launch, navigation, subscription, or settings change.
+Internal MobX backing fields are inspection-only and must not become a production
+API dependency. Next: measure/review the intended production reader and resolve
+freshness; selected-game UI binding remains a later delivery requirement.
+
 Latest reuse checkpoint (2026-09-04): added an attributed adaptation of Storage
 Cleaner's single-game detail request helper. See `THIRD_PARTY_NOTICES.md` and
 `src/steam-app-details-request.ts`. Six callback/timeout/abort/error tests and
 TypeScript passed. It is not wired to Steam: native subscription behavior and
 freshness still need review, and this async helper does not fit the existing
-synchronous read-local port. The selected-game-page request remains outstanding.
+synchronous read-local port. A user-selected page is not required for bounded
+source investigation; it remains required context for the eventual player flow.
 
 Read this file, `OFFLINE_EVIDENCE_SOURCE_REVIEW.md`, `OFFLINE_READINESS_UI.md`,
 and current `git status`/diff in the worktree above. Continue only this mission.

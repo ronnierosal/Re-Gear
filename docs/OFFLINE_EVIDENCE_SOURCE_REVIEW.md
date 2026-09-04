@@ -133,6 +133,16 @@ enabling debugging or installing an observer.
 
 ### Request boundary
 
+**REMOTELY OBSERVED sample, 2026-09-04:** a bounded cache inspection (at most 16
+entries and 16 client records per entry) found a locally installed base game in
+the first entry. Local platform availability was true, streaming false, display
+status 19 (UpdateQueued), and cloud status unavailable. Identity was not exported.
+The normal observable-map iteration was rejected by side-effect checking; direct
+inspection of native backing values passed with that checking still enabled.
+This verifies a real cache shape and preserves missing-cloud uncertainty. It
+does not prove source age or offline play. MobX internals are an inspection
+technique only, not an approved production integration surface.
+
 **REMOTELY OBSERVED, 2026-09-04:** existing Steam loopback debugging access was
 already enabled (protocol 1.3). A bounded side-effect-checked runtime read in
 `SharedJSContext` confirmed appStore exists, is initialized, and has the exact
