@@ -1,5 +1,21 @@
 # Current state
 
+## Re-Gear 0.3.14 combined G1 readiness candidate — 2026-09-04
+
+The 0.3.13 Offline Play and UI lineage now includes the hybrid G1 connection
+pipeline: bounded Thunderbolt/PCI/DRM event wakeups, adaptive polling through a
+120-second enumeration window, exact USB4 and complete G1 identity, driver and
+link checks, G1-backed HDMI/EDID, read-only selectable TV-audio and Portable
+rollback validation, Gamescope readiness, and known idle game state. Four
+topology samples and two HDMI/audio samples are required before the existing
+one-shot automatic transition engine may receive a request.
+
+The readiness observer does not reset USB4, rescan PCI, authorize devices, bind
+drivers, or mutate display/audio state. This combined candidate is not installed
+or hardware validated. Stage its ZIP only in `/home/deck/`, verify the installed
+version first, and remove superseded ZIPs from `/home/deck/` and
+`/home/deck/Downloads/` before the supervised detached-install test.
+
 ## Re-Gear 0.3.11 transparent white icon correction — 2026-09-04
 
 The installed 0.3.10 lineage still imported the 0.3.6 black-filled gear asset.
