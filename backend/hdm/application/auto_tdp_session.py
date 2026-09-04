@@ -49,7 +49,8 @@ class AutoTdpSession:
                  collect: Callable[[], AutoTdpEvidence | None],
                  revalidate: Callable[[], AutoTdpLiveContext | None],
                  game_state: Callable[[], GameState], clock_ms: Callable[[], int],
-                 contract: TelemetryCollectionContract):
+                 contract: TelemetryCollectionContract,
+                 reset_collection: Callable[[], None] | None = None):
         if contract.consumer is not TelemetryConsumer.AUTO_TDP:
             raise ValueError("Auto TDP requires its own collection contract")
         self._service, self._collect, self._revalidate = service, collect, revalidate
@@ -62,6 +63,7 @@ class AutoTdpSession:
         self._lock = threading.Lock()
         self._control_lock = threading.Lock()
         self._stop_generation = 0
+        self._reset_collection = reset_collection
 
     @property
     def enabled(self) -> bool:
@@ -85,6 +87,8 @@ class AutoTdpSession:
             admission = admit_telemetry_collection(self._contract, GameState.RUNNING, auto_tdp_enabled=True)
             if admission.kind is not TelemetryAdmissionKind.ADMIT:
                 return self._result(admission.reason)
+            if self._reset_collection is not None:
+                self._reset_collection()
             with self._control_lock:
                 if self._stop_generation != stop_generation:
                     return self._result("auto_tdp.activation_changed")
@@ -128,6 +132,8 @@ class AutoTdpSession:
             admission = admit_telemetry_collection(self._contract, self._game_state(), auto_tdp_enabled=True)
             if admission.kind is not TelemetryAdmissionKind.ADMIT:
                 self._state = AutoTdpState()
+                if self._reset_collection is not None:
+                    self._reset_collection()
                 return self._result(admission.reason)
             evidence = self._collect()
             if self._activation != activation:

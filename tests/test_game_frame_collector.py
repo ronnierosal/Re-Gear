@@ -32,6 +32,14 @@ class FrameCollectorTests(unittest.TestCase):
         self.assertEqual(result.span_ms, 4000)
         self.assertEqual(result.context_key, "opaque-context")
 
+    def test_explicit_power_epoch_reset_requires_a_new_window(self):
+        self.assertIsNotNone(self.warm().sampled_fps)
+        self.collector.reset()
+        result = self.collector.collect()
+        self.assertIsNone(result.sampled_fps)
+        self.assertEqual(result.sample_count, 1)
+        self.assertEqual(result.span_ms, 0)
+
     def test_resolution_changes_after_read_discard_all_history(self):
         self.warm()
         for target in (None, replace(self.target, context_key="new-generation"), replace(self.target, app_id=43)):

@@ -56,6 +56,9 @@ Manual lifecycle/RPC/UI delivery, known-controller detection and a Re-Gear write
 lease are implemented and locally tested. Live provider discovery, Linux lock
 validation, actual gameplay telemetry and the live Auto TDP loop remain pending. See
 [TDP control](TDP_CONTROL.md). It does not own G1 lifecycle transitions.
+The composed Auto evidence collector now checks workload/power context around
+every retained frame and resets history across setting/source changes; the
+concrete Decky factory, justified thermal profile and measured admission remain.
 
 | Priority | Work item and owner | Status | Acceptance evidence |
 | --- | --- | --- | --- |
