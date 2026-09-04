@@ -19,16 +19,36 @@ MAX_BYTES = 4 * 1024 * 1024
 MAX_REPORT_BYTES = 16 * 1024
 MAX_ELAPSED_MS = 24 * 60 * 60 * 1000
 JOURNAL_TIMEOUT_SECONDS = 10
-JOURNAL_ARGV = (
-    "/usr/bin/journalctl", "--boot=-1", "--lines=2000", "--output=json",
-    "--output-fields=MESSAGE,__MONOTONIC_TIMESTAMP,_TRANSPORT,_COMM,_SYSTEMD_UNIT",
-    "--no-pager", "--quiet",
-)
+CAPTURE_BOOT = "previous"
+CAPTURE_SCOPE = "shutdown"
+SCOPES = {
+    "shutdown": ("_TRANSPORT=kernel", "+", "_COMM=systemd", "+",
+                 "_COMM=systemd-shutdow", "+", "_SYSTEMD_UNIT=plugin_loader.service"),
+    "kernel": ("_TRANSPORT=kernel",),
+    "services": ("_COMM=systemd", "+", "_COMM=systemd-shutdow"),
+    "plugin": ("_SYSTEMD_UNIT=plugin_loader.service",),
+}
+
+
+def journal_argv(boot="previous", scope="shutdown"):
+    if boot not in ("previous", "current") or scope not in SCOPES:
+        raise ValueError("unsupported journal selection")
+    return (
+        "/usr/bin/journalctl", "--boot=" + ("-1" if boot == "previous" else "0"),
+        "--lines=2000", "--output=json",
+        "--output-fields=MESSAGE,__MONOTONIC_TIMESTAMP,_TRANSPORT,_COMM,_SYSTEMD_UNIT",
+        "--no-pager", "--quiet", *SCOPES[scope],
+    )
+
+
+JOURNAL_ARGV = journal_argv()
 CATEGORIES = (
     "kernel_blocked_task", "amdgpu_blocked_task", "pciehp_blocked_task",
     "amdgpu_shutdown_stack", "pciehp_shutdown_stack", "aer_error",
     "xhci_error", "systemd_stop_timeout", "session_exit_126",
 )
+PHASES = ("steam_stopped", "gamescope_stopped", "poweroff_target",
+          "shutdown_sync", "shutdown_term", "shutdown_kill", "poweroff_requested")
 STAGES = (
     "unload_started", "observers_stopped", "sleep_guard_release_started",
     "sleep_guard_released", "unload_complete", "observer_stop_failed",
@@ -46,11 +66,12 @@ CHECKPOINT_RE = re.compile(
 
 def empty_report(status: str) -> dict:
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "collector": {
             "read_only": True, "remote_files_written": False,
             "transport": "ssh_stdin", "execution_privilege": "unprivileged",
-            "source": "previous_boot_journal", "selection": "bounded_tail",
+            "source": CAPTURE_BOOT + "_boot_journal", "selection": "bounded_tail",
+            "scope": CAPTURE_SCOPE,
             "installed_revision": "unknown", "event_scope": "plugin_unload_not_poweroff",
         },
         "status": status,
@@ -58,8 +79,12 @@ def empty_report(status: str) -> dict:
         "coverage": {
             "rows_examined": 0, "tail_limit_reached": False,
             "malformed_rows": 0, "span_ms": None,
+            "binary_message_rows": 0, "unavailable_message_rows": 0,
+            "ambiguous_message_rows": 0, "kernel_rows": 0,
+            "systemd_rows": 0, "plugin_rows": 0,
         },
         "symptoms": {name: 0 for name in CATEGORIES},
+        "shutdown_phases": {name: 0 for name in PHASES},
         "checkpoints": {
             stage: {"count": 0, "last_elapsed_ms": None} for stage in STAGES
         },
@@ -85,13 +110,38 @@ def classify_journal(data: bytes) -> dict:
         except (UnicodeDecodeError, json.JSONDecodeError):
             coverage["malformed_rows"] += 1
             continue
-        if not isinstance(row, dict) or not isinstance(row.get("MESSAGE"), str):
+        if not isinstance(row, dict):
             coverage["malformed_rows"] += 1
             continue
         stamp = row.get("__MONOTONIC_TIMESTAMP")
         if isinstance(stamp, str) and re.fullmatch(r"[0-9]{1,18}", stamp):
             timestamps.append(int(stamp))
-        message = row["MESSAGE"]
+        coverage["kernel_rows"] += row.get("_TRANSPORT") == "kernel"
+        coverage["systemd_rows"] += row.get("_COMM") in ("systemd", "systemd-shutdow")
+        coverage["plugin_rows"] += row.get("_SYSTEMD_UNIT") == "plugin_loader.service"
+        message = row.get("MESSAGE")
+        # journalctl JSON uses null for omitted large fields and byte arrays for
+        # non-printable/non-UTF8 fields. Repeated fields are arrays of values.
+        # Decode only a bounded byte array; never concatenate ambiguous values.
+        if message is None:
+            coverage["unavailable_message_rows"] += 1
+            continue
+        if isinstance(message, list):
+            if message and all(type(byte) is int and 0 <= byte <= 255 for byte in message):
+                coverage["binary_message_rows"] += 1
+                try:
+                    if len(message) > 4096:
+                        raise UnicodeError()
+                    message = bytes(message).decode("utf-8", errors="strict")
+                except UnicodeError:
+                    coverage["unavailable_message_rows"] += 1
+                    continue
+            else:
+                coverage["ambiguous_message_rows"] += 1
+                continue
+        if not isinstance(message, str):
+            coverage["malformed_rows"] += 1
+            continue
         lower = message.lower()
         matched = set()
         if row.get("_TRANSPORT") == "kernel":
@@ -117,6 +167,17 @@ def classify_journal(data: bytes) -> dict:
                 matched.add("session_exit_126")
         for category in matched:
             report["symptoms"][category] += 1
+        phases = report["shutdown_phases"]
+        if row.get("_COMM") == "systemd":
+            phases["steam_stopped"] += message == "Stopped Steam Launcher."
+            phases["gamescope_stopped"] += message == "Stopped Gamescope Session."
+            if row.get("_SYSTEMD_UNIT") == "init.scope":
+                phases["poweroff_target"] += bool(re.search(r"Reached target .*Power-Off", message))
+        if row.get("_COMM") == "systemd-shutdow":
+            phases["shutdown_sync"] += "Syncing filesystems" in message
+            phases["shutdown_term"] += "Sending SIGTERM" in message
+            phases["shutdown_kill"] += "Sending SIGKILL" in message
+            phases["poweroff_requested"] += "Powering off" in message
         if row.get("_SYSTEMD_UNIT") == "plugin_loader.service":
             checkpoint = CHECKPOINT_RE.search(message)
             if checkpoint and int(checkpoint[2]) <= MAX_ELAPSED_MS:
@@ -209,15 +270,19 @@ else:
     from remote_capture import build_ssh_argv, ssh_failure_code
 
 
-def remote_payload() -> str:
+def remote_payload(boot="previous", scope="shutdown") -> str:
+    journal_argv(boot, scope)  # Validate before embedding categorical literals.
     source = Path(__file__).read_text(encoding="utf-8")
     remote, separator, _ = source.partition("\n# LOCAL SSH CLIENT\n")
     if not separator:
         raise ValueError("fixed remote payload boundary is missing")
-    return remote + "\nprint(json.dumps(collect_previous_boot(), sort_keys=True))\n"
+    return remote + (f"\nCAPTURE_BOOT = {boot!r}\nCAPTURE_SCOPE = {scope!r}\n"
+                     "JOURNAL_ARGV = journal_argv(CAPTURE_BOOT, CAPTURE_SCOPE)\n"
+                     "print(json.dumps(collect_previous_boot(), sort_keys=True))\n")
 
 
-def validate_report(stdout: str) -> dict:
+def validate_report(stdout: str, boot="previous", scope="shutdown") -> dict:
+    journal_argv(boot, scope)
     if len(stdout.encode("utf-8")) > MAX_REPORT_BYTES:
         raise ValueError("shutdown report exceeds size bound")
     try:
@@ -225,9 +290,11 @@ def validate_report(stdout: str) -> dict:
     except json.JSONDecodeError as error:
         raise ValueError("shutdown report is malformed") from error
     template = empty_report("observed")
+    template["collector"]["source"] = boot + "_boot_journal"
+    template["collector"]["scope"] = scope
     if not isinstance(value, dict) or set(value) != set(template):
         raise ValueError("shutdown report schema is unsupported")
-    if (type(value["schema_version"]) is not int or value["schema_version"] != 1
+    if (type(value["schema_version"]) is not int or value["schema_version"] != 2
             or value["collector"] != template["collector"]
             or value["physical_poweroff"] != "unknown"
             or value["status"] not in STATUSES):
@@ -237,6 +304,9 @@ def validate_report(stdout: str) -> dict:
     symptoms = value["symptoms"]
     if not isinstance(symptoms, dict) or set(symptoms) != set(CATEGORIES) or not all(map(bounded_count, symptoms.values())):
         raise ValueError("shutdown symptom counts are invalid")
+    phases = value["shutdown_phases"]
+    if not isinstance(phases, dict) or set(phases) != set(PHASES) or not all(map(bounded_count, phases.values())):
+        raise ValueError("shutdown phase counts are invalid")
     coverage = value["coverage"]
     if not isinstance(coverage, dict) or set(coverage) != set(template["coverage"]):
         raise ValueError("shutdown coverage is invalid")
@@ -245,6 +315,10 @@ def validate_report(stdout: str) -> dict:
             or coverage["malformed_rows"] > coverage["rows_examined"]
             or type(coverage["tail_limit_reached"]) is not bool):
         raise ValueError("shutdown coverage counts are invalid")
+    for key in ("binary_message_rows", "unavailable_message_rows", "ambiguous_message_rows",
+                "kernel_rows", "systemd_rows", "plugin_rows"):
+        if not bounded_count(coverage[key]) or coverage[key] > coverage["rows_examined"]:
+            raise ValueError("shutdown coverage counts are invalid")
     def elapsed(item):
         return item is None or (type(item) is int and 0 <= item <= MAX_ELAPSED_MS)
     if not elapsed(coverage["span_ms"]):
@@ -260,17 +334,18 @@ def validate_report(stdout: str) -> dict:
 
 
 def collect_remote(*, host: str, user: str = "deck", port: int = 22,
-                   timeout_seconds: int = 10, identity_file: Path | None = None) -> dict:
+                   timeout_seconds: int = 10, identity_file: Path | None = None,
+                   boot="previous", scope="shutdown") -> dict:
     if user == "root":
         raise ValueError("shutdown capture requires an unprivileged SSH user")
     argv = build_ssh_argv(host=host, user=user, port=port,
                          timeout_seconds=timeout_seconds, identity_file=identity_file)
-    payload = remote_payload()
+    payload = remote_payload(boot, scope)
     result = subprocess.run(argv, input=payload, text=True, capture_output=True,
                             timeout=timeout_seconds + JOURNAL_TIMEOUT_SECONDS + 5, check=False)
     if result.returncode:
         raise RuntimeError(ssh_failure_code(result.returncode, result.stderr))
-    value = validate_report(result.stdout)
+    value = validate_report(result.stdout, boot, scope)
     value["collector"]["payload_sha256"] = hashlib.sha256(payload.encode("utf-8")).hexdigest()
     return value
 
@@ -282,10 +357,13 @@ def main() -> int:
     parser.add_argument("--port", type=int, default=22)
     parser.add_argument("--timeout", type=int, default=10)
     parser.add_argument("--identity-file", type=Path)
+    parser.add_argument("--boot", choices=("previous", "current"), default="previous")
+    parser.add_argument("--scope", choices=tuple(SCOPES), default="shutdown")
     args = parser.parse_args()
     try:
         report = collect_remote(host=args.host, user=args.user, port=args.port,
-                                timeout_seconds=args.timeout, identity_file=args.identity_file)
+                                timeout_seconds=args.timeout, identity_file=args.identity_file,
+                                boot=args.boot, scope=args.scope)
     except (OSError, ValueError, RuntimeError, subprocess.SubprocessError):
         # Exceptions may contain command lines or destinations; do not print them.
         print("Shutdown evidence capture unavailable; no remote changes made.", file=sys.stderr)

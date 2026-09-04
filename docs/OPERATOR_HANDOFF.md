@@ -1,5 +1,20 @@
 # Maintainer and agent handoff
 
+## Shutdown capture repair — 2026-09-03
+
+Developer-only capture now handles bounded journal byte messages and reports
+omitted/ambiguous message coverage explicitly. Fixed current/previous boot and
+kernel/service/plugin selections avoid mixed-tail crowding. A bounded live
+reader streams validated redacted summaries to the development computer before
+SSH closes; it never initiates shutdown or changes remote configuration.
+Verification: 21 collector/live tests, architecture, compileall and diff checks
+passed. A 30-second live dry run exited cleanly. Separate previous-boot reads
+returned 1296 kernel, 1365 service and 1272 plugin rows without malformed rows,
+but no final poweroff or HDM unload evidence. Installed Re-Gear remains 0.3.0
+`9571a5ca3e5b`; these scripts are not part of the plugin archive. Next: one
+player-requested poweroff with live capture, then physical-state confirmation and
+retained-log retrieval after a safe boot. SSH loss is not poweroff proof.
+
 ## Graceful session experiment — 2026-09-03
 
 On installed 0.3.0 `9571a5ca3e5b`, one explicitly supervised no-force session

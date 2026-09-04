@@ -19,6 +19,8 @@ class ShutdownEvidenceTests(unittest.TestCase):
             "/usr/bin/journalctl", "--boot=-1", "--lines=2000", "--output=json",
             "--output-fields=MESSAGE,__MONOTONIC_TIMESTAMP,_TRANSPORT,_COMM,_SYSTEMD_UNIT",
             "--no-pager", "--quiet",
+            "_TRANSPORT=kernel", "+", "_COMM=systemd", "+", "_COMM=systemd-shutdow",
+            "+", "_SYSTEMD_UNIT=plugin_loader.service",
         ))
         self.assertEqual(capture.JOURNAL_TIMEOUT_SECONDS, 10)
 
@@ -85,7 +87,8 @@ class ShutdownEvidenceTests(unittest.TestCase):
         self.assertEqual(capture.classify_journal(b"")["status"], "no_previous_journal")
         malformed = capture.classify_journal(b"not-json\n[]\n" + journal([1, 2, 3]))
         self.assertEqual(malformed["status"], "malformed_journal")
-        self.assertEqual(malformed["coverage"]["malformed_rows"], 3)
+        self.assertEqual(malformed["coverage"]["malformed_rows"], 2)
+        self.assertEqual(malformed["coverage"]["binary_message_rows"], 1)
         unknown = capture.classify_journal(journal("ordinary event with private text"))
         self.assertEqual(unknown["status"], "observed")
         self.assertFalse(any(unknown["symptoms"].values()))
@@ -94,6 +97,60 @@ class ShutdownEvidenceTests(unittest.TestCase):
         tail = capture.classify_journal(journal("x") * capture.MAX_ROWS)
         self.assertTrue(tail["coverage"]["tail_limit_reached"])
         self.assertEqual(tail["physical_poweroff"], "unknown")
+
+    def test_byte_messages_decode_without_exporting_private_content(self):
+        message = b"amdgpu_device_fini secret-host /private/path\x00"
+        report = capture.classify_journal(journal(list(message), _TRANSPORT="kernel"))
+        self.assertEqual(report["status"], "observed")
+        self.assertEqual(report["symptoms"]["amdgpu_shutdown_stack"], 1)
+        self.assertEqual(report["coverage"]["binary_message_rows"], 1)
+        self.assertEqual(report["coverage"]["kernel_rows"], 1)
+        self.assertNotIn("secret-host", json.dumps(report))
+        self.assertNotIn("/private/path", json.dumps(report))
+        capture.validate_report(json.dumps(report))
+
+    def test_unavailable_and_ambiguous_messages_are_coverage_gaps(self):
+        data = journal(None) + journal([255, 254]) + journal([65] * 4097)
+        data += journal(["amdgpu_device_fini", "private"], _TRANSPORT="kernel")
+        data += journal([True, False]) + journal([256]) + journal([])
+        report = capture.classify_journal(data)
+        self.assertEqual(report["status"], "observed")
+        self.assertEqual(report["coverage"]["unavailable_message_rows"], 3)
+        self.assertEqual(report["coverage"]["ambiguous_message_rows"], 4)
+        self.assertFalse(any(report["symptoms"].values()))
+        capture.validate_report(json.dumps(report))
+
+    def test_scoped_queries_cannot_accept_arbitrary_remote_arguments(self):
+        args = capture.journal_argv("current", "kernel")
+        self.assertIn("--boot=0", args)
+        self.assertEqual(args[-1], "_TRANSPORT=kernel")
+        self.assertNotIn("_SYSTEMD_UNIT=plugin_loader.service", args)
+        for boot, scope in (("-2", "kernel"), ("current", "--all")):
+            with self.assertRaises(ValueError):
+                capture.remote_payload(boot, scope)
+        payload = capture.remote_payload("current", "kernel")
+        namespace = {}
+        exec(payload.rsplit("\nprint(", 1)[0], namespace)
+        report = namespace["empty_report"]("observed")
+        self.assertEqual(report["collector"]["source"], "current_boot_journal")
+        self.assertEqual(report["collector"]["scope"], "kernel")
+        capture.validate_report(json.dumps(report), "current", "kernel")
+        with self.assertRaises(ValueError):
+            capture.validate_report(json.dumps(report))
+
+    def test_shutdown_phases_require_provenance_and_never_prove_poweroff(self):
+        data = journal("Stopped Steam Launcher.", _COMM="systemd")
+        data += journal("Stopped Gamescope Session.", _COMM="systemd")
+        data += journal("Reached target System Power-Off.", _COMM="systemd", _SYSTEMD_UNIT="init.scope")
+        data += journal("Syncing filesystems and block devices.", _COMM="systemd-shutdow")
+        data += journal("Sending SIGTERM to remaining processes...", _COMM="systemd-shutdow")
+        data += journal("Sending SIGKILL to remaining processes...", _COMM="systemd-shutdow")
+        data += journal("Powering off.", _COMM="systemd-shutdow")
+        data += journal("Powering off.", SYSLOG_IDENTIFIER="systemd-shutdow")
+        report = capture.classify_journal(data)
+        self.assertTrue(all(count == 1 for count in report["shutdown_phases"].values()))
+        self.assertEqual(report["physical_poweroff"], "unknown")
+        capture.validate_report(json.dumps(report))
 
     def test_missing_permissions_failures_and_root_never_fallback(self):
         cases = (

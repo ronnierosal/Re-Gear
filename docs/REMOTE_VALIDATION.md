@@ -16,6 +16,30 @@ exception text are not returned. The fixed payload hash identifies the reader,
 not the prior boot's installed build. It writes no remote files, never uses sudo,
 and does not enable persistent journaling or change shutdown behavior.
 
+The schema-2 collector accepts `--boot previous|current` and
+`--scope shutdown|kernel|services|plugin`. Default shutdown scope selects only
+kernel, systemd and HDM-loader records; separate kernel/service/plugin reads
+prevent a busy source from crowding another out of the bounded tail. Byte-array
+MESSAGE values are decoded only within a 4 KiB UTF-8 bound; omitted, undecodable
+and ambiguous values remain explicit coverage gaps. Raw message text never
+leaves the remote classifier. Shutdown-phase counts do not prove poweroff.
+
+For a separately supervised poweroff, begin a bounded live capture first:
+
+```text
+python scripts/capture_shutdown_live.py --host <ally-ip> --identity-file <ssh-key> \
+  --seconds 180 --output out/shutdown-live-<unique-session>.jsonl
+```
+
+Wait for `Live shutdown capture ready` before the player requests shutdown.
+This observes only newly arriving current-boot records for 30–300 seconds, up
+to 2,000 rows / 4 MiB, and writes validated categorical summaries to an exclusive
+local JSONL file. It changes no remote files or services. The reader terminates
+only its own journalctl child; the local watchdog terminates only its own SSH
+client. SSH loss and capture expiry are evidence boundaries, never physical
+poweroff proof. Read retained previous-boot scopes after a later safe boot to
+look for evidence after SSH disappeared. Missing late records remain unknown.
+
 No previous journal, permission denial, malformed or size-limited output are
 explicit evidence gaps. Even an observed tail is not a complete shutdown trace.
 Plugin unload can mean an update. An unload-complete marker, journal EOF, or new
