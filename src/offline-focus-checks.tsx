@@ -53,6 +53,10 @@ export function startOfflineFocusChecks(): { stop(): void } {
       if (views.has(view)) continue;
       view.document.addEventListener("focusin", focus, true);
       views.add(view);
+      const active = view.document.activeElement;
+      if (active?.closest?.(OFFLINE_TILE_SELECTOR)) {
+        focus({ target: active } as unknown as FocusEvent);
+      }
     }
   };
   // Steam may not expose navigation windows when Decky first loads. Route

@@ -67,8 +67,8 @@ export function attachOfflineTileBadge(
     badge.src = image;
     badge.alt = label;
     badge.title = `${label} — Steam report at check time`;
-    badge.width = 72; badge.height = 32;
-    badge.style.cssText = "position:absolute;bottom:6px;left:6px;width:72px;height:32px;pointer-events:none;z-index:2";
+    badge.width = 48; badge.height = 21;
+    badge.style.cssText = "position:absolute;bottom:6px;left:6px;width:48px;height:21px;pointer-events:none;z-index:2";
     host.appendChild(badge);
     owned.set(tile, badge);
   };
