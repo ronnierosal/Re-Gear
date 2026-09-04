@@ -10,7 +10,7 @@ before using a build.
 
 ## Players and hardware testers
 
-HDM is not ready for an ordinary self-service installation. Hardware-facing
+Re-Gear is not ready for an ordinary self-service installation. Hardware-facing
 builds are provenance-bound and validated in supervised sessions. Do not select
 an archive by filename or age, copy an unverified build onto a handheld, or use
 development commands as general install instructions.

@@ -5,7 +5,7 @@ type HealthState = NonNullable<SnapshotPayload["health"]>["state"];
 const HEALTH_BLOCKER_MESSAGES: Record<string, string> = {
   "health.placement_degraded": "Current mode needs attention.",
   "health.placement_unknown": "Current mode needs verification.",
-  "health.workflow_unknown": "HDM recovery status needs review.",
+  "health.workflow_unknown": "Re-Gear recovery status needs review.",
   "health.session_degraded": "Steam session is not usable.",
   "health.session_unknown": "Steam session status needs verification.",
   "health.display_degraded": "Active display is not usable.",
@@ -18,8 +18,8 @@ const HEALTH_BLOCKER_MESSAGES: Record<string, string> = {
   "health.controller_unknown": "Built-in controls need verification.",
   "health.audio_degraded": "Current audio output is not usable.",
   "health.audio_unknown": "Current audio output needs verification.",
-  "health.no_observations": "HDM health evidence is unavailable.",
-  "health.duplicate_component": "HDM health evidence is inconsistent.",
+  "health.no_observations": "Re-Gear health evidence is unavailable.",
+  "health.duplicate_component": "Re-Gear health evidence is inconsistent.",
 };
 
 export function healthStatusLabel(
@@ -54,7 +54,7 @@ export function healthAttentionMessages(
     return [];
   }
   const messages = health.blockers.map((blocker) =>
-    HEALTH_BLOCKER_MESSAGES[blocker] ?? "HDM health evidence needs review.",
+    HEALTH_BLOCKER_MESSAGES[blocker] ?? "Re-Gear health evidence needs review.",
   );
   return [...new Set(messages)].slice(0, 3);
 }

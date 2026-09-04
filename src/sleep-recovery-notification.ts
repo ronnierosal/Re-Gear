@@ -43,7 +43,7 @@ export function decideSleepRecoveryNotification(
       memory: current,
       notification: {
         title: "Interrupted sleep request closed",
-        body: "HDM verified the handheld path after restart. Sleep was not continued. Game/session outcome was not verified.",
+        body: "Re-Gear verified the handheld path after restart. Sleep was not continued. Game/session outcome was not verified.",
         critical: false,
       },
     };
@@ -53,7 +53,7 @@ export function decideSleepRecoveryNotification(
       memory: current,
       notification: {
         title: "Interrupted sleep request needs attention",
-        body: "HDM did not continue sleep or claim handheld recovery. Review the current status before trying again.",
+        body: "Re-Gear did not continue sleep or claim handheld recovery. Review the current status before trying again.",
         critical: false,
       },
     };
@@ -62,7 +62,7 @@ export function decideSleepRecoveryNotification(
     memory: current,
     notification: {
       title: "Sleep recovery status unavailable",
-      body: "HDM did not continue sleep. Review the current status before trying again.",
+      body: "Re-Gear did not continue sleep. Review the current status before trying again.",
       critical: false,
     },
   };

@@ -120,7 +120,7 @@ export function connectionProgress(
       label: snapshot.egpu_link.applicable && snapshot.egpu_link.state === "down"
         ? "eGPU link needs attention"
         : "eGPU link needs verification",
-      detail: "HDM is preserving the current setup. Verify the display and controls before changing it.",
+      detail: "Re-Gear is preserving the current setup. Verify the display and controls before changing it.",
       settling: true,
     };
   }

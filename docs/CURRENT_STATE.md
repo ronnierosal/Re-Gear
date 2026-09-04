@@ -1,5 +1,16 @@
 # Current state
 
+## Re-Gear branding integration
+
+Re-Gear is the public product name. The runtime branch integrates the UI
+workstream's `8067a04` branding/artwork and `20d0749` self-contained image loader
+with the `7afa509` lifecycle fixes. The supplied PNG is embedded byte-for-byte;
+the journal-idle acknowledgement fix remains intact. Legacy installation IDs,
+state paths, GitHub links and checkout paths remain unchanged as documented in
+[branding compatibility](BRANDING.md). Combined local gates: 873 backend tests
+(six skips), 73 frontend tests, architecture, compile, typecheck, build and package
+checks passed. No rebranded build is yet installed or hardware-validated.
+
 ## Local automatic-lifecycle candidate — 2026-09-03 late session
 
 The maintainer confirmed TV picture/audio and a Prepare G1 disconnect return to

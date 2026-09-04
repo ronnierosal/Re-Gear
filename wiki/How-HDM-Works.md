@@ -1,4 +1,4 @@
-# How HDM works
+# How Re-Gear works
 
 **Audience:** players, testers, and contributors<br>
 **Evidence reviewed:** 2026-09-02<br>
@@ -8,7 +8,7 @@ The repository [architecture](https://github.com/ronnierosal/Handheld-Docked-Mod
 and [product definition](https://github.com/ronnierosal/Handheld-Docked-Mode-SteamOS/blob/main/docs/PRODUCT.md)
 own the model summarized here.
 
-HDM first observes the system, then derives a placement and health state. It
+Re-Gear first observes the system, then derives a placement and health state. It
 does not assume that plugging in a cable completed a docking workflow.
 
 ## Independent facts
@@ -37,7 +37,7 @@ with speculative abstractions.
 
 ## Verification matters
 
-A requested transition is complete only after HDM re-observes the intended
+A requested transition is complete only after Re-Gear re-observes the intended
 render GPU, active display, Gamescope state, and user-visible readiness.
 Command success or connector presence alone is insufficient. A timeout or
 contradiction triggers bounded rollback or retains the known-good state.

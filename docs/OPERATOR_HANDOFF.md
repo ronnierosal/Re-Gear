@@ -1,5 +1,13 @@
 # Maintainer and agent handoff
 
+## Re-Gear local candidate
+
+The UI workstream's Re-Gear name and original supplied PNG are integrated with
+the runtime automation candidate. Backend tests: 873, six skipped; frontend: 73
+passed. See [branding compatibility](BRANDING.md). Installer identity, helpers,
+preferences and GitHub URLs stay legacy-compatible. The GitHub repository rename
+is the maintainer's pending action. No remote deployment occurred for this rename.
+
 ## Active local goal — event observation and successful completion
 
 See [automation plan](G1_AUTOMATION_PLAN_2026-09-03.md). The maintainer confirmed

@@ -94,7 +94,7 @@ const JOURNEY_STATES: Record<string, Record<string, [string, string]>> = {
   },
   link_instability: {
     stable_observed: ["Stable state observed", "Two observed samples matched; this is not a performance or link-quality rating."],
-    instability_observed: ["State change observed", "Review the current link observation; HDM does not diagnose cable quality."],
+    instability_observed: ["State change observed", "Review the current link observation; Re-Gear does not diagnose cable quality."],
     evidence_insufficient: ["Evidence incomplete", "Fresh observed link evidence is unavailable."],
   },
   offline_readiness: {

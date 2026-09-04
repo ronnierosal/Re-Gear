@@ -1,12 +1,12 @@
 <div align="center">
 
-<img src="docs/images/hdm-icon.jpg" alt="Handheld Dock Mode icon" width="260">
+<img src="docs/images/re-gear-icon.png" alt="Re-Gear: handheld today, console tomorrow" width="320">
 
-# Handheld Dock Mode
+# Re-Gear
 
 **Safety-first, games-first reliability companion for SteamOS handheld PCs**
 
-HDM aims to make handheld gaming console-simple: status first, low overhead,
+Re-Gear aims to make handheld gaming console-simple: status first, low overhead,
 and no avoidable surprises. It verifies GPU, display, Gamescope, game, and
 hardware state before any future dock-mode action.
 
@@ -17,7 +17,7 @@ hardware state before any future dock-mode action.
 </div>
 
 > [!IMPORTANT]
-> HDM is in active development and is not a general-availability release.
+> Re-Gear is in active development and is not a general-availability release.
 > Version 0.2.0 exposes diagnostics, eGPU sleep protection, reviewed support
 > bundles, supervised integration preparation, and explicitly approved guarded
 > release of eligible non-game eGPU clients. It does **not** expose a display/GPU
@@ -30,18 +30,22 @@ hardware state before any future dock-mode action.
 
 ## 📖 About
 
-Handheld Dock Mode (HDM) is a Decky Loader-native reliability companion for
+The product is now **Re-Gear**. Existing HDM installation IDs, commands and paths
+remain compatible; see [branding and compatibility](docs/BRANDING.md). Repository
+links will be updated after the maintainer renames the GitHub repository.
+
+Re-Gear (formerly Handheld Dock Mode / HDM) is a Decky Loader-native reliability companion for
 console-like SteamOS handheld gaming. Its North Star is to reduce PC-gaming
 paper cuts by detecting problems, preventing avoidable failures, explaining
 state in player language, and safely guiding or performing verified recovery
 where authority and evidence allow. Docking is the first domain, not the
 product boundary; today’s implemented scope remains deliberately narrower.
-HDM presents player-friendly placement and journey status—such as **Portable**
+Re-Gear presents player-friendly placement and journey status—such as **Portable**
 or a future **TV Docked** target—instead of DRM connectors, PCI addresses, GPU
 selectors, or Gamescope arguments. Current native transition authority remains
 intentionally narrow and supervised.
 
-The project is deliberately fail-closed. If HDM cannot prove the exact hardware,
+The project is deliberately fail-closed. If Re-Gear cannot prove the exact hardware,
 active display, render GPU, game state, or rollback path, it reports the state
 as unknown or degraded and blocks the action.
 
@@ -55,7 +59,7 @@ as unknown or degraded and blocks the action.
   login1 inhibitor and Steam's native preflight blocker
 - 📦 Preview, copy, and token-approved save of a bounded, redacted support bundle
 - 📊 Adaptive Decky polling, collection timings, and an optional troubleshooting
-  overlay with bounded health, recovery/link explanations, and HDM-overhead
+  overlay with bounded health, recovery/link explanations, and Re-Gear-overhead
   status that never claims game impact
 - 🧭 Compact controller-first Journey status: deferred dock, prepared idle,
   Safe Undock evidence, recovery, link, and Offline Readiness remain local
@@ -72,7 +76,7 @@ It cannot restart Gamescope, switch a display, or select a GPU.
 
 ## 🚦 Current status
 
-HDM `0.2.0` is a development build. The implementation is intentionally split
+Re-Gear `0.2.0` is a development build. The implementation is intentionally split
 between production-safe features and dormant or simulated transition work.
 
 Evidence labels matter: **Implemented** means code and deterministic checks;
@@ -97,7 +101,7 @@ claim. Neither a simulation nor a clean UI promotes hardware support.
 | Automatic docking | Planned | Not available |
 
 The next release-facing gate is supervised validation of the corrected blocked-
-Sleep warning and the controller-visible support preview/save flow. Native HDM
+Sleep warning and the controller-visible support preview/save flow. Native Re-Gear
 TV Docked transition validation remains pending.
 
 See the [authoritative roadmap](docs/ROADMAP.md) for the complete evidence ledger
@@ -105,7 +109,7 @@ and ordered milestones.
 
 ## 🕹️ Player-facing placements
 
-HDM keeps observed placement separate from workflow progress so a pending or
+Re-Gear keeps observed placement separate from workflow progress so a pending or
 failed action can never overwrite hardware truth.
 
 | Placement | Meaning | Current state |
@@ -177,7 +181,7 @@ Each successful CI run retains one **controlled validation artifact** for 14
 days. It contains the ZIP, its SHA-256 manifest, and the exact source revision;
 it is not a GitHub Release, public installer, or automatic deployment. Use it
 only when its workflow commit, `source-revision.txt`, and the installed QAM
-**HDM build** label agree.
+**Re-Gear build** label agree.
 
 After unzipping a downloaded artifact, run
 `python scripts/verify_validation_artifact.py <artifact-directory>` from a
@@ -271,7 +275,7 @@ operating-system calls. Mechanisms live behind narrow ports, hardware
 capabilities come from exact profiles, and public Decky RPCs are checked against
 an explicit allowlist.
 
-HDM is a new SteamOS-first implementation. eGPUBridge supplied useful hardware
+Re-Gear is a new SteamOS-first implementation. eGPUBridge supplied useful hardware
 evidence, but its architecture and behavior are not inherited as proof.
 
 ## 📚 Documentation
@@ -315,7 +319,7 @@ See [Contributing](CONTRIBUTING.md) and the
 
 ## 📜 Licensing
 
-HDM's community distribution is licensed under the
+Re-Gear's community distribution is licensed under the
 [GNU General Public License version 3 or later](LICENSE) (`GPL-3.0-or-later`).
 Commercial/OEM integration, redistribution, bundling, customization, support,
 or branding under terms outside GPLv3+ requires a separate negotiated license;

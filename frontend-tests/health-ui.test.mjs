@@ -33,7 +33,7 @@ test("health attention exposes only bounded controller-readable messages", () =>
   });
   assert.deepEqual(messages, [
     "Active display needs verification.",
-    "HDM health evidence needs review.",
+    "Re-Gear health evidence needs review.",
     "Built-in controls need verification.",
   ]);
   assert.doesNotMatch(JSON.stringify(messages), /private\.health\.code/);

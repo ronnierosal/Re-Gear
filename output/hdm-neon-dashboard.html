@@ -1,0 +1,110 @@
+<div id="hdm-neon" aria-label="Re-Gear dashboard design">
+<style>
+ #hdm-neon{color-scheme:dark;--hdm-accent:#5bdfff;--hdm-radius:14px;--hdm-glow:12px;font-family:Arial,sans-serif;color:#edf5ff;max-width:430px;margin:auto}
+ #hdm-neon *{box-sizing:border-box}
+ #hdm-neon .hdn-shell{background:linear-gradient(150deg,#132341,#111932 70%);border:1px solid #344972;border-radius:20px;overflow:hidden}
+ #hdm-neon .hdn-head{padding:20px 18px 16px;background:#172442;border-bottom:1px solid #344972;display:flex;align-items:center;gap:12px}
+ #hdm-neon .hdn-logo{display:grid;place-items:center;flex-shrink:0;width:46px;height:46px;border-radius:14px;background:linear-gradient(145deg,#24628b,#1e305f);color:var(--hdm-accent);border:1px solid #72c9ed;box-shadow:inset 0 1px #b7f3ff55,0 0 16px #46c8ff33}
+ #hdm-neon .hdn-logo svg{width:26px;height:26px;filter:drop-shadow(0 0 4px #56cfff77)}
+ #hdm-neon .hdn-title{font-size:20px;font-weight:600;letter-spacing:-.4px}
+ #hdm-neon .hdn-caption{font-size:11px;color:#a9bedf;letter-spacing:1px;margin-top:5px}
+ #hdm-neon .hdn-body{padding:16px}
+ #hdm-neon .hdn-state{display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px;font-size:13px;margin-bottom:14px;color:#c2d1eb}
+ #hdm-neon .hdn-ready{color:#75ebbf;display:flex;align-items:center;gap:6px}
+ #hdm-neon button,#hdm-neon summary{font:inherit;cursor:pointer;color:inherit}
+ #hdm-neon button{min-height:44px;padding:10px 12px;border-radius:10px;border:1px solid #496697;background:#254571}
+ #hdm-neon button:hover{background:#315786}
+ #hdm-neon .hdn-hero{width:100%;display:flex;align-items:center;justify-content:center;gap:14px;text-align:left;min-height:76px;border:2px solid var(--hdm-accent);border-radius:var(--hdm-radius);background:linear-gradient(110deg,#184972,#2c3468);box-shadow:0 0 var(--hdm-glow) #38b8ff35,inset 0 0 18px #429fe714;margin-bottom:16px}
+ #hdm-neon .hdn-hero svg{color:var(--hdm-accent);flex-shrink:0}
+ #hdm-neon .hdn-hero-emblem{display:grid;place-items:center;width:44px;height:44px;flex-shrink:0;border:1px solid #80e8ff88;border-radius:13px;background:linear-gradient(135deg,#246787,#243764);box-shadow:0 0 14px #4edaff33}
+ #hdm-neon .hdn-hero-emblem svg{width:28px;height:28px;fill:#5bdfff22;filter:drop-shadow(0 0 4px #5bdfff88)}
+ #hdm-neon .hdn-hero small{display:block;font-size:11px;color:#bbefff;letter-spacing:1.5px;margin-bottom:4px}
+ #hdm-neon .hdn-hero strong{font-size:18px}
+ #hdm-neon .hdn-card{border:1px solid #4660a0;border-radius:var(--hdm-radius);background:linear-gradient(120deg,#21345c,#1b264b);box-shadow:inset 0 1px #7792dd18,0 0 var(--hdm-glow) #425fff10;margin-bottom:12px;overflow:hidden}
+ #hdm-neon .hdn-row{display:flex;align-items:center;gap:12px;padding:15px;min-width:0}
+ #hdm-neon .hdn-row+.hdn-row{border-top:1px solid #3b507a}
+ #hdm-neon .hdn-icon{--hdn-ink:#66e2ff;width:44px;height:44px;display:grid;place-items:center;flex-shrink:0;border-radius:13px;background:linear-gradient(145deg,#22536d,#1b3155);color:var(--hdn-ink);border:1px solid #59cde866;box-shadow:inset 0 1px #c7f7ff22,0 0 12px #47caff18}
+ #hdm-neon .hdn-icon svg{width:25px;height:25px;stroke-width:2;filter:drop-shadow(0 0 4px color-mix(in srgb,var(--hdn-ink) 45%,transparent))}
+ #hdm-neon .hdn-icon.green{--hdn-ink:#63ffbc;background:linear-gradient(145deg,#236453,#173e48);border-color:#5de6b777;box-shadow:inset 0 1px #caffeb33,0 0 13px #43ffc425}
+ #hdm-neon .hdn-icon.purple{--hdn-ink:#d4a0ff;background:linear-gradient(145deg,#593c87,#322951);border-color:#bf83fc88;box-shadow:inset 0 1px #ebceff33,0 0 13px #bd73ff25}
+ #hdm-neon .hdn-icon.blue{--hdn-ink:#9fcaff;background:linear-gradient(145deg,#365f9a,#25335f);border-color:#81affb77;box-shadow:inset 0 1px #d3eaff33,0 0 13px #5899ff25}
+ #hdm-neon .hdn-icon.amber{--hdn-ink:#ffd48a;background:linear-gradient(145deg,#675235,#3b3232);border-color:#d4a65c88;box-shadow:inset 0 1px #ffebc233,0 0 12px #ffbb4420}
+ #hdm-neon .hdn-copy{min-width:0;flex:1}
+ #hdm-neon .hdn-name{font-size:15px;font-weight:600;line-height:1.4}
+ #hdm-neon .hdn-sub{font-size:12px;color:#bfceeb;line-height:1.5;margin-top:3px;overflow-wrap:anywhere}
+ #hdm-neon summary{list-style:none;min-height:66px}
+ #hdm-neon summary::-webkit-details-marker{display:none}
+ #hdm-neon .hdn-chevron{display:grid;place-items:center;flex-shrink:0;width:38px;height:38px;background:linear-gradient(135deg,#2774bd,#30488c);border:1px solid #6e9dd8;border-radius:50%;color:#c6f2ff}
+ #hdm-neon details[open]>summary .hdn-chevron{transform:rotate(180deg)}
+ #hdm-neon .hdn-expanded{padding:0 15px 15px;background:#1c2a4a}
+ #hdm-neon .hdn-fact{display:flex;justify-content:space-between;gap:12px;padding:10px 0;border-top:1px solid #3a4d73;font-size:12px;color:#c2d1e9}
+ #hdm-neon .hdn-fact span:last-child{text-align:right;color:#eef5ff}
+ #hdm-neon .hdn-pref{display:flex;align-items:center;gap:12px;width:100%}
+ #hdm-neon input[type=checkbox]{appearance:none;width:46px;height:27px;border-radius:30px;background:#586887;border:1px solid #7b8ca8;position:relative;flex-shrink:0;margin:0;cursor:pointer}
+ #hdm-neon input[type=checkbox]:after{content:'';position:absolute;width:21px;height:21px;left:2px;top:2px;border-radius:50%;background:#f1f7ff}
+ #hdm-neon input[type=checkbox]:checked{background:#1687b5;border-color:#71e7ff}
+ #hdm-neon input[type=checkbox]:checked:after{left:21px}
+ #hdm-neon .hdn-disconnect{width:100%;display:flex;align-items:center;gap:12px;text-align:left;background:#2c2c3a;border:1px solid #8f7755;border-radius:var(--hdm-radius);padding:12px;margin:2px 0 9px}
+ #hdm-neon .hdn-caution{font-size:12px;line-height:1.5;color:#eac996;margin:0 3px 17px}
+ #hdm-neon .hdn-dialog{border:1px solid #7da5d4;background:#24385a;border-radius:12px;padding:14px;margin:0 0 14px}
+ #hdm-neon .hdn-dialog p{font-size:13px;line-height:1.5;color:#d0dff3;margin:8px 0 12px}
+ #hdm-neon .hdn-dialog-actions{display:flex;flex-wrap:wrap;gap:8px}
+ #hdm-neon .hdn-result{font-size:12px;line-height:1.5;color:#9ee9ff;margin:0 0 12px}
+ #hdm-neon .hdn-result:empty{display:none}
+ #hdm-neon .hdn-tool{width:100%;text-align:left;margin-top:8px;font-size:13px}
+ #hdm-neon .hdn-foot{padding:12px 16px;color:#a6badb;font-size:11px;background:#101b32;display:flex;justify-content:space-between;gap:12px}
+ #hdm-neon [hidden]{display:none!important}
+ @media(max-width:360px){#hdm-neon .hdn-body{padding:12px}#hdm-neon .hdn-row{padding:12px;gap:10px}#hdm-neon .hdn-title{font-size:18px}}
+</style>
+<div class="hdn-shell">
+ <header class="hdn-head"><div class="hdn-logo"><i data-lucide="plug-zap" aria-hidden="true"></i></div><div><div class="hdn-title">Re-Gear</div><div class="hdn-caption">INTERACTIVE DESIGN · SAMPLE DATA</div></div></header>
+ <div class="hdn-body">
+  <div class="hdn-state"><span id="hdn-mode">Portable</span><span class="hdn-ready"><i data-lucide="circle-check" aria-hidden="true"></i>Ready</span><span>No game running</span></div>
+  <button class="hdn-hero" id="hdn-primary" type="button"><span class="hdn-hero-emblem"><i data-lucide="zap" aria-hidden="true"></i></span><span><small id="hdn-primary-label">SWITCH TO TV</small><strong id="hdn-primary-target">External display</strong></span></button>
+  <div class="hdn-dialog" id="hdn-confirm" hidden><strong id="hdn-dialog-title">Preview transition</strong><p id="hdn-dialog-copy"></p><div class="hdn-dialog-actions"><button id="hdn-accept" type="button">Preview result</button><button id="hdn-cancel" type="button">Cancel</button></div></div>
+  <div id="hdn-result" class="hdn-result" role="status" aria-live="polite"></div>
+  <details class="hdn-card">
+   <summary class="hdn-row"><span class="hdn-icon green"><i data-lucide="gpu" aria-hidden="true"></i></span><span class="hdn-copy"><span class="hdn-name">Dock / eGPU</span><span class="hdn-sub" style="display:block">Connected · Recognized hardware</span></span><span class="hdn-chevron"><i data-lucide="chevron-down" aria-hidden="true"></i></span></summary>
+   <div class="hdn-expanded"><div class="hdn-fact"><span>Sample hardware</span><span>GPD G1 · RX 7600M XT</span></div><div class="hdn-fact"><span>Connection</span><span>USB4</span></div><div class="hdn-sub">Recognition does not certify live removal.</div></div>
+  </details>
+  <div class="hdn-card hdn-row"><span class="hdn-icon"><i data-lucide="cable" aria-hidden="true"></i></span><div class="hdn-copy"><div class="hdn-name">Link / readiness</div><div class="hdn-sub">Link observed up · Ready to dock</div></div></div>
+  <details class="hdn-card">
+   <summary class="hdn-row"><span class="hdn-icon purple"><i data-lucide="monitor" aria-hidden="true"></i></span><span class="hdn-copy"><span class="hdn-name">Display &amp; graphics</span><span class="hdn-sub" id="hdn-display" style="display:block">Handheld active · TV available</span></span><span class="hdn-chevron"><i data-lucide="chevron-down" aria-hidden="true"></i></span></summary>
+   <div class="hdn-expanded"><div class="hdn-fact"><span>Active display</span><span id="hdn-active">Internal display</span></div><div class="hdn-fact"><span>Render GPU</span><span id="hdn-render">Internal GPU</span></div><div class="hdn-fact"><span>Game session</span><span>Idle</span></div><div class="hdn-sub">Display target and render GPU remain separate observations.</div></div>
+  </details>
+  <div class="hdn-card hdn-row"><span class="hdn-icon blue"><i data-lucide="workflow" aria-hidden="true"></i></span><label class="hdn-pref"><span class="hdn-copy"><span class="hdn-name">Automatic docking</span><span class="hdn-sub" id="hdn-auto-state" style="display:block">Off · Ask before enabling</span></span><input id="hdn-auto" type="checkbox" aria-label="Automatic docking, preview only"></label></div>
+  <button class="hdn-disconnect" id="hdn-disconnect" type="button"><span class="hdn-icon amber"><i data-lucide="power" aria-hidden="true"></i></span><span class="hdn-copy"><span class="hdn-name">Prepare to disconnect</span><span class="hdn-sub" style="display:block">Shutdown required for this eGPU</span></span></button>
+  <div class="hdn-caution">Keep the eGPU connected until the handheld is fully powered off.</div>
+  <details class="hdn-card" id="hdn-troubleshoot">
+   <summary class="hdn-row"><span class="hdn-icon blue"><i data-lucide="wrench" aria-hidden="true"></i></span><span class="hdn-copy"><span class="hdn-name">Troubleshoot</span><span class="hdn-sub" style="display:block">Safety checks, diagnostics &amp; support</span></span><span class="hdn-chevron"><i data-lucide="chevron-down" aria-hidden="true"></i></span></summary>
+   <div class="hdn-expanded"><div class="hdn-fact"><span>Sleep protection</span><span>Active</span></div><div class="hdn-fact"><span>Physical removal</span><span>Shutdown first</span></div><div class="hdn-fact"><span>Journey evidence</span><span>Not connected</span></div><div class="hdn-fact"><span>Verbose diagnostics</span><span>Off</span></div><button class="hdn-tool" type="button" data-tool="Connection details">Review connection details</button><button class="hdn-tool" type="button" data-tool="Support bundle">Preview redacted support bundle</button><button class="hdn-tool" type="button" data-tool="Recent actions">Review recent actions</button><div id="hdn-tool-result" class="hdn-sub" role="status" aria-live="polite"></div></div>
+  </details>
+ </div>
+ <footer class="hdn-foot"><span>Re-Gear · Design preview</span><span>No device connected</span></footer>
+</div>
+<script>
+(() => {
+ const root=document.getElementById('hdm-neon');
+ const el=id=>root.querySelector('#'+id);
+ const box=el('hdn-confirm');
+ const auto=el('hdn-auto');
+ let docked=false, pending=null, trigger=null;
+ function ask(kind,title,copy,origin){pending=kind;trigger=origin;el('hdn-dialog-title').textContent=title;el('hdn-dialog-copy').textContent=copy;box.hidden=false;el('hdn-accept').focus();}
+ el('hdn-primary').onclick=()=>ask('display',docked?'Return to handheld?':'Switch to TV?', 'Preview only. The real workflow revalidates idle game state, display readiness, and recovery before any transition.',el('hdn-primary'));
+ auto.onchange=()=>{if(auto.checked){auto.checked=false;ask('auto','Enable automatic docking?','Preview only. Actual automatic docking remains opt-in and uses the same guarded transition engine.',auto);}else{el('hdn-auto-state').textContent='Off · Ask before enabling';}};
+ el('hdn-disconnect').onclick=()=>ask('disconnect','Shutdown before disconnect','The real flow returns to Portable and requires a separate shutdown confirmation. Software cannot prove physical power-off. This preview will not shut down anything.',el('hdn-disconnect'));
+ el('hdn-cancel').onclick=()=>{box.hidden=true;pending=null;trigger?.focus();};
+ el('hdn-accept').onclick=()=>{
+  if(pending==='display'){docked=!docked;el('hdn-mode').textContent=docked?'TV Docked':'Portable';el('hdn-primary-label').textContent=docked?'RETURN TO HANDHELD':'SWITCH TO TV';el('hdn-primary-target').textContent=docked?'Internal display':'External display';el('hdn-display').textContent=docked?'TV active · eGPU rendering':'Handheld active · TV available';el('hdn-active').textContent=docked?'External display':'Internal display';el('hdn-render').textContent=docked?'External GPU':'Internal GPU';el('hdn-result').textContent='Simulated result only — no display was changed.';}
+  if(pending==='auto'){auto.checked=true;el('hdn-auto-state').textContent='On · Waits for safe conditions';el('hdn-result').textContent='Automatic docking enabled in this preview only.';}
+  if(pending==='disconnect'){el('hdn-result').textContent='Preview only: keep the eGPU connected until physical power-off is verified. No shutdown was requested.';}
+  box.hidden=true;pending=null;trigger?.focus();
+ };
+ root.querySelectorAll('[data-tool]').forEach(button=>button.onclick=()=>{el('hdn-tool-result').textContent=button.dataset.tool+': sample preview only. No live diagnostics or report collected.';});
+ const design={radius:14,glow:12,accent:'#5bdfff'};
+ const render=()=>{root.style.setProperty('--hdm-radius',design.radius+'px');root.style.setProperty('--hdm-glow',design.glow+'px');root.style.setProperty('--hdm-accent',design.accent);};
+ render();
+ if(globalThis.Tweak){const tweak=new Tweak({container:root,onChange:render});tweak.addSlider(design,'radius',{label:'Card rounding',min:8,max:20,unit:'px'});tweak.addSlider(design,'glow',{label:'Edge glow',min:0,max:24,unit:'px'});tweak.addColorPicker(design,'accent',{label:'Primary accent'});}
+})();
+</script>
+</div>

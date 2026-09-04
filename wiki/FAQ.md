@@ -4,13 +4,13 @@
 **Evidence reviewed:** 2026-09-02<br>
 **Maturity:** answers reflect the current development baseline
 
-## Can I install HDM as an ordinary Decky plugin today?
+## Can I install Re-Gear as an ordinary Decky plugin today?
 
 Not as a supported public release. Current hardware builds use controlled,
 provenance-verified deployment and supervised validation. See
 [Getting Started](Getting-Started).
 
-## Does HDM only support the Ally X and GPD G1?
+## Does Re-Gear only support the Ally X and GPD G1?
 
 They are the first exact validated profile, not the intended architectural
 limit. Other hardware is not yet certified. Several first-profile couplings
@@ -20,7 +20,7 @@ remain open and are being moved behind capability/profile seams incrementally.
 
 The exact-profile automatic workflow is implemented and reached a real
 Gamescope restart on hardware. The TV received a signal but remained black, and
-HDM recovered to Portable. Two launch-config defects were then fixed in source;
+Re-Gear recovered to Portable. Two launch-config defects were then fixed in source;
 the latest fix still needs a clean-build supervised hardware proof. See
 [Current State](Current-State).
 
@@ -31,7 +31,7 @@ An accepted shutdown request is not proof of physical power-off. If the fan
 remains on, keep the G1 connected and hold the Ally power button until the fan
 stops; only then remove the cable.
 
-## Can HDM move a running game between GPUs?
+## Can Re-Gear move a running game between GPUs?
 
 No. A running workload stays on its current GPU. Transitions requiring a
 Gamescope restart are blocked while a game is running or game state is unknown.
@@ -40,7 +40,7 @@ Gamescope restart are blocked while a game is running or game state is unknown.
 
 DRM connection state means a connector detected a sink. It does not prove that
 Gamescope selected that output, the expected GPU is rendering, or the display is
-showing a usable image. HDM verifies those facts separately.
+showing a usable image. Re-Gear verifies those facts separately.
 
 ## What diagnostic data is safe to share?
 

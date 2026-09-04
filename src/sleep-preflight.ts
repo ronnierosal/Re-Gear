@@ -108,7 +108,7 @@ export function warningForBlockedAttempt(
   return {
     kind: "unknown",
     title: "Sleep blocked — safety state is unknown",
-    body: "HDM could not verify that the eGPU is safely absent, so the sleep request was not started.",
+    body: "Re-Gear could not verify that the eGPU is safely absent, so the sleep request was not started.",
     critical: true,
   };
 }

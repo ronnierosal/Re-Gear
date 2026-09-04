@@ -1,3 +1,5 @@
+import { PRODUCT_NAME } from "./branding";
+import brandIcon from "../docs/images/re-gear-icon.png";
 import { definePlugin, toaster, useQuickAccessVisible } from "@decky/api";
 import {
   ButtonItem,
@@ -187,7 +189,7 @@ function showSupportBundlePreview(
       </div>
     </ConfirmModal>,
     window,
-    { strTitle: "Handheld Dock Mode", bNeverPopOut: true },
+    { strTitle: PRODUCT_NAME, bNeverPopOut: true },
   );
   return modal;
 }
@@ -220,13 +222,13 @@ function showPresentationPreparationConfirmation(
           Continue only with the eGPU disconnected, no game running, and the handheld screen visible.
         </p>
         <p>
-          This installs HDM&apos;s reversible Gamescope startup integration and reloads the user
+          This installs Re-Gear&apos;s reversible Gamescope startup integration and reloads the user
           service configuration. It does not restart Gamescope, switch displays, or select a GPU.
         </p>
       </div>
     </ConfirmModal>,
     window,
-    { strTitle: "Handheld Dock Mode", bNeverPopOut: true },
+    { strTitle: PRODUCT_NAME, bNeverPopOut: true },
   );
   return modal;
 }
@@ -256,7 +258,7 @@ function showAutomaticDockConfirmation(
     >
       <div style={{ fontSize: "13px", lineHeight: "18px" }}>
         <p>
-          When HDM verifies this Ally X, the exact GPD G1, one ready TV, a healthy link,
+          When Re-Gear verifies this Ally X, the exact GPD G1, one ready TV, a healthy link,
           and no running game, it will restart Steam Game Mode onto the TV.
         </p>
         <p>
@@ -266,7 +268,7 @@ function showAutomaticDockConfirmation(
       </div>
     </ConfirmModal>,
     window,
-    { strTitle: "Handheld Dock Mode", bNeverPopOut: true },
+    { strTitle: PRODUCT_NAME, bNeverPopOut: true },
   );
   return modal;
 }
@@ -298,20 +300,20 @@ function showSafeDisconnectConfirmation(
       <div style={{ fontSize: "13px", lineHeight: "18px" }}>
         {portable ? (
           <>
-            <p>HDM will revalidate idle Portable mode and request a normal system shutdown.</p>
+            <p>Re-Gear will revalidate idle Portable mode and request a normal system shutdown.</p>
             <p>The request cannot prove physical power-off. Keep the G1 connected until the fan stops and every top power LED is off.</p>
             <p>If the fan remains on after 60 seconds, keep the G1 connected and hold the Ally power button until the fan stops.</p>
           </>
         ) : (
           <>
-            <p>HDM will require no running game, then restart Game Mode on the Ally display.</p>
+            <p>Re-Gear will require no running game, then restart Game Mode on the Ally display.</p>
             <p>After Portable is verified, acknowledge the result and use this control again to shut down. Do not unplug yet.</p>
           </>
         )}
       </div>
     </ConfirmModal>,
     window,
-    { strTitle: "Handheld Dock Mode", bNeverPopOut: true },
+    { strTitle: PRODUCT_NAME, bNeverPopOut: true },
   );
   return modal;
 }
@@ -328,7 +330,7 @@ function showPresentationPreparationBlocked(blockers: string[]): void {
   toaster.toast({
     title: "Display validation is not ready",
     body: ownsPresentationPath
-      ? "Another display integration is active. HDM will not replace it."
+      ? "Another display integration is active. Re-Gear will not replace it."
       : `Preparation blocked: ${blockers.map(label).join(", ")}.`,
     critical: true,
     duration: 12000,
@@ -364,7 +366,7 @@ function showProcessReleaseConfirmation(
         <p>
           {force
             ? "Force close may lose unsaved work. Only the exact processes that survived the approved graceful attempt are eligible."
-            : "HDM will request a graceful close only for the exact ordinary user processes listed below."}
+            : "Re-Gear will request a graceful close only for the exact ordinary user processes listed below."}
         </p>
         {preview.targets.map((target, index) => (
           <p key={`${target.name}-${index}`}>
@@ -381,7 +383,7 @@ function showProcessReleaseConfirmation(
       </div>
     </ConfirmModal>,
     window,
-    { strTitle: "Handheld Dock Mode", bNeverPopOut: true },
+    { strTitle: PRODUCT_NAME, bNeverPopOut: true },
   );
   return modal;
 }
@@ -398,7 +400,7 @@ function showDiagnosticLoggingConfirmation(
   };
   modal = showModal(
     <ConfirmModal
-      strTitle="Enable verbose HDM diagnostics?"
+      strTitle="Enable verbose Re-Gear diagnostics?"
       strOKButtonText="Enable"
       strCancelButtonText="Cancel"
       bDisableBackgroundDismiss={true}
@@ -411,7 +413,7 @@ function showDiagnosticLoggingConfirmation(
     >
       <div style={{ fontSize: "13px", lineHeight: "18px" }}>
         <p>
-          HDM will retain additional sanitized, HDM-only events for {durationLabel}.
+          Re-Gear will retain additional sanitized, Re-Gear-only events for {durationLabel}.
           Storage remains capped and verbose logging will not survive a reboot.
         </p>
         <p>
@@ -421,24 +423,15 @@ function showDiagnosticLoggingConfirmation(
       </div>
     </ConfirmModal>,
     window,
-    { strTitle: "Handheld Dock Mode", bNeverPopOut: true },
+    { strTitle: PRODUCT_NAME, bNeverPopOut: true },
   );
   return modal;
 }
 
-function MonitorIcon() {
+function BrandIcon({ size = 24 }: { size?: number }) {
   return (
-    <svg
-      width="24"
-      height="24"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-    >
-      <rect x="3" y="4" width="18" height="13" rx="2" />
-      <path d="M8 21h8M12 17v4" />
-    </svg>
+    <img src={brandIcon} alt="" aria-hidden="true" width={size} height={size}
+      style={{ objectFit: "contain", flexShrink: 0 }} />
   );
 }
 
@@ -525,22 +518,22 @@ function Content({ preflight }: { preflight: SleepPreflightCoordinator }) {
         setTvSwitchAcknowledgementId("");
       } else if (status.owner === "sleep" && status.acknowledgement_required) {
         setJournalMessage(
-          "A prior sleep result must be acknowledged before HDM can switch displays.",
+          "A prior sleep result must be acknowledged before Re-Gear can switch displays.",
         );
       } else if (status.code === "journal.recovery_required") {
         setJournalMessage(
-          `An interrupted ${label(status.owner)} workflow requires recovery. HDM will not retry it automatically.`,
+          `An interrupted ${label(status.owner)} workflow requires recovery. Re-Gear will not retry it automatically.`,
         );
       } else if (status.owner === "unknown") {
         setJournalMessage(
-          "The safety journal owner is unknown. HDM will not clear it or switch displays.",
+          "The safety journal owner is unknown. Re-Gear will not clear it or switch displays.",
         );
       } else {
         setJournalMessage(`A prior ${label(status.owner)} result still needs attention.`);
       }
     } catch {
       setJournalStatus(null);
-      setJournalMessage("Shared safety-journal status is unavailable. HDM will not switch displays.");
+      setJournalMessage("Shared safety-journal status is unavailable. Re-Gear will not switch displays.");
     }
   }, []);
 
@@ -620,12 +613,12 @@ function Content({ preflight }: { preflight: SleepPreflightCoordinator }) {
       }
       setTvSwitchMessage(
         status.action_required
-          ? "A prior display transition needs acknowledgement. HDM did not claim its target is active."
+          ? "A prior display transition needs acknowledgement. Re-Gear did not claim its target is active."
           : `Previous display transition result: ${label(status.code)}.`,
       );
     }).catch(() => {
       if (!disposed) {
-        setTvSwitchMessage("Display-transition safety state is unavailable. HDM did not claim success.");
+        setTvSwitchMessage("Display-transition safety state is unavailable. Re-Gear did not claim success.");
       }
     });
     return () => {
@@ -1025,8 +1018,8 @@ function Content({ preflight }: { preflight: SleepPreflightCoordinator }) {
         return;
       }
       toaster.toast({
-        title: "HDM is switching to the TV",
-        body: "Watch the handheld screen while HDM verifies the transition.",
+        title: "Re-Gear is switching to the TV",
+        body: "Watch the handheld screen while Re-Gear verifies the transition.",
         critical: true,
         duration: 30000,
       });
@@ -1040,7 +1033,7 @@ function Content({ preflight }: { preflight: SleepPreflightCoordinator }) {
           : `TV switch was not accepted: ${label(outcome.code)}.`,
       );
     } catch {
-      setTvSwitchMessage("TV switch did not complete. HDM did not claim success.");
+      setTvSwitchMessage("TV switch did not complete. Re-Gear did not claim success.");
     } finally {
       setTvSwitchBusy(false);
     }
@@ -1054,7 +1047,7 @@ function Content({ preflight }: { preflight: SleepPreflightCoordinator }) {
       setAutomaticDockStatus(status);
       setAutomaticDockMessage(
         status.enabled
-          ? "Automatic TV docking is enabled. HDM is waiting for complete G1 and TV evidence."
+          ? "Automatic TV docking is enabled. Re-Gear is waiting for complete G1 and TV evidence."
           : status.code === "automatic_dock.disabled"
             ? "Automatic TV docking is disabled."
             : `Automatic TV docking was not changed: ${label(status.code)}.`,
@@ -1096,7 +1089,7 @@ function Content({ preflight }: { preflight: SleepPreflightCoordinator }) {
           return;
         }
         toaster.toast({
-          title: "HDM requested an Ally shutdown",
+          title: "Re-Gear requested an Ally shutdown",
           body: "Completion is unverified. Keep the G1 connected until the fan and every top power LED are off.",
           critical: true,
           duration: 30000,
@@ -1120,7 +1113,7 @@ function Content({ preflight }: { preflight: SleepPreflightCoordinator }) {
         return;
       }
       toaster.toast({
-        title: "HDM is returning to the Ally",
+        title: "Re-Gear is returning to the Ally",
         body: "Do not disconnect the G1. Wait for Portable verification, then shut down.",
         critical: true,
         duration: 30000,
@@ -1358,7 +1351,7 @@ function Content({ preflight }: { preflight: SleepPreflightCoordinator }) {
       <PanelSection title="At a glance">
         <Focusable
           ref={statusFocusAnchor}
-          aria-label="HDM status summary"
+          aria-label="Re-Gear status summary"
           onGamepadFocus={() => {
             if (statusAnchor.current) scrollToTopOfOwningPanel(statusAnchor.current);
           }}
@@ -1634,7 +1627,7 @@ function Content({ preflight }: { preflight: SleepPreflightCoordinator }) {
 
       {sectionVisibility.support && <PanelSection title="Support bundle">
         <PanelSectionRow>
-          Preview a bounded HDM-only report before copying or saving it. Raw hardware IDs,
+          Preview a bounded Re-Gear-only report before copying or saving it. Raw hardware IDs,
           addresses, usernames, home paths, and command lines are excluded or redacted.
         </PanelSectionRow>
         <PanelSectionRow>
@@ -1677,7 +1670,7 @@ function Content({ preflight }: { preflight: SleepPreflightCoordinator }) {
           </PanelSectionRow>
           {optionalDiagnosticsDeferred && (
             <PanelSectionRow>
-              Additional troubleshooting checks wait until HDM confirms no game is running.
+              Additional troubleshooting checks wait until Re-Gear confirms no game is running.
             </PanelSectionRow>
           )}
           {overlayRows.map((row) => (
@@ -1773,7 +1766,7 @@ function showBlockedAttempt(
       onOK={close}
     />,
     window,
-    { strTitle: "Handheld Dock Mode", bNeverPopOut: true },
+    { strTitle: PRODUCT_NAME, bNeverPopOut: true },
   );
   return modal;
 }
@@ -1832,9 +1825,9 @@ export default definePlugin(() => {
 
   return {
     name: "Handheld Dock Mode",
-    titleView: <div className={staticClasses.Title}>Handheld Dock Mode</div>,
+    titleView: <div className={staticClasses.Title} style={{ display: "flex", alignItems: "center", gap: 8 }}><BrandIcon size={36} />{PRODUCT_NAME}</div>,
     content: <Content preflight={preflight} />,
-    icon: <MonitorIcon />,
+    icon: <BrandIcon />,
     alwaysRender: true,
     onDismount() {
       if (warningTimer !== null) {

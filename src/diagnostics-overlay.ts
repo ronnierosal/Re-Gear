@@ -94,7 +94,7 @@ export function diagnosticOverlayRows(
         : "unavailable",
     },
     { name: "Snapshot schema", value: String(snapshot.schema_version) },
-    { name: "Reported HDM build", value: reportedBuildLabel(payload.diagnostics.build) },
+    { name: "Reported Re-Gear build", value: reportedBuildLabel(payload.diagnostics.build) },
     {
       name: "Device profile",
       value: profiles.host.status === "exact"
@@ -182,7 +182,7 @@ export function diagnosticOverlayRows(
         .join(" · ") || "unavailable",
     },
     {
-      name: "HDM overhead",
+      name: "Re-Gear overhead",
       value: overheadMeasurementLabel(payload.diagnostics.overhead_measurement),
     },
     {

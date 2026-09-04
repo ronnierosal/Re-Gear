@@ -31,39 +31,39 @@ const EXPLANATIONS: Record<RecoveryExplanationKind, Record<string, ExplanationTe
   link: {
     instability_observed: [
       "eGPU link changed",
-      "HDM observed a link state change. It is preserving the current setup; review display and controls before changing anything.",
+      "Re-Gear observed a link state change. It is preserving the current setup; review display and controls before changing anything.",
     ],
     evidence_insufficient: [
       "eGPU link needs verification",
-      "HDM could not confirm the current link state. It is not drawing a link-quality or removal conclusion.",
+      "Re-Gear could not confirm the current link state. It is not drawing a link-quality or removal conclusion.",
     ],
   },
   sleep: {
     portable_verified: [
       "Interrupted sleep request closed",
-      "HDM observed the handheld path after restart. Sleep was not continued, and game/session outcome remains unknown.",
+      "Re-Gear observed the handheld path after restart. Sleep was not continued, and game/session outcome remains unknown.",
     ],
     action_required: [
       "Interrupted sleep needs attention",
-      "HDM did not continue sleep or claim handheld recovery. Review the current status before trying again.",
+      "Re-Gear did not continue sleep or claim handheld recovery. Review the current status before trying again.",
     ],
     unavailable: [
       "Sleep recovery status unavailable",
-      "HDM did not continue sleep. Recovery evidence is unavailable.",
+      "Re-Gear did not continue sleep. Recovery evidence is unavailable.",
     ],
   },
   portable_recovery: {
     portable_fallback_verified: [
       "Handheld fallback observed",
-      "HDM observed internal display, input, and audio evidence. This does not claim hardware recovery or game survival.",
+      "Re-Gear observed internal display, input, and audio evidence. This does not claim hardware recovery or game survival.",
     ],
     recovery_incomplete: [
       "Handheld recovery incomplete",
-      "HDM observed incomplete fallback evidence. Keep the current setup and review the status.",
+      "Re-Gear observed incomplete fallback evidence. Keep the current setup and review the status.",
     ],
     needs_supervised_diagnosis: [
       "Handheld recovery needs diagnosis",
-      "HDM could not reconcile the current recovery evidence. It is not taking a recovery action.",
+      "Re-Gear could not reconcile the current recovery evidence. It is not taking a recovery action.",
     ],
   },
 };
@@ -87,7 +87,7 @@ export function decideRecoveryExplanation(
         ? null
         : {
           title: "Recovery evidence needs verification",
-          body: "HDM could not classify the current evidence. It is not taking an action.",
+          body: "Re-Gear could not classify the current evidence. It is not taking an action.",
           critical: false,
         },
     };

@@ -177,7 +177,7 @@ class DeckyContractTests(unittest.TestCase):
         ui_source = (ROOT / "src" / "index.tsx").read_text(encoding="utf-8")
         self.assertIn("showPresentationPreparationBlocked", ui_source)
         self.assertIn('title: "Display validation is not ready"', ui_source)
-        self.assertIn("HDM will not replace it.", ui_source)
+        self.assertIn("Re-Gear will not replace it.", ui_source)
         self.assertIn('"get_process_release_status"', source)
         self.assertIn('"preview_process_release"', source)
         self.assertIn('"approve_process_release"', source)
@@ -202,7 +202,7 @@ class DeckyContractTests(unittest.TestCase):
         source = (ROOT / "src" / "index.tsx").read_text(encoding="utf-8")
         backend = (ROOT / "src" / "backend.ts").read_text(encoding="utf-8")
 
-        self.assertIn('strTitle="Enable verbose HDM diagnostics?"', source)
+        self.assertIn('strTitle="Enable verbose Re-Gear diagnostics?"', source)
         self.assertIn('strOKButtonText="Enable"', source)
         self.assertIn("Logs stay on this handheld unless you separately preview", source)
         for duration in ("30_minutes", "1_hour", "2_hours", "until_reboot"):

@@ -61,7 +61,7 @@ export function decideLinkHealthNotification(
       notification: wasUnstable
         ? {
             title: "eGPU link observed again",
-            body: "HDM is preserving the current setup. Verify the display and controls before changing it.",
+            body: "Re-Gear is preserving the current setup. Verify the display and controls before changing it.",
             critical: false,
           }
         : null,
@@ -74,7 +74,7 @@ export function decideLinkHealthNotification(
     memory: { ...current, instabilityNotified: true },
     notification: {
       title: current.state === "down" ? "eGPU link is down" : "eGPU link needs verification",
-      body: "HDM is preserving the current setup. Avoid disconnecting until the link is stable.",
+      body: "Re-Gear is preserving the current setup. Avoid disconnecting until the link is stable.",
       critical: false,
     },
   };
