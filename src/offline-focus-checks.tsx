@@ -29,22 +29,25 @@ export function startOfflineFocusChecks(): { stop(): void } {
   let shown: ReturnType<typeof attachOfflineTileBadge> | undefined;
   const cancel = () => { sequence++; clearTimeout(timer); session.invalidate(); shown?.stop(); shown = undefined; };
   const context = (id: number, app: unknown, source: NonNullable<ReturnType<typeof offlineNativeSource>>) =>
-    (window.appStore as unknown) === source.store && source.store.GetAppOverviewByAppID(id) === app && Array.isArray(Router.RunningApps) && Router.RunningApps.length === 0;
+    (window.appStore as unknown) === source.store && source.store.GetAppOverviewByAppID(id) === app && (app as { display_status?: number }).display_status !== 4 && Array.isArray(Router.RunningApps) && Router.RunningApps.length === 0;
   const focus = (event: FocusEvent) => {
     cancel(); const target = event.target as Element | null; const tile = target?.closest?.(OFFLINE_TILE_SELECTOR);
     const id = tile ? exactTileElementAppId(tile) : null; const view = tile?.ownerDocument.defaultView;
     if (!tile || !view || id === null) return;
     const source = offlineNativeSource(); const app = source?.store.GetAppOverviewByAppID(id);
     if (!source || !app || app.display_status === 4 || !Array.isArray(Router.RunningApps) || Router.RunningApps.length) return;
-    const valid = () => context(id, app, source) && tile.isConnected && exactTileElementAppId(tile) === id;
+    const valid = () => context(id, app, source) && tile.isConnected &&
+      tile.ownerDocument.activeElement?.closest(OFFLINE_TILE_SELECTOR) === tile && exactTileElementAppId(tile) === id;
     const show = (badge: CachedBadge) => { shown?.stop(); shown = attachOfflineTileBadge(view, id, offlineBadgeImages[badge.asset], badge.label, valid, tile); };
     const cached = cache.get(id); if (cached && Date.now() - cached.at < CACHE_MS && valid()) { show(cached); return; }
     const request = sequence; timer = setTimeout(async () => {
-      if (request !== sequence || !valid()) return; const report = await session.request(id, source.subscribe, valid);
-      if (!report || request !== sequence) return; const result = await classify(report.details);
-      if (!report.isValid() || request !== sequence || !valid()) return; const badge = offlineReportBadge(result); if (!badge) return;
-      const saved: CachedBadge = { ...badge, at: Date.now() }; cache.delete(id); cache.set(id, saved);
-      while (cache.size > CACHE_LIMIT) cache.delete(cache.keys().next().value!); show(saved);
+      try {
+        if (request !== sequence || !valid()) return; const report = await session.request(id, source.subscribe, valid);
+        if (!report || request !== sequence) return; const result = await classify(report.details);
+        if (!report.isValid() || request !== sequence || !valid()) return; const badge = offlineReportBadge(result); if (!badge) return;
+        const saved: CachedBadge = { ...badge, at: Date.now() }; cache.delete(id); cache.set(id, saved);
+        while (cache.size > CACHE_LIMIT) cache.delete(cache.keys().next().value!); show(saved);
+      } catch { /* Steam/Decky may disappear during a request; discard this result. */ }
     }, SETTLE_MS);
   };
   const views = new Set<Window>();

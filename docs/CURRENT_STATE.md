@@ -1,5 +1,32 @@
 # Current state
 
+## Re-Gear 0.3.23 Offline Readiness review — 2026-09-04
+
+Local UI candidate based on integrated `37daf74`; G1 runtime is unchanged.
+Artwork `src` changes now invalidate recycled Library tiles, and automatic
+attachments remain restricted to the original focused tile after DOM updates.
+Requests recheck actual focus and Steam's running display status before showing
+results; classification failures are contained and a later focus can retry.
+The four `*-gear.svg` assets match fetched `origin/main`; only attention and
+online-check assets are imported because evidence cannot prove offline launch.
+
+Validation: 943 backend tests (six skipped), 108 frontend tests, architecture,
+Python compilation, TypeScript, production build, and package check passed.
+New tests exercise artwork-only recycling, duplicate tiles, startup focus,
+focus loss/game start, failed classification retry, and late classification.
+These are simulated checks, not native Steam visual or gameplay validation.
+
+SSH to the supplied Ally address timed out during this review. Installed version,
+G1 state, and current visible behavior could not be verified. The 0.3.23 archive
+is a local candidate; transfer is pending connectivity and installed-version
+verification. No installation, restart, or hardware transition was performed.
+
+Remaining review limits: the badge expires after 30 seconds, cache is volatile,
+and manual/automatic attachment handles can overlap on the same tile. Native
+Home startup attachment, bottom-left layout, scrolling cost, and absence during
+gameplay still need device evidence. Metadata remains insufficient for Ready
+Offline or Requires Internet conclusions.
+
 ## Re-Gear 0.3.22 late-enumeration candidate — 2026-09-04
 
 The supervised 0.3.21 attach began with `observation.wake.kernel_event`, then

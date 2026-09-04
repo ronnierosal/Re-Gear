@@ -7,6 +7,7 @@ import { attachOfflineTileBadge, exactTileAppId, exactTileElementAppId } from ".
 function surface(ids = [123]) {
   class Element {
     nodeType = 1;
+    tagName = "DIV";
     attrs = new Map();
     children = [];
     parentElement = null;
@@ -21,7 +22,7 @@ function surface(ids = [123]) {
     hasAttribute(name) { return this.attrs.has(name); }
     matches() { return this.tile && this.matchesSelector; }
     closest(selector) { return this.matches(selector) ? this : this.parentElement?.closest(selector) ?? null; }
-    querySelectorAll(selector) { return this.children.flatMap(child => [...(child.matches(selector) ? [child] : []), ...child.querySelectorAll(selector)]); }
+    querySelectorAll(selector) { return this.children.flatMap(child => [...((selector === "img" ? child.tagName === "IMG" : child.matches(selector)) ? [child] : []), ...child.querySelectorAll(selector)]); }
     appendChild(child) { child.parentElement = this; this.children.push(child); return child; }
     remove() { if (this.parentElement) this.parentElement.children = this.parentElement.children.filter(child => child !== this); this.parentElement = null; this.connected = false; }
   }
@@ -35,11 +36,11 @@ function surface(ids = [123]) {
   class Observer {
     disconnected = false;
     constructor(callback) { this.callback = callback; observers.push(this); }
-    observe() {}
+    observe(target, options) { this.options = options; }
     disconnect() { this.disconnected = true; }
   }
   const view = {
-    document: { body, querySelectorAll: selector => body.querySelectorAll(selector), createElement: () => new Element() },
+    document: { body, querySelectorAll: selector => body.querySelectorAll(selector), createElement: tag => { const element = new Element(); element.tagName = tag.toUpperCase(); return element; } },
     MutationObserver: Observer,
     getComputedStyle: element => ({ position: element.position }),
   };
@@ -127,5 +128,31 @@ test("ancestor role changes remove badges from connected tiles that leave the li
     s.tiles[0].matchesSelector = false;
     s.mutate(s.body);
     assert.equal(s.badges(s.tiles[0]).length, 0);
+  } finally { handle.stop(); }
+});
+
+
+test("focused attachment never spreads to duplicate tiles after mutations", () => {
+  const s = surface([123, 123]);
+  const handle = attachOfflineTileBadge(s.view, 123, "badge.svg", "Offline report", () => true, s.tiles[0]);
+  try {
+    s.mutate(s.body);
+    assert.deepEqual(s.tiles.map(tile => s.badges(tile).length), [1, 0]);
+  } finally { handle.stop(); }
+});
+
+test("artwork-only recycling removes a stale Library badge", () => {
+  const s = surface([null]);
+  const tile = s.tiles[0];
+  const artwork = s.view.document.createElement("img");
+  artwork.setAttribute("src", "https://cdn.example/apps/123/library.jpg");
+  tile.appendChild(artwork);
+  const handle = attachOfflineTileBadge(s.view, 123, "badge.svg", "Offline report", () => true, tile);
+  try {
+    assert.equal(s.badges(tile).length, 1);
+    artwork.setAttribute("src", "https://cdn.example/apps/456/library.jpg");
+    // Deliver only mutations the production observer actually subscribes to.
+    if (s.observers[0].options.attributeFilter.includes("src")) s.mutate(artwork);
+    assert.equal(s.badges(tile).length, 0);
   } finally { handle.stop(); }
 });

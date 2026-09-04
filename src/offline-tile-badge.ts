@@ -46,6 +46,7 @@ export function attachOfflineTileBadge(
     try { if (!current()) stop(); } catch { stop(); }
   };
   const reconcile = (tile: Element) => {
+    if (initialTile && tile !== initialTile) return;
     const existing = owned.get(tile);
     const artwork = Array.from(tile.querySelectorAll("img")).find(img => {
       const src = img.getAttribute("src") ?? "";
@@ -112,7 +113,7 @@ export function attachOfflineTileBadge(
           for (const tile of candidates) reconcile(tile);
         } catch { stop(); }
       });
-      observer.observe(view.document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ["data-id", "role", "class"] });
+      observer.observe(view.document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ["data-id", "role", "class", "src"] });
       timer = setTimeout(stop, 30000);
     }
   } catch { stop(); }
