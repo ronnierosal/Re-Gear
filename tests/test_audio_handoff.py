@@ -4,6 +4,7 @@ import json
 import sys
 import tempfile
 import unittest
+from unittest.mock import Mock
 from pathlib import Path
 
 
@@ -12,6 +13,7 @@ sys.path.insert(0, str(ROOT / "backend"))
 
 from hdm.adapters.steamos.audio_handoff import (  # noqa: E402
     G1AudioHandoff,
+    G1AudioReadiness,
 )
 from hdm.adapters.steamos.commands import (  # noqa: E402
     AudioCommandResult,
@@ -336,6 +338,76 @@ class G1AudioHandoffTests(unittest.TestCase):
             self.assertEqual(result.code, "audio.g1_identity_unverified")
             self.assertEqual(commands.set_ids, [])
 
+
+class G1AudioReadinessTests(unittest.TestCase):
+    def readiness(self, root, commands, resolve=lambda: "0000:08:00.1"):
+        return G1AudioReadiness(
+            commands=commands,
+            state=PortableAudioStateStore(root),
+            resolve_g1_audio_bdf=resolve,
+        )
+
+    def test_exact_g1_sink_and_current_default_are_ready_without_mutation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            commands = FakeCommands()
+
+            result = self.readiness(Path(directory), commands).observe(USER)
+
+            self.assertTrue(result.ready)
+            self.assertEqual(result.code, "audio.ready")
+            self.assertEqual(result.g1_sink_name, EXTERNAL)
+            self.assertEqual(result.g1_sink_object_id, 101)
+            self.assertEqual(result.rollback_sink_name, INTERNAL)
+            self.assertEqual(result.default_sink_name, INTERNAL)
+            self.assertEqual(commands.set_ids, [])
+
+    def test_saved_non_g1_rollback_is_ready_when_g1_is_already_default(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            PortableAudioStateStore(root).save(INTERNAL)
+            commands = FakeCommands(default=EXTERNAL)
+
+            result = self.readiness(root, commands).observe(USER)
+
+            self.assertTrue(result.ready)
+            self.assertEqual(result.rollback_sink_name, INTERNAL)
+            self.assertEqual(result.default_sink_name, EXTERNAL)
+            self.assertEqual(commands.set_ids, [])
+
+    def test_g1_default_without_saved_portable_sink_is_not_ready(self):
+        with tempfile.TemporaryDirectory() as directory:
+            commands = FakeCommands(default=EXTERNAL)
+
+            result = self.readiness(Path(directory), commands).observe(USER)
+
+            self.assertFalse(result.ready)
+            self.assertEqual(result.code, "audio.rollback_sink_unavailable")
+            self.assertEqual(result.g1_sink_name, EXTERNAL)
+            self.assertEqual(commands.set_ids, [])
+
+    def test_multiple_selectable_g1_sinks_are_not_ready(self):
+        with tempfile.TemporaryDirectory() as directory:
+            commands = FakeCommands(duplicate_external=True)
+
+            result = self.readiness(Path(directory), commands).observe(USER)
+
+            self.assertFalse(result.ready)
+            self.assertEqual(result.code, "audio.external_sink_ambiguous")
+            self.assertEqual(commands.set_ids, [])
+
+    def test_unverified_g1_identity_does_not_read_or_mutate_pipewire(self):
+        with tempfile.TemporaryDirectory() as directory:
+            commands = FakeCommands()
+            commands.dump = Mock(wraps=commands.dump)
+
+            result = self.readiness(
+                Path(directory), commands, resolve=lambda: ""
+            ).observe(USER)
+
+            self.assertFalse(result.ready)
+            self.assertEqual(result.code, "audio.g1_identity_unverified")
+            commands.dump.assert_not_called()
+            self.assertEqual(commands.set_ids, [])
 
 class PipeWireCommandRunnerTests(unittest.TestCase):
     def test_set_default_argv_is_numeric_only(self):

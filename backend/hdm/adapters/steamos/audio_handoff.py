@@ -41,6 +41,18 @@ class AudioHandoffResult:
 
 
 @dataclass(frozen=True, slots=True)
+class AudioReadinessObservation:
+    """Read-only evidence needed before a G1 audio handoff is attempted."""
+
+    ready: bool
+    code: str
+    g1_sink_name: str = ""
+    g1_sink_object_id: int = -1
+    rollback_sink_name: str = ""
+    default_sink_name: str = ""
+
+
+@dataclass(frozen=True, slots=True)
 class _Sink:
     object_id: int
     name: str
@@ -51,6 +63,56 @@ class _Sink:
 class _PipeWireState:
     sinks: tuple[_Sink, ...]
     default_sink_name: str
+
+
+class G1AudioReadiness:
+    """Observe exact selectable and rollback sinks without changing PipeWire."""
+
+    def __init__(
+        self,
+        *,
+        commands: PipeWireCommandRunner,
+        state: PortableAudioStateStore,
+        resolve_g1_audio_bdf: Callable[[], str],
+    ) -> None:
+        self._commands = commands
+        self._state = state
+        self._resolve_g1_audio_bdf = resolve_g1_audio_bdf
+
+    def observe(self, user: GamescopeUserContext) -> AudioReadinessObservation:
+        audio_bdf = _resolve_audio_bdf(self._resolve_g1_audio_bdf)
+        if not audio_bdf:
+            return AudioReadinessObservation(False, "audio.g1_identity_unverified")
+        observed = _observe_pipewire(self._commands, user)
+        if observed is None:
+            return AudioReadinessObservation(False, "audio.observation_unavailable")
+        external = tuple(
+            item for item in observed.sinks if item.device_bdf == audio_bdf
+        )
+        if len(external) != 1:
+            return AudioReadinessObservation(
+                False,
+                "audio.external_sink_ambiguous",
+                default_sink_name=observed.default_sink_name,
+            )
+        wanted_name = self._state.load() or observed.default_sink_name
+        rollback = tuple(item for item in observed.sinks if item.name == wanted_name)
+        if len(rollback) != 1 or rollback[0].device_bdf == audio_bdf:
+            return AudioReadinessObservation(
+                False,
+                "audio.rollback_sink_unavailable",
+                g1_sink_name=external[0].name,
+                g1_sink_object_id=external[0].object_id,
+                default_sink_name=observed.default_sink_name,
+            )
+        return AudioReadinessObservation(
+            True,
+            "audio.ready",
+            g1_sink_name=external[0].name,
+            g1_sink_object_id=external[0].object_id,
+            rollback_sink_name=rollback[0].name,
+            default_sink_name=observed.default_sink_name,
+        )
 
 
 class G1AudioHandoff:
@@ -250,79 +312,89 @@ class G1AudioHandoff:
         return False
 
     def _resolve_bdf(self) -> str:
-        try:
-            value = self._resolve_g1_audio_bdf().lower()
-        except Exception:
-            return ""
-        return value if PCI_BDF_RE.fullmatch(value) else ""
+        return _resolve_audio_bdf(self._resolve_g1_audio_bdf)
 
     def _observe(self, user: GamescopeUserContext) -> _PipeWireState | None:
-        result = self._commands.dump(user)
-        if not result.ok or not result.output or len(result.output) > MAX_DUMP_BYTES:
-            return None
-        try:
-            values = json.loads(result.output)
-        except (UnicodeDecodeError, json.JSONDecodeError):
-            return None
-        if not isinstance(values, list):
-            return None
-        devices: dict[int, str] = {}
-        default_sink_name = ""
-        raw_nodes: list[tuple[int, str, int]] = []
-        for value in values:
-            if not isinstance(value, dict):
+        return _observe_pipewire(self._commands, user)
+
+
+def _resolve_audio_bdf(resolve: Callable[[], str]) -> str:
+    try:
+        value = resolve().lower()
+    except Exception:
+        return ""
+    return value if PCI_BDF_RE.fullmatch(value) else ""
+
+
+def _observe_pipewire(
+    commands: PipeWireCommandRunner, user: GamescopeUserContext
+) -> _PipeWireState | None:
+    result = commands.dump(user)
+    if not result.ok or not result.output or len(result.output) > MAX_DUMP_BYTES:
+        return None
+    try:
+        values = json.loads(result.output)
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    if not isinstance(values, list):
+        return None
+    devices: dict[int, str] = {}
+    default_sink_name = ""
+    raw_nodes: list[tuple[int, str, int]] = []
+    for value in values:
+        if not isinstance(value, dict):
+            continue
+        object_id = value.get("id")
+        info = value.get("info")
+        props = info.get("props", {}) if isinstance(info, dict) else {}
+        if value.get("type") == "PipeWire:Interface:Device" and isinstance(
+            object_id, int
+        ):
+            bus_path = props.get("device.bus-path", "")
+            if isinstance(bus_path, str) and bus_path.startswith("pci-"):
+                candidate = bus_path.removeprefix("pci-").lower()
+                if PCI_BDF_RE.fullmatch(candidate):
+                    devices[object_id] = candidate
+        elif value.get("type") == "PipeWire:Interface:Node" and isinstance(
+            object_id, int
+        ):
+            name = props.get("node.name", "")
+            device_id = props.get("device.id")
+            if (
+                props.get("media.class") == "Audio/Sink"
+                and props.get("alsa.loopback") is True
+                and isinstance(name, str)
+                and NODE_NAME_RE.fullmatch(name)
+                and isinstance(device_id, int)
+            ):
+                raw_nodes.append((object_id, name, device_id))
+        elif value.get("type") == "PipeWire:Interface:Metadata":
+            metadata = value.get("metadata", ())
+            if not isinstance(metadata, list):
                 continue
-            object_id = value.get("id")
-            info = value.get("info")
-            props = info.get("props", {}) if isinstance(info, dict) else {}
-            if value.get("type") == "PipeWire:Interface:Device" and isinstance(
-                object_id, int
-            ):
-                bus_path = props.get("device.bus-path", "")
-                if isinstance(bus_path, str) and bus_path.startswith("pci-"):
-                    candidate = bus_path.removeprefix("pci-").lower()
-                    if PCI_BDF_RE.fullmatch(candidate):
-                        devices[object_id] = candidate
-            elif value.get("type") == "PipeWire:Interface:Node" and isinstance(
-                object_id, int
-            ):
-                name = props.get("node.name", "")
-                device_id = props.get("device.id")
+            for entry in metadata:
                 if (
-                    props.get("media.class") == "Audio/Sink"
-                    and props.get("alsa.loopback") is True
-                    and isinstance(name, str)
-                    and NODE_NAME_RE.fullmatch(name)
-                    and isinstance(device_id, int)
+                    not isinstance(entry, dict)
+                    or entry.get("key") != "default.audio.sink"
                 ):
-                    raw_nodes.append((object_id, name, device_id))
-            elif value.get("type") == "PipeWire:Interface:Metadata":
-                metadata = value.get("metadata", ())
-                if not isinstance(metadata, list):
                     continue
-                for entry in metadata:
-                    if (
-                        not isinstance(entry, dict)
-                        or entry.get("key") != "default.audio.sink"
-                    ):
-                        continue
-                    configured = entry.get("value")
-                    name = (
-                        configured.get("name", "")
-                        if isinstance(configured, dict)
-                        else ""
-                    )
-                    if isinstance(name, str) and NODE_NAME_RE.fullmatch(name):
-                        if default_sink_name and default_sink_name != name:
-                            return None
-                        default_sink_name = name
-        sinks = tuple(
-            _Sink(object_id, name, devices[device_id])
-            for object_id, name, device_id in raw_nodes
-            if device_id in devices
-        )
-        if not default_sink_name:
-            return None
-        if len(tuple(item for item in sinks if item.name == default_sink_name)) != 1:
-            return None
-        return _PipeWireState(sinks, default_sink_name)
+                configured = entry.get("value")
+                name = (
+                    configured.get("name", "")
+                    if isinstance(configured, dict)
+                    else ""
+                )
+                if isinstance(name, str) and NODE_NAME_RE.fullmatch(name):
+                    if default_sink_name and default_sink_name != name:
+                        return None
+                    default_sink_name = name
+    sinks = tuple(
+        _Sink(object_id, name, devices[device_id])
+        for object_id, name, device_id in raw_nodes
+        if device_id in devices
+    )
+    if not default_sink_name:
+        return None
+    if len(tuple(item for item in sinks if item.name == default_sink_name)) != 1:
+        return None
+    return _PipeWireState(sinks, default_sink_name)
