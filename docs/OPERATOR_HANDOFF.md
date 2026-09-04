@@ -1,5 +1,14 @@
 # Maintainer and agent handoff
 
+## Graceful session experiment — 2026-09-03
+
+On installed 0.3.0 `9571a5ca3e5b`, one explicitly supervised no-force session
+stop completed; SteamOS automatically restored the session. Temporary overrides
+were removed and native service settings verified. Internal display is active;
+player picture/audio/control confirmation remains pending. This does not resolve
+the shutdown hang or authorize unplugging. See the
+[experiment record](G1_GRACEFUL_SESSION_EXPERIMENT_2026-09-03.md).
+
 ## Re-Gear 0.3.0 packaging checkpoint — 2026-09-03
 
 New candidates use `Re-Gear-<version>.zip`; package.json and pyproject.toml now
