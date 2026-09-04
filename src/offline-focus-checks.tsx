@@ -4,7 +4,7 @@ import { OfflineDetailsSession } from "./offline-details-session";
 import { offlineReportBadge } from "./offline-badge-state";
 import { offlineBadgeImages } from "./offline-readiness-badge";
 import { offlineNativeSource } from "./offline-native-source";
-import { attachOfflineTileBadge, exactTileAppId, OFFLINE_TILE_SELECTOR } from "./offline-tile-badge";
+import { attachOfflineTileBadge, exactTileElementAppId, OFFLINE_TILE_SELECTOR } from "./offline-tile-badge";
 
 const classify = callable<[Record<string, number | boolean>], { schema_version?: unknown; status?: unknown; reason_codes?: unknown }>("classify_offline_details");
 const SETTLE_MS = 450;
@@ -32,11 +32,11 @@ export function startOfflineFocusChecks(): { stop(): void } {
     (window.appStore as unknown) === source.store && source.store.GetAppOverviewByAppID(id) === app && Array.isArray(Router.RunningApps) && Router.RunningApps.length === 0;
   const focus = (event: FocusEvent) => {
     cancel(); const target = event.target as Element | null; const tile = target?.closest?.(OFFLINE_TILE_SELECTOR);
-    const id = tile ? exactTileAppId(tile.getAttribute("data-id")) : null; const view = tile?.ownerDocument.defaultView;
+    const id = tile ? exactTileElementAppId(tile) : null; const view = tile?.ownerDocument.defaultView;
     if (!tile || !view || id === null) return;
     const source = offlineNativeSource(); const app = source?.store.GetAppOverviewByAppID(id);
     if (!source || !app || app.display_status === 4 || !Array.isArray(Router.RunningApps) || Router.RunningApps.length) return;
-    const valid = () => context(id, app, source) && tile.isConnected && exactTileAppId(tile.getAttribute("data-id")) === id;
+    const valid = () => context(id, app, source) && tile.isConnected && exactTileElementAppId(tile) === id;
     const show = (badge: CachedBadge) => { shown?.stop(); shown = attachOfflineTileBadge(view, id, offlineBadgeImages[badge.asset], badge.label, valid, tile); };
     const cached = cache.get(id); if (cached && Date.now() - cached.at < CACHE_MS && valid()) { show(cached); return; }
     const request = sequence; timer = setTimeout(async () => {

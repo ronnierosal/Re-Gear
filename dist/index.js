@@ -273,6 +273,20 @@ function exactTileAppId(value) {
     const id = Number(value);
     return id < 2 ** 32 ? id : null;
 }
+function exactTileElementAppId(tile) {
+    const direct = exactTileAppId(tile.getAttribute("data-id"));
+    if (direct !== null)
+        return direct;
+    const ids = new Set();
+    for (const image of Array.from(tile.querySelectorAll("img")).slice(0, 8)) {
+        for (const match of (image.getAttribute("src") ?? "").matchAll(/\/(?:apps|assets|customimages)\/(\d+)(?:\/|[p.]|$)/g)) {
+            const id = exactTileAppId(match[1]);
+            if (id !== null)
+                ids.add(id);
+        }
+    }
+    return ids.size === 1 ? [...ids][0] : null;
+}
 function attachOfflineTileBadge(view, appId, image, label, current, initialTile) {
     const owned = new Map();
     let stopped = false;
@@ -297,14 +311,23 @@ function attachOfflineTileBadge(view, appId, image, label, current, initialTile)
     };
     const reconcile = (tile) => {
         const existing = owned.get(tile);
+        const artwork = Array.from(tile.querySelectorAll("img")).find(img => {
+            const src = img.getAttribute("src") ?? "";
+            return src.includes(`/${appId}/`) || src.includes(`/${appId}p.`) || src.includes(`/${appId}.`);
+        });
+        let host = tile;
+        if (view.getComputedStyle(host).position === "static" && artwork) {
+            host = artwork.parentElement;
+            while (host && host !== tile && view.getComputedStyle(host).position === "static")
+                host = host.parentElement;
+        }
         if (!tile.isConnected || !tile.matches(OFFLINE_TILE_SELECTOR) ||
-            exactTileAppId(tile.getAttribute("data-id")) !== appId ||
-            view.getComputedStyle(tile).position === "static") {
+            exactTileElementAppId(tile) !== appId || !host || view.getComputedStyle(host).position === "static") {
             existing?.remove();
             owned.delete(tile);
             return;
         }
-        if (existing?.parentElement === tile)
+        if (existing?.parentElement === host)
             return;
         existing?.remove();
         const badge = view.document.createElement("img");
@@ -315,7 +338,7 @@ function attachOfflineTileBadge(view, appId, image, label, current, initialTile)
         badge.width = 72;
         badge.height = 32;
         badge.style.cssText = "position:absolute;bottom:6px;left:6px;width:72px;height:32px;pointer-events:none;z-index:2";
-        tile.appendChild(badge);
+        host.appendChild(badge);
         owned.set(tile, badge);
     };
     try {
@@ -433,7 +456,7 @@ function startOfflineFocusChecks() {
         cancel();
         const target = event.target;
         const tile = target?.closest?.(OFFLINE_TILE_SELECTOR);
-        const id = tile ? exactTileAppId(tile.getAttribute("data-id")) : null;
+        const id = tile ? exactTileElementAppId(tile) : null;
         const view = tile?.ownerDocument.defaultView;
         if (!tile || !view || id === null)
             return;
@@ -441,7 +464,7 @@ function startOfflineFocusChecks() {
         const app = source?.store.GetAppOverviewByAppID(id);
         if (!source || !app || app.display_status === 4 || !Array.isArray(DFL.Router.RunningApps) || DFL.Router.RunningApps.length)
             return;
-        const valid = () => context(id, app, source) && tile.isConnected && exactTileAppId(tile.getAttribute("data-id")) === id;
+        const valid = () => context(id, app, source) && tile.isConnected && exactTileElementAppId(tile) === id;
         const show = (badge) => { shown?.stop(); shown = attachOfflineTileBadge(view, id, offlineBadgeImages[badge.asset], badge.label, valid, tile); };
         const cached = cache.get(id);
         if (cached && Date.now() - cached.at < CACHE_MS && valid()) {

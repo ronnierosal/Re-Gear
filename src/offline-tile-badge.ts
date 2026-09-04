@@ -10,6 +10,19 @@ export function exactTileAppId(value: string | null): number | null {
   return id < 2 ** 32 ? id : null;
 }
 
+export function exactTileElementAppId(tile: Element): number | null {
+  const direct = exactTileAppId(tile.getAttribute("data-id"));
+  if (direct !== null) return direct;
+  const ids = new Set<number>();
+  for (const image of Array.from(tile.querySelectorAll("img")).slice(0, 8)) {
+    for (const match of (image.getAttribute("src") ?? "").matchAll(/\/(?:apps|assets|customimages)\/(\d+)(?:\/|[p.]|$)/g)) {
+      const id = exactTileAppId(match[1]);
+      if (id !== null) ids.add(id);
+    }
+  }
+  return ids.size === 1 ? [...ids][0] : null;
+}
+
 export function attachOfflineTileBadge(
   view: Window,
   appId: number,
@@ -34,12 +47,20 @@ export function attachOfflineTileBadge(
   };
   const reconcile = (tile: Element) => {
     const existing = owned.get(tile);
+    const artwork = Array.from(tile.querySelectorAll("img")).find(img => {
+      const src = img.getAttribute("src") ?? "";
+      return src.includes(`/${appId}/`) || src.includes(`/${appId}p.`) || src.includes(`/${appId}.`);
+    });
+    let host: Element | null = tile;
+    if (view.getComputedStyle(host).position === "static" && artwork) {
+      host = artwork.parentElement;
+      while (host && host !== tile && view.getComputedStyle(host).position === "static") host = host.parentElement;
+    }
     if (!tile.isConnected || !tile.matches(OFFLINE_TILE_SELECTOR) ||
-        exactTileAppId(tile.getAttribute("data-id")) !== appId ||
-        view.getComputedStyle(tile).position === "static") {
+        exactTileElementAppId(tile) !== appId || !host || view.getComputedStyle(host).position === "static") {
       existing?.remove(); owned.delete(tile); return;
     }
-    if (existing?.parentElement === tile) return;
+    if (existing?.parentElement === host) return;
     existing?.remove();
     const badge = view.document.createElement("img");
     badge.setAttribute(OWN, "");
@@ -48,7 +69,7 @@ export function attachOfflineTileBadge(
     badge.title = `${label} — Steam report at check time`;
     badge.width = 72; badge.height = 32;
     badge.style.cssText = "position:absolute;bottom:6px;left:6px;width:72px;height:32px;pointer-events:none;z-index:2";
-    tile.appendChild(badge);
+    host.appendChild(badge);
     owned.set(tile, badge);
   };
   try {

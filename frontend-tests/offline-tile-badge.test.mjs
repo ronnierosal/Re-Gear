@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { attachOfflineTileBadge, exactTileAppId } from "../src/offline-tile-badge.ts";
+import { attachOfflineTileBadge, exactTileAppId, exactTileElementAppId } from "../src/offline-tile-badge.ts";
 
 // Small DOM contract double: selector matching is controlled independently of
 // connectivity, reproducing virtualized tiles without importing a browser DOM.
@@ -54,6 +54,17 @@ test("tile identity accepts only exact unsigned Steam application IDs", () => {
   for (const value of [null, "", "0", "00123", "123junk", "-123", "4294967296", " 123", "123.0"]) assert.equal(exactTileAppId(value), null);
   assert.equal(exactTileAppId("123"), 123);
   assert.equal(exactTileAppId("4294967295"), 4294967295);
+});
+
+test("tile identity accepts one exact Steam artwork ID and rejects conflicts", () => {
+  const tile = (sources) => ({
+    getAttribute: () => null,
+    querySelectorAll: () => sources.map(src => ({ getAttribute: () => src })),
+  });
+  assert.equal(exactTileElementAppId(tile(["https://cdn.example/apps/123/library.jpg"])), 123);
+  assert.equal(exactTileElementAppId(tile(["x/assets/123/a.jpg", "x/assets/123/b.jpg"])), 123);
+  assert.equal(exactTileElementAppId(tile(["x/apps/123/a.jpg", "x/apps/456/b.jpg"])), null);
+  assert.equal(exactTileElementAppId(tile(["x/anything/123/a.jpg"])), null);
 });
 
 test("recycled tiles lose the old game's badge and recover only on the exact identity", () => {
