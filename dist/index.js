@@ -170,32 +170,6 @@ class OfflineDetailsSession {
     }
 }
 
-// Native interfaces are checked at use time: Steam updates may remove them.
-function offlineNativeSource() {
-    const native = window;
-    const store = native.appStore;
-    const apps = native.SteamClient?.Apps;
-    if (!store || typeof store.m_mapApps?.values !== "function" ||
-        typeof store.GetAppOverviewByAppID !== "function" ||
-        typeof apps?.RegisterForAppDetails !== "function")
-        return null;
-    return { store, subscribe: apps.RegisterForAppDetails.bind(apps) };
-}
-function offlineGameChoices(source) {
-    const games = [];
-    let examined = 0;
-    for (const app of source.store.m_mapApps.values()) {
-        if (++examined > 256)
-            break;
-        if (app.app_type !== 1 || app.local_per_client_data?.installed !== true ||
-            !Number.isInteger(app.appid) || app.appid <= 0 || app.appid >= 2 ** 32 ||
-            typeof app.display_name !== "string")
-            continue;
-        games.push({ data: app.appid, label: app.display_name.slice(0, 160) });
-    }
-    return games;
-}
-
 /** Public reason copy only. Never render a backend string as player guidance. */
 const GUIDANCE = {
     cloud_save_conflict: "Resolve the Steam Cloud conflict for this game before going offline.",
@@ -261,6 +235,32 @@ function OfflineReadinessBadge({ badge }) {
     return SP_JSX.jsx("img", { src: offlineBadgeImages[badge.asset], alt: badge.label, title: badge.label, width: 72, height: 32, style: { display: "block", flexShrink: 0 } });
 }
 
+// Native interfaces are checked at use time: Steam updates may remove them.
+function offlineNativeSource() {
+    const native = window;
+    const store = native.appStore;
+    const apps = native.SteamClient?.Apps;
+    if (!store || typeof store.m_mapApps?.values !== "function" ||
+        typeof store.GetAppOverviewByAppID !== "function" ||
+        typeof apps?.RegisterForAppDetails !== "function")
+        return null;
+    return { store, subscribe: apps.RegisterForAppDetails.bind(apps) };
+}
+function offlineGameChoices(source) {
+    const games = [];
+    let examined = 0;
+    for (const app of source.store.m_mapApps.values()) {
+        if (++examined > 256)
+            break;
+        if (app.app_type !== 1 || app.local_per_client_data?.installed !== true ||
+            !Number.isInteger(app.appid) || app.appid <= 0 || app.appid >= 2 ** 32 ||
+            typeof app.display_name !== "string")
+            continue;
+        games.push({ data: app.appid, label: app.display_name.slice(0, 160) });
+    }
+    return games;
+}
+
 // Native DOM seam researched in sebet/decky-nonsteam-badges (BSD-3-Clause),
 // cc620181962f601b713c9db2045e98dd82ecdbf2. Independent bounded implementation:
 // exact data-id only; no native style changes, per-tile requests, or polling.
@@ -272,7 +272,7 @@ function exactTileAppId(value) {
     const id = Number(value);
     return id < 2 ** 32 ? id : null;
 }
-function attachOfflineTileBadge(view, appId, image, label, current) {
+function attachOfflineTileBadge(view, appId, image, label, current, initialTile) {
     const owned = new Map();
     let stopped = false;
     let timer;
@@ -320,7 +320,7 @@ function attachOfflineTileBadge(view, appId, image, label, current) {
     try {
         validate();
         if (!stopped) {
-            const tiles = view.document.querySelectorAll(OFFLINE_TILE_SELECTOR);
+            const tiles = initialTile ? [initialTile] : Array.from(view.document.querySelectorAll(OFFLINE_TILE_SELECTOR));
             // Fail closed rather than process an unexpectedly large rendered surface.
             if (tiles.length > 256)
                 stop();
@@ -400,6 +400,93 @@ function offlineLibraryWindow() {
         }
     }
     catch { /* Native Steam internals unavailable. */ }
+    return null;
+}
+
+const classify$1 = callable("classify_offline_details");
+const SETTLE_MS = 450;
+const CACHE_MS = 5 * 60 * 1000;
+const CACHE_LIMIT = 32;
+function libraryWindows() {
+    try {
+        const host = window;
+        const trees = host.DFL?.getGamepadNavigationTrees?.();
+        if (!Array.isArray(trees))
+            return [];
+        return [...new Set(trees.slice(0, 16).map(tree => tree.m_window).filter((view) => !!view))];
+    }
+    catch {
+        return [];
+    }
+}
+/** Invisible, event-driven selected-game check. It never scans or polls the library. */
+function OfflineFocusChecks({ gameState }) {
+    const state = SP_REACT.useRef(gameState);
+    state.current = gameState;
+    SP_REACT.useEffect(() => {
+        const session = new OfflineDetailsSession();
+        const cache = new Map();
+        let timer;
+        let sequence = 0;
+        let shown;
+        const cancel = () => { sequence++; clearTimeout(timer); session.invalidate(); shown?.stop(); shown = undefined; };
+        const context = (appId, app, source) => state.current === "idle" && window.appStore === source.store &&
+            source.store.GetAppOverviewByAppID(appId) === app &&
+            Array.isArray(DFL.Router.RunningApps) && DFL.Router.RunningApps.length === 0;
+        const show = (view, tile, appId, badge, valid) => {
+            shown?.stop();
+            shown = attachOfflineTileBadge(view, appId, offlineBadgeImages[badge.asset], badge.label, valid, tile);
+        };
+        const focus = (event) => {
+            cancel();
+            if (state.current !== "idle")
+                return;
+            const target = event.target;
+            const tile = target?.closest?.(OFFLINE_TILE_SELECTOR);
+            const appId = tile ? exactTileAppId(tile.getAttribute("data-id")) : null;
+            const view = tile?.ownerDocument.defaultView;
+            if (!tile || !view || appId === null)
+                return;
+            const source = offlineNativeSource();
+            const app = source?.store.GetAppOverviewByAppID(appId);
+            if (!source || !app || app.display_status === 4)
+                return;
+            const valid = () => context(appId, app, source) && tile.isConnected && exactTileAppId(tile.getAttribute("data-id")) === appId;
+            const cached = cache.get(appId);
+            if (cached && Date.now() - cached.at < CACHE_MS && valid()) {
+                show(view, tile, appId, cached, valid);
+                return;
+            }
+            const request = sequence;
+            timer = setTimeout(async () => {
+                if (request !== sequence || !valid())
+                    return;
+                const report = await session.request(appId, source.subscribe, valid);
+                if (!report || request !== sequence)
+                    return;
+                const result = await classify$1(report.details);
+                if (!report.isValid() || request !== sequence || !valid())
+                    return;
+                const badge = offlineReportBadge(result);
+                if (!badge)
+                    return;
+                const saved = { ...badge, at: Date.now() };
+                cache.delete(appId);
+                cache.set(appId, saved);
+                while (cache.size > CACHE_LIMIT)
+                    cache.delete(cache.keys().next().value);
+                show(view, tile, appId, saved, valid);
+            }, SETTLE_MS);
+        };
+        const views = libraryWindows();
+        for (const view of views)
+            view.document.addEventListener("focusin", focus, true);
+        return () => {
+            cancel();
+            for (const view of views)
+                view.document.removeEventListener("focusin", focus, true);
+        };
+    }, []);
     return null;
 }
 
@@ -2655,7 +2742,7 @@ function Content({ preflight }) {
     return (SP_JSX.jsx(SP_JSX.Fragment, { children: SP_JSX.jsxs("div", { ref: statusAnchor, tabIndex: -1, children: [SP_JSX.jsxs(DFL.PanelSection, { title: "At a glance", children: [SP_JSX.jsx(DFL.Focusable, { ref: statusFocusAnchor, "aria-label": "Re-Gear status summary", onGamepadFocus: () => {
                                 if (statusAnchor.current)
                                     scrollToTopOfOwningPanel(statusAnchor.current);
-                            }, children: SP_JSX.jsx(QuickAccessOverview, { mode: payload?.inference.mode ?? "unknown", modeLabel: loading ? "Reading…" : label(payload?.inference.mode ?? "unknown"), health: healthStatusLabel(payload?.health, loading), game: label(snapshot?.game_state ?? "unknown"), loading: loading }) }), SP_JSX.jsxs(DashboardSurface, { children: [SP_JSX.jsx(DashboardAction, { title: "Dock / eGPU", description: progress.label, icon: "connection", expanded: showHardwareDetails, onClick: () => setShowHardwareDetails((visible) => !visible) }), showHardwareDetails && SP_JSX.jsxs("div", { children: [hardwareDetailRows(payload).map(([name, value]) => SP_JSX.jsx(DiagnosticRow, { name: name, value: value }, name)), SP_JSX.jsx(DFL.PanelSectionRow, { children: progress.detail })] })] })] }), SP_JSX.jsx(OfflineReadinessPanel, { gameState: snapshot?.game_state ?? "unknown", visible: quickAccessVisible }), SP_JSX.jsxs(DFL.PanelSection, { title: "Safety & actions", children: [SP_JSX.jsxs("div", { ref: primaryControlAnchor, children: [SP_JSX.jsx(DashboardSurface, { primary: true, children: SP_JSX.jsx(DashboardAction, { icon: "bolt", title: tvSwitchBusy ? "Switching…" : "Switch to TV now", description: "Checks readiness before switching", onClick: () => void executeTvSwitch(), disabled: tvSwitchBusy
+                            }, children: SP_JSX.jsx(QuickAccessOverview, { mode: payload?.inference.mode ?? "unknown", modeLabel: loading ? "Reading…" : label(payload?.inference.mode ?? "unknown"), health: healthStatusLabel(payload?.health, loading), game: label(snapshot?.game_state ?? "unknown"), loading: loading }) }), SP_JSX.jsxs(DashboardSurface, { children: [SP_JSX.jsx(DashboardAction, { title: "Dock / eGPU", description: progress.label, icon: "connection", expanded: showHardwareDetails, onClick: () => setShowHardwareDetails((visible) => !visible) }), showHardwareDetails && SP_JSX.jsxs("div", { children: [hardwareDetailRows(payload).map(([name, value]) => SP_JSX.jsx(DiagnosticRow, { name: name, value: value }, name)), SP_JSX.jsx(DFL.PanelSectionRow, { children: progress.detail })] })] })] }), SP_JSX.jsx(OfflineFocusChecks, { gameState: snapshot?.game_state ?? "unknown" }), SP_JSX.jsx(OfflineReadinessPanel, { gameState: snapshot?.game_state ?? "unknown", visible: quickAccessVisible }), SP_JSX.jsxs(DFL.PanelSection, { title: "Safety & actions", children: [SP_JSX.jsxs("div", { ref: primaryControlAnchor, children: [SP_JSX.jsx(DashboardSurface, { primary: true, children: SP_JSX.jsx(DashboardAction, { icon: "bolt", title: tvSwitchBusy ? "Switching…" : "Switch to TV now", description: "Checks readiness before switching", onClick: () => void executeTvSwitch(), disabled: tvSwitchBusy
                                             || Boolean(tvSwitchAcknowledgementId)
                                             || Boolean(journalStatus && journalStatus.code !== "journal.idle") }) }), tvSwitchMessage && SP_JSX.jsx(DFL.PanelSectionRow, { children: tvSwitchMessage }), SP_JSX.jsx(DashboardSurface, { children: SP_JSX.jsx("div", { style: { padding: "4px 12px" }, children: SP_JSX.jsx(DFL.ToggleField, { label: "Automatic TV docking", layout: "inline", description: automaticDockBusy
                                                 ? "Saving…"

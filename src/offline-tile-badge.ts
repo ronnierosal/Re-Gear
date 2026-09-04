@@ -16,6 +16,7 @@ export function attachOfflineTileBadge(
   image: string,
   label: string,
   current: () => boolean,
+  initialTile?: Element,
 ): { stop(): void; validate(): void } {
   const owned = new Map<Element, HTMLImageElement>();
   let stopped = false;
@@ -53,7 +54,7 @@ export function attachOfflineTileBadge(
   try {
     validate();
     if (!stopped) {
-      const tiles = view.document.querySelectorAll(OFFLINE_TILE_SELECTOR);
+      const tiles = initialTile ? [initialTile] : Array.from(view.document.querySelectorAll(OFFLINE_TILE_SELECTOR));
       // Fail closed rather than process an unexpectedly large rendered surface.
       if (tiles.length > 256) stop();
       else for (const tile of Array.from(tiles)) reconcile(tile);

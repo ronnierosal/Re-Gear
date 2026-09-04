@@ -1,4 +1,5 @@
 import { PRODUCT_NAME } from "./branding";
+import { OfflineFocusChecks } from "./offline-focus-checks";
 import { OfflineReadinessPanel } from "./offline-readiness-panel";
 import brandIcon from "../docs/images/re-gear-decky-transparent.png";
 import { definePlugin, toaster, useQuickAccessVisible } from "@decky/api";
@@ -1384,6 +1385,7 @@ function Content({ preflight }: { preflight: SleepPreflightCoordinator }) {
         </DashboardSurface>
       </PanelSection>
 
+      <OfflineFocusChecks gameState={snapshot?.game_state ?? "unknown"} />
       <OfflineReadinessPanel gameState={snapshot?.game_state ?? "unknown"} visible={quickAccessVisible} />
       <PanelSection title="Safety & actions">
         <div ref={primaryControlAnchor}>
