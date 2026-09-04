@@ -14,11 +14,13 @@ from .auto_tdp_worker import AutoTdpWorker, AutoTdpWorkerStatus
 
 
 class _AutoActuator:
-    def __init__(self, runtime: TdpRuntime):
+    def __init__(self, runtime: TdpRuntime, admission: Callable[[], bool]):
         self._runtime = runtime
+        self._admission = admission
 
     def apply(self, watts: int, *, dispatch_guard: TdpDispatchGuard) -> TdpControlResult:
-        return self._runtime._apply_auto(watts, dispatch_guard)
+        return self._runtime._apply_auto(watts,
+            lambda: self._admission() is True and dispatch_guard() is True)
 
 
 class WriterLease(Protocol):
@@ -55,6 +57,7 @@ class TdpRuntime:
         self._service = service_factory(self._provider, self._journal)
         self._auto_factory = auto_session_factory
         self._auto_worker: AutoTdpWorker | None = None
+        self._auto_policy: AutoTdpPolicy | None = None
         self._disable_requested = threading.Event()
         self._auto_cancel = threading.Event()
         self._auto_control_lock = threading.Lock()
@@ -123,28 +126,39 @@ class TdpRuntime:
             self._lease.close()
             self._disable_requested.clear()
 
-    def start_auto(self, policy: AutoTdpPolicy) -> AutoTdpWorkerStatus | None:
+    def start_auto(self, policy: AutoTdpPolicy, *, admission_guard: Callable[[], bool] | None = None) -> AutoTdpWorkerStatus | None:
+        def admitted():
+            try:
+                return admission_guard is None or admission_guard() is True
+            except Exception:
+                return False
         with self._auto_control_lock:
             generation = self._auto_generation
-        if self._closing.is_set() or not self._lock.acquire(blocking=False):
+        if not admitted() or self._closing.is_set() or not self._lock.acquire(blocking=False):
             return None
         try:
-            if self._closing.is_set() or self._disable_requested.is_set() or self._auto_factory is None:
+            if not admitted() or self._closing.is_set() or self._disable_requested.is_set() or self._auto_factory is None:
                 return None
             with self._auto_control_lock:
                 if generation != self._auto_generation:
                     return None
                 self._auto_cancel.clear()
-            if not self._status()["ready"]:
+            status = self._status()
+            if not status["ready"]:
                 return None
-            if self._auto_worker is None:
-                session = self._auto_factory(_AutoActuator(self), self._provider)
+            if (not isinstance(policy, AutoTdpPolicy)
+                    or not status["minimum_watts"] <= policy.minimum_watts <= status["current_watts"]
+                    or not status["current_watts"] <= policy.maximum_watts <= status["maximum_watts"]):
+                return None
+            if self._auto_worker is None or not self._auto_worker.status().running:
+                session = self._auto_factory(_AutoActuator(self, admitted), self._provider)
                 self._auto_worker = AutoTdpWorker(session, interval_ms=session.collection_interval_ms)
-            if self._closing.is_set() or self._disable_requested.is_set() or self._auto_cancel.is_set():
+                self._auto_policy = policy
+            if not admitted() or self._closing.is_set() or self._disable_requested.is_set() or self._auto_cancel.is_set():
                 self.stop_auto()
                 return None
             status = self._auto_worker.start(policy)
-            if self._closing.is_set() or self._disable_requested.is_set() or self._auto_cancel.is_set():
+            if not admitted() or self._closing.is_set() or self._disable_requested.is_set() or self._auto_cancel.is_set():
                 return self._auto_worker.stop()
             return status
         except Exception:
@@ -163,6 +177,22 @@ class TdpRuntime:
     def auto_status(self) -> AutoTdpWorkerStatus | None:
         worker = self._auto_worker
         return worker.status() if worker is not None else None
+
+    @property
+    def auto_policy(self) -> AutoTdpPolicy | None:
+        return self._auto_policy
+
+    def auto_context(self):
+        """Read-only readiness hint; every transaction independently revalidates."""
+        if self._closing.is_set() or not self._lock.acquire(blocking=False):
+            return None
+        try:
+            if not self._enabled or not self._lease.held or self._closing.is_set():
+                return None
+            observation = self._provider.observe()
+            return observation.reading if observation.code == "tdp.ready" else None
+        finally:
+            self._release_operation()
 
     def _apply_auto(self, watts: int, guard: TdpDispatchGuard) -> TdpControlResult:
         if self._closing.is_set():
