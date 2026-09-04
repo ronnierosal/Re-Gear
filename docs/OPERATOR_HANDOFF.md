@@ -1,5 +1,18 @@
 # Maintainer and agent handoff
 
+## 0.3.1 shutdown trial and recovery — 2026-09-03
+
+0.3.1 is installed. Its attached shutdown failed and required player-confirmed
+forced poweroff, followed by detach while off. Ally is now booted detached;
+picture/audio/controls work, read-only capture shows Idle/internal GPU only.
+Keep it detached. The earlier unload_started marker was 0.3.0 installation
+cleanup, not 0.3.1 shutdown. Actual 0.3.1 shutdown shows Decky response-listener
+stop then SIGKILL after five seconds without recorded unload-hook entry.
+See CURRENT_STATE.md and out/regear-0.3.1-shutdown-timeline.json. Investigate
+stop delivery/event-loop responsiveness; do not claim bounded cleanup ran or
+that a specific GPU/kernel cause is established. No further mutation authorized
+by this recovery confirmation.
+
 ## Safe-disconnect local work — 2026-09-03
 
 Re-Gear 0.3.1 bounds observer and guard cleanup and records incomplete work.

@@ -1,5 +1,31 @@
 # Current state
 
+## Re-Gear 0.3.1 shutdown failed; detached recovery — 2026-09-03
+
+Installed 0.3.1 `62f7333a69ff` was verified on disk and in the startup journal.
+The player confirmed working picture/audio/controls with powered G1 attached.
+The supervised normal shutdown again left fan/LEDs on beyond one minute;
+the player forced poweroff, detached G1 while off, and booted successfully.
+Player confirms picture/audio/controls; capture-20260904T053225Z.json shows
+Idle and only the internal GPU present. Keep G1 detached during diagnosis.
+
+Version/timestamp correlation is essential: the previous-boot `unload_started`
+marker belongs to 0.3.0 being replaced during installation, not the later 0.3.1
+shutdown. For the latter, Decky recorded a stop request and response-listener
+stop at 1788499653329876/1788499653329992 us, then SIGKILL at
+1788499658344191 us. No loader-unload, hook-attempt, or Re-Gear cleanup marker
+for that shutdown was retained. Startup confirms 0.3.1 ran; the bounded cleanup
+path has not been shown to execute at shutdown. This does not establish why
+the backend failed to enter unload, or why the whole machine failed to power off.
+Do not infer a particular cleanup await from the mixed-boot aggregate.
+
+Evidence: out/regear-0.3.1-shutdown-timeline.json,
+out/regear-0.3.1-failed-shutdown.json, and out/regear-0.3.1-shutdown-live.jsonl.
+Live SSH capture ended before any shutdown messages. Aggregate tail reached
+2000 rows; whole-boot AER/xHCI counts do not establish shutdown causality.
+Next investigate Decky-to-backend stop delivery and event-loop responsiveness
+before another code candidate or attached shutdown trial.
+
 ## Re-Gear 0.3.1 local shutdown candidate — 2026-09-03
 
 Local cleanup now closes background admission, requests every observer stop
