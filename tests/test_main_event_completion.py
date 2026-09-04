@@ -1,4 +1,5 @@
 import asyncio
+import threading
 import types
 import unittest
 from unittest.mock import patch
@@ -32,6 +33,51 @@ class Monitor:
 class MainEventCompletionTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.module = load_main_module()
+
+    async def test_blocked_transition_factory_keeps_event_loop_responsive(self):
+        plugin = self.module.Plugin()
+        plugin._automatic_dock_preferences = lambda: types.SimpleNamespace(load=lambda: False)
+        observed = current("connected-internal.json")
+        loop = asyncio.get_running_loop()
+        loop_thread = threading.get_ident()
+        entered = threading.Event()
+        release = threading.Event()
+        heartbeat = threading.Event()
+        evidence = {}
+
+        def blocked_factory():
+            evidence["factory_on_event_loop"] = threading.get_ident() == loop_thread
+            entered.set()
+            if not release.wait(2):
+                raise RuntimeError("test factory was not released")
+            raise ValueError("injected unavailable Gamescope scan")
+
+        def probe():
+            if entered.wait(2):
+                loop.call_soon_threadsafe(heartbeat.set)
+                evidence["heartbeat_during_factory"] = heartbeat.wait(0.5)
+            release.set()
+
+        async def stop_after_iteration(_delay):
+            raise asyncio.CancelledError
+
+        plugin._presentation_transition_service = blocked_factory
+        plugin._wait_for_topology = stop_after_iteration
+        probe_thread = threading.Thread(target=probe)
+        probe_thread.start()
+        try:
+            with patch.object(
+                self.module, "SnapshotTransitionObservationAdapter",
+                return_value=types.SimpleNamespace(observe=lambda: observed),
+            ):
+                with self.assertRaises(asyncio.CancelledError):
+                    await plugin._automatic_dock_loop()
+        finally:
+            release.set()
+            await asyncio.to_thread(probe_thread.join, 2)
+        self.assertFalse(probe_thread.is_alive())
+        self.assertFalse(evidence["factory_on_event_loop"])
+        self.assertTrue(evidence["heartbeat_during_factory"])
 
     async def run_iteration(self, *, hold=False, stage=AttachReadinessStage.READY_IDLE, available=True):
         plugin = self.module.Plugin()

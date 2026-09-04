@@ -861,9 +861,9 @@ class Plugin:
         """Inspect one idle-only display switch without issuing authority."""
         try:
             preview = await asyncio.to_thread(
-                self._presentation_transition_service().preview,
-                PlacementState.DOCKED_EGPU,
-                user_confirmed=False,
+                lambda: self._presentation_transition_service().preview(
+                    PlacementState.DOCKED_EGPU, user_confirmed=False
+                ),
             )
             return {
                 "schema_version": 1,
@@ -885,9 +885,9 @@ class Plugin:
         """Issue one short-lived permit after an on-screen player confirmation."""
         try:
             preview = await asyncio.to_thread(
-                self._presentation_transition_service().preview,
-                PlacementState.DOCKED_EGPU,
-                user_confirmed=True,
+                lambda: self._presentation_transition_service().preview(
+                    PlacementState.DOCKED_EGPU, user_confirmed=True
+                ),
             )
             return {
                 "schema_version": 1,
@@ -923,7 +923,7 @@ class Plugin:
         )
         try:
             result = await asyncio.to_thread(
-                self._presentation_transition_service().execute, approval_token
+                lambda: self._presentation_transition_service().execute(approval_token)
             )
         except Exception:
             finished_ns = self._journey_now_ns()
@@ -985,9 +985,9 @@ class Plugin:
         """Issue one short-lived permit to return a verified idle dock to Portable."""
         try:
             preview = await asyncio.to_thread(
-                self._presentation_transition_service().preview,
-                PlacementState.PORTABLE,
-                user_confirmed=True,
+                lambda: self._presentation_transition_service().preview(
+                    PlacementState.PORTABLE, user_confirmed=True
+                ),
             )
             return {
                 "schema_version": 1,
@@ -1076,14 +1076,13 @@ class Plugin:
         """Clear only the exact terminal transition after player acknowledgement."""
         try:
             prior_status = await asyncio.to_thread(
-                self._presentation_transition_service().status
+                lambda: self._presentation_transition_service().status()
             )
         except Exception:
             prior_status = None
         try:
             acknowledged = await asyncio.to_thread(
-                self._presentation_transition_service().acknowledge,
-                acknowledgement_id,
+                lambda: self._presentation_transition_service().acknowledge(acknowledgement_id),
             )
         except Exception:
             acknowledged = False
@@ -1102,7 +1101,7 @@ class Plugin:
         """Return the durable supervised-TV result after a Gamescope restart."""
         try:
             status = await asyncio.to_thread(
-                self._presentation_transition_service().status
+                lambda: self._presentation_transition_service().status()
             )
             return presentation_transition_status_to_payload(status)
         except Exception:
@@ -1385,9 +1384,9 @@ class Plugin:
                     )
                     if resolution.ok and resolution.context is not None:
                         audio = await self._run_background_operation(
-                            self._audio_handoff_service().switch,
-                            PlacementState.PORTABLE,
-                            resolution.context,
+                            lambda: self._audio_handoff_service().switch(
+                                PlacementState.PORTABLE, resolution.context
+                            ),
                         )
                         self._events.append(
                             severity="info" if audio.succeeded else "warning",
@@ -1424,7 +1423,7 @@ class Plugin:
                 )
                 current = await asyncio.to_thread(observations.observe)
                 completion = await asyncio.to_thread(
-                    self._presentation_transition_service().reconcile_completion, current
+                    lambda: self._presentation_transition_service().reconcile_completion(current)
                 )
                 if completion.hold_portable:
                     self._automatic_dock.suppress_current_attachment_after_portable_return()
@@ -1443,8 +1442,7 @@ class Plugin:
                     )
                     if resolution.ok and resolution.context is not None:
                         await asyncio.to_thread(
-                            self._audio_handoff_service().remember_portable,
-                            resolution.context,
+                            lambda: self._audio_handoff_service().remember_portable(resolution.context),
                         )
                 if not enabled:
                     delay_seconds = 5.0
@@ -1494,10 +1492,11 @@ class Plugin:
                     )
                     try:
                         result = await self._run_background_operation(
-                            self._presentation_transition_service().execute_automatic,
-                            PlacementState.DOCKED_EGPU,
-                            expected_generation=decision.expected_generation,
-                            standing_consent=enabled,
+                            lambda: self._presentation_transition_service().execute_automatic(
+                                PlacementState.DOCKED_EGPU,
+                                expected_generation=decision.expected_generation,
+                                standing_consent=enabled,
+                            ),
                         )
                     except Exception:
                         transition_finished_ns = self._journey_now_ns()

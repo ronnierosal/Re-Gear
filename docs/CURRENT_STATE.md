@@ -1,5 +1,24 @@
 # Current state
 
+## 0.3.2 local event-loop responsiveness repair — 2026-09-03
+
+The automatic loop constructed its presentation service on the event-loop
+thread before passing a bound method to asyncio.to_thread. That uncached
+factory scans Gamescope processes and prepares runtime storage on every call.
+A blocked factory reproduced event-loop starvation: a queued callback could
+not run until the factory was released. Factory construction plus invocation
+now run inside the worker for automatic completion/execution, background audio
+handoff, and supervised presentation RPCs. Existing transition approvals and
+tracked background-operation ownership remain in place.
+
+Regression verifies a callback runs while the factory is blocked off-loop.
+Architecture, 884 backend tests (six skipped), and compilation passed.
+This is a demonstrated local defect with plausible shutdown-handler impact;
+the actual Ally hang is not attributed to it. The local Windows Decky fork
+shows SIGTERM scheduling unload on the event loop, but is reference evidence,
+not verified installed Linux loader source. Installed Ally remains 0.3.1 and
+detached; no runtime changes were made during this investigation.
+
 ## Re-Gear 0.3.1 shutdown failed; detached recovery — 2026-09-03
 
 Installed 0.3.1 `62f7333a69ff` was verified on disk and in the startup journal.
