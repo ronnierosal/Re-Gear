@@ -33,6 +33,27 @@ def contract(**changes: object) -> TelemetryCollectionContract:
 
 
 class TelemetryAdmissionTests(unittest.TestCase):
+    def test_auto_tdp_requires_explicit_enable_known_game_and_tighter_measured_budget(self):
+        measured = contract(consumer=TelemetryConsumer.AUTO_TDP, interval_ms=1_000)
+        for enabled in (False, None, 1, "true"):
+            self.assertEqual(admit_telemetry_collection(measured, GameState.RUNNING, auto_tdp_enabled=enabled).kind, TelemetryAdmissionKind.REJECT)
+        self.assertEqual(admit_telemetry_collection(measured, GameState.RUNNING, auto_tdp_enabled=True).kind, TelemetryAdmissionKind.ADMIT)
+        for game in (GameState.IDLE, GameState.UNKNOWN, "running"):
+            self.assertEqual(admit_telemetry_collection(measured, game, auto_tdp_enabled=True).kind, TelemetryAdmissionKind.DEFER)
+        for changes in ({"benchmarked": False}, {"measured_collection_cost_ms": 11}):
+            value = contract(consumer=TelemetryConsumer.AUTO_TDP, interval_ms=1_000, **changes)
+            self.assertEqual(admit_telemetry_collection(value, GameState.RUNNING, auto_tdp_enabled=True).kind, TelemetryAdmissionKind.REJECT)
+        self.assertEqual(admit_telemetry_collection(contract(), GameState.RUNNING, auto_tdp_enabled=True).kind, TelemetryAdmissionKind.DEFER)
+
+    def test_contract_rejects_nonfinite_fractional_and_untyped_cost_evidence(self):
+        for field in ("interval_ms", "measured_collection_cost_ms"):
+            for value in (True, float("nan"), float("inf"), 1.5, "1000"):
+                with self.subTest(field=field, value=value), self.assertRaises(ValueError):
+                    contract(**{field: value})
+        for changes in ({"benchmarked": 1}, {"consumer": "auto_tdp"}, {"metrics": ("fps",)}):
+            with self.assertRaises(ValueError):
+                contract(**changes)
+
     def test_unbenchmarked_or_expensive_periodic_collection_is_rejected(self):
         unbenchmarked = admit_telemetry_collection(
             contract(benchmarked=False), GameState.IDLE
