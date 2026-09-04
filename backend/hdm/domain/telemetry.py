@@ -76,13 +76,17 @@ class TelemetryCollectionContract:
     benchmarked: bool
 
     def __post_init__(self) -> None:
+        if not isinstance(self.consumer, TelemetryConsumer) or type(self.benchmarked) is not bool:
+            raise ValueError("telemetry consumer and benchmark evidence are invalid")
+        if any(not isinstance(metric, TelemetryMetric) for metric in self.metrics):
+            raise ValueError("telemetry contract metric identity is invalid")
         if not self.metrics or len(self.metrics) > len(TelemetryMetric):
             raise ValueError("telemetry contract metrics are invalid")
         if len(self.metrics) != len(set(self.metrics)):
             raise ValueError("telemetry contract metrics must be unique")
-        if self.interval_ms < 1_000:
+        if type(self.interval_ms) is not int or self.interval_ms < 1_000:
             raise ValueError("telemetry interval must be at least one second")
-        if self.measured_collection_cost_ms <= 0:
+        if type(self.measured_collection_cost_ms) is not int or self.measured_collection_cost_ms <= 0:
             raise ValueError("telemetry collection cost must be positive")
 
 
@@ -100,7 +104,8 @@ class TelemetryAdmission:
 
 
 def admit_telemetry_collection(
-    contract: TelemetryCollectionContract, game_state: GameState
+    contract: TelemetryCollectionContract, game_state: GameState, *,
+    auto_tdp_enabled: bool = False,
 ) -> TelemetryAdmission:
     """Admit only measured, low-cost collection under the shared runtime budget.
 
@@ -121,6 +126,17 @@ def admit_telemetry_collection(
             0,
             "telemetry.collection_cost_exceeds_budget",
         )
+    if contract.consumer is TelemetryConsumer.AUTO_TDP:
+        # Gameplay control is useful only during a known running workload. It
+        # has a separate explicit opt-in; optional diagnostics remain deferred.
+        # This admits collection only, never a power change or a scheduler.
+        if auto_tdp_enabled is not True:
+            return TelemetryAdmission(TelemetryAdmissionKind.REJECT, 0, "telemetry.auto_tdp_disabled")
+        if game_state is not GameState.RUNNING:
+            return TelemetryAdmission(TelemetryAdmissionKind.DEFER, 5_000, "telemetry.auto_tdp_game_not_running")
+        if contract.measured_collection_cost_ms * 100 > contract.interval_ms:
+            return TelemetryAdmission(TelemetryAdmissionKind.REJECT, 0, "telemetry.auto_tdp_cost_exceeds_budget")
+        return TelemetryAdmission(TelemetryAdmissionKind.ADMIT, 0, "telemetry.auto_tdp_collection_admitted")
     work = (
         RuntimeWorkKind.EXPLICIT_DIAGNOSTICS
         if contract.consumer is TelemetryConsumer.PLAYER_DIAGNOSTICS

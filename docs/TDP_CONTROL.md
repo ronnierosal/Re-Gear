@@ -103,6 +103,20 @@ choice can become a runtime implementation.
 - A feedback algorithm may be implemented and simulated before a real collector
   is available, but remains disabled until its data and actuator are validated.
 
+## Read-only telemetry foundation
+
+`GamescopePerformanceReader` is a bounded, one-shot candidate reader for the
+Gamescope v6 performance protocol. It verifies the target process identity and
+socket peer before returning one timestamped frame-time observation; it does not
+change display, GPU, refresh, or game settings. `TdpSensorDiscovery` inventories
+labelled thermal and power-source evidence without treating battery-terminal
+power as APU consumption. Missing, ambiguous, invalid, or stale evidence remains
+unavailable. Neither reader is scheduled or connected to an Auto TDP writer.
+
+The remaining gates are supported-profile discovery, exact game/session binding,
+aggregation, measured collection cost, and hardware validation. These readers
+are not proof that Auto TDP can run on the Ally.
+
 ## Ordered implementation
 
 1. Fix non-finite thermal readings being classified Normal; add regression
