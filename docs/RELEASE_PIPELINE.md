@@ -1,5 +1,16 @@
 # Release-candidate pipeline
 
+## Ally ZIP location and cleanup
+
+Every Re-Gear/HDM ZIP transferred to the Ally must be placed directly in
+`/home/deck/`. Do not stage ZIP builds in `/home/deck/Downloads/`.
+
+Before transferring a new ZIP, verify the currently installed Re-Gear version
+and identify the newest candidate. Then delete superseded Re-Gear/HDM ZIP builds
+from both `/home/deck/` and `/home/deck/Downloads/`. Keep the newest required
+candidate only. Setup scripts, public keys, and other non-ZIP files may remain
+in Downloads when their documented setup flow requires it.
+
 HDM has a local, publish-ready candidate contract, not an automated release
 channel. `package.json` is the semantic-version source. The pipeline rejects a
 non-semantic version, a mismatched Python package version, a ZIP whose filename

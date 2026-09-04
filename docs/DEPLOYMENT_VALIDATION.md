@@ -407,7 +407,7 @@ maintainer's external development boundary.
 ## Package staging automation
 
 `scripts/stage_decky_update.py` may upload one already-built HDM ZIP to the
-fixed Decky user's `Downloads` directory and read back its SHA-256. It accepts
+fixed Decky user's `/home/deck/` directory and read back its SHA-256. It accepts
 only a complete archive carrying a committed revision and derives its remote
 filename exclusively from that verified metadata:
 
@@ -437,7 +437,7 @@ or alter displays, sleep, hardware, or the active session.
 The public verification key is installed once at
 `/var/lib/handheld-dock-mode/deploy-public-key.pem`; the corresponding private key
 must remain off the Ally and outside the repository. A package that is merely
-copied to Downloads is rejected unless its signature validates against that
+copied to `/home/deck/` is rejected unless its signature validates against that
 key. The helper therefore avoids turning a passwordless `sudo` rule into an
 arbitrary root-plugin installer.
 

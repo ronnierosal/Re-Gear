@@ -14,7 +14,7 @@ cat >/etc/sudoers.d/hdm-deploy-plugin <<'EOF'
 # Sudo authorizes only the immutable root-owned helper; it intentionally does
 # not repeat argument globs because SteamOS sudo parses those globs differently
 # from the shell.  The helper itself rejects every argument except an exact
-# fixed Downloads ZIP + matching signature, then verifies its public-key
+# fixed `/home/deck/` ZIP + matching signature, then verifies its public-key
 # signature and archive provenance before replacing anything.
 deck ALL=(root) NOPASSWD: /var/lib/handheld-dock-mode/hdm-deploy-plugin
 EOF
