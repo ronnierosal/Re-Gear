@@ -29,7 +29,8 @@ from hdm.adapters.steamos.commands import (  # noqa: E402
     SystemPowerCommandRunner,
     UserServiceCommandRunner,
 )
-from hdm.adapters.steamos.audio_handoff import G1AudioHandoff  # noqa: E402
+from hdm.adapters.steamos.audio_handoff import G1AudioHandoff, G1AudioReadiness  # noqa: E402
+from hdm.adapters.steamos.connection_readiness import G1ConnectionTopologyDiscovery  # noqa: E402
 from hdm.adapters.steamos.gamescope import GamescopeDiscovery  # noqa: E402
 from hdm.adapters.steamos.gamescope_session import (  # noqa: E402
     GamescopeSessionObservationAdapter,
@@ -87,6 +88,11 @@ from hdm.application.snapshot import report_to_public_dict  # noqa: E402
 from hdm.application.attach_readiness import (  # noqa: E402
     AttachReadinessLifecycle,
     AttachReadinessStage,
+)
+from hdm.application.connection_readiness import (  # noqa: E402
+    ConnectionReadinessLifecycle,
+    ConnectionReadinessObservation,
+    ConnectionReadinessStage,
 )
 from hdm.application.automatic_dock import (  # noqa: E402
     AutomaticDockCoordinator,
@@ -176,7 +182,7 @@ from hdm.domain.control_plane import (  # noqa: E402
     PlacementState,
     TransitionOutcomeKind,
 )
-from hdm.domain.models import GameState, GpuRole  # noqa: E402
+from hdm.domain.models import Confidence, EgpuLinkState, GameState, GpuRole  # noqa: E402
 from hdm.domain.inference import infer_placement  # noqa: E402
 from hdm.profiles.gpd_g1 import match_gpd_g1  # noqa: E402
 
@@ -232,6 +238,9 @@ class Plugin:
         self._topology_observation = None
         self._attach_readiness = AttachReadinessLifecycle()
         self._last_attach_readiness_code = self._attach_readiness.status().code
+        self._connection_readiness = ConnectionReadinessLifecycle()
+        self._connection_topology = G1ConnectionTopologyDiscovery()
+        self._last_connection_readiness_code = self._connection_readiness.status().code
         self._journey_clock_ns = time.monotonic_ns
         self._journey_timing_lock = threading.Lock()
         self._journey_started_ns: int | None = None
@@ -276,6 +285,14 @@ class Plugin:
             self._record_topology_observation, report.snapshot
         )
         payload["attach_readiness"] = attach_readiness_to_payload(attach_status)
+        connection = self._connection_readiness.status()
+        payload["connection_readiness"] = {
+            "schema_version": 1,
+            "stage": connection.stage.value,
+            "code": connection.code,
+            "poll_after_ms": connection.poll_after_ms,
+            "window_age_ms": connection.window_age_ms,
+        }
         await asyncio.to_thread(self._record_verbose_snapshot, payload)
         return payload
 
@@ -1436,6 +1453,27 @@ class Plugin:
                     self._automatic_dock_preferences().load
                 )
                 current = await asyncio.to_thread(observations.observe)
+                connection = await self._observe_connection_readiness(current)
+                if connection.code != self._last_connection_readiness_code:
+                    self._last_connection_readiness_code = connection.code
+                    self._append_journey_event(
+                        severity=(
+                            "warning"
+                            if connection.stage in {
+                                ConnectionReadinessStage.ACTION_REQUIRED,
+                                ConnectionReadinessStage.LINK_TRAINING_FAILED,
+                                ConnectionReadinessStage.TIMED_OUT,
+                            }
+                            else "info"
+                        ),
+                        code=connection.code,
+                        component="connection",
+                        stage=connection.stage.value,
+                        details={
+                            "poll_after_ms": connection.poll_after_ms,
+                            "window_age_ms": connection.window_age_ms,
+                        },
+                    )
                 completion = await asyncio.to_thread(
                     lambda: self._presentation_transition_service().reconcile_completion(current)
                 )
@@ -1462,37 +1500,33 @@ class Plugin:
                     delay_seconds = 5.0
                     await self._wait_for_topology(delay_seconds)
                     continue
-                readiness = await asyncio.to_thread(
-                    self._record_topology_observation, current.snapshot
-                )
-                if enabled and readiness.stage is AttachReadinessStage.IDLE:
-                    readiness = await asyncio.to_thread(
-                        self._attach_readiness.arm_current, current
-                    )
-                    with self._topology_lock:
-                        readiness_changed = (
-                            readiness.code != self._last_attach_readiness_code
-                        )
-                        self._last_attach_readiness_code = readiness.code
-                    if readiness_changed:
-                        self._record_attach_readiness_status(readiness)
                 decision = self._automatic_dock.update(
                     enabled=enabled,
-                    readiness=readiness,
+                    readiness=connection,
                     current=current,
                 )
                 delay_seconds = min(
-                    delay_seconds, readiness.poll_after_ms / 1_000
+                    delay_seconds, connection.poll_after_ms / 1_000
                 )
                 if (
                     self._topology_wakeup is not None
                     and self._topology_wakeup.available
-                    and readiness.stage is not AttachReadinessStage.SETTLING
+                    and connection.stage
+                    not in {
+                        ConnectionReadinessStage.TRANSPORT_DETECTED,
+                        ConnectionReadinessStage.WAITING_FOR_PCI,
+                        ConnectionReadinessStage.WAITING_FOR_DRIVER,
+                        ConnectionReadinessStage.WAITING_FOR_LINK,
+                        ConnectionReadinessStage.WAITING_FOR_HDMI,
+                        ConnectionReadinessStage.WAITING_FOR_AUDIO,
+                        ConnectionReadinessStage.WAITING_FOR_SESSION,
+                        ConnectionReadinessStage.STABILIZING,
+                    }
                 ):
                     delay_seconds = 5.0
                 if decision.status.stage is AutomaticDockStage.DOCKED:
                     delay_seconds = 15.0
-                elif readiness.stage is AttachReadinessStage.GAME_RUNNING:
+                elif connection.stage is ConnectionReadinessStage.GAME_RUNNING:
                     delay_seconds = 5.0
                 if decision.should_switch:
                     transition_started_ns = self._journey_now_ns()
@@ -1568,6 +1602,51 @@ class Plugin:
                     stage="automatic_dock",
                 )
             await self._wait_for_topology(delay_seconds)
+
+    async def _observe_connection_readiness(self, current):
+        """Collect each independent readiness fact without changing hardware."""
+        topology = await asyncio.to_thread(self._connection_topology.observe)
+        audio_ready = False
+        session_ready = False
+        if topology.g1_identity:
+            resolution = await asyncio.to_thread(
+                lambda: resolve_gamescope_user(GamescopeDiscovery().scan())
+            )
+            if resolution.ok and resolution.context is not None:
+                audio = await asyncio.to_thread(
+                    lambda: self._audio_readiness_service().observe(resolution.context)
+                )
+                audio_ready = audio.ready
+                session_ready = await asyncio.to_thread(
+                    lambda: GamescopeIntegrationStore(
+                        plugin_root=PLUGIN_ROOT, user=resolution.context
+                    ).status().ready
+                )
+        return self._connection_readiness.update(
+            ConnectionReadinessObservation(
+                sample_id=current.sample_id,
+                transport_identity=topology.transport_identity,
+                transport_present=topology.transport_present,
+                transport_absent_verified=topology.transport_absent_verified,
+                g1_identity=topology.g1_identity,
+                pci_complete=topology.pci_complete,
+                driver_ready=topology.driver_ready,
+                link_up=bool(
+                    topology.link_applicable
+                    and current.snapshot.egpu_link.applicable
+                    and current.snapshot.egpu_link.state is EgpuLinkState.UP
+                    and current.snapshot.egpu_link.confidence is Confidence.VERIFIED
+                ),
+                hdmi_ready=topology.hdmi_ready,
+                audio_ready=audio_ready,
+                session_ready=bool(
+                    session_ready
+                    and current.snapshot.gamescope.running is True
+                    and current.snapshot.gamescope.confidence is Confidence.VERIFIED
+                ),
+                game_state=current.snapshot.game_state,
+            )
+        )
 
     async def _wait_for_topology(self, delay_seconds: float) -> None:
         """Events are invalidations only; the next iteration re-collects evidence."""
@@ -1938,6 +2017,13 @@ class Plugin:
             state=PortableAudioStateStore(RootOwnedRuntimeState().ensure()),
             resolve_g1_audio_bdf=self._verified_g1_audio_bdf,
             report_result=self._record_audio_handoff_result,
+        )
+
+    def _audio_readiness_service(self) -> G1AudioReadiness:
+        return G1AudioReadiness(
+            commands=PipeWireCommandRunner(),
+            state=PortableAudioStateStore(RootOwnedRuntimeState().ensure()),
+            resolve_g1_audio_bdf=self._verified_g1_audio_bdf,
         )
 
     def _record_audio_handoff_result(self, target, result) -> None:

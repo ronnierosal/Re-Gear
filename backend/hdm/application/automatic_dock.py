@@ -9,6 +9,7 @@ from ..domain.control_plane import PlacementState
 from ..ports.transition import VersionedObservation
 from ..profiles.registry import ProfileResolutionStatus, resolve_runtime_profiles
 from .attach_readiness import AttachReadinessStage, AttachReadinessStatus
+from .connection_readiness import ConnectionReadinessStage, ConnectionReadinessStatus
 from ..domain.inference import infer_placement
 
 
@@ -55,7 +56,7 @@ class AutomaticDockCoordinator:
         self,
         *,
         enabled: bool,
-        readiness: AttachReadinessStatus,
+        readiness: AttachReadinessStatus | ConnectionReadinessStatus,
         current: VersionedObservation,
     ) -> AutomaticDockDecision:
         profiles = resolve_runtime_profiles(current.snapshot)
@@ -86,7 +87,10 @@ class AutomaticDockCoordinator:
             return AutomaticDockDecision(self._status)
         if self._attempted:
             return AutomaticDockDecision(self._status)
-        if readiness.stage is AttachReadinessStage.READY_IDLE:
+        if readiness.stage in {
+            AttachReadinessStage.READY_IDLE,
+            ConnectionReadinessStage.READY_IDLE,
+        }:
             if placement is not PlacementState.PORTABLE:
                 self._status = AutomaticDockStatus(
                     AutomaticDockStage.ACTION_REQUIRED,
@@ -99,9 +103,18 @@ class AutomaticDockCoordinator:
                 AutomaticDockStage.SWITCHING, "automatic_dock.switch_requested", True
             )
             return AutomaticDockDecision(self._status, current.generation)
-        if readiness.stage is AttachReadinessStage.SETTLING:
+        if readiness.stage in {
+            AttachReadinessStage.SETTLING,
+            ConnectionReadinessStage.STABILIZING,
+            ConnectionReadinessStage.TRANSPORT_DETECTED,
+        }:
             stage = AutomaticDockStage.SETTLING
-        elif readiness.stage is AttachReadinessStage.ACTION_REQUIRED:
+        elif readiness.stage in {
+            AttachReadinessStage.ACTION_REQUIRED,
+            ConnectionReadinessStage.ACTION_REQUIRED,
+            ConnectionReadinessStage.LINK_TRAINING_FAILED,
+            ConnectionReadinessStage.TIMED_OUT,
+        }:
             stage = AutomaticDockStage.ACTION_REQUIRED
         else:
             stage = AutomaticDockStage.WAITING

@@ -142,6 +142,13 @@ export interface SnapshotPayload {
     code: string;
     poll_after_ms: number;
   };
+  connection_readiness?: {
+    schema_version: number;
+    stage: "disconnected" | "transport_detected" | "waiting_for_pci" | "waiting_for_driver" | "waiting_for_link" | "waiting_for_hdmi" | "waiting_for_audio" | "waiting_for_session" | "game_running" | "stabilizing" | "ready_idle" | "link_training_failed" | "timed_out" | "action_required";
+    code: string;
+    poll_after_ms: number;
+    window_age_ms: number;
+  };
   /** Optional future read-only delivery for local journey classifiers. */
   journey?: {
     deferred_dock?: { state: string; code: string };

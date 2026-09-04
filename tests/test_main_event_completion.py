@@ -8,6 +8,10 @@ from tests.test_main_process_delivery import load_main_module
 from tests.test_automatic_dock import current, readiness
 from hdm.application.attach_readiness import AttachReadinessStage
 from hdm.application.attach_readiness import AttachReadinessStatus
+from hdm.application.connection_readiness import (
+    ConnectionReadinessStage,
+    ConnectionReadinessStatus,
+)
 from hdm.application.presentation_completion import PresentationCompletion
 from hdm.domain.control_plane import TransitionOutcomeKind
 
@@ -79,14 +83,17 @@ class MainEventCompletionTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(evidence["factory_on_event_loop"])
         self.assertTrue(evidence["heartbeat_during_factory"])
 
-    async def run_iteration(self, *, hold=False, stage=AttachReadinessStage.READY_IDLE, available=True):
+    async def run_iteration(self, *, hold=False, stage=ConnectionReadinessStage.READY_IDLE, available=True):
         plugin = self.module.Plugin()
         plugin._topology_wakeup = Monitor(available)
         plugin._automatic_dock_preferences = lambda: types.SimpleNamespace(load=lambda: True)
         observed = current("connected-internal.json")
-        plugin._record_topology_observation = lambda _: AttachReadinessStatus(
-            stage, "attach.test", 250 if stage is AttachReadinessStage.SETTLING else 1000
-        )
+        async def observe_connection(_current):
+            return ConnectionReadinessStatus(
+                stage, "connection.test",
+                500 if stage is ConnectionReadinessStage.STABILIZING else 1000,
+            )
+        plugin._observe_connection_readiness = observe_connection
         calls = []
         def execute(*args, **kwargs):
             calls.append("execute")
@@ -122,9 +129,9 @@ class MainEventCompletionTests(unittest.IsolatedAsyncioTestCase):
     async def test_unavailable_events_retain_polling_and_settling_remains_fast(self):
         _, waits = await self.run_iteration(available=False)
         self.assertEqual(waits, [1.0])
-        calls, waits = await self.run_iteration(stage=AttachReadinessStage.SETTLING)
+        calls, waits = await self.run_iteration(stage=ConnectionReadinessStage.STABILIZING)
         self.assertEqual(calls, [])
-        self.assertEqual(waits, [0.25])
+        self.assertEqual(waits, [0.5])
 
     async def test_actual_wait_forwards_timeout_and_unload_closes_listener(self):
         plugin = self.module.Plugin()
@@ -137,7 +144,7 @@ class MainEventCompletionTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(plugin._topology_wakeup)
 
     async def test_game_running_never_executes(self):
-        calls, waits = await self.run_iteration(stage=AttachReadinessStage.GAME_RUNNING)
+        calls, waits = await self.run_iteration(stage=ConnectionReadinessStage.GAME_RUNNING)
         self.assertEqual(calls, [])
         self.assertEqual(waits, [5.0])
 
