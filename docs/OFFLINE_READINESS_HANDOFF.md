@@ -128,6 +128,13 @@ local tests or enable collection merely by setting admission flags to true.
 
 ## Resume
 
+Latest reuse checkpoint (2026-09-04): added an attributed adaptation of Storage
+Cleaner's single-game detail request helper. See `THIRD_PARTY_NOTICES.md` and
+`src/steam-app-details-request.ts`. Six callback/timeout/abort/error tests and
+TypeScript passed. It is not wired to Steam: native subscription behavior and
+freshness still need review, and this async helper does not fit the existing
+synchronous read-local port. The selected-game-page request remains outstanding.
+
 Read this file, `OFFLINE_EVIDENCE_SOURCE_REVIEW.md`, `OFFLINE_READINESS_UI.md`,
 and current `git status`/diff in the worktree above. Continue only this mission.
 Update this checkpoint after each meaningful verified slice, preserving the

@@ -45,6 +45,23 @@ cloud query, or launcher invocation is justified by this research.
 
 ## Implemented candidate projection
 
+### Reused plugin code — 2026-09-04
+
+At the maintainer's request, inspected and adapted Storage Cleaner's
+[single-game details helper](https://github.com/mcarlucci/decky-storage-cleaner/blob/932e6876dbf94b6feb4b033401139b193f9cc79a/src/utils.ts)
+into `src/steam-app-details-request.ts`. It uses one subscription with a bounded
+timeout and cleanup. Re-Gear adds abort handling, immediate-callback safety,
+late/duplicate reply suppression, and strict private AppID validation. Six focused
+tests and TypeScript checking passed. Attribution/license details are in
+`THIRD_PARTY_NOTICES.md`.
+
+The plugin's README also identifies the local overview cloud field, corroborating
+our selected cache source. Its helper does not prove cache freshness or native
+subscription cost/network behavior. This async candidate has no production caller
+and must not be inserted into the synchronous local-memory service. Native source
+review and a separate asynchronous request boundary remain required. No storage
+cleanup or backup/sync code was imported or run.
+
 `backend/hdm/adapters/steamos/offline_steam_overview.py` consumes one supplied
 plain decoded overview with a private expected AppID. It accepts only a bound
 base game and the local client branch, with affirmative platform availability.
