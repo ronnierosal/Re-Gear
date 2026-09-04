@@ -51,7 +51,7 @@ class FakeCommands:
         self.fail_set = fail_set
         self.set_ids = []
 
-    def dump(self, user):
+    def dump(self, user, **kwargs):
         values = [
             self.device(50, "0000:64:00.6"),
             self.device(105, "0000:08:00.1"),
@@ -105,7 +105,89 @@ class FakeCommands:
         }
 
 
+def hide_external_sink(commands):
+    original = commands.dump
+    def dump(user, **kwargs):
+        result = original(user)
+        values = json.loads(result.output)
+        return AudioCommandResult(True, json.dumps([
+            v for v in values if v.get("id") != 101
+        ]).encode())
+    commands.dump = dump
+
+
 class G1AudioHandoffTests(unittest.TestCase):
+    def test_prepare_persists_rollback_before_hdmi_sink_exists(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            commands = FakeCommands()
+            hide_external_sink(commands)
+            self.assertTrue(self.handoff(root, commands).prepare_docked(USER).succeeded)
+            self.assertEqual(PortableAudioStateStore(root).load(), INTERNAL)
+            self.assertEqual(commands.set_ids, [])
+
+    def test_prepare_save_failure_blocks_activation(self):
+        commands = FakeCommands()
+        state = Mock(load=lambda: "", save=Mock(side_effect=OSError()))
+        handoff = G1AudioHandoff(commands=commands, state=state,
+                                resolve_g1_audio_bdf=lambda: "0000:08:00.1")
+        self.assertEqual(handoff.prepare_docked(USER).code, "audio.rollback_state_failed")
+        self.assertEqual(commands.set_ids, [])
+
+    def test_post_display_wait_handles_delayed_sink_and_remains_bounded(self):
+        for appears in (True, False):
+            with self.subTest(appears=appears), tempfile.TemporaryDirectory() as directory:
+                commands = FakeCommands()
+                original = commands.dump
+                polls = []
+                waits = []
+                def dump(user, **kwargs):
+                    polls.append(1)
+                    values = json.loads(original(user).output)
+                    if not appears or len(polls) <= 12:
+                        values = [v for v in values if v.get("id") != 101]
+                    return AudioCommandResult(True, json.dumps(values).encode())
+                commands.dump = dump
+                handoff = G1AudioHandoff(
+                    commands=commands, state=PortableAudioStateStore(Path(directory)),
+                    resolve_g1_audio_bdf=lambda: "0000:08:00.1",
+                    readiness_attempts=40, wait=waits.append,
+                )
+                self.assertTrue(handoff.prepare_docked(USER).succeeded)
+                result = handoff.switch(PlacementState.DOCKED_EGPU, USER)
+                self.assertEqual(result.succeeded, appears)
+                self.assertLessEqual(sum(waits), 9.75)
+                self.assertEqual(commands.set_ids, [101] if appears else [])
+
+    def test_slow_reads_respect_elapsed_sink_availability_deadline(self):
+        now = [0.0]
+        budgets = []
+        def dump(user, *, timeout_seconds=None):
+            budgets.append(timeout_seconds)
+            now[0] += min(5.0, timeout_seconds)
+            return AudioCommandResult(False, code="audio.command_timeout")
+        handoff = G1AudioHandoff(
+            commands=Mock(dump=dump), state=Mock(),
+            resolve_g1_audio_bdf=lambda: "0000:08:00.1", readiness_attempts=40,
+            clock=lambda: now[0], wait=lambda delay: now.__setitem__(0, now[0] + delay),
+        )
+        result = handoff._wait_for_external_sink(USER, "0000:08:00.1")
+        self.assertIsNone(result[0])
+        self.assertEqual(now[0], 10.0)
+        self.assertEqual(budgets, [10.0, 4.75])
+
+    def test_failed_default_verification_can_restore_durable_portable_audio(self):
+        with tempfile.TemporaryDirectory() as directory:
+            commands = FakeCommands()
+            handoff = self.handoff(Path(directory), commands)
+            self.assertTrue(handoff.prepare_docked(USER).succeeded)
+            handoff._verify_default = lambda user, expected: expected == INTERNAL
+            self.assertFalse(handoff.switch(PlacementState.DOCKED_EGPU, USER).succeeded)
+            self.assertEqual(commands.default, EXTERNAL)
+            self.assertTrue(handoff.switch(PlacementState.PORTABLE, USER).succeeded)
+            self.assertEqual(commands.default, INTERNAL)
+            self.assertEqual(commands.set_ids, [101, 62])
+
     def test_audio_result_callback_observes_success_and_cannot_break_switch(self):
         with tempfile.TemporaryDirectory() as directory:
             commands = FakeCommands()
@@ -130,7 +212,7 @@ class G1AudioHandoffTests(unittest.TestCase):
             commands = FakeCommands()
             original_dump = commands.dump
             alternative = INTERNAL + "-alternative"
-            def dump(user):
+            def dump(user, **kwargs):
                 values = json.loads(original_dump(user).output)
                 values.append(commands.sink(63, alternative, 50))
                 return AudioCommandResult(True, json.dumps(values).encode())
@@ -300,7 +382,7 @@ class G1AudioHandoffTests(unittest.TestCase):
             original_dump = commands.dump
             calls = 0
 
-            def dump(user):
+            def dump(user, **kwargs):
                 nonlocal calls
                 calls += 1
                 if calls == 2:
@@ -346,6 +428,28 @@ class G1AudioReadinessTests(unittest.TestCase):
             state=PortableAudioStateStore(root),
             resolve_g1_audio_bdf=resolve,
         )
+
+    def test_before_display_allows_only_absent_sink_with_verified_rollback(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            commands = FakeCommands()
+            hide_external_sink(commands)
+            readiness = self.readiness(root, commands)
+            self.assertFalse(readiness.observe(USER).ready)
+            result = readiness.observe_before_display(USER)
+            self.assertTrue(result.ready)
+            self.assertEqual(result.code, "audio.awaiting_display_activation")
+            self.assertEqual(result.rollback_sink_name, INTERNAL)
+            PortableAudioStateStore(root).save(INTERNAL + "-missing")
+            self.assertFalse(readiness.observe_before_display(USER).ready)
+            self.assertEqual(commands.set_ids, [])
+
+    def test_before_display_still_rejects_ambiguous_external_sinks(self):
+        with tempfile.TemporaryDirectory() as directory:
+            result = self.readiness(Path(directory), FakeCommands(
+                duplicate_external=True)).observe_before_display(USER)
+            self.assertFalse(result.ready)
+            self.assertEqual(result.code, "audio.external_sink_ambiguous")
 
     def test_exact_g1_sink_and_current_default_are_ready_without_mutation(self):
         with tempfile.TemporaryDirectory() as directory:

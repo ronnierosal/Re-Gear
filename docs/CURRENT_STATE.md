@@ -1,5 +1,16 @@
 # Current state
 
+## Re-Gear 0.3.25 audio activation candidate — 2026-09-04
+
+The [audio sequencing candidate](G1_AUDIO_ACTIVATION.md) separates pre-display
+rollback readiness from post-display HDMI audio proof. It preserves rollback
+before restart, bounds sink-availability polling, and requires the recovery
+mechanism even if the source display is already visible. No profile forcing or
+driver mutation was added. It includes the committed 0.3.24 UI lineage.
+Validation: 954 backend tests (six skipped), 110 frontend tests, architecture,
+compilation, TypeScript, production build and package checks passed. Candidate
+only: no installation or hardware validation by this workstream.
+
 ## Re-Gear 0.3.24 Home and Library tab refresh candidate — 2026-09-04
 
 The player reports missing Home artwork badges and unreliable badges after

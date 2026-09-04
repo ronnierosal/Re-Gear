@@ -62,6 +62,7 @@ issue**. Architectural possibility is not support.
   [operator handoff](OPERATOR_HANDOFF.md), [diagnostics](DIAGNOSTICS.md),
   [release pipeline](RELEASE_PIPELINE.md)
 - Reference ancestry: [eGPUBridge parity](EGPUBRIDGE_FEATURE_REVIEW.md)
+- Audio sequencing: [G1 audio activation candidate](G1_AUDIO_ACTIVATION.md)
 - Hardware incident evidence: [Ally X and GPD G1 automatic docking incident](ALLY_X_GPD_G1_DOCKING_INCIDENT_2026-09-02.md)
 - Public documentation: [Wiki source](../wiki/README.md) and
   [Wiki information architecture](WIKI_INFORMATION_ARCHITECTURE.md)

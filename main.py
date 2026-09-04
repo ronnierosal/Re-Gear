@@ -234,6 +234,7 @@ class Plugin:
         self._topology_wakeup_was_available = False
         self._connection_wake_source = "startup"
         self._last_completion_code = ""
+        self._last_audio_readiness_code = ""
         self._automatic_dock = AutomaticDockCoordinator()
         self._native_recovery_task: asyncio.Task[None] | None = None
         self._native_recovery = NativePortableRecoverySupervisor()
@@ -1627,9 +1628,15 @@ class Plugin:
             )
             if resolution.ok and resolution.context is not None:
                 audio = await asyncio.to_thread(
-                    lambda: self._audio_readiness_service().observe(resolution.context)
+                    lambda: self._audio_readiness_service().observe_before_display(resolution.context)
                 )
                 audio_ready = audio.ready
+                if audio.code != self._last_audio_readiness_code:
+                    self._last_audio_readiness_code = audio.code
+                    self._append_journey_event(
+                        severity="info" if audio.ready else "warning",
+                        code=audio.code, component="connection", stage="audio_preflight",
+                    )
                 session_ready = await asyncio.to_thread(
                     lambda: GamescopeIntegrationStore(
                         plugin_root=PLUGIN_ROOT, user=resolution.context
@@ -2037,6 +2044,7 @@ class Plugin:
             state=PortableAudioStateStore(RootOwnedRuntimeState().ensure()),
             resolve_g1_audio_bdf=self._verified_g1_audio_bdf,
             report_result=self._record_audio_handoff_result,
+            readiness_attempts=40,
         )
 
     def _audio_readiness_service(self) -> G1AudioReadiness:

@@ -132,6 +132,10 @@ class PresentationTransitionMechanism:
         if not self._user_still_current(user):
             return MechanismResult(False, f"{prefix}.user_changed")
         current = infer_placement(observation)
+        if self._audio is not None and target is PlacementState.DOCKED_EGPU:
+            prepared = self._audio.prepare_docked(user)
+            if not prepared.succeeded:
+                return MechanismResult(False, prepared.code)
         try:
             self._config.write_target(
                 target=target,

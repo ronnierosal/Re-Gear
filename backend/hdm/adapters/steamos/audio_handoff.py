@@ -80,6 +80,13 @@ class G1AudioReadiness:
         self._resolve_g1_audio_bdf = resolve_g1_audio_bdf
 
     def observe(self, user: GamescopeUserContext) -> AudioReadinessObservation:
+        return self._observe(user, before_display=False)
+
+    def observe_before_display(self, user: GamescopeUserContext) -> AudioReadinessObservation:
+        """Require rollback audio; an absent HDMI sink may await display activation."""
+        return self._observe(user, before_display=True)
+
+    def _observe(self, user: GamescopeUserContext, *, before_display: bool) -> AudioReadinessObservation:
         audio_bdf = _resolve_audio_bdf(self._resolve_g1_audio_bdf)
         if not audio_bdf:
             return AudioReadinessObservation(False, "audio.g1_identity_unverified")
@@ -89,7 +96,7 @@ class G1AudioReadiness:
         external = tuple(
             item for item in observed.sinks if item.device_bdf == audio_bdf
         )
-        if len(external) != 1:
+        if len(external) != 1 and not (before_display and not external):
             return AudioReadinessObservation(
                 False,
                 "audio.external_sink_ambiguous",
@@ -101,15 +108,15 @@ class G1AudioReadiness:
             return AudioReadinessObservation(
                 False,
                 "audio.rollback_sink_unavailable",
-                g1_sink_name=external[0].name,
-                g1_sink_object_id=external[0].object_id,
+                g1_sink_name=external[0].name if external else "",
+                g1_sink_object_id=external[0].object_id if external else -1,
                 default_sink_name=observed.default_sink_name,
             )
         return AudioReadinessObservation(
             True,
-            "audio.ready",
-            g1_sink_name=external[0].name,
-            g1_sink_object_id=external[0].object_id,
+            "audio.ready" if external else "audio.awaiting_display_activation",
+            g1_sink_name=external[0].name if external else "",
+            g1_sink_object_id=external[0].object_id if external else -1,
             rollback_sink_name=rollback[0].name,
             default_sink_name=observed.default_sink_name,
         )
@@ -126,12 +133,34 @@ class G1AudioHandoff:
         resolve_g1_audio_bdf: Callable[[], str],
         wait: Callable[[float], None] = time.sleep,
         report_result: Callable[[PlacementState, AudioHandoffResult], None] | None = None,
+        readiness_attempts: int = AUDIO_READY_ATTEMPTS,
+        clock: Callable[[], float] = time.monotonic,
     ) -> None:
+        if type(readiness_attempts) is not int or not 2 <= readiness_attempts <= 40:
+            raise ValueError("audio readiness attempts must be between 2 and 40")
+        self._readiness_attempts = readiness_attempts
+        self._clock = clock
         self._commands = commands
         self._state = state
         self._resolve_g1_audio_bdf = resolve_g1_audio_bdf
         self._wait = wait
         self._report_result = report_result
+
+    def prepare_docked(self, user: GamescopeUserContext) -> AudioHandoffResult:
+        """Persist verified source audio before any display restart is queued."""
+        ready = G1AudioReadiness(
+            commands=self._commands, state=self._state,
+            resolve_g1_audio_bdf=self._resolve_g1_audio_bdf,
+        ).observe_before_display(user)
+        if not ready.ready:
+            return AudioHandoffResult(False, ready.code)
+        try:
+            self._state.save(ready.rollback_sink_name)
+            if self._state.load() != ready.rollback_sink_name:
+                return AudioHandoffResult(False, "audio.rollback_state_failed")
+        except (OSError, ValueError):
+            return AudioHandoffResult(False, "audio.rollback_state_failed")
+        return AudioHandoffResult(True, "audio.rollback_prepared")
 
     def remember_portable(self, user: GamescopeUserContext) -> AudioHandoffResult:
         """Capture the current portable default before an eGPU attach occurs."""
@@ -233,8 +262,14 @@ class G1AudioHandoff:
         """Require two matching exact observations before changing audio."""
         prior: tuple[str, int] | None = None
         observed_any = False
-        for attempt in range(AUDIO_READY_ATTEMPTS):
-            observed = self._observe(user)
+        deadline = self._clock() + 10.0
+        for attempt in range(self._readiness_attempts):
+            remaining = deadline - self._clock()
+            if remaining <= 0:
+                break
+            observed = self._observe(user, timeout_seconds=remaining)
+            if self._clock() >= deadline:
+                break
             observed_any = observed_any or observed is not None
             external = (
                 tuple(item for item in observed.sinks if item.device_bdf == audio_bdf)
@@ -249,8 +284,11 @@ class G1AudioHandoff:
             if current is not None and current == prior:
                 return observed, external, True
             prior = current
-            if attempt + 1 < AUDIO_READY_ATTEMPTS:
-                self._wait(AUDIO_READY_INTERVAL_SECONDS)
+            if attempt + 1 < self._readiness_attempts:
+                remaining = deadline - self._clock()
+                if remaining <= 0:
+                    break
+                self._wait(min(AUDIO_READY_INTERVAL_SECONDS, remaining))
         return None, (), observed_any
 
     def rollback(
@@ -314,8 +352,8 @@ class G1AudioHandoff:
     def _resolve_bdf(self) -> str:
         return _resolve_audio_bdf(self._resolve_g1_audio_bdf)
 
-    def _observe(self, user: GamescopeUserContext) -> _PipeWireState | None:
-        return _observe_pipewire(self._commands, user)
+    def _observe(self, user: GamescopeUserContext, *, timeout_seconds: float | None = None) -> _PipeWireState | None:
+        return _observe_pipewire(self._commands, user, timeout_seconds=timeout_seconds)
 
 
 def _resolve_audio_bdf(resolve: Callable[[], str]) -> str:
@@ -327,9 +365,10 @@ def _resolve_audio_bdf(resolve: Callable[[], str]) -> str:
 
 
 def _observe_pipewire(
-    commands: PipeWireCommandRunner, user: GamescopeUserContext
+    commands: PipeWireCommandRunner, user: GamescopeUserContext,
+    *, timeout_seconds: float | None = None,
 ) -> _PipeWireState | None:
-    result = commands.dump(user)
+    result = commands.dump(user) if timeout_seconds is None else commands.dump(user, timeout_seconds=timeout_seconds)
     if not result.ok or not result.output or len(result.output) > MAX_DUMP_BYTES:
         return None
     try:

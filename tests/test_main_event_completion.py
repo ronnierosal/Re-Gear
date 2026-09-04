@@ -189,6 +189,25 @@ class MainEventCompletionTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(events[-1]["code"], "observation.wake." + source)
             self.assertEqual(events[-1]["stage"], "automatic_transition_observation")
 
+    async def test_connection_observer_uses_and_logs_pre_display_audio_readiness(self):
+        plugin = self.module.Plugin()
+        plugin._connection_topology = types.SimpleNamespace(observe=lambda: types.SimpleNamespace(
+            transport_identity="transport", transport_present=True,
+            transport_absent_verified=False, g1_identity="g1", pci_complete=True,
+            driver_ready=True, link_applicable=True, hdmi_ready=True))
+        plugin._audio_readiness_service = lambda: types.SimpleNamespace(
+            observe_before_display=lambda _: types.SimpleNamespace(
+                ready=True, code="audio.awaiting_display_activation"))
+        events = []
+        plugin._append_journey_event = lambda **event: events.append(event)
+        with patch.object(self.module, "GamescopeDiscovery", return_value=types.SimpleNamespace(scan=lambda: None)), patch.object(
+            self.module, "resolve_gamescope_user", return_value=types.SimpleNamespace(ok=True, context=object())
+        ), patch.object(self.module, "GamescopeIntegrationStore", return_value=types.SimpleNamespace(
+            status=lambda: types.SimpleNamespace(ready=True))):
+            result = await plugin._observe_connection_readiness(current("connected-internal.json"))
+        self.assertEqual(result.audio_samples, 1)
+        self.assertEqual(events[-1]["code"], "audio.awaiting_display_activation")
+
     async def test_game_running_never_executes(self):
         calls, waits = await self.run_iteration(stage=ConnectionReadinessStage.GAME_RUNNING)
         self.assertEqual(calls, [])
