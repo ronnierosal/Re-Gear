@@ -16,10 +16,14 @@ New tests exercise artwork-only recycling, duplicate tiles, startup focus,
 focus loss/game start, failed classification retry, and late classification.
 These are simulated checks, not native Steam visual or gameplay validation.
 
-SSH to the supplied Ally address timed out during this review. Installed version,
-G1 state, and current visible behavior could not be verified. The 0.3.23 archive
-is a local candidate; transfer is pending connectivity and installed-version
+A subsequent SSH retry succeeded. Installed metadata reports 0.3.22 revision
+`37daf74a025785b4c1b581fc6bba64eb735f32cd`; PCI observation shows the external
+AMD `1002:7480` GPU present. Do not install or restart while G1 is attached.
+Candidate 0.3.23 was copied to `/home/deck/Re-Gear-0.3.23.zip`; local and remote
+SHA-256 match `BFBB1BAC93BF986712551D908122624564E42A79153612F6966C9EA2D84EEC7A`.
+The enumerated superseded `/home/deck/Re-Gear-0.3.22.zip` was removed after hash
 verification. No installation, restart, or hardware transition was performed.
+Current visible badge behavior remains unverified.
 
 Remaining review limits: the badge expires after 30 seconds, cache is volatile,
 and manual/automatic attachment handles can overlap on the same tile. Native
