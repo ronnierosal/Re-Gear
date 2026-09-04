@@ -42,6 +42,24 @@ transaction internals.
 
 ## Status and error presentation
 
+### Re-Gear compact visual implementation
+
+Quick Access uses a single-column navy layout, cyan observed-mode cards, and an
+amber primary TV action. The cards are read-only status, not mode selectors;
+unknown, degraded, or loading evidence must not highlight a known placement.
+Health and game status remain visible above the cards. No unsupported Boosted,
+GPU tuning, or game-profile controls are offered.
+
+The Dock / eGPU disclosure uses only the existing snapshot to show independent
+active-display, render-GPU, and link observations. It starts no diagnostic RPCs.
+Automatic TV docking uses Decky's native sliding `ToggleField`, retaining its
+opt-in confirmation and unavailable/busy states. Native buttons retain their
+existing action guards, acknowledgement flows, and focus behavior. Troubleshoot
+remains the entry point for technical tools and secondary diagnostics.
+
+This layout requires on-device controller, text-fit, and scrolling validation;
+local component and contract tests are not evidence of hardware UX validation.
+
 - Prefer `eGPU`, `handheld`, `internal display`, and `external display` in normal
   UI. Exact Ally/G1 names belong in supported-hardware or diagnostic context.
 - State what HDM knows, what it cannot prove, and the safest next step.

@@ -362,21 +362,58 @@ function diagnosticLoggingLabel(status) {
     return `on · ${countdown}`;
 }
 
-/** Decorative icons never substitute for the independent, text-labelled facts. */
-const ICONS = {
-    Mode: { color: "#9baeff", path: "M3 5h18v12H3z M8 21h8 M12 17v4" },
-    Health: { color: "#7edbd2", path: "M12 3l8 3v6c0 5-8 9-8 9s-8-4-8-9V6z M7 12h3l2-4 2 8 2-4h2" },
-    Connection: { color: "#82caff", path: "M8 3v5 M16 3v5 M6 8h12v4a6 6 0 0 1-12 0z M12 18v4" },
-    Game: { color: "#c6adff", path: "M6 7h12l3 11h-5l-2-3h-4l-2 3H3z M6 11h5 M8.5 8.5v5 M16 10h.1 M18 12h.1" },
+/** Selection represents observed placement, never a clickable transition target. */
+function placementCards(mode, loading = false) {
+    return [
+        { name: "Portable", detail: "Internal GPU · Handheld screen", active: !loading && mode === "portable" },
+        { name: "TV Docked", detail: "External GPU · TV", active: !loading && mode === "tv_docked" },
+    ];
+}
+/** Bounded snapshot-only facts; opening this disclosure starts no extra requests. */
+function hardwareDetailRows(payload) {
+    const snapshot = payload?.snapshot;
+    const displays = snapshot?.displays.filter((display) => display.active === true);
+    const gpus = snapshot?.gpus.filter((gpu) => gpu.selected_for_render === true);
+    const displayKnown = displays && displays.length > 0
+        && displays.every((display) => display.confidence !== "unknown" && display.kind !== "unknown");
+    const gpu = gpus?.length === 1 ? gpus[0] : undefined;
+    const link = snapshot?.egpu_link;
+    return [
+        ["Active display", displayKnown
+                ? [...new Set(displays.map((display) => display.kind === "internal" ? "Handheld" : "External"))].join(" + ")
+                : "Unknown"],
+        ["Render GPU", gpu?.present && gpu.confidence !== "unknown" && gpu.role !== "unknown"
+                ? gpu.role === "internal" ? "Internal GPU" : "External GPU"
+                : "Unknown"],
+        ["eGPU link", link?.applicable && link.confidence !== "unknown"
+                ? link.state === "up" ? "Observed up" : link.state === "down" ? "Observed down" : "Unknown"
+                : "Unknown"],
+    ];
+}
+
+const colors = { cyan: "#26c9ff", text: "#edf4ff", muted: "#b6c9e3" };
+const paths = {
+    handheld: "M5 6h14l3 12h-5l-2-3H9l-2 3H2z M6 10h5 M8.5 7.5v5 M16 9h.1 M18 11h.1",
+    monitor: "M3 4h18v13H3z M8 21h8 M12 17v4",
+    connection: "M8 3v5 M16 3v5 M6 8h12v4a6 6 0 0 1-12 0z M12 18v4",
+    power: "M12 2v10 M6 5a9 9 0 1 0 12 0",
+    bolt: "M13 2L4 14h7l-1 8 10-12h-7z",
+    tools: "M14 3a6 6 0 0 0-7 7L2 15l7 7 5-5a6 6 0 0 0 7-7l-4 4-5-5z",
 };
-function StatusCard({ name, value }) {
-    const icon = ICONS[name] ?? ICONS.Mode;
-    return (SP_JSX.jsxs("div", { style: {
-            display: "flex", alignItems: "center", gap: 12, minWidth: 0,
-            padding: "12px", marginBottom: 8, borderRadius: 12,
-            border: "1px solid rgba(135, 164, 224, 0.32)",
-            background: "linear-gradient(120deg, rgba(62, 82, 128, 0.30), rgba(28, 39, 65, 0.35))",
-        }, children: [SP_JSX.jsx("svg", { width: "24", height: "24", viewBox: "0 0 24 24", "aria-hidden": "true", style: { color: icon.color, flexShrink: 0 }, fill: "none", stroke: "currentColor", strokeWidth: "1.8", strokeLinecap: "round", strokeLinejoin: "round", children: SP_JSX.jsx("path", { d: icon.path }) }), SP_JSX.jsxs("div", { style: { minWidth: 0, lineHeight: 1.4 }, children: [SP_JSX.jsx("div", { style: { fontSize: 12, opacity: 0.8 }, children: name }), SP_JSX.jsx("div", { style: { fontSize: 15, fontWeight: 600, overflowWrap: "anywhere" }, children: value })] })] }));
+function DashboardIcon({ kind }) {
+    return SP_JSX.jsx("svg", { width: "24", height: "24", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "1.7", strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": "true", style: { flexShrink: 0 }, children: SP_JSX.jsx("path", { d: paths[kind] }) });
+}
+function DashboardSurface({ children, primary = false }) {
+    return SP_JSX.jsx("div", { style: { borderRadius: 16, marginBottom: 12, minWidth: 0,
+            border: `1px solid ${primary ? "#ad8040" : "#304a6b"}`,
+            background: primary ? "linear-gradient(110deg, #302411, #111e30)" : "linear-gradient(120deg, #122139, #0a1423)",
+            color: colors.text }, children: children });
+}
+function QuickAccessOverview({ mode, modeLabel, health, game, loading }) {
+    return SP_JSX.jsxs("div", { style: { display: "grid", gap: 10, color: colors.text, minWidth: 0 }, children: [SP_JSX.jsxs("div", { style: { padding: "10px 12px", border: "1px solid #304a6b", borderRadius: 14, background: "#0b1728" }, children: [SP_JSX.jsx("div", { style: { fontSize: 16, fontWeight: 650 }, children: modeLabel }), SP_JSX.jsxs("div", { style: { display: "flex", flexWrap: "wrap", gap: "4px 12px", fontSize: 12, color: colors.muted }, children: [SP_JSX.jsxs("span", { children: ["Health: ", health] }), SP_JSX.jsxs("span", { children: ["Game: ", game] })] })] }), placementCards(mode, loading).map((card) => SP_JSX.jsxs("div", { style: { display: "flex", gap: 12, alignItems: "center", minWidth: 0, padding: "12px",
+                    borderRadius: 15, border: `1px solid ${card.active ? colors.cyan : "#30405b"}`,
+                    background: card.active ? "linear-gradient(115deg, #073351, #10203a)" : "#0b1525",
+                    boxShadow: card.active ? "inset 0 0 18px #00aaff15" : "none" }, children: [SP_JSX.jsx("span", { style: { color: card.active ? colors.cyan : "#91afd5", display: "flex" }, children: SP_JSX.jsx(DashboardIcon, { kind: card.name === "Portable" ? "handheld" : "monitor" }) }), SP_JSX.jsxs("div", { style: { minWidth: 0, overflowWrap: "anywhere" }, children: [SP_JSX.jsx("div", { style: { fontSize: 14, fontWeight: 650 }, children: card.name }), SP_JSX.jsx("div", { style: { fontSize: 12, color: colors.muted }, children: card.detail }), SP_JSX.jsx("div", { style: { fontSize: 11, color: card.active ? colors.cyan : colors.muted, marginTop: 4 }, children: card.active ? "✓ Current mode" : loading ? "Reading…" : "Not verified current · Status only" })] })] }, card.name))] });
 }
 
 const HEALTH_BLOCKER_MESSAGES = {
@@ -557,18 +594,6 @@ function quickAccessSectionVisibility(troubleshootingOpen) {
         diagnostics: troubleshootingOpen,
         navigation: troubleshootingOpen,
     };
-}
-/**
- * Keep the first screen to four player-facing facts. Technical evidence stays
- * behind the explicit troubleshooting control.
- */
-function atAGlanceRows(state) {
-    return [
-        ["Mode", state.mode],
-        ["Health", state.health],
-        ["Connection", state.connection],
-        ["Game", state.game],
-    ];
 }
 const JOURNEY_STATES = {
     deferred_dock: {
@@ -1222,6 +1247,7 @@ function Content({ preflight }) {
     const [automaticDockStatus, setAutomaticDockStatus] = SP_REACT.useState(null);
     const [automaticDockBusy, setAutomaticDockBusy] = SP_REACT.useState(false);
     const [automaticDockMessage, setAutomaticDockMessage] = SP_REACT.useState("");
+    const [showHardwareDetails, setShowHardwareDetails] = SP_REACT.useState(false);
     const [safeDisconnectBusy, setSafeDisconnectBusy] = SP_REACT.useState(false);
     const [safeDisconnectMessage, setSafeDisconnectMessage] = SP_REACT.useState("");
     const [dockedIgpuStatus, setDockedIgpuStatus] = SP_REACT.useState(null);
@@ -1436,6 +1462,7 @@ function Content({ preflight }) {
         const compact = compactStatusPanels();
         setShowDiagnostics(compact.showDiagnostics);
         setShowJourneyDetails(compact.showJourneyDetails);
+        setShowHardwareDetails(false);
         setDockedIgpuStatus(null);
         setDiagnosticLoggingStatus(null);
         setPeripheralStatus(null);
@@ -1977,6 +2004,7 @@ function Content({ preflight }) {
         const compact = compactStatusPanels();
         setShowDiagnostics(compact.showDiagnostics);
         setShowJourneyDetails(compact.showJourneyDetails);
+        setShowHardwareDetails(false);
         // Wait for the diagnostics section to collapse, then reset Steam's owning
         // scroll panel and move focus to a native in-panel control. A non-focusable
         // status div leaves controller navigation at Steam's QAM Back control.
@@ -2004,32 +2032,27 @@ function Content({ preflight }) {
         });
     }, []);
     const sectionVisibility = quickAccessSectionVisibility(showDiagnostics);
-    return (SP_JSX.jsx(SP_JSX.Fragment, { children: SP_JSX.jsxs("div", { ref: statusAnchor, tabIndex: -1, children: [SP_JSX.jsx(DFL.PanelSection, { title: "At a glance", children: SP_JSX.jsxs(DFL.Focusable, { ref: statusFocusAnchor, "aria-label": "Re-Gear status summary", onGamepadFocus: () => {
-                            if (statusAnchor.current)
-                                scrollToTopOfOwningPanel(statusAnchor.current);
-                        }, children: [atAGlanceRows({
-                                mode: loading ? "Reading…" : label(payload?.inference.mode ?? "unknown"),
-                                health: healthStatusLabel(payload?.health, loading),
-                                connection: progress.label,
-                                game: label(snapshot?.game_state ?? "unknown"),
-                            }).map(([name, value]) => (SP_JSX.jsx(StatusCard, { name: name, value: value }, name))), SP_JSX.jsx(DFL.PanelSectionRow, { children: progress.detail })] }) }), SP_JSX.jsxs(DFL.PanelSection, { title: "Safety & actions", children: [SP_JSX.jsxs("div", { ref: primaryControlAnchor, children: [SP_JSX.jsx(DFL.ToggleField, { label: "Automatic TV docking", description: automaticDockBusy
-                                        ? "Saving…"
-                                        : !automaticDockStatus
-                                            ? "Status unavailable"
-                                            : automaticDockStatus.enabled
-                                                ? label(automaticDockStatus.code)
-                                                : "Off · Ask before enabling", checked: automaticDockStatus?.enabled === true, disabled: automaticDockBusy || !automaticDockStatus, highlightOnFocus: true, onChange: toggleAutomaticDock }), automaticDockMessage && (SP_JSX.jsx(DFL.PanelSectionRow, { children: automaticDockMessage })), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", onClick: () => void executeTvSwitch(), disabled: tvSwitchBusy
-                                            || Boolean(tvSwitchAcknowledgementId)
-                                            || Boolean(journalStatus && journalStatus.code !== "journal.idle"), children: tvSwitchBusy ? "Switching…" : "Switch to TV now" }) }), tvSwitchMessage && SP_JSX.jsx(DFL.PanelSectionRow, { children: tvSwitchMessage }), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", onClick: requestSafeDisconnect, disabled: safeDisconnectBusy
-                                            || !disconnect?.applicable
-                                            || Boolean(tvSwitchAcknowledgementId)
-                                            || Boolean(journalStatus && journalStatus.code !== "journal.idle"), children: safeDisconnectBusy
-                                            ? "Checking…"
-                                            : payload?.inference.mode === "portable"
-                                                ? "Request shutdown for G1 disconnect"
-                                                : "Prepare G1 disconnect" }) }), safeDisconnectMessage && (SP_JSX.jsx(DFL.PanelSectionRow, { children: safeDisconnectMessage })), journalStatus && journalStatus.code !== "journal.idle" && (SP_JSX.jsx(DiagnosticRow, { name: "Safety journal", value: label(journalStatus.owner) })), journalMessage && SP_JSX.jsx(DFL.PanelSectionRow, { children: journalMessage }), journalStatus?.owner === "sleep"
+    return (SP_JSX.jsx(SP_JSX.Fragment, { children: SP_JSX.jsxs("div", { ref: statusAnchor, tabIndex: -1, children: [SP_JSX.jsxs(DFL.PanelSection, { title: "At a glance", children: [SP_JSX.jsx(DFL.Focusable, { ref: statusFocusAnchor, "aria-label": "Re-Gear status summary", onGamepadFocus: () => {
+                                if (statusAnchor.current)
+                                    scrollToTopOfOwningPanel(statusAnchor.current);
+                            }, children: SP_JSX.jsx(QuickAccessOverview, { mode: payload?.inference.mode ?? "unknown", modeLabel: loading ? "Reading…" : label(payload?.inference.mode ?? "unknown"), health: healthStatusLabel(payload?.health, loading), game: label(snapshot?.game_state ?? "unknown"), loading: loading }) }), SP_JSX.jsxs(DashboardSurface, { children: [SP_JSX.jsx(DFL.ButtonItem, { label: "Dock / eGPU", description: progress.label, icon: SP_JSX.jsx(DashboardIcon, { kind: "connection" }), layout: "inline", childrenContainerWidth: "min", onClick: () => setShowHardwareDetails((visible) => !visible), children: showHardwareDetails ? "Hide" : "Details" }), showHardwareDetails && SP_JSX.jsxs("div", { children: [hardwareDetailRows(payload).map(([name, value]) => SP_JSX.jsx(DiagnosticRow, { name: name, value: value }, name)), SP_JSX.jsx(DFL.PanelSectionRow, { children: progress.detail })] })] })] }), SP_JSX.jsxs(DFL.PanelSection, { title: "Safety & actions", children: [SP_JSX.jsxs("div", { ref: primaryControlAnchor, children: [SP_JSX.jsx(DashboardSurface, { primary: true, children: SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { icon: SP_JSX.jsx(DashboardIcon, { kind: "bolt" }), description: "Checks current readiness before switching displays", layout: "below", onClick: () => void executeTvSwitch(), disabled: tvSwitchBusy
+                                                || Boolean(tvSwitchAcknowledgementId)
+                                                || Boolean(journalStatus && journalStatus.code !== "journal.idle"), children: tvSwitchBusy ? "Switching…" : "Switch to TV now" }) }) }), tvSwitchMessage && SP_JSX.jsx(DFL.PanelSectionRow, { children: tvSwitchMessage }), SP_JSX.jsx(DashboardSurface, { children: SP_JSX.jsx(DFL.ToggleField, { label: "Automatic TV docking", layout: "inline", description: automaticDockBusy
+                                            ? "Saving…"
+                                            : !automaticDockStatus
+                                                ? "Status unavailable"
+                                                : automaticDockStatus.enabled
+                                                    ? label(automaticDockStatus.code)
+                                                    : "Off · Ask before enabling", checked: automaticDockStatus?.enabled === true, disabled: automaticDockBusy || !automaticDockStatus, highlightOnFocus: true, onChange: toggleAutomaticDock }) }), automaticDockMessage && (SP_JSX.jsx(DFL.PanelSectionRow, { children: automaticDockMessage })), SP_JSX.jsx(DashboardSurface, { children: SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { icon: SP_JSX.jsx(DashboardIcon, { kind: "power" }), description: "Return to handheld, then shut down. Keep the eGPU connected until fully powered off.", layout: "below", onClick: requestSafeDisconnect, disabled: safeDisconnectBusy
+                                                || !disconnect?.applicable
+                                                || Boolean(tvSwitchAcknowledgementId)
+                                                || Boolean(journalStatus && journalStatus.code !== "journal.idle"), children: safeDisconnectBusy
+                                                ? "Checking…"
+                                                : payload?.inference.mode === "portable"
+                                                    ? "Request shutdown for G1 disconnect"
+                                                    : "Prepare G1 disconnect" }) }) }), safeDisconnectMessage && (SP_JSX.jsx(DFL.PanelSectionRow, { children: safeDisconnectMessage })), journalStatus && journalStatus.code !== "journal.idle" && (SP_JSX.jsx(DiagnosticRow, { name: "Safety journal", value: label(journalStatus.owner) })), journalMessage && SP_JSX.jsx(DFL.PanelSectionRow, { children: journalMessage }), journalStatus?.owner === "sleep"
                                     && journalStatus.acknowledgement_required
-                                    && journalStatus.acknowledgement_id && (SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", onClick: () => void acknowledgePriorSleep(), disabled: journalBusy, children: journalBusy ? "Acknowledging…" : "Acknowledge prior sleep result" }) })), tvSwitchAcknowledgementId && (SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", onClick: () => void acknowledgeTvSwitch(), disabled: tvSwitchBusy, children: "Acknowledge prior display transition result" }) })), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { label: "Troubleshoot", description: "Connection checks, safety details, and support", layout: "inline", childrenContainerWidth: "min", onClick: toggleTroubleshooting, children: showDiagnostics ? "Hide" : "Show" }) })] }), needsAttention && (SP_JSX.jsx(DFL.PanelSectionRow, { children: error || healthAttention[0] || `${snapshot?.blockers.length} safety check${snapshot?.blockers.length === 1 ? "" : "s"} needs attention.` })), sectionVisibility.diagnostics && (SP_JSX.jsx(DFL.PanelSectionRow, { children: "Read-only status refreshes while this panel is open." })), sectionVisibility.diagnostics && sleepGuard?.required && sleepWarningHidden && (SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", onClick: showSleepWarning, children: "Show sleep warning again" }) }))] }), sectionVisibility.journey && (SP_JSX.jsxs(SP_JSX.Fragment, { children: [SP_JSX.jsxs(DFL.PanelSection, { title: "Journey status", children: [journeyRows.map((row) => (SP_JSX.jsx(DiagnosticRow, { name: row.name, value: row.value }, row.name))), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", onClick: toggleJourneyDetails, children: showJourneyDetails ? "Hide journey details" : "Open journey details" }) })] }), showJourneyDetails && (SP_JSX.jsx("div", { ref: journeyDetailsAnchor, children: SP_JSX.jsxs(DFL.PanelSection, { title: "Journey details", children: [SP_JSX.jsx(DFL.PanelSectionRow, { children: "Read-only local policy status. It does not perform dock, undock, recovery, or game actions." }), journeyDetailRows.map((row) => (SP_JSX.jsx(DiagnosticRow, { name: row.name, value: row.detail }, row.name)))] }) }))] })), sectionVisibility.sleepProtection && SP_JSX.jsxs(DFL.PanelSection, { title: "Sleep protection", children: [SP_JSX.jsx(DiagnosticRow, { name: "System inhibitor", value: loading
+                                    && journalStatus.acknowledgement_id && (SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", onClick: () => void acknowledgePriorSleep(), disabled: journalBusy, children: journalBusy ? "Acknowledging…" : "Acknowledge prior sleep result" }) })), tvSwitchAcknowledgementId && (SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", onClick: () => void acknowledgeTvSwitch(), disabled: tvSwitchBusy, children: "Acknowledge prior display transition result" }) })), SP_JSX.jsx(DashboardSurface, { children: SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { label: "Troubleshoot", icon: SP_JSX.jsx(DashboardIcon, { kind: "tools" }), description: "Connection checks, safety details, and support", layout: "inline", childrenContainerWidth: "min", onClick: toggleTroubleshooting, children: showDiagnostics ? "Hide" : "Show" }) }) })] }), needsAttention && (SP_JSX.jsx(DFL.PanelSectionRow, { children: error || healthAttention[0] || `${snapshot?.blockers.length} safety check${snapshot?.blockers.length === 1 ? "" : "s"} needs attention.` })), sectionVisibility.diagnostics && (SP_JSX.jsx(DFL.PanelSectionRow, { children: "Read-only status refreshes while this panel is open." })), sectionVisibility.diagnostics && sleepGuard?.required && sleepWarningHidden && (SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", onClick: showSleepWarning, children: "Show sleep warning again" }) }))] }), sectionVisibility.journey && (SP_JSX.jsxs(SP_JSX.Fragment, { children: [SP_JSX.jsxs(DFL.PanelSection, { title: "Journey status", children: [journeyRows.map((row) => (SP_JSX.jsx(DiagnosticRow, { name: row.name, value: row.value }, row.name))), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", onClick: toggleJourneyDetails, children: showJourneyDetails ? "Hide journey details" : "Open journey details" }) })] }), showJourneyDetails && (SP_JSX.jsx("div", { ref: journeyDetailsAnchor, children: SP_JSX.jsxs(DFL.PanelSection, { title: "Journey details", children: [SP_JSX.jsx(DFL.PanelSectionRow, { children: "Read-only local policy status. It does not perform dock, undock, recovery, or game actions." }), journeyDetailRows.map((row) => (SP_JSX.jsx(DiagnosticRow, { name: row.name, value: row.detail }, row.name)))] }) }))] })), sectionVisibility.sleepProtection && SP_JSX.jsxs(DFL.PanelSection, { title: "Sleep protection", children: [SP_JSX.jsx(DiagnosticRow, { name: "System inhibitor", value: loading
                                 ? "Checking…"
                                 : sleepGuard?.required
                                     ? sleepGuard.active

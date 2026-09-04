@@ -23,7 +23,7 @@ test("upward navigation reaches the native status focus stop before leaving HDM"
   const summary = source.slice(source.indexOf('<PanelSection title="At a glance">'), source.indexOf('<PanelSection title="Safety & actions">'));
   assert.match(summary, /<Focusable[\s\S]*ref=\{statusFocusAnchor\}/);
   assert.match(summary, /onGamepadFocus=\{[\s\S]*scrollToTopOfOwningPanel\(statusAnchor.current\)/);
-  assert.match(summary, /atAGlanceRows\([\s\S]*<\/Focusable>/);
+  assert.match(summary, /<QuickAccessOverview[\s\S]*<\/Focusable>/);
   assert.doesNotMatch(summary, /onActivate|onCancel|onGamepadDirection/);
   assert.match(source, /statusFocusAnchor.current \?\? primaryControlAnchor.current/);
 });
@@ -49,7 +49,8 @@ test("secondary sections stay hidden until the player opens Troubleshoot", () =>
 
 test("dashboard uses native preference controls without bypassing confirmation", () => {
   const source = readFileSync(new URL("../src/index.tsx", import.meta.url), "utf8");
-  assert.match(source, /<StatusCard key=\{name\} name=\{name\} value=\{value\}/);
+  assert.match(source, /<QuickAccessOverview/);
+  assert.match(source, /<DashboardSurface primary>/);
   assert.match(source, /<ToggleField[\s\S]*?checked=\{automaticDockStatus\?\.enabled === true\}/);
   assert.match(source, /disabled=\{automaticDockBusy \|\| !automaticDockStatus\}/);
   assert.match(source, /onChange=\{toggleAutomaticDock\}/);

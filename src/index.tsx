@@ -61,12 +61,12 @@ import {
 import { createDeckySteamSuspendAdapter } from "./decky-steam-suspend";
 import { deliverBlockedAttempt } from "./blocked-attempt-delivery";
 import { diagnosticOverlayRows } from "./diagnostics-overlay";
-import { StatusCard } from "./status-card";
+import { DashboardIcon, DashboardSurface, QuickAccessOverview } from "./quick-access-overview";
+import { hardwareDetailRows } from "./quick-access-dashboard";
 import { healthAttentionMessages, healthStatusLabel } from "./health-ui";
 import { decideLinkHealthNotification } from "./link-health-notification";
 import { sanitizeJourneyStatus } from "./journey-status-delivery";
 import {
-  atAGlanceRows,
   compactJourneyStatusRows,
   compactStatusPanels,
   quickAccessSectionVisibility,
@@ -461,6 +461,7 @@ function Content({ preflight }: { preflight: SleepPreflightCoordinator }) {
   const [automaticDockStatus, setAutomaticDockStatus] = useState<AutomaticDockStatusPayload | null>(null);
   const [automaticDockBusy, setAutomaticDockBusy] = useState(false);
   const [automaticDockMessage, setAutomaticDockMessage] = useState("");
+  const [showHardwareDetails, setShowHardwareDetails] = useState(false);
   const [safeDisconnectBusy, setSafeDisconnectBusy] = useState(false);
   const [safeDisconnectMessage, setSafeDisconnectMessage] = useState("");
   const [dockedIgpuStatus, setDockedIgpuStatus] = useState<DockedIgpuStatusPayload | null>(null);
@@ -702,6 +703,7 @@ function Content({ preflight }: { preflight: SleepPreflightCoordinator }) {
     const compact = compactStatusPanels();
     setShowDiagnostics(compact.showDiagnostics);
     setShowJourneyDetails(compact.showJourneyDetails);
+    setShowHardwareDetails(false);
     setDockedIgpuStatus(null);
     setDiagnosticLoggingStatus(null);
     setPeripheralStatus(null);
@@ -1311,6 +1313,7 @@ function Content({ preflight }: { preflight: SleepPreflightCoordinator }) {
     const compact = compactStatusPanels();
     setShowDiagnostics(compact.showDiagnostics);
     setShowJourneyDetails(compact.showJourneyDetails);
+    setShowHardwareDetails(false);
     // Wait for the diagnostics section to collapse, then reset Steam's owning
     // scroll panel and move focus to a native in-panel control. A non-focusable
     // status div leaves controller navigation at Steam's QAM Back control.
@@ -1356,22 +1359,56 @@ function Content({ preflight }: { preflight: SleepPreflightCoordinator }) {
             if (statusAnchor.current) scrollToTopOfOwningPanel(statusAnchor.current);
           }}
         >
-        {atAGlanceRows({
-          mode: loading ? "Reading…" : label(payload?.inference.mode ?? "unknown"),
-          health: healthStatusLabel(payload?.health, loading),
-          connection: progress.label,
-          game: label(snapshot?.game_state ?? "unknown"),
-        }).map(([name, value]) => (
-          <StatusCard key={name} name={name} value={value} />
-        ))}
-        <PanelSectionRow>{progress.detail}</PanelSectionRow>
+        <QuickAccessOverview
+          mode={payload?.inference.mode ?? "unknown"}
+          modeLabel={loading ? "Reading…" : label(payload?.inference.mode ?? "unknown")}
+          health={healthStatusLabel(payload?.health, loading)}
+          game={label(snapshot?.game_state ?? "unknown")}
+          loading={loading}
+        />
         </Focusable>
+        <DashboardSurface>
+          <ButtonItem
+            label="Dock / eGPU"
+            description={progress.label}
+            icon={<DashboardIcon kind="connection" />}
+            layout="inline"
+            childrenContainerWidth="min"
+            onClick={() => setShowHardwareDetails((visible) => !visible)}
+          >
+            {showHardwareDetails ? "Hide" : "Details"}
+          </ButtonItem>
+          {showHardwareDetails && <div>
+            {hardwareDetailRows(payload).map(([name, value]) => <DiagnosticRow key={name} name={name} value={value} />)}
+            <PanelSectionRow>{progress.detail}</PanelSectionRow>
+          </div>}
+        </DashboardSurface>
       </PanelSection>
 
       <PanelSection title="Safety & actions">
         <div ref={primaryControlAnchor}>
+          <DashboardSurface primary>
+          <PanelSectionRow>
+            <ButtonItem
+              icon={<DashboardIcon kind="bolt" />}
+              description="Checks current readiness before switching displays"
+              layout="below"
+              onClick={() => void executeTvSwitch()}
+              disabled={
+                tvSwitchBusy
+                || Boolean(tvSwitchAcknowledgementId)
+                || Boolean(journalStatus && journalStatus.code !== "journal.idle")
+              }
+            >
+              {tvSwitchBusy ? "Switching…" : "Switch to TV now"}
+            </ButtonItem>
+          </PanelSectionRow>
+          </DashboardSurface>
+          {tvSwitchMessage && <PanelSectionRow>{tvSwitchMessage}</PanelSectionRow>}
+          <DashboardSurface>
           <ToggleField
             label="Automatic TV docking"
+            layout="inline"
             description={automaticDockBusy
               ? "Saving…"
               : !automaticDockStatus
@@ -1384,25 +1421,15 @@ function Content({ preflight }: { preflight: SleepPreflightCoordinator }) {
             highlightOnFocus={true}
             onChange={toggleAutomaticDock}
           />
+          </DashboardSurface>
           {automaticDockMessage && (
             <PanelSectionRow>{automaticDockMessage}</PanelSectionRow>
           )}
+          <DashboardSurface>
           <PanelSectionRow>
             <ButtonItem
-              layout="below"
-              onClick={() => void executeTvSwitch()}
-              disabled={
-                tvSwitchBusy
-                || Boolean(tvSwitchAcknowledgementId)
-                || Boolean(journalStatus && journalStatus.code !== "journal.idle")
-              }
-            >
-              {tvSwitchBusy ? "Switching…" : "Switch to TV now"}
-            </ButtonItem>
-          </PanelSectionRow>
-          {tvSwitchMessage && <PanelSectionRow>{tvSwitchMessage}</PanelSectionRow>}
-          <PanelSectionRow>
-            <ButtonItem
+              icon={<DashboardIcon kind="power" />}
+              description="Return to handheld, then shut down. Keep the eGPU connected until fully powered off."
               layout="below"
               onClick={requestSafeDisconnect}
               disabled={
@@ -1419,6 +1446,7 @@ function Content({ preflight }: { preflight: SleepPreflightCoordinator }) {
                   : "Prepare G1 disconnect"}
             </ButtonItem>
           </PanelSectionRow>
+          </DashboardSurface>
           {safeDisconnectMessage && (
             <PanelSectionRow>{safeDisconnectMessage}</PanelSectionRow>
           )}
@@ -1446,9 +1474,11 @@ function Content({ preflight }: { preflight: SleepPreflightCoordinator }) {
               </ButtonItem>
             </PanelSectionRow>
           )}
+          <DashboardSurface>
           <PanelSectionRow>
             <ButtonItem
               label="Troubleshoot"
+              icon={<DashboardIcon kind="tools" />}
               description="Connection checks, safety details, and support"
               layout="inline"
               childrenContainerWidth="min"
@@ -1457,6 +1487,7 @@ function Content({ preflight }: { preflight: SleepPreflightCoordinator }) {
               {showDiagnostics ? "Hide" : "Show"}
             </ButtonItem>
           </PanelSectionRow>
+          </DashboardSurface>
         </div>
         {needsAttention && (
           <PanelSectionRow>
