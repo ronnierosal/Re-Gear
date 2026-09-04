@@ -1,5 +1,21 @@
 # G1 automatic lifecycle completion and event observation
 
+## Combined dashboard checkpoint — 2026-09-03
+
+- Integrated the committed compact dashboard from `e5d648d` onto the G1
+  lifecycle branch. Source merged cleanly; regenerated the conflicting source
+  map from combined source. Successful-journal UI clearance remains covered.
+- Verification: architecture, 873 backend tests (six skipped), compileall,
+  TypeScript, 77 frontend tests, build, package check and diff check passed.
+- Fresh read-only Ally capture still reports installed `1981259840ce`, exact
+  G1 present, internal display active, connected external display inactive,
+  and Idle game state. Protected render-selector evidence was unavailable;
+  non-interactive root capture was unavailable. No remote mutation occurred.
+- The combined candidate remains local and requires supervised installation
+  with G1 disconnected, followed by the acceptance sequence below. The player
+  currently reports Steam on Ally with G1 connected. Shutdown-before-removal
+  remains mandatory; this checkpoint does not resolve the shutdown hang.
+
 ## Goal
 
 Make normal Ally X/GPD G1 attachment use the proven display/audio transition

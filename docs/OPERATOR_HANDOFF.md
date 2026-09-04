@@ -1,5 +1,17 @@
 # Maintainer and agent handoff
 
+## Combined dashboard and G1 candidate — 2026-09-03
+
+UI commit `e5d648d` is integrated as `812b8d0` on the lifecycle branch, retaining
+event observation, durable Portable intent, audio and launcher fixes. Architecture,
+873 backend tests (six skipped), compileall, TypeScript, 77 frontend tests,
+build, package and diff checks passed. Read-only Ally evidence still identifies
+installed `1981259840ce`, G1 present and the internal display active. No deployment
+or hardware transition occurred. Next: package the clean combined revision, then
+supervised detached installation and the acceptance sequence in
+[the automation plan](G1_AUTOMATION_PLAN_2026-09-03.md). Physical poweroff must be
+confirmed before removal; shutdown reliability remains unresolved.
+
 ## Re-Gear local candidate
 
 The UI workstream's Re-Gear name and original supplied PNG are integrated with
