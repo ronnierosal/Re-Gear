@@ -93,6 +93,29 @@ provide a trustworthy timestamp and exact selected-game/session binding. Do not
 enable remote debugging, deploy a plugin, install an observer, or trigger a
 Steam refresh to obtain evidence under this workstream's current authority.
 
+### Installed static-source verification — 2026-09-04
+
+**REMOTELY OBSERVED:** read-only SSH succeeded using the maintainer-supplied
+current host and documented key/account with strict host-key checking. No
+credentials or destination address are retained in this record.
+
+Inspected four installed Steam UI JavaScript files, bounded to 32 MiB total.
+Installed `chunk~2dcc5aaf7.js` is 14,382,865 bytes, SHA-256
+`4a62cebec339c3e24e5394efcb507c9e7bddc3de7cec4dc2f891c699ca389bd6`.
+Its exact-AppID method only performs map membership/lookup. Its local-client
+getter selects client ID `"0"`, and the native overview registration symbol is
+present. These methods agree with the inspected upstream behavior; the artifact
+hash differs, so this is not whole-build equivalence.
+
+No remote file was created, no runtime JavaScript was evaluated, no listener was
+opened, and no service/install/device action ran. This closes the installed
+static-reader inspection gap only. Cache values, callback freshness, selected
+game binding, and reader cost have not been observed or benchmarked. Next:
+identify an already available read-only runtime observation surface without
+enabling debugging or installing an observer.
+
+### Request boundary
+
 The application service in `backend/hdm/application/offline_readiness.py` now
 implements one request's admission/revalidation/freshness boundary over an
 injected bounded local-memory reader. It does not manufacture source approval

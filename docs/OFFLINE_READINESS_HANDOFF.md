@@ -82,13 +82,19 @@ transition. No remote call has been attempted. When supplied, inspect only
 bounded installed client/source provenance first. Remote debugging activation,
 observer deployment, and forced refresh are outside current authority.
 
-Goal status: **Blocked awaiting the current maintainer-provided Ally SSH host**.
-The source-inspection turn made progress and first recorded this missing input;
-two subsequent goal turns revalidated the same blocker without new input or
-executable work. No remote task is running. The branch and gates were rechecked;
-more synthetic tests or speculative wiring cannot establish installed-source
-freshness or cost. Resume with the current host and the bounded read-only
-inspection above. The feature remains incomplete and undeployed.
+### Resume evidence — 2026-09-04
+
+The maintainer supplied the current host and read-only SSH succeeded. The prior
+missing-host blocker is resolved. Installed static-source inspection verified
+the exact-AppID map lookup and local-client getter; artifact details and limits
+are in `OFFLINE_EVIDENCE_SOURCE_REVIEW.md`. No installation was needed.
+
+No remote task remains running. Runtime cache data, callback timestamps,
+selection binding, and reader cost remain unmeasured. Next: identify an already
+available read-only runtime observation surface; do not enable debugging,
+install an observer, trigger refresh, or interfere with the G1 driver. The
+feature remains incomplete and undeployed. This resumed turn made progress;
+the former missing-host blocked audit no longer applies.
 
 ## Completion audit
 
