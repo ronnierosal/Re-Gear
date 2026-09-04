@@ -35,7 +35,7 @@ No driver unbind/reset, physical removal, shutdown, or force-kill was requested.
 - All 12 temporary override files and the experiment manifest were removed.
   Native Gamescope 10-second / Steam 60-second timeouts and SendSIGKILL=yes were
   re-observed, with both services active and no pending jobs.
-- Player confirmation of restored picture/audio/controls remains pending.
+- The maintainer confirmed restored Ally picture, audio, and built-in controls.
 
 ## Interpretation and next step
 
@@ -43,8 +43,8 @@ One orderly userspace session stop succeeded with the G1 attached. This does not
 reproduce complete machine shutdown or isolate the prior shutdown hang. Native
 session re-entry prevented a sustained stopped-session observation; force-killing
 these services is not supported by this result. Keep shutdown-before-removal.
-Confirm visible usability, then design bounded capture of the actual shutdown
-phase before another separately supervised poweroff. Do not disable native
+Visible usability is confirmed. Next, design bounded capture of the actual
+shutdown phase before another separately supervised poweroff. Do not disable native
 session re-entry, stop audio, or widen teardown authority from this result.
 
 ## Local evidence
@@ -55,3 +55,14 @@ Ignored operator artifacts under `out/`: `graceful-session-before.json`,
 `remote-captures/capture-20260904T044253Z.json`. The fixed streamed experiment
 script is retained locally as `graceful_session_experiment.py`; it is not a
 product feature or a reusable authorization to stop sessions.
+
+## Follow-up capture limitation
+
+A read-only coverage check found 18 previous-boot records whose JSON MESSAGE was
+an array, and no invalid JSON rows in that 2,000-row tail. The current classifier
+labels non-string MESSAGE fields malformed; its earlier malformed_journal status
+therefore does not establish corrupt journaling. The current-boot tail likewise
+contains array-valued messages. Both bounded tails contain only sparse kernel
+evidence. Review array-message handling and targeted shutdown coverage before
+relying on the collector to diagnose another poweroff. No journal configuration
+was changed.
