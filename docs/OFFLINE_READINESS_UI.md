@@ -6,6 +6,18 @@ validated. Library-tile badge designed; native tile integration pending.**
 
 ## Library-tile direction — user reference, 2026-09-04
 
+The maintainer's four SVG assets are now available under
+`src/assets/offline-readiness/`, imported from upstream commits
+`3d79706`, `f7506a4`, `2b5e0cf`, and `d5a31a5`. Use these supplied
+controller/status designs instead of the earlier proposed airplane symbol.
+`offline-ready.svg` maps to Ready to try offline (provide that exact accessible
+label at the component boundary); `offline-attention.svg` maps to Needs attention;
+`offline-verify.svg` maps to Online check needed. Reserve `offline-required.svg`
+for a future independently confirmed internet-required state: the current
+classifier has no such definitive category, so do not map unknown or a launcher
+check requirement to this red badge. Assets are present; tile rendering remains
+pending.
+
 The maintainer supplied a photo of a compact controller/checkmark badge in the
 lower-right of a Steam game tile and requested similar at-a-glance offline
 readiness. Make the library tile the intended glanceable entry point; retain
