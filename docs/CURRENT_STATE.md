@@ -1,5 +1,16 @@
 # Current state
 
+## Latest G1 checkpoint — 2026-09-03
+
+See [the package/audio incident record](G1_LIFECYCLE_VALIDATION_2026-09-03.md).
+Installed base `3a5d1620ddf8` failed a session restart because the launcher shipped
+CRLF. An approved in-place LF repair restored Steam; a subsequent TV picture/audio
+and return-to-Ally display/control cycle passed. Return audio remained HDMI and
+required manual selection. LF package enforcement, Portable audio baseline guards,
+and separate audio-result diagnostics are locally implemented with regression
+tests, not yet validated as a new installed build. Older entries below are
+historical. No live-removal claim has changed.
+
 Last repository audit baseline: **2026-09-02**. This page records a dated
 implementation baseline rather than attempting to name its own containing Git
 commit. Re-verify all mutable facts before a build, deployment, merge, or

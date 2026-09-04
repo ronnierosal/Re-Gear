@@ -173,12 +173,25 @@ from hdm.domain.control_plane import (  # noqa: E402
     PlacementState,
     TransitionOutcomeKind,
 )
-from hdm.domain.models import GameState  # noqa: E402
+from hdm.domain.models import GameState, GpuRole  # noqa: E402
 from hdm.domain.inference import infer_placement  # noqa: E402
 from hdm.profiles.gpd_g1 import match_gpd_g1  # noqa: E402
 
 
 MAX_JOURNEY_ELAPSED_MS = 24 * 60 * 60 * 1000
+
+
+def _can_remember_portable_audio(snapshot) -> bool:
+    """Do not let attached HDMI overwrite the pre-attach audio baseline."""
+    return (
+        infer_placement(snapshot) is PlacementState.PORTABLE
+        and snapshot.game_state is GameState.IDLE
+        and not snapshot.disconnect_readiness.applicable
+        and snapshot.disconnect_readiness.scan_complete
+        and not snapshot.sleep_guard.required
+        and not snapshot.egpu_link.applicable
+        and not any(gpu.role is GpuRole.EXTERNAL for gpu in snapshot.gpus)
+    )
 
 
 class Plugin:
@@ -1389,7 +1402,7 @@ class Plugin:
                     self._automatic_dock_preferences().load
                 )
                 current = await asyncio.to_thread(observations.observe)
-                if infer_placement(current.snapshot) is PlacementState.PORTABLE:
+                if _can_remember_portable_audio(current.snapshot):
                     resolution = await asyncio.to_thread(
                         lambda: resolve_gamescope_user(GamescopeDiscovery().scan())
                     )
@@ -1777,6 +1790,16 @@ class Plugin:
             commands=PipeWireCommandRunner(),
             state=PortableAudioStateStore(RootOwnedRuntimeState().ensure()),
             resolve_g1_audio_bdf=self._verified_g1_audio_bdf,
+            report_result=self._record_audio_handoff_result,
+        )
+
+    def _record_audio_handoff_result(self, target, result) -> None:
+        self._append_journey_event(
+            severity="info" if result.succeeded else "warning",
+            code=result.code,
+            component="audio",
+            stage="restore_portable" if target is PlacementState.PORTABLE else "select_tv",
+            details={"target": target.value, "succeeded": result.succeeded},
         )
 
     def _safe_disconnect_shutdown_service(self) -> SafeDisconnectShutdownService:

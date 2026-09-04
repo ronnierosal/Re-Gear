@@ -104,6 +104,90 @@ class FakeCommands:
 
 
 class G1AudioHandoffTests(unittest.TestCase):
+    def test_audio_result_callback_observes_success_and_cannot_break_switch(self):
+        with tempfile.TemporaryDirectory() as directory:
+            commands = FakeCommands()
+            reports = []
+            def report(target, result):
+                reports.append((target, result.code, result.succeeded))
+                raise RuntimeError("logging unavailable")
+            handoff = G1AudioHandoff(
+                commands=commands,
+                state=PortableAudioStateStore(Path(directory)),
+                resolve_g1_audio_bdf=lambda: "0000:08:00.1",
+                report_result=report,
+            )
+            self.assertTrue(handoff.switch(PlacementState.DOCKED_EGPU, USER).succeeded)
+            self.assertEqual(reports, [(PlacementState.DOCKED_EGPU, "audio.default_verified", True)])
+
+    def test_saved_portable_baseline_survives_a_different_current_sink(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            store = PortableAudioStateStore(root)
+            store.save(INTERNAL)
+            commands = FakeCommands()
+            original_dump = commands.dump
+            alternative = INTERNAL + "-alternative"
+            def dump(user):
+                values = json.loads(original_dump(user).output)
+                values.append(commands.sink(63, alternative, 50))
+                return AudioCommandResult(True, json.dumps(values).encode())
+            commands.dump = dump
+            commands.default = alternative
+            result = self.handoff(root, commands).switch(PlacementState.DOCKED_EGPU, USER)
+            self.assertTrue(result.succeeded)
+            self.assertEqual(store.load(), INTERNAL)
+            self.assertEqual(result.receipt.previous_sink_name, alternative)
+
+    def test_attached_hdmi_cannot_replace_portable_baseline(self):
+        for saved in ("", INTERNAL):
+            with self.subTest(saved=saved), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                store = PortableAudioStateStore(root)
+                if saved:
+                    store.save(saved)
+                commands = FakeCommands(default=EXTERNAL)
+                result = self.handoff(root, commands).remember_portable(USER)
+                self.assertFalse(result.succeeded)
+                self.assertEqual(result.code, "audio.portable_sink_is_egpu")
+                self.assertEqual(store.load(), saved)
+                self.assertEqual(commands.set_ids, [])
+
+    def test_corrupted_external_baseline_never_reports_portable_success(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            PortableAudioStateStore(root).save(EXTERNAL)
+            commands = FakeCommands(default=EXTERNAL)
+            result = self.handoff(root, commands).switch(PlacementState.PORTABLE, USER)
+            self.assertFalse(result.succeeded)
+            self.assertEqual(result.code, "audio.portable_sink_is_egpu")
+            self.assertEqual(commands.set_ids, [])
+
+    def test_dock_rejects_corrupted_external_rollback_even_if_already_selected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            PortableAudioStateStore(root).save(EXTERNAL)
+            commands = FakeCommands(default=EXTERNAL)
+            result = self.handoff(root, commands).switch(PlacementState.DOCKED_EGPU, USER)
+            self.assertFalse(result.succeeded)
+            self.assertEqual(result.code, "audio.rollback_sink_unavailable")
+            self.assertEqual(commands.set_ids, [])
+
+    def test_repeated_dock_portable_cycles_preserve_original_audio(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            commands = FakeCommands()
+            handoff = self.handoff(root, commands)
+            self.assertTrue(handoff.remember_portable(USER).succeeded)
+            for _ in range(3):
+                self.assertTrue(handoff.switch(PlacementState.DOCKED_EGPU, USER).succeeded)
+                # An attached Portable observation must not poison the baseline.
+                self.assertFalse(handoff.remember_portable(USER).succeeded)
+                self.assertTrue(handoff.switch(PlacementState.PORTABLE, USER).succeeded)
+                self.assertEqual(commands.default, INTERNAL)
+                self.assertEqual(PortableAudioStateStore(root).load(), INTERNAL)
+            self.assertEqual(commands.set_ids, [101, 62] * 3)
+
     def handoff(self, root, commands):
         return G1AudioHandoff(
             commands=commands,

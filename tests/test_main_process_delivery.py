@@ -243,6 +243,28 @@ def load_main_module():
 
 
 class MainProcessDeliveryTests(unittest.TestCase):
+    def test_portable_audio_capture_requires_detached_idle_verified_session(self):
+        portable = snapshot_from_dict(
+            json.loads((ROOT / "tests" / "fixtures" / "portable.json").read_text())
+        )
+        self.assertTrue(self.module._can_remember_portable_audio(portable))
+        blocked = (
+            replace(portable, game_state=GameState.RUNNING),
+            replace(portable, game_state=GameState.UNKNOWN),
+            replace(portable, disconnect_readiness=replace(
+                portable.disconnect_readiness, applicable=True)),
+            replace(portable, disconnect_readiness=replace(
+                portable.disconnect_readiness, scan_complete=False)),
+            replace(portable, sleep_guard=replace(portable.sleep_guard, required=True)),
+            replace(portable, egpu_link=replace(portable.egpu_link, applicable=True)),
+            replace(portable, gamescope=replace(portable.gamescope, confidence=Confidence.UNKNOWN)),
+            snapshot_from_dict(json.loads(
+                (ROOT / "tests" / "fixtures" / "connected-internal.json").read_text())),
+        )
+        for snapshot in blocked:
+            with self.subTest(snapshot=snapshot):
+                self.assertFalse(self.module._can_remember_portable_audio(snapshot))
+
     @classmethod
     def setUpClass(cls):
         cls.module = load_main_module()

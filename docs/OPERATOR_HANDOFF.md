@@ -1,5 +1,14 @@
 # Maintainer and agent handoff
 
+## 2026-09-03 G1 package/audio correction
+
+Read [the evidence and next test](G1_LIFECYCLE_VALIDATION_2026-09-03.md) first.
+Installed `3a5d1620ddf8` has an approved in-place LF launcher repair and no longer
+matches the original ZIP. One TV picture/audio switch and Ally display/control
+return succeeded; audio required manual restoration to Ryzen HD Audio Controller.
+G1 remains attached; no physical removal was authorized. New local package/audio
+fixes need detached installation and a fresh Portable baseline before testing.
+
 This is the operational runbook and checkpoint history. The short mutable
 repository/build/deployment snapshot is [Current state](CURRENT_STATE.md).
 Historical entries here are evidence in their original context, not proof of a

@@ -314,6 +314,12 @@ rows. The existing 128-event rotation remains authoritative. No raw snapshot,
 arbitrary system log, durable consent, path, process identity, hardware
 identity, or upload is introduced.
 
+Audio handoff results also use normal journey events: component `audio`, stage
+`select_tv` or `restore_portable`, a categorical `audio.*` result code, target,
+and success boolean. No sink names, node IDs, or PCI identities are exported.
+These describe default-sink selection, not proof of audible output or movement
+of every existing stream. Reporting failure cannot interrupt the handoff.
+
 Low-frequency connection-journey changes are normal events and do not require
 verbose logging. Exact G1 presence, categorical attach-readiness changes,
 automatic or supervised presentation attempts/results, Portable-return results,
