@@ -1,5 +1,27 @@
 # Remote read-only validation
 
+## Previous-boot shutdown evidence
+
+After the maintainer confirms safe poweroff and a later boot, use the separate
+developer-only reader when investigating the attached-G1 shutdown delay:
+
+```text
+python scripts/capture_shutdown_evidence.py --host <ally-ip> --identity-file <ssh-key>
+```
+
+It runs one fixed previous-boot journal query, bounded to 2,000 rows, 4 MiB and
+10 seconds. Only allowlisted symptom counts, HDM unload checkpoint timings, and
+coverage categories leave the remote process. Raw logs, paths, identities, and
+exception text are not returned. The fixed payload hash identifies the reader,
+not the prior boot's installed build. It writes no remote files, never uses sudo,
+and does not enable persistent journaling or change shutdown behavior.
+
+No previous journal, permission denial, malformed or size-limited output are
+explicit evidence gaps. Even an observed tail is not a complete shutdown trace.
+Plugin unload can mean an update. An unload-complete marker, journal EOF, or new
+boot never proves physical poweroff; that field remains `unknown`. Do not use the
+reader to authorize unplugging. See [shutdown review](G1_SHUTDOWN_REVIEW_2026-09-03.md).
+
 The maintainer may capture bounded Ally state over SSH without installing a
 remote agent, opening a listener, or writing a file on the handheld.
 

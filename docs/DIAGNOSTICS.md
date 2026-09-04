@@ -1,5 +1,13 @@
 # Read-only diagnostics
 
+## Shutdown checkpoint evidence
+
+The existing Decky logger emits categorical unload stages and bounded elapsed
+milliseconds. Stages distinguish observer retirement, sleep-guard release, and
+plugin unload completion; none proves physical shutdown. No journal configuration,
+disk sync, poller, or new shutdown hook is added. Retention depends on SteamOS.
+See [shutdown review](G1_SHUTDOWN_REVIEW_2026-09-03.md) for evidence limits.
+
 ## Purpose
 
 The plugin exposes one privacy-safe JSON snapshot. It observes current state and

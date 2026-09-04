@@ -1,5 +1,14 @@
 # Maintainer and agent handoff
 
+## Shutdown follow-up while maintainer away — 2026-09-03
+
+[Shutdown review](G1_SHUTDOWN_REVIEW_2026-09-03.md): fan/LEDs remained on after
+the requested shutdown; final power state is unknown. No live actions performed.
+Local cleanup now tolerates failed owned observers before releasing its sleep
+guard and emits bounded journal checkpoints. This fixes a reproduced code defect,
+not a proven hardware-hang cause. The staged `bf1b2efde366` ZIP predates it.
+Inspect retained previous-boot evidence after a safe boot; SSH loss is not poweroff.
+
 ## 2026-09-03 G1 package/audio correction
 
 Read [the evidence and next test](G1_LIFECYCLE_VALIDATION_2026-09-03.md) first.

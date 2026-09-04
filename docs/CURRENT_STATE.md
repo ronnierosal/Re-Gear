@@ -1,5 +1,15 @@
 # Current state
 
+## Shutdown follow-up — 2026-09-03
+
+The latest maintainer report is an incomplete attached-G1 shutdown (fan and LEDs
+still on); eventual poweroff is unknown. The
+[shutdown review](G1_SHUTDOWN_REVIEW_2026-09-03.md) preserves the other hardware
+audit's safety findings. Local code now prevents an already-failed HDM observer
+from skipping owned sleep-guard cleanup and adds categorical unload checkpoints.
+A developer-only previous-boot journal collector adds no production polling or
+remote mutation. This is not a verified fix for the hardware shutdown hang.
+
 ## Latest G1 checkpoint — 2026-09-03
 
 See [the package/audio incident record](G1_LIFECYCLE_VALIDATION_2026-09-03.md).

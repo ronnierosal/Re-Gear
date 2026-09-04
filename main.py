@@ -1645,42 +1645,65 @@ class Plugin:
             await asyncio.sleep(1)
 
     async def _unload(self) -> None:
-        self._events.append(
-            severity="info",
-            code="plugin.unloading",
-            component="lifecycle",
-            stage="shutdown",
-        )
-        if self._automatic_dock_task is not None:
-            self._automatic_dock_task.cancel()
+        started_ns = self._journey_now_ns()
+        self._record_shutdown_checkpoint("unload_started", started_ns)
+        try:
+            self._events.append(
+                severity="info", code="plugin.unloading",
+                component="lifecycle", stage="shutdown",
+            )
+        except Exception:
+            pass
+        # An already-failed observer must not prevent retiring our other tasks
+        # or releasing the HDM-owned inhibitor. Never touch Steam/driver clients.
+        for attribute in (
+            "_automatic_dock_task", "_native_recovery_task",
+            "_docked_igpu_task", "_sleep_guard_task",
+        ):
+            task = getattr(self, attribute)
+            setattr(self, attribute, None)
+            if task is None:
+                continue
+            task.cancel()
             try:
-                await self._automatic_dock_task
+                await task
             except asyncio.CancelledError:
                 pass
-            self._automatic_dock_task = None
-        if self._native_recovery_task is not None:
-            self._native_recovery_task.cancel()
-            try:
-                await self._native_recovery_task
-            except asyncio.CancelledError:
-                pass
-            self._native_recovery_task = None
-        await self._stop_docked_igpu_lifecycle()
-        if self._sleep_guard_task is not None:
-            self._sleep_guard_task.cancel()
-            try:
-                await self._sleep_guard_task
-            except asyncio.CancelledError:
-                pass
-            self._sleep_guard_task = None
-        status = await asyncio.to_thread(self._sleep_guard.close)
-        decky.logger.info("HDM sleep guard released: active=%s", status.active)
+            except Exception:
+                self._record_shutdown_checkpoint("observer_stop_failed", started_ns)
+        self._docked_igpu_scheduler = None
+        self._record_shutdown_checkpoint("observers_stopped", started_ns)
+        self._record_shutdown_checkpoint("sleep_guard_release_started", started_ns)
+        try:
+            status = await asyncio.to_thread(self._sleep_guard.close)
+        except Exception:
+            self._record_shutdown_checkpoint("sleep_guard_release_failed", started_ns)
+            return
+        if status.active or status.error:
+            self._record_shutdown_checkpoint("sleep_guard_release_failed", started_ns)
+            return
+        self._record_shutdown_checkpoint("sleep_guard_released", started_ns)
+        self._record_shutdown_checkpoint("unload_complete", started_ns)
         # Do not drain asyncio's shared executor here. Cancellation stops the
         # coroutine that requested a read-only scan, but cannot cancel a scan
         # already running in a worker thread. Waiting for that worker can hold
         # Decky's unload hook past its five-second deadline and cause a forced
         # stop. Decky owns backend-process retirement after this hook returns;
         # HDM only owns and stops the tasks and resources it created.
+
+    def _record_shutdown_checkpoint(self, stage: str, started_ns: int) -> None:
+        """Existing journal only: no new collector, disk sync, or shutdown hook.
+
+        Plugin unload may be an update, not poweroff. Completion never proves
+        kernel teardown or physical poweroff; missing markers prove neither.
+        """
+        try:
+            elapsed = self._bounded_elapsed_ms(started_ns, self._journey_now_ns())
+            decky.logger.info(
+                "HDM shutdown checkpoint: stage=%s elapsed_ms=%s", stage, elapsed
+            )
+        except Exception:
+            pass
 
     async def _stop_docked_igpu_lifecycle(self) -> None:
         task = self._docked_igpu_task
