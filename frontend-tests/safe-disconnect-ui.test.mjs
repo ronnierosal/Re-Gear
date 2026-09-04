@@ -6,8 +6,8 @@ const source = readFileSync(new URL("../src/index.tsx", import.meta.url), "utf8"
 const backend = readFileSync(new URL("../src/backend.ts", import.meta.url), "utf8");
 
 test("safe disconnect returns Portable before offering confirmed shutdown", () => {
-  assert.match(source, /Prepare G1 disconnect/);
-  assert.match(source, /Request shutdown for G1 disconnect/);
+  assert.match(source, /Prepare to disconnect/);
+  assert.match(source, /Shut down to disconnect/);
   assert.match(source, /approveSupervisedPortableSwitch/);
   assert.match(source, /executeSupervisedPortableSwitch/);
   assert.match(source, /approveSafeDisconnectShutdown/);

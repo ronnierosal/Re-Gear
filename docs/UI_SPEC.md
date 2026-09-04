@@ -57,6 +57,14 @@ opt-in confirmation and unavailable/busy states. Native buttons retain their
 existing action guards, acknowledgement flows, and focus behavior. Troubleshoot
 remains the entry point for technical tools and secondary diagnostics.
 
+On-device photos exposed detached icons and narrow, mid-word label wrapping
+from `ButtonItem` label/action columns. Main dashboard actions now place icon,
+title, description, and chevron inside one native `DialogButton` with a
+32px icon tile / flexible text / 16px chevron grid. Do not put these icons in an external Item
+slot or add separate Details/Show buttons. Preserve native focus and disabled
+behavior; copy wraps at word boundaries. Automatic docking remains a native
+`ToggleField`, with inset padding rather than custom switch behavior.
+
 This layout requires on-device controller, text-fit, and scrolling validation;
 local component and contract tests are not evidence of hardware UX validation.
 

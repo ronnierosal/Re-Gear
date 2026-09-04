@@ -55,7 +55,7 @@ test("dashboard uses native preference controls without bypassing confirmation",
   assert.match(source, /disabled=\{automaticDockBusy \|\| !automaticDockStatus\}/);
   assert.match(source, /onChange=\{toggleAutomaticDock\}/);
   assert.match(source, /automaticDockModal.current = showAutomaticDockConfirmation\(/);
-  assert.match(source, /label="Troubleshoot"[\s\S]*?layout="inline"/);
+  assert.match(source, /<DashboardAction\s+title="Troubleshoot"[\s\S]*?expanded=\{showDiagnostics\}/);
 });
 
 test("at-a-glance UI remains compact and preserves progressive state labels", () => {

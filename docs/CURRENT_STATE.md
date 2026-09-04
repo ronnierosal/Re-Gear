@@ -1,5 +1,30 @@
 # Current state
 
+## Re-Gear 0.3.3 UI integration candidate — 2026-09-04
+
+This isolated packaging branch starts from G1 runtime
+`412b9dc8f6b573450e174fc87f15d4e48b56dd66` (0.3.2) and incorporates
+the UI-only changes from `75f441f`, `3a54108`, and `b83f324`.
+The backend, lifecycle code, RPC contracts, polling, safety conditions, and
+runtime journal acknowledgement retirement are preserved. Generated frontend
+outputs are rebuilt from this combined source, not copied from the UI branch.
+
+Package and Python versions are 0.3.3; the archive is `Re-Gear-0.3.3.zip`.
+Legacy Decky identity and internal `HandheldDockMode` directory are unchanged.
+Offline Play and Auto TDP workstream implementations are intentionally excluded.
+This is a local validation candidate, not a published release or installed build.
+Actual Decky controller/layout validation and G1-connected shutdown remain
+unverified for this candidate. No hardware operations are part of packaging.
+The dated observations below remain historical, not current device evidence.
+
+Local integration verification: 884 backend tests (6 skipped), 78 frontend
+tests, architecture, compileall, typecheck, fresh build and package checks pass.
+The production-action host surrogate passes 240/280/320px layout, keyboard-focus
+and disabled-state checks; this is not native Decky/controller proof. Every
+non-render statement in Content matches the runtime base; backend, main.py,
+RPC contracts and polling files have no differences. The UI regression assertion
+now matches the published polish's 32px icon tile and multiline style formatting.
+
 ## 0.3.2 local event-loop responsiveness repair — 2026-09-03
 
 The automatic loop constructed its presentation service on the event-loop
