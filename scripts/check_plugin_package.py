@@ -65,6 +65,14 @@ def main() -> int:
         if not (root / relative).is_file():
             failures.append(f"missing {relative}")
 
+    wrapper_path = root / "bin" / "gamescope"
+    if wrapper_path.is_file():
+        # read_text() silently translates CRLF, masking a Linux bad-interpreter
+        # failure. Check the actual executable bytes in checkouts/extracted ZIPs.
+        wrapper = wrapper_path.read_bytes()
+        if not wrapper.startswith(b"#!/usr/bin/python3\n") or b"\r" in wrapper:
+            failures.append("bin/gamescope must have an LF-only /usr/bin/python3 shebang and body")
+
     manifest_path = root / "plugin.json"
     if manifest_path.is_file():
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
