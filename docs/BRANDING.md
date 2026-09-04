@@ -8,6 +8,14 @@ their original wording.
 
 ## Presentation assets
 
+The 0.3.4 icon candidate uses the user-supplied, unmodified
+`docs/images/re-gear-decky-monochrome.jpg` for the Decky list and panel header.
+The earlier PNG artwork is retained. The JPEG is embedded locally in the bundle.
+The requested list rename is not implemented: inspected local Decky loader
+code overwrites exported frontend names with the backend plugin identity.
+Changing that identity requires upgrade/unload/settings migration verification;
+no CSS text replacement, loader patch, or identity migration is included here.
+
 `src/branding.ts` owns the UI display name. `docs/images/re-gear-icon.png` is the
 original detailed README artwork; `docs/images/re-gear-decky-icon.png` is the
 original simpler Decky artwork. Both are maintainer-approved and retained.

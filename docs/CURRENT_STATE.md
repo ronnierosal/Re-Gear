@@ -1,5 +1,14 @@
 # Current state
 
+## Re-Gear 0.3.4 icon candidate — 2026-09-04
+
+Based on the combined 0.3.3 candidate `3c182d6`, this update embeds the
+user-supplied monochrome JPEG as the Decky list and panel icon. Original artwork
+is retained. Backend, RPC, lifecycle, polling and safety logic are unchanged.
+The Decky list still uses the legacy plugin identity; the requested Re-Gear
+list rename is deferred pending a tested identity migration (see BRANDING.md).
+This candidate is not installed or published and does not close hardware gates.
+
 ## Re-Gear 0.3.3 UI integration candidate — 2026-09-04
 
 This isolated packaging branch starts from G1 runtime
