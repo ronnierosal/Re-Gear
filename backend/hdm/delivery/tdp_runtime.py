@@ -1,4 +1,4 @@
-"""On-demand Decky power controls; no background collector or automatic writer."""
+"""Single TDP transaction owner with optional explicitly configured Auto worker."""
 
 from __future__ import annotations
 
@@ -7,7 +7,18 @@ from dataclasses import asdict
 from typing import Callable, Protocol
 
 from ..application.tdp_control import TdpControlResult, TdpControlService
-from ..ports.tdp import TdpJournal, TdpProvider
+from ..application.auto_tdp_session import AutoTdpActuator, AutoTdpSession
+from ..domain.auto_tdp import AutoTdpPolicy
+from ..ports.tdp import TdpDispatchGuard, TdpJournal, TdpProvider
+from .auto_tdp_worker import AutoTdpWorker, AutoTdpWorkerStatus
+
+
+class _AutoActuator:
+    def __init__(self, runtime: TdpRuntime):
+        self._runtime = runtime
+
+    def apply(self, watts: int, *, dispatch_guard: TdpDispatchGuard) -> TdpControlResult:
+        return self._runtime._apply_auto(watts, dispatch_guard)
 
 
 class WriterLease(Protocol):
@@ -31,6 +42,7 @@ class TdpRuntime:
         self, *, provider_factory: Callable[[Callable[[], bool]], TdpProvider],
         journal: TdpJournal, lease: WriterLease, preflight: Callable[[], str],
         service_factory: Callable[..., TdpControlService] = TdpControlService,
+        auto_session_factory: Callable[[AutoTdpActuator, TdpProvider], AutoTdpSession] | None = None,
     ) -> None:
         self._journal = journal
         self._lease = lease
@@ -41,6 +53,12 @@ class TdpRuntime:
         self._last_result: TdpControlResult | None = None
         self._provider = provider_factory(self._may_write)
         self._service = service_factory(self._provider, self._journal)
+        self._auto_factory = auto_session_factory
+        self._auto_worker: AutoTdpWorker | None = None
+        self._disable_requested = threading.Event()
+        self._auto_cancel = threading.Event()
+        self._auto_control_lock = threading.Lock()
+        self._auto_generation = 0
 
     def _may_write(self) -> bool:
         return (
@@ -63,10 +81,103 @@ class TdpRuntime:
             result["last_result"] = asdict(self._last_result) if self._last_result else None
             return result
         finally:
-            if self._closing.is_set():
-                self._enabled = False
-                self._lease.close()
+            self._release_operation()
+
+    def _release_operation(self) -> None:
+        try:
+            self._finish_operation()
+        finally:
             self._lock.release()
+        # A close/disable can arrive after cleanup checked flags but before
+        # unlock. Once unlocked, either we drain it or the new lock owner does.
+        while (self._disable_requested.is_set() or
+               (self._closing.is_set() and (self._enabled or self._lease.held))):
+            if not self._lock.acquire(blocking=False):
+                return
+            try:
+                self._finish_operation()
+            finally:
+                self._lock.release()
+
+    def _finish_operation(self) -> None:
+        # Caller holds the one transaction lock, including automatic apply.
+        if self._closing.is_set():
+            self._enabled = False
+            self._lease.close()
+            self._disable_requested.clear()
+        elif self._disable_requested.is_set():
+            self._disable()
+
+    def _disable(self) -> None:
+        try:
+            if self._journal.load() is not None:
+                if not self._lease.acquire():
+                    self._last_result = TdpControlResult("blocked", "tdp.writer_busy")
+                    return
+                self._enabled = True
+                self._last_result = self._service.restore()
+        except Exception:
+            self._last_result = TdpControlResult("recovery_required", "tdp.journal_unavailable")
+        finally:
+            self._enabled = False
+            self._lease.close()
+            self._disable_requested.clear()
+
+    def start_auto(self, policy: AutoTdpPolicy) -> AutoTdpWorkerStatus | None:
+        with self._auto_control_lock:
+            generation = self._auto_generation
+        if self._closing.is_set() or not self._lock.acquire(blocking=False):
+            return None
+        try:
+            if self._closing.is_set() or self._disable_requested.is_set() or self._auto_factory is None:
+                return None
+            with self._auto_control_lock:
+                if generation != self._auto_generation:
+                    return None
+                self._auto_cancel.clear()
+            if not self._status()["ready"]:
+                return None
+            if self._auto_worker is None:
+                session = self._auto_factory(_AutoActuator(self), self._provider)
+                self._auto_worker = AutoTdpWorker(session, interval_ms=session.collection_interval_ms)
+            if self._closing.is_set() or self._disable_requested.is_set() or self._auto_cancel.is_set():
+                self.stop_auto()
+                return None
+            status = self._auto_worker.start(policy)
+            if self._closing.is_set() or self._disable_requested.is_set() or self._auto_cancel.is_set():
+                return self._auto_worker.stop()
+            return status
+        except Exception:
+            self.stop_auto()
+            return None
+        finally:
+            self._release_operation()
+
+    def stop_auto(self) -> AutoTdpWorkerStatus | None:
+        with self._auto_control_lock:
+            self._auto_generation += 1
+            self._auto_cancel.set()
+        worker = self._auto_worker
+        return worker.stop() if worker is not None else None
+
+    def auto_status(self) -> AutoTdpWorkerStatus | None:
+        worker = self._auto_worker
+        return worker.status() if worker is not None else None
+
+    def _apply_auto(self, watts: int, guard: TdpDispatchGuard) -> TdpControlResult:
+        if self._closing.is_set():
+            return TdpControlResult("blocked", "tdp.closing", watts)
+        if not self._lock.acquire(blocking=False):
+            return TdpControlResult("blocked", "tdp.busy", watts)
+        try:
+            if self._closing.is_set() or self._disable_requested.is_set() or self._auto_cancel.is_set() or not self._enabled:
+                return TdpControlResult("blocked", "tdp.enable_required", watts)
+            if not callable(guard):
+                return TdpControlResult("blocked", "tdp.request_invalid", watts)
+            self._last_result = self._service.apply(watts, dispatch_guard=guard)
+            return self._last_result
+        finally:
+            self._release_operation()
 
     def status(self) -> dict[str, object]:
         return self._run(self._status)
@@ -118,8 +229,13 @@ class TdpRuntime:
     def set_enabled(self, enabled: bool) -> dict[str, object]:
         if type(enabled) is not bool:
             return unavailable_status("tdp.request_invalid")
+        if not enabled:
+            self._disable_requested.set()
+            self.stop_auto()
         def action():
             if enabled:
+                if self._disable_requested.is_set():
+                    return unavailable_status("tdp.busy")
                 before = self._status()
                 if not before["can_enable"]:
                     return before
@@ -128,19 +244,12 @@ class TdpRuntime:
                     return before
                 self._enabled = True
             else:
-                try:
-                    if self._journal.load() is not None:
-                        if not self._lease.acquire():
-                            return unavailable_status("tdp.writer_busy")
-                        self._enabled = True
-                        self._last_result = self._service.restore()
-                finally:
-                    self._enabled = False
-                    self._lease.close()
+                self._disable()
             return self._status()
         return self._run(action)
 
     def apply(self, watts: int) -> dict[str, object]:
+        self.stop_auto()
         def action():
             if not self._enabled:
                 output = self._status()
@@ -151,6 +260,7 @@ class TdpRuntime:
         return self._run(action)
 
     def restore(self) -> dict[str, object]:
+        self.stop_auto()
         def action():
             before = self._status()
             if not before["restore_available"]:
@@ -176,9 +286,6 @@ class TdpRuntime:
         The next loaded panel can explicitly restore a verified active record.
         """
         self._closing.set()
+        self.stop_auto()
         if self._lock.acquire(blocking=False):
-            try:
-                self._enabled = False
-                self._lease.close()
-            finally:
-                self._lock.release()
+            self._release_operation()
