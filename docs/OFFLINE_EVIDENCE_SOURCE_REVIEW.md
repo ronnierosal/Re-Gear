@@ -45,6 +45,36 @@ cloud query, or launcher invocation is justified by this research.
 
 ## Implemented candidate projection
 
+### Bazzite review — 2026-09-04
+
+Inspected Bazzite `09cca86e0476c8b58aa58bdfffc744e7b02cddd7` (Apache-2.0).
+Its [Steam launcher](https://github.com/ublue-os/bazzite/blob/09cca86e0476c8b58aa58bdfffc744e7b02cddd7/system_files/desktop/shared/usr/bin/bazzite-steam)
+bootstraps the client for first startup; it does not assess individual games.
+Its [updater integration](https://github.com/ublue-os/bazzite/blob/09cca86e0476c8b58aa58bdfffc744e7b02cddd7/system_files/desktop/shared/usr/libexec/uupd-update)
+operates an OS update service. Adjacent uupd
+[`updateCheck.go`](https://github.com/ublue-os/uupd/blob/fd09b47a1e56ba93cb84feffec8ceaa202462fdc/cmd/updateCheck.go)
+at `fd09b47a1e56ba93cb84feffec8ceaa202462fdc` (Apache-2.0) checks system updates,
+not Steam game content or cloud saves. No direct reader was found in the inspected
+Bazzite tracked files and uupd cmd/drv/pkg/checks trees. This is a scoped finding,
+not a claim about all dependencies. No code from these projects was imported.
+
+### One-shot native details evidence — 2026-09-04
+
+The maintainer authorized completing development remotely without player presence.
+A disposable request used the adapted Storage Cleaner helper in the existing
+Steam context. Installed diagnostics confirmed Idle before and after. One native
+registration and one removal completed, with callback elapsed time 28.2 ms and
+stable exact app reference. No files/settings/game actions were performed.
+
+The native callback supplied an installation-folder index, display status 19
+(UpdateQueued), cloud status 1 (Disabled), cloud availability false, account
+cloud enabled true, app cloud enabled false, and third-party updater false.
+`offline_steam_details.py` projects these into categorical evidence: update
+attention, no positive installation-completeness or cloud-sync claim. The
+corresponding redacted fixture is covered by tests. Account/title/AppID values
+are not retained. Callback receipt is a current report from the local client;
+it does not prove remote-server freshness, license validity, or offline launch.
+
 ### Reused plugin code — 2026-09-04
 
 At the maintainer's request, inspected and adapted Storage Cleaner's

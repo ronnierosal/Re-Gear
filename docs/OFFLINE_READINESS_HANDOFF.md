@@ -1,5 +1,9 @@
 # Offline Readiness delivery workstream
 
+**Current execution contract:** [remote completion plan](OFFLINE_COMPLETION_PLAN.md).
+The maintainer now requests remote completion with hands-on validation only at
+the end. That plan supersedes the older operator-presence assumptions below.
+
 ## Mission and ownership
 
 Help a player understand whether a game needs attention before leaving Wi-Fi.
@@ -127,6 +131,20 @@ and request/UI binding. Resume the goal when its input is available; do not mark
 local tests or enable collection merely by setting admission flags to true.
 
 ## Resume
+
+Latest checkpoint (2026-09-04): executed the reused app-details helper remotely
+for one bounded installed-game sample after verified Idle, and verified Idle
+again afterward. Received details in 28.2 ms, one registration/one removal,
+stable app object. Installation folder known; display status 19; cloud status 1;
+cloud unavailable, account-cloud enabled, app-cloud disabled, third-party updater
+false. No identity exported. Added the corresponding conservative callback-field
+projector; 39 focused offline tests, architecture, and compilation passed.
+
+This measures one request only, not a general benchmark. Native metadata callback
+receipt is not proof of server sync or launch authorization. Next implementation
+work is the async reader/selected-game flow and bounded repeated cost checks.
+No player presence is required for those development steps. Bazzite/updater
+research found no direct substitute in inspected source; see source review.
 
 Latest remote sample (2026-09-04): the user is away from the Ally and asked us to
 continue remotely. Source validation does not require the user to select a game;
