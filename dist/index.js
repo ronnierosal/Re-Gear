@@ -789,9 +789,11 @@ function diagnosticOverlayRows(payload, dockedIgpuStatus = null, loggingStatus =
         },
         {
             name: "eGPU attach",
-            value: payload.attach_readiness
-                ? `${humanize(payload.attach_readiness.stage)} · ${humanize(payload.attach_readiness.code)}`
-                : "unavailable",
+            value: payload.connection_readiness
+                ? `${humanize(payload.connection_readiness.stage)} · ${humanize(payload.connection_readiness.code)}`
+                : payload.attach_readiness
+                    ? `${humanize(payload.attach_readiness.stage)} · ${humanize(payload.attach_readiness.code)}`
+                    : "unavailable",
         },
         { name: "Snapshot schema", value: String(snapshot.schema_version) },
         { name: "Reported Re-Gear build", value: reportedBuildLabel(payload.diagnostics.build) },
@@ -1793,6 +1795,20 @@ const LABELS = {
     "journal.foreign_workflow": "Another workflow needs attention",
     "automatic_dock.rearmed_after_acknowledgement": "Re-checking attachment",
     "automatic_dock.suppressed_for_safe_disconnect": "Waiting for G1 removal",
+    "connection.disconnected": "Waiting for G1",
+    "connection.waiting_for_pci": "G1 detected; starting GPU",
+    "connection.waiting_for_driver": "Waiting for G1 graphics driver",
+    "connection.waiting_for_link": "Waiting for G1 PCIe link",
+    "connection.waiting_for_hdmi": "Waiting for G1 HDMI",
+    "connection.waiting_for_audio": "Waiting for G1 TV audio",
+    "connection.waiting_for_session": "Preparing Steam session",
+    "connection.game_running": "Waiting for game to close",
+    "connection.stabilizing": "Checking G1 connection stability",
+    "connection.ready_idle": "G1 ready for TV",
+    "connection.transport_dropped_before_pci": "G1 USB4 connection dropped while starting",
+    "connection.verified_absence_required": "Power off and disconnect G1 before retrying",
+    "connection.readiness_timed_out": "G1 did not become ready",
+    "connection.game_state_unknown": "Game state could not be verified",
     boosted_handheld: "Boosted Handheld",
     certified: "Certified",
     degraded: "Degraded",
