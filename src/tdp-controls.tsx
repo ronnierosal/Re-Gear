@@ -2,9 +2,11 @@ import { ButtonItem, DropdownItem, PanelSection, PanelSectionRow, ToggleField } 
 import { useEffect, useRef, useState } from "react";
 import { applyTdpLimit, getTdpStatus, restoreTdpLimit, setTdpEnabled, type TdpStatusPayload } from "./backend";
 import { sanitizeTdpStatus, tdpControls, tdpMessage, tdpResultMessage, TdpRequestGate } from "./tdp-ui";
+import { AutoTdpControls } from "./auto-tdp-controls";
 
 export function TdpControls({ visible }: { visible: boolean }) {
   const [expanded, setExpanded] = useState(false);
+  const [autoExpanded, setAutoExpanded] = useState(false);
   const [status, setStatus] = useState<TdpStatusPayload | null>(null);
   const [selected, setSelected] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
@@ -34,7 +36,7 @@ export function TdpControls({ visible }: { visible: boolean }) {
     return () => { mounted.current = false; };
   }, []);
   useEffect(() => {
-    if (!visible) { setExpanded(false); setStatus(null); setSelected(null); }
+    if (!visible) { setExpanded(false); setAutoExpanded(false); setStatus(null); setSelected(null); }
   }, [visible]);
   useEffect(() => {
     if (visible && expanded) void request(getTdpStatus);
@@ -48,21 +50,22 @@ export function TdpControls({ visible }: { visible: boolean }) {
 
   return <PanelSection title="Handheld power">
     <PanelSectionRow>
-      <ButtonItem layout="below" disabled={busy} onClick={() => { setStatus(null); setSelected(null); setExpanded((value) => !value); }}>
+      <ButtonItem layout="below" disabled={busy} onClick={() => { setStatus(null); setSelected(null); setAutoExpanded(false); setExpanded((value) => !value); }}>
         {expanded ? "Hide power controls" : "Show power controls"}
       </ButtonItem>
     </PanelSectionRow>
     {visible && expanded && <>
       <PanelSectionRow>{busy ? "Checking power settings…" : tdpMessage(status)}</PanelSectionRow>
       {!busy && tdpResultMessage(status) && <PanelSectionRow>Last request: {tdpResultMessage(status)}</PanelSectionRow>}
-      <PanelSectionRow>{status?.current_watts != null ? `Configured handheld power: ${status.current_watts} W` : "Configured handheld power: unavailable"}</PanelSectionRow>
+      <PanelSectionRow>{status?.current_watts != null ? `Last checked limit: ${status.current_watts} W` : "Last checked limit: unavailable"}</PanelSectionRow>
       <PanelSectionRow><span style={{ fontSize: "12px", opacity: 0.75 }}>This is the configured limit, not measured power use. Enable only after resolving other power controllers.</span></PanelSectionRow>
       <ToggleField label="Use Re-Gear power control" checked={status?.enabled ?? false} disabled={busy || !controls.canToggle} onChange={(enabled) => { if (controls.canToggle) void request(() => setTdpEnabled(enabled)); }} />
       <DropdownItem label="Power limit" rgOptions={options} selectedOption={selected ?? undefined} disabled={busy || !controls.canApply} onChange={(option) => { if (options.some((entry) => entry.data === option.data)) setSelected(option.data as number); }} />
       <PanelSectionRow><ButtonItem layout="below" disabled={busy || !controls.canApply || selected === null} onClick={() => { if (controls.canApply && selected !== null) void request(() => applyTdpLimit(selected)); }}>Apply power limit</ButtonItem></PanelSectionRow>
       <PanelSectionRow><ButtonItem layout="below" disabled={busy || !controls.canRestore} onClick={() => { if (controls.canRestore) void request(restoreTdpLimit); }}>Restore previous power settings</ButtonItem></PanelSectionRow>
       <PanelSectionRow><ButtonItem layout="below" disabled={busy} onClick={() => void request(getTdpStatus)}>Refresh power settings</ButtonItem></PanelSectionRow>
-      <PanelSectionRow>Auto TDP: In development</PanelSectionRow>
+      <PanelSectionRow><ButtonItem layout="below" onClick={() => setAutoExpanded((value) => !value)}>{autoExpanded ? "Hide Auto TDP" : "Show Auto TDP"}</ButtonItem></PanelSectionRow>
+      {autoExpanded && <AutoTdpControls manual={status} manualBusy={busy} manualMessage={tdpMessage(status)} onChanged={() => { void request(getTdpStatus); }} />}
     </>}
   </PanelSection>;
 }

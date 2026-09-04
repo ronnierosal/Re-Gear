@@ -536,7 +536,7 @@ export interface TdpStatusPayload {
   maximum_watts: number | null;
   restore_available: boolean;
   recovery_required: boolean;
-  auto_tdp_available: false;
+  auto_tdp_available: boolean;
   last_result: null | {
     state: string;
     code: string;
@@ -549,3 +549,20 @@ export const getTdpStatus = callable<[], TdpStatusPayload>("get_tdp_status");
 export const setTdpEnabled = callable<[boolean], TdpStatusPayload>("set_tdp_enabled");
 export const applyTdpLimit = callable<[number], TdpStatusPayload>("apply_tdp_limit");
 export const restoreTdpLimit = callable<[], TdpStatusPayload>("restore_tdp_limit");
+
+export interface AutoTdpStatusPayload {
+  schema_version: 1;
+  can_start: boolean;
+  enabled: boolean;
+  running: boolean;
+  stopping: boolean;
+  code: string;
+  activity_code: string | null;
+  target_fps: number | null;
+  minimum_watts: number | null;
+  maximum_watts: number | null;
+}
+
+export const getAutoTdpStatus = callable<[], AutoTdpStatusPayload>("get_auto_tdp_status");
+export const startAutoTdp = callable<[number, number, number], AutoTdpStatusPayload>("start_auto_tdp");
+export const stopAutoTdp = callable<[], AutoTdpStatusPayload>("stop_auto_tdp");

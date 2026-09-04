@@ -69,9 +69,10 @@ writes, with pending-request cancellation and drain tests. Backend checkpoint:
 Exact host/firmware/kernel/provider/range compatibility binding is implemented
 and checked on collection and dispatch. Strict private-file configuration loading
 is implemented/tested. Main now supplies the lazy factory and explicit Auto
-status/start/stop RPCs with request-bound cancellation. Frontend and benchmark RPC
-integration, provenance evidence, actual device measurements and user-facing
-availability explanations remain.
+status/start/stop RPCs with request-bound cancellation. Expandable frontend
+controls and availability explanations are implemented, with schema/race tests
+and mock browser interaction/layout checks. Benchmark RPC integration, provenance
+evidence, actual device measurements and native Decky/controller checks remain.
 
 | Priority | Work item and owner | Status | Acceptance evidence |
 | --- | --- | --- | --- |
