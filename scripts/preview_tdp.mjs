@@ -7,17 +7,33 @@ import ts from "typescript";
 const compile = (file) => ts.transpileModule(readFileSync(new URL(`../src/${file}`, import.meta.url), "utf8"), {
   compilerOptions: { jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
 }).outputText.replaceAll('"./backend"', '"./fixture.js"').replaceAll('"./tdp-ui"', '"./tdp-ui.js"')
-  .replaceAll('"./auto-tdp-ui"', '"./auto-tdp-ui.js"').replaceAll('"./auto-tdp-controls"', '"./auto-tdp-controls.js"');
+  .replaceAll('"./auto-tdp-ui"', '"./auto-tdp-ui.js"').replaceAll('"./auto-tdp-controls"', '"./auto-tdp-controls.js"')
+  .replaceAll('"./tdp-benchmark-controls"', '"./tdp-benchmark-controls.js"').replaceAll('"./tdp-benchmark-ui"', '"./tdp-benchmark-ui.js"');
 const files = new Map([
   ["/tdp-controls.js", compile("tdp-controls.tsx")],
   ["/tdp-ui.js", compile("tdp-ui.ts")],
   ["/auto-tdp-controls.js", compile("auto-tdp-controls.tsx")],
   ["/auto-tdp-ui.js", compile("auto-tdp-ui.ts")],
+  ["/tdp-benchmark-controls.js", compile("tdp-benchmark-controls.tsx")],
+  ["/tdp-benchmark-ui.js", compile("tdp-benchmark-ui.ts")],
   ["/fixture.js", `
 let state = {schema_version:1,enabled:false,can_enable:true,ready:false,code:'tdp.disabled',current_watts:15,minimum_watts:7,maximum_watts:30,restore_available:false,recovery_required:false,last_result:null,auto_tdp_available:true};
 let scenario='ready', generation=0;
 let auto={schema_version:1,can_start:false,enabled:false,running:false,stopping:false,code:'tdp.disabled',activity_code:null,target_fps:null,minimum_watts:null,maximum_watts:null};
 export const setScenario=(value)=>{scenario=value;};
+let benchmark={schema_version:1,running:false,cancelling:false,code:'auto_tdp.benchmark_idle',result:null};
+let benchmarkGeneration=0;
+export const getTdpBenchmarkStatus=async()=>scenario==='malformed'?{}:{...benchmark};
+export const cancelTdpBenchmark=async()=>{benchmarkGeneration++;benchmark={...benchmark,running:false,cancelling:false,code:'auto_tdp.benchmark_cancelled'};return {...benchmark};};
+export const runTdpBenchmark=async()=>{
+  if(scenario==='missing')return {...benchmark,code:'auto_tdp.configuration_missing'};
+  if(auto.running)return {...benchmark,code:'auto_tdp.benchmark_stop_auto_first'};
+  const token=benchmarkGeneration;benchmark={...benchmark,running:true,result:null};
+  await new Promise(resolve=>setTimeout(resolve,scenario==='slow'?5000:1200));
+  if(token!==benchmarkGeneration)return {...benchmark};
+  benchmark={...benchmark,running:false,code:'auto_tdp.benchmark_within_budget',result:{code:'auto_tdp.benchmark_within_budget',attempts:12,usable_samples:8,consecutive_samples:8,maximum_collection_and_revalidation_ms:5,elapsed_ms:11060,interval_ms:1000}};
+  return {...benchmark};
+};
 const autoCopy=(override)=>({...auto,can_start:!override&&state.ready&&!auto.running&&scenario!=='missing',code:override||(scenario==='missing'?'auto_tdp.configuration_missing':state.ready?'auto_tdp.ready':'tdp.disabled')});
 export const getAutoTdpStatus=async()=>scenario==='malformed'?{}:autoCopy();
 export const startAutoTdp=async(target_fps,minimum_watts,maximum_watts)=>{const token=generation;if(scenario==='slow')await new Promise(resolve=>setTimeout(resolve,1800));if(token!==generation)return autoCopy();auto={...auto,enabled:true,running:true,target_fps,minimum_watts,maximum_watts,activity_code:'auto_tdp.context_settling'};return autoCopy();};

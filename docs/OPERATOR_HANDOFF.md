@@ -1,5 +1,12 @@
 # Maintainer and agent handoff
 
+- Latest TDP UI checkpoint: expandable benchmark Run/Cancel/Refresh and sample/time
+  results are implemented. Frontend: 96 tests, typecheck/build/package pass. Mock
+  browser verifies successful results, delayed-run cancellation/retry, missing
+  configuration and malformed status. Preview server/tab closed. No device changes.
+  Remaining: actual host/thermal evidence, benchmark measurement, configuration
+  review, coordinated integration and native Decky/hardware validation.
+
 - Latest TDP benchmark checkpoint: explicit run/status/cancel RPCs use the
   read-only collector under shared runtime ownership. Cancellation covers pending
   setup, manual intent and unload. Results do not change configuration or admit
