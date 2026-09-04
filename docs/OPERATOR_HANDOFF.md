@@ -1,5 +1,21 @@
 # Maintainer and agent handoff
 
+## TDP foundation checkpoint — 2026-09-04
+
+- Change: isolated `codex/tdp-control` from `75f441f`; current-source TDP/Auto TDP
+  research, product scope extension, thermal non-finite fix, read-only ASUS
+  limit inventory and pure Auto TDP proposal policy. See [TDP control](TDP_CONTROL.md).
+- Verification: targeted thermal/inventory/policy tests, independent review,
+  architecture and compilation checks. Review fixes cover stale observation
+  streaks and oversized-integer FPS inputs. Final integration counts are in
+  the workstream document.
+- Hardware evidence: none. No remote setting change, installation or deployment.
+- Blocker: maintainer-provided current Ally SSH address is awaited. No network
+  scanning or alternate credential attempts.
+- Next: inspect installed provider/ownership and readback, then implement shared
+  manual apply/verify/restore and UI before enabling live Auto TDP. G1 journey
+  ownership remains separate; there is no installed Auto TDP background loop.
+
 ## Re-Gear repository checkpoint — 2026-09-03
 
 - Change: local merge `9aeb841` combines journey timing diagnostics with the

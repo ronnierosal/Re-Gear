@@ -97,7 +97,10 @@ result is acknowledged, the same control may request a normal shutdown from a
 fresh idle Portable observation. “Safe” means the Ally has completely powered
 off; this workflow does not promise powered live removal.
 
-Current scope does not include TDP control, automatic graphics tuning, game
+TDP control and optional Auto TDP are now an active development workstream;
+see [TDP control](TDP_CONTROL.md) for intended behavior, research and evidence
+gates. They are not yet available or hardware validated. Current scope does
+not include automatic graphics tuning, game
 configuration writes, Steam Library badges, travel automation, or controller
 wake. Future work must place those behind narrow telemetry, device-profile,
 and game-adapter boundaries and preserve the same recovery and explicit-consent

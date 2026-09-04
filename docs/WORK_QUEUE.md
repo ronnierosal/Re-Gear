@@ -47,6 +47,13 @@ is permitted.
 
 ### Supporting queue
 
+**Active separate workstream: TDP / Auto TDP.** The maintainer assigned research,
+development and remote checks to `codex/tdp-control` on 2026-09-04. Its initial
+thermal fix, ASUS read-only inventory and pure FPS proposal policy are locally
+implemented and tested. Device provider discovery, manual apply/verify/restore,
+UI delivery and actual gameplay telemetry remain pending. See
+[TDP control](TDP_CONTROL.md). It does not own G1 lifecycle transitions.
+
 | Priority | Work item and owner | Status | Acceptance evidence |
 | --- | --- | --- | --- |
 | 2 | Mode/link health: improve fail-closed usability signals and bounded link-instability diagnostics. Owner: next safe worker. | **Implemented (pure evidence + read-only UI):** fresh same-binding observed Up/Down samples can report stable/changed state or fail closed; `Ready to dock` also requires a current exact G1 profile, verified present external GPU/display facts, verified Gamescope, and a current observed-Up link—never only a stale display or sleep guard. Quick Access stays categorical; no collector, transition, or removal conclusion exists. Hardware link quality is **Hardware Validation Required**. | Pure/replay tests; privacy-safe snapshot/UI checks; supported-profile read-only capture when useful. |

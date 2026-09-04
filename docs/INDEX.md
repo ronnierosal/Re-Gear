@@ -55,6 +55,7 @@ issue**. Architectural possibility is not support.
 - Hardware and compatibility: [Hardware support](HARDWARE_SUPPORT.md),
   [hardware-agnostic audit](HARDWARE_AGNOSTIC_AUDIT.md)
 - UX: [UI specification](UI_SPEC.md)
+- Power management: [TDP and Auto TDP workstream](TDP_CONTROL.md)
 - Operations: [Deployment validation](DEPLOYMENT_VALIDATION.md),
   [operator handoff](OPERATOR_HANDOFF.md), [diagnostics](DIAGNOSTICS.md),
   [release pipeline](RELEASE_PIPELINE.md)
