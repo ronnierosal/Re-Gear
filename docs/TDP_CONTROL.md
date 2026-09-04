@@ -117,6 +117,10 @@ The remaining gates are supported-profile discovery, exact game/session binding,
 aggregation, measured collection cost, and hardware validation. These readers
 are not proof that Auto TDP can run on the Ally.
 
+`GameFrameCollector` and `FrameTimeWindow` add a pure context binding and bounded
+aggregation layer. They reject changed, repeated, out-of-order, or stale samples;
+they do not discover a game, open a socket, schedule collection, or change TDP.
+
 ## Ordered implementation
 
 1. Fix non-finite thermal readings being classified Normal; add regression
