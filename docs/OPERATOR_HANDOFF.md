@@ -2,6 +2,14 @@
 
 ## TDP foundation checkpoint — 2026-09-04
 
+- Follow-up: SteamOS Manager ASUS provider, unique-owner D-Bus dispatch,
+  shared manual apply/verify/restore and atomic file journal implemented and
+  simulated. 882 backend tests pass (5 expected skips), plus architecture,
+  compile and diff checks. No Decky wiring or device deployment. Ownership
+  defaults to unverified until an actual resolver is integrated. The pending
+  SSH address continues to block remote validation only; local development
+  continues with ownership/lifecycle and UI delivery next.
+
 - Change: isolated `codex/tdp-control` from `75f441f`; current-source TDP/Auto TDP
   research, product scope extension, thermal non-finite fix, read-only ASUS
   limit inventory and pure Auto TDP proposal policy. See [TDP control](TDP_CONTROL.md).

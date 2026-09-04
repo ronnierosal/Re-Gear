@@ -50,8 +50,10 @@ is permitted.
 **Active separate workstream: TDP / Auto TDP.** The maintainer assigned research,
 development and remote checks to `codex/tdp-control` on 2026-09-04. Its initial
 thermal fix, ASUS read-only inventory and pure FPS proposal policy are locally
-implemented and tested. Device provider discovery, manual apply/verify/restore,
-UI delivery and actual gameplay telemetry remain pending. See
+implemented and tested. SteamOS Manager ASUS provider, fixed D-Bus runner,
+manual apply/verify/restore and atomic journal are also implemented/simulated.
+Live provider discovery, ownership/lifecycle wiring, UI delivery and actual
+gameplay telemetry remain pending. See
 [TDP control](TDP_CONTROL.md). It does not own G1 lifecycle transitions.
 
 | Priority | Work item and owner | Status | Acceptance evidence |
