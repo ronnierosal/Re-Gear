@@ -1,5 +1,24 @@
 # Maintainer and agent handoff
 
+## Combined runtime/UI candidate — 2026-09-03 evening
+
+The maintainer reports a detached reboot restored built-in controls. SSH became
+reachable again; the 00:46 UTC read-only capture confirmed idle Steam/Gamescope,
+active internal display, G1 absent, and installed base `3a5d1620ddf8`.
+No controller service was restarted: the attempted read-only identification
+timed out before the maintainer rebooted. Controller failure cause remains unknown.
+
+Integrated focused UI commit `7a3cab7` as `7081301` onto runtime `c386499`.
+Includes status cards, native confirmed automatic-docking toggle, compact
+Troubleshoot controls, and a status focus stop. This is a first visual pass,
+not the full neon mockup; it does not fix the read-only suspend-hook warning.
+Runtime contains launcher LF enforcement, audio baseline guards, and owned
+cleanup/checkpoint logging. Combined gates passed: 838 backend tests (five skips),
+68 frontend tests, architecture, compileall, typecheck, Rollup, package contract,
+and whitespace. Build one clean combined archive; never deploy UI/runtime
+separately. Install detached, verify audio/controls and UI navigation first,
+then one supervised attach. Shutdown/controller causality is still unresolved.
+
 ## Shutdown follow-up while maintainer away — 2026-09-03
 
 [Shutdown review](G1_SHUTDOWN_REVIEW_2026-09-03.md): fan/LEDs remained on after
