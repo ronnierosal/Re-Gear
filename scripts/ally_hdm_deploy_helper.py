@@ -22,7 +22,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 
-DOWNLOADS = Path("/home/deck/Downloads")
+PACKAGE_ROOT = Path("/home/deck")
 PLUGIN_PARENT = Path("/home/deck/homebrew/plugins")
 PLUGIN_NAME = "HandheldDockMode"
 TARGET = PLUGIN_PARENT / PLUGIN_NAME
@@ -41,10 +41,10 @@ class DeploymentError(RuntimeError):
 
 
 def fixed_download(name: str, suffix: str) -> Path:
-    """Return a no-follow fixed Downloads path, rejecting all caller paths."""
+    """Return a no-follow fixed package path, rejecting all caller paths."""
     if Path(name).name != name or not name.endswith(suffix):
         raise DeploymentError("package name is invalid")
-    path = DOWNLOADS / name
+    path = PACKAGE_ROOT / name
     try:
         status = path.lstat()
     except FileNotFoundError as error:

@@ -9,7 +9,7 @@ install -m 0755 /home/deck/Downloads/ally_hdm_deploy_helper.py /var/lib/handheld
 install -m 0644 /home/deck/Downloads/hdm-deploy-public-key.pem /var/lib/handheld-dock-mode/deploy-public-key.pem
 cat >/etc/sudoers.d/hdm-deploy-plugin <<'EOF'
 # Developer-only HDM package installer.  The binary accepts only signed,
-# fixed-name archives in /home/deck/Downloads, then restarts only the fixed
+# fixed-name archives in /home/deck, then restarts only the fixed
 # Decky plugin loader. It never invokes Gamescope or hardware/session actions.
 # Sudo authorizes only the immutable root-owned helper; it intentionally does
 # not repeat argument globs because SteamOS sudo parses those globs differently

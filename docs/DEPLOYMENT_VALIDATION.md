@@ -429,7 +429,7 @@ For this maintainer-controlled Ally only, a separate developer helper may be
 installed after a one-time **interactive** `sudo` action. It is not a Decky API
 and is never part of an HDM release. The helper is root-owned, accepts only a
 signed `HDM-update-<version>-<revision>.zip` and matching signature from the
-fixed `/home/deck/Downloads` directory, validates the embedded HDM provenance,
+fixed `/home/deck/` directory, validates the embedded HDM provenance,
 then atomically replaces only `HandheldDockMode`. It moves the prior plugin to
 a root-owned rollback directory. It does not reload Decky, restart Gamescope,
 or alter displays, sleep, hardware, or the active session.

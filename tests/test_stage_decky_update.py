@@ -53,7 +53,7 @@ class StageDeckyUpdateTests(unittest.TestCase):
     def test_commands_constrain_destination_and_remote_path(self):
         filename = "HDM-update-0.2.0-aaaaaaaaaaaa.zip"
         argv = stage_decky_update.build_hash_argv(host="192.0.2.146", user="deck", port=22, timeout_seconds=15, identity_file=None, filename=filename)
-        self.assertEqual(argv[-3:], ["sha256sum", "--", f"/home/deck/Downloads/{filename}"])
+        self.assertEqual(argv[-3:], ["sha256sum", "--", f"/home/deck/{filename}"])
         with self.assertRaises(ValueError):
             stage_decky_update.build_hash_argv(host="bad host", user="deck", port=22, timeout_seconds=15, identity_file=None, filename=filename)
         with self.assertRaises(ValueError):
@@ -70,7 +70,7 @@ class StageDeckyUpdateTests(unittest.TestCase):
             digest = hashlib.sha256(package.read_bytes()).hexdigest()
             expected_name = "HDM-update-0.2.0-aaaaaaaaaaaa.zip"
             results = [Result(), Result()]
-            results[1].stdout = f"{digest}  /home/deck/Downloads/{expected_name}\n"
+            results[1].stdout = f"{digest}  /home/deck/{expected_name}\n"
             with patch.object(stage_decky_update.subprocess, "run", side_effect=results) as run:
                 result = stage_decky_update.stage_package(package=package, host="192.0.2.146")
             self.assertEqual(result["state"], "staged")

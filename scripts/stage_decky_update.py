@@ -1,7 +1,7 @@
 """Stage one provenance-checked HDM ZIP for Decky's native installer.
 
 This developer tool uploads a verified HDM package to the fixed Decky user's
-Downloads directory, then reads back its digest. It deliberately does *not*
+home directory (``/home/deck/``), then reads back its digest. It deliberately does *not*
 call an undocumented Decky endpoint, replace a live plugin directory, reload
 Decky, or alter Gamescope, sleep, hardware, or the current session.
 """
@@ -98,18 +98,18 @@ def _validate_filename(filename: str) -> None:
 def build_scp_argv(*, package: Path, host: str, user: str, port: int, timeout_seconds: int, identity_file: Path | None, filename: str) -> list[str]:
     destination = validate_destination(host, user, port)
     _validate_filename(filename)
-    return ["scp", *connection_options(timeout_seconds=timeout_seconds, identity_file=identity_file), "-P", str(port), str(package.resolve()), f"{destination}:Downloads/{filename}"]
+    return ["scp", *connection_options(timeout_seconds=timeout_seconds, identity_file=identity_file), "-P", str(port), str(package.resolve()), f"{destination}:{filename}"]
 
 
 def build_hash_argv(*, host: str, user: str, port: int, timeout_seconds: int, identity_file: Path | None, filename: str) -> list[str]:
     destination = validate_destination(host, user, port)
     _validate_filename(filename)
-    return ["ssh", *connection_options(timeout_seconds=timeout_seconds, identity_file=identity_file), "-p", str(port), destination, "sha256sum", "--", f"/home/{user}/Downloads/{filename}"]
+    return ["ssh", *connection_options(timeout_seconds=timeout_seconds, identity_file=identity_file), "-p", str(port), destination, "sha256sum", "--", f"/home/{user}/{filename}"]
 
 
 def parse_remote_digest(stdout: str, *, user: str, filename: str) -> str:
     rows = stdout.splitlines()
-    expected_path = f"/home/{user}/Downloads/{filename}"
+    expected_path = f"/home/{user}/{filename}"
     if len(rows) != 1:
         raise ValueError("remote package verification returned an unexpected response")
     parts = rows[0].split(maxsplit=1)

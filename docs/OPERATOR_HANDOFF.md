@@ -1,5 +1,13 @@
 # Maintainer and agent handoff
 
+## Ally ZIP placement policy — 2026-09-04
+
+Place every Re-Gear/HDM ZIP staged on the Ally directly in `/home/deck/`.
+Do not place ZIP archives in `/home/deck/Downloads/`. Before staging a new
+candidate, remove superseded Re-Gear/HDM ZIPs from both directories after
+verifying the installed build and the newest candidate. Non-ZIP setup files may
+remain in Downloads when their documented setup command requires that location.
+
 ## 0.3.1 shutdown trial and recovery — 2026-09-03
 
 0.3.1 is installed. Its attached shutdown failed and required player-confirmed
