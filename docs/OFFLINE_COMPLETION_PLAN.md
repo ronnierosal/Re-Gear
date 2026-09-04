@@ -25,7 +25,8 @@ User refinement, 2026-09-04: add a compact per-game library-tile offline badge
 inspired by the supplied Steam controller/checkmark reference. The badge is the
 glanceable entry point; the existing one-game check provides explanations.
 See `OFFLINE_READINESS_UI.md` for states, identity/expiry rules, and the native
-tile integration research gate. This is designed, not yet implemented.
+tile integration evidence. Panel and passive tile rendering are now implemented
+locally with supplied assets; installed rendering and controller checks remain.
 
 A player can request an offline check for one identified game and see understandable
 installation/update/cloud/online-requirement guidance. The result identifies its

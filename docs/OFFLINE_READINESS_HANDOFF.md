@@ -184,3 +184,15 @@ package, whitespace. Live actual-code sample: picker 0.6 ms; three callback requ
 No new runtime installed. G1 driver has 0.3.2 installed from its lifecycle branch;
 our branch baseline is older. Prepare an integrated candidate before coordinating
 installation, preserving the existing G1 changes. Active end-to-end goal is set.
+# Badge continuation checkpoint — 2026-09-04
+
+Supplied SVGs now render beside the check result and through a passive native-tile
+adapter. See `OFFLINE_READINESS_UI.md` for source research and bounds. The adapter
+uses exact native data-id, adds only owned nodes, does not alter Steam badges or
+styles, and clears recycled/expired/invalid results. Only an explicit game check
+starts a 30-second badge lifetime; no new periodic scan or per-tile Steam request.
+Read-only Ally DOM inspection confirmed selectors and numeric IDs, but the badge
+has only been visually exercised in a local browser surrogate. 100 frontend tests,
+typecheck, build, package and whitespace checks pass. No installed runtime change.
+Continue with integrated candidate preparation against G1's newer baseline and
+native rendering verification; direct game-details-page explanation is pending.

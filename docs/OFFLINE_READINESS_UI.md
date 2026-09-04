@@ -2,7 +2,8 @@
 
 Status: **Implemented locally: one-game picker, native Steam details request,
 Python classification RPC, and reason guidance. Not installed or controller
-validated. Library-tile badge designed; native tile integration pending.**
+validated. Library-tile badge implemented locally; installed native rendering
+and controller validation pending.**
 
 ## Library-tile direction — user reference, 2026-09-04
 
@@ -15,8 +16,44 @@ label at the component boundary); `offline-attention.svg` maps to Needs attentio
 `offline-verify.svg` maps to Online check needed. Reserve `offline-required.svg`
 for a future independently confirmed internet-required state: the current
 classifier has no such definitive category, so do not map unknown or a launcher
-check requirement to this red badge. Assets are present; tile rendering remains
-pending.
+check requirement to this red badge. Attention and verify assets are now embedded
+locally by Rollup and rendered by the panel and tile adapter.
+
+### Implemented badge delivery
+
+`offline-tile-badge.ts` uses exact numeric native `data-id` binding on observed
+library/home tile selectors. It requires an already-positioned tile, adds only
+its own pointer-transparent image at the upper-left, and does not alter native
+styles or badges. Position remains provisional pending real Steam rendering.
+An explicit panel check can badge the matching visible tile for up to 30 seconds,
+including after Quick Access closes. Selection changes, plugin unmount, expiry,
+or observed game/source invalidation remove it. Recycled tiles are rebound from
+their current native ID; our own badge is never an identity source.
+
+The adapter inspects at most 256 initially rendered tiles and handles changed DOM
+nodes through one short-lived MutationObserver. Oversized batches/surfaces fail
+closed. There is no periodic scan, library-wide game-details request, persistence,
+or new game/session polling. Missing native ID/host yields no tile badge while
+the panel can still explain the result. Direct game-details-page explanation
+integration remains pending; use the existing Quick Access check surface.
+
+Research seam: [Non-Steam Badges observer](https://github.com/sebet/decky-nonsteam-badges/blob/cc620181962f601b713c9db2045e98dd82ecdbf2/src/utils/observer.ts)
+and [capsule implementation](https://github.com/sebet/decky-nonsteam-badges/blob/cc620181962f601b713c9db2045e98dd82ecdbf2/src/feature/addBadgeToCapsule.ts),
+BSD-3-Clause. Our bounded adapter is independently implemented. We did not copy
+upstream periodic scans, broad identity fallbacks, native badge hiding, or style
+rewrites. ProtonDB Badges' archived implementation patches game-details routes,
+not library tiles.
+
+Remote read-only DOM inspection on 2026-09-04 confirmed DFL navigation windows,
+the expected library/home selectors, and 23 numeric data IDs in a bounded sample
+of 32 tiles; all sampled tiles were already positioned. Repeated navigation trees
+can reference the same window, so discovery deduplicates them. This is source/DOM
+evidence, not a device badge-rendering claim. A local browser preview exercised
+the actual adapter and showed the supplied icon legibly at 72x32 beside a report
+and on sample artwork. Six adapter regression tests cover recycled identities,
+unknown/static tiles, expiry/unmount, foreign badge preservation, source failure,
+and ancestor-role changes. Full frontend suite: 100 passed; typecheck/build/package
+and whitespace checks passed. Backend unchanged since the 834-test gate.
 
 The maintainer supplied a photo of a compact controller/checkmark badge in the
 lower-right of a Steam game tile and requested similar at-a-glance offline
@@ -43,10 +80,9 @@ the one-game panel as the explanation/check surface.
   Do not run a library-wide scan or subscribe per visible tile. Reuse bounded
   explicit checks; invalidate on observed context changes and expiry.
 
-Next implementation gate: inspect a maintained Decky tile-badge integration and
-the current Steam tile component, review licensing and patch/unpatch behavior,
-then implement the smallest reversible integration. The photo is a visual
-reference, not evidence of a supported Steam extension API.
+Next implementation gate: integrate with the newer installed G1 baseline, then
+verify native rendering and controller behavior. The photo is a visual reference,
+not evidence of a supported Steam extension API.
 
 ## Current one-game delivery
 
