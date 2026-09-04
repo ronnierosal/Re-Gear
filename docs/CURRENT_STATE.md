@@ -1,5 +1,31 @@
 # Current state
 
+## Re-Gear 0.3.1 local shutdown candidate — 2026-09-03
+
+Local cleanup now closes background admission, requests every observer stop
+before waiting, and uses a shared one-second observer deadline plus a separate
+three-second sleep-guard release deadline. Already-started automatic display
+and recovery audio operations remain tracked when their observer is cancelled.
+Pending work produces categorical timeout/incomplete checkpoints, never a
+successful unload marker. The collector recognizes each new checkpoint.
+
+Regression tests cover blocked cancellation, other observers and guard still
+stopping, retained in-flight mutation ownership, closed admission, and a blocked
+guard release. Architecture, 883 backend tests (six skipped), compilation,
+TypeScript, 77 frontend tests, build and package checks passed. Independent
+review found no blocking issue. A lock-blocked watcher close was reproduced
+locally; it has not been identified as the observer in the recorded Ally hang.
+This does not prove final OS shutdown or live removal safety. Worker ownership
+does not guarantee worker completion after Decky retires its process.
+
+Installed hardware remains 0.3.0 `9571a5ca3e5b`. The latest cold G1 attach
+enumerated its AMD GPU and requested automatic docking, but failed with
+`audio.external_sink_ambiguous` before display switching. The TV was on another
+input; its causal role and event-versus-fallback trigger are unproven. HDMI
+validation is deferred by the player. No hardware mutation was made for 0.3.1.
+Next: detached installation of the candidate, then a separately supervised
+shutdown capture. Disconnect only after physical poweroff is confirmed.
+
 ## Failed shutdown and detached recovery — 2026-09-03
 
 The supervised ordinary shutdown on installed 0.3.0 `9571a5ca3e5b` again left

@@ -5,6 +5,8 @@ import importlib.util
 import json
 import sys
 import types
+import threading
+from unittest.mock import patch
 from dataclasses import replace
 import unittest
 from pathlib import Path
@@ -902,6 +904,94 @@ class MainProcessDeliveryTests(unittest.TestCase):
                 loop.shutdown_default_executor = original_shutdown
             self.assertFalse(called)
 
+        asyncio.run(exercise())
+
+    def test_blocked_cancellation_does_not_skip_other_observers_or_guard(self):
+        plugin, _service = self.plugin()
+        stages = []
+        plugin._record_shutdown_checkpoint = lambda stage, started: stages.append(stage)
+        plugin._sleep_guard = types.SimpleNamespace(close=lambda: types.SimpleNamespace(active=False, error=""))
+
+        async def exercise():
+            release = asyncio.Event()
+            stopped = []
+            async def observer(block):
+                try:
+                    await asyncio.Event().wait()
+                finally:
+                    stopped.append(block)
+                    if block:
+                        await release.wait()
+            blocked = asyncio.create_task(observer(True))
+            other = asyncio.create_task(observer(False))
+            plugin._automatic_dock_task = blocked
+            plugin._native_recovery_task = other
+            await asyncio.sleep(0)
+            try:
+                with patch.object(self.module, "UNLOAD_OBSERVER_TIMEOUT_SECONDS", 0.02):
+                    await asyncio.wait_for(plugin._unload(), 1)
+                self.assertIn(False, stopped)
+                self.assertIn(blocked, plugin._retiring_tasks)
+                self.assertIn("automatic_dock_stop_timed_out", stages)
+                self.assertIn("sleep_guard_released", stages)
+                self.assertEqual(stages[-1], "unload_incomplete")
+                self.assertNotIn("unload_complete", stages)
+                await plugin._start_docked_igpu_lifecycle()
+                self.assertIsNone(plugin._docked_igpu_task)
+            finally:
+                release.set()
+                await asyncio.gather(blocked, other, return_exceptions=True)
+        asyncio.run(exercise())
+
+    def test_inflight_mutation_is_retained_and_new_mutations_are_refused(self):
+        plugin, _service = self.plugin()
+        stages = []
+        plugin._record_shutdown_checkpoint = lambda stage, started: stages.append(stage)
+        plugin._sleep_guard = types.SimpleNamespace(close=lambda: types.SimpleNamespace(active=False, error=""))
+        release = threading.Event()
+
+        async def exercise():
+            entered = asyncio.Event()
+            loop = asyncio.get_running_loop()
+            def operation():
+                loop.call_soon_threadsafe(entered.set)
+                release.wait(2)
+            observer = asyncio.create_task(plugin._run_background_operation(operation))
+            plugin._automatic_dock_task = observer
+            await asyncio.wait_for(entered.wait(), 1)
+            try:
+                with patch.object(self.module, "UNLOAD_OBSERVER_TIMEOUT_SECONDS", 0.02):
+                    await plugin._unload()
+                self.assertTrue(observer.cancelled())
+                self.assertEqual(len(plugin._background_operations), 1)
+                self.assertIn("background_operation_pending", stages)
+                self.assertNotIn("unload_complete", stages)
+                with self.assertRaises(asyncio.CancelledError):
+                    await plugin._run_background_operation(lambda: self.fail("new mutation"))
+            finally:
+                release.set()
+                await asyncio.gather(*plugin._background_operations)
+        asyncio.run(exercise())
+
+    def test_guard_release_timeout_is_bounded_and_never_claims_completion(self):
+        plugin, _service = self.plugin()
+        stages = []
+        plugin._record_shutdown_checkpoint = lambda stage, started: stages.append(stage)
+        release = threading.Event()
+        def close():
+            release.wait(2)
+            return types.SimpleNamespace(active=False, error="")
+        plugin._sleep_guard = types.SimpleNamespace(close=close)
+        async def exercise():
+            try:
+                with patch.object(self.module, "UNLOAD_GUARD_TIMEOUT_SECONDS", 0.02):
+                    await asyncio.wait_for(plugin._unload(), 1)
+                self.assertEqual(stages[-2:], ["sleep_guard_release_timed_out", "unload_incomplete"])
+                self.assertNotIn("sleep_guard_released", stages)
+                self.assertNotIn("unload_complete", stages)
+            finally:
+                release.set()
+                await asyncio.gather(*plugin._retiring_tasks)
         asyncio.run(exercise())
 
     def test_failed_observers_do_not_skip_sleep_guard_release(self):

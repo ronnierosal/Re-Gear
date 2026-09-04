@@ -1,5 +1,16 @@
 # Maintainer and agent handoff
 
+## Safe-disconnect local work — 2026-09-03
+
+Re-Gear 0.3.1 bounds observer and guard cleanup and records incomplete work.
+See CURRENT_STATE.md for local verification and its hardware evidence limits.
+The Ally remains on 0.3.0 `9571a5ca3e5b`; do not install/restart Decky while G1
+is attached. The last cold attach reached the automatic transition but failed
+at `audio.external_sink_ambiguous`, before display switching. TV-input testing
+is deferred. Next installation requires confirmed poweroff, physical detach,
+and a detached boot; the later shutdown test needs explicit supervision.
+The shutdown hang remains unresolved until actual hardware verification.
+
 ## Failed shutdown and detached recovery — 2026-09-03
 
 The supervised ordinary shutdown on installed 0.3.0 `9571a5ca3e5b` again left

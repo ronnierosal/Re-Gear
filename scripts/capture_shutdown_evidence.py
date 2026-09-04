@@ -53,6 +53,12 @@ STAGES = (
     "unload_started", "observers_stopped", "sleep_guard_release_started",
     "sleep_guard_released", "unload_complete", "observer_stop_failed",
     "sleep_guard_release_failed",
+    "automatic_dock_stop_requested", "native_recovery_stop_requested",
+    "docked_igpu_stop_requested", "sleep_guard_stop_requested",
+    "automatic_dock_stop_timed_out", "native_recovery_stop_timed_out",
+    "docked_igpu_stop_timed_out", "sleep_guard_stop_timed_out",
+    "background_operation_pending", "sleep_guard_release_timed_out",
+    "unload_incomplete",
 )
 STATUSES = (
     "observed", "no_previous_journal", "permission_denied", "journal_unavailable",

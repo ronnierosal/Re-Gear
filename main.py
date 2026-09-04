@@ -180,6 +180,8 @@ from hdm.profiles.gpd_g1 import match_gpd_g1  # noqa: E402
 
 
 MAX_JOURNEY_ELAPSED_MS = 24 * 60 * 60 * 1000
+UNLOAD_OBSERVER_TIMEOUT_SECONDS = 1.0
+UNLOAD_GUARD_TIMEOUT_SECONDS = 3.0
 
 
 def _can_remember_portable_audio(snapshot) -> bool:
@@ -197,6 +199,9 @@ def _can_remember_portable_audio(snapshot) -> bool:
 
 class Plugin:
     def __init__(self) -> None:
+        self._unloading = False
+        self._background_operations: set[asyncio.Task] = set()
+        self._retiring_tasks: set[asyncio.Task] = set()
         self._sleep_guard = SleepGuardController()
         self._sleep_hardware = G1SleepGuardHardwareDiscovery()
         self._discovery = SteamOsDiscovery(
@@ -1343,7 +1348,7 @@ class Plugin:
 
         observations = SnapshotTransitionObservationAdapter(self._discovery)
         clock = SystemMonotonicClock()
-        while True:
+        while not self._unloading:
             delay_seconds = 1.0
             try:
                 enabled = await asyncio.to_thread(
@@ -1379,7 +1384,7 @@ class Plugin:
                         lambda: resolve_gamescope_user(GamescopeDiscovery().scan())
                     )
                     if resolution.ok and resolution.context is not None:
-                        audio = await asyncio.to_thread(
+                        audio = await self._run_background_operation(
                             self._audio_handoff_service().switch,
                             PlacementState.PORTABLE,
                             resolution.context,
@@ -1411,7 +1416,7 @@ class Plugin:
     async def _automatic_dock_loop(self) -> None:
         """Submit one exact, idle attach request through the shared transition engine."""
         observations = SnapshotTransitionObservationAdapter(self._discovery)
-        while True:
+        while not self._unloading:
             delay_seconds = self._automatic_dock_retry_seconds
             try:
                 enabled = await asyncio.to_thread(
@@ -1488,7 +1493,7 @@ class Plugin:
                         now_ns=transition_started_ns,
                     )
                     try:
-                        result = await asyncio.to_thread(
+                        result = await self._run_background_operation(
                             self._presentation_transition_service().execute_automatic,
                             PlacementState.DOCKED_EGPU,
                             expected_generation=decision.expected_generation,
@@ -1567,14 +1572,14 @@ class Plugin:
             )
 
     async def _start_docked_igpu_lifecycle(self) -> None:
-        if self._docked_igpu_task is not None:
+        if self._unloading or self._docked_igpu_task is not None:
             return
         self._docked_igpu_task = asyncio.create_task(
             self._docked_igpu_supervisor_loop()
         )
 
     async def _docked_igpu_supervisor_loop(self) -> None:
-        while True:
+        while not self._unloading:
             try:
                 scheduler = await asyncio.to_thread(
                     self._build_docked_igpu_scheduler
@@ -1682,7 +1687,7 @@ class Plugin:
             self._last_sleep_guard_log = current
 
     async def _sleep_guard_loop(self) -> None:
-        while True:
+        while not self._unloading:
             try:
                 await self._reconcile_sleep_guard()
             except Exception:
@@ -1695,7 +1700,28 @@ class Plugin:
                 )
             await asyncio.sleep(1)
 
+    def _retain_until_done(self, task: asyncio.Task, collection: set) -> None:
+        collection.add(task)
+
+        def completed(done):
+            collection.discard(done)
+            if not done.cancelled():
+                done.exception()  # Consume late errors without exporting private text.
+
+        task.add_done_callback(completed)
+
+    async def _run_background_operation(self, operation, *args, **kwargs):
+        """Retain ownership of an already-started mutation when its observer exits."""
+        if self._unloading:
+            raise asyncio.CancelledError
+        task = asyncio.create_task(asyncio.to_thread(operation, *args, **kwargs))
+        self._retain_until_done(task, self._background_operations)
+        # Cancellation of the observer cannot stop a running worker thread.
+        # Let the existing transaction finish; never silently label it stopped.
+        return await asyncio.shield(task)
+
     async def _unload(self) -> None:
+        self._unloading = True
         started_ns = self._journey_now_ns()
         self._record_shutdown_checkpoint("unload_started", started_ns)
         try:
@@ -1705,8 +1731,18 @@ class Plugin:
             )
         except Exception:
             pass
-        # An already-failed observer must not prevent retiring our other tasks
-        # or releasing the HDM-owned inhibitor. Never touch Steam/driver clients.
+        # Wake the listener and request cancellation of every producer before
+        # waiting for any one of them. A cancelled read can still hold a lock
+        # in a worker thread needed by that observer's finally/close path.
+        incomplete = False
+        if self._topology_wakeup is not None:
+            try:
+                self._topology_wakeup.close()
+            except Exception:
+                incomplete = True
+                self._record_shutdown_checkpoint("observer_stop_failed", started_ns)
+            self._topology_wakeup = None
+        tasks = {}
         for attribute in (
             "_automatic_dock_task", "_native_recovery_task",
             "_docked_igpu_task", "_sleep_guard_task",
@@ -1715,24 +1751,39 @@ class Plugin:
             setattr(self, attribute, None)
             if task is None:
                 continue
+            owner = attribute.removeprefix("_").removesuffix("_task")
+            self._record_shutdown_checkpoint(owner + "_stop_requested", started_ns)
+            tasks[task] = owner
+            self._retain_until_done(task, self._retiring_tasks)
             task.cancel()
-            try:
-                await task
-            except asyncio.CancelledError:
-                pass
-            except Exception:
+        operations = set(self._background_operations)
+        pending = set()
+        if tasks or operations:
+            _, pending = await asyncio.wait(
+                set(tasks) | operations, timeout=UNLOAD_OBSERVER_TIMEOUT_SECONDS
+            )
+        for task, owner in tasks.items():
+            if task in pending:
+                incomplete = True
+                self._record_shutdown_checkpoint(owner + "_stop_timed_out", started_ns)
+            elif not task.cancelled() and task.exception() is not None:
                 self._record_shutdown_checkpoint("observer_stop_failed", started_ns)
+        if operations & pending:
+            incomplete = True
+            self._record_shutdown_checkpoint("background_operation_pending", started_ns)
         self._docked_igpu_scheduler = None
-        if self._topology_wakeup is not None:
-            try:
-                self._topology_wakeup.close()
-            except Exception:
-                self._record_shutdown_checkpoint("observer_stop_failed", started_ns)
-            self._topology_wakeup = None
-        self._record_shutdown_checkpoint("observers_stopped", started_ns)
+        if not incomplete:
+            self._record_shutdown_checkpoint("observers_stopped", started_ns)
         self._record_shutdown_checkpoint("sleep_guard_release_started", started_ns)
+        release = asyncio.create_task(asyncio.to_thread(self._sleep_guard.close))
+        self._retain_until_done(release, self._retiring_tasks)
+        _, pending_release = await asyncio.wait({release}, timeout=UNLOAD_GUARD_TIMEOUT_SECONDS)
+        if pending_release:
+            self._record_shutdown_checkpoint("sleep_guard_release_timed_out", started_ns)
+            self._record_shutdown_checkpoint("unload_incomplete", started_ns)
+            return
         try:
-            status = await asyncio.to_thread(self._sleep_guard.close)
+            status = release.result()
         except Exception:
             self._record_shutdown_checkpoint("sleep_guard_release_failed", started_ns)
             return
@@ -1740,10 +1791,13 @@ class Plugin:
             self._record_shutdown_checkpoint("sleep_guard_release_failed", started_ns)
             return
         self._record_shutdown_checkpoint("sleep_guard_released", started_ns)
-        self._record_shutdown_checkpoint("unload_complete", started_ns)
+        self._record_shutdown_checkpoint(
+            "unload_incomplete" if incomplete else "unload_complete", started_ns
+        )
         # Do not drain asyncio's shared executor here. Cancellation stops the
-        # coroutine that requested a read-only scan, but cannot cancel a scan
-        # already running in a worker thread. Waiting for that worker can hold
+        # coroutine that requested work, but cannot cancel work already running
+        # in a worker thread (including a durable presentation transaction).
+        # Waiting without a deadline can hold
         # Decky's unload hook past its five-second deadline and cause a forced
         # stop. Decky owns backend-process retirement after this hook returns;
         # HDM only owns and stops the tasks and resources it created.
