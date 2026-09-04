@@ -66,6 +66,33 @@ mandatory for any future application caller.
 
 ## Production gates and next slice
 
+### Client implementation inspection — 2026-09-03
+
+**OBSERVATION (upstream extracted client, not installed Steam):** inspected
+[SteamTracking's extracted client chunk at adfe27cf](https://github.com/SteamTracking/SteamTracking/blob/adfe27cfeb32a1ad09314039a4657e4dd4a5955c/ClientExtracted/steamui/chunk~2dcc5aaf7.js).
+`GetAppOverviewByAppID` reads its map without a network operation in that method.
+The local-client getter selects client ID `"0"`. The overview callback updates
+the map from native messages. The lookup does not supply an observation time.
+
+**DECISION:** the exact lookup is a promising bounded reader; native callback
+registration and freshness remain unreviewed runtime boundaries. Do not call
+store initialization, enumerate all games, or replace Steam's callback. Since
+the local branch is a getter, serialize only explicitly extracted fields;
+serializing the whole object is neither privacy-minimized nor reliable.
+
+Downloaded research artifact SHA-256:
+`26ac253942bfaa80a48cc7b3176b2fcbef56c7c0eda3d5845562c68b0ed0b94d`.
+It remains in ignored `out/offline-source-research/steam-client-chunk.js`; no
+upstream code is bundled or copied into the implementation. This artifact is
+source-inspection evidence only, not a freshness or supported-profile benchmark.
+
+**NEXT EVIDENCE:** obtain the maintainer's current Ally host as required by
+`OPERATOR_HANDOFF.md`. Inspect installed client provenance/static reader behavior
+read-only, then determine whether an already available observation boundary can
+provide a trustworthy timestamp and exact selected-game/session binding. Do not
+enable remote debugging, deploy a plugin, install an observer, or trigger a
+Steam refresh to obtain evidence under this workstream's current authority.
+
 The application service in `backend/hdm/application/offline_readiness.py` now
 implements one request's admission/revalidation/freshness boundary over an
 injected bounded local-memory reader. It does not manufacture source approval

@@ -38,6 +38,7 @@ No live source can self-declare a benchmark from synthetic test timing.
   references, not dependencies. Valve documents why installation and enabled
   cloud settings cannot establish readiness.
 - First commit: `03946d2` adds the candidate source projection and research.
+- Second commit: `0bfbf8f` adds guarded request and categorical reason delivery.
 - Change: a candidate adapter minimizes one privately bound base-game overview
   into existing categorical evidence. Explicit updates/downloads and cloud
   conflicts can report attention; no favorable overview can report offline-ready.
@@ -65,6 +66,26 @@ No live source can self-declare a benchmark from synthetic test timing.
   design one selected-game request with invalidation and cleanup. Confirm its
   local-only behavior before wiring a reader. Do not label request time as the
   freshness timestamp of cached data.
+
+## Latest source evidence and required input
+
+Upstream implementation inspection now verifies that the exact-AppID lookup
+reads a map, the local-client getter selects the local reserved client ID, and
+native overview callbacks populate the cache. It does not establish trustworthy
+sample age or installed-client equivalence. The pinned URL, artifact hash,
+privacy/serialization implication, and next gate are in the source-review doc.
+
+The maintainer has been asked for the current Ally SSH host. The operator
+handoff requires a current maintainer-provided host: do not reuse stale captures,
+guess an address, scan the network, or ask another workstream to make a hardware
+transition. No remote call has been attempted. When supplied, inspect only
+bounded installed client/source provenance first. Remote debugging activation,
+observer deployment, and forced refresh are outside current authority.
+
+Previous goal turn classification: progress (verified request/UI implementation).
+This turn: progress (source mechanism evidence changes the next action). Missing
+current host is the first recorded external-input blocker for live inspection;
+the goal is not complete or marked blocked.
 
 ## Completion audit
 
