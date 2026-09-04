@@ -8,6 +8,11 @@ the Decky row color shows through every transparent area. It preserves the
 0.3.10 focused-game/offline and G1 runtime changes and does not modify backend,
 RPC, polling, lifecycle, or safety behavior. Not installed or hardware validated.
 
+Manual-install package staging now uses `/home/deck/Re-Gear-<version>.zip`.
+After verifying the current candidate's SHA-256, remove older Re-Gear and
+HandheldDockMode ZIPs from `/home/deck/` and `/home/deck/Downloads/` so only
+the current installation candidate remains.
+
 ## Re-Gear 0.3.8 combined G1 audio readiness candidate — 2026-09-04
 
 Installed 0.3.7 revision `52db288056c3` and the separately built 0.3.7 audio

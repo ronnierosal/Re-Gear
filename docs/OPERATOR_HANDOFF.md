@@ -83,6 +83,16 @@ Version policy is recorded in RELEASE_PIPELINE.md. Verification passed architect
 build, package and diff checks. This is a local candidate, not installed or
 hardware validated. Next: supervised detached install and automatic-dock test.
 
+### Manual ZIP staging convention
+
+Place every player-facing Re-Gear/HDM installation ZIP directly in
+`/home/deck/`, never `/home/deck/Downloads/`. Before removing older packages,
+enumerate the exact matching ZIP paths under those two locations. Retain only
+the current verified candidate and remove older Re-Gear/HandheldDockMode ZIPs
+after its SHA-256 matches the local artifact. This convention applies to manual
+installation handoff only; existing signed/developer staging helpers still use
+their separately constrained legacy paths and must not be silently repurposed.
+
 ## Combined dashboard and G1 candidate — 2026-09-03
 
 UI commit `e5d648d` is integrated as `812b8d0` on the lifecycle branch, retaining
