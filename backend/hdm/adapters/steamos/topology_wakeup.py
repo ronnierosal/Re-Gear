@@ -21,7 +21,7 @@ _ACTIONS = frozenset((b"add", b"remove", b"change", b"bind", b"unbind", b"move")
 
 
 def is_topology_invalidation(data: bytes) -> bool:
-    """Accept bounded kernel-format PCI/DRM events; retain no private fields."""
+    """Accept bounded PCI/DRM/Thunderbolt events; retain no private fields."""
     if not data or len(data) > MAX_DATAGRAM_BYTES or not data.endswith(b"\0"):
         return False
     fields = data.split(b"\0")
@@ -37,7 +37,7 @@ def is_topology_invalidation(data: bytes) -> bool:
             return False
         values[key] = value
     return (
-        values.get(b"SUBSYSTEM") in (b"pci", b"drm")
+        values.get(b"SUBSYSTEM") in (b"pci", b"drm", b"thunderbolt")
         and values.get(b"ACTION") == header[0]
         and values.get(b"DEVPATH") == header[1]
     )

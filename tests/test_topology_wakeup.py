@@ -14,7 +14,7 @@ def event(subsystem=b"drm", action=b"change"):
 
 class ParserTests(unittest.TestCase):
     def test_allowlisted_subsystems_and_actions(self):
-        for subsystem in (b"pci", b"drm"):
+        for subsystem in (b"pci", b"drm", b"thunderbolt"):
             for action in (b"add", b"remove", b"change", b"bind", b"unbind", b"move"):
                 self.assertTrue(module.is_topology_invalidation(event(subsystem, action)))
 
@@ -25,6 +25,8 @@ class ParserTests(unittest.TestCase):
             event().replace(b"DEVPATH=/devices/example", b"DEVPATH=/other"),
             b"libudev\0" + event(), b"x" * (module.MAX_DATAGRAM_BYTES + 1),
             event() + b"x=y\0" * 129,
+            event(b"thunderbolt")[:-1],
+            event(b"thunderbolt") + b"x" * module.MAX_DATAGRAM_BYTES,
         ):
             with self.subTest(data=data[:60]):
                 self.assertFalse(module.is_topology_invalidation(data))
