@@ -9,7 +9,8 @@ their original wording.
 ## Presentation assets
 
 `src/branding.ts` owns the UI display name. `docs/images/re-gear-icon.png` is the
-maintainer-approved original artwork; the UI workstream owns its bundled use.
+original detailed README artwork; `docs/images/re-gear-decky-icon.png` is the
+original simpler Decky artwork. Both are maintainer-approved and retained.
 Do not redraw or silently replace the supplied image. Generated `dist` assets
 must be built with the runtime and UI from the same clean source revision.
 
