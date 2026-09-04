@@ -21,6 +21,7 @@ from hdm.domain.models import Confidence, EgpuLinkState
 class Monitor:
     def __init__(self, available=True):
         self.available = available
+        self.last_wake_source = "kernel_event"
         self.invalidations = 0
         self.closed = False
         self.waits = []
@@ -118,6 +119,9 @@ class MainEventCompletionTests(unittest.IsolatedAsyncioTestCase):
             )
         plugin._observe_connection_readiness = observe_connection
         calls = []
+        events = []
+        plugin._append_journey_event = lambda **event: events.append(event)
+        plugin._connection_wake_source = "local_change"
         def execute(*args, **kwargs):
             calls.append("execute")
             return types.SimpleNamespace(
@@ -137,6 +141,12 @@ class MainEventCompletionTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(self.module, "SnapshotTransitionObservationAdapter", return_value=types.SimpleNamespace(observe=lambda: observed)):
             with self.assertRaises(asyncio.CancelledError):
                 await plugin._automatic_dock_loop()
+        if calls:
+            self.assertTrue(any(
+                event["code"] == "observation.wake.local_change"
+                and event["stage"] == "automatic_transition_observation"
+                for event in events
+            ))
         return calls, waits
 
     async def test_durable_portable_hold_prevents_automatic_execute(self):
@@ -165,6 +175,19 @@ class MainEventCompletionTests(unittest.IsolatedAsyncioTestCase):
         await plugin._unload()
         self.assertTrue(monitor.closed)
         self.assertIsNone(plugin._topology_wakeup)
+
+    async def test_wake_cause_reaches_transition_diagnostics(self):
+        plugin = self.module.Plugin()
+        monitor = plugin._topology_wakeup = Monitor()
+        events = []
+        plugin._append_journey_event = lambda **event: events.append(event)
+        for source in ("kernel_event", "local_change", "kernel_and_local",
+                       "poll_timer", "observer_degraded"):
+            monitor.last_wake_source = source
+            await plugin._wait_for_topology(1)
+            plugin._record_connection_wake("automatic_transition_observation")
+            self.assertEqual(events[-1]["code"], "observation.wake." + source)
+            self.assertEqual(events[-1]["stage"], "automatic_transition_observation")
 
     async def test_game_running_never_executes(self):
         calls, waits = await self.run_iteration(stage=ConnectionReadinessStage.GAME_RUNNING)

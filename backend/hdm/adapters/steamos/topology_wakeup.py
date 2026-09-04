@@ -51,6 +51,8 @@ class LinuxTopologyWakeup:
         self._loop: asyncio.AbstractEventLoop | None = None
         self._reader_fd: int | None = None
         self._pending = asyncio.Event()
+        self._pending_sources: set[str] = set()
+        self.last_wake_source = "startup"
         self._started = False
         self._closed = False
 
@@ -61,6 +63,7 @@ class LinuxTopologyWakeup:
     def invalidate(self) -> None:
         """Wake fresh observation after a local preference/acknowledgement change."""
         if not self._closed:
+            self._pending_sources.add("local_change")
             self._pending.set()
 
     def start(self) -> bool:
@@ -101,6 +104,7 @@ class LinuxTopologyWakeup:
             except OSError:
                 # Includes queue overflow: force one fresh scan, then fallback.
                 self._release_socket()
+                self._pending_sources.add("observer_degraded")
                 self._pending.set()
                 return
             if (
@@ -110,6 +114,7 @@ class LinuxTopologyWakeup:
                 and not flags & getattr(socket, "MSG_TRUNC", 0x20)
                 and is_topology_invalidation(data)
             ):
+                self._pending_sources.add("kernel_event")
                 self._pending.set()
 
     async def wait(self, timeout_seconds: float) -> bool:
@@ -121,14 +126,25 @@ class LinuxTopologyWakeup:
         if not math.isfinite(timeout_seconds) or timeout_seconds <= 0:
             raise ValueError("fallback timeout must be finite and positive")
         if self._closed:
+            self.last_wake_source = "closed"
             return False
         try:
             await asyncio.wait_for(self._pending.wait(), timeout_seconds)
         except asyncio.TimeoutError:
+            self.last_wake_source = "poll_timer"
             return False
         if self._closed:
+            self.last_wake_source = "closed"
             return False
         await asyncio.sleep(min(COALESCE_SECONDS, timeout_seconds))
+        sources = self._pending_sources
+        self.last_wake_source = (
+            "closed" if self._closed else
+            "observer_degraded" if "observer_degraded" in sources else
+            "kernel_and_local" if len(sources) > 1 else
+            next(iter(sources), "unknown")
+        )
+        self._pending_sources = set()
         self._pending.clear()
         return not self._closed
 

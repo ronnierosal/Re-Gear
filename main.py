@@ -232,6 +232,7 @@ class Plugin:
         self._automatic_dock_retry_seconds = 1.0
         self._topology_wakeup = None
         self._topology_wakeup_was_available = False
+        self._connection_wake_source = "startup"
         self._last_completion_code = ""
         self._automatic_dock = AutomaticDockCoordinator()
         self._native_recovery_task: asyncio.Task[None] | None = None
@@ -1466,6 +1467,7 @@ class Plugin:
                 connection = await self._observe_connection_readiness(current)
                 if connection.code != self._last_connection_readiness_code:
                     self._last_connection_readiness_code = connection.code
+                    self._record_connection_wake("readiness_observation")
                     self._append_journey_event(
                         severity=(
                             "warning"
@@ -1539,6 +1541,7 @@ class Plugin:
                 elif connection.stage is ConnectionReadinessStage.GAME_RUNNING:
                     delay_seconds = 5.0
                 if decision.should_switch:
+                    self._record_connection_wake("automatic_transition_observation")
                     transition_started_ns = self._journey_now_ns()
                     self._append_journey_event(
                         severity="info",
@@ -1656,14 +1659,23 @@ class Plugin:
             )
         )
 
+    def _record_connection_wake(self, stage: str) -> None:
+        """Describe the latest scan wake, not proof of device-specific causality."""
+        self._append_journey_event(
+            severity="info", code="observation.wake." + self._connection_wake_source,
+            component="connection", stage=stage, create_timeline=False,
+        )
+
     async def _wait_for_topology(self, delay_seconds: float) -> None:
         """Events are invalidations only; the next iteration re-collects evidence."""
         monitor = self._topology_wakeup
         if monitor is None:
             await asyncio.sleep(delay_seconds)
+            self._connection_wake_source = "poll_timer"
             return
         was_available = self._topology_wakeup_was_available or monitor.available
         await monitor.wait(delay_seconds)
+        self._connection_wake_source = monitor.last_wake_source
         self._topology_wakeup_was_available = monitor.available
         if was_available and not monitor.available:
             self._append_journey_event(

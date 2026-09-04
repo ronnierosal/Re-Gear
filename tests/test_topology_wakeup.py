@@ -68,13 +68,24 @@ class MonitorTests(unittest.IsolatedAsyncioTestCase):
         self.sock.recvmsg.side_effect = [(event(), [], 0, (0, 1))] * 5 + [BlockingIOError()]
         self.monitor._on_readable()
         self.assertTrue(await self.monitor.wait(0.001))
+        self.assertEqual(self.monitor.last_wake_source, "kernel_event")
         self.assertFalse(await self.monitor.wait(0.001))
+        self.assertEqual(self.monitor.last_wake_source, "poll_timer")
 
     async def test_local_invalidations_coalesce_without_socket(self):
         self.monitor.invalidate()
         self.monitor.invalidate()
         self.assertTrue(await self.monitor.wait(0.001))
+        self.assertEqual(self.monitor.last_wake_source, "local_change")
         self.assertFalse(await self.monitor.wait(0.001))
+
+    async def test_mixed_kernel_and_local_wake_preserves_both_causes(self):
+        self.start()
+        self.sock.recvmsg.side_effect = [(event(), [], 0, (0, 1)), BlockingIOError()]
+        self.monitor._on_readable()
+        self.monitor.invalidate()
+        self.assertTrue(await self.monitor.wait(0.001))
+        self.assertEqual(self.monitor.last_wake_source, "kernel_and_local")
 
     async def test_sender_truncation_and_unrelated_events_ignored(self):
         self.start()
@@ -98,6 +109,7 @@ class MonitorTests(unittest.IsolatedAsyncioTestCase):
         self.monitor._on_readable()
         self.assertFalse(self.monitor.available)
         self.assertTrue(await self.monitor.wait(0.001))
+        self.assertEqual(self.monitor.last_wake_source, "observer_degraded")
         self.assertFalse(await self.monitor.wait(0.001))
         self.loop.remove_reader.assert_called_once_with(42)
 

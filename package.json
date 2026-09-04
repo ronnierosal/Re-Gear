@@ -1,6 +1,6 @@
 {
   "name": "handheld-dock-mode-steamos",
-  "version": "0.3.20",
+  "version": "0.3.21",
   "private": true,
   "license": "GPL-3.0-or-later",
   "packageManager": "pnpm@11.19.0",

@@ -1,5 +1,22 @@
 # Current state
 
+## Re-Gear 0.3.21 G1 readiness candidate — 2026-09-04
+
+Unreleased local changes invalidate readiness and reset settling counters when
+transport observation becomes unknown. The 120-second initial deadline stops
+applying after topology, HDMI, audio, and session readiness settle, allowing
+game completion or result acknowledgement later; fresh observations still gate
+every request. Verified absence or changed identity resets initial readiness.
+
+Wake diagnostics distinguish kernel events, local changes, mixed wakeups,
+observer degradation, and timer polling at readiness changes and automatic
+transition requests. These describe what woke the scan, not device-specific
+causality. Local validation passed: 938 backend tests (six skipped), 102
+frontend tests, architecture, compilation, TypeScript, production UI build,
+and package checks. Hardware validation remains pending; the candidate is not
+installed. Read-only verification found 0.3.20 installed on the detached Ally
+before staging this candidate.
+
 ## Re-Gear 0.3.17 observed-link correction â€” 2026-09-04
 
 The first 0.3.14 hardware attach verified the exact G1 profile and G1 HDMI, but

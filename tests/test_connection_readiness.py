@@ -145,6 +145,50 @@ class ConnectionReadinessTests(unittest.TestCase):
         unknown = self.lifecycle.update(ConnectionReadinessObservation(sample_id="unknown"))
         self.assertEqual(unknown.stage, ConnectionReadinessStage.DISCONNECTED)
 
+    def test_unknown_transport_invalidates_ready_and_requires_fresh_quorum(self):
+        for index in range(4):
+            self.lifecycle.update(sample(index))
+        unknown = self.lifecycle.update(ConnectionReadinessObservation(sample_id="unknown"))
+        self.assertEqual(unknown.stage, ConnectionReadinessStage.ACTION_REQUIRED)
+        self.assertEqual(unknown.code, "connection.transport_unknown")
+        self.assertEqual(unknown.topology_samples, 0)
+        for index in range(4, 7):
+            self.assertEqual(self.lifecycle.update(sample(index)).stage,
+                             ConnectionReadinessStage.STABILIZING)
+        self.assertEqual(self.lifecycle.update(sample(7)).stage,
+                         ConnectionReadinessStage.READY_IDLE)
+
+    def test_established_readiness_survives_deadline_but_not_fresh_link_failure(self):
+        for index in range(4):
+            self.lifecycle.update(sample(index))
+        self.clock.now = 121
+        self.assertEqual(self.lifecycle.update(sample(4)).stage,
+                         ConnectionReadinessStage.READY_IDLE)
+        self.assertEqual(self.lifecycle.update(sample(5, link_up=False)).stage,
+                         ConnectionReadinessStage.WAITING_FOR_LINK)
+        self.assertEqual(self.lifecycle.update(sample(6)).stage,
+                         ConnectionReadinessStage.STABILIZING)
+
+    def test_game_exit_after_deadline_rechecks_idle_without_timing_out(self):
+        for index in range(4):
+            self.lifecycle.update(sample(index, game_state=GameState.RUNNING))
+        self.clock.now = 121
+        self.assertEqual(self.lifecycle.update(sample(4, game_state=GameState.UNKNOWN)).stage,
+                         ConnectionReadinessStage.ACTION_REQUIRED)
+        self.assertEqual(self.lifecycle.update(sample(5)).stage,
+                         ConnectionReadinessStage.READY_IDLE)
+
+    def test_verified_absence_restores_initial_deadline(self):
+        for index in range(4):
+            self.lifecycle.update(sample(index))
+        self.lifecycle.update(ConnectionReadinessObservation(
+            sample_id="absent", transport_absent_verified=True))
+        self.clock.now = 200
+        self.lifecycle.update(sample(5, g1_identity="", pci_complete=False))
+        self.clock.now = 320
+        self.assertEqual(self.lifecycle.update(sample(6)).stage,
+                         ConnectionReadinessStage.TIMED_OUT)
+
     def test_window_times_out_at_120_seconds(self):
         self.lifecycle.update(sample(0, g1_identity="", pci_complete=False))
         self.clock.now = 119.9

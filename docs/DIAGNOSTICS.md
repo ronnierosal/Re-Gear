@@ -344,3 +344,17 @@ player can verify that fans and LEDs actually stopped.
 Logging consent and support-export consent remain separate. Verbose events stay
 in memory unless the player later creates and reviews a support bundle. The
 controller-visible flow and expiry countdown remain unverified on hardware.
+
+## Connection observation wake evidence
+
+`observation.events_ready` means the kernel listener started; it does not prove
+an attach was detected through an event. `observation.poll_fallback` reports
+listener unavailability/degradation. Bounded `observation.wake.*` rows accompany
+readiness-code changes and automatic transition requests, using stages
+`readiness_observation` and `automatic_transition_observation` respectively.
+Suffixes are `startup`, `kernel_event`, `local_change`, `kernel_and_local`,
+`observer_degraded`, `poll_timer`, `closed`, or `unknown`. They identify the wake
+for the current scan; kernel events can concern other PCI/DRM/Thunderbolt devices.
+A timer scan may complete readiness after earlier event scans. Correlate the
+sequence rather than attributing the whole attachment to the last wake alone.
+Raw uevent contents and device paths are never retained by this instrumentation.

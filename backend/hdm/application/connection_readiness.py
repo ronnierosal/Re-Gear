@@ -92,6 +92,7 @@ class ConnectionReadinessLifecycle:
         self._hdmi_samples = 0
         self._audio_samples = 0
         self._failure_requires_absence = False
+        self._readiness_established = False
         self._status = self._make_status(
             ConnectionReadinessStage.DISCONNECTED, "connection.disconnected", 0.0
         )
@@ -111,13 +112,19 @@ class ConnectionReadinessLifecycle:
             return self._status
 
         if not observation.transport_present:
+            self._reset_stability()
+            self._last_sample_id = ""
             if self._started_at is not None and not self._g1_identity:
-                self._reset_stability()
                 self._failure_requires_absence = True
                 self._status = self._make_status(
                     ConnectionReadinessStage.LINK_TRAINING_FAILED,
                     "connection.transport_dropped_before_pci",
                     now,
+                )
+            elif self._started_at is not None:
+                self._status = self._make_status(
+                    ConnectionReadinessStage.ACTION_REQUIRED,
+                    "connection.transport_unknown", now,
                 )
             return self._status
 
@@ -133,12 +140,13 @@ class ConnectionReadinessLifecycle:
             self._transport_identity = observation.transport_identity
             self._g1_identity = ""
             self._started_at = now
+            self._readiness_established = False
             self._last_sample_id = ""
             self._reset_stability()
 
         assert self._started_at is not None
         age = max(0.0, now - self._started_at)
-        if age >= WINDOW_TIMEOUT_SECONDS:
+        if not self._readiness_established and age >= WINDOW_TIMEOUT_SECONDS:
             self._reset_stability()
             self._status = self._make_status(
                 ConnectionReadinessStage.TIMED_OUT, "connection.readiness_timed_out", now
@@ -161,12 +169,25 @@ class ConnectionReadinessLifecycle:
 
         if self._g1_identity and observation.g1_identity != self._g1_identity:
             self._reset_stability()
+            self._readiness_established = False
+            self._started_at = now
         self._g1_identity = observation.g1_identity
 
         topology_ready = observation.driver_ready and observation.link_up
         self._topology_samples = self._topology_samples + 1 if topology_ready else 0
         self._hdmi_samples = self._hdmi_samples + 1 if observation.hdmi_ready else 0
         self._audio_samples = self._audio_samples + 1 if observation.audio_ready else 0
+
+        # The initial readiness deadline excludes waiting for the player to
+        # finish a game or acknowledge a result. Every later sample still gates
+        # action on fresh topology, peripherals, session, and idle game state.
+        if (
+            self._topology_samples >= TOPOLOGY_STABILITY_SAMPLES
+            and self._hdmi_samples >= PERIPHERAL_STABILITY_SAMPLES
+            and self._audio_samples >= PERIPHERAL_STABILITY_SAMPLES
+            and observation.session_ready
+        ):
+            self._readiness_established = True
 
         if not observation.driver_ready:
             self._status = self._make_status(
@@ -214,6 +235,7 @@ class ConnectionReadinessLifecycle:
         self._transport_identity = ""
         self._g1_identity = ""
         self._started_at = None
+        self._readiness_established = False
         self._last_sample_id = ""
         self._reset_stability()
 
