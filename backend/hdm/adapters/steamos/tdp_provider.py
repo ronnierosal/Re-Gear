@@ -8,7 +8,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from ...ports.presentation_activation import GamescopeUserContext
-from ...ports.tdp import TdpObservation, TdpReading, TdpRegister, TdpWriteOutcome
+from ...ports.tdp import TdpDispatchGuard, TdpDispatchRejected, TdpObservation, TdpReading, TdpRegister, TdpWriteOutcome
 from ...profiles.ally_x import PROFILE_ID, matches_ally_x
 from .commands import SteamOsTdpCommandRunner
 from .host import HostDiscovery
@@ -105,7 +105,7 @@ class SteamOsManagerTdpProvider:
         except Exception:
             return unavailable("tdp.observation_invalid")
 
-    def set_limit(self, expected: TdpReading, watts: int) -> TdpWriteOutcome:
+    def set_limit(self, expected: TdpReading, watts: int, *, dispatch_guard: TdpDispatchGuard | None = None) -> TdpWriteOutcome:
         observation, user, owner = self._observe()
         if observation.code != "tdp.ready" or observation.reading is None or user is None or owner is None:
             return TdpWriteOutcome(False, False, observation.code)
@@ -118,7 +118,12 @@ class SteamOsManagerTdpProvider:
         # Reuse this observation's resolved identity. Do not resolve a different
         # session between validation and dispatch, or retain mutable cached users.
         try:
-            result = self._commands.set_limit(user, watts, owner=owner)
+            if dispatch_guard is None:
+                result = self._commands.set_limit(user, watts, owner=owner)
+            else:
+                result = self._commands.set_limit(user, watts, owner=owner, dispatch_guard=dispatch_guard)
+        except TdpDispatchRejected:
+            return TdpWriteOutcome(False, False, "tdp.dispatch_rejected")
         except Exception:
             return TdpWriteOutcome(True, False, "tdp.write_unverified")
         return TdpWriteOutcome(

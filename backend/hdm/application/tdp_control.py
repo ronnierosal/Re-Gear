@@ -11,7 +11,7 @@ import time
 from dataclasses import dataclass, replace
 from typing import Callable
 
-from ..ports.tdp import TdpJournal, TdpObservation, TdpProvider, TdpReading, TdpSessionRecord
+from ..ports.tdp import TdpDispatchGuard, TdpJournal, TdpObservation, TdpProvider, TdpReading, TdpSessionRecord
 
 
 @dataclass(frozen=True, slots=True)
@@ -35,10 +35,10 @@ class TdpControlService:
         self._attempts = verification_attempts
         self._lock = threading.Lock()
 
-    def apply(self, watts: int) -> TdpControlResult:
+    def apply(self, watts: int, *, dispatch_guard: TdpDispatchGuard | None = None) -> TdpControlResult:
         if type(watts) is not int or not 0 < watts <= 0xFFFFFFFF:
             return TdpControlResult("blocked", "tdp.request_invalid")
-        return self._run(watts, restoring=False)
+        return self._run(watts, restoring=False, dispatch_guard=dispatch_guard)
 
     def restore(self) -> TdpControlResult:
         return self._run(None, restoring=True)
@@ -56,15 +56,15 @@ class TdpControlService:
         except Exception:
             return False
 
-    def _run(self, watts: int | None, *, restoring: bool) -> TdpControlResult:
+    def _run(self, watts: int | None, *, restoring: bool, dispatch_guard: TdpDispatchGuard | None = None) -> TdpControlResult:
         if not self._lock.acquire(blocking=False):
             return TdpControlResult("blocked", "tdp.busy", watts)
         try:
-            return self._execute(watts, restoring=restoring)
+            return self._execute(watts, restoring=restoring, dispatch_guard=dispatch_guard)
         finally:
             self._lock.release()
 
-    def _execute(self, watts: int | None, *, restoring: bool) -> TdpControlResult:
+    def _execute(self, watts: int | None, *, restoring: bool, dispatch_guard: TdpDispatchGuard | None = None) -> TdpControlResult:
         try:
             record = self._journal.load()
         except Exception:
@@ -98,7 +98,10 @@ class TdpControlService:
         if not self._save(pending):
             return TdpControlResult("blocked", "tdp.journal_unavailable", watts)
         try:
-            outcome = self._provider.set_limit(current, watts)
+            if dispatch_guard is None:
+                outcome = self._provider.set_limit(current, watts)
+            else:
+                outcome = self._provider.set_limit(current, watts, dispatch_guard=dispatch_guard)
         except Exception:
             return TdpControlResult("recovery_required", "tdp.write_outcome_unknown", watts)
         if not outcome.attempted:

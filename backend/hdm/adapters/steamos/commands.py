@@ -11,6 +11,7 @@ from typing import Sequence
 
 from ...ports.presentation_activation import UserServiceOperation
 from ...ports.system_power import PowerOffResult
+from ...ports.tdp import TdpDispatchGuard, TdpDispatchRejected
 
 
 @dataclass(frozen=True, slots=True)
@@ -514,7 +515,7 @@ class SteamOsTdpCommandRunner:
             capture=True,
         )
 
-    def set_limit(self, user, watts: int, *, owner: str = "") -> CommandResult:
+    def set_limit(self, user, watts: int, *, owner: str = "", dispatch_guard: TdpDispatchGuard | None = None) -> CommandResult:
         # An omitted owner fails categorically instead of falling back to SERVICE.
         if type(owner) is not str or not self.UNIQUE_OWNER.fullmatch(owner):
             return CommandResult((), None, "", "", "tdp.owner_invalid")
@@ -527,9 +528,10 @@ class SteamOsTdpCommandRunner:
                 "TdpLimit", "u", str(watts),
             ),
             capture=False,
+            dispatch_guard=dispatch_guard,
         )
 
-    def _run(self, user, suffix: tuple[str, ...], *, capture: bool) -> CommandResult:
+    def _run(self, user, suffix: tuple[str, ...], *, capture: bool, dispatch_guard: TdpDispatchGuard | None = None) -> CommandResult:
         from ...ports.presentation_activation import GamescopeUserContext
 
         if (
@@ -560,6 +562,13 @@ class SteamOsTdpCommandRunner:
             "--timeout=2s",
             *suffix,
         )
+        if dispatch_guard is not None:
+            try:
+                allowed = dispatch_guard() is True
+            except Exception:
+                allowed = False
+            if not allowed:
+                raise TdpDispatchRejected("tdp.dispatch_rejected")
         try:
             completed = subprocess.run(
                 argv,

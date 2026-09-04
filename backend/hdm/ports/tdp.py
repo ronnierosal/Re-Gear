@@ -3,7 +3,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Callable, Protocol
+
+
+TdpDispatchGuard = Callable[[], bool]
+
+
+class TdpDispatchRejected(Exception):
+    """Raised only before invoking the power-setting subprocess."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,7 +73,7 @@ class TdpWriteOutcome:
 
 class TdpProvider(Protocol):
     def observe(self) -> TdpObservation: ...
-    def set_limit(self, expected: TdpReading, watts: int) -> TdpWriteOutcome:
+    def set_limit(self, expected: TdpReading, watts: int, *, dispatch_guard: TdpDispatchGuard | None = None) -> TdpWriteOutcome:
         """Freshly revalidate the expected reading and ownership before enqueueing."""
         ...
 
