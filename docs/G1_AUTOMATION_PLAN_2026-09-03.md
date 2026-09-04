@@ -109,3 +109,19 @@ Give one physical action at a time and inspect after each confirmation:
 
 Failures remain diagnosable and explicitly acknowledged; no blanket success
 clearance or repeated Steam restart loop is allowed.
+
+## Watched 0.3.0 attach after forced shutdown — 2026-09-03
+
+The player booted detached with picture/audio/controls working and then attached
+the powered G1 without pressing Switch to TV. Re-Gear's current-boot logs showed
+the event observer ready and the previous Portable hold released. Read-only
+evidence then found an authorized external USB4 router reporting 20 Gb/s link
+speed, but none of the known G1 GPU/audio/bridge/xHCI PCI functions. No G1 DRM
+device or external display was exposed. This blocks before display-transition
+readiness; it does not establish an event-observer failure. The player confirmed
+G1 power on. No rescan, bind, unbind, authorization change or power reset was
+performed. G1 remained powered across the earlier forced Ally shutdown; a
+separately supervised full cold G1 restart after confirmed Ally poweroff is the
+next hardware isolation step, not a proven fix. Keep the cable attached until
+full Ally poweroff. Local evidence: out/regear-attach-pci-check.json and
+out/regear-attach-usb4-check.json.
