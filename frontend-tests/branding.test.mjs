@@ -25,7 +25,7 @@ test("approved preview uses Re-Gear and keeps sample-data disclosure", () => {
 
 test("UI and README use the supplied local Re-Gear artwork", () => {
   const source = read("../src/index.tsx");
-  assert.match(source, /import brandIcon from "\.\.\/docs\/images\/re-gear-decky-icon\.png"/);
+  assert.ok(source.includes('import brandIcon from "../docs/images/re-gear-decky-transparent.png"'));
   assert.match(source, /icon: <BrandIcon \/>/);
   assert.match(source, /<BrandIcon size=\{36\} \/>/);
   assert.match(read("../README.md"), /src="docs\/images\/re-gear-icon\.png"/);
@@ -35,7 +35,9 @@ test("UI and README use the supplied local Re-Gear artwork", () => {
 
 test("committed bundle embeds the artwork without an unpackaged asset URL", () => {
   const bundle = read("../dist/index.js");
-  const image = readFileSync(new URL("../docs/images/re-gear-decky-icon.png", import.meta.url));
+  const image = readFileSync(new URL("../docs/images/re-gear-decky-transparent.png", import.meta.url));
+  assert.deepEqual([...image.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
+  assert.equal(image[25], 6, "Decky icon must retain RGBA PNG format");
   assert.ok(bundle.includes("data:image/png;base64," + image.toString("base64")));
   assert.doesNotMatch(bundle, /\/assets\/re-gear-(?:decky-)?icon/);
 });

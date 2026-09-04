@@ -60,7 +60,7 @@ remains the entry point for technical tools and secondary diagnostics.
 On-device photos exposed detached icons and narrow, mid-word label wrapping
 from `ButtonItem` label/action columns. Main dashboard actions now place icon,
 title, description, and chevron inside one native `DialogButton` with a
-24px / flexible text / 16px grid. Do not put these icons in an external Item
+32px icon tile / flexible text / 16px chevron grid. Do not put these icons in an external Item
 slot or add separate Details/Show buttons. Preserve native focus and disabled
 behavior; copy wraps at word boundaries. Automatic docking remains a native
 `ToggleField`, with inset padding rather than custom switch behavior.

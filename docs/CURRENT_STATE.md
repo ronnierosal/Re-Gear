@@ -1,24 +1,252 @@
 # Current state
 
-## Re-Gear integration update — 2026-09-03
+## Re-Gear 0.3.8 combined G1 audio readiness candidate — 2026-09-04
 
-- The GitHub repository is now `ronnierosal/Re-Gear`; local `origin` uses
-  `https://github.com/ronnierosal/Re-Gear.git`. The checkout directory retains
-  its existing name.
-- Local merge `9aeb841` integrates remote journey timing diagnostics `3a5d162`
-  with UI and branding work through `12dac34`. This records local integration,
-  not publication or installation.
-- Re-Gear branding is implemented in the panel, dialogs, notifications, README,
-  and bundled artwork. Public documentation and Wiki source use the new brand
-  and repository links. Wiki source changes are not live Wiki publication.
-- Decky identity `Handheld Dock Mode`, install directory `HandheldDockMode`,
-  modules, state paths, and preference keys retain legacy names under the
-  [presentation-only branding contract](PRODUCT.md#brand-identity).
-- Integration checks passed: architecture, 805 backend tests (5 skipped),
-  compilation, TypeScript, 72 frontend tests, frontend build, and package check.
-  Two stale backend UI-copy assertions were updated for Re-Gear.
-- No deployment or hardware validation was performed for this update.
-  The implementation and device observations below remain dated evidence.
+Installed 0.3.7 revision `52db288056c3` and the separately built 0.3.7 audio
+candidate `9d85b35` collided on the same version. The installed build did not
+contain the audio readiness change. This candidate starts from the installed
+runtime revision and adds that bounded change, then advances the version to
+0.3.8. It requires two consecutive matching exact G1 HDMI sink observations,
+bounded to six attempts at 250 ms intervals, before any audio mutation.
+
+The triggering hot-attach attempt bound the G1 GPU but twice failed automatic
+docking at `audio.external_sink_ambiguous`. PipeWire later showed one exact G1
+HDMI loopback sink. This supports a transient readiness defect; hardware
+validation remains required. Keep G1 detached for candidate installation.
+
+## Re-Gear 0.3.7 combined candidate — 2026-09-04
+
+- Local candidate combines the preserved 0.3.6 G1/runtime and transparent-icon
+  release baseline with Offline Readiness, the latest compact Quick Access UI,
+  and supplied offline badges. This is a build candidate, not installed evidence.
+- Full integration gate passed: architecture, 913 backend tests (6 skipped),
+  compilation, TypeScript, 101 frontend tests, frontend build, package check,
+  and whitespace validation.
+- Do not overwrite the shared installed runtime while G1 is connected. The ZIP
+  may be staged in the deck user's home without changing the running plugin;
+  installation still requires a detached/idle coordinated window and rollback.
+
+## Re-Gear 0.3.6 transparent icon — 2026-09-04
+
+Replaces the opaque JPEG background with a derived RGBA PNG in list and header.
+Alpha inspection: 1254x1254, 668393 fully transparent pixels, corner alpha 0.
+White internal details remain opaque. Original supplied artwork is retained.
+No backend, identity, lifecycle or polling changes. Not installed or uploaded
+by this update; native Decky visual validation and identity migration remain open.
+
+## Re-Gear 0.3.5 icon selection — 2026-09-04
+
+Supersedes the 0.3.4 artwork with the user's unmodified black gear JPEG,
+`docs/images/re-gear-decky-black-gear.jpg`, in the list and header. White
+background is retained. No runtime or identity changes; the Decky name
+migration remains pending. Not installed, uploaded or published by this update.
+
+## Re-Gear 0.3.4 icon candidate — 2026-09-04
+
+Based on the combined 0.3.3 candidate `3c182d6`, this update embeds the
+user-supplied monochrome JPEG as the Decky list and panel icon. Original artwork
+is retained. Backend, RPC, lifecycle, polling and safety logic are unchanged.
+The Decky list still uses the legacy plugin identity; the requested Re-Gear
+list rename is deferred pending a tested identity migration (see BRANDING.md).
+This candidate is not installed or published and does not close hardware gates.
+
+## Re-Gear 0.3.3 UI integration candidate — 2026-09-04
+
+This isolated packaging branch starts from G1 runtime
+`412b9dc8f6b573450e174fc87f15d4e48b56dd66` (0.3.2) and incorporates
+the UI-only changes from `75f441f`, `3a54108`, and `b83f324`.
+The backend, lifecycle code, RPC contracts, polling, safety conditions, and
+runtime journal acknowledgement retirement are preserved. Generated frontend
+outputs are rebuilt from this combined source, not copied from the UI branch.
+
+Package and Python versions are 0.3.3; the archive is `Re-Gear-0.3.3.zip`.
+Legacy Decky identity and internal `HandheldDockMode` directory are unchanged.
+Offline Play and Auto TDP workstream implementations are intentionally excluded.
+This is a local validation candidate, not a published release or installed build.
+Actual Decky controller/layout validation and G1-connected shutdown remain
+unverified for this candidate. No hardware operations are part of packaging.
+The dated observations below remain historical, not current device evidence.
+
+Local integration verification: 884 backend tests (6 skipped), 78 frontend
+tests, architecture, compileall, typecheck, fresh build and package checks pass.
+The production-action host surrogate passes 240/280/320px layout, keyboard-focus
+and disabled-state checks; this is not native Decky/controller proof. Every
+non-render statement in Content matches the runtime base; backend, main.py,
+RPC contracts and polling files have no differences. The UI regression assertion
+now matches the published polish's 32px icon tile and multiline style formatting.
+
+## 0.3.2 local event-loop responsiveness repair — 2026-09-03
+
+The automatic loop constructed its presentation service on the event-loop
+thread before passing a bound method to asyncio.to_thread. That uncached
+factory scans Gamescope processes and prepares runtime storage on every call.
+A blocked factory reproduced event-loop starvation: a queued callback could
+not run until the factory was released. Factory construction plus invocation
+now run inside the worker for automatic completion/execution, background audio
+handoff, and supervised presentation RPCs. Existing transition approvals and
+tracked background-operation ownership remain in place.
+
+Regression verifies a callback runs while the factory is blocked off-loop.
+Architecture, 884 backend tests (six skipped), and compilation passed.
+This is a demonstrated local defect with plausible shutdown-handler impact;
+the actual Ally hang is not attributed to it. The local Windows Decky fork
+shows SIGTERM scheduling unload on the event loop, but is reference evidence,
+not verified installed Linux loader source. Installed Ally remains 0.3.1 and
+detached; no runtime changes were made during this investigation.
+
+## Re-Gear 0.3.1 shutdown failed; detached recovery — 2026-09-03
+
+Installed 0.3.1 `62f7333a69ff` was verified on disk and in the startup journal.
+The player confirmed working picture/audio/controls with powered G1 attached.
+The supervised normal shutdown again left fan/LEDs on beyond one minute;
+the player forced poweroff, detached G1 while off, and booted successfully.
+Player confirms picture/audio/controls; capture-20260904T053225Z.json shows
+Idle and only the internal GPU present. Keep G1 detached during diagnosis.
+
+Version/timestamp correlation is essential: the previous-boot `unload_started`
+marker belongs to 0.3.0 being replaced during installation, not the later 0.3.1
+shutdown. For the latter, Decky recorded a stop request and response-listener
+stop at 1788499653329876/1788499653329992 us, then SIGKILL at
+1788499658344191 us. No loader-unload, hook-attempt, or Re-Gear cleanup marker
+for that shutdown was retained. Startup confirms 0.3.1 ran; the bounded cleanup
+path has not been shown to execute at shutdown. This does not establish why
+the backend failed to enter unload, or why the whole machine failed to power off.
+Do not infer a particular cleanup await from the mixed-boot aggregate.
+
+Evidence: out/regear-0.3.1-shutdown-timeline.json,
+out/regear-0.3.1-failed-shutdown.json, and out/regear-0.3.1-shutdown-live.jsonl.
+Live SSH capture ended before any shutdown messages. Aggregate tail reached
+2000 rows; whole-boot AER/xHCI counts do not establish shutdown causality.
+Next investigate Decky-to-backend stop delivery and event-loop responsiveness
+before another code candidate or attached shutdown trial.
+
+## Re-Gear 0.3.1 local shutdown candidate — 2026-09-03
+
+Local cleanup now closes background admission, requests every observer stop
+before waiting, and uses a shared one-second observer deadline plus a separate
+three-second sleep-guard release deadline. Already-started automatic display
+and recovery audio operations remain tracked when their observer is cancelled.
+Pending work produces categorical timeout/incomplete checkpoints, never a
+successful unload marker. The collector recognizes each new checkpoint.
+
+Regression tests cover blocked cancellation, other observers and guard still
+stopping, retained in-flight mutation ownership, closed admission, and a blocked
+guard release. Architecture, 883 backend tests (six skipped), compilation,
+TypeScript, 77 frontend tests, build and package checks passed. Independent
+review found no blocking issue. A lock-blocked watcher close was reproduced
+locally; it has not been identified as the observer in the recorded Ally hang.
+This does not prove final OS shutdown or live removal safety. Worker ownership
+does not guarantee worker completion after Decky retires its process.
+
+Installed hardware remains 0.3.0 `9571a5ca3e5b`. The latest cold G1 attach
+enumerated its AMD GPU and requested automatic docking, but failed with
+`audio.external_sink_ambiguous` before display switching. The TV was on another
+input; its causal role and event-versus-fallback trigger are unproven. HDMI
+validation is deferred by the player. No hardware mutation was made for 0.3.1.
+Next: detached installation of the candidate, then a separately supervised
+shutdown capture. Disconnect only after physical poweroff is confirmed.
+
+## Failed shutdown and detached recovery — 2026-09-03
+
+The supervised ordinary shutdown on installed 0.3.0 `9571a5ca3e5b` again left
+fan/power LEDs on after SSH closed. The player used a forced power-button hold,
+confirmed poweroff, disconnected G1, and booted detached. Player confirmed Ally
+picture/audio/controls; read-only capture confirms Idle, internal display active,
+only internal GPU present, and the same installed version.
+
+The shutdown-window journal shows HDM unload_started, Steam stopping in about
+2.54 seconds, Gamescope stopping in about 1.42 seconds, then a Decky SIGKILL
+entry naming HDM about 5.01 seconds after its unload start. No subsequent HDM
+cleanup checkpoint was retained. This establishes incomplete HDM cleanup in
+this shutdown, not the cause of final machine poweroff failure. No final
+poweroff-stage evidence was retained. Whole-boot PCIe AER/xHCI counts were not
+in the shutdown window and must not be attributed to it.
+
+Current-boot logs show observation.events_ready, completion.portable_released,
+and completion.idle. Fresh automatic attach is now eligible for supervised
+testing after normal readiness gates; this is not proof of successful docking.
+Next local shutdown investigation: identify the HDM observer await that prevents
+cleanup, reproduce it, and fix only that lifecycle path. Do not widen process
+termination or driver-reset authority. Local evidence: out/shutdown-failed-20260904-*.json,
+out/shutdown-20260904-window.json, out/shutdown-hdm-and-detached-events.json,
+and remote-captures/capture-20260904T045931Z.json.
+
+## Shutdown capture repair — 2026-09-03
+
+Developer-only capture now handles bounded journal byte messages and reports
+omitted/ambiguous message coverage explicitly. Fixed current/previous boot and
+kernel/service/plugin selections avoid mixed-tail crowding. A bounded live
+reader streams validated redacted summaries to the development computer before
+SSH closes; it never initiates shutdown or changes remote configuration.
+Verification: 21 collector/live tests, architecture, compileall and diff checks
+passed. A 30-second live dry run exited cleanly. Separate previous-boot reads
+returned 1296 kernel, 1365 service and 1272 plugin rows without malformed rows,
+but no final poweroff or HDM unload evidence. Installed Re-Gear remains 0.3.0
+`9571a5ca3e5b`; these scripts are not part of the plugin archive. Next: one
+player-requested poweroff with live capture, then physical-state confirmation and
+retained-log retrieval after a safe boot. SSH loss is not poweroff proof.
+
+## Graceful session experiment — 2026-09-03
+
+On installed 0.3.0 `9571a5ca3e5b`, one explicitly supervised no-force session
+stop completed; SteamOS automatically restored the session. Temporary overrides
+were removed and native service settings verified. The maintainer confirmed restored Ally picture, audio and built-in controls. This does not resolve
+the shutdown hang or authorize unplugging. See the
+[experiment record](G1_GRACEFUL_SESSION_EXPERIMENT_2026-09-03.md).
+
+## Re-Gear 0.3.0 packaging checkpoint — 2026-09-03
+
+New candidates use `Re-Gear-<version>.zip`; package.json and pyproject.toml now
+agree on 0.3.0. The combined dashboard/event-trigger candidate retains the legacy
+Decky installation identity. CI, candidate validation and deployment selection
+use the branded name; historical rollback verification accepts either prefix.
+Version policy is recorded in RELEASE_PIPELINE.md. Verification passed architecture,
+874 backend tests (six skipped), compilation, TypeScript, 77 frontend tests,
+build, package and diff checks. This is a local candidate, not installed or
+hardware validated. Next: supervised detached install and automatic-dock test.
+
+## Re-Gear branding integration
+
+Re-Gear is the public product name. The runtime branch integrates the UI
+workstream's `8067a04` branding/artwork and `20d0749` self-contained image loader
+with the `7afa509` lifecycle fixes. The supplied PNG is embedded byte-for-byte;
+the journal-idle acknowledgement fix remains intact. Legacy installation IDs,
+state paths, GitHub links and checkout paths remain unchanged as documented in
+[branding compatibility](BRANDING.md). Combined local gates: 873 backend tests
+(six skips), 73 frontend tests, architecture, compile, typecheck, build and package
+checks passed. No rebranded build is yet installed or hardware-validated.
+
+## Local automatic-lifecycle candidate — 2026-09-03 late session
+
+The maintainer confirmed TV picture/audio and a Prepare G1 disconnect return to
+Ally picture/audio/controls on installed `1981259840ce`. This proves one watched
+software cycle, not repeated reconnect or physical removal. The
+[automation plan](G1_AUTOMATION_PLAN_2026-09-03.md) tracks local completion receipts,
+durable Portable suppression, PCI/DRM event wakeups with fallback, and categorical
+logs. Local verification: 873 backend tests (six skipped), 69 frontend tests,
+architecture, compile, typecheck, build, package and diff checks passed. These
+changes are not installed or hardware-validated. Older state below is historical.
+
+## Shutdown follow-up — 2026-09-03
+
+The latest maintainer report is an incomplete attached-G1 shutdown (fan and LEDs
+still on); eventual poweroff is unknown. The
+[shutdown review](G1_SHUTDOWN_REVIEW_2026-09-03.md) preserves the other hardware
+audit's safety findings. Local code now prevents an already-failed HDM observer
+from skipping owned sleep-guard cleanup and adds categorical unload checkpoints.
+A developer-only previous-boot journal collector adds no production polling or
+remote mutation. This is not a verified fix for the hardware shutdown hang.
+
+## Latest G1 checkpoint — 2026-09-03
+
+See [the package/audio incident record](G1_LIFECYCLE_VALIDATION_2026-09-03.md).
+Installed base `3a5d1620ddf8` failed a session restart because the launcher shipped
+CRLF. An approved in-place LF repair restored Steam; a subsequent TV picture/audio
+and return-to-Ally display/control cycle passed. Return audio remained HDMI and
+required manual selection. LF package enforcement, Portable audio baseline guards,
+and separate audio-result diagnostics are locally implemented with regression
+tests, not yet validated as a new installed build. Older entries below are
+historical. No live-removal claim has changed.
 
 Last repository audit baseline: **2026-09-02**. This page records a dated
 implementation baseline rather than attempting to name its own containing Git

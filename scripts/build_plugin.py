@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 PACKAGE_VERSION = str(
     json.loads((ROOT / "package.json").read_text(encoding="utf-8"))["version"]
 )
-OUTPUT = ROOT / "out" / f"HandheldDockMode-{PACKAGE_VERSION}.zip"
+OUTPUT = ROOT / "out" / f"Re-Gear-{PACKAGE_VERSION}.zip"
 PLUGIN_DIRECTORY = "HandheldDockMode"
 BUILD_INFO_FILENAME = "build_info.json"
 REVISION_RE = re.compile(r"^[0-9a-f]{40}$")
@@ -47,6 +47,26 @@ def archive_name(path: Path) -> str:
 
 def archive_mode(path: Path) -> int:
     return 0o100755 if path == ROOT / "bin" / "gamescope" else 0o100644
+
+
+def archive_bytes(path: Path) -> bytes:
+    """Canonicalize the Linux launcher even in an older Windows checkout.
+
+    Git attributes protect new checkouts, but do not rewrite existing CRLF
+    files. Normalize only CRLF pairs, leaving all other source bytes intact;
+    invalid shebangs or remaining bare CR bytes must fail closed.
+    """
+    content = path.read_bytes()
+    if path == ROOT / "bin" / "gamescope":
+        content = content.replace(b"\r\n", b"\n")
+        validate_launcher_bytes(content)
+    return content
+
+
+def validate_launcher_bytes(content: bytes) -> None:
+    """Check bytes, not universal-newline text, before Linux executes them."""
+    if not content.startswith(b"#!/usr/bin/python3\n") or b"\r" in content:
+        raise ValueError("Gamescope shim must have an LF-only /usr/bin/python3 shebang and body")
 
 
 def _git_status(*args: str) -> subprocess.CompletedProcess[str] | None:
@@ -121,7 +141,7 @@ def main() -> int:
             info = zipfile.ZipInfo(archive_name(path))
             info.date_time = (2026, 1, 1, 0, 0, 0)
             info.external_attr = archive_mode(path) << 16
-            archive.writestr(info, path.read_bytes(), compress_type=zipfile.ZIP_DEFLATED)
+            archive.writestr(info, archive_bytes(path), compress_type=zipfile.ZIP_DEFLATED)
         info = zipfile.ZipInfo(f"{PLUGIN_DIRECTORY}/{BUILD_INFO_FILENAME}")
         info.date_time = (2026, 1, 1, 0, 0, 0)
         info.external_attr = 0o100644 << 16
@@ -136,6 +156,7 @@ def main() -> int:
         if archive.read(f"{PLUGIN_DIRECTORY}/{BUILD_INFO_FILENAME}") != build_info:
             raise SystemExit("Decky archive build metadata did not round-trip")
         wrapper = archive.getinfo(f"{PLUGIN_DIRECTORY}/bin/gamescope")
+        validate_launcher_bytes(archive.read(wrapper))
         if (wrapper.external_attr >> 16) & 0o777 != 0o755:
             raise SystemExit("Gamescope shim must be executable in the archive")
     print(OUTPUT)

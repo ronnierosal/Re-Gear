@@ -4,6 +4,9 @@ Re-Gear is an early, safety-conscious SteamOS project. Contributions are welcome
 when they keep behavior evidence-based, changes focused, and hardware claims
 honest.
 
+Use the Re-Gear display name; preserve legacy technical identifiers as described
+in [branding and compatibility](docs/BRANDING.md).
+
 ## Before changing code
 
 Read:

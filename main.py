@@ -20,6 +20,7 @@ if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
 from hdm.adapters.steamos.discovery import SteamOsDiscovery  # noqa: E402
+from hdm.adapters.steamos.topology_wakeup import LinuxTopologyWakeup  # noqa: E402
 from hdm.adapters.steamos.drm import DrmDiscovery  # noqa: E402
 from hdm.adapters.steamos.pci import PciUsb4Discovery  # noqa: E402
 from hdm.adapters.steamos.wake_diagnostics import WakeDiagnosticsDiscovery  # noqa: E402
@@ -175,16 +176,34 @@ from hdm.domain.control_plane import (  # noqa: E402
     PlacementState,
     TransitionOutcomeKind,
 )
-from hdm.domain.models import GameState  # noqa: E402
+from hdm.domain.models import GameState, GpuRole  # noqa: E402
 from hdm.domain.inference import infer_placement  # noqa: E402
 from hdm.profiles.gpd_g1 import match_gpd_g1  # noqa: E402
 
 
 MAX_JOURNEY_ELAPSED_MS = 24 * 60 * 60 * 1000
+UNLOAD_OBSERVER_TIMEOUT_SECONDS = 1.0
+UNLOAD_GUARD_TIMEOUT_SECONDS = 3.0
+
+
+def _can_remember_portable_audio(snapshot) -> bool:
+    """Do not let attached HDMI overwrite the pre-attach audio baseline."""
+    return (
+        infer_placement(snapshot) is PlacementState.PORTABLE
+        and snapshot.game_state is GameState.IDLE
+        and not snapshot.disconnect_readiness.applicable
+        and snapshot.disconnect_readiness.scan_complete
+        and not snapshot.sleep_guard.required
+        and not snapshot.egpu_link.applicable
+        and not any(gpu.role is GpuRole.EXTERNAL for gpu in snapshot.gpus)
+    )
 
 
 class Plugin:
     def __init__(self) -> None:
+        self._unloading = False
+        self._background_operations: set[asyncio.Task] = set()
+        self._retiring_tasks: set[asyncio.Task] = set()
         self._sleep_guard = SleepGuardController()
         self._sleep_hardware = G1SleepGuardHardwareDiscovery()
         self._discovery = SteamOsDiscovery(
@@ -195,6 +214,9 @@ class Plugin:
         self._sleep_guard_task: asyncio.Task[None] | None = None
         self._automatic_dock_task: asyncio.Task[None] | None = None
         self._automatic_dock_retry_seconds = 1.0
+        self._topology_wakeup = None
+        self._topology_wakeup_was_available = False
+        self._last_completion_code = ""
         self._automatic_dock = AutomaticDockCoordinator()
         self._native_recovery_task: asyncio.Task[None] | None = None
         self._native_recovery = NativePortableRecoverySupervisor()
@@ -454,6 +476,8 @@ class Plugin:
                 "automatic_dock.preference_unavailable"
             )
         code = "automatic_dock.enabled" if enabled else "automatic_dock.disabled"
+        if self._topology_wakeup is not None:
+            self._topology_wakeup.invalidate()
         self._events.append(
             severity="info",
             code=code,
@@ -851,9 +875,9 @@ class Plugin:
         """Inspect one idle-only display switch without issuing authority."""
         try:
             preview = await asyncio.to_thread(
-                self._presentation_transition_service().preview,
-                PlacementState.DOCKED_EGPU,
-                user_confirmed=False,
+                lambda: self._presentation_transition_service().preview(
+                    PlacementState.DOCKED_EGPU, user_confirmed=False
+                ),
             )
             return {
                 "schema_version": 1,
@@ -875,9 +899,9 @@ class Plugin:
         """Issue one short-lived permit after an on-screen player confirmation."""
         try:
             preview = await asyncio.to_thread(
-                self._presentation_transition_service().preview,
-                PlacementState.DOCKED_EGPU,
-                user_confirmed=True,
+                lambda: self._presentation_transition_service().preview(
+                    PlacementState.DOCKED_EGPU, user_confirmed=True
+                ),
             )
             return {
                 "schema_version": 1,
@@ -913,7 +937,7 @@ class Plugin:
         )
         try:
             result = await asyncio.to_thread(
-                self._presentation_transition_service().execute, approval_token
+                lambda: self._presentation_transition_service().execute(approval_token)
             )
         except Exception:
             finished_ns = self._journey_now_ns()
@@ -975,9 +999,9 @@ class Plugin:
         """Issue one short-lived permit to return a verified idle dock to Portable."""
         try:
             preview = await asyncio.to_thread(
-                self._presentation_transition_service().preview,
-                PlacementState.PORTABLE,
-                user_confirmed=True,
+                lambda: self._presentation_transition_service().preview(
+                    PlacementState.PORTABLE, user_confirmed=True
+                ),
             )
             return {
                 "schema_version": 1,
@@ -1066,14 +1090,13 @@ class Plugin:
         """Clear only the exact terminal transition after player acknowledgement."""
         try:
             prior_status = await asyncio.to_thread(
-                self._presentation_transition_service().status
+                lambda: self._presentation_transition_service().status()
             )
         except Exception:
             prior_status = None
         try:
             acknowledged = await asyncio.to_thread(
-                self._presentation_transition_service().acknowledge,
-                acknowledgement_id,
+                lambda: self._presentation_transition_service().acknowledge(acknowledgement_id),
             )
         except Exception:
             acknowledged = False
@@ -1082,6 +1105,8 @@ class Plugin:
                 self._automatic_dock.suppress_current_attachment_after_portable_return()
             else:
                 self._automatic_dock.reset_after_acknowledgement()
+            if self._topology_wakeup is not None:
+                self._topology_wakeup.invalidate()
         return {"schema_version": 1, "acknowledged": acknowledged}
 
     async def get_supervised_tv_switch_status(
@@ -1090,7 +1115,7 @@ class Plugin:
         """Return the durable supervised-TV result after a Gamescope restart."""
         try:
             status = await asyncio.to_thread(
-                self._presentation_transition_service().status
+                lambda: self._presentation_transition_service().status()
             )
             return presentation_transition_status_to_payload(status)
         except Exception:
@@ -1317,6 +1342,14 @@ class Plugin:
                 component="discovery",
                 stage="startup",
             )
+        self._topology_wakeup = LinuxTopologyWakeup()
+        monitor_ready = self._topology_wakeup.start()
+        self._topology_wakeup_was_available = monitor_ready
+        self._append_journey_event(
+            severity="info" if monitor_ready else "warning",
+            code="observation.events_ready" if monitor_ready else "observation.poll_fallback",
+            component="connection", stage="observer_start", create_timeline=False,
+        )
         self._sleep_guard_task = asyncio.create_task(self._sleep_guard_loop())
         self._automatic_dock_task = asyncio.create_task(self._automatic_dock_loop())
         self._native_recovery_task = asyncio.create_task(
@@ -1328,7 +1361,7 @@ class Plugin:
 
         observations = SnapshotTransitionObservationAdapter(self._discovery)
         clock = SystemMonotonicClock()
-        while True:
+        while not self._unloading:
             delay_seconds = 1.0
             try:
                 enabled = await asyncio.to_thread(
@@ -1364,10 +1397,10 @@ class Plugin:
                         lambda: resolve_gamescope_user(GamescopeDiscovery().scan())
                     )
                     if resolution.ok and resolution.context is not None:
-                        audio = await asyncio.to_thread(
-                            self._audio_handoff_service().switch,
-                            PlacementState.PORTABLE,
-                            resolution.context,
+                        audio = await self._run_background_operation(
+                            lambda: self._audio_handoff_service().switch(
+                                PlacementState.PORTABLE, resolution.context
+                            ),
                         )
                         self._events.append(
                             severity="info" if audio.succeeded else "warning",
@@ -1396,25 +1429,38 @@ class Plugin:
     async def _automatic_dock_loop(self) -> None:
         """Submit one exact, idle attach request through the shared transition engine."""
         observations = SnapshotTransitionObservationAdapter(self._discovery)
-        while True:
+        while not self._unloading:
             delay_seconds = self._automatic_dock_retry_seconds
             try:
                 enabled = await asyncio.to_thread(
                     self._automatic_dock_preferences().load
                 )
                 current = await asyncio.to_thread(observations.observe)
-                if infer_placement(current.snapshot) is PlacementState.PORTABLE:
+                completion = await asyncio.to_thread(
+                    lambda: self._presentation_transition_service().reconcile_completion(current)
+                )
+                if completion.hold_portable:
+                    self._automatic_dock.suppress_current_attachment_after_portable_return()
+                if completion.code != self._last_completion_code:
+                    self._last_completion_code = completion.code
+                    self._append_journey_event(
+                        severity="warning" if completion.code in {
+                            "completion.storage_unavailable", "completion.receipt_unverified"
+                        } else "info",
+                        code=completion.code, component="presentation", stage="completion",
+                        create_timeline=False,
+                    )
+                if _can_remember_portable_audio(current.snapshot):
                     resolution = await asyncio.to_thread(
                         lambda: resolve_gamescope_user(GamescopeDiscovery().scan())
                     )
                     if resolution.ok and resolution.context is not None:
                         await asyncio.to_thread(
-                            self._audio_handoff_service().remember_portable,
-                            resolution.context,
+                            lambda: self._audio_handoff_service().remember_portable(resolution.context),
                         )
                 if not enabled:
                     delay_seconds = 5.0
-                    await asyncio.sleep(delay_seconds)
+                    await self._wait_for_topology(delay_seconds)
                     continue
                 readiness = await asyncio.to_thread(
                     self._record_topology_observation, current.snapshot
@@ -1438,6 +1484,12 @@ class Plugin:
                 delay_seconds = min(
                     delay_seconds, readiness.poll_after_ms / 1_000
                 )
+                if (
+                    self._topology_wakeup is not None
+                    and self._topology_wakeup.available
+                    and readiness.stage is not AttachReadinessStage.SETTLING
+                ):
+                    delay_seconds = 5.0
                 if decision.status.stage is AutomaticDockStage.DOCKED:
                     delay_seconds = 15.0
                 elif readiness.stage is AttachReadinessStage.GAME_RUNNING:
@@ -1453,11 +1505,12 @@ class Plugin:
                         now_ns=transition_started_ns,
                     )
                     try:
-                        result = await asyncio.to_thread(
-                            self._presentation_transition_service().execute_automatic,
-                            PlacementState.DOCKED_EGPU,
-                            expected_generation=decision.expected_generation,
-                            standing_consent=enabled,
+                        result = await self._run_background_operation(
+                            lambda: self._presentation_transition_service().execute_automatic(
+                                PlacementState.DOCKED_EGPU,
+                                expected_generation=decision.expected_generation,
+                                standing_consent=enabled,
+                            ),
                         )
                     except Exception:
                         transition_finished_ns = self._journey_now_ns()
@@ -1514,17 +1567,32 @@ class Plugin:
                     component="presentation",
                     stage="automatic_dock",
                 )
+            await self._wait_for_topology(delay_seconds)
+
+    async def _wait_for_topology(self, delay_seconds: float) -> None:
+        """Events are invalidations only; the next iteration re-collects evidence."""
+        monitor = self._topology_wakeup
+        if monitor is None:
             await asyncio.sleep(delay_seconds)
+            return
+        was_available = self._topology_wakeup_was_available or monitor.available
+        await monitor.wait(delay_seconds)
+        self._topology_wakeup_was_available = monitor.available
+        if was_available and not monitor.available:
+            self._append_journey_event(
+                severity="warning", code="observation.poll_fallback",
+                component="connection", stage="observer_degraded", create_timeline=False,
+            )
 
     async def _start_docked_igpu_lifecycle(self) -> None:
-        if self._docked_igpu_task is not None:
+        if self._unloading or self._docked_igpu_task is not None:
             return
         self._docked_igpu_task = asyncio.create_task(
             self._docked_igpu_supervisor_loop()
         )
 
     async def _docked_igpu_supervisor_loop(self) -> None:
-        while True:
+        while not self._unloading:
             try:
                 scheduler = await asyncio.to_thread(
                     self._build_docked_igpu_scheduler
@@ -1632,7 +1700,7 @@ class Plugin:
             self._last_sleep_guard_log = current
 
     async def _sleep_guard_loop(self) -> None:
-        while True:
+        while not self._unloading:
             try:
                 await self._reconcile_sleep_guard()
             except Exception:
@@ -1645,43 +1713,121 @@ class Plugin:
                 )
             await asyncio.sleep(1)
 
+    def _retain_until_done(self, task: asyncio.Task, collection: set) -> None:
+        collection.add(task)
+
+        def completed(done):
+            collection.discard(done)
+            if not done.cancelled():
+                done.exception()  # Consume late errors without exporting private text.
+
+        task.add_done_callback(completed)
+
+    async def _run_background_operation(self, operation, *args, **kwargs):
+        """Retain ownership of an already-started mutation when its observer exits."""
+        if self._unloading:
+            raise asyncio.CancelledError
+        task = asyncio.create_task(asyncio.to_thread(operation, *args, **kwargs))
+        self._retain_until_done(task, self._background_operations)
+        # Cancellation of the observer cannot stop a running worker thread.
+        # Let the existing transaction finish; never silently label it stopped.
+        return await asyncio.shield(task)
+
     async def _unload(self) -> None:
-        self._events.append(
-            severity="info",
-            code="plugin.unloading",
-            component="lifecycle",
-            stage="shutdown",
+        self._unloading = True
+        started_ns = self._journey_now_ns()
+        self._record_shutdown_checkpoint("unload_started", started_ns)
+        try:
+            self._events.append(
+                severity="info", code="plugin.unloading",
+                component="lifecycle", stage="shutdown",
+            )
+        except Exception:
+            pass
+        # Wake the listener and request cancellation of every producer before
+        # waiting for any one of them. A cancelled read can still hold a lock
+        # in a worker thread needed by that observer's finally/close path.
+        incomplete = False
+        if self._topology_wakeup is not None:
+            try:
+                self._topology_wakeup.close()
+            except Exception:
+                incomplete = True
+                self._record_shutdown_checkpoint("observer_stop_failed", started_ns)
+            self._topology_wakeup = None
+        tasks = {}
+        for attribute in (
+            "_automatic_dock_task", "_native_recovery_task",
+            "_docked_igpu_task", "_sleep_guard_task",
+        ):
+            task = getattr(self, attribute)
+            setattr(self, attribute, None)
+            if task is None:
+                continue
+            owner = attribute.removeprefix("_").removesuffix("_task")
+            self._record_shutdown_checkpoint(owner + "_stop_requested", started_ns)
+            tasks[task] = owner
+            self._retain_until_done(task, self._retiring_tasks)
+            task.cancel()
+        operations = set(self._background_operations)
+        pending = set()
+        if tasks or operations:
+            _, pending = await asyncio.wait(
+                set(tasks) | operations, timeout=UNLOAD_OBSERVER_TIMEOUT_SECONDS
+            )
+        for task, owner in tasks.items():
+            if task in pending:
+                incomplete = True
+                self._record_shutdown_checkpoint(owner + "_stop_timed_out", started_ns)
+            elif not task.cancelled() and task.exception() is not None:
+                self._record_shutdown_checkpoint("observer_stop_failed", started_ns)
+        if operations & pending:
+            incomplete = True
+            self._record_shutdown_checkpoint("background_operation_pending", started_ns)
+        self._docked_igpu_scheduler = None
+        if not incomplete:
+            self._record_shutdown_checkpoint("observers_stopped", started_ns)
+        self._record_shutdown_checkpoint("sleep_guard_release_started", started_ns)
+        release = asyncio.create_task(asyncio.to_thread(self._sleep_guard.close))
+        self._retain_until_done(release, self._retiring_tasks)
+        _, pending_release = await asyncio.wait({release}, timeout=UNLOAD_GUARD_TIMEOUT_SECONDS)
+        if pending_release:
+            self._record_shutdown_checkpoint("sleep_guard_release_timed_out", started_ns)
+            self._record_shutdown_checkpoint("unload_incomplete", started_ns)
+            return
+        try:
+            status = release.result()
+        except Exception:
+            self._record_shutdown_checkpoint("sleep_guard_release_failed", started_ns)
+            return
+        if status.active or status.error:
+            self._record_shutdown_checkpoint("sleep_guard_release_failed", started_ns)
+            return
+        self._record_shutdown_checkpoint("sleep_guard_released", started_ns)
+        self._record_shutdown_checkpoint(
+            "unload_incomplete" if incomplete else "unload_complete", started_ns
         )
-        if self._automatic_dock_task is not None:
-            self._automatic_dock_task.cancel()
-            try:
-                await self._automatic_dock_task
-            except asyncio.CancelledError:
-                pass
-            self._automatic_dock_task = None
-        if self._native_recovery_task is not None:
-            self._native_recovery_task.cancel()
-            try:
-                await self._native_recovery_task
-            except asyncio.CancelledError:
-                pass
-            self._native_recovery_task = None
-        await self._stop_docked_igpu_lifecycle()
-        if self._sleep_guard_task is not None:
-            self._sleep_guard_task.cancel()
-            try:
-                await self._sleep_guard_task
-            except asyncio.CancelledError:
-                pass
-            self._sleep_guard_task = None
-        status = await asyncio.to_thread(self._sleep_guard.close)
-        decky.logger.info("HDM sleep guard released: active=%s", status.active)
         # Do not drain asyncio's shared executor here. Cancellation stops the
-        # coroutine that requested a read-only scan, but cannot cancel a scan
-        # already running in a worker thread. Waiting for that worker can hold
+        # coroutine that requested work, but cannot cancel work already running
+        # in a worker thread (including a durable presentation transaction).
+        # Waiting without a deadline can hold
         # Decky's unload hook past its five-second deadline and cause a forced
         # stop. Decky owns backend-process retirement after this hook returns;
         # HDM only owns and stops the tasks and resources it created.
+
+    def _record_shutdown_checkpoint(self, stage: str, started_ns: int) -> None:
+        """Existing journal only: no new collector, disk sync, or shutdown hook.
+
+        Plugin unload may be an update, not poweroff. Completion never proves
+        kernel teardown or physical poweroff; missing markers prove neither.
+        """
+        try:
+            elapsed = self._bounded_elapsed_ms(started_ns, self._journey_now_ns())
+            decky.logger.info(
+                "HDM shutdown checkpoint: stage=%s elapsed_ms=%s", stage, elapsed
+            )
+        except Exception:
+            pass
 
     async def _stop_docked_igpu_lifecycle(self) -> None:
         task = self._docked_igpu_task
@@ -1791,6 +1937,16 @@ class Plugin:
             commands=PipeWireCommandRunner(),
             state=PortableAudioStateStore(RootOwnedRuntimeState().ensure()),
             resolve_g1_audio_bdf=self._verified_g1_audio_bdf,
+            report_result=self._record_audio_handoff_result,
+        )
+
+    def _record_audio_handoff_result(self, target, result) -> None:
+        self._append_journey_event(
+            severity="info" if result.succeeded else "warning",
+            code=result.code,
+            component="audio",
+            stage="restore_portable" if target is PlacementState.PORTABLE else "select_tv",
+            details={"target": target.value, "succeeded": result.succeeded},
         )
 
     def _safe_disconnect_shutdown_service(self) -> SafeDisconnectShutdownService:

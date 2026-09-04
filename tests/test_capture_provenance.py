@@ -55,7 +55,7 @@ class CaptureProvenanceTests(unittest.TestCase):
         capture = self._capture()
         capture["plugin"] = dict(
             capture["plugin"],
-            build={"schema_version": 1, "version": "0.2.0", "revision": "a" * 12},
+            build={"schema_version": 1, "version": json.loads((ROOT / "package.json").read_text())["version"], "revision": "a" * 12},
         )
         self.assertEqual(
             compare_capture_provenance(capture, checkout_revision="a" * 40),
@@ -75,7 +75,7 @@ class CaptureProvenanceTests(unittest.TestCase):
             with self.subTest(revision=revision):
                 capture["plugin"] = dict(
                     capture["plugin"],
-                    build={"schema_version": 1, "version": "0.2.0", "revision": revision},
+                    build={"schema_version": 1, "version": json.loads((ROOT / "package.json").read_text())["version"], "revision": revision},
                 )
                 self.assertEqual(
                     compare_capture_provenance(capture, checkout_revision="a" * 40),
@@ -103,7 +103,7 @@ class CaptureProvenanceTests(unittest.TestCase):
         invalid_schema = self._capture()
         invalid_schema["plugin"] = dict(
             invalid_schema["plugin"],
-            build={"schema_version": 2, "version": "0.2.0", "revision": "a" * 12},
+            build={"schema_version": 2, "version": json.loads((ROOT / "package.json").read_text())["version"], "revision": "a" * 12},
         )
         self.assertEqual(
             compare_capture_provenance(invalid_schema, checkout_revision="a" * 40),

@@ -53,8 +53,8 @@ test("dashboard actions keep icons and text inside one native button, not Item c
   const action = readFileSync(new URL("../src/dashboard-action.tsx", import.meta.url), "utf8");
   const source = readFileSync(new URL("../src/index.tsx", import.meta.url), "utf8");
   assert.match(action, /<DialogButton onClick=\{onClick\} disabled=\{disabled\}/);
-  assert.match(action, /gridTemplateColumns: "24px minmax\(0, 1fr\) 16px"/);
-  assert.match(action, /wordBreak: "normal", overflowWrap: "normal"/);
+  assert.match(action, /gridTemplateColumns: "32px minmax\(0, 1fr\) 16px"/);
+  assert.match(action, /wordBreak: "normal",\s+overflowWrap: "normal"/);
   assert.doesNotMatch(action, /ButtonItem|noFocusRing=|outline:|overflow: "hidden"/);
   assert.equal((source.match(/<DashboardAction\s/g) ?? []).length, 4);
   assert.match(source, /title="Dock \/ eGPU"[\s\S]*expanded=\{showHardwareDetails\}/);

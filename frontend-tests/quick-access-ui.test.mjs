@@ -12,6 +12,12 @@ import {
   restoreQuickAccessFocus,
 } from "../src/quick-access-ui.ts";
 
+test("backend-retired display success releases stale acknowledgement UI", () => {
+  const source = readFileSync(new URL("../src/index.tsx", import.meta.url), "utf8");
+  const refresh = source.slice(source.indexOf("const refreshTransitionJournal ="), source.indexOf("const refreshTransitionJournal =") + 800);
+  assert.match(refresh, /if \(status.code === "journal.idle"\) \{[^}]*setTvSwitchAcknowledgementId\(""\)/);
+});
+
 test("upward navigation reaches the native status focus stop before leaving HDM", () => {
   const source = readFileSync(new URL("../src/index.tsx", import.meta.url), "utf8");
   const summary = source.slice(source.indexOf('<PanelSection title="At a glance">'), source.indexOf('<PanelSection title="Safety & actions">'));

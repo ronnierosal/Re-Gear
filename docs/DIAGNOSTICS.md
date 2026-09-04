@@ -1,5 +1,13 @@
 # Read-only diagnostics
 
+## Shutdown checkpoint evidence
+
+The existing Decky logger emits categorical unload stages and bounded elapsed
+milliseconds. Stages distinguish observer retirement, sleep-guard release, and
+plugin unload completion; none proves physical shutdown. No journal configuration,
+disk sync, poller, or new shutdown hook is added. Retention depends on SteamOS.
+See [shutdown review](G1_SHUTDOWN_REVIEW_2026-09-03.md) for evidence limits.
+
 ## Purpose
 
 The plugin exposes one privacy-safe JSON snapshot. It observes current state and
@@ -313,6 +321,12 @@ support tier, blocker codes, and up to 32 existing collector stage/duration
 rows. The existing 128-event rotation remains authoritative. No raw snapshot,
 arbitrary system log, durable consent, path, process identity, hardware
 identity, or upload is introduced.
+
+Audio handoff results also use normal journey events: component `audio`, stage
+`select_tv` or `restore_portable`, a categorical `audio.*` result code, target,
+and success boolean. No sink names, node IDs, or PCI identities are exported.
+These describe default-sink selection, not proof of audible output or movement
+of every existing stream. Reporting failure cannot interrupt the handoff.
 
 Low-frequency connection-journey changes are normal events and do not require
 verbose logging. Exact G1 presence, categorical attach-readiness changes,

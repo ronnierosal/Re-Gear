@@ -1,6 +1,6 @@
 import { PRODUCT_NAME } from "./branding";
 import { OfflineReadinessPanel } from "./offline-readiness-panel";
-import brandIcon from "../docs/images/re-gear-decky-icon.png";
+import brandIcon from "../docs/images/re-gear-decky-transparent.png";
 import { definePlugin, toaster, useQuickAccessVisible } from "@decky/api";
 import {
   ButtonItem,
@@ -516,6 +516,9 @@ function Content({ preflight }: { preflight: SleepPreflightCoordinator }) {
       setJournalStatus(status);
       if (status.code === "journal.idle") {
         setJournalMessage("");
+        // A verified success may be retired by the backend after the initial
+        // status/RPC response. Do not keep its acknowledgement blocking actions.
+        setTvSwitchAcknowledgementId("");
       } else if (status.owner === "sleep" && status.acknowledgement_required) {
         setJournalMessage(
           "A prior sleep result must be acknowledged before Re-Gear can switch displays.",

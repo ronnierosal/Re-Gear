@@ -4,17 +4,17 @@
 **Evidence reviewed:** 2026-09-02<br>
 **Maturity:** early development; no general public release
 
-Re-Gear is a SteamOS-first, safety-focused Decky Loader plugin
+Re-Gear (formerly Handheld Dock Mode / HDM) is a SteamOS-first, safety-focused Decky Loader plugin
 for console-like handheld, eGPU, dock, and external-display workflows. It aims
 to detect current state, block unsafe operations, explain what is happening in
 player language, and recover to a known-good state when a verified transition
 fails.
 
 The engineering authorities are the repository
-[documentation index](https://github.com/ronnierosal/Re-Gear/blob/main/docs/INDEX.md),
-[current state](https://github.com/ronnierosal/Re-Gear/blob/main/docs/CURRENT_STATE.md),
-[product definition](https://github.com/ronnierosal/Re-Gear/blob/main/docs/PRODUCT.md),
-and [safety invariants](https://github.com/ronnierosal/Re-Gear/blob/main/docs/SAFETY_INVARIANTS.md).
+[documentation index](https://github.com/ronnierosal/Handheld-Docked-Mode-SteamOS/blob/main/docs/INDEX.md),
+[current state](https://github.com/ronnierosal/Handheld-Docked-Mode-SteamOS/blob/main/docs/CURRENT_STATE.md),
+[product definition](https://github.com/ronnierosal/Handheld-Docked-Mode-SteamOS/blob/main/docs/PRODUCT.md),
+and [safety invariants](https://github.com/ronnierosal/Handheld-Docked-Mode-SteamOS/blob/main/docs/SAFETY_INVARIANTS.md).
 
 ## Target placements
 

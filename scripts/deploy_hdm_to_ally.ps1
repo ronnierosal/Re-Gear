@@ -68,7 +68,8 @@ Invoke-Pnpm @("build") "Frontend build failed."
 Invoke-Checked "python" @("scripts/check_plugin_package.py", ".") "Plugin package check failed."
 Invoke-Checked "python" @("scripts/build_plugin.py") "Plugin package build failed."
 
-$package = Get-ChildItem -LiteralPath (Join-Path $RepositoryRoot "out") -Filter "HandheldDockMode-*.zip" -File | Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1
+$packageVersion = (Get-Content -LiteralPath (Join-Path $RepositoryRoot "package.json") -Raw | ConvertFrom-Json).version
+$package = Get-Item -LiteralPath (Join-Path $RepositoryRoot "out/Re-Gear-$packageVersion.zip")
 if ($null -eq $package) { throw "No HDM package was created." }
 $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
 $remoteArchive = "/tmp/hdm-deploy-$stamp.zip"

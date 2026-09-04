@@ -22,6 +22,8 @@ PCI_BDF_RE = re.compile(r"^[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]$")
 MAX_DUMP_BYTES = PipeWireCommandRunner.MAX_OUTPUT_BYTES
 VERIFY_ATTEMPTS = 5
 VERIFY_INTERVAL_SECONDS = 0.1
+AUDIO_READY_ATTEMPTS = 6
+AUDIO_READY_INTERVAL_SECONDS = 0.25
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,11 +63,13 @@ class G1AudioHandoff:
         state: PortableAudioStateStore,
         resolve_g1_audio_bdf: Callable[[], str],
         wait: Callable[[float], None] = time.sleep,
+        report_result: Callable[[PlacementState, AudioHandoffResult], None] | None = None,
     ) -> None:
         self._commands = commands
         self._state = state
         self._resolve_g1_audio_bdf = resolve_g1_audio_bdf
         self._wait = wait
+        self._report_result = report_result
 
     def remember_portable(self, user: GamescopeUserContext) -> AudioHandoffResult:
         """Capture the current portable default before an eGPU attach occurs."""
@@ -77,6 +81,9 @@ class G1AudioHandoff:
         )
         if len(current) != 1:
             return AudioHandoffResult(False, "audio.portable_sink_ambiguous")
+        audio_bdf = self._resolve_bdf()
+        if audio_bdf and current[0].device_bdf == audio_bdf:
+            return AudioHandoffResult(False, "audio.portable_sink_is_egpu")
         try:
             self._state.save(current[0].name)
         except (OSError, ValueError):
@@ -84,6 +91,18 @@ class G1AudioHandoff:
         return AudioHandoffResult(True, "audio.portable_sink_recorded")
 
     def switch(
+        self, target: PlacementState, user: GamescopeUserContext
+    ) -> AudioHandoffResult:
+        result = self._switch(target, user)
+        if self._report_result is not None:
+            try:
+                self._report_result(target, result)
+            except Exception:
+                # Logging cannot change the outcome of an audio operation.
+                pass
+        return result
+
+    def _switch(
         self, target: PlacementState, user: GamescopeUserContext
     ) -> AudioHandoffResult:
         if target is PlacementState.PORTABLE:
@@ -98,6 +117,9 @@ class G1AudioHandoff:
             )
             if len(portable) != 1:
                 return AudioHandoffResult(False, "audio.portable_sink_unavailable")
+            audio_bdf = self._resolve_bdf()
+            if audio_bdf and portable[0].device_bdf == audio_bdf:
+                return AudioHandoffResult(False, "audio.portable_sink_is_egpu")
             return self._select(user, before, portable[0])
 
         if target not in {PlacementState.DOCKED_EGPU, PlacementState.DOCKED_IGPU}:
@@ -105,14 +127,21 @@ class G1AudioHandoff:
         audio_bdf = self._resolve_bdf()
         if not audio_bdf:
             return AudioHandoffResult(False, "audio.g1_identity_unverified")
-        before = self._observe(user)
+        before, external, observed_any = self._wait_for_external_sink(user, audio_bdf)
         if before is None:
-            return AudioHandoffResult(False, "audio.observation_unavailable")
-        external = tuple(item for item in before.sinks if item.device_bdf == audio_bdf)
-        if len(external) != 1:
-            return AudioHandoffResult(False, "audio.external_sink_ambiguous")
+            return AudioHandoffResult(
+                False,
+                "audio.external_sink_ambiguous"
+                if observed_any
+                else "audio.observation_unavailable",
+            )
+        saved_name = self._state.load()
+        if saved_name:
+            saved = tuple(item for item in before.sinks if item.name == saved_name)
+            if len(saved) != 1 or saved[0].device_bdf == audio_bdf:
+                return AudioHandoffResult(False, "audio.rollback_sink_unavailable")
         if before.default_sink_name == external[0].name:
-            if not self._state.load():
+            if not saved_name:
                 return AudioHandoffResult(False, "audio.rollback_sink_unavailable")
             return AudioHandoffResult(
                 True, "audio.already_selected", AudioSwitchReceipt(False)
@@ -122,9 +151,10 @@ class G1AudioHandoff:
         )
         if len(previous) != 1 or previous[0].device_bdf == audio_bdf:
             return AudioHandoffResult(False, "audio.rollback_sink_unavailable")
-        created = not bool(self._state.load())
+        created = not bool(saved_name)
         try:
-            self._state.save(previous[0].name)
+            if created:
+                self._state.save(previous[0].name)
         except (OSError, ValueError):
             return AudioHandoffResult(False, "audio.rollback_state_failed")
         return self._select(
@@ -134,6 +164,32 @@ class G1AudioHandoff:
             previous_sink=previous[0].name,
             created_portable_state=created,
         )
+
+    def _wait_for_external_sink(
+        self, user: GamescopeUserContext, audio_bdf: str
+    ) -> tuple[_PipeWireState | None, tuple[_Sink, ...], bool]:
+        """Require two matching exact observations before changing audio."""
+        prior: tuple[str, int] | None = None
+        observed_any = False
+        for attempt in range(AUDIO_READY_ATTEMPTS):
+            observed = self._observe(user)
+            observed_any = observed_any or observed is not None
+            external = (
+                tuple(item for item in observed.sinks if item.device_bdf == audio_bdf)
+                if observed is not None
+                else ()
+            )
+            current = (
+                (external[0].name, external[0].object_id)
+                if len(external) == 1
+                else None
+            )
+            if current is not None and current == prior:
+                return observed, external, True
+            prior = current
+            if attempt + 1 < AUDIO_READY_ATTEMPTS:
+                self._wait(AUDIO_READY_INTERVAL_SECONDS)
+        return None, (), observed_any
 
     def rollback(
         self, receipt: AudioSwitchReceipt | None, user: GamescopeUserContext

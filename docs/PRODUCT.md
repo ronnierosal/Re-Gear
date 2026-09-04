@@ -7,9 +7,6 @@ Use that spelling and capitalization in new UI and product copy. The existing
 status colors and functional icons remain unchanged; the README and plugin use
 the supplied Re-Gear brand artwork. Historical evidence retains its original name.
 
-The GitHub repository is `ronnierosal/Re-Gear`. Repository naming is independent
-of the compatibility-sensitive plugin and runtime identities below.
-
 This is a presentation-only rebrand. Decky identity `Handheld Dock Mode`,
 package/install directory `HandheldDockMode`, `hdm` modules and commands,
 `handheld-dock-mode` state/helper paths, stored preference keys, and managed-file
@@ -19,14 +16,14 @@ therefore still show the legacy name while the opened panel shows Re-Gear.
 
 ## Objective
 
-HDM's North Star is console-like SteamOS handheld gaming: systematically reduce
+Re-Gear's North Star is console-like SteamOS handheld gaming: systematically reduce
 PC-gaming paper cuts by detecting problems, preventing avoidable failures,
 explaining state in player language, and safely guiding or performing verified
 recovery where authority and evidence allow. Docking and eGPU safety are the
 first domains, not the product boundary. The current scope remains narrowly
 limited to the implemented, evidence-gated capabilities below.
 
-Games always come first. HDM is a lightweight, mostly dormant SteamOS
+Games always come first. Re-Gear is a lightweight, mostly dormant SteamOS
 reliability layer: it must not become a performance problem while it removes
 avoidable friction and makes uncertain state understandable.
 
@@ -46,7 +43,7 @@ Docked-eGPU placement. Docked-iGPU is research, not an implemented claim.
 
 Connecting, Preparing to disconnect, Safe to disconnect, Returning to portable,
 Sleep pending disconnect, Action required, and Failure are workflow phases, not
-placement modes. HDM keeps both dimensions visible internally so a pending or
+placement modes. Re-Gear keeps both dimensions visible internally so a pending or
 failed operation cannot overwrite observed hardware truth.
 
 ## Product behavior
@@ -63,13 +60,13 @@ Manual and automatic requests use the same policy and transition engine.
 
 ## Experience and runtime principles
 
-HDM is performance-first: it remains event-driven and dormant whenever no
+Re-Gear is performance-first: it remains event-driven and dormant whenever no
 transition, fault, or explicit player request requires work. Adaptive polling
 is permitted only where an event source is unavailable, must have bounded
 cadence and cost, and must defer nonessential analysis while a game is active.
-Any measurable game-performance regression attributable to HDM is a defect.
+Any measurable game-performance regression attributable to Re-Gear is a defect.
 
-Observed placement is not a complete player experience. HDM's target model uses
+Observed placement is not a complete player experience. Re-Gear's target model uses
 a separate health dimension: **Ready**, **Recovering**, **Degraded**, or
 **Attention Required**. Its future typed aggregation will report whether
 verified display, input, audio, eGPU/link, and session evidence is usable; it
@@ -86,7 +83,7 @@ Physical controls and UI affordances resolve to typed logical requests such as
 Safe Undock, Return to Handheld, Recovery, or Change Performance Profile. They
 must all enter the same authoritative transition engine. A controller hotkey
 is therefore a future delivery adapter, not a parallel detach implementation.
-The physical power button remains platform-owned: HDM must not delay, suppress,
+The physical power button remains platform-owned: Re-Gear must not delay, suppress,
 or synthesize ordinary Sleep merely to recognize a gesture. See [physical
 power-button Safe Undock feasibility](POWER_BUTTON_SAFE_UNDOCK.md).
 
@@ -119,14 +116,14 @@ implemented or authorized.
 
 **Product intent; not current hardware behavior:** if an eGPU is removed while
 the handheld sleeps and wake leaves the original game/session no longer
-running, HDM should first establish a usable handheld path. It may describe
+running, Re-Gear should first establish a usable handheld path. It may describe
 handheld recovery only after independent display, input, and audio verification.
 It must not claim that a game crashed, that sleep caused the loss, or that
 recovery succeeded without that evidence.
 
 Only after those checks are complete, and only when the current game has no
 known update, cloud-sync, or repeat-failure concern, the intended default is to
-offer a safe game relaunch. On the first successful use of that capability, HDM
+offer a safe game relaunch. On the first successful use of that capability, Re-Gear
 will show one non-intrusive choice to keep automatic restart enabled or turn it
 off. That preference is future player policy, not authority to bypass Steam,
 game, save, update, or recovery gates.
@@ -139,7 +136,7 @@ adapter, recovery verification, and supervised hardware validation.
 
 ## Decky-native delivery
 
-HDM is a Decky Loader-native plugin. Its player interface uses Decky's Quick
+Re-Gear is a Decky Loader-native plugin. Its player interface uses Decky's Quick
 Access components and typed Decky RPC. The Python backend runs under Decky's
 managed plugin lifecycle; there is no separate web dashboard or general-purpose
 command endpoint. Root privilege is isolated to narrow observation and future
@@ -163,7 +160,7 @@ confirmation; supervised disposable-process validation remains pending.
 
 The proposed eGPUBridge-derived feature selection, including sleep blocking and
 guarded process closure, is documented in
-[eGPUBridge feature review for HDM](EGPUBRIDGE_FEATURE_REVIEW.md). These are 0.2
+[eGPUBridge feature review for Re-Gear](EGPUBRIDGE_FEATURE_REVIEW.md). These are 0.2
 candidates. The sleep guard and guarded process release are now explicitly in
 0.2 scope; other mutation boundaries remain closed until their own design and
 validation gates pass.
