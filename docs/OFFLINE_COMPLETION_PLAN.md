@@ -45,6 +45,12 @@ It never promises an offline launch, changes saves/settings, or launches a game.
    to backend classification. Preserve the existing Python policy as authority;
    do not accumulate competing classifiers. Cancel on selection change/unmount,
    reject stale responses, and show concrete next steps.
+   The private `OfflineDetailsSession` now cancels superseded requests, gates on
+   current Idle context before/after, minimizes callback fields, and permanently
+   expires result leases after one second or observed context failure. Its four
+   regression tests plus six native-helper tests and typecheck pass. The caller
+   must invalidate on every selection/session/game-state event; UI/RPC wiring
+   is still pending, and no production freshness claim follows from this lease.
 5. **Integration and remote preparation — pending.** Run the full relevant
    matrix, review the diff and artifact, integrate with current main preserving
    other work, and coordinate shared runtime ownership before any installation.
