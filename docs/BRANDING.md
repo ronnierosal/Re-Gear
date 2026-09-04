@@ -8,7 +8,7 @@ their original wording.
 
 ## Presentation assets
 
-Current selection (0.3.6): `docs/images/re-gear-decky-transparent.png`.
+Current selection (0.3.11): `docs/images/re-gear-decky-white-transparent.png`.
 Built-in image editing removed the outer background from the supplied JPEG;
 this is a derived asset, not byte-identical original artwork. Actual alpha
 was verified. Keep the opaque white inner details and original source JPEG.

@@ -1,5 +1,13 @@
 # Current state
 
+## Re-Gear 0.3.11 transparent white icon correction — 2026-09-04
+
+The installed 0.3.10 lineage still imported the 0.3.6 black-filled gear asset.
+This UI-only correction embeds the user's white gear-and-handheld RGBA PNG so
+the Decky row color shows through every transparent area. It preserves the
+0.3.10 focused-game/offline and G1 runtime changes and does not modify backend,
+RPC, polling, lifecycle, or safety behavior. Not installed or hardware validated.
+
 ## Re-Gear 0.3.8 combined G1 audio readiness candidate — 2026-09-04
 
 Installed 0.3.7 revision `52db288056c3` and the separately built 0.3.7 audio

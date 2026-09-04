@@ -11,6 +11,11 @@ it does not depend on GitHub, a network request, or a renamed plugin path.
 These files do not change the plugin's installation identity or safety behavior.
 # Current Decky icon
 
+0.3.11 uses `re-gear-decky-white-transparent.png`, the exact white
+gear-and-handheld RGBA PNG supplied through the user's shared ChatGPT image.
+The black gear fill is absent; transparent areas reveal the Decky row color.
+The prior icon assets remain preserved below.
+
 0.3.6 uses `re-gear-decky-transparent.png`, a background-extracted derivative
 of `re-gear-decky-black-gear.jpg`, made using the built-in image editing tool.
 Verified RGBA with 668393 fully transparent pixels and transparent corners.

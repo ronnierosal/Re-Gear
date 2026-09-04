@@ -1,7 +1,7 @@
 import { PRODUCT_NAME } from "./branding";
 import { OfflineFocusChecks } from "./offline-focus-checks";
 import { OfflineReadinessPanel } from "./offline-readiness-panel";
-import brandIcon from "../docs/images/re-gear-decky-transparent.png";
+import brandIcon from "../docs/images/re-gear-decky-white-transparent.png";
 import { definePlugin, toaster, useQuickAccessVisible } from "@decky/api";
 import {
   ButtonItem,
