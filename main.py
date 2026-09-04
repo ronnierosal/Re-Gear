@@ -58,6 +58,8 @@ from hdm.adapters.steamos.peripherals import (  # noqa: E402
     peripheral_status_to_public_payload,
 )
 from hdm.api import DiagnosticsApi  # noqa: E402
+from hdm.adapters.steamos.offline_steam_details import project_steam_app_details  # noqa: E402
+from hdm.application.offline_details import classify_minimized_steam_details  # noqa: E402
 from hdm.adapters.transition_runtime import (  # noqa: E402
     BoundedDeadlineWaiter,
     SnapshotTransitionObservationAdapter,
@@ -229,6 +231,18 @@ class Plugin:
         self._process_release: GuardedProcessReleaseService | None = None
         self._version_info = SteamOsVersionDiscovery().scan()
         self._build_info = load_public_build_info(PLUGIN_ROOT)
+
+    async def classify_offline_details(self, details: object = None) -> dict[str, object]:
+        """Classify one minimized report without starting a hardware lifecycle."""
+        try:
+            report = await asyncio.to_thread(self._api.get_snapshot_report)
+            game_state = report.snapshot.game_state
+        except Exception:
+            # Do not log exceptions or raw Steam data across this privacy boundary.
+            game_state = GameState.UNKNOWN
+        return classify_minimized_steam_details(
+            details, game_state=game_state, project_details=project_steam_app_details,
+        )
 
     async def get_snapshot(self, _request: object = None) -> dict[str, object]:
         """Return the existing privacy-safe, read-only diagnostics payload."""

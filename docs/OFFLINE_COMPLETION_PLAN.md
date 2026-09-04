@@ -14,10 +14,10 @@ The separate Ally/G1 lifecycle remains owned by its driver. Do not restart its
 services, replace its installed runtime, or run display/GPU/sleep transitions
 without coordination. Scope is Offline Readiness, not all Re-Gear milestones.
 
-The goal tool rejected the requested replacement goal because its old unfinished
-record remains blocked. It exposes no resume operation. Do not mark that goal
-complete merely to clear the tool error; this plan is the current execution
-contract while that app status is unresolved.
+The original bounded research/read-only delivery milestone is now complete:
+the native reader, Python classification RPC, and one-game panel are implemented
+and locally verified. Its goal was completed on 2026-09-04, and a new active goal
+tracks end-to-end integration, remote preparation, and final acceptance.
 
 ## Deliverable
 
@@ -61,6 +61,30 @@ It never promises an offline launch, changes saves/settings, or launches a game.
    is a separate player action, never an unattended developer test.
 
 ## Sources and current workspace
+
+## Latest checkpoint — 2026-09-04
+
+- One-game panel and `classify_offline_details` RPC are now wired locally. The
+  seven scalar callback fields cross the RPC; game titles/IDs remain in the view.
+  The backend reads diagnostics directly and invokes the existing Python policy.
+  It does not call the plugin snapshot endpoint that starts lifecycle work.
+- The picker enumerates at most 256 cache entries on explicit request. The native
+  getter and subscription were exercised remotely with the actual compiled code:
+  picker 0.6 ms; three details requests 48.0/54.2/53.0 ms, three registrations and
+  three releases, stable overview reference, Idle before and after. These are
+  small-sample observations, not a general overhead or game-impact benchmark.
+- Delivery expires after one second. Displayed guidance is explicitly a historical
+  Steam report, expires after 30 seconds, and clears on selection/view/game changes
+  or source/overview changes observed during existing panel refreshes. No verified
+  native session event hook or new polling loop is claimed.
+- Review found stale source-result retention and failed-picker old-choice retention;
+  both are fixed. Full backend gate: 834 tests, 5 skipped. Frontend: 92 passing.
+  Typecheck, architecture, compileall, build, package and whitespace checks pass.
+- This feature has not been installed or controller-validated. Shared main is
+  still at base `75f441f` with unrelated dirty research/docs. G1 driver reports
+  installed 0.3.2 from `codex/g1-lifecycle-logging` (tip `412b9dc` when inspected),
+  whereas this branch inherits 0.2.0. Do not deploy this branch over that runtime.
+  Next: inspect/integrate the current G1 baseline and coordinate shared installation.
 
 Branch `codex/offline-readiness-delivery`, worktree:
 `C:/Users/SLDD/.codex/worktrees/offline-readiness-delivery/Handheld-Docked-Mode-SteamOS`.

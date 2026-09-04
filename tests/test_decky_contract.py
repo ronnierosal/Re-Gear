@@ -42,6 +42,7 @@ class DeckyContractTests(unittest.TestCase):
             public_methods,
             {
                 "get_snapshot",
+                "classify_offline_details",
                 "get_peripheral_status",
                 "get_action_history",
                 "get_automatic_dock_status",

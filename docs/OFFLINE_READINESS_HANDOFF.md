@@ -172,3 +172,15 @@ Read this file, `OFFLINE_EVIDENCE_SOURCE_REVIEW.md`, `OFFLINE_READINESS_UI.md`,
 and current `git status`/diff in the worktree above. Continue only this mission.
 Update this checkpoint after each meaningful verified slice, preserving the
 distinction between synthetic tests, source research, and live verification.
+# Current continuation checkpoint — 2026-09-04
+
+The newest authority for this workstream is `OFFLINE_COMPLETION_PLAN.md`.
+The earlier no-live-reader and pending-UI checkpoints below are historical.
+The native reader, private request lifecycle, one-game panel, and strict Python
+classification RPC are now wired and verified locally. Full checks: 834 backend
+tests (5 skipped), 92 frontend tests, typecheck, architecture, compileall, build,
+package, whitespace. Live actual-code sample: picker 0.6 ms; three callback requests
+48.0/54.2/53.0 ms with exactly matching registration/cleanup, Idle before/after.
+No new runtime installed. G1 driver has 0.3.2 installed from its lifecycle branch;
+our branch baseline is older. Prepare an integrated candidate before coordinating
+installation, preserving the existing G1 changes. Active end-to-end goal is set.

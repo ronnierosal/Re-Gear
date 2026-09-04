@@ -90,6 +90,7 @@ def main() -> int:
         allowed_methods = {
             "get_snapshot",
             "get_peripheral_status",
+            "classify_offline_details",
             "get_action_history",
             "get_automatic_dock_status",
             "set_automatic_dock_enabled",
@@ -122,7 +123,7 @@ def main() -> int:
         }
         if public_methods != allowed_methods:
             failures.append(
-                "Decky RPCs must remain limited to diagnostics/logging, read-only peripheral/watcher/action-history status, automatic-dock preference/status, approved support export, supervised presentation, confirmed shutdown-before-disconnect, and guarded process release"
+                "Decky RPCs must remain limited to diagnostics/logging, read-only offline report classification and peripheral/watcher/action-history status, automatic-dock preference/status, approved support export, supervised presentation, confirmed shutdown-before-disconnect, and guarded process release"
             )
 
     delivery_sources = "\n".join(
