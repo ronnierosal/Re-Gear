@@ -31,25 +31,48 @@ reads, saves/configuration writes, game launches, or automatic Offline Mode.
 An installed game is not proof of entitlement, cloud sync, or offline launch.
 No live source can self-declare a benchmark from synthetic test timing.
 
-## Checkpoint: candidate source projection implemented
+## Checkpoint: guarded request and reason delivery implemented locally
 
 - Research decision and links: [source review](OFFLINE_EVIDENCE_SOURCE_REVIEW.md).
   Prefer exact local Steam overview evidence; Protontricks and Ludusavi are
   references, not dependencies. Valve documents why installation and enabled
   cloud settings cannot establish readiness.
+- First commit: `03946d2` adds the candidate source projection and research.
 - Change: a candidate adapter minimizes one privately bound base-game overview
   into existing categorical evidence. Explicit updates/downloads and cloud
   conflicts can report attention; no favorable overview can report offline-ready.
-- Verification: 22 focused offline tests passed (7 new adapter tests); architecture
-  check, targeted Python compilation, and whitespace checks passed.
+- The new application request service admits before reading and rechecks the
+  private selection/session generation, game state, timestamp, and actual cost
+  before public serialization. It performs one injected local-memory read, with
+  no scheduler, cache, retries, or production reader construction.
+- The existing UI sanitizer now preserves only known bounded reason codes and
+  shows fixed next-step guidance. Cloud conflicts take priority over updates.
+  No broad layout or hardware journey behavior changed.
+- Independent review found and fixed an observation-type hole that allowed
+  malformed evidence to appear ready. A regression covers the reproduced case.
+- Verification: 825 backend tests passed (5 skipped); 80 frontend tests passed;
+  architecture, full Python compilation, TypeScript, frontend build, package,
+  and whitespace checks passed. Source maps/bundle were regenerated locally.
+- During verification, Node required explicit TypeScript import extensions;
+  no-emit checking and Rollup now share extension-aware configuration. A copy
+  regression restored the existing explicit offline-play-not-guaranteed wording.
 - Hardware evidence: none. No remote capture, install, Steam calls, or transition.
-- Remaining gates: live schema/source review, exact game/session binding,
-  source freshness, measured reader cost, on-request transport, and scoped UI
-  context. Production snapshot delivery remains unconstructed.
+- Remaining gates: live schema/source review, production game/session binding,
+  trustworthy source timestamps, measured reader cost, on-request RPC transport,
+  and selected-game UI context with response invalidation. Production snapshot
+  delivery remains unconstructed; this milestone is not yet a usable live check.
 - Next safe task: inspect the local Steam/Decky cached-state access path and
   design one selected-game request with invalidation and cleanup. Confirm its
   local-only behavior before wiring a reader. Do not label request time as the
   freshness timestamp of cached data.
+
+## Completion audit
+
+Research/source choices, conservative projection, request gates, actionable
+categorical presentation, local verification, and continuation documentation
+have evidence. A usable selected-game check still lacks a reviewed live reader
+and request/UI binding. Keep the goal active; do not mark completion from the
+local tests or enable collection merely by setting admission flags to true.
 
 ## Resume
 

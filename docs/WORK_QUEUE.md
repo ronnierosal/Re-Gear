@@ -49,7 +49,8 @@ is permitted.
 
 Offline Readiness item 4 now has an isolated evidence/delivery driver on
 `codex/offline-readiness-delivery`. Source research and a synthetic-tested local
-Steam overview projection are implemented; production collection remains gated.
+Steam overview projection, guarded one-request service, and allowlisted UI reason
+guidance are implemented; production collection and selected-game wiring remain gated.
 See the [continuation checkpoint](OFFLINE_READINESS_HANDOFF.md) before overlapping work.
 
 | Priority | Work item and owner | Status | Acceptance evidence |

@@ -482,7 +482,8 @@ they are not authorization for a separate optimizer or launcher.
 
 Independent Offline Readiness delivery work is tracked in the
 [workstream handoff](OFFLINE_READINESS_HANDOFF.md). A candidate local Steam
-overview projection and source research are implemented on its isolated branch;
+overview projection, guarded request service, reason guidance, and source
+research are implemented on its isolated branch;
 live source validation, cost measurement, game context, and production wiring
 remain open. This does not change the G1 journey or release gates below.
 

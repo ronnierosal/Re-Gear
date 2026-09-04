@@ -41,6 +41,8 @@ PUBLIC_REASON_CODES = frozenset(
         "offline_evidence_stale",
         "offline_evidence_game_active",
         "offline_evidence_game_unknown",
+        "offline_evidence_context_changed",
+        "offline_evidence_unavailable",
     }
 )
 
@@ -194,8 +196,10 @@ class OfflineReadinessObservation:
     evidence: "OfflineReadinessEvidence"
 
     def __post_init__(self) -> None:
-        if self.observed_at_monotonic_ms < 0:
+        if type(self.observed_at_monotonic_ms) is not int or self.observed_at_monotonic_ms < 0:
             raise ValueError("offline readiness observation time is invalid")
+        if not isinstance(self.evidence, OfflineReadinessEvidence):
+            raise ValueError("offline readiness observation evidence is invalid")
 
 
 @dataclass(frozen=True, slots=True)
@@ -212,6 +216,20 @@ class OfflineReadinessEvidence:
     )
 
     def __post_init__(self) -> None:
+        for value, expected in (
+            (self.install, InstallState),
+            (self.download, DownloadState),
+            (self.steam_entitlement, SteamEntitlementState),
+            (self.cloud_save, CloudSaveState),
+        ):
+            if not isinstance(value, expected):
+                raise ValueError("offline readiness evidence category is invalid")
+        for values, expected in (
+            (self.local_blockers, LocalOfflineBlocker),
+            (self.online_check_requirements, OnlineCheckRequirement),
+        ):
+            if type(values) is not tuple or any(not isinstance(v, expected) for v in values):
+                raise ValueError("offline readiness evidence list is invalid")
         if len(self.local_blockers) > MAX_BLOCKERS or len(
             self.online_check_requirements
         ) > MAX_BLOCKERS:
@@ -295,7 +313,7 @@ def admit_offline_evidence_collection(
             "offline_evidence_game_active",
             defer_for_ms=30_000,
         )
-    if game_state is GameState.UNKNOWN:
+    if game_state is not GameState.IDLE:
         return OfflineEvidenceAdmission(
             OfflineEvidenceAdmissionKind.DEFER,
             "offline_evidence_game_unknown",

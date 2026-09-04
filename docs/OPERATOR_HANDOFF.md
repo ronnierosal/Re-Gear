@@ -4,8 +4,11 @@
 
 - Change: source research and candidate local Steam overview projection on
   `codex/offline-readiness-delivery`, based on `75f441f`; not integrated into main.
-- Verification: 22 focused offline tests, architecture, targeted compilation,
-  and whitespace checks passed. No frontend or runtime wiring changed.
+- Follow-up: guarded one-request service and allowlisted player-language reason
+  delivery implemented locally. Observation-type false-positive regression fixed.
+- Verification: 825 backend tests (5 skipped), 80 frontend tests, architecture,
+  compilation, TypeScript, build, package, and whitespace checks passed. Bundle
+  regenerated; no live source/RPC wiring or hardware lifecycle change.
 - Hardware evidence: none; no deployment or device actions.
 - Blockers: live source/schema/freshness validation, reader benchmark, private
   selection binding, and UI context precede production delivery.

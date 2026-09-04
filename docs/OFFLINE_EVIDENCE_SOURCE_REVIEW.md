@@ -1,7 +1,7 @@
 # Offline Readiness source review boundary
 
-Status: **Implemented (pure review contract and candidate Steam overview
-projection); live source validation and delivery required**
+Status: **Implemented (review contract, candidate Steam overview projection,
+and guarded request service); live reader and selected-game wiring required**
 
 Active workstream and continuation: [Offline Readiness handoff](OFFLINE_READINESS_HANDOFF.md).
 
@@ -65,6 +65,20 @@ The existing source declaration, cost, game-state, and freshness gates remain
 mandatory for any future application caller.
 
 ## Production gates and next slice
+
+The application service in `backend/hdm/application/offline_readiness.py` now
+implements one request's admission/revalidation/freshness boundary over an
+injected bounded local-memory reader. It does not manufacture source approval
+or benchmark evidence. It reads no source when unreviewed, unbenchmarked,
+running, unknown, or without a selected context. It rejects a changed private
+generation, stale/future evidence, exceptions, and elapsed time beyond the
+declared measured ceiling. The source timestamp is preserved.
+
+This synchronous local-memory port cannot preempt a blocking callback. It must
+not be adapted to filesystem, subprocess, network, or subscription work without
+separate lifecycle and timeout review. No production implementation is admitted
+or constructed. Generation counters must change on every selection, session,
+or game-state transition, including changing away and back.
 
 1. Identify a bounded, local-only reader and a private exact game/session
    binding. Inspect its implementation; do not trust a cached overview merely

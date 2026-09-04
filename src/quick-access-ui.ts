@@ -1,4 +1,5 @@
 /** Small, controller-first presentation helpers for the Quick Access panel. */
+import { offlineReadinessDetail } from "./offline-readiness-detail.ts";
 
 export interface AtAGlanceState {
   mode: string;
@@ -121,7 +122,9 @@ export function journeyStatusRows(
     const state = value && ("status" in value ? value.status : value.state);
     const presentation = state && JOURNEY_STATES[key][state];
     return presentation
-      ? { name, value: presentation[0], detail: presentation[1] }
+      ? { name, value: presentation[0], detail: key === "offline_readiness"
+          ? offlineReadinessDetail(journey?.offline_readiness?.reason_codes) ?? presentation[1]
+          : presentation[1] }
       : {
         name,
         value: "Not connected",
