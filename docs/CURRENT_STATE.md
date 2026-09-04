@@ -1,5 +1,29 @@
 # Current state
 
+## Re-Gear 0.3.24 Home and Library tab refresh candidate — 2026-09-04
+
+The player reports missing Home artwork badges and unreliable badges after
+Library tab changes on installed 0.3.23 (`57ebfb9b8cca`). Read-only inspection
+of Steam's existing debugging endpoint confirmed a registered focus listener,
+a matching focused Home listitem, exact numeric tile identity, positioned
+artwork, available native details interface, and zero badge nodes at that
+instant. This does not establish why the earlier badge was absent: the
+30-second expiry and evidence/game gates remain possible contributors.
+
+The candidate adds a `/library/home` attachment retry and observes DOM changes
+in known navigation windows to reconsider only the active tile. Tile or exact
+identity changes refresh the check even without focusin. Unrelated mutations
+do not restart the 450 ms delay or repeat detail requests; no library scan or
+periodic timer was added. Registered windows are rechecked on route callbacks,
+and observers disconnect on unload. G1 runtime remains unchanged.
+
+Validation passed: 943 backend tests (six skipped), 110 frontend tests,
+architecture, compilation, TypeScript, production build, and package check.
+Regression tests cover tab replacement without focusin and repeated unrelated
+mutations. Native Home/tab-switch visual acceptance and actual overhead remain
+unverified. This is a candidate fix, not a confirmed resolution of the report.
+No plugin installation, restart, or hardware transition was performed.
+
 ## Re-Gear 0.3.23 Offline Readiness review — 2026-09-04
 
 Local UI candidate based on integrated `37daf74`; G1 runtime is unchanged.

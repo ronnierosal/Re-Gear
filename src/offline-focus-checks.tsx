@@ -26,13 +26,16 @@ function libraryWindows(): Window[] {
 export function startOfflineFocusChecks(): { stop(): void } {
   const session = new OfflineDetailsSession(); const cache = new Map<number, CachedBadge>();
   let timer: ReturnType<typeof setTimeout> | undefined; let sequence = 0;
+  let selectedTile: Element | null = null; let selectedId: number | null = null;
   let shown: ReturnType<typeof attachOfflineTileBadge> | undefined;
   const cancel = () => { sequence++; clearTimeout(timer); session.invalidate(); shown?.stop(); shown = undefined; };
   const context = (id: number, app: unknown, source: NonNullable<ReturnType<typeof offlineNativeSource>>) =>
     (window.appStore as unknown) === source.store && source.store.GetAppOverviewByAppID(id) === app && (app as { display_status?: number }).display_status !== 4 && Array.isArray(Router.RunningApps) && Router.RunningApps.length === 0;
   const focus = (event: FocusEvent) => {
-    cancel(); const target = event.target as Element | null; const tile = target?.closest?.(OFFLINE_TILE_SELECTOR);
+    const target = event.target as Element | null; const tile = target?.closest?.(OFFLINE_TILE_SELECTOR);
     const id = tile ? exactTileElementAppId(tile) : null; const view = tile?.ownerDocument.defaultView;
+    if (event.type !== "focusin" && tile === selectedTile && id === selectedId) return;
+    cancel(); selectedTile = tile ?? null; selectedId = id;
     if (!tile || !view || id === null) return;
     const source = offlineNativeSource(); const app = source?.store.GetAppOverviewByAppID(id);
     if (!source || !app || app.display_status === 4 || !Array.isArray(Router.RunningApps) || Router.RunningApps.length) return;
@@ -50,29 +53,42 @@ export function startOfflineFocusChecks(): { stop(): void } {
       } catch { /* Steam/Decky may disappear during a request; discard this result. */ }
     }, SETTLE_MS);
   };
-  const views = new Set<Window>();
+  const views = new Map<Window, MutationObserver>();
+  const refresh = (view: Window) => {
+    const active = view.document.activeElement;
+    if (active?.closest?.(OFFLINE_TILE_SELECTOR) || selectedTile?.ownerDocument === view.document)
+      focus({ target: active } as unknown as FocusEvent);
+  };
   const syncViews = () => {
     for (const view of libraryWindows()) {
-      if (views.has(view)) continue;
-      view.document.addEventListener("focusin", focus, true);
-      views.add(view);
-      const active = view.document.activeElement;
-      if (active?.closest?.(OFFLINE_TILE_SELECTOR)) {
-        focus({ target: active } as unknown as FocusEvent);
+      if (!views.has(view)) {
+        view.document.addEventListener("focusin", focus, true);
+        const Observer = (view as unknown as { MutationObserver: typeof MutationObserver }).MutationObserver;
+        // Controller tab changes and recycled artwork need not emit focusin.
+        // Inspect only the active element; never enumerate library tiles.
+        const observer = new Observer(() => refresh(view));
+        observer.observe(view.document.body, { subtree: true, childList: true,
+          attributes: true, attributeFilter: ["class", "role", "data-id", "src"] });
+        views.set(view, observer);
       }
+      refresh(view);
     }
   };
   // Steam may not expose navigation windows when Decky first loads. Route
   // patches provide an event-driven retry without a timer or document scan.
   const routePatch = <T,>(route: T): T => { syncViews(); return route; };
   const libraryPatch = routerHook.addPatch("/library", routePatch);
+  const homePatch = routerHook.addPatch("/library/home", routePatch);
   const searchPatch = routerHook.addPatch("/search", routePatch);
   syncViews();
   return { stop() {
     cancel();
     routerHook.removePatch("/library", libraryPatch);
     routerHook.removePatch("/search", searchPatch);
-    for (const view of views) view.document.removeEventListener("focusin", focus, true);
+    routerHook.removePatch("/library/home", homePatch);
+    for (const [view, observer] of views) {
+      view.document.removeEventListener("focusin", focus, true); observer.disconnect();
+    }
     views.clear();
   } };
 }

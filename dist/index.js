@@ -451,15 +451,21 @@ function startOfflineFocusChecks() {
     const cache = new Map();
     let timer;
     let sequence = 0;
+    let selectedTile = null;
+    let selectedId = null;
     let shown;
     const cancel = () => { sequence++; clearTimeout(timer); session.invalidate(); shown?.stop(); shown = undefined; };
     const context = (id, app, source) => window.appStore === source.store && source.store.GetAppOverviewByAppID(id) === app && app.display_status !== 4 && Array.isArray(DFL.Router.RunningApps) && DFL.Router.RunningApps.length === 0;
     const focus = (event) => {
-        cancel();
         const target = event.target;
         const tile = target?.closest?.(OFFLINE_TILE_SELECTOR);
         const id = tile ? exactTileElementAppId(tile) : null;
         const view = tile?.ownerDocument.defaultView;
+        if (event.type !== "focusin" && tile === selectedTile && id === selectedId)
+            return;
+        cancel();
+        selectedTile = tile ?? null;
+        selectedId = id;
         if (!tile || !view || id === null)
             return;
         const source = offlineNativeSource();
@@ -498,31 +504,43 @@ function startOfflineFocusChecks() {
             catch { /* Steam/Decky may disappear during a request; discard this result. */ }
         }, SETTLE_MS);
     };
-    const views = new Set();
+    const views = new Map();
+    const refresh = (view) => {
+        const active = view.document.activeElement;
+        if (active?.closest?.(OFFLINE_TILE_SELECTOR) || selectedTile?.ownerDocument === view.document)
+            focus({ target: active });
+    };
     const syncViews = () => {
         for (const view of libraryWindows()) {
-            if (views.has(view))
-                continue;
-            view.document.addEventListener("focusin", focus, true);
-            views.add(view);
-            const active = view.document.activeElement;
-            if (active?.closest?.(OFFLINE_TILE_SELECTOR)) {
-                focus({ target: active });
+            if (!views.has(view)) {
+                view.document.addEventListener("focusin", focus, true);
+                const Observer = view.MutationObserver;
+                // Controller tab changes and recycled artwork need not emit focusin.
+                // Inspect only the active element; never enumerate library tiles.
+                const observer = new Observer(() => refresh(view));
+                observer.observe(view.document.body, { subtree: true, childList: true,
+                    attributes: true, attributeFilter: ["class", "role", "data-id", "src"] });
+                views.set(view, observer);
             }
+            refresh(view);
         }
     };
     // Steam may not expose navigation windows when Decky first loads. Route
     // patches provide an event-driven retry without a timer or document scan.
     const routePatch = (route) => { syncViews(); return route; };
     const libraryPatch = routerHook.addPatch("/library", routePatch);
+    const homePatch = routerHook.addPatch("/library/home", routePatch);
     const searchPatch = routerHook.addPatch("/search", routePatch);
     syncViews();
     return { stop() {
             cancel();
             routerHook.removePatch("/library", libraryPatch);
             routerHook.removePatch("/search", searchPatch);
-            for (const view of views)
+            routerHook.removePatch("/library/home", homePatch);
+            for (const [view, observer] of views) {
                 view.document.removeEventListener("focusin", focus, true);
+                observer.disconnect();
+            }
             views.clear();
         } };
 }
