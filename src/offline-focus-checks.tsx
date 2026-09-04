@@ -1,6 +1,5 @@
 import { callable } from "@decky/api";
 import { Router } from "@decky/ui";
-import { useEffect, useRef } from "react";
 import { OfflineDetailsSession } from "./offline-details-session";
 import { offlineReportBadge } from "./offline-badge-state";
 import { offlineBadgeImages } from "./offline-readiness-badge";
@@ -23,60 +22,31 @@ function libraryWindows(): Window[] {
   } catch { return []; }
 }
 
-/** Invisible, event-driven selected-game check. It never scans or polls the library. */
-export function OfflineFocusChecks({ gameState }: { gameState: string }) {
-  const state = useRef(gameState);
-  state.current = gameState;
-  useEffect(() => {
-    const session = new OfflineDetailsSession();
-    const cache = new Map<number, CachedBadge>();
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    let sequence = 0;
-    let shown: ReturnType<typeof attachOfflineTileBadge> | undefined;
-    const cancel = () => { sequence++; clearTimeout(timer); session.invalidate(); shown?.stop(); shown = undefined; };
-    const context = (appId: number, app: unknown, source: NonNullable<ReturnType<typeof offlineNativeSource>>) =>
-      state.current === "idle" && (window.appStore as unknown) === source.store &&
-      source.store.GetAppOverviewByAppID(appId) === app &&
-      Array.isArray(Router.RunningApps) && Router.RunningApps.length === 0;
-    const show = (view: Window, tile: Element, appId: number, badge: CachedBadge, valid: () => boolean) => {
-      shown?.stop();
-      shown = attachOfflineTileBadge(view, appId, offlineBadgeImages[badge.asset], badge.label, valid, tile);
-    };
-    const focus = (event: FocusEvent) => {
-      cancel();
-      if (state.current !== "idle") return;
-      const target = event.target as Element | null;
-      const tile = target?.closest?.(OFFLINE_TILE_SELECTOR);
-      const appId = tile ? exactTileAppId(tile.getAttribute("data-id")) : null;
-      const view = tile?.ownerDocument.defaultView;
-      if (!tile || !view || appId === null) return;
-      const source = offlineNativeSource();
-      const app = source?.store.GetAppOverviewByAppID(appId);
-      if (!source || !app || app.display_status === 4) return;
-      const valid = () => context(appId, app, source) && tile.isConnected && exactTileAppId(tile.getAttribute("data-id")) === appId;
-      const cached = cache.get(appId);
-      if (cached && Date.now() - cached.at < CACHE_MS && valid()) { show(view, tile, appId, cached, valid); return; }
-      const request = sequence;
-      timer = setTimeout(async () => {
-        if (request !== sequence || !valid()) return;
-        const report = await session.request(appId, source.subscribe, valid);
-        if (!report || request !== sequence) return;
-        const result = await classify(report.details);
-        if (!report.isValid() || request !== sequence || !valid()) return;
-        const badge = offlineReportBadge(result);
-        if (!badge) return;
-        const saved: CachedBadge = { ...badge, at: Date.now() };
-        cache.delete(appId); cache.set(appId, saved);
-        while (cache.size > CACHE_LIMIT) cache.delete(cache.keys().next().value!);
-        show(view, tile, appId, saved, valid);
-      }, SETTLE_MS);
-    };
-    const views = libraryWindows();
-    for (const view of views) view.document.addEventListener("focusin", focus, true);
-    return () => {
-      cancel();
-      for (const view of views) view.document.removeEventListener("focusin", focus, true);
-    };
-  }, []);
-  return null;
+/** Start once with the plugin, independently of Quick Access rendering. */
+export function startOfflineFocusChecks(): { stop(): void } {
+  const session = new OfflineDetailsSession(); const cache = new Map<number, CachedBadge>();
+  let timer: ReturnType<typeof setTimeout> | undefined; let sequence = 0;
+  let shown: ReturnType<typeof attachOfflineTileBadge> | undefined;
+  const cancel = () => { sequence++; clearTimeout(timer); session.invalidate(); shown?.stop(); shown = undefined; };
+  const context = (id: number, app: unknown, source: NonNullable<ReturnType<typeof offlineNativeSource>>) =>
+    (window.appStore as unknown) === source.store && source.store.GetAppOverviewByAppID(id) === app && Array.isArray(Router.RunningApps) && Router.RunningApps.length === 0;
+  const focus = (event: FocusEvent) => {
+    cancel(); const target = event.target as Element | null; const tile = target?.closest?.(OFFLINE_TILE_SELECTOR);
+    const id = tile ? exactTileAppId(tile.getAttribute("data-id")) : null; const view = tile?.ownerDocument.defaultView;
+    if (!tile || !view || id === null) return;
+    const source = offlineNativeSource(); const app = source?.store.GetAppOverviewByAppID(id);
+    if (!source || !app || app.display_status === 4 || !Array.isArray(Router.RunningApps) || Router.RunningApps.length) return;
+    const valid = () => context(id, app, source) && tile.isConnected && exactTileAppId(tile.getAttribute("data-id")) === id;
+    const show = (badge: CachedBadge) => { shown?.stop(); shown = attachOfflineTileBadge(view, id, offlineBadgeImages[badge.asset], badge.label, valid, tile); };
+    const cached = cache.get(id); if (cached && Date.now() - cached.at < CACHE_MS && valid()) { show(cached); return; }
+    const request = sequence; timer = setTimeout(async () => {
+      if (request !== sequence || !valid()) return; const report = await session.request(id, source.subscribe, valid);
+      if (!report || request !== sequence) return; const result = await classify(report.details);
+      if (!report.isValid() || request !== sequence || !valid()) return; const badge = offlineReportBadge(result); if (!badge) return;
+      const saved: CachedBadge = { ...badge, at: Date.now() }; cache.delete(id); cache.set(id, saved);
+      while (cache.size > CACHE_LIMIT) cache.delete(cache.keys().next().value!); show(saved);
+    }, SETTLE_MS);
+  };
+  const views = libraryWindows(); for (const view of views) view.document.addEventListener("focusin", focus, true);
+  return { stop() { cancel(); for (const view of views) view.document.removeEventListener("focusin", focus, true); } };
 }

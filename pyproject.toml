@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "handheld-dock-mode-steamos"
-version = "0.3.11"
+version = "0.3.12"
 description = "Re-Gear: safety-first SteamOS handheld docking"
 readme = "README.md"
 requires-python = ">=3.11"

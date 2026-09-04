@@ -1,5 +1,5 @@
 import { PRODUCT_NAME } from "./branding";
-import { OfflineFocusChecks } from "./offline-focus-checks";
+import { startOfflineFocusChecks } from "./offline-focus-checks";
 import { OfflineReadinessPanel } from "./offline-readiness-panel";
 import brandIcon from "../docs/images/re-gear-decky-white-transparent.png";
 import { definePlugin, toaster, useQuickAccessVisible } from "@decky/api";
@@ -1385,7 +1385,6 @@ function Content({ preflight }: { preflight: SleepPreflightCoordinator }) {
         </DashboardSurface>
       </PanelSection>
 
-      <OfflineFocusChecks gameState={snapshot?.game_state ?? "unknown"} />
       <OfflineReadinessPanel gameState={snapshot?.game_state ?? "unknown"} visible={quickAccessVisible} />
       <PanelSection title="Safety & actions">
         <div ref={primaryControlAnchor}>
@@ -1844,6 +1843,7 @@ export default definePlugin(() => {
     },
   );
   preflight.start();
+  const offlineFocusChecks = startOfflineFocusChecks();
 
   return {
     name: "Handheld Dock Mode",
@@ -1858,6 +1858,7 @@ export default definePlugin(() => {
       }
       warningModal?.Close();
       warningModal = null;
+      offlineFocusChecks.stop();
       preflight.stop();
     },
   };

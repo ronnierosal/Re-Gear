@@ -419,75 +419,60 @@ function libraryWindows() {
         return [];
     }
 }
-/** Invisible, event-driven selected-game check. It never scans or polls the library. */
-function OfflineFocusChecks({ gameState }) {
-    const state = SP_REACT.useRef(gameState);
-    state.current = gameState;
-    SP_REACT.useEffect(() => {
-        const session = new OfflineDetailsSession();
-        const cache = new Map();
-        let timer;
-        let sequence = 0;
-        let shown;
-        const cancel = () => { sequence++; clearTimeout(timer); session.invalidate(); shown?.stop(); shown = undefined; };
-        const context = (appId, app, source) => state.current === "idle" && window.appStore === source.store &&
-            source.store.GetAppOverviewByAppID(appId) === app &&
-            Array.isArray(DFL.Router.RunningApps) && DFL.Router.RunningApps.length === 0;
-        const show = (view, tile, appId, badge, valid) => {
-            shown?.stop();
-            shown = attachOfflineTileBadge(view, appId, offlineBadgeImages[badge.asset], badge.label, valid, tile);
-        };
-        const focus = (event) => {
-            cancel();
-            if (state.current !== "idle")
+/** Start once with the plugin, independently of Quick Access rendering. */
+function startOfflineFocusChecks() {
+    const session = new OfflineDetailsSession();
+    const cache = new Map();
+    let timer;
+    let sequence = 0;
+    let shown;
+    const cancel = () => { sequence++; clearTimeout(timer); session.invalidate(); shown?.stop(); shown = undefined; };
+    const context = (id, app, source) => window.appStore === source.store && source.store.GetAppOverviewByAppID(id) === app && Array.isArray(DFL.Router.RunningApps) && DFL.Router.RunningApps.length === 0;
+    const focus = (event) => {
+        cancel();
+        const target = event.target;
+        const tile = target?.closest?.(OFFLINE_TILE_SELECTOR);
+        const id = tile ? exactTileAppId(tile.getAttribute("data-id")) : null;
+        const view = tile?.ownerDocument.defaultView;
+        if (!tile || !view || id === null)
+            return;
+        const source = offlineNativeSource();
+        const app = source?.store.GetAppOverviewByAppID(id);
+        if (!source || !app || app.display_status === 4 || !Array.isArray(DFL.Router.RunningApps) || DFL.Router.RunningApps.length)
+            return;
+        const valid = () => context(id, app, source) && tile.isConnected && exactTileAppId(tile.getAttribute("data-id")) === id;
+        const show = (badge) => { shown?.stop(); shown = attachOfflineTileBadge(view, id, offlineBadgeImages[badge.asset], badge.label, valid, tile); };
+        const cached = cache.get(id);
+        if (cached && Date.now() - cached.at < CACHE_MS && valid()) {
+            show(cached);
+            return;
+        }
+        const request = sequence;
+        timer = setTimeout(async () => {
+            if (request !== sequence || !valid())
                 return;
-            const target = event.target;
-            const tile = target?.closest?.(OFFLINE_TILE_SELECTOR);
-            const appId = tile ? exactTileAppId(tile.getAttribute("data-id")) : null;
-            const view = tile?.ownerDocument.defaultView;
-            if (!tile || !view || appId === null)
+            const report = await session.request(id, source.subscribe, valid);
+            if (!report || request !== sequence)
                 return;
-            const source = offlineNativeSource();
-            const app = source?.store.GetAppOverviewByAppID(appId);
-            if (!source || !app || app.display_status === 4)
+            const result = await classify$1(report.details);
+            if (!report.isValid() || request !== sequence || !valid())
                 return;
-            const valid = () => context(appId, app, source) && tile.isConnected && exactTileAppId(tile.getAttribute("data-id")) === appId;
-            const cached = cache.get(appId);
-            if (cached && Date.now() - cached.at < CACHE_MS && valid()) {
-                show(view, tile, appId, cached, valid);
+            const badge = offlineReportBadge(result);
+            if (!badge)
                 return;
-            }
-            const request = sequence;
-            timer = setTimeout(async () => {
-                if (request !== sequence || !valid())
-                    return;
-                const report = await session.request(appId, source.subscribe, valid);
-                if (!report || request !== sequence)
-                    return;
-                const result = await classify$1(report.details);
-                if (!report.isValid() || request !== sequence || !valid())
-                    return;
-                const badge = offlineReportBadge(result);
-                if (!badge)
-                    return;
-                const saved = { ...badge, at: Date.now() };
-                cache.delete(appId);
-                cache.set(appId, saved);
-                while (cache.size > CACHE_LIMIT)
-                    cache.delete(cache.keys().next().value);
-                show(view, tile, appId, saved, valid);
-            }, SETTLE_MS);
-        };
-        const views = libraryWindows();
-        for (const view of views)
-            view.document.addEventListener("focusin", focus, true);
-        return () => {
-            cancel();
-            for (const view of views)
-                view.document.removeEventListener("focusin", focus, true);
-        };
-    }, []);
-    return null;
+            const saved = { ...badge, at: Date.now() };
+            cache.delete(id);
+            cache.set(id, saved);
+            while (cache.size > CACHE_LIMIT)
+                cache.delete(cache.keys().next().value);
+            show(saved);
+        }, SETTLE_MS);
+    };
+    const views = libraryWindows();
+    for (const view of views)
+        view.document.addEventListener("focusin", focus, true);
+    return { stop() { cancel(); for (const view of views)
+            view.document.removeEventListener("focusin", focus, true); } };
 }
 
 const classify = callable("classify_offline_details");
@@ -2742,7 +2727,7 @@ function Content({ preflight }) {
     return (SP_JSX.jsx(SP_JSX.Fragment, { children: SP_JSX.jsxs("div", { ref: statusAnchor, tabIndex: -1, children: [SP_JSX.jsxs(DFL.PanelSection, { title: "At a glance", children: [SP_JSX.jsx(DFL.Focusable, { ref: statusFocusAnchor, "aria-label": "Re-Gear status summary", onGamepadFocus: () => {
                                 if (statusAnchor.current)
                                     scrollToTopOfOwningPanel(statusAnchor.current);
-                            }, children: SP_JSX.jsx(QuickAccessOverview, { mode: payload?.inference.mode ?? "unknown", modeLabel: loading ? "Reading…" : label(payload?.inference.mode ?? "unknown"), health: healthStatusLabel(payload?.health, loading), game: label(snapshot?.game_state ?? "unknown"), loading: loading }) }), SP_JSX.jsxs(DashboardSurface, { children: [SP_JSX.jsx(DashboardAction, { title: "Dock / eGPU", description: progress.label, icon: "connection", expanded: showHardwareDetails, onClick: () => setShowHardwareDetails((visible) => !visible) }), showHardwareDetails && SP_JSX.jsxs("div", { children: [hardwareDetailRows(payload).map(([name, value]) => SP_JSX.jsx(DiagnosticRow, { name: name, value: value }, name)), SP_JSX.jsx(DFL.PanelSectionRow, { children: progress.detail })] })] })] }), SP_JSX.jsx(OfflineFocusChecks, { gameState: snapshot?.game_state ?? "unknown" }), SP_JSX.jsx(OfflineReadinessPanel, { gameState: snapshot?.game_state ?? "unknown", visible: quickAccessVisible }), SP_JSX.jsxs(DFL.PanelSection, { title: "Safety & actions", children: [SP_JSX.jsxs("div", { ref: primaryControlAnchor, children: [SP_JSX.jsx(DashboardSurface, { primary: true, children: SP_JSX.jsx(DashboardAction, { icon: "bolt", title: tvSwitchBusy ? "Switching…" : "Switch to TV now", description: "Checks readiness before switching", onClick: () => void executeTvSwitch(), disabled: tvSwitchBusy
+                            }, children: SP_JSX.jsx(QuickAccessOverview, { mode: payload?.inference.mode ?? "unknown", modeLabel: loading ? "Reading…" : label(payload?.inference.mode ?? "unknown"), health: healthStatusLabel(payload?.health, loading), game: label(snapshot?.game_state ?? "unknown"), loading: loading }) }), SP_JSX.jsxs(DashboardSurface, { children: [SP_JSX.jsx(DashboardAction, { title: "Dock / eGPU", description: progress.label, icon: "connection", expanded: showHardwareDetails, onClick: () => setShowHardwareDetails((visible) => !visible) }), showHardwareDetails && SP_JSX.jsxs("div", { children: [hardwareDetailRows(payload).map(([name, value]) => SP_JSX.jsx(DiagnosticRow, { name: name, value: value }, name)), SP_JSX.jsx(DFL.PanelSectionRow, { children: progress.detail })] })] })] }), SP_JSX.jsx(OfflineReadinessPanel, { gameState: snapshot?.game_state ?? "unknown", visible: quickAccessVisible }), SP_JSX.jsxs(DFL.PanelSection, { title: "Safety & actions", children: [SP_JSX.jsxs("div", { ref: primaryControlAnchor, children: [SP_JSX.jsx(DashboardSurface, { primary: true, children: SP_JSX.jsx(DashboardAction, { icon: "bolt", title: tvSwitchBusy ? "Switching…" : "Switch to TV now", description: "Checks readiness before switching", onClick: () => void executeTvSwitch(), disabled: tvSwitchBusy
                                             || Boolean(tvSwitchAcknowledgementId)
                                             || Boolean(journalStatus && journalStatus.code !== "journal.idle") }) }), tvSwitchMessage && SP_JSX.jsx(DFL.PanelSectionRow, { children: tvSwitchMessage }), SP_JSX.jsx(DashboardSurface, { children: SP_JSX.jsx("div", { style: { padding: "4px 12px" }, children: SP_JSX.jsx(DFL.ToggleField, { label: "Automatic TV docking", layout: "inline", description: automaticDockBusy
                                                 ? "Saving…"
@@ -2843,6 +2828,7 @@ var index = definePlugin(() => {
         }, BLOCKED_ATTEMPT_MODAL_DELAY_MS);
     });
     preflight.start();
+    const offlineFocusChecks = startOfflineFocusChecks();
     return {
         name: "Handheld Dock Mode",
         titleView: SP_JSX.jsxs("div", { className: DFL.staticClasses.Title, style: { display: "flex", alignItems: "center", gap: 8 }, children: [SP_JSX.jsx(BrandIcon, { size: 36 }), PRODUCT_NAME] }),
@@ -2856,6 +2842,7 @@ var index = definePlugin(() => {
             }
             warningModal?.Close();
             warningModal = null;
+            offlineFocusChecks.stop();
             preflight.stop();
         },
     };
