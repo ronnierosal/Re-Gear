@@ -8,6 +8,7 @@ import test_auto_tdp_session as session_fixtures
 import test_tdp_control as control_fixtures
 import test_tdp_sensor_readiness as sensor_fixtures
 from hdm.adapters.steamos.gamescope_performance import PerformanceReading, PerformanceTarget
+from hdm.adapters.steamos.auto_tdp_host import AutoTdpHostContext
 from hdm.adapters.steamos.gamescope_performance_target import PerformanceTargetResolution
 from hdm.application.tdp_control import TdpControlService
 from hdm.delivery.auto_tdp_evidence import AutoTdpEligibility
@@ -26,6 +27,7 @@ class AutoFactoryTests(unittest.TestCase):
         self.reads = 0
         self.game = GameState.RUNNING
         self.internal = True
+        self.host_key = "a" * 64
         self.target = PerformanceTarget(Path(__file__).resolve(), 1000, 123, 456, "game", 789)
         # All timing and thermal values are synthetic fixture inputs.
         self.contract = TelemetryCollectionContract(TelemetryConsumer.AUTO_TDP,
@@ -33,6 +35,8 @@ class AutoFactoryTests(unittest.TestCase):
         self.args = dict(resolve=lambda: PerformanceTargetResolution("performance.target_resolved", self.target),
             eligibility=lambda: AutoTdpEligibility(self.game, self.internal),
             sensor_config=fixture.config, contract=self.contract, clock=lambda: self.now,
+            host_context_key=self.host_key, thermal_evidence_reference="synthetic-fixture-only",
+            host_context=lambda reading: AutoTdpHostContext("auto_tdp.host_context_observed", self.host_key),
             performance_reader=SimpleNamespace(observe=self.frame),
             sensors=lambda: replace(fixture.inventory, started_at=self.now, finished_at=self.now))
         self.journal = control_fixtures.MemoryJournal()
@@ -112,6 +116,19 @@ class AutoFactoryTests(unittest.TestCase):
         for change in (dict(contract=replace(self.contract, consumer=TelemetryConsumer.HEALTH)),
                        dict(contract=replace(self.contract, metrics=(TelemetryMetric.TEMPERATURE_C,))),
                        dict(contract=replace(self.contract, interval_ms=2000)),
+                       dict(host_context_key=""), dict(thermal_evidence_reference=""),
                        dict(sensor_config=None)):
             with self.subTest(change=change), self.assertRaises(ValueError):
                 self.create(**change)
+
+    def test_changed_host_configuration_blocks_collection_and_pending_dispatch(self):
+        session = self.create()
+        session.start(self.policy)
+        self.provider.before_dispatch = lambda: setattr(self, "host_key", "b" * 64)
+        result = self.feed(session, 0, 11)
+        self.assertEqual(result.transaction.code, "tdp.dispatch_rejected")
+        self.assertEqual(self.provider.writes, [])
+        self.assertIsNone(self.journal.record)
+        reads = self.reads
+        self.assertEqual(self.feed(session, 12, 12).code, "auto_tdp.sample_unavailable")
+        self.assertEqual(self.reads, reads)
