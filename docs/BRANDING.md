@@ -8,6 +8,11 @@ their original wording.
 
 ## Presentation assets
 
+Current selection (0.3.5): `docs/images/re-gear-decky-black-gear.jpg`,
+the user's unmodified black gear/white background image. It supersedes the
+0.3.4 icon below for both Decky list and header. All prior originals remain.
+The JPEG's white background is retained; it is not a transparent asset.
+
 The 0.3.4 icon candidate uses the user-supplied, unmodified
 `docs/images/re-gear-decky-monochrome.jpg` for the Decky list and panel header.
 The earlier PNG artwork is retained. The JPEG is embedded locally in the bundle.

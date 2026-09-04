@@ -1,5 +1,12 @@
 # Current state
 
+## Re-Gear 0.3.5 icon selection — 2026-09-04
+
+Supersedes the 0.3.4 artwork with the user's unmodified black gear JPEG,
+`docs/images/re-gear-decky-black-gear.jpg`, in the list and header. White
+background is retained. No runtime or identity changes; the Decky name
+migration remains pending. Not installed, uploaded or published by this update.
+
 ## Re-Gear 0.3.4 icon candidate — 2026-09-04
 
 Based on the combined 0.3.3 candidate `3c182d6`, this update embeds the
