@@ -98,6 +98,28 @@ the former missing-host blocked audit no longer applies.
 
 ## Completion audit
 
+## Five-task completion plan — resumed 2026-09-04
+
+The maintainer explicitly authorized proceeding with all five next steps.
+The app rejected creation of a second goal because the earlier goal is unfinished;
+its status remains blocked in the app and no resume operation is exposed by the
+goal tool. Continue the existing objective here; do not falsely complete it to
+clear that tool constraint.
+
+| Task | Current evidence/status | Remaining acceptance |
+| --- | --- | --- |
+| 1. Inspect existing live read-only access | **Verified:** existing loopback Steam debugging endpoint, protocol 1.3, shared context, initialized appStore, and exact lookup function. Runtime evaluation enforced `throwOnSideEffect`; no debugging activation. | Complete for identifying access; production use still needs its own design. |
+| 2. Validate selected-game local evidence and freshness | **In progress:** no selected-game route was present in the inspected targets. Maintainer asked to open one game's details page and keep the game closed. | Exact local fields, game/session binding, evidence age; categorical output only. |
+| 3. Measure collection cost | Pending task 2. | Actual bounded reader timings; no claim from source parsing, SSH latency, or synthetic tests. |
+| 4. Wire on-demand check and invalidation | Guarded service and reason text locally tested; live transport/context unconstructed. | Selected-game request, clear status/reasons, discard on context change/expiry; no background polling. |
+| 5. Test/build/review before installation | Prior local gate: 825 backend tests (5 skipped), 80 frontend tests, architecture/typecheck/build/package passed. | Re-run affected gates for final changes; review final artifact. No deployment authorized. |
+
+Runtime probe returned only capability booleans. CDP target IDs stayed transient;
+no titles, AppIDs, account data, cache records, or destination addresses were
+persisted. The probe connection closed after each read. No remote task remains.
+Next action: after the player selects a game, inspect the current route/context
+without a library scan. Do not infer game identity from most-recent-played data.
+
 Research/source choices, conservative projection, request gates, actionable
 categorical presentation, local verification, and continuation documentation
 have evidence. A usable selected-game check still lacks a reviewed live reader

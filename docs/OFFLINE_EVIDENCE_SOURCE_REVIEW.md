@@ -116,6 +116,15 @@ enabling debugging or installing an observer.
 
 ### Request boundary
 
+**REMOTELY OBSERVED, 2026-09-04:** existing Steam loopback debugging access was
+already enabled (protocol 1.3). A bounded side-effect-checked runtime read in
+`SharedJSContext` confirmed appStore exists, is initialized, and has the exact
+lookup method. No native getter was invoked and no game/account data returned.
+This establishes an available inspection surface, not production collector
+approval or evidence freshness. No selected-game route was observed; the player
+was asked to select a game before per-game inspection. No listener, subscription,
+observer, or plugin was installed, and the probe sockets were closed.
+
 The application service in `backend/hdm/application/offline_readiness.py` now
 implements one request's admission/revalidation/freshness boundary over an
 injected bounded local-memory reader. It does not manufacture source approval
