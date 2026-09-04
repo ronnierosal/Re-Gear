@@ -89,6 +89,10 @@ def main() -> int:
         }
         allowed_methods = {
             "get_snapshot",
+            "get_tdp_status",
+            "set_tdp_enabled",
+            "apply_tdp_limit",
+            "restore_tdp_limit",
             "get_peripheral_status",
             "get_action_history",
             "get_automatic_dock_status",
@@ -122,7 +126,7 @@ def main() -> int:
         }
         if public_methods != allowed_methods:
             failures.append(
-                "Decky RPCs must remain limited to diagnostics/logging, read-only peripheral/watcher/action-history status, automatic-dock preference/status, approved support export, supervised presentation, confirmed shutdown-before-disconnect, and guarded process release"
+                "Decky RPCs must remain limited to diagnostics/logging, read-only peripheral/watcher/action-history status, automatic-dock preference/status, explicit TDP status/enable/apply/restore, approved support export, supervised presentation, confirmed shutdown-before-disconnect, and guarded process release"
             )
 
     delivery_sources = "\n".join(
@@ -140,7 +144,7 @@ def main() -> int:
             print(f"- {failure}")
         return 1
     print(
-        "Plugin package check passed: diagnostics/logging, read-only peripheral/watcher/action-history status, automatic-dock preference/status, support export, sleep guard, supervised presentation, confirmed shutdown-before-disconnect, and guarded process release only."
+        "Plugin package check passed: documented diagnostics, preferences, explicit TDP controls, support export, sleep guard, supervised presentation, confirmed shutdown-before-disconnect, and guarded process release only."
     )
     return 0
 

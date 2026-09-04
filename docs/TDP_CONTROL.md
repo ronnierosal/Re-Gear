@@ -143,11 +143,41 @@ state directory; this store is not an interprocess lock. Current filesystem
 tests ran on Windows, so Linux directory-fsync and permissions still need
 Linux execution evidence.
 
-These components are implemented and simulated, not wired into Decky or
-installed. Provider ownership defaults to unverified. An active native manager
-is not by itself proof that Steam, a Decky plugin or another daemon will not
-change its state. A real ownership resolver, lifecycle integration and user
-controls remain necessary before runtime activation.
+These components are wired into Decky for explicit manual requests, but are not
+installed or hardware-validated. The provider still defaults to unverified when
+used alone. An active native manager is not proof that Steam or another tool will
+not change its state. The runtime checks known overlaps and current readback;
+it cannot guarantee exclusive ownership of a platform API shared with Steam.
+
+### Manual runtime and panel checkpoint
+
+`TdpRuntime` serializes on-demand status, enable, apply and restore calls. Opening
+the collapsed Handheld power section requests status once; there is no background
+collector or polling timer. Enabling is explicit and initially off on each load.
+The UI labels configured watts separately from measured consumption, exposes
+current readiness separately from the last request, and always permits disabling
+an enabled controller when the status payload is valid, even during recovery.
+
+The first runtime scope requires detached Portable mode, known game state and no
+active transition. Bounded process/plugin scanning rejects known HHD, asusd,
+PowerStation, RyzenAdj, SimpleDeckyTDP and PowerControl overlaps, plus incomplete
+scans. A private file with a held Linux flock coordinates Re-Gear processes only.
+Neither detection nor that lease prevents writes by Steam or unknown controllers.
+Fresh provider context/settings checks remain mandatory before dispatch. No G1
+display/GPU lifecycle path is changed by this workstream.
+
+Disabling attempts verified baseline restoration, then releases the lease even
+when restoration is blocked. Unload stops new requests immediately without
+launching a power write or waiting past Decky's unload deadline. An in-flight
+request retains the lease until it returns; its durable journal survives process
+exit. Reload stays disabled and offers explicit restore only for a still-matching
+active journal. Uncertain or externally changed records require recovery review.
+
+The explicit RPC contract is `get_tdp_status`, `set_tdp_enabled`,
+`apply_tdp_limit` and `restore_tdp_limit`; there is no arbitrary command or sysfs
+write RPC. `auto_tdp_available` remains false. A local development fixture is
+available with `node scripts/preview_tdp.mjs`; it renders the actual component
+with mock data and substitute HTML controls and cannot reach the device.
 
 ## Ordered implementation
 
@@ -163,8 +193,8 @@ controls remain necessary before runtime activation.
 4. Resolve the device-backed provider and write a shared manual apply/verify/
    restore service, with tests for timeout, partial failure and external changes.
    **Implemented/simulated:** command runner, ASUS provider, application service
-   and file journal. **Pending:** live provider validation, ownership resolver,
-   lifecycle wiring and honest capability/requested/observed panel status.
+   and file journal, known-controller resolver, lifecycle and panel delivery.
+   **Pending:** live provider/ownership validation and native Decky verification.
 5. Add the pure Auto TDP policy, replay scenarios and a measured collector;
    integrate only after manual behavior and provider ownership are understood.
 6. Run the integration matrix and independent review. Record remote evidence
@@ -200,6 +230,13 @@ excluded from reuse in this workstream.
 - Manual-provider checkpoint: 65 TDP-specific tests passed. Independent review
   led to unique-owner dispatch, journal context validation and categorical
   verification-failure handling, all covered by regressions.
-- Integration verification: 882 backend tests passed (5 expected skips);
-  architecture, Python compilation and `git diff --check` passed. No frontend
-  files or generated package artifacts changed, and no deployment gate is claimed.
+- Manual-delivery integration: 923 backend tests ran successfully (13 platform
+  skips); 84 frontend tests, architecture, Python compilation, typecheck, build,
+  package and diff checks pass. Generated frontend bundle rebuilt. Eight of the
+  skips are new real Linux lease tests; WSL is not installed on this host.
+- Browser fixture verified default disabled state, enable, keyboard apply from
+  15 W to 20 W and restore to 15 W at 360 px panel width. This is component/mock
+  evidence, not native Decky focus, controller or hardware proof.
+- Independent review fixed historical failure text overriding fresh readiness.
+  Lifecycle regression covers unload racing lazy runtime construction. No device
+  deployment gate is claimed; measured telemetry and live Auto TDP remain next.
