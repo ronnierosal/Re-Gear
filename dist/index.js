@@ -1831,6 +1831,7 @@ const LABELS = {
     "connection.waiting_for_session": "Preparing Steam session",
     "connection.game_running": "Waiting for game to close",
     "connection.stabilizing": "Checking G1 connection stability",
+    "connection.late_enumeration_detected": "G1 GPU appeared; checking connection",
     "connection.ready_idle": "G1 ready for TV",
     "connection.transport_dropped_before_pci": "G1 USB4 connection dropped while starting",
     "connection.verified_absence_required": "Power off and disconnect G1 before retrying",

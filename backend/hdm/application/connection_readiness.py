@@ -147,6 +147,25 @@ class ConnectionReadinessLifecycle:
         assert self._started_at is not None
         age = max(0.0, now - self._started_at)
         if not self._readiness_established and age >= WINDOW_TIMEOUT_SECONDS:
+            # One late first enumeration may open a fresh readiness window.
+            # Bind its identity immediately so repeated events/failed settling
+            # cannot renew the deadline or re-arm the transition coordinator.
+            if (
+                self._status.stage is ConnectionReadinessStage.TIMED_OUT
+                and not self._g1_identity
+                and observation.pci_complete
+                and observation.g1_identity
+                and observation.sample_id != self._last_sample_id
+            ):
+                self._g1_identity = observation.g1_identity
+                self._started_at = now
+                self._last_sample_id = observation.sample_id
+                self._reset_stability()
+                self._status = self._make_status(
+                    ConnectionReadinessStage.STABILIZING,
+                    "connection.late_enumeration_detected", now,
+                )
+                return self._status
             self._reset_stability()
             self._status = self._make_status(
                 ConnectionReadinessStage.TIMED_OUT, "connection.readiness_timed_out", now

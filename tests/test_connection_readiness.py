@@ -199,6 +199,79 @@ class ConnectionReadinessTests(unittest.TestCase):
         self.assertEqual(timed_out.stage, ConnectionReadinessStage.TIMED_OUT)
         self.assertEqual(timed_out.poll_after_ms, 5_000)
 
+    def begin_late_enumeration(self):
+        self.lifecycle.update(sample(0, g1_identity="", pci_complete=False))
+        self.clock.now = 120
+        self.assertEqual(self.lifecycle.update(
+            sample(1, g1_identity="", pci_complete=False)).stage,
+            ConnectionReadinessStage.TIMED_OUT)
+        self.clock.now = 169
+        return self.lifecycle.update(sample(2))
+
+    def test_late_exact_enumeration_starts_fresh_bounded_settling(self):
+        recovered = self.begin_late_enumeration()
+        self.assertEqual(recovered.stage, ConnectionReadinessStage.STABILIZING)
+        self.assertEqual(recovered.code, "connection.late_enumeration_detected")
+        self.assertEqual(recovered.window_age_ms, 0)
+        self.assertEqual(recovered.topology_samples, 0)
+        # Neither the triggering sample nor repeated samples count as quorum.
+        self.assertEqual(self.lifecycle.update(sample(2)).topology_samples, 0)
+        for index in range(3, 6):
+            self.assertEqual(self.lifecycle.update(sample(index)).stage,
+                             ConnectionReadinessStage.STABILIZING)
+        self.assertEqual(self.lifecycle.update(sample(6)).stage,
+                         ConnectionReadinessStage.READY_IDLE)
+
+    def test_late_enumeration_retains_all_readiness_guards(self):
+        cases = (
+            ({"driver_ready": False}, ConnectionReadinessStage.WAITING_FOR_DRIVER),
+            ({"link_up": False}, ConnectionReadinessStage.WAITING_FOR_LINK),
+            ({"hdmi_ready": False}, ConnectionReadinessStage.WAITING_FOR_HDMI),
+            ({"audio_ready": False}, ConnectionReadinessStage.WAITING_FOR_AUDIO),
+            ({"session_ready": False}, ConnectionReadinessStage.WAITING_FOR_SESSION),
+            ({"game_state": GameState.RUNNING}, ConnectionReadinessStage.GAME_RUNNING),
+            ({"game_state": GameState.UNKNOWN}, ConnectionReadinessStage.ACTION_REQUIRED),
+        )
+        for changes, expected in cases:
+            with self.subTest(changes=changes):
+                self.setUp()
+                self.begin_late_enumeration()
+                for index in range(3, 8):
+                    result = self.lifecycle.update(sample(index, **changes))
+                self.assertEqual(result.stage, expected)
+
+    def test_late_recheck_cannot_restart_repeatedly_on_same_attachment(self):
+        self.begin_late_enumeration()
+        self.clock.now = 289
+        for index in range(3, 8):
+            self.assertEqual(self.lifecycle.update(sample(index)).stage,
+                             ConnectionReadinessStage.TIMED_OUT)
+
+    def test_timeout_without_exact_identity_does_not_restart(self):
+        self.lifecycle.update(sample(0, g1_identity="", pci_complete=False))
+        for index, seconds in enumerate((120, 169, 300), start=1):
+            self.clock.now = seconds
+            result = self.lifecycle.update(sample(index, g1_identity="", pci_complete=False))
+            self.assertEqual(result.stage, ConnectionReadinessStage.TIMED_OUT)
+            self.assertEqual(result.window_age_ms, seconds * 1000)
+
+    def test_late_readiness_preserves_one_shot_and_portable_suppression(self):
+        from tests.test_automatic_dock import current
+        from hdm.application.automatic_dock import AutomaticDockCoordinator
+        self.begin_late_enumeration()
+        for index in range(3, 7):
+            ready = self.lifecycle.update(sample(index))
+        coordinator = AutomaticDockCoordinator()
+        observed = current("connected-internal.json")
+        self.assertTrue(coordinator.update(enabled=True, readiness=ready,
+                                           current=observed).should_switch)
+        self.assertFalse(coordinator.update(enabled=True, readiness=ready,
+                                            current=observed).should_switch)
+        suppressed = AutomaticDockCoordinator()
+        suppressed.suppress_current_attachment_after_portable_return()
+        self.assertFalse(suppressed.update(enabled=True, readiness=ready,
+                                           current=observed).should_switch)
+
     def test_unknown_game_fails_closed_after_other_layers_are_ready(self):
         result = self.lifecycle.update(sample(0, game_state=GameState.UNKNOWN))
         self.assertEqual(result.stage, ConnectionReadinessStage.ACTION_REQUIRED)

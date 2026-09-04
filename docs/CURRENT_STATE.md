@@ -1,5 +1,28 @@
 # Current state
 
+## Re-Gear 0.3.22 late-enumeration candidate — 2026-09-04
+
+The supervised 0.3.21 attach began with `observation.wake.kernel_event`, then
+reported timeout at 120.593 seconds from a `poll_timer` scan. Kernel Link Up
+arrived about 168 seconds after USB4 discovery; Re-Gear observed the exact G1
+at 169.240 seconds. Later read-only evidence verified the GPU bound to amdgpu
+and TV HDMI/EDID present, with only the internal display active. PCI BAR
+assignment failures were logged during enumeration; their causal role is
+unproven. Evidence: `out/ally-0.3.21-late-enumeration.jsonl` and
+`out/ally-0.3.21-late-enumeration-state.json` in the release worktree.
+
+The local 0.3.22 candidate allows first exact G1 enumeration after timeout to
+open one fresh 120-second readiness window on that transport. It binds the
+identity and discards prior settling samples. Unknown identity, a transport
+failure requiring absence, repeated events, and a second timeout do not renew
+that window. Existing game/session/audio/display/link gates and automatic
+transition one-shot/Portable-suppression state remain authoritative. This is
+late-arrival handling, not a fix for the underlying kernel enumeration delay.
+Local checks passed: 943 backend tests (six skipped), 102 frontend tests,
+TypeScript, architecture, compilation, build, and package validation.
+Not installed or hardware validated; keep the connected Ally untouched until
+normal shutdown, confirmed power-off, disconnect, and detached boot.
+
 ## Re-Gear 0.3.21 G1 readiness candidate — 2026-09-04
 
 Unreleased local changes invalidate readiness and reset settling counters when
