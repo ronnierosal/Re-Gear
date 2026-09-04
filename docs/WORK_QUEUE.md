@@ -47,6 +47,11 @@ is permitted.
 
 ### Supporting queue
 
+Offline Readiness item 4 now has an isolated evidence/delivery driver on
+`codex/offline-readiness-delivery`. Source research and a synthetic-tested local
+Steam overview projection are implemented; production collection remains gated.
+See the [continuation checkpoint](OFFLINE_READINESS_HANDOFF.md) before overlapping work.
+
 | Priority | Work item and owner | Status | Acceptance evidence |
 | --- | --- | --- | --- |
 | 2 | Mode/link health: improve fail-closed usability signals and bounded link-instability diagnostics. Owner: next safe worker. | **Implemented (pure evidence + read-only UI):** fresh same-binding observed Up/Down samples can report stable/changed state or fail closed; `Ready to dock` also requires a current exact G1 profile, verified present external GPU/display facts, verified Gamescope, and a current observed-Up link—never only a stale display or sleep guard. Quick Access stays categorical; no collector, transition, or removal conclusion exists. Hardware link quality is **Hardware Validation Required**. | Pure/replay tests; privacy-safe snapshot/UI checks; supported-profile read-only capture when useful. |

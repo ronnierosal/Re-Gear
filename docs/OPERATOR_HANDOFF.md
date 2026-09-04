@@ -1,5 +1,17 @@
 # Maintainer and agent handoff
 
+## Offline Readiness isolated checkpoint — 2026-09-03
+
+- Change: source research and candidate local Steam overview projection on
+  `codex/offline-readiness-delivery`, based on `75f441f`; not integrated into main.
+- Verification: 22 focused offline tests, architecture, targeted compilation,
+  and whitespace checks passed. No frontend or runtime wiring changed.
+- Hardware evidence: none; no deployment or device actions.
+- Blockers: live source/schema/freshness validation, reader benchmark, private
+  selection binding, and UI context precede production delivery.
+- Next safe task and exact worktree: [Offline Readiness handoff](OFFLINE_READINESS_HANDOFF.md).
+  Ally/G1 lifecycle ownership remains with its separate driver.
+
 ## Re-Gear repository checkpoint — 2026-09-03
 
 - Change: local merge `9aeb841` combines journey timing diagnostics with the

@@ -480,6 +480,12 @@ they are not authorization for a separate optimizer or launcher.
 
 ## Smallest safe next milestone
 
+Independent Offline Readiness delivery work is tracked in the
+[workstream handoff](OFFLINE_READINESS_HANDOFF.md). A candidate local Steam
+overview projection and source research are implemented on its isolated branch;
+live source validation, cost measurement, game context, and production wiring
+remain open. This does not change the G1 journey or release gates below.
+
 Unattended-safe R1 policy/replay, guarded process-release implementation,
 canonical sleep policy/coordinator, compatibility policy, temporary logging
 policy, and the optional overlay are complete. The next release-facing gates are
