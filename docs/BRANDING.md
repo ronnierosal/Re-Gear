@@ -8,6 +8,11 @@ their original wording.
 
 ## Presentation assets
 
+Current selection (0.3.6): `docs/images/re-gear-decky-transparent.png`.
+Built-in image editing removed the outer background from the supplied JPEG;
+this is a derived asset, not byte-identical original artwork. Actual alpha
+was verified. Keep the opaque white inner details and original source JPEG.
+
 Current selection (0.3.5): `docs/images/re-gear-decky-black-gear.jpg`,
 the user's unmodified black gear/white background image. It supersedes the
 0.3.4 icon below for both Decky list and header. All prior originals remain.

@@ -1,5 +1,13 @@
 # Current state
 
+## Re-Gear 0.3.6 transparent icon — 2026-09-04
+
+Replaces the opaque JPEG background with a derived RGBA PNG in list and header.
+Alpha inspection: 1254x1254, 668393 fully transparent pixels, corner alpha 0.
+White internal details remain opaque. Original supplied artwork is retained.
+No backend, identity, lifecycle or polling changes. Not installed or uploaded
+by this update; native Decky visual validation and identity migration remain open.
+
 ## Re-Gear 0.3.5 icon selection — 2026-09-04
 
 Supersedes the 0.3.4 artwork with the user's unmodified black gear JPEG,

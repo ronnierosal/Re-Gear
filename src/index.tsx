@@ -1,5 +1,5 @@
 import { PRODUCT_NAME } from "./branding";
-import brandIcon from "../docs/images/re-gear-decky-black-gear.jpg";
+import brandIcon from "../docs/images/re-gear-decky-transparent.png";
 import { definePlugin, toaster, useQuickAccessVisible } from "@decky/api";
 import {
   ButtonItem,
