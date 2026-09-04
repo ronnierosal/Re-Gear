@@ -1,5 +1,16 @@
 # Maintainer and agent handoff
 
+## Re-Gear 0.3.0 packaging checkpoint — 2026-09-03
+
+New candidates use `Re-Gear-<version>.zip`; package.json and pyproject.toml now
+agree on 0.3.0. The combined dashboard/event-trigger candidate retains the legacy
+Decky installation identity. CI, candidate validation and deployment selection
+use the branded name; historical rollback verification accepts either prefix.
+Version policy is recorded in RELEASE_PIPELINE.md. Verification passed architecture,
+874 backend tests (six skipped), compilation, TypeScript, 77 frontend tests,
+build, package and diff checks. This is a local candidate, not installed or
+hardware validated. Next: supervised detached install and automatic-dock test.
+
 ## Combined dashboard and G1 candidate — 2026-09-03
 
 UI commit `e5d648d` is integrated as `812b8d0` on the lifecycle branch, retaining

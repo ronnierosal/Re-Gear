@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 PACKAGE_VERSION = str(
     json.loads((ROOT / "package.json").read_text(encoding="utf-8"))["version"]
 )
-OUTPUT = ROOT / "out" / f"HandheldDockMode-{PACKAGE_VERSION}.zip"
+OUTPUT = ROOT / "out" / f"Re-Gear-{PACKAGE_VERSION}.zip"
 PLUGIN_DIRECTORY = "HandheldDockMode"
 BUILD_INFO_FILENAME = "build_info.json"
 REVISION_RE = re.compile(r"^[0-9a-f]{40}$")

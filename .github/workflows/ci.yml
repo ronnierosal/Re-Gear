@@ -57,20 +57,20 @@ jobs:
       - name: Record validation artifact provenance
         run: |
           git rev-parse HEAD > out/source-revision.txt
-          sha256sum out/HandheldDockMode-*.zip > out/SHA256SUMS.txt
+          sha256sum out/Re-Gear-*.zip > out/SHA256SUMS.txt
       - name: Verify controlled validation artifact
         run: python scripts/verify_validation_artifact.py "$GITHUB_WORKSPACE/out"
       - name: Prepare local-only release candidate record
         run: |
-          python scripts/prepare_release_candidate.py out/HandheldDockMode-*.zip \
+          python scripts/prepare_release_candidate.py out/Re-Gear-*.zip \
             --output out/release-candidate.json \
             --notes-template out/RELEASE_NOTES_TEMPLATE.md
       - name: Upload controlled validation artifact
         uses: actions/upload-artifact@v4
         with:
-          name: HandheldDockMode-${{ github.sha }}
+          name: Re-Gear-${{ github.sha }}
           path: |
-            out/HandheldDockMode-*.zip
+            out/Re-Gear-*.zip
             out/source-revision.txt
             out/SHA256SUMS.txt
             out/release-candidate.json

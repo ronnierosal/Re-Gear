@@ -26,7 +26,7 @@ class BuildInfoTests(unittest.TestCase):
 
             self.assertEqual(
                 load_public_build_info(root),
-                {"schema_version": 1, "version": "0.2.0", "revision": "a" * 12},
+                {"schema_version": 1, "version": build_plugin.PACKAGE_VERSION, "revision": "a" * 12},
             )
 
     def test_uncommitted_and_invalid_metadata_never_claim_a_revision(self):

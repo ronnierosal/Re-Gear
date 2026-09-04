@@ -11,7 +11,7 @@ From a clean validated checkout:
 pnpm build
 python scripts/check_plugin_package.py .
 python scripts/build_plugin.py
-python scripts/prepare_release_candidate.py out/HandheldDockMode-<version>.zip \
+python scripts/prepare_release_candidate.py out/Re-Gear-<version>.zip \
   --output out/release-candidate.json \
   --notes-template out/RELEASE_NOTES_TEMPLATE.md
 ```
@@ -26,6 +26,21 @@ CI repeats this local verification and retains the ZIP, checksum, candidate
 manifest, and notes template as a short-lived controlled validation artifact.
 It has read-only repository permissions and does not publish a GitHub Release,
 contact Decky, register a store channel, deploy, or use publication secrets.
+
+## Candidate versioning
+
+New player-facing archives use `Re-Gear-<version>.zip`. The internal archive
+folder and installed Decky identity remain `HandheldDockMode` / `Handheld Dock
+Mode` to preserve upgrades and settings. Historical rollback validation accepts
+both archive prefixes; new release candidates require Re-Gear naming.
+
+Version 0.3.0 starts the combined dashboard and event-triggered docking candidate.
+Bump the patch version for subsequent fix candidates (0.3.1, 0.3.2); bump the minor
+version for new feature milestones (0.4.0). Update package.json and pyproject.toml
+together before packaging. Do not reuse a version for changed distributed code.
+Rebuilding identical source may retain its version. The embedded source revision
+and SHA-256 still identify the exact artifact. A version bump does not certify
+hardware behavior or authorize installation/publication.
 
 ## Manual publication gate
 

@@ -10,7 +10,7 @@ Re-Gear aims to make handheld gaming console-simple: status first, low overhead,
 and no avoidable surprises. It verifies GPU, display, Gamescope, game, and
 hardware state before any future dock-mode action.
 
-[![CI](https://github.com/ronnierosal/Handheld-Docked-Mode-SteamOS/actions/workflows/ci.yml/badge.svg)](https://github.com/ronnierosal/Handheld-Docked-Mode-SteamOS/actions/workflows/ci.yml) [![Last commit](https://img.shields.io/github/last-commit/ronnierosal/Handheld-Docked-Mode-SteamOS)](https://github.com/ronnierosal/Handheld-Docked-Mode-SteamOS/commits/main/) ![Version](https://img.shields.io/badge/version-0.2.0-6f42c1) ![Platform](https://img.shields.io/badge/platform-SteamOS-1b2838?logo=steam) [![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-2ea44f)](LICENSE)
+[![CI](https://github.com/ronnierosal/Handheld-Docked-Mode-SteamOS/actions/workflows/ci.yml/badge.svg)](https://github.com/ronnierosal/Handheld-Docked-Mode-SteamOS/actions/workflows/ci.yml) [![Last commit](https://img.shields.io/github/last-commit/ronnierosal/Handheld-Docked-Mode-SteamOS)](https://github.com/ronnierosal/Handheld-Docked-Mode-SteamOS/commits/main/) ![Version](https://img.shields.io/badge/version-0.3.0-6f42c1) ![Platform](https://img.shields.io/badge/platform-SteamOS-1b2838?logo=steam) [![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-2ea44f)](LICENSE)
 
 [Current status](#-current-status) · [Safety](#-safety-first) · [Development](#-development) · [Documentation](#-documentation)
 
@@ -18,7 +18,7 @@ hardware state before any future dock-mode action.
 
 > [!IMPORTANT]
 > Re-Gear is in active development and is not a general-availability release.
-> Version 0.2.0 exposes diagnostics, eGPU sleep protection, reviewed support
+> Version 0.3.0 exposes diagnostics, eGPU sleep protection, reviewed support
 > bundles, supervised integration preparation, and explicitly approved guarded
 > release of eligible non-game eGPU clients. It does **not** expose a display/GPU
 > transition or authorize physical live eGPU removal.
@@ -76,7 +76,7 @@ It cannot restart Gamescope, switch a display, or select a GPU.
 
 ## 🚦 Current status
 
-Re-Gear `0.2.0` is a development build. The implementation is intentionally split
+Re-Gear `0.3.0` is a development build. The implementation is intentionally split
 between production-safe features and dormant or simulated transition work.
 
 Evidence labels matter: **Implemented** means code and deterministic checks;
@@ -233,7 +233,7 @@ Build the deterministic Decky archive:
 python scripts/build_plugin.py
 ```
 
-The package is written to `out/HandheldDockMode-<version>.zip`. Never deploy if a
+The package is written to `out/Re-Gear-<version>.zip`. Never deploy if a
 check fails, the worktree contains unexplained changes, or artifact provenance
 cannot be matched to one commit.
 
