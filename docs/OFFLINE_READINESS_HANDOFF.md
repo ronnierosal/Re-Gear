@@ -82,17 +82,20 @@ transition. No remote call has been attempted. When supplied, inspect only
 bounded installed client/source provenance first. Remote debugging activation,
 observer deployment, and forced refresh are outside current authority.
 
-Previous goal turn classification: progress (verified request/UI implementation).
-This turn: progress (source mechanism evidence changes the next action). Missing
-current host is the first recorded external-input blocker for live inspection;
-the goal is not complete or marked blocked.
+Goal status: **Blocked awaiting the current maintainer-provided Ally SSH host**.
+The source-inspection turn made progress and first recorded this missing input;
+two subsequent goal turns revalidated the same blocker without new input or
+executable work. No remote task is running. The branch and gates were rechecked;
+more synthetic tests or speculative wiring cannot establish installed-source
+freshness or cost. Resume with the current host and the bounded read-only
+inspection above. The feature remains incomplete and undeployed.
 
 ## Completion audit
 
 Research/source choices, conservative projection, request gates, actionable
 categorical presentation, local verification, and continuation documentation
 have evidence. A usable selected-game check still lacks a reviewed live reader
-and request/UI binding. Keep the goal active; do not mark completion from the
+and request/UI binding. Resume the goal when its input is available; do not mark completion from the
 local tests or enable collection merely by setting admission flags to true.
 
 ## Resume
