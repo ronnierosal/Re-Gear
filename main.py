@@ -205,6 +205,16 @@ def _can_remember_portable_audio(snapshot) -> bool:
     )
 
 
+def _exact_g1_link_is_up(snapshot) -> bool:
+    """Accept the exact bridge's read-only observed Up state."""
+    return bool(
+        snapshot.egpu_link.applicable
+        and snapshot.egpu_link.state is EgpuLinkState.UP
+        and snapshot.egpu_link.confidence
+        in {Confidence.OBSERVED, Confidence.VERIFIED}
+    )
+
+
 class Plugin:
     def __init__(self) -> None:
         self._unloading = False
@@ -1633,9 +1643,7 @@ class Plugin:
                 driver_ready=topology.driver_ready,
                 link_up=bool(
                     topology.link_applicable
-                    and current.snapshot.egpu_link.applicable
-                    and current.snapshot.egpu_link.state is EgpuLinkState.UP
-                    and current.snapshot.egpu_link.confidence is Confidence.VERIFIED
+                    and _exact_g1_link_is_up(current.snapshot)
                 ),
                 hdmi_ready=topology.hdmi_ready,
                 audio_ready=audio_ready,

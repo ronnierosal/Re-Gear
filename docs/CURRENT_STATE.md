@@ -1,5 +1,16 @@
 # Current state
 
+## Re-Gear 0.3.17 observed-link correction — 2026-09-04
+
+The first 0.3.14 hardware attach verified the exact G1 profile and G1 HDMI, but
+the readiness window remained at `waiting_for_link` and timed out. Direct
+read-only observation showed the exact removable bridge was Up at 2.5 GT/s x4
+with `observed` confidence. The integration had incorrectly required `verified`
+confidence even though the profile-bound link adapter intentionally reports
+observed sysfs link state. The 0.3.17 candidate accepts observed or verified Up
+only after exact G1 topology is established; Down and Unknown still fail closed.
+It is not installed or hardware validated.
+
 ## Re-Gear 0.3.14 combined G1 readiness candidate — 2026-09-04
 
 The 0.3.13 Offline Play and UI lineage now includes the hybrid G1 connection

@@ -2,6 +2,7 @@ import asyncio
 import threading
 import types
 import unittest
+from dataclasses import replace
 from unittest.mock import patch
 
 from tests.test_main_process_delivery import load_main_module
@@ -14,6 +15,7 @@ from hdm.application.connection_readiness import (
 )
 from hdm.application.presentation_completion import PresentationCompletion
 from hdm.domain.control_plane import TransitionOutcomeKind
+from hdm.domain.models import Confidence, EgpuLinkState
 
 
 class Monitor:
@@ -37,6 +39,27 @@ class Monitor:
 class MainEventCompletionTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.module = load_main_module()
+
+    def test_exact_observed_up_link_satisfies_readiness_gate(self):
+        observed = current("connected-internal.json")
+        snapshot = replace(
+            observed.snapshot,
+            egpu_link=replace(
+                observed.snapshot.egpu_link,
+                applicable=True,
+                state=EgpuLinkState.UP,
+                confidence=Confidence.OBSERVED,
+            ),
+        )
+        self.assertTrue(self.module._exact_g1_link_is_up(snapshot))
+        self.assertFalse(
+            self.module._exact_g1_link_is_up(
+                replace(
+                    snapshot,
+                    egpu_link=replace(snapshot.egpu_link, state=EgpuLinkState.DOWN),
+                )
+            )
+        )
 
     async def test_blocked_transition_factory_keeps_event_loop_responsive(self):
         plugin = self.module.Plugin()
