@@ -313,7 +313,7 @@ function attachOfflineTileBadge(view, appId, image, label, current) {
         badge.title = `${label} — Steam report at check time`;
         badge.width = 72;
         badge.height = 32;
-        badge.style.cssText = "position:absolute;top:6px;left:6px;width:72px;height:32px;pointer-events:none;z-index:2";
+        badge.style.cssText = "position:absolute;bottom:6px;left:6px;width:72px;height:32px;pointer-events:none;z-index:2";
         tile.appendChild(badge);
         owned.set(tile, badge);
     };

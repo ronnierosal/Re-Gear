@@ -23,7 +23,8 @@ locally by Rollup and rendered by the panel and tile adapter.
 
 `offline-tile-badge.ts` uses exact numeric native `data-id` binding on observed
 library/home tile selectors. It requires an already-positioned tile, adds only
-its own pointer-transparent image at the upper-left, and does not alter native
+its own pointer-transparent image at the bottom-left, per the maintainer's
+2026-09-04 placement decision, and does not alter native
 styles or badges. Position remains provisional pending real Steam rendering.
 An explicit panel check can badge the matching visible tile for up to 30 seconds,
 including after Quick Access closes. Selection changes, plugin unmount, expiry,
