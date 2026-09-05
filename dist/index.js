@@ -614,11 +614,11 @@ function offlineConfidenceBadge(value) {
             value.status === "likely_offline_ready" || value.status === "tested_offline" ? "offline-ready" : "offline-verify", label: value.label };
 }
 
-var ready = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNTYgMTI4IiByb2xlPSJpbWciIGFyaWEtbGFiZWxsZWRieT0idGl0bGUiPjx0aXRsZSBpZD0idGl0bGUiPlJlYWR5IG9mZmxpbmU8L3RpdGxlPjxyZWN0IHg9IjQiIHk9IjgiIHdpZHRoPSIyNDgiIGhlaWdodD0iMTEyIiByeD0iNTYiIGZpbGw9IiMwZjE1MWIiIHN0cm9rZT0iIzMwM2I0NiIgc3Ryb2tlLXdpZHRoPSI0Ii8+PGcgdHJhbnNmb3JtPSJ0cmFuc2xhdGUoMTggMTYpIj48cGF0aCBmaWxsPSIjZmZmIiBkPSJNNTAgNGgyMGw0IDE0YTM4IDM4IDAgMCAxIDEwIDZsMTQtNSAxMCAxOC0xMSAxMGEzOCAzOCAwIDAgMSAwIDEybDExIDEwLTEwIDE4LTE0LTVhMzggMzggMCAwIDEtMTAgNmwtNCAxNEg1MGwtNC0xNGEzOCAzOCAwIDAgMS0xMC02bC0xNCA1LTEwLTE4IDExLTEwYTM4IDM4IDAgMCAxIDAtMTJMMTIgMzdsMTAtMTggMTQgNWEzOCAzOCAwIDAgMSAxMC02TDUwIDRabTEwIDI5YTIxIDIxIDAgMSAwIDAgNDIgMjEgMjEgMCAwIDAgMC00MloiLz48Y2lyY2xlIGN4PSIxNzQiIGN5PSI0OCIgcj0iNDAiIGZpbGw9IiMyMGJmZjMiLz48cGF0aCBkPSJNMTUzIDQ4bDE0IDE0IDI5LTMxIiBmaWxsPSJub25lIiBzdHJva2U9IiMwODEzMWQiIHN0cm9rZS13aWR0aD0iMTAiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIvPjwvZz48L3N2Zz4=";
+var ready = 'http://127.0.0.1:1337/plugins/Re-Gear/assets/offline-ready-compact-268ab6db.svg';
 
-var attention = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNTYgMTI4IiByb2xlPSJpbWciIGFyaWEtbGFiZWxsZWRieT0idGl0bGUiPjx0aXRsZSBpZD0idGl0bGUiPk9mZmxpbmUgcGxheSBuZWVkcyBhdHRlbnRpb248L3RpdGxlPjxyZWN0IHg9IjQiIHk9IjgiIHdpZHRoPSIyNDgiIGhlaWdodD0iMTEyIiByeD0iNTYiIGZpbGw9IiMwZjE1MWIiIHN0cm9rZT0iIzMwM2I0NiIgc3Ryb2tlLXdpZHRoPSI0Ii8+PGcgdHJhbnNmb3JtPSJ0cmFuc2xhdGUoMTggMTYpIj48cGF0aCBmaWxsPSIjZmZmIiBkPSJNNTAgNGgyMGw0IDE0YTM4IDM4IDAgMCAxIDEwIDZsMTQtNSAxMCAxOC0xMSAxMGEzOCAzOCAwIDAgMSAwIDEybDExIDEwLTEwIDE4LTE0LTVhMzggMzggMCAwIDEtMTAgNmwtNCAxNEg1MGwtNC0xNGEzOCAzOCAwIDAgMS0xMC02bC0xNCA1LTEwLTE4IDExLTEwYTM4IDM4IDAgMCAxIDAtMTJMMTIgMzdsMTAtMTggMTQgNWEzOCAzOCAwIDAgMSAxMC02TDUwIDRabTEwIDI5YTIxIDIxIDAgMSAwIDAgNDIgMjEgMjEgMCAwIDAgMC00MloiLz48Y2lyY2xlIGN4PSIxNzQiIGN5PSI0OCIgcj0iNDAiIGZpbGw9IiNmZmM5MjgiLz48cGF0aCBkPSJNMTc0IDI1djMxIiBzdHJva2U9IiMwODEzMWQiIHN0cm9rZS13aWR0aD0iMTAiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPjxjaXJjbGUgY3g9IjE3NCIgY3k9IjcyIiByPSI2IiBmaWxsPSIjMDgxMzFkIi8+PC9nPjwvc3ZnPg==";
+var attention = 'http://127.0.0.1:1337/plugins/Re-Gear/assets/offline-attention-compact-d920f3c0.svg';
 
-var verify = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNTYgMTI4IiByb2xlPSJpbWciIGFyaWEtbGFiZWxsZWRieT0idGl0bGUiPjx0aXRsZSBpZD0idGl0bGUiPk9ubGluZSBjaGVjayBuZWVkZWQ8L3RpdGxlPjxyZWN0IHg9IjQiIHk9IjgiIHdpZHRoPSIyNDgiIGhlaWdodD0iMTEyIiByeD0iNTYiIGZpbGw9IiMwZjE1MWIiIHN0cm9rZT0iIzMwM2I0NiIgc3Ryb2tlLXdpZHRoPSI0Ii8+PGcgdHJhbnNmb3JtPSJ0cmFuc2xhdGUoMTggMTYpIj48cGF0aCBmaWxsPSIjZmZmIiBkPSJNNTAgNGgyMGw0IDE0YTM4IDM4IDAgMCAxIDEwIDZsMTQtNSAxMCAxOC0xMSAxMGEzOCAzOCAwIDAgMSAwIDEybDExIDEwLTEwIDE4LTE0LTVhMzggMzggMCAwIDEtMTAgNmwtNCAxNEg1MGwtNC0xNGEzOCAzOCAwIDAgMS0xMC02bC0xNCA1LTEwLTE4IDExLTEwYTM4IDM4IDAgMCAxIDAtMTJMMTIgMzdsMTAtMTggMTQgNWEzOCAzOCAwIDAgMSAxMC02TDUwIDRabTEwIDI5YTIxIDIxIDAgMSAwIDAgNDIgMjEgMjEgMCAwIDAgMC00MloiLz48Y2lyY2xlIGN4PSIxNzQiIGN5PSI0OCIgcj0iNDAiIGZpbGw9IiM5ZmIyYzkiLz48cGF0aCBkPSJNMTYwIDM1YzItMTAgMjUtMTIgMjkgMSAzIDEwLTggMTMtMTMgMTgtMyAzLTMgNS0zIDgiIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzA4MTMxZCIgc3Ryb2tlLXdpZHRoPSI4IiBzdHJva2UtbGluZWNhcD0icm91bmQiLz48Y2lyY2xlIGN4PSIxNzMiIGN5PSI3MyIgcj0iNS41IiBmaWxsPSIjMDgxMzFkIi8+PC9nPjwvc3ZnPg==";
+var verify = 'http://127.0.0.1:1337/plugins/Re-Gear/assets/offline-verify-compact-60f58e7b.svg';
 
 const offlineBadgeImages = { "offline-ready": ready, "offline-attention": attention, "offline-verify": verify };
 
@@ -640,14 +640,12 @@ function offlineBadgeLayout(host, clientWidth, clientHeight, icon, group = icon)
     if (!values.every(Number.isFinite) || Math.min(host.width, host.height, clientWidth, clientHeight, icon.width, icon.height, group.width, group.height) <= 0)
         return null;
     const sx = host.width / clientWidth, sy = host.height / clientHeight;
-    const height = icon.height / sy * 128 / 80;
-    if (height < 12 || height > 48)
+    const height = Math.min(24, icon.height / sy);
+    if (height < 12)
         return null;
-    const width = height * 2;
-    // Stack above Steam on every cover shape, with a four CSS-pixel gap.
-    const left = (group.left + group.width - host.left) / sx - width;
-    const bottom = (host.top + host.height - group.top) / sy + 4;
-    if (left < 0 || bottom < 0 || bottom + height > clientHeight || left + width > clientWidth)
+    const width = height, left = 6;
+    const bottom = (host.top + host.height - icon.top - icon.height / 2) / sy - height / 2;
+    if (bottom < 0 || bottom + height > clientHeight || left + width + 4 > (group.left - host.left) / sx)
         return null;
     return { width, height, left, bottom };
 }
@@ -677,7 +675,7 @@ function exactTileElementAppId(tile) {
     }
     return ids.size === 1 ? [...ids][0] : null;
 }
-function attachOfflineTileBadge(view, appId, image, label, current, initialTile, expiredBadge) {
+function attachOfflineTileBadge(view, appId, image, label, current, initialTile, expiredBadge, expiryMs = 30000) {
     const owned = new Map();
     let stopped = false;
     let timer;
@@ -719,7 +717,7 @@ function attachOfflineTileBadge(view, appId, image, label, current, initialTile,
             owned.delete(tile);
             return;
         }
-        let css = "position:absolute;bottom:38px;right:6px;width:64px;height:32px;pointer-events:none;z-index:2";
+        let css = "position:absolute;bottom:6px;left:6px;width:24px;height:24px;pointer-events:none;z-index:2";
         // Inspect only a few native SVGs on this exact tile. A visible square
         // lower-right icon is Steam's compatibility mark, not the cover artwork.
         const icons = Array.from(tile.querySelectorAll("svg")).slice(0, 16);
@@ -755,8 +753,8 @@ function attachOfflineTileBadge(view, appId, image, label, current, initialTile,
         badge.src = image;
         badge.alt = label;
         badge.title = `${label} â€” Steam report at check time`;
-        badge.width = 64;
-        badge.height = 32;
+        badge.width = 24;
+        badge.height = 24;
         badge.style.cssText = css;
         host.appendChild(badge);
         owned.set(tile, badge);
@@ -839,7 +837,7 @@ function attachOfflineTileBadge(view, appId, image, label, current, initialTile,
                     badge.alt = label;
                     badge.title = label;
                 }
-            }, 30000);
+            }, expiryMs);
         }
     }
     catch {
@@ -892,10 +890,10 @@ function startOfflineFocusChecks() {
         const displayStatus = app.display_status;
         const valid = () => offlineAccountScope() === account && app.display_status === displayStatus && context(id, app, source) && tile.isConnected &&
             tile.ownerDocument.activeElement?.closest(OFFLINE_TILE_SELECTOR) === tile && exactTileElementAppId(tile) === id;
-        const show = (badge) => { shown?.stop(); shown = attachOfflineTileBadge(view, id, offlineBadgeImages[badge.asset], badge.label, valid, tile, { image: offlineBadgeImages["offline-verify"], label: "Check expired - highlight this game again to recheck" }); };
+        const show = (badge) => { shown?.stop(); shown = attachOfflineTileBadge(view, id, offlineBadgeImages[badge.asset], badge.label, valid, tile, { image: offlineBadgeImages["offline-verify"], label: "Check unavailable" }, 65000); };
         // Re-read on settled selection so positive confidence cannot reuse an old build report.
         const request = sequence;
-        timer = setTimeout(async () => {
+        const check = async () => {
             try {
                 if (request !== sequence || !valid())
                     return;
@@ -910,8 +908,13 @@ function startOfflineFocusChecks() {
                 const badge = offlineConfidenceBadge(offlineConfidenceForGame(report.preparation, source, id, result));
                 show(badge);
             }
-            catch { /* Steam/Decky may disappear during a request; discard this result. */ }
-        }, SETTLE_MS);
+            catch { /* Failed refresh expires to neutral; never retain a stale positive. */ }
+            finally {
+                if (request === sequence && valid())
+                    timer = setTimeout(check, 60000);
+            }
+        };
+        timer = setTimeout(check, SETTLE_MS);
     };
     const views = new Map();
     const refresh = (view) => {

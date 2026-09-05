@@ -70,3 +70,12 @@ test("unrelated mutations do not restart the settle timer or repeat checks", asy
   t.mock.timers.tick(450); await flush();
   assert.deepEqual(s.counts(), { requests: 1, shown: 1 });
 });
+
+test("selected game refreshes at sixty seconds and suppresses refresh during gameplay", async t => {
+ const s=setup(t); t.mock.timers.tick(450); await flush();
+ t.mock.timers.tick(30000); await flush(); assert.equal(s.counts().requests,1);
+ t.mock.timers.tick(29999); await flush(); assert.equal(s.counts().requests,1);
+ t.mock.timers.tick(1); await flush(); assert.deepEqual(s.counts(),{requests:2,shown:2});
+ s.router.RunningApps=[123]; t.mock.timers.tick(60000); await flush();
+ assert.equal(s.counts().requests,2);
+});

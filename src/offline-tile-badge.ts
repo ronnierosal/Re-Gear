@@ -32,6 +32,7 @@ export function attachOfflineTileBadge(
   current: () => boolean,
   initialTile?: Element,
   expiredBadge?: { image: string; label: string },
+  expiryMs = 30000,
 ): { stop(): void; validate(): void } {
   const owned = new Map<Element, HTMLImageElement>();
   let stopped = false;
@@ -63,7 +64,7 @@ export function attachOfflineTileBadge(
         exactTileElementAppId(tile) !== appId || !host || view.getComputedStyle(host).position === "static") {
       existing?.remove(); owned.delete(tile); return;
     }
-    let css = "position:absolute;bottom:38px;right:6px;width:64px;height:32px;pointer-events:none;z-index:2";
+    let css = "position:absolute;bottom:6px;left:6px;width:24px;height:24px;pointer-events:none;z-index:2";
     // Inspect only a few native SVGs on this exact tile. A visible square
     // lower-right icon is Steam's compatibility mark, not the cover artwork.
     const icons = Array.from(tile.querySelectorAll("svg")).slice(0, 16);
@@ -94,7 +95,7 @@ export function attachOfflineTileBadge(
     badge.src = image;
     badge.alt = label;
     badge.title = `${label} â€” Steam report at check time`;
-    badge.width = 64; badge.height = 32;
+    badge.width = 24; badge.height = 24;
     badge.style.cssText = css;
     host.appendChild(badge);
     owned.set(tile, badge);
@@ -150,7 +151,7 @@ export function attachOfflineTileBadge(
         for (const badge of owned.values()) {
           badge.src = image; badge.alt = label; badge.title = label;
         }
-      }, 30000);
+      }, expiryMs);
     }
   } catch { stop(); }
   return { stop, validate };

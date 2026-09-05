@@ -43,17 +43,21 @@ export function startOfflineFocusChecks(): { stop(): void } {
     const displayStatus = app.display_status;
     const valid = () => offlineAccountScope() === account && app.display_status === displayStatus && context(id, app, source) && tile.isConnected &&
       tile.ownerDocument.activeElement?.closest(OFFLINE_TILE_SELECTOR) === tile && exactTileElementAppId(tile) === id;
-    const show = (badge: CachedBadge) => { shown?.stop(); shown = attachOfflineTileBadge(view, id, offlineBadgeImages[badge.asset], badge.label, valid, tile, { image: offlineBadgeImages["offline-verify"], label: "Check expired - highlight this game again to recheck" }); };
+    const show = (badge: CachedBadge) => { shown?.stop(); shown = attachOfflineTileBadge(view, id, offlineBadgeImages[badge.asset], badge.label, valid, tile, { image: offlineBadgeImages["offline-verify"], label: "Check unavailable" }, 65000); };
     // Re-read on settled selection so positive confidence cannot reuse an old build report.
-    const request = sequence; timer = setTimeout(async () => {
+    const request = sequence; const check = async () => {
       try {
         if (request !== sequence || !valid()) return; const report = await session.request(id, source.subscribe, valid);
         if (!report || request !== sequence) return; const result = await classify(report.details);
         if (!report.isValid() || request !== sequence || !valid()) return; if (!offlineReportBadge(result)) return;
         const badge = offlineConfidenceBadge(offlineConfidenceForGame(report.preparation, source, id, result));
         show(badge);
-      } catch { /* Steam/Decky may disappear during a request; discard this result. */ }
-    }, SETTLE_MS);
+      } catch { /* Failed refresh expires to neutral; never retain a stale positive. */ }
+      finally {
+        if (request === sequence && valid()) timer = setTimeout(check, 60000);
+      }
+    };
+    timer = setTimeout(check, SETTLE_MS);
   };
   const views = new Map<Window, MutationObserver>();
   const refresh = (view: Window) => {
