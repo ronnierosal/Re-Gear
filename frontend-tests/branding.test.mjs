@@ -9,7 +9,7 @@ test("Re-Gear is the Decky list, panel, and dialog brand", () => {
   assert.equal(PRODUCT_NAME, "Re-Gear");
   const source = read("../src/index.tsx");
   assert.match(source, /titleView:.*<BrandHeader \/>/);
-  assert.match(source, /alt=\{PRODUCT_NAME\}/);
+  assert.match(source, /<BrandIcon size=\{28\} \/>/);
   assert.match(source, /strTitle: PRODUCT_NAME/);
   assert.match(source, /name: PRODUCT_NAME/);
   assert.equal(JSON.parse(read("../plugin.json")).name, "Re-Gear");
@@ -26,7 +26,6 @@ test("approved preview uses Re-Gear and keeps sample-data disclosure", () => {
 
 test("UI uses the approved compact Re-Gear assets while README keeps its artwork", () => {
   const source = read("../src/index.tsx");
-  assert.ok(source.includes('import brandHeaderLogo from "./assets/regear-header-logo.svg"'));
   assert.ok(source.includes('import brandIcon from "./assets/regear-icon.svg"'));
   assert.match(source, /icon: <BrandIcon \/>/);
   assert.match(source, /<BrandHeader \/>/);
@@ -37,7 +36,7 @@ test("UI uses the approved compact Re-Gear assets while README keeps its artwork
 
 test("committed bundle embeds compact transparent SVG artwork without unpackaged asset URLs", () => {
   const bundle = read("../dist/index.js");
-  for (const name of ["regear-header-logo", "regear-icon", "mode-handheld", "mode-tv"]) {
+  for (const name of ["regear-icon", "mode-handheld", "mode-tv"]) {
     const image = readFileSync(new URL(`../src/assets/${name}.svg`, import.meta.url));
     assert.ok(bundle.includes("data:image/svg+xml;base64," + image.toString("base64")), `${name} must be embedded`);
   }

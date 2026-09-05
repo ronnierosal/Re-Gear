@@ -16,12 +16,16 @@ an official asset from a generated UI concept.
 
 The approved transparent source assets are:
 
-- `src/assets/regear-header-logo.svg` for the compact panel header
+- Native white Re-Gear text beside `src/assets/regear-icon.svg` for the panel header
 - `src/assets/regear-icon.svg` for icon-only Decky surfaces
 - `src/assets/mode-handheld.svg` and `src/assets/mode-tv.svg` for the two mode cards
 
 These assets are embedded in the compiled bundle. Do not substitute the larger
 README artwork or shrink the full wordmark into icon-only contexts.
+
+The 0.3.45 small-size polish uses one flat cyan emblem with no blur filter in
+both the header and plugin list. Mode illustrations also omit blur and gradients.
+The original combined `regear-header-logo.svg` is retained as a reference asset.
 
 ## Presentation assets
 

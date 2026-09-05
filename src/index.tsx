@@ -6,7 +6,6 @@ import { showConnectionLivePanel } from "./connection-live-panel";
 import { PRODUCT_NAME } from "./branding";
 import { startControllerSafeDisconnect, steamControllerInput } from "./controller-safe-disconnect";
 import { startOfflineFocusChecks } from "./offline-focus-checks";
-import brandHeaderLogo from "./assets/regear-header-logo.svg";
 import brandIcon from "./assets/regear-icon.svg";
 import { definePlugin, toaster, useQuickAccessVisible } from "@decky/api";
 import {
@@ -485,13 +484,10 @@ function BrandIcon({ size = 24 }: { size?: number }) {
 
 function BrandHeader() {
   return (
-    <img
-      src={brandHeaderLogo}
-      alt={PRODUCT_NAME}
-      width={144}
-      height={36}
-      style={{ display: "block", objectFit: "contain", objectPosition: "left center" }}
-    />
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 8, minHeight: 36, whiteSpace: "nowrap" }}>
+      <BrandIcon size={28} />
+      <span style={{ fontSize: 20, fontWeight: 700, lineHeight: 1.2, color: "#ffffff" }}>{PRODUCT_NAME}</span>
+    </span>
   );
 }
 
