@@ -58,7 +58,9 @@ class LauncherPackagingTests(unittest.TestCase):
             archives = []
             for source in (LAUNCHER, LAUNCHER.replace(b"\n", b"\r\n")):
                 wrapper.write_bytes(source)
+                output = root / f"plugin-{len(archives)}.zip"
                 with (
+                    patch("release_coordination.reserve"),
                     patch.object(build_plugin, "ROOT", root),
                     patch.object(build_plugin, "OUTPUT", output),
                     patch.object(build_plugin, "included_files", return_value=(manifest, wrapper)),

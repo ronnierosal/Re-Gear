@@ -1,5 +1,15 @@
 # Current state
 
+
+## Re-Gear 0.3.40 UI candidate
+
+Unifies the quick menu and animated connection popup, adds five compact live
+readiness checks, and a read-only Disconnect status dialog. No live-release
+RPC is wired: Ally audio, GPU release and final unplug verification explicitly
+show unavailable. A clean resource scan never authorizes physical unplug.
+Includes registered offline-ui and quick-launch-name commits. Native layout
+and controller acceptance remain pending. Staging is not installation.
+
 ## Compact gear and minute refresh - 2026-09-05
 
 0.3.38-offline.1 revision 07b22bf includes installed popup lineage 02d9c84.
