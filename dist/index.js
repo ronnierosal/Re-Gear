@@ -634,25 +634,20 @@ function offlineNativeSource() {
     return { store, subscribe: apps.RegisterForAppDetails.bind(apps) };
 }
 
-/** The supplied SVG's status circle is 80 units high in a 128-unit canvas. */
-function offlineBadgeLayout(host, clientWidth, clientHeight, icon, reservedLeft = icon.left - icon.width * 1.5) {
-    const values = [host.left, host.top, host.width, host.height, clientWidth, clientHeight, icon.left, icon.top, icon.width, icon.height];
-    if (!values.every(Number.isFinite) || Math.min(host.width, host.height, clientWidth, clientHeight, icon.width, icon.height) <= 0)
+/** Match the supplied SVG's 80/128 status-circle ratio to Steam's symbol. */
+function offlineBadgeLayout(host, clientWidth, clientHeight, icon, group = icon) {
+    const values = [host.left, host.top, host.width, host.height, clientWidth, clientHeight, icon.left, icon.top, icon.width, icon.height, group.left, group.top, group.width, group.height];
+    if (!values.every(Number.isFinite) || Math.min(host.width, host.height, clientWidth, clientHeight, icon.width, icon.height, group.width, group.height) <= 0)
         return null;
     const sx = host.width / clientWidth, sy = host.height / clientHeight;
     const height = icon.height / sy * 128 / 80;
     if (height < 12 || height > 48)
         return null;
     const width = height * 2;
-    const left = 6;
-    let bottom = (host.top + host.height - icon.top - icon.height / 2) / sy - height / 2;
-    if (bottom < 0 || bottom + height > clientHeight)
-        return null;
-    // Preserve matching size on unusually narrow tiles by moving above the
-    // native badge rather than overlapping its controls or shrinking our icon.
-    if (left + width + 4 > (reservedLeft - host.left) / sx)
-        bottom = (host.top + host.height - icon.top) / sy + 4;
-    if (bottom + height > clientHeight || left + width > clientWidth)
+    // Stack above Steam on every cover shape, with a four CSS-pixel gap.
+    const left = (group.left + group.width - host.left) / sx - width;
+    const bottom = (host.top + host.height - group.top) / sy + 4;
+    if (left < 0 || bottom < 0 || bottom + height > clientHeight || left + width > clientWidth)
         return null;
     return { width, height, left, bottom };
 }
@@ -724,7 +719,7 @@ function attachOfflineTileBadge(view, appId, image, label, current, initialTile,
             owned.delete(tile);
             return;
         }
-        let css = "position:absolute;bottom:6px;left:6px;width:64px;height:32px;pointer-events:none;z-index:2";
+        let css = "position:absolute;bottom:38px;right:6px;width:64px;height:32px;pointer-events:none;z-index:2";
         // Inspect only a few native SVGs on this exact tile. A visible square
         // lower-right icon is Steam's compatibility mark, not the cover artwork.
         const icons = Array.from(tile.querySelectorAll("svg")).slice(0, 16);
@@ -735,17 +730,17 @@ function attachOfflineTileBadge(view, appId, image, label, current, initialTile,
                 r.right <= bounds.right + 1 && r.bottom <= bounds.bottom + 1);
             if (matches.length === 1) {
                 const reference = matches[0];
-                let reservedLeft = reference.rect.left - reference.rect.width * 1.5;
+                let nativeGroup = reference.rect;
                 let parent = reference.element.parentElement;
                 for (let depth = 0; parent && parent !== tile && depth < 3; depth++, parent = parent.parentElement) {
                     if (parent.querySelectorAll("svg").length !== 2)
                         continue;
                     const group = parent.getBoundingClientRect();
                     if (group.width <= bounds.width * 0.65 && group.height <= bounds.height * 0.3)
-                        reservedLeft = group.left;
+                        nativeGroup = group;
                     break;
                 }
-                const layout = offlineBadgeLayout(bounds, host.clientWidth, host.clientHeight, reference.rect, reservedLeft);
+                const layout = offlineBadgeLayout(bounds, host.clientWidth, host.clientHeight, reference.rect, nativeGroup);
                 if (layout)
                     css = `position:absolute;bottom:${layout.bottom}px;left:${layout.left}px;width:${layout.width}px;height:${layout.height}px;pointer-events:none;z-index:2`;
             }
@@ -759,7 +754,7 @@ function attachOfflineTileBadge(view, appId, image, label, current, initialTile,
         badge.setAttribute(OWN, "");
         badge.src = image;
         badge.alt = label;
-        badge.title = `${label} — Steam report at check time`;
+        badge.title = `${label} â€” Steam report at check time`;
         badge.width = 64;
         badge.height = 32;
         badge.style.cssText = css;

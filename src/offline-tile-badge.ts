@@ -63,7 +63,7 @@ export function attachOfflineTileBadge(
         exactTileElementAppId(tile) !== appId || !host || view.getComputedStyle(host).position === "static") {
       existing?.remove(); owned.delete(tile); return;
     }
-    let css = "position:absolute;bottom:6px;left:6px;width:64px;height:32px;pointer-events:none;z-index:2";
+    let css = "position:absolute;bottom:38px;right:6px;width:64px;height:32px;pointer-events:none;z-index:2";
     // Inspect only a few native SVGs on this exact tile. A visible square
     // lower-right icon is Steam's compatibility mark, not the cover artwork.
     const icons = Array.from(tile.querySelectorAll("svg")).slice(0, 16);
@@ -75,15 +75,15 @@ export function attachOfflineTileBadge(
         r.right <= bounds.right + 1 && r.bottom <= bounds.bottom + 1);
       if (matches.length === 1) {
         const reference = matches[0];
-        let reservedLeft = reference.rect.left - reference.rect.width * 1.5;
+        let nativeGroup = reference.rect;
         let parent = reference.element.parentElement;
         for (let depth = 0; parent && parent !== tile && depth < 3; depth++, parent = parent.parentElement) {
           if (parent.querySelectorAll("svg").length !== 2) continue;
           const group = parent.getBoundingClientRect();
-          if (group.width <= bounds.width * 0.65 && group.height <= bounds.height * 0.3) reservedLeft = group.left;
+          if (group.width <= bounds.width * 0.65 && group.height <= bounds.height * 0.3) nativeGroup = group;
           break;
         }
-        const layout = offlineBadgeLayout(bounds, host.clientWidth, host.clientHeight, reference.rect, reservedLeft);
+        const layout = offlineBadgeLayout(bounds, host.clientWidth, host.clientHeight, reference.rect, nativeGroup);
         if (layout) css = `position:absolute;bottom:${layout.bottom}px;left:${layout.left}px;width:${layout.width}px;height:${layout.height}px;pointer-events:none;z-index:2`;
       }
     }
@@ -93,7 +93,7 @@ export function attachOfflineTileBadge(
     badge.setAttribute(OWN, "");
     badge.src = image;
     badge.alt = label;
-    badge.title = `${label} — Steam report at check time`;
+    badge.title = `${label} â€” Steam report at check time`;
     badge.width = 64; badge.height = 32;
     badge.style.cssText = css;
     host.appendChild(badge);
