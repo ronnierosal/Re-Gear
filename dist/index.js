@@ -204,7 +204,7 @@ function steamControllerInput(host) {
     }
 }
 
-const manifest = {"name":"Handheld Dock Mode"};
+const manifest = {"name":"Re-Gear"};
 const API_VERSION = 2;
 const internalAPIConnection = window.__DECKY_SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED_deckyLoaderAPIInit;
 if (!internalAPIConnection) {
@@ -3393,7 +3393,7 @@ var index = definePlugin(() => {
     preflight.start();
     const offlineFocusChecks = startOfflineFocusChecks();
     return {
-        name: "Handheld Dock Mode",
+        name: PRODUCT_NAME,
         titleView: SP_JSX.jsxs("div", { className: DFL.staticClasses.Title, style: { display: "flex", alignItems: "center", gap: 8 }, children: [SP_JSX.jsx(BrandIcon, { size: 36 }), PRODUCT_NAME] }),
         content: SP_JSX.jsx(Content, { preflight: preflight }),
         icon: SP_JSX.jsx(BrandIcon, {}),

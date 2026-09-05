@@ -1961,7 +1961,7 @@ export default definePlugin(() => {
   const offlineFocusChecks = startOfflineFocusChecks();
 
   return {
-    name: "Handheld Dock Mode",
+    name: PRODUCT_NAME,
     titleView: <div className={staticClasses.Title} style={{ display: "flex", alignItems: "center", gap: 8 }}><BrandIcon size={36} />{PRODUCT_NAME}</div>,
     content: <Content preflight={preflight} />,
     icon: <BrandIcon />,

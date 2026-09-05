@@ -173,7 +173,7 @@ observation behavior; it is not an eGPU, sleep, or performance certification.
    Access **HDM build** row shows the expected short revision before starting
    one ordinary Steam game on the internal display. `uncommitted` or
    `unavailable` is not sufficient provenance for this stage.
-2. Open Quick Access → Handheld Dock Mode. Confirm the panel is controller
+2. Open Quick Access → Re-Gear. Confirm the panel is controller
    usable and reports a running game without changing the display, audio,
    controller assignment, or game session.
 3. Open Troubleshooting. Confirm it says that additional checks wait until HDM

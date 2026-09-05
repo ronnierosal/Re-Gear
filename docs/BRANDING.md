@@ -21,10 +21,10 @@ The JPEG's white background is retained; it is not a transparent asset.
 The 0.3.4 icon candidate uses the user-supplied, unmodified
 `docs/images/re-gear-decky-monochrome.jpg` for the Decky list and panel header.
 The earlier PNG artwork is retained. The JPEG is embedded locally in the bundle.
-The requested list rename is not implemented: inspected local Decky loader
-code overwrites exported frontend names with the backend plugin identity.
-Changing that identity requires upgrade/unload/settings migration verification;
-no CSS text replacement, loader patch, or identity migration is included here.
+As of 0.3.33, the Decky manifest and exported frontend display name are
+`Re-Gear`, so Quick Access uses the current product name. The installed folder,
+archive root, RPC/state keys, helper paths, and package names remain unchanged.
+This is a scoped display-label migration, not a stored-state migration.
 
 `src/branding.ts` owns the UI display name. `docs/images/re-gear-icon.png` is the
 original detailed README artwork; `docs/images/re-gear-decky-icon.png` is the
@@ -38,18 +38,16 @@ This rebrand does not migrate installed data or change runtime behavior:
 
 | Surface | Compatibility value retained |
 | --- | --- |
-| Decky manifest identity | `Handheld Dock Mode` |
+| Decky visible manifest label | `Re-Gear` |
 | Installed plugin/archive directory | `HandheldDockMode` |
 | npm and Python distribution name | `handheld-dock-mode-steamos` |
 | Python package and diagnostic command | `hdm`, `hdm-diagnose` |
 | Helper/state paths | existing `handheld-dock-mode` paths |
 | Settings, managed markers and diagnostic codes | existing keys and HDM identifiers |
 
-Consequently Decky's plugin list, installer ZIPs and technical logs can still
-display legacy names while the product panel displays Re-Gear. Changing the
-manifest identity or paths risks duplicate installations, lost preferences,
-broken launcher paths or bypassed safety state. Any such migration needs its
-own upgrade/rollback design and tests, not a search-and-replace.
+Decky's plugin list and panel display Re-Gear. Installer internals and technical
+logs may still show compatibility identifiers. Changing the installed folder,
+package names, RPC/state keys, or helper paths remains outside this label change.
 
 ## GitHub and checkout rename — pending maintainer action
 
