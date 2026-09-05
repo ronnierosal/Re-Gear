@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 const config = deckyPlugin({});
-const offlineBadgeNames = new Set(["offline-ready", "offline-attention", "offline-verify", "offline-required", "offline-ready-gear", "offline-attention-gear", "offline-verify-gear", "offline-required-gear"]);
+const offlineBadgeNames = new Set(["offline-ready", "offline-attention", "offline-verify", "offline-required", "offline-ready-gear", "offline-attention-gear", "offline-verify-gear", "offline-required-gear", "offline-ready-compact", "offline-attention-compact", "offline-verify-compact"]);
 config.plugins.unshift({
   name: "re-gear-offline-badges",
   resolveId(source) {

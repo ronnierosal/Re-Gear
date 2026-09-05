@@ -1,6 +1,15 @@
 # Current state
 
 
+## Re-Gear 0.3.41 offline icon packaging fix
+
+Compact badge imports were omitted from the inline SVG resolver, leaving
+references to dist/assets files excluded by the ZIP contract. All three
+compact icons are now embedded as SVG data URLs. Regression coverage resolves
+every badge import and compares decoded inline bytes to source assets.
+No change to offline readiness decisions or game artwork.
+
+
 ## Re-Gear 0.3.40 UI candidate
 
 Staged 2026-09-05: `/home/deck/Re-Gear-0.3.40.zip`, revision
