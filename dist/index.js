@@ -634,6 +634,29 @@ function offlineNativeSource() {
     return { store, subscribe: apps.RegisterForAppDetails.bind(apps) };
 }
 
+/** The supplied SVG's status circle is 80 units high in a 128-unit canvas. */
+function offlineBadgeLayout(host, clientWidth, clientHeight, icon, reservedLeft = icon.left - icon.width * 1.5) {
+    const values = [host.left, host.top, host.width, host.height, clientWidth, clientHeight, icon.left, icon.top, icon.width, icon.height];
+    if (!values.every(Number.isFinite) || Math.min(host.width, host.height, clientWidth, clientHeight, icon.width, icon.height) <= 0)
+        return null;
+    const sx = host.width / clientWidth, sy = host.height / clientHeight;
+    const height = icon.height / sy * 128 / 80;
+    if (height < 12 || height > 48)
+        return null;
+    const width = height * 2;
+    const left = 6;
+    let bottom = (host.top + host.height - icon.top - icon.height / 2) / sy - height / 2;
+    if (bottom < 0 || bottom + height > clientHeight)
+        return null;
+    // Preserve matching size on unusually narrow tiles by moving above the
+    // native badge rather than overlapping its controls or shrinking our icon.
+    if (left + width + 4 > (reservedLeft - host.left) / sx)
+        bottom = (host.top + host.height - icon.top) / sy + 4;
+    if (bottom + height > clientHeight || left + width > clientWidth)
+        return null;
+    return { width, height, left, bottom };
+}
+
 // Native DOM seam researched in sebet/decky-nonsteam-badges (BSD-3-Clause),
 // cc620181962f601b713c9db2045e98dd82ecdbf2. Independent bounded implementation:
 // exact data-id only; no native style changes, per-tile requests, or polling.
@@ -701,19 +724,45 @@ function attachOfflineTileBadge(view, appId, image, label, current, initialTile,
             owned.delete(tile);
             return;
         }
-        if (existing?.parentElement === host)
+        let css = "position:absolute;bottom:6px;left:6px;width:64px;height:32px;pointer-events:none;z-index:2";
+        // Inspect only a few native SVGs on this exact tile. A visible square
+        // lower-right icon is Steam's compatibility mark, not the cover artwork.
+        const icons = Array.from(tile.querySelectorAll("svg")).slice(0, 16);
+        if (icons.length) {
+            const bounds = host.getBoundingClientRect();
+            const matches = icons.map(element => ({ element, rect: element.getBoundingClientRect() })).filter(({ rect: r }) => r.width > 0 && r.height > 0 && r.width / r.height > 0.9 && r.width / r.height < 1.1 &&
+                r.left >= bounds.left + bounds.width * 0.5 && r.top >= bounds.top + bounds.height * 0.7 &&
+                r.right <= bounds.right + 1 && r.bottom <= bounds.bottom + 1);
+            if (matches.length === 1) {
+                const reference = matches[0];
+                let reservedLeft = reference.rect.left - reference.rect.width * 1.5;
+                let parent = reference.element.parentElement;
+                for (let depth = 0; parent && parent !== tile && depth < 3; depth++, parent = parent.parentElement) {
+                    if (parent.querySelectorAll("svg").length !== 2)
+                        continue;
+                    const group = parent.getBoundingClientRect();
+                    if (group.width <= bounds.width * 0.65 && group.height <= bounds.height * 0.3)
+                        reservedLeft = group.left;
+                    break;
+                }
+                const layout = offlineBadgeLayout(bounds, host.clientWidth, host.clientHeight, reference.rect, reservedLeft);
+                if (layout)
+                    css = `position:absolute;bottom:${layout.bottom}px;left:${layout.left}px;width:${layout.width}px;height:${layout.height}px;pointer-events:none;z-index:2`;
+            }
+        }
+        if (existing?.parentElement === host) {
+            existing.style.cssText = css;
             return;
+        }
         existing?.remove();
         const badge = view.document.createElement("img");
         badge.setAttribute(OWN, "");
         badge.src = image;
         badge.alt = label;
         badge.title = `${label} — Steam report at check time`;
-        badge.width = 48;
-        badge.height = 24;
-        // Reserve the right half for Steam's compatibility controls. CSS scales
-        // with the artwork host, including carousel resize/focus transitions.
-        badge.style.cssText = "position:absolute;bottom:6px;left:6px;width:min(48px,calc(40% - 8px));height:auto;aspect-ratio:2 / 1;pointer-events:none;z-index:2";
+        badge.width = 64;
+        badge.height = 32;
+        badge.style.cssText = css;
         host.appendChild(badge);
         owned.set(tile, badge);
     };

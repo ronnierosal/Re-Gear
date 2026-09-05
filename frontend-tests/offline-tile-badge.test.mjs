@@ -158,12 +158,11 @@ test("artwork-only recycling removes a stale Library badge", () => {
 });
 
 
-test("badges share a bottom baseline and scale within the left artwork space", () => {
+test("badges use a full-size fallback when the native reference is absent", () => {
   const s = surface([123]); const tile = s.tiles[0]; tile.setAttribute("role", "listitem");
   let handle = attachOfflineTileBadge(s.view, 123, "badge.svg", "Report", () => true, tile);
   assert.match(s.badges(tile)[0].style.cssText, /bottom:6px/);
-  assert.match(s.badges(tile)[0].style.cssText, /width:min\(48px,calc\(40% - 8px\)\)/);
-  assert.match(s.badges(tile)[0].style.cssText, /height:auto;aspect-ratio:2 \/ 1/); handle.stop();
+  assert.match(s.badges(tile)[0].style.cssText, /width:64px;height:32px/); handle.stop();
   tile.setAttribute("role", "gridcell");
   handle = attachOfflineTileBadge(s.view, 123, "badge.svg", "Report", () => true, tile);
   assert.match(s.badges(tile)[0].style.cssText, /bottom:6px/); handle.stop();
