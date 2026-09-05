@@ -1,5 +1,16 @@
 # Current state
 
+## Re-Gear 0.3.29 Back/View shortcut candidate
+
+The player selected Back/View (two overlapping boxes) + Y for three seconds
+after Xbox holding on the Bluetooth Raikiri II powered the controller off.
+The native listener and pure policy now require View + Y. Xbox/Guide + Y is
+no longer bound. Same confirmation and backend guards; no execution shortcut.
+Button mapping comes from Steam API declarations; actual Bluetooth delivery
+remains unverified. The player confirmed panel-driven return to Ally display
+and speakers; G1 remains attached, and shutdown reliability remains unresolved.
+Install only after full power-off, G1 removal and detached boot.
+
 ## Re-Gear 0.3.28 controller API compatibility candidate
 
 Installed 0.3.27 displayed Controller shortcut unavailable. Read-only API

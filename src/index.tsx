@@ -1470,7 +1470,7 @@ function Content({ preflight }: { preflight: SleepPreflightCoordinator }) {
                   ? "Shut down to disconnect"
                   : "Prepare to disconnect"}
               description={controllerShortcutAvailable
-                ? "Experimental: Xbox + Y for 3 seconds. Keep the eGPU connected until fully off."
+                ? "Experimental: Back/View + Y for 3 seconds. Keep the eGPU connected until fully off."
                 : "Keep the eGPU connected until fully powered off. Controller shortcut unavailable."}
               onClick={requestSafeDisconnect}
               disabled={

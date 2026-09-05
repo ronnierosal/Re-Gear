@@ -28,7 +28,7 @@ def evidence(
 ) -> ControllerInputEvidence:
     return ControllerInputEvidence(
         verified,
-        buttons or frozenset({ControllerButton.GUIDE, ControllerButton.Y}),
+        buttons or frozenset({ControllerButton.VIEW, ControllerButton.Y}),
         held_ms,
         "2026-08-31T12:00:00Z",
         "generation-1",
@@ -37,7 +37,7 @@ def evidence(
 
 
 class ControllerShortcutTests(unittest.TestCase):
-    def test_verified_guide_y_hold_emits_the_existing_safe_undock_action(self):
+    def test_verified_view_y_hold_emits_the_existing_safe_undock_action(self):
         decision = evaluate_controller_shortcut(evidence())
         self.assertTrue(decision.matched)
         self.assertEqual(decision.request.action, LogicalAction.SAFE_UNDOCK)
@@ -47,10 +47,11 @@ class ControllerShortcutTests(unittest.TestCase):
 
     def test_unverified_short_or_non_exact_chords_never_emit_a_request(self):
         cases = (
+            (evidence(buttons=frozenset({ControllerButton.GUIDE, ControllerButton.Y})), "controller_shortcut.no_exact_match"),
             (evidence(verified=False), "controller_shortcut.input_unverified"),
             (evidence(held_ms=1_200), "controller_shortcut.hold_incomplete"),
             (evidence(held_ms=2_999), "controller_shortcut.hold_incomplete"),
-            (evidence(buttons=frozenset({ControllerButton.GUIDE})), "controller_shortcut.no_exact_match"),
+            (evidence(buttons=frozenset({ControllerButton.VIEW})), "controller_shortcut.no_exact_match"),
         )
         for value, reason in cases:
             with self.subTest(reason=reason):

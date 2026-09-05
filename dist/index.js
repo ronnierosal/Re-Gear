@@ -2,7 +2,7 @@
 const PRODUCT_NAME = "Re-Gear";
 
 // SteamClient.Input.ControllerInputGamepadButton, not browser Gamepad indices.
-const GUIDE_BUTTON = 34;
+const VIEW_BUTTON = 9;
 const Y_BUTTON = 3;
 const SAFE_DISCONNECT_HOLD_MS = 3000;
 const CONTEXT_TIMEOUT_MS = 2000;
@@ -34,7 +34,7 @@ function startControllerSafeDisconnect(deps) {
     let owner;
     const exact = (id) => {
         const buttons = controllers.get(id);
-        return buttons?.size === 2 && buttons.has(GUIDE_BUTTON) && buttons.has(Y_BUTTON);
+        return buttons?.size === 2 && buttons.has(VIEW_BUTTON) && buttons.has(Y_BUTTON);
     };
     const cancel = () => { epoch++; clearTimeout(timer); timer = undefined; owner = undefined; };
     const reset = () => { cancel(); controllers.clear(); latched.clear(); };
@@ -3014,7 +3014,7 @@ function Content({ preflight }) {
                                             : payload?.inference.mode === "portable"
                                                 ? "Shut down to disconnect"
                                                 : "Prepare to disconnect", description: controllerShortcutAvailable
-                                            ? "Experimental: Xbox + Y for 3 seconds. Keep the eGPU connected until fully off."
+                                            ? "Experimental: Back/View + Y for 3 seconds. Keep the eGPU connected until fully off."
                                             : "Keep the eGPU connected until fully powered off. Controller shortcut unavailable.", onClick: requestSafeDisconnect, disabled: safeDisconnectBusy
                                             || !disconnect?.applicable
                                             || Boolean(tvSwitchAcknowledgementId)

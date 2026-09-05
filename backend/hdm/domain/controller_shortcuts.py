@@ -11,6 +11,7 @@ from .logical_actions import ActionSurface, LogicalAction, LogicalActionRequest
 
 class ControllerButton(StrEnum):
     GUIDE = "guide"
+    VIEW = "view"
     Y = "y"
 
 
@@ -74,7 +75,7 @@ DEFAULT_CONTROLLER_SHORTCUTS = ControllerShortcutPolicy(
     (
         ControllerShortcut(
             LogicalAction.SAFE_UNDOCK,
-            frozenset({ControllerButton.GUIDE, ControllerButton.Y}),
+            frozenset({ControllerButton.VIEW, ControllerButton.Y}),
         ),
     )
 )

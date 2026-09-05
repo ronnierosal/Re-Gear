@@ -6,7 +6,7 @@ import ts from "typescript";
 const js = ts.transpileModule(readFileSync(new URL("../src/controller-safe-disconnect.ts", import.meta.url), "utf8"), {
   compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 },
 }).outputText;
-const { startControllerSafeDisconnect, GUIDE_BUTTON: G, Y_BUTTON: Y } = await import(
+const { startControllerSafeDisconnect, VIEW_BUTTON: G, Y_BUTTON: Y } = await import(
   "data:text/javascript;base64," + Buffer.from(js).toString("base64"));
 const flush = async () => { for (let i = 0; i < 12; i++) await Promise.resolve(); };
 function context(mode = "docked_egpu") {
@@ -159,4 +159,17 @@ test("button API alone is insufficient without a controller-change subscription"
     confirm() { assert.fail("unexpected confirmation"); },
   });
   assert.equal(result.available, false); assert.equal(registered, false);
+});
+
+
+test("only View plus Y works; Xbox/Guide and Menu plus Y remain inactive", async t => {
+  const s = setup(t);
+  for (const wrongButton of [34, 8]) {
+    s.state(); s.input(0, wrongButton, true); s.input(0, Y, true); await flush();
+    t.mock.timers.tick(3000); await flush();
+    assert.equal(s.confirmations.length, 0); assert.equal(s.counts().reads, 0);
+  }
+  s.state(); s.input(0, 9, true); s.input(0, 3, true); await flush();
+  t.mock.timers.tick(2999); await flush(); assert.equal(s.confirmations.length, 0);
+  t.mock.timers.tick(1); await flush(); assert.equal(s.confirmations.length, 1);
 });

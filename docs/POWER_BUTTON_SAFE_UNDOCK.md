@@ -26,14 +26,14 @@ a double-press gesture implementation.
 ## Current fallback
 
 The controller alternative is the locally implemented candidate: verified,
-exact **Xbox/Guide + Y** held for 3 seconds. Its pure policy emits
+exact **Back/View + Y** held for 3 seconds. Its pure policy emits
 `LogicalAction.SAFE_UNDOCK`, which routes to the ordinary `UNDOCK` intent. The
 delivery relay accepts one verified opaque event at most once and has no input
 listener, mechanism, or transition authority.
 
-No UI may claim physical power-button support. The native Xbox/Guide + Y
+No UI may claim physical power-button support. The native Back/View + Y
 listener candidate opens the existing guarded confirmation; hardware event
-delivery and Guide-menu compatibility remain unverified. A controller-focusable Decky fallback is
+delivery and View-button behavior remain unverified. A controller-focusable Decky fallback is
 implemented separately: return to verified Portable, acknowledge the durable
 transition, then issue one confirmed normal shutdown request. The accepted
 request is not a completion result. Physical removal remains prohibited until

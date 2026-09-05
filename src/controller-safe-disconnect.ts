@@ -1,7 +1,7 @@
 import type { SnapshotPayload } from "./backend";
 
 // SteamClient.Input.ControllerInputGamepadButton, not browser Gamepad indices.
-export const GUIDE_BUTTON = 34;
+export const VIEW_BUTTON = 9;
 export const Y_BUTTON = 3;
 export const SAFE_DISCONNECT_HOLD_MS = 3000;
 const CONTEXT_TIMEOUT_MS = 2000;
@@ -49,7 +49,7 @@ export function startControllerSafeDisconnect(deps: Dependencies): { available: 
   let owner: number | undefined;
   const exact = (id: number) => {
     const buttons = controllers.get(id);
-    return buttons?.size === 2 && buttons.has(GUIDE_BUTTON) && buttons.has(Y_BUTTON);
+    return buttons?.size === 2 && buttons.has(VIEW_BUTTON) && buttons.has(Y_BUTTON);
   };
   const cancel = () => { epoch++; clearTimeout(timer); timer = undefined; owner = undefined; };
   const reset = () => { cancel(); controllers.clear(); latched.clear(); };

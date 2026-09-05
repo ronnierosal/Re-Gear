@@ -34,7 +34,7 @@ class Sink:
 def evidence(*, event_id="controller-event-0001", verified=True, held_ms=3_000):
     return ControllerInputEvidence(
         verified,
-        frozenset({ControllerButton.GUIDE, ControllerButton.Y}),
+        frozenset({ControllerButton.VIEW, ControllerButton.Y}),
         held_ms,
         "2026-08-31T12:00:00Z",
         "generation-1",

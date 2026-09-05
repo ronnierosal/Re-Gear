@@ -2,7 +2,7 @@
 
 Status: **Implemented locally; native controller delivery and hardware validation pending**
 
-The requested gesture is **Xbox/Guide + Y held for 3 seconds**. The pure backend
+The requested gesture is **Back/View + Y held for 3 seconds**. The pure backend
 policy retains that threshold, exact-chord matching and verified-evidence
 requirements. Its dormant logical-action relay remains separately tested.
 
@@ -33,9 +33,9 @@ panel click and shortcut from executing concurrently. The always-rendered
 Decky content owns the subscription and releases it on unmount. Subscription
 failure leaves the ordinary button available and labels the shortcut unavailable.
 
-Hardware validation must establish native Guide/Y delivery, supported controller
+Hardware validation must establish native View/Y delivery, supported controller
 mapping, operation outside Quick Access, cancellation on disconnect, and native
-Guide-menu compatibility. API type declarations and fake-event tests do not
+View-button behavior. API type declarations and fake-event tests do not
 establish that hardware evidence.
 
 ## Physical removal boundary
@@ -58,8 +58,8 @@ session, first test confirmation delivery without confirming any transition.
 Try five separate three-second holds with Quick Access closed; cancel each
 dialog and fully release both buttons between attempts. Verify early release
 opens nothing, partial release cannot reopen a dismissed dialog, and opening
-the Steam Guide menu does not swallow the gesture or hide its confirmation.
+a native Steam menu does not swallow the gesture or hide its confirmation.
 Record controller model, transport, delivered dialogs and misses. Passing this
 check establishes only that controller configuration; shutdown remains a
 separate unresolved hardware gate. Double-power-press work is deferred until
-Xbox/Guide + Y works consistently.
+Back/View + Y works consistently.
