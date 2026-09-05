@@ -1,3 +1,5 @@
+import { connectionLiveStatus, createLiveStatusStore } from "./connection-live-status";
+import { showConnectionLivePanel } from "./connection-live-panel";
 import { PRODUCT_NAME } from "./branding";
 import { startControllerSafeDisconnect, steamControllerInput } from "./controller-safe-disconnect";
 import { startOfflineFocusChecks } from "./offline-focus-checks";
@@ -550,6 +552,9 @@ function Content({ preflight }: { preflight: SleepPreflightCoordinator }) {
   const safeDisconnectModal = useRef<ReturnType<typeof showModal> | null>(null);
   const safeDisconnectExecuting = useRef(false);
   const tvSwitchExecuting = useRef(false);
+  const liveConnectionStore = useRef(createLiveStatusStore());
+  const liveConnectionModal = useRef<ReturnType<typeof showModal> | null>(null);
+  const connectionPopupSeen = useRef(false);
   const [controllerShortcutAvailable, setControllerShortcutAvailable] = useState(false);
   const processModal = useRef<ReturnType<typeof showModal> | null>(null);
   const diagnosticLoggingModal = useRef<ReturnType<typeof showModal> | null>(null);
@@ -687,6 +692,7 @@ function Content({ preflight }: { preflight: SleepPreflightCoordinator }) {
       try {
         setAutomaticDockStatus(await getAutomaticDockStatus());
       } catch {
+        setAutomaticDockStatus(null);
         setAutomaticDockMessage(
           "Automatic docking status is unavailable; no restart will be requested.",
         );
@@ -770,7 +776,7 @@ function Content({ preflight }: { preflight: SleepPreflightCoordinator }) {
       if (!disposed) {
         timer = window.setTimeout(
           () => void poll(true),
-          refreshDelayForVisibility(nextPayload, quickAccessVisible),
+          refreshDelayForVisibility(nextPayload, quickAccessVisible || liveConnectionModal.current !== null),
         );
       }
     };
@@ -1088,6 +1094,33 @@ function Content({ preflight }: { preflight: SleepPreflightCoordinator }) {
       tvSwitchExecuting.current = false;
       setTvSwitchBusy(false);
     }
+  }, []);
+
+  const openConnectionProgress = useCallback(() => {
+    if (liveConnectionModal.current) return;
+    liveConnectionModal.current = showConnectionLivePanel(liveConnectionStore.current,
+      () => void executeTvSwitch(), () => { liveConnectionModal.current = null; });
+  }, [executeTvSwitch]);
+
+  useEffect(() => {
+    const status = connectionLiveStatus(payload, automaticDockStatus, journalStatus?.code, !!error);
+    liveConnectionStore.current.set(status);
+    if (!payload || error) return;
+    if (!status.connected) {
+      connectionPopupSeen.current = false;
+      liveConnectionModal.current?.Close();
+      liveConnectionModal.current = null;
+    } else if (!connectionPopupSeen.current) {
+      connectionPopupSeen.current = true;
+      // Avoid surprising an already docked session or covering a running game.
+      if (payload.inference.mode !== "docked_egpu" && payload.snapshot.game_state === "idle"
+        && !safeDisconnectModal.current) openConnectionProgress();
+    }
+  }, [payload, automaticDockStatus, journalStatus?.code, error, openConnectionProgress]);
+
+  useEffect(() => () => {
+    liveConnectionModal.current?.Close();
+    liveConnectionModal.current = null;
   }, []);
 
   const changeAutomaticDock = useCallback(async (enabled: boolean) => {
@@ -1460,6 +1493,12 @@ function Content({ preflight }: { preflight: SleepPreflightCoordinator }) {
       </PanelSection>
 
       <OfflineReadinessPanel gameState={snapshot?.game_state ?? "unknown"} visible={quickAccessVisible} />
+      {payload?.connection_readiness && payload.connection_readiness.stage !== "disconnected" &&
+        <PanelSection title="G1 connection">
+          <ButtonItem layout="below" onClick={openConnectionProgress}>
+            {connectionLiveStatus(payload, automaticDockStatus, journalStatus?.code, !!error).title} — View progress
+          </ButtonItem>
+        </PanelSection>}
       <PanelSection title="Safety & actions">
         <div ref={primaryControlAnchor}>
           <DashboardSurface primary>

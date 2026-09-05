@@ -1,5 +1,14 @@
 # Current state
 
+## Re-Gear 0.3.31 live connection progress candidate
+
+Adds a dismissible live readiness popup and persistent View progress control.
+Independent existing observer checks now include sample age; stale/error reads
+cannot stay green. Automatic behavior is unchanged. With automatic docking off,
+fresh complete readiness offers the guarded Switch to TV action. See
+[popup contract](CONNECTION_PROGRESS_POPUP.md). Native layout and hardware
+delivery remain unverified; this candidate is not installed.
+
 ## Re-Gear 0.3.30 bidirectional display shortcut candidate
 
 Back/View + Y held for three seconds opens Switch to TV from Portable or

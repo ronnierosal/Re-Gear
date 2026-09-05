@@ -148,6 +148,8 @@ export interface SnapshotPayload {
     code: string;
     poll_after_ms: number;
     window_age_ms: number;
+    checks?: Record<"gpu" | "link" | "hdmi" | "audio" | "session" | "idle", boolean> | null;
+    checks_age_ms?: number;
   };
   /** Optional future read-only delivery for local journey classifiers. */
   journey?: {

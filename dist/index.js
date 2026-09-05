@@ -1,3 +1,44 @@
+function connectionLiveStatus(payload, automatic, journal, failed = false) {
+    const c = payload?.connection_readiness;
+    const connected = !!c && c.stage !== "disconnected";
+    const snapshotAge = Date.now() - Date.parse(payload?.snapshot.observed_at ?? "");
+    const fresh = !failed && Number.isFinite(snapshotAge) && snapshotAge >= -5e3 && snapshotAge < 15000
+        && typeof c?.checks_age_ms === "number" && c.checks_age_ms >= 0 && c.checks_age_ms < 15000;
+    const blocked = fresh && ["timed_out", "link_training_failed", "action_required"].includes(c?.stage ?? "");
+    const names = { gpu: "GPU and driver", link: "Connection link", hdmi: "TV HDMI detected", audio: "Audio recovery ready", session: "Display switching ready", idle: "No game running" };
+    const rows = Object.entries(names).map(([key, label]) => ({ label, state: (!fresh ? "waiting" : (key === "idle" ? payload?.snapshot.game_state === "idle" && c?.checks?.idle === true : c?.checks?.[key] === true) ? "ready" : blocked || key === "idle" && payload?.snapshot.game_state === "running" ? "blocked" : "waiting") }));
+    rows.push({ label: "Previous result cleared", state: !fresh || !journal ? "waiting" : journal === "journal.idle" ? "ready" : "blocked" });
+    const all = fresh && c?.stage === "ready_idle" && rows.every(row => row.state === "ready");
+    const switching = fresh && automatic?.stage === "switching";
+    const docked = fresh && automatic?.stage === "docked" && payload?.inference.mode === "docked_egpu";
+    const waiting = { waiting_for_pci: "Waiting for G1 detection", transport_detected: "G1 connection detected", waiting_for_driver: "Waiting for GPU driver", waiting_for_link: "Waiting for connection link", waiting_for_hdmi: "Waiting for TV HDMI", waiting_for_audio: "Checking audio recovery", waiting_for_session: "Waiting for display integration", game_running: "Close the game to continue", stabilizing: "Checking connection stability", timed_out: "Detection timed out — keep G1 connected", link_training_failed: "Connection link needs attention", action_required: "Connection needs attention" };
+    return { connected, expiresAt: fresh ? Date.now() + Math.max(0, 15000 - Math.max(snapshotAge, c?.checks_age_ms ?? 15000)) : 0, seconds: Math.floor((c?.window_age_ms ?? 0) / 1000), rows,
+        title: !fresh ? "Waiting for a fresh status update" : switching ? "Switching to TV — checking picture and audio" : docked ? "TV transition reported complete" : all ? automatic?.enabled ? "Ready — waiting for automatic switch" : "Ready to switch to TV" : waiting[c?.stage ?? ""] ?? "Checking connection readiness",
+        canSwitch: all && automatic?.enabled === false };
+}
+function createLiveStatusStore() {
+    let value = { connected: false, expiresAt: 0, seconds: 0, title: "Checking connection", rows: [], canSwitch: false };
+    const listeners = new Set();
+    return { get: () => value, set(next) { value = next; for (const listener of listeners)
+            listener(); }, subscribe(listener) { listeners.add(listener); return () => { listeners.delete(listener); }; } };
+}
+
+function LivePanel({ store, close, switchTv }) {
+    const source = SP_REACT.useSyncExternalStore(store.subscribe, store.get);
+    const [, tick] = SP_REACT.useReducer((value) => value + 1, 0);
+    SP_REACT.useEffect(() => { const timer = setInterval(tick, 1000); return () => clearInterval(timer); }, []);
+    const status = Date.now() < source.expiresAt ? source : { ...source, canSwitch: false,
+        title: "Waiting for a fresh status update", rows: source.rows.map(row => ({ ...row, state: "waiting" })) };
+    return SP_JSX.jsx(DFL.ConfirmModal, { strTitle: "G1 connection progress", strOKButtonText: status.canSwitch ? "Switch to TV" : "Hide", strCancelButtonText: "Hide", bDisableBackgroundDismiss: true, bHideCloseIcon: true, onOK: () => { const latest = store.get(); const ready = latest.canSwitch && Date.now() < latest.expiresAt; close(); if (ready)
+            switchTv(); }, onCancel: close, children: SP_JSX.jsxs("div", { "aria-live": "polite", style: { fontSize: 14, lineHeight: "20px" }, children: [SP_JSX.jsx("p", { children: status.title }), SP_JSX.jsxs("p", { children: ["Connection check: ", status.seconds, " seconds"] }), status.rows.map(row => SP_JSX.jsxs("div", { style: { display: "flex", justifyContent: "space-between", gap: 12, padding: "5px 0" }, children: [SP_JSX.jsx("span", { children: row.label }), SP_JSX.jsx("strong", { style: { color: row.state === "ready" ? "#78df9c" : row.state === "blocked" ? "#ff8d8d" : "#ffd574" }, children: row.state === "ready" ? "✓ Ready" : row.state === "blocked" ? "! Needs attention" : "… Waiting" })] }, row.label)), SP_JSX.jsx("p", { children: "Keep the G1 connected. You can hide this window and check progress in Re-Gear." })] }) });
+}
+function showConnectionLivePanel(store, switchTv, onClose) {
+    let modal;
+    const close = () => { modal.Close(); onClose(); };
+    modal = DFL.showModal(SP_JSX.jsx(LivePanel, { store: store, switchTv: switchTv, close: close }), window, { strTitle: "Re-Gear", bNeverPopOut: true });
+    return modal;
+}
+
 /** Player-facing name; keep legacy installation and safety-state identities separate. */
 const PRODUCT_NAME = "Re-Gear";
 
@@ -2433,6 +2474,9 @@ function Content({ preflight }) {
     const safeDisconnectModal = SP_REACT.useRef(null);
     const safeDisconnectExecuting = SP_REACT.useRef(false);
     const tvSwitchExecuting = SP_REACT.useRef(false);
+    const liveConnectionStore = SP_REACT.useRef(createLiveStatusStore());
+    const liveConnectionModal = SP_REACT.useRef(null);
+    const connectionPopupSeen = SP_REACT.useRef(false);
     const [controllerShortcutAvailable, setControllerShortcutAvailable] = SP_REACT.useState(false);
     const processModal = SP_REACT.useRef(null);
     const diagnosticLoggingModal = SP_REACT.useRef(null);
@@ -2556,6 +2600,7 @@ function Content({ preflight }) {
                 setAutomaticDockStatus(await getAutomaticDockStatus());
             }
             catch {
+                setAutomaticDockStatus(null);
                 setAutomaticDockMessage("Automatic docking status is unavailable; no restart will be requested.");
             }
             await refreshTransitionJournal();
@@ -2625,7 +2670,7 @@ function Content({ preflight }) {
             }
             const nextPayload = await refresh(quiet);
             if (!disposed) {
-                timer = window.setTimeout(() => void poll(true), refreshDelayForVisibility(nextPayload, quickAccessVisible));
+                timer = window.setTimeout(() => void poll(true), refreshDelayForVisibility(nextPayload, quickAccessVisible || liveConnectionModal.current !== null));
             }
         };
         void poll(false);
@@ -2910,6 +2955,33 @@ function Content({ preflight }) {
             tvSwitchExecuting.current = false;
             setTvSwitchBusy(false);
         }
+    }, []);
+    const openConnectionProgress = SP_REACT.useCallback(() => {
+        if (liveConnectionModal.current)
+            return;
+        liveConnectionModal.current = showConnectionLivePanel(liveConnectionStore.current, () => void executeTvSwitch(), () => { liveConnectionModal.current = null; });
+    }, [executeTvSwitch]);
+    SP_REACT.useEffect(() => {
+        const status = connectionLiveStatus(payload, automaticDockStatus, journalStatus?.code, !!error);
+        liveConnectionStore.current.set(status);
+        if (!payload || error)
+            return;
+        if (!status.connected) {
+            connectionPopupSeen.current = false;
+            liveConnectionModal.current?.Close();
+            liveConnectionModal.current = null;
+        }
+        else if (!connectionPopupSeen.current) {
+            connectionPopupSeen.current = true;
+            // Avoid surprising an already docked session or covering a running game.
+            if (payload.inference.mode !== "docked_egpu" && payload.snapshot.game_state === "idle"
+                && !safeDisconnectModal.current)
+                openConnectionProgress();
+        }
+    }, [payload, automaticDockStatus, journalStatus?.code, error, openConnectionProgress]);
+    SP_REACT.useEffect(() => () => {
+        liveConnectionModal.current?.Close();
+        liveConnectionModal.current = null;
     }, []);
     const changeAutomaticDock = SP_REACT.useCallback(async (enabled) => {
         setAutomaticDockBusy(true);
@@ -3213,7 +3285,8 @@ function Content({ preflight }) {
     return (SP_JSX.jsx(SP_JSX.Fragment, { children: SP_JSX.jsxs("div", { ref: statusAnchor, tabIndex: -1, children: [SP_JSX.jsxs(DFL.PanelSection, { title: "At a glance", children: [SP_JSX.jsx(DFL.Focusable, { ref: statusFocusAnchor, "aria-label": "Re-Gear status summary", onGamepadFocus: () => {
                                 if (statusAnchor.current)
                                     scrollToTopOfOwningPanel(statusAnchor.current);
-                            }, children: SP_JSX.jsx(QuickAccessOverview, { mode: payload?.inference.mode ?? "unknown", modeLabel: loading ? "Reading…" : label(payload?.inference.mode ?? "unknown"), health: healthStatusLabel(payload?.health, loading), game: label(snapshot?.game_state ?? "unknown"), loading: loading }) }), SP_JSX.jsxs(DashboardSurface, { children: [SP_JSX.jsx(DashboardAction, { title: "Dock / eGPU", description: progress.label, icon: "connection", expanded: showHardwareDetails, onClick: () => setShowHardwareDetails((visible) => !visible) }), showHardwareDetails && SP_JSX.jsxs("div", { children: [hardwareDetailRows(payload).map(([name, value]) => SP_JSX.jsx(DiagnosticRow, { name: name, value: value }, name)), SP_JSX.jsx(DFL.PanelSectionRow, { children: progress.detail })] })] })] }), SP_JSX.jsx(OfflineReadinessPanel, { gameState: snapshot?.game_state ?? "unknown", visible: quickAccessVisible }), SP_JSX.jsxs(DFL.PanelSection, { title: "Safety & actions", children: [SP_JSX.jsxs("div", { ref: primaryControlAnchor, children: [SP_JSX.jsx(DashboardSurface, { primary: true, children: SP_JSX.jsx(DashboardAction, { icon: "bolt", title: tvSwitchBusy ? "Switching…" : "Switch to TV now", description: "Checks readiness before switching", onClick: () => void executeTvSwitch(), disabled: tvSwitchBusy
+                            }, children: SP_JSX.jsx(QuickAccessOverview, { mode: payload?.inference.mode ?? "unknown", modeLabel: loading ? "Reading…" : label(payload?.inference.mode ?? "unknown"), health: healthStatusLabel(payload?.health, loading), game: label(snapshot?.game_state ?? "unknown"), loading: loading }) }), SP_JSX.jsxs(DashboardSurface, { children: [SP_JSX.jsx(DashboardAction, { title: "Dock / eGPU", description: progress.label, icon: "connection", expanded: showHardwareDetails, onClick: () => setShowHardwareDetails((visible) => !visible) }), showHardwareDetails && SP_JSX.jsxs("div", { children: [hardwareDetailRows(payload).map(([name, value]) => SP_JSX.jsx(DiagnosticRow, { name: name, value: value }, name)), SP_JSX.jsx(DFL.PanelSectionRow, { children: progress.detail })] })] })] }), SP_JSX.jsx(OfflineReadinessPanel, { gameState: snapshot?.game_state ?? "unknown", visible: quickAccessVisible }), payload?.connection_readiness && payload.connection_readiness.stage !== "disconnected" &&
+                    SP_JSX.jsx(DFL.PanelSection, { title: "G1 connection", children: SP_JSX.jsxs(DFL.ButtonItem, { layout: "below", onClick: openConnectionProgress, children: [connectionLiveStatus(payload, automaticDockStatus, journalStatus?.code, !!error).title, " \u2014 View progress"] }) }), SP_JSX.jsxs(DFL.PanelSection, { title: "Safety & actions", children: [SP_JSX.jsxs("div", { ref: primaryControlAnchor, children: [SP_JSX.jsx(DashboardSurface, { primary: true, children: SP_JSX.jsx(DashboardAction, { icon: "bolt", title: tvSwitchBusy ? "Switching…" : "Switch to TV now", description: "Checks readiness before switching", onClick: () => void executeTvSwitch(), disabled: tvSwitchBusy
                                             || Boolean(tvSwitchAcknowledgementId)
                                             || Boolean(journalStatus && journalStatus.code !== "journal.idle") }) }), tvSwitchMessage && SP_JSX.jsx(DFL.PanelSectionRow, { children: tvSwitchMessage }), SP_JSX.jsx(DashboardSurface, { children: SP_JSX.jsx("div", { style: { padding: "4px 12px" }, children: SP_JSX.jsx(DFL.ToggleField, { label: "Automatic TV docking", layout: "inline", description: automaticDockBusy
                                                 ? "Saving…"

@@ -251,6 +251,8 @@ class Plugin:
         self._attach_readiness = AttachReadinessLifecycle()
         self._last_attach_readiness_code = self._attach_readiness.status().code
         self._connection_readiness = ConnectionReadinessLifecycle()
+        self._connection_checks = None
+        self._connection_checks_at = 0.0
         self._connection_topology = G1ConnectionTopologyDiscovery()
         self._last_connection_readiness_code = self._connection_readiness.status().code
         self._journey_clock_ns = time.monotonic_ns
@@ -304,6 +306,8 @@ class Plugin:
             "code": connection.code,
             "poll_after_ms": connection.poll_after_ms,
             "window_age_ms": connection.window_age_ms,
+            "checks": getattr(self, "_connection_checks", None),
+            "checks_age_ms": max(0, int((time.monotonic() - getattr(self, "_connection_checks_at", 0.0)) * 1000)),
         }
         await asyncio.to_thread(self._record_verbose_snapshot, payload)
         return payload
@@ -1485,6 +1489,8 @@ class Plugin:
                         details={
                             "poll_after_ms": connection.poll_after_ms,
                             "window_age_ms": connection.window_age_ms,
+            "checks": getattr(self, "_connection_checks", None),
+            "checks_age_ms": max(0, int((time.monotonic() - getattr(self, "_connection_checks_at", 0.0)) * 1000)),
                         },
                     )
                 completion = await asyncio.to_thread(
@@ -1642,8 +1648,7 @@ class Plugin:
                         plugin_root=PLUGIN_ROOT, user=resolution.context
                     ).status().ready
                 )
-        return self._connection_readiness.update(
-            ConnectionReadinessObservation(
+        observation = ConnectionReadinessObservation(
                 sample_id=current.sample_id,
                 transport_identity=topology.transport_identity,
                 transport_present=topology.transport_present,
@@ -1664,7 +1669,16 @@ class Plugin:
                 ),
                 game_state=current.snapshot.game_state,
             )
-        )
+        self._connection_checks = {
+            "gpu": bool(observation.g1_identity and observation.pci_complete and observation.driver_ready),
+            "link": observation.link_up,
+            "hdmi": observation.hdmi_ready,
+            "audio": observation.audio_ready,
+            "session": observation.session_ready,
+            "idle": observation.game_state is GameState.IDLE,
+        }
+        self._connection_checks_at = time.monotonic()
+        return self._connection_readiness.update(observation)
 
     def _record_connection_wake(self, stage: str) -> None:
         """Describe the latest scan wake, not proof of device-specific causality."""

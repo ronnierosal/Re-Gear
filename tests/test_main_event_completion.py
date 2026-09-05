@@ -205,6 +205,12 @@ class MainEventCompletionTests(unittest.IsolatedAsyncioTestCase):
         ), patch.object(self.module, "GamescopeIntegrationStore", return_value=types.SimpleNamespace(
             status=lambda: types.SimpleNamespace(ready=True))):
             result = await plugin._observe_connection_readiness(current("connected-internal.json"))
+        self.assertEqual(set(plugin._connection_checks), {"gpu", "link", "hdmi", "audio", "session", "idle"})
+        self.assertTrue(plugin._connection_checks["gpu"])
+        self.assertTrue(plugin._connection_checks["hdmi"])
+        self.assertTrue(plugin._connection_checks["audio"])
+        self.assertTrue(all(type(value) is bool for value in plugin._connection_checks.values()))
+        self.assertGreater(plugin._connection_checks_at, 0)
         self.assertEqual(result.audio_samples, 1)
         self.assertEqual(events[-1]["code"], "audio.awaiting_display_activation")
 
