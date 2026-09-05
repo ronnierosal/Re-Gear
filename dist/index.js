@@ -681,7 +681,7 @@ function exactTileElementAppId(tile) {
     }
     return ids.size === 1 ? [...ids][0] : null;
 }
-function attachOfflineTileBadge(view, appId, image, label, current, initialTile) {
+function attachOfflineTileBadge(view, appId, image, label, current, initialTile, expiredBadge) {
     const owned = new Map();
     let stopped = false;
     let timer;
@@ -733,8 +733,9 @@ function attachOfflineTileBadge(view, appId, image, label, current, initialTile)
         badge.title = `${label} — Steam report at check time`;
         badge.width = 48;
         badge.height = 24;
-        const bottom = tile.getAttribute("role") === "listitem" ? 12 : 6;
-        badge.style.cssText = `position:absolute;bottom:${bottom}px;left:6px;width:48px;height:24px;pointer-events:none;z-index:2`;
+        // Reserve the right half for Steam's compatibility controls. CSS scales
+        // with the artwork host, including carousel resize/focus transitions.
+        badge.style.cssText = "position:absolute;bottom:6px;left:6px;width:min(48px,calc(40% - 8px));height:auto;aspect-ratio:2 / 1;pointer-events:none;z-index:2";
         host.appendChild(badge);
         owned.set(tile, badge);
     };
@@ -756,6 +757,10 @@ function attachOfflineTileBadge(view, appId, image, label, current, initialTile)
                 if (stopped)
                     return;
                 try {
+                    if (initialTile) {
+                        reconcile(initialTile);
+                        return;
+                    }
                     if (records.length > 128) {
                         stop();
                         return;
@@ -796,7 +801,23 @@ function attachOfflineTileBadge(view, appId, image, label, current, initialTile)
                 }
             });
             observer.observe(view.document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ["data-id", "role", "class", "src"] });
-            timer = setTimeout(stop, 30000);
+            timer = setTimeout(() => {
+                validate();
+                if (stopped)
+                    return;
+                if (!expiredBadge) {
+                    stop();
+                    return;
+                }
+                // Preserve the affordance, but never leave an expired positive claim.
+                image = expiredBadge.image;
+                label = expiredBadge.label;
+                for (const badge of owned.values()) {
+                    badge.src = image;
+                    badge.alt = label;
+                    badge.title = label;
+                }
+            }, 30000);
         }
     }
     catch {
@@ -868,7 +889,7 @@ function startOfflineFocusChecks() {
         const displayStatus = app.display_status;
         const valid = () => offlineAccountScope() === account && app.display_status === displayStatus && context(id, app, source) && tile.isConnected &&
             tile.ownerDocument.activeElement?.closest(OFFLINE_TILE_SELECTOR) === tile && exactTileElementAppId(tile) === id;
-        const show = (badge) => { shown?.stop(); shown = attachOfflineTileBadge(view, id, offlineBadgeImages[badge.asset], badge.label, valid, tile); };
+        const show = (badge) => { shown?.stop(); shown = attachOfflineTileBadge(view, id, offlineBadgeImages[badge.asset], badge.label, valid, tile, { image: offlineBadgeImages["offline-verify"], label: "Check expired - highlight this game again to recheck" }); };
         // Re-read on settled selection so positive confidence cannot reuse an old build report.
         const request = sequence;
         timer = setTimeout(async () => {

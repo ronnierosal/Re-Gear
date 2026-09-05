@@ -43,7 +43,7 @@ export function startOfflineFocusChecks(): { stop(): void } {
     const displayStatus = app.display_status;
     const valid = () => offlineAccountScope() === account && app.display_status === displayStatus && context(id, app, source) && tile.isConnected &&
       tile.ownerDocument.activeElement?.closest(OFFLINE_TILE_SELECTOR) === tile && exactTileElementAppId(tile) === id;
-    const show = (badge: CachedBadge) => { shown?.stop(); shown = attachOfflineTileBadge(view, id, offlineBadgeImages[badge.asset], badge.label, valid, tile); };
+    const show = (badge: CachedBadge) => { shown?.stop(); shown = attachOfflineTileBadge(view, id, offlineBadgeImages[badge.asset], badge.label, valid, tile, { image: offlineBadgeImages["offline-verify"], label: "Check expired - highlight this game again to recheck" }); };
     // Re-read on settled selection so positive confidence cannot reuse an old build report.
     const request = sequence; timer = setTimeout(async () => {
       try {
