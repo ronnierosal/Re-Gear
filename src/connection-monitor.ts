@@ -48,5 +48,5 @@ export function startConnectionMonitor(deps: Dependencies) {
     }
   };
   void poll();
-  return {open, stop() { stopped = true; if (timer !== undefined) cancel(timer); close(); }};
+  return {store, open, stop() { stopped = true; if (timer !== undefined) cancel(timer); close(); }};
 }

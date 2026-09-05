@@ -1,3 +1,4 @@
+import { regearTheme as theme } from "./regear-theme";
 /** Decorative icons never substitute for the independent, text-labelled facts. */
 const ICONS: Record<string, { color: string; path: string }> = {
   Mode: { color: "#9baeff", path: "M3 5h18v12H3z M8 21h8 M12 17v4" },
@@ -12,8 +13,8 @@ export function StatusCard({ name, value }: { name: string; value: string }) {
     <div style={{
       display: "flex", alignItems: "center", gap: 12, minWidth: 0,
       padding: "12px", marginBottom: 8, borderRadius: 12,
-      border: "1px solid rgba(135, 164, 224, 0.32)",
-      background: "linear-gradient(120deg, rgba(62, 82, 128, 0.30), rgba(28, 39, 65, 0.35))",
+      border: `1px solid ${theme.border}`,
+      background: theme.surface,
     }}>
       <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"
         style={{ color: icon.color, flexShrink: 0 }} fill="none" stroke="currentColor"

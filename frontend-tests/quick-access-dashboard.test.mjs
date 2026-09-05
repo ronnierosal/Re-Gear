@@ -45,7 +45,7 @@ test("compact dashboard keeps native controls, single guarded action and local d
   assert.match(source, /<ToggleField\s+label="Automatic TV docking"\s+layout="inline"/);
   assert.match(source, /onClick=\{\(\) => setShowHardwareDetails\(\(visible\) => !visible\)\}/);
   assert.match(source, /showHardwareDetails &&[\s\S]*hardwareDetailRows\(payload\)/);
-  assert.ok(source.indexOf("<DashboardSurface primary>") < source.indexOf('<ToggleField\n'));
+  assert.ok(source.indexOf("<DashboardSurface primary>") > source.indexOf('<ToggleField\n'));
   assert.match(source, /Keep the eGPU connected until fully powered off/);
 });
 
@@ -56,7 +56,7 @@ test("dashboard actions keep icons and text inside one native button, not Item c
   assert.match(action, /gridTemplateColumns: "32px minmax\(0, 1fr\) 16px"/);
   assert.match(action, /wordBreak: "normal",\s+overflowWrap: "normal"/);
   assert.doesNotMatch(action, /ButtonItem|noFocusRing=|outline:|overflow: "hidden"/);
-  assert.equal((source.match(/<DashboardAction\s/g) ?? []).length, 4);
+  assert.equal((source.match(/<DashboardAction\s/g) ?? []).length, 5);
   assert.match(source, /title="Dock \/ eGPU"[\s\S]*expanded=\{showHardwareDetails\}/);
   assert.match(source, /title="Troubleshoot"[\s\S]*expanded=\{showDiagnostics\}/);
 });

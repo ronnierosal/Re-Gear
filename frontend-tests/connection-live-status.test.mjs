@@ -32,3 +32,12 @@ test("a newer running-game snapshot overrides an earlier idle observation",()=>{
  assert.equal(s.canSwitch,false);assert.equal(s.rows.find(r=>r.label==="No game running").state,"blocked");
  p.snapshot.game_state="unknown";assert.equal(status(p,{enabled:false},"journal.idle").canSwitch,false);
 });
+test("completion presentation requires fresh docked backend and display evidence",()=>{
+ const p=sample();
+ assert.equal(status(p,{stage:"switching"},"journal.idle").phase,"switching");
+ assert.equal(status(p,{stage:"docked"},"journal.idle").phase,"checking");
+ p.inference.mode="docked_egpu";
+ assert.equal(status(p,{stage:"docked"},"journal.idle").phase,"complete");
+ p.snapshot.observed_at=new Date(Date.now()-16000).toISOString();
+ assert.equal(status(p,{stage:"docked"},"journal.idle").phase,"checking");
+});

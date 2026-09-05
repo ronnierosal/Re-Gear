@@ -9,10 +9,10 @@ transition authority is introduced. Identity tokens are not exposed.
 An idle attachment opens a dismissible progress dialog once per observed
 connection. It does not cover a running game or an already-docked startup.
 The panel retains View progress. Dismissal does not cancel automatic docking.
-Only observed disconnection rearms automatic popup delivery. Read-only refresh
-uses the existing foreground cadence while the dialog is open; a one-second
-local freshness timer exists only while mounted and makes old greens expire.
-No extra backend RPC polling loop is added.
+Only observed disconnection rearms automatic popup delivery. The plugin-owned monitor serializes status reads one second after each
+completed read, independently of Quick Access mounting. Its first fresh sample
+establishes a baseline and cannot open an already-connected popup. A one-second
+local freshness timer while mounted makes old greens expire.
 
 Yellow means waiting or unknown, green means a fresh positive result, and red
 means a blocker/timeout. Words and symbols accompany colors. Previous-result
@@ -33,3 +33,15 @@ manual/automatic routing and subscription-cleanup fixtures. Native Decky layout,
 controller focus, automatic appearance, dismissal, and survival across the
 Gamescope restart require supervised Ally validation. Keep G1 attached until
 physically powered off; install only after detached boot.
+
+## Animated presentation
+
+The modal uses a dark bordered card, amber checking rings, 200 ms green check
+entrances, and an indeterminate cyan sweep during the backend switching phase.
+Reduced-motion preferences disable all three animations. Stale samples show
+static waiting icons and never retain a completion or manual-switch state.
+Backend docked status plus docked inference and fresh checks show a completion
+panel; after 3.5 seconds it revalidates freshness before closing. This is a
+reported transition result, not independent player confirmation of picture or
+sound. No individual HDMI-audio step is fabricated from pre-switch checks.
+Native Decky appearance and focus remain pending hardware validation.

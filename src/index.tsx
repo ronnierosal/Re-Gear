@@ -1,4 +1,6 @@
-import { connectionLiveStatus } from "./connection-live-status";
+import { showDisconnectProgress } from "./disconnect-progress-panel";
+import { ConnectionQuickStatus } from "./connection-quick-status";
+import { regearControlCss } from "./regear-theme";
 import { startConnectionMonitor } from "./connection-monitor";
 import { showConnectionLivePanel } from "./connection-live-panel";
 import { PRODUCT_NAME } from "./branding";
@@ -549,6 +551,7 @@ function Content({ preflight, connection }: { preflight: SleepPreflightCoordinat
   const supportModal = useRef<ReturnType<typeof showModal> | null>(null);
   const presentationModal = useRef<ReturnType<typeof showModal> | null>(null);
   const automaticDockModal = useRef<ReturnType<typeof showModal> | null>(null);
+  const disconnectProgressModal = useRef<ReturnType<typeof showModal> | null>(null);
   const safeDisconnectModal = useRef<ReturnType<typeof showModal> | null>(null);
   const safeDisconnectExecuting = useRef(false);
   const tvSwitchExecuting = useRef(false);
@@ -587,6 +590,8 @@ function Content({ preflight, connection }: { preflight: SleepPreflightCoordinat
   }, []);
 
   useEffect(() => () => {
+    disconnectProgressModal.current?.Close();
+    disconnectProgressModal.current = null;
     supportModal.current?.Close();
     supportModal.current = null;
     presentationModal.current?.Close();
@@ -1434,6 +1439,7 @@ function Content({ preflight, connection }: { preflight: SleepPreflightCoordinat
 
   return (
     <>
+      <style>{regearControlCss}</style>
       <div ref={statusAnchor} tabIndex={-1}>
       <PanelSection title="At a glance">
         <Focusable
@@ -1451,43 +1457,16 @@ function Content({ preflight, connection }: { preflight: SleepPreflightCoordinat
           loading={loading}
         />
         </Focusable>
-        <DashboardSurface>
-          <DashboardAction
-            title="Dock / eGPU"
-            description={progress.label}
-            icon="connection"
-            expanded={showHardwareDetails}
-            onClick={() => setShowHardwareDetails((visible) => !visible)}
-          />
-          {showHardwareDetails && <div>
-            {hardwareDetailRows(payload).map(([name, value]) => <DiagnosticRow key={name} name={name} value={value} />)}
-            <PanelSectionRow>{progress.detail}</PanelSectionRow>
-          </div>}
-        </DashboardSurface>
+
       </PanelSection>
 
       {payload?.connection_readiness && payload.connection_readiness.stage !== "disconnected" &&
-        <PanelSection title="G1 connection">
-          <ButtonItem layout="below" onClick={openConnectionProgress}>
-            {connectionLiveStatus(payload, automaticDockStatus, journalStatus?.code, !!error).title} — View progress
-          </ButtonItem>
+        <PanelSection title="G1 readiness">
+          <ConnectionQuickStatus store={connection.store} visible={quickAccessVisible}
+            onOpen={openConnectionProgress} />
         </PanelSection>}
-      <PanelSection title="Safety & actions">
+      <PanelSection title="Docking & actions">
         <div ref={primaryControlAnchor}>
-          <DashboardSurface primary>
-            <DashboardAction
-              icon="bolt"
-              title={tvSwitchBusy ? "Switching…" : "Switch to TV now"}
-              description="Checks readiness before switching"
-              onClick={() => void executeTvSwitch()}
-              disabled={
-                tvSwitchBusy
-                || Boolean(tvSwitchAcknowledgementId)
-                || Boolean(journalStatus && journalStatus.code !== "journal.idle")
-              }
-            />
-          </DashboardSurface>
-          {tvSwitchMessage && <PanelSectionRow>{tvSwitchMessage}</PanelSectionRow>}
           <DashboardSurface>
           <div style={{ padding: "4px 12px" }}>
           <ToggleField
@@ -1510,6 +1489,29 @@ function Content({ preflight, connection }: { preflight: SleepPreflightCoordinat
           {automaticDockMessage && (
             <PanelSectionRow>{automaticDockMessage}</PanelSectionRow>
           )}
+          <DashboardSurface primary>
+            <DashboardAction
+              icon="bolt"
+              title={tvSwitchBusy ? "Switching…" : "Switch to TV now"}
+              description="Checks readiness before switching"
+              onClick={() => void executeTvSwitch()}
+              disabled={
+                tvSwitchBusy
+                || Boolean(tvSwitchAcknowledgementId)
+                || Boolean(journalStatus && journalStatus.code !== "journal.idle")
+              }
+            />
+          </DashboardSurface>
+          {tvSwitchMessage && <PanelSectionRow>{tvSwitchMessage}</PanelSectionRow>}
+
+          <DashboardSurface>
+            <DashboardAction icon="connection" title="Disconnect status"
+              description="Live checks · keep G1 connected"
+              onClick={() => {
+                if (!disconnectProgressModal.current) disconnectProgressModal.current = showDisconnectProgress(
+                  () => { disconnectProgressModal.current = null; });
+              }} />
+          </DashboardSurface>
           <DashboardSurface>
             <DashboardAction
               icon="power"
@@ -1774,6 +1776,19 @@ function Content({ preflight, connection }: { preflight: SleepPreflightCoordinat
 
       {sectionVisibility.diagnostics && (
         <PanelSection title="Troubleshooting details">
+        <DashboardSurface>
+          <DashboardAction
+            title="Dock / eGPU"
+            description={progress.label}
+            icon="connection"
+            expanded={showHardwareDetails}
+            onClick={() => setShowHardwareDetails((visible) => !visible)}
+          />
+          {showHardwareDetails && <div>
+            {hardwareDetailRows(payload).map(([name, value]) => <DiagnosticRow key={name} name={name} value={value} />)}
+            <PanelSectionRow>{progress.detail}</PanelSectionRow>
+          </div>}
+        </DashboardSurface>
           <PanelSectionRow>
             Read-only technical evidence. Raw hardware identities, connector names, and process IDs are hidden.
           </PanelSectionRow>

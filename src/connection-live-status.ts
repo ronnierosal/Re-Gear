@@ -1,6 +1,6 @@
 import type { SnapshotPayload, AutomaticDockStatusPayload } from "./backend";
 export type Light = "ready" | "waiting" | "blocked";
-export type LiveStatus = { connected: boolean; expiresAt: number; seconds: number; title: string; rows: {label: string; state: Light}[]; canSwitch: boolean };
+export type LiveStatus = { phase: "checking" | "switching" | "complete"; connected: boolean; expiresAt: number; seconds: number; title: string; rows: {label: string; state: Light}[]; canSwitch: boolean };
 export function connectionLiveStatus(payload: SnapshotPayload | null, automatic: AutomaticDockStatusPayload | null, journal: string | undefined, failed = false): LiveStatus {
   const c = payload?.connection_readiness;
   const connected = !!c && c.stage !== "disconnected";
@@ -15,12 +15,12 @@ export function connectionLiveStatus(payload: SnapshotPayload | null, automatic:
   const switching = fresh && automatic?.stage === "switching";
   const docked = fresh && automatic?.stage === "docked" && payload?.inference.mode === "docked_egpu";
   const waiting: Record<string, string> = {waiting_for_pci: "Waiting for G1 detection", transport_detected: "G1 connection detected", waiting_for_driver: "Waiting for GPU driver", waiting_for_link: "Waiting for connection link", waiting_for_hdmi: "Waiting for TV HDMI", waiting_for_audio: "Checking audio recovery", waiting_for_session: "Waiting for display integration", game_running: "Close the game to continue", stabilizing: "Checking connection stability", timed_out: "Detection timed out — keep G1 connected", link_training_failed: "Connection link needs attention", action_required: "Connection needs attention"};
-  return {connected, expiresAt: fresh ? Date.now() + Math.max(0, 15000 - Math.max(snapshotAge, c?.checks_age_ms ?? 15000)) : 0, seconds: Math.floor((c?.window_age_ms ?? 0) / 1000), rows,
+  return {phase: docked ? "complete" : switching ? "switching" : "checking", connected, expiresAt: fresh ? Date.now() + Math.max(0, 15000 - Math.max(snapshotAge, c?.checks_age_ms ?? 15000)) : 0, seconds: Math.floor((c?.window_age_ms ?? 0) / 1000), rows,
     title: !fresh ? "Waiting for a fresh status update" : switching ? "Switching to TV — checking picture and audio" : docked ? "TV transition reported complete" : all ? automatic?.enabled ? "Ready — waiting for automatic switch" : "Ready to switch to TV" : waiting[c?.stage ?? ""] ?? "Checking connection readiness",
     canSwitch: all && automatic?.enabled === false};
 }
 export function createLiveStatusStore() {
-  let value: LiveStatus = {connected:false,expiresAt:0,seconds:0,title:"Checking connection",rows:[],canSwitch:false};
+  let value: LiveStatus = {phase:"checking",connected:false,expiresAt:0,seconds:0,title:"Checking connection",rows:[],canSwitch:false};
   const listeners = new Set<() => void>();
   return {get: () => value, set(next: LiveStatus) { value = next; for (const listener of listeners) listener(); }, subscribe(listener: () => void) { listeners.add(listener); return () => { listeners.delete(listener); }; }};
 }

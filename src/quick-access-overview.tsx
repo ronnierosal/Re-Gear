@@ -1,13 +1,14 @@
+import { regearTheme as theme } from "./regear-theme";
 import type { ReactNode } from "react";
 import { placementCards } from "./quick-access-dashboard";
 
 const colors = {
-  cyan: "#29d3ff",
-  cyanSoft: "#8be8ff",
+  cyan: theme.accent,
+  cyanSoft: theme.accentSoft,
   orange: "#f2a23b",
-  text: "#f3f8ff",
-  muted: "#9fb3cc",
-  border: "#29425f",
+  text: theme.text,
+  muted: theme.muted,
+  border: theme.border,
   surface: "#0a1422",
 };
 
@@ -20,8 +21,8 @@ const paths = {
   tools: "M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94z",
 };
 
-export function DashboardIcon({ kind }: { kind: keyof typeof paths }) {
-  return <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+export function DashboardIcon({ kind, size = 24 }: { kind: keyof typeof paths; size?: number }) {
+  return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
     strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"
     style={{ flexShrink: 0 }}><path d={paths[kind]} /></svg>;
 }
@@ -33,10 +34,10 @@ export function DashboardSurface({ children, primary = false }: { children: Reac
     marginBottom: 12,
     minWidth: 0,
     overflow: "hidden",
-    border: `1px solid ${primary ? "#9a672d" : colors.border}`,
+    border: `1px solid ${primary ? colors.cyan : colors.border}`,
     background: primary
-      ? "linear-gradient(125deg, rgba(83,53,18,.94) 0%, rgba(18,29,45,.98) 58%, rgba(9,20,34,1) 100%)"
-      : "linear-gradient(145deg, rgba(18,35,57,.98), rgba(8,18,31,.98))",
+      ? theme.activeSurface
+      : theme.surface,
     boxShadow: primary
       ? "inset 0 1px 0 rgba(255,255,255,.04), 0 8px 22px rgba(0,0,0,.18)"
       : "inset 0 1px 0 rgba(255,255,255,.025)",
@@ -55,7 +56,7 @@ function StatusPill({ label, value, accent = false }: { label: string; value: st
     border: `1px solid ${accent ? "#2e7892" : "#31465f"}`,
     background: accent ? "rgba(19, 79, 100, .34)" : "rgba(7, 17, 29, .55)",
     color: accent ? colors.cyanSoft : colors.muted,
-    fontSize: 10,
+    fontSize: 11,
     lineHeight: 1.2,
     whiteSpace: "nowrap",
   }}>
@@ -73,18 +74,18 @@ export function QuickAccessOverview({ mode, modeLabel, health, game, loading }: 
       padding: "11px 12px 10px",
       border: `1px solid ${colors.border}`,
       borderRadius: 15,
-      background: "linear-gradient(130deg, #10243a 0%, #0a1727 72%)",
+      background: theme.surface,
       boxShadow: "inset 0 1px 0 rgba(255,255,255,.025)",
     }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
         <div style={{ minWidth: 0 }}>
-          <div style={{ fontSize: 10, letterSpacing: ".11em", textTransform: "uppercase", color: colors.cyanSoft,
+          <div style={{ fontSize: 11, letterSpacing: ".11em", textTransform: "uppercase", color: colors.cyanSoft,
             fontWeight: 700, marginBottom: 3 }}>Current state</div>
           <div style={{ fontSize: 17, lineHeight: 1.15, fontWeight: 700, overflowWrap: "normal" }}>{modeLabel}</div>
         </div>
         <span style={{ width: 8, height: 8, borderRadius: "50%", flexShrink: 0,
           background: loading ? "#6d8098" : colors.cyan,
-          boxShadow: loading ? "none" : "0 0 12px rgba(41,211,255,.7)" }} />
+          boxShadow: "none" }} />
       </div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 9 }}>
         <StatusPill label="Health" value={health} accent={!loading && health.toLowerCase().includes("ready")} />
@@ -102,43 +103,23 @@ export function QuickAccessOverview({ mode, modeLabel, health, game, loading }: 
           borderRadius: 15,
           border: `1px solid ${card.active ? colors.cyan : "#2b4058"}`,
           background: card.active
-            ? "linear-gradient(145deg, rgba(8,69,98,.98), rgba(12,31,51,.98))"
-            : "linear-gradient(145deg, #0d1929, #091321)",
+            ? theme.activeSurface
+            : theme.surface,
           boxShadow: card.active
-            ? "inset 0 1px 0 rgba(255,255,255,.05), inset 0 0 24px rgba(0,174,255,.08), 0 0 0 1px rgba(0,210,255,.04)"
+            ? "inset 0 1px 0 rgba(255,255,255,.04)"
             : "inset 0 1px 0 rgba(255,255,255,.02)",
           overflow: "hidden",
         }}>
         {card.active && <span style={{ position: "absolute", top: 0, left: 10, right: 10, height: 2,
           borderRadius: "0 0 4px 4px", background: colors.cyan,
-          boxShadow: "0 0 10px rgba(41,211,255,.65)" }} />}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-          <span style={{
-            color: card.active ? colors.cyan : "#7e9bbb",
-            display: "inline-flex",
-            alignItems: "center",
-            justifyContent: "center",
-            width: 30,
-            height: 30,
-            borderRadius: 10,
-            border: `1px solid ${card.active ? "#287b98" : "#2d4057"}`,
-            background: card.active ? "rgba(5, 48, 68, .72)" : "rgba(11, 25, 42, .82)",
-          }}>
-            <DashboardIcon kind={card.name === "Portable" ? "handheld" : "monitor"} />
+          boxShadow: "none" }} />}
+        <div style={{display:"flex", flexDirection:"column", alignItems:"center", gap:10, textAlign:"center", padding:"5px 0"}}>
+          <span style={{color:card.active ? colors.cyanSoft : colors.muted, display:"flex", alignItems:"center", justifyContent:"center", height:42}}>
+            <DashboardIcon kind={card.name === "Portable" ? "handheld" : "monitor"} size={42}/>
           </span>
-          {card.active && <span style={{
-            fontSize: 9,
-            fontWeight: 750,
-            letterSpacing: ".06em",
-            textTransform: "uppercase",
-            color: colors.cyanSoft,
-          }}>Active</span>}
-        </div>
-        <div style={{ minWidth: 0, marginTop: 8, lineHeight: 1.25 }}>
-          <div style={{ fontSize: 13, fontWeight: 700 }}>{card.name}</div>
-          <div style={{ fontSize: 10.5, color: colors.muted, marginTop: 3 }}>{card.detail}</div>
-          <div style={{ fontSize: 9.5, color: card.active ? colors.cyanSoft : "#7f93ac", marginTop: 6 }}>
-            {card.active ? "✓ Current mode" : loading ? "Reading…" : "Not confirmed active"}
+          <div style={{fontSize:15, fontWeight:650}}>{card.name}</div>
+          <div style={{fontSize:11, letterSpacing:".06em", color:card.active ? colors.cyan : colors.muted, minHeight:15}}>
+            {card.active ? "ACTIVE" : loading ? "Reading…" : "Not active"}
           </div>
         </div>
       </div>)}
