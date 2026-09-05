@@ -77,3 +77,9 @@ python -m compileall -q backend tests scripts
 
 Hardware-affecting work additionally requires redacted before/live/after evidence
 and supervised validation on a supported profile.
+
+## Shared release coordination
+
+Before editing or packaging, read `docs/CHAT_COORDINATION.md`. Register tested
+completed commits with `scripts/release_coordination.py ready <workstream>`.
+All player ZIPs use plain Re-Gear-X.Y.Z.zip names. Do not overwrite archives.
