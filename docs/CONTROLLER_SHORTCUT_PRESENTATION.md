@@ -7,7 +7,11 @@ policy retains that threshold, exact-chord matching and verified-evidence
 requirements. Its dormant logical-action relay remains separately tested.
 
 The frontend candidate uses SteamClient.Input's non-exclusive native input
-messages and controller-list changes. It tracks button edges per controller,
+messages and controller-list changes, falling back to active-controller changes
+on Steam builds such as the Ally that lack the list API. The installed Ally
+returned valid unregister handles for both button and active-controller
+subscriptions during a bounded subscribe/unsubscribe probe. Physical press
+and disconnect delivery still require supervised verification. It tracks button edges per controller,
 ignores repeats, requires the exact two-button chord, and cancels on release,
 extra buttons, malformed events, controller-list changes or unload. One hold
 can open at most one confirmation; release both buttons before another attempt.

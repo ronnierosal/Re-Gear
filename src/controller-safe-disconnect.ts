@@ -9,7 +9,8 @@ const CONTEXT_TIMEOUT_MS = 2000;
 type Subscription = { unregister(): void };
 export interface ControllerInputSource {
   RegisterForControllerInputMessages(callback: (controller: number, button: number, pressed: boolean) => void): Subscription;
-  RegisterForControllerListChanges(callback: (...args: unknown[]) => void): Subscription;
+  RegisterForControllerListChanges?(callback: (...args: unknown[]) => void): Subscription;
+  RegisterForActiveControllerChanges?(callback: (...args: unknown[]) => void): Subscription;
 }
 type Context = { snapshot: SnapshotPayload; journal: { code: string } };
 type Dependencies = {
@@ -109,10 +110,17 @@ export function startControllerSafeDisconnect(deps: Dependencies): { available: 
   };
   try {
     const input = deps.input;
-    if (typeof input?.RegisterForControllerInputMessages !== "function"
-      || typeof input.RegisterForControllerListChanges !== "function") return { available: false, stop };
+    if (typeof input?.RegisterForControllerInputMessages !== "function") return { available: false, stop };
+    // Steam builds differ: the Ally exposes active-controller notifications,
+    // while other builds expose controller-list notifications. Either cancels
+    // all pending holds; never substitute per-button/analog state notifications.
+    const registerChanges = typeof input.RegisterForControllerListChanges === "function"
+      ? input.RegisterForControllerListChanges.bind(input)
+      : typeof input.RegisterForActiveControllerChanges === "function"
+        ? input.RegisterForActiveControllerChanges.bind(input) : undefined;
+    if (!registerChanges) return { available: false, stop };
     for (const register of [
-      () => input.RegisterForControllerListChanges(reset),
+      () => registerChanges(reset),
       () => input.RegisterForControllerInputMessages(onInput),
     ]) {
       const subscription = register();

@@ -1,5 +1,14 @@
 # Current state
 
+## Re-Gear 0.3.28 controller API compatibility candidate
+
+Installed 0.3.27 displayed Controller shortcut unavailable. Read-only API
+inspection found button messages available but controller-list registration
+absent. A bounded subscription probe verified button and active-controller
+registration return unregister handles. The adapter now accepts the active
+controller notification API as a fallback. Physical button/hold/disconnect
+delivery remains unverified. No display, sleep or GPU action was performed.
+
 ## Re-Gear 0.3.27 controller safe-disconnect candidate — 2026-09-04
 
 Combines the committed neutral Offline Play badge correction from d76ddb7

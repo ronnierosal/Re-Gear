@@ -17,14 +17,14 @@ function context(mode = "docked_egpu") {
     gpus: [{ role: "external", present: true, confidence: "verified" }],
   } }, journal: { code: "journal.idle" } };
 }
-function setup(t, read) {
+function setup(t, read, changesMethod = "RegisterForControllerListChanges") {
   t.mock.timers.enable({ apis: ["setTimeout"] });
   let input, state, removed = 0, reads = 0, busy = false;
   const current = context(); const confirmations = [];
   const handle = startControllerSafeDisconnect({
     input: {
       RegisterForControllerInputMessages(callback) { input = callback; return { unregister() { removed++; } }; },
-      RegisterForControllerListChanges(callback) { state = callback; return { unregister() { removed++; } }; },
+      [changesMethod](callback) { state = callback; return { unregister() { removed++; } }; },
     },
     readContext: () => { reads++; return read ? read() : Promise.resolve(structuredClone(current)); },
     isBusy: () => busy,
@@ -138,4 +138,25 @@ test("controller removal while final read is pending cancels confirmation", asyn
   const s = setup(t, () => ++count === 1 ? Promise.resolve(context()) : new Promise(resolve => { finish = resolve; }));
   s.chord(); await flush(); t.mock.timers.tick(3000); await flush();
   s.state(); finish(context()); await flush(); assert.equal(s.confirmations.length, 0);
+});
+
+
+test("Ally active-controller API works without controller-list API and cancels a pending hold", async t => {
+  const s = setup(t, undefined, "RegisterForActiveControllerChanges");
+  assert.equal(s.handle.available, true);
+  s.chord(); await flush(); t.mock.timers.tick(1000); s.state();
+  t.mock.timers.tick(2000); await flush(); assert.equal(s.confirmations.length, 0);
+  s.chord(); await flush(); t.mock.timers.tick(3000); await flush();
+  assert.equal(s.confirmations.length, 1);
+  s.handle.stop(); assert.equal(s.counts().removed, 2);
+});
+
+test("button API alone is insufficient without a controller-change subscription", () => {
+  let registered = false;
+  const result = startControllerSafeDisconnect({
+    input: { RegisterForControllerInputMessages() { registered = true; return { unregister() {} }; } },
+    readContext: async () => context(), isBusy: () => false,
+    confirm() { assert.fail("unexpected confirmation"); },
+  });
+  assert.equal(result.available, false); assert.equal(registered, false);
 });

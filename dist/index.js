@@ -122,11 +122,19 @@ function startControllerSafeDisconnect(deps) {
     };
     try {
         const input = deps.input;
-        if (typeof input?.RegisterForControllerInputMessages !== "function"
-            || typeof input.RegisterForControllerListChanges !== "function")
+        if (typeof input?.RegisterForControllerInputMessages !== "function")
+            return { available: false, stop };
+        // Steam builds differ: the Ally exposes active-controller notifications,
+        // while other builds expose controller-list notifications. Either cancels
+        // all pending holds; never substitute per-button/analog state notifications.
+        const registerChanges = typeof input.RegisterForControllerListChanges === "function"
+            ? input.RegisterForControllerListChanges.bind(input)
+            : typeof input.RegisterForActiveControllerChanges === "function"
+                ? input.RegisterForActiveControllerChanges.bind(input) : undefined;
+        if (!registerChanges)
             return { available: false, stop };
         for (const register of [
-            () => input.RegisterForControllerListChanges(reset),
+            () => registerChanges(reset),
             () => input.RegisterForControllerInputMessages(onInput),
         ]) {
             const subscription = register();
