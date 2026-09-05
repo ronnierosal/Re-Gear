@@ -261,3 +261,53 @@ Valve's [Offline Mode guidance](https://help.steampowered.com/en/faqs/view/0E18-
 recommends preparing and trying games before relying on offline play, and notes
 initial startup requirements. The automatic highlighted-game check remains
 local and does not query that website.
+
+
+## Confidence source extension — 2026-09-05
+
+User authorized implementing evidence-based Likely offline-ready and explicit
+player-tested offline confidence. This supersedes the earlier proposal-only
+restriction for the implementation described here; it does not redefine the
+backend's stronger ready_to_try_offline classifier or its entitlement contract.
+
+The existing selected-game callback now privately projects only nBuildID,
+bHasAnyLocalContent, bIsSubscribedTo, bIsThirdPartyUpdater, display/cloud states,
+cloud enablement, and two explicit deckDerivedProperties internet flags. New
+fields stay in frontend memory, never enter RPC, logs, files, or network queries.
+Steam's local_per_client_data.installed is read from the exact overview, and
+BHasStoreCategory(2) supplies the cached single-player category. Read-only live
+inspection verified BHasStoreCategory only reads m_setStoreCategories.has; no
+fetch occurs. The account-name scope is taken privately from loginStore and
+never displayed or persisted. No cache files, licenses, credentials, save files,
+external databases, or remote library records are scanned.
+
+One bounded idle read for the previously selected Re:Story game returned the
+new scalar facts in 5.9 ms, with a positive build ID, content/subscription true,
+explicit internet flags false, local installation true, and single-player true.
+This is one schema/cost observation, not a general gameplay-performance claim.
+The existing callback source review and one-second timeout remain authoritative.
+
+Likely offline-ready is a documented heuristic: all local preparation gates,
+explicit single-player category, explicit no-internet setup/single-player flags,
+and no third-party updater are required. ReadyToLaunch means only no pending
+download reported by Steam at check time; file integrity, storage health, DRM
+activation and future offline authorization are not verified. Missing booleans
+are unknown, never false. Subscription alone is not offline entitlement.
+Known backend blockers and game-unknown/unavailable reports cannot become green.
+Cloud disabled means no cloud gate, not proof that saves are current.
+
+Player-tested confirmations are explicit attestations, not automatic tests.
+They bind game ID, build ID, private account scope, store and app object, and
+expire at 24 hours or plugin restart. At most 32 records are kept in memory.
+A fresh callback must match the displayed binding before confirmation; account
+changes invalidate request/display context. Build/account changes, missing
+preparation, known blockers, and explicit Forget invalidate stored evidence.
+There is no persistence or automatic network/game control. A separate account
+return cannot resurrect an invalidated record. Reinstalling the same build
+without an intervening observation may be indistinguishable; confirmations
+are therefore session-only historical evidence, never continuing certification.
+
+Settled highlight changes now re-read evidence instead of restoring a five-minute
+badge cache. This avoids reusing positive confidence for an old build. Work
+remains event-driven and limited to one highlighted game after 450 ms, with
+cancellation, no polling/library scan, and existing 30-second badge expiry.

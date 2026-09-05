@@ -1,6 +1,7 @@
 import { callable, routerHook } from "@decky/api";
 import { Router } from "@decky/ui";
 import { OfflineDetailsSession } from "./offline-details-session";
+import { offlineConfidenceForGame, offlineConfidenceBadge, offlineAccountScope } from "./offline-confidence-session";
 import { offlineReportBadge } from "./offline-badge-state";
 import { offlineBadgeImages } from "./offline-readiness-badge";
 import { offlineNativeSource } from "./offline-native-source";
@@ -8,10 +9,8 @@ import { attachOfflineTileBadge, exactTileElementAppId, OFFLINE_TILE_SELECTOR } 
 
 const classify = callable<[Record<string, number | boolean>], { schema_version?: unknown; status?: unknown; reason_codes?: unknown }>("classify_offline_details");
 const SETTLE_MS = 450;
-const CACHE_MS = 5 * 60 * 1000;
-const CACHE_LIMIT = 32;
 
-type CachedBadge = { at: number; asset: "offline-attention" | "offline-verify"; label: string };
+type CachedBadge = ReturnType<typeof offlineConfidenceBadge>;
 
 function libraryWindows(): Window[] {
   try {
@@ -24,7 +23,7 @@ function libraryWindows(): Window[] {
 
 /** Start once with the plugin, independently of Quick Access rendering. */
 export function startOfflineFocusChecks(): { stop(): void } {
-  const session = new OfflineDetailsSession(); const cache = new Map<number, CachedBadge>();
+  const session = new OfflineDetailsSession();
   let timer: ReturnType<typeof setTimeout> | undefined; let sequence = 0;
   let selectedTile: Element | null = null; let selectedId: number | null = null;
   let shown: ReturnType<typeof attachOfflineTileBadge> | undefined;
@@ -39,17 +38,19 @@ export function startOfflineFocusChecks(): { stop(): void } {
     if (!tile || !view || id === null) return;
     const source = offlineNativeSource(); const app = source?.store.GetAppOverviewByAppID(id);
     if (!source || !app || app.display_status === 4 || !Array.isArray(Router.RunningApps) || Router.RunningApps.length) return;
-    const valid = () => context(id, app, source) && tile.isConnected &&
+    const account = offlineAccountScope();
+    const displayStatus = app.display_status;
+    const valid = () => offlineAccountScope() === account && app.display_status === displayStatus && context(id, app, source) && tile.isConnected &&
       tile.ownerDocument.activeElement?.closest(OFFLINE_TILE_SELECTOR) === tile && exactTileElementAppId(tile) === id;
     const show = (badge: CachedBadge) => { shown?.stop(); shown = attachOfflineTileBadge(view, id, offlineBadgeImages[badge.asset], badge.label, valid, tile); };
-    const cached = cache.get(id); if (cached && Date.now() - cached.at < CACHE_MS && valid()) { show(cached); return; }
+    // Re-read on settled selection so positive confidence cannot reuse an old build report.
     const request = sequence; timer = setTimeout(async () => {
       try {
         if (request !== sequence || !valid()) return; const report = await session.request(id, source.subscribe, valid);
         if (!report || request !== sequence) return; const result = await classify(report.details);
-        if (!report.isValid() || request !== sequence || !valid()) return; const badge = offlineReportBadge(result); if (!badge) return;
-        const saved: CachedBadge = { ...badge, at: Date.now() }; cache.delete(id); cache.set(id, saved);
-        while (cache.size > CACHE_LIMIT) cache.delete(cache.keys().next().value!); show(saved);
+        if (!report.isValid() || request !== sequence || !valid()) return; if (!offlineReportBadge(result)) return;
+        const badge = offlineConfidenceBadge(offlineConfidenceForGame(report.preparation, source, id, result));
+        show(badge);
       } catch { /* Steam/Decky may disappear during a request; discard this result. */ }
     }, SETTLE_MS);
   };

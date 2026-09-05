@@ -10,7 +10,7 @@ export type SubscribeAppDetails = (
 
 /**
  * One private, explicitly requested game-detail subscription, never a poller.
- * No production caller: native source behavior and cost must be reviewed first.
+ * Used by the bounded selected-game check; see the offline source review.
  * Callback receipt time does not prove freshness. Caller must minimize fields
  * and discard on game/session changes; raw details must not enter public RPC.
  */

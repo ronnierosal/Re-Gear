@@ -1,3 +1,4 @@
+import { projectOfflinePreparation, type OfflinePreparation } from "./offline-confidence.ts";
 import { requestSteamAppDetails, type SubscribeAppDetails } from "./steam-app-details-request.ts";
 
 // Only fields consumed by the Python projector may cross the private reader seam.
@@ -16,7 +17,7 @@ export function minimizeOfflineDetails(value: unknown): Record<string, number | 
 }
 
 /** Private view lifetime; invalidate on selection, Steam session, or game-state changes.
- * No polling, persistence, or readiness classification. Not yet wired to the panel.
+ * No polling or persistence. Supplies minimized RPC fields and private preparation clues.
  */
 export class OfflineDetailsSession {
   private generation = 0;
@@ -33,7 +34,7 @@ export class OfflineDetailsSession {
     subscribe: SubscribeAppDetails,
     isCurrentAndIdle: () => boolean,
     now: () => number = () => performance.now(),
-  ): Promise<{ details: Record<string, number | boolean>; isValid(): boolean } | null> {
+  ): Promise<{ details: Record<string, number | boolean>; preparation: OfflinePreparation; isValid(): boolean } | null> {
     this.invalidate();
     const generation = this.generation;
     const controller = new AbortController();
@@ -57,7 +58,7 @@ export class OfflineDetailsSession {
       };
       if (!valid()) return null;
       const details = minimizeOfflineDetails(raw);
-      return details ? { details, isValid: valid } : null;
+      return details ? { details, preparation: projectOfflinePreparation(raw), isValid: valid } : null;
     } catch {
       return null;
     } finally {

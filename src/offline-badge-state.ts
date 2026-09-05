@@ -1,6 +1,6 @@
 import { sanitizeOfflineReasonCodes } from "./offline-readiness-detail.ts";
 
-export type OfflineBadge = { asset: "offline-attention" | "offline-verify"; label: string };
+export type OfflineBadge = { asset: "offline-attention" | "offline-verify" | "offline-ready"; label: string };
 
 /** Badges for the limited Steam-report source. It cannot certify offline launch. */
 export function offlineReportBadge(value: unknown): OfflineBadge | null {

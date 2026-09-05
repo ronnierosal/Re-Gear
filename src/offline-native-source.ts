@@ -1,6 +1,6 @@
 import type { SubscribeAppDetails } from "./steam-app-details-request.ts";
 
-type Overview = { appid: number; app_type: number; display_name: string; display_status: number; local_per_client_data?: { installed?: boolean } };
+type Overview = { appid: number; app_type: number; display_name: string; display_status: number; BHasStoreCategory?(category: number): boolean; local_per_client_data?: { installed?: boolean } };
 export type OfflineNativeSource = {
   store: { m_mapApps: { values(): IterableIterator<Overview> }; GetAppOverviewByAppID(id: number): Overview | null };
   subscribe: SubscribeAppDetails;
