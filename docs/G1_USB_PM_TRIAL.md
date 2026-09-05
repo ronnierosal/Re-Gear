@@ -70,7 +70,8 @@ devices, wrong drivers, counter/storage rejection, restored state, mutation
 failure, cancellation, replacement identity, active-state verification, and the
 non-mutating deadline alarm. Architecture and Python compilation checks pass.
 Fan/thermal control is outside this helper. The original revision has now been
-used in supervised trials; the longer-wait revision has not yet been run.
+used in supervised trials; the longer-wait revision was subsequently exercised
+with Re-Gear fixed at 0.3.50, as recorded below.
 
 ## Supervised results and next comparison
 
@@ -86,7 +87,59 @@ TV transition and four followed Portable return. The subsequent shutdown hung,
 despite complete Re-Gear cleanup; a hard-off and detached restart restored the
 Ally controller. The final kernel stall is still unproven.
 
-Next trial: retain the exact installed Re-Gear and patched Loader, use the
-600-second armed wait and explicitly select the existing 300-second hold. Test
-TV and Portable before hold expiry. Do not shut down while the helper is active;
-first verify restoration. Do not install another update during the trial.
+## Fixed 0.3.50 trial and failed shutdown — 2026-09-05
+
+Re-Gear 0.3.50 revision `e07bfb6e657ff3c30fc2f0fa3d84a94e87f869e9`
+remained unchanged during this trial. The patched Decky Loader remained installed.
+Helper revision `bd790a7` used a 600-second armed wait and 300-second hold.
+GPU enumeration took approximately 230 seconds after transport detection;
+TV switching succeeded at approximately 237 seconds. These are journal-derived
+intervals, not precisely measured cable-insertion timestamps.
+
+Both TV and Portable transitions completed while the controller was held awake.
+The player confirmed picture, audio and controls on both displays. The helper
+reported restoration to `auto`; subsequent reads showed the USB controller and
+bridge suspended. Monitored fatal/nonfatal counters stayed zero, including a
+check almost three minutes after restoration. This does NOT mean zero PCIe
+errors: retained kernel logs include correctable BadDLLP and BadTLP events.
+
+The subsequent ordinary attached shutdown FAILED and required forced power-off.
+Re-Gear logged `unload_complete elapsed_ms=2`, and Decky reported its plugin
+stopped in 0.1 seconds. The system manager (PID 1) progressed to filesystem
+unmounting and stopping persistent journal flushing. The user-manager shutdown
+target is not proof of system power-off. No final blocked-task stack or kernel
+power-off completion was captured. Absence of the earlier monitored recovery
+failures therefore does not establish a shutdown fix or a causal explanation.
+
+After full power-off and cable removal, the detached boot had working display
+and audio but failed controller input. InputPlumber logged source-device reads
+failing with "No such device". Those messages alone do not establish the cause.
+A subsequent normal detached restart restored controls, confirmed by the player.
+
+Local evidence (ignored `out/`, not public raw logs):
+- `usb-pm-fixed-050-final-check.txt`
+- `usb-pm-fixed-050-failed-shutdown-retained.log`
+- `usb-pm-fixed-050-shutdown-system-kernel-tail.log`
+- `usb-pm-fixed-050-controller-after-hardoff.log`
+- `usb-pm-fixed-050-restoration.jsonl`
+
+## Next diagnostic gate
+
+Do not repeat the same attached shutdown until late-stage capture is prepared.
+Read-only inspection found the active pstore backend is `ramoops`, the persistent
+archive directory is empty, and the pstore archival service is inactive. The
+pstore filesystem and ramoops parameters require root to inspect. This does not
+prove console retention is configured or that logs survive forced power-off.
+The available network interface is Wi-Fi; SSH already disappears before the
+unknown final shutdown stage and is insufficient as the only recorder.
+
+Next inspect existing pstore records and ramoops console capacity read-only with
+the player entering sudo locally. Preserve any existing records before making
+changes. Verify actual installed-kernel support before selecting a reversible
+capture configuration; do not blindly apply options from newer kernel docs.
+No boot parameters, pstore settings, services, drivers or device states were
+changed by this inspection. Keep the G1 detached and software frozen meanwhile.
+
+Reference: [Linux shutdown debugging with pstore](https://cdn.kernel.org/doc/html/latest/power/shutdown-debugging.html).
+Persistent console capture is a diagnostic possibility, not a validated solution
+on this Ally. No live-removal support or GPU unbind/reset was tested or added.
