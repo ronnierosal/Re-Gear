@@ -1,5 +1,19 @@
 # Current state
 
+## Combined badge restoration staged - 2026-09-04
+
+Installed 0.3.33 revision 263dc089 retained confidence/branding but omitted
+narrow-cover sizing and neutral expiry fixes. Candidate 0.3.34-offline.1
+revision 1ab3b2f starts from that installed revision and restores those exact
+source/test changes, preserving the Re-Gear Quick Access rename.
+Staged: /home/deck/Re-Gear-0.3.34-offline.1.zip. Local/remote SHA-256:
+98CCA0F609101F021C53E94E9CA41655D387A7182F8BD9C818E1D7EF3944EF0F.
+955 backend tests (six skipped), 149 frontend tests, architecture, compilation,
+TypeScript, build, package/provenance and diff checks passed. No installation
+or restart. No existing ZIP overwritten. Native visual acceptance pending.
+Use branch fix/combined-badges-0.3.34 as the integration reference for these
+fixes; taking only the older offline confidence commit loses them.
+
 ## Re-Gear 0.3.31 live connection progress candidate
 
 Adds a dismissible live readiness popup and persistent View progress control.
