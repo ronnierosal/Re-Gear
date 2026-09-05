@@ -1,5 +1,19 @@
 # Current state
 
+## Independent Auto TDP checkpoint — 2026-09-05
+
+The isolated TDP branch now persists explicit per-mode FPS/watt preferences through
+strict private storage, two RPCs and an expandable editor. Saving never activates
+power control; unsupported modes remain unavailable. The Auto policy holds after
+two ineffective verified increases, requires sustained changed FPS before reassessing,
+and preserves response evidence across only verified frame rewarming. Pause/recovery
+replays and UI explanations cover unavailable game/render/ownership/power evidence.
+1,150 backend tests pass (15 platform skips), 99 frontend tests pass, and architecture,
+compileall, typecheck, build and package checks pass. Rendered preference-editor
+validation could not run because no browser provider is available. No device action
+or release. See [independent work plan](AUTO_TDP_INDEPENDENT_PLAN.md) for all five
+requested items, integration preparation and remaining device/UI gates.
+
 ## TDP workstream development checkpoint — 2026-09-04
 
 The isolated `codex/tdp-control` workstream starts from `75f441f`. It contains

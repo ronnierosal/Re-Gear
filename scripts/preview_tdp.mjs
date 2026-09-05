@@ -8,7 +8,8 @@ const compile = (file) => ts.transpileModule(readFileSync(new URL(`../src/${file
   compilerOptions: { jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
 }).outputText.replaceAll('"./backend"', '"./fixture.js"').replaceAll('"./tdp-ui"', '"./tdp-ui.js"')
   .replaceAll('"./auto-tdp-ui"', '"./auto-tdp-ui.js"').replaceAll('"./auto-tdp-controls"', '"./auto-tdp-controls.js"')
-  .replaceAll('"./tdp-benchmark-controls"', '"./tdp-benchmark-controls.js"').replaceAll('"./tdp-benchmark-ui"', '"./tdp-benchmark-ui.js"');
+  .replaceAll('"./tdp-benchmark-controls"', '"./tdp-benchmark-controls.js"').replaceAll('"./tdp-benchmark-ui"', '"./tdp-benchmark-ui.js"')
+  .replaceAll('"./auto-tdp-preferences-controls"', '"./auto-tdp-preferences-controls.js"').replaceAll('"./auto-tdp-preferences-ui"', '"./auto-tdp-preferences-ui.js"');
 const files = new Map([
   ["/tdp-controls.js", compile("tdp-controls.tsx")],
   ["/tdp-ui.js", compile("tdp-ui.ts")],
@@ -16,11 +17,16 @@ const files = new Map([
   ["/auto-tdp-ui.js", compile("auto-tdp-ui.ts")],
   ["/tdp-benchmark-controls.js", compile("tdp-benchmark-controls.tsx")],
   ["/tdp-benchmark-ui.js", compile("tdp-benchmark-ui.ts")],
+  ["/auto-tdp-preferences-controls.js", compile("auto-tdp-preferences-controls.tsx")],
+  ["/auto-tdp-preferences-ui.js", compile("auto-tdp-preferences-ui.ts")],
   ["/fixture.js", `
 let state = {schema_version:1,enabled:false,can_enable:true,ready:false,code:'tdp.disabled',current_watts:15,minimum_watts:7,maximum_watts:30,restore_available:false,recovery_required:false,last_result:null,auto_tdp_available:true};
 let scenario='ready', generation=0;
 let auto={schema_version:1,can_start:false,enabled:false,running:false,stopping:false,code:'tdp.disabled',activity_code:null,target_fps:null,minimum_watts:null,maximum_watts:null};
 export const setScenario=(value)=>{scenario=value;};
+const preferences=new Map();
+export const getAutoTdpPreferences=async()=>({schema_version:1,code:'auto_tdp_preferences.loaded',preferences:[...preferences.values()]});
+export const saveAutoTdpPreference=async(placement,target_fps,minimum_watts,maximum_watts)=>{preferences.set(placement,{placement,target_fps,minimum_watts,maximum_watts});return {...await getAutoTdpPreferences(),code:'auto_tdp_preferences.saved'};};
 let benchmark={schema_version:1,running:false,cancelling:false,code:'auto_tdp.benchmark_idle',result:null};
 let benchmarkGeneration=0;
 export const getTdpBenchmarkStatus=async()=>scenario==='malformed'?{}:{...benchmark};
