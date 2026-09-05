@@ -1,4 +1,5 @@
-import { connectionLiveStatus, createLiveStatusStore } from "./connection-live-status";
+import { connectionLiveStatus } from "./connection-live-status";
+import { startConnectionMonitor } from "./connection-monitor";
 import { showConnectionLivePanel } from "./connection-live-panel";
 import { PRODUCT_NAME } from "./branding";
 import { startControllerSafeDisconnect, steamControllerInput } from "./controller-safe-disconnect";
@@ -493,7 +494,7 @@ function preflightObservation(payload: SnapshotPayload): PreflightObservation {
   }, Date.now(), SNAPSHOT_STALE_AFTER_MS);
 }
 
-function Content({ preflight }: { preflight: SleepPreflightCoordinator }) {
+function Content({ preflight, connection }: { preflight: SleepPreflightCoordinator; connection: ReturnType<typeof startConnectionMonitor> }) {
   const quickAccessVisible = useQuickAccessVisible();
   const statusAnchor = useRef<HTMLDivElement | null>(null);
   const statusFocusAnchor = useRef<HTMLDivElement | null>(null);
@@ -551,9 +552,6 @@ function Content({ preflight }: { preflight: SleepPreflightCoordinator }) {
   const safeDisconnectModal = useRef<ReturnType<typeof showModal> | null>(null);
   const safeDisconnectExecuting = useRef(false);
   const tvSwitchExecuting = useRef(false);
-  const liveConnectionStore = useRef(createLiveStatusStore());
-  const liveConnectionModal = useRef<ReturnType<typeof showModal> | null>(null);
-  const connectionPopupSeen = useRef(false);
   const [controllerShortcutAvailable, setControllerShortcutAvailable] = useState(false);
   const processModal = useRef<ReturnType<typeof showModal> | null>(null);
   const diagnosticLoggingModal = useRef<ReturnType<typeof showModal> | null>(null);
@@ -775,7 +773,7 @@ function Content({ preflight }: { preflight: SleepPreflightCoordinator }) {
       if (!disposed) {
         timer = window.setTimeout(
           () => void poll(true),
-          refreshDelayForVisibility(nextPayload, quickAccessVisible || liveConnectionModal.current !== null),
+          refreshDelayForVisibility(nextPayload, quickAccessVisible),
         );
       }
     };
@@ -1096,31 +1094,8 @@ function Content({ preflight }: { preflight: SleepPreflightCoordinator }) {
   }, []);
 
   const openConnectionProgress = useCallback(() => {
-    if (liveConnectionModal.current) return;
-    liveConnectionModal.current = showConnectionLivePanel(liveConnectionStore.current,
-      () => void executeTvSwitch(), () => { liveConnectionModal.current = null; });
-  }, [executeTvSwitch]);
-
-  useEffect(() => {
-    const status = connectionLiveStatus(payload, automaticDockStatus, journalStatus?.code, !!error);
-    liveConnectionStore.current.set(status);
-    if (!payload || error) return;
-    if (!status.connected) {
-      connectionPopupSeen.current = false;
-      liveConnectionModal.current?.Close();
-      liveConnectionModal.current = null;
-    } else if (!connectionPopupSeen.current) {
-      connectionPopupSeen.current = true;
-      // Avoid surprising an already docked session or covering a running game.
-      if (payload.inference.mode !== "docked_egpu" && payload.snapshot.game_state === "idle"
-        && !safeDisconnectModal.current) openConnectionProgress();
-    }
-  }, [payload, automaticDockStatus, journalStatus?.code, error, openConnectionProgress]);
-
-  useEffect(() => () => {
-    liveConnectionModal.current?.Close();
-    liveConnectionModal.current = null;
-  }, []);
+    connection.open(() => void executeTvSwitch());
+  }, [connection, executeTvSwitch]);
 
   const changeAutomaticDock = useCallback(async (enabled: boolean) => {
     setAutomaticDockBusy(true);
@@ -1957,11 +1932,20 @@ export default definePlugin(() => {
   );
   preflight.start();
   const offlineFocusChecks = startOfflineFocusChecks();
+  const connection = startConnectionMonitor({
+    read: async () => {
+      const [payload, automatic, journal] = await Promise.all([
+        getSnapshot(), getAutomaticDockStatus(), getTransitionJournalStatus(),
+      ]);
+      return {payload, automatic, journal: journal.code};
+    },
+    show: (store, switchTv, closed) => showConnectionLivePanel(store, switchTv, closed),
+  });
 
   return {
     name: PRODUCT_NAME,
     titleView: <div className={staticClasses.Title} style={{ display: "flex", alignItems: "center", gap: 8 }}><BrandIcon size={36} />{PRODUCT_NAME}</div>,
-    content: <Content preflight={preflight} />,
+    content: <Content preflight={preflight} connection={connection} />,
     icon: <BrandIcon />,
     alwaysRender: true,
     onDismount() {
@@ -1971,6 +1955,7 @@ export default definePlugin(() => {
       }
       warningModal?.Close();
       warningModal = null;
+      connection.stop();
       offlineFocusChecks.stop();
       preflight.stop();
     },

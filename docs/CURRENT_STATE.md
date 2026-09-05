@@ -15,6 +15,15 @@ Installed before staging: 0.3.36-offline.1 revision 24b39befb0de.
 No installation or restart. New filename verified absent before transfer;
 other workstream archives preserved. Player visual confirmation still pending.
 
+## Re-Gear 0.3.38-popup.1 candidate
+
+Combines the committed 0.3.37 offline badge lineage with plugin-owned
+connection progress monitoring. Fresh disconnected-to-connected observations
+open one popup without opening Quick Access; initial attached state does not.
+One-second serialized status refresh updates the checklist. Automatic popups
+show one Hide action; manual View progress retains guarded TV switching.
+No backend transition behavior changed. Native popup timing remains unverified.
+
 ## Steam-reference icon sizing - 2026-09-04
 
 0.3.36-offline.1 revision 24b39be uses a bounded same-tile native lower-right

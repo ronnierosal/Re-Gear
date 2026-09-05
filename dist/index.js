@@ -23,14 +23,64 @@ function createLiveStatusStore() {
             listener(); }, subscribe(listener) { listeners.add(listener); return () => { listeners.delete(listener); }; } };
 }
 
+// Owned by the plugin, never by the Quick Access content mount. The first
+// successful sample establishes a baseline; an already attached GPU is not
+// a new physical connection. Missing/stale reads cannot rearm the popup.
+function startConnectionMonitor(deps) {
+    const store = createLiveStatusStore();
+    const schedule = deps.schedule ?? setTimeout;
+    const cancel = deps.cancel ?? clearTimeout;
+    let previous;
+    let stopped = false;
+    let timer;
+    let modal = null;
+    const close = () => { modal?.Close(); modal = null; };
+    const open = (switchTv) => {
+        if (!stopped && !modal)
+            modal = deps.show(store, switchTv, () => { modal = null; });
+    };
+    const poll = async () => {
+        try {
+            const { payload, automatic, journal } = await deps.read();
+            if (stopped)
+                return;
+            const status = connectionLiveStatus(payload, automatic, journal);
+            store.set(status);
+            const age = Date.now() - Date.parse(payload.snapshot.observed_at);
+            if (payload.connection_readiness && Number.isFinite(age) && age >= -5e3 && age < 15000) {
+                const attached = status.connected;
+                const newConnection = previous === false && attached;
+                previous = attached;
+                if (!attached)
+                    close();
+                else if (newConnection && payload.snapshot.game_state === "idle"
+                    && payload.inference.mode !== "docked_egpu")
+                    open();
+            }
+        }
+        catch {
+            if (!stopped)
+                store.set({ ...store.get(), expiresAt: 0, canSwitch: false });
+        }
+        finally {
+            // One in-flight read, no overlapping polling or new hardware mutation.
+            if (!stopped)
+                timer = schedule(() => void poll(), 1000);
+        }
+    };
+    void poll();
+    return { open, stop() { stopped = true; if (timer !== undefined)
+            cancel(timer); close(); } };
+}
+
 function LivePanel({ store, close, switchTv }) {
     const source = SP_REACT.useSyncExternalStore(store.subscribe, store.get);
     const [, tick] = SP_REACT.useReducer((value) => value + 1, 0);
     SP_REACT.useEffect(() => { const timer = setInterval(tick, 1000); return () => clearInterval(timer); }, []);
     const status = Date.now() < source.expiresAt ? source : { ...source, canSwitch: false,
         title: "Waiting for a fresh status update", rows: source.rows.map(row => ({ ...row, state: "waiting" })) };
-    return SP_JSX.jsx(DFL.ConfirmModal, { strTitle: "G1 connection progress", strOKButtonText: status.canSwitch ? "Switch to TV" : "Hide", strCancelButtonText: "Hide", bDisableBackgroundDismiss: true, bHideCloseIcon: true, onOK: () => { const latest = store.get(); const ready = latest.canSwitch && Date.now() < latest.expiresAt; close(); if (ready)
-            switchTv(); }, onCancel: close, children: SP_JSX.jsxs("div", { "aria-live": "polite", style: { fontSize: 14, lineHeight: "20px" }, children: [SP_JSX.jsx("p", { children: status.title }), SP_JSX.jsxs("p", { children: ["Connection check: ", status.seconds, " seconds"] }), status.rows.map(row => SP_JSX.jsxs("div", { style: { display: "flex", justifyContent: "space-between", gap: 12, padding: "5px 0" }, children: [SP_JSX.jsx("span", { children: row.label }), SP_JSX.jsx("strong", { style: { color: row.state === "ready" ? "#78df9c" : row.state === "blocked" ? "#ff8d8d" : "#ffd574" }, children: row.state === "ready" ? "✓ Ready" : row.state === "blocked" ? "! Needs attention" : "… Waiting" })] }, row.label)), SP_JSX.jsx("p", { children: "Keep the G1 connected. You can hide this window and check progress in Re-Gear." })] }) });
+    return SP_JSX.jsx(DFL.ConfirmModal, { strTitle: "G1 connection progress", strOKButtonText: status.canSwitch && switchTv ? "Switch to TV" : "Hide", strCancelButtonText: "Hide", bAlertDialog: !status.canSwitch || !switchTv, bDisableBackgroundDismiss: true, bHideCloseIcon: true, onOK: () => { const latest = store.get(); const ready = latest.canSwitch && Date.now() < latest.expiresAt; close(); if (ready)
+            switchTv?.(); }, onCancel: close, children: SP_JSX.jsxs("div", { "aria-live": "polite", style: { fontSize: 14, lineHeight: "20px" }, children: [SP_JSX.jsx("p", { children: status.title }), SP_JSX.jsxs("p", { children: ["Connection check: ", status.seconds, " seconds"] }), status.rows.map(row => SP_JSX.jsxs("div", { style: { display: "flex", justifyContent: "space-between", gap: 12, padding: "5px 0" }, children: [SP_JSX.jsx("span", { children: row.label }), SP_JSX.jsx("strong", { style: { color: row.state === "ready" ? "#78df9c" : row.state === "blocked" ? "#ff8d8d" : "#ffd574" }, children: row.state === "ready" ? "✓ Ready" : row.state === "blocked" ? "! Needs attention" : "… Waiting" })] }, row.label)), SP_JSX.jsx("p", { children: "Keep the G1 connected. You can hide this window and check progress in Re-Gear." })] }) });
 }
 function showConnectionLivePanel(store, switchTv, onClose) {
     let modal;
@@ -634,7 +684,7 @@ function offlineNativeSource() {
     return { store, subscribe: apps.RegisterForAppDetails.bind(apps) };
 }
 
-/** Match the supplied SVG's 80/128 status-circle ratio to Steam's symbol. */
+/** Compact gear matches the native symbol height, capped at 24 CSS pixels. */
 function offlineBadgeLayout(host, clientWidth, clientHeight, icon, group = icon) {
     const values = [host.left, host.top, host.width, host.height, clientWidth, clientHeight, icon.left, icon.top, icon.width, icon.height, group.left, group.top, group.width, group.height];
     if (!values.every(Number.isFinite) || Math.min(host.width, host.height, clientWidth, clientHeight, icon.width, icon.height, group.width, group.height) <= 0)
@@ -2308,7 +2358,7 @@ function preflightObservation(payload) {
         gameUsesEgpu: snapshot.disconnect_readiness.clients.some((client) => client.kind === "game"),
     }, Date.now(), SNAPSHOT_STALE_AFTER_MS);
 }
-function Content({ preflight }) {
+function Content({ preflight, connection }) {
     const quickAccessVisible = useQuickAccessVisible();
     const statusAnchor = SP_REACT.useRef(null);
     const statusFocusAnchor = SP_REACT.useRef(null);
@@ -2362,9 +2412,6 @@ function Content({ preflight }) {
     const safeDisconnectModal = SP_REACT.useRef(null);
     const safeDisconnectExecuting = SP_REACT.useRef(false);
     const tvSwitchExecuting = SP_REACT.useRef(false);
-    const liveConnectionStore = SP_REACT.useRef(createLiveStatusStore());
-    const liveConnectionModal = SP_REACT.useRef(null);
-    const connectionPopupSeen = SP_REACT.useRef(false);
     const [controllerShortcutAvailable, setControllerShortcutAvailable] = SP_REACT.useState(false);
     const processModal = SP_REACT.useRef(null);
     const diagnosticLoggingModal = SP_REACT.useRef(null);
@@ -2558,7 +2605,7 @@ function Content({ preflight }) {
             }
             const nextPayload = await refresh(quiet);
             if (!disposed) {
-                timer = window.setTimeout(() => void poll(true), refreshDelayForVisibility(nextPayload, quickAccessVisible || liveConnectionModal.current !== null));
+                timer = window.setTimeout(() => void poll(true), refreshDelayForVisibility(nextPayload, quickAccessVisible));
             }
         };
         void poll(false);
@@ -2845,32 +2892,8 @@ function Content({ preflight }) {
         }
     }, []);
     const openConnectionProgress = SP_REACT.useCallback(() => {
-        if (liveConnectionModal.current)
-            return;
-        liveConnectionModal.current = showConnectionLivePanel(liveConnectionStore.current, () => void executeTvSwitch(), () => { liveConnectionModal.current = null; });
-    }, [executeTvSwitch]);
-    SP_REACT.useEffect(() => {
-        const status = connectionLiveStatus(payload, automaticDockStatus, journalStatus?.code, !!error);
-        liveConnectionStore.current.set(status);
-        if (!payload || error)
-            return;
-        if (!status.connected) {
-            connectionPopupSeen.current = false;
-            liveConnectionModal.current?.Close();
-            liveConnectionModal.current = null;
-        }
-        else if (!connectionPopupSeen.current) {
-            connectionPopupSeen.current = true;
-            // Avoid surprising an already docked session or covering a running game.
-            if (payload.inference.mode !== "docked_egpu" && payload.snapshot.game_state === "idle"
-                && !safeDisconnectModal.current)
-                openConnectionProgress();
-        }
-    }, [payload, automaticDockStatus, journalStatus?.code, error, openConnectionProgress]);
-    SP_REACT.useEffect(() => () => {
-        liveConnectionModal.current?.Close();
-        liveConnectionModal.current = null;
-    }, []);
+        connection.open(() => void executeTvSwitch());
+    }, [connection, executeTvSwitch]);
     const changeAutomaticDock = SP_REACT.useCallback(async (enabled) => {
         setAutomaticDockBusy(true);
         setAutomaticDockMessage("");
@@ -3278,10 +3301,19 @@ var index = definePlugin(() => {
     });
     preflight.start();
     const offlineFocusChecks = startOfflineFocusChecks();
+    const connection = startConnectionMonitor({
+        read: async () => {
+            const [payload, automatic, journal] = await Promise.all([
+                getSnapshot(), getAutomaticDockStatus(), getTransitionJournalStatus(),
+            ]);
+            return { payload, automatic, journal: journal.code };
+        },
+        show: (store, switchTv, closed) => showConnectionLivePanel(store, switchTv, closed),
+    });
     return {
         name: PRODUCT_NAME,
         titleView: SP_JSX.jsxs("div", { className: DFL.staticClasses.Title, style: { display: "flex", alignItems: "center", gap: 8 }, children: [SP_JSX.jsx(BrandIcon, { size: 36 }), PRODUCT_NAME] }),
-        content: SP_JSX.jsx(Content, { preflight: preflight }),
+        content: SP_JSX.jsx(Content, { preflight: preflight, connection: connection }),
         icon: SP_JSX.jsx(BrandIcon, {}),
         alwaysRender: true,
         onDismount() {
@@ -3291,6 +3323,7 @@ var index = definePlugin(() => {
             }
             warningModal?.Close();
             warningModal = null;
+            connection.stop();
             offlineFocusChecks.stop();
             preflight.stop();
         },
