@@ -3,6 +3,12 @@
 
 ## Re-Gear 0.3.40 UI candidate
 
+Staged 2026-09-05: `/home/deck/Re-Gear-0.3.40.zip`, revision
+`c262a2d2b3b427e254623cbe83177750b19ba04c`. Local and final remote SHA-256:
+`5a119ed4af0765bcc852f8a3d065d505dd778f9a1cfdf62a31ae5fb5160b51d8`.
+956 backend tests passed (six skipped), 159 frontend tests passed; typecheck,
+architecture, compilation, build, package and diff checks passed. Not installed.
+
 Unifies the quick menu and animated connection popup, adds five compact live
 readiness checks, and a read-only Disconnect status dialog. No live-release
 RPC is wired: Ally audio, GPU release and final unplug verification explicitly
