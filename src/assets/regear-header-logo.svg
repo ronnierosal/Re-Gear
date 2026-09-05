@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="160" viewBox="0 0 640 160" fill="none">
+  <defs>
+    <linearGradient id="g" x1="20" y1="20" x2="140" y2="140" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#35E6FF"/>
+      <stop offset="1" stop-color="#0A8CFF"/>
+    </linearGradient>
+    <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="4" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <g transform="translate(8 8)" filter="url(#glow)">
+    <path d="M72 8 125 39v61l-53 31-53-31V39L72 8Z" stroke="url(#g)" stroke-width="8" stroke-linejoin="round" stroke-dasharray="42 10"/>
+    <path d="M43 42h35c22 0 34 11 34 28 0 13-7 22-20 26l23 30H91L71 99H59v27H39V42h4Zm16 18v22h20c8 0 13-4 13-11s-5-11-13-11H59Z" fill="url(#g)"/>
+  </g>
+  <text x="160" y="101" fill="#FFFFFF" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="68" font-weight="700" letter-spacing="-1">Re-Gear</text>
+</svg>
