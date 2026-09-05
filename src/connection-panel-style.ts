@@ -1,4 +1,5 @@
 export const connectionPanelCss = `
+.rg-connection-modal.rg-connection-compact { padding:8px !important; min-width:0 !important; width:min(496px,calc(100vw - 24px)) !important; }
 .rg-connection-modal { background: linear-gradient(145deg,#18212c,#10171f) !important; border:1px solid #394653; border-radius:14px; box-sizing:border-box; max-width:calc(100vw - 32px); max-height:calc(100vh - 32px); overflow-y:auto; }
 .rg-connection { color:#edf3f8; font-size:16px; line-height:1.4; min-width:0; width:100%; max-width:520px; }
 .rg-connection-subtitle { color:#b5c3d2; margin:0 0 18px; }

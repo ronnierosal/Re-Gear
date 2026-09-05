@@ -27,7 +27,7 @@ function LivePanel({store, close, switchTv}: {store: Store; close(): void; switc
     const latest = store.get();
     if (latest.canSwitch && Date.now() < latest.expiresAt) { close(); switchTv(); }
   } : undefined;
-  return <ModalRoot className="rg-connection-modal" onCancel={close} closeModal={close}
+  return <ModalRoot className="rg-connection-modal rg-connection-compact" onCancel={close} closeModal={close}
     bDisableBackgroundDismiss={true} bHideCloseIcon={true}>
     <style>{connectionPanelCss}</style>
     <ConnectionProgressOverlay {...connectionProgressViewModel(source)} onHide={close} onSwitch={switchAction} />

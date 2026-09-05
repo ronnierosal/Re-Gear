@@ -86,6 +86,7 @@ function disconnectProgress(payload, failed = false, now = Date.now()) {
 }
 
 const connectionPanelCss = `
+.rg-connection-modal.rg-connection-compact { padding:8px !important; min-width:0 !important; width:min(496px,calc(100vw - 24px)) !important; }
 .rg-connection-modal { background: linear-gradient(145deg,#18212c,#10171f) !important; border:1px solid #394653; border-radius:14px; box-sizing:border-box; max-width:calc(100vw - 32px); max-height:calc(100vh - 32px); overflow-y:auto; }
 .rg-connection { color:#edf3f8; font-size:16px; line-height:1.4; min-width:0; width:100%; max-width:520px; }
 .rg-connection-subtitle { color:#b5c3d2; margin:0 0 18px; }
@@ -334,20 +335,20 @@ const stateColor = {
 function StatusGlyph({ state }) {
     if (state === "ready") {
         return SP_JSX.jsx("span", { "aria-hidden": "true", style: {
-                width: 23, height: 23, borderRadius: 999, border: `2px solid ${C$1.green}`,
-                display: "grid", placeItems: "center", color: C$1.green, fontWeight: 900, fontSize: 14,
+                width: 16, height: 16, borderRadius: 999, border: `2px solid ${C$1.green}`,
+                display: "grid", placeItems: "center", color: C$1.green, fontWeight: 900, fontSize: 13,
                 boxShadow: `0 0 12px ${C$1.green}18`, boxSizing: "border-box",
             }, children: "\u2713" });
     }
     if (state === "blocked" || state === "error") {
         return SP_JSX.jsx("span", { "aria-hidden": "true", style: {
-                width: 23, height: 23, borderRadius: 999, border: `2px solid ${stateColor[state]}`,
-                display: "grid", placeItems: "center", color: stateColor[state], fontWeight: 900, fontSize: 14,
+                width: 16, height: 16, borderRadius: 999, border: `2px solid ${stateColor[state]}`,
+                display: "grid", placeItems: "center", color: stateColor[state], fontWeight: 900, fontSize: 13,
                 boxSizing: "border-box",
             }, children: "!" });
     }
     return SP_JSX.jsx("span", { "aria-hidden": "true", className: state === "checking" || state === "switching" ? "regear-progress-spinner" : undefined, style: {
-            width: 22, height: 22, borderRadius: 999, border: "3px solid rgba(255,255,255,.16)",
+            width: 16, height: 16, borderRadius: 999, border: "3px solid rgba(255,255,255,.16)",
             borderTopColor: stateColor[state], boxSizing: "border-box", flexShrink: 0,
         } });
 }
@@ -361,10 +362,10 @@ function ConnectionProgressOverlay(props) {
     const activeIndex = phaseIndex(props.phase);
     const elapsed = props.elapsedSeconds != null ? ` · ${props.elapsedSeconds} seconds` : "";
     return SP_JSX.jsxs("div", { style: {
-            width: "100%", maxWidth: 620, minWidth: 0, boxSizing: "border-box", padding: 14,
+            width: "100%", maxWidth: 480, minWidth: 0, boxSizing: "border-box", padding: 8,
             borderRadius: 22, background: `linear-gradient(180deg, ${C$1.bg} 0%, #071322 100%)`,
             border: `1px solid ${C$1.borderStrong}`, boxShadow: "0 26px 90px rgba(0,0,0,.58)",
-            color: C$1.text, fontFamily: "Motiva Sans, Inter, system-ui, sans-serif",
+            lineHeight: 1.2, color: C$1.text, fontFamily: "Motiva Sans, Inter, system-ui, sans-serif",
         }, children: [SP_JSX.jsx("style", { children: `
       @keyframes regear-spin { to { transform: rotate(360deg); } }
       @keyframes regear-sweep { 0% { opacity:.35; transform:scaleX(.35); transform-origin:left; } 50% { opacity:1; transform:scaleX(.78); transform-origin:left; } 100% { opacity:.35; transform:scaleX(.35); transform-origin:right; } }
@@ -372,21 +373,21 @@ function ConnectionProgressOverlay(props) {
       .regear-progress-sweep { animation: regear-sweep 1.25s ease-in-out infinite; }
       .regear-hide-button:focus { outline: 3px solid rgba(57,216,255,.42); outline-offset: 3px; }
       @media (prefers-reduced-motion: reduce) { .regear-progress-spinner, .regear-progress-sweep { animation: none; } }
-    ` }), SP_JSX.jsxs("div", { style: { display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 3, minWidth: 0 }, children: [SP_JSX.jsx("img", { src: brandIcon, alt: "", "aria-hidden": "true", width: 28, height: 28, style: { objectFit: "contain", flexShrink: 0 } }), SP_JSX.jsx("div", { style: { fontSize: 20, fontWeight: 820, letterSpacing: "-.02em" }, children: "Re-Gear" }), SP_JSX.jsx("div", { style: { color: C$1.muted, fontSize: 14, margin: "0 2px" }, children: "/" }), SP_JSX.jsx("div", { style: { fontSize: 14, fontWeight: 620 }, children: "Connection progress" })] }), SP_JSX.jsx("div", { style: { color: C$1.muted, fontSize: 13, margin: "0 0 10px 42px" }, children: "Live feedback from plug-in to TV" }), SP_JSX.jsx("div", { style: { display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 18, marginBottom: 10 }, children: ["Connecting", "Switching", "Ready"].map((name, i) => {
+    ` }), SP_JSX.jsxs("div", { style: { display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 3, minWidth: 0 }, children: [SP_JSX.jsx("img", { src: brandIcon, alt: "", "aria-hidden": "true", width: 22, height: 22, style: { objectFit: "contain", flexShrink: 0 } }), SP_JSX.jsx("div", { style: { fontSize: 17, fontWeight: 820, letterSpacing: "-.02em" }, children: "Re-Gear" }), SP_JSX.jsx("div", { style: { color: C$1.muted, fontSize: 13, margin: "0 2px" }, children: "/" }), SP_JSX.jsx("div", { style: { fontSize: 13, fontWeight: 620 }, children: "Connection progress" })] }), SP_JSX.jsx("div", { style: { display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8, marginTop: 6, marginBottom: 6 }, children: ["Connecting", "Switching", "Ready"].map((name, i) => {
                     const active = i === activeIndex;
                     const complete = i < activeIndex;
-                    return SP_JSX.jsxs("div", { children: [SP_JSX.jsxs("div", { style: { display: "flex", alignItems: "baseline", gap: 10, color: active ? C$1.text : C$1.muted, marginBottom: 10 }, children: [SP_JSX.jsxs("span", { style: { color: complete || active ? C$1.cyan : C$1.muted, fontWeight: 820, fontSize: 14 }, children: ["0", i + 1] }), SP_JSX.jsx("span", { style: { fontWeight: active ? 780 : 600, fontSize: 14 }, children: name })] }), SP_JSX.jsx("div", { style: { height: 4, borderRadius: 999, background: "rgba(105,130,155,.28)", overflow: "hidden" }, children: (complete || active) && SP_JSX.jsx("div", { className: active && props.phase === "switching" ? "regear-progress-sweep" : undefined, style: { width: "100%", height: "100%", borderRadius: 999, background: C$1.cyan, boxShadow: `0 0 12px ${C$1.cyan}66` } }) })] }, name);
+                    return SP_JSX.jsxs("div", { children: [SP_JSX.jsxs("div", { style: { display: "flex", alignItems: "baseline", gap: 4, color: active ? C$1.text : C$1.muted, marginBottom: 4 }, children: [SP_JSX.jsxs("span", { style: { color: complete || active ? C$1.cyan : C$1.muted, fontWeight: 820, fontSize: 13 }, children: ["0", i + 1] }), SP_JSX.jsx("span", { style: { fontWeight: active ? 780 : 600, fontSize: 13 }, children: name })] }), SP_JSX.jsx("div", { style: { height: 4, borderRadius: 999, background: "rgba(105,130,155,.28)", overflow: "hidden" }, children: (complete || active) && SP_JSX.jsx("div", { className: active && props.phase === "switching" ? "regear-progress-sweep" : undefined, style: { width: "100%", height: "100%", borderRadius: 999, background: C$1.cyan, boxShadow: `0 0 12px ${C$1.cyan}66` } }) })] }, name);
                 }) }), SP_JSX.jsxs("div", { style: {
                     border: `1px solid ${C$1.border}`, borderRadius: 18,
-                    background: `linear-gradient(180deg, ${C$1.panel} 0%, ${C$1.panel2} 100%)`, padding: "12px",
-                }, children: [SP_JSX.jsx("div", { style: { fontSize: 20, fontWeight: 830, letterSpacing: "-.02em", marginBottom: 4 }, children: headline(props.phase) }), SP_JSX.jsxs("div", { style: { color: C$1.muted, fontSize: 14, marginBottom: 8 }, children: [props.deviceLabel, elapsed] }), props.phase === "ready" && SP_JSX.jsx("div", { style: { display: "grid", placeItems: "center", margin: "2px 0 18px" }, children: SP_JSX.jsx("div", { style: { width: 88, height: 88, borderRadius: 999, border: `4px solid ${C$1.green}`, color: C$1.green, display: "grid", placeItems: "center", fontSize: 52, fontWeight: 500, boxShadow: `0 0 28px ${C$1.green}18` }, children: "\u2713" }) }), SP_JSX.jsx("div", { style: { border: `1px solid ${C$1.border}`, borderRadius: 14, overflow: "hidden", background: C$1.row }, children: props.rows.map((row, index) => SP_JSX.jsxs("div", { style: {
-                                minHeight: 27, padding: "4px 8px", display: "grid", gridTemplateColumns: row.icon ? "24px minmax(0,1fr) auto" : "minmax(0,1fr) auto",
-                                alignItems: "center", gap: 10, borderBottom: index === props.rows.length - 1 ? "none" : `1px solid ${C$1.border}`,
-                            }, children: [row.icon && SP_JSX.jsx("div", { style: { color: C$1.text, opacity: .95 }, children: row.icon }), SP_JSX.jsx("div", { style: { fontSize: 14, minWidth: 0, overflowWrap: "anywhere" }, children: row.label }), SP_JSX.jsxs("div", { style: { display: "flex", alignItems: "center", gap: 10, color: stateColor[row.state], fontWeight: 700, fontSize: 13, whiteSpace: "nowrap" }, children: [SP_JSX.jsx(StatusGlyph, { state: row.state }), SP_JSX.jsx("span", { children: row.stateLabel ?? (row.state === "ready" ? "Ready" : row.state === "checking" ? "Checking" : row.state === "switching" ? "Switching" : row.state === "pending" ? "Next" : row.state === "blocked" ? "Blocked" : "Error") })] })] }, row.key)) }), props.detail && SP_JSX.jsx("div", { style: { marginTop: 15, color: C$1.muted, fontSize: 13 }, children: props.detail }), props.keepConnectedMessage && SP_JSX.jsx("div", { style: { marginTop: 6, color: C$1.muted, fontSize: 14 }, children: props.keepConnectedMessage }), SP_JSX.jsx(DFL.DialogButton, { className: "rg-dashboard-action regear-hide-button", onClick: props.onHide, style: {
-                            marginTop: 10, width: "100%", minHeight: 36, borderRadius: 12,
-                            border: `2px solid ${C$1.cyan}`, background: "rgba(5,16,28,.74)", color: C$1.text,
-                            fontSize: 20, fontWeight: 720, cursor: "pointer", boxShadow: `inset 0 0 18px ${C$1.cyan}08`,
-                        }, children: "Hide" }), props.onSwitch && SP_JSX.jsx(DFL.DialogButton, { className: "rg-dashboard-action", onClick: props.onSwitch, style: { width: "100%", marginTop: 8 }, children: "Switch to TV" })] })] });
+                    background: `linear-gradient(180deg, ${C$1.panel} 0%, ${C$1.panel2} 100%)`, padding: "8px",
+                }, children: [SP_JSX.jsx("div", { style: { fontSize: 17, fontWeight: 830, letterSpacing: "-.02em", marginBottom: 4 }, children: headline(props.phase) }), SP_JSX.jsxs("div", { style: { color: C$1.muted, fontSize: 13, marginBottom: 8 }, children: [props.deviceLabel, elapsed] }), props.phase === "ready" && SP_JSX.jsx("div", { style: { display: "grid", placeItems: "center", margin: "2px 0 6px" }, children: SP_JSX.jsx("div", { style: { width: 36, height: 36, borderRadius: 999, border: `4px solid ${C$1.green}`, color: C$1.green, display: "grid", placeItems: "center", fontSize: 24, fontWeight: 500, boxShadow: `0 0 28px ${C$1.green}18` }, children: "\u2713" }) }), SP_JSX.jsx("div", { style: { border: `1px solid ${C$1.border}`, borderRadius: 14, overflow: "hidden", background: C$1.row }, children: props.rows.map((row, index) => SP_JSX.jsxs("div", { style: {
+                                minHeight: 22, padding: "2px 6px", display: "grid", gridTemplateColumns: row.icon ? "24px minmax(0,1fr) auto" : "minmax(0,1fr) auto",
+                                alignItems: "center", gap: 6, borderBottom: index === props.rows.length - 1 ? "none" : `1px solid ${C$1.border}`,
+                            }, children: [row.icon && SP_JSX.jsx("div", { style: { color: C$1.text, opacity: .95 }, children: row.icon }), SP_JSX.jsx("div", { style: { fontSize: 13, minWidth: 0, overflowWrap: "anywhere" }, children: row.label }), SP_JSX.jsxs("div", { style: { display: "flex", alignItems: "center", gap: 6, color: stateColor[row.state], fontWeight: 700, fontSize: 13, whiteSpace: "nowrap" }, children: [SP_JSX.jsx(StatusGlyph, { state: row.state }), SP_JSX.jsx("span", { children: row.stateLabel ?? (row.state === "ready" ? "Ready" : row.state === "checking" ? "Checking" : row.state === "switching" ? "Switching" : row.state === "pending" ? "Next" : row.state === "blocked" ? "Blocked" : "Error") })] })] }, row.key)) }), props.detail && SP_JSX.jsx("div", { style: { marginTop: 4, color: C$1.muted, fontSize: 13 }, children: props.detail }), props.keepConnectedMessage && SP_JSX.jsx("div", { style: { marginTop: 6, color: C$1.muted, fontSize: 13 }, children: props.keepConnectedMessage }), SP_JSX.jsxs("div", { style: { display: "flex", gap: 8, marginTop: 6 }, children: [SP_JSX.jsx(DFL.DialogButton, { className: "rg-dashboard-action regear-hide-button", onClick: props.onHide, style: {
+                                    margin: 0, padding: "4px 10px", height: 32, lineHeight: "22px", width: "100%", minWidth: 0, minHeight: 32, borderRadius: 12,
+                                    border: `2px solid ${C$1.cyan}`, background: "rgba(5,16,28,.74)", color: C$1.text,
+                                    fontSize: 17, fontWeight: 720, cursor: "pointer", boxShadow: `inset 0 0 18px ${C$1.cyan}08`,
+                                }, children: "Hide" }), props.onSwitch && SP_JSX.jsx(DFL.DialogButton, { className: "rg-dashboard-action", onClick: props.onSwitch, style: { width: "100%", minWidth: 0, margin: 0, padding: "4px 10px", height: 32, minHeight: 32, lineHeight: "22px", fontSize: 14 }, children: "Switch to TV" })] })] })] });
 }
 
 /** Presentation adapter for the existing monitor: no snapshot inference or I/O. */
@@ -443,7 +444,7 @@ function LivePanel({ store, close, switchTv }) {
             switchTv();
         }
     } : undefined;
-    return SP_JSX.jsxs(DFL.ModalRoot, { className: "rg-connection-modal", onCancel: close, closeModal: close, bDisableBackgroundDismiss: true, bHideCloseIcon: true, children: [SP_JSX.jsx("style", { children: connectionPanelCss }), SP_JSX.jsx(ConnectionProgressOverlay, { ...connectionProgressViewModel(source), onHide: close, onSwitch: switchAction })] });
+    return SP_JSX.jsxs(DFL.ModalRoot, { className: "rg-connection-modal rg-connection-compact", onCancel: close, closeModal: close, bDisableBackgroundDismiss: true, bHideCloseIcon: true, children: [SP_JSX.jsx("style", { children: connectionPanelCss }), SP_JSX.jsx(ConnectionProgressOverlay, { ...connectionProgressViewModel(source), onHide: close, onSwitch: switchAction })] });
 }
 function showConnectionLivePanel(store, switchTv, onClose) {
     let modal;

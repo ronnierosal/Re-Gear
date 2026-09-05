@@ -51,22 +51,22 @@ const stateColor: Record<ConnectionProgressState, string> = {
 function StatusGlyph({ state }: { state: ConnectionProgressState }) {
   if (state === "ready") {
     return <span aria-hidden="true" style={{
-      width: 23, height: 23, borderRadius: 999, border: `2px solid ${C.green}`,
-      display: "grid", placeItems: "center", color: C.green, fontWeight: 900, fontSize: 14,
+      width: 16, height: 16, borderRadius: 999, border: `2px solid ${C.green}`,
+      display: "grid", placeItems: "center", color: C.green, fontWeight: 900, fontSize: 13,
       boxShadow: `0 0 12px ${C.green}18`, boxSizing: "border-box",
     }}>✓</span>;
   }
   if (state === "blocked" || state === "error") {
     return <span aria-hidden="true" style={{
-      width: 23, height: 23, borderRadius: 999, border: `2px solid ${stateColor[state]}`,
-      display: "grid", placeItems: "center", color: stateColor[state], fontWeight: 900, fontSize: 14,
+      width: 16, height: 16, borderRadius: 999, border: `2px solid ${stateColor[state]}`,
+      display: "grid", placeItems: "center", color: stateColor[state], fontWeight: 900, fontSize: 13,
       boxSizing: "border-box",
     }}>!</span>;
   }
   return <span aria-hidden="true"
     className={state === "checking" || state === "switching" ? "regear-progress-spinner" : undefined}
     style={{
-      width: 22, height: 22, borderRadius: 999, border: "3px solid rgba(255,255,255,.16)",
+      width: 16, height: 16, borderRadius: 999, border: "3px solid rgba(255,255,255,.16)",
       borderTopColor: stateColor[state], boxSizing: "border-box", flexShrink: 0,
     }} />;
 }
@@ -84,10 +84,10 @@ export function ConnectionProgressOverlay(props: ConnectionProgressOverlayProps)
   const elapsed = props.elapsedSeconds != null ? ` · ${props.elapsedSeconds} seconds` : "";
 
   return <div style={{
-    width: "100%", maxWidth: 620, minWidth: 0, boxSizing: "border-box", padding: 14,
+    width: "100%", maxWidth: 480, minWidth: 0, boxSizing: "border-box", padding: 8,
     borderRadius: 22, background: `linear-gradient(180deg, ${C.bg} 0%, #071322 100%)`,
     border: `1px solid ${C.borderStrong}`, boxShadow: "0 26px 90px rgba(0,0,0,.58)",
-    color: C.text, fontFamily: "Motiva Sans, Inter, system-ui, sans-serif",
+    lineHeight: 1.2, color: C.text, fontFamily: "Motiva Sans, Inter, system-ui, sans-serif",
   }}>
     <style>{`
       @keyframes regear-spin { to { transform: rotate(360deg); } }
@@ -99,21 +99,20 @@ export function ConnectionProgressOverlay(props: ConnectionProgressOverlayProps)
     `}</style>
 
     <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 3, minWidth: 0 }}>
-      <img src={brandIcon} alt="" aria-hidden="true" width={28} height={28} style={{ objectFit: "contain", flexShrink: 0 }} />
-      <div style={{ fontSize: 20, fontWeight: 820, letterSpacing: "-.02em" }}>Re-Gear</div>
-      <div style={{ color: C.muted, fontSize: 14, margin: "0 2px" }}>/</div>
-      <div style={{ fontSize: 14, fontWeight: 620 }}>Connection progress</div>
+      <img src={brandIcon} alt="" aria-hidden="true" width={22} height={22} style={{ objectFit: "contain", flexShrink: 0 }} />
+      <div style={{ fontSize: 17, fontWeight: 820, letterSpacing: "-.02em" }}>Re-Gear</div>
+      <div style={{ color: C.muted, fontSize: 13, margin: "0 2px" }}>/</div>
+      <div style={{ fontSize: 13, fontWeight: 620 }}>Connection progress</div>
     </div>
-    <div style={{ color: C.muted, fontSize: 13, margin: "0 0 10px 42px" }}>Live feedback from plug-in to TV</div>
 
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 18, marginBottom: 10 }}>
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8, marginTop: 6, marginBottom: 6 }}>
       {["Connecting", "Switching", "Ready"].map((name, i) => {
         const active = i === activeIndex;
         const complete = i < activeIndex;
         return <div key={name}>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 10, color: active ? C.text : C.muted, marginBottom: 10 }}>
-            <span style={{ color: complete || active ? C.cyan : C.muted, fontWeight: 820, fontSize: 14 }}>0{i + 1}</span>
-            <span style={{ fontWeight: active ? 780 : 600, fontSize: 14 }}>{name}</span>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 4, color: active ? C.text : C.muted, marginBottom: 4 }}>
+            <span style={{ color: complete || active ? C.cyan : C.muted, fontWeight: 820, fontSize: 13 }}>0{i + 1}</span>
+            <span style={{ fontWeight: active ? 780 : 600, fontSize: 13 }}>{name}</span>
           </div>
           <div style={{ height: 4, borderRadius: 999, background: "rgba(105,130,155,.28)", overflow: "hidden" }}>
             {(complete || active) && <div className={active && props.phase === "switching" ? "regear-progress-sweep" : undefined}
@@ -125,39 +124,40 @@ export function ConnectionProgressOverlay(props: ConnectionProgressOverlayProps)
 
     <div style={{
       border: `1px solid ${C.border}`, borderRadius: 18,
-      background: `linear-gradient(180deg, ${C.panel} 0%, ${C.panel2} 100%)`, padding: "12px",
+      background: `linear-gradient(180deg, ${C.panel} 0%, ${C.panel2} 100%)`, padding: "8px",
     }}>
-      <div style={{ fontSize: 20, fontWeight: 830, letterSpacing: "-.02em", marginBottom: 4 }}>{headline(props.phase)}</div>
-      <div style={{ color: C.muted, fontSize: 14, marginBottom: 8 }}>{props.deviceLabel}{elapsed}</div>
+      <div style={{ fontSize: 17, fontWeight: 830, letterSpacing: "-.02em", marginBottom: 4 }}>{headline(props.phase)}</div>
+      <div style={{ color: C.muted, fontSize: 13, marginBottom: 8 }}>{props.deviceLabel}{elapsed}</div>
 
-      {props.phase === "ready" && <div style={{ display: "grid", placeItems: "center", margin: "2px 0 18px" }}>
-        <div style={{ width: 88, height: 88, borderRadius: 999, border: `4px solid ${C.green}`, color: C.green, display: "grid", placeItems: "center", fontSize: 52, fontWeight: 500, boxShadow: `0 0 28px ${C.green}18` }}>✓</div>
+      {props.phase === "ready" && <div style={{ display: "grid", placeItems: "center", margin: "2px 0 6px" }}>
+        <div style={{ width: 36, height: 36, borderRadius: 999, border: `4px solid ${C.green}`, color: C.green, display: "grid", placeItems: "center", fontSize: 24, fontWeight: 500, boxShadow: `0 0 28px ${C.green}18` }}>✓</div>
       </div>}
 
       <div style={{ border: `1px solid ${C.border}`, borderRadius: 14, overflow: "hidden", background: C.row }}>
         {props.rows.map((row, index) => <div key={row.key} style={{
-          minHeight: 27, padding: "4px 8px", display: "grid", gridTemplateColumns: row.icon ? "24px minmax(0,1fr) auto" : "minmax(0,1fr) auto",
-          alignItems: "center", gap: 10, borderBottom: index === props.rows.length - 1 ? "none" : `1px solid ${C.border}`,
+          minHeight: 22, padding: "2px 6px", display: "grid", gridTemplateColumns: row.icon ? "24px minmax(0,1fr) auto" : "minmax(0,1fr) auto",
+          alignItems: "center", gap: 6, borderBottom: index === props.rows.length - 1 ? "none" : `1px solid ${C.border}`,
         }}>
           {row.icon && <div style={{ color: C.text, opacity: .95 }}>{row.icon}</div>}
-          <div style={{ fontSize: 14, minWidth: 0, overflowWrap: "anywhere" }}>{row.label}</div>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, color: stateColor[row.state], fontWeight: 700, fontSize: 13, whiteSpace: "nowrap" }}>
+          <div style={{ fontSize: 13, minWidth: 0, overflowWrap: "anywhere" }}>{row.label}</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, color: stateColor[row.state], fontWeight: 700, fontSize: 13, whiteSpace: "nowrap" }}>
             <StatusGlyph state={row.state} />
             <span>{row.stateLabel ?? (row.state === "ready" ? "Ready" : row.state === "checking" ? "Checking" : row.state === "switching" ? "Switching" : row.state === "pending" ? "Next" : row.state === "blocked" ? "Blocked" : "Error")}</span>
           </div>
         </div>)}
       </div>
 
-      {props.detail && <div style={{ marginTop: 15, color: C.muted, fontSize: 13 }}>{props.detail}</div>}
-      {props.keepConnectedMessage && <div style={{ marginTop: 6, color: C.muted, fontSize: 14 }}>{props.keepConnectedMessage}</div>}
+      {props.detail && <div style={{ marginTop: 4, color: C.muted, fontSize: 13 }}>{props.detail}</div>}
+      {props.keepConnectedMessage && <div style={{ marginTop: 6, color: C.muted, fontSize: 13 }}>{props.keepConnectedMessage}</div>}
 
+      <div style={{display:"flex", gap:8, marginTop:6}}>
       <DialogButton className="rg-dashboard-action regear-hide-button" onClick={props.onHide} style={{
-        marginTop: 10, width: "100%", minHeight: 36, borderRadius: 12,
+        margin: 0, padding: "4px 10px", height: 32, lineHeight: "22px", width: "100%", minWidth: 0, minHeight: 32, borderRadius: 12,
         border: `2px solid ${C.cyan}`, background: "rgba(5,16,28,.74)", color: C.text,
-        fontSize: 20, fontWeight: 720, cursor: "pointer", boxShadow: `inset 0 0 18px ${C.cyan}08`,
+        fontSize: 17, fontWeight: 720, cursor: "pointer", boxShadow: `inset 0 0 18px ${C.cyan}08`,
       }}>Hide</DialogButton>
-      {props.onSwitch && <DialogButton className="rg-dashboard-action" onClick={props.onSwitch} style={{width:"100%", marginTop:8}}>Switch to TV</DialogButton>}
+      {props.onSwitch && <DialogButton className="rg-dashboard-action" onClick={props.onSwitch} style={{width:"100%", minWidth:0, margin:0, padding:"4px 10px", height:32, minHeight:32, lineHeight:"22px", fontSize:14}}>Switch to TV</DialogButton>}
+      </div>
     </div>
   </div>;
 }
-
