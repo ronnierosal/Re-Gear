@@ -25,13 +25,16 @@ eGPU, an applicable disconnect workflow and an idle safety journal. Missing,
 stale-in-flight or unknown evidence stays closed. Only one context read can
 be outstanding; a timed-out read cannot later open a confirmation.
 
-A valid hold opens the same confirmation as the panel button; it does not
-execute a transition. Confirming uses the same backend approval and execution
-APIs. The dialog captures whether the user confirmed Return to Ally or Shutdown,
-and backend guards revalidate before action. A shared busy guard prevents a
-panel click and shortcut from executing concurrently. The always-rendered
-Decky content owns the subscription and releases it on unmount. Subscription
-failure leaves the ordinary button available and labels the shortcut unavailable.
+A valid hold selects a display target from fresh mode evidence: Portable opens
+Switch to TV confirmation; TV Docked opens Return to Ally confirmation. A mode
+change during the hold cancels it. Confirming calls the existing supervised TV
+or Portable approval/execution APIs, which revalidate readiness and game state.
+The controller route never calls shutdown. The panel retains its separate
+shutdown action in Portable mode. A shared busy guard prevents overlapping
+manual display actions. The always-rendered Decky content owns and cleans up
+the subscription; unavailable APIs leave the ordinary panel controls available.
+The pure backend Safe Undock relay is a separate dormant contract; this frontend
+display shortcut does not invoke it.
 
 Hardware validation must establish native View/Y delivery, supported controller
 mapping, operation outside Quick Access, cancellation on disconnect, and native

@@ -1,5 +1,13 @@
 # Current state
 
+## Re-Gear 0.3.30 bidirectional display shortcut candidate
+
+Back/View + Y held for three seconds opens Switch to TV from Portable or
+Return to Ally from TV Docked. Fresh idle evidence and an idle journal are
+required; mode changes during the hold cancel it. Both confirmations use
+existing supervised backend guards. The shortcut cannot request shutdown;
+that remains a separate panel action. Not installed or hardware validated.
+
 ## Re-Gear 0.3.29 Back/View shortcut candidate
 
 The player selected Back/View (two overlapping boxes) + Y for three seconds

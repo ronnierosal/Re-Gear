@@ -17,7 +17,7 @@ type Dependencies = {
   input?: ControllerInputSource;
   readContext(): Promise<Context>;
   isBusy(): boolean;
-  confirm(portable: boolean): void;
+  confirm(target: "tv" | "ally"): void;
 };
 
 export function safeDisconnectContext(context: Context): boolean {
@@ -87,8 +87,9 @@ export function startControllerSafeDisconnect(deps: Dependencies): { available: 
         if (!valid(id, token) || !before || !safeDisconnectContext(before)) return;
         const after = await readFresh();
         if (!valid(id, token) || !after || !safeDisconnectContext(after)) return;
+        if (before.snapshot.inference.mode !== after.snapshot.inference.mode) return;
         latched.add(id);
-        deps.confirm(after.snapshot.inference.mode === "portable");
+        deps.confirm(after.snapshot.inference.mode === "portable" ? "tv" : "ally");
       })().catch(() => { /* No retry of an uncertain delivery. */ });
     }, SAFE_DISCONNECT_HOLD_MS);
   };

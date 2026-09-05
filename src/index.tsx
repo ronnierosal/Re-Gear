@@ -337,6 +337,30 @@ function showSafeDisconnectConfirmation(
   return modal;
 }
 
+function showControllerDisplayConfirmation(
+  target: "tv" | "ally", onConfirm: () => void, onClose: () => void,
+): ReturnType<typeof showModal> {
+  let modal: ReturnType<typeof showModal>;
+  const close = () => { modal.Close(); onClose(); };
+  modal = showModal(
+    <ConfirmModal
+      strTitle={target === "tv" ? "Switch to TV?" : "Return to Ally?"}
+      strOKButtonText={target === "tv" ? "Switch to TV" : "Return to Ally"}
+      strCancelButtonText="Cancel"
+      bDisableBackgroundDismiss={true}
+      bHideCloseIcon={true}
+      onOK={() => { close(); onConfirm(); }}
+      onCancel={close}
+    >
+      <p>Re-Gear will check that no game is running and verify display readiness before restarting Game Mode.</p>
+      <p>Keep the G1 connected. This action does not shut down the Ally or make unplugging safe.</p>
+    </ConfirmModal>,
+    window,
+    { strTitle: PRODUCT_NAME, bNeverPopOut: true },
+  );
+  return modal;
+}
+
 function showPresentationPreparationBlocked(blockers: string[]): void {
   // The preparation result appears below its controller-focused button. Steam's
   // Quick Access navigation can leave that row off-screen, so also surface the
@@ -525,6 +549,7 @@ function Content({ preflight }: { preflight: SleepPreflightCoordinator }) {
   const automaticDockModal = useRef<ReturnType<typeof showModal> | null>(null);
   const safeDisconnectModal = useRef<ReturnType<typeof showModal> | null>(null);
   const safeDisconnectExecuting = useRef(false);
+  const tvSwitchExecuting = useRef(false);
   const [controllerShortcutAvailable, setControllerShortcutAvailable] = useState(false);
   const processModal = useRef<ReturnType<typeof showModal> | null>(null);
   const diagnosticLoggingModal = useRef<ReturnType<typeof showModal> | null>(null);
@@ -1028,6 +1053,8 @@ function Content({ preflight }: { preflight: SleepPreflightCoordinator }) {
   }, [preparePresentation]);
 
   const executeTvSwitch = useCallback(async () => {
+    if (tvSwitchExecuting.current || safeDisconnectExecuting.current) return;
+    tvSwitchExecuting.current = true;
     setTvSwitchBusy(true);
     setTvSwitchMessage("");
     try {
@@ -1058,6 +1085,7 @@ function Content({ preflight }: { preflight: SleepPreflightCoordinator }) {
     } catch {
       setTvSwitchMessage("TV switch did not complete. Re-Gear did not claim success.");
     } finally {
+      tvSwitchExecuting.current = false;
       setTvSwitchBusy(false);
     }
   }, []);
@@ -1097,7 +1125,7 @@ function Content({ preflight }: { preflight: SleepPreflightCoordinator }) {
   }, [automaticDockStatus?.enabled, changeAutomaticDock]);
 
   const executeSafeDisconnect = useCallback(async (portable: boolean) => {
-    if (safeDisconnectExecuting.current) return;
+    if (safeDisconnectExecuting.current || tvSwitchExecuting.current) return;
     safeDisconnectExecuting.current = true;
     setSafeDisconnectBusy(true);
     setSafeDisconnectMessage("");
@@ -1164,7 +1192,7 @@ function Content({ preflight }: { preflight: SleepPreflightCoordinator }) {
   }, []);
 
   const requestSafeDisconnectForMode = useCallback((portable: boolean) => {
-    if (safeDisconnectExecuting.current || safeDisconnectModal.current) return;
+    if (safeDisconnectExecuting.current || tvSwitchExecuting.current || safeDisconnectModal.current) return;
     safeDisconnectModal.current = showSafeDisconnectConfirmation(
       portable,
       () => void executeSafeDisconnect(portable),
@@ -1178,6 +1206,15 @@ function Content({ preflight }: { preflight: SleepPreflightCoordinator }) {
     requestSafeDisconnectForMode(payload?.inference.mode === "portable");
   }, [requestSafeDisconnectForMode, payload?.inference.mode]);
 
+  const requestControllerDisplaySwitch = useCallback((target: "tv" | "ally") => {
+    if (safeDisconnectExecuting.current || tvSwitchExecuting.current || safeDisconnectModal.current) return;
+    safeDisconnectModal.current = showControllerDisplayConfirmation(
+      target,
+      () => { if (target === "tv") void executeTvSwitch(); else void executeSafeDisconnect(false); },
+      () => { safeDisconnectModal.current = null; },
+    );
+  }, [executeTvSwitch, executeSafeDisconnect]);
+
   useEffect(() => {
     const shortcut = startControllerSafeDisconnect({
       input: steamControllerInput(window),
@@ -1185,12 +1222,12 @@ function Content({ preflight }: { preflight: SleepPreflightCoordinator }) {
         const [snapshot, journal] = await Promise.all([getSnapshot(), getTransitionJournalStatus()]);
         return { snapshot, journal };
       },
-      isBusy: () => safeDisconnectExecuting.current || safeDisconnectModal.current !== null,
-      confirm: requestSafeDisconnectForMode,
+      isBusy: () => safeDisconnectExecuting.current || tvSwitchExecuting.current || safeDisconnectModal.current !== null,
+      confirm: requestControllerDisplaySwitch,
     });
     setControllerShortcutAvailable(shortcut.available);
     return () => shortcut.stop();
-  }, [requestSafeDisconnectForMode]);
+  }, [requestControllerDisplaySwitch]);
 
   const acknowledgeTvSwitch = useCallback(async () => {
     if (!tvSwitchAcknowledgementId) return;
@@ -1470,7 +1507,7 @@ function Content({ preflight }: { preflight: SleepPreflightCoordinator }) {
                   ? "Shut down to disconnect"
                   : "Prepare to disconnect"}
               description={controllerShortcutAvailable
-                ? "Experimental: Back/View + Y for 3 seconds. Keep the eGPU connected until fully off."
+                ? "Back/View + Y (3 seconds): switch between Ally and TV. Keep the G1 connected."
                 : "Keep the eGPU connected until fully powered off. Controller shortcut unavailable."}
               onClick={requestSafeDisconnect}
               disabled={

@@ -40,11 +40,11 @@ test("same-controller chord opens confirmation at three seconds only once per ho
   const s = setup(t); s.chord(); await flush();
   t.mock.timers.tick(2999); await flush(); assert.deepEqual(s.confirmations, []);
   s.input(0, Y, true); t.mock.timers.tick(1); await flush();
-  assert.deepEqual(s.confirmations, [false]);
+  assert.deepEqual(s.confirmations, ["ally"]);
   s.input(0, G, true); t.mock.timers.tick(10000); await flush();
-  assert.deepEqual(s.confirmations, [false]);
+  assert.deepEqual(s.confirmations, ["ally"]);
   s.release(); s.current.snapshot.inference.mode = "portable"; s.chord(); await flush();
-  t.mock.timers.tick(3000); await flush(); assert.deepEqual(s.confirmations, [false, true]);
+  t.mock.timers.tick(3000); await flush(); assert.deepEqual(s.confirmations, ["ally", "tv"]);
 });
 test("release before threshold cancels and a new hold needs all three seconds", async t => {
   const s = setup(t); s.chord(); await flush(); t.mock.timers.tick(2999); s.release();
@@ -172,4 +172,19 @@ test("only View plus Y works; Xbox/Guide and Menu plus Y remain inactive", async
   s.state(); s.input(0, 9, true); s.input(0, 3, true); await flush();
   t.mock.timers.tick(2999); await flush(); assert.equal(s.confirmations.length, 0);
   t.mock.timers.tick(1); await flush(); assert.equal(s.confirmations.length, 1);
+});
+
+
+test("a mode change during the hold cancels rather than reversing the requested direction", async t => {
+  const s = setup(t); s.chord(); await flush();
+  s.current.snapshot.inference.mode = "portable";
+  t.mock.timers.tick(3000); await flush(); assert.equal(s.confirmations.length, 0);
+});
+
+test("controller confirmation has only TV and Ally routes, never shutdown", () => {
+  const source = readFileSync(new URL("../src/index.tsx", import.meta.url), "utf8");
+  const route = source.split('const requestControllerDisplaySwitch =')[1].split('  useEffect(')[0];
+  assert.match(route, /executeTvSwitch\(\)/);
+  assert.match(route, /executeSafeDisconnect\(false\)/);
+  assert.doesNotMatch(route, /executeSafeDisconnect\(true\)|approveSafeDisconnectShutdown/);
 });
