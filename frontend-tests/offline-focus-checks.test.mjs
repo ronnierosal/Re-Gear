@@ -19,12 +19,12 @@ function setup(t, classify = async () => ({})) {
   const tile = { id: 123, ownerDocument: { ...document, defaultView: view }, isConnected: true, closest: () => tile };
   tile.ownerDocument = document; document.defaultView = view; document.activeElement = tile;
   let requests = 0; let shown = 0;
-  const start = new Function("window", "Router", "routerHook", "callable", "OfflineDetailsSession", "offlineNativeSource", "attachOfflineTileBadge", "exactTileElementAppId", "OFFLINE_TILE_SELECTOR", "offlineReportBadge", "offlineBadgeImages", "offlineConfidenceForGame", "offlineConfidenceBadge", "offlineAccountScope", js + "\nreturn startOfflineFocusChecks;")(
+  const start = new Function("window", "Router", "routerHook", "callable", "OfflineDetailsSession", "offlineNativeSource", "attachOfflineTileBadge", "exactTileElementAppId", "OFFLINE_TILE_SELECTOR", "offlineReportBadge", "offlineBadgeImages", "offlineConfidenceForGame", "offlineConfidenceBadge", "offlineAccountScope", "offlineTestMemory", js + "\nreturn startOfflineFocusChecks;")(
     { appStore: store, DFL: { getGamepadNavigationTrees: () => [{ m_window: view }] } }, router,
     { addPatch: () => ({}), removePatch() {} }, () => classify,
     class { invalidate() {} async request() { requests++; return { details: {}, isValid: () => true }; } },
     () => ({ store, subscribe() {} }), () => { shown++; return { stop() {} }; }, tile => tile.id,
-    "tile", () => ({ asset: "offline-verify", label: "Check" }), { "offline-verify": "badge.svg" }, () => ({}), () => ({asset: "offline-verify", label:"Check"}), () => "account",
+    "tile", () => ({ asset: "offline-verify", label: "Check" }), { "offline-verify": "badge.svg" }, () => ({}), () => ({asset: "offline-verify", label:"Check"}), () => "account", {clear() {}},
   );
   const handle = start(); t.after(() => handle.stop());
   return { document, tile, app, router, listeners, observers, counts: () => ({ requests, shown }) };

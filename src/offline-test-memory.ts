@@ -4,6 +4,7 @@ export class OfflineTestMemory {
   private records = new Map<number, { binding: OfflineTestBinding; at: number }>();
   private now: () => number;
   constructor(now = () => Date.now()) { this.now = now; }
+  clear() { this.records.clear(); }
   forget(appId: number) { this.records.delete(appId); }
   confirm(binding: OfflineTestBinding): boolean {
     const at = this.now();

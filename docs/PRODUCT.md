@@ -187,3 +187,18 @@ gate for hardware-facing work.
 - Arbitrary desktop Linux distributions
 - GPU tuning, fan control, overclocking, or driver installation
 - TV network automation, cloud services, or a general plugin ecosystem
+
+
+### Offline confidence implementation
+
+The selected-game frontend now distinguishes Needs preparation, Likely
+offline-ready, Tested offline, and Unverified. These are confidence labels,
+not guarantees or replacements for the backend entitlement classification.
+Likely requires independent local preparation and explicit cached single-player
+internet-compatibility evidence. Tested requires an explicit player attestation
+bound to the displayed account/build and a fresh matching recheck. Confirmation
+lasts at most 24 hours in the current plugin session, with a Forget control.
+No automatic game launch, network change, external query, or persistent play
+history is introduced. Source handling and limits are owned by
+OFFLINE_EVIDENCE_SOURCE_REVIEW.md. Earlier foundation-only snapshots above do
+not describe this later frontend delivery.

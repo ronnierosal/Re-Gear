@@ -1,5 +1,6 @@
 import { callable, routerHook } from "@decky/api";
 import { Router } from "@decky/ui";
+import { offlineTestMemory } from "./offline-test-memory";
 import { OfflineDetailsSession } from "./offline-details-session";
 import { offlineConfidenceForGame, offlineConfidenceBadge, offlineAccountScope } from "./offline-confidence-session";
 import { offlineReportBadge } from "./offline-badge-state";
@@ -84,6 +85,7 @@ export function startOfflineFocusChecks(): { stop(): void } {
   syncViews();
   return { stop() {
     cancel();
+    offlineTestMemory.clear();
     routerHook.removePatch("/library", libraryPatch);
     routerHook.removePatch("/search", searchPatch);
     routerHook.removePatch("/library/home", homePatch);

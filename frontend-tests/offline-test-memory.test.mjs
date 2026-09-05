@@ -15,5 +15,6 @@ test("confirmations are bounded and never survive a new memory instance", () => 
   assert.equal(new OfflineTestMemory().has(b),false);
   for(let id=1;id<=33;id++) memory.confirm({...b,appId:id});
   assert.equal(memory.has({...b,appId:1}),false);
+  memory.clear(); assert.equal(memory.has({...b,appId:32}),false);
   memory.forget(33); assert.equal(memory.has({...b,appId:33}),false);
 });
