@@ -3,6 +3,11 @@
 
 ## Re-Gear 0.3.42 shared UI status candidate
 
+Staged `/home/deck/Re-Gear-0.3.42.zip`, revision
+`81ab7c1c9a16efe0f679c2beabbcb5f8e666d734`. Local/final remote SHA-256 matched:
+`58d4630fe17294aaa3cf569b0754a9525952ead401ea219d2d2f361e1e045771`.
+Installed readback before transfer remained 0.3.40. Transfer only; not installed.
+
 Shared readiness rows and status icons now unify the dashboard, connection
 and disconnect views. Blocked is amber, unavailable is gray; only errors are
 red. Compact text is larger and modal minimum width no longer forces overflow.
