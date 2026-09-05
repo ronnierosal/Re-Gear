@@ -98,21 +98,21 @@ import {
 const LABELS: Record<string, string> = {
   "journal.foreign_workflow": "Another workflow needs attention",
   "automatic_dock.rearmed_after_acknowledgement": "Re-checking attachment",
-  "automatic_dock.suppressed_for_safe_disconnect": "Waiting for G1 removal",
-  "connection.disconnected": "Waiting for G1",
-  "connection.waiting_for_pci": "G1 detected; starting GPU",
-  "connection.waiting_for_driver": "Waiting for G1 graphics driver",
-  "connection.waiting_for_link": "Waiting for G1 PCIe link",
-  "connection.waiting_for_hdmi": "Waiting for G1 HDMI",
-  "connection.waiting_for_audio": "Waiting for G1 TV audio",
+  "automatic_dock.suppressed_for_safe_disconnect": "Waiting for eGPU removal",
+  "connection.disconnected": "Waiting for eGPU",
+  "connection.waiting_for_pci": "eGPU detected; starting GPU",
+  "connection.waiting_for_driver": "Waiting for eGPU graphics driver",
+  "connection.waiting_for_link": "Waiting for eGPU PCIe link",
+  "connection.waiting_for_hdmi": "Waiting for eGPU HDMI",
+  "connection.waiting_for_audio": "Waiting for eGPU TV audio",
   "connection.waiting_for_session": "Preparing Steam session",
   "connection.game_running": "Waiting for game to close",
-  "connection.stabilizing": "Checking G1 connection stability",
-  "connection.late_enumeration_detected": "G1 GPU appeared; checking connection",
-  "connection.ready_idle": "G1 ready for TV",
-  "connection.transport_dropped_before_pci": "G1 USB4 connection dropped while starting",
-  "connection.verified_absence_required": "Power off and disconnect G1 before retrying",
-  "connection.readiness_timed_out": "G1 did not become ready",
+  "connection.stabilizing": "Checking eGPU connection stability",
+  "connection.late_enumeration_detected": "eGPU GPU appeared; checking connection",
+  "connection.ready_idle": "eGPU ready for TV",
+  "connection.transport_dropped_before_pci": "eGPU USB4 connection dropped while starting",
+  "connection.verified_absence_required": "Power off and disconnect eGPU before retrying",
+  "connection.readiness_timed_out": "eGPU did not become ready",
   "connection.game_state_unknown": "Game state could not be verified",
   boosted_handheld: "Boosted Handheld",
   certified: "Certified",
@@ -281,7 +281,7 @@ function showAutomaticDockConfirmation(
     >
       <div style={{ fontSize: "13px", lineHeight: "18px" }}>
         <p>
-          When Re-Gear verifies this Ally X, the exact GPD G1, one ready TV, a healthy link,
+          When Re-Gear verifies this Ally X, the exact supported eGPU profile, one ready TV, a healthy link,
           and no running game, it will restart Steam Game Mode onto the TV.
         </p>
         <p>
@@ -308,7 +308,7 @@ function showSafeDisconnectConfirmation(
   };
   modal = showModal(
     <ConfirmModal
-      strTitle={portable ? "Shut down for G1 disconnect?" : "Return to Ally for G1 disconnect?"}
+      strTitle={portable ? "Shut down for eGPU disconnect?" : "Return to Ally for eGPU disconnect?"}
       strOKButtonText={portable ? "Shut down" : "Return to Ally"}
       strCancelButtonText="Cancel"
       bDestructiveWarning={true}
@@ -324,8 +324,8 @@ function showSafeDisconnectConfirmation(
         {portable ? (
           <>
             <p>Re-Gear will revalidate idle Portable mode and request a normal system shutdown.</p>
-            <p>The request cannot prove physical power-off. Keep the G1 connected until the fan stops and every top power LED is off.</p>
-            <p>If the fan remains on after 60 seconds, keep the G1 connected and hold the Ally power button until the fan stops.</p>
+            <p>The request cannot prove physical power-off. Keep the eGPU connected until the fan stops and every top power LED is off.</p>
+            <p>If the fan remains on after 60 seconds, keep the eGPU connected and hold the Ally power button until the fan stops.</p>
           </>
         ) : (
           <>
@@ -357,7 +357,7 @@ function showControllerDisplayConfirmation(
       onCancel={close}
     >
       <p>Re-Gear will check that no game is running and verify display readiness before restarting Game Mode.</p>
-      <p>Keep the G1 connected. This action does not shut down the Ally or make unplugging safe.</p>
+      <p>Keep the eGPU connected. This action does not shut down the Ally or make unplugging safe.</p>
     </ConfirmModal>,
     window,
     { strTitle: PRODUCT_NAME, bNeverPopOut: true },
@@ -1119,7 +1119,7 @@ function Content({ preflight, connection }: { preflight: SleepPreflightCoordinat
       setAutomaticDockStatus(status);
       setAutomaticDockMessage(
         status.enabled
-          ? "Automatic TV docking is enabled. Re-Gear is waiting for complete G1 and TV evidence."
+          ? "Automatic TV docking is enabled. Re-Gear is waiting for complete eGPU and TV evidence."
           : status.code === "automatic_dock.disabled"
             ? "Automatic TV docking is disabled."
             : `Automatic TV docking was not changed: ${label(status.code)}.`,
@@ -1163,14 +1163,14 @@ function Content({ preflight, connection }: { preflight: SleepPreflightCoordinat
         }
         toaster.toast({
           title: "Re-Gear requested an Ally shutdown",
-          body: "Completion is unverified. Keep the G1 connected until the fan and every top power LED are off.",
+          body: "Completion is unverified. Keep the eGPU connected until the fan and every top power LED are off.",
           critical: true,
           duration: 30000,
         });
         const outcome = await executeSafeDisconnectShutdown(approval.approval_token);
         setSafeDisconnectMessage(
           outcome.accepted
-            ? "Power-off request accepted; completion is unverified. Keep the G1 connected until the fan stops. If it remains on after 60 seconds, hold the Ally power button until the fan stops."
+            ? "Power-off request accepted; completion is unverified. Keep the eGPU connected until the fan stops. If it remains on after 60 seconds, hold the Ally power button until the fan stops."
             : `Shutdown was not requested: ${label(outcome.code)}.`,
         );
         return;
@@ -1187,7 +1187,7 @@ function Content({ preflight, connection }: { preflight: SleepPreflightCoordinat
       }
       toaster.toast({
         title: "Re-Gear is returning to the Ally",
-        body: "Do not disconnect the G1. Wait for Portable verification, then shut down.",
+        body: "Do not disconnect the eGPU. Wait for Portable verification, then shut down.",
         critical: true,
         duration: 30000,
       });
@@ -1203,8 +1203,8 @@ function Content({ preflight, connection }: { preflight: SleepPreflightCoordinat
     } catch {
       setSafeDisconnectMessage(
         portable
-          ? "Shutdown was not requested. Keep the G1 connected."
-          : "Portable transition did not complete. Keep the G1 connected.",
+          ? "Shutdown was not requested. Keep the eGPU connected."
+          : "Portable transition did not complete. Keep the eGPU connected.",
       );
     } finally {
       safeDisconnectExecuting.current = false;
@@ -1523,7 +1523,7 @@ function Content({ preflight, connection }: { preflight: SleepPreflightCoordinat
 
           <DashboardSurface>
             <DashboardAction icon="connection" title="Disconnect status"
-              description="Live checks · keep G1 connected"
+              description="Live checks · keep eGPU connected"
               onClick={() => {
                 if (!disconnectProgressModal.current) disconnectProgressModal.current = showDisconnectProgress(
                   () => { disconnectProgressModal.current = null; });
@@ -1537,7 +1537,7 @@ function Content({ preflight, connection }: { preflight: SleepPreflightCoordinat
                 : payload?.inference.mode === "portable"
                   ? "Shut down to disconnect"
                   : "Prepare to disconnect"}
-              description="Keep the G1 connected until fully powered off."
+              description="Keep the eGPU connected until fully powered off."
               onClick={requestSafeDisconnect}
               disabled={
                 safeDisconnectBusy

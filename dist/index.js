@@ -86,7 +86,7 @@ function disconnectProgress(payload, failed = false, now = Date.now()) {
 }
 
 const connectionPanelCss = `
-.rg-connection-modal.rg-connection-compact { padding:8px !important; min-width:0 !important; width:min(496px,calc(100vw - 24px)) !important; }
+.rg-connection-modal.rg-connection-compact { padding:6px !important; min-width:0 !important; width:min(432px,calc(100vw - 24px)) !important; }
 .rg-connection-modal { background: linear-gradient(145deg,#18212c,#10171f) !important; border:1px solid #394653; border-radius:14px; box-sizing:border-box; max-width:calc(100vw - 32px); max-height:calc(100vh - 32px); overflow-y:auto; }
 .rg-connection { color:#edf3f8; font-size:16px; line-height:1.4; min-width:0; width:100%; max-width:520px; }
 .rg-connection-subtitle { color:#b5c3d2; margin:0 0 18px; }
@@ -181,7 +181,7 @@ function DisconnectPanel({ close }) {
             clearTimeout(timer); };
     }, []);
     const status = disconnectProgress(payload, failed, now);
-    return SP_JSX.jsxs(DFL.ConfirmModal, { className: "rg-connection-modal", strTitle: "Disconnect status", strOKButtonText: "Hide", bAlertDialog: true, bDisableBackgroundDismiss: true, bHideCloseIcon: true, onOK: close, onCancel: close, children: [SP_JSX.jsx("style", { children: connectionPanelCss }), SP_JSX.jsxs("div", { className: "rg-connection", children: [SP_JSX.jsx("p", { className: "rg-connection-subtitle", children: "Keep the G1 cable connected" }), SP_JSX.jsx("div", { className: "rg-connection-list", children: status.rows.map(row => SP_JSX.jsx(ReadinessRow, { label: row.label, state: row.state === "ready" ? "ready" : row.state === "blocked" ? "blocked" : row.state === "unavailable" ? "unavailable" : "waiting" }, row.label)) }), SP_JSX.jsx("p", { role: "status", className: "rg-connection-detail", children: status.detail }), SP_JSX.jsx("p", { className: "rg-connection-foot", children: "Status only. This does not release devices. Shut down fully before unplugging." })] })] });
+    return SP_JSX.jsxs(DFL.ConfirmModal, { className: "rg-connection-modal", strTitle: "Disconnect status", strOKButtonText: "Hide", bAlertDialog: true, bDisableBackgroundDismiss: true, bHideCloseIcon: true, onOK: close, onCancel: close, children: [SP_JSX.jsx("style", { children: connectionPanelCss }), SP_JSX.jsxs("div", { className: "rg-connection", children: [SP_JSX.jsx("p", { className: "rg-connection-subtitle", children: "Keep the eGPU cable connected" }), SP_JSX.jsx("div", { className: "rg-connection-list", children: status.rows.map(row => SP_JSX.jsx(ReadinessRow, { label: row.label, state: row.state === "ready" ? "ready" : row.state === "blocked" ? "blocked" : row.state === "unavailable" ? "unavailable" : "waiting" }, row.label)) }), SP_JSX.jsx("p", { role: "status", className: "rg-connection-detail", children: status.detail }), SP_JSX.jsx("p", { className: "rg-connection-foot", children: "Status only. This does not release devices. Shut down fully before unplugging." })] })] });
 }
 function showDisconnectProgress(onClose) {
     let modal;
@@ -198,7 +198,14 @@ const regearTheme = {
     accentSoft: "#acebfa"};
 // Scoped to Re-Gear controls. Native Decky focus handling remains in charge.
 const regearControlCss = `
-.rg-section-focus.rg-section-focused, .rg-section-focus:focus-visible {
+.rg-section-focus {
+  min-width: 0;
+  border-radius: 14px;
+  scroll-margin-top: 48px;
+  scroll-margin-bottom: 16px;
+}
+.rg-section-focus.gpfocus, .rg-section-focus:focus-visible,
+.rg-section-focus:focus-within {
   outline: 2px solid #66d9f7;
   outline-offset: -2px;
 }
@@ -213,12 +220,14 @@ const regearControlCss = `
 
 /** Informational controller stop, not an action or an invisible button. */
 const SectionFocus = SP_REACT.forwardRef(function SectionFocus({ label, children, onFocused }, ref) {
-    return SP_JSX.jsx(DFL.Focusable, { ref: ref, role: "group", "aria-label": label, className: "rg-section-focus", focusClassName: "rg-section-focused", onGamepadFocus: (event) => {
+    // Generic Focusable containers can route to children without becoming a
+    // selectable leaf. Field explicitly registers this read-only focus stop.
+    return SP_JSX.jsx(DFL.Field, { ref: ref, focusable: true, highlightOnFocus: true, padding: "none", bottomSeparator: "none", childrenLayout: "below", className: "rg-section-focus", onGamepadFocus: (event) => {
             if (event.currentTarget instanceof HTMLElement) {
                 event.currentTarget.scrollIntoView({ block: "nearest", inline: "nearest" });
             }
             onFocused?.();
-        }, style: { minWidth: 0, borderRadius: 14, scrollMarginTop: 48, scrollMarginBottom: 16 }, children: children });
+        }, children: SP_JSX.jsx("div", { role: "group", "aria-label": label, style: { minWidth: 0, width: "100%" }, children: children }) });
 });
 
 const labels = {
@@ -239,7 +248,7 @@ function ConnectionQuickStatus({ store, visible, onOpen }) {
         return () => clearInterval(timer);
     }, [visible]);
     const stale = Date.now() >= source.expiresAt;
-    return SP_JSX.jsxs("div", { "aria-label": "Live eGPU readiness", style: { background: regearTheme.surface, border: `1px solid ${regearTheme.border}`, borderRadius: 14, padding: "10px 12px", color: regearTheme.text }, children: [SP_JSX.jsx("style", { children: connectionPanelCss }), SP_JSX.jsxs(SectionFocus, { label: "eGPU readiness", children: [SP_JSX.jsx("div", { style: { fontSize: 13, lineHeight: 1.4, color: regearTheme.muted, marginBottom: 6 }, role: "status", children: stale ? "Waiting for a fresh status update" : source.title.replace(/\bG1\b/g, "eGPU") }), SP_JSX.jsx("div", { children: source.rows.filter(row => labels[row.label]).map(row => {
+    return SP_JSX.jsxs("div", { "aria-label": "Live eGPU readiness", style: { background: regearTheme.surface, border: `1px solid ${regearTheme.border}`, borderRadius: 14, padding: "10px 12px", color: regearTheme.text }, children: [SP_JSX.jsx("style", { children: connectionPanelCss }), SP_JSX.jsxs(SectionFocus, { label: "eGPU readiness", children: [SP_JSX.jsx("div", { style: { fontSize: 13, fontWeight: 700, overflowWrap: "anywhere", marginBottom: 6 }, children: !stale && source.gpuName ? source.gpuName : "eGPU" }), SP_JSX.jsx("div", { style: { fontSize: 13, lineHeight: 1.4, color: regearTheme.muted, marginBottom: 6 }, role: "status", children: stale ? "Waiting for a fresh status update" : source.title }), SP_JSX.jsx("div", { children: source.rows.filter(row => labels[row.label]).map(row => {
                             const state = stale ? "waiting" : row.state;
                             return SP_JSX.jsx(ReadinessRow, { label: labels[row.label], compact: true, state: state === "waiting" && !stale && visible ? "checking" : state }, row.label);
                         }) })] }), SP_JSX.jsx(DFL.DialogButton, { className: "rg-dashboard-action", onClick: onOpen, style: { width: "100%", minWidth: 0, height: "auto", padding: "9px 8px", marginTop: 10,
@@ -247,6 +256,19 @@ function ConnectionQuickStatus({ store, visible, onOpen }) {
                     color: regearTheme.accentSoft, fontSize: 13, lineHeight: 1.4 }, children: "View full progress" })] });
 }
 
+function detectedGpuName(payload, fresh) {
+    if (!fresh)
+        return undefined;
+    // Do not choose arbitrarily among external or unclassified devices.
+    const candidates = payload?.snapshot.gpus?.filter(gpu => gpu.present && gpu.role !== "internal") ?? [];
+    if (candidates.length !== 1 || candidates[0].role !== "external" || candidates[0].confidence !== "verified")
+        return undefined;
+    const raw = candidates[0].model_name;
+    if (typeof raw !== "string" || raw.length > 128)
+        return undefined;
+    const name = raw.trim();
+    return name && /^[\x20-\x7e]+$/.test(name) && !/^(unknown|n\/a|none)$/i.test(name) ? name : undefined;
+}
 function connectionLiveStatus(payload, automatic, journal, failed = false) {
     const c = payload?.connection_readiness;
     const connected = !!c && c.stage !== "disconnected";
@@ -262,7 +284,7 @@ function connectionLiveStatus(payload, automatic, journal, failed = false) {
     const all = fresh && c?.stage === "ready_idle" && rows.every(row => row.state === "ready");
     const switching = fresh && automatic?.stage === "switching";
     const docked = fresh && automatic?.stage === "docked" && payload?.inference.mode === "docked_egpu";
-    const waiting = { waiting_for_pci: "Waiting for G1 detection", transport_detected: "G1 connection detected", waiting_for_driver: "Waiting for GPU driver", waiting_for_link: "Waiting for connection link", waiting_for_hdmi: "Waiting for TV HDMI", waiting_for_audio: "Checking audio recovery", waiting_for_session: "Waiting for display integration", game_running: "Close the game to continue", stabilizing: "Checking connection stability", timed_out: "Detection timed out — keep G1 connected", link_training_failed: "Connection link needs attention", action_required: "Connection needs attention" };
+    const waiting = { waiting_for_pci: "Waiting for eGPU detection", transport_detected: "eGPU connection detected", waiting_for_driver: "Waiting for GPU driver", waiting_for_link: "Waiting for connection link", waiting_for_hdmi: "Waiting for TV HDMI", waiting_for_audio: "Checking audio recovery", waiting_for_session: "Waiting for display integration", game_running: "Close the game to continue", stabilizing: "Checking connection stability", timed_out: "Detection timed out — keep eGPU connected", link_training_failed: "Connection link needs attention", action_required: "Connection needs attention" };
     const age = c?.window_age_ms;
     const waitingStage = ["timed_out", "waiting_for_pci", "transport_detected", "waiting_for_driver", "waiting_for_link", "waiting_for_hdmi", "waiting_for_audio", "waiting_for_session", "stabilizing"].includes(c?.stage ?? "");
     const delayMessage = waitingStage && typeof age === "number" && Number.isFinite(age)
@@ -275,6 +297,7 @@ function connectionLiveStatus(payload, automatic, journal, failed = false) {
                 : delayMessage ?? (c?.stage === "timed_out" ? "Taking longer than expected—still checking" : waiting[c?.stage ?? ""]);
     return { phase: docked ? "complete" : switching ? "switching" : "checking", connected, expiresAt: fresh ? Date.now() + Math.max(0, 15000 - Math.max(snapshotAge, c?.checks_age_ms ?? 15000)) : 0, seconds: Math.floor((c?.window_age_ms ?? 0) / 1000), rows,
         title: !fresh ? "Waiting for a fresh status update" : switching ? "Switching to TV — checking picture and audio" : docked ? "TV transition reported complete" : all ? automatic?.enabled ? "Ready — waiting for automatic switch" : "Ready to switch to TV" : detail ?? "Checking connection readiness",
+        gpuName: connected ? detectedGpuName(payload, fresh) : undefined,
         canSwitch: all && automatic?.enabled === false };
 }
 function createLiveStatusStore() {
@@ -361,20 +384,20 @@ const stateColor = {
 function StatusGlyph({ state }) {
     if (state === "ready") {
         return SP_JSX.jsx("span", { "aria-hidden": "true", style: {
-                width: 16, height: 16, borderRadius: 999, border: `2px solid ${C$1.green}`,
+                width: 14, height: 14, borderRadius: 999, border: `2px solid ${C$1.green}`,
                 display: "grid", placeItems: "center", color: C$1.green, fontWeight: 900, fontSize: 13,
                 boxShadow: `0 0 12px ${C$1.green}18`, boxSizing: "border-box",
             }, children: "\u2713" });
     }
     if (state === "blocked" || state === "error") {
         return SP_JSX.jsx("span", { "aria-hidden": "true", style: {
-                width: 16, height: 16, borderRadius: 999, border: `2px solid ${stateColor[state]}`,
+                width: 14, height: 14, borderRadius: 999, border: `2px solid ${stateColor[state]}`,
                 display: "grid", placeItems: "center", color: stateColor[state], fontWeight: 900, fontSize: 13,
                 boxSizing: "border-box",
             }, children: "!" });
     }
     return SP_JSX.jsx("span", { "aria-hidden": "true", className: state === "checking" || state === "switching" ? "regear-progress-spinner" : undefined, style: {
-            width: 16, height: 16, borderRadius: 999, border: "3px solid rgba(255,255,255,.16)",
+            width: 14, height: 14, borderRadius: 999, border: "2px solid rgba(255,255,255,.16)",
             borderTopColor: stateColor[state], boxSizing: "border-box", flexShrink: 0,
         } });
 }
@@ -388,7 +411,7 @@ function ConnectionProgressOverlay(props) {
     const activeIndex = phaseIndex(props.phase);
     const elapsed = props.elapsedSeconds != null ? ` · ${props.elapsedSeconds} seconds` : "";
     return SP_JSX.jsxs("div", { style: {
-            width: "100%", maxWidth: 480, minWidth: 0, boxSizing: "border-box", padding: 8,
+            width: "100%", maxWidth: 420, minWidth: 0, boxSizing: "border-box", padding: 6,
             borderRadius: 22, background: `linear-gradient(180deg, ${C$1.bg} 0%, #071322 100%)`,
             border: `1px solid ${C$1.borderStrong}`, boxShadow: "0 26px 90px rgba(0,0,0,.58)",
             lineHeight: 1.2, color: C$1.text, fontFamily: "Motiva Sans, Inter, system-ui, sans-serif",
@@ -399,15 +422,15 @@ function ConnectionProgressOverlay(props) {
       .regear-progress-sweep { animation: regear-sweep 1.25s ease-in-out infinite; }
       .regear-hide-button:focus { outline: 3px solid rgba(57,216,255,.42); outline-offset: 3px; }
       @media (prefers-reduced-motion: reduce) { .regear-progress-spinner, .regear-progress-sweep { animation: none; } }
-    ` }), SP_JSX.jsxs("div", { style: { display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 3, minWidth: 0 }, children: [SP_JSX.jsx("img", { src: brandIcon, alt: "", "aria-hidden": "true", width: 22, height: 22, style: { objectFit: "contain", flexShrink: 0 } }), SP_JSX.jsx("div", { style: { fontSize: 17, fontWeight: 820, letterSpacing: "-.02em" }, children: "Re-Gear" }), SP_JSX.jsx("div", { style: { color: C$1.muted, fontSize: 13, margin: "0 2px" }, children: "/" }), SP_JSX.jsx("div", { style: { fontSize: 13, fontWeight: 620 }, children: "Connection progress" })] }), SP_JSX.jsx("div", { style: { display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8, marginTop: 6, marginBottom: 6 }, children: ["Connecting", "Switching", "Ready"].map((name, i) => {
+    ` }), SP_JSX.jsxs("div", { style: { display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 3, minWidth: 0 }, children: [SP_JSX.jsx("img", { src: brandIcon, alt: "", "aria-hidden": "true", width: 20, height: 20, style: { objectFit: "contain", flexShrink: 0 } }), SP_JSX.jsx("div", { style: { fontSize: 16, fontWeight: 820, letterSpacing: "-.02em" }, children: "Re-Gear" }), SP_JSX.jsx("div", { style: { color: C$1.muted, fontSize: 13, margin: "0 2px" }, children: "/" }), SP_JSX.jsx("div", { style: { fontSize: 13, fontWeight: 620 }, children: "Connection progress" })] }), SP_JSX.jsx("div", { style: { display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 6, marginTop: 4, marginBottom: 4 }, children: ["Connecting", "Switching", "Ready"].map((name, i) => {
                     const active = i === activeIndex;
                     const complete = i < activeIndex;
                     return SP_JSX.jsxs("div", { children: [SP_JSX.jsxs("div", { style: { display: "flex", alignItems: "baseline", gap: 4, color: active ? C$1.text : C$1.muted, marginBottom: 4 }, children: [SP_JSX.jsxs("span", { style: { color: complete || active ? C$1.cyan : C$1.muted, fontWeight: 820, fontSize: 13 }, children: ["0", i + 1] }), SP_JSX.jsx("span", { style: { fontWeight: active ? 780 : 600, fontSize: 13 }, children: name })] }), SP_JSX.jsx("div", { style: { height: 4, borderRadius: 999, background: "rgba(105,130,155,.28)", overflow: "hidden" }, children: (complete || active) && SP_JSX.jsx("div", { className: active && props.phase === "switching" ? "regear-progress-sweep" : undefined, style: { width: "100%", height: "100%", borderRadius: 999, background: C$1.cyan, boxShadow: `0 0 12px ${C$1.cyan}66` } }) })] }, name);
                 }) }), SP_JSX.jsxs("div", { style: {
                     border: `1px solid ${C$1.border}`, borderRadius: 18,
-                    background: `linear-gradient(180deg, ${C$1.panel} 0%, ${C$1.panel2} 100%)`, padding: "8px",
-                }, children: [SP_JSX.jsx("div", { style: { fontSize: 17, fontWeight: 830, letterSpacing: "-.02em", marginBottom: 4 }, children: headline(props.phase) }), SP_JSX.jsxs("div", { style: { color: C$1.muted, fontSize: 13, marginBottom: 8 }, children: [props.deviceLabel, elapsed] }), props.phase === "ready" && SP_JSX.jsx("div", { style: { display: "grid", placeItems: "center", margin: "2px 0 6px" }, children: SP_JSX.jsx("div", { style: { width: 36, height: 36, borderRadius: 999, border: `4px solid ${C$1.green}`, color: C$1.green, display: "grid", placeItems: "center", fontSize: 24, fontWeight: 500, boxShadow: `0 0 28px ${C$1.green}18` }, children: "\u2713" }) }), SP_JSX.jsx("div", { style: { border: `1px solid ${C$1.border}`, borderRadius: 14, overflow: "hidden", background: C$1.row }, children: props.rows.map((row, index) => SP_JSX.jsxs("div", { style: {
-                                minHeight: 22, padding: "2px 6px", display: "grid", gridTemplateColumns: row.icon ? "24px minmax(0,1fr) auto" : "minmax(0,1fr) auto",
+                    background: `linear-gradient(180deg, ${C$1.panel} 0%, ${C$1.panel2} 100%)`, padding: "6px",
+                }, children: [SP_JSX.jsx("div", { style: { fontSize: 16, fontWeight: 830, letterSpacing: "-.02em", marginBottom: 3 }, children: headline(props.phase) }), SP_JSX.jsxs("div", { style: { color: C$1.muted, fontSize: 13, marginBottom: 6 }, children: [props.deviceLabel, elapsed] }), props.phase === "ready" && SP_JSX.jsx("div", { style: { display: "grid", placeItems: "center", margin: "2px 0 6px" }, children: SP_JSX.jsx("div", { style: { width: 36, height: 36, borderRadius: 999, border: `4px solid ${C$1.green}`, color: C$1.green, display: "grid", placeItems: "center", fontSize: 24, fontWeight: 500, boxShadow: `0 0 28px ${C$1.green}18` }, children: "\u2713" }) }), SP_JSX.jsx("div", { style: { border: `1px solid ${C$1.border}`, borderRadius: 14, overflow: "hidden", background: C$1.row }, children: props.rows.map((row, index) => SP_JSX.jsxs("div", { style: {
+                                minHeight: 19, padding: "1px 6px", display: "grid", gridTemplateColumns: row.icon ? "20px minmax(0,1fr) auto" : "minmax(0,1fr) auto",
                                 alignItems: "center", gap: 6, borderBottom: index === props.rows.length - 1 ? "none" : `1px solid ${C$1.border}`,
                             }, children: [row.icon && SP_JSX.jsx("div", { style: { color: C$1.text, opacity: .95 }, children: row.icon }), SP_JSX.jsx("div", { style: { fontSize: 13, minWidth: 0, overflowWrap: "anywhere" }, children: row.label }), SP_JSX.jsxs("div", { style: { display: "flex", alignItems: "center", gap: 6, color: stateColor[row.state], fontWeight: 700, fontSize: 13, whiteSpace: "nowrap" }, children: [SP_JSX.jsx(StatusGlyph, { state: row.state }), SP_JSX.jsx("span", { children: row.stateLabel ?? (row.state === "ready" ? "Ready" : row.state === "checking" ? "Checking" : row.state === "switching" ? "Switching" : row.state === "pending" ? "Next" : row.state === "blocked" ? "Blocked" : "Error") })] })] }, row.key)) }), props.detail && SP_JSX.jsx("div", { style: { marginTop: 4, color: C$1.muted, fontSize: 13 }, children: props.detail }), props.keepConnectedMessage && SP_JSX.jsx("div", { style: { marginTop: 6, color: C$1.muted, fontSize: 13 }, children: props.keepConnectedMessage }), SP_JSX.jsxs("div", { style: { display: "flex", gap: 8, marginTop: 6 }, children: [SP_JSX.jsx(DFL.DialogButton, { className: "rg-dashboard-action regear-hide-button", onClick: props.onHide, style: {
                                     margin: 0, padding: "4px 10px", height: 32, lineHeight: "22px", width: "100%", minWidth: 0, minHeight: 32, borderRadius: 12,
@@ -438,10 +461,10 @@ function connectionProgressViewModel(status, now = Date.now()) {
             { key: "audio", label: "TV audio", state: "pending", stateLabel: "Check sound" },
         ];
     return { phase, rows, elapsedSeconds: status.seconds,
-        deviceLabel: status.connected ? "GPD G1 connected" : "GPD G1 connection",
+        deviceLabel: `${fresh && status.gpuName ? status.gpuName : "eGPU"} ${fresh && status.connected ? "connected" : "connection"}`,
         detail: !fresh ? "Waiting for a fresh status update" : phase === "ready"
             ? "TV transition reported complete. Check picture and sound. Closing automatically…" : status.title,
-        keepConnectedMessage: "Keep G1 connected · Hide keeps docking active.",
+        keepConnectedMessage: "Keep eGPU connected · Hide keeps docking active.",
     };
 }
 
@@ -2227,7 +2250,7 @@ function connectionProgress(payload) {
     }
     return {
         label: "Ready to dock",
-        detail: "G1 and TV evidence are ready. Use Switch to TV now, or enable automatic TV docking.",
+        detail: "eGPU and TV evidence are ready. Use Switch to TV now, or enable automatic TV docking.",
         settling: false,
     };
 }
@@ -2483,21 +2506,21 @@ class SleepPreflightCoordinator {
 const LABELS = {
     "journal.foreign_workflow": "Another workflow needs attention",
     "automatic_dock.rearmed_after_acknowledgement": "Re-checking attachment",
-    "automatic_dock.suppressed_for_safe_disconnect": "Waiting for G1 removal",
-    "connection.disconnected": "Waiting for G1",
-    "connection.waiting_for_pci": "G1 detected; starting GPU",
-    "connection.waiting_for_driver": "Waiting for G1 graphics driver",
-    "connection.waiting_for_link": "Waiting for G1 PCIe link",
-    "connection.waiting_for_hdmi": "Waiting for G1 HDMI",
-    "connection.waiting_for_audio": "Waiting for G1 TV audio",
+    "automatic_dock.suppressed_for_safe_disconnect": "Waiting for eGPU removal",
+    "connection.disconnected": "Waiting for eGPU",
+    "connection.waiting_for_pci": "eGPU detected; starting GPU",
+    "connection.waiting_for_driver": "Waiting for eGPU graphics driver",
+    "connection.waiting_for_link": "Waiting for eGPU PCIe link",
+    "connection.waiting_for_hdmi": "Waiting for eGPU HDMI",
+    "connection.waiting_for_audio": "Waiting for eGPU TV audio",
     "connection.waiting_for_session": "Preparing Steam session",
     "connection.game_running": "Waiting for game to close",
-    "connection.stabilizing": "Checking G1 connection stability",
-    "connection.late_enumeration_detected": "G1 GPU appeared; checking connection",
-    "connection.ready_idle": "G1 ready for TV",
-    "connection.transport_dropped_before_pci": "G1 USB4 connection dropped while starting",
-    "connection.verified_absence_required": "Power off and disconnect G1 before retrying",
-    "connection.readiness_timed_out": "G1 did not become ready",
+    "connection.stabilizing": "Checking eGPU connection stability",
+    "connection.late_enumeration_detected": "eGPU GPU appeared; checking connection",
+    "connection.ready_idle": "eGPU ready for TV",
+    "connection.transport_dropped_before_pci": "eGPU USB4 connection dropped while starting",
+    "connection.verified_absence_required": "Power off and disconnect eGPU before retrying",
+    "connection.readiness_timed_out": "eGPU did not become ready",
     "connection.game_state_unknown": "Game state could not be verified",
     boosted_handheld: "Boosted Handheld",
     certified: "Certified",
@@ -2581,7 +2604,7 @@ function showAutomaticDockConfirmation(onConfirm, onClose) {
     modal = DFL.showModal(SP_JSX.jsx(DFL.ConfirmModal, { strTitle: "Enable automatic TV docking?", strOKButtonText: "Enable", strCancelButtonText: "Cancel", bDestructiveWarning: true, bDisableBackgroundDismiss: true, bHideCloseIcon: true, onOK: () => {
             close();
             onConfirm();
-        }, onCancel: close, children: SP_JSX.jsxs("div", { style: { fontSize: "13px", lineHeight: "18px" }, children: [SP_JSX.jsx("p", { children: "When Re-Gear verifies this Ally X, the exact GPD G1, one ready TV, a healthy link, and no running game, it will restart Steam Game Mode onto the TV." }), SP_JSX.jsx("p", { children: "The screen will briefly show Steam shutting down. USB4 presence alone never triggers the restart, and physical live removal remains unsupported." })] }) }), window, { strTitle: PRODUCT_NAME, bNeverPopOut: true });
+        }, onCancel: close, children: SP_JSX.jsxs("div", { style: { fontSize: "13px", lineHeight: "18px" }, children: [SP_JSX.jsx("p", { children: "When Re-Gear verifies this Ally X, the exact supported eGPU profile, one ready TV, a healthy link, and no running game, it will restart Steam Game Mode onto the TV." }), SP_JSX.jsx("p", { children: "The screen will briefly show Steam shutting down. USB4 presence alone never triggers the restart, and physical live removal remains unsupported." })] }) }), window, { strTitle: PRODUCT_NAME, bNeverPopOut: true });
     return modal;
 }
 function showSafeDisconnectConfirmation(portable, onConfirm, onClose) {
@@ -2590,16 +2613,16 @@ function showSafeDisconnectConfirmation(portable, onConfirm, onClose) {
         modal.Close();
         onClose();
     };
-    modal = DFL.showModal(SP_JSX.jsx(DFL.ConfirmModal, { strTitle: portable ? "Shut down for G1 disconnect?" : "Return to Ally for G1 disconnect?", strOKButtonText: portable ? "Shut down" : "Return to Ally", strCancelButtonText: "Cancel", bDestructiveWarning: true, bDisableBackgroundDismiss: true, bHideCloseIcon: true, onOK: () => {
+    modal = DFL.showModal(SP_JSX.jsx(DFL.ConfirmModal, { strTitle: portable ? "Shut down for eGPU disconnect?" : "Return to Ally for eGPU disconnect?", strOKButtonText: portable ? "Shut down" : "Return to Ally", strCancelButtonText: "Cancel", bDestructiveWarning: true, bDisableBackgroundDismiss: true, bHideCloseIcon: true, onOK: () => {
             close();
             onConfirm();
-        }, onCancel: close, children: SP_JSX.jsx("div", { style: { fontSize: "13px", lineHeight: "18px" }, children: portable ? (SP_JSX.jsxs(SP_JSX.Fragment, { children: [SP_JSX.jsx("p", { children: "Re-Gear will revalidate idle Portable mode and request a normal system shutdown." }), SP_JSX.jsx("p", { children: "The request cannot prove physical power-off. Keep the G1 connected until the fan stops and every top power LED is off." }), SP_JSX.jsx("p", { children: "If the fan remains on after 60 seconds, keep the G1 connected and hold the Ally power button until the fan stops." })] })) : (SP_JSX.jsxs(SP_JSX.Fragment, { children: [SP_JSX.jsx("p", { children: "Re-Gear will require no running game, then restart Game Mode on the Ally display." }), SP_JSX.jsx("p", { children: "After Portable is verified, acknowledge the result and use this control again to shut down. Do not unplug yet." })] })) }) }), window, { strTitle: PRODUCT_NAME, bNeverPopOut: true });
+        }, onCancel: close, children: SP_JSX.jsx("div", { style: { fontSize: "13px", lineHeight: "18px" }, children: portable ? (SP_JSX.jsxs(SP_JSX.Fragment, { children: [SP_JSX.jsx("p", { children: "Re-Gear will revalidate idle Portable mode and request a normal system shutdown." }), SP_JSX.jsx("p", { children: "The request cannot prove physical power-off. Keep the eGPU connected until the fan stops and every top power LED is off." }), SP_JSX.jsx("p", { children: "If the fan remains on after 60 seconds, keep the eGPU connected and hold the Ally power button until the fan stops." })] })) : (SP_JSX.jsxs(SP_JSX.Fragment, { children: [SP_JSX.jsx("p", { children: "Re-Gear will require no running game, then restart Game Mode on the Ally display." }), SP_JSX.jsx("p", { children: "After Portable is verified, acknowledge the result and use this control again to shut down. Do not unplug yet." })] })) }) }), window, { strTitle: PRODUCT_NAME, bNeverPopOut: true });
     return modal;
 }
 function showControllerDisplayConfirmation(target, onConfirm, onClose) {
     let modal;
     const close = () => { modal.Close(); onClose(); };
-    modal = DFL.showModal(SP_JSX.jsxs(DFL.ConfirmModal, { strTitle: target === "tv" ? "Switch to TV?" : "Return to Ally?", strOKButtonText: target === "tv" ? "Switch to TV" : "Return to Ally", strCancelButtonText: "Cancel", bDisableBackgroundDismiss: true, bHideCloseIcon: true, onOK: () => { close(); onConfirm(); }, onCancel: close, children: [SP_JSX.jsx("p", { children: "Re-Gear will check that no game is running and verify display readiness before restarting Game Mode." }), SP_JSX.jsx("p", { children: "Keep the G1 connected. This action does not shut down the Ally or make unplugging safe." })] }), window, { strTitle: PRODUCT_NAME, bNeverPopOut: true });
+    modal = DFL.showModal(SP_JSX.jsxs(DFL.ConfirmModal, { strTitle: target === "tv" ? "Switch to TV?" : "Return to Ally?", strOKButtonText: target === "tv" ? "Switch to TV" : "Return to Ally", strCancelButtonText: "Cancel", bDisableBackgroundDismiss: true, bHideCloseIcon: true, onOK: () => { close(); onConfirm(); }, onCancel: close, children: [SP_JSX.jsx("p", { children: "Re-Gear will check that no game is running and verify display readiness before restarting Game Mode." }), SP_JSX.jsx("p", { children: "Keep the eGPU connected. This action does not shut down the Ally or make unplugging safe." })] }), window, { strTitle: PRODUCT_NAME, bNeverPopOut: true });
     return modal;
 }
 function showPresentationPreparationBlocked(blockers) {
@@ -3208,7 +3231,7 @@ function Content({ preflight, connection }) {
             const status = await setAutomaticDockEnabled(enabled, enabled);
             setAutomaticDockStatus(status);
             setAutomaticDockMessage(status.enabled
-                ? "Automatic TV docking is enabled. Re-Gear is waiting for complete G1 and TV evidence."
+                ? "Automatic TV docking is enabled. Re-Gear is waiting for complete eGPU and TV evidence."
                 : status.code === "automatic_dock.disabled"
                     ? "Automatic TV docking is disabled."
                     : `Automatic TV docking was not changed: ${label(status.code)}.`);
@@ -3247,13 +3270,13 @@ function Content({ preflight, connection }) {
                 }
                 toaster.toast({
                     title: "Re-Gear requested an Ally shutdown",
-                    body: "Completion is unverified. Keep the G1 connected until the fan and every top power LED are off.",
+                    body: "Completion is unverified. Keep the eGPU connected until the fan and every top power LED are off.",
                     critical: true,
                     duration: 30000,
                 });
                 const outcome = await executeSafeDisconnectShutdown(approval.approval_token);
                 setSafeDisconnectMessage(outcome.accepted
-                    ? "Power-off request accepted; completion is unverified. Keep the G1 connected until the fan stops. If it remains on after 60 seconds, hold the Ally power button until the fan stops."
+                    ? "Power-off request accepted; completion is unverified. Keep the eGPU connected until the fan stops. If it remains on after 60 seconds, hold the Ally power button until the fan stops."
                     : `Shutdown was not requested: ${label(outcome.code)}.`);
                 return;
             }
@@ -3266,7 +3289,7 @@ function Content({ preflight, connection }) {
             }
             toaster.toast({
                 title: "Re-Gear is returning to the Ally",
-                body: "Do not disconnect the G1. Wait for Portable verification, then shut down.",
+                body: "Do not disconnect the eGPU. Wait for Portable verification, then shut down.",
                 critical: true,
                 duration: 30000,
             });
@@ -3278,8 +3301,8 @@ function Content({ preflight, connection }) {
         }
         catch {
             setSafeDisconnectMessage(portable
-                ? "Shutdown was not requested. Keep the G1 connected."
-                : "Portable transition did not complete. Keep the G1 connected.");
+                ? "Shutdown was not requested. Keep the eGPU connected."
+                : "Portable transition did not complete. Keep the eGPU connected.");
         }
         finally {
             safeDisconnectExecuting.current = false;
@@ -3525,14 +3548,14 @@ function Content({ preflight, connection }) {
                                                 || safeDisconnectBusy
                                                 || (payload?.inference.mode !== "portable" && payload?.inference.mode !== "docked_egpu")
                                                 || Boolean(tvSwitchAcknowledgementId)
-                                                || Boolean(journalStatus && journalStatus.code !== "journal.idle") }) }), tvSwitchMessage && SP_JSX.jsx(DFL.PanelSectionRow, { children: tvSwitchMessage }), SP_JSX.jsx(DashboardSurface, { children: SP_JSX.jsx(DashboardAction, { icon: "connection", title: "Disconnect status", description: "Live checks \u00B7 keep G1 connected", onClick: () => {
+                                                || Boolean(journalStatus && journalStatus.code !== "journal.idle") }) }), tvSwitchMessage && SP_JSX.jsx(DFL.PanelSectionRow, { children: tvSwitchMessage }), SP_JSX.jsx(DashboardSurface, { children: SP_JSX.jsx(DashboardAction, { icon: "connection", title: "Disconnect status", description: "Live checks \u00B7 keep eGPU connected", onClick: () => {
                                                 if (!disconnectProgressModal.current)
                                                     disconnectProgressModal.current = showDisconnectProgress(() => { disconnectProgressModal.current = null; });
                                             } }) }), SP_JSX.jsx(DashboardSurface, { children: SP_JSX.jsx(DashboardAction, { icon: "power", title: safeDisconnectBusy
                                                 ? "Checking…"
                                                 : payload?.inference.mode === "portable"
                                                     ? "Shut down to disconnect"
-                                                    : "Prepare to disconnect", description: "Keep the G1 connected until fully powered off.", onClick: requestSafeDisconnect, disabled: safeDisconnectBusy
+                                                    : "Prepare to disconnect", description: "Keep the eGPU connected until fully powered off.", onClick: requestSafeDisconnect, disabled: safeDisconnectBusy
                                                 || !disconnect?.applicable
                                                 || Boolean(tvSwitchAcknowledgementId)
                                                 || Boolean(journalStatus && journalStatus.code !== "journal.idle") }) }), safeDisconnectMessage && (SP_JSX.jsx(DFL.PanelSectionRow, { children: safeDisconnectMessage })), journalStatus && journalStatus.code !== "journal.idle" && (SP_JSX.jsx(DiagnosticRow, { name: "Safety journal", value: label(journalStatus.owner) })), journalMessage && SP_JSX.jsx(DFL.PanelSectionRow, { children: journalMessage }), journalStatus?.owner === "sleep"

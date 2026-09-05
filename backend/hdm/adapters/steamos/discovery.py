@@ -323,6 +323,7 @@ class SteamOsDiscovery:
                     vendor_device=card.vendor_device,
                     present=True,
                     selected_for_render=(stable_id == selected_id) if selected_id else None,
+                    model_name=card.model_name,
                     confidence=confidence,
                     evidence=(
                         Evidence("drm-sysfs", Confidence.OBSERVED, "GPU is present in DRM"),

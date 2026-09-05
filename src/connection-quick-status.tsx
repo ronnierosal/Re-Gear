@@ -29,8 +29,11 @@ export function ConnectionQuickStatus({store, visible, onOpen}: {
   return <div aria-label="Live eGPU readiness" style={{background:theme.surface, border:`1px solid ${theme.border}`, borderRadius:14, padding:"10px 12px", color:theme.text}}>
     <style>{connectionPanelCss}</style>
     <SectionFocus label="eGPU readiness">
+    <div style={{fontSize:13, fontWeight:700, overflowWrap:"anywhere", marginBottom:6}}>
+      {!stale && source.gpuName ? source.gpuName : "eGPU"}
+    </div>
     <div style={{fontSize:13, lineHeight:1.4, color:theme.muted, marginBottom:6}} role="status">
-      {stale ? "Waiting for a fresh status update" : source.title.replace(/\bG1\b/g, "eGPU")}
+      {stale ? "Waiting for a fresh status update" : source.title}
     </div>
     <div>{source.rows.filter(row => labels[row.label]).map(row => {
       const state = stale ? "waiting" : row.state;

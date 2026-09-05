@@ -25,7 +25,7 @@ function DisconnectPanel({close}: {close(): void}) {
     strOKButtonText="Hide" bAlertDialog={true} bDisableBackgroundDismiss={true} bHideCloseIcon={true} onOK={close} onCancel={close}>
     <style>{connectionPanelCss}</style>
     <div className="rg-connection">
-      <p className="rg-connection-subtitle">Keep the G1 cable connected</p>
+      <p className="rg-connection-subtitle">Keep the eGPU cable connected</p>
       <div className="rg-connection-list">{status.rows.map(row => <ReadinessRow key={row.label}
         label={row.label} state={row.state === "ready" ? "ready" : row.state === "blocked" ? "blocked" : row.state === "unavailable" ? "unavailable" : "waiting"}/>)}</div>
       <p role="status" className="rg-connection-detail">{status.detail}</p>

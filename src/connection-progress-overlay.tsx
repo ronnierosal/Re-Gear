@@ -51,14 +51,14 @@ const stateColor: Record<ConnectionProgressState, string> = {
 function StatusGlyph({ state }: { state: ConnectionProgressState }) {
   if (state === "ready") {
     return <span aria-hidden="true" style={{
-      width: 16, height: 16, borderRadius: 999, border: `2px solid ${C.green}`,
+      width: 14, height: 14, borderRadius: 999, border: `2px solid ${C.green}`,
       display: "grid", placeItems: "center", color: C.green, fontWeight: 900, fontSize: 13,
       boxShadow: `0 0 12px ${C.green}18`, boxSizing: "border-box",
     }}>✓</span>;
   }
   if (state === "blocked" || state === "error") {
     return <span aria-hidden="true" style={{
-      width: 16, height: 16, borderRadius: 999, border: `2px solid ${stateColor[state]}`,
+      width: 14, height: 14, borderRadius: 999, border: `2px solid ${stateColor[state]}`,
       display: "grid", placeItems: "center", color: stateColor[state], fontWeight: 900, fontSize: 13,
       boxSizing: "border-box",
     }}>!</span>;
@@ -66,7 +66,7 @@ function StatusGlyph({ state }: { state: ConnectionProgressState }) {
   return <span aria-hidden="true"
     className={state === "checking" || state === "switching" ? "regear-progress-spinner" : undefined}
     style={{
-      width: 16, height: 16, borderRadius: 999, border: "3px solid rgba(255,255,255,.16)",
+      width: 14, height: 14, borderRadius: 999, border: "2px solid rgba(255,255,255,.16)",
       borderTopColor: stateColor[state], boxSizing: "border-box", flexShrink: 0,
     }} />;
 }
@@ -84,7 +84,7 @@ export function ConnectionProgressOverlay(props: ConnectionProgressOverlayProps)
   const elapsed = props.elapsedSeconds != null ? ` · ${props.elapsedSeconds} seconds` : "";
 
   return <div style={{
-    width: "100%", maxWidth: 480, minWidth: 0, boxSizing: "border-box", padding: 8,
+    width: "100%", maxWidth: 420, minWidth: 0, boxSizing: "border-box", padding: 6,
     borderRadius: 22, background: `linear-gradient(180deg, ${C.bg} 0%, #071322 100%)`,
     border: `1px solid ${C.borderStrong}`, boxShadow: "0 26px 90px rgba(0,0,0,.58)",
     lineHeight: 1.2, color: C.text, fontFamily: "Motiva Sans, Inter, system-ui, sans-serif",
@@ -99,13 +99,13 @@ export function ConnectionProgressOverlay(props: ConnectionProgressOverlayProps)
     `}</style>
 
     <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 3, minWidth: 0 }}>
-      <img src={brandIcon} alt="" aria-hidden="true" width={22} height={22} style={{ objectFit: "contain", flexShrink: 0 }} />
-      <div style={{ fontSize: 17, fontWeight: 820, letterSpacing: "-.02em" }}>Re-Gear</div>
+      <img src={brandIcon} alt="" aria-hidden="true" width={20} height={20} style={{ objectFit: "contain", flexShrink: 0 }} />
+      <div style={{ fontSize: 16, fontWeight: 820, letterSpacing: "-.02em" }}>Re-Gear</div>
       <div style={{ color: C.muted, fontSize: 13, margin: "0 2px" }}>/</div>
       <div style={{ fontSize: 13, fontWeight: 620 }}>Connection progress</div>
     </div>
 
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8, marginTop: 6, marginBottom: 6 }}>
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 6, marginTop: 4, marginBottom: 4 }}>
       {["Connecting", "Switching", "Ready"].map((name, i) => {
         const active = i === activeIndex;
         const complete = i < activeIndex;
@@ -124,10 +124,10 @@ export function ConnectionProgressOverlay(props: ConnectionProgressOverlayProps)
 
     <div style={{
       border: `1px solid ${C.border}`, borderRadius: 18,
-      background: `linear-gradient(180deg, ${C.panel} 0%, ${C.panel2} 100%)`, padding: "8px",
+      background: `linear-gradient(180deg, ${C.panel} 0%, ${C.panel2} 100%)`, padding: "6px",
     }}>
-      <div style={{ fontSize: 17, fontWeight: 830, letterSpacing: "-.02em", marginBottom: 4 }}>{headline(props.phase)}</div>
-      <div style={{ color: C.muted, fontSize: 13, marginBottom: 8 }}>{props.deviceLabel}{elapsed}</div>
+      <div style={{ fontSize: 16, fontWeight: 830, letterSpacing: "-.02em", marginBottom: 3 }}>{headline(props.phase)}</div>
+      <div style={{ color: C.muted, fontSize: 13, marginBottom: 6 }}>{props.deviceLabel}{elapsed}</div>
 
       {props.phase === "ready" && <div style={{ display: "grid", placeItems: "center", margin: "2px 0 6px" }}>
         <div style={{ width: 36, height: 36, borderRadius: 999, border: `4px solid ${C.green}`, color: C.green, display: "grid", placeItems: "center", fontSize: 24, fontWeight: 500, boxShadow: `0 0 28px ${C.green}18` }}>✓</div>
@@ -135,7 +135,7 @@ export function ConnectionProgressOverlay(props: ConnectionProgressOverlayProps)
 
       <div style={{ border: `1px solid ${C.border}`, borderRadius: 14, overflow: "hidden", background: C.row }}>
         {props.rows.map((row, index) => <div key={row.key} style={{
-          minHeight: 22, padding: "2px 6px", display: "grid", gridTemplateColumns: row.icon ? "24px minmax(0,1fr) auto" : "minmax(0,1fr) auto",
+          minHeight: 19, padding: "1px 6px", display: "grid", gridTemplateColumns: row.icon ? "20px minmax(0,1fr) auto" : "minmax(0,1fr) auto",
           alignItems: "center", gap: 6, borderBottom: index === props.rows.length - 1 ? "none" : `1px solid ${C.border}`,
         }}>
           {row.icon && <div style={{ color: C.text, opacity: .95 }}>{row.icon}</div>}

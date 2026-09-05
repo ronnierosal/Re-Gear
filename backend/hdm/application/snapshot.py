@@ -133,7 +133,7 @@ def report_to_dict(report: SnapshotReport) -> dict[str, object]:
         workflow_unavailable=report.workflow_unavailable,
     )
     return {
-        "snapshot": snapshot_to_dict(report.snapshot),
+        "snapshot": snapshot_to_dict(report.snapshot, include_presentation=True),
         "inference": {
             "mode": report.inference.mode.value,
             "reasons": list(report.inference.reasons),
