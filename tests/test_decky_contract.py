@@ -22,6 +22,7 @@ from scripts.build_plugin import (  # noqa: E402
 class DeckyContractTests(unittest.TestCase):
     def test_manifest_requests_root_for_observation_and_sleep_guard(self):
         manifest = json.loads((ROOT / "plugin.json").read_text(encoding="utf-8"))
+        self.assertEqual(manifest["name"], "Re-Gear")
         self.assertEqual(manifest["flags"], ["root"])
         self.assertEqual(manifest["api_version"], 1)
         self.assertIn("sleep safety", manifest["publish"]["description"].lower())
@@ -230,6 +231,7 @@ class DeckyContractTests(unittest.TestCase):
         self.assertNotIn("    undefined,\n    { strTitle", warning)
 
     def test_decky_archive_has_one_top_level_plugin_directory(self):
+        self.assertEqual(PLUGIN_DIRECTORY, "HandheldDockMode")
         self.assertEqual(
             archive_name(ROOT / "plugin.json"),
             f"{PLUGIN_DIRECTORY}/plugin.json",

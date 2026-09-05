@@ -1,5 +1,60 @@
 # Current state
 
+
+## Re-Gear 0.3.38-popup.1 candidate
+
+Combines the committed 0.3.37 offline badge lineage with plugin-owned
+connection progress monitoring. Fresh disconnected-to-connected observations
+open one popup without opening Quick Access; initial attached state does not.
+One-second serialized status refresh updates the checklist. Automatic popups
+show one Hide action; manual View progress retains guarded TV switching.
+No backend transition behavior changed. Native popup timing remains unverified.
+
+## Steam-reference icon sizing - 2026-09-04
+
+0.3.36-offline.1 revision 24b39be uses a bounded same-tile native lower-right
+square SVG reference to match visible symbol height and center. The supplied
+asset's 80/128 status-circle ratio is included in sizing; fallback is 64x32.
+The percent-width shrink is removed. Native two-SVG group bounds reserve room
+for Steam controls; unusually narrow covers move our badge above rather than
+overlap. Only Re-Gear styles are changed. No new timer or resize observer.
+Live diagnostic inspection found no carousel on the current Steam surface;
+new geometry is tested synthetically, not visually verified on device.
+955 backend tests (six skipped), 152 frontend tests, architecture, compilation,
+TypeScript, build and package/provenance checks passed.
+Staged /home/deck/Re-Gear-0.3.36-offline.1.zip; matching SHA-256:
+2014635357F0A950FE63328198E29454FE8647DEEF3BAB1C622C4A2719AAE1D7.
+Installed before staging: 0.3.35-offline.1 c0590e58abeb. No installation,
+restart or existing archive overwrite. Automatic-only behavior retained.
+
+## Automatic-only offline UI - 2026-09-04
+
+0.3.35-offline.1 revision c0590e5 removes the manual Offline Readiness panel,
+game picker, check button and manual test confirmation from Quick Access.
+The plugin-lifecycle automatic checks and artwork badges remain. Manual-panel
+source is dormant and tree-shaken from the build; no manual check is required.
+Includes the narrow-cover and persistent neutral-expiry fixes.
+Staged at /home/deck/Re-Gear-0.3.35-offline.1.zip; matching local/remote SHA-256:
+B6A38CF5B83C2D38C116BDCBDCBB519CBE6A0F26FF15E5D92086C6057B7F716E.
+Installed before staging: 0.3.34-offline.1 revision 1ab3b2f8d097.
+955 backend tests (six skipped), 149 frontend tests, architecture, compilation,
+TypeScript, build and package/provenance checks passed. No installation, restart
+or existing ZIP overwrite. Player validation remains pending.
+
+## Combined badge restoration staged - 2026-09-04
+
+Installed 0.3.33 revision 263dc089 retained confidence/branding but omitted
+narrow-cover sizing and neutral expiry fixes. Candidate 0.3.34-offline.1
+revision 1ab3b2f starts from that installed revision and restores those exact
+source/test changes, preserving the Re-Gear Quick Access rename.
+Staged: /home/deck/Re-Gear-0.3.34-offline.1.zip. Local/remote SHA-256:
+98CCA0F609101F021C53E94E9CA41655D387A7182F8BD9C818E1D7EF3944EF0F.
+955 backend tests (six skipped), 149 frontend tests, architecture, compilation,
+TypeScript, build, package/provenance and diff checks passed. No installation
+or restart. No existing ZIP overwritten. Native visual acceptance pending.
+Use branch fix/combined-badges-0.3.34 as the integration reference for these
+fixes; taking only the older offline confidence commit loses them.
+
 ## Re-Gear 0.3.31 live connection progress candidate
 
 Adds a dismissible live readiness popup and persistent View progress control.

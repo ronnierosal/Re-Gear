@@ -4,7 +4,6 @@ import { showConnectionLivePanel } from "./connection-live-panel";
 import { PRODUCT_NAME } from "./branding";
 import { startControllerSafeDisconnect, steamControllerInput } from "./controller-safe-disconnect";
 import { startOfflineFocusChecks } from "./offline-focus-checks";
-import { OfflineReadinessPanel } from "./offline-readiness-panel";
 import brandIcon from "../docs/images/re-gear-decky-white-transparent.png";
 import { definePlugin, toaster, useQuickAccessVisible } from "@decky/api";
 import {
@@ -1467,7 +1466,6 @@ function Content({ preflight, connection }: { preflight: SleepPreflightCoordinat
         </DashboardSurface>
       </PanelSection>
 
-      <OfflineReadinessPanel gameState={snapshot?.game_state ?? "unknown"} visible={quickAccessVisible} />
       {payload?.connection_readiness && payload.connection_readiness.stage !== "disconnected" &&
         <PanelSection title="G1 connection">
           <ButtonItem layout="below" onClick={openConnectionProgress}>
@@ -1945,7 +1943,7 @@ export default definePlugin(() => {
   });
 
   return {
-    name: "Handheld Dock Mode",
+    name: PRODUCT_NAME,
     titleView: <div className={staticClasses.Title} style={{ display: "flex", alignItems: "center", gap: 8 }}><BrandIcon size={36} />{PRODUCT_NAME}</div>,
     content: <Content preflight={preflight} connection={connection} />,
     icon: <BrandIcon />,

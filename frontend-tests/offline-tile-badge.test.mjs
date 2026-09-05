@@ -158,11 +158,30 @@ test("artwork-only recycling removes a stale Library badge", () => {
 });
 
 
-test("Home badge is raised six pixels while portrait placement stays unchanged", () => {
+test("badges use a full-size fallback when the native reference is absent", () => {
   const s = surface([123]); const tile = s.tiles[0]; tile.setAttribute("role", "listitem");
   let handle = attachOfflineTileBadge(s.view, 123, "badge.svg", "Report", () => true, tile);
-  assert.match(s.badges(tile)[0].style.cssText, /bottom:12px/); handle.stop();
+  assert.match(s.badges(tile)[0].style.cssText, /bottom:38px;right:6px/);
+  assert.match(s.badges(tile)[0].style.cssText, /width:64px;height:32px/); handle.stop();
   tile.setAttribute("role", "gridcell");
   handle = attachOfflineTileBadge(s.view, 123, "badge.svg", "Report", () => true, tile);
-  assert.match(s.badges(tile)[0].style.cssText, /bottom:6px/); handle.stop();
+  assert.match(s.badges(tile)[0].style.cssText, /bottom:38px;right:6px/); handle.stop();
+});
+
+
+test("focused badge remains neutral after expiry and ignores unrelated mutation bursts", t => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const s=surface(); const tile=s.tiles[0]; let current=true;
+  const handle=attachOfflineTileBadge(s.view,123,"ready.svg","Likely offline-ready",()=>current,tile,
+    {image:"verify.svg",label:"Recheck needed"});
+  try {
+    s.observers[0].callback(Array.from({length:200},()=>({target:s.body,type:"attributes"})));
+    assert.equal(s.badges(tile).length,1);
+    t.mock.timers.tick(30000);
+    assert.equal(s.badges(tile).length,1);
+    assert.equal(s.badges(tile)[0].src,"verify.svg");
+    assert.equal(s.badges(tile)[0].alt,"Recheck needed");
+    t.mock.timers.tick(300000); assert.equal(s.badges(tile).length,1);
+    current=false; handle.validate(); assert.equal(s.badges(tile).length,0);
+  } finally { handle.stop(); }
 });

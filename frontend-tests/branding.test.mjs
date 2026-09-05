@@ -5,13 +5,13 @@ import { PRODUCT_NAME } from "../src/branding.ts";
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
 
-test("Re-Gear is the panel and dialog brand without changing Decky identity", () => {
+test("Re-Gear is the Decky list, panel, and dialog brand", () => {
   assert.equal(PRODUCT_NAME, "Re-Gear");
   const source = read("../src/index.tsx");
   assert.match(source, /titleView:.*\{PRODUCT_NAME\}/);
   assert.match(source, /strTitle: PRODUCT_NAME/);
-  assert.match(source, /name: "Handheld Dock Mode"/);
-  assert.equal(JSON.parse(read("../plugin.json")).name, "Handheld Dock Mode");
+  assert.match(source, /name: PRODUCT_NAME/);
+  assert.equal(JSON.parse(read("../plugin.json")).name, "Re-Gear");
   assert.match(source, /hdm\.hideAttachedEgpuSleepWarning/);
   assert.match(source, /hdm\.hideAttachedG1SleepWarning/);
 });
