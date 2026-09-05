@@ -1,6 +1,9 @@
 # Current state
 
-## Re-Gear 0.3.26 controller safe-disconnect candidate — 2026-09-04
+## Re-Gear 0.3.27 controller safe-disconnect candidate — 2026-09-04
+
+Combines the committed neutral Offline Play badge correction from d76ddb7
+with the controller candidate; 0.3.26 was already staged by that workstream.
 
 Xbox/Guide + Y held for three seconds now has a native Steam input subscription
 candidate that opens the existing safe-disconnect confirmation. It requires
@@ -9,7 +12,7 @@ The gesture policy uses the requested three-second threshold. Power-button
 double press remains unsupported. See the
 [controller contract](CONTROLLER_SHORTCUT_PRESENTATION.md) for source, cleanup,
 bounds and hardware gates. Not installed or hardware validated.
-Local validation: 954 backend tests (six skipped), 123 frontend tests,
+Local validation: 954 backend tests (six skipped), 124 frontend tests,
 TypeScript, architecture, compile, production build and package checks passed.
 
 ## Re-Gear 0.3.25 audio activation candidate � 2026-09-04

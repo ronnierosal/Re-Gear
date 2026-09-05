@@ -10,6 +10,12 @@ export function offlineReportBadge(value: unknown): OfflineBadge | null {
   switch (report.status) {
     case "needs_attention": return { asset: "offline-attention", label: "Offline needs attention" };
     case "online_check_needed": return { asset: "offline-verify", label: "Online check needed" };
+    case "unknown": {
+      const reasons = sanitizeOfflineReasonCodes(report.reason_codes);
+      const incomplete = new Set(["install_unknown", "download_state_unknown", "steam_entitlement_unknown", "cloud_save_unknown"]);
+      return reasons.length && reasons.every(reason => incomplete.has(reason))
+        ? { asset: "offline-verify", label: "Offline readiness unverified" } : null;
+    }
     // Ready and Internet required require stronger evidence than this source provides.
     default: return null;
   }

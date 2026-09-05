@@ -15,3 +15,12 @@ test("unknown, malformed, or insufficient reports never get a positive or intern
     assert.equal(offlineReportBadge(report), null);
   }
 });
+
+
+test("incomplete selected-game evidence shows a neutral badge, never a readiness claim", () => {
+  assert.deepEqual(offlineReportBadge({ schema_version: 1, status: "unknown",
+    reason_codes: ["install_unknown", "download_state_unknown", "steam_entitlement_unknown"] }),
+    { asset: "offline-verify", label: "Offline readiness unverified" });
+  for (const reason of ["offline_evidence_game_active", "offline_evidence_game_unknown", "offline_evidence_stale", "offline_evidence_unavailable"])
+    assert.equal(offlineReportBadge({ schema_version: 1, status: "unknown", reason_codes: ["install_unknown", reason] }), null);
+});
