@@ -23,7 +23,7 @@ function LivePanel({store, close, switchTv}: {store: Store; close(): void; switc
     return () => clearTimeout(timer);
   }, [complete, store, close]);
   const title = complete ? "TV connection complete" : switching ? "Switching to TV" : "Getting your TV ready";
-  return <ConfirmModal className="rg-connection-modal" strTitle={title}
+  return <ConfirmModal className="rg-connection-modal" strTitle={<span style={{fontSize:20,lineHeight:1.2}}>{title}</span>}
     strOKButtonText={status.canSwitch && switchTv ? "Switch to TV" : "Hide"}
     strCancelButtonText="Hide" bAlertDialog={!status.canSwitch || !switchTv}
     bDisableBackgroundDismiss={true} bHideCloseIcon={true}
@@ -35,7 +35,7 @@ function LivePanel({store, close, switchTv}: {store: Store; close(): void; switc
         <div className="rg-connection-list">{status.rows.map(row => <ReadinessRow key={row.label} label={row.label}
           state={row.state === "waiting" && !stale ? "checking" : row.state}/>)}</div>}
       <p className="rg-connection-detail" role="status">{complete ? "Check the TV picture and sound. Closing automatically…" : status.title}</p>
-      <p className="rg-connection-foot">Keep G1 connected. Hiding this window does not cancel docking.</p>
+      <p className="rg-connection-foot">Keep G1 connected · Hide keeps docking active.</p>
     </div>
   </ConfirmModal>;
 }

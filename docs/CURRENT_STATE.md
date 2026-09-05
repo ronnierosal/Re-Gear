@@ -1,6 +1,15 @@
 # Current state
 
 
+## Re-Gear 0.3.43 compact popup candidate
+
+Connection and disconnect dialogs share compact base spacing, smaller icons
+and a viewport height limit. The connection title and footer are shortened.
+This addresses reported cropping on the Ally, but actual native Steam scaling
+acceptance remains pending. Includes previous offline icon embedding fixes.
+No backend lifecycle changes.
+
+
 ## Re-Gear 0.3.42 shared UI status candidate
 
 Staged `/home/deck/Re-Gear-0.3.42.zip`, revision

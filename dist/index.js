@@ -86,7 +86,7 @@ function disconnectProgress(payload, failed = false, now = Date.now()) {
 }
 
 const connectionPanelCss = `
-.rg-connection-modal { background: linear-gradient(145deg,#18212c,#10171f) !important; border:1px solid #394653; border-radius:18px; }
+.rg-connection-modal { background: linear-gradient(145deg,#18212c,#10171f) !important; border:1px solid #394653; border-radius:14px; box-sizing:border-box; max-width:calc(100vw - 32px); max-height:calc(100vh - 32px); overflow-y:auto; }
 .rg-connection { color:#edf3f8; font-size:16px; line-height:1.4; min-width:0; width:100%; max-width:520px; }
 .rg-connection-subtitle { color:#b5c3d2; margin:0 0 18px; }
 .rg-connection-list { border:1px solid #394653; border-radius:12px; padding:0 14px; }
@@ -110,7 +110,23 @@ const connectionPanelCss = `
 @keyframes rg-connection-reveal { from { opacity:.3; transform:scale(.8); } to { opacity:1; transform:scale(1); } }
 @keyframes rg-connection-sweep { from { transform:translateX(-110%); } to { transform:translateX(390%); } }
 @media (prefers-reduced-motion:reduce) { .rg-connection-ring,.rg-connection-check,.rg-connection-sweep::after { animation:none; } }
-@media (max-height:700px) { .rg-connection-row { padding:7px 0; } .rg-connection-subtitle { margin-bottom:12px; } }
+/* Modal density is independent of the physical display resolution: Steam can
+   scale its UI while reporting a large CSS viewport. Keep the base compact. */
+.rg-connection-modal .rg-connection { font-size:14px; line-height:1.3; max-width:440px; }
+.rg-connection-modal .rg-connection-subtitle { margin:0 0 8px; font-size:13px; }
+.rg-connection-modal .rg-connection-list { padding:0 10px; }
+.rg-connection-modal .rg-connection-row { padding:4px 0; gap:8px; min-height:20px; }
+.rg-connection-modal .rg-connection-icon, .rg-connection-modal .rg-connection-icon svg { width:18px; height:18px; }
+.rg-connection-modal .rg-connection-ring { width:14px; height:14px; }
+.rg-connection-modal .rg-connection-detail { margin:8px 0 4px; font-size:13px; }
+.rg-connection-modal .rg-connection-foot { margin:4px 0 0; font-size:12px; }
+.rg-connection-modal .rg-connection-hero { padding:10px 0; }
+.rg-connection-modal .rg-connection-hero .rg-connection-icon, .rg-connection-modal .rg-connection-hero svg { width:48px; height:48px; }
+.rg-connection-modal .rg-connection-sweep { margin:12px 0; }
+@media (max-height:540px) {
+  .rg-connection-modal { padding:16px !important; }
+  .rg-connection-modal .rg-connection-row { padding:2px 0; }
+}
 `;
 
 const statusAppearance = {
@@ -314,9 +330,9 @@ function LivePanel({ store, close, switchTv }) {
         return () => clearTimeout(timer);
     }, [complete, store, close]);
     const title = complete ? "TV connection complete" : switching ? "Switching to TV" : "Getting your TV ready";
-    return SP_JSX.jsxs(DFL.ConfirmModal, { className: "rg-connection-modal", strTitle: title, strOKButtonText: status.canSwitch && switchTv ? "Switch to TV" : "Hide", strCancelButtonText: "Hide", bAlertDialog: !status.canSwitch || !switchTv, bDisableBackgroundDismiss: true, bHideCloseIcon: true, onOK: () => { const latest = store.get(); const ready = latest.canSwitch && Date.now() < latest.expiresAt; close(); if (ready)
+    return SP_JSX.jsxs(DFL.ConfirmModal, { className: "rg-connection-modal", strTitle: SP_JSX.jsx("span", { style: { fontSize: 20, lineHeight: 1.2 }, children: title }), strOKButtonText: status.canSwitch && switchTv ? "Switch to TV" : "Hide", strCancelButtonText: "Hide", bAlertDialog: !status.canSwitch || !switchTv, bDisableBackgroundDismiss: true, bHideCloseIcon: true, onOK: () => { const latest = store.get(); const ready = latest.canSwitch && Date.now() < latest.expiresAt; close(); if (ready)
             switchTv?.(); }, onCancel: close, children: [SP_JSX.jsx("style", { children: connectionPanelCss }), SP_JSX.jsxs("div", { className: "rg-connection", children: [SP_JSX.jsx("p", { className: "rg-connection-subtitle", children: complete ? "Re-Gear reports the TV transition completed." : switching ? "Checking the display and TV audio" : `GPD G1 connection · ${status.seconds} seconds` }), complete ? SP_JSX.jsx("div", { className: "rg-connection-hero", children: SP_JSX.jsx(StatusIcon, { state: "ready" }) }) : switching ? SP_JSX.jsx("div", { className: "rg-connection-sweep", "aria-hidden": "true" }) :
-                        SP_JSX.jsx("div", { className: "rg-connection-list", children: status.rows.map(row => SP_JSX.jsx(ReadinessRow, { label: row.label, state: row.state === "waiting" && !stale ? "checking" : row.state }, row.label)) }), SP_JSX.jsx("p", { className: "rg-connection-detail", role: "status", children: complete ? "Check the TV picture and sound. Closing automatically…" : status.title }), SP_JSX.jsx("p", { className: "rg-connection-foot", children: "Keep G1 connected. Hiding this window does not cancel docking." })] })] });
+                        SP_JSX.jsx("div", { className: "rg-connection-list", children: status.rows.map(row => SP_JSX.jsx(ReadinessRow, { label: row.label, state: row.state === "waiting" && !stale ? "checking" : row.state }, row.label)) }), SP_JSX.jsx("p", { className: "rg-connection-detail", role: "status", children: complete ? "Check the TV picture and sound. Closing automatically…" : status.title }), SP_JSX.jsx("p", { className: "rg-connection-foot", children: "Keep G1 connected \u00B7 Hide keeps docking active." })] })] });
 }
 function showConnectionLivePanel(store, switchTv, onClose) {
     let modal;
