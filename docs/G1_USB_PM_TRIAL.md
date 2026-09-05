@@ -162,3 +162,24 @@ Next assess visible console capture or an independently connected supported
 network console before considering a kernel change. Neither capture method is
 validated on this Ally; do not repeat the attached hang simply to collect the
 same journal cutoff, or trigger a deliberate panic as a substitute.
+
+### Temporary visible-console diagnostic candidate
+
+Read-only inspection found the active console and foreground VT are tty1;
+manager logging is info/journal-or-kmsg and printk console level is 1.
+plymouth-poweroff.service is static, inactive, with no /run or /etc override;
+it starts the shutdown splash. The installed systemctl help confirms runtime
+masks expire at reboot.
+
+Proposed detached-only preparation (not yet applied/validated): runtime-mask
+only plymouth-poweroff.service, set manager log-target=console and log-level=debug,
+and set console printk level to 7. This changes diagnostic output and suppresses
+the shutdown splash for this boot; it does not initiate shutdown. Verify command
+results before a separately supervised normal detached poweroff. Screen visibility
+is not guaranteed because graphics teardown can disable console output.
+
+Rollback before reboot: systemctl log-level info; systemctl log-target
+journal-or-kmsg; dmesg -n 1; systemctl unmask --runtime plymouth-poweroff.service.
+These original values were read from the current device. Do not apply this
+rollback to an unrelated machine or a later configuration without rechecking.
+No G1 attach test is authorized by successful logging setup alone.
