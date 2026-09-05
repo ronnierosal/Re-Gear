@@ -1,6 +1,17 @@
 import type { SnapshotPayload, AutomaticDockStatusPayload } from "./backend";
 export type Light = "ready" | "waiting" | "blocked";
-export type LiveStatus = { phase: "checking" | "switching" | "complete"; connected: boolean; expiresAt: number; seconds: number; title: string; rows: {label: string; state: Light}[]; canSwitch: boolean };
+export type LiveStatus = { phase: "checking" | "switching" | "complete"; connected: boolean; expiresAt: number; seconds: number; title: string; gpuName?: string; rows: {label: string; state: Light}[]; canSwitch: boolean };
+
+function detectedGpuName(payload: SnapshotPayload | null, fresh: boolean): string | undefined {
+  if (!fresh) return undefined;
+  // Do not choose arbitrarily among external or unclassified devices.
+  const candidates = payload?.snapshot.gpus?.filter(gpu => gpu.present && gpu.role !== "internal") ?? [];
+  if (candidates.length !== 1 || candidates[0].role !== "external" || candidates[0].confidence !== "verified") return undefined;
+  const raw = candidates[0].model_name;
+  if (typeof raw !== "string" || raw.length > 128) return undefined;
+  const name = raw.trim();
+  return name && /^[\x20-\x7e]+$/.test(name) && !/^(unknown|n\/a|none)$/i.test(name) ? name : undefined;
+}
 export function connectionLiveStatus(payload: SnapshotPayload | null, automatic: AutomaticDockStatusPayload | null, journal: string | undefined, failed = false): LiveStatus {
   const c = payload?.connection_readiness;
   const connected = !!c && c.stage !== "disconnected";
@@ -16,7 +27,7 @@ export function connectionLiveStatus(payload: SnapshotPayload | null, automatic:
   const all = fresh && c?.stage === "ready_idle" && rows.every(row => row.state === "ready");
   const switching = fresh && automatic?.stage === "switching";
   const docked = fresh && automatic?.stage === "docked" && payload?.inference.mode === "docked_egpu";
-  const waiting: Record<string, string> = {waiting_for_pci: "Waiting for G1 detection", transport_detected: "G1 connection detected", waiting_for_driver: "Waiting for GPU driver", waiting_for_link: "Waiting for connection link", waiting_for_hdmi: "Waiting for TV HDMI", waiting_for_audio: "Checking audio recovery", waiting_for_session: "Waiting for display integration", game_running: "Close the game to continue", stabilizing: "Checking connection stability", timed_out: "Detection timed out — keep G1 connected", link_training_failed: "Connection link needs attention", action_required: "Connection needs attention"};
+  const waiting: Record<string, string> = {waiting_for_pci: "Waiting for eGPU detection", transport_detected: "eGPU connection detected", waiting_for_driver: "Waiting for GPU driver", waiting_for_link: "Waiting for connection link", waiting_for_hdmi: "Waiting for TV HDMI", waiting_for_audio: "Checking audio recovery", waiting_for_session: "Waiting for display integration", game_running: "Close the game to continue", stabilizing: "Checking connection stability", timed_out: "Detection timed out — keep eGPU connected", link_training_failed: "Connection link needs attention", action_required: "Connection needs attention"};
   const age = c?.window_age_ms;
   const waitingStage = ["timed_out", "waiting_for_pci", "transport_detected", "waiting_for_driver", "waiting_for_link", "waiting_for_hdmi", "waiting_for_audio", "waiting_for_session", "stabilizing"].includes(c?.stage ?? "");
   const delayMessage = waitingStage && typeof age === "number" && Number.isFinite(age)
@@ -29,6 +40,7 @@ export function connectionLiveStatus(payload: SnapshotPayload | null, automatic:
     : delayMessage ?? (c?.stage === "timed_out" ? "Taking longer than expected—still checking" : waiting[c?.stage ?? ""]);
   return {phase: docked ? "complete" : switching ? "switching" : "checking", connected, expiresAt: fresh ? Date.now() + Math.max(0, 15000 - Math.max(snapshotAge, c?.checks_age_ms ?? 15000)) : 0, seconds: Math.floor((c?.window_age_ms ?? 0) / 1000), rows,
     title: !fresh ? "Waiting for a fresh status update" : switching ? "Switching to TV — checking picture and audio" : docked ? "TV transition reported complete" : all ? automatic?.enabled ? "Ready — waiting for automatic switch" : "Ready to switch to TV" : detail ?? "Checking connection readiness",
+    gpuName: connected ? detectedGpuName(payload, fresh) : undefined,
     canSwitch: all && automatic?.enabled === false};
 }
 export function createLiveStatusStore() {

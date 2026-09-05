@@ -6,6 +6,24 @@ const js = ts.transpileModule(readFileSync(new URL("../src/connection-live-statu
 const {connectionLiveStatus: status,createLiveStatusStore} = await import("data:text/javascript;base64,"+Buffer.from(js).toString("base64"));
 const sample = () => ({snapshot:{observed_at:new Date().toISOString(),game_state:"idle"},inference:{mode:"portable"},connection_readiness:{stage:"ready_idle",window_age_ms:90000,checks_age_ms:0,checks:{gpu:true,link:true,hdmi:true,audio:true,session:true,idle:true}}});
 
+test("GPU name is fresh unambiguous presentation only, with unknown fallback", () => {
+ const p=sample(); const gpu={role:"external",present:true,confidence:"verified",model_name:"Example GPU 9000"};
+ p.snapshot.gpus=[gpu];
+ assert.equal(status(p,{enabled:false},"journal.idle").gpuName,"Example GPU 9000");
+ gpu.model_name="Another GPU 500";
+ assert.equal(status(p,{enabled:false},"journal.idle").gpuName,"Another GPU 500");
+ const permission=status(p,{enabled:false},"journal.idle").canSwitch;
+ for(const name of [undefined,null,42,"","unknown","x".repeat(129),"GPU\u0000name","GPU\u202ename"]) {
+  gpu.model_name=name; const result=status(p,{enabled:false},"journal.idle");
+  assert.equal(result.gpuName,undefined); assert.equal(result.canSwitch,permission);
+ }
+ gpu.model_name="Example GPU 9000";
+ p.snapshot.gpus=[gpu,{...gpu}]; assert.equal(status(p,null,"journal.idle").gpuName,undefined);
+ p.snapshot.gpus=[gpu]; gpu.confidence="unknown"; assert.equal(status(p,null,"journal.idle").gpuName,undefined);
+ gpu.confidence="verified"; assert.equal(status(p,null,"journal.idle",true).gpuName,undefined);
+ p.connection_readiness.stage="disconnected"; assert.equal(status(p,null,"journal.idle").gpuName,undefined);
+});
+
 test("timeout is waiting at two minutes and attention at five without switch permission",()=>{
  const p=sample();p.connection_readiness.stage="timed_out";p.connection_readiness.checks.gpu=false;
  for(const age of [120000,299999,300000,480000]){
@@ -59,7 +77,7 @@ test("stale and failed evidence cannot show green or authorize a switch",()=>{
 });
 test("waiting, timeout and switching are distinct and backend age is displayed",()=>{
  const p=sample();p.connection_readiness.stage="waiting_for_pci";p.connection_readiness.checks.gpu=false;
- let s=status(p,null,"journal.idle");assert.match(s.title,/G1 detection/);assert.equal(s.seconds,90);assert.equal(s.rows[0].state,"waiting");
+ let s=status(p,null,"journal.idle");assert.match(s.title,/eGPU detection/);assert.equal(s.seconds,90);assert.equal(s.rows[0].state,"waiting");
  p.connection_readiness.stage="timed_out";s=status(p,null,"journal.idle");assert.equal(s.rows[0].state,"waiting");
  assert.match(status(p,{stage:"switching"},"journal.idle").title,/checking picture and audio/);
 });

@@ -6,6 +6,8 @@ export interface BlockerPayload {
 }
 
 export interface GpuPayload {
+  /** Optional driver-reported presentation; never a readiness/identity input. */
+  model_name?: string;
   role: "internal" | "external" | "unknown";
   present: boolean;
   selected_for_render: boolean | null;

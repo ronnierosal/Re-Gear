@@ -32,7 +32,9 @@ test("informational sections have separate native focus stops without activation
   const focus = read("section-focus.tsx");
   const overview = read("quick-access-overview.tsx");
   const readiness = read("connection-quick-status.tsx");
-  assert.match(focus, /<Focusable/);
+  assert.match(focus, /<Field ref=\{ref\} focusable=\{true\} highlightOnFocus=\{true\}/);
+  assert.match(focus, /padding="none" bottomSeparator="none" childrenLayout="below"/);
+  assert.doesNotMatch(focus, /<Focusable/);
   assert.match(focus, /role="group"/);
   assert.match(focus, /scrollIntoView/);
   assert.doesNotMatch(focus, /onActivate|onClick|onCancel|<button/);
@@ -41,7 +43,7 @@ test("informational sections have separate native focus stops without activation
   assert.ok(readiness.indexOf('</SectionFocus>') < readiness.indexOf('<DialogButton'));
   assert.match(readiness, /label="eGPU readiness"/);
   assert.match(read("index.tsx"), /PanelSection title="eGPU readiness"/);
-  assert.match(read("regear-theme.ts"), /rg-section-focused/);
+  assert.match(read("regear-theme.ts"), /rg-section-focus.gpfocus/);
   assert.doesNotMatch(overview, /StatusPill|fontSize: 26/);
 });
 

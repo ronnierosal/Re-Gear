@@ -22,5 +22,5 @@ test("display action names its target and keeps the shortcut separate from shutd
   const disconnect = source.slice(source.indexOf('icon="power"'), source.indexOf('{safeDisconnectMessage &&'));
   assert.doesNotMatch(disconnect, /Back\/View \+ Y/);
   assert.match(disconnect, /onClick=\{requestSafeDisconnect\}/);
-  assert.match(disconnect, /Keep the G1 connected until fully powered off/);
+  assert.match(disconnect, /Keep the eGPU connected until fully powered off/);
 });

@@ -6,6 +6,14 @@ const js = ts.transpileModule(readFileSync(new URL("../src/connection-progress-m
 const {connectionProgressViewModel: view} = await import("data:text/javascript;base64,"+Buffer.from(js).toString("base64"));
 const sample = () => ({phase:"checking",connected:true,expiresAt:200,seconds:90,title:"Waiting for TV HDMI",canSwitch:false,
   rows:[{label:"GPU and driver",state:"ready"},{label:"TV HDMI detected",state:"waiting"},{label:"No game running",state:"blocked"}]});
+
+test("popup uses detected GPU name and generic fallback, never a dock-brand default",()=>{
+ const s=sample(); assert.equal(view(s,100).deviceLabel,"eGPU connected");
+ s.gpuName="Example GPU 9000"; assert.equal(view(s,100).deviceLabel,"Example GPU 9000 connected");
+ s.gpuName="Another GPU 500"; assert.equal(view(s,100).deviceLabel,"Another GPU 500 connected");
+ assert.equal(view(s,200).deviceLabel,"eGPU connection");
+ assert.equal(view(s,100).keepConnectedMessage,"Keep eGPU connected · Hide keeps docking active.");
+});
 test("approved overlay preserves monitor evidence and blockers without new readiness inference",()=>{
  const s=sample(); const v=view(s,100);
  assert.equal(v.phase,"connecting"); assert.equal(v.detail,s.title); assert.equal(v.elapsedSeconds,90);

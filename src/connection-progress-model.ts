@@ -21,9 +21,9 @@ export function connectionProgressViewModel(status: LiveStatus, now = Date.now()
     {key:"audio",label:"TV audio",state:"pending",stateLabel:"Check sound"},
   ];
   return {phase, rows, elapsedSeconds:status.seconds,
-    deviceLabel:status.connected ? "GPD G1 connected" : "GPD G1 connection",
+    deviceLabel:`${fresh && status.gpuName ? status.gpuName : "eGPU"} ${fresh && status.connected ? "connected" : "connection"}`,
     detail:!fresh ? "Waiting for a fresh status update" : phase === "ready"
       ? "TV transition reported complete. Check picture and sound. Closing automatically…" : status.title,
-    keepConnectedMessage:"Keep G1 connected · Hide keeps docking active.",
+    keepConnectedMessage:"Keep eGPU connected · Hide keeps docking active.",
   };
 }
