@@ -1,5 +1,36 @@
 # Current state
 
+## Compact gear and minute refresh - 2026-09-05
+
+0.3.38-offline.1 revision 07b22bf includes installed popup lineage 02d9c84.
+Artwork uses a single status-in-gear SVG at bottom-left, aligned to Steam's
+symbol center with a 24px size cap (24x24 fallback). Selected-game checks
+repeat 60 seconds after completion; selection change/unload cancels the timer,
+and gameplay/context guards suppress requests. Automatic badges expire to
+neutral at 65 seconds if a refresh fails or does not finish; successful refresh
+replaces the badge before expiry. No library scan or network request added.
+955 backend tests (six skipped), 156 frontend tests, architecture, compilation,
+TypeScript, production build and package/provenance validation passed.
+Staged /home/deck/Re-Gear-0.3.38-offline.1.zip; matching SHA-256:
+CA3EA0EF73FBB8E8A20C1A3E1403546FBC0CC8A940188163FBBD8E6EDF7D25D8.
+Installed before staging: 0.3.38-popup.1 revision 02d9c84. No install/restart.
+New filename, no existing ZIP overwritten. Compact icon visual acceptance and
+minute refresh on device remain pending.
+
+## Badge stacked above Steam - 2026-09-04
+
+0.3.37-offline.1 revision 1f08bd3 positions Re-Gear above the native Steam
+compatibility group on both landscape and portrait covers, right aligned with
+four CSS pixels of clearance. Native glyph sizing remains; missing native
+reference falls back to bottom-right at bottom 38px, size 64x32. Automatic-only
+checks and persistent neutral expiry remain unchanged.
+955 backend tests (six skipped), 152 frontend tests, architecture, compilation,
+TypeScript, production build, package and provenance checks passed.
+Staged /home/deck/Re-Gear-0.3.37-offline.1.zip; matching local/remote SHA-256:
+6A70A44633401E390B64A87ACDBD219796412E99975BABB30F07C903C8771D10.
+Installed before staging: 0.3.36-offline.1 revision 24b39befb0de.
+No installation or restart. New filename verified absent before transfer;
+other workstream archives preserved. Player visual confirmation still pending.
 
 ## Re-Gear 0.3.38-popup.1 candidate
 
