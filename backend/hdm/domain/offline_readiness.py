@@ -26,6 +26,8 @@ PUBLIC_REASON_CODES = frozenset(
         "update_pending",
         "cloud_save_pending",
         "cloud_save_conflict",
+        "cloud_save_failed",
+        "steam_authorization_required",
         "third_party_launcher",
         "drm",
         "anti_cheat",
@@ -77,10 +79,12 @@ class CloudSaveState(StrEnum):
     SYNCED = "synced"
     PENDING = "pending"
     CONFLICT = "conflict"
+    FAILED = "failed"
     UNKNOWN = "unknown"
 
 
 class OnlineCheckRequirement(StrEnum):
+    STEAM_AUTHORIZATION_REQUIRED = "steam_authorization_required"
     THIRD_PARTY_LAUNCHER = "third_party_launcher"
     DRM = "drm"
     ANTI_CHEAT = "anti_cheat"
@@ -401,6 +405,8 @@ def _attention_reasons(evidence: OfflineReadinessEvidence) -> list[str]:
         reasons.append("cloud_save_pending")
     elif evidence.cloud_save is CloudSaveState.CONFLICT:
         reasons.append("cloud_save_conflict")
+    if evidence.cloud_save is CloudSaveState.FAILED:
+        reasons.append("cloud_save_failed")
     return reasons
 
 

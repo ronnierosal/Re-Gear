@@ -1,5 +1,7 @@
 /** Public reason copy only. Never render a backend string as player guidance. */
 const GUIDANCE: Record<string, string> = {
+  cloud_save_failed: "Steam reports a cloud-save problem. Resolve it in Steam before going offline.",
+  steam_authorization_required: "Steam reports a pending or expired license. Connect to Steam and check this game before going offline.",
   cloud_save_conflict: "Resolve the Steam Cloud conflict for this game before going offline.",
   cloud_save_pending: "Wait for this game's Steam Cloud sync to finish before going offline.",
   game_not_installed: "Install this game on this handheld before going offline.",

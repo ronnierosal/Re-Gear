@@ -156,3 +156,13 @@ test("artwork-only recycling removes a stale Library badge", () => {
     assert.equal(s.badges(tile).length, 0);
   } finally { handle.stop(); }
 });
+
+
+test("Home badge is raised six pixels while portrait placement stays unchanged", () => {
+  const s = surface([123]); const tile = s.tiles[0]; tile.setAttribute("role", "listitem");
+  let handle = attachOfflineTileBadge(s.view, 123, "badge.svg", "Report", () => true, tile);
+  assert.match(s.badges(tile)[0].style.cssText, /bottom:12px/); handle.stop();
+  tile.setAttribute("role", "gridcell");
+  handle = attachOfflineTileBadge(s.view, 123, "badge.svg", "Report", () => true, tile);
+  assert.match(s.badges(tile)[0].style.cssText, /bottom:6px/); handle.stop();
+});

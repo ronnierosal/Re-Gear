@@ -25,6 +25,24 @@ class SteamDetailsTests(unittest.TestCase):
                          {"schema_version": 1, "status": "needs_attention",
                           "reason_codes": ["update_pending"]})
 
+    def test_install_license_and_cloud_blockers_are_explained(self):
+        for fields, status, reason in [
+            ({"eDisplayStatus": 9}, "needs_attention", "game_not_installed"),
+            ({"eDisplayStatus": 10, "iInstallFolder": -1}, "needs_attention", "game_not_installed"),
+            ({"eDisplayStatus": 26}, "online_check_needed", "steam_authorization_required"),
+            ({"eDisplayStatus": 27}, "online_check_needed", "steam_authorization_required"),
+            ({"eCloudStatus": 8}, "needs_attention", "cloud_save_failed"),
+            ({"eDisplayStatus": 34}, "needs_attention", "cloud_save_failed"),
+            ({"eDisplayStatus": 35}, "needs_attention", "cloud_save_failed"),
+        ]:
+            with self.subTest(fields=fields):
+                result = offline_readiness_to_public_dict(classify_offline_readiness(project_steam_app_details(fields)))
+                self.assertEqual(result["status"], status)
+                self.assertIn(reason, result["reason_codes"])
+        self.assertEqual(project_steam_app_details({"eDisplayStatus": 9, "iInstallFolder": 0}).install, InstallState.UNKNOWN)
+        evidence = project_steam_app_details({"eDisplayStatus": 27, "bIsThirdPartyUpdater": True})
+        self.assertEqual(len(evidence.online_check_requirements), 2)
+
     def test_sync_requires_affirmative_consistent_cloud_fields(self):
         fields = dict(eCloudStatus=3, bCloudAvailable=True,
                       bCloudEnabledForAccount=True, bCloudEnabledForApp=True)

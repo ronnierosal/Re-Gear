@@ -335,6 +335,8 @@ class OfflineDetailsSession {
 
 /** Public reason copy only. Never render a backend string as player guidance. */
 const GUIDANCE = {
+    cloud_save_failed: "Steam reports a cloud-save problem. Resolve it in Steam before going offline.",
+    steam_authorization_required: "Steam reports a pending or expired license. Connect to Steam and check this game before going offline.",
     cloud_save_conflict: "Resolve the Steam Cloud conflict for this game before going offline.",
     cloud_save_pending: "Wait for this game's Steam Cloud sync to finish before going offline.",
     game_not_installed: "Install this game on this handheld before going offline.",
@@ -507,7 +509,8 @@ function attachOfflineTileBadge(view, appId, image, label, current, initialTile)
         badge.title = `${label} — Steam report at check time`;
         badge.width = 48;
         badge.height = 24;
-        badge.style.cssText = "position:absolute;bottom:6px;left:6px;width:48px;height:24px;pointer-events:none;z-index:2";
+        const bottom = tile.getAttribute("role") === "listitem" ? 12 : 6;
+        badge.style.cssText = `position:absolute;bottom:${bottom}px;left:6px;width:48px;height:24px;pointer-events:none;z-index:2`;
         host.appendChild(badge);
         owned.set(tile, badge);
     };

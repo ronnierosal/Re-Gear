@@ -214,3 +214,50 @@ or game-state transition, including changing away and back.
 Remaining product gap: the current categorical UI has no game-selection
 context. Do not show an unidentified game's result as whole-device readiness.
 This needs a narrow selection/context contract before production presentation.
+
+
+## Additional negative evidence — 2026-09-04
+
+The same seven admitted fields now recognize additional states from the pinned
+[Decky Steam schema](https://github.com/SteamDeckHomebrew/decky-frontend-lib/blob/247eb635ea7acdc3e7807d5f99722daf854aaa70/src/globals/steam-client/App.ts):
+ReadyToInstall (9) and ReadyToPreload (10) imply installation needed only when
+the folder is absent/-1; a nonnegative folder retains unknown installation.
+LicensePending (26) and LicenseExpired (27) explicitly require Steam
+verification. SyncFailed (cloud 8) reports a cloud problem. CloudError (display
+34) and CloudOutOfDate (35) supply cloud attention only when the cloud field
+has not already established a categorical state. These are negative evidence,
+not positive offline authorization. Third-party launcher and license requirements
+are both retained. New public reasons are cloud_save_failed and
+steam_authorization_required; no account identity or new RPC fields are added.
+Pinned schema compatibility is source evidence, not real-device validation of
+every enum. Unknown/future values and favorable display status remain unable
+to prove Ready.
+
+## Stronger readiness: proposed next stage
+
+The current callback cannot establish installed completeness, up-to-date
+content, and offline authorization. Most otherwise normal games therefore
+still show unverified. Do not solve this by converting ReadyToLaunch, positive
+folder index, subscription, or playtime into offline-ready evidence.
+
+Recommended next flow: separate local preparation from **player-tested offline**.
+Offer an explicit check guide, then let the player confirm reaching playable
+content while actually disconnected. A launched process/menu alone is not
+successful play, and Steam Offline Mode alone does not establish that a
+publisher launcher had no network access. Re-Gear must not disconnect networking,
+launch games, or terminate them automatically for testing.
+
+Before implementation, review a minimal local confirmation record bound to the
+exact game, account scope, and installed build, including observed test time,
+player confirmation, and evidence provenance. Invalidate on build/account change,
+reinstallation, known launch/update/license blockers, and bounded age. Label it
+"Tested offline" with date, never a guarantee of future authorization. A local
+preparation breakdown should separately explain install/update/cloud facts and
+remaining authorization uncertainty. Persistence, identity handling, source
+admission, invalidation tests, and controller UX require implementation review;
+this document does not claim that flow is implemented.
+
+Valve's [Offline Mode guidance](https://help.steampowered.com/en/faqs/view/0E18-319B-E34B-B2C8)
+recommends preparing and trying games before relying on offline play, and notes
+initial startup requirements. The automatic highlighted-game check remains
+local and does not query that website.
