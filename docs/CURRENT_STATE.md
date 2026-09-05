@@ -3,6 +3,12 @@
 
 ## Re-Gear 0.3.41 offline icon packaging fix
 
+Staged `/home/deck/Re-Gear-0.3.41.zip`, revision
+`8c1ab62c4d8c96d11f7d6925598cf2cdb9d3416f`; matched local/final remote SHA-256
+`f57836abca6197190f78d2e982ede4ee7c24bb62e9a0350a10aba5a6ba9abcb6`.
+160 frontend tests and 956 backend tests passed (six skipped), with typecheck,
+architecture, compilation, build/package and diff verification. Not installed.
+
 Compact badge imports were omitted from the inline SVG resolver, leaving
 references to dist/assets files excluded by the ZIP contract. All three
 compact icons are now embedded as SVG data URLs. Regression coverage resolves
