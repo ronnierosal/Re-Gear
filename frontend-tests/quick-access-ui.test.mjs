@@ -32,7 +32,7 @@ test("informational sections have separate native focus stops without activation
   const focus = read("section-focus.tsx");
   const overview = read("quick-access-overview.tsx");
   const readiness = read("connection-quick-status.tsx");
-  assert.match(focus, /<Field ref=\{ref\} focusable=\{true\} highlightOnFocus=\{true\}/);
+  assert.match(focus, /<Field ref=\{ref\} focusable=\{true\} highlightOnFocus=\{false\}/);
   assert.match(focus, /padding="none" bottomSeparator="none" childrenLayout="below"/);
   assert.doesNotMatch(focus, /<Focusable/);
   assert.match(focus, /role="group"/);
@@ -45,6 +45,16 @@ test("informational sections have separate native focus stops without activation
   assert.match(read("index.tsx"), /PanelSection title="eGPU readiness"/);
   assert.match(read("regear-theme.ts"), /rg-section-focus.gpfocus/);
   assert.doesNotMatch(overview, /StatusPill|fontSize: 26/);
+});
+
+test("neutral informational focus does not suppress action focus cues", () => {
+  const css = readFileSync(new URL("../src/regear-theme.ts", import.meta.url), "utf8");
+  const section = css.slice(css.indexOf('.rg-section-focus,'), css.indexOf('.rg-dashboard-action:focus-visible'));
+  assert.match(section, /background: transparent !important/);
+  assert.match(section, /outline: none !important/);
+  assert.doesNotMatch(section.slice(0, section.indexOf('{')), /button|input|rg-dashboard-action|\*/);
+  const actions = css.slice(css.indexOf('.rg-dashboard-action:focus-visible'));
+  assert.match(actions, /outline: 2px solid #66d9f7 !important/);
 });
 
 test("secondary sections stay hidden until the player opens Troubleshoot", () => {

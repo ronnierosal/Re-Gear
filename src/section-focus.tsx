@@ -7,7 +7,7 @@ export const SectionFocus = forwardRef<HTMLDivElement, {
 }>(function SectionFocus({ label, children, onFocused }, ref) {
   // Generic Focusable containers can route to children without becoming a
   // selectable leaf. Field explicitly registers this read-only focus stop.
-  return <Field ref={ref} focusable={true} highlightOnFocus={true}
+  return <Field ref={ref} focusable={true} highlightOnFocus={false}
     padding="none" bottomSeparator="none" childrenLayout="below"
     className="rg-section-focus"
     onGamepadFocus={(event) => {

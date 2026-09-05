@@ -204,10 +204,12 @@ const regearControlCss = `
   scroll-margin-top: 48px;
   scroll-margin-bottom: 16px;
 }
-.rg-section-focus.gpfocus, .rg-section-focus:focus-visible,
+.rg-section-focus, .rg-section-focus.gpfocus, .rg-section-focus:focus-visible,
 .rg-section-focus:focus-within {
-  outline: 2px solid #66d9f7;
-  outline-offset: -2px;
+  /* Informational navigation stops remain focusable but visually neutral. */
+  background: transparent !important;
+  outline: none !important;
+  box-shadow: none !important;
 }
 .rg-dashboard-action:focus-visible, .rg-dashboard-action.gpfocus,
 .gpfocus > .rg-dashboard-action {
@@ -222,7 +224,7 @@ const regearControlCss = `
 const SectionFocus = SP_REACT.forwardRef(function SectionFocus({ label, children, onFocused }, ref) {
     // Generic Focusable containers can route to children without becoming a
     // selectable leaf. Field explicitly registers this read-only focus stop.
-    return SP_JSX.jsx(DFL.Field, { ref: ref, focusable: true, highlightOnFocus: true, padding: "none", bottomSeparator: "none", childrenLayout: "below", className: "rg-section-focus", onGamepadFocus: (event) => {
+    return SP_JSX.jsx(DFL.Field, { ref: ref, focusable: true, highlightOnFocus: false, padding: "none", bottomSeparator: "none", childrenLayout: "below", className: "rg-section-focus", onGamepadFocus: (event) => {
             if (event.currentTarget instanceof HTMLElement) {
                 event.currentTarget.scrollIntoView({ block: "nearest", inline: "nearest" });
             }

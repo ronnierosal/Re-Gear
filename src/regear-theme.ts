@@ -16,10 +16,12 @@ export const regearControlCss = `
   scroll-margin-top: 48px;
   scroll-margin-bottom: 16px;
 }
-.rg-section-focus.gpfocus, .rg-section-focus:focus-visible,
+.rg-section-focus, .rg-section-focus.gpfocus, .rg-section-focus:focus-visible,
 .rg-section-focus:focus-within {
-  outline: 2px solid #66d9f7;
-  outline-offset: -2px;
+  /* Informational navigation stops remain focusable but visually neutral. */
+  background: transparent !important;
+  outline: none !important;
+  box-shadow: none !important;
 }
 .rg-dashboard-action:focus-visible, .rg-dashboard-action.gpfocus,
 .gpfocus > .rg-dashboard-action {
