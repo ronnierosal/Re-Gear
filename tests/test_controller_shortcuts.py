@@ -24,7 +24,7 @@ def evidence(
     *,
     verified: bool = True,
     buttons: frozenset[ControllerButton] | None = None,
-    held_ms: int = 1_200,
+    held_ms: int = 3_000,
 ) -> ControllerInputEvidence:
     return ControllerInputEvidence(
         verified,
@@ -48,7 +48,8 @@ class ControllerShortcutTests(unittest.TestCase):
     def test_unverified_short_or_non_exact_chords_never_emit_a_request(self):
         cases = (
             (evidence(verified=False), "controller_shortcut.input_unverified"),
-            (evidence(held_ms=1_199), "controller_shortcut.hold_incomplete"),
+            (evidence(held_ms=1_200), "controller_shortcut.hold_incomplete"),
+            (evidence(held_ms=2_999), "controller_shortcut.hold_incomplete"),
             (evidence(buttons=frozenset({ControllerButton.GUIDE})), "controller_shortcut.no_exact_match"),
         )
         for value, reason in cases:

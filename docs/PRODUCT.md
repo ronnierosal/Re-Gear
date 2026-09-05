@@ -81,8 +81,9 @@ certification documentation.
 
 Physical controls and UI affordances resolve to typed logical requests such as
 Safe Undock, Return to Handheld, Recovery, or Change Performance Profile. They
-must all enter the same authoritative transition engine. A controller hotkey
-is therefore a future delivery adapter, not a parallel detach implementation.
+must all enter the same authoritative transition engine. The controller hotkey candidate
+opens the existing confirmation and approval flow; it is not a parallel detach
+implementation. Native event delivery still requires hardware validation.
 The physical power button remains platform-owned: Re-Gear must not delay, suppress,
 or synthesize ordinary Sleep merely to recognize a gesture. See [physical
 power-button Safe Undock feasibility](POWER_BUTTON_SAFE_UNDOCK.md).

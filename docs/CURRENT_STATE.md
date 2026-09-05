@@ -1,5 +1,17 @@
 # Current state
 
+## Re-Gear 0.3.26 controller safe-disconnect candidate â€” 2026-09-04
+
+Xbox/Guide + Y held for three seconds now has a native Steam input subscription
+candidate that opens the existing safe-disconnect confirmation. It requires
+fresh idle/safety-journal evidence and preserves backend approval/revalidation.
+The gesture policy uses the requested three-second threshold. Power-button
+double press remains unsupported. See the
+[controller contract](CONTROLLER_SHORTCUT_PRESENTATION.md) for source, cleanup,
+bounds and hardware gates. Not installed or hardware validated.
+Local validation: 954 backend tests (six skipped), 123 frontend tests,
+TypeScript, architecture, compile, production build and package checks passed.
+
 ## Re-Gear 0.3.25 audio activation candidate — 2026-09-04
 
 The [audio sequencing candidate](G1_AUDIO_ACTIVATION.md) separates pre-display

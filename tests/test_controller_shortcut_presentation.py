@@ -25,7 +25,7 @@ def evidence(**changes):
         "occurred_at": "2026-09-01T12:00:00Z",
         "expected_generation": "generation-1",
         "pressed_buttons": frozenset({ControllerButton.GUIDE, ControllerButton.Y}),
-        "held_ms": 1_200,
+        "held_ms": 3_000,
         "input_verified": True,
     }
     values.update(changes)
@@ -41,12 +41,12 @@ class ControllerShortcutPresentationTests(unittest.TestCase):
     def test_connected_policy_waits_for_verified_input(self):
         result = present_controller_safe_undock(None, delivery_connected=True)
         self.assertEqual(ControllerShortcutPresentationState.READY_FOR_VERIFIED_INPUT, result.state)
-        self.assertEqual("Guide + Y hold", result.gesture)
+        self.assertEqual("Xbox/Guide + Y hold (3 seconds)", result.gesture)
 
     def test_unverified_short_and_nonexact_input_remain_non_authorizing(self):
         for value, state in (
             (evidence(input_verified=False), ControllerShortcutPresentationState.INPUT_NOT_VERIFIED),
-            (evidence(held_ms=1_199), ControllerShortcutPresentationState.HOLD_INCOMPLETE),
+            (evidence(held_ms=2_999), ControllerShortcutPresentationState.HOLD_INCOMPLETE),
             (evidence(pressed_buttons=frozenset({ControllerButton.GUIDE})), ControllerShortcutPresentationState.CHORD_NOT_MATCHED),
         ):
             with self.subTest(state=state):

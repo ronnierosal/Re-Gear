@@ -1,4 +1,5 @@
 import { PRODUCT_NAME } from "./branding";
+import { startControllerSafeDisconnect, steamControllerInput } from "./controller-safe-disconnect";
 import { startOfflineFocusChecks } from "./offline-focus-checks";
 import { OfflineReadinessPanel } from "./offline-readiness-panel";
 import brandIcon from "../docs/images/re-gear-decky-white-transparent.png";
@@ -523,6 +524,8 @@ function Content({ preflight }: { preflight: SleepPreflightCoordinator }) {
   const presentationModal = useRef<ReturnType<typeof showModal> | null>(null);
   const automaticDockModal = useRef<ReturnType<typeof showModal> | null>(null);
   const safeDisconnectModal = useRef<ReturnType<typeof showModal> | null>(null);
+  const safeDisconnectExecuting = useRef(false);
+  const [controllerShortcutAvailable, setControllerShortcutAvailable] = useState(false);
   const processModal = useRef<ReturnType<typeof showModal> | null>(null);
   const diagnosticLoggingModal = useRef<ReturnType<typeof showModal> | null>(null);
 
@@ -1093,10 +1096,11 @@ function Content({ preflight }: { preflight: SleepPreflightCoordinator }) {
     );
   }, [automaticDockStatus?.enabled, changeAutomaticDock]);
 
-  const executeSafeDisconnect = useCallback(async () => {
+  const executeSafeDisconnect = useCallback(async (portable: boolean) => {
+    if (safeDisconnectExecuting.current) return;
+    safeDisconnectExecuting.current = true;
     setSafeDisconnectBusy(true);
     setSafeDisconnectMessage("");
-    const portable = payload?.inference.mode === "portable";
     try {
       if (portable) {
         const approval = await approveSafeDisconnectShutdown();
@@ -1154,21 +1158,39 @@ function Content({ preflight }: { preflight: SleepPreflightCoordinator }) {
           : "Portable transition did not complete. Keep the G1 connected.",
       );
     } finally {
+      safeDisconnectExecuting.current = false;
       setSafeDisconnectBusy(false);
     }
-  }, [payload?.inference.mode]);
+  }, []);
 
-  const requestSafeDisconnect = useCallback(() => {
-    const portable = payload?.inference.mode === "portable";
-    safeDisconnectModal.current?.Close();
+  const requestSafeDisconnectForMode = useCallback((portable: boolean) => {
+    if (safeDisconnectExecuting.current || safeDisconnectModal.current) return;
     safeDisconnectModal.current = showSafeDisconnectConfirmation(
       portable,
-      () => void executeSafeDisconnect(),
+      () => void executeSafeDisconnect(portable),
       () => {
         safeDisconnectModal.current = null;
       },
     );
-  }, [executeSafeDisconnect, payload?.inference.mode]);
+  }, [executeSafeDisconnect]);
+
+  const requestSafeDisconnect = useCallback(() => {
+    requestSafeDisconnectForMode(payload?.inference.mode === "portable");
+  }, [requestSafeDisconnectForMode, payload?.inference.mode]);
+
+  useEffect(() => {
+    const shortcut = startControllerSafeDisconnect({
+      input: steamControllerInput(window),
+      readContext: async () => {
+        const [snapshot, journal] = await Promise.all([getSnapshot(), getTransitionJournalStatus()]);
+        return { snapshot, journal };
+      },
+      isBusy: () => safeDisconnectExecuting.current || safeDisconnectModal.current !== null,
+      confirm: requestSafeDisconnectForMode,
+    });
+    setControllerShortcutAvailable(shortcut.available);
+    return () => shortcut.stop();
+  }, [requestSafeDisconnectForMode]);
 
   const acknowledgeTvSwitch = useCallback(async () => {
     if (!tvSwitchAcknowledgementId) return;
@@ -1447,7 +1469,9 @@ function Content({ preflight }: { preflight: SleepPreflightCoordinator }) {
                 : payload?.inference.mode === "portable"
                   ? "Shut down to disconnect"
                   : "Prepare to disconnect"}
-              description="Keep the eGPU connected until fully powered off."
+              description={controllerShortcutAvailable
+                ? "Experimental: Xbox + Y for 3 seconds. Keep the eGPU connected until fully off."
+                : "Keep the eGPU connected until fully powered off. Controller shortcut unavailable."}
               onClick={requestSafeDisconnect}
               disabled={
                 safeDisconnectBusy

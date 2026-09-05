@@ -1,6 +1,158 @@
 /** Player-facing name; keep legacy installation and safety-state identities separate. */
 const PRODUCT_NAME = "Re-Gear";
 
+// SteamClient.Input.ControllerInputGamepadButton, not browser Gamepad indices.
+const GUIDE_BUTTON = 34;
+const Y_BUTTON = 3;
+const SAFE_DISCONNECT_HOLD_MS = 3000;
+const CONTEXT_TIMEOUT_MS = 2000;
+function safeDisconnectContext(context) {
+    const value = context?.snapshot;
+    const snapshot = value?.snapshot;
+    const observedAt = Date.parse(snapshot?.observed_at ?? "");
+    const age = Date.now() - observedAt;
+    return value?.delivery_schema_version === 2 && snapshot?.schema_version === 3
+        && Number.isFinite(age) && age >= -5e3 && age <= 15000
+        && snapshot.game_state === "idle"
+        && snapshot.gamescope?.running === true
+        && snapshot.support_tier === "certified"
+        && snapshot.disconnect_readiness?.applicable === true
+        && Array.isArray(snapshot.gpus)
+        && snapshot.gpus.some(gpu => gpu.role === "external" && gpu.present === true && gpu.confidence === "verified")
+        && (value.inference?.mode === "portable" || value.inference?.mode === "docked_egpu")
+        && context.journal?.code === "journal.idle";
+}
+/** Native event listener; only opens the ordinary confirmation, never executes. */
+function startControllerSafeDisconnect(deps) {
+    const subscriptions = [];
+    const controllers = new Map();
+    const latched = new Set();
+    let active = false;
+    let reading = false;
+    let epoch = 0;
+    let timer;
+    let owner;
+    const exact = (id) => {
+        const buttons = controllers.get(id);
+        return buttons?.size === 2 && buttons.has(GUIDE_BUTTON) && buttons.has(Y_BUTTON);
+    };
+    const cancel = () => { epoch++; clearTimeout(timer); timer = undefined; owner = undefined; };
+    const reset = () => { cancel(); controllers.clear(); latched.clear(); };
+    const stop = () => {
+        active = false;
+        reset();
+        for (const subscription of subscriptions.splice(0)) {
+            try {
+                subscription.unregister();
+            }
+            catch { /* Disabled callbacks remain inert. */ }
+        }
+    };
+    const readFresh = async () => {
+        if (reading)
+            return null;
+        reading = true;
+        const request = Promise.resolve().then(() => deps.readContext()).then(value => { reading = false; return value; }, () => { reading = false; return null; });
+        let timeout;
+        try {
+            return await Promise.race([
+                request,
+                new Promise(resolve => { timeout = setTimeout(() => resolve(null), CONTEXT_TIMEOUT_MS); }),
+            ]);
+        }
+        catch {
+            return null;
+        }
+        finally {
+            clearTimeout(timeout);
+        }
+    };
+    const valid = (id, token) => active && epoch === token && exact(id) && !deps.isBusy();
+    const begin = (id) => {
+        cancel();
+        owner = id;
+        const token = epoch;
+        const initial = readFresh();
+        timer = setTimeout(() => {
+            timer = undefined;
+            void (async () => {
+                const before = await initial;
+                if (!valid(id, token) || !before || !safeDisconnectContext(before))
+                    return;
+                const after = await readFresh();
+                if (!valid(id, token) || !after || !safeDisconnectContext(after))
+                    return;
+                latched.add(id);
+                deps.confirm(after.snapshot.inference.mode === "portable");
+            })().catch(() => { });
+        }, SAFE_DISCONNECT_HOLD_MS);
+    };
+    const onInput = (id, button, pressed) => {
+        if (!active)
+            return;
+        if (!Number.isInteger(id) || id < 0 || id > 255 || !Number.isInteger(button)
+            || button < 0 || button > 255 || typeof pressed !== "boolean") {
+            reset();
+            return;
+        }
+        if (!controllers.has(id)) {
+            if (!pressed)
+                return;
+            if (controllers.size >= 8) {
+                reset();
+                return;
+            }
+            controllers.set(id, new Set());
+        }
+        const buttons = controllers.get(id);
+        if (pressed === buttons.has(button))
+            return; // Ignore repeated down/up delivery.
+        if (pressed)
+            buttons.add(button);
+        else
+            buttons.delete(button);
+        if (!exact(id) && owner === id)
+            cancel();
+        if (buttons.size === 0) {
+            controllers.delete(id);
+            latched.delete(id);
+        }
+        if (exact(id) && !latched.has(id) && owner === undefined && !deps.isBusy())
+            begin(id);
+    };
+    try {
+        const input = deps.input;
+        if (typeof input?.RegisterForControllerInputMessages !== "function"
+            || typeof input.RegisterForControllerListChanges !== "function")
+            return { available: false, stop };
+        for (const register of [
+            () => input.RegisterForControllerListChanges(reset),
+            () => input.RegisterForControllerInputMessages(onInput),
+        ]) {
+            const subscription = register();
+            if (typeof subscription?.unregister !== "function") {
+                stop();
+                return { available: false, stop };
+            }
+            subscriptions.push(subscription);
+        }
+        active = true;
+        return { available: true, stop };
+    }
+    catch {
+        stop();
+        return { available: false, stop };
+    }
+}
+function steamControllerInput(host) {
+    try {
+        return host?.SteamClient?.Input;
+    }
+    catch {
+        return undefined;
+    }
+}
+
 const manifest = {"name":"Handheld Dock Mode"};
 const API_VERSION = 2;
 const internalAPIConnection = window.__DECKY_SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED_deckyLoaderAPIInit;
@@ -2066,6 +2218,8 @@ function Content({ preflight }) {
     const presentationModal = SP_REACT.useRef(null);
     const automaticDockModal = SP_REACT.useRef(null);
     const safeDisconnectModal = SP_REACT.useRef(null);
+    const safeDisconnectExecuting = SP_REACT.useRef(false);
+    const [controllerShortcutAvailable, setControllerShortcutAvailable] = SP_REACT.useState(false);
     const processModal = SP_REACT.useRef(null);
     const diagnosticLoggingModal = SP_REACT.useRef(null);
     const refreshTransitionJournal = SP_REACT.useCallback(async () => {
@@ -2568,10 +2722,12 @@ function Content({ preflight }) {
             automaticDockModal.current = null;
         });
     }, [automaticDockStatus?.enabled, changeAutomaticDock]);
-    const executeSafeDisconnect = SP_REACT.useCallback(async () => {
+    const executeSafeDisconnect = SP_REACT.useCallback(async (portable) => {
+        if (safeDisconnectExecuting.current)
+            return;
+        safeDisconnectExecuting.current = true;
         setSafeDisconnectBusy(true);
         setSafeDisconnectMessage("");
-        const portable = payload?.inference.mode === "portable";
         try {
             if (portable) {
                 const approval = await approveSafeDisconnectShutdown();
@@ -2618,16 +2774,33 @@ function Content({ preflight }) {
                 : "Portable transition did not complete. Keep the G1 connected.");
         }
         finally {
+            safeDisconnectExecuting.current = false;
             setSafeDisconnectBusy(false);
         }
-    }, [payload?.inference.mode]);
-    const requestSafeDisconnect = SP_REACT.useCallback(() => {
-        const portable = payload?.inference.mode === "portable";
-        safeDisconnectModal.current?.Close();
-        safeDisconnectModal.current = showSafeDisconnectConfirmation(portable, () => void executeSafeDisconnect(), () => {
+    }, []);
+    const requestSafeDisconnectForMode = SP_REACT.useCallback((portable) => {
+        if (safeDisconnectExecuting.current || safeDisconnectModal.current)
+            return;
+        safeDisconnectModal.current = showSafeDisconnectConfirmation(portable, () => void executeSafeDisconnect(portable), () => {
             safeDisconnectModal.current = null;
         });
-    }, [executeSafeDisconnect, payload?.inference.mode]);
+    }, [executeSafeDisconnect]);
+    const requestSafeDisconnect = SP_REACT.useCallback(() => {
+        requestSafeDisconnectForMode(payload?.inference.mode === "portable");
+    }, [requestSafeDisconnectForMode, payload?.inference.mode]);
+    SP_REACT.useEffect(() => {
+        const shortcut = startControllerSafeDisconnect({
+            input: steamControllerInput(window),
+            readContext: async () => {
+                const [snapshot, journal] = await Promise.all([getSnapshot(), getTransitionJournalStatus()]);
+                return { snapshot, journal };
+            },
+            isBusy: () => safeDisconnectExecuting.current || safeDisconnectModal.current !== null,
+            confirm: requestSafeDisconnectForMode,
+        });
+        setControllerShortcutAvailable(shortcut.available);
+        return () => shortcut.stop();
+    }, [requestSafeDisconnectForMode]);
     const acknowledgeTvSwitch = SP_REACT.useCallback(async () => {
         if (!tvSwitchAcknowledgementId)
             return;
@@ -2826,7 +2999,9 @@ function Content({ preflight }) {
                                             ? "Checking…"
                                             : payload?.inference.mode === "portable"
                                                 ? "Shut down to disconnect"
-                                                : "Prepare to disconnect", description: "Keep the eGPU connected until fully powered off.", onClick: requestSafeDisconnect, disabled: safeDisconnectBusy
+                                                : "Prepare to disconnect", description: controllerShortcutAvailable
+                                            ? "Experimental: Xbox + Y for 3 seconds. Keep the eGPU connected until fully off."
+                                            : "Keep the eGPU connected until fully powered off. Controller shortcut unavailable.", onClick: requestSafeDisconnect, disabled: safeDisconnectBusy
                                             || !disconnect?.applicable
                                             || Boolean(tvSwitchAcknowledgementId)
                                             || Boolean(journalStatus && journalStatus.code !== "journal.idle") }) }), safeDisconnectMessage && (SP_JSX.jsx(DFL.PanelSectionRow, { children: safeDisconnectMessage })), journalStatus && journalStatus.code !== "journal.idle" && (SP_JSX.jsx(DiagnosticRow, { name: "Safety journal", value: label(journalStatus.owner) })), journalMessage && SP_JSX.jsx(DFL.PanelSectionRow, { children: journalMessage }), journalStatus?.owner === "sleep"

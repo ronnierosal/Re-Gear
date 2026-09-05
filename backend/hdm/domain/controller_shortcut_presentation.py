@@ -21,7 +21,7 @@ class ControllerShortcutPresentationState(StrEnum):
 class ControllerShortcutPresentation:
     state: ControllerShortcutPresentationState
     code: str
-    gesture: str = "Guide + Y hold"
+    gesture: str = "Xbox/Guide + Y hold (3 seconds)"
 
     @property
     def authorizes_action(self) -> bool:

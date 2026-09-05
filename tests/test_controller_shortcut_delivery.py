@@ -31,7 +31,7 @@ class Sink:
         return self.result
 
 
-def evidence(*, event_id="controller-event-0001", verified=True, held_ms=1_200):
+def evidence(*, event_id="controller-event-0001", verified=True, held_ms=3_000):
     return ControllerInputEvidence(
         verified,
         frozenset({ControllerButton.GUIDE, ControllerButton.Y}),
@@ -69,7 +69,7 @@ class ControllerShortcutDeliveryTests(unittest.TestCase):
         adapter = ControllerShortcutDeliveryAdapter(sink)
         for value, code in (
             (evidence(verified=False), "controller_shortcut.input_unverified"),
-            (evidence(held_ms=1_199), "controller_shortcut.hold_incomplete"),
+            (evidence(held_ms=2_999), "controller_shortcut.hold_incomplete"),
         ):
             with self.subTest(code=code):
                 result = adapter.deliver(value)

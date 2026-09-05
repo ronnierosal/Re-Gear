@@ -14,7 +14,7 @@ class ControllerButton(StrEnum):
     Y = "y"
 
 
-DEFAULT_SAFE_UNDOCK_HOLD_MS = 1_200
+DEFAULT_SAFE_UNDOCK_HOLD_MS = 3_000
 EVENT_ID_RE = re.compile(r"^[A-Za-z0-9_.-]{8,96}$")
 
 
