@@ -198,6 +198,10 @@ const regearTheme = {
     accentSoft: "#acebfa"};
 // Scoped to Re-Gear controls. Native Decky focus handling remains in charge.
 const regearControlCss = `
+.rg-section-focus.rg-section-focused, .rg-section-focus:focus-visible {
+  outline: 2px solid #66d9f7;
+  outline-offset: -2px;
+}
 .rg-dashboard-action:focus-visible, .rg-dashboard-action.gpfocus,
 .gpfocus > .rg-dashboard-action {
   outline: 2px solid #66d9f7 !important;
@@ -206,6 +210,16 @@ const regearControlCss = `
 }
 .rg-dashboard-action:disabled { opacity: .7; }
 `;
+
+/** Informational controller stop, not an action or an invisible button. */
+const SectionFocus = SP_REACT.forwardRef(function SectionFocus({ label, children, onFocused }, ref) {
+    return SP_JSX.jsx(DFL.Focusable, { ref: ref, role: "group", "aria-label": label, className: "rg-section-focus", focusClassName: "rg-section-focused", onGamepadFocus: (event) => {
+            if (event.currentTarget instanceof HTMLElement) {
+                event.currentTarget.scrollIntoView({ block: "nearest", inline: "nearest" });
+            }
+            onFocused?.();
+        }, style: { minWidth: 0, borderRadius: 14, scrollMarginTop: 48, scrollMarginBottom: 16 }, children: children });
+});
 
 const labels = {
     "GPU and driver": "GPU driver",
@@ -225,10 +239,10 @@ function ConnectionQuickStatus({ store, visible, onOpen }) {
         return () => clearInterval(timer);
     }, [visible]);
     const stale = Date.now() >= source.expiresAt;
-    return SP_JSX.jsxs("div", { "aria-label": "Live G1 readiness", style: { background: regearTheme.surface, border: `1px solid ${regearTheme.border}`, borderRadius: 14, padding: "10px 12px", color: regearTheme.text }, children: [SP_JSX.jsx("style", { children: connectionPanelCss }), SP_JSX.jsx("div", { style: { fontSize: 13, lineHeight: 1.4, color: regearTheme.muted, marginBottom: 6 }, role: "status", children: stale ? "Waiting for a fresh status update" : source.title }), SP_JSX.jsx("div", { children: source.rows.filter(row => labels[row.label]).map(row => {
-                    const state = stale ? "waiting" : row.state;
-                    return SP_JSX.jsx(ReadinessRow, { label: labels[row.label], compact: true, state: state === "waiting" && !stale && visible ? "checking" : state }, row.label);
-                }) }), SP_JSX.jsx(DFL.DialogButton, { className: "rg-dashboard-action", onClick: onOpen, style: { width: "100%", minWidth: 0, height: "auto", padding: "9px 8px", marginTop: 10,
+    return SP_JSX.jsxs("div", { "aria-label": "Live eGPU readiness", style: { background: regearTheme.surface, border: `1px solid ${regearTheme.border}`, borderRadius: 14, padding: "10px 12px", color: regearTheme.text }, children: [SP_JSX.jsx("style", { children: connectionPanelCss }), SP_JSX.jsxs(SectionFocus, { label: "eGPU readiness", children: [SP_JSX.jsx("div", { style: { fontSize: 13, lineHeight: 1.4, color: regearTheme.muted, marginBottom: 6 }, role: "status", children: stale ? "Waiting for a fresh status update" : source.title.replace(/\bG1\b/g, "eGPU") }), SP_JSX.jsx("div", { children: source.rows.filter(row => labels[row.label]).map(row => {
+                            const state = stale ? "waiting" : row.state;
+                            return SP_JSX.jsx(ReadinessRow, { label: labels[row.label], compact: true, state: state === "waiting" && !stale && visible ? "checking" : state }, row.label);
+                        }) })] }), SP_JSX.jsx(DFL.DialogButton, { className: "rg-dashboard-action", onClick: onOpen, style: { width: "100%", minWidth: 0, height: "auto", padding: "9px 8px", marginTop: 10,
                     border: `1px solid ${regearTheme.border}`, borderRadius: 9, background: "transparent",
                     color: regearTheme.accentSoft, fontSize: 13, lineHeight: 1.4 }, children: "View full progress" })] });
 }
@@ -239,7 +253,9 @@ function connectionLiveStatus(payload, automatic, journal, failed = false) {
     const snapshotAge = Date.now() - Date.parse(payload?.snapshot.observed_at ?? "");
     const fresh = !failed && Number.isFinite(snapshotAge) && snapshotAge >= -5e3 && snapshotAge < 15000
         && typeof c?.checks_age_ms === "number" && c.checks_age_ms >= 0 && c.checks_age_ms < 15000;
-    const blocked = fresh && ["timed_out", "link_training_failed", "action_required"].includes(c?.stage ?? "");
+    // The backend timeout remains an authorization boundary, not proof of a
+    // failed cable/device. Later exact enumeration can start a fresh window.
+    const blocked = fresh && ["link_training_failed", "action_required"].includes(c?.stage ?? "");
     const names = { gpu: "GPU and driver", link: "Connection link", hdmi: "TV HDMI detected", audio: "Audio recovery ready", session: "Display switching ready", idle: "No game running" };
     const rows = Object.entries(names).map(([key, label]) => ({ label, state: (!fresh ? "waiting" : (key === "idle" ? payload?.snapshot.game_state === "idle" && c?.checks?.idle === true : c?.checks?.[key] === true) ? "ready" : blocked || key === "idle" && payload?.snapshot.game_state === "running" ? "blocked" : "waiting") }));
     rows.push({ label: "Previous result cleared", state: !fresh || !journal ? "waiting" : journal === "journal.idle" ? "ready" : "blocked" });
@@ -247,8 +263,18 @@ function connectionLiveStatus(payload, automatic, journal, failed = false) {
     const switching = fresh && automatic?.stage === "switching";
     const docked = fresh && automatic?.stage === "docked" && payload?.inference.mode === "docked_egpu";
     const waiting = { waiting_for_pci: "Waiting for G1 detection", transport_detected: "G1 connection detected", waiting_for_driver: "Waiting for GPU driver", waiting_for_link: "Waiting for connection link", waiting_for_hdmi: "Waiting for TV HDMI", waiting_for_audio: "Checking audio recovery", waiting_for_session: "Waiting for display integration", game_running: "Close the game to continue", stabilizing: "Checking connection stability", timed_out: "Detection timed out — keep G1 connected", link_training_failed: "Connection link needs attention", action_required: "Connection needs attention" };
+    const age = c?.window_age_ms;
+    const waitingStage = ["timed_out", "waiting_for_pci", "transport_detected", "waiting_for_driver", "waiting_for_link", "waiting_for_hdmi", "waiting_for_audio", "waiting_for_session", "stabilizing"].includes(c?.stage ?? "");
+    const delayMessage = waitingStage && typeof age === "number" && Number.isFinite(age)
+        ? age >= 300000 ? "Connection hasn’t completed—troubleshooting needed"
+            : age >= 120000 ? "Taking longer than expected—still checking" : undefined
+        : undefined;
+    const detail = blocked ? waiting[c?.stage ?? ""]
+        : payload?.snapshot.game_state === "running" ? "Close the game to continue"
+            : journal && journal !== "journal.idle" ? "Previous result needs acknowledgement"
+                : delayMessage ?? (c?.stage === "timed_out" ? "Taking longer than expected—still checking" : waiting[c?.stage ?? ""]);
     return { phase: docked ? "complete" : switching ? "switching" : "checking", connected, expiresAt: fresh ? Date.now() + Math.max(0, 15000 - Math.max(snapshotAge, c?.checks_age_ms ?? 15000)) : 0, seconds: Math.floor((c?.window_age_ms ?? 0) / 1000), rows,
-        title: !fresh ? "Waiting for a fresh status update" : switching ? "Switching to TV — checking picture and audio" : docked ? "TV transition reported complete" : all ? automatic?.enabled ? "Ready — waiting for automatic switch" : "Ready to switch to TV" : waiting[c?.stage ?? ""] ?? "Checking connection readiness",
+        title: !fresh ? "Waiting for a fresh status update" : switching ? "Switching to TV — checking picture and audio" : docked ? "TV transition reported complete" : all ? automatic?.enabled ? "Ready — waiting for automatic switch" : "Ready to switch to TV" : detail ?? "Checking connection readiness",
         canSwitch: all && automatic?.enabled === false };
 }
 function createLiveStatusStore() {
@@ -1712,43 +1738,28 @@ function DashboardSurface({ children, primary = false }) {
             boxShadow: primary ? "inset 0 0 28px rgba(255,185,48,.05)" : "inset 0 0 24px rgba(0,170,255,.025)",
         }, children: children });
 }
-function StatusPill({ label, tone }) {
-    const color = tone === "ready" ? C.green : tone === "unknown" ? C.muted : C.cyan;
-    return SP_JSX.jsxs("div", { style: {
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 6,
-            minHeight: 28,
-            padding: "0 10px",
-            borderRadius: 999,
-            border: `1px solid ${color}66`,
-            color,
-            background: `${color}0d`,
-            fontSize: 12,
-            fontWeight: 650,
-            whiteSpace: "nowrap",
-        }, children: [SP_JSX.jsx("span", { style: { width: 8, height: 8, borderRadius: 999, border: `2px solid ${color}`, boxSizing: "border-box" } }), label] });
-}
 function CurrentStateCard({ modeLabel, health, game, loading }) {
     return SP_JSX.jsxs("div", { style: {
-            padding: "14px 15px",
+            padding: "10px 12px",
             marginBottom: 14,
-            borderRadius: 18,
-            border: `1px solid ${C.border}`,
-            background: "linear-gradient(135deg, rgba(14,30,49,.98), rgba(7,16,28,.98))",
+            borderRadius: 14,
+            border: `1px solid ${regearTheme.border}`,
+            background: regearTheme.surface,
         }, children: [SP_JSX.jsx("div", { style: {
                     color: C.cyan,
                     fontSize: 12,
                     fontWeight: 760,
                     letterSpacing: "1.5px",
                     marginBottom: 5,
-                }, children: "CURRENT STATE" }), SP_JSX.jsxs("div", { style: {
+                }, children: "CURRENT STATE" }), SP_JSX.jsx("div", { style: {
                     display: "flex",
                     justifyContent: "space-between",
                     alignItems: "center",
                     gap: 10,
                     marginBottom: 12,
-                }, children: [SP_JSX.jsx("div", { style: { fontSize: 26, fontWeight: 760, lineHeight: 1 }, children: modeLabel }), SP_JSX.jsx("span", { "aria-hidden": "true", style: { width: 10, height: 10, borderRadius: 999, background: C.cyan, boxShadow: `0 0 14px ${C.cyan}` } })] }), SP_JSX.jsxs("div", { style: { display: "flex", flexWrap: "wrap", gap: 8 }, children: [SP_JSX.jsx(StatusPill, { label: `Health ${loading ? "Reading…" : health}`, tone: !loading && health === "Ready" ? "ready" : "unknown" }), SP_JSX.jsx(StatusPill, { label: `Game ${loading ? "Reading…" : game}`, tone: "info" })] })] });
+                }, children: SP_JSX.jsx("div", { style: { fontSize: 18, fontWeight: 700, lineHeight: 1.4 }, children: modeLabel }) }), [["Health", loading ? "Reading…" : health], ["Game", loading ? "Reading…" : game]].map(([name, value]) => SP_JSX.jsxs("div", { style: { display: "grid", gridTemplateColumns: "64px minmax(0,1fr)", gap: 8,
+                    padding: "8px 0", borderTop: `1px solid ${regearTheme.border}`, fontSize: 13, lineHeight: 1.4 }, children: [SP_JSX.jsx("span", { style: { color: regearTheme.muted }, children: name }), SP_JSX.jsx("span", { style: { textAlign: "right", overflowWrap: "anywhere",
+                            color: name === "Health" && !loading && health === "Ready" ? C.green : regearTheme.text }, children: value })] }, name))] });
 }
 function ModeCard({ name, detail, active, loading }) {
     const isPortable = name === "Portable";
@@ -1770,15 +1781,15 @@ function ModeCard({ name, detail, active, loading }) {
             color: active ? C.text : "#d7e3f1",
         }, children: [SP_JSX.jsx("div", { style: { color: active ? C.cyan : "#a6bfdc", marginBottom: 10 }, children: SP_JSX.jsx("img", { src: isPortable ? handheldModeIcon : tvModeIcon, width: 56, height: 56, alt: "", "aria-hidden": "true", style: { display: "block", objectFit: "contain" } }) }), SP_JSX.jsx("div", { style: { fontSize: 18, fontWeight: 760, marginBottom: 6 }, children: name }), SP_JSX.jsx("div", { style: { fontSize: 12, lineHeight: "16px", color: C.muted, minHeight: 32 }, children: detail }), SP_JSX.jsx("div", { style: { marginTop: 10, color: active ? C.cyan : C.muted, fontSize: 12, fontWeight: 700 }, children: active ? "ACTIVE" : loading ? "READING…" : "Not active" })] });
 }
-function QuickAccessOverview({ mode, modeLabel, health, game, loading }) {
+function QuickAccessOverview({ mode, modeLabel, health, game, loading, summaryRef, onSummaryFocus }) {
     const cards = placementCards(mode, loading);
-    return SP_JSX.jsxs("div", { style: { color: C.text, minWidth: 0 }, children: [SP_JSX.jsx(CurrentStateCard, { modeLabel: modeLabel, health: health, game: game, loading: loading }), SP_JSX.jsx("div", { style: {
-                    color: C.muted,
-                    fontSize: 11,
-                    fontWeight: 760,
-                    letterSpacing: "1.6px",
-                    margin: "2px 2px 8px",
-                }, children: "YOUR SETUP" }), SP_JSX.jsx("div", { style: { display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10 }, children: cards.map((card) => SP_JSX.jsx(ModeCard, { ...card, loading: loading }, card.name)) })] });
+    return SP_JSX.jsxs("div", { style: { color: C.text, minWidth: 0 }, children: [SP_JSX.jsx(SectionFocus, { ref: summaryRef, label: "At a glance: current state", onFocused: onSummaryFocus, children: SP_JSX.jsx(CurrentStateCard, { modeLabel: modeLabel, health: health, game: game, loading: loading }) }), SP_JSX.jsxs(SectionFocus, { label: "Your setup", children: [SP_JSX.jsx("div", { style: {
+                            color: C.muted,
+                            fontSize: 11,
+                            fontWeight: 760,
+                            letterSpacing: "1.6px",
+                            margin: "2px 2px 8px",
+                        }, children: "YOUR SETUP" }), SP_JSX.jsx("div", { style: { display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10 }, children: cards.map((card) => SP_JSX.jsx(ModeCard, { ...card, loading: loading }, card.name)) })] })] });
 }
 
 /** Re-Gear action card: one controller focus target with mockup-style hierarchy. */
@@ -3489,17 +3500,30 @@ function Content({ preflight, connection }) {
         });
     }, []);
     const sectionVisibility = quickAccessSectionVisibility(showDiagnostics);
-    return (SP_JSX.jsxs(SP_JSX.Fragment, { children: [SP_JSX.jsx("style", { children: regearControlCss }), SP_JSX.jsxs("div", { ref: statusAnchor, tabIndex: -1, children: [SP_JSX.jsx(DFL.PanelSection, { title: "At a glance", children: SP_JSX.jsx(DFL.Focusable, { ref: statusFocusAnchor, "aria-label": "Re-Gear status summary", onGamepadFocus: () => {
+    return (SP_JSX.jsxs(SP_JSX.Fragment, { children: [SP_JSX.jsx("style", { children: regearControlCss }), SP_JSX.jsxs("div", { ref: statusAnchor, tabIndex: -1, children: [SP_JSX.jsx(DFL.PanelSection, { title: "At a glance", children: SP_JSX.jsx(QuickAccessOverview, { summaryRef: statusFocusAnchor, onSummaryFocus: () => {
                                 if (statusAnchor.current)
                                     scrollToTopOfOwningPanel(statusAnchor.current);
-                            }, children: SP_JSX.jsx(QuickAccessOverview, { mode: payload?.inference.mode ?? "unknown", modeLabel: loading ? "Reading…" : label(payload?.inference.mode ?? "unknown"), health: healthStatusLabel(payload?.health, loading), game: label(snapshot?.game_state ?? "unknown"), loading: loading }) }) }), payload?.connection_readiness && payload.connection_readiness.stage !== "disconnected" &&
-                        SP_JSX.jsx(DFL.PanelSection, { title: "G1 readiness", children: SP_JSX.jsx(ConnectionQuickStatus, { store: connection.store, visible: quickAccessVisible, onOpen: openConnectionProgress }) }), SP_JSX.jsxs(DFL.PanelSection, { title: "Docking & actions", children: [SP_JSX.jsxs("div", { ref: primaryControlAnchor, children: [SP_JSX.jsx(DashboardSurface, { children: SP_JSX.jsx("div", { style: { padding: "4px 12px" }, children: SP_JSX.jsx(DFL.ToggleField, { label: "Automatic TV docking", layout: "inline", description: automaticDockBusy
+                            }, mode: payload?.inference.mode ?? "unknown", modeLabel: loading ? "Reading…" : label(payload?.inference.mode ?? "unknown"), health: healthStatusLabel(payload?.health, loading), game: label(snapshot?.game_state ?? "unknown"), loading: loading }) }), payload?.connection_readiness && payload.connection_readiness.stage !== "disconnected" &&
+                        SP_JSX.jsx(DFL.PanelSection, { title: "eGPU readiness", children: SP_JSX.jsx(ConnectionQuickStatus, { store: connection.store, visible: quickAccessVisible, onOpen: openConnectionProgress }) }), SP_JSX.jsxs(DFL.PanelSection, { title: "Docking & actions", children: [SP_JSX.jsxs("div", { ref: primaryControlAnchor, children: [SP_JSX.jsx(DashboardSurface, { children: SP_JSX.jsx("div", { style: { padding: "4px 12px" }, children: SP_JSX.jsx(DFL.ToggleField, { label: "Automatic TV docking", layout: "inline", description: automaticDockBusy
                                                     ? "Saving…"
                                                     : !automaticDockStatus
                                                         ? "Status unavailable"
                                                         : automaticDockStatus.enabled
                                                             ? label(automaticDockStatus.code)
-                                                            : "Off · Ask before enabling", checked: automaticDockStatus?.enabled === true, disabled: automaticDockBusy || !automaticDockStatus, highlightOnFocus: true, onChange: toggleAutomaticDock }) }) }), automaticDockMessage && (SP_JSX.jsx(DFL.PanelSectionRow, { children: automaticDockMessage })), SP_JSX.jsx(DashboardSurface, { primary: true, children: SP_JSX.jsx(DashboardAction, { icon: "bolt", tone: "primary", title: tvSwitchBusy ? "Switching…" : "Switch to TV now", description: "Checks readiness before switching", onClick: () => void executeTvSwitch(), disabled: tvSwitchBusy
+                                                            : "Off · Ask before enabling", checked: automaticDockStatus?.enabled === true, disabled: automaticDockBusy || !automaticDockStatus, highlightOnFocus: true, onChange: toggleAutomaticDock }) }) }), automaticDockMessage && (SP_JSX.jsx(DFL.PanelSectionRow, { children: automaticDockMessage })), SP_JSX.jsx(DashboardSurface, { primary: true, children: SP_JSX.jsx(DashboardAction, { icon: "bolt", tone: "primary", title: tvSwitchBusy || safeDisconnectBusy
+                                                ? "Switching…"
+                                                : payload?.inference.mode === "docked_egpu"
+                                                    ? "Switch to handheld"
+                                                    : "Switch to TV", description: controllerShortcutAvailable
+                                                ? "Hold Back/View + Y for 3 seconds to switch."
+                                                : "Checks readiness before switching. Controller shortcut unavailable.", onClick: () => {
+                                                if (payload?.inference.mode === "docked_egpu")
+                                                    requestControllerDisplaySwitch("ally");
+                                                else if (payload?.inference.mode === "portable")
+                                                    void executeTvSwitch();
+                                            }, disabled: tvSwitchBusy
+                                                || safeDisconnectBusy
+                                                || (payload?.inference.mode !== "portable" && payload?.inference.mode !== "docked_egpu")
                                                 || Boolean(tvSwitchAcknowledgementId)
                                                 || Boolean(journalStatus && journalStatus.code !== "journal.idle") }) }), tvSwitchMessage && SP_JSX.jsx(DFL.PanelSectionRow, { children: tvSwitchMessage }), SP_JSX.jsx(DashboardSurface, { children: SP_JSX.jsx(DashboardAction, { icon: "connection", title: "Disconnect status", description: "Live checks \u00B7 keep G1 connected", onClick: () => {
                                                 if (!disconnectProgressModal.current)
@@ -3508,9 +3532,7 @@ function Content({ preflight, connection }) {
                                                 ? "Checking…"
                                                 : payload?.inference.mode === "portable"
                                                     ? "Shut down to disconnect"
-                                                    : "Prepare to disconnect", description: controllerShortcutAvailable
-                                                ? "Back/View + Y (3 seconds): switch between Ally and TV. Keep the G1 connected."
-                                                : "Keep the eGPU connected until fully powered off. Controller shortcut unavailable.", onClick: requestSafeDisconnect, disabled: safeDisconnectBusy
+                                                    : "Prepare to disconnect", description: "Keep the G1 connected until fully powered off.", onClick: requestSafeDisconnect, disabled: safeDisconnectBusy
                                                 || !disconnect?.applicable
                                                 || Boolean(tvSwitchAcknowledgementId)
                                                 || Boolean(journalStatus && journalStatus.code !== "journal.idle") }) }), safeDisconnectMessage && (SP_JSX.jsx(DFL.PanelSectionRow, { children: safeDisconnectMessage })), journalStatus && journalStatus.code !== "journal.idle" && (SP_JSX.jsx(DiagnosticRow, { name: "Safety journal", value: label(journalStatus.owner) })), journalMessage && SP_JSX.jsx(DFL.PanelSectionRow, { children: journalMessage }), journalStatus?.owner === "sleep"
