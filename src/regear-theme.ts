@@ -10,6 +10,10 @@ export const regearTheme = {
 
 // Scoped to Re-Gear controls. Native Decky focus handling remains in charge.
 export const regearControlCss = `
+.rg-section-focus.rg-section-focused, .rg-section-focus:focus-visible {
+  outline: 2px solid #66d9f7;
+  outline-offset: -2px;
+}
 .rg-dashboard-action:focus-visible, .rg-dashboard-action.gpfocus,
 .gpfocus > .rg-dashboard-action {
   outline: 2px solid #66d9f7 !important;

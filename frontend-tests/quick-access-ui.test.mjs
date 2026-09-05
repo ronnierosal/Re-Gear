@@ -20,12 +20,29 @@ test("backend-retired display success releases stale acknowledgement UI", () => 
 
 test("upward navigation reaches the native status focus stop before leaving HDM", () => {
   const source = readFileSync(new URL("../src/index.tsx", import.meta.url), "utf8");
-  const summary = source.slice(source.indexOf('<PanelSection title="At a glance">'), source.indexOf('<PanelSection title="Safety & actions">'));
-  assert.match(summary, /<Focusable[\s\S]*ref=\{statusFocusAnchor\}/);
-  assert.match(summary, /onGamepadFocus=\{[\s\S]*scrollToTopOfOwningPanel\(statusAnchor.current\)/);
-  assert.match(summary, /<QuickAccessOverview[\s\S]*<\/Focusable>/);
+  const summary = source.slice(source.indexOf('<PanelSection title="At a glance">'), source.indexOf('<PanelSection title="Docking & actions">'));
+  assert.match(summary, /<QuickAccessOverview[\s\S]*summaryRef=\{statusFocusAnchor\}/);
+  assert.match(summary, /onSummaryFocus=\{[\s\S]*scrollToTopOfOwningPanel\(statusAnchor.current\)/);
   assert.doesNotMatch(summary, /onActivate|onCancel|onGamepadDirection/);
   assert.match(source, /statusFocusAnchor.current \?\? primaryControlAnchor.current/);
+});
+
+test("informational sections have separate native focus stops without activation handlers", () => {
+  const read = name => readFileSync(new URL(`../src/${name}`, import.meta.url), "utf8");
+  const focus = read("section-focus.tsx");
+  const overview = read("quick-access-overview.tsx");
+  const readiness = read("connection-quick-status.tsx");
+  assert.match(focus, /<Focusable/);
+  assert.match(focus, /role="group"/);
+  assert.match(focus, /scrollIntoView/);
+  assert.doesNotMatch(focus, /onActivate|onClick|onCancel|<button/);
+  assert.match(overview, /label="At a glance: current state"/);
+  assert.match(overview, /label="Your setup"/);
+  assert.ok(readiness.indexOf('</SectionFocus>') < readiness.indexOf('<DialogButton'));
+  assert.match(readiness, /label="eGPU readiness"/);
+  assert.match(read("index.tsx"), /PanelSection title="eGPU readiness"/);
+  assert.match(read("regear-theme.ts"), /rg-section-focused/);
+  assert.doesNotMatch(overview, /StatusPill|fontSize: 26/);
 });
 
 test("secondary sections stay hidden until the player opens Troubleshoot", () => {
