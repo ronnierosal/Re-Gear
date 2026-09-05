@@ -1,5 +1,20 @@
 # Current state
 
+## Badge stacked above Steam - 2026-09-04
+
+0.3.37-offline.1 revision 1f08bd3 positions Re-Gear above the native Steam
+compatibility group on both landscape and portrait covers, right aligned with
+four CSS pixels of clearance. Native glyph sizing remains; missing native
+reference falls back to bottom-right at bottom 38px, size 64x32. Automatic-only
+checks and persistent neutral expiry remain unchanged.
+955 backend tests (six skipped), 152 frontend tests, architecture, compilation,
+TypeScript, production build, package and provenance checks passed.
+Staged /home/deck/Re-Gear-0.3.37-offline.1.zip; matching local/remote SHA-256:
+6A70A44633401E390B64A87ACDBD219796412E99975BABB30F07C903C8771D10.
+Installed before staging: 0.3.36-offline.1 revision 24b39befb0de.
+No installation or restart. New filename verified absent before transfer;
+other workstream archives preserved. Player visual confirmation still pending.
+
 ## Steam-reference icon sizing - 2026-09-04
 
 0.3.36-offline.1 revision 24b39be uses a bounded same-tile native lower-right
