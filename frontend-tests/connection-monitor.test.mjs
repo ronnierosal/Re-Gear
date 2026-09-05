@@ -30,3 +30,20 @@ test('late RPC completion after plugin unload cannot open a modal',async()=>{
  const h=startConnectionMonitor({read:()=>new Promise(r=>resolve=r),show:()=>{opened++;return {Close(){}};},schedule:()=>{scheduled++;return 1;}});
  h.stop();resolve(sample(true));await settle();assert.equal(opened,0);assert.equal(scheduled,0);
 });
+
+test('one existing popup receives timeout, late recovery and completion without reopening',async()=>{
+ const h=harness(sample(false));await settle();
+ const s=sample(true);s.payload.connection_readiness.window_age_ms=121000;
+ s.payload.connection_readiness.stage='timed_out';
+ await h.step(s);assert.equal(h.opened,1);
+ assert.match(h.monitor.store.get().title,/still checking/);
+ s.payload.connection_readiness.window_age_ms=300000;
+ await h.step(s);assert.match(h.monitor.store.get().title,/troubleshooting/);
+ s.payload.connection_readiness.stage='stabilizing';s.payload.connection_readiness.window_age_ms=1000;
+ await h.step(s);assert.match(h.monitor.store.get().title,/stability/);
+ s.automatic.stage='switching';await h.step(s);assert.equal(h.monitor.store.get().phase,'switching');
+ s.automatic.stage='docked';s.payload.inference.mode='docked_egpu';
+ await h.step(s);assert.equal(h.monitor.store.get().phase,'complete');assert.equal(h.opened,1);
+ await h.step(new Error('unavailable'));assert.equal(h.monitor.store.get().expiresAt,0);
+ h.monitor.stop();
+});
