@@ -136,7 +136,11 @@ def main() -> int:
     if missing:
         raise SystemExit("Missing package inputs: " + ", ".join(missing))
     OUTPUT.parent.mkdir(parents=True, exist_ok=True)
-    with zipfile.ZipFile(OUTPUT, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+    from release_coordination import reserve
+    if OUTPUT.exists():
+        raise SystemExit("Refusing to overwrite existing ZIP: " + str(OUTPUT))
+    reserve(PACKAGE_VERSION)
+    with zipfile.ZipFile(OUTPUT, "x", compression=zipfile.ZIP_DEFLATED) as archive:
         for path in files:
             info = zipfile.ZipInfo(archive_name(path))
             info.date_time = (2026, 1, 1, 0, 0, 0)
