@@ -1,5 +1,19 @@
 # Current state
 
+## Automatic-only offline UI - 2026-09-04
+
+0.3.35-offline.1 revision c0590e5 removes the manual Offline Readiness panel,
+game picker, check button and manual test confirmation from Quick Access.
+The plugin-lifecycle automatic checks and artwork badges remain. Manual-panel
+source is dormant and tree-shaken from the build; no manual check is required.
+Includes the narrow-cover and persistent neutral-expiry fixes.
+Staged at /home/deck/Re-Gear-0.3.35-offline.1.zip; matching local/remote SHA-256:
+B6A38CF5B83C2D38C116BDCBDCBB519CBE6A0F26FF15E5D92086C6057B7F716E.
+Installed before staging: 0.3.34-offline.1 revision 1ab3b2f8d097.
+955 backend tests (six skipped), 149 frontend tests, architecture, compilation,
+TypeScript, build and package/provenance checks passed. No installation, restart
+or existing ZIP overwrite. Player validation remains pending.
+
 ## Combined badge restoration staged - 2026-09-04
 
 Installed 0.3.33 revision 263dc089 retained confidence/branding but omitted
