@@ -143,3 +143,22 @@ changed by this inspection. Keep the G1 detached and software frozen meanwhile.
 Reference: [Linux shutdown debugging with pstore](https://cdn.kernel.org/doc/html/latest/power/shutdown-debugging.html).
 Persistent console capture is a diagnostic possibility, not a validated solution
 on this Ally. No live-removal support or GPU unbind/reset was tested or added.
+
+### Read-only pstore follow-up
+
+Player sudo inspection found an empty `/sys/fs/pstore`, `console_size=4096`,
+`mem_size=5242880`, `record_size=2097152`, and `max_reason=2`.
+Live `/proc/config.gz` inspection established `CONFIG_PSTORE=y` and
+`CONFIG_PSTORE_RAM=m`, but `CONFIG_PSTORE_CONSOLE`, `CONFIG_PSTORE_PMSG`, and
+`CONFIG_PSTORE_FTRACE` are not enabled. Therefore the console_size parameter
+must not be described as an operational persistent console recorder. Increasing
+that parameter alone cannot add the missing compiled support. max_reason=2
+selects Oops/Panic dumps, not continuous capture of a silent shutdown hang.
+No records were deleted and no settings were changed.
+
+Reference: [Linux 6.16 ramoops documentation](https://www.kernel.org/doc/html/v6.16/admin-guide/ramoops.html).
+The proposed persistent-console route is blocked on this installed kernel.
+Next assess visible console capture or an independently connected supported
+network console before considering a kernel change. Neither capture method is
+validated on this Ally; do not repeat the attached hang simply to collect the
+same journal cutoff, or trigger a deliberate panic as a substitute.
