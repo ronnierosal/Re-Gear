@@ -1,4 +1,6 @@
-import type { ReactNode } from "react";
+import type { ReactNode, Ref } from "react";
+import { SectionFocus } from "./section-focus";
+import { regearTheme as theme } from "./regear-theme";
 import handheldModeIcon from "./assets/mode-handheld.svg";
 import tvModeIcon from "./assets/mode-tv.svg";
 import { placementCards } from "./quick-access-dashboard";
@@ -46,36 +48,15 @@ export function DashboardSurface({ children, primary = false }: { children: Reac
   }}>{children}</div>;
 }
 
-function StatusPill({ label, tone }: { label: string; tone: "ready" | "info" | "unknown" }) {
-  const color = tone === "ready" ? C.green : tone === "unknown" ? C.muted : C.cyan;
-  return <div style={{
-    display: "inline-flex",
-    alignItems: "center",
-    gap: 6,
-    minHeight: 28,
-    padding: "0 10px",
-    borderRadius: 999,
-    border: `1px solid ${color}66`,
-    color,
-    background: `${color}0d`,
-    fontSize: 12,
-    fontWeight: 650,
-    whiteSpace: "nowrap",
-  }}>
-    <span style={{ width: 8, height: 8, borderRadius: 999, border: `2px solid ${color}`, boxSizing: "border-box" }} />
-    {label}
-  </div>;
-}
-
 function CurrentStateCard({ modeLabel, health, game, loading }: {
   modeLabel: string; health: string; game: string; loading: boolean;
 }) {
   return <div style={{
-    padding: "14px 15px",
+    padding: "10px 12px",
     marginBottom: 14,
-    borderRadius: 18,
-    border: `1px solid ${C.border}`,
-    background: "linear-gradient(135deg, rgba(14,30,49,.98), rgba(7,16,28,.98))",
+    borderRadius: 14,
+    border: `1px solid ${theme.border}`,
+    background: theme.surface,
   }}>
     <div style={{
       color: C.cyan,
@@ -91,13 +72,15 @@ function CurrentStateCard({ modeLabel, health, game, loading }: {
       gap: 10,
       marginBottom: 12,
     }}>
-      <div style={{ fontSize: 26, fontWeight: 760, lineHeight: 1 }}>{modeLabel}</div>
-      <span aria-hidden="true" style={{ width: 10, height: 10, borderRadius: 999, background: C.cyan, boxShadow: `0 0 14px ${C.cyan}` }} />
+      <div style={{ fontSize: 18, fontWeight: 700, lineHeight: 1.4 }}>{modeLabel}</div>
     </div>
-    <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-      <StatusPill label={`Health ${loading ? "Reading…" : health}`} tone={!loading && health === "Ready" ? "ready" : "unknown"} />
-      <StatusPill label={`Game ${loading ? "Reading…" : game}`} tone="info" />
-    </div>
+    {[["Health", loading ? "Reading…" : health], ["Game", loading ? "Reading…" : game]].map(([name, value]) =>
+      <div key={name} style={{display:"grid", gridTemplateColumns:"64px minmax(0,1fr)", gap:8,
+        padding:"8px 0", borderTop:`1px solid ${theme.border}`, fontSize:13, lineHeight:1.4}}>
+        <span style={{color:theme.muted}}>{name}</span>
+        <span style={{textAlign:"right", overflowWrap:"anywhere",
+          color:name === "Health" && !loading && health === "Ready" ? C.green : theme.text}}>{value}</span>
+      </div>)}
   </div>;
 }
 
@@ -133,12 +116,16 @@ function ModeCard({ name, detail, active, loading }: {
   </div>;
 }
 
-export function QuickAccessOverview({ mode, modeLabel, health, game, loading }: {
+export function QuickAccessOverview({ mode, modeLabel, health, game, loading, summaryRef, onSummaryFocus }: {
   mode: string; modeLabel: string; health: string; game: string; loading: boolean;
+  summaryRef?: Ref<HTMLDivElement>; onSummaryFocus?(): void;
 }) {
   const cards = placementCards(mode, loading);
   return <div style={{ color: C.text, minWidth: 0 }}>
-    <CurrentStateCard modeLabel={modeLabel} health={health} game={game} loading={loading} />
+    <SectionFocus ref={summaryRef} label="At a glance: current state" onFocused={onSummaryFocus}>
+      <CurrentStateCard modeLabel={modeLabel} health={health} game={game} loading={loading} />
+    </SectionFocus>
+    <SectionFocus label="Your setup">
     <div style={{
       color: C.muted,
       fontSize: 11,
@@ -149,5 +136,6 @@ export function QuickAccessOverview({ mode, modeLabel, health, game, loading }: 
     <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10 }}>
       {cards.map((card) => <ModeCard key={card.name} {...card} loading={loading} />)}
     </div>
+    </SectionFocus>
   </div>;
 }
