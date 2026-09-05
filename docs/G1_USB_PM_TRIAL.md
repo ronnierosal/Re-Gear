@@ -34,10 +34,14 @@ It is not equivalent to safely ejecting or powering down the GPU.
 4. For a supervised trial, start the helper with `--apply` while detached. It
    refuses already attached/partial transport and overlapping helper runs. Its
    `armed_detached` event precedes the single user cable connection.
-5. Detection waits up to 180 seconds, independently of Re-Gear's 120-second
+5. Detection defaults to 600 seconds (ten minutes), independently of Re-Gear's 120-second
    first-attempt timeout. It requires an exact GPU, transport ancestry, and xHCI
    driver, clean readable fatal/nonfatal counters, no USB block devices, and the
    original automatic power setting. It does not alter readiness gates.
+   The timeout runs from arming, including time before the user connects. The
+   explicit 600-second bound accounts for a recorded 363-second GPU arrival;
+   expiry still ends without a write. This is a developer-test window, not a
+   change to the player's popup or backend transition policy.
 6. The 180-second hold begins only after writing and reading back `on` and
    verifying the controller is active. Re-Gear remains responsible for display
    switching. AER failures, identity changes or unexpected setting changes abort
@@ -61,8 +65,28 @@ procedure. `/run` records are volatile and must be copied before reboot.
 
 ## Verification
 
-Nineteen fixture tests exercise target selection, unrelated/ambiguous USB
+Twenty fixture tests exercise target selection, unrelated/ambiguous USB
 devices, wrong drivers, counter/storage rejection, restored state, mutation
 failure, cancellation, replacement identity, active-state verification, and the
 non-mutating deadline alarm. Architecture and Python compilation checks pass.
-No Ally execution or fan/thermal control was performed by this helper.
+Fan/thermal control is outside this helper. The original revision has now been
+used in supervised trials; the longer-wait revision has not yet been run.
+
+## Supervised results and next comparison
+
+The original 180-second hold kept the exact xHCI controller active with zero
+observed nonfatal/fatal errors. It restored `auto`, and a subsequent Portable
+return produced four USB-bridge ACS/recovery failures. Re-Gear was updated from
+0.3.46 to 0.3.47 during that trial, so it is not a clean causal comparison.
+
+With Re-Gear fixed at 0.3.48, the old helper's 300-second armed wait ended
+without a write. GPU detection arrived 363 seconds after physical connection;
+TV switching succeeded around 371 seconds. Four USB-bridge failures followed
+TV transition and four followed Portable return. The subsequent shutdown hung,
+despite complete Re-Gear cleanup; a hard-off and detached restart restored the
+Ally controller. The final kernel stall is still unproven.
+
+Next trial: retain the exact installed Re-Gear and patched Loader, use the
+600-second armed wait and explicitly select the existing 300-second hold. Test
+TV and Portable before hold expiry. Do not shut down while the helper is active;
+first verify restoration. Do not install another update during the trial.

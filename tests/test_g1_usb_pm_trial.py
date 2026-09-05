@@ -38,6 +38,15 @@ class SysfsControl:
 
 
 class TrialTests(unittest.TestCase):
+    def test_detection_window_covers_six_minute_arrival_without_extending_hold(self):
+        trial.validate_durations(600, 300)
+        trial.validate_durations(1, 1)
+        for wait, hold in ((0, 300), (601, 300), (600, 301), (600, 0),
+                           (True, 300), (600, True)):
+            with self.subTest(wait=wait, hold=hold):
+                with self.assertRaises(ValueError):
+                    trial.validate_durations(wait, hold)
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)

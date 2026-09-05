@@ -141,14 +141,23 @@ def watch_deadline(finished, stop, seconds, record):
         record('deadline_exceeded', state='unknown_keep_connected_no_reset')
 
 
+def validate_durations(wait_seconds, hold_seconds):
+    if type(wait_seconds) is not int or not 1 <= wait_seconds <= 600:
+        raise ValueError('wait must be 1..600 seconds')
+    if type(hold_seconds) is not int or not 1 <= hold_seconds <= 300:
+        raise ValueError('hold must be 1..300 seconds')
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--apply', action='store_true')
-    parser.add_argument('--wait-seconds', type=int, default=180)
+    parser.add_argument('--wait-seconds', type=int, default=600)
     parser.add_argument('--hold-seconds', type=int, default=180)
     args = parser.parse_args()
-    if not 1 <= args.wait_seconds <= 300 or not 1 <= args.hold_seconds <= 300:
-        parser.error('wait and hold must each be 1..300 seconds')
+    try:
+        validate_durations(args.wait_seconds, args.hold_seconds)
+    except ValueError as error:
+        parser.error(str(error))
     if not args.apply:
         target = discover()
         if target:
