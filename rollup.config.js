@@ -1,6 +1,5 @@
 import deckyPlugin from "@decky/rollup";
 import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 
 const config = deckyPlugin({});
 const offlineBadgeNames = new Set(["offline-ready", "offline-attention", "offline-verify", "offline-required", "offline-ready-gear", "offline-attention-gear", "offline-verify-gear", "offline-required-gear", "offline-ready-compact", "offline-attention-compact", "offline-verify-compact"]);
@@ -19,17 +18,26 @@ config.plugins.unshift({
     return `export default ${JSON.stringify("data:image/svg+xml;base64," + readFileSync(path).toString("base64"))};`;
   },
 });
-// Bundle the approved artwork locally; no network or plugin-path dependency.
-const brandImagePath = fileURLToPath(new URL("./docs/images/re-gear-decky-white-transparent.png", import.meta.url));
+// Bundle the approved compact UI artwork locally; no network or plugin-path dependency.
+const uiAssetNames = new Set([
+  "regear-header-logo",
+  "regear-icon",
+  "mode-handheld",
+  "mode-tv",
+]);
 config.plugins.unshift({
-  name: "re-gear-brand-image",
+  name: "re-gear-ui-assets",
   resolveId(source) {
-    if (source === "../docs/images/re-gear-decky-white-transparent.png") return "\0re-gear-brand-image";
-    return null;
+    const match = /^\.\/assets\/(regear-[a-z-]+|mode-[a-z-]+)\.svg$/.exec(source);
+    return match && uiAssetNames.has(match[1]) ? `\0re-gear-ui-asset:${match[1]}` : null;
   },
   load(id) {
-    if (id !== "\0re-gear-brand-image") return null;
-    return `export default ${JSON.stringify("data:image/png;base64," + readFileSync(brandImagePath).toString("base64"))};`;
+    const prefix = "\0re-gear-ui-asset:";
+    if (!id.startsWith(prefix)) return null;
+    const name = id.slice(prefix.length);
+    if (!uiAssetNames.has(name)) return null;
+    const path = new URL(`./src/assets/${name}.svg`, import.meta.url);
+    return `export default ${JSON.stringify("data:image/svg+xml;base64," + readFileSync(path).toString("base64"))};`;
   },
 });
 const deckySourcemapPathTransform = config.output.sourcemapPathTransform;

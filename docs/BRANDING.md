@@ -6,7 +6,7 @@ Handheld Dock Mode (HDM) is the former name of the same project, not a separate
 application. Dated hardware evidence, quoted logs and historical records retain
 their original wording.
 
-## Approved compact UI branding — pending source asset
+## Approved compact UI branding
 
 The approved next header is the supplied cyan outlined Re-Gear R emblem with
 white Re-Gear wordmark on transparency, horizontally aligned and compact.
@@ -14,14 +14,18 @@ Icon-only surfaces use the emblem alone. No tagline or README artwork belongs
 inside the panel. Preserve supplied artwork; do not redraw it in CSS or infer
 an official asset from a generated UI concept.
 
-The compact R source file was not attached to the implementation handoff and
-is not present in this checkout. The existing asset below remains in use until
-the approved SVG or high-resolution transparent PNG is supplied. This is an
-outstanding visual acceptance requirement, not a completed branding migration.
+The approved transparent source assets are:
+
+- `src/assets/regear-header-logo.svg` for the compact panel header
+- `src/assets/regear-icon.svg` for icon-only Decky surfaces
+- `src/assets/mode-handheld.svg` and `src/assets/mode-tv.svg` for the two mode cards
+
+These assets are embedded in the compiled bundle. Do not substitute the larger
+README artwork or shrink the full wordmark into icon-only contexts.
 
 ## Presentation assets
 
-Current selection (0.3.11): `docs/images/re-gear-decky-white-transparent.png`.
+Previous selection (0.3.11): `docs/images/re-gear-decky-white-transparent.png`.
 Built-in image editing removed the outer background from the supplied JPEG;
 this is a derived asset, not byte-identical original artwork. Actual alpha
 was verified. Keep the opaque white inner details and original source JPEG.

@@ -47,6 +47,9 @@ test("compact dashboard keeps native controls, single guarded action and local d
   assert.match(source, /showHardwareDetails &&[\s\S]*hardwareDetailRows\(payload\)/);
   assert.ok(source.indexOf("<DashboardSurface primary>") > source.indexOf('<ToggleField\n'));
   assert.match(source, /Keep the eGPU connected until fully powered off/);
+  assert.match(overview, /import handheldModeIcon from "\.\/assets\/mode-handheld\.svg"/);
+  assert.match(overview, /import tvModeIcon from "\.\/assets\/mode-tv\.svg"/);
+  assert.match(overview, /card\.name === "Portable" \? handheldModeIcon : tvModeIcon/);
 });
 
 test("dashboard actions keep icons and text inside one native button, not Item columns", () => {

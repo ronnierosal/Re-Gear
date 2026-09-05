@@ -1,6 +1,8 @@
 import { regearTheme as theme } from "./regear-theme";
 import type { ReactNode } from "react";
 import { placementCards } from "./quick-access-dashboard";
+import handheldModeIcon from "./assets/mode-handheld.svg";
+import tvModeIcon from "./assets/mode-tv.svg";
 
 const colors = {
   cyan: theme.accent,
@@ -115,7 +117,14 @@ export function QuickAccessOverview({ mode, modeLabel, health, game, loading }: 
           boxShadow: "none" }} />}
         <div style={{display:"flex", flexDirection:"column", alignItems:"center", gap:10, textAlign:"center", padding:"5px 0"}}>
           <span style={{color:card.active ? colors.cyanSoft : colors.muted, display:"flex", alignItems:"center", justifyContent:"center", height:42}}>
-            <DashboardIcon kind={card.name === "Portable" ? "handheld" : "monitor"} size={42}/>
+            <img
+              src={card.name === "Portable" ? handheldModeIcon : tvModeIcon}
+              alt=""
+              aria-hidden="true"
+              width={48}
+              height={48}
+              style={{ display: "block", objectFit: "contain" }}
+            />
           </span>
           <div style={{fontSize:15, fontWeight:650}}>{card.name}</div>
           <div style={{fontSize:11, letterSpacing:".06em", color:card.active ? colors.cyan : colors.muted, minHeight:15}}>

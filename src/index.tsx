@@ -6,7 +6,8 @@ import { showConnectionLivePanel } from "./connection-live-panel";
 import { PRODUCT_NAME } from "./branding";
 import { startControllerSafeDisconnect, steamControllerInput } from "./controller-safe-disconnect";
 import { startOfflineFocusChecks } from "./offline-focus-checks";
-import brandIcon from "../docs/images/re-gear-decky-white-transparent.png";
+import brandHeaderLogo from "./assets/regear-header-logo.svg";
+import brandIcon from "./assets/regear-icon.svg";
 import { definePlugin, toaster, useQuickAccessVisible } from "@decky/api";
 import {
   ButtonItem,
@@ -479,6 +480,18 @@ function BrandIcon({ size = 24 }: { size?: number }) {
   return (
     <img src={brandIcon} alt="" aria-hidden="true" width={size} height={size}
       style={{ objectFit: "contain", flexShrink: 0 }} />
+  );
+}
+
+function BrandHeader() {
+  return (
+    <img
+      src={brandHeaderLogo}
+      alt={PRODUCT_NAME}
+      width={144}
+      height={36}
+      style={{ display: "block", objectFit: "contain", objectPosition: "left center" }}
+    />
   );
 }
 
@@ -1959,7 +1972,7 @@ export default definePlugin(() => {
 
   return {
     name: PRODUCT_NAME,
-    titleView: <div className={staticClasses.Title} style={{ display: "flex", alignItems: "center", gap: 8 }}><BrandIcon size={36} />{PRODUCT_NAME}</div>,
+    titleView: <div className={staticClasses.Title} style={{ display: "flex", alignItems: "center" }}><BrandHeader /></div>,
     content: <Content preflight={preflight} connection={connection} />,
     icon: <BrandIcon />,
     alwaysRender: true,
