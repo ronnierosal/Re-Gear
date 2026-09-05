@@ -9,6 +9,7 @@ test("mode cards select only known observed placement, never connection readines
   }
   assert.deepEqual(placementCards("portable").map((card) => card.active), [true, false]);
   assert.deepEqual(placementCards("tv_docked").map((card) => card.active), [false, true]);
+  assert.deepEqual(placementCards("docked_egpu").map((card) => card.active), [false, true]);
   assert.ok(placementCards("portable", true).every((card) => !card.active));
 });
 
@@ -41,22 +42,22 @@ test("compact dashboard keeps native controls, single guarded action and local d
   const source = readFileSync(new URL("../src/index.tsx", import.meta.url), "utf8");
   const overview = readFileSync(new URL("../src/quick-access-overview.tsx", import.meta.url), "utf8");
   assert.doesNotMatch(overview, /onClick|onActivate|<button|setInterval|fetch\(/);
-  assert.equal((source.match(/onClick=\{\(\) => void executeTvSwitch\(\)\}/g) ?? []).length, 1);
+  assert.equal((source.match(/else if \(payload\?\.inference.mode === "portable"\) void executeTvSwitch\(\);/g) ?? []).length, 1);
   assert.match(source, /<ToggleField\s+label="Automatic TV docking"\s+layout="inline"/);
   assert.match(source, /onClick=\{\(\) => setShowHardwareDetails\(\(visible\) => !visible\)\}/);
   assert.match(source, /showHardwareDetails &&[\s\S]*hardwareDetailRows\(payload\)/);
   assert.ok(source.indexOf("<DashboardSurface primary>") > source.indexOf('<ToggleField\n'));
-  assert.match(source, /Keep the eGPU connected until fully powered off/);
+  assert.match(source, /Keep the G1 connected until fully powered off/);
   assert.match(overview, /import handheldModeIcon from "\.\/assets\/mode-handheld\.svg"/);
   assert.match(overview, /import tvModeIcon from "\.\/assets\/mode-tv\.svg"/);
-  assert.match(overview, /card\.name === "Portable" \? handheldModeIcon : tvModeIcon/);
+  assert.match(overview, /isPortable \? handheldModeIcon : tvModeIcon/);
 });
 
 test("dashboard actions keep icons and text inside one native button, not Item columns", () => {
   const action = readFileSync(new URL("../src/dashboard-action.tsx", import.meta.url), "utf8");
   const source = readFileSync(new URL("../src/index.tsx", import.meta.url), "utf8");
   assert.match(action, /<DialogButton onClick=\{onClick\} disabled=\{disabled\}/);
-  assert.match(action, /gridTemplateColumns: "32px minmax\(0, 1fr\) 16px"/);
+  assert.match(action, /gridTemplateColumns: "38px minmax\(0,1fr\) 18px"/);
   assert.match(action, /wordBreak: "normal",\s+overflowWrap: "normal"/);
   assert.doesNotMatch(action, /ButtonItem|noFocusRing=|outline:|overflow: "hidden"/);
   assert.equal((source.match(/<DashboardAction\s/g) ?? []).length, 5);

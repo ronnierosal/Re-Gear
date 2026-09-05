@@ -12,7 +12,6 @@ import {
   ButtonItem,
   ConfirmModal,
   DropdownItem,
-  Focusable,
   ToggleField,
   PanelSection,
   PanelSectionRow,
@@ -126,6 +125,7 @@ const LABELS: Record<string, string> = {
   protected: "Protected",
   system: "System",
   tv_docked: "TV Docked",
+  docked_egpu: "TV Docked",
   unknown: "Unknown",
   unsupported: "Unsupported",
   user: "User",
@@ -1451,26 +1451,22 @@ function Content({ preflight, connection }: { preflight: SleepPreflightCoordinat
       <style>{regearControlCss}</style>
       <div ref={statusAnchor} tabIndex={-1}>
       <PanelSection title="At a glance">
-        <Focusable
-          ref={statusFocusAnchor}
-          aria-label="Re-Gear status summary"
-          onGamepadFocus={() => {
+        <QuickAccessOverview
+          summaryRef={statusFocusAnchor}
+          onSummaryFocus={() => {
             if (statusAnchor.current) scrollToTopOfOwningPanel(statusAnchor.current);
           }}
-        >
-        <QuickAccessOverview
           mode={payload?.inference.mode ?? "unknown"}
           modeLabel={loading ? "Reading…" : label(payload?.inference.mode ?? "unknown")}
           health={healthStatusLabel(payload?.health, loading)}
           game={label(snapshot?.game_state ?? "unknown")}
           loading={loading}
         />
-        </Focusable>
 
       </PanelSection>
 
       {payload?.connection_readiness && payload.connection_readiness.stage !== "disconnected" &&
-        <PanelSection title="G1 readiness">
+        <PanelSection title="eGPU readiness">
           <ConnectionQuickStatus store={connection.store} visible={quickAccessVisible}
             onOpen={openConnectionProgress} />
         </PanelSection>}
@@ -1501,11 +1497,23 @@ function Content({ preflight, connection }: { preflight: SleepPreflightCoordinat
           <DashboardSurface primary>
             <DashboardAction
               icon="bolt"
-              title={tvSwitchBusy ? "Switching…" : "Switch to TV now"}
-              description="Checks readiness before switching"
-              onClick={() => void executeTvSwitch()}
+              tone="primary"
+              title={tvSwitchBusy || safeDisconnectBusy
+                ? "Switching…"
+                : payload?.inference.mode === "docked_egpu"
+                  ? "Switch to handheld"
+                  : "Switch to TV"}
+              description={controllerShortcutAvailable
+                ? "Hold Back/View + Y for 3 seconds to switch."
+                : "Checks readiness before switching. Controller shortcut unavailable."}
+              onClick={() => {
+                if (payload?.inference.mode === "docked_egpu") requestControllerDisplaySwitch("ally");
+                else if (payload?.inference.mode === "portable") void executeTvSwitch();
+              }}
               disabled={
                 tvSwitchBusy
+                || safeDisconnectBusy
+                || (payload?.inference.mode !== "portable" && payload?.inference.mode !== "docked_egpu")
                 || Boolean(tvSwitchAcknowledgementId)
                 || Boolean(journalStatus && journalStatus.code !== "journal.idle")
               }
@@ -1529,9 +1537,7 @@ function Content({ preflight, connection }: { preflight: SleepPreflightCoordinat
                 : payload?.inference.mode === "portable"
                   ? "Shut down to disconnect"
                   : "Prepare to disconnect"}
-              description={controllerShortcutAvailable
-                ? "Back/View + Y (3 seconds): switch between Ally and TV. Keep the G1 connected."
-                : "Keep the eGPU connected until fully powered off. Controller shortcut unavailable."}
+              description="Keep the G1 connected until fully powered off."
               onClick={requestSafeDisconnect}
               disabled={
                 safeDisconnectBusy

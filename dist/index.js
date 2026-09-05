@@ -86,6 +86,7 @@ function disconnectProgress(payload, failed = false, now = Date.now()) {
 }
 
 const connectionPanelCss = `
+.rg-connection-modal.rg-connection-compact { padding:8px !important; min-width:0 !important; width:min(496px,calc(100vw - 24px)) !important; }
 .rg-connection-modal { background: linear-gradient(145deg,#18212c,#10171f) !important; border:1px solid #394653; border-radius:14px; box-sizing:border-box; max-width:calc(100vw - 32px); max-height:calc(100vh - 32px); overflow-y:auto; }
 .rg-connection { color:#edf3f8; font-size:16px; line-height:1.4; min-width:0; width:100%; max-width:520px; }
 .rg-connection-subtitle { color:#b5c3d2; margin:0 0 18px; }
@@ -194,12 +195,13 @@ const regearTheme = {
     muted: "#b5c3d2",
     border: "#394653",
     surface: "linear-gradient(145deg, #18212c, #10171f)",
-    accent: "#66d9f7",
-    accentSoft: "#acebfa",
-    activeSurface: "linear-gradient(145deg, #193542, #14242d)",
-};
+    accentSoft: "#acebfa"};
 // Scoped to Re-Gear controls. Native Decky focus handling remains in charge.
 const regearControlCss = `
+.rg-section-focus.rg-section-focused, .rg-section-focus:focus-visible {
+  outline: 2px solid #66d9f7;
+  outline-offset: -2px;
+}
 .rg-dashboard-action:focus-visible, .rg-dashboard-action.gpfocus,
 .gpfocus > .rg-dashboard-action {
   outline: 2px solid #66d9f7 !important;
@@ -208,6 +210,16 @@ const regearControlCss = `
 }
 .rg-dashboard-action:disabled { opacity: .7; }
 `;
+
+/** Informational controller stop, not an action or an invisible button. */
+const SectionFocus = SP_REACT.forwardRef(function SectionFocus({ label, children, onFocused }, ref) {
+    return SP_JSX.jsx(DFL.Focusable, { ref: ref, role: "group", "aria-label": label, className: "rg-section-focus", focusClassName: "rg-section-focused", onGamepadFocus: (event) => {
+            if (event.currentTarget instanceof HTMLElement) {
+                event.currentTarget.scrollIntoView({ block: "nearest", inline: "nearest" });
+            }
+            onFocused?.();
+        }, style: { minWidth: 0, borderRadius: 14, scrollMarginTop: 48, scrollMarginBottom: 16 }, children: children });
+});
 
 const labels = {
     "GPU and driver": "GPU driver",
@@ -227,10 +239,10 @@ function ConnectionQuickStatus({ store, visible, onOpen }) {
         return () => clearInterval(timer);
     }, [visible]);
     const stale = Date.now() >= source.expiresAt;
-    return SP_JSX.jsxs("div", { "aria-label": "Live G1 readiness", style: { background: regearTheme.surface, border: `1px solid ${regearTheme.border}`, borderRadius: 14, padding: "10px 12px", color: regearTheme.text }, children: [SP_JSX.jsx("style", { children: connectionPanelCss }), SP_JSX.jsx("div", { style: { fontSize: 13, lineHeight: 1.4, color: regearTheme.muted, marginBottom: 6 }, role: "status", children: stale ? "Waiting for a fresh status update" : source.title }), SP_JSX.jsx("div", { children: source.rows.filter(row => labels[row.label]).map(row => {
-                    const state = stale ? "waiting" : row.state;
-                    return SP_JSX.jsx(ReadinessRow, { label: labels[row.label], compact: true, state: state === "waiting" && !stale && visible ? "checking" : state }, row.label);
-                }) }), SP_JSX.jsx(DFL.DialogButton, { className: "rg-dashboard-action", onClick: onOpen, style: { width: "100%", minWidth: 0, height: "auto", padding: "9px 8px", marginTop: 10,
+    return SP_JSX.jsxs("div", { "aria-label": "Live eGPU readiness", style: { background: regearTheme.surface, border: `1px solid ${regearTheme.border}`, borderRadius: 14, padding: "10px 12px", color: regearTheme.text }, children: [SP_JSX.jsx("style", { children: connectionPanelCss }), SP_JSX.jsxs(SectionFocus, { label: "eGPU readiness", children: [SP_JSX.jsx("div", { style: { fontSize: 13, lineHeight: 1.4, color: regearTheme.muted, marginBottom: 6 }, role: "status", children: stale ? "Waiting for a fresh status update" : source.title.replace(/\bG1\b/g, "eGPU") }), SP_JSX.jsx("div", { children: source.rows.filter(row => labels[row.label]).map(row => {
+                            const state = stale ? "waiting" : row.state;
+                            return SP_JSX.jsx(ReadinessRow, { label: labels[row.label], compact: true, state: state === "waiting" && !stale && visible ? "checking" : state }, row.label);
+                        }) })] }), SP_JSX.jsx(DFL.DialogButton, { className: "rg-dashboard-action", onClick: onOpen, style: { width: "100%", minWidth: 0, height: "auto", padding: "9px 8px", marginTop: 10,
                     border: `1px solid ${regearTheme.border}`, borderRadius: 9, background: "transparent",
                     color: regearTheme.accentSoft, fontSize: 13, lineHeight: 1.4 }, children: "View full progress" })] });
 }
@@ -241,7 +253,9 @@ function connectionLiveStatus(payload, automatic, journal, failed = false) {
     const snapshotAge = Date.now() - Date.parse(payload?.snapshot.observed_at ?? "");
     const fresh = !failed && Number.isFinite(snapshotAge) && snapshotAge >= -5e3 && snapshotAge < 15000
         && typeof c?.checks_age_ms === "number" && c.checks_age_ms >= 0 && c.checks_age_ms < 15000;
-    const blocked = fresh && ["timed_out", "link_training_failed", "action_required"].includes(c?.stage ?? "");
+    // The backend timeout remains an authorization boundary, not proof of a
+    // failed cable/device. Later exact enumeration can start a fresh window.
+    const blocked = fresh && ["link_training_failed", "action_required"].includes(c?.stage ?? "");
     const names = { gpu: "GPU and driver", link: "Connection link", hdmi: "TV HDMI detected", audio: "Audio recovery ready", session: "Display switching ready", idle: "No game running" };
     const rows = Object.entries(names).map(([key, label]) => ({ label, state: (!fresh ? "waiting" : (key === "idle" ? payload?.snapshot.game_state === "idle" && c?.checks?.idle === true : c?.checks?.[key] === true) ? "ready" : blocked || key === "idle" && payload?.snapshot.game_state === "running" ? "blocked" : "waiting") }));
     rows.push({ label: "Previous result cleared", state: !fresh || !journal ? "waiting" : journal === "journal.idle" ? "ready" : "blocked" });
@@ -249,8 +263,18 @@ function connectionLiveStatus(payload, automatic, journal, failed = false) {
     const switching = fresh && automatic?.stage === "switching";
     const docked = fresh && automatic?.stage === "docked" && payload?.inference.mode === "docked_egpu";
     const waiting = { waiting_for_pci: "Waiting for G1 detection", transport_detected: "G1 connection detected", waiting_for_driver: "Waiting for GPU driver", waiting_for_link: "Waiting for connection link", waiting_for_hdmi: "Waiting for TV HDMI", waiting_for_audio: "Checking audio recovery", waiting_for_session: "Waiting for display integration", game_running: "Close the game to continue", stabilizing: "Checking connection stability", timed_out: "Detection timed out — keep G1 connected", link_training_failed: "Connection link needs attention", action_required: "Connection needs attention" };
+    const age = c?.window_age_ms;
+    const waitingStage = ["timed_out", "waiting_for_pci", "transport_detected", "waiting_for_driver", "waiting_for_link", "waiting_for_hdmi", "waiting_for_audio", "waiting_for_session", "stabilizing"].includes(c?.stage ?? "");
+    const delayMessage = waitingStage && typeof age === "number" && Number.isFinite(age)
+        ? age >= 300000 ? "Connection hasn’t completed—troubleshooting needed"
+            : age >= 120000 ? "Taking longer than expected—still checking" : undefined
+        : undefined;
+    const detail = blocked ? waiting[c?.stage ?? ""]
+        : payload?.snapshot.game_state === "running" ? "Close the game to continue"
+            : journal && journal !== "journal.idle" ? "Previous result needs acknowledgement"
+                : delayMessage ?? (c?.stage === "timed_out" ? "Taking longer than expected—still checking" : waiting[c?.stage ?? ""]);
     return { phase: docked ? "complete" : switching ? "switching" : "checking", connected, expiresAt: fresh ? Date.now() + Math.max(0, 15000 - Math.max(snapshotAge, c?.checks_age_ms ?? 15000)) : 0, seconds: Math.floor((c?.window_age_ms ?? 0) / 1000), rows,
-        title: !fresh ? "Waiting for a fresh status update" : switching ? "Switching to TV — checking picture and audio" : docked ? "TV transition reported complete" : all ? automatic?.enabled ? "Ready — waiting for automatic switch" : "Ready to switch to TV" : waiting[c?.stage ?? ""] ?? "Checking connection readiness",
+        title: !fresh ? "Waiting for a fresh status update" : switching ? "Switching to TV — checking picture and audio" : docked ? "TV transition reported complete" : all ? automatic?.enabled ? "Ready — waiting for automatic switch" : "Ready to switch to TV" : detail ?? "Checking connection readiness",
         canSwitch: all && automatic?.enabled === false };
 }
 function createLiveStatusStore() {
@@ -310,15 +334,125 @@ function startConnectionMonitor(deps) {
             cancel(timer); close(); } };
 }
 
+var brandIcon = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNTYgMjU2IiByb2xlPSJpbWciIGFyaWEtbGFiZWxsZWRieT0idGl0bGUgZGVzYyI+CiAgPHRpdGxlIGlkPSJ0aXRsZSI+UmUtR2VhciBpY29uPC90aXRsZT4KICA8ZGVzYyBpZD0iZGVzYyI+Q3lhbiBzZWdtZW50ZWQgaGV4YWdvbmFsIFJlLUdlYXIgUiBlbWJsZW0gZm9yIERlY2t5IFVJLjwvZGVzYz4KICA8ZyBmaWxsPSJub25lIiBzdHJva2U9IiMzNWQ2ZjUiIHN0cm9rZS13aWR0aD0iMTQiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+CiAgICA8cGF0aCBkPSJNNzggMzEgMTIxIDhsNDMgMjMiLz4KICAgIDxwYXRoIGQ9Ik0xODEgNDEgMjIwIDYzdjQ3Ii8+CiAgICA8cGF0aCBkPSJNMjIwIDE0NXY0OGwtNDIgMjQiLz4KICAgIDxwYXRoIGQ9Im0xNjQgMjI1LTQzIDIzLTQzLTIzIi8+CiAgICA8cGF0aCBkPSJNNjEgMjE2IDIwIDE5M3YtNDciLz4KICAgIDxwYXRoIGQ9Ik0yMCAxMTFWNjNsNDItMjMiLz4KICA8L2c+CiAgPHBhdGggZmlsbD0iIzM1ZDZmNSIgZD0iTTc1IDYyaDY5YzI5IDAgNDYgMTQgNDYgMzkgMCAyMC0xMSAzMy0zMSAzOGwzMCA1NWgtMzRsLTI3LTUwaC0yMmwtMTkgNTBINTNsMzgtMTAxaDU1YzggMCAxMi0zIDEyLTEwIDAtNi00LTktMTItOUg4M0w3NSA2MlptNDEgNThoMjljOCAwIDEyLTQgMTItMTBzLTQtOS0xMi05aC0yMmwtNyAxOVoiLz4KPC9zdmc+Cg==";
+
+const C$1 = {
+    bg: "#06101c",
+    panel: "#0a1727",
+    panel2: "#0d1b2d",
+    row: "rgba(4,11,20,.34)",
+    border: "rgba(129,160,193,.30)",
+    borderStrong: "rgba(57,216,255,.62)",
+    text: "#f4f7fb",
+    muted: "#9fb1c8",
+    cyan: "#39d8ff",
+    green: "#6fe45d",
+    amber: "#ffc43d",
+    red: "#ff6578",
+};
+const stateColor = {
+    ready: C$1.green,
+    checking: C$1.amber,
+    pending: C$1.muted,
+    switching: C$1.cyan,
+    blocked: C$1.amber,
+    error: C$1.red,
+};
+function StatusGlyph({ state }) {
+    if (state === "ready") {
+        return SP_JSX.jsx("span", { "aria-hidden": "true", style: {
+                width: 16, height: 16, borderRadius: 999, border: `2px solid ${C$1.green}`,
+                display: "grid", placeItems: "center", color: C$1.green, fontWeight: 900, fontSize: 13,
+                boxShadow: `0 0 12px ${C$1.green}18`, boxSizing: "border-box",
+            }, children: "\u2713" });
+    }
+    if (state === "blocked" || state === "error") {
+        return SP_JSX.jsx("span", { "aria-hidden": "true", style: {
+                width: 16, height: 16, borderRadius: 999, border: `2px solid ${stateColor[state]}`,
+                display: "grid", placeItems: "center", color: stateColor[state], fontWeight: 900, fontSize: 13,
+                boxSizing: "border-box",
+            }, children: "!" });
+    }
+    return SP_JSX.jsx("span", { "aria-hidden": "true", className: state === "checking" || state === "switching" ? "regear-progress-spinner" : undefined, style: {
+            width: 16, height: 16, borderRadius: 999, border: "3px solid rgba(255,255,255,.16)",
+            borderTopColor: stateColor[state], boxSizing: "border-box", flexShrink: 0,
+        } });
+}
+function phaseIndex(phase) {
+    return phase === "connecting" ? 0 : phase === "switching" ? 1 : 2;
+}
+function headline(phase) {
+    return phase === "connecting" ? "Getting your TV ready" : phase === "switching" ? "Switching to TV" : "Ready to play";
+}
+function ConnectionProgressOverlay(props) {
+    const activeIndex = phaseIndex(props.phase);
+    const elapsed = props.elapsedSeconds != null ? ` · ${props.elapsedSeconds} seconds` : "";
+    return SP_JSX.jsxs("div", { style: {
+            width: "100%", maxWidth: 480, minWidth: 0, boxSizing: "border-box", padding: 8,
+            borderRadius: 22, background: `linear-gradient(180deg, ${C$1.bg} 0%, #071322 100%)`,
+            border: `1px solid ${C$1.borderStrong}`, boxShadow: "0 26px 90px rgba(0,0,0,.58)",
+            lineHeight: 1.2, color: C$1.text, fontFamily: "Motiva Sans, Inter, system-ui, sans-serif",
+        }, children: [SP_JSX.jsx("style", { children: `
+      @keyframes regear-spin { to { transform: rotate(360deg); } }
+      @keyframes regear-sweep { 0% { opacity:.35; transform:scaleX(.35); transform-origin:left; } 50% { opacity:1; transform:scaleX(.78); transform-origin:left; } 100% { opacity:.35; transform:scaleX(.35); transform-origin:right; } }
+      .regear-progress-spinner { animation: regear-spin 1s linear infinite; }
+      .regear-progress-sweep { animation: regear-sweep 1.25s ease-in-out infinite; }
+      .regear-hide-button:focus { outline: 3px solid rgba(57,216,255,.42); outline-offset: 3px; }
+      @media (prefers-reduced-motion: reduce) { .regear-progress-spinner, .regear-progress-sweep { animation: none; } }
+    ` }), SP_JSX.jsxs("div", { style: { display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 3, minWidth: 0 }, children: [SP_JSX.jsx("img", { src: brandIcon, alt: "", "aria-hidden": "true", width: 22, height: 22, style: { objectFit: "contain", flexShrink: 0 } }), SP_JSX.jsx("div", { style: { fontSize: 17, fontWeight: 820, letterSpacing: "-.02em" }, children: "Re-Gear" }), SP_JSX.jsx("div", { style: { color: C$1.muted, fontSize: 13, margin: "0 2px" }, children: "/" }), SP_JSX.jsx("div", { style: { fontSize: 13, fontWeight: 620 }, children: "Connection progress" })] }), SP_JSX.jsx("div", { style: { display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8, marginTop: 6, marginBottom: 6 }, children: ["Connecting", "Switching", "Ready"].map((name, i) => {
+                    const active = i === activeIndex;
+                    const complete = i < activeIndex;
+                    return SP_JSX.jsxs("div", { children: [SP_JSX.jsxs("div", { style: { display: "flex", alignItems: "baseline", gap: 4, color: active ? C$1.text : C$1.muted, marginBottom: 4 }, children: [SP_JSX.jsxs("span", { style: { color: complete || active ? C$1.cyan : C$1.muted, fontWeight: 820, fontSize: 13 }, children: ["0", i + 1] }), SP_JSX.jsx("span", { style: { fontWeight: active ? 780 : 600, fontSize: 13 }, children: name })] }), SP_JSX.jsx("div", { style: { height: 4, borderRadius: 999, background: "rgba(105,130,155,.28)", overflow: "hidden" }, children: (complete || active) && SP_JSX.jsx("div", { className: active && props.phase === "switching" ? "regear-progress-sweep" : undefined, style: { width: "100%", height: "100%", borderRadius: 999, background: C$1.cyan, boxShadow: `0 0 12px ${C$1.cyan}66` } }) })] }, name);
+                }) }), SP_JSX.jsxs("div", { style: {
+                    border: `1px solid ${C$1.border}`, borderRadius: 18,
+                    background: `linear-gradient(180deg, ${C$1.panel} 0%, ${C$1.panel2} 100%)`, padding: "8px",
+                }, children: [SP_JSX.jsx("div", { style: { fontSize: 17, fontWeight: 830, letterSpacing: "-.02em", marginBottom: 4 }, children: headline(props.phase) }), SP_JSX.jsxs("div", { style: { color: C$1.muted, fontSize: 13, marginBottom: 8 }, children: [props.deviceLabel, elapsed] }), props.phase === "ready" && SP_JSX.jsx("div", { style: { display: "grid", placeItems: "center", margin: "2px 0 6px" }, children: SP_JSX.jsx("div", { style: { width: 36, height: 36, borderRadius: 999, border: `4px solid ${C$1.green}`, color: C$1.green, display: "grid", placeItems: "center", fontSize: 24, fontWeight: 500, boxShadow: `0 0 28px ${C$1.green}18` }, children: "\u2713" }) }), SP_JSX.jsx("div", { style: { border: `1px solid ${C$1.border}`, borderRadius: 14, overflow: "hidden", background: C$1.row }, children: props.rows.map((row, index) => SP_JSX.jsxs("div", { style: {
+                                minHeight: 22, padding: "2px 6px", display: "grid", gridTemplateColumns: row.icon ? "24px minmax(0,1fr) auto" : "minmax(0,1fr) auto",
+                                alignItems: "center", gap: 6, borderBottom: index === props.rows.length - 1 ? "none" : `1px solid ${C$1.border}`,
+                            }, children: [row.icon && SP_JSX.jsx("div", { style: { color: C$1.text, opacity: .95 }, children: row.icon }), SP_JSX.jsx("div", { style: { fontSize: 13, minWidth: 0, overflowWrap: "anywhere" }, children: row.label }), SP_JSX.jsxs("div", { style: { display: "flex", alignItems: "center", gap: 6, color: stateColor[row.state], fontWeight: 700, fontSize: 13, whiteSpace: "nowrap" }, children: [SP_JSX.jsx(StatusGlyph, { state: row.state }), SP_JSX.jsx("span", { children: row.stateLabel ?? (row.state === "ready" ? "Ready" : row.state === "checking" ? "Checking" : row.state === "switching" ? "Switching" : row.state === "pending" ? "Next" : row.state === "blocked" ? "Blocked" : "Error") })] })] }, row.key)) }), props.detail && SP_JSX.jsx("div", { style: { marginTop: 4, color: C$1.muted, fontSize: 13 }, children: props.detail }), props.keepConnectedMessage && SP_JSX.jsx("div", { style: { marginTop: 6, color: C$1.muted, fontSize: 13 }, children: props.keepConnectedMessage }), SP_JSX.jsxs("div", { style: { display: "flex", gap: 8, marginTop: 6 }, children: [SP_JSX.jsx(DFL.DialogButton, { className: "rg-dashboard-action regear-hide-button", onClick: props.onHide, style: {
+                                    margin: 0, padding: "4px 10px", height: 32, lineHeight: "22px", width: "100%", minWidth: 0, minHeight: 32, borderRadius: 12,
+                                    border: `2px solid ${C$1.cyan}`, background: "rgba(5,16,28,.74)", color: C$1.text,
+                                    fontSize: 17, fontWeight: 720, cursor: "pointer", boxShadow: `inset 0 0 18px ${C$1.cyan}08`,
+                                }, children: "Hide" }), props.onSwitch && SP_JSX.jsx(DFL.DialogButton, { className: "rg-dashboard-action", onClick: props.onSwitch, style: { width: "100%", minWidth: 0, margin: 0, padding: "4px 10px", height: 32, minHeight: 32, lineHeight: "22px", fontSize: 14 }, children: "Switch to TV" })] })] })] });
+}
+
+/** Presentation adapter for the existing monitor: no snapshot inference or I/O. */
+function connectionProgressViewModel(status, now = Date.now()) {
+    const fresh = now < status.expiresAt;
+    const phase = !fresh ? "connecting"
+        : status.phase === "complete" ? "ready" : status.phase === "switching" ? "switching" : "connecting";
+    let rows = status.rows.map((row, index) => ({
+        key: String(index), label: row.label,
+        state: !fresh ? "pending" : row.state === "waiting" ? "checking" : row.state,
+    }));
+    if (phase === "switching")
+        rows = [
+            { key: "display", label: "Display activation", state: "switching" },
+            { key: "audio", label: "TV audio", state: "pending", stateLabel: "Not verified" },
+            { key: "final", label: "Final verification", state: "pending", stateLabel: "Next" },
+        ];
+    if (phase === "ready")
+        rows = [
+            { key: "display", label: "TV display", state: "ready" },
+            // Audio recovery readiness is not proof of active TV audio output.
+            { key: "audio", label: "TV audio", state: "pending", stateLabel: "Check sound" },
+        ];
+    return { phase, rows, elapsedSeconds: status.seconds,
+        deviceLabel: status.connected ? "GPD G1 connected" : "GPD G1 connection",
+        detail: !fresh ? "Waiting for a fresh status update" : phase === "ready"
+            ? "TV transition reported complete. Check picture and sound. Closing automatically…" : status.title,
+        keepConnectedMessage: "Keep G1 connected · Hide keeps docking active.",
+    };
+}
+
 function LivePanel({ store, close, switchTv }) {
     const source = SP_REACT.useSyncExternalStore(store.subscribe, store.get);
     const [, tick] = SP_REACT.useReducer((value) => value + 1, 0);
     SP_REACT.useEffect(() => { const timer = setInterval(tick, 1000); return () => clearInterval(timer); }, []);
     const stale = Date.now() >= source.expiresAt;
-    const status = stale ? { ...source, phase: "checking", canSwitch: false,
-        title: "Waiting for a fresh status update", rows: source.rows.map(row => ({ ...row, state: "waiting" })) } : source;
+    const status = stale ? { phase: "checking", canSwitch: false,
+        rows: source.rows.map(row => ({ ...row, state: "waiting" })) } : source;
     const complete = status.phase === "complete";
-    const switching = status.phase === "switching";
     SP_REACT.useEffect(() => {
         if (!complete)
             return;
@@ -329,10 +463,14 @@ function LivePanel({ store, close, switchTv }) {
         }, 3500);
         return () => clearTimeout(timer);
     }, [complete, store, close]);
-    const title = complete ? "TV connection complete" : switching ? "Switching to TV" : "Getting your TV ready";
-    return SP_JSX.jsxs(DFL.ConfirmModal, { className: "rg-connection-modal", strTitle: SP_JSX.jsx("span", { style: { fontSize: 20, lineHeight: 1.2 }, children: title }), strOKButtonText: status.canSwitch && switchTv ? "Switch to TV" : "Hide", strCancelButtonText: "Hide", bAlertDialog: !status.canSwitch || !switchTv, bDisableBackgroundDismiss: true, bHideCloseIcon: true, onOK: () => { const latest = store.get(); const ready = latest.canSwitch && Date.now() < latest.expiresAt; close(); if (ready)
-            switchTv?.(); }, onCancel: close, children: [SP_JSX.jsx("style", { children: connectionPanelCss }), SP_JSX.jsxs("div", { className: "rg-connection", children: [SP_JSX.jsx("p", { className: "rg-connection-subtitle", children: complete ? "Re-Gear reports the TV transition completed." : switching ? "Checking the display and TV audio" : `GPD G1 connection · ${status.seconds} seconds` }), complete ? SP_JSX.jsx("div", { className: "rg-connection-hero", children: SP_JSX.jsx(StatusIcon, { state: "ready" }) }) : switching ? SP_JSX.jsx("div", { className: "rg-connection-sweep", "aria-hidden": "true" }) :
-                        SP_JSX.jsx("div", { className: "rg-connection-list", children: status.rows.map(row => SP_JSX.jsx(ReadinessRow, { label: row.label, state: row.state === "waiting" && !stale ? "checking" : row.state }, row.label)) }), SP_JSX.jsx("p", { className: "rg-connection-detail", role: "status", children: complete ? "Check the TV picture and sound. Closing automatically…" : status.title }), SP_JSX.jsx("p", { className: "rg-connection-foot", children: "Keep G1 connected \u00B7 Hide keeps docking active." })] })] });
+    const switchAction = status.canSwitch && switchTv ? () => {
+        const latest = store.get();
+        if (latest.canSwitch && Date.now() < latest.expiresAt) {
+            close();
+            switchTv();
+        }
+    } : undefined;
+    return SP_JSX.jsxs(DFL.ModalRoot, { className: "rg-connection-modal rg-connection-compact", onCancel: close, closeModal: close, bDisableBackgroundDismiss: true, bHideCloseIcon: true, children: [SP_JSX.jsx("style", { children: connectionPanelCss }), SP_JSX.jsx(ConnectionProgressOverlay, { ...connectionProgressViewModel(source), onHide: close, onSwitch: switchAction })] });
 }
 function showConnectionLivePanel(store, switchTv, onClose) {
     let modal;
@@ -1233,8 +1371,6 @@ function startOfflineFocusChecks() {
         } };
 }
 
-var brandIcon = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNTYgMjU2IiByb2xlPSJpbWciIGFyaWEtbGFiZWxsZWRieT0idGl0bGUgZGVzYyI+CiAgPHRpdGxlIGlkPSJ0aXRsZSI+UmUtR2VhciBpY29uPC90aXRsZT4KICA8ZGVzYyBpZD0iZGVzYyI+Q3lhbiBzZWdtZW50ZWQgaGV4YWdvbmFsIFJlLUdlYXIgUiBlbWJsZW0gZm9yIERlY2t5IFVJLjwvZGVzYz4KICA8ZyBmaWxsPSJub25lIiBzdHJva2U9IiMzNWQ2ZjUiIHN0cm9rZS13aWR0aD0iMTQiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+CiAgICA8cGF0aCBkPSJNNzggMzEgMTIxIDhsNDMgMjMiLz4KICAgIDxwYXRoIGQ9Ik0xODEgNDEgMjIwIDYzdjQ3Ii8+CiAgICA8cGF0aCBkPSJNMjIwIDE0NXY0OGwtNDIgMjQiLz4KICAgIDxwYXRoIGQ9Im0xNjQgMjI1LTQzIDIzLTQzLTIzIi8+CiAgICA8cGF0aCBkPSJNNjEgMjE2IDIwIDE5M3YtNDciLz4KICAgIDxwYXRoIGQ9Ik0yMCAxMTFWNjNsNDItMjMiLz4KICA8L2c+CiAgPHBhdGggZmlsbD0iIzM1ZDZmNSIgZD0iTTc1IDYyaDY5YzI5IDAgNDYgMTQgNDYgMzkgMCAyMC0xMSAzMy0zMSAzOGwzMCA1NWgtMzRsLTI3LTUwaC0yMmwtMTkgNTBINTNsMzgtMTAxaDU1YzggMCAxMi0zIDEyLTEwIDAtNi00LTktMTItOUg4M0w3NSA2MlptNDEgNThoMjljOCAwIDEyLTQgMTItMTBzLTQtOS0xMi05aC0yMmwtNyAxOVoiLz4KPC9zdmc+Cg==";
-
 function isSteamSuspendStore(value) {
     if (typeof value !== "object" || value === null) {
         return false;
@@ -1538,11 +1674,15 @@ function diagnosticLoggingLabel(status) {
     return `on · ${countdown}`;
 }
 
+var handheldModeIcon = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1MTIiIGhlaWdodD0iNTEyIiB2aWV3Qm94PSIwIDAgNTEyIDUxMiIgZmlsbD0ibm9uZSI+CiAgPGc+CiAgICA8cmVjdCB4PSI0OCIgeT0iMTMyIiB3aWR0aD0iNDE2IiBoZWlnaHQ9IjI0OCIgcng9Ijc4IiBmaWxsPSIjMDgxODJBIiBzdHJva2U9IiMzNWQ2ZjUiIHN0cm9rZS13aWR0aD0iMTIiLz4KICAgIDxyZWN0IHg9IjE2NiIgeT0iMTY2IiB3aWR0aD0iMTgwIiBoZWlnaHQ9IjE4MCIgcng9IjE0IiBmaWxsPSIjMDIwQTE0IiBzdHJva2U9IiMwRDJCNTAiIHN0cm9rZS13aWR0aD0iOCIvPgogICAgPHJlY3QgeD0iMTg0IiB5PSIxODQiIHdpZHRoPSIxNDQiIGhlaWdodD0iMTQ0IiByeD0iOCIgZmlsbD0iIzEwMjIzNyIvPgogICAgPGNpcmNsZSBjeD0iMTA0IiBjeT0iMjAwIiByPSIyNCIgZmlsbD0iIzBBMTkzMCIgc3Ryb2tlPSIjMzVkNmY1IiBzdHJva2Utd2lkdGg9IjkiLz4KICAgIDxjaXJjbGUgY3g9IjQwOCIgY3k9IjIwMCIgcj0iMjQiIGZpbGw9IiMwQTE5MzAiIHN0cm9rZT0iIzM1ZDZmNSIgc3Ryb2tlLXdpZHRoPSI5Ii8+CiAgICA8cGF0aCBkPSJNOTUgMjY2aDE4djE4aDE4djE4aC0xOHYxOEg5NXYtMThINzd2LTE4aDE4di0xOFoiIGZpbGw9IiMzNWQ2ZjUiLz4KICAgIDxjaXJjbGUgY3g9IjQwMiIgY3k9IjI3OCIgcj0iOSIgZmlsbD0iIzM1ZDZmNSIvPgogICAgPGNpcmNsZSBjeD0iNDI4IiBjeT0iMjk0IiByPSI5IiBmaWxsPSIjMzVkNmY1Ii8+CiAgICA8Y2lyY2xlIGN4PSIzNzYiIGN5PSIyOTQiIHI9IjkiIGZpbGw9IiMzNWQ2ZjUiLz4KICAgIDxjaXJjbGUgY3g9IjQwMiIgY3k9IjMxMCIgcj0iOSIgZmlsbD0iIzM1ZDZmNSIvPgogICAgPHJlY3QgeD0iOTEiIHk9IjMzNyIgd2lkdGg9IjMwIiBoZWlnaHQ9IjgiIHJ4PSI0IiBmaWxsPSIjMzVkNmY1Ii8+CiAgICA8cmVjdCB4PSIzOTEiIHk9IjMzNyIgd2lkdGg9IjMwIiBoZWlnaHQ9IjgiIHJ4PSI0IiBmaWxsPSIjMzVkNmY1Ii8+CiAgPC9nPgo8L3N2Zz4K";
+
+var tvModeIcon = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1MTIiIGhlaWdodD0iNTEyIiB2aWV3Qm94PSIwIDAgNTEyIDUxMiIgZmlsbD0ibm9uZSI+CiAgPGc+CiAgICA8cmVjdCB4PSI2NiIgeT0iMTAwIiB3aWR0aD0iMzgwIiBoZWlnaHQ9IjI0OCIgcng9IjI4IiBmaWxsPSIjMDcxNTI2IiBzdHJva2U9IiMzNWQ2ZjUiIHN0cm9rZS13aWR0aD0iMTIiLz4KICAgIDxyZWN0IHg9IjkyIiB5PSIxMjYiIHdpZHRoPSIzMjgiIGhlaWdodD0iMTk2IiByeD0iMTIiIGZpbGw9IiMxMDIyMzciIHN0cm9rZT0iIzBEMkI1MCIgc3Ryb2tlLXdpZHRoPSI4Ii8+CiAgICA8cGF0aCBkPSJNMjM2IDM0OGg0MHY1Mmg3MGMxMiAwIDIyIDEwIDIyIDIySDE0NGMwLTEyIDEwLTIyIDIyLTIyaDcwdi01MloiIGZpbGw9IiMwODE4MkEiIHN0cm9rZT0iIzM1ZDZmNSIgc3Ryb2tlLXdpZHRoPSIxMCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIvPgogIDwvZz4KPC9zdmc+Cg==";
+
 /** Selection represents observed placement, never a clickable transition target. */
 function placementCards(mode, loading = false) {
     return [
         { name: "Portable", detail: "Internal GPU · Handheld screen", active: !loading && mode === "portable" },
-        { name: "TV Docked", detail: "External GPU · TV", active: !loading && mode === "tv_docked" },
+        { name: "TV Docked", detail: "External GPU · TV", active: !loading && (mode === "tv_docked" || mode === "docked_egpu") },
     ];
 }
 /** Bounded snapshot-only facts; opening this disclosure starts no extra requests. */
@@ -1567,133 +1707,113 @@ function hardwareDetailRows(payload) {
     ];
 }
 
-var handheldModeIcon = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1MTIiIGhlaWdodD0iNTEyIiB2aWV3Qm94PSIwIDAgNTEyIDUxMiIgZmlsbD0ibm9uZSI+CiAgPGc+CiAgICA8cmVjdCB4PSI0OCIgeT0iMTMyIiB3aWR0aD0iNDE2IiBoZWlnaHQ9IjI0OCIgcng9Ijc4IiBmaWxsPSIjMDgxODJBIiBzdHJva2U9IiMzNWQ2ZjUiIHN0cm9rZS13aWR0aD0iMTIiLz4KICAgIDxyZWN0IHg9IjE2NiIgeT0iMTY2IiB3aWR0aD0iMTgwIiBoZWlnaHQ9IjE4MCIgcng9IjE0IiBmaWxsPSIjMDIwQTE0IiBzdHJva2U9IiMwRDJCNTAiIHN0cm9rZS13aWR0aD0iOCIvPgogICAgPHJlY3QgeD0iMTg0IiB5PSIxODQiIHdpZHRoPSIxNDQiIGhlaWdodD0iMTQ0IiByeD0iOCIgZmlsbD0iIzEwMjIzNyIvPgogICAgPGNpcmNsZSBjeD0iMTA0IiBjeT0iMjAwIiByPSIyNCIgZmlsbD0iIzBBMTkzMCIgc3Ryb2tlPSIjMzVkNmY1IiBzdHJva2Utd2lkdGg9IjkiLz4KICAgIDxjaXJjbGUgY3g9IjQwOCIgY3k9IjIwMCIgcj0iMjQiIGZpbGw9IiMwQTE5MzAiIHN0cm9rZT0iIzM1ZDZmNSIgc3Ryb2tlLXdpZHRoPSI5Ii8+CiAgICA8cGF0aCBkPSJNOTUgMjY2aDE4djE4aDE4djE4aC0xOHYxOEg5NXYtMThINzd2LTE4aDE4di0xOFoiIGZpbGw9IiMzNWQ2ZjUiLz4KICAgIDxjaXJjbGUgY3g9IjQwMiIgY3k9IjI3OCIgcj0iOSIgZmlsbD0iIzM1ZDZmNSIvPgogICAgPGNpcmNsZSBjeD0iNDI4IiBjeT0iMjk0IiByPSI5IiBmaWxsPSIjMzVkNmY1Ii8+CiAgICA8Y2lyY2xlIGN4PSIzNzYiIGN5PSIyOTQiIHI9IjkiIGZpbGw9IiMzNWQ2ZjUiLz4KICAgIDxjaXJjbGUgY3g9IjQwMiIgY3k9IjMxMCIgcj0iOSIgZmlsbD0iIzM1ZDZmNSIvPgogICAgPHJlY3QgeD0iOTEiIHk9IjMzNyIgd2lkdGg9IjMwIiBoZWlnaHQ9IjgiIHJ4PSI0IiBmaWxsPSIjMzVkNmY1Ii8+CiAgICA8cmVjdCB4PSIzOTEiIHk9IjMzNyIgd2lkdGg9IjMwIiBoZWlnaHQ9IjgiIHJ4PSI0IiBmaWxsPSIjMzVkNmY1Ii8+CiAgPC9nPgo8L3N2Zz4K";
-
-var tvModeIcon = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1MTIiIGhlaWdodD0iNTEyIiB2aWV3Qm94PSIwIDAgNTEyIDUxMiIgZmlsbD0ibm9uZSI+CiAgPGc+CiAgICA8cmVjdCB4PSI2NiIgeT0iMTAwIiB3aWR0aD0iMzgwIiBoZWlnaHQ9IjI0OCIgcng9IjI4IiBmaWxsPSIjMDcxNTI2IiBzdHJva2U9IiMzNWQ2ZjUiIHN0cm9rZS13aWR0aD0iMTIiLz4KICAgIDxyZWN0IHg9IjkyIiB5PSIxMjYiIHdpZHRoPSIzMjgiIGhlaWdodD0iMTk2IiByeD0iMTIiIGZpbGw9IiMxMDIyMzciIHN0cm9rZT0iIzBEMkI1MCIgc3Ryb2tlLXdpZHRoPSI4Ii8+CiAgICA8cGF0aCBkPSJNMjM2IDM0OGg0MHY1Mmg3MGMxMiAwIDIyIDEwIDIyIDIySDE0NGMwLTEyIDEwLTIyIDIyLTIyaDcwdi01MloiIGZpbGw9IiMwODE4MkEiIHN0cm9rZT0iIzM1ZDZmNSIgc3Ryb2tlLXdpZHRoPSIxMCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIvPgogIDwvZz4KPC9zdmc+Cg==";
-
-const colors = {
-    cyan: regearTheme.accent,
-    cyanSoft: regearTheme.accentSoft,
-    text: regearTheme.text,
-    muted: regearTheme.muted,
-    border: regearTheme.border};
+const C = {
+    cyan: "#39d8ff",
+    green: "#5eea8a",
+    text: "#f4f7fb",
+    muted: "#9eb2ca",
+    border: "#294665"};
 const paths = {
     handheld: "M5 6h14l3 12h-5l-2-3H9l-2 3H2z M6 10h5 M8.5 7.5v5 M16 9h.1 M18 11h.1",
     monitor: "M3 4h18v13H3z M8 21h8 M12 17v4",
     connection: "M8 3v5 M16 3v5 M6 8h12v4a6 6 0 0 1-12 0z M12 18v4",
     power: "M12 2v10 M6 5a9 9 0 1 0 12 0",
     bolt: "M13 2L4 14h7l-1 8 10-12h-7z",
-    tools: "M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94z",
+    tools: "M14 3a6 6 0 0 0-7 7L2 15l7 7 5-5a6 6 0 0 0 7-7l-4 4-5-5z",
 };
 function DashboardIcon({ kind, size = 24 }) {
     return SP_JSX.jsx("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "1.7", strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": "true", style: { flexShrink: 0 }, children: SP_JSX.jsx("path", { d: paths[kind] }) });
 }
 function DashboardSurface({ children, primary = false }) {
     return SP_JSX.jsx("div", { style: {
-            borderRadius: 16,
-            marginTop: 10,
+            borderRadius: 18,
             marginBottom: 12,
             minWidth: 0,
             overflow: "hidden",
-            border: `1px solid ${primary ? colors.cyan : colors.border}`,
+            border: `1px solid ${primary ? "#9d7635" : C.border}`,
             background: primary
-                ? regearTheme.activeSurface
-                : regearTheme.surface,
-            boxShadow: primary
-                ? "inset 0 1px 0 rgba(255,255,255,.04), 0 8px 22px rgba(0,0,0,.18)"
-                : "inset 0 1px 0 rgba(255,255,255,.025)",
-            color: colors.text,
+                ? "linear-gradient(115deg, rgba(82,58,16,.72), rgba(12,25,42,.98))"
+                : "linear-gradient(120deg, rgba(14,31,52,.98), rgba(7,17,30,.98))",
+            color: C.text,
+            boxShadow: primary ? "inset 0 0 28px rgba(255,185,48,.05)" : "inset 0 0 24px rgba(0,170,255,.025)",
         }, children: children });
 }
-function StatusPill({ label, value, accent = false }) {
-    return SP_JSX.jsxs("span", { style: {
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 5,
-            minWidth: 0,
-            padding: "4px 7px",
-            borderRadius: 999,
-            border: `1px solid ${accent ? "#2e7892" : "#31465f"}`,
-            background: accent ? "rgba(19, 79, 100, .34)" : "rgba(7, 17, 29, .55)",
-            color: accent ? colors.cyanSoft : colors.muted,
-            fontSize: 11,
-            lineHeight: 1.2,
-            whiteSpace: "nowrap",
-        }, children: [SP_JSX.jsx("span", { style: { opacity: .72 }, children: label }), SP_JSX.jsx("span", { style: { color: colors.text, fontWeight: 650 }, children: value })] });
+function CurrentStateCard({ modeLabel, health, game, loading }) {
+    return SP_JSX.jsxs("div", { style: {
+            padding: "10px 12px",
+            marginBottom: 14,
+            borderRadius: 14,
+            border: `1px solid ${regearTheme.border}`,
+            background: regearTheme.surface,
+        }, children: [SP_JSX.jsx("div", { style: {
+                    color: C.cyan,
+                    fontSize: 12,
+                    fontWeight: 760,
+                    letterSpacing: "1.5px",
+                    marginBottom: 5,
+                }, children: "CURRENT STATE" }), SP_JSX.jsx("div", { style: {
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    gap: 10,
+                    marginBottom: 12,
+                }, children: SP_JSX.jsx("div", { style: { fontSize: 18, fontWeight: 700, lineHeight: 1.4 }, children: modeLabel }) }), [["Health", loading ? "Reading…" : health], ["Game", loading ? "Reading…" : game]].map(([name, value]) => SP_JSX.jsxs("div", { style: { display: "grid", gridTemplateColumns: "64px minmax(0,1fr)", gap: 8,
+                    padding: "8px 0", borderTop: `1px solid ${regearTheme.border}`, fontSize: 13, lineHeight: 1.4 }, children: [SP_JSX.jsx("span", { style: { color: regearTheme.muted }, children: name }), SP_JSX.jsx("span", { style: { textAlign: "right", overflowWrap: "anywhere",
+                            color: name === "Health" && !loading && health === "Ready" ? C.green : regearTheme.text }, children: value })] }, name))] });
 }
-function QuickAccessOverview({ mode, modeLabel, health, game, loading }) {
+function ModeCard({ name, detail, active, loading }) {
+    const isPortable = name === "Portable";
+    return SP_JSX.jsxs("div", { style: {
+            minWidth: 0,
+            minHeight: 130,
+            padding: "18px 12px 14px",
+            borderRadius: 20,
+            border: `2px solid ${active ? C.cyan : "#36516f"}`,
+            background: active
+                ? "linear-gradient(145deg, rgba(4,53,82,.98), rgba(9,26,45,.98))"
+                : "linear-gradient(145deg, rgba(12,28,47,.98), rgba(7,17,30,.98))",
+            boxShadow: active ? `0 0 20px ${C.cyan}20, inset 0 0 24px ${C.cyan}0b` : "none",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            textAlign: "center",
+            color: active ? C.text : "#d7e3f1",
+        }, children: [SP_JSX.jsx("div", { style: { color: active ? C.cyan : "#a6bfdc", marginBottom: 10 }, children: SP_JSX.jsx("img", { src: isPortable ? handheldModeIcon : tvModeIcon, width: 56, height: 56, alt: "", "aria-hidden": "true", style: { display: "block", objectFit: "contain" } }) }), SP_JSX.jsx("div", { style: { fontSize: 18, fontWeight: 760, marginBottom: 6 }, children: name }), SP_JSX.jsx("div", { style: { fontSize: 12, lineHeight: "16px", color: C.muted, minHeight: 32 }, children: detail }), SP_JSX.jsx("div", { style: { marginTop: 10, color: active ? C.cyan : C.muted, fontSize: 12, fontWeight: 700 }, children: active ? "ACTIVE" : loading ? "READING…" : "Not active" })] });
+}
+function QuickAccessOverview({ mode, modeLabel, health, game, loading, summaryRef, onSummaryFocus }) {
     const cards = placementCards(mode, loading);
-    return SP_JSX.jsxs("div", { style: { display: "grid", gap: 10, color: colors.text, minWidth: 0 }, children: [SP_JSX.jsxs("div", { style: {
-                    padding: "11px 12px 10px",
-                    border: `1px solid ${colors.border}`,
-                    borderRadius: 15,
-                    background: regearTheme.surface,
-                    boxShadow: "inset 0 1px 0 rgba(255,255,255,.025)",
-                }, children: [SP_JSX.jsxs("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }, children: [SP_JSX.jsxs("div", { style: { minWidth: 0 }, children: [SP_JSX.jsx("div", { style: { fontSize: 11, letterSpacing: ".11em", textTransform: "uppercase", color: colors.cyanSoft,
-                                            fontWeight: 700, marginBottom: 3 }, children: "Current state" }), SP_JSX.jsx("div", { style: { fontSize: 17, lineHeight: 1.15, fontWeight: 700, overflowWrap: "normal" }, children: modeLabel })] }), SP_JSX.jsx("span", { style: { width: 8, height: 8, borderRadius: "50%", flexShrink: 0,
-                                    background: loading ? "#6d8098" : colors.cyan,
-                                    boxShadow: "none" } })] }), SP_JSX.jsxs("div", { style: { display: "flex", flexWrap: "wrap", gap: 6, marginTop: 9 }, children: [SP_JSX.jsx(StatusPill, { label: "Health", value: health, accent: !loading && health.toLowerCase().includes("ready") }), SP_JSX.jsx(StatusPill, { label: "Game", value: game })] })] }), SP_JSX.jsx("div", { style: { display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }, children: cards.map((card) => SP_JSX.jsxs("div", { style: {
-                        position: "relative",
-                        minWidth: 0,
-                        minHeight: 105,
-                        padding: "11px 10px 10px",
-                        borderRadius: 15,
-                        border: `1px solid ${card.active ? colors.cyan : "#2b4058"}`,
-                        background: card.active
-                            ? regearTheme.activeSurface
-                            : regearTheme.surface,
-                        boxShadow: card.active
-                            ? "inset 0 1px 0 rgba(255,255,255,.04)"
-                            : "inset 0 1px 0 rgba(255,255,255,.02)",
-                        overflow: "hidden",
-                    }, children: [card.active && SP_JSX.jsx("span", { style: { position: "absolute", top: 0, left: 10, right: 10, height: 2,
-                                borderRadius: "0 0 4px 4px", background: colors.cyan,
-                                boxShadow: "none" } }), SP_JSX.jsxs("div", { style: { display: "flex", flexDirection: "column", alignItems: "center", gap: 10, textAlign: "center", padding: "5px 0" }, children: [SP_JSX.jsx("span", { style: { color: card.active ? colors.cyanSoft : colors.muted, display: "flex", alignItems: "center", justifyContent: "center", height: 42 }, children: SP_JSX.jsx("img", { src: card.name === "Portable" ? handheldModeIcon : tvModeIcon, alt: "", "aria-hidden": "true", width: 48, height: 48, style: { display: "block", objectFit: "contain" } }) }), SP_JSX.jsx("div", { style: { fontSize: 15, fontWeight: 650 }, children: card.name }), SP_JSX.jsx("div", { style: { fontSize: 11, letterSpacing: ".06em", color: card.active ? colors.cyan : colors.muted, minHeight: 15 }, children: card.active ? "ACTIVE" : loading ? "Reading…" : "Not active" })] })] }, card.name)) })] });
+    return SP_JSX.jsxs("div", { style: { color: C.text, minWidth: 0 }, children: [SP_JSX.jsx(SectionFocus, { ref: summaryRef, label: "At a glance: current state", onFocused: onSummaryFocus, children: SP_JSX.jsx(CurrentStateCard, { modeLabel: modeLabel, health: health, game: game, loading: loading }) }), SP_JSX.jsxs(SectionFocus, { label: "Your setup", children: [SP_JSX.jsx("div", { style: {
+                            color: C.muted,
+                            fontSize: 11,
+                            fontWeight: 760,
+                            letterSpacing: "1.6px",
+                            margin: "2px 2px 8px",
+                        }, children: "YOUR SETUP" }), SP_JSX.jsx("div", { style: { display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10 }, children: cards.map((card) => SP_JSX.jsx(ModeCard, { ...card, loading: loading }, card.name)) })] })] });
 }
 
-/** One native focus target; no Item label/action columns or detached icon row. */
-function DashboardAction({ title, description, icon, expanded, onClick, disabled }) {
-    return (SP_JSX.jsx(DFL.DialogButton, { onClick: onClick, disabled: disabled, className: "rg-dashboard-action", "aria-expanded": expanded, style: {
-            width: "100%",
-            minWidth: 0,
-            height: "auto",
-            minHeight: 62,
-            margin: 0,
-            padding: "11px 12px",
-            boxSizing: "border-box",
-            borderRadius: 14,
-            textAlign: "left",
-            whiteSpace: "normal",
-            background: regearTheme.surface,
-            border: `1px solid ${regearTheme.border}`,
-            boxShadow: "inset 0 1px 0 rgba(255,255,255,.025)",
-        }, children: SP_JSX.jsxs("span", { style: {
-                display: "grid",
-                gridTemplateColumns: "32px minmax(0, 1fr) 16px",
-                alignItems: "center",
-                gap: 10,
-                width: "100%",
-                minWidth: 0,
-                boxSizing: "border-box",
-            }, children: [SP_JSX.jsx("span", { style: {
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        width: 32,
-                        height: 32,
-                        borderRadius: 10,
-                        color: disabled ? "#687b91" : regearTheme.accent,
-                        background: disabled ? "rgba(25,37,51,.62)" : "rgba(9,58,78,.58)",
-                        border: `1px solid ${disabled ? "#344457" : "#2b7188"}`,
-                    }, children: SP_JSX.jsx(DashboardIcon, { kind: icon }) }), SP_JSX.jsxs("span", { style: {
-                        display: "block",
-                        minWidth: 0,
-                        whiteSpace: "normal",
-                        wordBreak: "normal",
-                        overflowWrap: "normal",
-                        lineHeight: 1.32,
-                    }, children: [SP_JSX.jsx("span", { style: { display: "block", fontSize: 14, fontWeight: 700, color: disabled ? "#8394a7" : regearTheme.text }, children: title }), SP_JSX.jsx("span", { style: { display: "block", fontSize: 12, fontWeight: 400, marginTop: 3,
-                                color: disabled ? "#708093" : regearTheme.muted }, children: description })] }), SP_JSX.jsx("svg", { width: "16", height: "16", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": "true", style: { opacity: disabled ? .35 : .72, transform: expanded ? "rotate(90deg)" : undefined }, children: SP_JSX.jsx("path", { d: "m9 5 7 7-7 7" }) })] }) }));
+/** Re-Gear action card: one controller focus target with mockup-style hierarchy. */
+function DashboardAction({ title, description, icon, expanded, onClick, disabled, tone = "normal" }) {
+    const primary = tone === "primary";
+    const warning = tone === "warning";
+    const accent = warning ? "#ffc247" : primary ? "#39d8ff" : "#35d6ff";
+    return SP_JSX.jsx(DFL.DialogButton, { onClick: onClick, disabled: disabled, className: "rg-dashboard-action", "aria-expanded": expanded, style: {
+            width: "100%", minWidth: 0, height: "auto", minHeight: 68, margin: 0,
+            padding: "12px 13px", boxSizing: "border-box", borderRadius: 16,
+            textAlign: "left", whiteSpace: "normal",
+            background: warning
+                ? "linear-gradient(135deg, rgba(65,47,15,.92), rgba(10,22,37,.98))"
+                : primary
+                    ? "linear-gradient(135deg, rgba(8,56,81,.94), rgba(8,24,41,.98))"
+                    : "linear-gradient(135deg, rgba(19,36,58,.96), rgba(9,21,36,.98))",
+            border: `1px solid ${disabled ? "#344457" : warning ? "#9d7635" : primary ? "#2c89a6" : "#2c4663"}`,
+            boxShadow: disabled ? "none" : `inset 0 1px 0 rgba(255,255,255,.025), 0 0 20px ${accent}0a`,
+        }, children: SP_JSX.jsxs("span", { style: { display: "grid", gridTemplateColumns: "38px minmax(0,1fr) 18px", alignItems: "center", gap: 11, width: "100%", minWidth: 0 }, children: [SP_JSX.jsx("span", { style: {
+                        display: "flex", alignItems: "center", justifyContent: "center", width: 38, height: 38,
+                        borderRadius: 11, color: disabled ? "#687b91" : accent,
+                        background: disabled ? "rgba(25,37,51,.62)" : `${accent}14`,
+                        border: `1px solid ${disabled ? "#344457" : `${accent}66`}`,
+                    }, children: SP_JSX.jsx(DashboardIcon, { kind: icon }) }), SP_JSX.jsxs("span", { style: { display: "block", minWidth: 0, whiteSpace: "normal", wordBreak: "normal", overflowWrap: "normal", lineHeight: 1.3 }, children: [SP_JSX.jsx("span", { style: { display: "block", fontSize: 14, fontWeight: 760, color: disabled ? "#8394a7" : primary || warning ? accent : "#f2f7ff" }, children: title }), SP_JSX.jsx("span", { style: { display: "block", fontSize: 12, marginTop: 3, color: disabled ? "#708093" : "#9fb2ca" }, children: description })] }), SP_JSX.jsx("svg", { width: "18", height: "18", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": "true", style: { opacity: disabled ? .35 : .75, color: warning || primary ? accent : undefined, transform: expanded ? "rotate(90deg)" : undefined, transition: "transform 120ms ease" }, children: SP_JSX.jsx("path", { d: "m9 5 7 7-7 7" }) })] }) });
 }
 
 const HEALTH_BLOCKER_MESSAGES = {
@@ -2390,6 +2510,7 @@ const LABELS = {
     protected: "Protected",
     system: "System",
     tv_docked: "TV Docked",
+    docked_egpu: "TV Docked",
     unknown: "Unknown",
     unsupported: "Unsupported",
     user: "User",
@@ -3379,17 +3500,30 @@ function Content({ preflight, connection }) {
         });
     }, []);
     const sectionVisibility = quickAccessSectionVisibility(showDiagnostics);
-    return (SP_JSX.jsxs(SP_JSX.Fragment, { children: [SP_JSX.jsx("style", { children: regearControlCss }), SP_JSX.jsxs("div", { ref: statusAnchor, tabIndex: -1, children: [SP_JSX.jsx(DFL.PanelSection, { title: "At a glance", children: SP_JSX.jsx(DFL.Focusable, { ref: statusFocusAnchor, "aria-label": "Re-Gear status summary", onGamepadFocus: () => {
+    return (SP_JSX.jsxs(SP_JSX.Fragment, { children: [SP_JSX.jsx("style", { children: regearControlCss }), SP_JSX.jsxs("div", { ref: statusAnchor, tabIndex: -1, children: [SP_JSX.jsx(DFL.PanelSection, { title: "At a glance", children: SP_JSX.jsx(QuickAccessOverview, { summaryRef: statusFocusAnchor, onSummaryFocus: () => {
                                 if (statusAnchor.current)
                                     scrollToTopOfOwningPanel(statusAnchor.current);
-                            }, children: SP_JSX.jsx(QuickAccessOverview, { mode: payload?.inference.mode ?? "unknown", modeLabel: loading ? "Reading…" : label(payload?.inference.mode ?? "unknown"), health: healthStatusLabel(payload?.health, loading), game: label(snapshot?.game_state ?? "unknown"), loading: loading }) }) }), payload?.connection_readiness && payload.connection_readiness.stage !== "disconnected" &&
-                        SP_JSX.jsx(DFL.PanelSection, { title: "G1 readiness", children: SP_JSX.jsx(ConnectionQuickStatus, { store: connection.store, visible: quickAccessVisible, onOpen: openConnectionProgress }) }), SP_JSX.jsxs(DFL.PanelSection, { title: "Docking & actions", children: [SP_JSX.jsxs("div", { ref: primaryControlAnchor, children: [SP_JSX.jsx(DashboardSurface, { children: SP_JSX.jsx("div", { style: { padding: "4px 12px" }, children: SP_JSX.jsx(DFL.ToggleField, { label: "Automatic TV docking", layout: "inline", description: automaticDockBusy
+                            }, mode: payload?.inference.mode ?? "unknown", modeLabel: loading ? "Reading…" : label(payload?.inference.mode ?? "unknown"), health: healthStatusLabel(payload?.health, loading), game: label(snapshot?.game_state ?? "unknown"), loading: loading }) }), payload?.connection_readiness && payload.connection_readiness.stage !== "disconnected" &&
+                        SP_JSX.jsx(DFL.PanelSection, { title: "eGPU readiness", children: SP_JSX.jsx(ConnectionQuickStatus, { store: connection.store, visible: quickAccessVisible, onOpen: openConnectionProgress }) }), SP_JSX.jsxs(DFL.PanelSection, { title: "Docking & actions", children: [SP_JSX.jsxs("div", { ref: primaryControlAnchor, children: [SP_JSX.jsx(DashboardSurface, { children: SP_JSX.jsx("div", { style: { padding: "4px 12px" }, children: SP_JSX.jsx(DFL.ToggleField, { label: "Automatic TV docking", layout: "inline", description: automaticDockBusy
                                                     ? "Saving…"
                                                     : !automaticDockStatus
                                                         ? "Status unavailable"
                                                         : automaticDockStatus.enabled
                                                             ? label(automaticDockStatus.code)
-                                                            : "Off · Ask before enabling", checked: automaticDockStatus?.enabled === true, disabled: automaticDockBusy || !automaticDockStatus, highlightOnFocus: true, onChange: toggleAutomaticDock }) }) }), automaticDockMessage && (SP_JSX.jsx(DFL.PanelSectionRow, { children: automaticDockMessage })), SP_JSX.jsx(DashboardSurface, { primary: true, children: SP_JSX.jsx(DashboardAction, { icon: "bolt", title: tvSwitchBusy ? "Switching…" : "Switch to TV now", description: "Checks readiness before switching", onClick: () => void executeTvSwitch(), disabled: tvSwitchBusy
+                                                            : "Off · Ask before enabling", checked: automaticDockStatus?.enabled === true, disabled: automaticDockBusy || !automaticDockStatus, highlightOnFocus: true, onChange: toggleAutomaticDock }) }) }), automaticDockMessage && (SP_JSX.jsx(DFL.PanelSectionRow, { children: automaticDockMessage })), SP_JSX.jsx(DashboardSurface, { primary: true, children: SP_JSX.jsx(DashboardAction, { icon: "bolt", tone: "primary", title: tvSwitchBusy || safeDisconnectBusy
+                                                ? "Switching…"
+                                                : payload?.inference.mode === "docked_egpu"
+                                                    ? "Switch to handheld"
+                                                    : "Switch to TV", description: controllerShortcutAvailable
+                                                ? "Hold Back/View + Y for 3 seconds to switch."
+                                                : "Checks readiness before switching. Controller shortcut unavailable.", onClick: () => {
+                                                if (payload?.inference.mode === "docked_egpu")
+                                                    requestControllerDisplaySwitch("ally");
+                                                else if (payload?.inference.mode === "portable")
+                                                    void executeTvSwitch();
+                                            }, disabled: tvSwitchBusy
+                                                || safeDisconnectBusy
+                                                || (payload?.inference.mode !== "portable" && payload?.inference.mode !== "docked_egpu")
                                                 || Boolean(tvSwitchAcknowledgementId)
                                                 || Boolean(journalStatus && journalStatus.code !== "journal.idle") }) }), tvSwitchMessage && SP_JSX.jsx(DFL.PanelSectionRow, { children: tvSwitchMessage }), SP_JSX.jsx(DashboardSurface, { children: SP_JSX.jsx(DashboardAction, { icon: "connection", title: "Disconnect status", description: "Live checks \u00B7 keep G1 connected", onClick: () => {
                                                 if (!disconnectProgressModal.current)
@@ -3398,9 +3532,7 @@ function Content({ preflight, connection }) {
                                                 ? "Checking…"
                                                 : payload?.inference.mode === "portable"
                                                     ? "Shut down to disconnect"
-                                                    : "Prepare to disconnect", description: controllerShortcutAvailable
-                                                ? "Back/View + Y (3 seconds): switch between Ally and TV. Keep the G1 connected."
-                                                : "Keep the eGPU connected until fully powered off. Controller shortcut unavailable.", onClick: requestSafeDisconnect, disabled: safeDisconnectBusy
+                                                    : "Prepare to disconnect", description: "Keep the G1 connected until fully powered off.", onClick: requestSafeDisconnect, disabled: safeDisconnectBusy
                                                 || !disconnect?.applicable
                                                 || Boolean(tvSwitchAcknowledgementId)
                                                 || Boolean(journalStatus && journalStatus.code !== "journal.idle") }) }), safeDisconnectMessage && (SP_JSX.jsx(DFL.PanelSectionRow, { children: safeDisconnectMessage })), journalStatus && journalStatus.code !== "journal.idle" && (SP_JSX.jsx(DiagnosticRow, { name: "Safety journal", value: label(journalStatus.owner) })), journalMessage && SP_JSX.jsx(DFL.PanelSectionRow, { children: journalMessage }), journalStatus?.owner === "sleep"
