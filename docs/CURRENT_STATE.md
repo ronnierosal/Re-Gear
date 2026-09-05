@@ -3,6 +3,14 @@
 
 ## Re-Gear 0.3.43 compact popup candidate
 
+Staged `/home/deck/Re-Gear-0.3.43.zip` to user-supplied host 192.168.1.149;
+SSH identity verified against the existing Ally host key. Revision
+`d687972b88d46cde696e4eed1e408039394140c8`; local/final SHA-256 matched:
+`f592e509d850685bff27004f204b031493d3a51f87838fe4b78b3536fb6de77a`.
+161 frontend and 956 backend tests passed (six skipped), plus typecheck,
+architecture, compile, build/package and diff checks. Installed readback was
+0.3.42 before transfer. Candidate staged only, not installed.
+
 Connection and disconnect dialogs share compact base spacing, smaller icons
 and a viewport height limit. The connection title and footer are shortened.
 This addresses reported cropping on the Ally, but actual native Steam scaling
