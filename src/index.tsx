@@ -126,6 +126,7 @@ const LABELS: Record<string, string> = {
   protected: "Protected",
   system: "System",
   tv_docked: "TV Docked",
+  docked_egpu: "TV Docked",
   unknown: "Unknown",
   unsupported: "Unsupported",
   user: "User",
@@ -1501,6 +1502,7 @@ function Content({ preflight, connection }: { preflight: SleepPreflightCoordinat
           <DashboardSurface primary>
             <DashboardAction
               icon="bolt"
+              tone="primary"
               title={tvSwitchBusy ? "Switching…" : "Switch to TV now"}
               description="Checks readiness before switching"
               onClick={() => void executeTvSwitch()}

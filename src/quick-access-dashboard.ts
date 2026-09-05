@@ -4,7 +4,7 @@ import type { SnapshotPayload } from "./backend";
 export function placementCards(mode: string, loading = false) {
   return [
     { name: "Portable", detail: "Internal GPU · Handheld screen", active: !loading && mode === "portable" },
-    { name: "TV Docked", detail: "External GPU · TV", active: !loading && mode === "tv_docked" },
+    { name: "TV Docked", detail: "External GPU · TV", active: !loading && (mode === "tv_docked" || mode === "docked_egpu") },
   ];
 }
 
