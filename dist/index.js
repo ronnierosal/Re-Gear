@@ -87,23 +87,23 @@ function disconnectProgress(payload, failed = false, now = Date.now()) {
 
 const connectionPanelCss = `
 .rg-connection-modal { background: linear-gradient(145deg,#18212c,#10171f) !important; border:1px solid #394653; border-radius:18px; }
-.rg-connection { color:#edf3f8; font-size:16px; line-height:1.4; min-width:320px; max-width:520px; }
+.rg-connection { color:#edf3f8; font-size:16px; line-height:1.4; min-width:0; width:100%; max-width:520px; }
 .rg-connection-subtitle { color:#b5c3d2; margin:0 0 18px; }
 .rg-connection-list { border:1px solid #394653; border-radius:12px; padding:0 14px; }
 .rg-connection-row { display:flex; align-items:center; gap:12px; padding:11px 0; border-bottom:1px solid #303c48; }
 .rg-connection-row:last-child { border:0; }
-.rg-connection-label { flex:1; }
+.rg-connection-label { flex:1; min-width:0; overflow-wrap:break-word; }
 .rg-connection-state { display:flex; align-items:center; gap:8px; font-size:14px; white-space:nowrap; }
 .rg-connection-ready { color:#87da91; }
 .rg-connection-waiting { color:#ffd16b; }
-.rg-connection-blocked { color:#ff9c93; }
+.rg-connection-blocked { color:#ffd16b; }
 .rg-connection-icon { width:22px; height:22px; display:inline-flex; align-items:center; justify-content:center; flex-shrink:0; }
-.rg-connection-ring { width:17px; height:17px; border:2px solid #ffd16b40; border-top-color:currentColor; border-right-color:currentColor; border-radius:50%; animation:rg-connection-spin 1.3s linear infinite; }
+.rg-connection-ring { width:17px; height:17px; border:2px solid transparent; border-top-color:currentColor; border-right-color:currentColor; border-radius:50%; animation:rg-connection-spin 1.3s linear infinite; }
 .rg-connection-check { animation:rg-connection-reveal .2s ease-out; }
 .rg-connection-detail { margin:16px 0 8px; color:#b5c3d2; font-size:14px; }
 .rg-connection-foot { color:#95a6b7; font-size:13px; margin:8px 0 0; }
 .rg-connection-hero { display:flex; justify-content:center; padding:20px 0; color:#87da91; }
-.rg-connection-hero svg { width:76px; height:76px; }
+.rg-connection-hero .rg-connection-icon, .rg-connection-hero svg { width:76px; height:76px; }
 .rg-connection-sweep { overflow:hidden; height:3px; background:#33414f; margin:22px 0; border-radius:3px; }
 .rg-connection-sweep::after { content:''; display:block; width:35%; height:100%; background:#66d9f7; animation:rg-connection-sweep 1.8s ease-in-out infinite; }
 @keyframes rg-connection-spin { to { transform:rotate(360deg); } }
@@ -113,41 +113,25 @@ const connectionPanelCss = `
 @media (max-height:700px) { .rg-connection-row { padding:7px 0; } .rg-connection-subtitle { margin-bottom:12px; } }
 `;
 
-function Check() {
-    return SP_JSX.jsxs("svg", { className: "rg-connection-check", viewBox: "0 0 24 24", width: "22", height: "22", fill: "none", stroke: "currentColor", strokeWidth: "1.7", "aria-hidden": "true", children: [SP_JSX.jsx("circle", { cx: "12", cy: "12", r: "10" }), SP_JSX.jsx("path", { d: "m7 12 3 3 7-7" })] });
+const statusAppearance = {
+    ready: { label: "Ready", color: "#87da91", motion: false },
+    checking: { label: "Checking", color: "#ffd16b", motion: true },
+    waiting: { label: "Waiting", color: "#ffd16b", motion: false },
+    pending: { label: "Pending", color: "#95a6b7", motion: false },
+    switching: { label: "Switching", color: "#66d9f7", motion: true },
+    blocked: { label: "Blocked", color: "#ffd16b", motion: false },
+    error: { label: "Error", color: "#ff9c93", motion: false },
+    unavailable: { label: "Unavailable", color: "#95a6b7", motion: false },
+};
+
+function StatusIcon({ state }) {
+    const appearance = statusAppearance[state];
+    return SP_JSX.jsx("span", { className: "rg-connection-icon", "aria-hidden": "true", style: { color: appearance.color }, children: state === "ready" ? SP_JSX.jsxs("svg", { className: "rg-connection-check", viewBox: "0 0 24 24", width: "22", height: "22", fill: "none", stroke: "currentColor", strokeWidth: "1.7", children: [SP_JSX.jsx("circle", { cx: "12", cy: "12", r: "10" }), SP_JSX.jsx("path", { d: "m7 12 3 3 7-7" })] })
+            : state === "blocked" || state === "error" ? SP_JSX.jsx("svg", { viewBox: "0 0 24 24", width: "22", height: "22", fill: "none", stroke: "currentColor", strokeWidth: "1.7", children: SP_JSX.jsx("path", { d: "M12 3 22 21H2Z M12 9v5 M12 17v1" }) })
+                : appearance.motion ? SP_JSX.jsx("span", { className: "rg-connection-ring" }) : SP_JSX.jsx("svg", { viewBox: "0 0 24 24", width: "22", height: "22", fill: "none", stroke: "currentColor", strokeWidth: "1.7", children: SP_JSX.jsx("circle", { cx: "12", cy: "12", r: "9" }) }) });
 }
-function ConnectionIndicator({ state, stale }) {
-    return SP_JSX.jsx("span", { className: "rg-connection-icon", "aria-hidden": "true", children: state === "ready" ? SP_JSX.jsx(Check, {}) : state === "blocked" ? "!" : stale ? "○" : SP_JSX.jsx("span", { className: "rg-connection-ring" }) });
-}
-function LivePanel({ store, close, switchTv }) {
-    const source = SP_REACT.useSyncExternalStore(store.subscribe, store.get);
-    const [, tick] = SP_REACT.useReducer((value) => value + 1, 0);
-    SP_REACT.useEffect(() => { const timer = setInterval(tick, 1000); return () => clearInterval(timer); }, []);
-    const stale = Date.now() >= source.expiresAt;
-    const status = stale ? { ...source, phase: "checking", canSwitch: false,
-        title: "Waiting for a fresh status update", rows: source.rows.map(row => ({ ...row, state: "waiting" })) } : source;
-    const complete = status.phase === "complete";
-    const switching = status.phase === "switching";
-    SP_REACT.useEffect(() => {
-        if (!complete)
-            return;
-        const timer = setTimeout(() => {
-            const latest = store.get();
-            if (latest.phase === "complete" && Date.now() < latest.expiresAt)
-                close();
-        }, 3500);
-        return () => clearTimeout(timer);
-    }, [complete, store, close]);
-    const title = complete ? "TV connection complete" : switching ? "Switching to TV" : "Getting your TV ready";
-    return SP_JSX.jsxs(DFL.ConfirmModal, { className: "rg-connection-modal", strTitle: title, strOKButtonText: status.canSwitch && switchTv ? "Switch to TV" : "Hide", strCancelButtonText: "Hide", bAlertDialog: !status.canSwitch || !switchTv, bDisableBackgroundDismiss: true, bHideCloseIcon: true, onOK: () => { const latest = store.get(); const ready = latest.canSwitch && Date.now() < latest.expiresAt; close(); if (ready)
-            switchTv?.(); }, onCancel: close, children: [SP_JSX.jsx("style", { children: connectionPanelCss }), SP_JSX.jsxs("div", { className: "rg-connection", children: [SP_JSX.jsx("p", { className: "rg-connection-subtitle", children: complete ? "Re-Gear reports the TV transition completed." : switching ? "Checking the display and TV audio" : `GPD G1 connection · ${status.seconds} seconds` }), complete ? SP_JSX.jsx("div", { className: "rg-connection-hero", children: SP_JSX.jsx(Check, {}) }) : switching ? SP_JSX.jsx("div", { className: "rg-connection-sweep", "aria-hidden": "true" }) :
-                        SP_JSX.jsx("div", { className: "rg-connection-list", children: status.rows.map(row => SP_JSX.jsxs("div", { className: "rg-connection-row", children: [SP_JSX.jsx("span", { className: "rg-connection-label", children: row.label }), SP_JSX.jsxs("span", { className: `rg-connection-state rg-connection-${row.state}`, children: [SP_JSX.jsx(ConnectionIndicator, { state: row.state, stale: stale }), row.state === "ready" ? "Ready" : row.state === "blocked" ? "Needs attention" : stale ? "Waiting" : "Checking"] })] }, row.label)) }), SP_JSX.jsx("p", { className: "rg-connection-detail", role: "status", children: complete ? "Check the TV picture and sound. Closing automatically…" : status.title }), SP_JSX.jsx("p", { className: "rg-connection-foot", children: "Keep G1 connected. Hiding this window does not cancel docking." })] })] });
-}
-function showConnectionLivePanel(store, switchTv, onClose) {
-    let modal;
-    const close = () => { modal.Close(); onClose(); };
-    modal = DFL.showModal(SP_JSX.jsx(LivePanel, { store: store, switchTv: switchTv, close: close }), window, { strTitle: "Re-Gear", bNeverPopOut: true });
-    return modal;
+function ReadinessRow({ label, state, compact = false }) {
+    return SP_JSX.jsxs("div", { className: "rg-connection-row", style: compact ? { padding: "8px 0", gap: 8, fontSize: 13 } : undefined, children: [SP_JSX.jsx("span", { className: "rg-connection-label", children: label }), SP_JSX.jsxs("span", { className: "rg-connection-state", style: { color: statusAppearance[state].color, fontSize: compact ? 12 : 14 }, children: [SP_JSX.jsx(StatusIcon, { state: state }), statusAppearance[state].label] })] });
 }
 
 function DisconnectPanel({ close }) {
@@ -180,7 +164,7 @@ function DisconnectPanel({ close }) {
             clearTimeout(timer); };
     }, []);
     const status = disconnectProgress(payload, failed, now);
-    return SP_JSX.jsxs(DFL.ConfirmModal, { className: "rg-connection-modal", strTitle: "Disconnect status", strOKButtonText: "Hide", bAlertDialog: true, bDisableBackgroundDismiss: true, bHideCloseIcon: true, onOK: close, onCancel: close, children: [SP_JSX.jsx("style", { children: connectionPanelCss }), SP_JSX.jsxs("div", { className: "rg-connection", children: [SP_JSX.jsx("p", { className: "rg-connection-subtitle", children: "Keep the G1 cable connected" }), SP_JSX.jsx("div", { className: "rg-connection-list", children: status.rows.map(row => SP_JSX.jsxs("div", { className: "rg-connection-row", children: [SP_JSX.jsx("span", { className: "rg-connection-label", children: row.label }), SP_JSX.jsxs("span", { className: `rg-connection-state rg-connection-${row.state === "unavailable" ? "waiting" : row.state}`, children: [SP_JSX.jsx(ConnectionIndicator, { state: row.state === "ready" ? "ready" : row.state === "blocked" ? "blocked" : "waiting", stale: true }), row.state === "ready" ? "Ready" : row.state === "blocked" ? "Blocked" : row.state === "unavailable" ? "Not available" : "Not verified"] })] }, row.label)) }), SP_JSX.jsx("p", { role: "status", className: "rg-connection-detail", children: status.detail }), SP_JSX.jsx("p", { className: "rg-connection-foot", children: "Status only. This does not release devices. Shut down fully before unplugging." })] })] });
+    return SP_JSX.jsxs(DFL.ConfirmModal, { className: "rg-connection-modal", strTitle: "Disconnect status", strOKButtonText: "Hide", bAlertDialog: true, bDisableBackgroundDismiss: true, bHideCloseIcon: true, onOK: close, onCancel: close, children: [SP_JSX.jsx("style", { children: connectionPanelCss }), SP_JSX.jsxs("div", { className: "rg-connection", children: [SP_JSX.jsx("p", { className: "rg-connection-subtitle", children: "Keep the G1 cable connected" }), SP_JSX.jsx("div", { className: "rg-connection-list", children: status.rows.map(row => SP_JSX.jsx(ReadinessRow, { label: row.label, state: row.state === "ready" ? "ready" : row.state === "blocked" ? "blocked" : row.state === "unavailable" ? "unavailable" : "waiting" }, row.label)) }), SP_JSX.jsx("p", { role: "status", className: "rg-connection-detail", children: status.detail }), SP_JSX.jsx("p", { className: "rg-connection-foot", children: "Status only. This does not release devices. Shut down fully before unplugging." })] })] });
 }
 function showDisconnectProgress(onClose) {
     let modal;
@@ -227,12 +211,12 @@ function ConnectionQuickStatus({ store, visible, onOpen }) {
         return () => clearInterval(timer);
     }, [visible]);
     const stale = Date.now() >= source.expiresAt;
-    return SP_JSX.jsxs("div", { "aria-label": "Live G1 readiness", style: { background: regearTheme.surface, border: `1px solid ${regearTheme.border}`, borderRadius: 14, padding: "10px 12px", color: regearTheme.text }, children: [SP_JSX.jsx("style", { children: connectionPanelCss }), SP_JSX.jsx("div", { style: { fontSize: 12, lineHeight: 1.4, color: regearTheme.muted, marginBottom: 6 }, role: "status", children: stale ? "Waiting for a fresh status update" : source.title }), SP_JSX.jsx("div", { children: source.rows.filter(row => labels[row.label]).map(row => {
+    return SP_JSX.jsxs("div", { "aria-label": "Live G1 readiness", style: { background: regearTheme.surface, border: `1px solid ${regearTheme.border}`, borderRadius: 14, padding: "10px 12px", color: regearTheme.text }, children: [SP_JSX.jsx("style", { children: connectionPanelCss }), SP_JSX.jsx("div", { style: { fontSize: 13, lineHeight: 1.4, color: regearTheme.muted, marginBottom: 6 }, role: "status", children: stale ? "Waiting for a fresh status update" : source.title }), SP_JSX.jsx("div", { children: source.rows.filter(row => labels[row.label]).map(row => {
                     const state = stale ? "waiting" : row.state;
-                    return SP_JSX.jsxs("div", { className: "rg-connection-row", style: { padding: "7px 0", gap: 8, fontSize: 12 }, children: [SP_JSX.jsx("span", { className: "rg-connection-label", children: labels[row.label] }), SP_JSX.jsxs("span", { className: `rg-connection-state rg-connection-${state}`, style: { fontSize: 11 }, children: [SP_JSX.jsx(ConnectionIndicator, { state: state, stale: stale || !visible }), state === "ready" ? "Ready" : state === "blocked" ? "Blocked" : "Waiting"] })] }, row.label);
+                    return SP_JSX.jsx(ReadinessRow, { label: labels[row.label], compact: true, state: state === "waiting" && !stale && visible ? "checking" : state }, row.label);
                 }) }), SP_JSX.jsx(DFL.DialogButton, { className: "rg-dashboard-action", onClick: onOpen, style: { width: "100%", minWidth: 0, height: "auto", padding: "9px 8px", marginTop: 10,
                     border: `1px solid ${regearTheme.border}`, borderRadius: 9, background: "transparent",
-                    color: regearTheme.accentSoft, fontSize: 12, lineHeight: 1.4 }, children: "View full progress" })] });
+                    color: regearTheme.accentSoft, fontSize: 13, lineHeight: 1.4 }, children: "View full progress" })] });
 }
 
 function connectionLiveStatus(payload, automatic, journal, failed = false) {
@@ -308,6 +292,37 @@ function startConnectionMonitor(deps) {
     void poll();
     return { store, open, stop() { stopped = true; if (timer !== undefined)
             cancel(timer); close(); } };
+}
+
+function LivePanel({ store, close, switchTv }) {
+    const source = SP_REACT.useSyncExternalStore(store.subscribe, store.get);
+    const [, tick] = SP_REACT.useReducer((value) => value + 1, 0);
+    SP_REACT.useEffect(() => { const timer = setInterval(tick, 1000); return () => clearInterval(timer); }, []);
+    const stale = Date.now() >= source.expiresAt;
+    const status = stale ? { ...source, phase: "checking", canSwitch: false,
+        title: "Waiting for a fresh status update", rows: source.rows.map(row => ({ ...row, state: "waiting" })) } : source;
+    const complete = status.phase === "complete";
+    const switching = status.phase === "switching";
+    SP_REACT.useEffect(() => {
+        if (!complete)
+            return;
+        const timer = setTimeout(() => {
+            const latest = store.get();
+            if (latest.phase === "complete" && Date.now() < latest.expiresAt)
+                close();
+        }, 3500);
+        return () => clearTimeout(timer);
+    }, [complete, store, close]);
+    const title = complete ? "TV connection complete" : switching ? "Switching to TV" : "Getting your TV ready";
+    return SP_JSX.jsxs(DFL.ConfirmModal, { className: "rg-connection-modal", strTitle: title, strOKButtonText: status.canSwitch && switchTv ? "Switch to TV" : "Hide", strCancelButtonText: "Hide", bAlertDialog: !status.canSwitch || !switchTv, bDisableBackgroundDismiss: true, bHideCloseIcon: true, onOK: () => { const latest = store.get(); const ready = latest.canSwitch && Date.now() < latest.expiresAt; close(); if (ready)
+            switchTv?.(); }, onCancel: close, children: [SP_JSX.jsx("style", { children: connectionPanelCss }), SP_JSX.jsxs("div", { className: "rg-connection", children: [SP_JSX.jsx("p", { className: "rg-connection-subtitle", children: complete ? "Re-Gear reports the TV transition completed." : switching ? "Checking the display and TV audio" : `GPD G1 connection · ${status.seconds} seconds` }), complete ? SP_JSX.jsx("div", { className: "rg-connection-hero", children: SP_JSX.jsx(StatusIcon, { state: "ready" }) }) : switching ? SP_JSX.jsx("div", { className: "rg-connection-sweep", "aria-hidden": "true" }) :
+                        SP_JSX.jsx("div", { className: "rg-connection-list", children: status.rows.map(row => SP_JSX.jsx(ReadinessRow, { label: row.label, state: row.state === "waiting" && !stale ? "checking" : row.state }, row.label)) }), SP_JSX.jsx("p", { className: "rg-connection-detail", role: "status", children: complete ? "Check the TV picture and sound. Closing automatically…" : status.title }), SP_JSX.jsx("p", { className: "rg-connection-foot", children: "Keep G1 connected. Hiding this window does not cancel docking." })] })] });
+}
+function showConnectionLivePanel(store, switchTv, onClose) {
+    let modal;
+    const close = () => { modal.Close(); onClose(); };
+    modal = DFL.showModal(SP_JSX.jsx(LivePanel, { store: store, switchTv: switchTv, close: close }), window, { strTitle: "Re-Gear", bNeverPopOut: true });
+    return modal;
 }
 
 /** Player-facing name; keep legacy installation and safety-state identities separate. */

@@ -1,6 +1,16 @@
 # Current state
 
 
+## Re-Gear 0.3.42 shared UI status candidate
+
+Shared readiness rows and status icons now unify the dashboard, connection
+and disconnect views. Blocked is amber, unavailable is gray; only errors are
+red. Compact text is larger and modal minimum width no longer forces overflow.
+Includes the 0.3.41 embedded offline icon fix. Current logo retained pending
+the approved cyan R source asset. No live-eject behavior added.
+Local candidate only; native Decky visual/controller validation pending.
+
+
 ## Re-Gear 0.3.41 offline icon packaging fix
 
 Staged `/home/deck/Re-Gear-0.3.41.zip`, revision

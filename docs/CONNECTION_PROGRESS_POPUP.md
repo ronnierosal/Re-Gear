@@ -45,3 +45,13 @@ panel; after 3.5 seconds it revalidates freshness before closing. This is a
 reported transition result, not independent player confirmation of picture or
 sound. No individual HDMI-audio step is fabricated from pre-switch checks.
 Native Decky appearance and focus remain pending hardware validation.
+
+## Shared visual status contract
+
+All readiness surfaces reuse ReadinessRow and StatusIcon. Ready is green;
+checking/waiting/blocked are amber; pending/unavailable are gray; switching
+is cyan; error alone is red. Only active checking and switching animate.
+Reduced motion disables animation. Narrow modals have no fixed minimum width.
+The compact card uses 13 px labels and 12 px status text rather than 11 px
+status captions. Backend lifecycle and release authority remain unchanged.
+The approved R branding awaits the original supplied asset; see BRANDING.md.

@@ -3,7 +3,7 @@ import { ConfirmModal, showModal } from "@decky/ui";
 import { getSnapshot, type SnapshotPayload } from "./backend";
 import { disconnectProgress } from "./disconnect-progress";
 import { connectionPanelCss } from "./connection-panel-style";
-import { ConnectionIndicator } from "./connection-live-panel";
+import { ReadinessRow } from "./readiness-row";
 function DisconnectPanel({close}: {close(): void}) {
   const [payload, setPayload] = useState<SnapshotPayload | null>(null);
   const [failed, setFailed] = useState(false);
@@ -26,13 +26,8 @@ function DisconnectPanel({close}: {close(): void}) {
     <style>{connectionPanelCss}</style>
     <div className="rg-connection">
       <p className="rg-connection-subtitle">Keep the G1 cable connected</p>
-      <div className="rg-connection-list">{status.rows.map(row => <div key={row.label} className="rg-connection-row">
-        <span className="rg-connection-label">{row.label}</span>
-        <span className={`rg-connection-state rg-connection-${row.state === "unavailable" ? "waiting" : row.state}`}>
-          <ConnectionIndicator state={row.state === "ready" ? "ready" : row.state === "blocked" ? "blocked" : "waiting"} stale={true}/>
-          {row.state === "ready" ? "Ready" : row.state === "blocked" ? "Blocked" : row.state === "unavailable" ? "Not available" : "Not verified"}
-        </span>
-      </div>)}</div>
+      <div className="rg-connection-list">{status.rows.map(row => <ReadinessRow key={row.label}
+        label={row.label} state={row.state === "ready" ? "ready" : row.state === "blocked" ? "blocked" : row.state === "unavailable" ? "unavailable" : "waiting"}/>)}</div>
       <p role="status" className="rg-connection-detail">{status.detail}</p>
       <p className="rg-connection-foot">Status only. This does not release devices. Shut down fully before unplugging.</p>
     </div>
