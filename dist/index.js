@@ -722,6 +722,110 @@ async function collectOptionalDiagnostics(visible, sources) {
     };
 }
 
+const C = {
+    bg: "#07111f",
+    panel: "#0b1727",
+    panel2: "#0d1c2f",
+    border: "rgba(135, 166, 199, 0.30)",
+    borderStrong: "rgba(69, 207, 255, 0.55)",
+    text: "#f4f7fb",
+    muted: "#9fb1c8",
+    cyan: "#39d8ff",
+    green: "#71e35d",
+    amber: "#ffc43d",
+    red: "#ff6578",
+};
+const stateColor = {
+    ready: C.green,
+    checking: C.amber,
+    pending: C.muted,
+    switching: C.cyan,
+    blocked: C.amber,
+    error: C.red,
+};
+function StatusGlyph({ state }) {
+    if (state === "ready") {
+        return (SP_JSX.jsx("span", { "aria-hidden": "true", style: { width: 24, height: 24, borderRadius: 999, border: `2px solid ${C.green}`, display: "grid", placeItems: "center", color: C.green, fontWeight: 900, fontSize: 15 }, children: "\u2713" }));
+    }
+    if (state === "blocked" || state === "error") {
+        return (SP_JSX.jsx("span", { "aria-hidden": "true", style: { width: 24, height: 24, borderRadius: 999, border: `2px solid ${stateColor[state]}`, display: "grid", placeItems: "center", color: stateColor[state], fontWeight: 900, fontSize: 15 }, children: "!" }));
+    }
+    return (SP_JSX.jsx("span", { "aria-hidden": "true", className: state === "checking" || state === "switching" ? "regear-progress-spinner" : undefined, style: { width: 22, height: 22, borderRadius: 999, border: "3px solid rgba(255,255,255,.18)", borderTopColor: stateColor[state], boxSizing: "border-box", flexShrink: 0 } }));
+}
+function phaseIndex(phase) {
+    return phase === "connecting" ? 0 : phase === "switching" ? 1 : 2;
+}
+function headline(phase) {
+    return phase === "connecting" ? "Getting your TV ready" : phase === "switching" ? "Switching to TV" : "Ready to play";
+}
+function ConnectionProgressOverlay(props) {
+    const activeIndex = phaseIndex(props.phase);
+    const elapsed = props.elapsedSeconds != null ? ` · ${props.elapsedSeconds} seconds` : "";
+    return (SP_JSX.jsxs("div", { style: { width: "min(1120px, 92vw)", maxHeight: "84vh", overflow: "hidden", padding: 22, borderRadius: 22, background: `linear-gradient(180deg, ${C.bg} 0%, #081321 100%)`, border: `1px solid ${C.borderStrong}`, boxShadow: "0 24px 80px rgba(0,0,0,.52)", color: C.text, fontFamily: "Motiva Sans, Inter, system-ui, sans-serif" }, children: [SP_JSX.jsx("style", { children: `
+        @keyframes regear-spin { to { transform: rotate(360deg); } }
+        .regear-progress-spinner { animation: regear-spin 1s linear infinite; }
+        @media (prefers-reduced-motion: reduce) { .regear-progress-spinner { animation: none; } }
+      ` }), SP_JSX.jsxs("div", { style: { display: "flex", alignItems: "baseline", gap: 14, marginBottom: 8, minWidth: 0 }, children: [SP_JSX.jsx("div", { style: { color: C.cyan, fontWeight: 900, fontSize: 30, letterSpacing: "-0.02em" }, children: "Re-Gear" }), SP_JSX.jsx("div", { style: { color: C.muted, fontSize: 28 }, children: "/" }), SP_JSX.jsx("div", { style: { fontSize: 28, fontWeight: 700 }, children: "Connection progress" })] }), SP_JSX.jsx("div", { style: { color: C.muted, fontSize: 17, marginBottom: 18 }, children: "Live feedback from plug-in to TV" }), SP_JSX.jsx("div", { style: { display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 16, marginBottom: 18 }, children: ["Connecting", "Switching", "Ready"].map((name, i) => {
+                    const active = i === activeIndex;
+                    const complete = i < activeIndex;
+                    return (SP_JSX.jsxs("div", { children: [SP_JSX.jsxs("div", { style: { display: "flex", alignItems: "baseline", gap: 10, color: active ? C.text : C.muted, marginBottom: 10 }, children: [SP_JSX.jsxs("span", { style: { color: complete || active ? C.cyan : C.muted, fontWeight: 800, fontSize: 18 }, children: ["0", i + 1] }), SP_JSX.jsx("span", { style: { fontWeight: active ? 800 : 600, fontSize: 18 }, children: name })] }), SP_JSX.jsx("div", { style: { height: 4, borderRadius: 999, background: complete ? C.cyan : active ? `linear-gradient(90deg, ${C.cyan} 0 58%, rgba(105,130,155,.35) 58%)` : "rgba(105,130,155,.30)" } })] }, name));
+                }) }), SP_JSX.jsxs("div", { style: { border: `1px solid ${C.border}`, borderRadius: 18, background: `linear-gradient(180deg, ${C.panel} 0%, ${C.panel2} 100%)`, padding: "22px 24px" }, children: [SP_JSX.jsx("div", { style: { fontSize: 31, fontWeight: 850, letterSpacing: "-0.02em", marginBottom: 4 }, children: headline(props.phase) }), SP_JSX.jsxs("div", { style: { color: C.muted, fontSize: 18, marginBottom: 18 }, children: [props.deviceLabel, elapsed] }), SP_JSX.jsx("div", { style: { border: `1px solid ${C.border}`, borderRadius: 14, overflow: "hidden", background: "rgba(4,10,18,.30)" }, children: props.rows.map((row, index) => (SP_JSX.jsxs("div", { style: { minHeight: 50, padding: "0 16px", display: "grid", gridTemplateColumns: "42px 1fr auto", alignItems: "center", gap: 10, borderBottom: index === props.rows.length - 1 ? "none" : `1px solid ${C.border}` }, children: [SP_JSX.jsx("div", { style: { color: C.text, opacity: .96 }, children: row.icon ?? "" }), SP_JSX.jsx("div", { style: { fontSize: 18, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }, children: row.label }), SP_JSX.jsxs("div", { style: { display: "flex", alignItems: "center", gap: 10, color: stateColor[row.state], fontWeight: 700, fontSize: 17, whiteSpace: "nowrap" }, children: [SP_JSX.jsx(StatusGlyph, { state: row.state }), SP_JSX.jsx("span", { children: row.stateLabel ?? (row.state === "ready" ? "Ready" : row.state === "checking" ? "Checking" : row.state === "switching" ? "Switching" : row.state === "pending" ? "Next" : row.state === "blocked" ? "Blocked" : "Error") })] })] }, row.key))) }), props.detail && SP_JSX.jsx("div", { style: { marginTop: 14, color: C.muted, fontSize: 17 }, children: props.detail }), props.keepConnectedMessage && SP_JSX.jsx("div", { style: { marginTop: 6, color: C.muted, fontSize: 16 }, children: props.keepConnectedMessage }), SP_JSX.jsx("button", { onClick: props.onHide, style: { marginTop: 18, width: "100%", minHeight: 54, borderRadius: 12, border: `2px solid ${C.cyan}`, background: "rgba(6,18,30,.66)", color: C.text, fontSize: 20, fontWeight: 750, cursor: "pointer" }, children: "Hide" })] })] }));
+}
+
+function tvState(progress) {
+    if (progress.label === "TV Docked") {
+        return { key: "tv", label: "TV HDMI detected", state: "ready" };
+    }
+    if (progress.label === "Ready to dock") {
+        return { key: "tv", label: "TV HDMI detected", state: "ready" };
+    }
+    if (progress.label === "eGPU detected") {
+        return {
+            key: "tv",
+            label: "TV HDMI detected",
+            state: "pending",
+            stateLabel: "Waiting for TV",
+        };
+    }
+    return { key: "tv", label: "TV HDMI detected", state: "checking" };
+}
+function connectionProgressModalModel(progress, automatic) {
+    const stage = automatic?.stage ?? "observing";
+    const docked = progress.label === "TV Docked" || stage === "docked";
+    const switching = stage === "switching";
+    const gpuReady = ![
+        "Checking hardware",
+        "eGPU not detected",
+        "eGPU evidence unavailable",
+        "eGPU verification blocked",
+        "eGPU link needs attention",
+        "eGPU link needs verification",
+    ].includes(progress.label);
+    return {
+        phase: docked ? "ready" : switching ? "switching" : "connecting",
+        deviceLabel: "G1 and TV connection",
+        rows: [
+            {
+                key: "gpu",
+                label: "G1 GPU and driver",
+                state: gpuReady ? "ready" : "checking",
+                stateLabel: gpuReady ? "Connected" : "Checking",
+            },
+            tvState(progress),
+            {
+                key: "automatic",
+                label: "Automatic TV connection",
+                state: docked ? "ready" : switching ? "switching" : stage === "action_required" ? "blocked" : "pending",
+                stateLabel: docked ? "TV active" : switching ? "Switching" : stage === "action_required" ? "Needs attention" : "Waiting",
+            },
+        ],
+        detail: progress.detail,
+        keepConnectedMessage: docked
+            ? "TV output is verified."
+            : "This window can be hidden. Re-Gear keeps observing in the background and will retry when the saved TV appears.",
+    };
+}
+
 const DISCOVERY_REFRESH_MS = 1_000;
 const SETTLING_REFRESH_MS = 750;
 const STABLE_REFRESH_MS = 3_000;
@@ -1289,6 +1393,9 @@ function Content({ preflight }) {
     const safeDisconnectModal = SP_REACT.useRef(null);
     const processModal = SP_REACT.useRef(null);
     const diagnosticLoggingModal = SP_REACT.useRef(null);
+    const connectionProgressModal = SP_REACT.useRef(null);
+    const connectionProgressModalKey = SP_REACT.useRef("");
+    const connectionProgressDismissed = SP_REACT.useRef(false);
     const refreshTransitionJournal = SP_REACT.useCallback(async () => {
         try {
             const status = await getTransitionJournalStatus();
@@ -1327,6 +1434,8 @@ function Content({ preflight }) {
         processModal.current = null;
         diagnosticLoggingModal.current?.Close();
         diagnosticLoggingModal.current = null;
+        connectionProgressModal.current?.Close();
+        connectionProgressModal.current = null;
     }, []);
     SP_REACT.useEffect(() => {
         void refreshTransitionJournal();
@@ -1490,6 +1599,41 @@ function Content({ preflight }) {
     const disconnect = snapshot?.disconnect_readiness;
     const sleepGuard = snapshot?.sleep_guard;
     const progress = connectionProgress(payload);
+    SP_REACT.useEffect(() => {
+        const automatic = automaticDockStatus;
+        const attachmentGone = progress.label === "eGPU not detected";
+        if (!automatic?.enabled || attachmentGone) {
+            connectionProgressDismissed.current = false;
+            connectionProgressModal.current?.Close();
+            connectionProgressModal.current = null;
+            connectionProgressModalKey.current = "";
+            return;
+        }
+        const shouldShow = automatic.stage !== "disabled" && automatic.stage !== "docked";
+        if (!shouldShow || connectionProgressDismissed.current) {
+            return;
+        }
+        const model = connectionProgressModalModel(progress, automatic);
+        const key = `${automatic.stage}:${automatic.code}:${progress.label}:${progress.detail}`;
+        if (connectionProgressModal.current && connectionProgressModalKey.current === key) {
+            return;
+        }
+        connectionProgressModal.current?.Close();
+        connectionProgressModal.current = null;
+        connectionProgressModalKey.current = key;
+        let modal;
+        const hide = () => {
+            // Dismissal controls the presentation only. The backend automatic-dock
+            // lifecycle remains the sole owner of observation and TV switching.
+            connectionProgressDismissed.current = true;
+            modal.Close();
+            if (connectionProgressModal.current === modal) {
+                connectionProgressModal.current = null;
+            }
+        };
+        modal = DFL.showModal(SP_JSX.jsx(ConnectionProgressOverlay, { ...model, onHide: hide }));
+        connectionProgressModal.current = modal;
+    }, [automaticDockStatus, progress]);
     const gameUsesEgpu = disconnect?.clients.some((client) => client.kind === "game") ?? false;
     const closeEligibleClientCount = disconnect?.clients.filter((client) => client.kind === "user" && client.close_eligible).length ?? 0;
     const disconnectStatus = loading
