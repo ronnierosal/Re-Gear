@@ -9,7 +9,7 @@ const js = ts.transpileModule(readFileSync(new URL("../src/controller-safe-disco
 const { startControllerSafeDisconnect, VIEW_BUTTON: G, Y_BUTTON: Y } = await import(
   "data:text/javascript;base64," + Buffer.from(js).toString("base64"));
 const flush = async () => { for (let i = 0; i < 12; i++) await Promise.resolve(); };
-function context(mode = "docked_egpu") {
+function context(mode = "tv_docked") {
   return { snapshot: { delivery_schema_version: 2, inference: { mode }, snapshot: {
     schema_version: 3, observed_at: new Date().toISOString(),
     game_state: "idle", support_tier: "certified", gamescope: { running: true },
@@ -187,4 +187,10 @@ test("controller confirmation has only TV and Ally routes, never shutdown", () =
   assert.match(route, /executeSupervisedTvSwitch\(token\)/);
   assert.match(route, /executeSupervisedPortableSwitch\(token\)/);
   assert.doesNotMatch(route, /executeSafeDisconnectShutdown|approveSafeDisconnectShutdown/);
+});
+
+test("transition target docked_egpu is not an observed mode", async t => {
+  const s = setup(t); s.current.snapshot.inference.mode = "docked_egpu";
+  s.chord(); await flush(); t.mock.timers.tick(3000); await flush();
+  assert.equal(s.confirmations.length, 0);
 });

@@ -33,7 +33,7 @@ export function safeDisconnectContext(context: Context): boolean {
     && snapshot.disconnect_readiness?.applicable === true
     && Array.isArray(snapshot.gpus)
     && snapshot.gpus.some(gpu => gpu.role === "external" && gpu.present === true && gpu.confidence === "verified")
-    && (value.inference?.mode === "portable" || value.inference?.mode === "docked_egpu")
+    && (value.inference?.mode === "portable" || value.inference?.mode === "tv_docked")
     && context.journal?.code === "journal.idle";
 }
 
