@@ -784,3 +784,12 @@ pnpm build
 python scripts/check_plugin_package.py .
 git diff --check
 ```
+# Local disconnect mapping checkpoint — 2026-09-05
+
+The client scanner now includes bounded process memory-map inspection so a
+retained exact G1 mapping cannot disappear from readiness merely because its
+descriptor closed. Incomplete mapping visibility blocks scan completeness.
+Verification: 994 backend tests passed (six skipped), architecture and Python
+compilation passed. No deployment or hardware operation performed. No removal
+executor exists. Next safe task: integrate recoverable supervised internal-GPU
+launch policy, then inspect fresh privileged resource evidence with cable attached.
