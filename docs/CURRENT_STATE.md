@@ -2,6 +2,13 @@
 
 ## Re-Gear 0.3.52 disconnect mapping candidate - 2026-09-05
 
+Installed via native Decky lifecycle and verified on the detached Ally. Runtime
+reports 0.3.52 / c028223b1940, Portable, Idle, no blockers and events ready.
+Installed scanner SHA256 matches local source:
+9568672637b998f4ab8ae473fdea7c5a21539cd387e4011bfe6f67bb5066afd9.
+Loader recorded previous plugin stopped in 0.1 seconds and new plugin loaded.
+This supersedes the pre-install status below; G1 release remains unvalidated.
+
 Staged only: /home/deck/Re-Gear-0.3.52.zip
 Source: c028223b194043ca92de0e4663bb77623cd974f7
 Local and remote SHA256: 50dda76cdf9a193ee704085a923b5d86d354170eb18ac8fdb3d8e4b9bc5c2c01
