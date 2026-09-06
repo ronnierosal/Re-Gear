@@ -1,7 +1,7 @@
 # Supported hardware
 
 **Audience:** players, testers, and profile contributors<br>
-**Evidence reviewed:** 2026-09-02<br>
+**Reviewed:** 2026-09-06<br>
 **Maturity:** one exact first profile; capability status varies
 
 The authoritative compatibility model is

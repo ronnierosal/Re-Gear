@@ -1,7 +1,7 @@
 # Project overview
 
 **Audience:** anyone evaluating or contributing to Re-Gear<br>
-**Evidence reviewed:** 2026-09-02<br>
+**Reviewed:** 2026-09-06<br>
 **Maturity:** product and architecture are defined; capabilities remain evidence-gated
 
 The authoritative scope is the repository
@@ -41,7 +41,7 @@ not scattered product-name branches.
 - support for every handheld, dock, or eGPU by inference
 - physical live eGPU removal on the GPD G1
 - moving a running game between GPUs
-- GPU tuning, overclocking, fan control, or driver installation
+- arbitrary GPU overclocking, fan control, or driver installation
 - cloud services or a general plugin ecosystem
 
 Re-Gear is not a port of eGPUBridge. Prior eGPUBridge observations are reference

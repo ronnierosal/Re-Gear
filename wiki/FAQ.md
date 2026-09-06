@@ -1,7 +1,7 @@
 # Frequently asked questions
 
 **Audience:** players, testers, and contributors<br>
-**Evidence reviewed:** 2026-09-02<br>
+**Reviewed:** 2026-09-06<br>
 **Maturity:** answers reflect the current development baseline
 
 ## Can I install Re-Gear as an ordinary Decky plugin today?
@@ -18,11 +18,7 @@ remain open and are being moved behind capability/profile seams incrementally.
 
 ## Does TV Docked work now?
 
-The exact-profile automatic workflow is implemented and reached a real
-Gamescope restart on hardware. The TV received a signal but remained black, and
-Re-Gear recovered to Portable. Two launch-config defects were then fixed in source;
-the latest fix still needs a clean-build supervised hardware proof. See
-[Current State](Current-State).
+Yes, bounded supervised Ally X/GPD G1 sessions have activated the TV and selected the external GPU. Automatic docking is experimental and off by default. Repeatable operation, recovery, and audio must still be verified for the exact build. See [Current State](Current-State).
 
 ## Can I unplug the GPD G1 while the handheld is running?
 

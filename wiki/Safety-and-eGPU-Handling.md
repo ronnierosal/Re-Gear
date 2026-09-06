@@ -1,7 +1,7 @@
 # Safety and eGPU handling
 
 **Audience:** players and supervised hardware testers<br>
-**Evidence reviewed:** 2026-09-02<br>
+**Reviewed:** 2026-09-06<br>
 **Maturity:** safety policy is authoritative; individual mechanisms remain evidence-gated
 
 Read the complete repository
@@ -35,3 +35,5 @@ than guessing.
 
 No Wiki instruction grants mutation authority. Follow the current supervised
 validation plan and active hardware driver's directions for a specific session.
+
+An accepted shutdown request or loss of networking is not physical power-off. Keep the G1 attached if the handheld has not fully powered down. A working Portable screen does not prove that every external GPU reference has been released.

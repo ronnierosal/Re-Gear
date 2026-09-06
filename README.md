@@ -12,7 +12,7 @@ hardware state before a guarded dock-mode action.
 
 [![CI](https://github.com/ronnierosal/Re-Gear/actions/workflows/ci.yml/badge.svg)](https://github.com/ronnierosal/Re-Gear/actions/workflows/ci.yml) [![Last commit](https://img.shields.io/github/last-commit/ronnierosal/Re-Gear)](https://github.com/ronnierosal/Re-Gear/commits/main/) [![Development candidate](https://img.shields.io/badge/development_candidate-0.3.55-6f42c1)](https://github.com/ronnierosal/Re-Gear/tree/codex/release-batch-2026-09-06) ![Platform](https://img.shields.io/badge/platform-SteamOS-1b2838?logo=steam) [![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-2ea44f)](LICENSE)
 
-[Current status](#-current-status) · [Safety](#-safety-first) · [Development](#-development) · [Documentation](#-documentation)
+[Wiki / Player Guide](https://github.com/ronnierosal/Re-Gear/wiki) · [Current status](#-current-status) · [Safety](#-safety-first) · [Development](#-development) · [Documentation](#-documentation)
 
 </div>
 
@@ -66,8 +66,8 @@ as unknown or degraded and blocks the action.
   overlay with bounded health, recovery/link explanations, and HDM-overhead
   status that never claims game impact
 - 🧭 Compact controller-first Journey status: deferred dock, prepared idle,
-  Safe Undock evidence, recovery, link, and Offline Readiness remain local
-  classifiers until a reviewed read-only delivery source is connected
+  Safe Undock evidence, recovery, and link explanations; newer 0.3.x candidates
+  also deliver selected-game Offline Readiness from local Steam evidence
 - 🧪 Deterministic transition, rollback, crash-recovery, process-release, sleep,
   compatibility, and failure-injection simulations
 - 🔧 Explicitly approved preparation of the reversible Gamescope integration
@@ -319,6 +319,10 @@ evidence, but its architecture and behavior are not inherited as proof.
 
 ## 📚 Documentation
 
+Start with the **[Re-Gear Wiki](https://github.com/ronnierosal/Re-Gear/wiki)** for
+getting started, supported hardware, Offline Readiness, safety, troubleshooting,
+and FAQs. Repository documents retain engineering and validation authority.
+
 | Topic | Document |
 |---|---|
 | Authority and navigation | [Documentation index](docs/INDEX.md) |
@@ -339,7 +343,7 @@ evidence, but its architecture and behavior are not inherited as proof.
 | Contributor and Git workflow | [Development](docs/DEVELOPMENT.md) |
 | Player-facing UI contract | [UI specification](docs/UI_SPEC.md) |
 | eGPUBridge capability preservation | [Parity audit](docs/EGPUBRIDGE_FEATURE_REVIEW.md) |
-| Planned GitHub Wiki pages | [Wiki information architecture](docs/WIKI_INFORMATION_ARCHITECTURE.md) |
+| Wiki source and maintenance | [Publishing workflow](wiki/README.md) |
 
 Additional design records and compatibility documents are available in
 [`docs/`](docs/).

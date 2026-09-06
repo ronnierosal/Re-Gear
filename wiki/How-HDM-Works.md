@@ -1,7 +1,7 @@
 # How Re-Gear works
 
 **Audience:** players, testers, and contributors<br>
-**Evidence reviewed:** 2026-09-02<br>
+**Reviewed:** 2026-09-06<br>
 **Maturity:** implemented foundation with capability-specific validation
 
 The repository [architecture](https://github.com/ronnierosal/Re-Gear/blob/main/docs/ARCHITECTURE.md)

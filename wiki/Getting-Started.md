@@ -1,10 +1,10 @@
 # Getting started
 
 **Audience:** prospective users and developers<br>
-**Evidence reviewed:** 2026-09-02<br>
+**Reviewed:** 2026-09-06<br>
 **Maturity:** development-only; no general public release or supported installer
 
-Check the repository [current state](https://github.com/ronnierosal/Re-Gear/blob/main/docs/CURRENT_STATE.md)
+Check the [README candidate status](https://github.com/ronnierosal/Re-Gear#-current-status), the repository [current state](https://github.com/ronnierosal/Re-Gear/blob/main/docs/CURRENT_STATE.md)
 and [deployment validation contract](https://github.com/ronnierosal/Re-Gear/blob/main/docs/DEPLOYMENT_VALIDATION.md)
 before using a build.
 

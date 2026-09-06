@@ -1,61 +1,34 @@
 # Current state
 
-**Audience:** players, testers, maintainers, and contributors<br>
-**Evidence reviewed:** 2026-09-02<br>
-**Maturity:** development build; no general public release
+**Audience:** players, testers, and contributors<br>
+**Reviewed:** 2026-09-06<br>
+**Maturity:** experimental development; no general public release
 
-This is a readable snapshot, not the mutable engineering record. Verify the
-repository [current-state document](https://github.com/ronnierosal/Re-Gear/blob/main/docs/CURRENT_STATE.md)
-before building, installing, testing, or making a support claim.
+Use the [README status](https://github.com/ronnierosal/Re-Gear#-current-status) for the development candidate and source branch. The [repository status](https://github.com/ronnierosal/Re-Gear/blob/main/docs/CURRENT_STATE.md) and dated validation records distinguish implementation, installation, and hardware evidence. While newer work remains on an integration branch, consult that branch's records too; older main-branch snapshots do not establish the newest candidate's status.
 
-## What exists today
+## Available development work
 
-- Read-only host, eGPU, DRM, Gamescope, game, link, and readiness discovery
-- Exact matching for the first Ally X plus GPD G1 profile
-- Privacy-safe diagnostics and support preview/export
-- Sleep protection foundations and guarded process-release workflows
-- Deterministic transition and rollback behavior exercised through tests and fakes
-- An exact-profile automatic TV Docked path behind an off-by-default persistent
-  player opt-in
-
-Implementation and simulation do not prove that every physical transition will
-succeed; the evidence below records one watched success.
-
-## Latest supervised hardware result
-
-The installed build observed on 2026-09-02 successfully detected the authorized
-USB4 path, exact Ally X/G1 profile, RX 7600M XT, G1 audio, an EDID-ready TV,
-link health, and an idle game state. Earlier automatic-docking attempts
-restarted Gamescope, but the TV stayed black and HDM verified recovery to
-Portable.
-
-The investigation found two distinct launch-binding defects:
-
-1. the config writer and Gamescope launch shim derived different boot bindings;
-2. after that was corrected, the root-owned config was written with permissions
-   that prevented the Gamescope user from reading it.
-
-Both received narrow code fixes. After the readability fix was installed, a
-watched attach made the TV the only active display, selected the RX 7600M XT,
-showed Steam on the TV, and committed the transition. Audio initially remained
-on the Ally; direct supervised selection moved it to the TV and the player
-confirmed sound. The guarded automatic audio implementation remains simulated
-pending installation and watched validation.
-
-## Capability status
-
-| Capability | Status |
+| Area | Evidence and limits |
 |---|---|
-| Exact first-profile detection | Implemented and observed on hardware |
-| Read-only diagnostics | Implemented; privacy-safe public projection |
-| Automatic TV Docked transition | Implemented and hardware tested once for TV activity and external rendering |
-| G1 HDMI audio handoff | Direct selection hardware tested; guarded automatic selection and Portable restoration simulated |
-| Failure rollback to Portable | Observed during the latest supervised attempt |
-| Boosted Handheld | Not available; hardware behavior unproven |
-| Physical live G1 removal | Unsupported |
-| Other handheld/eGPU profiles | Not certified by inference |
+| Decky dashboard and diagnostics | Implemented; compact controller-focused status and actions in newer candidates |
+| Exact Ally X/GPD G1 discovery | Hardware observations exist; other profiles are not certified by similarity |
+| TV docking and Portable return | Guarded shared transition engine; bounded supervised successes, with repeatability and recovery gates remaining |
+| Automatic TV docking | Experimental persistent opt-in, off by default; exact readiness and idle-game checks apply |
+| Audio handoff | Exact G1 HDMI default selection observed in a supervised cycle; display success alone never proves audio success |
+| Offline Readiness | Newer candidates read selected-game local Steam evidence; badges are guidance, not a guarantee of offline launch |
+| Sleep protection and support export | Implemented with capability-specific controller and hardware acceptance gates |
+| Disconnect status | Observes blockers; Portable return and a clear client scan do not authorize physical unplug |
+| Boosted Handheld | Unproven and unavailable |
+| Physical live G1 removal | Unsupported; shutdown before disconnect remains required |
 
-The current GPD G1 rule is still: restore or retain a safe state, shut down, and
-only then physically disconnect it.
+## Recorded hardware evidence
 
-See the complete [Ally X and GPD G1 docking incident](Ally-X-and-GPD-G1-Docking-Incident).
+Earlier supervised sessions activated the TV and selected the RX 7600M XT. A later cycle selected G1 HDMI audio and returned to Portable. Other attempts encountered black-TV recovery, delayed enumeration, or missing driver binding. These are separate outcomes, not a claim that docking is uniformly reliable.
+
+A watched shutdown lost networking while the handheld fan and LEDs remained on. More recent Portable trial records also found retained external GPU references despite a working internal display. Neither network loss nor a usable Portable screen proves complete shutdown or released eGPU resources.
+
+## Remaining gates
+
+Repeatable attach, TV picture, audio, gameplay, Portable return, reconnect, and physical shutdown need coordinated validation on the exact build. Experimental launch trials and local regression tests do not establish live-removal support.
+
+See [Safety and eGPU Handling](Safety-and-eGPU-Handling), the [deployment gates](https://github.com/ronnierosal/Re-Gear/blob/main/docs/DEPLOYMENT_VALIDATION.md), and the [historical incident](Ally-X-and-GPD-G1-Docking-Incident).

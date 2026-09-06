@@ -1,7 +1,7 @@
 # Troubleshooting
 
 **Audience:** supervised testers and support reviewers<br>
-**Evidence reviewed:** 2026-09-02<br>
+**Reviewed:** 2026-09-06<br>
 **Maturity:** diagnostic guidance; not permission to mutate hardware
 
 Use Re-Gear's bounded snapshot and support preview described in
@@ -34,8 +34,8 @@ Display success does not establish audio success. Inspect the current default
 SteamOS loopback sink and associate an external candidate with the freshly
 verified eGPU audio function. PipeWire numeric node IDs are transient: resolve
 one immediately before use, never store or accept one from the UI, and preserve
-a verified Portable rollback target. The guarded automatic audio path still
-needs watched hardware validation.
+a verified Portable rollback target. Automatic default-sink selection has been observed in a supervised cycle, but
+each new build and repeated cycle still needs its own verification.
 
 ### A TV transition falls back to the handheld
 
@@ -57,6 +57,8 @@ revision and artifact manifest. A ZIP filename or timestamp is not provenance.
 Do not claim a fix is installed until the runtime reports the expected identity.
 
 ## Reporting an issue
+
+Search [open and closed GitHub issues](https://github.com/ronnierosal/Re-Gear/issues?q=is%3Aissue) first and update a matching issue when appropriate.
 
 Include the symptom, expected behavior, Re-Gear version/revision, evidence category,
 reproduction steps, and the redacted support preview. State whether the result
