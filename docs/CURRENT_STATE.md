@@ -2,6 +2,11 @@
 
 ## Re-Gear 0.3.52 disconnect mapping candidate - 2026-09-05
 
+Staged only: /home/deck/Re-Gear-0.3.52.zip
+Source: c028223b194043ca92de0e4663bb77623cd974f7
+Local and remote SHA256: 50dda76cdf9a193ee704085a923b5d86d354170eb18ac8fdb3d8e4b9bc5c2c01
+Installed version remains 0.3.51; detached installation checkpoint pending.
+
 Local candidate preserves installed 0.3.51 ancestry and the reviewed hotkey fix.
 Retained exact eGPU memory mappings now count as clients; unreadable mappings
 block scan completeness. No removal executor or live-unplug support is included.
