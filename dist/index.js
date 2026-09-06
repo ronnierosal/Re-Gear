@@ -1359,6 +1359,8 @@ function attachOfflineTileBadge(view, appId, image, label, current, initialTile,
 
 const classify = callable("classify_offline_details");
 const SETTLE_MS = 450;
+const REFRESH_MS = 60000;
+const RETRY_MS = 5000;
 function libraryWindows() {
     try {
         const host = window;
@@ -1379,6 +1381,7 @@ function startOfflineFocusChecks() {
     let selectedTile = null;
     let selectedId = null;
     let shown;
+    let selectionContextMatches;
     const cancel = () => { sequence++; clearTimeout(timer); session.invalidate(); shown?.stop(); shown = undefined; };
     const context = (id, app, source) => window.appStore === source.store && source.store.GetAppOverviewByAppID(id) === app && app.display_status !== 4 && Array.isArray(DFL.Router.RunningApps) && DFL.Router.RunningApps.length === 0;
     const focus = (event) => {
@@ -1386,30 +1389,49 @@ function startOfflineFocusChecks() {
         const tile = target?.closest?.(OFFLINE_TILE_SELECTOR);
         const id = tile ? exactTileElementAppId(tile) : null;
         const view = tile?.ownerDocument.defaultView;
-        if (event.type !== "focusin" && tile === selectedTile && id === selectedId)
+        if (event.type !== "focusin" && tile === selectedTile && id === selectedId && selectionContextMatches?.())
             return;
         cancel();
         selectedTile = tile ?? null;
         selectedId = id;
+        selectionContextMatches = undefined;
         if (!tile || !view || id === null)
             return;
-        const source = offlineNativeSource();
-        const app = source?.store.GetAppOverviewByAppID(id);
-        if (!source || !app || app.display_status === 4 || !Array.isArray(DFL.Router.RunningApps) || DFL.Router.RunningApps.length)
-            return;
-        const account = offlineAccountScope();
-        const displayStatus = app.display_status;
-        const valid = () => offlineAccountScope() === account && app.display_status === displayStatus && context(id, app, source) && tile.isConnected &&
-            tile.ownerDocument.activeElement?.closest(OFFLINE_TILE_SELECTOR) === tile && exactTileElementAppId(tile) === id;
-        const show = (badge) => { shown?.stop(); shown = attachOfflineTileBadge(view, id, offlineBadgeImages[badge.asset], badge.label, valid, tile, { image: offlineBadgeImages["offline-verify"], label: "Check unavailable" }, 65000); };
-        // Re-read on settled selection so positive confidence cannot reuse an old build report.
         const request = sequence;
+        const selected = () => request === sequence && tile.isConnected &&
+            tile.ownerDocument.activeElement?.closest(OFFLINE_TILE_SELECTOR) === tile && exactTileElementAppId(tile) === id;
+        const capture = () => {
+            const source = offlineNativeSource();
+            const app = source?.store.GetAppOverviewByAppID(id);
+            const account = offlineAccountScope();
+            const displayStatus = app?.display_status;
+            const idle = Array.isArray(DFL.Router.RunningApps) && DFL.Router.RunningApps.length === 0;
+            selectionContextMatches = () => offlineAccountScope() === account &&
+                window.appStore === source?.store && source?.store.GetAppOverviewByAppID(id) === app &&
+                app?.display_status === displayStatus && idle === (Array.isArray(DFL.Router.RunningApps) && DFL.Router.RunningApps.length === 0);
+            return { source, app, matches: selectionContextMatches };
+        };
+        capture();
+        let failures = 0;
+        // Re-read on settled selection so positive confidence cannot reuse an old build report.
         const check = async () => {
+            let delay = REFRESH_MS;
             try {
-                if (request !== sequence || !valid())
+                if (!selected())
                     return;
+                shown?.validate();
+                const { source, app, matches } = capture();
+                if (!source || !app || !context(id, app, source)) {
+                    session.invalidate();
+                    return;
+                }
+                // Bind each attempt to its own observation, not the original focus state.
+                // Once invalidated, a late response cannot become valid again.
+                let invalid = false;
+                const valid = () => { invalid ||= !selected() || !matches() || !context(id, app, source); return !invalid; };
+                delay = ++failures <= 2 ? RETRY_MS : REFRESH_MS;
                 const report = await session.request(id, source.subscribe, valid);
-                if (!report || request !== sequence)
+                if (!report || !report.isValid() || !valid())
                     return;
                 const result = await classify(report.details);
                 if (!report.isValid() || request !== sequence || !valid())
@@ -1417,12 +1439,17 @@ function startOfflineFocusChecks() {
                 if (!offlineReportBadge(result))
                     return;
                 const badge = offlineConfidenceBadge(offlineConfidenceForGame(report.preparation, source, id, result));
-                show(badge);
+                shown?.stop();
+                shown = attachOfflineTileBadge(view, id, offlineBadgeImages[badge.asset], badge.label, valid, tile, { image: offlineBadgeImages["offline-verify"], label: "Check unavailable" }, 65000);
+                failures = 0;
+                delay = REFRESH_MS;
             }
             catch { /* Failed refresh expires to neutral; never retain a stale positive. */ }
             finally {
-                if (request === sequence && valid())
-                    timer = setTimeout(check, 60000);
+                // Keep the existing cadence alive while this exact tile is selected,
+                // including gameplay/unknown state. Ineligible ticks make no requests.
+                if (selected())
+                    timer = setTimeout(check, delay);
             }
         };
         timer = setTimeout(check, SETTLE_MS);
