@@ -149,6 +149,10 @@ is not by itself proof that Steam, a Decky plugin or another daemon will not
 change its state. A real ownership resolver, lifecycle integration and user
 controls remain necessary before runtime activation.
 
+`GameFrameCollector` and `FrameTimeWindow` add a pure context binding and bounded
+aggregation layer. They reject changed, repeated, out-of-order, or stale samples;
+they do not discover a game, open a socket, schedule collection, or change TDP.
+
 ## Ordered implementation
 
 1. Fix non-finite thermal readings being classified Normal; add regression
