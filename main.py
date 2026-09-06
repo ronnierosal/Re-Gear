@@ -20,6 +20,11 @@ if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
 from hdm.adapters.steamos.discovery import SteamOsDiscovery  # noqa: E402
+from hdm.adapters.steamos.tdp_provider import SteamOsManagerTdpProvider  # noqa: E402
+from hdm.adapters.steamos.tdp_conflicts import KnownTdpControllerScan  # noqa: E402
+from hdm.delivery.tdp_journal import FileTdpJournal  # noqa: E402
+from hdm.delivery.tdp_runtime import TdpRuntime, unavailable_status  # noqa: E402
+from hdm.delivery.tdp_writer_lease import FileTdpWriterLease  # noqa: E402
 from hdm.adapters.steamos.drm import DrmDiscovery  # noqa: E402
 from hdm.adapters.steamos.pci import PciUsb4Discovery  # noqa: E402
 from hdm.adapters.steamos.wake_diagnostics import WakeDiagnosticsDiscovery  # noqa: E402
@@ -173,7 +178,8 @@ from hdm.domain.control_plane import (  # noqa: E402
     PlacementState,
     TransitionOutcomeKind,
 )
-from hdm.domain.models import GameState  # noqa: E402
+from hdm.domain.models import GameState, EgpuPresence, OperatingMode  # noqa: E402
+from hdm.domain.inference import infer_operating_mode  # noqa: E402
 from hdm.domain.inference import infer_placement  # noqa: E402
 from hdm.profiles.gpd_g1 import match_gpd_g1  # noqa: E402
 
@@ -229,6 +235,79 @@ class Plugin:
         self._process_release: GuardedProcessReleaseService | None = None
         self._version_info = SteamOsVersionDiscovery().scan()
         self._build_info = load_public_build_info(PLUGIN_ROOT)
+        self._tdp_runtime: TdpRuntime | None = None
+        self._tdp_init_lock = threading.Lock()
+        self._tdp_closing = threading.Event()
+
+    async def get_tdp_status(self, _request: object = None) -> dict[str, object]:
+        return await self._tdp_call("status")
+
+    async def set_tdp_enabled(self, enabled: bool) -> dict[str, object]:
+        return await self._tdp_call("set_enabled", enabled)
+
+    async def apply_tdp_limit(self, watts: int) -> dict[str, object]:
+        return await self._tdp_call("apply", watts)
+
+    async def restore_tdp_limit(self) -> dict[str, object]:
+        return await self._tdp_call("restore")
+
+    async def _tdp_call(self, operation: str, *args) -> dict[str, object]:
+        if self._tdp_closing.is_set():
+            return unavailable_status("tdp.closing")
+        def call():
+            runtime = self._tdp_service()
+            return getattr(runtime, operation)(*args)
+        try:
+            return await asyncio.to_thread(call)
+        except Exception:
+            return unavailable_status()
+
+    @staticmethod
+    def _tdp_user():
+        return resolve_gamescope_user(GamescopeDiscovery().scan()).context
+
+    def _tdp_preflight(self) -> str:
+        if self._tdp_closing.is_set():
+            return "tdp.closing"
+        journal = self._transition_journal_service().status()
+        if not journal.durable or journal.owner.value != "none":
+            return "tdp.transition_active"
+        snapshot = self._api.get_snapshot_report().snapshot
+        if snapshot.game_state is GameState.UNKNOWN:
+            return "tdp.game_unknown"
+        if (
+            infer_operating_mode(snapshot).mode is not OperatingMode.PORTABLE
+            or self._sleep_hardware.observe_presence() is not EgpuPresence.ABSENT
+        ):
+            return "tdp.portable_required"
+        user = self._tdp_user()
+        if user is None:
+            return "tdp.user_unverified"
+        conflicts = KnownTdpControllerScan(plugins_root=user.home / "homebrew/plugins").scan()
+        if conflicts.conflicts:
+            return "tdp.conflict"
+        if not conflicts.complete:
+            return "tdp.conflict_scan_unavailable"
+        return "tdp.ready"
+
+    def _tdp_service(self) -> TdpRuntime:
+        with self._tdp_init_lock:
+            if self._tdp_closing.is_set():
+                raise RuntimeError("TDP runtime is closing")
+            if self._tdp_runtime is None:
+                state_root = RootOwnedRuntimeState().ensure()
+                self._tdp_runtime = TdpRuntime(
+                    provider_factory=lambda ready: SteamOsManagerTdpProvider(
+                        user_resolver=self._tdp_user, ownership_ready=ready,
+                    ),
+                    journal=FileTdpJournal(state_root),
+                    lease=FileTdpWriterLease(state_root),
+                    preflight=self._tdp_preflight,
+                )
+            if self._tdp_closing.is_set():
+                self._tdp_runtime.close()
+                raise RuntimeError("TDP runtime is closing")
+            return self._tdp_runtime
 
     async def get_snapshot(self, _request: object = None) -> dict[str, object]:
         """Return the existing privacy-safe, read-only diagnostics payload."""
@@ -1632,6 +1711,9 @@ class Plugin:
             await asyncio.sleep(1)
 
     async def _unload(self) -> None:
+        self._tdp_closing.set()
+        if self._tdp_runtime is not None:
+            self._tdp_runtime.close()
         self._events.append(
             severity="info",
             code="plugin.unloading",

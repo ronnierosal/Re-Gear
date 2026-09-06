@@ -26,7 +26,7 @@ class DeckyContractTests(unittest.TestCase):
         self.assertEqual(manifest["api_version"], 1)
         self.assertIn("sleep safety", manifest["publish"]["description"].lower())
 
-    def test_backend_exposes_only_diagnostics_support_and_preparation_rpcs(self):
+    def test_backend_exposes_only_documented_rpcs(self):
         path = ROOT / "main.py"
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         plugin = next(
@@ -42,6 +42,10 @@ class DeckyContractTests(unittest.TestCase):
             public_methods,
             {
                 "get_snapshot",
+                "get_tdp_status",
+                "set_tdp_enabled",
+                "apply_tdp_limit",
+                "restore_tdp_limit",
                 "get_peripheral_status",
                 "get_action_history",
                 "get_automatic_dock_status",

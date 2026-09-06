@@ -62,6 +62,7 @@ import { createDeckySteamSuspendAdapter } from "./decky-steam-suspend";
 import { deliverBlockedAttempt } from "./blocked-attempt-delivery";
 import { diagnosticOverlayRows } from "./diagnostics-overlay";
 import { DashboardIcon, DashboardSurface, QuickAccessOverview } from "./quick-access-overview";
+import { TdpControls } from "./tdp-controls";
 import { hardwareDetailRows } from "./quick-access-dashboard";
 import { healthAttentionMessages, healthStatusLabel } from "./health-ui";
 import { decideLinkHealthNotification } from "./link-health-notification";
@@ -1381,6 +1382,8 @@ function Content({ preflight }: { preflight: SleepPreflightCoordinator }) {
           </div>}
         </DashboardSurface>
       </PanelSection>
+
+      <TdpControls visible={quickAccessVisible} />
 
       <PanelSection title="Safety & actions">
         <div ref={primaryControlAnchor}>
