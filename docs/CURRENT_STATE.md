@@ -2,6 +2,14 @@
 
 ## Re-Gear 0.3.53 supervised Portable launch trial candidate
 
+Installed via native Decky ZIP lifecycle; readback verified 0.3.53 at
+8d7997fabd3286c4699404b42357a56b1b2edb8d. Installed portable_trial_launch.py
+SHA256 matches source: 1e13401fe31a1344f3e4993d1129eaf4fbb5740e9178efcbc8e904d57efc509f.
+Loader stopped 0.3.52 in 0.1 seconds and loaded 0.3.53. Startup reports
+Portable, Idle, no blockers and events ready. This supersedes pre-install
+status below. No supervised trial has run; G1 remains disconnected by last
+confirmed player state. Next: supervised attached trial, cable retained.
+
 Staged only: /home/deck/Re-Gear-0.3.53.zip
 Source: 8d7997fabd3286c4699404b42357a56b1b2edb8d
 Local/remote SHA256: 7461ac1c91161da99960880a6292c1d6c6e109f17e1d3af9649e9cf55ac7aa6b
