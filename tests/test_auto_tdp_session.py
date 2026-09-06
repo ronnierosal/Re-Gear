@@ -60,6 +60,18 @@ class AutoSessionTests(unittest.TestCase):
         self.assertEqual(self.collections, 0)
         self.assertEqual(self.provider.writes, [])
 
+    def test_restart_and_game_admission_loss_reset_collection_history(self):
+        resets = []
+        self.session._reset_collection = lambda: resets.append(True)
+        self.session.start(self.policy)
+        self.session.tick()
+        self.game = GameState.UNKNOWN
+        self.now += 1000
+        self.session.tick()
+        self.session.stop()
+        self.session.start(self.policy)
+        self.assertEqual(len(resets), 3)
+
     def test_fast_ticks_do_not_exceed_declared_collection_interval(self):
         self.session.start(self.policy)
         self.session.tick()

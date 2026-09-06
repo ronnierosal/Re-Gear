@@ -40,6 +40,11 @@ class GameFrameCollector:
         self._state = FrameWindowState()
         return FrameCollection(code)
 
+    def reset(self) -> None:
+        """Discard samples after a change in the surrounding power context."""
+        with self._lock:
+            self._state = FrameWindowState()
+
     def collect(self) -> FrameCollection:
         if not self._lock.acquire(blocking=False):
             return FrameCollection("frames.busy")
