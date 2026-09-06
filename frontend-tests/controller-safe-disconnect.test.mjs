@@ -183,8 +183,8 @@ test("a mode change during the hold cancels rather than reversing the requested 
 
 test("controller confirmation has only TV and Ally routes, never shutdown", () => {
   const source = readFileSync(new URL("../src/index.tsx", import.meta.url), "utf8");
-  const route = source.split('const requestControllerDisplaySwitch =')[1].split('  useEffect(')[0];
-  assert.match(route, /executeTvSwitch\(\)/);
-  assert.match(route, /executeSafeDisconnect\(false\)/);
-  assert.doesNotMatch(route, /executeSafeDisconnect\(true\)|approveSafeDisconnectShutdown/);
+  const route = source.split('const shortcut = createDisplayShortcutRuntime({')[1].split('  let warningModal')[0];
+  assert.match(route, /executeSupervisedTvSwitch\(token\)/);
+  assert.match(route, /executeSupervisedPortableSwitch\(token\)/);
+  assert.doesNotMatch(route, /executeSafeDisconnectShutdown|approveSafeDisconnectShutdown/);
 });
