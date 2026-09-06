@@ -1,6 +1,6 @@
 # Supervised one-shot Portable Vulkan launch
 
-Status: local experimental implementation. Not installed or hardware validated.
+Status: installed in Re-Gear 0.3.53; the trial is not yet hardware validated.
 This is a session launch-policy trial, not eGPU removal or safe unplug support.
 
 Local verification: 1023 backend tests completed (eight platform skips), 181
