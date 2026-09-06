@@ -1,5 +1,15 @@
 # Current state
 
+## TDP workstream development checkpoint — 2026-09-04
+
+The isolated `codex/tdp-control` workstream starts from `75f441f`. It contains
+the thermal non-finite validation fix, read-only ASUS power-limit inventory,
+and an original pure Auto TDP proposal policy. These are fixture/replay tested;
+there is no live TDP writer, collector loop, UI control or installation.
+Current-source research and remaining device/API checks are recorded in
+[TDP control](TDP_CONTROL.md). The online Ally address is awaited for remote
+inspection. This workstream does not own G1 lifecycle or Offline Play changes.
+
 ## Re-Gear integration update — 2026-09-03
 
 - The GitHub repository is now `ronnierosal/Re-Gear`; local `origin` uses
