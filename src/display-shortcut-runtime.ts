@@ -7,7 +7,7 @@ export function createDisplayShortcutRuntime(deps: {
   readContext: ListenerDeps["readContext"];
   show(target: Target, confirm: () => void, closed: () => void): { Close(): void };
   approve(target: Target): Promise<{ approval_token: string; blockers: string[] }>;
-  execute(target: Target, token: string): Promise<{ accepted: boolean; code: string }>;
+  execute(target: Target, token: string): Promise<{ accepted: boolean; code: string; acknowledgement_required?: boolean; acknowledgement_id?: string }>;
   report(message: string): void;
 }) {
   const state = {
@@ -15,6 +15,8 @@ export function createDisplayShortcutRuntime(deps: {
     portableBusy: { current: false }, tvBusy: { current: false },
   };
   let stopped = false;
+  let acknowledgement = "";
+  const acknowledgementListeners = new Set<(id: string) => void>();
   const busy = () => stopped || state.portableBusy.current || state.tvBusy.current || state.modal.current !== null;
   const execute = async (target: Target) => {
     if (busy()) return;
@@ -28,6 +30,10 @@ export function createDisplayShortcutRuntime(deps: {
         return;
       }
       const result = await deps.execute(target, approval.approval_token);
+      if (!stopped) {
+        acknowledgement = result.acknowledgement_required ? result.acknowledgement_id ?? "" : "";
+        for (const notify of acknowledgementListeners) notify(acknowledgement);
+      }
       if (!stopped) deps.report(result.accepted
         ? "Display request accepted. Keep the eGPU connected and verify the display."
         : "Display switch did not complete. Open Re-Gear for details.");
@@ -49,9 +55,17 @@ export function createDisplayShortcutRuntime(deps: {
     input: deps.input, readContext: deps.readContext, isBusy: busy,
     confirm: request,
   });
-  return { ...state, request, available: listener.available, stop() {
+  return { ...state, request, available: listener.available,
+    subscribeAcknowledgement(notify: (id: string) => void) {
+      acknowledgementListeners.add(notify);
+      notify(acknowledgement);
+      return () => { acknowledgementListeners.delete(notify); };
+    },
+    clearAcknowledgement() { acknowledgement = ""; },
+    stop() {
     stopped = true;
     listener.stop();
+    acknowledgementListeners.clear();
     state.modal.current?.Close();
     state.modal.current = null;
   } };

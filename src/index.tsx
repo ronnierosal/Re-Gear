@@ -546,6 +546,7 @@ function Content({ preflight, connection, shortcut }: { preflight: SleepPrefligh
   const [tvSwitchBusy, setTvSwitchBusy] = useState(false);
   const [tvSwitchMessage, setTvSwitchMessage] = useState("");
   const [tvSwitchAcknowledgementId, setTvSwitchAcknowledgementId] = useState("");
+  useEffect(() => shortcut.subscribeAcknowledgement(setTvSwitchAcknowledgementId), [shortcut]);
   const [journalStatus, setJournalStatus] = useState<TransitionJournalStatusPayload | null>(null);
   const [journalBusy, setJournalBusy] = useState(false);
   const [journalMessage, setJournalMessage] = useState("");
@@ -1236,6 +1237,7 @@ function Content({ preflight, connection, shortcut }: { preflight: SleepPrefligh
         ? "Display transition result acknowledged."
         : "Display transition result could not be acknowledged.");
       if (result.acknowledged) {
+        shortcut.clearAcknowledgement();
         setTvSwitchAcknowledgementId("");
         await refreshTransitionJournal();
       }

@@ -166,6 +166,8 @@ function createDisplayShortcutRuntime(deps) {
         portableBusy: { current: false }, tvBusy: { current: false },
     };
     let stopped = false;
+    let acknowledgement = "";
+    const acknowledgementListeners = new Set();
     const busy = () => stopped || state.portableBusy.current || state.tvBusy.current || state.modal.current !== null;
     const execute = async (target) => {
         if (busy())
@@ -181,6 +183,11 @@ function createDisplayShortcutRuntime(deps) {
                 return;
             }
             const result = await deps.execute(target, approval.approval_token);
+            if (!stopped) {
+                acknowledgement = result.acknowledgement_required ? result.acknowledgement_id ?? "" : "";
+                for (const notify of acknowledgementListeners)
+                    notify(acknowledgement);
+            }
             if (!stopped)
                 deps.report(result.accepted
                     ? "Display request accepted. Keep the eGPU connected and verify the display."
@@ -210,9 +217,17 @@ function createDisplayShortcutRuntime(deps) {
         input: deps.input, readContext: deps.readContext, isBusy: busy,
         confirm: request,
     });
-    return { ...state, request, available: listener.available, stop() {
+    return { ...state, request, available: listener.available,
+        subscribeAcknowledgement(notify) {
+            acknowledgementListeners.add(notify);
+            notify(acknowledgement);
+            return () => { acknowledgementListeners.delete(notify); };
+        },
+        clearAcknowledgement() { acknowledgement = ""; },
+        stop() {
             stopped = true;
             listener.stop();
+            acknowledgementListeners.clear();
             state.modal.current?.Close();
             state.modal.current = null;
         } };
@@ -2781,6 +2796,7 @@ function Content({ preflight, connection, shortcut }) {
     const [tvSwitchBusy, setTvSwitchBusy] = SP_REACT.useState(false);
     const [tvSwitchMessage, setTvSwitchMessage] = SP_REACT.useState("");
     const [tvSwitchAcknowledgementId, setTvSwitchAcknowledgementId] = SP_REACT.useState("");
+    SP_REACT.useEffect(() => shortcut.subscribeAcknowledgement(setTvSwitchAcknowledgementId), [shortcut]);
     const [journalStatus, setJournalStatus] = SP_REACT.useState(null);
     const [journalBusy, setJournalBusy] = SP_REACT.useState(false);
     const [journalMessage, setJournalMessage] = SP_REACT.useState("");
@@ -3388,6 +3404,7 @@ function Content({ preflight, connection, shortcut }) {
                 ? "Display transition result acknowledged."
                 : "Display transition result could not be acknowledged.");
             if (result.acknowledged) {
+                shortcut.clearAcknowledgement();
                 setTvSwitchAcknowledgementId("");
                 await refreshTransitionJournal();
             }

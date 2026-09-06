@@ -9,7 +9,7 @@ const url = js => "data:text/javascript;base64," + Buffer.from(js).toString("bas
 const source = compile("display-shortcut-runtime").replace('"./controller-safe-disconnect"', JSON.stringify(url(compile("controller-safe-disconnect"))));
 const { createDisplayShortcutRuntime } = await import(url(source));
 const flush = async () => { for (let i = 0; i < 16; i++) await Promise.resolve(); };
-function setup(t, approve = async () => ({ approval_token: "token", blockers: [] })) {
+function setup(t, approve = async () => ({ approval_token: "token", blockers: [] }), outcome = { accepted: true, code: "accepted" }) {
   t.mock.timers.enable({ apis: ["setTimeout"] });
   let input, confirm, shown = 0, executed = 0, removed = 0;
   const runtime = createDisplayShortcutRuntime({
@@ -23,7 +23,7 @@ function setup(t, approve = async () => ({ approval_token: "token", blockers: []
       gpus: [{ role: "external", present: true, confidence: "verified" }],
     } }, journal: { code: "journal.idle" } }),
     show(target, ok) { assert.equal(target, "tv"); shown++; confirm = ok; return { Close() {} }; },
-    approve, execute: async () => { executed++; return { accepted: true, code: "accepted" }; }, report() {},
+    approve, execute: async () => { executed++; return outcome; }, report() {},
   });
   return { runtime, input: (...args) => input(...args), confirm: () => confirm(), counts: () => ({shown, executed, removed}) };
 }
@@ -51,4 +51,21 @@ test("shared panel execution lock blocks global hotkey confirmation", t => {
 test("backend blocker never executes", async t => {
   const s = setup(t, async () => ({ approval_token: "token", blockers: ["running_game"] }));
   s.runtime.request("tv"); s.confirm(); await flush(); assert.equal(s.counts().executed, 0); s.runtime.stop();
+});
+
+test("mounted and later-mounted panels receive required acknowledgement from failed global request", async t => {
+  const s = setup(t, undefined, { accepted: false, code: "result_required", acknowledgement_required: true, acknowledgement_id: "result-1" });
+  const mounted = [];
+  const unsubscribe = s.runtime.subscribeAcknowledgement(id => mounted.push(id));
+  s.runtime.request("tv"); s.confirm(); await flush();
+  assert.deepEqual(mounted, ["", "result-1"]);
+  unsubscribe();
+  const later = [];
+  s.runtime.subscribeAcknowledgement(id => later.push(id));
+  assert.deepEqual(later, ["result-1"]);
+  s.runtime.clearAcknowledgement();
+  const afterClear = [];
+  s.runtime.subscribeAcknowledgement(id => afterClear.push(id));
+  assert.deepEqual(afterClear, [""]);
+  s.runtime.stop();
 });
