@@ -58,7 +58,8 @@ class AutoTdpEvidenceCollector:
                  sensors: Callable[[], TdpSensorInventory],
                  eligibility: Callable[[], AutoTdpEligibility],
                  sensor_config: TdpSensorReadinessConfig,
-                 clock: Callable[[], float], maximum_frame_age_ms: int):
+                 clock: Callable[[], float], maximum_frame_age_ms: int,
+                 provider_eligible: Callable[[TdpReading], bool] = lambda reading: True):
         if not isinstance(sensor_config, TdpSensorReadinessConfig):
             raise ValueError("Explicit sensor configuration is required")
         if type(maximum_frame_age_ms) is not int or maximum_frame_age_ms <= 0:
@@ -68,6 +69,7 @@ class AutoTdpEvidenceCollector:
         self._sensor_config, self._clock = sensor_config, clock
         self._maximum_frame_age_ms = maximum_frame_age_ms
         self._epoch: _LiveEvidence | None = None
+        self._provider_eligible = provider_eligible
 
     def reset(self) -> None:
         """Session start calls this while collection is idle."""
@@ -88,7 +90,10 @@ class AutoTdpEvidenceCollector:
 
     def _reading(self) -> TdpReading | None:
         value = self._provider.observe()
-        return value.reading if value.code == "tdp.ready" and isinstance(value.reading, TdpReading) else None
+        if (value.code != "tdp.ready" or not isinstance(value.reading, TdpReading)
+                or self._provider_eligible(value.reading) is not True):
+            return None
+        return value.reading
 
     def _live(self) -> _LiveEvidence | None:
         if not self._eligible():

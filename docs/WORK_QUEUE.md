@@ -58,7 +58,15 @@ validation, actual gameplay telemetry and the live Auto TDP loop remain pending.
 [TDP control](TDP_CONTROL.md). It does not own G1 lifecycle transitions.
 The composed Auto evidence collector now checks workload/power context around
 every retained frame and resets history across setting/source changes; the
-concrete Decky factory, justified thermal profile and measured admission remain.
+session factory is implemented and integration-tested. Host configuration, Decky
+RPC/UI wiring, justified thermal profile and measured admission remain.
+The complete-path read-only benchmark is implemented and fixture-tested, including
+context changes, expiry, cancellation, time/cadence bounds and no-write behavior.
+Actual device measurement and binding its evidence to host configuration remain.
+Exact host/firmware/kernel/provider/range compatibility binding is implemented
+and checked on collection and dispatch. Strict private-file configuration loading
+is implemented/tested; main/RPC/UI integration, provenance evidence, actual device
+measurements and user-facing availability explanations remain.
 
 | Priority | Work item and owner | Status | Acceptance evidence |
 | --- | --- | --- | --- |
