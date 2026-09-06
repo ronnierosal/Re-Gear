@@ -1,3 +1,238 @@
+// SteamClient.Input.ControllerInputGamepadButton, not browser Gamepad indices.
+const VIEW_BUTTON = 9;
+const Y_BUTTON = 3;
+const SAFE_DISCONNECT_HOLD_MS = 3000;
+const CONTEXT_TIMEOUT_MS = 2000;
+function safeDisconnectContext(context) {
+    const value = context?.snapshot;
+    const snapshot = value?.snapshot;
+    const observedAt = Date.parse(snapshot?.observed_at ?? "");
+    const age = Date.now() - observedAt;
+    return value?.delivery_schema_version === 2 && snapshot?.schema_version === 3
+        && Number.isFinite(age) && age >= -5e3 && age <= 15000
+        && snapshot.game_state === "idle"
+        && snapshot.gamescope?.running === true
+        && snapshot.support_tier === "certified"
+        && snapshot.disconnect_readiness?.applicable === true
+        && Array.isArray(snapshot.gpus)
+        && snapshot.gpus.some(gpu => gpu.role === "external" && gpu.present === true && gpu.confidence === "verified")
+        && (value.inference?.mode === "portable" || value.inference?.mode === "docked_egpu")
+        && context.journal?.code === "journal.idle";
+}
+/** Native event listener; only opens the ordinary confirmation, never executes. */
+function startControllerSafeDisconnect(deps) {
+    const subscriptions = [];
+    const controllers = new Map();
+    const latched = new Set();
+    let active = false;
+    let reading = false;
+    let epoch = 0;
+    let timer;
+    let owner;
+    const exact = (id) => {
+        const buttons = controllers.get(id);
+        return buttons?.size === 2 && buttons.has(VIEW_BUTTON) && buttons.has(Y_BUTTON);
+    };
+    const cancel = () => { epoch++; clearTimeout(timer); timer = undefined; owner = undefined; };
+    const reset = () => { cancel(); controllers.clear(); latched.clear(); };
+    const stop = () => {
+        active = false;
+        reset();
+        for (const subscription of subscriptions.splice(0)) {
+            try {
+                subscription.unregister();
+            }
+            catch { /* Disabled callbacks remain inert. */ }
+        }
+    };
+    const readFresh = async () => {
+        if (reading)
+            return null;
+        reading = true;
+        const request = Promise.resolve().then(() => deps.readContext()).then(value => { reading = false; return value; }, () => { reading = false; return null; });
+        let timeout;
+        try {
+            return await Promise.race([
+                request,
+                new Promise(resolve => { timeout = setTimeout(() => resolve(null), CONTEXT_TIMEOUT_MS); }),
+            ]);
+        }
+        catch {
+            return null;
+        }
+        finally {
+            clearTimeout(timeout);
+        }
+    };
+    const valid = (id, token) => active && epoch === token && exact(id) && !deps.isBusy();
+    const begin = (id) => {
+        cancel();
+        owner = id;
+        const token = epoch;
+        const initial = readFresh();
+        timer = setTimeout(() => {
+            timer = undefined;
+            void (async () => {
+                const before = await initial;
+                if (!valid(id, token) || !before || !safeDisconnectContext(before))
+                    return;
+                const after = await readFresh();
+                if (!valid(id, token) || !after || !safeDisconnectContext(after))
+                    return;
+                if (before.snapshot.inference.mode !== after.snapshot.inference.mode)
+                    return;
+                latched.add(id);
+                deps.confirm(after.snapshot.inference.mode === "portable" ? "tv" : "ally");
+            })().catch(() => { });
+        }, SAFE_DISCONNECT_HOLD_MS);
+    };
+    const onInput = (id, button, pressed) => {
+        if (!active)
+            return;
+        if (!Number.isInteger(id) || id < 0 || id > 255 || !Number.isInteger(button)
+            || button < 0 || button > 255 || typeof pressed !== "boolean") {
+            reset();
+            return;
+        }
+        if (!controllers.has(id)) {
+            if (!pressed)
+                return;
+            if (controllers.size >= 8) {
+                reset();
+                return;
+            }
+            controllers.set(id, new Set());
+        }
+        const buttons = controllers.get(id);
+        if (pressed === buttons.has(button))
+            return; // Ignore repeated down/up delivery.
+        if (pressed)
+            buttons.add(button);
+        else
+            buttons.delete(button);
+        if (!exact(id) && owner === id)
+            cancel();
+        if (buttons.size === 0) {
+            controllers.delete(id);
+            latched.delete(id);
+        }
+        if (exact(id) && !latched.has(id) && owner === undefined && !deps.isBusy())
+            begin(id);
+    };
+    try {
+        const input = deps.input;
+        if (typeof input?.RegisterForControllerInputMessages !== "function")
+            return { available: false, stop };
+        // Steam builds differ: the Ally exposes active-controller notifications,
+        // while other builds expose controller-list notifications. Either cancels
+        // all pending holds; never substitute per-button/analog state notifications.
+        const registerChanges = typeof input.RegisterForControllerListChanges === "function"
+            ? input.RegisterForControllerListChanges.bind(input)
+            : typeof input.RegisterForActiveControllerChanges === "function"
+                ? input.RegisterForActiveControllerChanges.bind(input) : undefined;
+        if (!registerChanges)
+            return { available: false, stop };
+        for (const register of [
+            () => registerChanges(reset),
+            () => input.RegisterForControllerInputMessages(onInput),
+        ]) {
+            const subscription = register();
+            if (typeof subscription?.unregister !== "function") {
+                stop();
+                return { available: false, stop };
+            }
+            subscriptions.push(subscription);
+        }
+        active = true;
+        return { available: true, stop };
+    }
+    catch {
+        stop();
+        return { available: false, stop };
+    }
+}
+function steamControllerInput(host) {
+    try {
+        return host?.SteamClient?.Input;
+    }
+    catch {
+        return undefined;
+    }
+}
+
+function createDisplayShortcutRuntime(deps) {
+    const state = {
+        modal: { current: null },
+        portableBusy: { current: false }, tvBusy: { current: false },
+    };
+    let stopped = false;
+    let acknowledgement = "";
+    const acknowledgementListeners = new Set();
+    const busy = () => stopped || state.portableBusy.current || state.tvBusy.current || state.modal.current !== null;
+    const execute = async (target) => {
+        if (busy())
+            return;
+        const lock = target === "tv" ? state.tvBusy : state.portableBusy;
+        lock.current = true;
+        try {
+            const approval = await deps.approve(target);
+            if (stopped)
+                return;
+            if (!approval.approval_token || approval.blockers.length) {
+                deps.report("Display switch blocked. Open Re-Gear to inspect readiness.");
+                return;
+            }
+            const result = await deps.execute(target, approval.approval_token);
+            if (!stopped) {
+                acknowledgement = result.acknowledgement_required ? result.acknowledgement_id ?? "" : "";
+                for (const notify of acknowledgementListeners)
+                    notify(acknowledgement);
+            }
+            if (!stopped)
+                deps.report(result.accepted
+                    ? "Display request accepted. Keep the eGPU connected and verify the display."
+                    : "Display switch did not complete. Open Re-Gear for details.");
+        }
+        catch {
+            if (!stopped)
+                deps.report("Display switch could not be verified. Keep the eGPU connected.");
+        }
+        finally {
+            lock.current = false;
+        }
+    };
+    const request = (target) => {
+        if (busy())
+            return;
+        let confirmed = false;
+        state.modal.current = deps.show(target, () => {
+            if (confirmed)
+                return;
+            confirmed = true;
+            state.modal.current = null;
+            void execute(target);
+        }, () => { state.modal.current = null; });
+    };
+    const listener = startControllerSafeDisconnect({
+        input: deps.input, readContext: deps.readContext, isBusy: busy,
+        confirm: request,
+    });
+    return { ...state, request, available: listener.available,
+        subscribeAcknowledgement(notify) {
+            acknowledgementListeners.add(notify);
+            notify(acknowledgement);
+            return () => { acknowledgementListeners.delete(notify); };
+        },
+        clearAcknowledgement() { acknowledgement = ""; },
+        stop() {
+            stopped = true;
+            listener.stop();
+            acknowledgementListeners.clear();
+            state.modal.current?.Close();
+            state.modal.current = null;
+        } };
+}
+
 const manifest = {"name":"Re-Gear"};
 const API_VERSION = 2;
 const internalAPIConnection = window.__DECKY_SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED_deckyLoaderAPIInit;
@@ -506,168 +741,6 @@ function showConnectionLivePanel(store, switchTv, onClose) {
 
 /** Player-facing name; keep legacy installation and safety-state identities separate. */
 const PRODUCT_NAME = "Re-Gear";
-
-// SteamClient.Input.ControllerInputGamepadButton, not browser Gamepad indices.
-const VIEW_BUTTON = 9;
-const Y_BUTTON = 3;
-const SAFE_DISCONNECT_HOLD_MS = 3000;
-const CONTEXT_TIMEOUT_MS = 2000;
-function safeDisconnectContext(context) {
-    const value = context?.snapshot;
-    const snapshot = value?.snapshot;
-    const observedAt = Date.parse(snapshot?.observed_at ?? "");
-    const age = Date.now() - observedAt;
-    return value?.delivery_schema_version === 2 && snapshot?.schema_version === 3
-        && Number.isFinite(age) && age >= -5e3 && age <= 15000
-        && snapshot.game_state === "idle"
-        && snapshot.gamescope?.running === true
-        && snapshot.support_tier === "certified"
-        && snapshot.disconnect_readiness?.applicable === true
-        && Array.isArray(snapshot.gpus)
-        && snapshot.gpus.some(gpu => gpu.role === "external" && gpu.present === true && gpu.confidence === "verified")
-        && (value.inference?.mode === "portable" || value.inference?.mode === "docked_egpu")
-        && context.journal?.code === "journal.idle";
-}
-/** Native event listener; only opens the ordinary confirmation, never executes. */
-function startControllerSafeDisconnect(deps) {
-    const subscriptions = [];
-    const controllers = new Map();
-    const latched = new Set();
-    let active = false;
-    let reading = false;
-    let epoch = 0;
-    let timer;
-    let owner;
-    const exact = (id) => {
-        const buttons = controllers.get(id);
-        return buttons?.size === 2 && buttons.has(VIEW_BUTTON) && buttons.has(Y_BUTTON);
-    };
-    const cancel = () => { epoch++; clearTimeout(timer); timer = undefined; owner = undefined; };
-    const reset = () => { cancel(); controllers.clear(); latched.clear(); };
-    const stop = () => {
-        active = false;
-        reset();
-        for (const subscription of subscriptions.splice(0)) {
-            try {
-                subscription.unregister();
-            }
-            catch { /* Disabled callbacks remain inert. */ }
-        }
-    };
-    const readFresh = async () => {
-        if (reading)
-            return null;
-        reading = true;
-        const request = Promise.resolve().then(() => deps.readContext()).then(value => { reading = false; return value; }, () => { reading = false; return null; });
-        let timeout;
-        try {
-            return await Promise.race([
-                request,
-                new Promise(resolve => { timeout = setTimeout(() => resolve(null), CONTEXT_TIMEOUT_MS); }),
-            ]);
-        }
-        catch {
-            return null;
-        }
-        finally {
-            clearTimeout(timeout);
-        }
-    };
-    const valid = (id, token) => active && epoch === token && exact(id) && !deps.isBusy();
-    const begin = (id) => {
-        cancel();
-        owner = id;
-        const token = epoch;
-        const initial = readFresh();
-        timer = setTimeout(() => {
-            timer = undefined;
-            void (async () => {
-                const before = await initial;
-                if (!valid(id, token) || !before || !safeDisconnectContext(before))
-                    return;
-                const after = await readFresh();
-                if (!valid(id, token) || !after || !safeDisconnectContext(after))
-                    return;
-                if (before.snapshot.inference.mode !== after.snapshot.inference.mode)
-                    return;
-                latched.add(id);
-                deps.confirm(after.snapshot.inference.mode === "portable" ? "tv" : "ally");
-            })().catch(() => { });
-        }, SAFE_DISCONNECT_HOLD_MS);
-    };
-    const onInput = (id, button, pressed) => {
-        if (!active)
-            return;
-        if (!Number.isInteger(id) || id < 0 || id > 255 || !Number.isInteger(button)
-            || button < 0 || button > 255 || typeof pressed !== "boolean") {
-            reset();
-            return;
-        }
-        if (!controllers.has(id)) {
-            if (!pressed)
-                return;
-            if (controllers.size >= 8) {
-                reset();
-                return;
-            }
-            controllers.set(id, new Set());
-        }
-        const buttons = controllers.get(id);
-        if (pressed === buttons.has(button))
-            return; // Ignore repeated down/up delivery.
-        if (pressed)
-            buttons.add(button);
-        else
-            buttons.delete(button);
-        if (!exact(id) && owner === id)
-            cancel();
-        if (buttons.size === 0) {
-            controllers.delete(id);
-            latched.delete(id);
-        }
-        if (exact(id) && !latched.has(id) && owner === undefined && !deps.isBusy())
-            begin(id);
-    };
-    try {
-        const input = deps.input;
-        if (typeof input?.RegisterForControllerInputMessages !== "function")
-            return { available: false, stop };
-        // Steam builds differ: the Ally exposes active-controller notifications,
-        // while other builds expose controller-list notifications. Either cancels
-        // all pending holds; never substitute per-button/analog state notifications.
-        const registerChanges = typeof input.RegisterForControllerListChanges === "function"
-            ? input.RegisterForControllerListChanges.bind(input)
-            : typeof input.RegisterForActiveControllerChanges === "function"
-                ? input.RegisterForActiveControllerChanges.bind(input) : undefined;
-        if (!registerChanges)
-            return { available: false, stop };
-        for (const register of [
-            () => registerChanges(reset),
-            () => input.RegisterForControllerInputMessages(onInput),
-        ]) {
-            const subscription = register();
-            if (typeof subscription?.unregister !== "function") {
-                stop();
-                return { available: false, stop };
-            }
-            subscriptions.push(subscription);
-        }
-        active = true;
-        return { available: true, stop };
-    }
-    catch {
-        stop();
-        return { available: false, stop };
-    }
-}
-function steamControllerInput(host) {
-    try {
-        return host?.SteamClient?.Input;
-    }
-    catch {
-        return undefined;
-    }
-}
 
 class OfflineTestMemory {
     records = new Map();
@@ -2687,7 +2760,7 @@ function preflightObservation(payload) {
         gameUsesEgpu: snapshot.disconnect_readiness.clients.some((client) => client.kind === "game"),
     }, Date.now(), SNAPSHOT_STALE_AFTER_MS);
 }
-function Content({ preflight, connection }) {
+function Content({ preflight, connection, shortcut }) {
     const quickAccessVisible = useQuickAccessVisible();
     const statusAnchor = SP_REACT.useRef(null);
     const statusFocusAnchor = SP_REACT.useRef(null);
@@ -2723,6 +2796,7 @@ function Content({ preflight, connection }) {
     const [tvSwitchBusy, setTvSwitchBusy] = SP_REACT.useState(false);
     const [tvSwitchMessage, setTvSwitchMessage] = SP_REACT.useState("");
     const [tvSwitchAcknowledgementId, setTvSwitchAcknowledgementId] = SP_REACT.useState("");
+    SP_REACT.useEffect(() => shortcut.subscribeAcknowledgement(setTvSwitchAcknowledgementId), [shortcut]);
     const [journalStatus, setJournalStatus] = SP_REACT.useState(null);
     const [journalBusy, setJournalBusy] = SP_REACT.useState(false);
     const [journalMessage, setJournalMessage] = SP_REACT.useState("");
@@ -2739,10 +2813,11 @@ function Content({ preflight, connection }) {
     const presentationModal = SP_REACT.useRef(null);
     const automaticDockModal = SP_REACT.useRef(null);
     const disconnectProgressModal = SP_REACT.useRef(null);
-    const safeDisconnectModal = SP_REACT.useRef(null);
-    const safeDisconnectExecuting = SP_REACT.useRef(false);
-    const tvSwitchExecuting = SP_REACT.useRef(false);
-    const [controllerShortcutAvailable, setControllerShortcutAvailable] = SP_REACT.useState(false);
+    const safeDisconnectModal = shortcut.modal;
+    const safeDisconnectExecuting = shortcut.portableBusy;
+    const tvSwitchExecuting = shortcut.tvBusy;
+    const controllerShortcutAvailable = shortcut.available;
+    const requestControllerDisplaySwitch = shortcut.request;
     const processModal = SP_REACT.useRef(null);
     const diagnosticLoggingModal = SP_REACT.useRef(null);
     const refreshTransitionJournal = SP_REACT.useCallback(async () => {
@@ -2782,8 +2857,6 @@ function Content({ preflight, connection }) {
         presentationModal.current = null;
         automaticDockModal.current?.Close();
         automaticDockModal.current = null;
-        safeDisconnectModal.current?.Close();
-        safeDisconnectModal.current = null;
         processModal.current?.Close();
         processModal.current = null;
         diagnosticLoggingModal.current?.Close();
@@ -3321,27 +3394,6 @@ function Content({ preflight, connection }) {
     const requestSafeDisconnect = SP_REACT.useCallback(() => {
         requestSafeDisconnectForMode(payload?.inference.mode === "portable");
     }, [requestSafeDisconnectForMode, payload?.inference.mode]);
-    const requestControllerDisplaySwitch = SP_REACT.useCallback((target) => {
-        if (safeDisconnectExecuting.current || tvSwitchExecuting.current || safeDisconnectModal.current)
-            return;
-        safeDisconnectModal.current = showControllerDisplayConfirmation(target, () => { if (target === "tv")
-            void executeTvSwitch();
-        else
-            void executeSafeDisconnect(false); }, () => { safeDisconnectModal.current = null; });
-    }, [executeTvSwitch, executeSafeDisconnect]);
-    SP_REACT.useEffect(() => {
-        const shortcut = startControllerSafeDisconnect({
-            input: steamControllerInput(window),
-            readContext: async () => {
-                const [snapshot, journal] = await Promise.all([getSnapshot(), getTransitionJournalStatus()]);
-                return { snapshot, journal };
-            },
-            isBusy: () => safeDisconnectExecuting.current || tvSwitchExecuting.current || safeDisconnectModal.current !== null,
-            confirm: requestControllerDisplaySwitch,
-        });
-        setControllerShortcutAvailable(shortcut.available);
-        return () => shortcut.stop();
-    }, [requestControllerDisplaySwitch]);
     const acknowledgeTvSwitch = SP_REACT.useCallback(async () => {
         if (!tvSwitchAcknowledgementId)
             return;
@@ -3352,6 +3404,7 @@ function Content({ preflight, connection }) {
                 ? "Display transition result acknowledged."
                 : "Display transition result could not be acknowledged.");
             if (result.acknowledged) {
+                shortcut.clearAcknowledgement();
                 setTvSwitchAcknowledgementId("");
                 await refreshTransitionJournal();
             }
@@ -3598,6 +3651,17 @@ function showBlockedAttempt(warning, onClose) {
     return modal;
 }
 var index = definePlugin(() => {
+    const shortcut = createDisplayShortcutRuntime({
+        input: steamControllerInput(window),
+        readContext: async () => {
+            const [snapshot, journal] = await Promise.all([getSnapshot(), getTransitionJournalStatus()]);
+            return { snapshot, journal };
+        },
+        show: showControllerDisplayConfirmation,
+        approve: target => target === "tv" ? approveSupervisedTvSwitch() : approveSupervisedPortableSwitch(),
+        execute: (target, token) => target === "tv" ? executeSupervisedTvSwitch(token) : executeSupervisedPortableSwitch(token),
+        report: body => { toaster.toast({ title: PRODUCT_NAME, body, duration: 15000 }); },
+    });
     let warningModal = null;
     let warningTimer = null;
     const preflight = new SleepPreflightCoordinator(createDeckySteamSuspendAdapter(), (warning) => {
@@ -3659,10 +3723,11 @@ var index = definePlugin(() => {
     return {
         name: PRODUCT_NAME,
         titleView: SP_JSX.jsx("div", { className: DFL.staticClasses.Title, style: { display: "flex", alignItems: "center" }, children: SP_JSX.jsx(BrandHeader, {}) }),
-        content: SP_JSX.jsx(Content, { preflight: preflight, connection: connection }),
+        content: SP_JSX.jsx(Content, { preflight: preflight, connection: connection, shortcut: shortcut }),
         icon: SP_JSX.jsx(BrandIcon, {}),
         alwaysRender: true,
         onDismount() {
+            shortcut.stop();
             if (warningTimer !== null) {
                 window.clearTimeout(warningTimer);
                 warningTimer = null;

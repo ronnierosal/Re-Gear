@@ -1,10 +1,11 @@
+import { createDisplayShortcutRuntime } from "./display-shortcut-runtime";
 import { showDisconnectProgress } from "./disconnect-progress-panel";
 import { ConnectionQuickStatus } from "./connection-quick-status";
 import { regearControlCss } from "./regear-theme";
 import { startConnectionMonitor } from "./connection-monitor";
 import { showConnectionLivePanel } from "./connection-live-panel";
 import { PRODUCT_NAME } from "./branding";
-import { startControllerSafeDisconnect, steamControllerInput } from "./controller-safe-disconnect";
+import { steamControllerInput } from "./controller-safe-disconnect";
 import { startOfflineFocusChecks } from "./offline-focus-checks";
 import brandIcon from "./assets/regear-icon.svg";
 import { definePlugin, toaster, useQuickAccessVisible } from "@decky/api";
@@ -505,7 +506,7 @@ function preflightObservation(payload: SnapshotPayload): PreflightObservation {
   }, Date.now(), SNAPSHOT_STALE_AFTER_MS);
 }
 
-function Content({ preflight, connection }: { preflight: SleepPreflightCoordinator; connection: ReturnType<typeof startConnectionMonitor> }) {
+function Content({ preflight, connection, shortcut }: { preflight: SleepPreflightCoordinator; connection: ReturnType<typeof startConnectionMonitor>; shortcut: ReturnType<typeof createDisplayShortcutRuntime> }) {
   const quickAccessVisible = useQuickAccessVisible();
   const statusAnchor = useRef<HTMLDivElement | null>(null);
   const statusFocusAnchor = useRef<HTMLDivElement | null>(null);
@@ -545,6 +546,7 @@ function Content({ preflight, connection }: { preflight: SleepPreflightCoordinat
   const [tvSwitchBusy, setTvSwitchBusy] = useState(false);
   const [tvSwitchMessage, setTvSwitchMessage] = useState("");
   const [tvSwitchAcknowledgementId, setTvSwitchAcknowledgementId] = useState("");
+  useEffect(() => shortcut.subscribeAcknowledgement(setTvSwitchAcknowledgementId), [shortcut]);
   const [journalStatus, setJournalStatus] = useState<TransitionJournalStatusPayload | null>(null);
   const [journalBusy, setJournalBusy] = useState(false);
   const [journalMessage, setJournalMessage] = useState("");
@@ -561,10 +563,11 @@ function Content({ preflight, connection }: { preflight: SleepPreflightCoordinat
   const presentationModal = useRef<ReturnType<typeof showModal> | null>(null);
   const automaticDockModal = useRef<ReturnType<typeof showModal> | null>(null);
   const disconnectProgressModal = useRef<ReturnType<typeof showModal> | null>(null);
-  const safeDisconnectModal = useRef<ReturnType<typeof showModal> | null>(null);
-  const safeDisconnectExecuting = useRef(false);
-  const tvSwitchExecuting = useRef(false);
-  const [controllerShortcutAvailable, setControllerShortcutAvailable] = useState(false);
+  const safeDisconnectModal = shortcut.modal;
+  const safeDisconnectExecuting = shortcut.portableBusy;
+  const tvSwitchExecuting = shortcut.tvBusy;
+  const controllerShortcutAvailable = shortcut.available;
+  const requestControllerDisplaySwitch = shortcut.request;
   const processModal = useRef<ReturnType<typeof showModal> | null>(null);
   const diagnosticLoggingModal = useRef<ReturnType<typeof showModal> | null>(null);
 
@@ -607,8 +610,6 @@ function Content({ preflight, connection }: { preflight: SleepPreflightCoordinat
     presentationModal.current = null;
     automaticDockModal.current?.Close();
     automaticDockModal.current = null;
-    safeDisconnectModal.current?.Close();
-    safeDisconnectModal.current = null;
     processModal.current?.Close();
     processModal.current = null;
     diagnosticLoggingModal.current?.Close();
@@ -1227,29 +1228,6 @@ function Content({ preflight, connection }: { preflight: SleepPreflightCoordinat
     requestSafeDisconnectForMode(payload?.inference.mode === "portable");
   }, [requestSafeDisconnectForMode, payload?.inference.mode]);
 
-  const requestControllerDisplaySwitch = useCallback((target: "tv" | "ally") => {
-    if (safeDisconnectExecuting.current || tvSwitchExecuting.current || safeDisconnectModal.current) return;
-    safeDisconnectModal.current = showControllerDisplayConfirmation(
-      target,
-      () => { if (target === "tv") void executeTvSwitch(); else void executeSafeDisconnect(false); },
-      () => { safeDisconnectModal.current = null; },
-    );
-  }, [executeTvSwitch, executeSafeDisconnect]);
-
-  useEffect(() => {
-    const shortcut = startControllerSafeDisconnect({
-      input: steamControllerInput(window),
-      readContext: async () => {
-        const [snapshot, journal] = await Promise.all([getSnapshot(), getTransitionJournalStatus()]);
-        return { snapshot, journal };
-      },
-      isBusy: () => safeDisconnectExecuting.current || tvSwitchExecuting.current || safeDisconnectModal.current !== null,
-      confirm: requestControllerDisplaySwitch,
-    });
-    setControllerShortcutAvailable(shortcut.available);
-    return () => shortcut.stop();
-  }, [requestControllerDisplaySwitch]);
-
   const acknowledgeTvSwitch = useCallback(async () => {
     if (!tvSwitchAcknowledgementId) return;
     setTvSwitchBusy(true);
@@ -1259,6 +1237,7 @@ function Content({ preflight, connection }: { preflight: SleepPreflightCoordinat
         ? "Display transition result acknowledged."
         : "Display transition result could not be acknowledged.");
       if (result.acknowledged) {
+        shortcut.clearAcknowledgement();
         setTvSwitchAcknowledgementId("");
         await refreshTransitionJournal();
       }
@@ -1911,6 +1890,17 @@ function showBlockedAttempt(
 }
 
 export default definePlugin(() => {
+  const shortcut = createDisplayShortcutRuntime({
+    input: steamControllerInput(window),
+    readContext: async () => {
+      const [snapshot, journal] = await Promise.all([getSnapshot(), getTransitionJournalStatus()]);
+      return { snapshot, journal };
+    },
+    show: showControllerDisplayConfirmation,
+    approve: target => target === "tv" ? approveSupervisedTvSwitch() : approveSupervisedPortableSwitch(),
+    execute: (target, token) => target === "tv" ? executeSupervisedTvSwitch(token) : executeSupervisedPortableSwitch(token),
+    report: body => { toaster.toast({ title: PRODUCT_NAME, body, duration: 15000 }); },
+  });
   let warningModal: ReturnType<typeof showModal> | null = null;
   let warningTimer: number | null = null;
   const preflight = new SleepPreflightCoordinator(
@@ -1975,10 +1965,11 @@ export default definePlugin(() => {
   return {
     name: PRODUCT_NAME,
     titleView: <div className={staticClasses.Title} style={{ display: "flex", alignItems: "center" }}><BrandHeader /></div>,
-    content: <Content preflight={preflight} connection={connection} />,
+    content: <Content preflight={preflight} connection={connection} shortcut={shortcut} />,
     icon: <BrandIcon />,
     alwaysRender: true,
     onDismount() {
+      shortcut.stop();
       if (warningTimer !== null) {
         window.clearTimeout(warningTimer);
         warningTimer = null;
