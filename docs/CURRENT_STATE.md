@@ -1,5 +1,22 @@
 # Current state
 
+## Re-Gear 0.3.52 disconnect mapping candidate - 2026-09-05
+
+Local candidate preserves installed 0.3.51 ancestry and the reviewed hotkey fix.
+Retained exact eGPU memory mappings now count as clients; unreadable mappings
+block scan completeness. No removal executor or live-unplug support is included.
+The Vulkan launch foundation remains unwired; recovery integration is pending.
+
+Checks passed: 997 backend tests (six skipped), 181 frontend tests, typecheck,
+architecture, compileall, build and package validation. Independent scanner review
+found no blocker. One unprivileged Ally comparison measured client scans at about
+10 ms installed and 25 ms candidate; privileged coverage remains unverified.
+
+Installed 0.3.51 was read back before staging. Player reports G1 attached, TV
+active and no game. Installation requires confirmed full power-off, detach and
+detached boot. Preserve 0.3.51 as rollback. No hardware mutation performed.
+
+
 
 ## Re-Gear 0.3.43 compact popup candidate
 
