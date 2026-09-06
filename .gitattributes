@@ -14,3 +14,4 @@ bin/** text eol=lf
 *.md text eol=lf
 *.ts text eol=lf
 *.tsx text eol=lf
+*.svg text eol=lf
