@@ -3,6 +3,21 @@
 Status: diagnostic foundation only. No removal executor, new player ZIP,
 remote deployment, hardware operation, or safe-unplug support is included.
 
+## Retained mapping verification follow-up
+
+The existing client scanner now also reads bounded per-process memory maps.
+An exact eGPU mapping counts as a resource holder even after all matching file
+descriptors close. Duplicate mappings remain one resource kind per process;
+protected Steam/Gamescope classification is unchanged. Missing, unreadable,
+malformed, or over-bound mappings make the scan incomplete rather than cleared.
+This is local verification code, not a removal executor or hardware validation.
+Path matching does not establish complete router/sibling release or prevent a
+client reopening a device after the scan. Those remain separate trial gates.
+
+Targeted client fixtures cover retained mappings and missing/malformed mapping
+visibility. Next: recoverable supervised internal-GPU launch integration, then
+fresh privileged before/after resource evidence with the cable attached.
+
 ## Findings
 
 Linux 6.16 has different amdgpu callbacks for PCI removal and machine shutdown.
