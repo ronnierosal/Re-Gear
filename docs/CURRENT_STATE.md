@@ -4,8 +4,12 @@
 
 The isolated `codex/tdp-control` workstream starts from `75f441f`. It contains
 the thermal non-finite validation fix, read-only ASUS power-limit inventory,
-and an original pure Auto TDP proposal policy. These are fixture/replay tested;
-there is no live TDP writer, collector loop, UI control or installation.
+and an original pure Auto TDP proposal policy. A SteamOS Manager ASUS provider,
+fixed D-Bus read/write runner, serialized apply/verify/restore service and atomic
+recovery journal are now implemented and simulated. They are not wired into
+Decky or installed; ownership resolution, collector loop and UI remain pending.
+882 backend tests pass (5 expected skips), with architecture and compilation
+checks. Linux filesystem and real-device behavior remain unverified.
 Current-source research and remaining device/API checks are recorded in
 [TDP control](TDP_CONTROL.md). The online Ally address is awaited for remote
 inspection. This workstream does not own G1 lifecycle or Offline Play changes.

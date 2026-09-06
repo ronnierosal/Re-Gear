@@ -470,3 +470,119 @@ class SystemPowerCommandRunner:
         return PowerOffResult(
             True, "safe_disconnect.poweroff_request_accepted_unverified"
         )
+
+
+class SteamOsTdpCommandRunner:
+    """Fixed SteamOSManager session-bus operations; callers own device-range gates.
+
+    A successful set only means the property command succeeded. Callers must
+    independently read back the setting before claiming it was applied.
+    """
+
+    BUSCTL = "/usr/bin/busctl"
+    RUNUSER = "/usr/bin/runuser"
+    ENV = "/usr/bin/env"
+    SERVICE = "com.steampowered.SteamOSManager1"
+    OBJECT_PATH = "/com/steampowered/SteamOSManager1"
+    INTERFACE = "com.steampowered.SteamOSManager1.TdpLimit1"
+    MAX_OUTPUT_BYTES = 4096
+    TIMEOUT_SECONDS = 8.0
+    UINT32_MAX = (1 << 32) - 1
+    SAFE_USERNAME = re.compile(r"[A-Za-z_][A-Za-z0-9_-]{0,31}[$]?")
+    UNIQUE_OWNER = re.compile(r":[0-9]{1,10}\.[0-9]{1,10}")
+
+    def __init__(self, effective_uid=None) -> None:
+        self._effective_uid = effective_uid or getattr(os, "geteuid", lambda: -1)
+
+    def read(self, user) -> CommandResult:
+        return self._run(
+            user,
+            (
+                "get-property", self.SERVICE, self.OBJECT_PATH, self.INTERFACE,
+                "TdpLimit", "TdpLimitMin", "TdpLimitMax",
+            ),
+            capture=True,
+        )
+
+    def owner(self, user) -> CommandResult:
+        return self._run(
+            user,
+            (
+                "call", "org.freedesktop.DBus", "/org/freedesktop/DBus",
+                "org.freedesktop.DBus", "GetNameOwner", "s", self.SERVICE,
+            ),
+            capture=True,
+        )
+
+    def set_limit(self, user, watts: int, *, owner: str = "") -> CommandResult:
+        # An omitted owner fails categorically instead of falling back to SERVICE.
+        if type(owner) is not str or not self.UNIQUE_OWNER.fullmatch(owner):
+            return CommandResult((), None, "", "", "tdp.owner_invalid")
+        if type(watts) is not int or not 0 < watts <= self.UINT32_MAX:
+            return CommandResult((), None, "", "", "tdp.limit_invalid")
+        return self._run(
+            user,
+            (
+                "set-property", owner, self.OBJECT_PATH, self.INTERFACE,
+                "TdpLimit", "u", str(watts),
+            ),
+            capture=False,
+        )
+
+    def _run(self, user, suffix: tuple[str, ...], *, capture: bool) -> CommandResult:
+        from ...ports.presentation_activation import GamescopeUserContext
+
+        if (
+            not isinstance(user, GamescopeUserContext)
+            or type(user.uid) is not int
+            or not 0 < user.uid < self.UINT32_MAX
+            or type(user.username) is not str
+            or not self.SAFE_USERNAME.fullmatch(user.username)
+            or user.runtime_directory != Path(f"/run/user/{user.uid}")
+            or user.bus_path != Path(f"/run/user/{user.uid}/bus")
+        ):
+            return CommandResult((), None, "", "", "tdp.user_invalid")
+        effective_uid = self._effective_uid()
+        if type(effective_uid) is not int or effective_uid not in (0, user.uid):
+            return CommandResult((), None, "", "", "tdp.uid_mismatch")
+        prefix = (
+            (self.RUNUSER, "-u", user.username, "--") if effective_uid == 0 else ()
+        )
+        argv = (
+            *prefix,
+            self.ENV,
+            f"XDG_RUNTIME_DIR=/run/user/{user.uid}",
+            f"DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/{user.uid}/bus",
+            self.BUSCTL,
+            "--user",
+            "--auto-start=no",
+            "--allow-interactive-authorization=no",
+            "--timeout=2s",
+            *suffix,
+        )
+        try:
+            completed = subprocess.run(
+                argv,
+                stdin=subprocess.DEVNULL,
+                capture_output=True,
+                check=False,
+                shell=False,
+                text=False,
+                timeout=self.TIMEOUT_SECONDS,
+                env={"LANG": "C", "LC_ALL": "C", "PATH": "/usr/bin:/bin"},
+            )
+        except subprocess.TimeoutExpired:
+            return CommandResult(argv, None, "", "", "tdp.command_timeout")
+        except (OSError, subprocess.SubprocessError):
+            return CommandResult(argv, None, "", "", "tdp.command_unavailable")
+        output = bytes(completed.stdout or b"")
+        error = bytes(completed.stderr or b"")
+        if len(output) + len(error) > self.MAX_OUTPUT_BYTES:
+            return CommandResult(argv, completed.returncode, "", "", "tdp.output_too_large")
+        if completed.returncode != 0:
+            return CommandResult(argv, completed.returncode, "", "", "tdp.command_failed")
+        try:
+            decoded = output.decode("ascii") if capture else ""
+        except UnicodeDecodeError:
+            return CommandResult(argv, completed.returncode, "", "", "tdp.output_invalid")
+        return CommandResult(argv, completed.returncode, decoded, "")

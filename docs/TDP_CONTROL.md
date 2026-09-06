@@ -103,6 +103,52 @@ choice can become a runtime implementation.
 - A feedback algorithm may be implemented and simulated before a real collector
   is available, but remains disabled until its data and actuator are validated.
 
+## Manual provider implementation
+
+The local `SteamOsManagerTdpProvider` now reads the exact Ally X host profile,
+boot identity, resolved session user, service owner, TdpLimit1 properties and
+all three canonical ASUS firmware registers. It checks D-Bus/sysfs sustained
+limit agreement and each register's own range. A simultaneous alternate fast
+attribute remains ambiguous; the explicitly selected firmware backend does not
+mistake a parallel legacy sysfs view for a separate controller.
+
+`SteamOsTdpCommandRunner` performs only fixed read, service-owner lookup and
+unsigned TDP assignment commands. The setter targets the observed unique
+D-Bus owner so a restarted daemon is not silently substituted. Calls disable
+service auto-start and interactive authorization. Commands are shell-free,
+time-bounded and return categorical failures. The accepted-output size check
+occurs after subprocess completion; it is not a streaming memory bound.
+The command syntax follows [systemd's busctl documentation](https://github.com/systemd/systemd/blob/main/man/busctl.xml).
+
+`TdpControlService` serializes manual or future automatic requests, validates
+the target against sustained and boost ranges, persists a pending record before
+dispatch, and verifies all three registers. Repeated adjustments preserve the
+original baseline. Restore requires the observed setting and context to still
+match the last verified application, and will not overwrite an external change.
+An accepted command alone never becomes an applied result. Partial readback,
+timeout or interrupted verification leaves recovery-required evidence and does
+not trigger speculative retries or reverse writes.
+
+SteamOS Manager's scalar setter cannot restore arbitrary independent boost
+settings. The first backend therefore requires a baseline representable by its
+actual scalar-to-register mapping before changing it; nonrepresentable baselines
+report `tdp.baseline_not_restorable`. This is an explicit current limitation,
+not a reason to silently flatten the user's original boost settings.
+
+`FileTdpJournal` validates its versioned schema, opaque bindings and baseline/
+applied context; writes a private temporary file; flushes it; replaces the fixed
+target; and fsyncs the directory on Linux. Corrupt or pending records remain
+blocking evidence. The runtime must provide one service owner and a private
+state directory; this store is not an interprocess lock. Current filesystem
+tests ran on Windows, so Linux directory-fsync and permissions still need
+Linux execution evidence.
+
+These components are implemented and simulated, not wired into Decky or
+installed. Provider ownership defaults to unverified. An active native manager
+is not by itself proof that Steam, a Decky plugin or another daemon will not
+change its state. A real ownership resolver, lifecycle integration and user
+controls remain necessary before runtime activation.
+
 ## Ordered implementation
 
 1. Fix non-finite thermal readings being classified Normal; add regression
@@ -116,7 +162,9 @@ choice can become a runtime implementation.
    address. Do not scan the network. The address is currently awaited.
 4. Resolve the device-backed provider and write a shared manual apply/verify/
    restore service, with tests for timeout, partial failure and external changes.
-   Expose honest capability and requested/observed status through the panel.
+   **Implemented/simulated:** command runner, ASUS provider, application service
+   and file journal. **Pending:** live provider validation, ownership resolver,
+   lifecycle wiring and honest capability/requested/observed panel status.
 5. Add the pure Auto TDP policy, replay scenarios and a measured collector;
    integrate only after manual behavior and provider ownership are understood.
 6. Run the integration matrix and independent review. Record remote evidence
@@ -144,10 +192,14 @@ excluded from reuse in this workstream.
   It has no live scheduler, actuator or runtime integration. Initial defaults
   are development parameters, not hardware-tuned values. Policy supports only
   verified internal rendering; eGPU-backed Auto TDP needs separate design.
-- Research is active; the current Ally address is required for remote checks.
+- Comparative research and the first backend are recorded above; the current
+  Ally address is still required for remote checks.
 - No device setting changes, deployment, push or publication performed.
 - Independent review found stale decision streaks after observation gaps and
   oversized-integer FPS validation failure. Both corrected with regressions.
-- Integration verification: 830 backend tests passed (5 expected skips);
+- Manual-provider checkpoint: 65 TDP-specific tests passed. Independent review
+  led to unique-owner dispatch, journal context validation and categorical
+  verification-failure handling, all covered by regressions.
+- Integration verification: 882 backend tests passed (5 expected skips);
   architecture, Python compilation and `git diff --check` passed. No frontend
   files or generated package artifacts changed, and no deployment gate is claimed.
