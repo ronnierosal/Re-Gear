@@ -8,9 +8,9 @@
 
 Re-Gear aims to make handheld gaming console-simple: status first, low overhead,
 and no avoidable surprises. It verifies GPU, display, Gamescope, game, and
-hardware state before any future dock-mode action.
+hardware state before a guarded dock-mode action.
 
-[![CI](https://github.com/ronnierosal/Re-Gear/actions/workflows/ci.yml/badge.svg)](https://github.com/ronnierosal/Re-Gear/actions/workflows/ci.yml) [![Last commit](https://img.shields.io/github/last-commit/ronnierosal/Re-Gear)](https://github.com/ronnierosal/Re-Gear/commits/main/) ![Version](https://img.shields.io/badge/version-0.2.0-6f42c1) ![Platform](https://img.shields.io/badge/platform-SteamOS-1b2838?logo=steam) [![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-2ea44f)](LICENSE)
+[![CI](https://github.com/ronnierosal/Re-Gear/actions/workflows/ci.yml/badge.svg)](https://github.com/ronnierosal/Re-Gear/actions/workflows/ci.yml) [![Last commit](https://img.shields.io/github/last-commit/ronnierosal/Re-Gear)](https://github.com/ronnierosal/Re-Gear/commits/main/) [![Development candidate](https://img.shields.io/badge/development_candidate-0.3.55-6f42c1)](https://github.com/ronnierosal/Re-Gear/tree/codex/release-batch-2026-09-06) ![Platform](https://img.shields.io/badge/platform-SteamOS-1b2838?logo=steam) [![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-2ea44f)](LICENSE)
 
 [Current status](#-current-status) · [Safety](#-safety-first) · [Development](#-development) · [Documentation](#-documentation)
 
@@ -18,15 +18,17 @@ hardware state before any future dock-mode action.
 
 > [!IMPORTANT]
 > Re-Gear is in active development and is not a general-availability release.
-> Version 0.2.0 exposes diagnostics, eGPU sleep protection, reviewed support
-> bundles, supervised integration preparation, and explicitly approved guarded
-> release of eligible non-game eGPU clients. It does **not** expose a display/GPU
-> transition or authorize physical live eGPU removal.
+> Implemented features include diagnostics, eGPU sleep protection, reviewed
+> support bundles, and guarded TV/Portable transitions. Automatic TV docking is
+> experimental and requires an explicit, off-by-default player opt-in.
+> Supervised Ally X/GPD G1 successes do not establish repeatable operation or
+> general hardware support. Physical live eGPU removal remains unsupported.
 
 > [!CAUTION]
 > Physical live removal is unsupported on the current certified hardware.
 > Restore internal operation and shut the handheld down before disconnecting an
-> eGPU.
+> eGPU. Loss of SSH or an accepted shutdown request is not proof of physical
+> power-off; verify that the handheld has actually powered down.
 
 ## 📖 About
 
@@ -37,7 +39,7 @@ state in player language, and safely guiding or performing verified recovery
 where authority and evidence allow. Docking is the first domain, not the
 product boundary; today’s implemented scope remains deliberately narrower.
 Re-Gear presents player-friendly placement and journey status—such as **Portable**
-or a future **TV Docked** target—instead of DRM connectors, PCI addresses, GPU
+or a **TV Docked** target—instead of DRM connectors, PCI addresses, GPU
 selectors, or Gamescope arguments. Current native transition authority remains
 intentionally narrow and supervised.
 
@@ -49,6 +51,12 @@ as unknown or degraded and blocks the action.
 
 - 🔎 Read-only discovery of the host, DRM devices and connectors, Gamescope,
   Steam game scopes, PCI topology, USB4 topology, and exact eGPU clients
+- 🎮 Compact, controller-first Quick Access dashboard with Re-Gear branding,
+  placement status, contextual actions, and expandable troubleshooting
+- 📺 Guarded TV/Portable transitions through a shared journaled engine, with
+  experimental opt-in automatic TV docking for the exact Ally X/GPD G1 profile
+- 🔊 Exact G1 HDMI audio selection and Portable audio restoration with
+  fail-closed identity and rollback checks
 - 🧭 Confidence-aware placement inference without hard-coded card numbers,
   connector suffixes, or PCI bus addresses
 - 🛡️ Two-layer sleep protection while a supported eGPU is attached: a bounded
@@ -72,8 +80,27 @@ It cannot restart Gamescope, switch a display, or select a GPU.
 
 ## 🚦 Current status
 
-Re-Gear `0.2.0` is a development build. The implementation is intentionally split
-between production-safe features and dormant or simulated transition work.
+**Current development candidate: Re-Gear 0.3.55** (verified **2026-09-06**).
+The newer implementation is on the
+[release-integration branch](https://github.com/ronnierosal/Re-Gear/tree/codex/release-batch-2026-09-06),
+whose [version metadata](https://github.com/ronnierosal/Re-Gear/blob/870157dda43d500241703fb5bfcea3f21c5f170d/package.json)
+records 0.3.55. The `main` implementation still carries 0.2.0 while integration
+is pending; that older number does not describe the latest development candidate.
+No public GitHub Release is published yet.
+
+The 0.3.x work includes compact connection/disconnect status, local Steam
+Offline Readiness badges, embedded offline icons, and guarded connection and
+recovery improvements. Version **0.3.55** specifically resumes focused offline
+checks after interrupted activity and bounds refresh retries; see the
+[integrated fix](https://github.com/ronnierosal/Re-Gear/commit/fd9e30b2b4acd0b98ead62180b21fd9cba0cb58b).
+These candidate features are separate from the older `main` implementation.
+
+Candidate version, packaged archive, installed version, and hardware validation
+are separate facts. The
+[release-batch record](https://github.com/ronnierosal/Re-Gear/blob/560ec33/docs/RELEASE_BATCH_2026-09-06.md)
+identifies 0.3.54 as its installed-source baseline; this README does not assert
+that 0.3.55 is installed. Consult the candidate branch's evidence and exact build
+metadata before a deployment. Re-Gear remains experimental.
 
 Evidence labels matter: **Implemented** means code and deterministic checks;
 **Remotely observed** means bounded read-only device evidence; **Hardware
@@ -88,17 +115,29 @@ claim. Neither a simulation nor a clean UI promotes hardware support.
 | eGPU sleep inhibitor and Steam preflight | Implemented and hardware tested | Available; persistent warning needs one final supervised visible proof |
 | Redacted support preview and approved save | Implemented and simulated | Available; controller-visible preview/save acceptance remains pending hardware proof |
 | Docked-iGPU natural-exit observer | Implemented and simulated | Read-only categorical status available in troubleshooting; hardware proof pending |
-| Journey, link/recovery explanation, and Offline Readiness classifiers | Implemented and frontend tested | Read-only UI remains “Not connected” until a reviewed delivery source is wired; no game/account collection or action authority |
+| Journey and link/recovery explanations | Implemented; delivery depends on the build | Newer 0.3.x candidates include compact connection/disconnect readiness views |
+| Offline Readiness | Local Steam evidence and badges implemented in the 0.3.x candidate; focused refresh recovery updated in 0.3.55 | Read-only guidance for the selected game; installation or Steam readiness flags do not guarantee offline launch |
 | Temporary verbose diagnostics | Implemented and simulated | Explicit controller consent, bounded countdown, disable control, and reboot reset available; visible acceptance pending |
 | Gamescope integration preparation | Implemented and simulated | Available only through an explicit, short-lived approval |
-| Supervised idle TV-switch test | Implemented and simulated | Explicit player-watched Decky test only; hardware proof pending, automatic docking remains unavailable |
+| Guarded TV/Portable transitions | Implemented; bounded supervised Ally X/G1 successes recorded | Experimental; repeat-cycle and recovery acceptance remain open |
+| G1 HDMI audio handoff | Implemented; automatic default-sink selection recorded in a supervised cycle | Experimental; readiness and repeated-cycle validation remain open |
+| Prepare G1 disconnect | Implemented; return to Portable hardware tested | Requires complete physical shutdown before disconnect; shutdown acceptance remains failed |
 | Guarded process release | Implemented and simulated | Decky-native experimental flow; supervised disposable-process proof pending |
 | Physical eGPU live removal | Known unsafe/unsupported on the current certified profile | Not available |
-| Automatic docking | Planned | Not available |
+| Automatic TV docking | Implemented; supervised Ally X/G1 attach successes recorded | Experimental, off by default; exact identity, stable readiness, idle game state, and recovery gates apply |
 
-The next release-facing gate is supervised validation of the corrected blocked-
-Sleep warning and the controller-visible support preview/save flow. Native Re-Gear
-TV Docked transition validation remains pending.
+Recorded milestones include a watched TV activation with RX 7600M XT selection
+on build `0d66127cd0c2`, and a later automatic retry with G1 HDMI default-sink
+selection followed by verified Portable return on `a988c0cf1d61`. These are
+historical, bounded results, not certification of every transition or build.
+
+Remaining gates include repeatable attach/TV/audio/Portable cycles, reconnect
+and startup recovery, controller-visible sleep/support acceptance, and reliable
+physical shutdown. A watched shutdown lost networking but left the Ally fan and
+LEDs on, requiring a player-forced power-off. Black-TV recovery and delayed or
+unbound G1 enumeration also remain relevant failure cases. See the
+[deployment gates](docs/DEPLOYMENT_VALIDATION.md) and
+[operator evidence](docs/OPERATOR_HANDOFF.md).
 
 See the [authoritative roadmap](docs/ROADMAP.md) for the complete evidence ledger
 and ordered milestones.
@@ -113,7 +152,7 @@ failed action can never overwrite hardware truth.
 | **Portable** | Internal GPU → internal panel | Hardware tested |
 | **Boosted Handheld** | Verified eGPU → internal panel | Unproven |
 | **Docked-iGPU** | Internal GPU → external display | Read-only observer implemented; placement remains unverified |
-| **TV Docked / Docked-eGPU** | Verified eGPU → its directly attached display | Transition simulated; native hardware proof pending |
+| **TV Docked / Docked-eGPU** | Verified eGPU → its directly attached display | Bounded native Ally X/G1 hardware success; handoff remains experimental |
 
 Incomplete or conflicting evidence is surfaced as **Unknown** or **Degraded**.
 Workflow phases such as Connecting, Action Required, and Failure remain a
@@ -121,7 +160,7 @@ separate axis.
 
 ## 🛡️ Safety first
 
-Every future transition follows one journaled, verifiable path:
+Guarded transitions follow one journaled, verifiable path:
 
 ```text
 DETECT → VALIDATE → PLAN → PREPARE → APPLY → VERIFY → COMMIT
@@ -159,7 +198,9 @@ The first certified identity profile is intentionally narrow:
 
 Certification is capability-specific. Exact identity, read-only discovery,
 Portable inference, and the sleep guard have hardware evidence; this does not
-certify display handoff, Boosted Handheld, or live removal. Other hosts, eGPUs,
+certify repeatable display/audio handoff, Boosted Handheld, or live removal.
+Supervised TV and Portable successes retain their bounded experimental status.
+Other hosts, eGPUs,
 and SteamOS versions are not promoted by similarity.
 
 See [Hardware support](docs/HARDWARE_SUPPORT.md) and the
@@ -229,7 +270,9 @@ Build the deterministic Decky archive:
 python scripts/build_plugin.py
 ```
 
-The package is written to `out/HandheldDockMode-<version>.zip`. Never deploy if a
+The 0.3.55 candidate writes `out/Re-Gear-<version>.zip`; the older `main` build
+script writes `out/HandheldDockMode-<version>.zip`. The internal Decky directory
+remains `HandheldDockMode` for compatibility. Never deploy if a
 check fails, the worktree contains unexplained changes, or artifact provenance
 cannot be matched to one commit.
 
@@ -248,9 +291,9 @@ file:
 python scripts/remote_capture.py --host <handheld-ip> --identity-file <ssh-key>
 ```
 
-The production plugin exposes no general-purpose command endpoint. Root access
-is constrained to the documented observation, sleep-protection, support-export,
-supervised preparation, and the explicit player-watched TV-test boundary.
+The production plugin exposes no general-purpose command endpoint. Privileged
+operations remain constrained to documented adapters and approval boundaries,
+including guarded presentation and shutdown-before-disconnect workflows.
 
 ## 🏗️ Architecture
 
