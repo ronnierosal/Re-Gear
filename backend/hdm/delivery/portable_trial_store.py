@@ -18,6 +18,7 @@ _FIELDS = frozenset(("schema_version", "operation_id", "boot_id_sha256", "genera
                      "internal_gpu", "internal_connector", "egpu_binding_sha256",
                      "original_config", "expected_config", "expires_at"))
 _MAX_BYTES = 16384
+_INVOCATION = re.compile(r"^[0-9a-f]{32}$")
 
 
 class PortableTrialStore:
@@ -27,6 +28,8 @@ class PortableTrialStore:
         self._root = root
         self._record = root / "portable-vulkan-trial.json"
         self._consumed = root / "portable-vulkan-trial.consumed"
+        self._steam_consumed = root / "portable-vulkan-trial.steam-consumed"
+        self._receipt = root / "portable-vulkan-trial.gamescope-launch"
 
     def _validate_root(self):
         if self._root.is_symlink() or not self._root.is_dir():
@@ -84,7 +87,8 @@ class PortableTrialStore:
             internal_connector=internal_connector, egpu_binding_sha256=egpu_binding_sha256,
             original_config=config_to_dict(original_config) if original_config is not None else None,
             expected_config=config_to_dict(expected_config), expires_at=expires_at))
-        if self._consumed.exists() or self._consumed.is_symlink():
+        if any(path.exists() or path.is_symlink() for path in
+               (self._consumed, self._steam_consumed, self._receipt)):
             raise ValueError("trial reconciliation required")
         data = json.dumps(value, allow_nan=False, separators=(",", ":")).encode("utf-8")
         if len(data) > _MAX_BYTES:
@@ -129,7 +133,51 @@ class PortableTrialStore:
         value = self.read()
         if value is None or value["operation_id"] != operation_id:
             raise ValueError("trial operation mismatch")
+        # Burn Steam first. A later Gamescope receipt cannot revive authority.
+        self._claim_steam(operation_id)
         self.consume()
+
+    def _claim_steam(self, operation_id):
+        try:
+            self._exclusive_write(self._steam_consumed, operation_id.encode('ascii'), mode=0o600)
+        except FileExistsError:
+            return False
+        return True
+
+    def _read_small_file(self, path):
+        descriptor = os.open(path, os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0)
+                             | getattr(os, 'O_NONBLOCK', 0))
+        with os.fdopen(descriptor, 'rb') as source:
+            if path.is_symlink() or not stat.S_ISREG(os.fstat(source.fileno()).st_mode):
+                raise ValueError('trial receipt must be a regular file')
+            value = source.read(513)
+        if len(value) > 512:
+            raise ValueError('trial receipt exceeds bound')
+        return value.decode('ascii')
+
+    def publish_gamescope_launch(self, operation_id, invocation_id):
+        """Receipt means validated launch attempt, never exec or release success."""
+        self._validate_root()
+        value = self.read()
+        if (value is None or value['operation_id'] != operation_id
+                or not _INVOCATION.fullmatch(invocation_id)
+                or self._read_small_file(self._consumed) != operation_id):
+            raise ValueError('trial launch receipt identity mismatch')
+        self._exclusive_write(self._receipt,
+            f'{operation_id}\n{invocation_id}'.encode('ascii'), mode=0o600)
+
+    def consume_steam(self):
+        """Burn before receipt or live validation; cancellation competes here."""
+        value = self.read()
+        if value is None or not self._claim_steam(value['operation_id']):
+            return None
+        if self._read_small_file(self._consumed) != value['operation_id']:
+            raise ValueError('Gamescope trial was not consumed')
+        parts = self._read_small_file(self._receipt).split('\n')
+        if (len(parts) != 2 or parts[0] != value['operation_id']
+                or not _INVOCATION.fullmatch(parts[1])):
+            raise ValueError('invalid Gamescope launch receipt')
+        return value, parts[1]
 
     def restore_original(self, config_store, operation_id):
         value = self.read()

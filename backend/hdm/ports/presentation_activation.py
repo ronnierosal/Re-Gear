@@ -11,6 +11,7 @@ from typing import Protocol
 class UserServiceOperation(StrEnum):
     DAEMON_RELOAD = "daemon_reload"
     VERIFY_GAMESCOPE_UNIT = "verify_gamescope_unit"
+    INSPECT_STEAM_UNIT = "inspect_steam_unit"
     RESTART_GAMESCOPE_SESSION = "restart_gamescope_session"
 
 

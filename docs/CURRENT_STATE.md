@@ -1,5 +1,18 @@
 # Current state
 
+## Re-Gear 0.3.54 separate Steam launch candidate (local)
+
+Adds a supervised Steam-only launch shim with invocation-bound single-use
+receipt, bounded handoff wait, detached approval-gated service preparation,
+exact unit readback/rollback, and fallback to the native launcher on package
+rollback. Independent review found no remaining material code blocker.
+1067 backend tests pass (nine platform skips); 181 frontend tests, typecheck,
+architecture, compilation, build and package checks pass. All 52 Linux fixture
+tests pass, including marker races and native-launcher fallback.
+Installed readback remains 0.3.53. G1 remains attached; resources are not
+released. No new trial or service preparation has run. See
+PORTABLE_VULKAN_TRIAL.md for validation and retained-record reconciliation.
+
 ## Re-Gear 0.3.53 supervised Portable launch trial candidate
 
 Installed via native Decky ZIP lifecycle; readback verified 0.3.53 at
@@ -7,8 +20,13 @@ Installed via native Decky ZIP lifecycle; readback verified 0.3.53 at
 SHA256 matches source: 1e13401fe31a1344f3e4993d1129eaf4fbb5740e9178efcbc8e904d57efc509f.
 Loader stopped 0.3.52 in 0.1 seconds and loaded 0.3.53. Startup reports
 Portable, Idle, no blockers and events ready. This supersedes pre-install
-status below. No supervised trial has run; G1 remains disconnected by last
-confirmed player state. Next: supervised attached trial, cable retained.
+status below. The supervised attached trial ran on September 5. The player
+confirmed normal Ally screen, audio and controls after returning to Portable.
+The complete privileged scan still finds Gamescope and Steam external render
+references plus WirePlumber audio control. G1 remains attached; software removal
+and unplug are blocked. The consumed trial must not be replayed. Steam launches
+in a separate OS service and does not inherit the wrapper trial environment.
+See PORTABLE_VULKAN_TRIAL.md for evidence and the next engineering boundary.
 
 Staged only: /home/deck/Re-Gear-0.3.53.zip
 Source: 8d7997fabd3286c4699404b42357a56b1b2edb8d

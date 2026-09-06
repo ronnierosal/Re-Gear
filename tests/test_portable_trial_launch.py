@@ -48,6 +48,36 @@ class TrialLaunchTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             candidate_from_record(self.record, **self.arguments)
 
+    def test_failed_receipt_publication_burns_gamescope_trial(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = PortableTrialStore(Path(directory))
+            store.arm(operation_id='operation-1', boot_id_sha256=self.boot_hash,
+                generation='generation-1', internal_gpu='1002:150e', internal_connector='eDP-1',
+                egpu_binding_sha256='b'*64, original_config=None,
+                expected_config=self.config, expires_at=100)
+            with (patch('hdm.delivery.portable_trial_launch.live_candidate_from_record',
+                        return_value=((), {})),
+                  patch.object(PortableTrialStore, 'publish_gamescope_launch', side_effect=OSError)):
+                result = consume_launch_candidate(Path(directory), config=self.config,
+                    argv=(), environment={'INVOCATION_ID': 'c'*32}, raw_boot_id=self.boot)
+                self.assertIsNone(result)
+                self.assertIsNone(store.consume())
+
+    def test_normal_gamescope_launch_clears_both_stale_trial_selectors(self):
+        from hdm.delivery import gamescope_wrapper as wrapper
+        with (patch.object(wrapper.os, 'environ', {
+                    'MESA_VK_DEVICE_SELECT': 'stale',
+                    'MESA_VK_DEVICE_SELECT_FORCE_DEFAULT_DEVICE': '1'}),
+              patch.object(wrapper, '_connected_connectors', return_value=()),
+              patch.object(wrapper, '_boot_identity', return_value=('', '')),
+              patch.object(wrapper, '_present_vendor_devices', return_value=()),
+              patch.object(wrapper, '_verified_egpu_binding_sha256', return_value=''),
+              patch.object(wrapper.os.sys, 'argv', ['gamescope']),
+              patch.object(wrapper.os, 'execve') as execute):
+            wrapper.main()
+        self.assertNotIn('MESA_VK_DEVICE_SELECT', execute.call_args.args[2])
+        self.assertNotIn('MESA_VK_DEVICE_SELECT_FORCE_DEFAULT_DEVICE', execute.call_args.args[2])
+
     def test_rejected_expired_launch_is_consumed_without_replay(self):
         with tempfile.TemporaryDirectory() as directory:
             store = PortableTrialStore(Path(directory))

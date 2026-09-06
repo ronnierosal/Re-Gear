@@ -56,24 +56,37 @@ def candidate_from_record(record, *, config, argv, environment, boot_hash,
 def consume_launch_candidate(state_root, *, config, argv, environment, raw_boot_id):
     # Imports stay local so ordinary launches do not collect extra evidence.
     from .portable_trial_store import PortableTrialStore
+
+    try:
+        store = PortableTrialStore(state_root)
+        record = store.consume()
+        if record is None:
+            return None
+        # The durable marker already exists. Any validation or exec failure
+        # leaves the next launch on its normal policy, never a repeated trial.
+        candidate = live_candidate_from_record(
+            record, config=config, argv=argv, environment=environment,
+            raw_boot_id=raw_boot_id,
+        )
+        invocation = environment.get('INVOCATION_ID', '')
+        if invocation:
+            store.publish_gamescope_launch(record['operation_id'], invocation)
+        return candidate
+    except (OSError, ValueError, TypeError, KeyError):
+        return None
+
+
+def live_candidate_from_record(record, *, config, argv, environment, raw_boot_id):
     from .gamescope_wrapper import _verified_egpu_binding_sha256
     from ..adapters.steamos.drm import DrmDiscovery
     from ..adapters.steamos.game_scopes import SystemdGameScopeDiscovery
     from ..domain.models import GameState
 
-    try:
-        record = PortableTrialStore(state_root).consume()
-        if record is None:
-            return None
-        # The durable marker already exists. Any validation or exec failure
-        # leaves the next launch on its normal policy, never a repeated trial.
-        return candidate_from_record(
-            record, config=config, argv=argv, environment=environment,
-            boot_hash=hashlib.sha256(raw_boot_id.encode()).hexdigest(),
-            egpu_binding_hash=_verified_egpu_binding_sha256(raw_boot_id),
-            now=time.monotonic(), cards=DrmDiscovery().scan(),
-            game_idle=SystemdGameScopeDiscovery().scan(user_uid=os.getuid()).state is GameState.IDLE,
-            layer_available=mesa_layer_available(),
-        )
-    except (OSError, ValueError, TypeError, KeyError):
-        return None
+    return candidate_from_record(
+        record, config=config, argv=argv, environment=environment,
+        boot_hash=hashlib.sha256(raw_boot_id.encode()).hexdigest(),
+        egpu_binding_hash=_verified_egpu_binding_sha256(raw_boot_id),
+        now=time.monotonic(), cards=DrmDiscovery().scan(),
+        game_idle=SystemdGameScopeDiscovery().scan(user_uid=os.getuid()).state is GameState.IDLE,
+        layer_available=mesa_layer_available(),
+    )

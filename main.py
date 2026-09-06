@@ -267,6 +267,7 @@ class Plugin:
         self._support_previews = SupportBundlePreviewStore()
         self._support_writer = SupportBundleFileWriter()
         self._presentation_approvals = PresentationActivationApprovalStore()
+        self._steam_trial_approvals = PresentationActivationApprovalStore()
         self._presentation_transition_approvals = ExperimentalTransitionApprovalStore()
         self._safe_disconnect_shutdown_approvals = (
             SafeDisconnectShutdownApprovalStore()
@@ -1059,6 +1060,9 @@ class Plugin:
     async def approve_supervised_portable_vulkan_trial(self) -> dict[str, object]:
         """Developer-supervised one-shot session trial; never safe-unplug approval."""
         try:
+            if not await asyncio.to_thread(self._steam_trial_integration().verify_effective):
+                return {"schema_version": 1, "approval_token": "",
+                        "blockers": ["portable_trial.steam_integration_required"], "safe_to_unplug": False}
             preview = await asyncio.to_thread(
                 lambda: self._presentation_transition_service().preview(
                     PlacementState.PORTABLE, user_confirmed=True, portable_vulkan_trial=True,
@@ -1069,6 +1073,30 @@ class Plugin:
         except Exception:
             return {"schema_version": 1, "approval_token": "",
                     "blockers": ["portable_trial.approval_failed"], "safe_to_unplug": False}
+
+    async def approve_supervised_steam_trial_preparation(self) -> dict[str, object]:
+        """Detached idle preparation only; no service restart or trial grant."""
+        try:
+            preview = await asyncio.to_thread(self._steam_trial_preparation_service().preview,
+                                              user_confirmed=True)
+            return {"schema_version": 1, "approval_token": preview.token,
+                    "ready": preview.already_ready, "blockers": list(preview.blockers)}
+        except Exception:
+            return {"schema_version": 1, "approval_token": "", "ready": False,
+                    "blockers": ["steam_trial.preparation_unavailable"]}
+
+    async def prepare_supervised_steam_trial_integration(self, approval_token: str) -> dict[str, object]:
+        """Prepare the fixed Steam shim under the existing single-use approval owner."""
+        try:
+            outcome = await asyncio.to_thread(self._steam_trial_preparation_service().execute,
+                                              approval_token)
+            return {"schema_version": 1, "prepared": outcome.prepared,
+                    "changed": outcome.changed, "code": outcome.code,
+                    "rollback_attempted": outcome.rollback_attempted,
+                    "rollback_succeeded": outcome.rollback_succeeded}
+        except Exception:
+            return {"schema_version": 1, "prepared": False, "changed": False,
+                    "code": "steam_trial.preparation_failed"}
 
     async def approve_safe_disconnect_shutdown(
         self, _request: object = None
@@ -2008,6 +2036,24 @@ class Plugin:
             "size_bytes": result.size_bytes,
         }
 
+    def _steam_trial_integration(self):
+        from hdm.delivery.steam_trial_activation import SteamTrialIntegrationStore
+        resolution = resolve_gamescope_user(GamescopeDiscovery().scan())
+        if not resolution.ok or resolution.context is None:
+            raise ValueError('Gamescope user unavailable')
+        return SteamTrialIntegrationStore(plugin_root=PLUGIN_ROOT, user=resolution.context,
+                                          commands=UserServiceCommandRunner())
+
+    def _steam_trial_preparation_service(self):
+        integration = self._steam_trial_integration()
+        return PresentationActivationService(
+            observations=SnapshotTransitionObservationAdapter(self._discovery),
+            integration=integration, commands=UserServiceCommandRunner(),
+            resolve_user=lambda: resolve_gamescope_user(GamescopeDiscovery().scan()),
+            approvals=self._steam_trial_approvals,
+            verify_prepared=integration.verify_effective,
+        )
+
     def _presentation_service(self) -> PresentationActivationService:
         resolution = resolve_gamescope_user(GamescopeDiscovery().scan())
         if not resolution.ok or resolution.context is None:
@@ -2041,6 +2087,8 @@ class Plugin:
         journal = FileTransitionJournalStore(journal_root)
         from hdm.delivery.portable_trial_store import PortableTrialStore
         from hdm.delivery.portable_trial_launch import mesa_layer_available
+        from hdm.delivery.steam_trial_wait import wait_for_steam_trial
+        steam_integration = self._steam_trial_integration()
 
         def active_operation():
             current = journal.load_current()
@@ -2062,8 +2110,10 @@ class Plugin:
             read_boot_id=self._boot_session_id,
             audio=self._audio_handoff_service(),
             trial_store=PortableTrialStore(presentation_state_root),
+            trial_steam_waiter=lambda operation: wait_for_steam_trial(
+                PortableTrialStore(presentation_state_root), operation),
+            trial_layer_ready=lambda: mesa_layer_available() and steam_integration.verify_effective(),
             active_operation=active_operation,
-            trial_layer_ready=mesa_layer_available,
         )
         orchestrator = TransitionOrchestrator(
             observations=observations,

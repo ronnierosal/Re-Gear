@@ -63,6 +63,8 @@ class DeckyContractTests(unittest.TestCase):
                 "execute_supervised_tv_switch",
                 "approve_supervised_portable_switch",
                 "approve_supervised_portable_vulkan_trial",
+                "approve_supervised_steam_trial_preparation",
+                "prepare_supervised_steam_trial_integration",
                 "execute_supervised_portable_switch",
                 "approve_safe_disconnect_shutdown",
                 "execute_safe_disconnect_shutdown",

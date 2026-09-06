@@ -4,12 +4,15 @@ import contextlib
 import io
 import json
 import tempfile
+import sys
 import unittest
 import zipfile
 from pathlib import Path
 from unittest.mock import patch
 
 from scripts import build_plugin, check_plugin_package
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
 
 
 LAUNCHER = b'#!/usr/bin/python3\n"""Launcher fixture."""\nprint("ready")\n'
@@ -21,9 +24,9 @@ class LauncherPackagingTests(unittest.TestCase):
         self.assertIn("bin/** text eol=lf", attributes.splitlines())
 
     def test_repository_launcher_is_linux_executable_text(self):
-        build_plugin.validate_launcher_bytes(
-            (build_plugin.ROOT / "bin" / "gamescope").read_bytes()
-        )
+        for launcher in ('gamescope', 'steam-launcher'):
+            build_plugin.validate_launcher_bytes(
+                (build_plugin.ROOT / "bin" / launcher).read_bytes())
 
     def test_raw_launcher_validation_rejects_crlf_bom_and_bad_shebang(self):
         for content in (
@@ -52,28 +55,34 @@ class LauncherPackagingTests(unittest.TestCase):
             wrapper = root / "bin" / "gamescope"
             wrapper.parent.mkdir()
             manifest = root / "plugin.json"
+            steam_wrapper = root / 'bin' / 'steam-launcher'
             manifest.write_bytes(b'{"flags":["root"]}')
             output = root / "plugin.zip"
             revision = "a" * 40
             archives = []
             for source in (LAUNCHER, LAUNCHER.replace(b"\n", b"\r\n")):
                 wrapper.write_bytes(source)
+                steam_wrapper.write_bytes(source)
                 output = root / f"plugin-{len(archives)}.zip"
                 with (
                     patch("release_coordination.reserve"),
                     patch.object(build_plugin, "ROOT", root),
                     patch.object(build_plugin, "OUTPUT", output),
-                    patch.object(build_plugin, "included_files", return_value=(manifest, wrapper)),
+                    patch.object(build_plugin, "included_files", return_value=(manifest, wrapper, steam_wrapper)),
                     patch.object(build_plugin, "source_revision", return_value=revision),
                     contextlib.redirect_stdout(io.StringIO()),
                 ):
                     self.assertEqual(build_plugin.main(), 0)
                 self.assertEqual(wrapper.read_bytes(), source, "packaging must not edit checkout")
+                self.assertEqual(steam_wrapper.read_bytes(), source)
                 archives.append(output.read_bytes())
                 with zipfile.ZipFile(output) as archive:
                     name = f"{build_plugin.PLUGIN_DIRECTORY}/bin/gamescope"
                     self.assertEqual(archive.read(name), LAUNCHER)
                     self.assertEqual(archive.getinfo(name).external_attr >> 16, 0o100755)
+                    steam_name = f'{build_plugin.PLUGIN_DIRECTORY}/bin/steam-launcher'
+                    self.assertEqual(archive.read(steam_name), LAUNCHER)
+                    self.assertEqual(archive.getinfo(steam_name).external_attr >> 16, 0o100755)
                     info = json.loads(archive.read(
                         f"{build_plugin.PLUGIN_DIRECTORY}/{build_plugin.BUILD_INFO_FILENAME}"
                     ))

@@ -269,6 +269,18 @@ class PresentationActivationServiceTests(unittest.TestCase):
         self.assertEqual(outcome.code, "activation.rollback_failed")
         self.assertFalse(outcome.rollback_succeeded)
 
+    def test_effective_unit_mismatch_rolls_back_new_dropin(self):
+        events = []
+        value = service(
+            Observations(VersionedObservation('generation-1', portable()),
+                         VersionedObservation('generation-1', portable())),
+            FakeIntegration(events), ScriptedCommands(events))
+        value._verify_prepared = lambda: False
+        outcome = value.execute(value.preview(user_confirmed=True).token)
+        self.assertEqual(outcome.code, 'activation.unit_mismatch')
+        self.assertTrue(outcome.rollback_succeeded)
+        self.assertNotIn('command.restart_gamescope_session', events)
+
 
 if __name__ == "__main__":
     unittest.main()

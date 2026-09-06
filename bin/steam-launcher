@@ -1,0 +1,17 @@
+#!/usr/bin/python3
+"""Re-Gear supervised Steam trial shim."""
+from pathlib import Path
+import sys
+import os
+
+plugin_root = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(plugin_root / 'backend'))
+try:
+    from hdm.delivery.steam_trial_wrapper import main
+except (ImportError, OSError, SyntaxError):
+    # Missing backend during package rollback must not strand Steam startup.
+    native = '/usr/lib/steamos/steam-launcher'
+    os.execve(native, (native,), dict(os.environ))
+    raise SystemExit(127)
+
+raise SystemExit(main())

@@ -318,6 +318,11 @@ class UserServiceCommandRunner:
     MAX_OUTPUT_BYTES = 4096
     SAFE_USERNAME = ReadOnlyCommandRunner.SAFE_USERNAME
     SUFFIXES = {
+        UserServiceOperation.INSPECT_STEAM_UNIT: (
+            'show', 'steam-launcher.service', '--property=LoadState',
+            '--property=FragmentPath', '--property=DropInPaths',
+            '--property=ExecStart', '--property=Environment', '--no-pager',
+        ),
         UserServiceOperation.DAEMON_RELOAD: ("daemon-reload",),
         UserServiceOperation.VERIFY_GAMESCOPE_UNIT: (
             "show",

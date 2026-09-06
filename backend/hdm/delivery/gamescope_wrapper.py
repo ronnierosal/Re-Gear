@@ -340,6 +340,7 @@ def main() -> int:
             os.execve(REAL_GAMESCOPE, (REAL_GAMESCOPE, *trial_arguments), trial_environment)
             return 127
     environment.pop("MESA_VK_DEVICE_SELECT", None)
+    environment.pop("MESA_VK_DEVICE_SELECT_FORCE_DEFAULT_DEVICE", None)
     arguments = rewrite_gamescope_argv(
         arguments,
         output_order=output_order,

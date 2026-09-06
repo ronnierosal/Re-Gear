@@ -16,6 +16,7 @@ from ..domain.control_plane import (
     PlacementState,
     PlannedStep,
     TransitionBinding,
+    TransitionOutcomeKind,
     TransitionStepCode,
 )
 from ..domain.inference import infer_placement
@@ -58,6 +59,7 @@ class PresentationTransitionMechanism:
         trial_store=None,
         active_operation: Callable[[], str] = lambda: "",
         trial_layer_ready: Callable[[], bool] | None = None,
+        trial_steam_waiter: Callable[[str], None] | None = None,
     ) -> None:
         self._integration = integration
         self._config = config
@@ -69,6 +71,7 @@ class PresentationTransitionMechanism:
         self._active_operation = active_operation
         self._trial_plan = None
         self._trial_layer_ready = trial_layer_ready
+        self._trial_steam_waiter = trial_steam_waiter
 
     def run_portable_trial(self, plan, orchestrator):
         """Called only for a consumed trial-bound permit; reuse the same engine."""
@@ -76,11 +79,20 @@ class PresentationTransitionMechanism:
             raise ValueError("portable trial unavailable")
         self._trial_plan = plan
         try:
-            return orchestrator.run(plan, portable_vulkan_trial=True)
+            result = orchestrator.run(plan, portable_vulkan_trial=True)
+            from ..application.transition_orchestrator import RuntimeTransitionResult
+            if (self._trial_steam_waiter is not None
+                    and isinstance(result, RuntimeTransitionResult)
+                    and result.durable
+                    and result.outcome.kind is TransitionOutcomeKind.SUCCEEDED):
+                self._trial_steam_waiter(plan.plan_id)
+            return result
         finally:
             try:
                 record = self._trial_store.read()
                 if record is not None and record['operation_id'] == plan.plan_id:
+                    # The exclusive Steam marker linearizes cancellation against
+                    # its one-shot claim; waiting never grants fresh authority.
                     self._trial_store.cancel(plan.plan_id)
             finally:
                 self._trial_plan = None

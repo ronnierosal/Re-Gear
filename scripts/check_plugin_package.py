@@ -40,6 +40,7 @@ REQUIRED_FILES = (
     "backend/hdm/ports/gamescope_session.py",
     "backend/hdm/domain/gamescope_session.py",
     "bin/gamescope",
+    "bin/steam-launcher",
     "dist/index.js",
     "dist/index.js.map",
     "main.py",
@@ -65,13 +66,15 @@ def main() -> int:
         if not (root / relative).is_file():
             failures.append(f"missing {relative}")
 
-    wrapper_path = root / "bin" / "gamescope"
-    if wrapper_path.is_file():
+    for launcher in ('gamescope', 'steam-launcher'):
+        wrapper_path = root / 'bin' / launcher
+        if not wrapper_path.is_file():
+            continue
         # read_text() silently translates CRLF, masking a Linux bad-interpreter
         # failure. Check the actual executable bytes in checkouts/extracted ZIPs.
         wrapper = wrapper_path.read_bytes()
         if not wrapper.startswith(b"#!/usr/bin/python3\n") or b"\r" in wrapper:
-            failures.append("bin/gamescope must have an LF-only /usr/bin/python3 shebang and body")
+            failures.append(f"bin/{launcher} must have an LF-only /usr/bin/python3 shebang and body")
 
     manifest_path = root / "plugin.json"
     if manifest_path.is_file():
@@ -117,6 +120,8 @@ def main() -> int:
             "execute_supervised_tv_switch",
             "approve_supervised_portable_switch",
             "approve_supervised_portable_vulkan_trial",
+            "approve_supervised_steam_trial_preparation",
+            "prepare_supervised_steam_trial_integration",
             "execute_supervised_portable_switch",
             "approve_safe_disconnect_shutdown",
             "execute_safe_disconnect_shutdown",
