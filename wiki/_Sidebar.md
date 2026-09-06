@@ -1,6 +1,8 @@
 **Re-Gear**
 
 - [Home](Home)
+- [Feature Roadmap](Feature-Roadmap)
+- [Help Improve Re-Gear](Help-Improve-Re-Gear)
 - [Confirmed Hardware Testing](Confirmed-Hardware-Testing)
 - [Offline Play Readiness](Offline-Readiness)
 - [Project Overview](Project-Overview)

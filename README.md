@@ -350,6 +350,12 @@ Additional design records and compatibility documents are available in
 
 ## 🤝 Contributing
 
+Players can help without writing code: follow [Help Improve Re-Gear](https://github.com/ronnierosal/Re-Gear/wiki/Help-Improve-Re-Gear)
+for a useful bug report, reviewed support export, and optional read-only diagnostic
+commands. See the [Feature Roadmap](https://github.com/ronnierosal/Re-Gear/wiki/Feature-Roadmap)
+for our core goal and development priorities.
+
+
 Contributions should preserve the safety invariants, pure-domain boundary, and
 fail-closed defaults. Keep changes narrow, add deterministic regression coverage,
 and use verification proportional to the change. Run the full matrix at

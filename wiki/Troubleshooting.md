@@ -58,6 +58,8 @@ Do not claim a fix is installed until the runtime reports the expected identity.
 
 ## Reporting an issue
 
+Start with [Help Improve Re-Gear](Help-Improve-Re-Gear) for support-preview steps, optional diagnostic commands, and a report checklist.
+
 Search [open and closed GitHub issues](https://github.com/ronnierosal/Re-Gear/issues?q=is%3Aissue) first and update a matching issue when appropriate.
 
 Include the symptom, expected behavior, Re-Gear version/revision, evidence category,

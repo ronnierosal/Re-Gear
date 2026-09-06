@@ -6,10 +6,18 @@
 
 Welcome to the player and contributor guide for Re-Gear, a Decky Loader companion for SteamOS handhelds. Re-Gear is designed for SteamOS handheld PCs across hardware vendors. It explains system state and provides capability-aware docking, recovery, and offline play guidance. Features depend on the device profile and available evidence; the project is not limited in scope to one handheld or eGPU brand.
 
+## Our core goal
+
+**Make SteamOS handheld PCs feel more like consoles:** help players get into their games, move between handheld and docked play, and recover from problems with less troubleshooting, across hardware vendors.
+
+Our immediate priorities are **reliability and recovery**, **offline play confidence**, and **everyday controller-friendly usability**. See the [Feature Roadmap](Feature-Roadmap) for the focus order and development status.
+
 ## Featured guides
 
 - **[Confirmed Hardware Testing](Confirmed-Hardware-Testing)** — tested devices, observed successes, failed gates, and remaining validation.
 - **[Offline Play Readiness](Offline-Readiness)** — where to find checks, what the badges mean, and preparing a game before leaving Wi-Fi.
+
+- **[Help Improve Re-Gear](Help-Improve-Re-Gear)** — report a problem, collect reviewed diagnostics, and contribute useful compatibility evidence.
 
 ## Start here
 
