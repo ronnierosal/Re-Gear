@@ -9,9 +9,26 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 from hdm.adapters.steamos.commands import SteamOsTdpCommandRunner
 from hdm.ports.presentation_activation import GamescopeUserContext
+from hdm.ports.tdp import TdpDispatchRejected
 
 
 class TdpCommandTests(unittest.TestCase):
+    def test_rejected_or_throwing_dispatch_guard_never_starts_subprocess(self):
+        def fail():
+            raise OSError("private context")
+        for guard in (lambda: False, lambda: 1, fail):
+            with self.subTest(guard=guard), patch("hdm.adapters.steamos.commands.subprocess.run") as run:
+                with self.assertRaises(TdpDispatchRejected):
+                    self.runner.set_limit(self.user, 20, owner=":1.42", dispatch_guard=guard)
+                run.assert_not_called()
+
+    def test_guard_is_evaluated_after_identity_setup_and_is_not_retained(self):
+        order = []
+        self.runner._effective_uid = lambda: order.append("identity") or 0
+        with patch("hdm.adapters.steamos.commands.subprocess.run", side_effect=lambda *a, **k: order.append("dispatch") or self.completed()):
+            self.runner.set_limit(self.user, 20, owner=":1.42", dispatch_guard=lambda: order.append("guard") or True)
+            self.runner.set_limit(self.user, 15, owner=":1.42")
+        self.assertEqual(order, ["identity", "guard", "dispatch", "identity", "dispatch"])
     def setUp(self):
         self.user = GamescopeUserContext(
             "deck", 1000, 1000, Path("/home/deck"),
