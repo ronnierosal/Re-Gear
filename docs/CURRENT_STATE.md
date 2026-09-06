@@ -2,6 +2,13 @@
 
 ## Re-Gear 0.3.53 supervised Portable launch trial candidate
 
+Staged only: /home/deck/Re-Gear-0.3.53.zip
+Source: 8d7997fabd3286c4699404b42357a56b1b2edb8d
+Local/remote SHA256: 7461ac1c91161da99960880a6292c1d6c6e109f17e1d3af9649e9cf55ac7aa6b
+1023 backend tests (eight skips), 181 frontend tests and release checks pass.
+Installed readback remains 0.3.52, and the PCI scan shows only internal graphics.
+The verified 0.3.52 archive is retained as rollback. Native install is pending.
+
 Local experimental integration uses a dedicated trial-bound approval and the
 existing Portable transition engine. Original launch policy is persisted before
 config change; one-shot authority is consumed before wrapper exec. Recovery
