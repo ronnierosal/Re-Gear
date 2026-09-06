@@ -524,3 +524,28 @@ export const acknowledgeProcessRelease = callable<
   [string],
   ProcessReleaseAcknowledgementPayload
 >("acknowledge_process_release");
+
+export interface TdpStatusPayload {
+  schema_version: 1;
+  enabled: boolean;
+  can_enable: boolean;
+  ready: boolean;
+  code: string;
+  current_watts: number | null;
+  minimum_watts: number | null;
+  maximum_watts: number | null;
+  restore_available: boolean;
+  recovery_required: boolean;
+  auto_tdp_available: false;
+  last_result: null | {
+    state: string;
+    code: string;
+    requested_watts: number | null;
+    observed_watts: number | null;
+  };
+}
+
+export const getTdpStatus = callable<[], TdpStatusPayload>("get_tdp_status");
+export const setTdpEnabled = callable<[boolean], TdpStatusPayload>("set_tdp_enabled");
+export const applyTdpLimit = callable<[number], TdpStatusPayload>("apply_tdp_limit");
+export const restoreTdpLimit = callable<[], TdpStatusPayload>("restore_tdp_limit");

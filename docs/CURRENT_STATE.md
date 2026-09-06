@@ -6,10 +6,17 @@ The isolated `codex/tdp-control` workstream starts from `75f441f`. It contains
 the thermal non-finite validation fix, read-only ASUS power-limit inventory,
 and an original pure Auto TDP proposal policy. A SteamOS Manager ASUS provider,
 fixed D-Bus read/write runner, serialized apply/verify/restore service and atomic
-recovery journal are now implemented and simulated. They are not wired into
-Decky or installed; ownership resolution, collector loop and UI remain pending.
-882 backend tests pass (5 expected skips), with architecture and compilation
-checks. Linux filesystem and real-device behavior remain unverified.
+recovery journal are implemented and simulated. Manual controls are now wired
+into Decky through four explicit RPCs and an on-demand, initially disabled panel.
+Runtime preflight requires detached Portable mode, known game state, no active
+transition, and a complete scan without known competing controllers. A process
+lease coordinates Re-Gear writers; it does not lock out Steam or unknown tools.
+923 backend tests ran successfully (13 platform-specific skips), and 84 frontend
+tests passed. Architecture, compilation, typecheck, build and package checks pass.
+Browser fixture apply/restore and keyboard interaction passed with substitute HTML
+controls; native Decky/controller behavior remains unverified. Nothing is installed.
+Linux filesystem and real-device behavior, measured telemetry and the live Auto
+TDP loop remain pending.
 Current-source research and remaining device/API checks are recorded in
 [TDP control](TDP_CONTROL.md). The online Ally address is awaited for remote
 inspection. This workstream does not own G1 lifecycle or Offline Play changes.

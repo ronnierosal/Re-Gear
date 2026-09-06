@@ -10,14 +10,18 @@ from __future__ import annotations
 import threading
 import uuid
 from dataclasses import dataclass, replace
-from typing import Callable
+from typing import Callable, Protocol
 
 from ..domain.auto_tdp import AutoTdpObservation, AutoTdpPolicy, AutoTdpState, propose_auto_tdp
 from ..domain.models import GameState
 from ..domain.telemetry import TelemetryAdmissionKind, TelemetryCollectionContract, TelemetryConsumer, admit_telemetry_collection
-from ..ports.tdp import TdpReading
+from ..ports.tdp import TdpDispatchGuard, TdpReading
 from .auto_tdp_dispatch import AutoTdpDispatchContext, AutoTdpDispatchGuard
-from .tdp_control import TdpControlResult, TdpControlService
+from .tdp_control import TdpControlResult
+
+
+class AutoTdpActuator(Protocol):
+    def apply(self, watts: int, *, dispatch_guard: TdpDispatchGuard) -> TdpControlResult: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -41,7 +45,7 @@ class AutoTdpSessionResult:
 
 
 class AutoTdpSession:
-    def __init__(self, *, service: TdpControlService,
+    def __init__(self, *, service: AutoTdpActuator,
                  collect: Callable[[], AutoTdpEvidence | None],
                  revalidate: Callable[[], AutoTdpLiveContext | None],
                  game_state: Callable[[], GameState], clock_ms: Callable[[], int],
@@ -62,6 +66,10 @@ class AutoTdpSession:
     @property
     def enabled(self) -> bool:
         return self._activation is not None
+
+    @property
+    def collection_interval_ms(self) -> int:
+        return self._contract.interval_ms
 
     def _result(self, code, proposed=None, transaction=None):
         return AutoTdpSessionResult(code, self.enabled, proposed, transaction)

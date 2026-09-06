@@ -2,13 +2,15 @@
 
 ## TDP foundation checkpoint — 2026-09-04
 
-- Follow-up: SteamOS Manager ASUS provider, unique-owner D-Bus dispatch,
-  shared manual apply/verify/restore and atomic file journal implemented and
-  simulated. 882 backend tests pass (5 expected skips), plus architecture,
-  compile and diff checks. No Decky wiring or device deployment. Ownership
-  defaults to unverified until an actual resolver is integrated. The pending
-  SSH address continues to block remote validation only; local development
-  continues with ownership/lifecycle and UI delivery next.
+- Follow-up: manual provider, apply/verify/restore and journal are now wired to
+  an on-demand Decky panel and four explicit RPCs. Default disabled; detached
+  Portable mode, game/transition evidence, known-controller scan and writer lease
+  are checked before writes. The scan does not prove universal exclusivity.
+  Unload stops admissions without power writes and preserves recovery state.
+  923 backend tests ran successfully (13 platform skips); 84 frontend tests,
+  architecture, compilation, typecheck, build and package checks pass. Browser
+  fixture apply/restore passed; real Decky/controller/Linux/device checks remain.
+  No deployment. Pending SSH address blocks remote validation only.
 
 - Change: isolated `codex/tdp-control` from `75f441f`; current-source TDP/Auto TDP
   research, product scope extension, thermal non-finite fix, read-only ASUS
@@ -20,8 +22,8 @@
 - Hardware evidence: none. No remote setting change, installation or deployment.
 - Blocker: maintainer-provided current Ally SSH address is awaited. No network
   scanning or alternate credential attempts.
-- Next: inspect installed provider/ownership and readback, then implement shared
-  manual apply/verify/restore and UI before enabling live Auto TDP. G1 journey
+- Next: inspect installed provider/ownership and readback, develop measured
+  telemetry and verify manual behavior before enabling live Auto TDP. G1 journey
   ownership remains separate; there is no installed Auto TDP background loop.
 
 ## Re-Gear repository checkpoint — 2026-09-03
