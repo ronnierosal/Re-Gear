@@ -99,6 +99,8 @@ def main() -> int:
             "get_auto_tdp_benchmark_status",
             "run_auto_tdp_benchmark",
             "cancel_auto_tdp_benchmark",
+            "get_auto_tdp_preferences",
+            "save_auto_tdp_preference",
             "get_peripheral_status",
             "get_action_history",
             "get_automatic_dock_status",

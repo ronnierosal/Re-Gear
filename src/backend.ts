@@ -586,3 +586,17 @@ export interface TdpBenchmarkStatus {
 export const getTdpBenchmarkStatus = callable<[], TdpBenchmarkStatus>("get_auto_tdp_benchmark_status");
 export const runTdpBenchmark = callable<[], TdpBenchmarkStatus>("run_auto_tdp_benchmark");
 export const cancelTdpBenchmark = callable<[], TdpBenchmarkStatus>("cancel_auto_tdp_benchmark");
+
+export interface AutoTdpSavedPreference {
+  placement: string;
+  target_fps: number;
+  minimum_watts: number;
+  maximum_watts: number;
+}
+export interface AutoTdpPreferencesPayload {
+  schema_version: 1;
+  code: string;
+  preferences: AutoTdpSavedPreference[];
+}
+export const getAutoTdpPreferences = callable<[], AutoTdpPreferencesPayload>("get_auto_tdp_preferences");
+export const saveAutoTdpPreference = callable<[string, number, number, number], AutoTdpPreferencesPayload>("save_auto_tdp_preference");

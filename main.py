@@ -190,6 +190,8 @@ from hdm.domain.control_plane import (  # noqa: E402
 from hdm.domain.models import GameState, EgpuPresence, OperatingMode  # noqa: E402
 from hdm.domain.inference import infer_operating_mode  # noqa: E402
 from hdm.domain.tdp_placement import tdp_placement_readiness  # noqa: E402
+from hdm.domain.auto_tdp_preferences import AutoTdpModePreference  # noqa: E402
+from hdm.delivery.auto_tdp_preferences import FileAutoTdpPreferences  # noqa: E402
 from hdm.domain.inference import infer_placement  # noqa: E402
 from hdm.profiles.gpd_g1 import match_gpd_g1  # noqa: E402
 
@@ -316,6 +318,34 @@ class Plugin:
 
     def _auto_configuration(self):
         return FileAutoTdpConfiguration(RootOwnedRuntimeState().ensure()).load()
+
+    def _auto_preferences_store(self):
+        with self._tdp_init_lock:
+            if not hasattr(self, "_auto_preferences_file"):
+                self._auto_preferences_file = FileAutoTdpPreferences(RootOwnedRuntimeState().ensure())
+            return self._auto_preferences_file
+
+    @staticmethod
+    def _auto_preferences_payload(result):
+        return {"schema_version": 1, "code": result.code, "preferences": [] if result.preferences is None else [
+            {"placement": item.placement.value, "target_fps": item.target_fps,
+             "minimum_watts": item.minimum_watts, "maximum_watts": item.maximum_watts}
+            for item in result.preferences.preferences]}
+
+    async def get_auto_tdp_preferences(self):
+        try:
+            result = await asyncio.to_thread(lambda: self._auto_preferences_store().load())
+            return self._auto_preferences_payload(result)
+        except Exception:
+            return {"schema_version": 1, "code": "auto_tdp_preferences.invalid", "preferences": []}
+
+    async def save_auto_tdp_preference(self, placement, target_fps, minimum_watts, maximum_watts):
+        try:
+            preference = AutoTdpModePreference(PlacementState(placement), AutoTdpPolicy(minimum_watts, maximum_watts, target_fps))
+            result = await asyncio.to_thread(lambda: self._auto_preferences_store().save_preference(preference))
+            return self._auto_preferences_payload(result)
+        except Exception:
+            return {"schema_version": 1, "code": "auto_tdp_preferences.save_failed", "preferences": []}
 
     def _benchmark_status(self, code=None):
         runtime = self._tdp_runtime

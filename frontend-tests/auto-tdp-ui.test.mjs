@@ -6,6 +6,14 @@ const ready = { schema_version: 1, can_start: true, enabled: false, running: fal
 const running = { ...ready, can_start: false, enabled: true, running: true, target_fps: 60, minimum_watts: 7, maximum_watts: 30, activity_code: "auto_tdp.context_settling" };
 const manual = { ready: true, recovery_required: false, minimum_watts: 7, maximum_watts: 30, current_watts: 15 };
 
+test("active sessions explain pauses and ineffective increases", () => {
+  assert.match(autoTdpActivity({ ...running, activity_code: "auto_tdp.no_performance_gain" }), /Holding power/);
+  for (const activity_code of ["telemetry.auto_tdp_game_not_running", "auto_tdp.render_unverified", "auto_tdp.ownership_unverified", "auto_tdp.thermal_unverified", "auto_tdp.power_source_unverified"]) {
+    assert.match(autoTdpActivity({ ...running, activity_code }), /Paused/);
+  }
+  assert.equal(autoTdpActivity({ ...ready, activity_code: "auto_tdp.no_performance_gain" }), null);
+});
+
 test("strict Auto schema preserves stop/drain separately from enablement", () => {
   assert.notEqual(sanitizeAutoTdpStatus(ready), null);
   assert.notEqual(sanitizeAutoTdpStatus(running), null);

@@ -55,6 +55,12 @@ export function autoTdpActivity(status: AutoTdpStatusPayload | null): string | n
   if (status && ["auto_tdp.worker_unavailable", "auto_tdp.session_unavailable"].includes(status.activity_code ?? "")) return "Auto TDP stopped because the session became unavailable. Refresh before restarting.";
   if (!status?.enabled) return null;
   switch (status.activity_code) {
+    case "auto_tdp.no_performance_gain": return "Holding power: recent increases did not improve the sampled frame rate. A changed workload or fresh start will reassess.";
+    case "telemetry.auto_tdp_game_not_running": return "Paused until a running game is verified. Fresh samples are required before power changes resume.";
+    case "auto_tdp.render_unverified": return "Paused while the game's render GPU is unverified.";
+    case "auto_tdp.ownership_unverified": return "Paused while power-controller ownership is unverified.";
+    case "auto_tdp.thermal_unverified": return "Paused until temperature evidence is ready.";
+    case "auto_tdp.power_source_unverified": return "Paused until the power source is verified.";
     case "auto_tdp.sample_unavailable": return "Waiting for fresh game performance and sensor evidence.";
     case "auto_tdp.context_settling": case "auto_tdp.settling": return "Collecting performance at the current power limit.";
     case "tdp.readback_verified": return "The latest power adjustment was verified.";

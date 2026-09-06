@@ -64,6 +64,7 @@ class AutoTdpSession:
         self._control_lock = threading.Lock()
         self._stop_generation = 0
         self._reset_collection = reset_collection
+        self._pending_response = None
 
     @property
     def enabled(self) -> bool:
@@ -94,6 +95,7 @@ class AutoTdpSession:
                     return self._result("auto_tdp.activation_changed")
                 self._policy, self._state = policy, AutoTdpState()
                 self._provider_context = None
+                self._pending_response = None
                 self._last_collection_ms = None
                 self._activation = uuid.uuid4().hex
             return self._result("auto_tdp.started")
@@ -106,6 +108,7 @@ class AutoTdpSession:
         with self._control_lock:
             self._stop_generation += 1
             self._activation = None
+            self._pending_response = None
         return self._result("auto_tdp.stopped")
 
     def _context(self, activation: str) -> AutoTdpDispatchContext | None:
@@ -132,6 +135,7 @@ class AutoTdpSession:
             admission = admit_telemetry_collection(self._contract, self._game_state(), auto_tdp_enabled=True)
             if admission.kind is not TelemetryAdmissionKind.ADMIT:
                 self._state = AutoTdpState()
+                self._pending_response = None
                 if self._reset_collection is not None:
                     self._reset_collection()
                 return self._result(admission.reason)
@@ -141,6 +145,12 @@ class AutoTdpSession:
                 return self._result("auto_tdp.activation_changed")
             if not isinstance(evidence, AutoTdpEvidence):
                 self._state = AutoTdpState()
+                if self._pending_response is not None:
+                    key, expected_reading, _, _, deadline = self._pending_response
+                    live = self._revalidate()
+                    if (not isinstance(live, AutoTdpLiveContext) or live.workload_key != key
+                            or live.reading != expected_reading or self._clock() > deadline):
+                        self._pending_response = None
                 return self._result("auto_tdp.sample_unavailable")
             sample, reading = evidence.observation, evidence.reading
             if (sample.configured_watts != reading.sustained.current
@@ -155,6 +165,21 @@ class AutoTdpSession:
             self._provider_context = reading
             decision = propose_auto_tdp(policy, self._state, sample, now_ms=self._clock())
             self._state = decision.state
+            # A verified setting change makes the real collector rewarm. Preserve
+            # only the response baseline across that expected gap, never its vote
+            # streak or permission to write. Fresh full context must match again.
+            if self._pending_response is not None:
+                key, expected_reading, baseline_fps, ineffective, deadline = self._pending_response
+                if (sample.context_key != key or reading != expected_reading or self._clock() > deadline
+                        or not all(value is True for value in (sample.internal_render_verified,
+                            sample.controller_owned, sample.thermal_ready, sample.power_source_ready))):
+                    self._pending_response = None
+                elif decision.code == "auto_tdp.context_settling":
+                    self._state = replace(self._state, increase_baseline_fps=baseline_fps,
+                                          ineffective_increases=ineffective)
+                    self._pending_response = None
+                else:
+                    self._pending_response = None
             if decision.proposed_watts is None:
                 return self._result(decision.code)
             expected = AutoTdpDispatchContext(activation, sample.context_key, reading)
@@ -163,8 +188,20 @@ class AutoTdpSession:
             result = self._service.apply(decision.proposed_watts, dispatch_guard=guard)
             if result.state == "applied" and result.observed_watts == decision.proposed_watts:
                 self._state = replace(self._state, configured_watts=result.observed_watts, last_change_ms=self._clock())
+                if decision.proposed_watts > sample.configured_watts:
+                    target = reading.target_values(decision.proposed_watts)
+                    expected_reading = replace(reading,
+                        sustained=replace(reading.sustained, current=target[0]),
+                        slow=replace(reading.slow, current=target[1]),
+                        fast=replace(reading.fast, current=target[2]))
+                    self._pending_response = (sample.context_key, expected_reading,
+                        self._state.increase_baseline_fps, self._state.ineffective_increases,
+                        self._clock() + 30_000)
+                else:
+                    self._pending_response = None
             else:
                 self._state = AutoTdpState()
+                self._pending_response = None
             if result.state == "recovery_required":
                 self._activation = None
             return self._result(result.code, decision.proposed_watts, result)

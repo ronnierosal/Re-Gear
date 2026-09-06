@@ -70,6 +70,11 @@ class AutoTdpState:
     configured_watts: int | None = None
     missed_samples: int = 0
     stable_samples: int = 0
+    increase_baseline_fps: float | None = None
+    ineffective_increases: int = 0
+    held_fps: float | None = None
+    held_change_fps: float | None = None
+    held_change_samples: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -142,6 +147,20 @@ def propose_auto_tdp(
             "auto_tdp.settling",
         )
     missed = sample.fps < policy.target_fps - policy.deadband_fps
+    if state.held_fps is not None:
+        if missed and abs(sample.fps - state.held_fps) <= policy.deadband_fps:
+            return AutoTdpDecision(replace(next_state, missed_samples=0, stable_samples=0,
+                                           held_change_fps=None, held_change_samples=0),
+                                   "auto_tdp.no_performance_gain")
+        count = state.held_change_samples + 1 if state.held_change_fps is not None and abs(sample.fps - state.held_change_fps) <= policy.deadband_fps else 1
+        if count < policy.missed_target_samples:
+            return AutoTdpDecision(replace(next_state, held_change_fps=sample.fps,
+                                           held_change_samples=count), "auto_tdp.no_performance_gain")
+        # Sustained changed evidence must still settle and earn a fresh streak.
+        next_state = replace(next_state, held_fps=None, increase_baseline_fps=None,
+                             ineffective_increases=0, missed_samples=0, stable_samples=0,
+                             held_change_fps=None, held_change_samples=0, last_change_ms=now_ms)
+        return AutoTdpDecision(next_state, "auto_tdp.context_settling")
     next_state = replace(
         next_state,
         missed_samples=state.missed_samples + 1 if missed else 0,
@@ -149,8 +168,17 @@ def propose_auto_tdp(
     )
     proposed = None
     if next_state.missed_samples >= policy.missed_target_samples:
+        ineffective = state.ineffective_increases
+        if state.increase_baseline_fps is not None:
+            ineffective = ineffective + 1 if sample.fps <= state.increase_baseline_fps + policy.deadband_fps else 0
+        if ineffective >= 2:
+            return AutoTdpDecision(replace(next_state, missed_samples=0, stable_samples=0,
+                                           ineffective_increases=ineffective, held_fps=sample.fps),
+                                   "auto_tdp.no_performance_gain")
+        next_state = replace(next_state, increase_baseline_fps=sample.fps, ineffective_increases=ineffective)
         proposed = min(policy.maximum_watts, watts + policy.step_watts)
     elif next_state.stable_samples >= policy.stable_target_samples:
+        next_state = replace(next_state, increase_baseline_fps=None, ineffective_increases=0, held_fps=None)
         proposed = max(policy.minimum_watts, watts - policy.step_watts)
     if proposed is None:
         return AutoTdpDecision(next_state, "auto_tdp.observing")

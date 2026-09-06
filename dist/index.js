@@ -70,6 +70,8 @@ const stopAutoTdp = callable("stop_auto_tdp");
 const getTdpBenchmarkStatus = callable("get_auto_tdp_benchmark_status");
 const runTdpBenchmark = callable("run_auto_tdp_benchmark");
 const cancelTdpBenchmark = callable("cancel_auto_tdp_benchmark");
+const getAutoTdpPreferences = callable("get_auto_tdp_preferences");
+const saveAutoTdpPreference = callable("save_auto_tdp_preference");
 
 function isSteamSuspendStore(value) {
     if (typeof value !== "object" || value === null) {
@@ -573,6 +575,12 @@ function autoTdpActivity(status) {
     if (!status?.enabled)
         return null;
     switch (status.activity_code) {
+        case "auto_tdp.no_performance_gain": return "Holding power: recent increases did not improve the sampled frame rate. A changed workload or fresh start will reassess.";
+        case "telemetry.auto_tdp_game_not_running": return "Paused until a running game is verified. Fresh samples are required before power changes resume.";
+        case "auto_tdp.render_unverified": return "Paused while the game's render GPU is unverified.";
+        case "auto_tdp.ownership_unverified": return "Paused while power-controller ownership is unverified.";
+        case "auto_tdp.thermal_unverified": return "Paused until temperature evidence is ready.";
+        case "auto_tdp.power_source_unverified": return "Paused until the power source is verified.";
         case "auto_tdp.sample_unavailable": return "Waiting for fresh game performance and sensor evidence.";
         case "auto_tdp.context_settling":
         case "auto_tdp.settling": return "Collecting performance at the current power limit.";
@@ -686,6 +694,63 @@ function TdpBenchmarkControls({ ready, autoRunning }) {
     return SP_JSX.jsxs(SP_JSX.Fragment, { children: [SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx("strong", { children: "Collection benchmark" }) }), SP_JSX.jsx(DFL.PanelSectionRow, { children: cancelling ? "Requesting cancellation…" : runPending && busy ? "Measuring frame and sensor collection…" : tdpBenchmarkMessage(status) }), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", disabled: busy || runPending || !ready || autoRunning || status?.running === true, onClick: () => void request("run"), children: "Run benchmark" }) }), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", disabled: cancelling, onClick: () => void request("cancel"), children: "Cancel benchmark" }) }), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", disabled: busy, onClick: () => void request("read"), children: "Refresh benchmark" }) }), result && SP_JSX.jsxs(DFL.PanelSectionRow, { children: ["Last benchmark: ", result.usable_samples, " usable samples from ", result.attempts, " attempts.", SP_JSX.jsx("br", {}), "Longest collection and recheck: ", result.maximum_collection_and_revalidation_ms === null ? "unavailable" : `${result.maximum_collection_and_revalidation_ms} ms`, ".", SP_JSX.jsx("br", {}), "Sample interval: ", result.interval_ms, " ms. Elapsed: ", (result.elapsed_ms / 1000).toFixed(1), " seconds."] }), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx("span", { style: { fontSize: "12px", opacity: 0.75 }, children: "Measures collection time while a game runs. Power settings stay unchanged. Closing this panel lets the benchmark finish; use Cancel to stop it. Results require review before Auto TDP can use them." }) })] });
 }
 
+const preferenceModes = [
+    { data: "portable", label: "Portable" },
+    { data: "boosted_handheld", label: "Boosted Handheld" },
+    { data: "docked_igpu", label: "Docked-iGPU" },
+    { data: "docked_egpu", label: "Docked-eGPU" },
+];
+function sanitizeAutoTdpPreferences(value) {
+    if (!value || typeof value !== "object")
+        return null;
+    const v = value;
+    if (v.schema_version !== 1 || !["loaded", "missing", "saved", "invalid", "save_failed"].some(code => v.code === `auto_tdp_preferences.${code}`) || !Array.isArray(v.preferences) || v.preferences.length > 4)
+        return null;
+    const seen = new Set();
+    for (const row of v.preferences) {
+        if (!row || !preferenceModes.some(mode => mode.data === row.placement) || seen.has(row.placement)
+            || typeof row.target_fps !== "number" || !Number.isFinite(row.target_fps) || row.target_fps <= 2 || row.target_fps > 1000
+            || !Number.isSafeInteger(row.minimum_watts) || !Number.isSafeInteger(row.maximum_watts)
+            || row.minimum_watts <= 0 || row.maximum_watts > 0xffffffff || row.minimum_watts > row.maximum_watts)
+            return null;
+        seen.add(row.placement);
+    }
+    return v;
+}
+
+function AutoTdpPreferencesControls({ target, minimum, maximum, canSave, onLoad }) {
+    const [mode, setMode] = SP_REACT.useState("portable");
+    const [status, setStatus] = SP_REACT.useState(null);
+    const [busy, setBusy] = SP_REACT.useState(false);
+    const mounted = SP_REACT.useRef(true);
+    const pending = SP_REACT.useRef(false);
+    const request = async (save = false) => {
+        if (pending.current)
+            return;
+        pending.current = true;
+        setBusy(true);
+        try {
+            const result = await (save && minimum !== null && maximum !== null ? saveAutoTdpPreference(mode, target, minimum, maximum) : getAutoTdpPreferences());
+            if (mounted.current)
+                setStatus(sanitizeAutoTdpPreferences(result));
+        }
+        catch {
+            if (mounted.current)
+                setStatus(null);
+        }
+        finally {
+            pending.current = false;
+            if (mounted.current)
+                setBusy(false);
+        }
+    };
+    SP_REACT.useEffect(() => { mounted.current = true; void request(); return () => { mounted.current = false; }; }, []);
+    const saved = status?.preferences.find(row => row.placement === mode);
+    return SP_JSX.jsxs(SP_JSX.Fragment, { children: [SP_JSX.jsx(DFL.DropdownItem, { label: "Save preferences for", rgOptions: preferenceModes, selectedOption: mode, disabled: busy, onChange: option => { if (preferenceModes.some(row => row.data === option.data))
+                    setMode(option.data); } }), SP_JSX.jsx(DFL.PanelSectionRow, { children: busy ? "Checking saved preferences…" : !status || ["auto_tdp_preferences.invalid", "auto_tdp_preferences.save_failed"].includes(status.code) ? "Preferences unavailable or save failed. Refresh to check stored values." : status.code === "auto_tdp_preferences.saved" ? "Preferences saved. Auto TDP settings and activation are unchanged." : "Saved preferences do not start Auto TDP." }), SP_JSX.jsx(DFL.PanelSectionRow, { children: saved ? `Saved: ${saved.target_fps} FPS, ${saved.minimum_watts}–${saved.maximum_watts} W.` : "No saved preferences for this mode." }), mode !== "portable" && SP_JSX.jsx(DFL.PanelSectionRow, { children: "This mode's power profile is not validated. Preferences can be saved for future use." }), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", disabled: busy || !canSave, onClick: () => void request(true), children: "Save current FPS and range" }) }), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", disabled: busy || !saved || mode !== "portable" || !canSave, onClick: () => { if (saved && mode === "portable")
+                        onLoad(saved); }, children: "Load Portable preferences into controls" }) }), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", disabled: busy, onClick: () => void request(), children: "Refresh saved preferences" }) })] });
+}
+
 function AutoTdpControls({ manual, manualBusy, manualMessage, onChanged }) {
     const [status, setStatus] = SP_REACT.useState(null);
     const [target, setTarget] = SP_REACT.useState(60);
@@ -694,6 +759,7 @@ function AutoTdpControls({ manual, manualBusy, manualMessage, onChanged }) {
     const [busy, setBusy] = SP_REACT.useState(false);
     const [stopping, setStopping] = SP_REACT.useState(false);
     const [benchmarkVisible, setBenchmarkVisible] = SP_REACT.useState(false);
+    const [preferencesVisible, setPreferencesVisible] = SP_REACT.useState(false);
     const mounted = SP_REACT.useRef(true);
     const gate = SP_REACT.useRef(new AutoTdpRequestGate());
     const pendingRefresh = SP_REACT.useRef(false);
@@ -756,7 +822,11 @@ function AutoTdpControls({ manual, manualBusy, manualMessage, onChanged }) {
                     setTarget(option.data); } }), SP_JSX.jsx(DFL.DropdownItem, { label: "Minimum power", rgOptions: watts, selectedOption: minimum ?? undefined, disabled: locked, onChange: (option) => { if (watts.some((entry) => entry.data === option.data))
                     setMinimum(option.data); } }), SP_JSX.jsx(DFL.DropdownItem, { label: "Maximum power", rgOptions: watts, selectedOption: maximum ?? undefined, disabled: locked, onChange: (option) => { if (watts.some((entry) => entry.data === option.data))
                     setMaximum(option.data); } }), !valid && manual?.ready && SP_JSX.jsxs(DFL.PanelSectionRow, { children: ["Choose a range that includes the last checked limit of ", manual.current_watts, " W."] }), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", disabled: locked || !status?.can_start || !valid, onClick: () => { if (!locked && status?.can_start && valid && minimum !== null && maximum !== null)
-                        void request(() => startAutoTdp(target, minimum, maximum), "start"); }, children: "Start Auto TDP" }) }), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", disabled: stopping, onClick: () => void request(stopAutoTdp, "stop"), children: "Stop Auto TDP" }) }), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", disabled: busy, onClick: () => void request(getAutoTdpStatus), children: "Refresh Auto TDP" }) }), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx("span", { style: { fontSize: "12px", opacity: 0.75 }, children: "Stop keeps the current limit. Restore returns to saved settings. Manual Apply or Restore stops Auto TDP. Closing this panel keeps Auto TDP running." }) }), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ToggleField, { label: "Show collection benchmark", checked: benchmarkVisible, onChange: setBenchmarkVisible }) }), benchmarkVisible && SP_JSX.jsx(TdpBenchmarkControls, { ready: manual?.ready === true && !manualBusy && !busy, autoRunning: status?.running === true })] });
+                        void request(() => startAutoTdp(target, minimum, maximum), "start"); }, children: "Start Auto TDP" }) }), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", disabled: stopping, onClick: () => void request(stopAutoTdp, "stop"), children: "Stop Auto TDP" }) }), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", disabled: busy, onClick: () => void request(getAutoTdpStatus), children: "Refresh Auto TDP" }) }), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx("span", { style: { fontSize: "12px", opacity: 0.75 }, children: "Stop keeps the current limit. Restore returns to saved settings. Manual Apply or Restore stops Auto TDP. Closing this panel keeps Auto TDP running." }) }), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ToggleField, { label: "Show saved mode preferences", checked: preferencesVisible, onChange: setPreferencesVisible }) }), preferencesVisible && SP_JSX.jsx(AutoTdpPreferencesControls, { target: target, minimum: minimum, maximum: maximum, canSave: !locked && valid, onLoad: row => { if (!locked) {
+                    setTarget(row.target_fps);
+                    setMinimum(row.minimum_watts);
+                    setMaximum(row.maximum_watts);
+                } } }), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ToggleField, { label: "Show collection benchmark", checked: benchmarkVisible, onChange: setBenchmarkVisible }) }), benchmarkVisible && SP_JSX.jsx(TdpBenchmarkControls, { ready: manual?.ready === true && !manualBusy && !busy, autoRunning: status?.running === true })] });
 }
 
 function TdpControls({ visible }) {
