@@ -7,7 +7,15 @@
 The authoritative compatibility model is
 [Hardware support](https://github.com/ronnierosal/Re-Gear/blob/main/docs/HARDWARE_SUPPORT.md).
 
-## Initial validated profile
+## Product scope and compatibility
+
+Re-Gear is designed for SteamOS handheld PCs across vendors, with capability-based
+support for docks, displays, and eGPUs. The combination below is the current
+recorded test baseline, not the product boundary. Offline Play Readiness is a
+local Steam evidence feature; it is not conceptually tied to a particular eGPU.
+Its installed delivery still needs validation on each relevant software environment.
+
+## Recorded test baseline
 
 | Component | Profile |
 |---|---|

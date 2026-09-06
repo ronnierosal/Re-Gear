@@ -6,7 +6,6 @@
 - [Project Overview](Project-Overview)
 - [Current State](Current-State)
 - [Fixes and Issue Tracking](Issues-Fixed)
-- [Ally X + GPD G1 Incident](Ally-X-and-GPD-G1-Docking-Incident)
 - [Getting Started](Getting-Started)
 - [How Re-Gear Works](How-HDM-Works)
 - [Supported Hardware](Supported-Hardware)
@@ -15,3 +14,7 @@
 - [Troubleshooting](Troubleshooting)
 - [Development](Development)
 - [FAQ](FAQ)
+
+**Device-specific evidence**
+
+- [Ally X + GPD G1 Incident](Ally-X-and-GPD-G1-Docking-Incident)

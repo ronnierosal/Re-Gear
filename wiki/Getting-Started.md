@@ -19,9 +19,9 @@ If you are participating in a coordinated test:
 
 1. Confirm the exact build revision and artifact checksum.
 2. Begin from the documented Portable baseline.
-3. Keep the GPD G1 disconnected during installation.
+3. Follow the installation baseline for your exact profile; current eGPU test builds require a powered-off detach before installation.
 4. Use one watched transition at a time with a rollback plan.
-5. Shut down before physically disconnecting the G1.
+5. Follow the documented disconnect policy. Current eGPU testing requires complete shutdown before physical disconnection.
 
 ## Developers
 

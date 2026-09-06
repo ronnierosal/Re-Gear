@@ -4,7 +4,7 @@
 **Reviewed:** 2026-09-06<br>
 **Maturity:** experimental development; no general public release
 
-Welcome to the player and contributor guide for Re-Gear, a Decky Loader companion for SteamOS handhelds. Re-Gear explains system state and provides guarded docking and recovery workflows.
+Welcome to the player and contributor guide for Re-Gear, a Decky Loader companion for SteamOS handhelds. Re-Gear is designed for SteamOS handheld PCs across hardware vendors. It explains system state and provides capability-aware docking, recovery, and offline play guidance. Features depend on the device profile and available evidence; the project is not limited in scope to one handheld or eGPU brand.
 
 ## Featured guides
 
@@ -27,4 +27,4 @@ Read [Project Overview](Project-Overview), [How Re-Gear Works](How-HDM-Works), [
 
 The [repository README](https://github.com/ronnierosal/Re-Gear#-current-status) identifies the current development candidate and integration branch. The Wiki explains the product; [repository contracts](https://github.com/ronnierosal/Re-Gear/blob/main/docs/INDEX.md) own engineering and support claims. A newer candidate is not automatically installed or hardware certified.
 
-> **GPD G1:** physical live removal remains unsupported. Restore or retain a known-good state and fully shut down before disconnecting. A Portable display or an accepted shutdown request does not prove safe removal.
+> **eGPU safety:** follow the verified disconnect policy for your exact hardware. Current Re-Gear testing does not establish physical live-removal support. Restore or retain a known-good state and fully shut down before disconnecting. A Portable display or an accepted shutdown request does not prove safe removal.

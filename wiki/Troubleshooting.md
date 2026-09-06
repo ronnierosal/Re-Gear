@@ -14,7 +14,7 @@ Do not begin by posting raw logs or hardware identities.
 
 Check the categorical host profile, eGPU profile, USB4 authorization, required
 topology functions, driver bindings, and link state. A GPU ID alone is not proof
-of the exact GPD G1 profile. Incomplete or ambiguous evidence should remain
+of a supported eGPU profile. Incomplete or ambiguous evidence should remain
 Unknown.
 
 ### The display connector says connected, but the TV is blank
@@ -26,7 +26,7 @@ symptom and safely returned to Portable. The cause was first a mismatched
 private launch binding and then a root-created config that the Gamescope user
 could not read. The corrected path subsequently completed one watched TV
 transition. See the detailed
-[Ally X and GPD G1 incident](Ally-X-and-GPD-G1-Docking-Incident).
+[historical device-specific incident](Ally-X-and-GPD-G1-Docking-Incident).
 
 ### The TV works, but sound still comes from the handheld
 
@@ -47,8 +47,8 @@ divergence.
 ### Sleep or disconnect remains blocked
 
 Treat stale, loading, incomplete, unavailable, or unknown evidence as a real
-blocker. Clearing process clients alone does not make physical G1 removal safe.
-The current profile still requires shutdown before disconnect.
+blocker. Clearing process clients alone does not establish safe physical eGPU removal.
+Follow the exact profile policy; current validation requires shutdown before disconnect.
 
 ### The installed result does not match the source checkout
 

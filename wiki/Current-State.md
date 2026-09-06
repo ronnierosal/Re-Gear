@@ -11,19 +11,19 @@ Use the [README status](https://github.com/ronnierosal/Re-Gear#-current-status) 
 | Area | Evidence and limits |
 |---|---|
 | Decky dashboard and diagnostics | Implemented; compact controller-focused status and actions in newer candidates |
-| Exact Ally X/GPD G1 discovery | Hardware observations exist; other profiles are not certified by similarity |
+| Profile-based hardware discovery | Exact tested combinations are listed in [Confirmed Hardware Testing](Confirmed-Hardware-Testing); other profiles are not certified by similarity |
 | TV docking and Portable return | Guarded shared transition engine; bounded supervised successes, with repeatability and recovery gates remaining |
 | Automatic TV docking | Experimental persistent opt-in, off by default; exact readiness and idle-game checks apply |
-| Audio handoff | Exact G1 HDMI default selection observed in a supervised cycle; display success alone never proves audio success |
+| Audio handoff | External HDMI default selection observed on the documented test profile; display success alone never proves audio success |
 | Offline Readiness | Newer candidates read selected-game local Steam evidence; badges are guidance, not a guarantee of offline launch |
 | Sleep protection and support export | Implemented with capability-specific controller and hardware acceptance gates |
 | Disconnect status | Observes blockers; Portable return and a clear client scan do not authorize physical unplug |
 | Boosted Handheld | Unproven and unavailable |
-| Physical live G1 removal | Unsupported; shutdown before disconnect remains required |
+| Physical live eGPU removal | Unsupported; shutdown before disconnect remains required |
 
 ## Recorded hardware evidence
 
-Earlier supervised sessions activated the TV and selected the RX 7600M XT. A later cycle selected G1 HDMI audio and returned to Portable. Other attempts encountered black-TV recovery, delayed enumeration, or missing driver binding. These are separate outcomes, not a claim that docking is uniformly reliable.
+Supervised sessions on the [documented test hardware](Confirmed-Hardware-Testing) activated the TV and selected the external GPU. A later cycle selected external HDMI audio and returned to Portable. Other attempts encountered black-TV recovery, delayed enumeration, or missing driver binding. These are separate outcomes, not a claim that docking is uniformly reliable.
 
 A watched shutdown lost networking while the handheld fan and LEDs remained on. More recent Portable trial records also found retained external GPU references despite a working internal display. Neither network loss nor a usable Portable screen proves complete shutdown or released eGPU resources.
 

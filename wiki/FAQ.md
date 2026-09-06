@@ -10,22 +10,25 @@ Not as a supported public release. Current hardware builds use controlled,
 provenance-verified deployment and supervised validation. See
 [Getting Started](Getting-Started).
 
-## Does Re-Gear only support the Ally X and GPD G1?
+## Is Re-Gear limited to one handheld or eGPU brand?
 
-They are the first exact validated profile, not the intended architectural
-limit. Other hardware is not yet certified. Several first-profile couplings
-remain open and are being moved behind capability/profile seams incrementally.
+No. Re-Gear is designed as a SteamOS handheld companion across hardware vendors.
+General features and hardware-dependent actions have separate requirements.
+Broader product scope does not mean every device is tested: see [Supported Hardware](Supported-Hardware)
+for exact combinations and [Confirmed Hardware Testing](Confirmed-Hardware-Testing)
+for recorded results. Additional devices need their own profile and capability evidence.
 
 ## Does TV Docked work now?
 
-Yes, bounded supervised Ally X/GPD G1 sessions have activated the TV and selected the external GPU. Automatic docking is experimental and off by default. Repeatable operation, recovery, and audio must still be verified for the exact build. See [Current State](Current-State).
+Yes, bounded supervised sessions on the documented test profile have activated the TV and selected the external GPU. Automatic docking is experimental and off by default. Repeatable operation, recovery, and audio must still be verified for the exact build. See [Current State](Current-State).
 
-## Can I unplug the GPD G1 while the handheld is running?
+## Can I unplug an eGPU while the handheld is running?
 
-No. Physical live G1 removal is unsupported. Shut down before disconnecting it.
-An accepted shutdown request is not proof of physical power-off. If the fan
-remains on, keep the G1 connected and hold the Ally power button until the fan
-stops; only then remove the cable.
+Current Re-Gear validation does not establish safe live removal. Follow the
+verified policy for your exact hardware; unknown profiles cannot authorize removal.
+Under shutdown-before-disconnect, an accepted shutdown request is not proof of
+physical power-off. Keep the eGPU connected if shutdown is incomplete and follow
+the device-specific recovery instructions.
 
 ## Can Re-Gear move a running game between GPUs?
 

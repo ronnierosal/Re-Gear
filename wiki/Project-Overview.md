@@ -31,15 +31,15 @@ claiming success from an attempted command.
 
 Core policy should ask what the current host, eGPU, display path, and session can
 do. Product-specific identity and quirks belong in profiles or platform
-adapters. The first Ally X and GPD G1 profile remains intentionally exact while
-future profiles should be added through capabilities and bounded mechanisms,
+adapters. Each validated hardware profile remains intentionally exact while
+additional profiles should be added through capabilities and bounded mechanisms,
 not scattered product-name branches.
 
 ## Current non-goals
 
 - Windows support or arbitrary desktop Linux distributions
 - support for every handheld, dock, or eGPU by inference
-- physical live eGPU removal on the GPD G1
+- physical live eGPU removal without capability-specific validation
 - moving a running game between GPUs
 - arbitrary GPU overclocking, fan control, or driver installation
 - cloud services or a general plugin ecosystem
