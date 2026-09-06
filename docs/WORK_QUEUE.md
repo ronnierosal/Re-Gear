@@ -65,7 +65,10 @@ context changes, expiry, cancellation, time/cadence bounds and no-write behavior
 Actual device measurement and binding its evidence to host configuration remain.
 Explicit benchmark run/status/cancel RPCs now share runtime ownership with power
 writes, with pending-request cancellation and drain tests. Backend checkpoint:
-1,106 tests successful, 14 platform skips. Benchmark UI remains pending.
+1,106 tests successful, 14 platform skips. Expandable benchmark UI is implemented:
+Run/Cancel/Refresh and sample/time results, with 96 frontend tests and mock browser
+cancellation/retry/error checks. Actual measurements and native Decky validation
+remain pending.
 Exact host/firmware/kernel/provider/range compatibility binding is implemented
 and checked on collection and dispatch. Strict private-file configuration loading
 is implemented/tested. Main now supplies the lazy factory and explicit Auto

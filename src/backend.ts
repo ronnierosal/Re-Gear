@@ -566,3 +566,23 @@ export interface AutoTdpStatusPayload {
 export const getAutoTdpStatus = callable<[], AutoTdpStatusPayload>("get_auto_tdp_status");
 export const startAutoTdp = callable<[number, number, number], AutoTdpStatusPayload>("start_auto_tdp");
 export const stopAutoTdp = callable<[], AutoTdpStatusPayload>("stop_auto_tdp");
+
+export interface TdpBenchmarkResult {
+  code: string;
+  attempts: number;
+  usable_samples: number;
+  consecutive_samples: number;
+  maximum_collection_and_revalidation_ms: number | null;
+  elapsed_ms: number;
+  interval_ms: number;
+}
+export interface TdpBenchmarkStatus {
+  schema_version: 1;
+  running: boolean;
+  cancelling: boolean;
+  code: string;
+  result: TdpBenchmarkResult | null;
+}
+export const getTdpBenchmarkStatus = callable<[], TdpBenchmarkStatus>("get_auto_tdp_benchmark_status");
+export const runTdpBenchmark = callable<[], TdpBenchmarkStatus>("run_auto_tdp_benchmark");
+export const cancelTdpBenchmark = callable<[], TdpBenchmarkStatus>("cancel_auto_tdp_benchmark");

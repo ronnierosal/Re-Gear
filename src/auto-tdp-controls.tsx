@@ -1,4 +1,5 @@
-import { ButtonItem, DropdownItem, PanelSectionRow } from "@decky/ui";
+import { ButtonItem, DropdownItem, PanelSectionRow, ToggleField } from "@decky/ui";
+import { TdpBenchmarkControls } from "./tdp-benchmark-controls";
 import { useEffect, useRef, useState } from "react";
 import { getAutoTdpStatus, startAutoTdp, stopAutoTdp, type AutoTdpStatusPayload, type TdpStatusPayload } from "./backend";
 import { autoTdpActivity, autoTdpMessage, AutoTdpRequestGate, sanitizeAutoTdpStatus, validAutoTdpRange } from "./auto-tdp-ui";
@@ -12,6 +13,7 @@ export function AutoTdpControls({ manual, manualBusy, manualMessage, onChanged }
   const [maximum, setMaximum] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [stopping, setStopping] = useState(false);
+  const [benchmarkVisible, setBenchmarkVisible] = useState(false);
   const mounted = useRef(true);
   const gate = useRef(new AutoTdpRequestGate());
   const pendingRefresh = useRef(false);
@@ -69,5 +71,7 @@ export function AutoTdpControls({ manual, manualBusy, manualMessage, onChanged }
     <PanelSectionRow><ButtonItem layout="below" disabled={stopping} onClick={() => void request(stopAutoTdp, "stop")}>Stop Auto TDP</ButtonItem></PanelSectionRow>
     <PanelSectionRow><ButtonItem layout="below" disabled={busy} onClick={() => void request(getAutoTdpStatus)}>Refresh Auto TDP</ButtonItem></PanelSectionRow>
     <PanelSectionRow><span style={{ fontSize: "12px", opacity: 0.75 }}>Stop keeps the current limit. Restore returns to saved settings. Manual Apply or Restore stops Auto TDP. Closing this panel keeps Auto TDP running.</span></PanelSectionRow>
+    <PanelSectionRow><ToggleField label="Show collection benchmark" checked={benchmarkVisible} onChange={setBenchmarkVisible} /></PanelSectionRow>
+    {benchmarkVisible && <TdpBenchmarkControls ready={manual?.ready === true && !manualBusy && !busy} autoRunning={status?.running === true} />}
   </>;
 }

@@ -67,6 +67,9 @@ const restoreTdpLimit = callable("restore_tdp_limit");
 const getAutoTdpStatus = callable("get_auto_tdp_status");
 const startAutoTdp = callable("start_auto_tdp");
 const stopAutoTdp = callable("stop_auto_tdp");
+const getTdpBenchmarkStatus = callable("get_auto_tdp_benchmark_status");
+const runTdpBenchmark = callable("run_auto_tdp_benchmark");
+const cancelTdpBenchmark = callable("cancel_auto_tdp_benchmark");
 
 function isSteamSuspendStore(value) {
     if (typeof value !== "object" || value === null) {
@@ -503,14 +506,14 @@ class TdpRequestGate {
 const object = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
 const watts = (value) => typeof value === "number" && Number.isInteger(value) && value > 0 && value <= 0xFFFFFFFF;
 const fps = (value) => typeof value === "number" && Number.isFinite(value) && value > 2 && value <= 1000;
-const code = (value) => typeof value === "string" && /^(auto_tdp|tdp|telemetry)\.[a-z0-9_]{1,80}$/.test(value);
+const code$1 = (value) => typeof value === "string" && /^(auto_tdp|tdp|telemetry)\.[a-z0-9_]{1,80}$/.test(value);
 function sanitizeAutoTdpStatus(value) {
-    if (!object(value) || value.schema_version !== 1 || !code(value.code))
+    if (!object(value) || value.schema_version !== 1 || !code$1(value.code))
         return null;
     for (const name of ["can_start", "enabled", "running", "stopping"])
         if (typeof value[name] !== "boolean")
             return null;
-    if (value.activity_code !== null && !code(value.activity_code))
+    if (value.activity_code !== null && !code$1(value.activity_code))
         return null;
     if ((value.enabled && (!value.running || value.stopping)) || (value.stopping && !value.running)
         || (value.can_start && (value.running || value.code !== "auto_tdp.ready")))
@@ -588,6 +591,96 @@ class AutoTdpRequestGate {
     invalidate() { this.generation++; this.active = false; }
 }
 
+const code = (value) => typeof value === "string" && /^(auto_tdp|tdp)\.[a-z_]{1,80}$/.test(value);
+const integer = (value, maximum) => typeof value === "number" && Number.isSafeInteger(value) && value >= 0 && value <= maximum;
+function sanitizeTdpBenchmark(value) {
+    if (!value || typeof value !== "object")
+        return null;
+    const v = value;
+    if (v.schema_version !== 1 || typeof v.running !== "boolean" || typeof v.cancelling !== "boolean" || (v.cancelling && !v.running) || !code(v.code))
+        return null;
+    if (v.result !== null) {
+        if (!v.result || typeof v.result !== "object")
+            return null;
+        const r = v.result;
+        if (!code(r.code) || !integer(r.attempts, 30) || !integer(r.usable_samples, r.attempts) || !integer(r.consecutive_samples, r.usable_samples)
+            || !integer(r.elapsed_ms, Number.MAX_SAFE_INTEGER) || !integer(r.interval_ms, 2000) || r.interval_ms < 1000
+            || (r.maximum_collection_and_revalidation_ms !== null && !integer(r.maximum_collection_and_revalidation_ms, Number.MAX_SAFE_INTEGER)))
+            return null;
+    }
+    return v;
+}
+function tdpBenchmarkMessage(status) {
+    if (!status)
+        return "Benchmark status unavailable. Refresh to check again.";
+    if (status.cancelling)
+        return "Cancelling after the current read finishes…";
+    if (status.running)
+        return "Measuring frame and sensor collection…";
+    return {
+        "auto_tdp.benchmark_idle": "No benchmark has run in this session.",
+        "auto_tdp.benchmark_within_budget": "This run met the collection time budget. Auto TDP has not been enabled.",
+        "auto_tdp.benchmark_budget_exceeded": "Collection exceeded the time budget for Auto TDP.",
+        "auto_tdp.benchmark_cancelled": "Benchmark cancelled.",
+        "auto_tdp.benchmark_stop_auto_first": "Stop Auto TDP before running a benchmark.",
+        "auto_tdp.benchmark_context_changed": "The game, power source or device context changed. Run again when stable.",
+        "auto_tdp.benchmark_samples_insufficient": "Not enough usable frame samples. Check the running game and try again.",
+        "auto_tdp.benchmark_context_unavailable": "Game, sensor or device evidence is unavailable. Check readiness and try again.",
+        "auto_tdp.benchmark_time_limit": "The benchmark reached its time limit.",
+        "auto_tdp.configuration_missing": "Device configuration is required before measurement.",
+        "auto_tdp.configuration_invalid": "Device configuration needs correction before measurement.",
+        "auto_tdp.game_or_render_unverified": "A verified game running on the internal GPU is required.",
+        "tdp.disabled": "Enable manual power control before measurement.",
+        "tdp.busy": "Power control is busy. Refresh and try again after it finishes.",
+        "tdp.closing": "Power control is shutting down.",
+    }[status.code] ?? "Benchmark unavailable. Check power control readiness and refresh.";
+}
+
+function TdpBenchmarkControls({ ready, autoRunning }) {
+    const [status, setStatus] = SP_REACT.useState(null);
+    const [busy, setBusy] = SP_REACT.useState(false);
+    const [runPending, setRunPending] = SP_REACT.useState(false);
+    const [cancelling, setCancelling] = SP_REACT.useState(false);
+    const mounted = SP_REACT.useRef(true);
+    const gate = SP_REACT.useRef(new AutoTdpRequestGate());
+    const request = async (kind) => {
+        const token = gate.current.begin(kind === "cancel");
+        if (token === null)
+            return;
+        setBusy(true);
+        setCancelling(kind === "cancel");
+        if (kind === "run")
+            setRunPending(true);
+        try {
+            const result = await (kind === "run" ? runTdpBenchmark() : kind === "cancel" ? cancelTdpBenchmark() : getTdpBenchmarkStatus());
+            if (mounted.current && gate.current.current(token))
+                setStatus(sanitizeTdpBenchmark(result));
+        }
+        catch {
+            if (mounted.current && gate.current.current(token))
+                setStatus(null);
+        }
+        finally {
+            if (mounted.current) {
+                if (kind === "run")
+                    setRunPending(false);
+                if (gate.current.current(token)) {
+                    setBusy(false);
+                    setCancelling(false);
+                }
+            }
+            gate.current.finish(token);
+        }
+    };
+    SP_REACT.useEffect(() => {
+        mounted.current = true;
+        void request("read");
+        return () => { mounted.current = false; gate.current.invalidate(); };
+    }, []);
+    const result = status?.result;
+    return SP_JSX.jsxs(SP_JSX.Fragment, { children: [SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx("strong", { children: "Collection benchmark" }) }), SP_JSX.jsx(DFL.PanelSectionRow, { children: cancelling ? "Requesting cancellation…" : runPending && busy ? "Measuring frame and sensor collection…" : tdpBenchmarkMessage(status) }), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", disabled: busy || runPending || !ready || autoRunning || status?.running === true, onClick: () => void request("run"), children: "Run benchmark" }) }), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", disabled: cancelling, onClick: () => void request("cancel"), children: "Cancel benchmark" }) }), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", disabled: busy, onClick: () => void request("read"), children: "Refresh benchmark" }) }), result && SP_JSX.jsxs(DFL.PanelSectionRow, { children: ["Last benchmark: ", result.usable_samples, " usable samples from ", result.attempts, " attempts.", SP_JSX.jsx("br", {}), "Longest collection and recheck: ", result.maximum_collection_and_revalidation_ms === null ? "unavailable" : `${result.maximum_collection_and_revalidation_ms} ms`, ".", SP_JSX.jsx("br", {}), "Sample interval: ", result.interval_ms, " ms. Elapsed: ", (result.elapsed_ms / 1000).toFixed(1), " seconds."] }), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx("span", { style: { fontSize: "12px", opacity: 0.75 }, children: "Measures collection time while a game runs. Power settings stay unchanged. Closing this panel lets the benchmark finish; use Cancel to stop it. Results require review before Auto TDP can use them." }) })] });
+}
+
 function AutoTdpControls({ manual, manualBusy, manualMessage, onChanged }) {
     const [status, setStatus] = SP_REACT.useState(null);
     const [target, setTarget] = SP_REACT.useState(60);
@@ -595,6 +688,7 @@ function AutoTdpControls({ manual, manualBusy, manualMessage, onChanged }) {
     const [maximum, setMaximum] = SP_REACT.useState(null);
     const [busy, setBusy] = SP_REACT.useState(false);
     const [stopping, setStopping] = SP_REACT.useState(false);
+    const [benchmarkVisible, setBenchmarkVisible] = SP_REACT.useState(false);
     const mounted = SP_REACT.useRef(true);
     const gate = SP_REACT.useRef(new AutoTdpRequestGate());
     const pendingRefresh = SP_REACT.useRef(false);
@@ -657,7 +751,7 @@ function AutoTdpControls({ manual, manualBusy, manualMessage, onChanged }) {
                     setTarget(option.data); } }), SP_JSX.jsx(DFL.DropdownItem, { label: "Minimum power", rgOptions: watts, selectedOption: minimum ?? undefined, disabled: locked, onChange: (option) => { if (watts.some((entry) => entry.data === option.data))
                     setMinimum(option.data); } }), SP_JSX.jsx(DFL.DropdownItem, { label: "Maximum power", rgOptions: watts, selectedOption: maximum ?? undefined, disabled: locked, onChange: (option) => { if (watts.some((entry) => entry.data === option.data))
                     setMaximum(option.data); } }), !valid && manual?.ready && SP_JSX.jsxs(DFL.PanelSectionRow, { children: ["Choose a range that includes the last checked limit of ", manual.current_watts, " W."] }), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", disabled: locked || !status?.can_start || !valid, onClick: () => { if (!locked && status?.can_start && valid && minimum !== null && maximum !== null)
-                        void request(() => startAutoTdp(target, minimum, maximum), "start"); }, children: "Start Auto TDP" }) }), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", disabled: stopping, onClick: () => void request(stopAutoTdp, "stop"), children: "Stop Auto TDP" }) }), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", disabled: busy, onClick: () => void request(getAutoTdpStatus), children: "Refresh Auto TDP" }) }), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx("span", { style: { fontSize: "12px", opacity: 0.75 }, children: "Stop keeps the current limit. Restore returns to saved settings. Manual Apply or Restore stops Auto TDP. Closing this panel keeps Auto TDP running." }) })] });
+                        void request(() => startAutoTdp(target, minimum, maximum), "start"); }, children: "Start Auto TDP" }) }), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", disabled: stopping, onClick: () => void request(stopAutoTdp, "stop"), children: "Stop Auto TDP" }) }), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", disabled: busy, onClick: () => void request(getAutoTdpStatus), children: "Refresh Auto TDP" }) }), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx("span", { style: { fontSize: "12px", opacity: 0.75 }, children: "Stop keeps the current limit. Restore returns to saved settings. Manual Apply or Restore stops Auto TDP. Closing this panel keeps Auto TDP running." }) }), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ToggleField, { label: "Show collection benchmark", checked: benchmarkVisible, onChange: setBenchmarkVisible }) }), benchmarkVisible && SP_JSX.jsx(TdpBenchmarkControls, { ready: manual?.ready === true && !manualBusy && !busy, autoRunning: status?.running === true })] });
 }
 
 function TdpControls({ visible }) {
