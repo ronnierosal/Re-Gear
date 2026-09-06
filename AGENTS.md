@@ -32,6 +32,13 @@ and correct the owning repository document.
 - One driver owns integration and durable decisions for each workstream.
 - Use parallel workers for bounded searches, audits, tests, or isolated changes.
   Workers return evidence and focused diffs; the driver integrates them.
+- Never use the shared `main` checkout for active implementation, conflict
+  resolution, or a temporary cherry-pick. Each workstream gets its own Git
+  worktree and branch; only the integration driver uses an
+  `codex/integration-*` worktree.
+- Before integrating, run `python scripts/check_integration_preflight.py` in a
+  clean integration worktree. Integrate reviewed commits only, one coherent
+  workstream at a time. See `docs/CHAT_COORDINATION.md`.
 - Do not have multiple workers independently redesign architecture, state
   machines, UX, hardware abstractions, or deployment strategy.
 - Inspect branch, HEAD, worktree status, and overlapping active work before
