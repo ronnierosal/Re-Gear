@@ -93,6 +93,46 @@ class AutoLifecycleTests(unittest.TestCase):
         self.assertIsNone(self.runtime.start_auto(self.policy))
         self.assertEqual(self.provider.writes, [])
 
+    def test_restart_after_drain_recreates_session_for_current_configuration(self):
+        self.runtime.set_enabled(True)
+        self.runtime.start_auto(self.policy)
+        previous = self.session
+        self.runtime.stop_auto()
+        self.gate.set()
+        self.assertTrue(self.runtime._auto_worker.wait_stopped(2))
+        self.gate.clear()
+        self.assertTrue(self.runtime.start_auto(AutoTdpPolicy(7, 30, 45)).running)
+        self.assertIsNot(self.session, previous)
+        self.assertEqual(self.runtime.auto_policy.target_fps, 45)
+        self.assertEqual(self.provider.writes, [])
+
+    def test_start_range_must_fit_provider_and_include_current_setting(self):
+        self.runtime.set_enabled(True)
+        for policy in (AutoTdpPolicy(7, 40, 60), AutoTdpPolicy(7, 14, 60), AutoTdpPolicy(16, 30, 60)):
+            self.assertIsNone(self.runtime.start_auto(policy))
+        self.assertIsNone(self.session)
+        self.assertEqual(self.provider.writes, [])
+
+    def test_rpc_admission_is_checked_again_at_final_dispatch(self):
+        admitted = [True]
+        finished = threading.Event()
+        original = self.provider.set_limit
+        def attempt(*args, **kwargs):
+            result = original(*args, **kwargs)
+            finished.set()
+            return result
+        self.provider.set_limit = attempt
+        self.provider.release.set()
+        self.runtime.set_enabled(True)
+        self.runtime.start_auto(self.policy, admission_guard=lambda: admitted[0])
+        admitted[0] = False
+        self.gate.set()
+        self.assertTrue(finished.wait(1))
+        self.runtime.stop_auto()
+        self.assertTrue(self.runtime._auto_worker.wait_stopped(2))
+        self.assertEqual(self.provider.writes, [])
+        self.assertIsNone(self.journal.record)
+
     def test_disable_queues_restore_after_inflight_auto_transaction(self):
         self.start_inflight()
         response = self.runtime.set_enabled(False)

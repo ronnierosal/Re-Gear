@@ -65,8 +65,10 @@ context changes, expiry, cancellation, time/cadence bounds and no-write behavior
 Actual device measurement and binding its evidence to host configuration remain.
 Exact host/firmware/kernel/provider/range compatibility binding is implemented
 and checked on collection and dispatch. Strict private-file configuration loading
-is implemented/tested; main/RPC/UI integration, provenance evidence, actual device
-measurements and user-facing availability explanations remain.
+is implemented/tested. Main now supplies the lazy factory and explicit Auto
+status/start/stop RPCs with request-bound cancellation. Frontend and benchmark RPC
+integration, provenance evidence, actual device measurements and user-facing
+availability explanations remain.
 
 | Priority | Work item and owner | Status | Acceptance evidence |
 | --- | --- | --- | --- |
