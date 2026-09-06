@@ -34,7 +34,7 @@ class MainTdpTests(unittest.TestCase):
         calls = []
         def method(name):
             return lambda *args: calls.append((name, args)) or unavailable_status()
-        runtime = SimpleNamespace(**{name: method(name) for name in ("status", "set_enabled", "apply", "restore")})
+        runtime = SimpleNamespace(cancel_benchmark=lambda: None, **{name: method(name) for name in ("status", "set_enabled", "apply", "restore")})
         self.plugin._tdp_service = lambda: runtime
         asyncio.run(self.plugin.get_tdp_status())
         asyncio.run(self.plugin.set_tdp_enabled(True))

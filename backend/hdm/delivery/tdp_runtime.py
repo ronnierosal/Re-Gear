@@ -11,6 +11,7 @@ from ..application.auto_tdp_session import AutoTdpActuator, AutoTdpSession
 from ..domain.auto_tdp import AutoTdpPolicy
 from ..ports.tdp import TdpDispatchGuard, TdpJournal, TdpProvider
 from .auto_tdp_worker import AutoTdpWorker, AutoTdpWorkerStatus
+from .auto_tdp_benchmark import AutoTdpBenchmarkResult
 
 
 class _AutoActuator:
@@ -62,6 +63,11 @@ class TdpRuntime:
         self._auto_cancel = threading.Event()
         self._auto_control_lock = threading.Lock()
         self._auto_generation = 0
+        self._benchmark_running = threading.Event()
+        self._benchmark_cancel = threading.Event()
+        self._benchmark_control = threading.Lock()
+        self._benchmark_generation = 0
+        self._benchmark_result: AutoTdpBenchmarkResult | None = None
 
     def _may_write(self) -> bool:
         return (
@@ -168,11 +174,65 @@ class TdpRuntime:
             self._release_operation()
 
     def stop_auto(self) -> AutoTdpWorkerStatus | None:
+        self.cancel_benchmark()
         with self._auto_control_lock:
             self._auto_generation += 1
             self._auto_cancel.set()
         worker = self._auto_worker
         return worker.stop() if worker is not None else None
+
+    def cancel_benchmark(self) -> None:
+        with self._benchmark_control:
+            self._benchmark_generation += 1
+            self._benchmark_cancel.set()
+
+    def benchmark_status(self, code: str | None = None) -> dict[str, object]:
+        running = self._benchmark_running.is_set()
+        result = self._benchmark_result
+        return {
+            "schema_version": 1, "running": running,
+            "cancelling": running and self._benchmark_cancel.is_set(),
+            "code": code or ("auto_tdp.benchmark_running" if running else
+                              result.code if result else "auto_tdp.benchmark_idle"),
+            "result": result.to_dict() if result else None,
+        }
+
+    def run_benchmark(self, operation: Callable[[TdpProvider, threading.Event], AutoTdpBenchmarkResult],
+                      *, admission_guard: Callable[[], bool]) -> dict[str, object]:
+        with self._benchmark_control:
+            generation = self._benchmark_generation
+        if self._closing.is_set():
+            return self.benchmark_status("tdp.closing")
+        if not self._lock.acquire(blocking=False):
+            return self.benchmark_status("tdp.busy")
+        failure = None
+        try:
+            if self._closing.is_set() or self._disable_requested.is_set():
+                failure = "tdp.closing" if self._closing.is_set() else "tdp.busy"
+            elif self._auto_worker is not None and self._auto_worker.status().running:
+                failure = "auto_tdp.benchmark_stop_auto_first"
+            else:
+                readiness = self._status()
+                if not readiness["ready"]:
+                    failure = readiness["code"]
+            with self._benchmark_control:
+                if generation != self._benchmark_generation or admission_guard() is not True:
+                    failure = "auto_tdp.benchmark_cancelled"
+                if failure is None:
+                    self._benchmark_cancel.clear()
+                    self._benchmark_result = None
+                    self._benchmark_running.set()
+            if failure is None:
+                result = operation(self._provider, self._benchmark_cancel)
+                if not isinstance(result, AutoTdpBenchmarkResult):
+                    raise ValueError("Benchmark returned invalid evidence")
+                self._benchmark_result = result
+        except Exception:
+            failure = "auto_tdp.benchmark_unavailable"
+        finally:
+            self._benchmark_running.clear()
+            self._release_operation()
+        return self.benchmark_status(failure)
 
     def auto_status(self) -> AutoTdpWorkerStatus | None:
         worker = self._auto_worker

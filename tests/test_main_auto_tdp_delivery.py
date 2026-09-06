@@ -46,6 +46,9 @@ class Runtime:
         self.worker = AutoTdpWorkerStatus(False, False, AutoTdpSessionResult("auto_tdp.stopped", False))
         return self.worker
 
+    def cancel_benchmark(self):
+        pass
+
 
 class MainAutoTdpTests(unittest.TestCase):
     @classmethod

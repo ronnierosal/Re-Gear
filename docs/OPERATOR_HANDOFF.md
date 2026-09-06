@@ -1,5 +1,13 @@
 # Maintainer and agent handoff
 
+- Latest TDP benchmark checkpoint: explicit run/status/cancel RPCs use the
+  read-only collector under shared runtime ownership. Cancellation covers pending
+  setup, manual intent and unload. Results do not change configuration or admit
+  Auto operation. Backend: 1,106 tests, 14 platform skips; architecture, compilation
+  and package checks pass. Next: benchmark UI and actual Ally/profile evidence.
+  Nothing deployed; current maintainer-provided SSH host and justified thermal
+  configuration remain unavailable to this workstream.
+
 ## TDP foundation checkpoint — 2026-09-04
 
 - Follow-up: manual provider, apply/verify/restore and journal are now wired to

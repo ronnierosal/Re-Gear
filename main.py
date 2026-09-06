@@ -29,6 +29,7 @@ from hdm.delivery.auto_tdp_configuration import FileAutoTdpConfiguration  # noqa
 from hdm.delivery.auto_tdp_factory import AutoTdpSessionFactory  # noqa: E402
 from hdm.delivery.auto_tdp_evidence import AutoTdpEligibility  # noqa: E402
 from hdm.delivery.auto_tdp_status import auto_tdp_status  # noqa: E402
+from hdm.delivery.auto_tdp_benchmark import benchmark_auto_tdp  # noqa: E402
 from hdm.adapters.steamos.auto_tdp_host import AutoTdpHostDiscovery  # noqa: E402
 from hdm.adapters.steamos.gamescope_performance_target import GamescopePerformanceTargetResolver, PerformanceTargetResolution  # noqa: E402
 from hdm.domain.auto_tdp import AutoTdpPolicy  # noqa: E402
@@ -248,6 +249,7 @@ class Plugin:
         self._tdp_closing = threading.Event()
         self._auto_request_lock = threading.Lock()
         self._auto_request_generation = 0
+        self._benchmark_request_generation = 0
         self._auto_cancel_requested = threading.Event()
         self._auto_cancel_requested.set()
 
@@ -298,7 +300,10 @@ class Plugin:
     def _cancel_auto_request(self):
         with self._auto_request_lock:
             self._auto_request_generation += 1
+            self._benchmark_request_generation += 1
             self._auto_cancel_requested.set()
+        if self._tdp_runtime is not None:
+            self._tdp_runtime.cancel_benchmark()
 
     async def stop_auto_tdp(self) -> dict[str, object]:
         # Revoke admission immediately, including while another RPC reads state.
@@ -310,6 +315,47 @@ class Plugin:
 
     def _auto_configuration(self):
         return FileAutoTdpConfiguration(RootOwnedRuntimeState().ensure()).load()
+
+    def _benchmark_status(self, code=None):
+        runtime = self._tdp_runtime
+        if runtime is not None:
+            return runtime.benchmark_status(code)
+        return {"schema_version": 1, "running": False, "cancelling": False,
+                "code": code or "auto_tdp.benchmark_idle", "result": None}
+
+    async def get_auto_tdp_benchmark_status(self) -> dict[str, object]:
+        return self._benchmark_status()
+
+    async def cancel_auto_tdp_benchmark(self) -> dict[str, object]:
+        with self._auto_request_lock:
+            self._benchmark_request_generation += 1
+        if self._tdp_runtime is not None:
+            self._tdp_runtime.cancel_benchmark()
+        return self._benchmark_status()
+
+    async def run_auto_tdp_benchmark(self) -> dict[str, object]:
+        with self._auto_request_lock:
+            generation = self._benchmark_request_generation
+        def run():
+            if self._tdp_closing.is_set():
+                return self._benchmark_status("tdp.closing")
+            loaded = self._auto_configuration()
+            if loaded.configuration is None:
+                return self._benchmark_status(loaded.code)
+            config = loaded.configuration
+            if not self._auto_eligibility().ready:
+                return self._benchmark_status("auto_tdp.game_or_render_unverified")
+            runtime = self._tdp_service()
+            def measure(provider, cancel):
+                factory = self._configured_auto_factory(config, self._auto_eligibility)
+                return benchmark_auto_tdp(factory.create_evidence(provider), cancel=cancel,
+                                         interval_ms=config.collection_contract.interval_ms)
+            return runtime.run_benchmark(measure, admission_guard=lambda:
+                generation == self._benchmark_request_generation and not self._tdp_closing.is_set())
+        try:
+            return await asyncio.to_thread(run)
+        except Exception:
+            return self._benchmark_status("auto_tdp.benchmark_unavailable")
 
     def _auto_eligibility(self):
         if self._tdp_closing.is_set():
@@ -332,14 +378,17 @@ class Plugin:
         config = self._auto_configuration().configuration
         if config is None:
             raise ValueError("Auto TDP configuration unavailable")
-        factory = AutoTdpSessionFactory(resolve=self._auto_target,
-            eligibility=lambda: (AutoTdpEligibility(GameState.UNKNOWN, False)
-                if self._auto_cancel_requested.is_set() else self._auto_eligibility()),
+        factory = self._configured_auto_factory(config, lambda:
+            AutoTdpEligibility(GameState.UNKNOWN, False)
+            if self._auto_cancel_requested.is_set() else self._auto_eligibility())
+        return factory(actuator, provider)
+
+    def _configured_auto_factory(self, config, eligibility):
+        return AutoTdpSessionFactory(resolve=self._auto_target, eligibility=eligibility,
             sensor_config=config.sensor_config,
             host_context_key=config.host_context_key,
             thermal_evidence_reference=config.thermal_evidence_reference,
             contract=config.collection_contract)
-        return factory(actuator, provider)
 
     def _auto_tdp_status_sync(self):
         runtime = self._tdp_runtime
