@@ -84,3 +84,28 @@ with the exact installed Gamescope/Mesa versions. No process was killed, session
 restarted, environment modified, or device released during this investigation.
 
 Reference: https://docs.mesa3d.org/envvars.html (Vulkan device selection).
+
+## Vulkan-only launch candidate foundation
+
+`backend/hdm/delivery/portable_vulkan_trial.py` now builds an opt-in argv and
+child environment from caller-verified internal GPU/connector evidence. It
+requires matching nonempty boot/generation, unique present internal GPU, idle
+game state and verified Mesa selection layer. Custom driver/layer/PRIME
+configuration blocks the candidate. It rewrites the Gamescope preference and
+sets Mesa's force-default Vulkan enumeration option. It does not modify parent
+environment. Restoration returns the two original trial-owned environment keys
+for a future launch, not rollback of a running session or blocked kernel call.
+
+This module is NOT connected to the production wrapper or transition engine.
+It contains no executor or configuration writer. Remaining integration work:
+collect trustworthy current internal identity and layer availability, obtain a
+supervised session restart through the existing transition owner, persist the
+original launch policy for recovery, and verify actual G1 clients/mappings after
+startup. No runtime update or ZIP has been staged. Vulkan enumeration restriction
+is not a general GPU access sandbox and may leave direct DRM references intact.
+
+Seven candidate tests pass; existing Gamescope wrapper suite ran 15 tests with
+one skipped; architecture and targeted Python compilation pass. No full release
+matrix or hardware claim is implied. Player fdinfo showed two distinct client
+IDs with resident G1 memory (Gamescope and Steam); duplicate descriptors must
+not be summed as separate allocations.
