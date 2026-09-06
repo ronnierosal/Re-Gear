@@ -2,6 +2,11 @@
 
 ## TDP foundation checkpoint — 2026-09-04
 
+- Change: added bounded, read-only Gamescope frame-time and labelled thermal/
+  power-source readers. They are not scheduled, do not write device state, and
+  still require supported-profile discovery, aggregation, and cost measurement.
+- Verification: focused protocol, sensor, and telemetry tests; no hardware
+  evidence, installation, or deployment.
 - Change: isolated `codex/tdp-control` from `75f441f`; current-source TDP/Auto TDP
   research, product scope extension, thermal non-finite fix, read-only ASUS
   limit inventory and pure Auto TDP proposal policy. See [TDP control](TDP_CONTROL.md).

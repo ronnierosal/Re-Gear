@@ -4,8 +4,11 @@
 
 The isolated `codex/tdp-control` workstream starts from `75f441f`. It contains
 the thermal non-finite validation fix, read-only ASUS power-limit inventory,
-and an original pure Auto TDP proposal policy. These are fixture/replay tested;
-there is no live TDP writer, collector loop, UI control or installation.
+an original pure Auto TDP proposal policy, and read-only one-shot Gamescope
+frame-time plus labelled thermal/power-source readers. These are fixture/replay
+tested. Frame observations are bound to one verified game/session context before
+they can be aggregated; there is no live TDP writer, collector loop, UI control,
+or installation.
 Current-source research and remaining device/API checks are recorded in
 [TDP control](TDP_CONTROL.md). The online Ally address is awaited for remote
 inspection. This workstream does not own G1 lifecycle or Offline Play changes.
