@@ -78,6 +78,8 @@ import {
   collectOptionalDiagnostics,
   shouldCollectOptionalDiagnostics,
 } from "./optional-diagnostics-refresh";
+import { ConnectionProgressOverlay } from "./connection-progress-overlay";
+import { connectionProgressModalModel } from "./connection-progress-model";
 import { connectionProgress, refreshDelayForVisibility } from "./refresh-policy";
 import { canOfferForce, processReleaseOutcomeMessage } from "./process-release-ui";
 import {
@@ -507,6 +509,9 @@ function Content({ preflight }: { preflight: SleepPreflightCoordinator }) {
   const safeDisconnectModal = useRef<ReturnType<typeof showModal> | null>(null);
   const processModal = useRef<ReturnType<typeof showModal> | null>(null);
   const diagnosticLoggingModal = useRef<ReturnType<typeof showModal> | null>(null);
+  const connectionProgressModal = useRef<ReturnType<typeof showModal> | null>(null);
+  const connectionProgressModalKey = useRef("");
+  const connectionProgressDismissed = useRef(false);
 
   const refreshTransitionJournal = useCallback(async () => {
     try {
@@ -548,6 +553,8 @@ function Content({ preflight }: { preflight: SleepPreflightCoordinator }) {
     processModal.current = null;
     diagnosticLoggingModal.current?.Close();
     diagnosticLoggingModal.current = null;
+    connectionProgressModal.current?.Close();
+    connectionProgressModal.current = null;
   }, []);
 
   useEffect(() => {
@@ -738,6 +745,45 @@ function Content({ preflight }: { preflight: SleepPreflightCoordinator }) {
   const disconnect = snapshot?.disconnect_readiness;
   const sleepGuard = snapshot?.sleep_guard;
   const progress = connectionProgress(payload);
+
+  useEffect(() => {
+    const automatic = automaticDockStatus;
+    const attachmentGone = progress.label === "eGPU not detected";
+    if (!automatic?.enabled || attachmentGone) {
+      connectionProgressDismissed.current = false;
+      connectionProgressModal.current?.Close();
+      connectionProgressModal.current = null;
+      connectionProgressModalKey.current = "";
+      return;
+    }
+
+    const shouldShow = automatic.stage !== "disabled" && automatic.stage !== "docked";
+    if (!shouldShow || connectionProgressDismissed.current) {
+      return;
+    }
+
+    const model = connectionProgressModalModel(progress, automatic);
+    const key = `${automatic.stage}:${automatic.code}:${progress.label}:${progress.detail}`;
+    if (connectionProgressModal.current && connectionProgressModalKey.current === key) {
+      return;
+    }
+    connectionProgressModal.current?.Close();
+    connectionProgressModal.current = null;
+    connectionProgressModalKey.current = key;
+    let modal: ReturnType<typeof showModal>;
+    const hide = () => {
+      // Dismissal controls the presentation only. The backend automatic-dock
+      // lifecycle remains the sole owner of observation and TV switching.
+      connectionProgressDismissed.current = true;
+      modal.Close();
+      if (connectionProgressModal.current === modal) {
+        connectionProgressModal.current = null;
+      }
+    };
+    modal = showModal(<ConnectionProgressOverlay {...model} onHide={hide} />);
+    connectionProgressModal.current = modal;
+  }, [automaticDockStatus, progress]);
+
   const gameUsesEgpu = disconnect?.clients.some((client) => client.kind === "game") ?? false;
   const closeEligibleClientCount = disconnect?.clients.filter(
     (client) => client.kind === "user" && client.close_eligible,
