@@ -189,6 +189,7 @@ from hdm.domain.control_plane import (  # noqa: E402
 )
 from hdm.domain.models import GameState, EgpuPresence, OperatingMode  # noqa: E402
 from hdm.domain.inference import infer_operating_mode  # noqa: E402
+from hdm.domain.tdp_placement import tdp_placement_readiness  # noqa: E402
 from hdm.domain.inference import infer_placement  # noqa: E402
 from hdm.profiles.gpd_g1 import match_gpd_g1  # noqa: E402
 
@@ -442,11 +443,9 @@ class Plugin:
         snapshot = self._api.get_snapshot_report().snapshot
         if snapshot.game_state is GameState.UNKNOWN:
             return "tdp.game_unknown"
-        if (
-            infer_operating_mode(snapshot).mode is not OperatingMode.PORTABLE
-            or self._sleep_hardware.observe_presence() is not EgpuPresence.ABSENT
-        ):
-            return "tdp.portable_required"
+        placement = tdp_placement_readiness(snapshot, self._sleep_hardware.observe_presence())
+        if placement != "tdp.ready":
+            return placement
         user = self._tdp_user()
         if user is None:
             return "tdp.user_unverified"

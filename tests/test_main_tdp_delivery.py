@@ -76,7 +76,7 @@ class MainTdpTests(unittest.TestCase):
             self.assertEqual(self.plugin._tdp_preflight(), "tdp.game_unknown")
             self.snapshot = replace(self.snapshot, game_state=GameState.IDLE)
             self.plugin._sleep_hardware.observe_presence = lambda: EgpuPresence.PRESENT
-            self.assertEqual(self.plugin._tdp_preflight(), "tdp.portable_required")
+            self.assertEqual(self.plugin._tdp_preflight(), "tdp.egpu_attached")
 
     def test_transition_and_unknown_conflict_scan_block(self):
         with patch.object(self.module, "KnownTdpControllerScan") as scan:

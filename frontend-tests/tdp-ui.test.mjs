@@ -4,6 +4,15 @@ import { sanitizeTdpStatus, tdpControls, tdpMessage, tdpResultMessage, TdpReques
 
 const ready = { schema_version: 1, enabled: true, can_enable: true, ready: true, code: "tdp.ready", current_watts: 17, minimum_watts: 7, maximum_watts: 30, restore_available: false, recovery_required: false, last_result: null, auto_tdp_available: false };
 
+test("mode-specific power readiness remains visible without enabling writes", () => {
+  for (const code of ["tdp.placement_unverified", "tdp.egpu_presence_unverified", "tdp.egpu_attached", "tdp.egpu_power_profile_unavailable", "tdp.docked_power_profile_unavailable"]) {
+    const status = sanitizeTdpStatus({ ...ready, ready: false, can_enable: false, code });
+    assert.notEqual(status, null);
+    assert.equal(tdpControls(status).canApply, false);
+    assert.doesNotMatch(tdpMessage(status), /tdp\./);
+  }
+});
+
 test("verified readiness controls apply; numbers alone never enable it", () => {
   assert.equal(tdpControls(sanitizeTdpStatus(ready)).canApply, true);
   assert.equal(tdpControls(sanitizeTdpStatus({ ...ready, ready: false })).canApply, false);
