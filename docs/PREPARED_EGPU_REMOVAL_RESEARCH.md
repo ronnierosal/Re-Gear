@@ -63,3 +63,24 @@ working screen/audio. They also reported a charger-only boot with failed input.
 These reports weaken an exclusively G1/forced-off explanation; charger causality
 and SteamOS compatibility remain unproven. They do not establish a removal fix.
 The user is away from the Ally; no hardware is to be operated during this work.
+
+## Portable session retains G1 references
+
+During the next supervised return, the player ran privileged fuser against the
+observed G1 render node. Gamescope held it open and Steam held it open plus
+memory-mapped. A sysfs control entry had no corresponding /dev node; future
+collectors must resolve actual device nodes rather than synthesize names.
+Read-only process inspection found Portable Gamescope argv without an explicit
+GPU preference and Steam without MESA_VK_DEVICE_SELECT. Gamescope's journal
+reported selecting the internal RADV PHOENIX GPU. Thus a retained external GPU
+handle does not prove rendering remains external, but still blocks release.
+
+The wrapper's Portable path selects the internal output and clears the Mesa
+selection variable. It does not enforce exclusive GPU enumeration. Mesa's
+force-default-device selection is a research candidate for Vulkan enumeration,
+not proof that direct DRM access or Steam's other graphics paths close. Before
+changing launch policy, inspect per-handle DRM fdinfo and mappings and compare
+with the exact installed Gamescope/Mesa versions. No process was killed, session
+restarted, environment modified, or device released during this investigation.
+
+Reference: https://docs.mesa3d.org/envvars.html (Vulkan device selection).
