@@ -6,17 +6,27 @@ import ts from "typescript";
 
 const compile = (file) => ts.transpileModule(readFileSync(new URL(`../src/${file}`, import.meta.url), "utf8"), {
   compilerOptions: { jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
-}).outputText.replaceAll('"./backend"', '"./fixture.js"').replaceAll('"./tdp-ui"', '"./tdp-ui.js"');
+}).outputText.replaceAll('"./backend"', '"./fixture.js"').replaceAll('"./tdp-ui"', '"./tdp-ui.js"')
+  .replaceAll('"./auto-tdp-ui"', '"./auto-tdp-ui.js"').replaceAll('"./auto-tdp-controls"', '"./auto-tdp-controls.js"');
 const files = new Map([
   ["/tdp-controls.js", compile("tdp-controls.tsx")],
   ["/tdp-ui.js", compile("tdp-ui.ts")],
+  ["/auto-tdp-controls.js", compile("auto-tdp-controls.tsx")],
+  ["/auto-tdp-ui.js", compile("auto-tdp-ui.ts")],
   ["/fixture.js", `
-let state = {schema_version:1,enabled:false,can_enable:true,ready:false,code:'tdp.disabled',current_watts:15,minimum_watts:7,maximum_watts:30,restore_available:false,recovery_required:false,last_result:null,auto_tdp_available:false};
+let state = {schema_version:1,enabled:false,can_enable:true,ready:false,code:'tdp.disabled',current_watts:15,minimum_watts:7,maximum_watts:30,restore_available:false,recovery_required:false,last_result:null,auto_tdp_available:true};
+let scenario='ready', generation=0;
+let auto={schema_version:1,can_start:false,enabled:false,running:false,stopping:false,code:'tdp.disabled',activity_code:null,target_fps:null,minimum_watts:null,maximum_watts:null};
+export const setScenario=(value)=>{scenario=value;};
+const autoCopy=(override)=>({...auto,can_start:!override&&state.ready&&!auto.running&&scenario!=='missing',code:override||(scenario==='missing'?'auto_tdp.configuration_missing':state.ready?'auto_tdp.ready':'tdp.disabled')});
+export const getAutoTdpStatus=async()=>scenario==='malformed'?{}:autoCopy();
+export const startAutoTdp=async(target_fps,minimum_watts,maximum_watts)=>{const token=generation;if(scenario==='slow')await new Promise(resolve=>setTimeout(resolve,1800));if(token!==generation)return autoCopy();auto={...auto,enabled:true,running:true,target_fps,minimum_watts,maximum_watts,activity_code:'auto_tdp.context_settling'};return autoCopy();};
+export const stopAutoTdp=async()=>{generation++;auto={...auto,enabled:false,running:false,stopping:false,activity_code:'auto_tdp.stopped'};return autoCopy('auto_tdp.stopped');};
 const copy = () => JSON.parse(JSON.stringify(state));
 export const getTdpStatus = async () => copy();
-export const setTdpEnabled = async (enabled) => { state.enabled=enabled; state.ready=enabled; state.code=enabled?'tdp.ready':'tdp.disabled'; if(!enabled && state.restore_available) await restoreTdpLimit(); return copy(); };
-export const applyTdpLimit = async (watts) => { state.current_watts=watts; state.restore_available=true; state.last_result={state:'applied',code:'tdp.readback_verified',requested_watts:watts,observed_watts:watts}; return copy(); };
-export const restoreTdpLimit = async () => { state.current_watts=15; state.restore_available=false; state.last_result={state:'restored',code:'tdp.readback_verified',requested_watts:15,observed_watts:15}; return copy(); };
+export const setTdpEnabled = async (enabled) => { state.enabled=enabled; state.ready=enabled; state.code=enabled?'tdp.ready':'tdp.disabled'; if(!enabled){await stopAutoTdp();if(state.restore_available)await restoreTdpLimit();} return copy(); };
+export const applyTdpLimit = async (watts) => { await stopAutoTdp();state.current_watts=watts; state.restore_available=true; state.last_result={state:'applied',code:'tdp.readback_verified',requested_watts:watts,observed_watts:watts}; return copy(); };
+export const restoreTdpLimit = async () => { await stopAutoTdp();state.current_watts=15; state.restore_available=false; state.last_result={state:'restored',code:'tdp.readback_verified',requested_watts:15,observed_watts:15}; return copy(); };
 `],
   ["/decky-ui.js", `
 import React from 'react';
@@ -36,6 +46,7 @@ const server = http.createServer((request, response) => {
   const source = files.get(request.url);
   if (source === undefined) { response.writeHead(404); response.end(); return; }
   response.writeHead(200, { "Content-Type": request.url === "/" ? "text/html; charset=utf-8" : "text/javascript; charset=utf-8", "Cache-Control": "no-store" });
-  response.end(source);
+  response.end(request.url === "/" ? source.replace("</aside>", `</aside><aside><label>Fixture scenario <select id="scenario"><option value="ready">Ready</option><option value="missing">Missing configuration</option><option value="malformed">Malformed status</option><option value="slow">Slow start</option></select></label></aside>`)
+    .replace("</body>", `<script type="module">import{setScenario}from'/fixture.js';document.getElementById('scenario').addEventListener('change',event=>setScenario(event.target.value));</script></body>`) : source);
 });
 server.listen(0, "127.0.0.1", () => console.log(`TDP preview: http://127.0.0.1:${server.address().port}`));

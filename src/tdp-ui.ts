@@ -13,6 +13,7 @@ const reasons: Record<string, string> = {
   "tdp.already_observed": "The requested power setting is already active.",
   "tdp.nothing_to_restore": "There are no saved power settings to restore.",
   "tdp.baseline_not_restorable": "The original power settings cannot yet be restored by this control.",
+  "tdp.dispatch_rejected": "The automatic request was stopped before changing power.",
 };
 
 for (const code of ["busy", "closing", "writer_busy"]) reasons[`tdp.${code}`] = "Power control is busy. Refresh in a moment.";
@@ -24,7 +25,7 @@ const watts = (value: unknown): value is number => typeof value === "number" && 
 const object = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value);
 
 export function sanitizeTdpStatus(value: unknown): TdpStatusPayload | null {
-  if (!object(value) || value.schema_version !== 1 || value.auto_tdp_available !== false || !known(value.code)) return null;
+  if (!object(value) || value.schema_version !== 1 || typeof value.auto_tdp_available !== "boolean" || !known(value.code)) return null;
   for (const field of ["enabled", "can_enable", "ready", "restore_available", "recovery_required"]) if (typeof value[field] !== "boolean") return null;
   const fields = [value.current_watts, value.minimum_watts, value.maximum_watts];
   const empty = fields.every((field) => field === null);

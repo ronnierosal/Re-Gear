@@ -274,6 +274,7 @@ class TdpRuntime:
 
     def _status(self) -> dict[str, object]:
         output = unavailable_status()
+        output["auto_tdp_available"] = self._auto_factory is not None
         output["enabled"] = self._enabled
         output["last_result"] = asdict(self._last_result) if self._last_result else None
         guard = self._preflight()

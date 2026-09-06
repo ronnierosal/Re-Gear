@@ -13,10 +13,16 @@ test("verified readiness controls apply; numbers alone never enable it", () => {
 });
 
 test("malformed schema, booleans, units and inconsistent bounds fail closed", () => {
-  for (const change of [{ schema_version: 2 }, { enabled: 1 }, { ready: "true" }, { current_watts: NaN }, { maximum_watts: Infinity }, { minimum_watts: -1 }, { current_watts: 17.5 }, { current_watts: "17" }, { minimum_watts: 18 }, { maximum_watts: 16 }, { maximum_watts: 9999 }, { current_watts: null }, { last_result: undefined }, { auto_tdp_available: true }, { enabled: false }, { can_enable: false }]) {
+  for (const change of [{ schema_version: 2 }, { enabled: 1 }, { ready: "true" }, { current_watts: NaN }, { maximum_watts: Infinity }, { minimum_watts: -1 }, { current_watts: 17.5 }, { current_watts: "17" }, { minimum_watts: 18 }, { maximum_watts: 16 }, { maximum_watts: 9999 }, { current_watts: null }, { last_result: undefined }, { auto_tdp_available: "true" }, { enabled: false }, { can_enable: false }]) {
     assert.equal(sanitizeTdpStatus({ ...ready, ...change }), null, JSON.stringify(change));
   }
   for (const value of [null, undefined, [], {}, true]) assert.equal(sanitizeTdpStatus(value), null);
+});
+
+test("Auto capability availability does not enable manual power control", () => {
+  const status = sanitizeTdpStatus({ ...ready, auto_tdp_available: true, ready: false, enabled: false });
+  assert.notEqual(status, null);
+  assert.equal(tdpControls(status).canApply, false);
 });
 
 test("unknown codes are never displayed or trusted", () => {
@@ -65,4 +71,14 @@ test("single inflight request suppresses duplicate writes and releases after fai
   assert.equal(await first, "done");
   await assert.rejects(gate.run(async () => { throw new Error("failed"); }));
   assert.equal(await gate.run(async () => "next"), "next");
+});
+
+test("a rejected automatic dispatch cannot disable otherwise-ready manual controls", () => {
+  const status = sanitizeTdpStatus({ ...ready, restore_available: true,
+    last_result: { state: "blocked", code: "tdp.dispatch_rejected", requested_watts: 20, observed_watts: null } });
+  assert.notEqual(status, null);
+  assert.equal(tdpControls(status).canToggle, true);
+  assert.equal(tdpControls(status).canApply, true);
+  assert.equal(tdpControls(status).canRestore, true);
+  assert.match(tdpResultMessage(status), /before changing power/);
 });

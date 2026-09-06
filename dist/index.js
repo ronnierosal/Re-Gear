@@ -64,6 +64,9 @@ const getTdpStatus = callable("get_tdp_status");
 const setTdpEnabled = callable("set_tdp_enabled");
 const applyTdpLimit = callable("apply_tdp_limit");
 const restoreTdpLimit = callable("restore_tdp_limit");
+const getAutoTdpStatus = callable("get_auto_tdp_status");
+const startAutoTdp = callable("start_auto_tdp");
+const stopAutoTdp = callable("stop_auto_tdp");
 
 function isSteamSuspendStore(value) {
     if (typeof value !== "object" || value === null) {
@@ -433,6 +436,7 @@ const reasons = {
     "tdp.already_observed": "The requested power setting is already active.",
     "tdp.nothing_to_restore": "There are no saved power settings to restore.",
     "tdp.baseline_not_restorable": "The original power settings cannot yet be restored by this control.",
+    "tdp.dispatch_rejected": "The automatic request was stopped before changing power.",
 };
 for (const code of ["busy", "closing", "writer_busy"])
     reasons[`tdp.${code}`] = "Power control is busy. Refresh in a moment.";
@@ -441,17 +445,17 @@ for (const code of ["runtime_unavailable", "conflict_scan_unavailable", "host_un
 for (const code of ["previous_write_uncertain", "external_change", "write_outcome_unknown", "readback_unverified", "write_unverified"])
     reasons[`tdp.${code}`] = "Power settings need recovery before further changes.";
 const known = (code) => typeof code === "string" && Object.hasOwn(reasons, code);
-const watts = (value) => typeof value === "number" && Number.isInteger(value) && value > 0 && value <= 0xFFFFFFFF;
-const object = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
+const watts$1 = (value) => typeof value === "number" && Number.isInteger(value) && value > 0 && value <= 0xFFFFFFFF;
+const object$1 = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
 function sanitizeTdpStatus(value) {
-    if (!object(value) || value.schema_version !== 1 || value.auto_tdp_available !== false || !known(value.code))
+    if (!object$1(value) || value.schema_version !== 1 || typeof value.auto_tdp_available !== "boolean" || !known(value.code))
         return null;
     for (const field of ["enabled", "can_enable", "ready", "restore_available", "recovery_required"])
         if (typeof value[field] !== "boolean")
             return null;
     const fields = [value.current_watts, value.minimum_watts, value.maximum_watts];
     const empty = fields.every((field) => field === null);
-    if (!empty && (!fields.every(watts) || value.minimum_watts > value.current_watts || value.current_watts > value.maximum_watts))
+    if (!empty && (!fields.every(watts$1) || value.minimum_watts > value.current_watts || value.current_watts > value.maximum_watts))
         return null;
     // Bound option allocation without making a device capability claim.
     if (!empty && value.maximum_watts - value.minimum_watts > 255)
@@ -459,7 +463,7 @@ function sanitizeTdpStatus(value) {
     if ((value.ready && (!value.enabled || !value.can_enable || value.code !== "tdp.ready")) || (empty && (value.ready || value.can_enable || value.restore_available)))
         return null;
     const last = value.last_result;
-    if (last !== null && (!object(last) || !["blocked", "unchanged", "applied", "restored", "recovery_required"].includes(last.state) || !known(last.code) || ![last.requested_watts, last.observed_watts].every((field) => field === null || watts(field))))
+    if (last !== null && (!object$1(last) || !["blocked", "unchanged", "applied", "restored", "recovery_required"].includes(last.state) || !known(last.code) || ![last.requested_watts, last.observed_watts].every((field) => field === null || watts$1(field))))
         return null;
     return value;
 }
@@ -496,8 +500,169 @@ class TdpRequestGate {
     }
 }
 
+const object = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
+const watts = (value) => typeof value === "number" && Number.isInteger(value) && value > 0 && value <= 0xFFFFFFFF;
+const fps = (value) => typeof value === "number" && Number.isFinite(value) && value > 2 && value <= 1000;
+const code = (value) => typeof value === "string" && /^(auto_tdp|tdp|telemetry)\.[a-z0-9_]{1,80}$/.test(value);
+function sanitizeAutoTdpStatus(value) {
+    if (!object(value) || value.schema_version !== 1 || !code(value.code))
+        return null;
+    for (const name of ["can_start", "enabled", "running", "stopping"])
+        if (typeof value[name] !== "boolean")
+            return null;
+    if (value.activity_code !== null && !code(value.activity_code))
+        return null;
+    if ((value.enabled && (!value.running || value.stopping)) || (value.stopping && !value.running)
+        || (value.can_start && (value.running || value.code !== "auto_tdp.ready")))
+        return null;
+    const empty = [value.target_fps, value.minimum_watts, value.maximum_watts].every((item) => item === null);
+    if (!empty && (!fps(value.target_fps) || !watts(value.minimum_watts) || !watts(value.maximum_watts)
+        || value.minimum_watts > value.maximum_watts))
+        return null;
+    if (value.enabled && empty)
+        return null;
+    return value;
+}
+function validAutoTdpRange(manual, minimum, maximum, target) {
+    return !!(manual?.ready && !manual.recovery_required && fps(target) && watts(minimum) && watts(maximum)
+        && manual.minimum_watts !== null && manual.maximum_watts !== null && manual.current_watts !== null
+        && manual.minimum_watts <= minimum && minimum <= manual.current_watts
+        && manual.current_watts <= maximum && maximum <= manual.maximum_watts);
+}
+function autoTdpMessage(status, manualMessage) {
+    if (!status)
+        return "Auto TDP status is unavailable. Refresh or stop Auto TDP.";
+    if (status.stopping)
+        return "Stopping Auto TDP…";
+    if (status.enabled && ["auto_tdp.configuration_missing", "auto_tdp.configuration_invalid", "auto_tdp.configuration_context_changed"].includes(status.code)) {
+        return "Auto TDP is still on. Stop and revalidate the device configuration before starting again.";
+    }
+    if (status.enabled && status.code === "auto_tdp.game_or_render_unverified")
+        return "Auto TDP is waiting for a running game in Portable mode.";
+    if (status.code.startsWith("tdp."))
+        return manualMessage;
+    const reasons = {
+        "auto_tdp.configuration_missing": "Auto TDP needs a device configuration before it can start.",
+        "auto_tdp.configuration_invalid": "The Auto TDP device configuration needs correction.",
+        "auto_tdp.configuration_context_changed": "The device or power provider changed. Revalidate its Auto TDP configuration.",
+        "auto_tdp.game_or_render_unverified": "Run a game in Portable mode before starting Auto TDP.",
+        "telemetry.collection_cost_unbenchmarked": "Auto TDP needs a collection benchmark on this device.",
+        "telemetry.auto_tdp_cost_exceeds_budget": "Collection exceeds the gameplay budget. Auto TDP cannot start.",
+        "telemetry.collection_cost_exceeds_budget": "Collection exceeds the gameplay budget. Auto TDP cannot start.",
+        "auto_tdp.request_invalid": "Choose a valid FPS target and power range.",
+        "auto_tdp.start_unavailable": "Auto TDP could not start. Refresh and check the power range.",
+        "auto_tdp.stopped": "Auto TDP is stopped. The current power limit is retained.",
+        "auto_tdp.closing": "Power control is closing.",
+        "auto_tdp.runtime_unavailable": "Auto TDP needs a fresh check. Refresh to try again.",
+    };
+    if (status.code === "auto_tdp.ready")
+        return status.enabled ? "Auto TDP is running." : "Ready to start Auto TDP.";
+    return Object.hasOwn(reasons, status.code) ? reasons[status.code] : "Auto TDP needs a fresh readiness check.";
+}
+function autoTdpActivity(status) {
+    if (status && ["auto_tdp.worker_unavailable", "auto_tdp.session_unavailable"].includes(status.activity_code ?? ""))
+        return "Auto TDP stopped because the session became unavailable. Refresh before restarting.";
+    if (!status?.enabled)
+        return null;
+    switch (status.activity_code) {
+        case "auto_tdp.sample_unavailable": return "Waiting for fresh game performance and sensor evidence.";
+        case "auto_tdp.context_settling":
+        case "auto_tdp.settling": return "Collecting performance at the current power limit.";
+        case "tdp.readback_verified": return "The latest power adjustment was verified.";
+        default: return "Status updates when you refresh.";
+    }
+}
+class AutoTdpRequestGate {
+    generation = 0;
+    active = false;
+    get busy() { return this.active; }
+    begin(priority = false) {
+        if (this.active && !priority)
+            return null;
+        this.active = true;
+        return ++this.generation;
+    }
+    current(generation) { return generation === this.generation; }
+    finish(generation) { if (this.current(generation))
+        this.active = false; }
+    invalidate() { this.generation++; this.active = false; }
+}
+
+function AutoTdpControls({ manual, manualBusy, manualMessage, onChanged }) {
+    const [status, setStatus] = SP_REACT.useState(null);
+    const [target, setTarget] = SP_REACT.useState(60);
+    const [minimum, setMinimum] = SP_REACT.useState(null);
+    const [maximum, setMaximum] = SP_REACT.useState(null);
+    const [busy, setBusy] = SP_REACT.useState(false);
+    const [stopping, setStopping] = SP_REACT.useState(false);
+    const mounted = SP_REACT.useRef(true);
+    const gate = SP_REACT.useRef(new AutoTdpRequestGate());
+    const pendingRefresh = SP_REACT.useRef(false);
+    const request = async (action, kind = "read") => {
+        const generation = gate.current.begin(kind === "stop");
+        if (generation === null)
+            return;
+        setBusy(true);
+        setStopping(kind === "stop");
+        try {
+            const next = sanitizeAutoTdpStatus(await action());
+            if (mounted.current && gate.current.current(generation)) {
+                setStatus(next);
+                if (next?.target_fps != null) {
+                    setTarget(next.target_fps);
+                    setMinimum(next.minimum_watts);
+                    setMaximum(next.maximum_watts);
+                }
+                if (kind !== "read")
+                    onChanged();
+            }
+        }
+        catch {
+            if (mounted.current && gate.current.current(generation))
+                setStatus(null);
+        }
+        finally {
+            if (mounted.current && gate.current.current(generation)) {
+                setBusy(false);
+                setStopping(false);
+            }
+            gate.current.finish(generation);
+            if (mounted.current && gate.current.current(generation) && pendingRefresh.current) {
+                pendingRefresh.current = false;
+                void request(getAutoTdpStatus);
+            }
+        }
+    };
+    SP_REACT.useEffect(() => {
+        mounted.current = true;
+        return () => { mounted.current = false; gate.current.invalidate(); };
+    }, []);
+    SP_REACT.useEffect(() => {
+        if (manual?.minimum_watts != null && manual.maximum_watts != null) {
+            setMinimum((value) => value === null || value < manual.minimum_watts || value > manual.maximum_watts ? manual.minimum_watts : value);
+            setMaximum((value) => value === null || value < manual.minimum_watts || value > manual.maximum_watts ? manual.maximum_watts : value);
+        }
+        if (gate.current.busy)
+            pendingRefresh.current = true;
+        else
+            void request(getAutoTdpStatus);
+        // On-demand only: manual state changes and explicit Refresh, never a timer.
+    }, [manual]);
+    const watts = manual?.minimum_watts != null && manual.maximum_watts != null
+        ? Array.from({ length: manual.maximum_watts - manual.minimum_watts + 1 }, (_, index) => ({ data: manual.minimum_watts + index, label: `${manual.minimum_watts + index} W` })) : [];
+    const targets = [...new Set([30, 40, 45, 60, 90, 120, target])].sort((a, b) => a - b).map((value) => ({ data: value, label: `${value} FPS` }));
+    const valid = validAutoTdpRange(manual, minimum, maximum, target);
+    const locked = busy || manualBusy || status?.running === true;
+    return SP_JSX.jsxs(SP_JSX.Fragment, { children: [SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx("strong", { children: "Auto TDP" }) }), SP_JSX.jsx(DFL.PanelSectionRow, { children: busy ? (stopping ? "Stopping Auto TDP…" : "Checking Auto TDP…") : autoTdpMessage(status, manualMessage) }), !busy && autoTdpActivity(status) && SP_JSX.jsx(DFL.PanelSectionRow, { children: autoTdpActivity(status) }), SP_JSX.jsx(DFL.DropdownItem, { label: "Target frame rate", rgOptions: targets, selectedOption: target, disabled: locked, onChange: (option) => { if (targets.some((entry) => entry.data === option.data))
+                    setTarget(option.data); } }), SP_JSX.jsx(DFL.DropdownItem, { label: "Minimum power", rgOptions: watts, selectedOption: minimum ?? undefined, disabled: locked, onChange: (option) => { if (watts.some((entry) => entry.data === option.data))
+                    setMinimum(option.data); } }), SP_JSX.jsx(DFL.DropdownItem, { label: "Maximum power", rgOptions: watts, selectedOption: maximum ?? undefined, disabled: locked, onChange: (option) => { if (watts.some((entry) => entry.data === option.data))
+                    setMaximum(option.data); } }), !valid && manual?.ready && SP_JSX.jsxs(DFL.PanelSectionRow, { children: ["Choose a range that includes the last checked limit of ", manual.current_watts, " W."] }), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", disabled: locked || !status?.can_start || !valid, onClick: () => { if (!locked && status?.can_start && valid && minimum !== null && maximum !== null)
+                        void request(() => startAutoTdp(target, minimum, maximum), "start"); }, children: "Start Auto TDP" }) }), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", disabled: stopping, onClick: () => void request(stopAutoTdp, "stop"), children: "Stop Auto TDP" }) }), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", disabled: busy, onClick: () => void request(getAutoTdpStatus), children: "Refresh Auto TDP" }) }), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx("span", { style: { fontSize: "12px", opacity: 0.75 }, children: "Stop keeps the current limit. Restore returns to saved settings. Manual Apply or Restore stops Auto TDP. Closing this panel keeps Auto TDP running." }) })] });
+}
+
 function TdpControls({ visible }) {
     const [expanded, setExpanded] = SP_REACT.useState(false);
+    const [autoExpanded, setAutoExpanded] = SP_REACT.useState(false);
     const [status, setStatus] = SP_REACT.useState(null);
     const [selected, setSelected] = SP_REACT.useState(null);
     const [busy, setBusy] = SP_REACT.useState(false);
@@ -534,6 +699,7 @@ function TdpControls({ visible }) {
     SP_REACT.useEffect(() => {
         if (!visible) {
             setExpanded(false);
+            setAutoExpanded(false);
             setStatus(null);
             setSelected(null);
         }
@@ -547,11 +713,11 @@ function TdpControls({ visible }) {
     const options = status?.minimum_watts != null && status.maximum_watts != null
         ? Array.from({ length: status.maximum_watts - status.minimum_watts + 1 }, (_, index) => ({ data: status.minimum_watts + index, label: `${status.minimum_watts + index} W` }))
         : [];
-    return SP_JSX.jsxs(DFL.PanelSection, { title: "Handheld power", children: [SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", disabled: busy, onClick: () => { setStatus(null); setSelected(null); setExpanded((value) => !value); }, children: expanded ? "Hide power controls" : "Show power controls" }) }), visible && expanded && SP_JSX.jsxs(SP_JSX.Fragment, { children: [SP_JSX.jsx(DFL.PanelSectionRow, { children: busy ? "Checking power settings…" : tdpMessage(status) }), !busy && tdpResultMessage(status) && SP_JSX.jsxs(DFL.PanelSectionRow, { children: ["Last request: ", tdpResultMessage(status)] }), SP_JSX.jsx(DFL.PanelSectionRow, { children: status?.current_watts != null ? `Configured handheld power: ${status.current_watts} W` : "Configured handheld power: unavailable" }), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx("span", { style: { fontSize: "12px", opacity: 0.75 }, children: "This is the configured limit, not measured power use. Enable only after resolving other power controllers." }) }), SP_JSX.jsx(DFL.ToggleField, { label: "Use Re-Gear power control", checked: status?.enabled ?? false, disabled: busy || !controls.canToggle, onChange: (enabled) => { if (controls.canToggle)
+    return SP_JSX.jsxs(DFL.PanelSection, { title: "Handheld power", children: [SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", disabled: busy, onClick: () => { setStatus(null); setSelected(null); setAutoExpanded(false); setExpanded((value) => !value); }, children: expanded ? "Hide power controls" : "Show power controls" }) }), visible && expanded && SP_JSX.jsxs(SP_JSX.Fragment, { children: [SP_JSX.jsx(DFL.PanelSectionRow, { children: busy ? "Checking power settings…" : tdpMessage(status) }), !busy && tdpResultMessage(status) && SP_JSX.jsxs(DFL.PanelSectionRow, { children: ["Last request: ", tdpResultMessage(status)] }), SP_JSX.jsx(DFL.PanelSectionRow, { children: status?.current_watts != null ? `Last checked limit: ${status.current_watts} W` : "Last checked limit: unavailable" }), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx("span", { style: { fontSize: "12px", opacity: 0.75 }, children: "This is the configured limit, not measured power use. Enable only after resolving other power controllers." }) }), SP_JSX.jsx(DFL.ToggleField, { label: "Use Re-Gear power control", checked: status?.enabled ?? false, disabled: busy || !controls.canToggle, onChange: (enabled) => { if (controls.canToggle)
                             void request(() => setTdpEnabled(enabled)); } }), SP_JSX.jsx(DFL.DropdownItem, { label: "Power limit", rgOptions: options, selectedOption: selected ?? undefined, disabled: busy || !controls.canApply, onChange: (option) => { if (options.some((entry) => entry.data === option.data))
                             setSelected(option.data); } }), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", disabled: busy || !controls.canApply || selected === null, onClick: () => { if (controls.canApply && selected !== null)
                                 void request(() => applyTdpLimit(selected)); }, children: "Apply power limit" }) }), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", disabled: busy || !controls.canRestore, onClick: () => { if (controls.canRestore)
-                                void request(restoreTdpLimit); }, children: "Restore previous power settings" }) }), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", disabled: busy, onClick: () => void request(getTdpStatus), children: "Refresh power settings" }) }), SP_JSX.jsx(DFL.PanelSectionRow, { children: "Auto TDP: In development" })] })] });
+                                void request(restoreTdpLimit); }, children: "Restore previous power settings" }) }), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", disabled: busy, onClick: () => void request(getTdpStatus), children: "Refresh power settings" }) }), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", onClick: () => setAutoExpanded((value) => !value), children: autoExpanded ? "Hide Auto TDP" : "Show Auto TDP" }) }), autoExpanded && SP_JSX.jsx(AutoTdpControls, { manual: status, manualBusy: busy, manualMessage: tdpMessage(status), onChanged: () => { void request(getTdpStatus); } })] })] });
 }
 
 const HEALTH_BLOCKER_MESSAGES = {
