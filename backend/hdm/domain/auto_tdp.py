@@ -2,7 +2,7 @@
 
 The caller supplies already-resolved bounds and one game-bound observation.
 Values are configured watts, never measurements of consumed package power.
-This initial policy supports internal rendering only and is not wired live.
+This policy supports internal rendering only. Delivery owns collection and writes.
 """
 
 from __future__ import annotations
