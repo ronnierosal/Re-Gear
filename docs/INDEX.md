@@ -51,7 +51,7 @@ issue**. Architectural possibility is not support.
 
 - Public entry point: [README](../README.md)
 - Status and work: [Current state](CURRENT_STATE.md), [Roadmap](ROADMAP.md),
-  [Worker queue](WORK_QUEUE.md)
+  [Worker queue](WORK_QUEUE.md), [chat coordination](CHAT_COORDINATION.md)
 - Hardware and compatibility: [Hardware support](HARDWARE_SUPPORT.md),
   [hardware-agnostic audit](HARDWARE_AGNOSTIC_AUDIT.md)
 - UX: [UI specification](UI_SPEC.md)

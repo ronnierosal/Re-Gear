@@ -78,6 +78,20 @@ driver's ownership.
 - Never push, tag, publish, create a release, force-push, rewrite published
   history, or delete remote refs without explicit maintainer authorization.
 
+## Concurrent chats and agents
+
+Follow [Chat coordination](CHAT_COORDINATION.md) whenever more than one chat or
+agent may modify the repository. Active implementation never happens in the
+shared `main` checkout. Before an integration, run:
+
+```text
+python scripts/check_integration_preflight.py
+```
+
+The check rejects a dirty workspace, unresolved conflicts, an in-progress Git
+operation, a detached checkout, a non-integration branch, or an integration
+branch that no longer contains the current `origin/main`.
+
 Before any authorized push report branch, HEAD, ahead/behind state, dirty/clean
 state, tests performed, and generated artifacts included. A GitHub CI result
 validates only its exact workflow commit.
