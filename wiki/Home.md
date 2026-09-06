@@ -6,13 +6,18 @@
 
 Welcome to the player and contributor guide for Re-Gear, a Decky Loader companion for SteamOS handhelds. Re-Gear explains system state and provides guarded docking and recovery workflows.
 
+## Featured guides
+
+- **[Confirmed Hardware Testing](Confirmed-Hardware-Testing)** — tested devices, observed successes, failed gates, and remaining validation.
+- **[Offline Play Readiness](Offline-Readiness)** — where to find checks, what the badges mean, and preparing a game before leaving Wi-Fi.
+
 ## Start here
 
 - [Getting Started](Getting-Started): availability and controlled testing.
 - [Current State](Current-State): implemented features and remaining validation.
 - [Supported Hardware](Supported-Hardware): the exact profiles with evidence.
 - [Safety and eGPU Handling](Safety-and-eGPU-Handling): connection, sleep, and shutdown boundaries.
-- [Offline Readiness](Offline-Readiness): what game badges can and cannot tell you.
+- [Offline Play Readiness](Offline-Readiness): what game badges can and cannot tell you.
 - [Troubleshooting](Troubleshooting): common symptoms and reporting a bug.
 - [FAQ](FAQ): quick answers.
 

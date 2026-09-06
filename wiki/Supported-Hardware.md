@@ -39,3 +39,5 @@ quirks while core policy remains product-neutral. It needs synthetic boundary
 tests and then capability-specific hardware evidence. Fuzzy device-name
 matching or falling back to `card0`, `card1`, or a connector name is not
 acceptable.
+
+See **[Confirmed Hardware Testing](Confirmed-Hardware-Testing)** for the capability-by-capability test ledger and **[Offline Play Readiness](Offline-Readiness)** for game checks.

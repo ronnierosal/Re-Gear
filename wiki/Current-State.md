@@ -32,3 +32,5 @@ A watched shutdown lost networking while the handheld fan and LEDs remained on. 
 Repeatable attach, TV picture, audio, gameplay, Portable return, reconnect, and physical shutdown need coordinated validation on the exact build. Experimental launch trials and local regression tests do not establish live-removal support.
 
 See [Safety and eGPU Handling](Safety-and-eGPU-Handling), the [deployment gates](https://github.com/ronnierosal/Re-Gear/blob/main/docs/DEPLOYMENT_VALIDATION.md), and the [historical incident](Ally-X-and-GPD-G1-Docking-Incident).
+
+See **[Confirmed Hardware Testing](Confirmed-Hardware-Testing)** for the capability-by-capability test ledger and **[Offline Play Readiness](Offline-Readiness)** for game checks.
