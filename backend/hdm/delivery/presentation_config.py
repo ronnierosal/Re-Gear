@@ -55,7 +55,30 @@ class PresentationConfigStore:
             raise ValueError("presentation config root must be an object")
         return config_from_dict(value)
 
+    def restore(self, value: GamescopeLaunchConfig | None) -> None:
+        """Restore an exact captured launch policy, including an absent file."""
+        self._validate_root()
+        with self._lock:
+            if self._target.is_symlink():
+                raise ValueError("presentation config cannot be a symlink")
+            if value is None:
+                self._target.unlink(missing_ok=True)
+                self._sync_directory()
+            elif isinstance(value, GamescopeLaunchConfig):
+                self._save(value)
+            else:
+                raise ValueError("invalid original launch config")
+
     def write_target(
+        self, *, target: PlacementState, binding: TransitionBinding,
+        snapshot: ObservedSnapshot, boot_id: str,
+    ) -> GamescopeLaunchConfig:
+        config = self.build_target(target=target, binding=binding, snapshot=snapshot, boot_id=boot_id)
+        with self._lock:
+            self._save(config)
+        return config
+
+    def build_target(
         self,
         *,
         target: PlacementState,
@@ -123,8 +146,6 @@ class PresentationConfigStore:
             )
         else:
             raise ValueError("presentation target is unsupported")
-        with self._lock:
-            self._save(config)
         return config
 
     def _save(self, value: GamescopeLaunchConfig) -> None:

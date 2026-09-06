@@ -84,10 +84,12 @@ class SupervisedPresentationTransitionService:
         integration_ready: Callable[[], bool],
         approvals: ExperimentalTransitionApprovalStore | None = None,
         identifier_factory: Callable[[], str] | None = None,
+        portable_trial_runner: Callable | None = None,
     ) -> None:
         self._observations = observations
         self._orchestrator = orchestrator
         self._journal_store = journal_store
+        self._portable_trial_runner = portable_trial_runner
         self._integration_ready = integration_ready
         self._approvals = approvals or ExperimentalTransitionApprovalStore()
         self._identifier_factory = identifier_factory or (
@@ -101,6 +103,7 @@ class SupervisedPresentationTransitionService:
         *,
         user_confirmed: bool,
         expected_generation: str = "",
+        portable_vulkan_trial: bool = False,
     ) -> SupervisedTransitionPreview:
         if target not in {PlacementState.PORTABLE, PlacementState.DOCKED_EGPU}:
             return SupervisedTransitionPreview(
@@ -118,6 +121,14 @@ class SupervisedPresentationTransitionService:
                 blockers=("transition.evidence_changed",),
             )
         current = infer_placement(observed.snapshot)
+        if portable_vulkan_trial and (
+            target is not PlacementState.PORTABLE
+            or current is not PlacementState.DOCKED_EGPU
+            or self._portable_trial_runner is None
+        ):
+            return SupervisedTransitionPreview(
+                target, current, blockers=("portable_trial.requires_supervised_docked_source",)
+            )
         resolved = resolve_runtime_profiles(observed.snapshot)
         evidence = evidence_from_snapshot(
             observed.snapshot,
@@ -162,6 +173,7 @@ class SupervisedPresentationTransitionService:
                 egpu_profile_id=resolved.capabilities.egpu_profile_id,
                 egpu_stable_id=evidence.egpu_stable_id,
                 user_confirmed=True,
+                portable_vulkan_trial=portable_vulkan_trial,
             )
         return SupervisedTransitionPreview(target, current, token)
 
@@ -278,12 +290,19 @@ class SupervisedPresentationTransitionService:
         )
         if decision.plan is None:
             return SupervisedTransitionExecution(False, "transition.preconditions_changed")
-        result = self._orchestrator.run(decision.plan)
+        if permit.portable_vulkan_trial:
+            if self._portable_trial_runner is None or current is not PlacementState.DOCKED_EGPU:
+                return SupervisedTransitionExecution(False, "portable_trial.unavailable")
+            result = self._portable_trial_runner(decision.plan, self._orchestrator)
+        else:
+            result = self._orchestrator.run(decision.plan)
         code = (
             result.outcome.failure.code
             if result.outcome.failure is not None
             else f"transition.{result.outcome.kind.value}"
         )
+        if permit.portable_vulkan_trial and result.outcome.failure is None:
+            code = "portable_trial.application_unverified"
         return SupervisedTransitionExecution(
             True,
             code,
@@ -356,8 +375,12 @@ class SupervisedPresentationTransitionService:
                 operation_id=current.operation_id,
             )
         terminal = current.entries[-1]
+        trial_unverified = (
+            dict(current.entries[0].details).get('launch_policy') == 'portable_vulkan_trial'
+            and terminal.kind is JournalEventKind.COMMITTED
+        )
         return SupervisedTransitionStatus(
-            terminal.code,
+            "portable_trial.application_unverified" if trial_unverified else terminal.code,
             acknowledgement_required=True,
             action_required=terminal.kind
             in (JournalEventKind.BLOCKED, JournalEventKind.FAILED),

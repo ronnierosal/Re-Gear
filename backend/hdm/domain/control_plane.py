@@ -127,8 +127,13 @@ class ExperimentalTransitionPermit:
     host_profile_id: str
     egpu_profile_id: str
     egpu_stable_id: str
+    portable_vulkan_trial: bool = False
 
     def __post_init__(self) -> None:
+        if type(self.portable_vulkan_trial) is not bool or (
+            self.portable_vulkan_trial and self.target_placement is not PlacementState.PORTABLE
+        ):
+            raise ValueError("Vulkan trial requires the Portable target")
         if not all(
             (
                 self.permit_id,

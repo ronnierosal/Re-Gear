@@ -52,6 +52,8 @@ issue**. Architectural possibility is not support.
 
 ## Document map
 
+- Supervised disconnect launch trial: [Portable Vulkan trial](PORTABLE_VULKAN_TRIAL.md)
+
 - Public entry point: [README](../README.md)
 - Status and work: [Current state](CURRENT_STATE.md), [Roadmap](ROADMAP.md),
   [Worker queue](WORK_QUEUE.md)

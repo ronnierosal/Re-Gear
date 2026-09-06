@@ -70,17 +70,17 @@ class TransitionOrchestrator:
         self._policy = policy or StrictRuntimeTransitionPolicy()
         self._lock = threading.Lock()
 
-    def run(self, plan: TransitionPlan) -> RuntimeTransitionResult:
+    def run(self, plan: TransitionPlan, *, portable_vulkan_trial: bool = False) -> RuntimeTransitionResult:
         if not self._lock.acquire(blocking=False):
             return self._without_journal(
                 plan.from_placement, "transition.concurrent_request"
             )
         try:
-            return self._run_locked(plan)
+            return self._run_locked(plan, portable_vulkan_trial=portable_vulkan_trial)
         finally:
             self._lock.release()
 
-    def _run_locked(self, plan: TransitionPlan) -> RuntimeTransitionResult:
+    def _run_locked(self, plan: TransitionPlan, *, portable_vulkan_trial: bool = False) -> RuntimeTransitionResult:
         try:
             current = self._journal_store.load_current()
         except Exception:
@@ -111,10 +111,10 @@ class TransitionOrchestrator:
                 WorkflowState.IDLE,
                 plan.from_placement,
                 "request.accepted",
-                (
+                tuple(sorted((
                     ("capability", "presentation_transition"),
                     ("target_placement", plan.target_placement.value),
-                ),
+                ) + ((("launch_policy", "portable_vulkan_trial"),) if portable_vulkan_trial else ()))),
             )
         except Exception:
             return self._without_journal(

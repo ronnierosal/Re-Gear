@@ -3,6 +3,11 @@
 Status: diagnostic foundation only. No removal executor, new player ZIP,
 remote deployment, hardware operation, or safe-unplug support is included.
 
+Follow-up: the retained-mapping scanner is installed in 0.3.52. The subsequent
+local one-shot launch integration and its evidence limits are now owned by
+[Portable Vulkan trial](PORTABLE_VULKAN_TRIAL.md). Historical foundation-only
+descriptions below apply to their original checkpoint, not that later work.
+
 ## Retained mapping verification follow-up
 
 The existing client scanner now also reads bounded per-process memory maps.

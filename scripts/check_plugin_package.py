@@ -116,6 +116,7 @@ def main() -> int:
             "approve_supervised_tv_switch",
             "execute_supervised_tv_switch",
             "approve_supervised_portable_switch",
+            "approve_supervised_portable_vulkan_trial",
             "execute_supervised_portable_switch",
             "approve_safe_disconnect_shutdown",
             "execute_safe_disconnect_shutdown",

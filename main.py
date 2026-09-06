@@ -1056,6 +1056,20 @@ class Plugin:
             approval_token, PlacementState.PORTABLE
         )
 
+    async def approve_supervised_portable_vulkan_trial(self) -> dict[str, object]:
+        """Developer-supervised one-shot session trial; never safe-unplug approval."""
+        try:
+            preview = await asyncio.to_thread(
+                lambda: self._presentation_transition_service().preview(
+                    PlacementState.PORTABLE, user_confirmed=True, portable_vulkan_trial=True,
+                )
+            )
+            return {"schema_version": 1, "approval_token": preview.approval_token,
+                    "blockers": list(preview.blockers), "safe_to_unplug": False}
+        except Exception:
+            return {"schema_version": 1, "approval_token": "",
+                    "blockers": ["portable_trial.approval_failed"], "safe_to_unplug": False}
+
     async def approve_safe_disconnect_shutdown(
         self, _request: object = None
     ) -> dict[str, object]:
@@ -2025,6 +2039,17 @@ class Plugin:
         )
         observations = SnapshotTransitionObservationAdapter(self._discovery)
         journal = FileTransitionJournalStore(journal_root)
+        from hdm.delivery.portable_trial_store import PortableTrialStore
+        from hdm.delivery.portable_trial_launch import mesa_layer_available
+
+        def active_operation():
+            current = journal.load_current()
+            if current is None or not current.entries:
+                return ""
+            if dict(current.entries[0].details).get('launch_policy') != 'portable_vulkan_trial':
+                return ""
+            return current.operation_id
+
         mechanism = PresentationTransitionMechanism(
             integration=integration,
             # The prepared drop-in passes this exact per-user path to the shim.
@@ -2036,6 +2061,9 @@ class Plugin:
             resolve_user=lambda: resolve_gamescope_user(GamescopeDiscovery().scan()),
             read_boot_id=self._boot_session_id,
             audio=self._audio_handoff_service(),
+            trial_store=PortableTrialStore(presentation_state_root),
+            active_operation=active_operation,
+            trial_layer_ready=mesa_layer_available,
         )
         orchestrator = TransitionOrchestrator(
             observations=observations,
@@ -2050,6 +2078,7 @@ class Plugin:
             journal_store=journal,
             integration_ready=lambda: integration.status().ready,
             approvals=self._presentation_transition_approvals,
+            portable_trial_runner=mechanism.run_portable_trial,
         )
 
     def _audio_handoff_service(self) -> G1AudioHandoff:

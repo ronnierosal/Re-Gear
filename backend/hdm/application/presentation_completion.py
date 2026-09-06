@@ -43,6 +43,8 @@ def reconcile_presentation_completion(store, current) -> PresentationCompletion:
         active = store.load_current()
         finalized = False
         if active is not None:
+            if active.entries and dict(active.entries[0].details).get('launch_policy') == 'portable_vulkan_trial':
+                return PresentationCompletion("completion.explicit_result_required", hold_portable=True)
             target = committed_target(active)
             if target is PlacementState.UNKNOWN:
                 return PresentationCompletion("completion.explicit_result_required")

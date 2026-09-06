@@ -1,5 +1,21 @@
 # Current state
 
+## Re-Gear 0.3.53 supervised Portable launch trial candidate
+
+Local experimental integration uses a dedicated trial-bound approval and the
+existing Portable transition engine. Original launch policy is persisted before
+config change; one-shot authority is consumed before wrapper exec. Recovery
+cancels pending authority even when observation is unavailable. Retained records
+block retrial. Normal and automatic transitions do not opt in. Portable success
+never claims the trial applied or that G1 resources are released.
+
+See PORTABLE_VULKAN_TRIAL.md for the developer-only RPC and hardware gates.
+Installed 0.3.52 remains unchanged while this candidate is built. No new session
+restart, GPU transition or live unplug has been performed. The detached Ally
+ran 11 temporary-file store tests successfully, including POSIX permissions,
+symlink rejection and concurrent consumption; this is not hardware validation.
+
+
 ## Re-Gear 0.3.52 disconnect mapping candidate - 2026-09-05
 
 Installed via native Decky lifecycle and verified on the detached Ally. Runtime

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import time
 from typing import Callable, Protocol
 
 from .steamos.commands import (
@@ -53,6 +55,9 @@ class PresentationTransitionMechanism:
         resolve_user: Callable[[], GamescopeUserResolution],
         read_boot_id: Callable[[], str],
         audio: G1AudioHandoff | None = None,
+        trial_store=None,
+        active_operation: Callable[[], str] = lambda: "",
+        trial_layer_ready: Callable[[], bool] | None = None,
     ) -> None:
         self._integration = integration
         self._config = config
@@ -60,6 +65,36 @@ class PresentationTransitionMechanism:
         self._resolve_user = resolve_user
         self._read_boot_id = read_boot_id
         self._audio = audio
+        self._trial_store = trial_store
+        self._active_operation = active_operation
+        self._trial_plan = None
+        self._trial_layer_ready = trial_layer_ready
+
+    def run_portable_trial(self, plan, orchestrator):
+        """Called only for a consumed trial-bound permit; reuse the same engine."""
+        if self._trial_store is None or self._trial_plan is not None:
+            raise ValueError("portable trial unavailable")
+        self._trial_plan = plan
+        try:
+            return orchestrator.run(plan, portable_vulkan_trial=True)
+        finally:
+            try:
+                record = self._trial_store.read()
+                if record is not None and record['operation_id'] == plan.plan_id:
+                    self._trial_store.cancel(plan.plan_id)
+            finally:
+                self._trial_plan = None
+
+    def _current_trial(self):
+        operation = self._active_operation()
+        if self._trial_store is None or not operation:
+            return None
+        record = self._trial_store.read()
+        if record is None or record['operation_id'] != operation:
+            return None
+        if record['boot_id_sha256'] != hashlib.sha256(self._read_boot_id().encode()).hexdigest():
+            raise ValueError("trial recovery boot changed")
+        return record
 
     def apply(
         self,
@@ -83,6 +118,14 @@ class PresentationTransitionMechanism:
         binding: TransitionBinding | None,
         observation: ObservedSnapshot | None,
     ) -> MechanismResult:
+        # Revoke pending launch authority even if fresh recovery evidence is
+        # unavailable. Otherwise a later session could execute the stale trial.
+        try:
+            record = self._current_trial()
+            if record is not None:
+                self._trial_store.cancel(record['operation_id'])
+        except Exception:
+            return MechanismResult(False, "recovery.trial_cancel_failed")
         if source not in {
             PlacementState.PORTABLE,
             PlacementState.DOCKED_IGPU,
@@ -116,6 +159,14 @@ class PresentationTransitionMechanism:
             )
             if len(external) != 1 or external[0].edid_ready is not True:
                 return MechanismResult(False, f"{prefix}.display_unready")
+        trial = self._trial_plan if prefix == "presentation" else None
+        if trial is not None:
+            if (target is not PlacementState.PORTABLE
+                    or infer_placement(observation) is not PlacementState.DOCKED_EGPU
+                    or self._trial_layer_ready is None or not self._trial_layer_ready()):
+                return MechanismResult(False, "portable_trial.preconditions_unavailable")
+            if self._trial_store.read() is not None:
+                return MechanismResult(False, "portable_trial.reconciliation_required")
         status = self._integration.status()
         if not status.ready:
             return MechanismResult(False, f"{prefix}.integration_not_ready")
@@ -137,12 +188,37 @@ class PresentationTransitionMechanism:
             if not prepared.succeeded:
                 return MechanismResult(False, prepared.code)
         try:
-            self._config.write_target(
-                target=target,
-                binding=binding,
-                snapshot=observation,
-                boot_id=self._read_boot_id(),
-            )
+            recovery_record = self._current_trial() if prefix == "recovery" else None
+            if recovery_record is not None:
+                self._trial_store.restore_original(self._config, recovery_record['operation_id'])
+            else:
+                original = self._config.load() if trial is not None else None
+                boot_id = self._read_boot_id()
+                if trial is not None:
+                    source_policy = self._config.build_target(
+                        target=PlacementState.DOCKED_EGPU, binding=binding,
+                        snapshot=observation, boot_id=boot_id,
+                    )
+                    if original != source_policy:
+                        return MechanismResult(False, 'portable_trial.original_policy_unverified')
+                    expected = self._config.build_target(
+                        target=target, binding=binding, snapshot=observation, boot_id=boot_id,
+                    )
+                    internal = next(g for g in observation.gpus
+                                    if g.stable_id == binding.internal_gpu_stable_id)
+                    self._trial_store.arm(
+                            operation_id=trial.plan_id, generation=trial.observed_generation,
+                            boot_id_sha256=hashlib.sha256(boot_id.encode()).hexdigest(),
+                            internal_gpu=internal.vendor_device,
+                            internal_connector=expected.internal_connector,
+                            egpu_binding_sha256=hashlib.sha256(
+                                f"{boot_id}:{binding.egpu_stable_id}".encode()).hexdigest(),
+                            original_config=original, expected_config=expected,
+                            expires_at=time.monotonic() + 120,
+                    )
+                self._config.write_target(
+                    target=target, binding=binding, snapshot=observation, boot_id=boot_id,
+                )
         except Exception:
             if not self._restore_current_config(current, binding, observation):
                 return MechanismResult(False, f"{prefix}.config_rollback_failed")
@@ -180,6 +256,10 @@ class PresentationTransitionMechanism:
         }:
             return False
         try:
+            record = self._current_trial()
+            if record is not None:
+                self._trial_store.restore_original(self._config, record['operation_id'])
+                return True
             self._config.write_target(
                 target=current,
                 binding=binding,
