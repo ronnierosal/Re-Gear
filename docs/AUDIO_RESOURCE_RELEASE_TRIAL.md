@@ -29,3 +29,20 @@ and 1,146 backend tests passed (17 platform skips). Linux-only filesystem tests
 remain to be rerun for this isolated slice. Remaining work is runtime composition,
 supervised cable-attached profile off/restore, and before/after resource evidence.
 No physical unplug safety claim follows from these tests.
+
+## Fresh recovery context (stacked implementation)
+
+The next slice adds `AudioTrialContextSource` and `LiveAudioTrialFactory` from
+8bea01b and 3d2bed6. It brackets a Portable idle snapshot with hardware, boot,
+Gamescope owner/process and service invocation observations. The recovery
+factory resolves the current owner anew for each durable record and builds
+fresh observers with a bounded deadline.
+
+The existing `FilterUnitObserver` name is retained for source compatibility;
+this helper only reads four systemd properties for two fixed service names.
+It adds no filter lifecycle or kernel access. No main.py factory composition,
+RPC, off action, or automatic recovery activation is included. Those hookups
+are absent from the source worktree and remain future work.
+
+On the isolated stacked base, 1,171 backend tests passed (17 platform skips),
+with architecture and compilation checks passing. No hardware run occurred.
