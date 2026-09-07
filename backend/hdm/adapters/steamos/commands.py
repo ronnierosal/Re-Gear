@@ -62,8 +62,8 @@ class PipeWireCommandRunner:
         self._timeout_seconds = timeout_seconds
         self._effective_uid = effective_uid or getattr(os, "geteuid", lambda: -1)
 
-    def dump(self, user) -> AudioCommandResult:
-        return self._run(user, (self.PW_DUMP,), capture=True)
+    def dump(self, user, *, timeout_seconds: float | None = None) -> AudioCommandResult:
+        return self._run(user, (self.PW_DUMP,), capture=True, timeout_seconds=timeout_seconds)
 
     def set_default(self, user, object_id: int) -> AudioCommandResult:
         if type(object_id) is not int or object_id <= 0:
@@ -73,8 +73,12 @@ class PipeWireCommandRunner:
         )
 
     def _run(
-        self, user, command: tuple[str, ...], *, capture: bool
+        self, user, command: tuple[str, ...], *, capture: bool,
+        timeout_seconds: float | None = None,
     ) -> AudioCommandResult:
+        timeout = self._timeout_seconds if timeout_seconds is None else min(self._timeout_seconds, timeout_seconds)
+        if not 0 < timeout <= self._timeout_seconds:
+            return AudioCommandResult(False, code="audio.deadline_expired")
         if self._effective_uid() != 0:
             return AudioCommandResult(False, code="audio.root_required")
         if not self.SAFE_USERNAME.fullmatch(user.username) or user.uid <= 0:
@@ -95,7 +99,7 @@ class PipeWireCommandRunner:
                 capture_output=True,
                 check=False,
                 shell=False,
-                timeout=self._timeout_seconds,
+                timeout=timeout,
                 env={"LANG": "C", "LC_ALL": "C", "PATH": "/usr/bin:/bin"},
             )
         except subprocess.TimeoutExpired:

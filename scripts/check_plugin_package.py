@@ -65,6 +65,14 @@ def main() -> int:
         if not (root / relative).is_file():
             failures.append(f"missing {relative}")
 
+    wrapper_path = root / "bin" / "gamescope"
+    if wrapper_path.is_file():
+        # read_text() silently translates CRLF, masking a Linux bad-interpreter
+        # failure. Check the actual executable bytes in checkouts/extracted ZIPs.
+        wrapper = wrapper_path.read_bytes()
+        if not wrapper.startswith(b"#!/usr/bin/python3\n") or b"\r" in wrapper:
+            failures.append("bin/gamescope must have an LF-only /usr/bin/python3 shebang and body")
+
     manifest_path = root / "plugin.json"
     if manifest_path.is_file():
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -90,6 +98,7 @@ def main() -> int:
         allowed_methods = {
             "get_snapshot",
             "get_peripheral_status",
+            "classify_offline_details",
             "get_action_history",
             "get_automatic_dock_status",
             "set_automatic_dock_enabled",
@@ -122,7 +131,7 @@ def main() -> int:
         }
         if public_methods != allowed_methods:
             failures.append(
-                "Decky RPCs must remain limited to diagnostics/logging, read-only peripheral/watcher/action-history status, automatic-dock preference/status, approved support export, supervised presentation, confirmed shutdown-before-disconnect, and guarded process release"
+                "Decky RPCs must remain limited to diagnostics/logging, read-only offline report classification and peripheral/watcher/action-history status, automatic-dock preference/status, approved support export, supervised presentation, confirmed shutdown-before-disconnect, and guarded process release"
             )
 
     delivery_sources = "\n".join(

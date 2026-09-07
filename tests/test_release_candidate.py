@@ -19,7 +19,7 @@ class ReleaseCandidateTests(unittest.TestCase):
         (root / "pyproject.toml").write_text('[project]\nversion = "' + version + '"\n', encoding="utf-8")
 
     def make_archive(self, root: Path, *, version: str = "1.2.3", revision: str = "a" * 40) -> Path:
-        archive = root / f"HandheldDockMode-{version}.zip"
+        archive = root / f"Re-Gear-{version}.zip"
         with zipfile.ZipFile(archive, "w") as value:
             value.writestr("HandheldDockMode/package.json", json.dumps({"version": version}))
             value.writestr("HandheldDockMode/build_info.json", json.dumps({"schema_version": 1, "version": version, "revision": revision}))

@@ -1,28 +1,16 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
-  <title id="title">Portable handheld icon</title>
-  <desc id="desc">Cyan handheld gaming device icon for Re-Gear Portable mode.</desc>
-  <defs>
-    <linearGradient id="hg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#4befff"/>
-      <stop offset="1" stop-color="#1895ff"/>
-    </linearGradient>
-    <filter id="glow" x="-25%" y="-25%" width="150%" height="150%">
-      <feGaussianBlur stdDeviation="3.5" result="b"/>
-      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
-    </filter>
-  </defs>
-  <g fill="none" stroke="url(#hg)" stroke-width="9" stroke-linecap="round" stroke-linejoin="round" filter="url(#glow)">
-    <rect x="18" y="63" width="220" height="130" rx="37"/>
-    <rect x="77" y="83" width="102" height="90" rx="7"/>
-    <circle cx="53" cy="101" r="15"/>
-    <circle cx="204" cy="101" r="15"/>
-    <path d="M45 145h24M57 133v24"/>
-    <circle cx="197" cy="139" r="5" fill="#31e8ff" stroke="none"/>
-    <circle cx="214" cy="151" r="5" fill="#31e8ff" stroke="none"/>
-    <circle cx="214" cy="127" r="5" fill="#31e8ff" stroke="none"/>
-    <circle cx="231" cy="139" r="5" fill="#31e8ff" stroke="none"/>
-    <path d="M45 174h17M194 174h17"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" fill="none">
+  <g>
+    <rect x="48" y="132" width="416" height="248" rx="78" fill="#08182A" stroke="#35d6f5" stroke-width="12"/>
+    <rect x="166" y="166" width="180" height="180" rx="14" fill="#020A14" stroke="#0D2B50" stroke-width="8"/>
+    <rect x="184" y="184" width="144" height="144" rx="8" fill="#102237"/>
+    <circle cx="104" cy="200" r="24" fill="#0A1930" stroke="#35d6f5" stroke-width="9"/>
+    <circle cx="408" cy="200" r="24" fill="#0A1930" stroke="#35d6f5" stroke-width="9"/>
+    <path d="M95 266h18v18h18v18h-18v18H95v-18H77v-18h18v-18Z" fill="#35d6f5"/>
+    <circle cx="402" cy="278" r="9" fill="#35d6f5"/>
+    <circle cx="428" cy="294" r="9" fill="#35d6f5"/>
+    <circle cx="376" cy="294" r="9" fill="#35d6f5"/>
+    <circle cx="402" cy="310" r="9" fill="#35d6f5"/>
+    <rect x="91" y="337" width="30" height="8" rx="4" fill="#35d6f5"/>
+    <rect x="391" y="337" width="30" height="8" rx="4" fill="#35d6f5"/>
   </g>
-  <rect x="87" y="93" width="82" height="70" rx="4" fill="#0d203d" opacity=".75"/>
-  <path d="M94 99h68l-47 58H94Z" fill="#1a66b8" opacity=".32"/>
 </svg>

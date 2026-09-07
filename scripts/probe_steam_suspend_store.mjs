@@ -37,14 +37,15 @@ await new Promise((resolve, reject) => {
 });
 
 const expression = String.raw`(() => {
+  const isReGear = (plugin) => plugin?.name === "Re-Gear" || plugin?.name === "Handheld Dock Mode";
   const hdmLoaded = Boolean(
     window.DeckyPluginLoader?.plugins?.some?.(
-      (plugin) => plugin?.name === "Handheld Dock Mode",
+      isReGear,
     ),
   );
   const hdmDisabled = Boolean(
     window.DeckyPluginLoader?.deckyState?.publicState?.().disabledPlugins?.some?.(
-      (plugin) => plugin?.name === "Handheld Dock Mode",
+      isReGear,
     ),
   );
   const reloadLocked = Boolean(window.DeckyPluginLoader?.reloadLock);

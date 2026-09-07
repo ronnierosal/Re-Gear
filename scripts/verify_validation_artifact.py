@@ -18,7 +18,7 @@ from typing import Any
 
 SOURCE_REVISION_FILENAME = "source-revision.txt"
 CHECKSUM_FILENAME = "SHA256SUMS.txt"
-ARCHIVE_RE = re.compile(r"^HandheldDockMode-([0-9]+(?:\.[0-9]+){2}(?:[-+][A-Za-z0-9.-]+)?)\.zip$")
+ARCHIVE_RE = re.compile(r"^(?:Re-Gear|HandheldDockMode)-([0-9]+(?:\.[0-9]+){2}(?:[-+][A-Za-z0-9.-]+)?)\.zip$")
 REVISION_RE = re.compile(r"^[0-9a-f]{40}$")
 REVISION_PREFIX_RE = re.compile(r"^[0-9a-f]{12}$")
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -47,7 +47,7 @@ def _read_text(path: Path, limit: int = 256) -> str | None:
 
 def _single_archive(root: Path) -> tuple[Path | None, str]:
     try:
-        candidates = tuple(sorted(root.glob("HandheldDockMode-*.zip")))
+        candidates = tuple(sorted((*root.glob("Re-Gear-*.zip"), *root.glob("HandheldDockMode-*.zip"))))
     except OSError:
         return None, "artifact.archive_unreadable"
     if len(candidates) != 1 or not candidates[0].is_file():

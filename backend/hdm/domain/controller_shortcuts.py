@@ -11,10 +11,11 @@ from .logical_actions import ActionSurface, LogicalAction, LogicalActionRequest
 
 class ControllerButton(StrEnum):
     GUIDE = "guide"
+    VIEW = "view"
     Y = "y"
 
 
-DEFAULT_SAFE_UNDOCK_HOLD_MS = 1_200
+DEFAULT_SAFE_UNDOCK_HOLD_MS = 3_000
 EVENT_ID_RE = re.compile(r"^[A-Za-z0-9_.-]{8,96}$")
 
 
@@ -74,7 +75,7 @@ DEFAULT_CONTROLLER_SHORTCUTS = ControllerShortcutPolicy(
     (
         ControllerShortcut(
             LogicalAction.SAFE_UNDOCK,
-            frozenset({ControllerButton.GUIDE, ControllerButton.Y}),
+            frozenset({ControllerButton.VIEW, ControllerButton.Y}),
         ),
     )
 )

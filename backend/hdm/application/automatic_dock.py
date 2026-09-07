@@ -7,8 +7,9 @@ from enum import StrEnum
 
 from ..domain.control_plane import PlacementState
 from ..ports.transition import VersionedObservation
-from ..profiles.registry import resolve_runtime_profiles
+from ..profiles.registry import ProfileResolutionStatus, resolve_runtime_profiles
 from .attach_readiness import AttachReadinessStage, AttachReadinessStatus
+from .connection_readiness import ConnectionReadinessStage, ConnectionReadinessStatus
 from ..domain.inference import infer_placement
 
 
@@ -55,11 +56,14 @@ class AutomaticDockCoordinator:
         self,
         *,
         enabled: bool,
-        readiness: AttachReadinessStatus,
+        readiness: AttachReadinessStatus | ConnectionReadinessStatus,
         current: VersionedObservation,
     ) -> AutomaticDockDecision:
         profiles = resolve_runtime_profiles(current.snapshot)
-        if not profiles.exact_egpu:
+        # Loss of exact identity during PCI/DRM enumeration is not removal.
+        # Keep the one-shot/safe-disconnect latch while any attachment evidence
+        # remains; otherwise a transient unknown snapshot can re-arm a restart.
+        if verified_egpu_absent(current.snapshot):
             self._attempted = False
         if not enabled:
             self._attempted = False
@@ -83,7 +87,10 @@ class AutomaticDockCoordinator:
             return AutomaticDockDecision(self._status)
         if self._attempted:
             return AutomaticDockDecision(self._status)
-        if readiness.stage is AttachReadinessStage.READY_IDLE:
+        if readiness.stage in {
+            AttachReadinessStage.READY_IDLE,
+            ConnectionReadinessStage.READY_IDLE,
+        }:
             if placement is not PlacementState.PORTABLE:
                 self._status = AutomaticDockStatus(
                     AutomaticDockStage.ACTION_REQUIRED,
@@ -96,9 +103,18 @@ class AutomaticDockCoordinator:
                 AutomaticDockStage.SWITCHING, "automatic_dock.switch_requested", True
             )
             return AutomaticDockDecision(self._status, current.generation)
-        if readiness.stage is AttachReadinessStage.SETTLING:
+        if readiness.stage in {
+            AttachReadinessStage.SETTLING,
+            ConnectionReadinessStage.STABILIZING,
+            ConnectionReadinessStage.TRANSPORT_DETECTED,
+        }:
             stage = AutomaticDockStage.SETTLING
-        elif readiness.stage is AttachReadinessStage.ACTION_REQUIRED:
+        elif readiness.stage in {
+            AttachReadinessStage.ACTION_REQUIRED,
+            ConnectionReadinessStage.ACTION_REQUIRED,
+            ConnectionReadinessStage.LINK_TRAINING_FAILED,
+            ConnectionReadinessStage.TIMED_OUT,
+        }:
             stage = AutomaticDockStage.ACTION_REQUIRED
         else:
             stage = AutomaticDockStage.WAITING
@@ -114,7 +130,6 @@ class AutomaticDockCoordinator:
             True,
         )
         return self._status
-
     def suppress_current_attachment_after_portable_return(self) -> AutomaticDockStatus:
         """Do not undo an intentional safe-disconnect Portable transition.
 
@@ -136,3 +151,15 @@ class AutomaticDockCoordinator:
             True,
         )
         return self._status
+
+
+def verified_egpu_absent(snapshot) -> bool:
+    """Observation reset only, never authorization for physical removal."""
+    profiles = resolve_runtime_profiles(snapshot)
+    return bool(
+        profiles.exact_host
+        and profiles.egpu_status is ProfileResolutionStatus.ABSENT
+        and not snapshot.egpu_link.applicable
+        and not snapshot.disconnect_readiness.applicable
+        and not snapshot.sleep_guard.required
+    )

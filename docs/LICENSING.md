@@ -1,8 +1,8 @@
-# HDM licensing
+# Re-Gear licensing
 
 ## Community distribution
 
-Handheld Dock Mode is offered to the community under the GNU General Public
+Re-Gear (formerly Handheld Dock Mode) is offered to the community under the GNU General Public
 License version 3 or later (`GPL-3.0-or-later`). Contributors and distributors
 must preserve applicable copyright, attribution, and license notices and meet
 the GPLv3-or-later obligations for distributed derivative works.

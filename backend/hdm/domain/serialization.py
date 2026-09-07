@@ -38,7 +38,7 @@ def _evidence_to_dict(values: tuple[Evidence, ...]) -> list[dict[str, Any]]:
     ]
 
 
-def snapshot_to_dict(snapshot: ObservedSnapshot) -> dict[str, Any]:
+def snapshot_to_dict(snapshot: ObservedSnapshot, *, include_presentation: bool = False) -> dict[str, Any]:
     return {
         "schema_version": snapshot.schema_version,
         "observed_at": snapshot.observed_at,
@@ -50,6 +50,7 @@ def snapshot_to_dict(snapshot: ObservedSnapshot) -> dict[str, Any]:
                 "stable_id": gpu.stable_id,
                 "role": gpu.role.value,
                 "vendor_device": gpu.vendor_device,
+                **({"model_name": gpu.model_name} if include_presentation else {}),
                 "present": gpu.present,
                 "selected_for_render": gpu.selected_for_render,
                 "confidence": gpu.confidence.value,
@@ -185,6 +186,7 @@ def snapshot_from_dict(value: dict[str, Any]) -> ObservedSnapshot:
             stable_id=str(gpu["stable_id"]),
             role=GpuRole(gpu["role"]),
             vendor_device=str(gpu.get("vendor_device", "")),
+            model_name=gpu.get("model_name", "") if isinstance(gpu.get("model_name", ""), str) else "",
             present=_required_bool(gpu["present"], "gpu.present"),
             selected_for_render=_optional_bool(
                 gpu.get("selected_for_render"), "gpu.selected_for_render"

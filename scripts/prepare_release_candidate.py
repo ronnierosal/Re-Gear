@@ -46,7 +46,7 @@ def _project_version(root: Path) -> str:
 def prepare_release_candidate(archive: Path, *, project_root: Path = ROOT) -> dict[str, Any]:
     """Return fixed metadata needed for a separately manual publication."""
     version = _project_version(project_root)
-    if not archive.is_file() or archive.name != f"HandheldDockMode-{version}.zip":
+    if not archive.is_file() or archive.name != f"Re-Gear-{version}.zip":
         raise ValueError("release.archive_name_invalid")
     try:
         with zipfile.ZipFile(archive) as value:
@@ -75,7 +75,7 @@ def prepare_release_candidate(archive: Path, *, project_root: Path = ROOT) -> di
 def _notes_template(candidate: dict[str, Any]) -> str:
     archive, build = candidate["archive"], candidate["build"]
     return "\n".join((
-        f"# HDM {candidate['version']} release notes", "",
+        f"# Re-Gear {candidate['version']} release notes", "",
         f"- Build revision: `{build['source_revision']}`",
         f"- Archive: `{archive['filename']}`", f"- SHA-256: `{archive['sha256']}`",
         "- Status: `Hardware Validation Required` unless separately evidenced.", "",
