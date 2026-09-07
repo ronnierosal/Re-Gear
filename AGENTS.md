@@ -47,6 +47,17 @@ and correct the owning repository document.
 
 ## Ownership and coordination
 
+- Codex, Claude Code, and other chats work concurrently in this repository.
+  At every task start/resume, read `docs/CHAT_COORDINATION.md`, fetch current
+  refs, and inspect open issues/PRs plus worktree ownership before editing.
+- Every code change requires a GitHub issue first (search open/closed issues;
+  reuse a match), a recorded owner/branch/file scope, and a linked draft PR.
+  Routine scoped issue updates, branch pushes, and PR creation are authorized;
+  this does not authorize merges, releases, or hardware operations.
+- Never edit another agent's worktree or claimed files without a recorded
+  handoff. Overlap requires an agreed owner and integration order, not merely
+  a clean Git merge. Preserve other agents' changes and behavior in combined
+  regression checks. See the playbook for collision checks and stale sessions.
 - One driver owns integration and durable decisions for each workstream.
 - Use parallel workers for bounded searches, audits, tests, or isolated changes.
   Workers return evidence and focused diffs; the driver integrates them.
