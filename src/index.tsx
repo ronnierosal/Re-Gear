@@ -1,3 +1,4 @@
+import { displayAction } from "./display-action";
 import { createDisplayShortcutRuntime } from "./display-shortcut-runtime";
 import { showDisconnectProgress } from "./disconnect-progress-panel";
 import { ConnectionQuickStatus } from "./connection-quick-status";
@@ -1424,6 +1425,10 @@ function Content({ preflight, connection, shortcut }: { preflight: SleepPrefligh
   }, []);
 
   const sectionVisibility = quickAccessSectionVisibility(showDiagnostics);
+  const primaryDisplayAction = displayAction(payload?.inference.mode,
+    tvSwitchBusy || safeDisconnectBusy, Boolean(tvSwitchAcknowledgementId),
+    Boolean(journalStatus && journalStatus.code !== "journal.idle"), controllerShortcutAvailable);
+
 
   return (
     <>
@@ -1477,25 +1482,14 @@ function Content({ preflight, connection, shortcut }: { preflight: SleepPrefligh
             <DashboardAction
               icon="bolt"
               tone="primary"
-              title={tvSwitchBusy || safeDisconnectBusy
-                ? "Switching…"
-                : payload?.inference.mode === "docked_egpu"
-                  ? "Switch to handheld"
-                  : "Switch to TV"}
-              description={controllerShortcutAvailable
-                ? "Hold Back/View + Y for 3 seconds to switch."
-                : "Checks readiness before switching. Controller shortcut unavailable."}
+              title={primaryDisplayAction.title}
+              description={primaryDisplayAction.description}
               onClick={() => {
-                if (payload?.inference.mode === "docked_egpu") requestControllerDisplaySwitch("ally");
-                else if (payload?.inference.mode === "portable") void executeTvSwitch();
+                if (primaryDisplayAction.disabled) return;
+                if (primaryDisplayAction.target === "ally") requestControllerDisplaySwitch("ally");
+                else if (primaryDisplayAction.target === "tv") void executeTvSwitch();
               }}
-              disabled={
-                tvSwitchBusy
-                || safeDisconnectBusy
-                || (payload?.inference.mode !== "portable" && payload?.inference.mode !== "docked_egpu")
-                || Boolean(tvSwitchAcknowledgementId)
-                || Boolean(journalStatus && journalStatus.code !== "journal.idle")
-              }
+              disabled={primaryDisplayAction.disabled}
             />
           </DashboardSurface>
           {tvSwitchMessage && <PanelSectionRow>{tvSwitchMessage}</PanelSectionRow>}

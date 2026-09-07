@@ -1,3 +1,23 @@
+/** Presentation only: execution still requires the backend approval token. */
+function displayAction(mode, busy, acknowledgementRequired, journalBlocked, shortcutAvailable) {
+    const target = mode === "tv_docked" || mode === "docked_egpu" ? "ally"
+        : mode === "portable" ? "tv" : null;
+    const reason = busy ? "Wait for the current display request to finish."
+        : acknowledgementRequired ? "Acknowledge the prior display transition result below to continue."
+            : journalBlocked ? "Resolve the prior operation shown below before switching."
+                : !target ? "Current display mode is unverified. Open Troubleshoot to inspect readiness."
+                    : null;
+    return {
+        target,
+        title: busy ? "Switching…" : target === "ally" ? "Switch to handheld"
+            : target === "tv" ? "Switch to TV" : "Display switch unavailable",
+        disabled: reason !== null,
+        description: reason ?? (shortcutAvailable
+            ? "Hold Back/View + Y for 3 seconds to switch."
+            : "Checks readiness before switching. Controller shortcut unavailable."),
+    };
+}
+
 // SteamClient.Input.ControllerInputGamepadButton, not browser Gamepad indices.
 const VIEW_BUTTON = 9;
 const Y_BUTTON = 3;
@@ -3605,6 +3625,7 @@ function Content({ preflight, connection, shortcut }) {
         });
     }, []);
     const sectionVisibility = quickAccessSectionVisibility(showDiagnostics);
+    const primaryDisplayAction = displayAction(payload?.inference.mode, tvSwitchBusy || safeDisconnectBusy, Boolean(tvSwitchAcknowledgementId), Boolean(journalStatus && journalStatus.code !== "journal.idle"), controllerShortcutAvailable);
     return (SP_JSX.jsxs(SP_JSX.Fragment, { children: [SP_JSX.jsx("style", { children: regearControlCss }), SP_JSX.jsxs("div", { ref: statusAnchor, tabIndex: -1, children: [SP_JSX.jsx(DFL.PanelSection, { title: "At a glance", children: SP_JSX.jsx(QuickAccessOverview, { summaryRef: statusFocusAnchor, onSummaryFocus: () => {
                                 if (statusAnchor.current)
                                     scrollToTopOfOwningPanel(statusAnchor.current);
@@ -3615,22 +3636,14 @@ function Content({ preflight, connection, shortcut }) {
                                                         ? "Status unavailable"
                                                         : automaticDockStatus.enabled
                                                             ? label(automaticDockStatus.code)
-                                                            : "Off · Ask before enabling", checked: automaticDockStatus?.enabled === true, disabled: automaticDockBusy || !automaticDockStatus, highlightOnFocus: true, onChange: toggleAutomaticDock }) }) }), automaticDockMessage && (SP_JSX.jsx(DFL.PanelSectionRow, { children: automaticDockMessage })), SP_JSX.jsx(DashboardSurface, { primary: true, children: SP_JSX.jsx(DashboardAction, { icon: "bolt", tone: "primary", title: tvSwitchBusy || safeDisconnectBusy
-                                                ? "Switching…"
-                                                : payload?.inference.mode === "docked_egpu"
-                                                    ? "Switch to handheld"
-                                                    : "Switch to TV", description: controllerShortcutAvailable
-                                                ? "Hold Back/View + Y for 3 seconds to switch."
-                                                : "Checks readiness before switching. Controller shortcut unavailable.", onClick: () => {
-                                                if (payload?.inference.mode === "docked_egpu")
+                                                            : "Off · Ask before enabling", checked: automaticDockStatus?.enabled === true, disabled: automaticDockBusy || !automaticDockStatus, highlightOnFocus: true, onChange: toggleAutomaticDock }) }) }), automaticDockMessage && (SP_JSX.jsx(DFL.PanelSectionRow, { children: automaticDockMessage })), SP_JSX.jsx(DashboardSurface, { primary: true, children: SP_JSX.jsx(DashboardAction, { icon: "bolt", tone: "primary", title: primaryDisplayAction.title, description: primaryDisplayAction.description, onClick: () => {
+                                                if (primaryDisplayAction.disabled)
+                                                    return;
+                                                if (primaryDisplayAction.target === "ally")
                                                     requestControllerDisplaySwitch("ally");
-                                                else if (payload?.inference.mode === "portable")
+                                                else if (primaryDisplayAction.target === "tv")
                                                     void executeTvSwitch();
-                                            }, disabled: tvSwitchBusy
-                                                || safeDisconnectBusy
-                                                || (payload?.inference.mode !== "portable" && payload?.inference.mode !== "docked_egpu")
-                                                || Boolean(tvSwitchAcknowledgementId)
-                                                || Boolean(journalStatus && journalStatus.code !== "journal.idle") }) }), tvSwitchMessage && SP_JSX.jsx(DFL.PanelSectionRow, { children: tvSwitchMessage }), SP_JSX.jsx(DashboardSurface, { children: SP_JSX.jsx(DashboardAction, { icon: "connection", title: "Disconnect status", description: "Live checks \u00B7 keep eGPU connected", onClick: () => {
+                                            }, disabled: primaryDisplayAction.disabled }) }), tvSwitchMessage && SP_JSX.jsx(DFL.PanelSectionRow, { children: tvSwitchMessage }), SP_JSX.jsx(DashboardSurface, { children: SP_JSX.jsx(DashboardAction, { icon: "connection", title: "Disconnect status", description: "Live checks \u00B7 keep eGPU connected", onClick: () => {
                                                 if (!disconnectProgressModal.current)
                                                     disconnectProgressModal.current = showDisconnectProgress(() => { disconnectProgressModal.current = null; });
                                             } }) }), SP_JSX.jsx(DashboardSurface, { children: SP_JSX.jsx(DashboardAction, { icon: "power", title: safeDisconnectBusy
