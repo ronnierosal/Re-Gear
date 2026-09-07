@@ -84,6 +84,28 @@ def binding_fingerprint(binding: str) -> str:
     return hashlib.sha256(binding.encode("utf-8")).hexdigest()[:12]
 
 
+def holders(report) -> list[dict[str, object]]:
+    """List what still holds the eGPU, shaped like the product's own preview.
+
+    `ProcessReleasePreviewRow` exposes name and resources only, so this matches
+    that redaction rather than inventing a wider one: no PIDs, no command lines,
+    no paths. `kind` and `close_eligible` are included because they decide what
+    an operator may do next, and neither identifies anything.
+    """
+    rows = []
+    for observed in report.snapshot.disconnect_readiness.clients:
+        rows.append(
+            {
+                "name": observed.name,
+                "kind": observed.kind.value,
+                "resources": [resource.value for resource in observed.resources],
+                "close_eligible": observed.close_eligible,
+                "reason": observed.reason,
+            }
+        )
+    return sorted(rows, key=lambda row: (row["kind"], row["name"]))
+
+
 def describe(report) -> dict[str, object]:
     """Classify one snapshot report and describe every contributing fact."""
     composed = build_safe_undock_evidence(report)
@@ -124,6 +146,7 @@ def describe(report) -> dict[str, object]:
         "game_state": evidence.game_state.value,
         "attachment_fingerprint": binding_fingerprint(evidence.attachment_binding),
         "blocking": [item["fact"] for item in facts if not item["satisfied"]],
+        "holders": holders(report),
         "facts": facts,
     }
 
@@ -150,6 +173,16 @@ def render(result: dict[str, object]) -> str:
             )
             if item.get("known_gap"):
                 lines.append(f"          known code gap, not hardware: {item['known_gap']}")
+    rows = result.get("holders") or []
+    if rows:
+        lines.append("")
+        lines.append(f"Still holding the eGPU ({len(rows)}):")
+        for row in rows:
+            resources = ", ".join(row["resources"]) or "none"
+            closable = "closable" if row["close_eligible"] else "PROTECTED"
+            lines.append(f"  - {row['name']} [{row['kind']}, {closable}]: {resources}")
+            if row.get("reason"):
+                lines.append(f"      {row['reason']}")
     blocking = [item for item in facts if not item["satisfied"]]
     hardware = [item for item in blocking if not item.get("known_gap")]
     if blocking:
