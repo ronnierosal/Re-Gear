@@ -102,6 +102,29 @@ identifies 0.3.54 as its installed-source baseline; this README does not assert
 that 0.3.55 is installed. Consult the candidate branch's evidence and exact build
 metadata before a deployment. Re-Gear remains experimental.
 
+## Resource-release experiment: September 6 update
+
+**Priority: active disconnect work.** The latest recorded hardware run used installed
+**0.3.54 / e765fad4b928**. TV output and return to the internal display worked;
+the player confirmed normal controls and audio afterward. Steam and Gamescope
+still retained external GPU allocations, and WirePlumber retained an audio-control
+handle even with playback endpoints closed. A working handheld screen therefore
+does not mean the external GPU has been released.
+
+The OpenGL and Vulkan selection experiment is packaged in **0.3.56**, tracked in
+[draft PR #82](https://github.com/ronnierosal/Re-Gear/pull/82). The candidate is staged,
+**not installed or hardware validated**. It combines the graphics trial, allocation
+diagnostics, and return-control correction; the separate experimental filter series
+is excluded. The current priority is GitHub review and documentation; hardware
+installation and testing are paused pending a separate supervised continuation.
+Preparation-only tests and repeated unchanged display switches do not complete it.
+Physical live removal remains unsupported.
+
+Follow [the resource-release experiment (#51)](https://github.com/ronnierosal/Re-Gear/issues/51)
+and [remaining audio ownership (#52)](https://github.com/ronnierosal/Re-Gear/issues/52).
+See the [dated evidence summary](https://github.com/ronnierosal/Re-Gear/blob/codex/disconnect-progress-docs/docs/DISCONNECT_PROGRESS_2026-09-06.md)
+for the tested configuration and limits.
+
 Evidence labels matter: **Implemented** means code and deterministic checks;
 **Remotely observed** means bounded read-only device evidence; **Hardware
 Validation Required** means a player-present supervised test still decides the
