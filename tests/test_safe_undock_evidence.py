@@ -111,8 +111,16 @@ def report(
             egpu_stable_id=egpu_stable_id,
             clients=clients,
         ),
+        # OBSERVED, not VERIFIED: PcieLinkHealthDiscovery has no VERIFIED path,
+        # so a fixture claiming one would not represent any real observation.
         egpu_link=link
-        or EgpuLinkObservation(True, EgpuLinkState.UP, Confidence.VERIFIED),
+        or EgpuLinkObservation(
+            True,
+            EgpuLinkState.UP,
+            Confidence.OBSERVED,
+            speed_gtps=2.5,
+            width_lanes=4,
+        ),
     )
     if displays is not None:
         snapshot = dataclasses.replace(snapshot, displays=displays)
@@ -197,6 +205,79 @@ class DisplayEvidenceTests(unittest.TestCase):
         ).evidence
         assert evidence is not None
         self.assertFalse(evidence.portable_display_active.verified)
+
+
+class TopologyGradingTests(unittest.TestCase):
+    """The link adapter never returns VERIFIED; the join happens here."""
+
+    def test_up_link_with_exact_identity_is_verified(self) -> None:
+        evidence = build_safe_undock_evidence(returned_to_portable()).evidence
+        assert evidence is not None
+        self.assertIs(evidence.topology_exact.value, True)
+        self.assertTrue(evidence.topology_exact.verified)
+
+    def test_up_link_without_metrics_is_not_upgraded(self) -> None:
+        link = EgpuLinkObservation(
+            True, EgpuLinkState.UP, Confidence.OBSERVED, speed_gtps=None, width_lanes=None
+        )
+        evidence = build_safe_undock_evidence(returned_to_portable(link=link)).evidence
+        assert evidence is not None
+        self.assertFalse(evidence.topology_exact.verified)
+
+    def test_up_link_without_exact_identity_is_not_upgraded(self) -> None:
+        base = returned_to_portable()
+        gpus = tuple(
+            dataclasses.replace(gpu, confidence=Confidence.OBSERVED)
+            for gpu in base.snapshot.gpus
+        )
+        evidence = build_safe_undock_evidence(
+            returned_to_portable(gpus=gpus)
+        ).evidence
+        assert evidence is not None
+        self.assertFalse(evidence.topology_exact.verified)
+
+    def test_down_link_is_never_upgraded(self) -> None:
+        link = EgpuLinkObservation(
+            True, EgpuLinkState.DOWN, Confidence.OBSERVED, speed_gtps=2.5, width_lanes=4
+        )
+        evidence = build_safe_undock_evidence(returned_to_portable(link=link)).evidence
+        assert evidence is not None
+        self.assertIs(evidence.topology_exact.value, False)
+        self.assertFalse(evidence.topology_exact.verified)
+
+    def test_inapplicable_link_is_unknown(self) -> None:
+        link = EgpuLinkObservation(False, EgpuLinkState.UNKNOWN, Confidence.UNKNOWN)
+        evidence = build_safe_undock_evidence(returned_to_portable(link=link)).evidence
+        assert evidence is not None
+        self.assertIsNone(evidence.topology_exact.value)
+        self.assertFalse(evidence.topology_exact.verified)
+
+
+class ControllerGradingTests(unittest.TestCase):
+    def test_availability_under_an_exact_mapping_is_enough(self) -> None:
+        """`builtin_input_verified` needs a player press and cannot gate this."""
+        evidence = build_safe_undock_evidence(
+            returned_to_portable(
+                controller=ControllerPeripheralState(
+                    True, True, "", "builtin", True, False, False, "external", True, False
+                )
+            )
+        ).evidence
+        assert evidence is not None
+        self.assertIs(evidence.builtin_controller_active.value, True)
+        self.assertTrue(evidence.builtin_controller_active.verified)
+
+    def test_unmapped_controller_still_fails_closed(self) -> None:
+        evidence = build_safe_undock_evidence(
+            returned_to_portable(
+                controller=ControllerPeripheralState(
+                    True, False, "controller.identity_unmapped", "", None, False,
+                    False, "", None, False,
+                )
+            )
+        ).evidence
+        assert evidence is not None
+        self.assertFalse(evidence.builtin_controller_active.verified)
 
 
 class ReadinessTests(unittest.TestCase):

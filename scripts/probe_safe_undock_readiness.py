@@ -58,6 +58,21 @@ FACT_MEANINGS: tuple[tuple[str, str], ...] = (
 
 EXPECTED_VALUES = {name: name != "external_display_active" for name, _ in FACT_MEANINGS}
 
+#: Facts that cannot currently be satisfied for reasons in the code rather than
+#: the hardware. Without this, a supervised run reads these as device problems
+#: and sends the operator chasing hardware that is working correctly.
+KNOWN_STRUCTURAL_GAPS: dict[str, str] = {
+    "portable_audio_active": (
+        "SteamOsPeripheralObservationAdapter never observes the active output: "
+        "even fully mapped it returns exact=False, current_output=UNKNOWN and "
+        "failure_code='audio.default_output_unobserved' (see issue #93)"
+    ),
+    "builtin_controller_active": (
+        "requires PeripheralMappingEvidence, which production never supplies, "
+        "so the controller subsystem always fails closed (see issue #93)"
+    ),
+}
+
 
 def binding_fingerprint(binding: str) -> str:
     """Return a short digest so runs are comparable without emitting the id.
@@ -90,15 +105,17 @@ def describe(report) -> dict[str, object]:
     for name, meaning in FACT_MEANINGS:
         fact = getattr(evidence, name)
         expected = EXPECTED_VALUES[name]
-        facts.append(
-            {
-                "fact": name,
-                "means": meaning,
-                "value": fact.value,
-                "verified": fact.verified,
-                "satisfied": fact.verified and fact.value is expected,
-            }
-        )
+        satisfied = fact.verified and fact.value is expected
+        entry = {
+            "fact": name,
+            "means": meaning,
+            "value": fact.value,
+            "verified": fact.verified,
+            "satisfied": satisfied,
+        }
+        if not satisfied and name in KNOWN_STRUCTURAL_GAPS:
+            entry["known_gap"] = KNOWN_STRUCTURAL_GAPS[name]
+        facts.append(entry)
     return {
         "state": readiness.state.value,
         "code": readiness.code,
@@ -131,6 +148,16 @@ def render(result: dict[str, object]) -> str:
             lines.append(
                 f"  [{mark}] {item['fact']}: {value} ({verified}) - {item['means']}"
             )
+            if item.get("known_gap"):
+                lines.append(f"          known code gap, not hardware: {item['known_gap']}")
+    blocking = [item for item in facts if not item["satisfied"]]
+    hardware = [item for item in blocking if not item.get("known_gap")]
+    if blocking:
+        lines.append("")
+        lines.append(
+            f"{len(blocking)} blocking, of which {len(hardware)} are hardware state; "
+            f"{len(blocking) - len(hardware)} are known code gaps (issue #93)."
+        )
     return "\n".join(lines)
 
 

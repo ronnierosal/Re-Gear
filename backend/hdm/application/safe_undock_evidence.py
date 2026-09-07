@@ -101,6 +101,40 @@ def _internal_render_selected(
     return gpu.selected_for_render, gpu.confidence
 
 
+def _topology_exact(
+    snapshot: ObservedSnapshot,
+    attachment_value: bool | None,
+    attachment_confidence: Confidence,
+) -> tuple[bool | None, Confidence]:
+    """Grade link topology by joining the link reading with the exact identity.
+
+    `PcieLinkHealthDiscovery` never returns `Confidence.VERIFIED`: it reads only
+    link sysfs for a bridge address and cannot see whether that bridge belongs to
+    an exactly matched, certified eGPU, so it correctly refuses to claim more
+    than `OBSERVED`. This composer is the first place both halves are available,
+    so the join belongs here.
+
+    The upgrade is deliberately narrow. It requires an exactly matched, certified
+    attachment verified independently, an applicable link that is up, and both
+    negotiated metrics actually present. Anything less passes the adapter's own
+    grade through unchanged, so a degraded or ambiguous link never gains
+    confidence it did not earn.
+    """
+    link = snapshot.egpu_link
+    if not link.applicable:
+        return None, Confidence.UNKNOWN
+    up = link.state is EgpuLinkState.UP
+    metrics_present = link.speed_gtps is not None and link.width_lanes is not None
+    identity_verified = (
+        attachment_value is True and attachment_confidence is Confidence.VERIFIED
+    )
+    if up and metrics_present and identity_verified:
+        return True, Confidence.VERIFIED
+    if link.state is EgpuLinkState.UNKNOWN:
+        return None, link.confidence
+    return up, link.confidence
+
+
 def _display_active(
     snapshot: ObservedSnapshot, kind: DisplayKind
 ) -> tuple[bool | None, Confidence]:
@@ -153,8 +187,9 @@ def build_safe_undock_evidence(report: SnapshotReport) -> SafeUndockEvidenceResu
         snapshot, DisplayKind.EXTERNAL
     )
 
-    link = snapshot.egpu_link
-    topology_value = link.state is EgpuLinkState.UP if link.applicable else None
+    topology_value, topology_confidence = _topology_exact(
+        snapshot, attachment_value, attachment_confidence
+    )
 
     # Every observed client holds one of the exact eGPU nodes, so a clear scan
     # is an empty one. `scan_complete` stays a separate fact so the domain can
@@ -173,9 +208,12 @@ def build_safe_undock_evidence(report: SnapshotReport) -> SafeUndockEvidenceResu
 
     controller = peripheral.controller
     controller_confidence = _subsystem_confidence(controller.complete, controller.exact)
-    controller_value = (
-        controller.builtin_available is True and controller.builtin_input_verified
-    )
+    # `builtin_input_verified` records that a player actually pressed something,
+    # which no passive observation can establish. Safe Undock asks whether the
+    # handheld's own controller is present and exactly identified, so availability
+    # under an exact mapping is the right signal; requiring the interactive flag
+    # here would make the fact permanently unsatisfiable.
+    controller_value = controller.builtin_available is True
 
     evidence = SafeUndockEvidence(
         attachment_binding=attachment_binding,
@@ -183,7 +221,7 @@ def build_safe_undock_evidence(report: SnapshotReport) -> SafeUndockEvidenceResu
         sample_id=sample_id,
         game_state=snapshot.game_state,
         exact_attachment=fact(attachment_value, attachment_confidence),
-        topology_exact=fact(topology_value, link.confidence),
+        topology_exact=fact(topology_value, topology_confidence),
         client_scan_complete=fact(readiness.scan_complete, scan_confidence),
         clients_clear=fact(clients_clear, scan_confidence),
         portable_display_active=fact(portable_display, portable_display_confidence),
