@@ -55,6 +55,8 @@ and correct the owning repository document.
   machines, UX, hardware abstractions, or deployment strategy.
 - Inspect branch, HEAD, worktree status, and overlapping active work before
   editing shared files. Never revert or absorb unrelated changes.
+- Concurrent assistants share one repository through per-agent worktrees. Layout,
+  setup tool, and cross-agent safety rules: `docs/MULTI_AGENT_WORKSPACE.md`.
 - The Ally X + GPD G1 end-to-end hardware journey has a separate driver. Shared
   diagnostics and documentation may support it, but this workstream must not
   deploy, run hardware transitions, or rewrite its runtime path without explicit
