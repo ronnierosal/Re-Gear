@@ -301,6 +301,50 @@ class EgpuClientDiscoveryTests(unittest.TestCase):
             self.assertIn("could not be inspected", result.error)
             self.assertEqual(result.clients, ())
 
+    def test_unreadable_live_descriptor_target_marks_scan_incomplete(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            def unreadable(_path):
+                raise PermissionError('fixture')
+            discovery = self.make_discovery(root, fd_target_reader=unreadable)
+            add_process(root / 'proc', 999, 'client', '0::/session\n',
+                        ('/dev/dri/renderD131',), 900)
+            result = self.scan(discovery)
+            self.assertFalse(result.complete)
+            self.assertIn('could not be inspected', result.error)
+            self.assertEqual(result.clients, ())
+
+    def test_unreadable_descriptor_target_preserves_known_client(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            def selective(path):
+                value = path.read_text(encoding='utf-8')
+                if value == '/unreadable':
+                    raise PermissionError('fixture')
+                return value
+            discovery = self.make_discovery(root, fd_target_reader=selective)
+            add_process(root / 'proc', 202, 'gamescope', '0::/session\n',
+                        ('/dev/dri/renderD131', '/unreadable'), 900)
+            result = self.scan(discovery)
+            self.assertFalse(result.complete)
+            self.assertEqual(len(result.clients), 1)
+            self.assertEqual(result.clients[0].pid, 202)
+
+    def test_descriptor_target_failure_after_process_exit_is_not_live_gap(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            def exited(_path):
+                # Move only this temporary fixture outside its captured PID path.
+                (root / 'proc' / '999').rename(root / 'exited-process')
+                raise FileNotFoundError('process exited')
+            discovery = self.make_discovery(root, fd_target_reader=exited)
+            add_process(root / 'proc', 999, 'client', '0::/session\n',
+                        ('/dev/dri/renderD131',), 900)
+            result = self.scan(discovery)
+            self.assertTrue(result.complete)
+            self.assertEqual(result.error, '')
+            self.assertEqual(result.clients, ())
+
 
 if __name__ == "__main__":
     unittest.main()
