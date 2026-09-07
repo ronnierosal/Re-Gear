@@ -12,6 +12,8 @@ class UserServiceOperation(StrEnum):
     DAEMON_RELOAD = "daemon_reload"
     VERIFY_GAMESCOPE_UNIT = "verify_gamescope_unit"
     INSPECT_STEAM_UNIT = "inspect_steam_unit"
+    OBSERVE_FILTER_GAMESCOPE = "observe_filter_gamescope"
+    OBSERVE_FILTER_STEAM = "observe_filter_steam"
     RESTART_GAMESCOPE_SESSION = "restart_gamescope_session"
 
 
