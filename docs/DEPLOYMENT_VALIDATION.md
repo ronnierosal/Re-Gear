@@ -173,7 +173,7 @@ observation behavior; it is not an eGPU, sleep, or performance certification.
    Access **HDM build** row shows the expected short revision before starting
    one ordinary Steam game on the internal display. `uncommitted` or
    `unavailable` is not sufficient provenance for this stage.
-2. Open Quick Access → Handheld Dock Mode. Confirm the panel is controller
+2. Open Quick Access → Re-Gear. Confirm the panel is controller
    usable and reports a running game without changing the display, audio,
    controller assignment, or game session.
 3. Open Troubleshooting. Confirm it says that additional checks wait until HDM
@@ -407,7 +407,7 @@ maintainer's external development boundary.
 ## Package staging automation
 
 `scripts/stage_decky_update.py` may upload one already-built HDM ZIP to the
-fixed Decky user's `Downloads` directory and read back its SHA-256. It accepts
+fixed Decky user's `/home/deck/` directory and read back its SHA-256. It accepts
 only a complete archive carrying a committed revision and derives its remote
 filename exclusively from that verified metadata:
 
@@ -429,7 +429,7 @@ For this maintainer-controlled Ally only, a separate developer helper may be
 installed after a one-time **interactive** `sudo` action. It is not a Decky API
 and is never part of an HDM release. The helper is root-owned, accepts only a
 signed `HDM-update-<version>-<revision>.zip` and matching signature from the
-fixed `/home/deck/Downloads` directory, validates the embedded HDM provenance,
+fixed `/home/deck/` directory, validates the embedded HDM provenance,
 then atomically replaces only `HandheldDockMode`. It moves the prior plugin to
 a root-owned rollback directory. It does not reload Decky, restart Gamescope,
 or alter displays, sleep, hardware, or the active session.
@@ -437,7 +437,7 @@ or alter displays, sleep, hardware, or the active session.
 The public verification key is installed once at
 `/var/lib/handheld-dock-mode/deploy-public-key.pem`; the corresponding private key
 must remain off the Ally and outside the repository. A package that is merely
-copied to Downloads is rejected unless its signature validates against that
+copied to `/home/deck/` is rejected unless its signature validates against that
 key. The helper therefore avoids turning a passwordless `sudo` rule into an
 arbitrary root-plugin installer.
 

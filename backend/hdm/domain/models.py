@@ -112,6 +112,7 @@ class GpuObservation:
     selected_for_render: bool | None
     confidence: Confidence
     evidence: tuple[Evidence, ...] = field(default_factory=tuple)
+    model_name: str = field(default="", compare=False)
 
 
 @dataclass(frozen=True, slots=True)

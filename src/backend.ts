@@ -6,6 +6,8 @@ export interface BlockerPayload {
 }
 
 export interface GpuPayload {
+  /** Optional driver-reported presentation; never a readiness/identity input. */
+  model_name?: string;
   role: "internal" | "external" | "unknown";
   present: boolean;
   selected_for_render: boolean | null;
@@ -141,6 +143,15 @@ export interface SnapshotPayload {
     stage: "idle" | "settling" | "waiting_for_external_display" | "waiting_for_link_health" | "ready_idle" | "game_running" | "action_required";
     code: string;
     poll_after_ms: number;
+  };
+  connection_readiness?: {
+    schema_version: number;
+    stage: "disconnected" | "transport_detected" | "waiting_for_pci" | "waiting_for_driver" | "waiting_for_link" | "waiting_for_hdmi" | "waiting_for_audio" | "waiting_for_session" | "game_running" | "stabilizing" | "ready_idle" | "link_training_failed" | "timed_out" | "action_required";
+    code: string;
+    poll_after_ms: number;
+    window_age_ms: number;
+    checks?: Record<"gpu" | "link" | "hdmi" | "audio" | "session" | "idle", boolean> | null;
+    checks_age_ms?: number;
   };
   /** Optional future read-only delivery for local journey classifiers. */
   journey?: {

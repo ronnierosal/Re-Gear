@@ -1,7 +1,23 @@
-import type { ReactNode } from "react";
+import type { ReactNode, Ref } from "react";
+import { SectionFocus } from "./section-focus";
+import { regearTheme as theme } from "./regear-theme";
+import handheldModeIcon from "./assets/mode-handheld.svg";
+import tvModeIcon from "./assets/mode-tv.svg";
 import { placementCards } from "./quick-access-dashboard";
 
-const colors = { cyan: "#26c9ff", text: "#edf4ff", muted: "#b6c9e3" };
+const C = {
+  cyan: "#39d8ff",
+  cyanSoft: "#0aa8e8",
+  green: "#5eea8a",
+  amber: "#ffc247",
+  text: "#f4f7fb",
+  muted: "#9eb2ca",
+  border: "#294665",
+  bg: "#06101d",
+  panel: "#0a1727",
+  panel2: "#0d1c2f",
+};
+
 const paths = {
   handheld: "M5 6h14l3 12h-5l-2-3H9l-2 3H2z M6 10h5 M8.5 7.5v5 M16 9h.1 M18 11h.1",
   monitor: "M3 4h18v13H3z M8 21h8 M12 17v4",
@@ -11,44 +27,115 @@ const paths = {
   tools: "M14 3a6 6 0 0 0-7 7L2 15l7 7 5-5a6 6 0 0 0 7-7l-4 4-5-5z",
 };
 
-export function DashboardIcon({ kind }: { kind: keyof typeof paths }) {
-  return <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+export function DashboardIcon({ kind, size = 24 }: { kind: keyof typeof paths; size?: number }) {
+  return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
     strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"
     style={{ flexShrink: 0 }}><path d={paths[kind]} /></svg>;
 }
 
 export function DashboardSurface({ children, primary = false }: { children: ReactNode; primary?: boolean }) {
-  return <div style={{ borderRadius: 16, marginBottom: 12, minWidth: 0,
-    border: `1px solid ${primary ? "#ad8040" : "#304a6b"}`,
-    background: primary ? "linear-gradient(110deg, #302411, #111e30)" : "linear-gradient(120deg, #122139, #0a1423)",
-    color: colors.text }}>{children}</div>;
+  return <div style={{
+    borderRadius: 18,
+    marginBottom: 12,
+    minWidth: 0,
+    overflow: "hidden",
+    border: `1px solid ${primary ? "#9d7635" : C.border}`,
+    background: primary
+      ? "linear-gradient(115deg, rgba(82,58,16,.72), rgba(12,25,42,.98))"
+      : "linear-gradient(120deg, rgba(14,31,52,.98), rgba(7,17,30,.98))",
+    color: C.text,
+    boxShadow: primary ? "inset 0 0 28px rgba(255,185,48,.05)" : "inset 0 0 24px rgba(0,170,255,.025)",
+  }}>{children}</div>;
 }
 
-export function QuickAccessOverview({ mode, modeLabel, health, game, loading }: {
-  mode: string; modeLabel: string; health: string; game: string; loading: boolean;
+function CurrentStateCard({ modeLabel, health, game, loading }: {
+  modeLabel: string; health: string; game: string; loading: boolean;
 }) {
-  return <div style={{ display: "grid", gap: 10, color: colors.text, minWidth: 0 }}>
-    <div style={{ padding: "10px 12px", border: "1px solid #304a6b", borderRadius: 14, background: "#0b1728" }}>
-      <div style={{ fontSize: 16, fontWeight: 650 }}>{modeLabel}</div>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 12px", fontSize: 12, color: colors.muted }}>
-        <span>Health: {health}</span><span>Game: {game}</span>
-      </div>
+  return <div style={{
+    padding: "10px 12px",
+    marginBottom: 14,
+    borderRadius: 14,
+    border: `1px solid ${theme.border}`,
+    background: theme.surface,
+  }}>
+    <div style={{
+      color: C.cyan,
+      fontSize: 12,
+      fontWeight: 760,
+      letterSpacing: "1.5px",
+      marginBottom: 5,
+    }}>CURRENT STATE</div>
+    <div style={{
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center",
+      gap: 10,
+      marginBottom: 12,
+    }}>
+      <div style={{ fontSize: 18, fontWeight: 700, lineHeight: 1.4 }}>{modeLabel}</div>
     </div>
-    {placementCards(mode, loading).map((card) => <div key={card.name}
-      style={{ display: "flex", gap: 12, alignItems: "center", minWidth: 0, padding: "12px",
-        borderRadius: 15, border: `1px solid ${card.active ? colors.cyan : "#30405b"}`,
-        background: card.active ? "linear-gradient(115deg, #073351, #10203a)" : "#0b1525",
-        boxShadow: card.active ? "inset 0 0 18px #00aaff15" : "none" }}>
-      <span style={{ color: card.active ? colors.cyan : "#91afd5", display: "flex" }}>
-        <DashboardIcon kind={card.name === "Portable" ? "handheld" : "monitor"} />
-      </span>
-      <div style={{ minWidth: 0, overflowWrap: "anywhere" }}>
-        <div style={{ fontSize: 14, fontWeight: 650 }}>{card.name}</div>
-        <div style={{ fontSize: 12, color: colors.muted }}>{card.detail}</div>
-        <div style={{ fontSize: 11, color: card.active ? colors.cyan : colors.muted, marginTop: 4 }}>
-          {card.active ? "✓ Current mode" : loading ? "Reading…" : "Not verified current · Status only"}
-        </div>
-      </div>
-    </div>)}
+    {[["Health", loading ? "Reading…" : health], ["Game", loading ? "Reading…" : game]].map(([name, value]) =>
+      <div key={name} style={{display:"grid", gridTemplateColumns:"64px minmax(0,1fr)", gap:8,
+        padding:"8px 0", borderTop:`1px solid ${theme.border}`, fontSize:13, lineHeight:1.4}}>
+        <span style={{color:theme.muted}}>{name}</span>
+        <span style={{textAlign:"right", overflowWrap:"anywhere",
+          color:name === "Health" && !loading && health === "Ready" ? C.green : theme.text}}>{value}</span>
+      </div>)}
+  </div>;
+}
+
+function ModeCard({ name, detail, active, loading }: {
+  name: string; detail: string; active: boolean; loading: boolean;
+}) {
+  const isPortable = name === "Portable";
+  return <div style={{
+    minWidth: 0,
+    minHeight: 130,
+    padding: "18px 12px 14px",
+    borderRadius: 20,
+    border: `2px solid ${active ? C.cyan : "#36516f"}`,
+    background: active
+      ? "linear-gradient(145deg, rgba(4,53,82,.98), rgba(9,26,45,.98))"
+      : "linear-gradient(145deg, rgba(12,28,47,.98), rgba(7,17,30,.98))",
+    boxShadow: active ? `0 0 20px ${C.cyan}20, inset 0 0 24px ${C.cyan}0b` : "none",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+    textAlign: "center",
+    color: active ? C.text : "#d7e3f1",
+  }}>
+    <div style={{ color: active ? C.cyan : "#a6bfdc", marginBottom: 10 }}>
+      <img src={isPortable ? handheldModeIcon : tvModeIcon} width={56} height={56} alt="" aria-hidden="true" style={{display:"block",objectFit:"contain"}} />
+    </div>
+    <div style={{ fontSize: 18, fontWeight: 760, marginBottom: 6 }}>{name}</div>
+    <div style={{ fontSize: 12, lineHeight: "16px", color: C.muted, minHeight: 32 }}>{detail}</div>
+    <div style={{ marginTop: 10, color: active ? C.cyan : C.muted, fontSize: 12, fontWeight: 700 }}>
+      {active ? "ACTIVE" : loading ? "READING…" : "Not active"}
+    </div>
+  </div>;
+}
+
+export function QuickAccessOverview({ mode, modeLabel, health, game, loading, summaryRef, onSummaryFocus }: {
+  mode: string; modeLabel: string; health: string; game: string; loading: boolean;
+  summaryRef?: Ref<HTMLDivElement>; onSummaryFocus?(): void;
+}) {
+  const cards = placementCards(mode, loading);
+  return <div style={{ color: C.text, minWidth: 0 }}>
+    <SectionFocus ref={summaryRef} label="At a glance: current state" onFocused={onSummaryFocus}>
+      <CurrentStateCard modeLabel={modeLabel} health={health} game={game} loading={loading} />
+    </SectionFocus>
+    <SectionFocus label="Your setup">
+    <div style={{
+      color: C.muted,
+      fontSize: 11,
+      fontWeight: 760,
+      letterSpacing: "1.6px",
+      margin: "2px 2px 8px",
+    }}>YOUR SETUP</div>
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10 }}>
+      {cards.map((card) => <ModeCard key={card.name} {...card} loading={loading} />)}
+    </div>
+    </SectionFocus>
   </div>;
 }

@@ -81,10 +81,15 @@ class PciUsb4Discovery:
         return tuple(records)
 
     def scan_usb4(self) -> tuple[Usb4DeviceRecord, ...]:
+        records, _complete = self.scan_usb4_checked()
+        return records
+
+    def scan_usb4_checked(self) -> tuple[tuple[Usb4DeviceRecord, ...], bool]:
+        """Return inventory plus whether the sysfs directory was readable."""
         try:
             entries = tuple(self._usb4_root.iterdir())
         except OSError:
-            return ()
+            return (), False
         records: list[Usb4DeviceRecord] = []
         for path in sorted(entries, key=lambda item: item.name):
             authorized_raw = _read_text(path / "authorized")
@@ -109,4 +114,4 @@ class PciUsb4Discovery:
                     ),
                 )
             )
-        return tuple(records)
+        return tuple(records), True

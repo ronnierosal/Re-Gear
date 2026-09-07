@@ -1,0 +1,144 @@
+import { callable } from "@decky/api";
+import { ButtonItem, DropdownItem, PanelSection, PanelSectionRow, Router } from "@decky/ui";
+import { useEffect, useRef, useState } from "react";
+import { offlineConfidenceForGame, offlineConfidenceBadge, offlineAccountScope, offlineConfirmationBinding } from "./offline-confidence-session";
+import { offlineTestMemory, type OfflineTestBinding } from "./offline-test-memory";
+import type { OfflineConfidence } from "./offline-confidence";
+import { OfflineDetailsSession } from "./offline-details-session";
+import { offlineGameChoices, offlineNativeSource } from "./offline-native-source";
+import { offlineReportBadge, type OfflineBadge } from "./offline-badge-state";
+import { OfflineReadinessBadge, offlineBadgeImages } from "./offline-readiness-badge";
+import { attachOfflineTileBadge, offlineLibraryWindow } from "./offline-tile-badge";
+
+const classify = callable<[Record<string, number | boolean>], { schema_version?: unknown; status?: unknown; reason_codes?: unknown }>("classify_offline_details");
+
+export function OfflineReadinessPanel({ gameState, visible }: { gameState: string; visible: boolean }) {
+  const session = useRef(new OfflineDetailsSession());
+  const current = useRef({ gameState, visible, selected: 0 });
+  current.current.gameState = gameState;
+  current.current.visible = visible;
+  const [games, setGames] = useState<Array<{ data: number; label: string }>>([]);
+  const [selected, setSelected] = useState(0);
+  const [message, setMessage] = useState("");
+  const [badge, setBadge] = useState<OfflineBadge | null>(null);
+  const [showDetails, setShowDetails] = useState(false);
+  const [confidence, setConfidence] = useState<OfflineConfidence | null>(null);
+  const [busy, setBusy] = useState(false);
+  const sequence = useRef(0);
+  const confirmation = useRef<OfflineTestBinding | null>(null);
+  const librarySource = useRef<unknown>(undefined);
+  const displayContext = useRef<(() => boolean) | undefined>(undefined);
+  const expiry = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const tiles = useRef<ReturnType<typeof attachOfflineTileBadge> | undefined>(undefined);
+  const clear = (keepTiles = false) => {
+    if (!keepTiles) { tiles.current?.stop(); tiles.current = undefined; }
+    sequence.current++;
+    session.current.invalidate();
+    clearTimeout(expiry.current);
+    displayContext.current = undefined;
+    setMessage("");
+    setBadge(null);
+    setConfidence(null);
+    confirmation.current = null;
+    setBusy(false);
+  };
+  useEffect(() => {
+    clear(gameState === "idle" && !visible);
+    return () => { sequence.current++; session.current.invalidate(); clearTimeout(expiry.current); };
+  }, [gameState, visible]);
+  useEffect(() => () => tiles.current?.stop(), []);
+  // Reuse existing panel refreshes. No new library polling or session hook.
+  useEffect(() => {
+    try {
+      tiles.current?.validate();
+      if (librarySource.current && librarySource.current !== (window.appStore as unknown)) {
+        librarySource.current = undefined;
+        setGames([]); setSelected(0); current.current.selected = 0; clear();
+      } else if (displayContext.current && !displayContext.current()) clear();
+    } catch { clear(); }
+  });
+
+  const load = () => {
+    clear();
+    setGames([]); setSelected(0); current.current.selected = 0;
+    librarySource.current = undefined;
+    try {
+      const source = offlineNativeSource();
+      const choices = source ? offlineGameChoices(source) : [];
+      librarySource.current = source?.store;
+      setGames(choices);
+      setSelected(choices[0]?.data ?? 0);
+      current.current.selected = choices[0]?.data ?? 0;
+      if (!choices.length) setMessage("Steam's installed games are unavailable. Try again from your library.");
+    } catch { setMessage("Steam's installed games are unavailable. Try again from your library."); }
+  };
+  const check = async (confirmOfflinePlay = false) => {
+    const expected = confirmation.current;
+    clear();
+    const request = sequence.current;
+    setBusy(true);
+    try {
+      const source = offlineNativeSource();
+      const app = source?.store.GetAppOverviewByAppID(selected);
+      if (!source || !app) throw new Error();
+      const account = offlineAccountScope();
+      const displayStatus = app.display_status;
+      const gameContext = () => offlineAccountScope() === account && app.display_status === displayStatus && current.current.gameState === "idle" && (window.appStore as unknown) === source.store &&
+        source.store.GetAppOverviewByAppID(selected) === app &&
+        app.display_status !== 4 && Array.isArray(Router.RunningApps) && Router.RunningApps.length === 0;
+      const matches = () => current.current.visible && current.current.selected === selected && gameContext();
+      const report = await session.current.request(selected, source.subscribe, matches);
+      if (!report) throw new Error();
+      const result = await classify(report.details);
+      if (request !== sequence.current) return;
+      if (!report.isValid()) { setMessage("The game context changed or the check expired. Try again."); return; }
+      displayContext.current = matches;
+      if (confirmOfflinePlay && !expected) { setMessage("The check expired. Check the game again before confirming."); return; }
+      const assessment = offlineConfidenceForGame(report.preparation, source, selected, result, confirmOfflinePlay ? expected : null);
+      confirmation.current = assessment.canConfirm ? offlineConfirmationBinding(report.preparation, source, selected) : null;
+      setConfidence(assessment);
+      const nextBadge = offlineReportBadge(result) ? offlineConfidenceBadge(assessment) : null;
+      setBadge(nextBadge);
+      const library = nextBadge ? offlineLibraryWindow() : null;
+      if (library && nextBadge) tiles.current = attachOfflineTileBadge(
+        library, selected, offlineBadgeImages[nextBadge.asset], nextBadge.label, gameContext,
+      );
+      setMessage(assessment.label);
+      expiry.current = setTimeout(() => {
+        if (request === sequence.current) {
+          setBadge(null);
+          setConfidence(null);
+          setMessage("This report has expired. Check the game again.");
+        }
+      }, 30000);
+    } catch {
+      if (request === sequence.current) setMessage("The check is unavailable. Close any running game and try again.");
+    } finally {
+      if (request === sequence.current) setBusy(false);
+    }
+  };
+  return <PanelSection title="Offline readiness">
+    <PanelSectionRow>Check Steam's report before leaving Wi-Fi. Offline play is not guaranteed.</PanelSectionRow>
+    <ButtonItem disabled={busy || gameState !== "idle"} onClick={load}>Choose an installed game</ButtonItem>
+    {!!games.length && <>
+      <DropdownItem label="Game" rgOptions={games} selectedOption={selected} onChange={(option) => {
+        clear(); setSelected(option.data); current.current.selected = option.data;
+      }} />
+      <ButtonItem disabled={busy || gameState !== "idle" || !visible} onClick={() => void check()}>{busy ? "Checking…" : "Check this game"}</ButtonItem>
+      <PanelSectionRow>Shows installed games from up to 256 cached library entries. Results describe Steam's report at check time.</PanelSectionRow>
+    </>}
+    {confidence && <ButtonItem onClick={() => setShowDetails(value => !value)}>{showDetails ? "Hide check details" : "Why this result?"}</ButtonItem>}
+    {showDetails && confidence?.reasons.map((reason, index) => <PanelSectionRow key={index}>{reason}</PanelSectionRow>)}
+    {showDetails && confidence?.status === "tested_offline" && <ButtonItem disabled={busy} onClick={() => { offlineTestMemory.forget(selected); void check(); }}>Forget this offline test</ButtonItem>}
+    {showDetails && confidence?.canConfirm && confidence.status !== "tested_offline" && <>
+      <PanelSectionRow>After reaching playable content with internet disconnected, return here to confirm. This is your report, not an automatic test. It expires within 24 hours and is forgotten when the plugin restarts.</PanelSectionRow>
+      <ButtonItem disabled={busy || gameState !== "idle" || !visible} onClick={() => void check(true)}>I played this build without internet</ButtonItem>
+    </>}
+    {!!message && <PanelSectionRow>
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        {badge && <OfflineReadinessBadge badge={badge} />}
+        <span>{message}</span>
+      </div>
+    </PanelSectionRow>}
+  </PanelSection>;
+}

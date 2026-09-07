@@ -21,6 +21,7 @@ from ..ports.transition_journal import TransitionJournalPort
 from ..profiles.registry import resolve_runtime_profiles
 from .experimental_transition import ExperimentalTransitionApprovalStore
 from .transition_orchestrator import RuntimeTransitionResult, TransitionOrchestrator
+from .presentation_completion import PresentationCompletion, committed_target, reconcile_presentation_completion
 
 
 IDENTIFIER_RE = re.compile(r"^[A-Za-z0-9_.-]{8,64}$")
@@ -294,6 +295,8 @@ class SupervisedPresentationTransitionService:
     def acknowledge(self, operation_id: str) -> bool:
         if not IDENTIFIER_RE.fullmatch(operation_id):
             return False
+        if not self._lock.acquire(blocking=False):
+            return False
         try:
             current = self._journal_store.load_current()
             if (
@@ -303,10 +306,26 @@ class SupervisedPresentationTransitionService:
                 or not self._is_presentation_journal(current)
             ):
                 return False
-            self._journal_store.clear_terminal(operation_id)
+            if current.entries[-1].kind is JournalEventKind.COMMITTED:
+                if committed_target(current) is PlacementState.UNKNOWN:
+                    return False
+                self._journal_store.retire_committed(operation_id)
+            else:
+                self._journal_store.clear_terminal(operation_id)
             return True
         except (OSError, ValueError):
             return False
+        finally:
+            self._lock.release()
+
+    def reconcile_completion(self, current) -> PresentationCompletion:
+        """Background success retirement shares the transition execution lock."""
+        if not self._lock.acquire(blocking=False):
+            return PresentationCompletion("completion.transition_busy")
+        try:
+            return reconcile_presentation_completion(self._journal_store, current)
+        finally:
+            self._lock.release()
 
     def status(self) -> SupervisedTransitionStatus:
         """Read the durable outcome after a restart without issuing a mutation.

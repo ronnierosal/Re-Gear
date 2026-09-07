@@ -21,6 +21,17 @@ ARCHIVE_NAME = "HandheldDockMode-0.2.0.zip"
 
 
 class ValidationArtifactTests(unittest.TestCase):
+    def test_regear_archive_preserves_legacy_install_layout(self):
+        with tempfile.TemporaryDirectory() as value:
+            root = Path(value)
+            archive = self._artifact(root)
+            renamed = archive.rename(root / "Re-Gear-0.2.0.zip")
+            digest = hashlib.sha256(renamed.read_bytes()).hexdigest()
+            (root / "SHA256SUMS.txt").write_text(f"{digest}  {renamed.name}\n")
+            self.assertEqual(verify_validation_artifact(root)["state"], "verified")
+            (root / ARCHIVE_NAME).write_bytes(renamed.read_bytes())
+            self.assertEqual(verify_validation_artifact(root)["reason"], "artifact.archive_ambiguous")
+
     def _artifact(
         self,
         directory: Path,
