@@ -3,6 +3,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'backend'))
@@ -47,6 +48,40 @@ class SteamTrialTests(unittest.TestCase):
         validate.assert_called_once()
         self.assertEqual(validate.call_args.kwargs['environment'], self.clean)
         self.assertEqual(self.original['MESA_VK_DEVICE_SELECT'], 'stale')
+
+    def test_v2_prime_is_child_only_and_inherited_prime_remains_a_conflict(self):
+        from hdm.delivery.portable_trial_launch import candidate_from_record
+        def live(record, **kwargs):
+            return candidate_from_record(record, config=kwargs['config'], argv=(),
+                environment=kwargs['environment'], boot_hash='a'*64, egpu_binding_hash='b'*64,
+                now=20, cards=(SimpleNamespace(boot_vga=True,vendor_device='1002:150e',
+                    connectors=(SimpleNamespace(name='eDP-1',internal=True,connected=True),)),),
+                game_idle=True, layer_available=True)
+        for index, prime in enumerate((None,'1002:150e','custom')):
+            root=self.root/str(index);root.mkdir()
+            store=PortableTrialStore(root)
+            store.arm(operation_id='fresh',boot_id_sha256='a'*64,generation='fresh',
+                internal_gpu='1002:150e',internal_connector='eDP-1',egpu_binding_sha256='b'*64,
+                original_config=None,expected_config=self.config,expires_at=100,schema_version=2)
+            store.consume();store.publish_gamescope_launch('fresh',self.invocation)
+            original={'KEEP':'yes'}
+            if prime is not None:original['DRI_PRIME']=prime
+            def launch():
+                return consume_steam_environment(root,config=self.config,environment=original,
+                    raw_boot_id='boot',invocation_reader=lambda:self.invocation)
+            with patch('hdm.delivery.steam_trial_wrapper.live_candidate_from_record',side_effect=live):
+                result=launch()
+                self.assertEqual(launch(),original)
+            if prime is None:
+                self.assertEqual(result['DRI_PRIME'],'1002:150e')
+                self.assertNotIn('DRI_PRIME',original)
+            else:
+                self.assertEqual(result,original)
+                self.assertNotIn('MESA_VK_DEVICE_SELECT',result)
+
+    def test_ordinary_launch_preserves_user_prime(self):
+        self.original['DRI_PRIME']='custom'
+        self.assertEqual(self.launch(),dict(self.clean,DRI_PRIME='custom'))
 
     def test_old_consumed_trial_without_receipt_cannot_authorize_steam(self):
         self.store.consume()

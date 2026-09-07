@@ -24,11 +24,34 @@ class TrialApprovalTests(unittest.TestCase):
         value._portable_trial_runner = trial_runner
         preview = value.preview(PlacementState.PORTABLE, user_confirmed=True, portable_vulkan_trial=True)
         self.assertTrue(preview.ready, preview.blockers)
+        self.assertEqual(preview.portable_trial_schema_version, 1)
         result = value.execute(preview.approval_token)
         self.assertTrue(result.accepted)
         self.assertEqual(result.code, 'portable_trial.application_unverified')
         self.assertEqual(len(calls), 1)
         self.assertFalse(value.execute(preview.approval_token).accepted)
+
+    def test_explicit_schema_two_token_reaches_runner_once(self):
+        observation = VersionedObservation('generation-1', snapshot('tv-docked.json'))
+        value, _, _ = service(Observations(observation, observation))
+        calls=[]
+        def runner(plan, engine, *, schema_version):
+            calls.append(schema_version)
+            return engine.run(plan)
+        value._portable_trial_runner=runner
+        preview=value.preview(PlacementState.PORTABLE,user_confirmed=True,
+            portable_vulkan_trial=True,portable_trial_schema_version=2)
+        self.assertEqual(preview.portable_trial_schema_version,2)
+        self.assertTrue(value.execute(preview.approval_token).accepted)
+        self.assertEqual(calls,[2])
+        self.assertFalse(value.execute(preview.approval_token).accepted)
+
+    def test_schema_two_without_explicit_trial_is_rejected(self):
+        observation = VersionedObservation('generation-1', snapshot('tv-docked.json'))
+        value, _, _ = service(Observations(observation))
+        preview=value.preview(PlacementState.PORTABLE,user_confirmed=True,portable_trial_schema_version=2)
+        self.assertFalse(preview.ready)
+        self.assertEqual(preview.approval_token,'')
 
     def test_normal_and_automatic_portable_never_call_trial_runner(self):
         for automatic in (False, True):
@@ -78,17 +101,23 @@ class TrialMechanismTests(unittest.TestCase):
         self.step = PlannedStep(TransitionStepCode.PRESENTATION_RESTORE_PORTABLE,
                                 10000, expected_placement=PlacementState.PORTABLE)
 
-    def run_trial(self):
+    def run_trial(self, schema_version=1):
         def run(plan, **kwargs):
             self.assertTrue(kwargs['portable_vulkan_trial'])
             return self.mechanism.apply(self.step, binding(), self.source)
-        return self.mechanism.run_portable_trial(self.plan, SimpleNamespace(run=run))
+        return self.mechanism.run_portable_trial(self.plan, SimpleNamespace(run=run),schema_version=schema_version)
+
+    def test_schema_two_reaches_durable_record_and_resets_after_run(self):
+        self.assertTrue(self.run_trial(schema_version=2).succeeded)
+        self.assertEqual(self.store.read()['schema_version'],2)
+        self.assertEqual(self.mechanism._trial_schema_version,1)
 
     def test_original_is_durable_before_config_write_and_restart(self):
         original_write = self.config.write_target
         def write(**kwargs):
             record = self.store.read()
             self.assertIsNotNone(record)
+            self.assertEqual(record['schema_version'],1)
             self.assertEqual(record['original_config']['target'], 'docked_egpu')
             self.assertEqual(self.config.load(), self.original)
             return original_write(**kwargs)

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 import unittest
+from dataclasses import replace
 from pathlib import Path
 
 
@@ -41,6 +42,7 @@ class ExperimentalTransitionApprovalTests(unittest.TestCase):
         token = self.issue(store)
         permit = store.consume(token)
         self.assertEqual(permit.plan_id, "operation-1")
+        self.assertEqual(permit.portable_trial_schema_version, 1)
         self.assertEqual(permit.observed_generation, "generation-1")
         self.assertEqual(permit.egpu_stable_id, "gpd-g1:0123456789abcdef")
         with self.assertRaisesRegex(ValueError, "already used"):
@@ -61,6 +63,13 @@ class ExperimentalTransitionApprovalTests(unittest.TestCase):
         now[0] = 15.0
         with self.assertRaisesRegex(ValueError, "expired"):
             store.consume(token)
+
+    def test_schema_two_cannot_be_added_to_nontrial_permit(self):
+        store=self.make_store([10.0])
+        permit=store.consume(self.issue(store))
+        for schema in (2, True, '2', 3):
+            with self.assertRaises(ValueError):
+                replace(permit,portable_trial_schema_version=schema)
 
 
 if __name__ == "__main__":

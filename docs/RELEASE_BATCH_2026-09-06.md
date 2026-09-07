@@ -41,5 +41,27 @@ Before packaging: review each final diff, require green checks, verify all share
 ready refs and installed ancestry, then rerun the full matrix. Existing ZIPs and
 version reservations are immutable. Record exact included commits and ZIP hash.
 
-No new version, artifact, upload, installation or hardware action is represented
-by this planning checkpoint.
+## Prepared candidate
+
+Focused Offline issues #21/#22 were independently implemented as `fd9e30b`,
+reviewed, and merged via PR #25 (`ebde3d0`). No old uncommitted patch was used.
+The candidate version commit is `870157dda43d500241703fb5bfcea3f21c5f170d`.
+Artifact: `out/Re-Gear-0.3.55.zip`, 449188 bytes, SHA-256:
+`992bc2442ab4f0a2679547952d870f0b7f51782e18bb41e6adcec49eb5ab0d0e`.
+ZIP CRC and embedded revision/version verified. The shared version was reserved
+once; no existing archive was overwritten.
+
+Final local matrix: 196 frontend tests, 1067 backend tests (nine skipped),
+typecheck, architecture, compileall, build and package validation pass. The 22
+focused Offline tests include eight regressions that fail against the old source.
+Backend, main.py, bin and packaging implementation have zero diff from exact
+installed e765fad. Only Offline frontend, tests/generated output, docs and version
+metadata are included after that baseline. Existing dormant experiments remain
+unchanged; this is not approval to use them.
+
+Read-only installed metadata still reports e765fad/0.3.54. Candidate is local
+only: no upload, old remote archive deletion, installation, service restart,
+device transition, or trial activation. Home/Library same-tile recovery, return
+from gameplay, and retry/expiry behavior require supervised device validation.
+Issues #21/#22 remain open. Bug Fixing has supplied no ready contribution at
+this cutoff; those fixes and issue #24 are not included.

@@ -39,7 +39,7 @@ class PortableTrialStore:
     def _validate(value):
         if not isinstance(value, dict) or set(value) != _FIELDS:
             raise ValueError("invalid trial record shape")
-        if type(value["schema_version"]) is not int or value["schema_version"] != 1:
+        if type(value["schema_version"]) is not int or value["schema_version"] not in (1, 2):
             raise ValueError("invalid trial schema")
         for key, pattern in (("operation_id", _IDENTIFIER), ("generation", _IDENTIFIER),
                              ("boot_id_sha256", SHA256_RE), ("egpu_binding_sha256", SHA256_RE),
@@ -80,9 +80,9 @@ class PortableTrialStore:
     def arm(self, *, operation_id: str, boot_id_sha256: str, generation: str,
             internal_gpu: str, internal_connector: str, egpu_binding_sha256: str,
             original_config: GamescopeLaunchConfig | None,
-            expected_config: GamescopeLaunchConfig, expires_at: float):
+            expected_config: GamescopeLaunchConfig, expires_at: float, schema_version: int = 1):
         self._validate_root()
-        value = self._validate(dict(schema_version=1, operation_id=operation_id,
+        value = self._validate(dict(schema_version=schema_version, operation_id=operation_id,
             boot_id_sha256=boot_id_sha256, generation=generation, internal_gpu=internal_gpu,
             internal_connector=internal_connector, egpu_binding_sha256=egpu_binding_sha256,
             original_config=config_to_dict(original_config) if original_config is not None else None,
