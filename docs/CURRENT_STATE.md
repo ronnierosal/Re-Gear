@@ -1,5 +1,23 @@
 # Current state
 
+## 2026-09-06 graphics resource-release candidate
+
+Candidate 0.3.56 combines draft PR #53 (explicit OpenGL + Vulkan trial), #57
+(read-only allocation evidence), and #62 (TV return control) on the published
+0.3.55 release lineage. It preserves the newer offline-refresh fixes. It does
+not include the separate experimental device-filter runtime series.
+
+Fresh SSH readback confirms installed Ally 0.3.54 / e765fad4b928. No trial,
+software removal, or physical live disconnect has been run by this candidate.
+Selection remains an experiment: capture both actual child environments and
+resource allocations, not only one-shot claim markers. Keep cable attached
+during the supervised run; installation starts with a detached boot.
+
+GitHub tracker #51 and dependency map #55 distinguish draft publication from
+installation and hardware evidence. README draft #56 and live Wiki document
+progress and known issues. Unrelated sleep investigation remains deferred.
+
+
 ## Re-Gear 0.3.54 separate Steam launch candidate (local)
 
 Adds a supervised Steam-only launch shim with invocation-bound single-use
