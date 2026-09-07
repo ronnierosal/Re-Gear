@@ -67,3 +67,22 @@ reproduction steps, and the redacted support preview. State whether the result
 was simulated, installed, or intentionally tested on named hardware. Never
 include credentials, private addresses, raw identifiers, or an unrestricted log
 dump.
+
+## Known disconnect and reconnect findings
+
+Returning to the handheld can restore picture, controls, and sound while Steam,
+Gamescope, or the audio service still owns external resources. This is the active
+[resource-release experiment (#51)](https://github.com/ronnierosal/Re-Gear/issues/51),
+with [audio ownership tracked separately (#52)](https://github.com/ronnierosal/Re-Gear/issues/52).
+Do not interpret a normal Portable screen or silent audio as unplug permission.
+Use the reviewed support preview above when reporting a result; no raw logs or
+experimental probe scripts are needed for a player report.
+
+Keep these distinct symptoms separate until evidence establishes a shared cause:
+
+- [Delayed eGPU detection (#17)](https://github.com/ronnierosal/Re-Gear/issues/17).
+- [Shutdown not completing (#18)](https://github.com/ronnierosal/Re-Gear/issues/18): lost networking alone does not establish power-off.
+- [Built-in controls missing after startup (#19)](https://github.com/ronnierosal/Re-Gear/issues/19).
+- [Sleep/power button failing when detached (#16)](https://github.com/ronnierosal/Re-Gear/issues/16): deferred separately from resource release.
+- [Popup dismissal interrupting docking (#27)](https://github.com/ronnierosal/Re-Gear/issues/27) and [TV profile/HDMI readiness (#28)](https://github.com/ronnierosal/Re-Gear/issues/28).
+- [Future sleep/wake restoration (#29)](https://github.com/ronnierosal/Re-Gear/issues/29): design and validation work, not an available live-disconnect capability.

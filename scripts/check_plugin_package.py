@@ -5,6 +5,7 @@ from __future__ import annotations
 import ast
 import json
 import sys
+import tomllib
 from pathlib import Path
 
 
@@ -56,6 +57,132 @@ FORBIDDEN_RPC_TERMS = (
     "approve_docked_igpu",
     "execute_docked_igpu",
 )
+
+
+#: The declared plugin version, and every file that restates it. `package.json`
+#: is the source of truth named by `docs/CURRENT_STATE.md`; the rest must agree.
+#: Nothing derives these at build time, so a release that edits only some of
+#: them ships a plugin reporting a version it is not.
+VERSION_SOURCE = "package.json"
+VERSION_SITES = (
+    "package.json",
+    "pyproject.toml",
+    "main.py",
+    "backend/hdm/delivery/build_info.py",
+)
+
+
+def _package_json_version(text: str) -> str | None:
+    value = json.loads(text).get("version")
+    return value if isinstance(value, str) else None
+
+
+def _pyproject_version(text: str) -> str | None:
+    value = tomllib.loads(text).get("project", {}).get("version")
+    return value if isinstance(value, str) else None
+
+
+def _main_version(text: str) -> str | None:
+    """Read the `"hdm"` entry of `Plugin._support_versions`.
+
+    Scoped to that method rather than to any `"hdm"` key in the module, so an
+    unrelated mapping cannot start answering for the declared version.
+    """
+    for function in ast.walk(ast.parse(text)):
+        if not isinstance(function, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        if function.name != "_support_versions":
+            continue
+        for node in ast.walk(function):
+            if not isinstance(node, ast.Dict):
+                continue
+            for key, value in zip(node.keys, node.values):
+                if (
+                    isinstance(key, ast.Constant)
+                    and key.value == "hdm"
+                    and isinstance(value, ast.Constant)
+                    and isinstance(value.value, str)
+                ):
+                    return value.value
+    return None
+
+
+def _build_info_version(text: str) -> str | None:
+    """Read the `fallback_version` default of `load_public_build_info`."""
+    for node in ast.walk(ast.parse(text)):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        if node.name != "load_public_build_info":
+            continue
+        for argument, default in zip(node.args.kwonlyargs, node.args.kw_defaults):
+            if (
+                argument.arg == "fallback_version"
+                and isinstance(default, ast.Constant)
+                and isinstance(default.value, str)
+            ):
+                return default.value
+    return None
+
+
+#: Each version site paired with the reader that extracts its literal.
+VERSION_READERS = {
+    "package.json": _package_json_version,
+    "pyproject.toml": _pyproject_version,
+    "main.py": _main_version,
+    "backend/hdm/delivery/build_info.py": _build_info_version,
+}
+
+
+def declared_versions(sources: "dict[str, str]") -> "dict[str, str | None]":
+    """Map each version site to its literal, or `None` when unreadable.
+
+    Pure: takes already-read file text so the comparison stays testable without
+    a checkout on disk.
+    """
+    versions: dict[str, str | None] = {}
+    for relative, read in VERSION_READERS.items():
+        text = sources.get(relative)
+        if text is None:
+            continue
+        try:
+            versions[relative] = read(text)
+        except (ValueError, SyntaxError, TypeError, AttributeError):
+            versions[relative] = None
+    return versions
+
+
+def version_failures(versions: "dict[str, str | None]") -> "list[str]":
+    """Report every present site that cannot be read or disagrees with the source.
+
+    Absent files are not reported here: `REQUIRED_FILES` already owns which
+    files a plugin root must contain, and duplicating that would make this
+    check fire on the narrowed roots used to exercise other rules.
+
+    A file that *is* present still fails closed: an unreadable or relocated
+    literal is a failure, never a silently skipped site, so moving one of these
+    declarations cannot quietly disable enforcement.
+    """
+    failures = [
+        f"could not read the declared version in {relative}"
+        for relative in VERSION_SITES
+        if relative in versions and versions[relative] is None
+    ]
+    if failures:
+        return failures
+    expected = versions.get(VERSION_SOURCE)
+    if expected is None:
+        return failures
+    for relative in VERSION_SITES:
+        if relative == VERSION_SOURCE or relative not in versions:
+            continue
+        found = versions[relative]
+        if found != expected:
+            failures.append(
+                f"{relative} declares version {found!r} but {VERSION_SOURCE}"
+                f" declares {expected!r}; all {len(VERSION_SITES)} declarations"
+                " must be updated together"
+            )
+    return failures
 
 
 def main() -> int:
@@ -133,6 +260,13 @@ def main() -> int:
             failures.append(
                 "Decky RPCs must remain limited to diagnostics/logging, read-only offline report classification and peripheral/watcher/action-history status, automatic-dock preference/status, approved support export, supervised presentation, confirmed shutdown-before-disconnect, and guarded process release"
             )
+
+    sources = {}
+    for relative in VERSION_SITES:
+        path = root / relative
+        if path.is_file():
+            sources[relative] = path.read_text(encoding="utf-8")
+    failures.extend(version_failures(declared_versions(sources)))
 
     delivery_sources = "\n".join(
         path.read_text(encoding="utf-8")

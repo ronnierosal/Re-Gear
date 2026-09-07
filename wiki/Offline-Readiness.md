@@ -4,7 +4,7 @@
 **Reviewed:** 2026-09-06<br>
 **Maturity:** experimental development; no general public release
 
-Newer Re-Gear development candidates show selected-game readiness guidance using local Steam evidence. See the [current candidate](https://github.com/ronnierosal/Re-Gear#-current-status) and [source review](https://github.com/ronnierosal/Re-Gear/blob/codex/release-batch-2026-09-06/docs/OFFLINE_EVIDENCE_SOURCE_REVIEW.md).
+Newer Re-Gear development candidates show selected-game readiness guidance using local Steam evidence. See the [current candidate](https://github.com/ronnierosal/Re-Gear#-current-status) and [source review](https://github.com/ronnierosal/Re-Gear/blob/main/docs/OFFLINE_EVIDENCE_SOURCE_REVIEW.md).
 
 ## Where to find it
 
