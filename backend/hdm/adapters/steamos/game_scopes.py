@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import os
+import math
 import re
+import stat
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Protocol, Sequence
@@ -90,6 +93,98 @@ def parse_game_scopes(output: str) -> GameScopeScan:
         tuple(sorted(set(app_ids), key=int)),
         tuple(sorted(set(unparsed_current))),
     )
+
+
+class LaunchGameScopeDiscovery:
+    """Bounded recognized-Steam-scope scan for an authenticated waiting user.
+
+    Caller supplies the authenticated UID. IDLE means no recognized Steam
+    scope in this complete traversal, not absence of arbitrary workloads.
+    This collector never invokes a command or requires a running Gamescope.
+    """
+    MAX_ENTRIES = 4096
+    MAX_DEPTH = 16
+
+    def __init__(self, cgroup_root=Path('/sys/fs/cgroup'), *, clock=time.monotonic):
+        self._root=Path(cgroup_root)
+        self._clock=clock
+
+    def scan(self, user_uid, *, deadline):
+        if (type(user_uid) is not int or user_uid<0 or type(deadline) not in (int,float)
+                or not math.isfinite(deadline) or deadline<0):
+            return GameScopeScan(GameState.UNKNOWN,error='Invalid authenticated scope scan input.')
+        descriptors=[];anchors=[];names=[];seen=set();entries=0;previous=None
+        traversed=[]
+        def check():
+            nonlocal previous
+            now=self._clock()
+            if (type(now) not in (int,float) or not math.isfinite(now) or now<0
+                    or now>=deadline or (previous is not None and now<previous)):
+                raise ValueError('scope deadline unavailable')
+            previous=now
+        def identity(info):return info.st_dev,info.st_ino
+        flags=os.O_RDONLY|getattr(os,'O_DIRECTORY',0x10000)|getattr(os,'O_NOFOLLOW',0x20000)|getattr(os,'O_CLOEXEC',0x80000)
+        def open_directory(name,parent=None):
+            check()
+            fd=os.open(name,flags,**({} if parent is None else {'dir_fd':parent}))
+            descriptors.append(fd)
+            info=os.fstat(fd)
+            if not stat.S_ISDIR(info.st_mode):raise ValueError('scope directory required')
+            anchors.append((name,parent,fd,identity(info)))
+            return fd
+        def walk(fd,depth):
+            nonlocal entries
+            check()
+            if depth>self.MAX_DEPTH:raise ValueError('scope depth exceeded')
+            before=os.fstat(fd)
+            key=identity(before)
+            traversed.append((fd,before.st_mtime_ns,before.st_ctime_ns))
+            if key in seen:raise ValueError('scope directory repeated')
+            seen.add(key)
+            with os.scandir(fd) as source:
+                for entry in source:
+                    check();entries+=1
+                    if entries>self.MAX_ENTRIES:raise ValueError('scope entry bound exceeded')
+                    info=entry.stat(follow_symlinks=False)
+                    if stat.S_ISLNK(info.st_mode):raise ValueError('scope symlink rejected')
+                    if stat.S_ISDIR(info.st_mode):
+                        child=open_directory(entry.name,fd)
+                        if identity(os.fstat(child))!=identity(info):raise ValueError('scope changed while opening')
+                        if entry.name.endswith('.scope'):names.append(entry.name)
+                        walk(child,depth+1)
+        try:
+            check()
+            if not self._root.is_absolute() or '..' in self._root.parts:raise ValueError('absolute scope root required')
+            fd=open_directory(self._root.anchor)
+            for part in self._root.parts[1:]:fd=open_directory(part,fd)
+            for part in ('user.slice',f'user-{user_uid}.slice',f'user@{user_uid}.service'):
+                fd=open_directory(part,fd)
+            walk(fd,0)
+            for name,parent,fd,expected in anchors:
+                check()
+                current=os.stat(name,follow_symlinks=False,**({} if parent is None else {'dir_fd':parent}))
+                if not stat.S_ISDIR(current.st_mode) or identity(current)!=expected or identity(os.fstat(fd))!=expected:
+                    raise ValueError('scope root or directory changed')
+            result=parse_game_scopes('\n'.join(names))
+            # Detect directory-entry changes during traversal. This is bounded
+            # consistency evidence, not an atomic filesystem snapshot.
+            for observed_fd,mtime,ctime in traversed:
+                check()
+                current=os.fstat(observed_fd)
+                if (current.st_mtime_ns,current.st_ctime_ns)!=(mtime,ctime):
+                    raise ValueError('scope inventory changed during traversal')
+            check()
+        except (OSError,ValueError,OverflowError):
+            result=GameScopeScan(GameState.UNKNOWN,error='Could not completely inspect bounded Steam game scopes.')
+        finally:
+            failed=False
+            for fd in reversed(descriptors):
+                try:os.close(fd)
+                except OSError:failed=True
+            if failed:result=GameScopeScan(GameState.UNKNOWN,error='Scope descriptor cleanup unconfirmed.')
+        try:check()
+        except ValueError:result=GameScopeScan(GameState.UNKNOWN,error='Scope observation expired.')
+        return result
 
 
 class SystemdGameScopeDiscovery:
