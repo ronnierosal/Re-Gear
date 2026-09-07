@@ -15,6 +15,9 @@ from .portable_trial_store import PortableTrialStore
 
 REAL_STEAM_LAUNCHER = '/usr/lib/steamos/steam-launcher'
 TRIAL_KEYS = ('MESA_VK_DEVICE_SELECT', 'MESA_VK_DEVICE_SELECT_FORCE_DEFAULT_DEVICE')
+# DRI_PRIME is deliberately not a blanket cleanup key. A valid schema-2 claim
+# adds it only to this child; inherited values remain conflicts, never evidence
+# of trial ownership, even if they equal the requested internal GPU.
 
 
 def current_gamescope_invocation():

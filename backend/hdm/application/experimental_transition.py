@@ -44,6 +44,7 @@ class ExperimentalTransitionApprovalStore:
         egpu_stable_id: str,
         user_confirmed: bool,
         portable_vulkan_trial: bool = False,
+        portable_trial_schema_version: int = 1,
     ) -> str:
         if not user_confirmed:
             raise ValueError("experimental transition requires explicit consent")
@@ -59,6 +60,7 @@ class ExperimentalTransitionApprovalStore:
             egpu_profile_id=egpu_profile_id,
             egpu_stable_id=egpu_stable_id,
             portable_vulkan_trial=portable_vulkan_trial,
+            portable_trial_schema_version=portable_trial_schema_version,
         )
         with self._lock:
             self._approval = (token, self._monotonic(), permit)

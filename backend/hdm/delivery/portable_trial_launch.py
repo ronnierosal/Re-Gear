@@ -1,4 +1,4 @@
-"""One-shot supervised Vulkan launch; never an eGPU removal mechanism."""
+"""One-shot schema-bound GPU selection; never an eGPU removal mechanism."""
 from __future__ import annotations
 
 import hashlib
@@ -50,6 +50,7 @@ def candidate_from_record(record, *, config, argv, environment, boot_hash,
         current_generation=record['generation'],
         present_gpus=tuple(card.vendor_device for card in cards),
         internal_connectors=connectors,
+        schema_version=record['schema_version'],
     )
 
 

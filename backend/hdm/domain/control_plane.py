@@ -128,8 +128,13 @@ class ExperimentalTransitionPermit:
     egpu_profile_id: str
     egpu_stable_id: str
     portable_vulkan_trial: bool = False
+    portable_trial_schema_version: int = 1
 
     def __post_init__(self) -> None:
+        if (type(self.portable_trial_schema_version) is not int
+                or self.portable_trial_schema_version not in (1, 2)
+                or (self.portable_trial_schema_version == 2 and self.portable_vulkan_trial is not True)):
+            raise ValueError("schema 2 requires an explicit portable trial")
         if type(self.portable_vulkan_trial) is not bool or (
             self.portable_vulkan_trial and self.target_placement is not PlacementState.PORTABLE
         ):

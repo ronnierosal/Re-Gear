@@ -37,6 +37,16 @@ class TrialStoreTests(unittest.TestCase):
         self.assertIsNone(self.store.read())
         self.assertIsNone(self.store.consume())
 
+    def test_schema_two_requires_explicit_arm_and_remains_one_shot(self):
+        self.store.arm(**self.values, schema_version=2)
+        self.assertEqual(self.store.read()['schema_version'], 2)
+        self.assertEqual(self.store.consume()['schema_version'], 2)
+        self.assertIsNone(self.store.consume())
+
+    def test_existing_arm_default_remains_vulkan_only(self):
+        self.store.arm(**self.values)
+        self.assertEqual(self.store.read()['schema_version'], 1)
+
     @unittest.skipUnless(os.name == "posix", "POSIX file modes required")
     def test_modes_ignore_restrictive_umask(self):
         previous = os.umask(0o077)
