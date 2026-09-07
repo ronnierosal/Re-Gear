@@ -27,6 +27,27 @@ Supervised sessions on the [documented test hardware](Confirmed-Hardware-Testing
 
 A watched shutdown lost networking while the handheld fan and LEDs remained on. More recent Portable trial records also found retained external GPU references despite a working internal display. Neither network loss nor a usable Portable screen proves complete shutdown or released eGPU resources.
 
+## Resource-release experiment: September 6 update
+
+**Priority: active disconnect work.** The latest recorded hardware run used installed
+**0.3.54 / e765fad4b928**. TV output and return to the internal display worked;
+the player confirmed normal controls and audio afterward. Steam and Gamescope
+still retained external GPU allocations, and WirePlumber retained an audio-control
+handle even with playback endpoints closed. A working handheld screen therefore
+does not mean the external GPU has been released.
+
+The next experiment extends the existing recoverable launch trial to select the
+internal GPU for both OpenGL and Vulkan. This is **local development, not installed
+or hardware validated**. It will keep the cable attached and measure whether
+resources are released, or capture a failure that identifies the next fix.
+Preparation-only tests and repeated unchanged display switches do not complete it.
+Physical live removal remains unsupported.
+
+Follow [the resource-release experiment (#51)](https://github.com/ronnierosal/Re-Gear/issues/51)
+and [remaining audio ownership (#52)](https://github.com/ronnierosal/Re-Gear/issues/52).
+See the [dated evidence summary](https://github.com/ronnierosal/Re-Gear/blob/codex/disconnect-progress-docs/docs/DISCONNECT_PROGRESS_2026-09-06.md)
+for the tested configuration and limits.
+
 ## Remaining gates
 
 Repeatable attach, TV picture, audio, gameplay, Portable return, reconnect, and physical shutdown need coordinated validation on the exact build. Experimental launch trials and local regression tests do not establish live-removal support.
