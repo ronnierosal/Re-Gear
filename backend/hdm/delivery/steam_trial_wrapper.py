@@ -33,15 +33,19 @@ def current_gamescope_invocation():
 
 
 def consume_steam_environment(state_root, *, config, environment, raw_boot_id,
-                              invocation_reader=current_gamescope_invocation):
+                              invocation_reader=current_gamescope_invocation, expected_operation=None):
     # Never trust selectors from a stale/shared environment file. The candidate
     # starts clean and requires its own exclusive, invocation-bound grant.
     clean = {key: value for key, value in environment.items() if key not in TRIAL_KEYS}
     try:
         claim = PortableTrialStore(state_root).consume_steam()
         if claim is None:
+            if expected_operation is not None:
+                raise ValueError('armed Steam selector is missing or consumed')
             return clean
         record, expected_invocation = claim
+        if expected_operation is not None and record['operation_id'] != expected_operation:
+            raise ValueError('armed Steam selector operation mismatch')
         if invocation_reader() != expected_invocation:
             raise ValueError('Gamescope launch changed')
         _, candidate = live_candidate_from_record(
@@ -53,19 +57,33 @@ def consume_steam_environment(state_root, *, config, environment, raw_boot_id,
             raise ValueError('Gamescope changed during launch validation')
         return candidate
     except (OSError, ValueError, TypeError, KeyError, subprocess.SubprocessError):
+        if expected_operation is not None:
+            raise
         return clean
 
 
 def main():
+    from .device_filter_wrapper import latch_filter_arm, authorize_filter_launch
+    try:
+        arm = latch_filter_arm('steam-launcher.service')
+    except (OSError, ValueError):
+        return 78
     environment = dict(os.environ)
     root = Path(environment.get('HDM_STATE_ROOT', ''))
     clean = {key: value for key, value in environment.items() if key not in TRIAL_KEYS}
+    config = None
     try:
         boot, _ = _boot_identity()
         if root.is_absolute():
-            clean = consume_steam_environment(root, config=_load_config(root),
-                environment=environment, raw_boot_id=boot)
-    except (OSError, ValueError):
-        pass
+            config = _load_config(root)
+            clean = consume_steam_environment(root, config=config,
+                environment=environment, raw_boot_id=boot,
+                expected_operation=arm.operation if arm else None)
+        if arm is not None:
+            authorize_filter_launch(arm, state_root=root, raw_boot_id=boot, environment=clean,
+                                    candidate_config=config)
+    except (OSError, ValueError, TypeError, KeyError, subprocess.SubprocessError):
+        if arm is not None:
+            return 78
     os.execve(REAL_STEAM_LAUNCHER, (REAL_STEAM_LAUNCHER,), clean)
     return 127
