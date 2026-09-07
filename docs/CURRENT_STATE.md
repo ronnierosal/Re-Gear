@@ -1,5 +1,19 @@
 # Current state
 
+## 0.3.56 staged for supervised installation
+
+Package source cfe7f2361005029b293cd973770ac8a4bbc62af8.
+Staged /home/deck/Re-Gear-0.3.56.zip, 452359 bytes; SHA-256
+`af56a3ec3dded4ac1cfd20bbc1afcc017702744fddeab83eec7108eb9e3d1734`.
+Remote hash matches local; final file created without clobbering an archive.
+1101 backend tests ran successfully (9 platform skips), 199 frontend tests
+passed; typecheck, architecture, compile, build and package checks passed.
+ZIP CRC and embedded source/version verified. Installed remains 0.3.54.
+No session or hardware mutation. Next: confirm current player/device state,
+then supervised detached installation through Decky. Cable stays attached
+through the later changed-code trial; no live-unplug clearance.
+
+
 ## 2026-09-06 graphics resource-release candidate
 
 Candidate 0.3.56 combines draft PR #53 (explicit OpenGL + Vulkan trial), #57
