@@ -36,10 +36,12 @@ still retained external GPU allocations, and WirePlumber retained an audio-contr
 handle even with playback endpoints closed. A working handheld screen therefore
 does not mean the external GPU has been released.
 
-The next experiment extends the existing recoverable launch trial to select the
-internal GPU for both OpenGL and Vulkan. This is **local development, not installed
-or hardware validated**. It will keep the cable attached and measure whether
-resources are released, or capture a failure that identifies the next fix.
+The OpenGL and Vulkan selection experiment is packaged in **0.3.56**, tracked in
+[draft PR #82](https://github.com/ronnierosal/Re-Gear/pull/82). The candidate is staged,
+**not installed or hardware validated**. It combines the graphics trial, allocation
+diagnostics, and return-control correction; the separate experimental filter series
+is excluded. The current priority is GitHub review and documentation; hardware
+installation and testing are paused pending a separate supervised continuation.
 Preparation-only tests and repeated unchanged display switches do not complete it.
 Physical live removal remains unsupported.
 
