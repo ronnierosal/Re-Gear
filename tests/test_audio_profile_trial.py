@@ -263,6 +263,18 @@ class AudioProfileCommandTests(unittest.TestCase):
         self.assertEqual(run.call_args.args[0][-4:], ('/usr/bin/wpctl', 'set-profile', '42', '0'))
         self.assertIs(run.call_args.kwargs['shell'], False)
 
+    def test_explicit_profile_deadline_is_bounded_and_invalid_values_do_not_run(self):
+        runner = PipeWireCommandRunner(effective_uid=lambda: 0)
+        user = SimpleNamespace(username='deck', uid=1000)
+        with patch('hdm.adapters.steamos.commands.subprocess.run',
+                   return_value=SimpleNamespace(stdout=b'', stderr=b'', returncode=0)) as run:
+            self.assertTrue(runner.set_profile(user, 42, 0, timeout_seconds=0.5).ok)
+            self.assertEqual(run.call_args.kwargs['timeout'], 0.5)
+            run.reset_mock()
+            for timeout in (True, 0, -1, float('nan'), float('inf')):
+                self.assertFalse(runner.set_profile(user, 42, 0, timeout_seconds=timeout).ok)
+            run.assert_not_called()
+
     def test_invalid_numeric_arguments_never_execute(self):
         runner = PipeWireCommandRunner(effective_uid=lambda: 0)
         with patch('hdm.adapters.steamos.commands.subprocess.run') as run:
