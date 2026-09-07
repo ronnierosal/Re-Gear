@@ -104,4 +104,3 @@ class AudioJournalFilesystem:
             if lock is not None:
                 os.close(lock)
             os.close(directory)
-
