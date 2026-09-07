@@ -35,6 +35,11 @@ from hdm.adapters.steamos.peripherals import (  # noqa: E402
 from hdm.application.safe_undock_evidence import (  # noqa: E402
     build_safe_undock_evidence,
 )
+from hdm.domain.removal_safety import (  # noqa: E402
+    REMOVAL_SAFETY_FACTS,
+    RemovalSafetyState,
+    assess_removal_safety,
+)
 from hdm.application.snapshot import SnapshotService  # noqa: E402
 from hdm.domain.safe_undock_readiness import (  # noqa: E402
     SafeUndockReadinessState,
@@ -117,12 +122,13 @@ def describe(report) -> dict[str, object]:
             "safe_to_unplug": False,
             "facts": [],
         }
-    readiness = assess_safe_undock_readiness(
-        evidence,
-        expected_attachment_binding=evidence.attachment_binding,
-        expected_generation=evidence.generation,
-        expected_sample_id=evidence.sample_id,
-    )
+    identity = {
+        "expected_attachment_binding": evidence.attachment_binding,
+        "expected_generation": evidence.generation,
+        "expected_sample_id": evidence.sample_id,
+    }
+    readiness = assess_safe_undock_readiness(evidence, **identity)
+    removal = assess_removal_safety(evidence, **identity)
     facts = []
     for name, meaning in FACT_MEANINGS:
         fact = getattr(evidence, name)
@@ -130,6 +136,7 @@ def describe(report) -> dict[str, object]:
         satisfied = fact.verified and fact.value is expected
         entry = {
             "fact": name,
+            "removal_safety": name in REMOVAL_SAFETY_FACTS,
             "means": meaning,
             "value": fact.value,
             "verified": fact.verified,
@@ -141,6 +148,8 @@ def describe(report) -> dict[str, object]:
     return {
         "state": readiness.state.value,
         "code": readiness.code,
+        "removal_safety_state": removal.state.value,
+        "removal_safety_code": removal.code,
         # Never let a readiness state be mistaken for physical clearance.
         "safe_to_unplug": False,
         "game_state": evidence.game_state.value,
@@ -153,8 +162,9 @@ def describe(report) -> dict[str, object]:
 
 def render(result: dict[str, object]) -> str:
     lines = [
-        f"Safe Undock state : {result['state']}",
-        f"Code              : {result['code']}",
+        f"Safe Undock state : {result['state']}  ({result['code']})",
+        f"Removal safety    : {result.get('removal_safety_state', 'unknown')}"
+        f"  ({result.get('removal_safety_code', '')})",
         f"Safe to unplug    : no (this probe never grants removal clearance)",
     ]
     if result.get("attachment_fingerprint"):
@@ -166,10 +176,11 @@ def render(result: dict[str, object]) -> str:
         lines.append("")
         for item in facts:
             mark = "ok  " if item["satisfied"] else "BLOCK"
+            scope = "removal" if item.get("removal_safety") else "player "
             value = "unknown" if item["value"] is None else str(item["value"]).lower()
             verified = "verified" if item["verified"] else "unverified"
             lines.append(
-                f"  [{mark}] {item['fact']}: {value} ({verified}) - {item['means']}"
+                f"  [{mark}][{scope}] {item['fact']}: {value} ({verified}) - {item['means']}"
             )
             if item.get("known_gap"):
                 lines.append(f"          known code gap, not hardware: {item['known_gap']}")
@@ -215,9 +226,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
     result = describe(report)
     print(json.dumps(result, indent=2, sort_keys=True) if arguments.json else render(result))
+    # Exit status tracks removal safety: that is the verdict which gates a
+    # supervised software-removal run. The full Safe Undock state stays in
+    # the report for the player-facing flow.
     return (
         0
-        if result["state"] == SafeUndockReadinessState.READY_FOR_REVALIDATION.value
+        if result.get("removal_safety_state")
+        == RemovalSafetyState.READY_FOR_SUPERVISED_REMOVAL.value
         else 1
     )
 
