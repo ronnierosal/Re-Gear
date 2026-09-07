@@ -1,6 +1,7 @@
 # Re-Gear Wiki source
 
 This directory is the reviewed source for the Re-Gear GitHub Wiki.
+The player guide is published at [Re-Gear Wiki](https://github.com/ronnierosal/Re-Gear/wiki).
 It is not the engineering source of truth. Start at [Home](Home.md).
 
 Repository contracts own product, safety, architecture, support, and current
@@ -22,3 +23,23 @@ document before updating the Wiki.
 
 The planned information architecture and review rules are recorded in
 [the repository Wiki plan](../docs/WIKI_INFORMATION_ARCHITECTURE.md).
+
+## Maintaining the published Wiki
+
+The initial 14 guides and sidebar were published on 2026-09-06. GitHub keeps
+the live Wiki in a separate Git repository; changes here do not sync automatically.
+
+For an authorized documentation update:
+
+1. Review the owning documents and exact candidate branch, then update these pages.
+2. Preserve historical incident dates and link version details to the README.
+3. Check page links, evidence labels, and private-data exclusions.
+4. Clone or pull `https://github.com/ronnierosal/Re-Gear.wiki.git`, inspect live
+   edits, and copy reviewed page Markdown plus `_Sidebar.md`. Do not publish this
+   README as a Wiki page or overwrite unrelated live changes.
+5. Commit with a public GitHub no-reply identity, push without force, and verify
+   live content and navigation. Keep these repository sources synchronized.
+
+Release and player-visible behavior changes should include a review of affected
+guides. GitHub Issues owns bug tracking; the Wiki explains behavior and links to
+evidence. No automatic publication job is configured.
