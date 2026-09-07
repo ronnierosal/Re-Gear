@@ -53,7 +53,13 @@ def candidate_from_record(record, *, config, argv, environment, boot_hash,
     )
 
 
-def consume_launch_candidate(state_root, *, config, argv, environment, raw_boot_id):
+def consume_launch_candidate(state_root, *, config, argv, environment, raw_boot_id,
+                             expected_operation=None, defer_receipt=False):
+    """Consume selector once; armed callers require exact operation or failure.
+
+    Deferred receipt publication belongs to the caller after its filter grant.
+    Neither option grants filter authority; legacy unarmed defaults are unchanged.
+    """
     # Imports stay local so ordinary launches do not collect extra evidence.
     from .portable_trial_store import PortableTrialStore
 
@@ -61,7 +67,13 @@ def consume_launch_candidate(state_root, *, config, argv, environment, raw_boot_
         store = PortableTrialStore(state_root)
         record = store.consume()
         if record is None:
+            if expected_operation is not None:
+                raise ValueError('armed trial record unavailable or consumed')
             return None
+        if expected_operation is not None and (
+                type(expected_operation) is not str or not expected_operation
+                or record['operation_id'] != expected_operation):
+            raise ValueError('armed trial operation mismatch')
         # The durable marker already exists. Any validation or exec failure
         # leaves the next launch on its normal policy, never a repeated trial.
         candidate = live_candidate_from_record(
@@ -69,10 +81,12 @@ def consume_launch_candidate(state_root, *, config, argv, environment, raw_boot_
             raw_boot_id=raw_boot_id,
         )
         invocation = environment.get('INVOCATION_ID', '')
-        if invocation:
+        if invocation and not defer_receipt:
             store.publish_gamescope_launch(record['operation_id'], invocation)
         return candidate
     except (OSError, ValueError, TypeError, KeyError):
+        if expected_operation is not None:
+            raise
         return None
 
 

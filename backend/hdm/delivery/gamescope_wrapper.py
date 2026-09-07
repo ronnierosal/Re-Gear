@@ -310,6 +310,11 @@ def _load_config(state_root: Path) -> GamescopeLaunchConfig | None:
 
 
 def main() -> int:
+    from .device_filter_wrapper import latch_filter_arm, authorize_filter_launch
+    try:
+        arm = latch_filter_arm("gamescope-session.service")
+    except (OSError, ValueError):
+        return 78
     state_value = os.environ.get("HDM_STATE_ROOT", "")
     state_root = Path(state_value)
     config = _load_config(state_root) if state_root.is_absolute() else None
@@ -331,14 +336,29 @@ def main() -> int:
     environment = dict(os.environ)
     if state_root.is_absolute():
         from .portable_trial_launch import consume_launch_candidate
-        candidate = consume_launch_candidate(
-            state_root, config=config, argv=arguments, environment=environment,
-            raw_boot_id=raw_boot_id,
-        )
+        try:
+            candidate = consume_launch_candidate(
+                state_root, config=config, argv=arguments, environment=environment,
+                raw_boot_id=raw_boot_id, expected_operation=arm.operation if arm else None,
+                defer_receipt=arm is not None,
+            )
+        except (OSError, ValueError, TypeError, KeyError):
+            return 78
         if candidate is not None:
             trial_arguments, trial_environment = candidate
+            if arm is not None:
+                try:
+                    authorize_filter_launch(arm, state_root=state_root,
+                        raw_boot_id=raw_boot_id, environment=trial_environment, candidate_config=config)
+                    from .portable_trial_store import PortableTrialStore
+                    PortableTrialStore(state_root).publish_gamescope_launch(
+                        arm.operation, trial_environment.get("INVOCATION_ID", ""))
+                except (OSError, ValueError, TypeError, KeyError):
+                    return 78
             os.execve(REAL_GAMESCOPE, (REAL_GAMESCOPE, *trial_arguments), trial_environment)
             return 127
+    if arm is not None:
+        return 78
     environment.pop("MESA_VK_DEVICE_SELECT", None)
     environment.pop("MESA_VK_DEVICE_SELECT_FORCE_DEFAULT_DEVICE", None)
     arguments = rewrite_gamescope_argv(

@@ -132,7 +132,8 @@ class SteamTrialTests(unittest.TestCase):
         self.assertEqual(self.launch(), self.clean)
 
     def test_entry_point_uses_only_fixed_launcher_and_cleans_stale_environment(self):
-        with (patch('hdm.delivery.steam_trial_wrapper.os.environ', self.original),
+        with (patch('hdm.delivery.device_filter_wrapper.latch_filter_arm', return_value=None),
+              patch('hdm.delivery.steam_trial_wrapper.os.environ', self.original),
               patch('hdm.delivery.steam_trial_wrapper._boot_identity', side_effect=OSError),
               patch('hdm.delivery.steam_trial_wrapper.os.execve') as execute):
             self.assertEqual(main(), 127)

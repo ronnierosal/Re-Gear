@@ -65,7 +65,8 @@ class TrialLaunchTests(unittest.TestCase):
 
     def test_normal_gamescope_launch_clears_both_stale_trial_selectors(self):
         from hdm.delivery import gamescope_wrapper as wrapper
-        with (patch.object(wrapper.os, 'environ', {
+        with (patch('hdm.delivery.device_filter_wrapper.latch_filter_arm', return_value=None),
+              patch.object(wrapper.os, 'environ', {
                     'MESA_VK_DEVICE_SELECT': 'stale',
                     'MESA_VK_DEVICE_SELECT_FORCE_DEFAULT_DEVICE': '1'}),
               patch.object(wrapper, '_connected_connectors', return_value=()),
@@ -95,6 +96,65 @@ class TrialLaunchTests(unittest.TestCase):
                     argv=(), environment={}, raw_boot_id=self.boot)
                 self.assertIsNone(result)
                 self.assertIsNone(store.consume())
+
+    def arm(self, directory):
+        store = PortableTrialStore(Path(directory))
+        store.arm(operation_id='operation-1', boot_id_sha256=self.boot_hash,
+            generation='generation-1', internal_gpu='1002:150e', internal_connector='eDP-1',
+            egpu_binding_sha256='b'*64, original_config=None,
+            expected_config=self.config, expires_at=100)
+        return store
+
+    def consume(self, directory, **options):
+        return consume_launch_candidate(Path(directory), config=self.config,
+            argv=(), environment={'INVOCATION_ID': 'c'*32}, raw_boot_id=self.boot, **options)
+
+    def test_strict_operation_mismatch_burns_without_live_probe(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = self.arm(directory)
+            with patch('hdm.delivery.portable_trial_launch.live_candidate_from_record') as live:
+                with self.assertRaises(ValueError):
+                    self.consume(directory, expected_operation='foreign')
+                live.assert_not_called()
+            self.assertIsNone(store.consume())
+
+    def test_strict_missing_and_replayed_record_raise(self):
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaises(ValueError):
+                self.consume(directory, expected_operation='operation-1')
+        with tempfile.TemporaryDirectory() as directory:
+            store = self.arm(directory)
+            store.consume()
+            with self.assertRaises(ValueError):
+                self.consume(directory, expected_operation='operation-1')
+
+    def test_strict_live_refusal_raises_and_burns(self):
+        for failure in (ValueError, OSError, TypeError, KeyError):
+            with tempfile.TemporaryDirectory() as directory:
+                store = self.arm(directory)
+                with patch('hdm.delivery.portable_trial_launch.live_candidate_from_record', side_effect=failure):
+                    with self.assertRaises(failure):
+                        self.consume(directory, expected_operation='operation-1')
+                self.assertIsNone(store.consume())
+
+    def test_deferred_receipt_does_not_publish_and_returns_candidate(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = self.arm(directory)
+            with (patch('hdm.delivery.portable_trial_launch.live_candidate_from_record', return_value=((), {})),
+                  patch.object(PortableTrialStore, 'publish_gamescope_launch') as publish):
+                self.assertEqual(self.consume(directory, expected_operation='operation-1', defer_receipt=True), ((), {}))
+                publish.assert_not_called()
+            self.assertIsNone(store.consume())
+
+    def test_legacy_missing_falls_back_and_success_publishes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            self.assertIsNone(self.consume(directory))
+        with tempfile.TemporaryDirectory() as directory:
+            self.arm(directory)
+            with (patch('hdm.delivery.portable_trial_launch.live_candidate_from_record', return_value=((), {})),
+                  patch.object(PortableTrialStore, 'publish_gamescope_launch') as publish):
+                self.assertEqual(self.consume(directory), ((), {}))
+                publish.assert_called_once_with('operation-1', 'c'*32)
 
 
 if __name__ == '__main__':
