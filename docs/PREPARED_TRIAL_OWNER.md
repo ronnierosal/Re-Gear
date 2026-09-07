@@ -23,3 +23,8 @@ This is a library/setup slice. It does not install a runtime, provide a startup
 recovery dispatcher, execute a session restart, grant a filtered launch, release
 GPU resources, or establish safe physical disconnect. Higher-level recovery and
 supervised hardware observation remain separate integration requirements.
+
+Validation on the isolated runtime PR base: 1,410 backend tests passed (68
+platform skips), architecture and compilation checks passed. Linux filesystem
+fixtures are included but were skipped on this Windows host. No deployment or
+hardware run was performed for this slice.
