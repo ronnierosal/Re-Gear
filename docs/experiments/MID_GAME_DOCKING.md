@@ -32,7 +32,7 @@ A successful future experiment must show:
 - a verified return to the internal panel
 
 If any condition is unknown, the result is inconclusive. If the platform lacks a
-runtime connector-selection mechanism, HDM should report that docking will be
+runtime connector-selection mechanism, Re-Gear should report that docking will be
 available after the game exits rather than restarting the session.
 
 ## Prohibited assumptions

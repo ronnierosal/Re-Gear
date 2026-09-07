@@ -1,6 +1,6 @@
 # Verified game-save child
 
-HDM is save-aware; it does not claim universal autosave. A catalog label or a
+Re-Gear is save-aware; it does not claim universal autosave. A catalog label or a
 successful mechanism call is never enough to tell the player that progress was
 saved.
 
@@ -62,5 +62,5 @@ hardware-verified game entry. Therefore this code cannot currently trigger or
 claim a real save.
 
 Every future recipe requires its own intentional supervised validation on the
-exact game, HDM version, SteamOS version, host profile, eGPU profile, and game
+exact game, Re-Gear version, SteamOS version, host profile, eGPU profile, and game
 version where relevant.

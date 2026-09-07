@@ -14,7 +14,7 @@ remote SSH capture harness can complete this procedure.
 Perform this only when the maintainer is physically present at the certified
 Ally X + GPD G1 setup and can see the active display and use a working control.
 
-1. Start from a provenance-recorded single HDM package following D0–D3 of
+1. Start from a provenance-recorded single Re-Gear package following D0–D3 of
    [Deployment and validation strategy](DEPLOYMENT_VALIDATION.md). Do not mix
    frontend and backend builds.
 2. Confirm Steam, Decky, internal display, built-in controls, and network are
@@ -22,7 +22,7 @@ Ally X + GPD G1 setup and can see the active display and use a working control.
 3. Keep a simple return path: no pending transition journal, no sleep request,
    no process-release operation, and no planned cable removal.
 4. Select one installed Steam game with a known AppID. Start it normally and
-   wait until HDM can obtain two fresh, exact active-session observations.
+   wait until Re-Gear can obtain two fresh, exact active-session observations.
 5. Keep diagnostics bounded and explicitly enabled only for the test. Do not
    treat logs as proof of saved progress.
 
@@ -39,7 +39,7 @@ save-on-exit.
 1. Arm the read-only watch only after the exact selected game is observed
    running.
 2. The player exits that same game normally through its ordinary in-game or
-   Steam flow. HDM must not request, signal, close, save, or relaunch it.
+   Steam flow. Re-Gear must not request, signal, close, save, or relaunch it.
 3. Collect a later fresh, exact idle observation.
 
 Pass criteria:
@@ -56,7 +56,7 @@ Failure criteria:
 
 - A different game starts, the original game remains running, evidence is
   unknown, or a generation/sample is reused.
-- HDM then enters Action Required, disables temporary diagnostics, and records
+- Re-Gear then enters Action Required, disables temporary diagnostics, and records
   no successful result.
 
 This result makes no claim that progress was saved. Autosave and save-on-exit
@@ -80,7 +80,7 @@ external-render proof.
 For either test, retain only:
 
 - source commit and package hash;
-- HDM and SteamOS version;
+- Re-Gear and SteamOS version;
 - categorical test outcome and reason;
 - redacted before/after snapshots;
 - whether controls, display, Steam, Decky, and SSH remained usable; and

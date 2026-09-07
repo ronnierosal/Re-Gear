@@ -2,9 +2,9 @@
 
 ## Decision
 
-HDM 0.2 owns a login1 `sleep` inhibitor in `block` mode whenever the supported
+Re-Gear 0.2 owns a login1 `sleep` inhibitor in `block` mode whenever the supported
 Ally X observes a G1 candidate. SteamOS's exact `systemd-inhibit` command owns
-the returned descriptor. HDM launches it only through an internal helper that
+the returned descriptor. Re-Gear launches it only through an internal helper that
 arms Linux parent-death signals before execution; the command's held no-op child
 uses the same guard.
 
@@ -43,7 +43,7 @@ lease, hide inactive-protection failures, or alter blockers.
   preview/token-approved support-bundle flow, and supervised presentation
   preparation. Preparation cannot restart Gamescope or switch display/GPU
   placement.
-- No sleep request is initiated by HDM.
+- No sleep request is initiated by Re-Gear.
 - No power-menu interception is treated as the safety boundary.
 - No display/GPU transition, process signal, or physical removal is added.
 - The original Steam active-session power-menu Sleep path failed acceptance on
