@@ -53,13 +53,24 @@ class VersionFailureTests(unittest.TestCase):
             ["could not read the declared version in main.py"],
         )
 
-    def test_a_missing_declaration_fails_closed(self):
+    def test_an_absent_file_is_left_to_required_files(self):
+        """`REQUIRED_FILES` owns existence; this check owns agreement.
+
+        Narrowed roots (see `test_launcher_packaging`) exercise one rule at a
+        time, so reporting absence here would fire on every such root.
+        """
         versions = dict(AGREED)
         del versions["pyproject.toml"]
-        self.assertEqual(
-            version_failures(versions),
-            ["missing version declaration in pyproject.toml"],
-        )
+        self.assertEqual(version_failures(versions), [])
+
+    def test_a_present_but_disagreeing_file_still_fails_when_others_are_absent(self):
+        versions = {"package.json": "0.3.51", "main.py": "0.2.0"}
+        failures = version_failures(versions)
+        self.assertEqual(len(failures), 1)
+        self.assertIn("main.py declares version '0.2.0'", failures[0])
+
+    def test_no_source_of_truth_means_nothing_to_compare(self):
+        self.assertEqual(version_failures({"main.py": "0.3.51"}), [])
 
 
 class DeclaredVersionTests(unittest.TestCase):

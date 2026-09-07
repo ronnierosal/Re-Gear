@@ -152,22 +152,28 @@ def declared_versions(sources: "dict[str, str]") -> "dict[str, str | None]":
 
 
 def version_failures(versions: "dict[str, str | None]") -> "list[str]":
-    """Report every site that cannot be read or disagrees with the source.
+    """Report every present site that cannot be read or disagrees with the source.
 
-    Fails closed: an unreadable literal is a failure, not a skipped check, so
-    moving one of these declarations cannot silently disable enforcement.
+    Absent files are not reported here: `REQUIRED_FILES` already owns which
+    files a plugin root must contain, and duplicating that would make this
+    check fire on the narrowed roots used to exercise other rules.
+
+    A file that *is* present still fails closed: an unreadable or relocated
+    literal is a failure, never a silently skipped site, so moving one of these
+    declarations cannot quietly disable enforcement.
     """
-    failures: list[str] = []
-    for relative in VERSION_SITES:
-        if relative not in versions:
-            failures.append(f"missing version declaration in {relative}")
-        elif versions[relative] is None:
-            failures.append(f"could not read the declared version in {relative}")
+    failures = [
+        f"could not read the declared version in {relative}"
+        for relative in VERSION_SITES
+        if relative in versions and versions[relative] is None
+    ]
     if failures:
         return failures
-    expected = versions[VERSION_SOURCE]
+    expected = versions.get(VERSION_SOURCE)
+    if expected is None:
+        return failures
     for relative in VERSION_SITES:
-        if relative == VERSION_SOURCE:
+        if relative == VERSION_SOURCE or relative not in versions:
             continue
         found = versions[relative]
         if found != expected:
