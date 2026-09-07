@@ -13,7 +13,7 @@ source remains in `wiki/`; the separate Wiki repository requires an explicit
 publication step. See the [maintenance workflow](../wiki/README.md#maintaining-the-published-wiki).
 
 The source set contains Home, Project Overview, Current State, Issues
-Fixed, Getting Started, How HDM Works, Supported Hardware, Safety and eGPU
+Fixed, Getting Started, How Re-Gear Works, Supported Hardware, Safety and eGPU
 Handling, Diagnostics and Privacy, Troubleshooting, Development, FAQ, and the
 dated Ally X/GPD G1 docking incident. The
 combined safety page covers connection, disconnect, and sleep guidance until
@@ -35,7 +35,7 @@ each publishing task.
 | Issues Fixed | Selected fixes with proof level and remaining gates | `CURRENT_STATE.md`, audit and validation records |
 | Ally X and GPD G1 Docking Incident | Full causal chain, fixes, evidence, and reusable diagnostic lessons | dated incident record, `CURRENT_STATE.md` |
 | Getting Started | Current availability, prerequisites, development-only install status | `CURRENT_STATE.md`, `DEPLOYMENT_VALIDATION.md` |
-| How HDM Works | Plain-language placement/health/workflow model | `PRODUCT.md`, `ARCHITECTURE.md` |
+| How Re-Gear Works | Plain-language placement/health/workflow model | `PRODUCT.md`, `ARCHITECTURE.md` |
 | Supported Hardware | Compatibility vocabulary and current profile | `HARDWARE_SUPPORT.md` |
 | Safety and eGPU Handling | Current connect, sleep, and shutdown-before-disconnect rules | `SAFETY_INVARIANTS.md`, `DEPLOYMENT_VALIDATION.md` |
 | Diagnostics and Privacy | Bounded privacy-safe evidence and support sharing | `DIAGNOSTICS.md`, `SUPPORT_BUNDLE.md` |

@@ -1,6 +1,6 @@
 # Durable transition journal
 
-HDM's transition journal is the crash-recovery authority for future mutating
+Re-Gear's transition journal is the crash-recovery authority for future mutating
 operations. It records what was requested, observed, validated, planned,
 attempted, verified, recovered, and committed. It does not infer success from a
 mechanism call.

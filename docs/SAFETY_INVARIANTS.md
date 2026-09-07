@@ -2,7 +2,7 @@
 
 These invariants are release gates, not preferences.
 
-1. A running game stays on its current GPU. HDM does not attempt live GPU
+1. A running game stays on its current GPU. Re-Gear does not attempt live GPU
    workload migration.
 2. A transition that requires restarting Gamescope is blocked while a game is
    running.
@@ -33,7 +33,7 @@ These invariants are release gates, not preferences.
 16. Graceful process closure and force closure are separate approvals. PID start
     time, eGPU identity, and opened nodes are revalidated immediately before a
     signal is sent.
-17. HDM never force-closes Gamescope, Steam, Decky, display/session managers,
+17. Re-Gear never force-closes Gamescope, Steam, Decky, display/session managers,
     mounted-storage clients, or unknown/system processes to make disconnect look
     safe.
 18. A sleep inhibitor is released when its verified hardware condition ends or

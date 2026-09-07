@@ -2,7 +2,7 @@
 
 ## Current implemented slice
 
-HDM currently observes the exact eGPU bridge's **current PCIe link state** and,
+Re-Gear currently observes the exact eGPU bridge's **current PCIe link state** and,
 when the kernel exposes them, current GT/s and lane width. The Quick Access
 Troubleshooting view shows those values as diagnostics only; it does not call
 them throughput, cable quality, charging headroom, performance, removal safety,
@@ -18,7 +18,7 @@ The player-facing policy is deliberately small:
 - a later observed Up state produces one compact recovery notice; and
 - eGPU absence resets the episode without a notice.
 
-Notices say HDM is preserving the current setup and advise against disconnecting.
+Notices say Re-Gear is preserving the current setup and advise against disconnecting.
 They never diagnose a cable fault, claim recovery, or execute an action. They
 remain non-blocking during a game. A player-requested unsafe action retains its
 own explicit confirmation and fail-closed checks.
@@ -54,7 +54,7 @@ before physical disconnection.
 
 ## Not implemented
 
-HDM has no collector for AC/charging state, battery direction, requested or
+Re-Gear has no collector for AC/charging state, battery direction, requested or
 available power budget, thermals, throttling, fan behavior, or sustained link
 churn. The telemetry contract is only an admission policy; it is not a
 collector. A future power-health implementation needs a profile-specific

@@ -1,6 +1,6 @@
 # eGPU attach readiness
 
-HDM's exact topology detector can observe an eGPU attach. A bounded USB4-only
+Re-Gear's exact topology detector can observe an eGPU attach. A bounded USB4-only
 or otherwise incomplete observation may settle into that exact candidate only
 after the complete Ally X + GPD G1 profile becomes verified. The attach-readiness
 watch binds that candidate to the private exact eGPU identity and waits for a
