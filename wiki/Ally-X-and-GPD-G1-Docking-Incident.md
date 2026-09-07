@@ -1,5 +1,7 @@
 # Ally X and GPD G1 docking incident
 
+> Historical September 2 evidence. Statements about pending candidates below describe that session, not the current build. See [Current State](Current-State) for the maintained summary.
+
 **Audience:** developers, maintainers, and supervised hardware testers<br>
 **Evidence reviewed:** 2026-09-02<br>
 **Maturity:** display/render fix hardware tested once; guarded automatic audio

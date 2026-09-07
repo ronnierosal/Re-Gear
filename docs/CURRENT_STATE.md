@@ -1,9 +1,19 @@
 # Current state
 
+## PR #3 integration checkpoint â€” 2026-09-07
+
+Historical 0.3.51 source `cc1bab4` is reconciled with main `a9125a9` in an
+isolated integration worktree. This is repository integration preparation,
+not an installation or promotion of 0.3.51 over newer candidates. Entries below
+are dated evidence, not current installed-state assertions.
+See [the review record](PR3_INTEGRATION_REVIEW.md) for scope and checks.
+Final CI and merge status are recorded in PR #3 and issue #34.
+
+
 
 ## Re-Gear 0.3.43 compact popup candidate
 
-Staged `/home/deck/Re-Gear-0.3.43.zip` to user-supplied host 192.168.1.149;
+Staged `/home/deck/Re-Gear-0.3.43.zip` to the maintainer-supplied host;
 SSH identity verified against the existing Ally host key. Revision
 `d687972b88d46cde696e4eed1e408039394140c8`; local/final SHA-256 matched:
 `f592e509d850685bff27004f204b031493d3a51f87838fe4b78b3536fb6de77a`.
@@ -201,7 +211,7 @@ bounds and hardware gates. Not installed or hardware validated.
 Local validation: 954 backend tests (six skipped), 124 frontend tests,
 TypeScript, architecture, compile, production build and package checks passed.
 
-## Re-Gear 0.3.25 audio activation candidate — 2026-09-04
+## Re-Gear 0.3.25 audio activation candidate â€” 2026-09-04
 
 The [audio sequencing candidate](G1_AUDIO_ACTIVATION.md) separates pre-display
 rollback readiness from post-display HDMI audio proof. It preserves rollback
@@ -212,7 +222,7 @@ Validation: 954 backend tests (six skipped), 110 frontend tests, architecture,
 compilation, TypeScript, production build and package checks passed. Candidate
 only: no installation or hardware validation by this workstream.
 
-## Re-Gear 0.3.24 Home and Library tab refresh candidate — 2026-09-04
+## Re-Gear 0.3.24 Home and Library tab refresh candidate â€” 2026-09-04
 
 The player reports missing Home artwork badges and unreliable badges after
 Library tab changes on installed 0.3.23 (`57ebfb9b8cca`). Read-only inspection
@@ -236,7 +246,7 @@ mutations. Native Home/tab-switch visual acceptance and actual overhead remain
 unverified. This is a candidate fix, not a confirmed resolution of the report.
 No plugin installation, restart, or hardware transition was performed.
 
-## Re-Gear 0.3.23 Offline Readiness review — 2026-09-04
+## Re-Gear 0.3.23 Offline Readiness review â€” 2026-09-04
 
 Local UI candidate based on integrated `37daf74`; G1 runtime is unchanged.
 Artwork `src` changes now invalidate recycled Library tiles, and automatic
@@ -267,7 +277,7 @@ Home startup attachment, bottom-left layout, scrolling cost, and absence during
 gameplay still need device evidence. Metadata remains insufficient for Ready
 Offline or Requires Internet conclusions.
 
-## Re-Gear 0.3.22 late-enumeration candidate — 2026-09-04
+## Re-Gear 0.3.22 late-enumeration candidate â€” 2026-09-04
 
 The supervised 0.3.21 attach began with `observation.wake.kernel_event`, then
 reported timeout at 120.593 seconds from a `poll_timer` scan. Kernel Link Up
@@ -290,7 +300,7 @@ TypeScript, architecture, compilation, build, and package validation.
 Not installed or hardware validated; keep the connected Ally untouched until
 normal shutdown, confirmed power-off, disconnect, and detached boot.
 
-## Re-Gear 0.3.21 G1 readiness candidate — 2026-09-04
+## Re-Gear 0.3.21 G1 readiness candidate â€” 2026-09-04
 
 Unreleased local changes invalidate readiness and reset settling counters when
 transport observation becomes unknown. The 120-second initial deadline stops

@@ -1,7 +1,7 @@
 # Development
 
 **Audience:** contributors<br>
-**Evidence reviewed:** 2026-09-02<br>
+**Reviewed:** 2026-09-06<br>
 **Maturity:** active development with safety-critical boundaries
 
 Read [Contributing](https://github.com/ronnierosal/Re-Gear/blob/main/CONTRIBUTING.md),

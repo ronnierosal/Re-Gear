@@ -94,7 +94,7 @@ It never promises an offline launch, changes saves/settings, or launches a game.
   Next: inspect/integrate the current G1 baseline and coordinate shared installation.
 
 Branch `codex/offline-readiness-delivery`, worktree:
-`C:/Users/SLDD/.codex/worktrees/offline-readiness-delivery/Handheld-Docked-Mode-SteamOS`.
+`<isolated offline-readiness worktree>`.
 See [handoff](OFFLINE_READINESS_HANDOFF.md), [source review](OFFLINE_EVIDENCE_SOURCE_REVIEW.md),
 and [third-party notices](../THIRD_PARTY_NOTICES.md).
 No installation or G1 lifecycle action has occurred in this workstream.

@@ -7,6 +7,11 @@ repository contract rather than duplicating it.
 
 ## Current source set
 
+The [live Wiki](https://github.com/ronnierosal/Re-Gear/wiki) was populated with
+14 guides and a sidebar on 2026-09-06, including Offline Readiness. Reviewed
+source remains in `wiki/`; the separate Wiki repository requires an explicit
+publication step. See the [maintenance workflow](../wiki/README.md#maintaining-the-published-wiki).
+
 The source set contains Home, Project Overview, Current State, Issues
 Fixed, Getting Started, How HDM Works, Supported Hardware, Safety and eGPU
 Handling, Diagnostics and Privacy, Troubleshooting, Development, FAQ, and the

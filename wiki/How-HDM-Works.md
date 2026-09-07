@@ -1,7 +1,7 @@
 # How Re-Gear works
 
 **Audience:** players, testers, and contributors<br>
-**Evidence reviewed:** 2026-09-02<br>
+**Reviewed:** 2026-09-06<br>
 **Maturity:** implemented foundation with capability-specific validation
 
 The repository [architecture](https://github.com/ronnierosal/Re-Gear/blob/main/docs/ARCHITECTURE.md)
@@ -25,14 +25,14 @@ ambiguous evidence becomes Unknown and blocks unsafe mutation.
 
 ## Profiles, capabilities, and mechanisms
 
-Hardware profiles hold exact identity and required quirks, such as the first
-Ally X and GPD G1 topology. Capability contracts describe what a resolved
+Hardware profiles hold exact device identity, topology, and required quirks.
+The same policy model can describe different handhelds, docks, and eGPUs. Capability contracts describe what a resolved
 profile may safely do. SteamOS adapters observe sysfs, procfs, Gamescope, and
 session state. Narrow mechanisms perform only approved operations. Pure domain
 policy decides whether a request is allowed and how it must recover.
 
 This separation is still incomplete in several P1 areas. The project is fixing
-those seams incrementally rather than replacing proven first-profile behavior
+those seams incrementally rather than replacing validated hardware behavior
 with speculative abstractions.
 
 ## Verification matters

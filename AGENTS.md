@@ -6,6 +6,24 @@ Re-Gear (formerly Handheld Dock Mode / HDM) is a SteamOS-first, safety-critical
 dock-mode controller. Branding and compatibility rules: `docs/BRANDING.md`. It is a new
 project; eGPUBridge is reference evidence, not the architecture to reproduce.
 
+## Public documentation
+
+- README and general Wiki pages describe Re-Gear across SteamOS handheld,
+  dock, display, controller, and eGPU vendors. Do not frame the product or
+  general instructions around a particular handheld or eGPU model.
+- Keep exact device names in compatibility tables and linked device-specific
+  test/incident records where they establish evidence. General feature and
+  testing summaries use capability terms and link those records; never turn
+  neutral wording into a claim that untested hardware is supported.
+- Public feature pages state player benefit, priority, implementation status,
+  and remaining validation. Keep proposed, in-development, installed, and
+  hardware-tested claims distinct; link owning docs and issues.
+- User diagnostic guidance uses the reviewed read-only CLI or support preview
+  flow in `docs/DIAGNOSTICS.md` and `docs/SUPPORT_BUNDLE.md`. Never request raw
+  logs, secrets, unrestricted system dumps, or unreviewed diagnostic scripts.
+- Review affected README/Wiki pages with player-visible changes and use the
+  synchronization workflow in `wiki/README.md` for authorized publication.
+
 ## Sources of truth
 
 - Documentation map and authority rules: `docs/INDEX.md`

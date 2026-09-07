@@ -1,10 +1,10 @@
 # Getting started
 
 **Audience:** prospective users and developers<br>
-**Evidence reviewed:** 2026-09-02<br>
+**Reviewed:** 2026-09-06<br>
 **Maturity:** development-only; no general public release or supported installer
 
-Check the repository [current state](https://github.com/ronnierosal/Re-Gear/blob/main/docs/CURRENT_STATE.md)
+Check the [README candidate status](https://github.com/ronnierosal/Re-Gear#-current-status), the repository [current state](https://github.com/ronnierosal/Re-Gear/blob/main/docs/CURRENT_STATE.md)
 and [deployment validation contract](https://github.com/ronnierosal/Re-Gear/blob/main/docs/DEPLOYMENT_VALIDATION.md)
 before using a build.
 
@@ -19,9 +19,9 @@ If you are participating in a coordinated test:
 
 1. Confirm the exact build revision and artifact checksum.
 2. Begin from the documented Portable baseline.
-3. Keep the GPD G1 disconnected during installation.
+3. Follow the installation baseline for your exact profile; current eGPU test builds require a powered-off detach before installation.
 4. Use one watched transition at a time with a rollback plan.
-5. Shut down before physically disconnecting the G1.
+5. Follow the documented disconnect policy. Current eGPU testing requires complete shutdown before physical disconnection.
 
 ## Developers
 

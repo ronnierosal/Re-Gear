@@ -1,7 +1,7 @@
 # Diagnostics and privacy
 
 **Audience:** players, support reviewers, and contributors<br>
-**Evidence reviewed:** 2026-09-02<br>
+**Reviewed:** 2026-09-06<br>
 **Maturity:** privacy-safe snapshot and reviewed support export implemented
 
 The authoritative contracts are
