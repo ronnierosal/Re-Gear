@@ -18,3 +18,8 @@ nor resource-release/disconnect clearance.
 The implementation is extracted from the existing hardware branch without
 runtime behavior changes. No device action or deployment is performed by this
 publication.
+
+Validation on owner #73 plus arm cleanup #74: 1,431 backend tests passed (75
+platform skips), architecture and compilation checks passed. Fourteen focused
+recovery tests cover ordering and failures. No production dispatcher or hardware
+result is implied.
