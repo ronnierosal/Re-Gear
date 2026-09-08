@@ -29,8 +29,8 @@ test("UI uses the approved compact Re-Gear assets while README keeps its artwork
   assert.ok(source.includes('import brandIcon from "./assets/regear-icon.svg"'));
   assert.match(source, /icon: <BrandIcon \/>/);
   assert.match(source, /<BrandHeader \/>/);
-  assert.match(read("../README.md"), /src="docs\/images\/re-gear-icon\.png"/);
-  const image = readFileSync(new URL("../docs/images/re-gear-icon.png", import.meta.url));
+  assert.match(read("../README.md"), /src="docs\/images\/re-gear-readme-logo\.png"/);
+  const image = readFileSync(new URL("../docs/images/re-gear-readme-logo.png", import.meta.url));
   assert.deepEqual([...image.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
 });
 
