@@ -73,6 +73,13 @@ test("the panel opens on the first usable section", () => {
   assert.equal(defaultSectionId([]), "egpu");
 });
 
+test("the default never names a section the caller was not given", () => {
+  // A nav row must be able to resolve its selection to a target it draws.
+  const none = [{ id: "tdp", title: "Auto TDP", summary: "s", available: false, reason: "r" }];
+  assert.equal(defaultSectionId(none), "tdp");
+  assert.equal(resolveSectionId(none, "tdp"), "tdp");
+});
+
 test("a remembered selection survives, but never strands the player", () => {
   const sections = quickAccessSections(ready);
   assert.equal(resolveSectionId(sections, "tdp"), "tdp");
