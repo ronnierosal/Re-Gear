@@ -1,8 +1,38 @@
 # Documentation cleanup inventory — 2026-09-08
 
-This is a bounded follow-up inventory, not new product work or an assertion of
-current installed behavior. Source inspected at `e73f57d` (product base `8de0ed4`).
-The workflow task leaves README, public Wiki pages and runtime code unchanged.
+This is a bounded follow-up inventory, not product work or an assertion of
+current installed behavior. The original inventory inspected `e73f57d` (product
+base `8de0ed4`). The reconciliation below reviewed merged main `5b18edf`.
+
+## Reconciliation pass — September 8
+
+Ronnie assigned the documentation owner to take over the existing reconciliation
+scope. Its unpublished draft was reviewed and adapted in a separate cleanup
+worktree; the original checkout and PR #82's `CURRENT_STATE.md` scope are preserved.
+Older draft changes to coordination rules were not imported over the merged policy.
+
+- README now identifies the dated 0.3.58 source baseline and the reconciled main
+  lineage. Archive naming follows the merged build script. Its lengthy experiment
+  diary and validation table are replaced with short limits and Wiki/evidence links.
+- Wiki Home/Current-State link technical evidence directly. The hardware ledger
+  distinguishes operator reports from independently captured proof; a stale branch
+  link now points to merged evidence. No new hardware success is claimed.
+- Wiki maintenance follows the shared standing routine-publication delegation;
+  obsolete future-renaming wording is removed and compatibility slugs are retained.
+- The dated [source/evidence snapshot](STATUS_SNAPSHOT_2026-09-08.md) records exact
+  provenance and limitations. It is a fixed reconciliation checkpoint, not a new
+  rolling source of truth.
+
+These are repository source changes. Main integration and separate Wiki publication
+require recorded revisions and live readback; neither is established by this file.
+Remaining follow-ups: broader module/visual presentation, the CURRENT_STATE owner's
+integration, live Wiki comparison/sync, and Discussion topic inventory. No Discussion
+is warranted solely by this factual cleanup. Preserve the approved UI direction in
+[the Wiki plan](WIKI_INFORMATION_ARCHITECTURE.md) without implying it is implemented.
+
+## Original findings and follow-ups
+
+Rows below retain the original observations; the pass above records what was addressed.
 
 | Finding | Evidence and next action |
 |---|---|
