@@ -48,38 +48,43 @@ and correct the owning repository document.
 
 ## Ownership and coordination
 
-- Codex, Claude Code, and other chats work concurrently in this repository.
-  At every task start/resume, read `docs/AGENT_COORDINATION.md`, fetch current
-  refs, and inspect open issues/PRs plus worktree ownership before editing.
-- Every code change requires a GitHub issue first (search open/closed issues;
-  reuse a match), a recorded owner/branch/file scope, and a linked draft PR.
-  Routine scoped issue updates, branch pushes, and PR creation are authorized;
-  this does not authorize merges, releases, or hardware operations.
-- Never edit another agent's worktree or claimed files without a recorded
-  handoff. Overlap requires an agreed owner and integration order, not merely
-  a clean Git merge. Preserve other agents' changes and behavior in combined
-  regression checks. See the playbook for collision checks and stale sessions.
-- One driver owns integration and durable decisions for each workstream.
-- Use parallel workers for bounded searches, audits, tests, or isolated changes.
-  Workers return evidence and focused diffs; the driver integrates them.
-- Never use the shared `main` checkout for active implementation, conflict
-  resolution, or a temporary cherry-pick. Each workstream gets its own Git
-  worktree and branch; only the integration driver uses an
-  integration worktree (`codex/integration-*`, `claude/integration-*`,
-  or `agent/integration-*`).
-- Before integrating, run `python scripts/check_integration_preflight.py` in a
-  clean integration worktree. Integrate reviewed commits only, one coherent
-  workstream at a time. See `docs/AGENT_COORDINATION.md`.
-- Do not have multiple workers independently redesign architecture, state
-  machines, UX, hardware abstractions, or deployment strategy.
-- Inspect branch, HEAD, worktree status, and overlapping active work before
-  editing shared files. Never revert or absorb unrelated changes.
-- Concurrent assistants share one repository through per-agent worktrees. Layout,
-  setup tool, and cross-agent safety rules: `docs/MULTI_AGENT_WORKSPACE.md`.
-- The Ally X + GPD G1 end-to-end hardware journey has a separate driver. Shared
-  diagnostics and documentation may support it, but this workstream must not
-  deploy, run hardware transitions, or rewrite its runtime path without explicit
-  coordination.
+- This file is the common contract for Codex, Claude Code, and ChatGPT/voice
+  handoffs. Agent entry files link here; they do not duplicate policy.
+- At start/resume read [the short lifecycle](docs/AGENT_COORDINATION.md), the
+  shared hub's `status` and your `inbox`, then Git/worktree state and relevant
+  issue/PR claims. Register your own stable session ID. Recheck before integration
+  and handoff; explicitly receipt messages you read or accept.
+- One task has one active owner. Claim an available, unblocked task atomically
+  before substantive work. A request to work the next appropriate task authorizes
+  selecting a bounded routine item. Stream leadership is inbox routing, not a
+  monopoly on its tasks. Existing ownership changes only by accepted transfer;
+  inactivity does not release it.
+- Own the problem, not a fixed list of files. Record scope, acceptance criteria,
+  branch, dependencies, blockers, next action, and verification in the task.
+  Expand paths within that scope after checking other claims; coordinate and
+  record overlap before editing. Unrelated discoveries become new tasks.
+- Each concurrent task uses its own branch/worktree. Shared main is inspection
+  only. Never edit another session's checkout or absorb its uncommitted work.
+  File claims are collision guards; inspect semantic overlap and GitHub too.
+- Local hub state is the live workspace record; GitHub issue/PR links carry
+  cross-machine coordination. Chat history is not required. An unavailable remote
+  blocks remote integration, not explicitly assigned, nonconflicting local work.
+- Validated routine work may be committed and merged autonomously by the owning
+  agent. Human approval is the exception for defined high-risk actions, not the
+  default merge mechanism. Before merging: recheck claims/dependencies, fetch the
+  current base, inspect the combined diff, pass applicable tests and final-head CI,
+  respect branch protection, and record exact revision/evidence. Use the clean
+  integration worktree and preflight described in the lifecycle.
+- Human approval is required for destructive operations or important data deletion;
+  force pushes/shared history rewrites; credential/security-policy or access changes;
+  release/publication/deployment unless explicitly delegated; disruptive or
+  irreversible hardware actions (including changes likely to leave the handheld or
+  eGPU environment unusable); overriding another owner's active task; and major
+  architecture changes outside the assigned scope. Supervised hardware gates remain.
+- Use bounded parallel agents only when useful, with disjoint task ownership and
+  evidence returned to the driver. Never independently redesign shared contracts.
+- The separate handheld/eGPU hardware driver retains that journey. Repository
+  coordination does not authorize hardware operations or changes to its active work.
 
 ## Required rules
 

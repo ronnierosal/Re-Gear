@@ -30,7 +30,8 @@ loaded at the start of repository work.
 | What version is built or installed? | Immutable build metadata plus `CURRENT_STATE.md` | Artifact checksum and deployment evidence |
 | What hardware is supported? | `HARDWARE_SUPPORT.md` | Dated hardware validation records |
 | What may workers change and how? | `AGENTS.md`, `DEVELOPMENT.md`, `WORK_QUEUE.md` | Active driver coordination |
-| How do concurrent agents share one checkout? | `MULTI_AGENT_WORKSPACE.md`, `CHAT_COORDINATION.md` | Live `git worktree list` |
+| Who owns active work, and what is available next? | Shared hub `status` / `snapshot`, linked issue/PR claims | `AGENT_COORDINATION.md`; chats are context only |
+| How do concurrent agents share the repository? | `MULTI_AGENT_WORKSPACE.md`, `CHAT_COORDINATION.md` | Live `git worktree list` |
 
 When sources conflict, do not select the most convenient statement. Verify the
 current code, build, or device as appropriate, then correct the document that

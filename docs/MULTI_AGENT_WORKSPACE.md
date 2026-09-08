@@ -20,9 +20,14 @@ are shared by every worktree, so the release ledger works across agents without
 a second clone. On Windows the workspace is a normal path, for example
 `C:\Users\SLDD\AI-Dev\Re-Gear`; the tool is path-agnostic.
 
-Each agent slot holds a task-specific branch named `agent/<agent>-<scope>`, for
-example `agent/claude-dock-telemetry`. No agent works directly on `main` unless
-a driver explicitly asks for it.
+Each concurrent task gets a dedicated branch and worktree: `codex/<topic>`,
+`claude/<topic>`, or `agent/<topic>`. The named slots are conveniences, not model
+ownership: two Claude sessions need different worktrees too. Reuse only a clean,
+released slot after checking the hub. Shared main is inspection-only.
+
+The shared `agent-hub/` sits beside these worktrees. Its implementation is tracked
+in `scripts/agent_hub/`; its one live database is workspace-local and never copied
+into individual worktrees. See [Agent coordination](AGENT_COORDINATION.md).
 
 ## Setup tool
 
@@ -71,8 +76,11 @@ it and let its owner finish and commit first.
   diff, never by absorbing their uncommitted files.
 - When a task overlaps files another agent is currently changing, stop editing
   the overlapping files and report the conflict instead of overwriting them.
-- Merging into `main` requires explicit authorization from the integration
-  driver.
+- The owning agent may act as integration driver for validated routine work
+  under `AGENTS.md`; no extra human merge approval is required. Use a clean
+  `codex/integration-*`, `claude/integration-*`, or `agent/integration-*` worktree.
+  Shared-main dirtiness is preserved; integrate through the protected remote PR
+  workflow, then leave updating that checkout to its owner.
 
 ## Verification
 
