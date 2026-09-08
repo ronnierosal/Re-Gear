@@ -46,3 +46,7 @@ This guard prevents accidental omission of registered work; review and tests
 are still required because ancestry alone cannot prove conflict resolution
 preserved behavior. Unregistered work must be discovered through owner handoffs.
 The conflicted main checkout must be resolved by its owner, not used as a build base.
+
+For agent preflight, ownership, issue/PR handoffs, and integration review, follow
+[Agent coordination](AGENT_COORDINATION.md). Both documents apply; release
+coordination does not grant merge, release, or hardware authority.

@@ -1,6 +1,8 @@
 # HDM worker queue
 
-This is the current coordination source of truth for bounded local work. It
+This is the ordered work and durable checkpoint index. Live cross-agent ownership
+comes from issue claims under [the coordination playbook](AGENT_COORDINATION.md);
+dated owners here are not exclusive current claims. This index
 does not replace executable behavior, [the roadmap](ROADMAP.md), or the
 [safety invariants](SAFETY_INVARIANTS.md). The North Star is console-simple,
 games-first SteamOS: HDM stays light, mostly dormant, event-driven where
@@ -69,8 +71,10 @@ See the [continuation checkpoint](OFFLINE_READINESS_HANDOFF.md) before overlappi
 
 ## Required checkpoint check-in
 
-Record each meaningful checkpoint in [Operator handoff](OPERATOR_HANDOFF.md)
-and, when status/dependencies change, [Roadmap](ROADMAP.md):
+Workers record each meaningful checkpoint in the owning issue/PR. The designated
+integrator coordinates summaries in [Operator handoff](OPERATOR_HANDOFF.md)
+and, when status/dependencies change, [Roadmap](ROADMAP.md). Do not have multiple
+agents independently edit these shared records. Include:
 
 ```text
 Change: <bounded files/behavior; state implemented vs proposal>
