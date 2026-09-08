@@ -2,6 +2,7 @@
 
 - [Home](Home)
 - [Getting Started](Getting-Started)
+- [Manual Installation](Manual-Installation)
 - [Current State](Current-State)
 - [Feature Roadmap](Feature-Roadmap)
 
