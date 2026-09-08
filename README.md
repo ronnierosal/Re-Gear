@@ -72,6 +72,17 @@ version number alone does not establish that it is suitable for installation.
 Hardware testing uses an exact revision, verified checksum, and a supervised
 validation plan.
 
+### Permissions
+
+Re-Gear requests that Decky Loader run its backend with **root privileges** for
+limited SteamOS hardware and system-state operations. The Quick Access interface
+itself does not run as root; it calls a narrow set of validated backend requests.
+Root access does not make every action automatic: user-facing confirmations and
+documented support limits still apply. Read the
+[permission and privacy guide](https://github.com/ronnierosal/Re-Gear/wiki/Diagnostics-and-Privacy)
+and [troubleshooting guidance](https://github.com/ronnierosal/Re-Gear/wiki/Troubleshooting)
+before controlled testing.
+
 ## 🛡️ Safety first
 
 Re-Gear keeps game state, rendering GPU, active display, and connected hardware
