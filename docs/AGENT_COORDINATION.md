@@ -57,6 +57,22 @@ an unreviewed helper into another branch. The report is advisory: it detects fil
 contention, not semantic incompatibility or unpushed changes. Stacked PRs can
 legitimately repeat paths; inspect their bases before classifying overlap.
 
+The default report answers the queue-wide question and lists only paths claimed
+by two or more pull requests. Before editing, also ask the narrower question
+about the paths you intend to touch:
+
+```text
+python scripts/check_pr_collisions.py --claimants <path> [<path>...]
+```
+
+This reports a **single** claimant too, and flags a claimed path that does not
+yet exist on the base ref as `duplicate-work` rather than contention — one pull
+request already creating the file you are about to create is not an edit-order
+problem, it is the same work done twice. Reading that pull request is the
+required next step, not agreeing a sequence. Neither mode replaces reading the
+claiming PR, and neither sees unpushed work: absence of a claim is not proof a
+path is unowned.
+
 If GitHub is unavailable, preserve a local issue/claim draft and report the
 publication blocker. Do not begin unclaimed code edits; read-only investigation
 can continue. Existing explicit maintainer incident directions take precedence.

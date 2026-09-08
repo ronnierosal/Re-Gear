@@ -8,6 +8,20 @@ discovering the collision during integration.
 The analysis is pure: `contended_files` takes an already-collected mapping of
 pull request number to changed paths. Only `collect_open_pull_requests` talks to
 the GitHub CLI, which keeps the reporting logic testable offline.
+
+Two questions, two reports. `contended_files` answers "which paths do several
+open pull requests both edit", which is the merge-sequencing question a driver
+asks about the queue as a whole. `path_claims` answers the question an agent has
+before it starts: "is anyone already claiming what I am about to touch". That
+one deliberately reports a *single* claimant, which contention by definition
+never does.
+
+The single-claimant case matters most for a path that does not yet exist on the
+base ref. Two pull requests editing one file is contention, and the answer is an
+agreed edit order. One pull request creating a file that another agent is about
+to create is not contention at all -- it is the same work done twice, and the
+answer is to stop and read the other pull request. That distinction is why the
+two reports are separate rather than one report with a lower threshold.
 """
 
 from __future__ import annotations
@@ -116,6 +130,106 @@ def contended_files(claims: Mapping[int, Sequence[str]]) -> tuple[Collision, ...
     )
 
 
+#: Why each claim kind is being surfaced. A reader who cannot tell why a line
+#: appeared classifies it as noise, and a report that reads as noise stops being
+#: run at all -- so the kind carries its own justification.
+CLAIM_KINDS: dict[str, str] = {
+    "duplicate-work": "claimed but absent from the base ref: another agent is"
+    " already building this. Read that pull request before writing anything",
+    "contended": "claimed by several pull requests; agree an owner and an edit"
+    " order before editing",
+    "claimed": "claimed by one pull request that already edits this existing"
+    " file; coordinate before overlapping edits",
+}
+
+
+@dataclass(frozen=True, slots=True)
+class Claim:
+    """Every open pull request claiming one path an agent asked about."""
+
+    path: str
+    pull_requests: tuple[int, ...]
+    bases: tuple[str, ...]
+    kind: str
+    risk: str
+
+    def __post_init__(self) -> None:
+        if len(self.pull_requests) != len(self.bases):
+            raise ValueError("every claiming pull request needs a base ref")
+
+    @property
+    def reason(self) -> str:
+        return CLAIM_KINDS[self.kind]
+
+
+def path_claims(
+    claims: Mapping[int, Sequence[str]],
+    paths: Iterable[str],
+    *,
+    present: Iterable[str],
+    bases: Mapping[int, str] | None = None,
+) -> tuple[Claim, ...]:
+    """Return every open pull request claiming each of `paths`.
+
+    `present` is the subset of `paths` that already exists on the base ref, so
+    the caller supplies the Git lookup and this stays pure. A path absent from
+    it is reported as duplicated work rather than contention, whatever the
+    number of claimants.
+
+    Paths nobody claims are omitted: the answer to "is anyone claiming this" is
+    a list of claimants, and an empty line for every clean path would bury the
+    ones that are not.
+    """
+    bases = bases or {}
+    existing = set(present)
+    owners: dict[str, set[int]] = {}
+    for number, claimed in claims.items():
+        for path in claimed:
+            owners.setdefault(path, set()).add(int(number))
+
+    found: list[Claim] = []
+    for path in dict.fromkeys(paths):
+        numbers = tuple(sorted(owners.get(path, ())))
+        if not numbers:
+            continue
+        if path not in existing:
+            kind = "duplicate-work"
+        elif len(numbers) > 1:
+            kind = "contended"
+        else:
+            kind = "claimed"
+        risk, _ = classify(path)
+        found.append(
+            Claim(
+                path,
+                numbers,
+                tuple(bases.get(number, "") for number in numbers),
+                kind,
+                risk,
+            )
+        )
+    # Loudest first: duplicated work is the one a reader must not skim past.
+    order = {"duplicate-work": 0, "contended": 1, "claimed": 2}
+    return tuple(sorted(found, key=lambda item: (order[item.kind], item.path)))
+
+
+def render_claims(claims: Iterable[Claim], asked: Iterable[str]) -> str:
+    claims = tuple(claims)
+    asked = tuple(dict.fromkeys(asked))
+    if not claims:
+        return f"No open pull request claims any of the {len(asked)} path(s) given."
+    lines = [f"{len(claims)} of {len(asked)} path(s) are claimed:", ""]
+    for claim in claims:
+        owners = ", ".join(
+            f"#{number}" + (f" (base {base})" if base else "")
+            for number, base in zip(claim.pull_requests, claim.bases)
+        )
+        lines.append(f"- {claim.path} [{claim.kind}] [{claim.risk}]")
+        lines.append(f"    claimed by {owners}")
+        lines.append(f"    {claim.reason}")
+    return "\n".join(lines)
+
+
 def _run_gh(argv: Sequence[str], timeout: int = 60) -> str:
     completed = subprocess.run(
         (_gh_executable(), *argv),
@@ -179,6 +293,55 @@ def collect_open_pull_requests(repository: str | None = None) -> dict[int, tuple
     return claims
 
 
+def collect_open_pull_request_bases(repository: str | None = None) -> dict[int, str]:
+    """Collect the base ref of every open pull request.
+
+    Stacked pull requests legitimately repeat paths, so a reader needs the base
+    to tell a stack from a duplicate. This is one extra listing call rather than
+    a per-pull-request one, so it costs a page, not a queue.
+    """
+    repository = repository or repository_slug()
+    return {
+        int(entry["number"]): str(entry.get("base", {}).get("ref", ""))
+        for entry in _paginated(f"repos/{repository}/pulls?state=open&per_page=100")
+    }
+
+
+def paths_present(paths: Iterable[str], ref: str = "origin/main") -> tuple[str, ...]:
+    """Return which of `paths` already exist on `ref`.
+
+    A path missing here is the signal that separates duplicated work from
+    contention, so a failed lookup must not read as "absent": an unreachable
+    ref would relabel every ordinary claim as duplicated work and train the
+    reader to ignore the loudest line in the report. Failure raises instead.
+    """
+    git = shutil.which("git")
+    if git is None:
+        raise RuntimeError("git was not found on PATH")
+    present: list[str] = []
+    for path in dict.fromkeys(paths):
+        completed = subprocess.run(
+            (git, "cat-file", "-e", f"{ref}:{path}"),
+            capture_output=True,
+            check=False,
+            shell=False,
+            text=True,
+            timeout=30,
+        )
+        if completed.returncode == 0:
+            present.append(path)
+            continue
+        error = completed.stderr.strip()
+        # Both a missing path and an unresolvable ref exit 128, and only the
+        # message tells them apart: "does not exist in" is an answer, anything
+        # else is a broken lookup. Treating the second as "absent" would relabel
+        # every ordinary claim as duplicated work, so only the known-absent
+        # message is accepted as one.
+        if "does not exist in" not in error:
+            raise RuntimeError(f"could not read {ref}: {error or 'unknown error'}")
+    return tuple(present)
+
+
 def render(collisions: Iterable[Collision]) -> str:
     collisions = tuple(collisions)
     if not collisions:
@@ -210,6 +373,28 @@ def main(argv: Sequence[str] | None = None) -> int:
         action="store_true",
         help="exit non-zero when contention is reported",
     )
+    parser.add_argument(
+        "--claimants",
+        nargs="+",
+        metavar="PATH",
+        default=[],
+        help="report every open pull request claiming these paths, including a"
+        " single claimant, and flag paths absent from --base as duplicated work",
+    )
+    parser.add_argument(
+        "--base",
+        default="origin/main",
+        help="ref a claimed path must already exist on to count as contention"
+        " rather than duplicated work (default: origin/main)",
+    )
+    parser.add_argument(
+        "--present",
+        nargs="*",
+        metavar="PATH",
+        default=None,
+        help="treat exactly these paths as existing on the base ref instead of"
+        " asking git; for offline use",
+    )
     arguments = parser.parse_args(argv)
 
     if arguments.claims:
@@ -222,6 +407,25 @@ def main(argv: Sequence[str] | None = None) -> int:
         except (OSError, RuntimeError, json.JSONDecodeError) as error:
             print(f"Could not collect open pull requests: {error}", file=sys.stderr)
             return 2
+
+    if arguments.claimants:
+        try:
+            present = (
+                tuple(arguments.present)
+                if arguments.present is not None
+                else paths_present(arguments.claimants, arguments.base)
+            )
+            bases = {} if arguments.claims else collect_open_pull_request_bases()
+        except (OSError, RuntimeError, json.JSONDecodeError) as error:
+            print(f"Could not resolve claims: {error}", file=sys.stderr)
+            return 2
+        found = path_claims(
+            claims, arguments.claimants, present=present, bases=bases
+        )
+        print(render_claims(found, arguments.claimants))
+        if arguments.strict and found:
+            return 1
+        return 0
 
     collisions = contended_files(claims)
     if arguments.risk:
