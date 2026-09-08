@@ -12,8 +12,9 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
 from hdm.egpu_release import (  # noqa: E402
+    scan_holders,
     egpu_functions,
-    holder_units,
+    HolderScan,
     main,
     restart_commands,
 )
@@ -53,21 +54,126 @@ class RestartCommandTests(unittest.TestCase):
 
 
 class HolderScanTests(unittest.TestCase):
-    def test_a_proc_tree_without_holders_reports_none(self) -> None:
+    """A scan that could not finish looking is not evidence of absence.
+
+    Every case below returned an empty tuple before, and an empty tuple was
+    read as `clients_clear`. The device could be held throughout.
+    """
+
+    NODE = "/dev/dri/renderD129"
+
+    @contextlib.contextmanager
+    def _proc(self, processes, links=None):
+        """Build a fake /proc and resolve descriptors through `links`.
+
+        Descriptors are resolved by patching `os.readlink` rather than by
+        creating symlinks, which need privileges on some platforms.
+        """
+        import hdm.egpu_release as module
+        from unittest.mock import patch
+
+        links = links or {}
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            (root / "1").mkdir()
-            (root / "1" / "fd").mkdir()
-            (root / "1" / "cgroup").write_text("0::/init.scope", encoding="utf-8")
-            self.assertEqual(
-                holder_units(("/dev/dri/renderD129",), proc_root=root), ()
-            )
+            for pid, spec in processes.items():
+                entry = root / pid
+                entry.mkdir()
+                if spec.get("fd_is_file"):
+                    (entry / "fd").write_text("", encoding="utf-8")
+                else:
+                    (entry / "fd").mkdir()
+                    for name in spec.get("fds", ()):
+                        (entry / "fd" / name).write_text("", encoding="utf-8")
+                if "cgroup" in spec:
+                    (entry / "cgroup").write_text(spec["cgroup"], encoding="utf-8")
+
+            def readlink(path):
+                key = Path(path).name
+                pid = Path(path).parent.parent.name
+                target = links.get((pid, key))
+                if target is None:
+                    raise OSError(13, "permission denied")
+                return target
+
+            with patch.object(module.os, "readlink", readlink):
+                yield root
+
+    def test_a_proc_tree_without_holders_is_clear(self) -> None:
+        with self._proc({"1": {"cgroup": "0::/init.scope"}}) as root:
+            scan = scan_holders((self.NODE,), proc_root=root)
+        self.assertEqual(scan.units, ())
+        self.assertTrue(scan.complete)
+        self.assertTrue(scan.clear)
 
     def test_non_numeric_entries_are_skipped(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
+        with self._proc({}) as root:
             (root / "self").mkdir()
-            self.assertEqual(holder_units(("/dev/dri/card1",), proc_root=root), ())
+            scan = scan_holders(("/dev/dri/card1",), proc_root=root)
+        self.assertTrue(scan.clear)
+
+    def test_a_process_whose_descriptors_cannot_be_listed_blocks_clear(self) -> None:
+        with self._proc({"1": {"fd_is_file": True}}) as root:
+            scan = scan_holders((self.NODE,), proc_root=root)
+        self.assertEqual(scan.units, ())
+        self.assertEqual(scan.unreadable_processes, 1)
+        self.assertFalse(scan.complete)
+        self.assertFalse(scan.clear)
+
+    def test_a_descriptor_that_cannot_be_resolved_blocks_clear(self) -> None:
+        # The unresolvable descriptor may be the eGPU node itself.
+        with self._proc({"1": {"fds": ["3"], "cgroup": "0::/x.service"}}) as root:
+            scan = scan_holders((self.NODE,), proc_root=root)
+        self.assertEqual(scan.unreadable_descriptors, 1)
+        self.assertFalse(scan.clear)
+
+    def test_a_holder_without_a_readable_cgroup_blocks_clear(self) -> None:
+        processes = {"1": {"fds": ["3"]}}
+        links = {("1", "3"): self.NODE}
+        with self._proc(processes, links) as root:
+            scan = scan_holders((self.NODE,), proc_root=root)
+        self.assertEqual(scan.units, ())
+        self.assertEqual(scan.unattributed_holders, 1)
+        self.assertFalse(scan.clear)
+
+    def test_a_scope_holder_is_reported_rather_than_dropped(self) -> None:
+        """The defect: a .scope holder was found, attributed, then discarded."""
+        processes = {"1": {"fds": ["3"], "cgroup": "0::/app.slice/app-steam.scope"}}
+        links = {("1", "3"): self.NODE}
+        with self._proc(processes, links) as root:
+            scan = scan_holders((self.NODE,), proc_root=root)
+        self.assertEqual(scan.units, ("app-steam.scope",))
+        self.assertTrue(scan.complete)
+        self.assertFalse(scan.clear)
+
+    def test_a_service_holder_is_still_reported(self) -> None:
+        processes = {"1": {"fds": ["3"], "cgroup": "0::/wireplumber.service"}}
+        links = {("1", "3"): self.NODE}
+        with self._proc(processes, links) as root:
+            scan = scan_holders((self.NODE,), proc_root=root)
+        self.assertEqual(scan.units, ("wireplumber.service",))
+
+    def test_an_incomplete_node_set_blocks_clear(self) -> None:
+        # Fewer nodes were searched than the device exposes, so a holder of the
+        # missing node is invisible to this scan.
+        with self._proc({"1": {"cgroup": "0::/init.scope"}}) as root:
+            scan = scan_holders((self.NODE,), proc_root=root, nodes_incomplete=True)
+        self.assertEqual(scan.units, ())
+        self.assertFalse(scan.complete)
+        self.assertFalse(scan.clear)
+
+    def test_a_vanished_process_is_not_counted_as_missed(self) -> None:
+        # Exiting between listing and reading loses nothing: a process that no
+        # longer exists holds nothing.
+        with self._proc({"1": {"cgroup": "0::/init.scope"}}) as root:
+            (root / "2").mkdir()
+            scan = scan_holders((self.NODE,), proc_root=root)
+        self.assertTrue(scan.clear)
+
+    def test_the_reasons_name_every_gap(self) -> None:
+        scan = HolderScan(("a.scope",), 1, 2, 3, True)
+        reasons = " | ".join(scan.why_not_clear())
+        for fragment in ("a.scope", "process", "descriptor", "attributable", "node set"):
+            self.assertIn(fragment, reasons)
 
 
 class BoundaryTests(unittest.TestCase):
@@ -193,13 +299,16 @@ class ArmPathTests(unittest.TestCase):
                 return (496,) if enforced else ()
 
         def observe(_nodes, **__):
-            return holders.pop(0) if len(holders) > 1 else holders[0]
+            units = holders.pop(0) if len(holders) > 1 else holders[0]
+            return HolderScan(tuple(units))
 
         buffer = io.StringIO()
         with patch.object(module, "SteamOsEgpuDeviceNodeDiscovery", FakeDiscovery), \
              patch.object(module, "CgroupDeviceLink", FakeLink), \
-             patch.object(module, "holder_units", observe), \
-             patch.object(module, "node_paths", lambda *a: ("/dev/dri/card1",)), \
+             patch.object(module, "scan_holders", observe), \
+             patch.object(
+                 module, "node_paths", lambda *a: (("/dev/dri/card1",), True)
+             ), \
              patch.object(os, "geteuid", return_value=0, create=True), \
              patch.object(os, "O_DIRECTORY", 0, create=True), \
              patch.object(os, "O_CLOEXEC", 0, create=True), \
@@ -265,27 +374,28 @@ class HoldOpenTests(unittest.TestCase):
         calls = []
         clock = {"now": 0.0}
 
-        def holder_units(*_args, **_kwargs):
+        def scan(*_args, **_kwargs):
             calls.append(clock["now"])
-            return seen.pop(0) if seen else ()
+            units = seen.pop(0) if seen else ()
+            return HolderScan(tuple(units))
 
         def sleep(duration):
             # Always advance, so a zero-length sleep cannot spin forever.
             clock["now"] += max(duration, 1.0)
 
-        with patch.object(module, "holder_units", holder_units), \
+        with patch.object(module, "scan_holders", scan), \
              patch.object(module.time, "monotonic", lambda: clock["now"]), \
              patch.object(module.time, "sleep", sleep):
             return module.hold_open(("/dev/dri/card1",), seconds, interval), calls
 
     def test_a_device_that_stays_clear_reports_no_holders(self) -> None:
         returned, calls = self._hold([(), (), ()])
-        self.assertEqual(returned, ())
+        self.assertIsNone(returned)
         self.assertEqual(len(calls), 3)
 
     def test_a_holder_that_returns_is_reported(self) -> None:
         returned, _ = self._hold([(), ("wireplumber.service",), ()])
-        self.assertEqual(returned, ("wireplumber.service",))
+        self.assertEqual(returned.units, ("wireplumber.service",))
 
     def test_a_returning_holder_ends_the_window_at_once(self) -> None:
         # Waiting the window out would end by reporting a device that stopped
@@ -295,14 +405,39 @@ class HoldOpenTests(unittest.TestCase):
 
     def test_a_zero_length_window_checks_nothing(self) -> None:
         returned, calls = self._hold([("wireplumber.service",)], seconds=0)
-        self.assertEqual(returned, ())
+        self.assertIsNone(returned)
         self.assertEqual(calls, [])
+
+    def test_a_scan_that_stops_being_complete_ends_the_window(self) -> None:
+        """Losing the ability to check ends the window, as a holder does.
+
+        An operator inside this window is about to remove the device. A
+        scan that can no longer see everywhere is not a clear device.
+        """
+        import hdm.egpu_release as module
+        from unittest.mock import patch
+
+        clock = {"now": 0.0}
+        seen = [HolderScan(()), HolderScan((), unreadable_processes=1)]
+
+        def scan(*_args, **_kwargs):
+            return seen.pop(0) if seen else HolderScan(())
+
+        def sleep(duration):
+            clock["now"] += max(duration, 1.0)
+
+        with patch.object(module, "scan_holders", scan), \
+             patch.object(module.time, "monotonic", lambda: clock["now"]), \
+             patch.object(module.time, "sleep", sleep):
+            ended = module.hold_open(("/dev/dri/card1",), 9, 3.0)
+        self.assertIsNotNone(ended)
+        self.assertEqual(ended.unreadable_processes, 1)
 
 
 class HoldOpenArmPathTests(ArmPathTests):
     """`--hold-open` as the arm path actually reaches it."""
 
-    def _arm_holding(self, *, window_result=(), seconds=180):
+    def _arm_holding(self, *, window_result=None, seconds=180):
         import hdm.egpu_release as module
         from unittest.mock import patch
 
@@ -331,8 +466,11 @@ class HoldOpenArmPathTests(ArmPathTests):
         self.assertEqual(code, 0)
 
     def test_a_holder_reopening_the_device_fails_the_run(self) -> None:
-        code, output, _ = self._arm_holding(window_result=("wireplumber.service",))
-        self.assertIn("a holder reopened the device", output)
+        code, output, _ = self._arm_holding(
+            window_result=HolderScan(("wireplumber.service",))
+        )
+        self.assertIn("the window ended early", output)
+        self.assertIn("wireplumber.service", output)
         self.assertIn("do not remove", output)
         self.assertEqual(code, 1)
 
