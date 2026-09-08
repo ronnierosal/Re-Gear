@@ -4082,7 +4082,7 @@ function Content({ preflight, connection, shortcut }) {
                                             } }) }), SP_JSX.jsx(DashboardSurface, { children: SP_JSX.jsx(DashboardAction, { icon: "power", title: safeDisconnectBusy
                                                 ? "Checking…"
                                                 : payload?.inference.mode === "portable"
-                                                    ? "Shut down to disconnect"
+                                                    ? "Shut down before unplugging"
                                                     : "Prepare to disconnect", description: "Keep the eGPU connected until fully powered off.", onClick: requestSafeDisconnect, disabled: safeDisconnectBusy
                                                 || !disconnect?.applicable
                                                 || Boolean(tvSwitchAcknowledgementId)
