@@ -2,6 +2,10 @@
 
 ## GitHub candidate pack received
 
+Update: the exact received pack is now visually approved under Ronnie's delegated
+review instruction. See [ASSET_APPROVAL](ASSET_APPROVAL.md) for sizes, dark-only
+wordmark use and evidence. Earlier candidate status below is intake history.
+
 PR [144](https://github.com/ronnierosal/Re-Gear/pull/144), branch
 `design/command-center-assets-v1`, exact reviewed commit
 `370f39e97023bd4de98f43eab47d2b570104e0d0` supplies ten SVG candidates.
