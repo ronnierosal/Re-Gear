@@ -4,6 +4,15 @@
 **Reviewed:** 2026-09-08<br>
 **Maturity:** development-only; no general public release or supported installer
 
+> **Release status — 2026-09-08:** No public supported Re-Gear release is available.
+> Current [GitHub releases](https://github.com/ronnierosal/Re-Gear/releases) are
+> development candidates; ordinary users must not install them. The
+> [Manual Installation](Manual-Installation) guide is conditional on a future
+> verified, supported release ZIP and published checksum.
+
+<!-- Keep this dated status aligned with Home.md. When a supported release is
+verified, update both with its exact release, checksum and support scope. -->
+
 Check [Current State](Current-State), the repository [evidence index](https://github.com/ronnierosal/Re-Gear/blob/main/docs/INDEX.md)
 and [deployment validation contract](https://github.com/ronnierosal/Re-Gear/blob/main/docs/DEPLOYMENT_VALIDATION.md)
 before using a build.

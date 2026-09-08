@@ -4,6 +4,17 @@
 **Reviewed:** 2026-09-08<br>
 **Maturity:** experimental development; no supported public release
 
+> **Release status — 2026-09-08:** No public supported Re-Gear release is available.
+> Current [GitHub releases](https://github.com/ronnierosal/Re-Gear/releases) are
+> development candidates; ordinary users must not install them. The
+> [Manual Installation](Manual-Installation) guide is conditional on a future
+> verified, supported release ZIP and published checksum.
+
+<!-- Keep this dated status aligned with Getting-Started.md. When a supported
+release is verified, update both with its exact release, checksum and support scope.
+Only add real Quick Access screenshots from an installed, visually verified build;
+record the build and capture context. Do not use mockups or generated images. -->
+
 Re-Gear is a Decky Loader companion for SteamOS handheld gaming: clear status,
 useful controls, and guided recovery across handheld and docked play. The
 [README](https://github.com/ronnierosal/Re-Gear) introduces the project; this Wiki
@@ -12,6 +23,7 @@ explains its features, limitations, and evidence.
 ## Start here
 
 - [Getting Started](Getting-Started) — availability and controlled testing.
+- [Manual Installation](Manual-Installation) — the future verified-release ZIP route; no public supported release is available yet.
 - [Current State](Current-State) — what is merged, what is still in development, and what has been tested.
 - [Feature Roadmap](Feature-Roadmap) — focus areas and the gates ahead.
 - [Supported Hardware](Supported-Hardware) and [Confirmed Hardware Testing](Confirmed-Hardware-Testing) — exact compatibility and recorded results.
