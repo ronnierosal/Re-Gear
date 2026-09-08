@@ -1,6 +1,6 @@
 # Auto TDP stack integration review
 
-Issue #34 / draft PR #49. Combined sources: main `482710f21310da0e096c154ceda2dbebfeba8ff8`
+Issue #34 / PR #49. Combined sources: main `482710f21310da0e096c154ceda2dbebfeba8ff8`
 and published Auto TDP tip `49f7f1f000bd39843541004182d606b52df0618b`.
 Both histories are retained by a normal merge; no rebase or force push.
 PR #31 is closed as superseded by restacked telemetry. The other carried PRs
@@ -50,7 +50,7 @@ Accepted-output size limits are checked after capture and do not guarantee a
 peak-memory bound; existing non-TDP internal error/environment behaviors are not
 widened or presented as new guarantees.
 
-## Mutation milestone: explicit unresolved merge gate
+## Approved development milestone — 2026-09-08
 
 Safety invariant 9 (preserve known-good state or bounded rollback) governs the
 TDP transaction's journal-before-dispatch, verified readback, conditional restore
@@ -58,20 +58,24 @@ and uncertain-result recovery. Invariants 3, 4, 11 and 12 provide relevant unkno
 game/identity/no-override/redaction constraints. TDP does not migrate workloads,
 switch display/GPU or change the display authorization of invariant 13.
 
-Those invariants and tests are not themselves a TDP milestone authorization.
-No accepted TDP-specific milestone decision was located in the owning documents.
-Before #49 is merged, Ronnie must confirm and record whether the bounded manual
-power writer and opt-in Auto TDP path are approved as the next development
-milestone, retaining independent hardware-validation gates. This review does not
-amend AGENTS.md or SAFETY_INVARIANTS.md to imply approval. Explicit main-merge
-authorization is also outstanding.
+Ronnie approved proceeding with this bounded manual power writer and opt-in Auto
+TDP development milestone in response to the milestone/merge decision request:
+"if its safe to merge then go ahead". The authorization is conditional on clean
+code, passing verification and no unresolved conflicts with other agents. The
+integration owner verified those conditions against main 482710f, the complete
+combined command boundary, final-head CI and the agreed #49 -> #81 -> #82 order.
+This records approval to integrate the reviewed implementation, not hardware
+certification, deployment, release, or permission to bypass runtime safety checks.
+The independent hardware-validation gates remain. Existing rollback coverage and
+safety tests support invariant 9; no display/GPU authority is widened.
 
 ## Validation
 
 Combined local matrix: architecture passed; 1,409 backend tests ran successfully
 with 17 platform skips; compileall passed; 203 frontend tests passed; typecheck,
 build and package checks passed. Two new tests cover combined unload behavior.
-Generated-output reproducibility and CI must be verified on the final pushed head.
+Generated-output reproducibility and both Linux CI runs passed at 56ff8ad.
+The decision-only follow-up must also pass final-head CI before merging.
 Local Windows tests do not replace skipped Linux behavior, native Decky rendering,
 actual collection cost, profile thermal evidence or hardware readback/restore proof.
 
