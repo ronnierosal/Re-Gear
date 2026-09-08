@@ -1516,7 +1516,7 @@ function Content({ preflight, connection, shortcut }: { preflight: SleepPrefligh
               title={safeDisconnectBusy
                 ? "Checking…"
                 : payload?.inference.mode === "portable"
-                  ? "Shut down to disconnect"
+                  ? "Shut down before unplugging"
                   : "Prepare to disconnect"}
               description="Keep the eGPU connected until fully powered off."
               onClick={requestSafeDisconnect}
