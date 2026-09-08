@@ -1,5 +1,26 @@
 # Maintainer and agent handoff
 
+## Read before using a historical checkpoint
+
+The sections below retain their original dates and device observations. Their
+installed versions, network coordinates, cleanup instructions and next actions
+are historical context, not current execution authority. Preserve immutable
+archives under [release coordination](CHAT_COORDINATION.md); old cleanup text
+does not authorize deleting them.
+
+Start with [the documentation/evidence reconciliation](DOCUMENTATION_CLEANUP.md)
+for the September 8 merged-source review, [the index](INDEX.md) for owning
+contracts, and the live shared hub/PR claims for active tasks. TDP work described
+below as isolated has since integrated through PR #49; installation and hardware
+acceptance have not been established by that merge. CURRENT_STATE's historical
+entries remain intact pending its PR #82 owner integration.
+
+Before hardware work, obtain a fresh deployment handoff identifying source,
+artifact checksum, installed revision, topology, game state, approval and rollback.
+This documentation pass did not contact a device or resume any old procedure.
+
+## Historical checkpoints
+
 ## Independent Auto TDP checkpoint — 2026-09-05
 
 The isolated TDP workstream implements and locally tests manual TDP controls,
