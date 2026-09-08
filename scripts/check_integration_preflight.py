@@ -9,6 +9,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
+INTEGRATION_PREFIXES = ("codex/integration-", "claude/integration-", "agent/integration-")
 
 
 def git(*args: str) -> subprocess.CompletedProcess[str]:
@@ -36,8 +37,12 @@ def main() -> int:
 
     if not branch:
         failures.append("detached HEAD is not an integration workspace")
-    elif not branch.startswith("codex/integration-"):
-        failures.append(f"branch {branch!r} is not named codex/integration-*")
+    elif not any(branch.startswith(prefix) and len(branch) > len(prefix)
+                 for prefix in INTEGRATION_PREFIXES):
+        failures.append(
+            f"branch {branch!r} must use an integration prefix with a topic: "
+            + ", ".join(prefix + "<topic>" for prefix in INTEGRATION_PREFIXES)
+        )
     if not git_dir.is_absolute():
         git_dir = ROOT / git_dir
     for marker, description in {

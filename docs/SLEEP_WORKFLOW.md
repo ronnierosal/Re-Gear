@@ -57,7 +57,7 @@ sleep request is emitted exactly once only after Portable placement is verified.
 Out-of-order events or failed recovery enter Action Required.
 
 Each request has a bounded deadline (15 minutes by default, one hour maximum).
-At or after expiry, HDM cancels the request and keeps the device awake instead
+At or after expiry, Re-Gear cancels the request and keeps the device awake instead
 of suspending from stale consent or stale hardware evidence.
 
 ## Durable journal projection

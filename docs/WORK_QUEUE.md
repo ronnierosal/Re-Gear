@@ -1,7 +1,7 @@
 # HDM worker queue
 
 This is the ordered work and durable checkpoint index. Live cross-agent ownership
-comes from issue claims under [the coordination playbook](CHAT_COORDINATION.md);
+comes from issue claims under [the coordination playbook](AGENT_COORDINATION.md);
 dated owners here are not exclusive current claims. This index
 does not replace executable behavior, [the roadmap](ROADMAP.md), or the
 [safety invariants](SAFETY_INVARIANTS.md). The North Star is console-simple,
@@ -48,6 +48,12 @@ is permitted.
 | 1.8 | Sleep/wake with G1 present or missing, with honest game-relaunch policy. Owner: sleep/recovery worker. | **Implemented (pure, local-only eligibility):** verified handheld fallback, stopped-game observation, clear risks, fresh evidence, and explicit opt-in can only label a future relaunch flow eligible. Unknown/running game, risks, repeated failure, stale/contradictory evidence, or uncertain preference block it. Wake behavior and relaunch are **Hardware Validation Required**. | Deterministic recovery, first-prompt, opt-in/out, risk, failure-limit, stale, and contradiction tests; separately approved supervised scenarios. No crash or relaunch claim from passive evidence. |
 
 ### Supporting queue
+
+Offline Readiness item 4 now has an isolated evidence/delivery driver on
+`codex/offline-readiness-delivery`. Source research and a synthetic-tested local
+Steam overview projection, guarded one-request service, and allowlisted UI reason
+guidance are implemented; production collection and selected-game wiring remain gated.
+See the [continuation checkpoint](OFFLINE_READINESS_HANDOFF.md) before overlapping work.
 
 | Priority | Work item and owner | Status | Acceptance evidence |
 | --- | --- | --- | --- |

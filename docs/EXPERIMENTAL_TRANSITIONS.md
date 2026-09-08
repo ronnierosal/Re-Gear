@@ -24,7 +24,7 @@ generation drift blocks approval. The watch is consumed only when explicit
 confirmation returns an approval token, and execution remains a separate gated
 operation.
 
-Hardware validation is a certification gate, not an implementation gate. HDM
+Hardware validation is a certification gate, not an implementation gate. Re-Gear
 may implement an Experimental mechanism before certification when the operation
 is exact, observable, bounded, recoverable, and explicitly approved for a
 supervised test.
@@ -77,7 +77,7 @@ For a docked selection, the shim requires the config's exact external connector
 and GPU vendor/device pair to remain uniquely present in the current boot. It
 never chooses a GPU by DRM card order or PCI address. Invalid or stale config
 falls back to a unique connected internal panel when possible and always clears
-an inherited HDM eGPU render selector. If a safe output cannot be selected, it
+an inherited Re-Gear eGPU render selector. If a safe output cannot be selected, it
 preserves the existing output arguments rather than guessing.
 
 Future activation must be reversible, must refuse conflicts with another
@@ -97,10 +97,10 @@ the restart operation remains behind the unwired transition mechanism.
 The reversible drop-in store owns exactly
 `90-handheld-dock-mode.conf`, creates only fixed descendants of the verified
 user home, and never edits Valve's session script. Activation rejects modified
-HDM content, unsafe ownership/symlinks, unknown environment files, and any
+Re-Gear content, unsafe ownership/symlinks, unknown environment files, and any
 other drop-in that can set, pass, or unset `PATH`. In particular, an installed
 eGPUBridge path shim is a conflict to resolve explicitly during a supervised
-test. Deactivation removes only the byte-exact HDM file and leaves its bounded
+test. Deactivation removes only the byte-exact Re-Gear file and leaves its bounded
 state directory for recovery evidence.
 
 The runtime presentation mechanism is implemented and simulated behind the
@@ -118,7 +118,7 @@ single-use token is bound to a verified Portable/idle semantic observation, the
 exact Gamescope user, and the shim/drop-in fingerprint. Preparation may install
 the fixed reversible drop-in, daemon-reload the exact user manager, and verify
 the fixed service, but it never restarts Gamescope. Any evidence change consumes
-the token without mutation. A failure after a new install removes the HDM file
+the token without mutation. A failure after a new install removes the Re-Gear file
 and reloads the user manager; failure to complete that rollback is Action
 Required. Decky exposes this preparation through a controller-first
 preview/confirm flow under troubleshooting details. Actual transition controls
@@ -135,10 +135,10 @@ The player must acknowledge the exact terminal result before a later test.
 ## Current hardware evidence
 
 The integration-preparation flow has been exercised on the certified handheld
-while Portable and idle. It installed HDM's reversible drop-in, reloaded the
+while Portable and idle. It installed Re-Gear's reversible drop-in, reloaded the
 verified user manager, and left the existing Gamescope session and internal
 display usable. A competing legacy eGPUBridge `PATH` override was removed as a
-separate, recoverable cleanup before that preparation; HDM did not overwrite the
+separate, recoverable cleanup before that preparation; Re-Gear did not overwrite the
 competing file.
 
 The first player-watched idle TV-switch attempt with a ready eGPU and TV did

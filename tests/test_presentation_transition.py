@@ -118,6 +118,10 @@ class FakeAudio:
         self.fail = fail
         self.rollback_ok = rollback
 
+    def prepare_docked(self, user):
+        self.events.append("audio.prepare")
+        return SimpleNamespace(succeeded=True, code="audio.rollback_prepared")
+
     def switch(self, target, user):
         self.events.append(f"audio.{target.value}")
         return SimpleNamespace(
@@ -149,6 +153,29 @@ def mechanism(*, fail=(), ready=True, user=USER, resolved_user=USER, config_fail
 
 
 class PresentationTransitionMechanismTests(unittest.TestCase):
+    def test_audio_preparation_failure_prevents_config_and_restart(self):
+        value, config, events = mechanism()
+        value._audio = SimpleNamespace(prepare_docked=lambda _: SimpleNamespace(
+            succeeded=False, code="audio.rollback_state_failed"))
+        result = value.apply(
+            PlannedStep(TransitionStepCode.PRESENTATION_APPLY_DOCKED_EGPU,
+                        10_000, expected_placement=PlacementState.DOCKED_EGPU),
+            binding(), observed(),
+        )
+        self.assertEqual(result.code, "audio.rollback_state_failed")
+        self.assertEqual(config.targets, [])
+        self.assertNotIn("command.restart_gamescope_session", events)
+
+    def test_portable_recovery_restarts_and_verifies_audio_even_at_source(self):
+        value, config, events = mechanism()
+        value._audio = FakeAudio(events)
+        result = value.recover(PlacementState.PORTABLE, binding(), observed())
+        self.assertTrue(result.succeeded)
+        self.assertIn("command.restart_gamescope_session", events)
+        self.assertIn("audio.portable", events)
+        value._audio = FakeAudio(events, fail=True)
+        self.assertFalse(value.recover(PlacementState.PORTABLE, binding(), observed()).succeeded)
+
     def test_audio_is_verified_after_restart_is_durably_queued(self):
         events = []
         config = FakeConfig(events)
@@ -170,6 +197,7 @@ class PresentationTransitionMechanismTests(unittest.TestCase):
             observed(),
         )
         self.assertTrue(result.succeeded)
+        self.assertLess(events.index("audio.prepare"), events.index("command.restart_gamescope_session"))
         self.assertGreater(
             events.index("audio.docked_egpu"),
             events.index("command.restart_gamescope_session"),

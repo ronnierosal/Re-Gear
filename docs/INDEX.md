@@ -1,5 +1,8 @@
 # Documentation and authority
 
+The product is now **Re-Gear**, formerly Handheld Dock Mode (HDM). See
+[branding and compatibility](BRANDING.md) before changing names or paths.
+
 The repository is HDM's engineering memory. Chats, Codex notes, issues, pull
 requests, and the GitHub Wiki may explain or propose work, but they do not own
 critical engineering contracts.
@@ -51,7 +54,8 @@ issue**. Architectural possibility is not support.
 
 - Public entry point: [README](../README.md)
 - Status and work: [Current state](CURRENT_STATE.md), [Roadmap](ROADMAP.md),
-  [Worker queue](WORK_QUEUE.md), [chat coordination](CHAT_COORDINATION.md)
+  [Worker queue](WORK_QUEUE.md), [release coordination](CHAT_COORDINATION.md),
+  [agent coordination](AGENT_COORDINATION.md)
 - Hardware and compatibility: [Hardware support](HARDWARE_SUPPORT.md),
   [hardware-agnostic audit](HARDWARE_AGNOSTIC_AUDIT.md)
 - UX: [UI specification](UI_SPEC.md)
@@ -59,6 +63,7 @@ issue**. Architectural possibility is not support.
   [operator handoff](OPERATOR_HANDOFF.md), [diagnostics](DIAGNOSTICS.md),
   [release pipeline](RELEASE_PIPELINE.md)
 - Reference ancestry: [eGPUBridge parity](EGPUBRIDGE_FEATURE_REVIEW.md)
+- Audio sequencing: [G1 audio activation candidate](G1_AUDIO_ACTIVATION.md)
 - Hardware incident evidence: [Ally X and GPD G1 automatic docking incident](ALLY_X_GPD_G1_DOCKING_INCIDENT_2026-09-02.md)
 - Public documentation: [Wiki source](../wiki/README.md) and
   [Wiki information architecture](WIKI_INFORMATION_ARCHITECTURE.md)

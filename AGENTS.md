@@ -1,8 +1,9 @@
-# Handheld Dock Mode Instructions
+# Re-Gear Instructions
 
 ## Project identity
 
-HDM is a SteamOS-first, safety-critical dock-mode controller. It is a new
+Re-Gear (formerly Handheld Dock Mode / HDM) is a SteamOS-first, safety-critical
+dock-mode controller. Branding and compatibility rules: `docs/BRANDING.md`. It is a new
 project; eGPUBridge is reference evidence, not the architecture to reproduce.
 
 ## Public documentation
@@ -48,7 +49,7 @@ and correct the owning repository document.
 ## Ownership and coordination
 
 - Codex, Claude Code, and other chats work concurrently in this repository.
-  At every task start/resume, read `docs/CHAT_COORDINATION.md`, fetch current
+  At every task start/resume, read `docs/AGENT_COORDINATION.md`, fetch current
   refs, and inspect open issues/PRs plus worktree ownership before editing.
 - Every code change requires a GitHub issue first (search open/closed issues;
   reuse a match), a recorded owner/branch/file scope, and a linked draft PR.
@@ -64,10 +65,11 @@ and correct the owning repository document.
 - Never use the shared `main` checkout for active implementation, conflict
   resolution, or a temporary cherry-pick. Each workstream gets its own Git
   worktree and branch; only the integration driver uses an
-  `codex/integration-*` worktree.
+  integration worktree (`codex/integration-*`, `claude/integration-*`,
+  or `agent/integration-*`).
 - Before integrating, run `python scripts/check_integration_preflight.py` in a
   clean integration worktree. Integrate reviewed commits only, one coherent
-  workstream at a time. See `docs/CHAT_COORDINATION.md`.
+  workstream at a time. See `docs/AGENT_COORDINATION.md`.
 - Do not have multiple workers independently redesign architecture, state
   machines, UX, hardware abstractions, or deployment strategy.
 - Inspect branch, HEAD, worktree status, and overlapping active work before
@@ -118,3 +120,9 @@ python -m compileall -q backend tests scripts
 
 Hardware-affecting work additionally requires redacted before/live/after evidence
 and supervised validation on a supported profile.
+
+## Shared release coordination
+
+Before editing or packaging, read `docs/CHAT_COORDINATION.md`. Register tested
+completed commits with `scripts/release_coordination.py ready <workstream>`.
+All player ZIPs use plain Re-Gear-X.Y.Z.zip names. Do not overwrite archives.

@@ -1,11 +1,18 @@
+import { createDisplayShortcutRuntime } from "./display-shortcut-runtime";
+import { showDisconnectProgress } from "./disconnect-progress-panel";
+import { ConnectionQuickStatus } from "./connection-quick-status";
+import { regearControlCss } from "./regear-theme";
+import { startConnectionMonitor } from "./connection-monitor";
+import { showConnectionLivePanel } from "./connection-live-panel";
 import { PRODUCT_NAME } from "./branding";
-import brandIcon from "../docs/images/re-gear-decky-icon.png";
+import { steamControllerInput } from "./controller-safe-disconnect";
+import { startOfflineFocusChecks } from "./offline-focus-checks";
+import brandIcon from "./assets/regear-icon.svg";
 import { definePlugin, toaster, useQuickAccessVisible } from "@decky/api";
 import {
   ButtonItem,
   ConfirmModal,
   DropdownItem,
-  Focusable,
   ToggleField,
   PanelSection,
   PanelSectionRow,
@@ -61,7 +68,8 @@ import {
 import { createDeckySteamSuspendAdapter } from "./decky-steam-suspend";
 import { deliverBlockedAttempt } from "./blocked-attempt-delivery";
 import { diagnosticOverlayRows } from "./diagnostics-overlay";
-import { DashboardIcon, DashboardSurface, QuickAccessOverview } from "./quick-access-overview";
+import { DashboardSurface, QuickAccessOverview } from "./quick-access-overview";
+import { DashboardAction } from "./dashboard-action";
 import { hardwareDetailRows } from "./quick-access-dashboard";
 import { healthAttentionMessages, healthStatusLabel } from "./health-ui";
 import { decideLinkHealthNotification } from "./link-health-notification";
@@ -91,7 +99,22 @@ import {
 const LABELS: Record<string, string> = {
   "journal.foreign_workflow": "Another workflow needs attention",
   "automatic_dock.rearmed_after_acknowledgement": "Re-checking attachment",
-  "automatic_dock.suppressed_for_safe_disconnect": "Waiting for G1 removal",
+  "automatic_dock.suppressed_for_safe_disconnect": "Waiting for eGPU removal",
+  "connection.disconnected": "Waiting for eGPU",
+  "connection.waiting_for_pci": "eGPU detected; starting GPU",
+  "connection.waiting_for_driver": "Waiting for eGPU graphics driver",
+  "connection.waiting_for_link": "Waiting for eGPU PCIe link",
+  "connection.waiting_for_hdmi": "Waiting for eGPU HDMI",
+  "connection.waiting_for_audio": "Waiting for eGPU TV audio",
+  "connection.waiting_for_session": "Preparing Steam session",
+  "connection.game_running": "Waiting for game to close",
+  "connection.stabilizing": "Checking eGPU connection stability",
+  "connection.late_enumeration_detected": "eGPU GPU appeared; checking connection",
+  "connection.ready_idle": "eGPU ready for TV",
+  "connection.transport_dropped_before_pci": "eGPU USB4 connection dropped while starting",
+  "connection.verified_absence_required": "Power off and disconnect eGPU before retrying",
+  "connection.readiness_timed_out": "eGPU did not become ready",
+  "connection.game_state_unknown": "Game state could not be verified",
   boosted_handheld: "Boosted Handheld",
   certified: "Certified",
   degraded: "Degraded",
@@ -103,6 +126,7 @@ const LABELS: Record<string, string> = {
   protected: "Protected",
   system: "System",
   tv_docked: "TV Docked",
+  docked_egpu: "TV Docked",
   unknown: "Unknown",
   unsupported: "Unsupported",
   user: "User",
@@ -258,7 +282,7 @@ function showAutomaticDockConfirmation(
     >
       <div style={{ fontSize: "13px", lineHeight: "18px" }}>
         <p>
-          When Re-Gear verifies this Ally X, the exact GPD G1, one ready TV, a healthy link,
+          When Re-Gear verifies this Ally X, the exact supported eGPU profile, one ready TV, a healthy link,
           and no running game, it will restart Steam Game Mode onto the TV.
         </p>
         <p>
@@ -285,7 +309,7 @@ function showSafeDisconnectConfirmation(
   };
   modal = showModal(
     <ConfirmModal
-      strTitle={portable ? "Shut down for G1 disconnect?" : "Return to Ally for G1 disconnect?"}
+      strTitle={portable ? "Shut down for eGPU disconnect?" : "Return to Ally for eGPU disconnect?"}
       strOKButtonText={portable ? "Shut down" : "Return to Ally"}
       strCancelButtonText="Cancel"
       bDestructiveWarning={true}
@@ -301,8 +325,8 @@ function showSafeDisconnectConfirmation(
         {portable ? (
           <>
             <p>Re-Gear will revalidate idle Portable mode and request a normal system shutdown.</p>
-            <p>The request cannot prove physical power-off. Keep the G1 connected until the fan stops and every top power LED is off.</p>
-            <p>If the fan remains on after 60 seconds, keep the G1 connected and hold the Ally power button until the fan stops.</p>
+            <p>The request cannot prove physical power-off. Keep the eGPU connected until the fan stops and every top power LED is off.</p>
+            <p>If the fan remains on after 60 seconds, keep the eGPU connected and hold the Ally power button until the fan stops.</p>
           </>
         ) : (
           <>
@@ -311,6 +335,30 @@ function showSafeDisconnectConfirmation(
           </>
         )}
       </div>
+    </ConfirmModal>,
+    window,
+    { strTitle: PRODUCT_NAME, bNeverPopOut: true },
+  );
+  return modal;
+}
+
+function showControllerDisplayConfirmation(
+  target: "tv" | "ally", onConfirm: () => void, onClose: () => void,
+): ReturnType<typeof showModal> {
+  let modal: ReturnType<typeof showModal>;
+  const close = () => { modal.Close(); onClose(); };
+  modal = showModal(
+    <ConfirmModal
+      strTitle={target === "tv" ? "Switch to TV?" : "Return to Ally?"}
+      strOKButtonText={target === "tv" ? "Switch to TV" : "Return to Ally"}
+      strCancelButtonText="Cancel"
+      bDisableBackgroundDismiss={true}
+      bHideCloseIcon={true}
+      onOK={() => { close(); onConfirm(); }}
+      onCancel={close}
+    >
+      <p>Re-Gear will check that no game is running and verify display readiness before restarting Game Mode.</p>
+      <p>Keep the eGPU connected. This action does not shut down the Ally or make unplugging safe.</p>
     </ConfirmModal>,
     window,
     { strTitle: PRODUCT_NAME, bNeverPopOut: true },
@@ -435,6 +483,15 @@ function BrandIcon({ size = 24 }: { size?: number }) {
   );
 }
 
+function BrandHeader() {
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 8, minHeight: 36, whiteSpace: "nowrap" }}>
+      <BrandIcon size={28} />
+      <span style={{ fontSize: 20, fontWeight: 700, lineHeight: 1.2, color: "#ffffff" }}>{PRODUCT_NAME}</span>
+    </span>
+  );
+}
+
 function preflightObservation(payload: SnapshotPayload): PreflightObservation {
   const { snapshot } = payload;
   return observationFromSnapshotEvidence({
@@ -449,7 +506,7 @@ function preflightObservation(payload: SnapshotPayload): PreflightObservation {
   }, Date.now(), SNAPSHOT_STALE_AFTER_MS);
 }
 
-function Content({ preflight }: { preflight: SleepPreflightCoordinator }) {
+function Content({ preflight, connection, shortcut }: { preflight: SleepPreflightCoordinator; connection: ReturnType<typeof startConnectionMonitor>; shortcut: ReturnType<typeof createDisplayShortcutRuntime> }) {
   const quickAccessVisible = useQuickAccessVisible();
   const statusAnchor = useRef<HTMLDivElement | null>(null);
   const statusFocusAnchor = useRef<HTMLDivElement | null>(null);
@@ -489,6 +546,7 @@ function Content({ preflight }: { preflight: SleepPreflightCoordinator }) {
   const [tvSwitchBusy, setTvSwitchBusy] = useState(false);
   const [tvSwitchMessage, setTvSwitchMessage] = useState("");
   const [tvSwitchAcknowledgementId, setTvSwitchAcknowledgementId] = useState("");
+  useEffect(() => shortcut.subscribeAcknowledgement(setTvSwitchAcknowledgementId), [shortcut]);
   const [journalStatus, setJournalStatus] = useState<TransitionJournalStatusPayload | null>(null);
   const [journalBusy, setJournalBusy] = useState(false);
   const [journalMessage, setJournalMessage] = useState("");
@@ -504,7 +562,12 @@ function Content({ preflight }: { preflight: SleepPreflightCoordinator }) {
   const supportModal = useRef<ReturnType<typeof showModal> | null>(null);
   const presentationModal = useRef<ReturnType<typeof showModal> | null>(null);
   const automaticDockModal = useRef<ReturnType<typeof showModal> | null>(null);
-  const safeDisconnectModal = useRef<ReturnType<typeof showModal> | null>(null);
+  const disconnectProgressModal = useRef<ReturnType<typeof showModal> | null>(null);
+  const safeDisconnectModal = shortcut.modal;
+  const safeDisconnectExecuting = shortcut.portableBusy;
+  const tvSwitchExecuting = shortcut.tvBusy;
+  const controllerShortcutAvailable = shortcut.available;
+  const requestControllerDisplaySwitch = shortcut.request;
   const processModal = useRef<ReturnType<typeof showModal> | null>(null);
   const diagnosticLoggingModal = useRef<ReturnType<typeof showModal> | null>(null);
 
@@ -514,6 +577,9 @@ function Content({ preflight }: { preflight: SleepPreflightCoordinator }) {
       setJournalStatus(status);
       if (status.code === "journal.idle") {
         setJournalMessage("");
+        // A verified success may be retired by the backend after the initial
+        // status/RPC response. Do not keep its acknowledgement blocking actions.
+        setTvSwitchAcknowledgementId("");
       } else if (status.owner === "sleep" && status.acknowledgement_required) {
         setJournalMessage(
           "A prior sleep result must be acknowledged before Re-Gear can switch displays.",
@@ -536,14 +602,14 @@ function Content({ preflight }: { preflight: SleepPreflightCoordinator }) {
   }, []);
 
   useEffect(() => () => {
+    disconnectProgressModal.current?.Close();
+    disconnectProgressModal.current = null;
     supportModal.current?.Close();
     supportModal.current = null;
     presentationModal.current?.Close();
     presentationModal.current = null;
     automaticDockModal.current?.Close();
     automaticDockModal.current = null;
-    safeDisconnectModal.current?.Close();
-    safeDisconnectModal.current = null;
     processModal.current?.Close();
     processModal.current = null;
     diagnosticLoggingModal.current?.Close();
@@ -638,6 +704,7 @@ function Content({ preflight }: { preflight: SleepPreflightCoordinator }) {
       try {
         setAutomaticDockStatus(await getAutomaticDockStatus());
       } catch {
+        setAutomaticDockStatus(null);
         setAutomaticDockMessage(
           "Automatic docking status is unavailable; no restart will be requested.",
         );
@@ -1004,6 +1071,8 @@ function Content({ preflight }: { preflight: SleepPreflightCoordinator }) {
   }, [preparePresentation]);
 
   const executeTvSwitch = useCallback(async () => {
+    if (tvSwitchExecuting.current || safeDisconnectExecuting.current) return;
+    tvSwitchExecuting.current = true;
     setTvSwitchBusy(true);
     setTvSwitchMessage("");
     try {
@@ -1034,9 +1103,14 @@ function Content({ preflight }: { preflight: SleepPreflightCoordinator }) {
     } catch {
       setTvSwitchMessage("TV switch did not complete. Re-Gear did not claim success.");
     } finally {
+      tvSwitchExecuting.current = false;
       setTvSwitchBusy(false);
     }
   }, []);
+
+  const openConnectionProgress = useCallback(() => {
+    connection.open(() => void executeTvSwitch());
+  }, [connection, executeTvSwitch]);
 
   const changeAutomaticDock = useCallback(async (enabled: boolean) => {
     setAutomaticDockBusy(true);
@@ -1046,7 +1120,7 @@ function Content({ preflight }: { preflight: SleepPreflightCoordinator }) {
       setAutomaticDockStatus(status);
       setAutomaticDockMessage(
         status.enabled
-          ? "Automatic TV docking is enabled. Re-Gear is waiting for complete G1 and TV evidence."
+          ? "Automatic TV docking is enabled. Re-Gear is waiting for complete eGPU and TV evidence."
           : status.code === "automatic_dock.disabled"
             ? "Automatic TV docking is disabled."
             : `Automatic TV docking was not changed: ${label(status.code)}.`,
@@ -1072,10 +1146,11 @@ function Content({ preflight }: { preflight: SleepPreflightCoordinator }) {
     );
   }, [automaticDockStatus?.enabled, changeAutomaticDock]);
 
-  const executeSafeDisconnect = useCallback(async () => {
+  const executeSafeDisconnect = useCallback(async (portable: boolean) => {
+    if (safeDisconnectExecuting.current || tvSwitchExecuting.current) return;
+    safeDisconnectExecuting.current = true;
     setSafeDisconnectBusy(true);
     setSafeDisconnectMessage("");
-    const portable = payload?.inference.mode === "portable";
     try {
       if (portable) {
         const approval = await approveSafeDisconnectShutdown();
@@ -1089,14 +1164,14 @@ function Content({ preflight }: { preflight: SleepPreflightCoordinator }) {
         }
         toaster.toast({
           title: "Re-Gear requested an Ally shutdown",
-          body: "Completion is unverified. Keep the G1 connected until the fan and every top power LED are off.",
+          body: "Completion is unverified. Keep the eGPU connected until the fan and every top power LED are off.",
           critical: true,
           duration: 30000,
         });
         const outcome = await executeSafeDisconnectShutdown(approval.approval_token);
         setSafeDisconnectMessage(
           outcome.accepted
-            ? "Power-off request accepted; completion is unverified. Keep the G1 connected until the fan stops. If it remains on after 60 seconds, hold the Ally power button until the fan stops."
+            ? "Power-off request accepted; completion is unverified. Keep the eGPU connected until the fan stops. If it remains on after 60 seconds, hold the Ally power button until the fan stops."
             : `Shutdown was not requested: ${label(outcome.code)}.`,
         );
         return;
@@ -1113,7 +1188,7 @@ function Content({ preflight }: { preflight: SleepPreflightCoordinator }) {
       }
       toaster.toast({
         title: "Re-Gear is returning to the Ally",
-        body: "Do not disconnect the G1. Wait for Portable verification, then shut down.",
+        body: "Do not disconnect the eGPU. Wait for Portable verification, then shut down.",
         critical: true,
         duration: 30000,
       });
@@ -1129,25 +1204,29 @@ function Content({ preflight }: { preflight: SleepPreflightCoordinator }) {
     } catch {
       setSafeDisconnectMessage(
         portable
-          ? "Shutdown was not requested. Keep the G1 connected."
-          : "Portable transition did not complete. Keep the G1 connected.",
+          ? "Shutdown was not requested. Keep the eGPU connected."
+          : "Portable transition did not complete. Keep the eGPU connected.",
       );
     } finally {
+      safeDisconnectExecuting.current = false;
       setSafeDisconnectBusy(false);
     }
-  }, [payload?.inference.mode]);
+  }, []);
 
-  const requestSafeDisconnect = useCallback(() => {
-    const portable = payload?.inference.mode === "portable";
-    safeDisconnectModal.current?.Close();
+  const requestSafeDisconnectForMode = useCallback((portable: boolean) => {
+    if (safeDisconnectExecuting.current || tvSwitchExecuting.current || safeDisconnectModal.current) return;
     safeDisconnectModal.current = showSafeDisconnectConfirmation(
       portable,
-      () => void executeSafeDisconnect(),
+      () => void executeSafeDisconnect(portable),
       () => {
         safeDisconnectModal.current = null;
       },
     );
-  }, [executeSafeDisconnect, payload?.inference.mode]);
+  }, [executeSafeDisconnect]);
+
+  const requestSafeDisconnect = useCallback(() => {
+    requestSafeDisconnectForMode(payload?.inference.mode === "portable");
+  }, [requestSafeDisconnectForMode, payload?.inference.mode]);
 
   const acknowledgeTvSwitch = useCallback(async () => {
     if (!tvSwitchAcknowledgementId) return;
@@ -1158,6 +1237,7 @@ function Content({ preflight }: { preflight: SleepPreflightCoordinator }) {
         ? "Display transition result acknowledged."
         : "Display transition result could not be acknowledged.");
       if (result.acknowledged) {
+        shortcut.clearAcknowledgement();
         setTvSwitchAcknowledgementId("");
         await refreshTransitionJournal();
       }
@@ -1347,62 +1427,32 @@ function Content({ preflight }: { preflight: SleepPreflightCoordinator }) {
 
   return (
     <>
+      <style>{regearControlCss}</style>
       <div ref={statusAnchor} tabIndex={-1}>
       <PanelSection title="At a glance">
-        <Focusable
-          ref={statusFocusAnchor}
-          aria-label="Re-Gear status summary"
-          onGamepadFocus={() => {
+        <QuickAccessOverview
+          summaryRef={statusFocusAnchor}
+          onSummaryFocus={() => {
             if (statusAnchor.current) scrollToTopOfOwningPanel(statusAnchor.current);
           }}
-        >
-        <QuickAccessOverview
           mode={payload?.inference.mode ?? "unknown"}
           modeLabel={loading ? "Reading…" : label(payload?.inference.mode ?? "unknown")}
           health={healthStatusLabel(payload?.health, loading)}
           game={label(snapshot?.game_state ?? "unknown")}
           loading={loading}
         />
-        </Focusable>
-        <DashboardSurface>
-          <ButtonItem
-            label="Dock / eGPU"
-            description={progress.label}
-            icon={<DashboardIcon kind="connection" />}
-            layout="inline"
-            childrenContainerWidth="min"
-            onClick={() => setShowHardwareDetails((visible) => !visible)}
-          >
-            {showHardwareDetails ? "Hide" : "Details"}
-          </ButtonItem>
-          {showHardwareDetails && <div>
-            {hardwareDetailRows(payload).map(([name, value]) => <DiagnosticRow key={name} name={name} value={value} />)}
-            <PanelSectionRow>{progress.detail}</PanelSectionRow>
-          </div>}
-        </DashboardSurface>
+
       </PanelSection>
 
-      <PanelSection title="Safety & actions">
+      {payload?.connection_readiness && payload.connection_readiness.stage !== "disconnected" &&
+        <PanelSection title="eGPU readiness">
+          <ConnectionQuickStatus store={connection.store} visible={quickAccessVisible}
+            onOpen={openConnectionProgress} />
+        </PanelSection>}
+      <PanelSection title="Docking & actions">
         <div ref={primaryControlAnchor}>
-          <DashboardSurface primary>
-          <PanelSectionRow>
-            <ButtonItem
-              icon={<DashboardIcon kind="bolt" />}
-              description="Checks current readiness before switching displays"
-              layout="below"
-              onClick={() => void executeTvSwitch()}
-              disabled={
-                tvSwitchBusy
-                || Boolean(tvSwitchAcknowledgementId)
-                || Boolean(journalStatus && journalStatus.code !== "journal.idle")
-              }
-            >
-              {tvSwitchBusy ? "Switching…" : "Switch to TV now"}
-            </ButtonItem>
-          </PanelSectionRow>
-          </DashboardSurface>
-          {tvSwitchMessage && <PanelSectionRow>{tvSwitchMessage}</PanelSectionRow>}
           <DashboardSurface>
+          <div style={{ padding: "4px 12px" }}>
           <ToggleField
             label="Automatic TV docking"
             layout="inline"
@@ -1418,16 +1468,55 @@ function Content({ preflight }: { preflight: SleepPreflightCoordinator }) {
             highlightOnFocus={true}
             onChange={toggleAutomaticDock}
           />
+          </div>
           </DashboardSurface>
           {automaticDockMessage && (
             <PanelSectionRow>{automaticDockMessage}</PanelSectionRow>
           )}
+          <DashboardSurface primary>
+            <DashboardAction
+              icon="bolt"
+              tone="primary"
+              title={tvSwitchBusy || safeDisconnectBusy
+                ? "Switching…"
+                : payload?.inference.mode === "docked_egpu"
+                  ? "Switch to handheld"
+                  : "Switch to TV"}
+              description={controllerShortcutAvailable
+                ? "Hold Back/View + Y for 3 seconds to switch."
+                : "Checks readiness before switching. Controller shortcut unavailable."}
+              onClick={() => {
+                if (payload?.inference.mode === "docked_egpu") requestControllerDisplaySwitch("ally");
+                else if (payload?.inference.mode === "portable") void executeTvSwitch();
+              }}
+              disabled={
+                tvSwitchBusy
+                || safeDisconnectBusy
+                || (payload?.inference.mode !== "portable" && payload?.inference.mode !== "docked_egpu")
+                || Boolean(tvSwitchAcknowledgementId)
+                || Boolean(journalStatus && journalStatus.code !== "journal.idle")
+              }
+            />
+          </DashboardSurface>
+          {tvSwitchMessage && <PanelSectionRow>{tvSwitchMessage}</PanelSectionRow>}
+
           <DashboardSurface>
-          <PanelSectionRow>
-            <ButtonItem
-              icon={<DashboardIcon kind="power" />}
-              description="Return to handheld, then shut down. Keep the eGPU connected until fully powered off."
-              layout="below"
+            <DashboardAction icon="connection" title="Disconnect status"
+              description="Live checks · keep eGPU connected"
+              onClick={() => {
+                if (!disconnectProgressModal.current) disconnectProgressModal.current = showDisconnectProgress(
+                  () => { disconnectProgressModal.current = null; });
+              }} />
+          </DashboardSurface>
+          <DashboardSurface>
+            <DashboardAction
+              icon="power"
+              title={safeDisconnectBusy
+                ? "Checking…"
+                : payload?.inference.mode === "portable"
+                  ? "Shut down to disconnect"
+                  : "Prepare to disconnect"}
+              description="Keep the eGPU connected until fully powered off."
               onClick={requestSafeDisconnect}
               disabled={
                 safeDisconnectBusy
@@ -1435,14 +1524,7 @@ function Content({ preflight }: { preflight: SleepPreflightCoordinator }) {
                 || Boolean(tvSwitchAcknowledgementId)
                 || Boolean(journalStatus && journalStatus.code !== "journal.idle")
               }
-            >
-              {safeDisconnectBusy
-                ? "Checking…"
-                : payload?.inference.mode === "portable"
-                  ? "Request shutdown for G1 disconnect"
-                  : "Prepare G1 disconnect"}
-            </ButtonItem>
-          </PanelSectionRow>
+            />
           </DashboardSurface>
           {safeDisconnectMessage && (
             <PanelSectionRow>{safeDisconnectMessage}</PanelSectionRow>
@@ -1472,18 +1554,13 @@ function Content({ preflight }: { preflight: SleepPreflightCoordinator }) {
             </PanelSectionRow>
           )}
           <DashboardSurface>
-          <PanelSectionRow>
-            <ButtonItem
-              label="Troubleshoot"
-              icon={<DashboardIcon kind="tools" />}
-              description="Connection checks, safety details, and support"
-              layout="inline"
-              childrenContainerWidth="min"
+            <DashboardAction
+              title="Troubleshoot"
+              icon="tools"
+              description="Safety checks, details & support"
+              expanded={showDiagnostics}
               onClick={toggleTroubleshooting}
-            >
-              {showDiagnostics ? "Hide" : "Show"}
-            </ButtonItem>
-          </PanelSectionRow>
+            />
           </DashboardSurface>
         </div>
         {needsAttention && (
@@ -1693,6 +1770,19 @@ function Content({ preflight }: { preflight: SleepPreflightCoordinator }) {
 
       {sectionVisibility.diagnostics && (
         <PanelSection title="Troubleshooting details">
+        <DashboardSurface>
+          <DashboardAction
+            title="Dock / eGPU"
+            description={progress.label}
+            icon="connection"
+            expanded={showHardwareDetails}
+            onClick={() => setShowHardwareDetails((visible) => !visible)}
+          />
+          {showHardwareDetails && <div>
+            {hardwareDetailRows(payload).map(([name, value]) => <DiagnosticRow key={name} name={name} value={value} />)}
+            <PanelSectionRow>{progress.detail}</PanelSectionRow>
+          </div>}
+        </DashboardSurface>
           <PanelSectionRow>
             Read-only technical evidence. Raw hardware identities, connector names, and process IDs are hidden.
           </PanelSectionRow>
@@ -1800,6 +1890,17 @@ function showBlockedAttempt(
 }
 
 export default definePlugin(() => {
+  const shortcut = createDisplayShortcutRuntime({
+    input: steamControllerInput(window),
+    readContext: async () => {
+      const [snapshot, journal] = await Promise.all([getSnapshot(), getTransitionJournalStatus()]);
+      return { snapshot, journal };
+    },
+    show: showControllerDisplayConfirmation,
+    approve: target => target === "tv" ? approveSupervisedTvSwitch() : approveSupervisedPortableSwitch(),
+    execute: (target, token) => target === "tv" ? executeSupervisedTvSwitch(token) : executeSupervisedPortableSwitch(token),
+    report: body => { toaster.toast({ title: PRODUCT_NAME, body, duration: 15000 }); },
+  });
   let warningModal: ReturnType<typeof showModal> | null = null;
   let warningTimer: number | null = null;
   const preflight = new SleepPreflightCoordinator(
@@ -1850,20 +1951,33 @@ export default definePlugin(() => {
     },
   );
   preflight.start();
+  const offlineFocusChecks = startOfflineFocusChecks();
+  const connection = startConnectionMonitor({
+    read: async () => {
+      const [payload, automatic, journal] = await Promise.all([
+        getSnapshot(), getAutomaticDockStatus(), getTransitionJournalStatus(),
+      ]);
+      return {payload, automatic, journal: journal.code};
+    },
+    show: (store, switchTv, closed) => showConnectionLivePanel(store, switchTv, closed),
+  });
 
   return {
-    name: "Handheld Dock Mode",
-    titleView: <div className={staticClasses.Title} style={{ display: "flex", alignItems: "center", gap: 8 }}><BrandIcon size={36} />{PRODUCT_NAME}</div>,
-    content: <Content preflight={preflight} />,
+    name: PRODUCT_NAME,
+    titleView: <div className={staticClasses.Title} style={{ display: "flex", alignItems: "center" }}><BrandHeader /></div>,
+    content: <Content preflight={preflight} connection={connection} shortcut={shortcut} />,
     icon: <BrandIcon />,
     alwaysRender: true,
     onDismount() {
+      shortcut.stop();
       if (warningTimer !== null) {
         window.clearTimeout(warningTimer);
         warningTimer = null;
       }
       warningModal?.Close();
       warningModal = null;
+      connection.stop();
+      offlineFocusChecks.stop();
       preflight.stop();
     },
   };

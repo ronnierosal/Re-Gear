@@ -1,5 +1,13 @@
 # Read-only diagnostics
 
+## Shutdown checkpoint evidence
+
+The existing Decky logger emits categorical unload stages and bounded elapsed
+milliseconds. Stages distinguish observer retirement, sleep-guard release, and
+plugin unload completion; none proves physical shutdown. No journal configuration,
+disk sync, poller, or new shutdown hook is added. Retention depends on SteamOS.
+See [shutdown review](G1_SHUTDOWN_REVIEW_2026-09-03.md) for evidence limits.
+
 ## Purpose
 
 The plugin exposes one privacy-safe JSON snapshot. It observes current state and
@@ -314,6 +322,12 @@ rows. The existing 128-event rotation remains authoritative. No raw snapshot,
 arbitrary system log, durable consent, path, process identity, hardware
 identity, or upload is introduced.
 
+Audio handoff results also use normal journey events: component `audio`, stage
+`select_tv` or `restore_portable`, a categorical `audio.*` result code, target,
+and success boolean. No sink names, node IDs, or PCI identities are exported.
+These describe default-sink selection, not proof of audible output or movement
+of every existing stream. Reporting failure cannot interrupt the handoff.
+
 Low-frequency connection-journey changes are normal events and do not require
 verbose logging. Exact G1 presence, categorical attach-readiness changes,
 automatic or supervised presentation attempts/results, Portable-return results,
@@ -330,3 +344,17 @@ player can verify that fans and LEDs actually stopped.
 Logging consent and support-export consent remain separate. Verbose events stay
 in memory unless the player later creates and reviews a support bundle. The
 controller-visible flow and expiry countdown remain unverified on hardware.
+
+## Connection observation wake evidence
+
+`observation.events_ready` means the kernel listener started; it does not prove
+an attach was detected through an event. `observation.poll_fallback` reports
+listener unavailability/degradation. Bounded `observation.wake.*` rows accompany
+readiness-code changes and automatic transition requests, using stages
+`readiness_observation` and `automatic_transition_observation` respectively.
+Suffixes are `startup`, `kernel_event`, `local_change`, `kernel_and_local`,
+`observer_degraded`, `poll_timer`, `closed`, or `unknown`. They identify the wake
+for the current scan; kernel events can concern other PCI/DRM/Thunderbolt devices.
+A timer scan may complete readiness after earlier event scans. Correlate the
+sequence rather than attributing the whole attachment to the last wake alone.
+Raw uevent contents and device paths are never retained by this instrumentation.

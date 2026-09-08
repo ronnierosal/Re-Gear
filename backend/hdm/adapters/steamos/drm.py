@@ -23,6 +23,21 @@ def _read_lines(path: Path) -> tuple[str, ...]:
     return tuple(line.strip() for line in _read_text(path).splitlines() if line.strip())
 
 
+def _product_name(path: Path) -> str:
+    """Optional driver-provided presentation only; never infer identity from it."""
+    try:
+        with path.open(encoding="utf-8", errors="strict") as stream:
+            raw = stream.read(130)
+    except (OSError, UnicodeError):
+        return ""
+    name = raw.strip()
+    if not 1 <= len(name) <= 128 or len(raw) >= 130:
+        return ""
+    if any(ord(char) < 32 or ord(char) > 126 for char in name):
+        return ""
+    return "" if name.lower() in {"unknown", "n/a", "none"} else name
+
+
 def _pci_from_device(device_path: Path) -> str:
     uevent = _read_text(device_path / "uevent")
     for line in uevent.splitlines():
@@ -68,6 +83,7 @@ class DrmCardRecord:
     boot_vga: bool | None
     driver: str
     connectors: tuple[DrmConnectorRecord, ...] = field(default_factory=tuple)
+    model_name: str = field(default="", compare=False)
 
     @property
     def vendor_device(self) -> str:
@@ -125,6 +141,7 @@ class DrmDiscovery:
                     boot_vga=boot_vga,
                     driver=driver,
                     connectors=tuple(connectors),
+                    model_name=_product_name(device_path / "product_name"),
                 )
             )
         return tuple(cards)

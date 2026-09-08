@@ -89,7 +89,9 @@ export function diagnosticOverlayRows(
     },
     {
       name: "eGPU attach",
-      value: payload.attach_readiness
+      value: payload.connection_readiness
+        ? `${humanize(payload.connection_readiness.stage)} · ${humanize(payload.connection_readiness.code)}`
+        : payload.attach_readiness
         ? `${humanize(payload.attach_readiness.stage)} · ${humanize(payload.attach_readiness.code)}`
         : "unavailable",
     },

@@ -2,7 +2,7 @@
 
 Codex, Claude Code, and multiple chats work concurrently on Re-Gear.
 Read and follow [AGENTS.md](AGENTS.md) and the shared
-[coordination playbook](docs/CHAT_COORDINATION.md) before editing and whenever
+[coordination playbook](docs/AGENT_COORDINATION.md) before editing and whenever
 resuming work. These are the common project rules for every agent; this file
 does not define a separate Claude policy.
 

@@ -1,4 +1,5 @@
 import type { JourneyStatusPayload } from "./quick-access-ui";
+import { sanitizeOfflineReasonCodes } from "./offline-readiness-detail.ts";
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -23,7 +24,7 @@ function state(value: unknown, allowed: ReadonlySet<string>): string | null {
 }
 
 /**
- * Accept only known public journey states. Raw codes, reason lists, and all
+ * Accept only known public journey states. Raw codes, unknown reasons, and all
  * unknown fields are intentionally discarded before Quick Access presentation.
  */
 export function sanitizeJourneyStatus(value: unknown): JourneyStatusPayload | undefined {
@@ -65,7 +66,7 @@ export function sanitizeJourneyStatus(value: unknown): JourneyStatusPayload | un
     result.offline_readiness = {
       schema_version: 1,
       status: offline.status as "ready_to_try_offline" | "needs_attention" | "online_check_needed" | "unknown",
-      reason_codes: [],
+      reason_codes: sanitizeOfflineReasonCodes(offline.reason_codes),
     };
   }
   return Object.keys(result).length ? result : undefined;

@@ -1,20 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
-  <title id="title">TV Docked icon</title>
-  <desc id="desc">Cyan widescreen TV monitor icon for Re-Gear TV Docked mode.</desc>
-  <defs>
-    <linearGradient id="tg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#4befff"/>
-      <stop offset="1" stop-color="#1895ff"/>
-    </linearGradient>
-    <filter id="glow" x="-25%" y="-25%" width="150%" height="150%">
-      <feGaussianBlur stdDeviation="3.5" result="b"/>
-      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
-    </filter>
-  </defs>
-  <g fill="none" stroke="url(#tg)" stroke-width="10" stroke-linecap="round" stroke-linejoin="round" filter="url(#glow)">
-    <rect x="24" y="49" width="208" height="132" rx="10"/>
-    <path d="M104 181v20h48v-20M86 214h84"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" fill="none">
+  <g>
+    <rect x="66" y="100" width="380" height="248" rx="28" fill="#071526" stroke="#35d6f5" stroke-width="12"/>
+    <rect x="92" y="126" width="328" height="196" rx="12" fill="#102237" stroke="#0D2B50" stroke-width="8"/>
+    <path d="M236 348h40v52h70c12 0 22 10 22 22H144c0-12 10-22 22-22h70v-52Z" fill="#08182A" stroke="#35d6f5" stroke-width="10" stroke-linejoin="round"/>
   </g>
-  <rect x="38" y="63" width="180" height="104" rx="4" fill="#0d203d" opacity=".78"/>
-  <path d="M45 69h127L87 160H45Z" fill="#1a66b8" opacity=".34"/>
 </svg>

@@ -56,14 +56,14 @@ lease.
 5. Reacquire it idempotently if later polling becomes unknown or observes the
    G1 again.
 6. Install a reversible `beforePatch()` on the store instance's
-   `OnSuspendRequest`. When HDM holds its blocker, the patch displays a
+   `OnSuspendRequest`. When Re-Gear holds its blocker, the patch displays a
    game-aware Decky warning and then lets the original method return through
    Steam's blocker check. It never calls a sleep API.
-7. On plugin dismount, unpatch once and invoke only HDM's returned blocker
+7. On plugin dismount, unpatch once and invoke only Re-Gear's returned blocker
    release callback. Other applications' blocker count is never reset.
 
 The native Steam blocker is the preflight enforcement point. The patch exists
-only to explain the refused action. HDM must not patch power-menu DOM nodes,
+only to explain the refused action. Re-Gear must not patch power-menu DOM nodes,
 hard-code webpack identifiers, replace `SuspendPC()`, or depend on connector,
 DRM-card, or PCI enumeration order.
 
@@ -82,14 +82,14 @@ When a blocked request occurs:
 - Snapshot or game state unknown: use the stronger fail-closed warning.
 
 Steam closes its transient Power menu after dispatching the suspend request.
-HDM therefore schedules the acknowledgement modal after that menu closes and
+Re-Gear therefore schedules the acknowledgement modal after that menu closes and
 uses Decky's non-popout modal host with its default visible-SP window resolver.
 The plugin runs in an invisible SharedJSContext, so that context's global
 `window` must never be supplied as the modal parent. Rendering the modal
 synchronously from the pre-request hook is not accepted because Steam may
 discard it with the Power menu.
 
-If the deferred modal host rejects the render, HDM emits one critical
+If the deferred modal host rejects the render, Re-Gear emits one critical
 attempted-action toast as a presentation-only fallback. A toast failure is
 contained and never reaches the Steam hook; neither fallback can release the
 native blocker or invoke a sleep API. The modal remains the preferred path
@@ -131,7 +131,7 @@ harness must prove:
 
 - startup acquires exactly one blocker before snapshot resolution
 - required, loading, stale, error, and unknown states retain the blocker
-- verified G1 absence releases only HDM's blocker
+- verified G1 absence releases only Re-Gear's blocker
 - later G1 presence or unknown state reacquires exactly once
 - blocked attempts show standard, game, and unknown-state warnings correctly
 - modal-host failure emits one critical fallback toast without changing either

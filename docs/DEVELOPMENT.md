@@ -80,7 +80,8 @@ driver's ownership.
 
 ## Concurrent chats and agents
 
-Follow [Chat coordination](CHAT_COORDINATION.md) whenever more than one chat or
+Follow [Agent coordination](AGENT_COORDINATION.md) and
+[release coordination](CHAT_COORDINATION.md) whenever more than one chat or
 agent may modify the repository. Active implementation never happens in the
 shared `main` checkout. Before an integration, run:
 

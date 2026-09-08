@@ -17,6 +17,13 @@ Each result below applies only to the exact hardware and software configuration 
 | Automatic external HDMI selection and Portable return | Later retry selected external HDMI as default; the disconnect-preparation workflow returned to the internal display | Same incident record; default-sink observation is distinct from player-confirmed audible output |
 | Portable trial: screen, audio, and controls | Player confirmed normal handheld screen, audio, and controls after returning to Portable on September 5 | [Dated trial evidence](https://github.com/ronnierosal/Re-Gear/blob/560ec33/docs/CURRENT_STATE.md); external GPU references remained, so this did not prove resource release |
 
+The [September 6 return-run summary](https://github.com/ronnierosal/Re-Gear/blob/codex/disconnect-progress-docs/docs/DISCONNECT_PROGRESS_2026-09-06.md)
+records installed 0.3.54: TV output followed by player-confirmed normal internal
+display, controls, and audio. Steam and Gamescope retained external allocations;
+WirePlumber retained audio control. This adds evidence of the resource-release
+blocker, not live-removal validation. Follow [#51](https://github.com/ronnierosal/Re-Gear/issues/51)
+and [#52](https://github.com/ronnierosal/Re-Gear/issues/52).
+
 ## Failed or incomplete gates
 
 | Gate | Result |

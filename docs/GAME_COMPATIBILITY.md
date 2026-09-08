@@ -1,6 +1,6 @@
 # Game compatibility catalog
 
-HDM records eGPU handoff and save/sleep behavior as two independent dimensions.
+Re-Gear records eGPU handoff and save/sleep behavior as two independent dimensions.
 A game may render correctly on an eGPU while its save-on-exit behavior remains
 untested, or the reverse.
 
@@ -27,7 +27,7 @@ untested, or the reverse.
 
 Passive telemetry and simulator results cannot change catalog status. Every
 non-Untested status requires a separately identified intentional hardware test,
-human review, an exact handheld/eGPU profile match, HDM and SteamOS versions,
+human review, an exact handheld/eGPU profile match, Re-Gear and SteamOS versions,
 an exact catalog game/AppID match, and a timestamp. A Verified eGPU result additionally requires an observed
 external rendering GPU; it cannot be inferred from launch success. Save claims
 must match the exact reviewed save outcome.
