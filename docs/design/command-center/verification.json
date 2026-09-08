@@ -1,0 +1,16 @@
+{
+  "date": "2026-09-08",
+  "kind": "local HTML fixture; not native Decky",
+  "browser": "152.0.4191.66",
+  "layoutCases": 72,
+  "interactionChecks": [
+    "Modules/page/Back route",
+    "focus return",
+    "Stop/Start local state",
+    "unknown recovery access",
+    "short-height focus scroll"
+  ],
+  "screenshots": 22,
+  "runtimeErrors": [],
+  "limitation": "Native QAM routing, gamepad, exact chrome, device capability and hardware actions not tested."
+}
