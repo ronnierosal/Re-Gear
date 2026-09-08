@@ -2780,10 +2780,26 @@ function quickAccessSections(input = {}) {
 function defaultSectionId(sections) {
     return sections.find((section) => section.available)?.id ?? sections[0]?.id ?? "egpu";
 }
-/** Resolve a remembered selection, falling back when it is gone or unusable. */
+/** Resolve a selection, falling back only when the section is gone.
+ *
+ * An unavailable section is still a real destination: the row draws it, and
+ * selecting it is how a player reads why the feature cannot be used. Bouncing
+ * off it silently returned the player to another section with no explanation,
+ * which is the "missing signal presented as a working one" this file exists to
+ * avoid -- and it made the blocked/reason path unreachable from any taxonomy
+ * this module can actually produce.
+ *
+ * Falling back was originally justified as refusing to strand the player on a
+ * dead pane. A blocked section is not a dead pane; it renders its reason. Only
+ * a section that no longer exists is unresolvable, and that still falls back.
+ *
+ * A fresh panel is unaffected: with no selection, `defaultSectionId` still
+ * opens on the first *available* section, so nobody lands on a blocked pane
+ * without having chosen it.
+ */
 function resolveSectionId(sections, requested) {
     const match = sections.find((section) => section.id === requested);
-    return match && match.available ? match.id : defaultSectionId(sections);
+    return match ? match.id : defaultSectionId(sections);
 }
 
 /** Quick Access navigation view model: pure, no React, no I/O, no requests.
@@ -2802,8 +2818,9 @@ const ICONS = {
     egpu: "connection", controller: "controller", tdp: "gauge", display: "monitor", system: "tools",
 };
 function quickAccessNavView(sections, requested) {
-    // resolveSectionId already refuses to land on an unusable section, so a
-    // remembered selection cannot strand the player on an empty pane.
+    // resolveSectionId honours any section the row draws, including unavailable
+    // ones: `blocked` and `detail` below are how such a selection explains
+    // itself. It falls back only for a section that no longer exists.
     const activeId = resolveSectionId(sections, requested);
     const active = sections.find((section) => section.id === activeId);
     return {

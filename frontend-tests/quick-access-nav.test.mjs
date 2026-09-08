@@ -51,11 +51,15 @@ test("an unavailable section is dimmed but still reachable", () => {
 });
 
 test("selecting a blocked section shows the reason, not the summary", () => {
+  // This is reachable from the real taxonomy, not only from a synthetic list:
+  // the test previously asserted the opposite of its own name because the
+  // resolver bounced off the selection before the row could explain it.
   const sections = quickAccessSections({ ...ready, autoTdpAvailable: false });
   const view = quickAccessNavView(sections, "tdp");
-  // resolveSectionId refuses the unusable section, so the panel lands elsewhere.
-  assert.equal(view.activeId, "egpu");
-  assert.equal(view.blocked, false);
+  assert.equal(view.activeId, "tdp");
+  assert.equal(view.blocked, true);
+  assert.equal(view.detail, "This device has no verified TDP control.");
+  assert.equal(view.items.find((item) => item.id === "tdp").active, true);
 });
 
 test("a blocked active section reports blocked and explains itself", () => {

@@ -80,13 +80,26 @@ test("the default never names a section the caller was not given", () => {
   assert.equal(resolveSectionId(none, "tdp"), "tdp");
 });
 
-test("a remembered selection survives, but never strands the player", () => {
+test("a selection survives, and falls back only when the section is gone", () => {
   const sections = quickAccessSections(ready);
   assert.equal(resolveSectionId(sections, "tdp"), "tdp");
   assert.equal(resolveSectionId(sections, "nonsense"), "egpu");
   assert.equal(resolveSectionId(sections, undefined), "egpu");
-  // Remembered but no longer usable: fall back instead of showing a dead pane.
-  assert.equal(resolveSectionId(quickAccessSections({ ...ready, tdpCanEnable: false }), "tdp"), "egpu");
+});
+
+test("an unavailable section is still resolved, so it can explain itself", () => {
+  // Bouncing off it silently moved the player with no reason given, and made
+  // the blocked/reason path unreachable from any real taxonomy.
+  const blocked = quickAccessSections({ ...ready, tdpCanEnable: false });
+  assert.equal(blocked.find((section) => section.id === "tdp").available, false);
+  assert.equal(resolveSectionId(blocked, "tdp"), "tdp");
+});
+
+test("a fresh panel still opens on an available section, never a blocked one", () => {
+  // Nobody lands on a blocked pane without having chosen it.
+  const sections = quickAccessSections({ healthKnown: true });
+  const opened = sections.find((section) => section.id === resolveSectionId(sections, undefined));
+  assert.equal(opened.available, true);
 });
 
 test("titles stay short enough for the ~310px Decky panel", () => {
