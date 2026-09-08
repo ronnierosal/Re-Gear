@@ -136,10 +136,7 @@ class BindingTests(unittest.TestCase):
         plan = compose_removal_plan(ready(), (GPU, AUDIO))
         self.assertTrue(
             plan_is_current(
-                plan,
-                attachment_binding=BINDING,
-                generation=GENERATION,
-                sample_id=SAMPLE,
+                plan, attachment_binding=BINDING, generation=GENERATION
             )
         )
 
@@ -150,27 +147,39 @@ class BindingTests(unittest.TestCase):
                 plan,
                 attachment_binding="a-different-egpu",
                 generation=GENERATION,
-                sample_id=SAMPLE,
             )
         )
 
-    def test_newer_sample_is_not_current(self) -> None:
+    def test_a_newer_sample_of_the_same_device_is_still_current(self) -> None:
+        """Issue 127: the predicate has to be satisfiable by a fresh reading.
+
+        Sample ids are minted per observation, so requiring one to match
+        meant no genuinely fresh observation could ever validate a plan and
+        the only passing call replayed the plan's own values.
+        """
+        plan = compose_removal_plan(ready(), (GPU, AUDIO))
+        self.assertTrue(
+            plan_is_current(
+                plan, attachment_binding=BINDING, generation=GENERATION
+            )
+        )
+        # The authorising sample is still recorded, for audit.
+        self.assertEqual(plan.sample_id, SAMPLE)
+
+    def test_a_changed_generation_is_not_current(self) -> None:
         plan = compose_removal_plan(ready(), (GPU, AUDIO))
         self.assertFalse(
             plan_is_current(
                 plan,
                 attachment_binding=BINDING,
-                generation=GENERATION,
-                sample_id="a-newer-sample",
+                generation="a-different-device-set",
             )
         )
 
     def test_an_unusable_plan_is_never_current(self) -> None:
         plan = compose_removal_plan(blocked(), (GPU, AUDIO))
         self.assertFalse(
-            plan_is_current(
-                plan, attachment_binding="", generation="", sample_id=""
-            )
+            plan_is_current(plan, attachment_binding="", generation="")
         )
 
 
