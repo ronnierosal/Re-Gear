@@ -25,6 +25,11 @@ from ..domain.models import (
     SupportTier,
 )
 from ..domain.peripheral_handoff import AudioOutput, PeripheralObservation
+from ..domain.removal_safety import (
+    RemovalSafety,
+    RemovalSafetyState,
+    assess_removal_safety,
+)
 from ..domain.safe_undock_readiness import (
     SafeUndockEvidence,
     SafeUndockFact,
@@ -242,6 +247,27 @@ def assess_report(report: SnapshotReport) -> SafeUndockReadiness:
         )
     evidence = result.evidence
     return assess_safe_undock_readiness(
+        evidence,
+        expected_attachment_binding=evidence.attachment_binding,
+        expected_generation=evidence.generation,
+        expected_sample_id=evidence.sample_id,
+    )
+
+
+def assess_removal_safety_report(report: SnapshotReport) -> RemovalSafety:
+    """Classify `report` for removal safety only.
+
+    Narrower than `assess_report`: it omits the player-recoverability facts, so
+    a supervised software-removal experiment is not gated on whether the player
+    would still have sound. See `hdm.domain.removal_safety` for why.
+    """
+    result = build_safe_undock_evidence(report)
+    if result.evidence is None:
+        return RemovalSafety(
+            RemovalSafetyState.EVIDENCE_INSUFFICIENT, result.code
+        )
+    evidence = result.evidence
+    return assess_removal_safety(
         evidence,
         expected_attachment_binding=evidence.attachment_binding,
         expected_generation=evidence.generation,

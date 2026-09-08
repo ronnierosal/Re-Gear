@@ -35,6 +35,11 @@ from hdm.adapters.steamos.peripherals import (  # noqa: E402
 from hdm.application.safe_undock_evidence import (  # noqa: E402
     build_safe_undock_evidence,
 )
+from hdm.domain.removal_safety import (  # noqa: E402
+    REMOVAL_SAFETY_FACTS,
+    RemovalSafetyState,
+    assess_removal_safety,
+)
 from hdm.application.snapshot import SnapshotService  # noqa: E402
 from hdm.domain.safe_undock_readiness import (  # noqa: E402
     SafeUndockReadinessState,
@@ -111,18 +116,25 @@ def describe(report) -> dict[str, object]:
     composed = build_safe_undock_evidence(report)
     evidence = composed.evidence
     if evidence is None:
+        # Both verdicts report the same failure here: without composed evidence
+        # neither can be assessed, and leaving removal safety unset rendered it
+        # as "unknown ()", which reads like a third state rather than a stop.
         return {
             "state": SafeUndockReadinessState.EVIDENCE_INSUFFICIENT.value,
             "code": composed.code,
+            "removal_safety_state": RemovalSafetyState.EVIDENCE_INSUFFICIENT.value,
+            "removal_safety_code": composed.code,
             "safe_to_unplug": False,
+            "holders": holders(report),
             "facts": [],
         }
-    readiness = assess_safe_undock_readiness(
-        evidence,
-        expected_attachment_binding=evidence.attachment_binding,
-        expected_generation=evidence.generation,
-        expected_sample_id=evidence.sample_id,
-    )
+    identity = {
+        "expected_attachment_binding": evidence.attachment_binding,
+        "expected_generation": evidence.generation,
+        "expected_sample_id": evidence.sample_id,
+    }
+    readiness = assess_safe_undock_readiness(evidence, **identity)
+    removal = assess_removal_safety(evidence, **identity)
     facts = []
     for name, meaning in FACT_MEANINGS:
         fact = getattr(evidence, name)
@@ -130,6 +142,7 @@ def describe(report) -> dict[str, object]:
         satisfied = fact.verified and fact.value is expected
         entry = {
             "fact": name,
+            "removal_safety": name in REMOVAL_SAFETY_FACTS,
             "means": meaning,
             "value": fact.value,
             "verified": fact.verified,
@@ -141,6 +154,8 @@ def describe(report) -> dict[str, object]:
     return {
         "state": readiness.state.value,
         "code": readiness.code,
+        "removal_safety_state": removal.state.value,
+        "removal_safety_code": removal.code,
         # Never let a readiness state be mistaken for physical clearance.
         "safe_to_unplug": False,
         "game_state": evidence.game_state.value,
@@ -153,8 +168,9 @@ def describe(report) -> dict[str, object]:
 
 def render(result: dict[str, object]) -> str:
     lines = [
-        f"Safe Undock state : {result['state']}",
-        f"Code              : {result['code']}",
+        f"Safe Undock state : {result['state']}  ({result['code']})",
+        f"Removal safety    : {result.get('removal_safety_state', 'unknown')}"
+        f"  ({result.get('removal_safety_code', '')})",
         f"Safe to unplug    : no (this probe never grants removal clearance)",
     ]
     if result.get("attachment_fingerprint"):
@@ -166,10 +182,11 @@ def render(result: dict[str, object]) -> str:
         lines.append("")
         for item in facts:
             mark = "ok  " if item["satisfied"] else "BLOCK"
+            scope = "removal" if item.get("removal_safety") else "player "
             value = "unknown" if item["value"] is None else str(item["value"]).lower()
             verified = "verified" if item["verified"] else "unverified"
             lines.append(
-                f"  [{mark}] {item['fact']}: {value} ({verified}) - {item['means']}"
+                f"  [{mark}][{scope}] {item['fact']}: {value} ({verified}) - {item['means']}"
             )
             if item.get("known_gap"):
                 lines.append(f"          known code gap, not hardware: {item['known_gap']}")
@@ -199,6 +216,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument(
         "--json", action="store_true", help="emit the machine-readable report"
     )
+    parser.add_argument(
+        "--exit-on",
+        choices=("safe-undock", "removal-safety"),
+        default="safe-undock",
+        help="which verdict the exit status reflects; 'safe-undock' (default)"
+        " keeps the established meaning of zero, 'removal-safety' reports the"
+        " narrower verdict that gates a supervised software-removal run",
+    )
     arguments = parser.parse_args(argv)
     # `DiagnosticsApi` deliberately wires discovery only, so Safe Undock
     # evidence — which needs controller and audio facts — cannot be composed
@@ -215,11 +240,22 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
     result = describe(report)
     print(json.dumps(result, indent=2, sort_keys=True) if arguments.json else render(result))
-    return (
-        0
-        if result["state"] == SafeUndockReadinessState.READY_FOR_REVALIDATION.value
-        else 1
-    )
+    # The default exit status keeps its established meaning: zero only when the
+    # full nine-fact Safe Undock contract is satisfied. Removal safety is a
+    # narrower verdict, so reporting it by default would let a caller that
+    # treats zero as full readiness receive zero while audio and controller
+    # readiness are still blocked. Callers gating a supervised removal ask for
+    # it explicitly.
+    if arguments.exit_on == "removal-safety":
+        satisfied = (
+            result.get("removal_safety_state")
+            == RemovalSafetyState.READY_FOR_SUPERVISED_REMOVAL.value
+        )
+    else:
+        satisfied = (
+            result["state"] == SafeUndockReadinessState.READY_FOR_REVALIDATION.value
+        )
+    return 0 if satisfied else 1
 
 
 if __name__ == "__main__":
