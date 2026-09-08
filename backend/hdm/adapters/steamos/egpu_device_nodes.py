@@ -110,6 +110,7 @@ class SteamOsEgpuDeviceNodeDiscovery:
         self, gpu_bdf: str
     ) -> tuple[tuple[EgpuDeviceNode, ...], str]:
         collected: list[EgpuDeviceNode] = []
+        present = 0
         for suffix, kind in (
             ("card", EgpuResourceKind.DRM_CARD),
             ("render", EgpuResourceKind.DRM_RENDER),
@@ -119,12 +120,20 @@ class SteamOsEgpuDeviceNodeDiscovery:
                 node = self._resolve_link(link)
             except (OSError, RuntimeError):
                 continue
+            present += 1
             numbers = self._device_numbers(node)
             if numbers is None:
-                continue
+                # The link exists but its device numbers are unreadable. Skipping
+                # it would emit a set that omits a node the eGPU still exposes.
+                return (), "egpu_nodes.drm_incomplete"
             collected.append(EgpuDeviceNode(kind, *numbers))
-        if not collected:
+        if not present:
             return (), "egpu_nodes.drm_unavailable"
+        if len(collected) != 2:
+            # A partial DRM set still satisfies the policy's required-kind check
+            # when the render node survives, producing a policy that silently
+            # omits the card node. Fail closed instead.
+            return (), "egpu_nodes.drm_incomplete"
         return tuple(collected), ""
 
     def _audio_nodes(
@@ -155,7 +164,10 @@ class SteamOsEgpuDeviceNodeDiscovery:
                 if not entry.name.startswith(template.format(index=index)):
                     continue
                 sibling = self._device_numbers(entry)
-                if sibling is not None:
-                    collected.append(EgpuDeviceNode(kind, *sibling))
+                if sibling is None:
+                    # This node belongs to the eGPU's ALSA card. Omitting it
+                    # would leave it openable under an otherwise valid policy.
+                    return (), "egpu_nodes.audio_incomplete"
+                collected.append(EgpuDeviceNode(kind, *sibling))
                 break
         return tuple(collected), ""

@@ -178,3 +178,71 @@ class DiscoveryTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PartialScanTests(unittest.TestCase):
+    """A partial set still passes the policy's required-kind check, so the
+    scan must fail closed rather than emit one. Reported by Codex on #101."""
+
+    def setUp(self) -> None:
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.tree = FakeTree(Path(directory.name))
+
+    def discovery(self) -> SteamOsEgpuDeviceNodeDiscovery:
+        return SteamOsEgpuDeviceNodeDiscovery(
+            dri_by_path=self.tree.dri_by_path,
+            snd_by_path=self.tree.snd_by_path,
+            snd_root=self.tree.snd,
+            device_numbers=self.tree.device_numbers,
+            resolve_link=self.tree.resolve_link,
+        )
+
+    def scan(self):
+        return self.discovery().scan(gpu_bdf=GPU_BDF, audio_bdf=AUDIO_BDF)
+
+    def test_missing_card_link_fails_closed(self) -> None:
+        """Render alone would compose a policy omitting the card node."""
+        build(self.tree)
+        del self.tree.links[(self.tree.dri_by_path / f"pci-{GPU_BDF}-card").resolve()]
+        scan = self.scan()
+        self.assertFalse(scan.complete)
+        self.assertEqual(scan.error, "egpu_nodes.drm_incomplete")
+        self.assertEqual(scan.nodes, ())
+
+    def test_missing_render_link_fails_closed(self) -> None:
+        build(self.tree)
+        del self.tree.links[(self.tree.dri_by_path / f"pci-{GPU_BDF}-render").resolve()]
+        scan = self.scan()
+        self.assertFalse(scan.complete)
+        self.assertEqual(scan.error, "egpu_nodes.drm_incomplete")
+
+    def test_unreadable_drm_device_numbers_fail_closed(self) -> None:
+        build(self.tree)
+        card = self.tree.dri / MEASURED["dri"][f"pci-{GPU_BDF}-card"][0]
+        del self.tree.numbers[card.resolve()]
+        scan = self.scan()
+        self.assertFalse(scan.complete)
+        self.assertEqual(scan.error, "egpu_nodes.drm_incomplete")
+
+    def test_unreadable_alsa_sibling_fails_closed(self) -> None:
+        build(self.tree)
+        sibling = self.tree.snd / "pcmC2D7p"
+        del self.tree.numbers[sibling.resolve()]
+        scan = self.scan()
+        self.assertFalse(scan.complete)
+        self.assertEqual(scan.error, "egpu_nodes.audio_incomplete")
+        self.assertEqual(scan.nodes, ())
+
+    def test_a_partial_set_would_have_passed_the_policy_check(self) -> None:
+        """Why this matters: the policy alone cannot catch a missing card node."""
+        from hdm.domain.egpu_device_policy import compose_egpu_device_policy
+
+        build(self.tree)
+        full = self.scan().nodes
+        without_card = tuple(
+            node for node in full if node.kind is not EgpuResourceKind.DRM_CARD
+        )
+        policy = compose_egpu_device_policy(without_card)
+        self.assertIs(policy.state, DevicePolicyState.COMPOSED)
+        self.assertEqual(len(policy.devices), 7)
