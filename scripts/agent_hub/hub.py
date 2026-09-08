@@ -382,6 +382,30 @@ class Hub:
         lines.append('\nMessages and transfers: use status and your inbox; reading never acknowledges them.')
         return '\n'.join(lines) + '\n'
 
+    def docs_queue(self):
+        """Derive pending documentation reviews from existing tasks, without writes."""
+        tasks = self.status()['tasks']
+        pending = []
+        for task in tasks:
+            if task['state'] != 'done' or task['stream'] == 'documentation':
+                continue
+            impacts = re.findall(r'^Documentation impact:[ \t]*(.*)$', task['note'], re.MULTILINE | re.IGNORECASE)
+            impact = impacts[0].strip().casefold() if len(impacts) == 1 else 'unassessed'
+            if impact not in ('none', 'readme', 'wiki', 'discussion', 'multiple'):
+                impact = 'unassessed'
+            if impact == 'none':
+                continue
+            reviews = [review for review in tasks
+                       if review['stream'] == 'documentation'
+                       and task['id'] in json.loads(review['dependencies'])
+                       and ('Documentation review: ' + task['id']) in review['note'].splitlines()]
+            if any(review['state'] == 'done' for review in reviews):
+                continue
+            pending.append({'task': task, 'documentation_impact': impact,
+                            'reviews': reviews})
+        return {'pending': pending,
+                'note': 'Read-only review queue. Missing/invalid impact needs triage. Verify merged code and evidence before publishing.'}
+
     def export_html(self, destination):
         data = self.status()
         esc = lambda value: html.escape(str(value), quote=True)
@@ -426,6 +450,7 @@ def main(argv=None):
     sub.add_parser('status')
     sub.add_parser('history')
     sub.add_parser('snapshot')
+    sub.add_parser('docs-queue')
     register = sub.add_parser('register')
     register.add_argument('--session', required=True)
     register.add_argument('--agent', required=True)
@@ -444,6 +469,7 @@ def main(argv=None):
         if args.command == 'init': result = hub.init()
         elif args.command == 'status': result = hub.status()
         elif args.command == 'history': result = hub.history()
+        elif args.command == 'docs-queue': result = hub.docs_queue()
         elif args.command == 'snapshot':
             print(hub.snapshot(), end='')
             return 0

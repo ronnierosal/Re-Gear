@@ -149,3 +149,21 @@ python -B -m unittest discover -s tests -p test_agent_hub.py -v
 
 Disposable databases test concurrent claims, scope conflicts, revisions, accepted
 transfers, dependencies, evidence, receipts, safe rendering, and CLI round trips.
+
+## Engineering completion and documentation review
+
+Claude and other implementation owners supply concise results, behavior changes,
+limitations and exact commit/PR/test evidence, not polished public copy. Add one
+standalone `Documentation impact: none|README|Wiki|Discussion|multiple` line to the
+existing task note. See [completion.example.json](completion.example.json).
+
+`hub.ps1 docs-queue` lists completed engineering tasks needing review, including
+missing/invalid impact labels as `unassessed`. It is read-only. Codex/ChatGPT uses
+an ordinary documentation task with the source dependency and a standalone
+`Documentation review: <source-id>` line (see [review.example.json](review.example.json)).
+A completed linked review clears the item; blocked/cancelled reviews do not.
+
+The shared repository `docs/DOCUMENTATION_WORKFLOW.md` defines layer triggers,
+validation, publication evidence and the standing routine-doc delegation. The
+queue neither schedules agents nor publishes to GitHub. No schema migration is
+needed; existing task records and ownership behavior remain compatible.

@@ -19,6 +19,10 @@ critical engineering contracts.
 Agents should also read `AGENTS.md`, which is the concise operating contract
 loaded at the start of repository work.
 
+Documentation owners start at [Documentation workflow](DOCUMENTATION_WORKFLOW.md):
+README introduces, Wiki explains, Discussions report developments. Engineering
+state and evidence flow outward; public summaries never override them.
+
 ## Authority by question
 
 | Question | Authority | Supporting evidence |
