@@ -37,6 +37,7 @@ nothing by itself.
 
 from __future__ import annotations
 
+import math
 import re
 from dataclasses import dataclass
 from enum import StrEnum
@@ -50,6 +51,18 @@ USER_MANAGER_PATH = re.compile(
 )
 
 HEX64 = re.compile(r"[0-9a-f]{64}")
+
+
+def is_finite_time(value: object) -> bool:
+    """Return whether `value` is a usable monotonic time.
+
+    NaN and the infinities are floats that survive a `> 0` test but defeat
+    every comparison afterwards: `now >= inf` and `now >= nan` are both
+    always false, so either one as a deadline never expires, and a NaN clock
+    reading defeats an otherwise valid finite deadline. Mirrors the finite
+    requirement `hdm.delivery.device_filter_lifecycle` already applies.
+    """
+    return type(value) in (int, float) and math.isfinite(value)
 
 
 class AuthorizationState(StrEnum):
@@ -124,8 +137,10 @@ class ParentScopeAuthorization:
                 )
             ):
                 raise ValueError("an authorized grant needs its binding evidence")
-            if self.deadline <= 0:
-                raise ValueError("an authorized grant needs a deadline")
+            if not is_finite_time(self.deadline) or self.deadline <= 0:
+                # Repeated here because a grant can be reconstructed from a
+                # store without passing back through the factory.
+                raise ValueError("an authorized grant needs a finite deadline")
         elif self.cgroup is not None or self.owner is not None:
             raise ValueError("only an authorized grant exposes a target or owner")
 
@@ -165,7 +180,7 @@ def authorize_parent_scope(
         return ParentScopeAuthorization(
             AuthorizationState.INVALID, "filter_authorization.input_invalid"
         )
-    if type(deadline) is not float or deadline <= 0:
+    if not is_finite_time(deadline) or deadline <= 0:
         return ParentScopeAuthorization(
             AuthorizationState.INVALID, "filter_authorization.deadline_invalid"
         )
@@ -219,6 +234,13 @@ def authorization_is_current(
     expired deadline all mean the grant no longer describes reality.
     """
     if not authorization.granted or authorization.cgroup is None:
+        return False
+    if not is_finite_time(now) or now < 0:
+        # An unusable clock reading cannot establish that a grant is still
+        # current, and must not be allowed to pass the expiry comparison by
+        # making it false.
+        return False
+    if not is_finite_time(authorization.deadline):
         return False
     if authorization.boot_hash != boot_hash:
         return False

@@ -228,3 +228,78 @@ class InvariantTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class NonFiniteTimeTests(unittest.TestCase):
+    """NaN and the infinities survive `> 0` but defeat every later comparison.
+
+    Reported by Codex on #111: `now >= inf` and `now >= nan` are both always
+    false, so either as a deadline never expires, and a NaN clock reading
+    defeats an otherwise valid finite deadline.
+    """
+
+    def test_infinite_deadline_is_rejected(self) -> None:
+        self.assertIs(
+            grant(deadline=float("inf")).state, AuthorizationState.INVALID
+        )
+
+    def test_negative_infinite_deadline_is_rejected(self) -> None:
+        self.assertIs(
+            grant(deadline=float("-inf")).state, AuthorizationState.INVALID
+        )
+
+    def test_nan_deadline_is_rejected(self) -> None:
+        self.assertIs(
+            grant(deadline=float("nan")).state, AuthorizationState.INVALID
+        )
+
+    def test_reconstruction_cannot_smuggle_a_non_finite_deadline(self) -> None:
+        """A grant can come back from a store without passing the factory."""
+        for value in (float("inf"), float("nan"), float("-inf")):
+            with self.assertRaises(ValueError):
+                ParentScopeAuthorization(
+                    AuthorizationState.AUTHORIZED,
+                    "code",
+                    CGROUP,
+                    OWNER,
+                    UID,
+                    BOOT,
+                    BINDING,
+                    GENERATION,
+                    SAMPLE,
+                    value,
+                )
+
+    def test_a_nan_clock_reading_does_not_keep_a_grant_current(self) -> None:
+        self.assertFalse(
+            authorization_is_current(
+                grant(deadline=1000.0),
+                boot_hash=BOOT,
+                cgroup=CGROUP,
+                now=float("nan"),
+            )
+        )
+
+    def test_an_infinite_clock_reading_does_not_keep_a_grant_current(self) -> None:
+        self.assertFalse(
+            authorization_is_current(
+                grant(deadline=1000.0),
+                boot_hash=BOOT,
+                cgroup=CGROUP,
+                now=float("inf"),
+            )
+        )
+
+    def test_a_negative_clock_reading_is_refused(self) -> None:
+        self.assertFalse(
+            authorization_is_current(
+                grant(deadline=1000.0), boot_hash=BOOT, cgroup=CGROUP, now=-1.0
+            )
+        )
+
+    def test_an_integer_clock_reading_is_accepted(self) -> None:
+        self.assertTrue(
+            authorization_is_current(
+                grant(deadline=1000.0), boot_hash=BOOT, cgroup=CGROUP, now=1
+            )
+        )
