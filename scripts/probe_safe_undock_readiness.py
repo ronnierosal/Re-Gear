@@ -116,10 +116,16 @@ def describe(report) -> dict[str, object]:
     composed = build_safe_undock_evidence(report)
     evidence = composed.evidence
     if evidence is None:
+        # Both verdicts report the same failure here: without composed evidence
+        # neither can be assessed, and leaving removal safety unset rendered it
+        # as "unknown ()", which reads like a third state rather than a stop.
         return {
             "state": SafeUndockReadinessState.EVIDENCE_INSUFFICIENT.value,
             "code": composed.code,
+            "removal_safety_state": RemovalSafetyState.EVIDENCE_INSUFFICIENT.value,
+            "removal_safety_code": composed.code,
             "safe_to_unplug": False,
+            "holders": holders(report),
             "facts": [],
         }
     identity = {

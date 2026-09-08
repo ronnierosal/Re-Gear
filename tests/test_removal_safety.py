@@ -176,3 +176,27 @@ class RemovalSafetyTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ProbeReportingTests(unittest.TestCase):
+    """The probe must not render an unassessable run as a third state."""
+
+    @staticmethod
+    def _describe(report):
+        import importlib.util
+
+        path = ROOT / "scripts" / "probe_safe_undock_readiness.py"
+        spec = importlib.util.spec_from_file_location("probe_sur", path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    def test_uncomposable_evidence_reports_both_verdicts(self) -> None:
+        module = self._describe(None)
+        result = module.describe(report(egpu_stable_id=""))
+        self.assertEqual(result["state"], "evidence_insufficient")
+        self.assertEqual(result["removal_safety_state"], "evidence_insufficient")
+        self.assertEqual(
+            result["removal_safety_code"], "safe_undock.attachment_binding_missing"
+        )
+        self.assertNotIn("unknown", module.render(result))
