@@ -45,10 +45,23 @@ from enum import StrEnum
 SESSION_TARGET = "gamescope-session.target"
 
 #: Approved holder units that a `SESSION_TARGET` restart already reaches, so
-#: they need no separate restart. Verified on the tested profile: restarting the
-#: target rebuilt the compositor and the Steam client, and both released.
+#: they need no separate restart. Membership is evidence, not inference: on the
+#: tested profile every unit here recorded an identical `ActiveEnterTimestamp`
+#: of 19:13:21 immediately after the target was restarted, while the audio units
+#: showed 19:13:16 from their own separate restarts five seconds earlier.
+#:
+#: `galileo-mura-setup.service` is wanted by the target but was inactive
+#: throughout, so no restart evidence exists for it and it is deliberately
+#: absent.
 APPROVED_SESSION_REACHED: frozenset[str] = frozenset(
-    {"gamescope-session.service", "steam-launcher.service"}
+    {
+        "gamescope-session.service",
+        "steam-launcher.service",
+        "gamescope-mangoapp.service",
+        "gamescope-xbindkeys.service",
+        "ibus-gamescope.service",
+        "steam-notif-daemon.service",
+    }
 )
 
 #: Approved holder units the session target does NOT reach, in the order the

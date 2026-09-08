@@ -52,10 +52,21 @@ class ApprovalTests(unittest.TestCase):
         self.assertIs(plan.state, ArmSequenceState.BLOCKED_UNAPPROVED_HOLDER)
         self.assertIn("systemd-logind.service", plan.unapproved)
 
-    def test_mangoapp_is_not_approved_without_evidence(self) -> None:
-        """Observed holding drm_render when docked, but never verified as
-        reached by a session restart, so it blocks rather than being assumed."""
-        self.assertNotIn("gamescope-mangoapp.service", APPROVED_HOLDER_UNITS)
+    def test_mangoapp_is_approved_on_restart_evidence(self) -> None:
+        """Observed holding drm_render when docked. Verified reached: it
+        recorded the same ActiveEnterTimestamp as the target restart."""
+        self.assertIn("gamescope-mangoapp.service", APPROVED_SESSION_REACHED)
+        units = compose_restart_plan(
+            (*MEASURED_HOLDERS, "gamescope-mangoapp.service")
+        ).units
+        self.assertNotIn("gamescope-mangoapp.service", units)
+
+    def test_a_target_unit_without_restart_evidence_is_not_approved(self) -> None:
+        """galileo-mura-setup is wanted by the target but was never observed
+        restarting, so no evidence exists and it must block."""
+        self.assertNotIn("galileo-mura-setup.service", APPROVED_HOLDER_UNITS)
+        plan = compose_restart_plan((*MEASURED_HOLDERS, "galileo-mura-setup.service"))
+        self.assertIs(plan.state, ArmSequenceState.BLOCKED_UNAPPROVED_HOLDER)
 
 
 class MeasuredHardwareTests(unittest.TestCase):
