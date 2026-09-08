@@ -5,6 +5,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -49,7 +50,15 @@ class RemovalTests(unittest.TestCase):
             (device / "remove").write_text("", encoding="ascii")
 
     def adapter(self) -> SysfsDeviceRemoval:
-        return SysfsDeviceRemoval(device_root=self.devices, rescan_path=self.rescan)
+        """Patch the module globals; production selection takes no arguments."""
+        import hdm.adapters.steamos.device_removal as module
+
+        patcher = patch.multiple(
+            module, PCI_DEVICE_ROOT=self.devices, PCI_RESCAN=self.rescan
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        return SysfsDeviceRemoval()
 
     def test_invalid_address_is_refused_before_any_write(self) -> None:
         result = self.adapter().remove("not-a-bdf")
@@ -113,7 +122,15 @@ class RescanTests(unittest.TestCase):
         self.rescan.write_text("", encoding="ascii")
 
     def adapter(self) -> SysfsDeviceRemoval:
-        return SysfsDeviceRemoval(device_root=self.devices, rescan_path=self.rescan)
+        """Patch the module globals; production selection takes no arguments."""
+        import hdm.adapters.steamos.device_removal as module
+
+        patcher = patch.multiple(
+            module, PCI_DEVICE_ROOT=self.devices, PCI_RESCAN=self.rescan
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        return SysfsDeviceRemoval()
 
     def test_restored_when_every_expected_device_returns(self) -> None:
         for address in (GPU, AUDIO):
@@ -146,7 +163,11 @@ class ArchitectureGateTests(unittest.TestCase):
     """The write exemption must stay narrow, so pin what it permits."""
 
     def test_only_one_adapter_may_write(self) -> None:
-        self.assertEqual(check_architecture.DEVICE_WRITER, "device_removal.py")
+        """An exact repository-relative path, not a file name."""
+        self.assertEqual(
+            check_architecture.DEVICE_WRITER,
+            Path("backend/hdm/adapters/steamos/device_removal.py"),
+        )
 
     def test_only_write_text_is_permitted_there(self) -> None:
         self.assertEqual(
@@ -164,3 +185,107 @@ class ArchitectureGateTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RescanRequestTests(unittest.TestCase):
+    """An empty request must not trigger a bus rescan and call it success."""
+
+    def setUp(self) -> None:
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.root = Path(directory.name)
+        self.rescan = self.root / "rescan"
+        self.devices = self.root / "devices"
+        self.devices.mkdir()
+        self.rescan.write_text("untouched", encoding="ascii")
+        import hdm.adapters.steamos.device_removal as module
+
+        patcher = patch.multiple(
+            module, PCI_DEVICE_ROOT=self.devices, PCI_RESCAN=self.rescan
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_empty_request_is_refused_without_writing(self) -> None:
+        result = SysfsDeviceRemoval().rescan(())
+        self.assertIs(result.outcome, RescanOutcome.FAILED)
+        self.assertEqual(result.code, "device_removal.expected_empty")
+        self.assertEqual(self.rescan.read_text(encoding="ascii"), "untouched")
+
+    def test_non_tuple_request_is_refused_without_writing(self) -> None:
+        result = SysfsDeviceRemoval().rescan(["0000:08:00.0"])
+        self.assertIs(result.outcome, RescanOutcome.FAILED)
+        self.assertEqual(self.rescan.read_text(encoding="ascii"), "untouched")
+
+    def test_invalid_address_is_refused_without_writing(self) -> None:
+        result = SysfsDeviceRemoval().rescan(("nope",))
+        self.assertIs(result.outcome, RescanOutcome.FAILED)
+        self.assertEqual(self.rescan.read_text(encoding="ascii"), "untouched")
+
+
+class GateNegativeFixtureTests(unittest.TestCase):
+    """Retained fixtures for each hole reported on #107.
+
+    A gate that only ever passes proves nothing, so each exemption boundary is
+    exercised by a violation that must be rejected.
+    """
+
+    def _run_with(self, relative: str, source: str) -> list[str]:
+        target = ROOT / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        existed = target.exists()
+        original = target.read_text(encoding="utf-8") if existed else None
+        target.write_text(source, encoding="utf-8")
+        try:
+            import io
+            import contextlib
+
+            buffer = io.StringIO()
+            with contextlib.redirect_stdout(buffer):
+                code = check_architecture.main()
+            return [code, buffer.getvalue()]
+        finally:
+            if original is None:
+                target.unlink()
+                if not any(target.parent.iterdir()):
+                    target.parent.rmdir()
+            else:
+                target.write_text(original, encoding="utf-8")
+
+    def test_same_named_module_elsewhere_gets_no_exemption(self) -> None:
+        code, output = self._run_with(
+            "backend/hdm/adapters/other/device_removal.py",
+            'from pathlib import Path\n\n\ndef sneak(p: Path) -> None:\n    p.write_text("1")\n',
+        )
+        self.assertEqual(code, 1)
+        self.assertIn("forbidden filesystem writer", output)
+
+    def test_dynamic_write_destination_is_rejected(self) -> None:
+        source = (
+            ROOT / "backend/hdm/adapters/steamos/device_removal.py"
+        ).read_text(encoding="utf-8")
+        code, output = self._run_with(
+            "backend/hdm/adapters/steamos/device_removal.py",
+            source.replace(
+                "PCI_RESCAN.write_text(TRIGGER", "Path(expected[0]).write_text(TRIGGER"
+            ),
+        )
+        self.assertEqual(code, 1)
+        self.assertIn("unapproved destination", output)
+
+    def test_an_extra_write_call_site_is_rejected(self) -> None:
+        source = (
+            ROOT / "backend/hdm/adapters/steamos/device_removal.py"
+        ).read_text(encoding="utf-8")
+        code, output = self._run_with(
+            "backend/hdm/adapters/steamos/device_removal.py",
+            source + '\n\ndef extra(node):\n    node.write_text("1")\n',
+        )
+        self.assertEqual(code, 1)
+        self.assertIn("write call sites", output)
+
+    def test_the_writer_is_matched_by_exact_path(self) -> None:
+        self.assertEqual(
+            check_architecture.DEVICE_WRITER,
+            Path("backend/hdm/adapters/steamos/device_removal.py"),
+        )

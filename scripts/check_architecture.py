@@ -24,7 +24,22 @@ FORBIDDEN_IMPORT_ROOTS = {
 #: commands.py. Device detachment requires a sysfs write, and concentrating it
 #: in a single reviewed module keeps every other adapter read-only rather than
 #: relaxing the ban globally. This module is additionally constrained below.
-DEVICE_WRITER = "device_removal.py"
+#:
+#: Matched as an exact repository-relative path, not a file name: a module named
+#: device_removal.py in any other adapter directory must not inherit the
+#: exemption.
+DEVICE_WRITER = Path("backend/hdm/adapters/steamos/device_removal.py")
+
+#: The exact receiver expressions the device writer may call write_text on, and
+#: how many such calls may exist. Pinning the expressions rather than string
+#: literals is the difference between checking what the module mentions and
+#: checking what it writes to; a relative path, a caller-supplied Path or an
+#: extra call site all fail here.
+APPROVED_WRITE_EXPRESSIONS = {
+    "self._remove_node(address)",
+    "PCI_RESCAN",
+}
+MAX_DEVICE_WRITES = 2
 
 #: Writes that module may perform. Anything else stays forbidden even there.
 DEVICE_WRITER_ALLOWED_CALLS = {"write_text"}
@@ -59,19 +74,29 @@ def device_writer_failures() -> list[str]:
     a PCI device, and every write target must be built from those constants, so
     a future edit cannot quietly widen it into a general filesystem writer.
     """
-    path = ADAPTER_ROOT / "steamos" / DEVICE_WRITER
+    path = REPOSITORY_ROOT / DEVICE_WRITER
     if not path.exists():
         return []
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     failures: list[str] = []
-    allowed_literals = {"/sys/bus/pci/devices", "/sys/bus/pci/rescan"}
+    writes = 0
     for node in ast.walk(tree):
-        if isinstance(node, ast.Constant) and isinstance(node.value, str):
-            if node.value.startswith("/") and node.value not in allowed_literals:
-                failures.append(
-                    f"{path.relative_to(REPOSITORY_ROOT)}:{node.lineno}: "
-                    f"device writer references unapproved path {node.value!r}"
-                )
+        if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)):
+            continue
+        if node.func.attr not in DEVICE_WRITER_ALLOWED_CALLS:
+            continue
+        writes += 1
+        receiver = ast.unparse(node.func.value)
+        if receiver not in APPROVED_WRITE_EXPRESSIONS:
+            failures.append(
+                f"{path.relative_to(REPOSITORY_ROOT)}:{node.lineno}: "
+                f"device writer writes to unapproved destination {receiver!r}"
+            )
+    if writes > MAX_DEVICE_WRITES:
+        failures.append(
+            f"{path.relative_to(REPOSITORY_ROOT)}: device writer has {writes} write "
+            f"call sites, more than the {MAX_DEVICE_WRITES} approved"
+        )
     if "subprocess" in {root for node in ast.walk(tree) for root in imported_roots(node)}:
         failures.append(
             f"{path.relative_to(REPOSITORY_ROOT)}: the device writer must not spawn processes"
@@ -95,7 +120,7 @@ def main() -> int:
         for node in ast.walk(tree):
             if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
                 permitted = (
-                    path.name == DEVICE_WRITER
+                    path.relative_to(REPOSITORY_ROOT) == DEVICE_WRITER
                     and node.func.attr in DEVICE_WRITER_ALLOWED_CALLS
                 )
                 if node.func.attr in FORBIDDEN_WRITE_CALLS and not permitted:

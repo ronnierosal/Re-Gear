@@ -5,11 +5,12 @@ what detaching it consists of. This module composes that plan: which PCI
 functions to remove, in what order, and what recovery is defined if a step does
 not complete.
 
-It performs no removal. Producing a plan authorises nothing, and the plan is
-deliberately inert — the write that actually detaches a device lives behind a
-port that does not exist yet, because `scripts/check_architecture.py` forbids
-adapter filesystem writes and widening that gate is a milestone decision rather
-than a side effect of this module.
+This module performs no removal: it composes a plan, and producing one
+authorises nothing. The write that detaches a device lives behind
+`hdm.ports.device_removal`, implemented by the single adapter
+`scripts/check_architecture.py` permits to write. Composing a plan and executing
+one are deliberately separate, so the decision to remove stays reviewable apart
+from the capability to remove.
 
 Grounded in a supervised run on an Ally X with a GPD G1, holders already
 cleared:

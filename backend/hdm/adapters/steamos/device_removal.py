@@ -34,9 +34,12 @@ from ...ports.device_removal import (
 
 PCI_ADDRESS = re.compile(r"[0-9a-fA-F]{4}:[0-9a-fA-F]{2}:[0-9a-fA-F]{2}\.[0-7]")
 
-#: The two approved write targets. The architecture check pins these literals.
-PCI_DEVICE_ROOT = "/sys/bus/pci/devices"
-PCI_RESCAN = "/sys/bus/pci/rescan"
+#: The two approved write targets, as module globals rather than constructor
+#: arguments. Production target selection is therefore fixed in source and
+#: checkable statically; a test that needs a different tree patches these names,
+#: which cannot be reached from a caller.
+PCI_DEVICE_ROOT = Path("/sys/bus/pci/devices")
+PCI_RESCAN = Path("/sys/bus/pci/rescan")
 
 #: sysfs treats any nonzero value as the trigger; "1" is the conventional one.
 TRIGGER = "1"
@@ -45,16 +48,12 @@ TRIGGER = "1"
 class SysfsDeviceRemoval:
     """Detach exact PCI functions and restore them by bus rescan."""
 
-    def __init__(
-        self,
-        device_root: Path = Path(PCI_DEVICE_ROOT),
-        rescan_path: Path = Path(PCI_RESCAN),
-    ) -> None:
-        self._device_root = device_root
-        self._rescan_path = rescan_path
-
     def _device(self, address: str) -> Path:
-        return self._device_root / address
+        return PCI_DEVICE_ROOT / address
+
+    def _remove_node(self, address: str) -> Path:
+        """The only device path this module ever writes to."""
+        return self._device(address) / "remove"
 
     def remove(self, address: str) -> RemovalResult:
         if not PCI_ADDRESS.fullmatch(address):
@@ -68,7 +67,7 @@ class SysfsDeviceRemoval:
                 address, RemovalOutcome.NOT_PRESENT, "device_removal.not_present"
             )
         try:
-            (device / "remove").write_text(TRIGGER, encoding="ascii")
+            self._remove_node(address).write_text(TRIGGER, encoding="ascii")
         except OSError as error:
             return RemovalResult(
                 address,
@@ -84,12 +83,18 @@ class SysfsDeviceRemoval:
         return RemovalResult(address, RemovalOutcome.REMOVED)
 
     def rescan(self, expected: tuple[str, ...]) -> RescanResult:
+        if type(expected) is not tuple or not expected:
+            # An empty request would trigger a global bus rescan and then report
+            # success, because nothing was expected and nothing was missing.
+            return RescanResult(
+                RescanOutcome.FAILED, code="device_removal.expected_empty"
+            )
         if any(not PCI_ADDRESS.fullmatch(address) for address in expected):
             return RescanResult(
                 RescanOutcome.FAILED, code="device_removal.address_invalid"
             )
         try:
-            self._rescan_path.write_text(TRIGGER, encoding="ascii")
+            PCI_RESCAN.write_text(TRIGGER, encoding="ascii")
         except OSError as error:
             return RescanResult(
                 RescanOutcome.FAILED, code=f"device_removal.rescan_failed:{error.errno}"
