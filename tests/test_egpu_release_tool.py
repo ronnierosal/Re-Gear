@@ -139,7 +139,7 @@ class ArmPathTests(unittest.TestCase):
     the boundary tests and CI all passed and the defect reached a release.
     """
 
-    def _arm(self, *, holders_after=(), enforced=True):
+    def _arm(self, *, holders_after=(), enforced=True, extra_argv=()):
         import os
         from pathlib import Path as _Path
         from unittest.mock import patch
@@ -207,7 +207,7 @@ class ArmPathTests(unittest.TestCase):
              patch.object(os, "close", lambda fd: None), \
              patch.object(_Path, "is_dir", lambda self: True), \
              contextlib.redirect_stdout(buffer):
-            code = module.main(["--arm", "--hold", "0"])
+            code = module.main(["--arm", "--hold", "0", *extra_argv])
         return code, buffer.getvalue()
 
     def test_the_arm_path_runs_without_a_missing_name(self) -> None:
@@ -246,3 +246,98 @@ class ArmPathTests(unittest.TestCase):
                        {"enforced": False}):
             _, output = self._arm(**kwargs)
             self.assertIn("detached", output)
+
+
+class HoldOpenTests(unittest.TestCase):
+    """The window a supervised removal has to act inside.
+
+    `clients_clear` is a property of the filter being attached, not a state the
+    device settles into. Before `--hold-open`, the tool reported every holder
+    released and detached in the same breath, so the condition it reported had
+    already stopped being true and nothing could act on it.
+    """
+
+    def _hold(self, observations, seconds=9, interval=3.0):
+        import hdm.egpu_release as module
+        from unittest.mock import patch
+
+        seen = list(observations)
+        calls = []
+        clock = {"now": 0.0}
+
+        def holder_units(*_args, **_kwargs):
+            calls.append(clock["now"])
+            return seen.pop(0) if seen else ()
+
+        def sleep(duration):
+            # Always advance, so a zero-length sleep cannot spin forever.
+            clock["now"] += max(duration, 1.0)
+
+        with patch.object(module, "holder_units", holder_units), \
+             patch.object(module.time, "monotonic", lambda: clock["now"]), \
+             patch.object(module.time, "sleep", sleep):
+            return module.hold_open(("/dev/dri/card1",), seconds, interval), calls
+
+    def test_a_device_that_stays_clear_reports_no_holders(self) -> None:
+        returned, calls = self._hold([(), (), ()])
+        self.assertEqual(returned, ())
+        self.assertEqual(len(calls), 3)
+
+    def test_a_holder_that_returns_is_reported(self) -> None:
+        returned, _ = self._hold([(), ("wireplumber.service",), ()])
+        self.assertEqual(returned, ("wireplumber.service",))
+
+    def test_a_returning_holder_ends_the_window_at_once(self) -> None:
+        # Waiting the window out would end by reporting a device that stopped
+        # being clear partway through, which is the case this exists to catch.
+        _, calls = self._hold([("wireplumber.service",), (), ()])
+        self.assertEqual(len(calls), 1)
+
+    def test_a_zero_length_window_checks_nothing(self) -> None:
+        returned, calls = self._hold([("wireplumber.service",)], seconds=0)
+        self.assertEqual(returned, ())
+        self.assertEqual(calls, [])
+
+
+class HoldOpenArmPathTests(ArmPathTests):
+    """`--hold-open` as the arm path actually reaches it."""
+
+    def _arm_holding(self, *, window_result=(), seconds=180):
+        import hdm.egpu_release as module
+        from unittest.mock import patch
+
+        recorded = {}
+
+        def fake_hold_open(nodes, hold_seconds, *args, **kwargs):
+            recorded["seconds"] = hold_seconds
+            return window_result
+
+        with patch.object(module, "hold_open", fake_hold_open):
+            code, output = self._arm(
+                holders_after=(), extra_argv=["--hold-open", str(seconds)]
+            )
+        return code, output, recorded
+
+    def test_the_default_still_detaches_immediately(self) -> None:
+        # No --hold-open: behaviour is exactly as before, no window at all.
+        _, output = self._arm(holders_after=())
+        self.assertNotIn("hold the filter open", output)
+
+    def test_holding_open_names_the_removal_command(self) -> None:
+        code, output, recorded = self._arm_holding()
+        self.assertIn("hold the filter open", output)
+        self.assertIn("hdm.egpu_remove", output)
+        self.assertEqual(recorded["seconds"], 180)
+        self.assertEqual(code, 0)
+
+    def test_a_holder_reopening_the_device_fails_the_run(self) -> None:
+        code, output, _ = self._arm_holding(window_result=("wireplumber.service",))
+        self.assertIn("a holder reopened the device", output)
+        self.assertIn("do not remove", output)
+        self.assertEqual(code, 1)
+
+    def test_a_window_that_stays_clear_succeeds(self) -> None:
+        code, output, _ = self._arm_holding()
+        self.assertIn("the window closed with the device still clear", output)
+        self.assertIn("NOT removal clearance", output)
+        self.assertEqual(code, 0)

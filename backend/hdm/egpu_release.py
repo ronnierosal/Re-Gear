@@ -15,8 +15,20 @@ What it does, in the order the supervised hardware runs established:
    actually enforced, print the restart commands an approved plan calls for,
    and re-observe holders while you run them.
 
+5. With ``--hold-open SECONDS``: once every holder has released, keep the
+   filter attached for that long instead of detaching at once, so a supervised
+   removal can run in a second terminal while ``clients_clear`` still holds.
+
 Without ``--arm`` nothing is loaded or attached. The default is a plan: it
 reports what would happen and stops.
+
+Why ``--hold-open`` exists. ``clients_clear`` is a property of the filter being
+attached, not a state the device settles into: the filter is what gates
+``open()``, so the instant the link goes, WirePlumber and the session reopen
+the nodes. Reporting "every holder released" and detaching in the same breath
+therefore describes a condition that has already stopped being true. Anything
+that must act on a clear device -- a supervised removal above all -- has to act
+inside the filter's lifetime, and this is the window in which it can.
 
 It never spawns a process. ``subprocess`` appears in exactly one adapter in
 this codebase, enforced by an architecture check, and the approved
@@ -35,6 +47,8 @@ Usage on the device, from the installed plugin directory:
 
     sudo PYTHONPATH=backend python3 -m hdm.egpu_release
     sudo PYTHONPATH=backend python3 -m hdm.egpu_release --arm --hold 120
+    sudo PYTHONPATH=backend python3 -m hdm.egpu_release --arm --hold 120 \
+        --hold-open 180
 """
 
 from __future__ import annotations
@@ -131,6 +145,30 @@ def node_paths(gpu_bdf: str, audio_bdf: str) -> tuple[str, ...]:
     return tuple(resolved)
 
 
+def hold_open(
+    nodes: tuple[str, ...], seconds: int, interval: float = 3.0
+) -> tuple[str, ...]:
+    """Keep the caller inside the filter's lifetime for `seconds`.
+
+    `clients_clear` is true only while the filter is attached: the filter is
+    what gates `open()`. The moment the link goes, WirePlumber and the session
+    reopen the nodes. A supervised removal therefore has to run inside this
+    window, so this holds it open and watches it, rather than returning as soon
+    as the device is first observed clear.
+
+    Returns the units that reopened the device, or an empty tuple if it stayed
+    clear for the whole window. A returning holder ends the wait immediately:
+    waiting it out would end by reporting a device that is no longer clear.
+    """
+    deadline = time.monotonic() + max(0, seconds)
+    while time.monotonic() < deadline:
+        time.sleep(max(0.0, min(interval, deadline - time.monotonic())))
+        returned = holder_units(nodes)
+        if returned:
+            return returned
+    return ()
+
+
 def restart_commands(units: tuple[str, ...], uid: int) -> tuple[str, ...]:
     """Return the commands an operator runs to apply the plan.
 
@@ -161,6 +199,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         type=int,
         default=60,
         help="seconds to hold the filter after arming before detaching",
+    )
+    parser.add_argument(
+        "--hold-open",
+        type=int,
+        default=0,
+        help="after every holder releases, keep the filter attached this many"
+        " seconds so a supervised removal can run while clients_clear still"
+        " holds; the default of 0 detaches immediately, as before",
     )
     arguments = parser.parse_args(argv)
 
@@ -251,6 +297,28 @@ def main(argv: Sequence[str] | None = None) -> int:
                 report(f"  holders remain: {remaining}")
                 return 1
             report("  clients_clear: every holder released")
+
+            if arguments.hold_open > 0:
+                section("8. hold the filter open")
+                # Reporting the window explicitly, because the property an
+                # operator is about to rely on is not "the device was clear"
+                # but "the device is clear right now, and stays clear while
+                # this link exists".
+                report("  clients_clear holds only while this filter is attached.")
+                report("  Run the supervised removal now, in another terminal:")
+                report(
+                    "    sudo PYTHONPATH=backend python3 -m hdm.egpu_remove"
+                    f" --gpu {gpu_bdf} --remove"
+                )
+                report("")
+                report(f"  The window is {arguments.hold_open}s. Holders are re-checked.")
+                returned = hold_open(nodes, arguments.hold_open)
+                if returned:
+                    report(f"\n  a holder reopened the device: {returned}")
+                    report("  clients_clear no longer holds; do not remove.")
+                    return 1
+                report("  the window closed with the device still clear.")
+
             report("\n  The eGPU is released. This is NOT removal clearance.")
     finally:
         os.close(cgroup_fd)
