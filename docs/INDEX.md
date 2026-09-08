@@ -55,11 +55,11 @@ issue**. Architectural possibility is not support.
 
 - Public entry point: [README](../README.md)
 - Status and work: [Current state](CURRENT_STATE.md), [Roadmap](ROADMAP.md),
-  [Worker queue](WORK_QUEUE.md),
-  [multi-agent workspace](MULTI_AGENT_WORKSPACE.md)
+  [Worker queue](WORK_QUEUE.md)
 - Hardware and compatibility: [Hardware support](HARDWARE_SUPPORT.md),
   [hardware-agnostic audit](HARDWARE_AGNOSTIC_AUDIT.md)
 - UX: [UI specification](UI_SPEC.md)
+- Agent workspaces: [multi-agent workspace](MULTI_AGENT_WORKSPACE.md)
 - Operations: [Deployment validation](DEPLOYMENT_VALIDATION.md),
   [operator handoff](OPERATOR_HANDOFF.md), [diagnostics](DIAGNOSTICS.md),
   [release pipeline](RELEASE_PIPELINE.md)
