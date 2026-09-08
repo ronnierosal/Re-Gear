@@ -21,6 +21,20 @@ if str(BACKEND_ROOT) not in sys.path:
 
 from hdm.adapters.steamos.discovery import SteamOsDiscovery  # noqa: E402
 from hdm.adapters.steamos.topology_wakeup import LinuxTopologyWakeup  # noqa: E402
+from hdm.adapters.steamos.tdp_provider import SteamOsManagerTdpProvider  # noqa: E402
+from hdm.adapters.steamos.tdp_conflicts import KnownTdpControllerScan  # noqa: E402
+from hdm.delivery.tdp_journal import FileTdpJournal  # noqa: E402
+from hdm.delivery.tdp_runtime import TdpRuntime, unavailable_status  # noqa: E402
+from hdm.delivery.tdp_writer_lease import FileTdpWriterLease  # noqa: E402
+from hdm.delivery.auto_tdp_configuration import FileAutoTdpConfiguration  # noqa: E402
+from hdm.delivery.auto_tdp_factory import AutoTdpSessionFactory  # noqa: E402
+from hdm.delivery.auto_tdp_evidence import AutoTdpEligibility  # noqa: E402
+from hdm.delivery.auto_tdp_status import auto_tdp_status  # noqa: E402
+from hdm.delivery.auto_tdp_benchmark import benchmark_auto_tdp  # noqa: E402
+from hdm.adapters.steamos.auto_tdp_host import AutoTdpHostDiscovery  # noqa: E402
+from hdm.adapters.steamos.gamescope_performance_target import GamescopePerformanceTargetResolver, PerformanceTargetResolution  # noqa: E402
+from hdm.domain.auto_tdp import AutoTdpPolicy  # noqa: E402
+from hdm.domain.telemetry import TelemetryAdmissionKind, admit_telemetry_collection  # noqa: E402
 from hdm.adapters.steamos.drm import DrmDiscovery  # noqa: E402
 from hdm.adapters.steamos.pci import PciUsb4Discovery  # noqa: E402
 from hdm.adapters.steamos.wake_diagnostics import WakeDiagnosticsDiscovery  # noqa: E402
@@ -182,7 +196,11 @@ from hdm.domain.control_plane import (  # noqa: E402
     PlacementState,
     TransitionOutcomeKind,
 )
-from hdm.domain.models import Confidence, EgpuLinkState, GameState, GpuRole  # noqa: E402
+from hdm.domain.models import Confidence, EgpuLinkState, GameState, GpuRole, EgpuPresence, OperatingMode  # noqa: E402
+from hdm.domain.inference import infer_operating_mode  # noqa: E402
+from hdm.domain.tdp_placement import tdp_placement_readiness  # noqa: E402
+from hdm.domain.auto_tdp_preferences import AutoTdpModePreference  # noqa: E402
+from hdm.delivery.auto_tdp_preferences import FileAutoTdpPreferences  # noqa: E402
 from hdm.domain.inference import infer_placement  # noqa: E402
 from hdm.profiles.gpd_g1 import match_gpd_g1  # noqa: E402
 
@@ -276,6 +294,264 @@ class Plugin:
         self._process_release: GuardedProcessReleaseService | None = None
         self._version_info = SteamOsVersionDiscovery().scan()
         self._build_info = load_public_build_info(PLUGIN_ROOT)
+        self._tdp_runtime: TdpRuntime | None = None
+        self._tdp_init_lock = threading.Lock()
+        self._tdp_closing = threading.Event()
+        self._auto_request_lock = threading.Lock()
+        self._auto_request_generation = 0
+        self._benchmark_request_generation = 0
+        self._auto_cancel_requested = threading.Event()
+        self._auto_cancel_requested.set()
+
+    async def get_tdp_status(self, _request: object = None) -> dict[str, object]:
+        return await self._tdp_call("status")
+
+    async def set_tdp_enabled(self, enabled: bool) -> dict[str, object]:
+        if enabled is False:
+            self._cancel_auto_request()
+        return await self._tdp_call("set_enabled", enabled)
+
+    async def apply_tdp_limit(self, watts: int) -> dict[str, object]:
+        self._cancel_auto_request()
+        return await self._tdp_call("apply", watts)
+
+    async def restore_tdp_limit(self) -> dict[str, object]:
+        self._cancel_auto_request()
+        return await self._tdp_call("restore")
+
+    async def get_auto_tdp_status(self, _request: object = None) -> dict[str, object]:
+        return await asyncio.to_thread(self._auto_tdp_status_sync)
+
+    async def start_auto_tdp(self, target_fps: float, minimum_watts: int, maximum_watts: int) -> dict[str, object]:
+        try:
+            policy = AutoTdpPolicy(minimum_watts, maximum_watts, target_fps)
+        except (TypeError, ValueError):
+            return auto_tdp_status("auto_tdp.request_invalid", self._tdp_runtime)
+        with self._auto_request_lock:
+            generation = self._auto_request_generation
+            self._auto_cancel_requested.clear()
+        def start():
+            before = self._auto_tdp_status_sync()
+            if not before["can_start"]:
+                return before
+            with self._auto_request_lock:
+                if generation != self._auto_request_generation:
+                    return auto_tdp_status("auto_tdp.stopped", self._tdp_runtime)
+            runtime = self._tdp_service()
+            if runtime.start_auto(policy, admission_guard=lambda: self._auto_request_generation == generation
+                                  and not self._tdp_closing.is_set()) is None:
+                return auto_tdp_status("auto_tdp.start_unavailable", runtime)
+            return self._auto_tdp_status_sync()
+        try:
+            return await asyncio.to_thread(start)
+        except Exception:
+            return auto_tdp_status("auto_tdp.runtime_unavailable", self._tdp_runtime)
+
+    def _cancel_auto_request(self):
+        with self._auto_request_lock:
+            self._auto_request_generation += 1
+            self._benchmark_request_generation += 1
+            self._auto_cancel_requested.set()
+        if self._tdp_runtime is not None:
+            self._tdp_runtime.cancel_benchmark()
+
+    async def stop_auto_tdp(self) -> dict[str, object]:
+        # Revoke admission immediately, including while another RPC reads state.
+        self._cancel_auto_request()
+        runtime = self._tdp_runtime
+        if runtime is not None:
+            runtime.stop_auto()
+        return auto_tdp_status("auto_tdp.stopped", runtime)
+
+    def _auto_configuration(self):
+        return FileAutoTdpConfiguration(RootOwnedRuntimeState().ensure()).load()
+
+    def _auto_preferences_store(self):
+        with self._tdp_init_lock:
+            if not hasattr(self, "_auto_preferences_file"):
+                self._auto_preferences_file = FileAutoTdpPreferences(RootOwnedRuntimeState().ensure())
+            return self._auto_preferences_file
+
+    @staticmethod
+    def _auto_preferences_payload(result):
+        return {"schema_version": 1, "code": result.code, "preferences": [] if result.preferences is None else [
+            {"placement": item.placement.value, "target_fps": item.target_fps,
+             "minimum_watts": item.minimum_watts, "maximum_watts": item.maximum_watts}
+            for item in result.preferences.preferences]}
+
+    async def get_auto_tdp_preferences(self):
+        try:
+            result = await asyncio.to_thread(lambda: self._auto_preferences_store().load())
+            return self._auto_preferences_payload(result)
+        except Exception:
+            return {"schema_version": 1, "code": "auto_tdp_preferences.invalid", "preferences": []}
+
+    async def save_auto_tdp_preference(self, placement, target_fps, minimum_watts, maximum_watts):
+        try:
+            preference = AutoTdpModePreference(PlacementState(placement), AutoTdpPolicy(minimum_watts, maximum_watts, target_fps))
+            result = await asyncio.to_thread(lambda: self._auto_preferences_store().save_preference(preference))
+            return self._auto_preferences_payload(result)
+        except Exception:
+            return {"schema_version": 1, "code": "auto_tdp_preferences.save_failed", "preferences": []}
+
+    def _benchmark_status(self, code=None):
+        runtime = self._tdp_runtime
+        if runtime is not None:
+            return runtime.benchmark_status(code)
+        return {"schema_version": 1, "running": False, "cancelling": False,
+                "code": code or "auto_tdp.benchmark_idle", "result": None}
+
+    async def get_auto_tdp_benchmark_status(self) -> dict[str, object]:
+        return self._benchmark_status()
+
+    async def cancel_auto_tdp_benchmark(self) -> dict[str, object]:
+        with self._auto_request_lock:
+            self._benchmark_request_generation += 1
+        if self._tdp_runtime is not None:
+            self._tdp_runtime.cancel_benchmark()
+        return self._benchmark_status()
+
+    async def run_auto_tdp_benchmark(self) -> dict[str, object]:
+        with self._auto_request_lock:
+            generation = self._benchmark_request_generation
+        def run():
+            if self._tdp_closing.is_set():
+                return self._benchmark_status("tdp.closing")
+            loaded = self._auto_configuration()
+            if loaded.configuration is None:
+                return self._benchmark_status(loaded.code)
+            config = loaded.configuration
+            if not self._auto_eligibility().ready:
+                return self._benchmark_status("auto_tdp.game_or_render_unverified")
+            runtime = self._tdp_service()
+            def measure(provider, cancel):
+                factory = self._configured_auto_factory(config, self._auto_eligibility)
+                return benchmark_auto_tdp(factory.create_evidence(provider), cancel=cancel,
+                                         interval_ms=config.collection_contract.interval_ms)
+            return runtime.run_benchmark(measure, admission_guard=lambda:
+                generation == self._benchmark_request_generation and not self._tdp_closing.is_set())
+        try:
+            return await asyncio.to_thread(run)
+        except Exception:
+            return self._benchmark_status("auto_tdp.benchmark_unavailable")
+
+    def _auto_eligibility(self):
+        if self._tdp_closing.is_set():
+            return AutoTdpEligibility(GameState.UNKNOWN, False)
+        snapshot = self._api.get_snapshot_report().snapshot
+        return AutoTdpEligibility(snapshot.game_state,
+            infer_operating_mode(snapshot).mode is OperatingMode.PORTABLE
+            and self._tdp_preflight() == "tdp.ready")
+
+    @staticmethod
+    def _auto_target():
+        gamescope = GamescopeDiscovery().scan()
+        user = resolve_gamescope_user(gamescope).context
+        if user is None:
+            return PerformanceTargetResolution("performance.game_unverified")
+        game = SystemdGameScopeDiscovery().scan(user_uid=user.uid)
+        return GamescopePerformanceTargetResolver().resolve(game, gamescope)
+
+    def _auto_session(self, actuator, provider):
+        config = self._auto_configuration().configuration
+        if config is None:
+            raise ValueError("Auto TDP configuration unavailable")
+        factory = self._configured_auto_factory(config, lambda:
+            AutoTdpEligibility(GameState.UNKNOWN, False)
+            if self._auto_cancel_requested.is_set() else self._auto_eligibility())
+        return factory(actuator, provider)
+
+    def _configured_auto_factory(self, config, eligibility):
+        return AutoTdpSessionFactory(resolve=self._auto_target, eligibility=eligibility,
+            sensor_config=config.sensor_config,
+            host_context_key=config.host_context_key,
+            thermal_evidence_reference=config.thermal_evidence_reference,
+            contract=config.collection_contract)
+
+    def _auto_tdp_status_sync(self):
+        runtime = self._tdp_runtime
+        try:
+            if self._tdp_closing.is_set():
+                return auto_tdp_status("auto_tdp.closing", runtime)
+            loaded = self._auto_configuration()
+            config = loaded.configuration
+            if config is None:
+                return auto_tdp_status(loaded.code, runtime)
+            runtime = self._tdp_service()
+            manual = runtime.status()
+            if not manual["ready"]:
+                return auto_tdp_status(manual["code"], runtime)
+            eligibility = self._auto_eligibility()
+            if not eligibility.ready:
+                return auto_tdp_status("auto_tdp.game_or_render_unverified", runtime)
+            admission = admit_telemetry_collection(config.collection_contract,
+                eligibility.game_state, auto_tdp_enabled=True)
+            if admission.kind is not TelemetryAdmissionKind.ADMIT:
+                return auto_tdp_status(admission.reason, runtime)
+            reading = runtime.auto_context()
+            observed = AutoTdpHostDiscovery().observe(reading)
+            if observed.context_key != config.host_context_key:
+                return auto_tdp_status("auto_tdp.configuration_context_changed", runtime)
+            return auto_tdp_status("auto_tdp.ready", runtime)
+        except Exception:
+            return auto_tdp_status("auto_tdp.runtime_unavailable", runtime)
+
+    async def _tdp_call(self, operation: str, *args) -> dict[str, object]:
+        if self._tdp_closing.is_set():
+            return unavailable_status("tdp.closing")
+        def call():
+            runtime = self._tdp_service()
+            return getattr(runtime, operation)(*args)
+        try:
+            return await asyncio.to_thread(call)
+        except Exception:
+            return unavailable_status()
+
+    @staticmethod
+    def _tdp_user():
+        return resolve_gamescope_user(GamescopeDiscovery().scan()).context
+
+    def _tdp_preflight(self) -> str:
+        if self._tdp_closing.is_set():
+            return "tdp.closing"
+        journal = self._transition_journal_service().status()
+        if not journal.durable or journal.owner.value != "none":
+            return "tdp.transition_active"
+        snapshot = self._api.get_snapshot_report().snapshot
+        if snapshot.game_state is GameState.UNKNOWN:
+            return "tdp.game_unknown"
+        placement = tdp_placement_readiness(snapshot, self._sleep_hardware.observe_presence())
+        if placement != "tdp.ready":
+            return placement
+        user = self._tdp_user()
+        if user is None:
+            return "tdp.user_unverified"
+        conflicts = KnownTdpControllerScan(plugins_root=user.home / "homebrew/plugins").scan()
+        if conflicts.conflicts:
+            return "tdp.conflict"
+        if not conflicts.complete:
+            return "tdp.conflict_scan_unavailable"
+        return "tdp.ready"
+
+    def _tdp_service(self) -> TdpRuntime:
+        with self._tdp_init_lock:
+            if self._tdp_closing.is_set():
+                raise RuntimeError("TDP runtime is closing")
+            if self._tdp_runtime is None:
+                state_root = RootOwnedRuntimeState().ensure()
+                self._tdp_runtime = TdpRuntime(
+                    provider_factory=lambda ready: SteamOsManagerTdpProvider(
+                        user_resolver=self._tdp_user, ownership_ready=ready,
+                    ),
+                    journal=FileTdpJournal(state_root),
+                    lease=FileTdpWriterLease(state_root),
+                    preflight=self._tdp_preflight,
+                    auto_session_factory=self._auto_session,
+                )
+            if self._tdp_closing.is_set():
+                self._tdp_runtime.close()
+                raise RuntimeError("TDP runtime is closing")
+            return self._tdp_runtime
 
     async def classify_offline_details(self, details: object = None) -> dict[str, object]:
         """Classify one minimized report without starting a hardware lifecycle."""
@@ -1855,8 +2131,16 @@ class Plugin:
 
     async def _unload(self) -> None:
         self._unloading = True
+        self._tdp_closing.set()
         started_ns = self._journey_now_ns()
         self._record_shutdown_checkpoint("unload_started", started_ns)
+        tdp_close_failed = False
+        if self._tdp_runtime is not None:
+            try:
+                self._tdp_runtime.close()
+            except Exception:
+                tdp_close_failed = True
+                self._record_shutdown_checkpoint("tdp_stop_failed", started_ns)
         try:
             self._events.append(
                 severity="info", code="plugin.unloading",
@@ -1867,7 +2151,7 @@ class Plugin:
         # Wake the listener and request cancellation of every producer before
         # waiting for any one of them. A cancelled read can still hold a lock
         # in a worker thread needed by that observer's finally/close path.
-        incomplete = False
+        incomplete = tdp_close_failed
         if self._topology_wakeup is not None:
             try:
                 self._topology_wakeup.close()

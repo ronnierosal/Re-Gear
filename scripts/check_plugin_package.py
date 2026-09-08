@@ -224,6 +224,18 @@ def main() -> int:
         }
         allowed_methods = {
             "get_snapshot",
+            "get_tdp_status",
+            "set_tdp_enabled",
+            "apply_tdp_limit",
+            "restore_tdp_limit",
+            "get_auto_tdp_status",
+            "start_auto_tdp",
+            "stop_auto_tdp",
+            "get_auto_tdp_benchmark_status",
+            "run_auto_tdp_benchmark",
+            "cancel_auto_tdp_benchmark",
+            "get_auto_tdp_preferences",
+            "save_auto_tdp_preference",
             "get_peripheral_status",
             "classify_offline_details",
             "get_action_history",
@@ -258,7 +270,7 @@ def main() -> int:
         }
         if public_methods != allowed_methods:
             failures.append(
-                "Decky RPCs must remain limited to diagnostics/logging, read-only offline report classification and peripheral/watcher/action-history status, automatic-dock preference/status, approved support export, supervised presentation, confirmed shutdown-before-disconnect, and guarded process release"
+                "Decky RPCs must remain limited to diagnostics/logging, read-only offline report classification and peripheral/watcher/action-history status, automatic-dock preference/status, explicit manual/automatic TDP controls and read-only benchmarks/preferences, approved support export, supervised presentation, confirmed shutdown-before-disconnect, and guarded process release"
             )
 
     sources = {}
@@ -283,7 +295,7 @@ def main() -> int:
             print(f"- {failure}")
         return 1
     print(
-        "Plugin package check passed: diagnostics/logging, read-only peripheral/watcher/action-history status, automatic-dock preference/status, support export, sleep guard, supervised presentation, confirmed shutdown-before-disconnect, and guarded process release only."
+        "Plugin package check passed: documented diagnostics, preferences, explicit TDP controls, support export, sleep guard, supervised presentation, confirmed shutdown-before-disconnect, and guarded process release only."
     )
     return 0
 
