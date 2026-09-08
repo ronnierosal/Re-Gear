@@ -1,5 +1,8 @@
 # Command Center visual review 01
 
+Current mockup: [review 02 — quick-control tiles](REVISION_02.md), revised to
+Ronnie's icon-grid direction. Review-01 decisions below are retained as history.
+
 Status: **proposed; visual approval pending**. Prepared 2026-09-08 for
 `qa-design-approval`, by Codex under Ronnie's instruction to proceed with mocks
 and coordination. This is a design artifact, not production frontend work.

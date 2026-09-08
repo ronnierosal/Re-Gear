@@ -6,7 +6,7 @@
   "interactionChecks": [
     "Modules/page/Back route",
     "focus return",
-    "Stop/Start local state",
+    "FPS/TDP pickers and Auto Stop/Start local state",
     "unknown recovery access",
     "short-height focus scroll"
   ],
