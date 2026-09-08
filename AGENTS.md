@@ -8,6 +8,21 @@ project; eGPUBridge is reference evidence, not the architecture to reproduce.
 
 ## Public documentation
 
+- Codex/ChatGPT owns README, Wiki and project Discussions. Claude primarily owns
+  implementation, task state and concise technical evidence; coding completion
+  does not require polished public documentation. Any implementing agent follows
+  the same evidence handoff. Explicit task assignments may vary these defaults.
+- Before completing work, record result, behavior change, tests, limitations,
+  commit/PR and a separate `Documentation impact: none|README|Wiki|Discussion|multiple`
+  line in the task note. See [Documentation workflow](docs/DOCUMENTATION_WORKFLOW.md)
+  for templates and the read-only `docs-queue`; unknown impact is triaged, not hidden.
+- Routine evidence-backed README/Wiki maintenance and factual development
+  Discussions are delegated to the documentation owner without per-update human
+  approval. This supersedes older blanket Wiki publication gates. Human review
+  remains for positioning changes, promises/timelines, licensing statements,
+  personal announcements, major roadmap commitments or material readiness claims.
+  Release artifacts, credentials and hardware retain their separate gates.
+
 - README and general Wiki pages describe Re-Gear across SteamOS handheld,
   dock, display, controller, and eGPU vendors. Do not frame the product or
   general instructions around a particular handheld or eGPU model.
@@ -21,8 +36,9 @@ project; eGPUBridge is reference evidence, not the architecture to reproduce.
 - User diagnostic guidance uses the reviewed read-only CLI or support preview
   flow in `docs/DIAGNOSTICS.md` and `docs/SUPPORT_BUNDLE.md`. Never request raw
   logs, secrets, unrestricted system dumps, or unreviewed diagnostic scripts.
-- Review affected README/Wiki pages with player-visible changes and use the
-  synchronization workflow in `wiki/README.md` for authorized publication.
+- Flag public impact with player-visible changes; the documentation owner reviews
+  and publishes using `docs/DOCUMENTATION_WORKFLOW.md` and the Wiki sync procedure.
+  Implementation owners still keep affected technical contracts/tests accurate.
 
 ## Sources of truth
 

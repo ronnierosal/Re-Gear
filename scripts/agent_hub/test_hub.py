@@ -151,6 +151,69 @@ class HubTests(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertTrue((script.parent / 'data' / 'hub.sqlite3').is_file())
 
+    def completed(self, key, note, stream='egpu', deps=None):
+        self.task(key, stream=stream, paths=[], deps=deps)
+        self.claim(key)
+        return self.do('lead', 'update_task', id=key, rev=2, state='done',
+                       note=note, evidence='abc: tests passed; PR merge must be checked independently')
+
+    def test_docs_queue_routes_completed_work_and_preserves_unknowns(self):
+        self.completed('none', 'Result: refactor\nDocumentation impact: none')
+        self.completed('wiki', 'Result: behavior changed\r\nDocumentation impact: WiKi\r\n')
+        self.completed('legacy', 'Old task with no impact marker')
+        self.completed('invalid', 'Documentation impact: none, maybe Wiki')
+        self.completed('ambiguous', 'Documentation impact: none\nDocumentation impact: Wiki')
+        self.completed('docs-own', 'Documentation impact: Wiki', stream='documentation')
+        self.task('unfinished', paths=[]); self.claim('unfinished')
+        before, history = self.hub.status(), self.hub.history()
+        rows = self.hub.docs_queue()['pending']
+        self.assertEqual({'wiki': 'wiki', 'legacy': 'unassessed', 'invalid': 'unassessed', 'ambiguous': 'unassessed'},
+                         {row['task']['id']: row['documentation_impact'] for row in rows})
+        self.assertEqual(before, self.hub.status())
+        self.assertEqual(history, self.hub.history())
+
+    def test_docs_review_requires_marker_and_dependency_and_done(self):
+        self.completed('source', 'Documentation impact: multiple')
+        self.completed('unrelated', 'Other docs work', stream='documentation', deps=['source'])
+        self.completed('wrong-link', 'Documentation review: source', stream='documentation')
+        self.assertEqual(1, len(self.hub.docs_queue()['pending']))
+        self.task('review', stream='documentation', paths=[], deps=['source']); self.claim('review')
+        self.do('lead', 'update_task', id='review', rev=2, state='blocked',
+                note='Documentation review: source\nPublication unavailable')
+        self.assertEqual('blocked', self.hub.docs_queue()['pending'][0]['reviews'][0]['state'])
+        self.do('lead', 'update_task', id='review', rev=3, state='cancelled',
+                note='Documentation review: source\nSuperseded by successor')
+        self.assertEqual(1, len(self.hub.docs_queue()['pending']))
+        self.completed('successor', 'Documentation review: source\nReviewed: no public change needed.',
+                       stream='documentation', deps=['source'])
+        self.assertEqual([], self.hub.docs_queue()['pending'])
+
+    def test_docs_queue_cli_and_batched_review(self):
+        self.completed('readme', 'Documentation impact: README')
+        self.completed('news', 'Documentation impact: Discussion')
+        cmd = [sys.executable, '-B', str(Path(__file__).with_name('hub.py')), '--db', str(self.hub.path), 'docs-queue']
+        result = subprocess.run(cmd, text=True, capture_output=True)
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(2, len(json.loads(result.stdout)['pending']))
+        self.completed('batch', 'Documentation review: readme\nDocumentation review: news\nPublished with readback.',
+                       stream='documentation', deps=['readme', 'news'])
+        self.assertEqual([], self.hub.docs_queue()['pending'])
+
+    def test_documentation_templates_round_trip(self):
+        directory = Path(__file__).parent
+        self.task('source-task-id', paths=[]); self.claim('source-task-id')
+        completion = json.loads((directory / 'completion.example.json').read_text(encoding='utf-8-sig'))
+        completion['id'] = 'source-task-id'
+        self.hub.apply('lead', completion)
+        self.assertEqual('wiki', self.hub.docs_queue()['pending'][0]['documentation_impact'])
+        review = json.loads((directory / 'review.example.json').read_text(encoding='utf-8-sig'))
+        self.hub.apply('worker', review)
+        self.do('worker', 'claim_task', id=review['id'], rev=1)
+        self.do('worker', 'update_task', id=review['id'], rev=2, state='done',
+                note=review['note'] + '\nDecision: no public change; internal-only task.',
+                evidence='Source reviewed; no public behavior change.')
+        self.assertEqual([], self.hub.docs_queue()['pending'])
+
     def test_transfer_requires_acceptance_and_matching_revision(self):
         self.task(); self.claim()
         transfer = self.do('lead', 'offer_transfer', kind='task', id='t1', rev=2, to='worker', note='Own this test slice')
