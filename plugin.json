@@ -6,6 +6,6 @@
   "publish": {
     "tags": ["system", "hardware", "diagnostics"],
     "description": "SteamOS dock diagnostics, eGPU sleep safety, and guarded user-approved eGPU client release.",
-    "image": "https://raw.githubusercontent.com/ronnierosal/Re-Gear/main/docs/images/re-gear-readme-logo.png"
+    "image": "https://raw.githubusercontent.com/ronnierosal/Re-Gear/main/docs/images/re-gear-decky-icon.png"
   }
 }

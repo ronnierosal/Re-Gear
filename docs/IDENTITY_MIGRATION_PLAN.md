@@ -1,14 +1,15 @@
 # Re-Gear installed identity cutover
 
-Status: repository implementation authorized on 2026-09-08 as a **separate task,
-worktree and PR**. This document changes no executable identity or installed
-system. Hardware migration remains a separate supervised step.
+Status: repository cutover implemented in a **separate task, worktree and PR**
+on 2026-09-08. See [implementation inventory and procedure](IDENTITY_CUTOVER.md).
+No installed system was changed. Hardware migration and rollback validation
+remain separate supervised steps.
 
 ## Decision and scope
 
 Use **`Re-Gear`** as the target installed Decky directory and archive root,
-subject to verifying Decky's actual installation/discovery contract in the
-implementation PR. The visible manifest/UI label is already Re-Gear. This is a
+consistent with the pinned upstream loader source inspected in the
+implementation inventory; the installed loader still needs supervised checks. The visible manifest/UI label is already Re-Gear. This is a
 clean identity cutover, not an ongoing dual-name compatibility layer.
 
 Ronnie reports legacy installs are limited to his own recent test device(s).

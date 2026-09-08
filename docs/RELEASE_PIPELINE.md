@@ -43,9 +43,11 @@ contact Decky, register a store channel, deploy, or use publication secrets.
 ## Candidate versioning
 
 New player-facing archives use `Re-Gear-<version>.zip`. The internal archive
-folder and installed directory remain `HandheldDockMode`; the visible manifest
-label is `Re-Gear`. These separate contracts preserve upgrades and settings. Historical rollback validation accepts
-both archive prefixes; new release candidates require Re-Gear naming.
+folder and new installed directory are `Re-Gear`; the visible manifest label
+is also `Re-Gear`. Historical read-only validation accepts either single old
+or new root; new release candidates require Re-Gear naming and root. Existing
+legacy test installations require the [supervised cutover](IDENTITY_CUTOVER.md)
+before new deployment. Persistent settings/recovery paths remain unchanged.
 
 Version 0.3.0 starts the combined dashboard and event-triggered docking candidate.
 Bump the patch version for subsequent fix candidates (0.3.1, 0.3.2); bump the minor

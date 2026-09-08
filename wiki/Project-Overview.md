@@ -37,8 +37,10 @@ overclocking/fan control/driver installation, or a cloud plugin marketplace.
 Physical live eGPU removal remains unsupported while its separately gated
 development continues.
 
-**Compatibility note:** Re-Gear was formerly Handheld Dock Mode. The installed
-Decky plugin identity/directory remains `HandheldDockMode`; exact technical paths
-and legacy Wiki slugs are retained for compatibility. This documentation update
-does not migrate them. eGPUBridge provides reference evidence; Re-Gear must
-establish its own behavior and hardware proof.
+**Compatibility note:** Re-Gear was formerly Handheld Dock Mode. New repository
+builds use the `Re-Gear` Decky directory. Older test installs may still use
+`HandheldDockMode` and require the separately supervised
+[cutover procedure](https://github.com/ronnierosal/Re-Gear/blob/main/docs/IDENTITY_CUTOVER.md);
+merged code does not migrate an installed device. Internal state identifiers and
+legacy Wiki slugs remain stable. eGPUBridge provides reference evidence; Re-Gear
+must establish its own behavior and hardware proof.
