@@ -216,6 +216,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument(
         "--json", action="store_true", help="emit the machine-readable report"
     )
+    parser.add_argument(
+        "--exit-on",
+        choices=("safe-undock", "removal-safety"),
+        default="safe-undock",
+        help="which verdict the exit status reflects; 'safe-undock' (default)"
+        " keeps the established meaning of zero, 'removal-safety' reports the"
+        " narrower verdict that gates a supervised software-removal run",
+    )
     arguments = parser.parse_args(argv)
     # `DiagnosticsApi` deliberately wires discovery only, so Safe Undock
     # evidence — which needs controller and audio facts — cannot be composed
@@ -232,15 +240,22 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
     result = describe(report)
     print(json.dumps(result, indent=2, sort_keys=True) if arguments.json else render(result))
-    # Exit status tracks removal safety: that is the verdict which gates a
-    # supervised software-removal run. The full Safe Undock state stays in
-    # the report for the player-facing flow.
-    return (
-        0
-        if result.get("removal_safety_state")
-        == RemovalSafetyState.READY_FOR_SUPERVISED_REMOVAL.value
-        else 1
-    )
+    # The default exit status keeps its established meaning: zero only when the
+    # full nine-fact Safe Undock contract is satisfied. Removal safety is a
+    # narrower verdict, so reporting it by default would let a caller that
+    # treats zero as full readiness receive zero while audio and controller
+    # readiness are still blocked. Callers gating a supervised removal ask for
+    # it explicitly.
+    if arguments.exit_on == "removal-safety":
+        satisfied = (
+            result.get("removal_safety_state")
+            == RemovalSafetyState.READY_FOR_SUPERVISED_REMOVAL.value
+        )
+    else:
+        satisfied = (
+            result["state"] == SafeUndockReadinessState.READY_FOR_REVALIDATION.value
+        )
+    return 0 if satisfied else 1
 
 
 if __name__ == "__main__":

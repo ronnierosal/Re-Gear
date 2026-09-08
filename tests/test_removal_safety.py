@@ -200,3 +200,54 @@ class ProbeReportingTests(unittest.TestCase):
             result["removal_safety_code"], "safe_undock.attachment_binding_missing"
         )
         self.assertNotIn("unknown", module.render(result))
+
+
+class ExitContractTests(unittest.TestCase):
+    """The default exit status must keep the meaning it already had.
+
+    Raised by Codex on #97: a caller treating zero as full Safe Undock
+    readiness must not start receiving zero while audio and controller
+    readiness are still blocked.
+    """
+
+    @staticmethod
+    def _module():
+        import importlib.util
+
+        path = ROOT / "scripts" / "probe_safe_undock_readiness.py"
+        spec = importlib.util.spec_from_file_location("probe_exit", path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    def _run(self, argv, report):
+        import contextlib
+        import io
+        from unittest.mock import patch
+
+        module = self._module()
+        service = patch.object(module, "SnapshotService", return_value=report)
+        with service, contextlib.redirect_stdout(io.StringIO()):
+            return module.main(argv)
+
+    def test_default_reflects_the_full_contract(self) -> None:
+        module = self._module()
+        result = module.describe(as_shipped())
+        self.assertEqual(result["state"], "not_ready")
+        self.assertEqual(
+            result["removal_safety_state"], "ready_for_supervised_removal"
+        )
+
+    def test_removal_safety_is_opt_in_not_the_default(self) -> None:
+        module = self._module()
+        parsed = module.argparse.ArgumentParser()
+        # The flag exists and defaults to the established meaning.
+        self.assertIn("--exit-on", Path(module.__file__).read_text(encoding="utf-8"))
+        source = Path(module.__file__).read_text(encoding="utf-8")
+        self.assertIn('default="safe-undock"', source)
+
+    def test_both_verdicts_stay_in_the_report(self) -> None:
+        module = self._module()
+        result = module.describe(as_shipped())
+        self.assertIn("state", result)
+        self.assertIn("removal_safety_state", result)
