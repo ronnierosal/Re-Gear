@@ -87,6 +87,11 @@ import {
   collectOptionalDiagnostics,
   shouldCollectOptionalDiagnostics,
 } from "./optional-diagnostics-refresh";
+import { quickAccessNavView } from "./quick-access-nav";
+import { QuickAccessNav } from "./quick-access-nav-row";
+import { quickAccessSections } from "./quick-access-sections";
+import type { QuickAccessSectionId } from "./quick-access-sections";
+import { applySectionSelection, requestedSectionId } from "./quick-access-section-state";
 import { connectionProgress, refreshDelayForVisibility } from "./refresh-policy";
 import { canOfferForce, processReleaseOutcomeMessage } from "./process-release-ui";
 import {
@@ -541,6 +546,10 @@ function Content({ preflight, connection, shortcut }: { preflight: SleepPrefligh
   const [supportBusy, setSupportBusy] = useState(false);
   const [supportMessage, setSupportMessage] = useState("");
   const [showDiagnostics, setShowDiagnostics] = useState(false);
+  // The row target to return to when the System section closes. `showDiagnostics`
+  // stays the single source of truth for whether System is open; see
+  // quick-access-section-state.ts for why this is not a second copy of it.
+  const [chosenSection, setChosenSection] = useState<QuickAccessSectionId>("egpu");
   const [showJourneyDetails, setShowJourneyDetails] = useState(false);
   const [presentationBusy, setPresentationBusy] = useState(false);
   const [presentationMessage, setPresentationMessage] = useState("");
@@ -1407,6 +1416,13 @@ function Content({ preflight, connection, shortcut }: { preflight: SleepPrefligh
     }, 0);
   }, []);
 
+  const selectSection = useCallback((id: QuickAccessSectionId) => {
+    const result = applySectionSelection({ showDiagnostics, chosen: chosenSection }, id);
+    if (result.refresh) void refresh(true);
+    setShowDiagnostics(result.next.showDiagnostics);
+    setChosenSection(result.next.chosen);
+  }, [chosenSection, refresh, showDiagnostics]);
+
   const toggleTroubleshooting = useCallback(() => {
     if (!showDiagnostics) {
       void refresh(true);
@@ -1424,6 +1440,19 @@ function Content({ preflight, connection, shortcut }: { preflight: SleepPrefligh
     });
   }, []);
 
+  // Only System is wired to the row in this slice; the other four targets change
+  // the selection and nothing else yet. TDP evidence lives inside TdpControls, so
+  // its readiness is not observable here and the section reads unavailable --
+  // unknown state is not a capability claim.
+  const sections = quickAccessSections({
+    mode: payload?.inference.mode,
+    fresh: !loading && payload != null,
+    shortcutAvailable: controllerShortcutAvailable,
+    healthKnown: payload?.health != null,
+  });
+  const navView = quickAccessNavView(
+    sections, requestedSectionId({ showDiagnostics, chosen: chosenSection }),
+  );
   const sectionVisibility = quickAccessSectionVisibility(showDiagnostics);
 
   return (
@@ -1443,6 +1472,10 @@ function Content({ preflight, connection, shortcut }: { preflight: SleepPrefligh
           loading={loading}
         />
 
+      </PanelSection>
+
+      <PanelSection>
+        <QuickAccessNav view={navView} onSelect={selectSection} />
       </PanelSection>
 
       {payload?.connection_readiness && payload.connection_readiness.stage !== "disconnected" &&

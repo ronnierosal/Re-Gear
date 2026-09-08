@@ -44,18 +44,35 @@ test("the row keeps its shape when evidence is missing", () => {
 });
 
 test("an unavailable section is dimmed but still reachable", () => {
-  const view = quickAccessNavView(quickAccessSections({ ...ready, shortcutAvailable: false }));
+  // Being drawn in the row was never the question. This asserted only presence,
+  // so it passed for the whole period when selecting the target was impossible:
+  // the resolver bounced off it. Reachability means landing on it.
+  const sections = quickAccessSections({ ...ready, shortcutAvailable: false });
+  const view = quickAccessNavView(sections);
   const controller = view.items.find((item) => item.id === "controller");
   assert.equal(controller.available, false);
-  assert.ok(view.items.some((item) => item.id === "controller"), "must stay in the row");
+  assert.equal(controller.active, false, "not active until chosen");
+
+  const chosen = quickAccessNavView(sections, "controller");
+  assert.equal(chosen.activeId, "controller", "selecting it must land on it");
+  assert.equal(chosen.blocked, true);
+  assert.equal(chosen.items.find((item) => item.id === "controller").active, true);
+
+  // Stepping must reach it too, or traversal order would depend on evidence.
+  const fromEgpu = quickAccessNavView(sections, "egpu");
+  assert.equal(stepSection(fromEgpu, 1), "controller");
 });
 
 test("selecting a blocked section shows the reason, not the summary", () => {
+  // This is reachable from the real taxonomy, not only from a synthetic list:
+  // the test previously asserted the opposite of its own name because the
+  // resolver bounced off the selection before the row could explain it.
   const sections = quickAccessSections({ ...ready, autoTdpAvailable: false });
   const view = quickAccessNavView(sections, "tdp");
-  // resolveSectionId refuses the unusable section, so the panel lands elsewhere.
-  assert.equal(view.activeId, "egpu");
-  assert.equal(view.blocked, false);
+  assert.equal(view.activeId, "tdp");
+  assert.equal(view.blocked, true);
+  assert.equal(view.detail, "This device has no verified TDP control.");
+  assert.equal(view.items.find((item) => item.id === "tdp").active, true);
 });
 
 test("a blocked active section reports blocked and explains itself", () => {

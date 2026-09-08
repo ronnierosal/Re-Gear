@@ -45,8 +45,9 @@ export type QuickAccessNavView = {
 export function quickAccessNavView(
   sections: QuickAccessSection[], requested?: string,
 ): QuickAccessNavView {
-  // resolveSectionId already refuses to land on an unusable section, so a
-  // remembered selection cannot strand the player on an empty pane.
+  // resolveSectionId honours any section the row draws, including unavailable
+  // ones: `blocked` and `detail` below are how such a selection explains
+  // itself. It falls back only for a section that no longer exists.
   const activeId = resolveSectionId(sections, requested);
   const active = sections.find((section) => section.id === activeId);
   return {
