@@ -68,7 +68,11 @@ The directory cutover preserves existing data and recovery authority:
 | Settings, managed markers and diagnostic codes | existing keys and HDM identifiers |
 
 Decky's plugin list and panel display Re-Gear. `publish.image` references the
-existing approved `docs/images/re-gear-decky-icon.png`. Historical installs may
+512px transparent `docs/images/re-gear-listing-icon.png`, rasterized directly
+from the canonical cyan R SVG `src/assets/regear-icon.svg`. Original assets
+are retained. Regenerate with `scripts/render_listing_icon.cjs` using the
+pinned renderer documented in its header; provenance hashes are checked by
+the Decky contract test. Historical installs may
 still use `HandheldDockMode`; normal new deployment refuses that root until the
 controlled supervised cutover. Package names, RPC/state keys and helper paths
 remain stable for the reasons in the cutover inventory.
