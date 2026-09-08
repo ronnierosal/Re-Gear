@@ -116,14 +116,14 @@ def contended_files(claims: Mapping[int, Sequence[str]]) -> tuple[Collision, ...
     )
 
 
-def _run_gh(argv: Sequence[str]) -> str:
+def _run_gh(argv: Sequence[str], timeout: int = 60) -> str:
     completed = subprocess.run(
         (_gh_executable(), *argv),
         capture_output=True,
         check=False,
         shell=False,
         text=True,
-        timeout=60,
+        timeout=timeout,
     )
     if completed.returncode != 0:
         raise RuntimeError(
@@ -132,18 +132,50 @@ def _run_gh(argv: Sequence[str]) -> str:
     return completed.stdout
 
 
-def collect_open_pull_requests(limit: int = 200) -> dict[int, tuple[str, ...]]:
-    """Collect changed paths for every open pull request via the GitHub CLI."""
-    listing = json.loads(
-        _run_gh(("pr", "list", "--state", "open", "--limit", str(limit), "--json", "number"))
-    )
+def _decode_pages(payload: str) -> list[dict]:
+    """Flatten `gh api --paginate` output.
+
+    Pagination emits one JSON array per page, concatenated rather than merged,
+    and older CLI versions have no --slurp. Decoding the stream keeps every
+    page: a partial inventory would read as "no contention" and silently hide
+    a claim, which is the failure this reporter exists to prevent.
+    """
+    decoder = json.JSONDecoder()
+    entries: list[dict] = []
+    index = 0
+    while index < len(payload):
+        if payload[index].isspace():
+            index += 1
+            continue
+        page, index = decoder.raw_decode(payload, index)
+        if not isinstance(page, list):
+            raise RuntimeError(f"expected a JSON array page, got {type(page).__name__}")
+        entries.extend(page)
+    return entries
+
+
+def _paginated(path: str, timeout: int = 120) -> list[dict]:
+    return _decode_pages(_run_gh(("api", "--paginate", path), timeout=timeout))
+
+
+def repository_slug() -> str:
+    """The owner/name of the checkout's GitHub repository."""
+    return json.loads(_run_gh(("repo", "view", "--json", "nameWithOwner")))["nameWithOwner"]
+
+
+def collect_open_pull_requests(repository: str | None = None) -> dict[int, tuple[str, ...]]:
+    """Collect changed paths for every open pull request via the GitHub CLI.
+
+    Both inventories are paginated. `gh pr list --limit` and `gh pr view --json
+    files` each cap their results and report the truncated set as if complete,
+    so a busy queue or a wide pull request would drop claims without warning.
+    """
+    repository = repository or repository_slug()
     claims: dict[int, tuple[str, ...]] = {}
-    for entry in listing:
+    for entry in _paginated(f"repos/{repository}/pulls?state=open&per_page=100"):
         number = int(entry["number"])
-        detail = json.loads(
-            _run_gh(("pr", "view", str(number), "--json", "files"))
-        )
-        claims[number] = tuple(item["path"] for item in detail.get("files", ()))
+        files = _paginated(f"repos/{repository}/pulls/{number}/files?per_page=100")
+        claims[number] = tuple(item["filename"] for item in files)
     return claims
 
 
