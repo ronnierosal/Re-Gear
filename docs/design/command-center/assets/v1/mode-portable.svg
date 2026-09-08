@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 64" fill="none" role="img" aria-labelledby="title desc">
+  <title id="title">Portable mode</title><desc id="desc">Handheld gaming device used on its internal display.</desc>
+  <rect x="10" y="12" width="76" height="40" rx="14" stroke="currentColor" stroke-width="3"/>
+  <rect x="31" y="18" width="34" height="28" rx="4" stroke="currentColor" stroke-width="3"/>
+  <circle cx="21" cy="24" r="5" stroke="currentColor" stroke-width="3"/>
+  <circle cx="75" cy="24" r="5" stroke="currentColor" stroke-width="3"/>
+  <path d="M20 34v8M16 38h8" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+  <circle cx="73" cy="37" r="2.2" fill="currentColor"/><circle cx="79" cy="41" r="2.2" fill="currentColor"/>
+</svg>
