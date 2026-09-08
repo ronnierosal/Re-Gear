@@ -28,6 +28,11 @@ const assert = require('node:assert/strict');
     }
   }
   await page.goto(base);
+  await page.locator('#quick-disconnect').click();
+  assert.match(await page.locator('dialog').innerText(), /In development/);
+  assert.equal(await page.locator('dialog [data-value]').count(), 0);
+  await page.keyboard.press('Escape');
+  assert.equal(await page.evaluate(() => document.activeElement.id), 'quick-disconnect');
   await page.locator('#open-egpu-status').click();
   assert.equal(await page.locator('#page').inputValue(), 'egpu-status');
   assert.equal(await page.locator('#restore').count(), 0);

@@ -6,6 +6,12 @@ stacked first-screen performance block with small selectable icon/value tiles.
 This revision implements that instruction in the local mockup only.
 
 - Two columns: FPS target, TDP limit, Auto TDP, Display target.
+- User follow-up explicitly adds a fifth **Safe Disconnect** tile, prepared for
+  Claude's upcoming backend work. It displays **In development** and opens an
+  informational placeholder with no disconnect operation. Do not invent a sixth
+  tile merely to fill the grid. Production enablement requires the owning
+  backend's verified capability, readiness and confirmation flow; this mockup
+  neither asserts safe live removal nor changes current shutdown guidance.
 - Tile activation opens a compact picker; Auto TDP offers Stop while running
   or Configure otherwise. Back restores the invoking tile.
 - Compact eGPU and Controller summaries follow the grid; deeper pages remain
