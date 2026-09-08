@@ -30,7 +30,9 @@
       "connected": true,
       "active": false,
       "edid_ready": true,
-      "confidence": "verified"
+      "confidence": "verified",
+      "mode_committed": false,
+      "active_confidence": "verified"
     },
     {
       "stable_id": "external-tv",
@@ -39,13 +41,17 @@
       "connected": true,
       "active": true,
       "edid_ready": true,
-      "confidence": "verified"
+      "confidence": "verified",
+      "mode_committed": true,
+      "active_confidence": "verified"
     }
   ],
   "gamescope": {
     "running": true,
     "pid": 47959,
-    "output_order": ["HDMI-A-1"],
+    "output_order": [
+      "HDMI-A-1"
+    ],
     "render_gpu_stable_id": "gpd-g1:0123456789abcdef",
     "render_vendor_device": "1002:7480",
     "confidence": "verified"
