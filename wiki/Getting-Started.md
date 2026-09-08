@@ -13,8 +13,10 @@ before using a build.
 [GitHub releases](https://github.com/ronnierosal/Re-Gear/releases) include
 development candidates. Publicly downloadable does not mean supported,
 hardware-validated or Decky Store registered. The maintainer reports legacy use only on recent test devices; see the [compatibility note](Project-Overview).
-The internal identity cutover is a separate implementation task; this documentation
-update changes no installation.
+The repository identity cutover is implemented for new builds. Existing test
+installations have not been migrated by that code change; installation and
+rollback remain separately supervised under the
+[cutover procedure](https://github.com/ronnierosal/Re-Gear/blob/main/docs/IDENTITY_CUTOVER.md).
 
 ## Players and hardware testers
 
