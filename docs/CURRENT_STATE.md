@@ -1,5 +1,26 @@
 # Current state
 
+## Release-line reconciliation — 2026-09-07
+
+`main` and the 0.3.5x release line had diverged rather than ordered: 117
+commits existed only on `main` and 23 only on `codex/release-0.3.55`, from a
+common ancestor at `cc1bab47`. No branch contained both the filter/removal
+work and the release candidates, so no installable build could be produced
+without regressing an installed device.
+
+This integration merges the release line into `main`, keeping `main` as the
+single lineage. The ancestry of installed revision
+`e765fad4b9283964f43fbcc4185fb6b332cd7333` is preserved.
+
+Both sets of dated entries below are retained. They are a chronological
+evidence record, and neither lineage's history is superseded by the other:
+the release entries record supervised device work, the main entries record
+integration and workstream checkpoints. Nothing here asserts a current
+installed state, and no version has been selected or reserved.
+
+The later 0.3.56 candidate is **not** included; its additional work is
+inventoried separately in issue #116.
+
 ## PR #3 integration checkpoint — 2026-09-07
 
 Historical 0.3.51 source `cc1bab4` is reconciled with main `a9125a9` in an
@@ -43,6 +64,84 @@ TDP loop remain pending.
 Current-source research and remaining device/API checks are recorded in
 [TDP control](TDP_CONTROL.md). The online Ally address is awaited for remote
 inspection. This workstream does not own G1 lifecycle or Offline Play changes.
+## Re-Gear 0.3.54 separate Steam launch candidate (local)
+
+Adds a supervised Steam-only launch shim with invocation-bound single-use
+receipt, bounded handoff wait, detached approval-gated service preparation,
+exact unit readback/rollback, and fallback to the native launcher on package
+rollback. Independent review found no remaining material code blocker.
+1067 backend tests pass (nine platform skips); 181 frontend tests, typecheck,
+architecture, compilation, build and package checks pass. All 52 Linux fixture
+tests pass, including marker races and native-launcher fallback.
+Installed readback remains 0.3.53. G1 remains attached; resources are not
+released. No new trial or service preparation has run. See
+PORTABLE_VULKAN_TRIAL.md for validation and retained-record reconciliation.
+
+## Re-Gear 0.3.53 supervised Portable launch trial candidate
+
+Installed via native Decky ZIP lifecycle; readback verified 0.3.53 at
+8d7997fabd3286c4699404b42357a56b1b2edb8d. Installed portable_trial_launch.py
+SHA256 matches source: 1e13401fe31a1344f3e4993d1129eaf4fbb5740e9178efcbc8e904d57efc509f.
+Loader stopped 0.3.52 in 0.1 seconds and loaded 0.3.53. Startup reports
+Portable, Idle, no blockers and events ready. This supersedes pre-install
+status below. The supervised attached trial ran on September 5. The player
+confirmed normal Ally screen, audio and controls after returning to Portable.
+The complete privileged scan still finds Gamescope and Steam external render
+references plus WirePlumber audio control. G1 remains attached; software removal
+and unplug are blocked. The consumed trial must not be replayed. Steam launches
+in a separate OS service and does not inherit the wrapper trial environment.
+See PORTABLE_VULKAN_TRIAL.md for evidence and the next engineering boundary.
+
+Staged only: /home/deck/Re-Gear-0.3.53.zip
+Source: 8d7997fabd3286c4699404b42357a56b1b2edb8d
+Local/remote SHA256: 7461ac1c91161da99960880a6292c1d6c6e109f17e1d3af9649e9cf55ac7aa6b
+1023 backend tests (eight skips), 181 frontend tests and release checks pass.
+Installed readback remains 0.3.52, and the PCI scan shows only internal graphics.
+The verified 0.3.52 archive is retained as rollback. Native install is pending.
+
+Local experimental integration uses a dedicated trial-bound approval and the
+existing Portable transition engine. Original launch policy is persisted before
+config change; one-shot authority is consumed before wrapper exec. Recovery
+cancels pending authority even when observation is unavailable. Retained records
+block retrial. Normal and automatic transitions do not opt in. Portable success
+never claims the trial applied or that G1 resources are released.
+
+See PORTABLE_VULKAN_TRIAL.md for the developer-only RPC and hardware gates.
+Installed 0.3.52 remains unchanged while this candidate is built. No new session
+restart, GPU transition or live unplug has been performed. The detached Ally
+ran 11 temporary-file store tests successfully, including POSIX permissions,
+symlink rejection and concurrent consumption; this is not hardware validation.
+
+
+## Re-Gear 0.3.52 disconnect mapping candidate - 2026-09-05
+
+Installed via native Decky lifecycle and verified on the detached Ally. Runtime
+reports 0.3.52 / c028223b1940, Portable, Idle, no blockers and events ready.
+Installed scanner SHA256 matches local source:
+9568672637b998f4ab8ae473fdea7c5a21539cd387e4011bfe6f67bb5066afd9.
+Loader recorded previous plugin stopped in 0.1 seconds and new plugin loaded.
+This supersedes the pre-install status below; G1 release remains unvalidated.
+
+Staged only: /home/deck/Re-Gear-0.3.52.zip
+Source: c028223b194043ca92de0e4663bb77623cd974f7
+Local and remote SHA256: 50dda76cdf9a193ee704085a923b5d86d354170eb18ac8fdb3d8e4b9bc5c2c01
+Installed version remains 0.3.51; detached installation checkpoint pending.
+
+Local candidate preserves installed 0.3.51 ancestry and the reviewed hotkey fix.
+Retained exact eGPU memory mappings now count as clients; unreadable mappings
+block scan completeness. No removal executor or live-unplug support is included.
+The Vulkan launch foundation remains unwired; recovery integration is pending.
+
+Checks passed: 997 backend tests (six skipped), 181 frontend tests, typecheck,
+architecture, compileall, build and package validation. Independent scanner review
+found no blocker. One unprivileged Ally comparison measured client scans at about
+10 ms installed and 25 ms candidate; privileged coverage remains unverified.
+
+Installed 0.3.51 was read back before staging. Player reports G1 attached, TV
+active and no game. Installation requires confirmed full power-off, detach and
+detached boot. Preserve 0.3.51 as rollback. No hardware mutation performed.
+
+
 
 ## Re-Gear 0.3.43 compact popup candidate
 

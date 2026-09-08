@@ -32,6 +32,7 @@ def included_files() -> tuple[Path, ...]:
     paths.append(ROOT / "dist" / "index.js")
     paths.append(ROOT / "dist" / "index.js.map")
     paths.append(ROOT / "bin" / "gamescope")
+    paths.append(ROOT / "bin" / "steam-launcher")
     paths.extend(
         path
         for path in sorted((ROOT / "backend" / "hdm").rglob("*"))
@@ -46,7 +47,7 @@ def archive_name(path: Path) -> str:
 
 
 def archive_mode(path: Path) -> int:
-    return 0o100755 if path == ROOT / "bin" / "gamescope" else 0o100644
+    return 0o100755 if path in (ROOT / "bin" / "gamescope", ROOT / "bin" / "steam-launcher") else 0o100644
 
 
 def archive_bytes(path: Path) -> bytes:
@@ -57,7 +58,7 @@ def archive_bytes(path: Path) -> bytes:
     invalid shebangs or remaining bare CR bytes must fail closed.
     """
     content = path.read_bytes()
-    if path == ROOT / "bin" / "gamescope":
+    if path in (ROOT / "bin" / "gamescope", ROOT / "bin" / "steam-launcher"):
         content = content.replace(b"\r\n", b"\n")
         validate_launcher_bytes(content)
     return content
@@ -159,10 +160,11 @@ def main() -> int:
             raise SystemExit("Decky archive is missing its nested plugin.json")
         if archive.read(f"{PLUGIN_DIRECTORY}/{BUILD_INFO_FILENAME}") != build_info:
             raise SystemExit("Decky archive build metadata did not round-trip")
-        wrapper = archive.getinfo(f"{PLUGIN_DIRECTORY}/bin/gamescope")
-        validate_launcher_bytes(archive.read(wrapper))
-        if (wrapper.external_attr >> 16) & 0o777 != 0o755:
-            raise SystemExit("Gamescope shim must be executable in the archive")
+        for launcher in ('gamescope', 'steam-launcher'):
+            wrapper = archive.getinfo(f"{PLUGIN_DIRECTORY}/bin/{launcher}")
+            validate_launcher_bytes(archive.read(wrapper))
+            if (wrapper.external_attr >> 16) & 0o777 != 0o755:
+                raise SystemExit("Session shim must be executable in the archive")
     print(OUTPUT)
     return 0
 

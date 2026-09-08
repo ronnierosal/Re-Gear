@@ -1,0 +1,248 @@
+from __future__ import annotations
+
+import contextlib
+import io
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "backend"))
+
+from hdm.egpu_release import (  # noqa: E402
+    egpu_functions,
+    holder_units,
+    main,
+    restart_commands,
+)
+
+
+TOOL = ROOT / "backend/hdm/egpu_release.py"
+
+
+class FunctionDerivationTests(unittest.TestCase):
+    """Audio is derived from the GPU address so the two cannot disagree."""
+
+    def test_audio_is_the_next_function(self) -> None:
+        self.assertEqual(
+            egpu_functions("0000:08:00.0"), ("0000:08:00.0", "0000:08:00.1")
+        )
+
+    def test_a_non_zero_gpu_function_still_derives(self) -> None:
+        self.assertEqual(
+            egpu_functions("0000:64:00.5"), ("0000:64:00.5", "0000:64:00.6")
+        )
+
+
+class RestartCommandTests(unittest.TestCase):
+    def test_commands_are_produced_in_plan_order(self) -> None:
+        commands = restart_commands(
+            ("wireplumber.service", "gamescope-session.target"), 1000
+        )
+        self.assertEqual(len(commands), 2)
+        self.assertIn("wireplumber.service", commands[0])
+        self.assertIn("gamescope-session.target", commands[1])
+
+    def test_commands_target_the_given_session_user(self) -> None:
+        self.assertIn("/run/user/1042", restart_commands(("a.service",), 1042)[0])
+
+    def test_no_units_produces_no_commands(self) -> None:
+        self.assertEqual(restart_commands((), 1000), ())
+
+
+class HolderScanTests(unittest.TestCase):
+    def test_a_proc_tree_without_holders_reports_none(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "1").mkdir()
+            (root / "1" / "fd").mkdir()
+            (root / "1" / "cgroup").write_text("0::/init.scope", encoding="utf-8")
+            self.assertEqual(
+                holder_units(("/dev/dri/renderD129",), proc_root=root), ()
+            )
+
+    def test_non_numeric_entries_are_skipped(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "self").mkdir()
+            self.assertEqual(holder_units(("/dev/dri/card1",), proc_root=root), ())
+
+
+class BoundaryTests(unittest.TestCase):
+    """The tool must not open a second process-spawning path."""
+
+    def test_the_tool_never_spawns_a_process(self) -> None:
+        source = TOOL.read_text(encoding="utf-8")
+        for line in source.splitlines():
+            stripped = line.strip()
+            self.assertFalse(
+                stripped.startswith(("import subprocess", "from subprocess")),
+                "the tool must not import subprocess",
+            )
+        self.assertNotIn("os.system", source)
+        self.assertNotIn("Popen", source)
+
+    def test_the_tool_never_removes_a_device(self) -> None:
+        """Clearing holders is not removal authority."""
+        source = TOOL.read_text(encoding="utf-8")
+        self.assertNotIn("device_removal", source)
+        self.assertNotIn("/remove", source)
+        self.assertNotIn("rescan", source)
+
+    def test_the_tool_states_that_recovery_is_not_durable(self) -> None:
+        source = TOOL.read_text(encoding="utf-8")
+        self.assertIn("not durable recovery", source)
+
+
+class DryRunTests(unittest.TestCase):
+    """Without --arm nothing is loaded or attached, on any hardware."""
+
+    def _run(self, argv: list[str]) -> tuple[int, str]:
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            code = main(argv)
+        return code, buffer.getvalue()
+
+    def test_absent_hardware_reports_incomplete_discovery(self) -> None:
+        code, output = self._run(["--gpu", "0000:ff:00.0"])
+        self.assertEqual(code, 1)
+        self.assertIn("discovery incomplete", output)
+
+    def test_arming_without_root_is_refused(self) -> None:
+        import os
+        from unittest.mock import patch
+
+        # geteuid is POSIX-only; create it so this runs on any platform.
+        with patch.object(os, "geteuid", return_value=1000, create=True):
+            code, output = self._run(["--arm"])
+        self.assertEqual(code, 2)
+        self.assertIn("needs root", output)
+
+    def test_default_is_a_plan_not_an_action(self) -> None:
+        source = TOOL.read_text(encoding="utf-8")
+        self.assertIn('"--arm"', source)
+        self.assertIn("action=\"store_true\"", source)
+
+
+if __name__ == "__main__":
+    unittest.main()
+
+
+class ArmPathTests(unittest.TestCase):
+    """Exercise the --arm path end to end with fakes.
+
+    Shipped in 0.3.57 with a NameError at the restart step: a string
+    replacement had silently failed to match, deleting the function while
+    leaving its call site. Nothing executed that path, so syntax checks,
+    the boundary tests and CI all passed and the defect reached a release.
+    """
+
+    def _arm(self, *, holders_after=(), enforced=True):
+        import os
+        from pathlib import Path as _Path
+        from unittest.mock import patch
+
+        import hdm.egpu_release as module
+        from hdm.domain.egpu_device_policy import EgpuDeviceNode
+        from hdm.domain.models import EgpuResourceKind as Kind
+
+        nodes = (
+            EgpuDeviceNode(Kind.DRM_CARD, 226, 1),
+            EgpuDeviceNode(Kind.DRM_RENDER, 226, 129),
+            EgpuDeviceNode(Kind.AUDIO_CONTROL, 116, 15),
+            EgpuDeviceNode(Kind.AUDIO_HARDWARE, 116, 14),
+            EgpuDeviceNode(Kind.AUDIO_PCM, 116, 10),
+        )
+        scan = module.SteamOsEgpuDeviceNodeDiscovery
+        holders = [
+            ("gamescope-session.service", "steam-launcher.service",
+             "wireplumber.service"),
+            tuple(holders_after),
+        ]
+
+        class FakeScan:
+            complete = True
+            error = ""
+            nodes = None
+
+        class FakeDiscovery:
+            def scan(self, **_):
+                result = FakeScan()
+                result.nodes = nodes
+                return result
+
+        class FakeLink:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_):
+                return False
+
+            def load(self, program):
+                return 3
+
+            def program_id(self):
+                return 496
+
+            def attach(self, fd):
+                return 4
+
+            def query_program_ids(self, fd):
+                return (496,) if enforced else ()
+
+        def observe(_nodes, **__):
+            return holders.pop(0) if len(holders) > 1 else holders[0]
+
+        buffer = io.StringIO()
+        with patch.object(module, "SteamOsEgpuDeviceNodeDiscovery", FakeDiscovery), \
+             patch.object(module, "CgroupDeviceLink", FakeLink), \
+             patch.object(module, "holder_units", observe), \
+             patch.object(module, "node_paths", lambda *a: ("/dev/dri/card1",)), \
+             patch.object(os, "geteuid", return_value=0, create=True), \
+             patch.object(os, "O_DIRECTORY", 0, create=True), \
+             patch.object(os, "O_CLOEXEC", 0, create=True), \
+             patch.object(os, "open", return_value=99), \
+             patch.object(os, "close", lambda fd: None), \
+             patch.object(_Path, "is_dir", lambda self: True), \
+             contextlib.redirect_stdout(buffer):
+            code = module.main(["--arm", "--hold", "0"])
+        return code, buffer.getvalue()
+
+    def test_the_arm_path_runs_without_a_missing_name(self) -> None:
+        """The regression: this raised NameError: restart_unit."""
+        code, output = self._arm(holders_after=())
+        self.assertIn("enforcement verified", output)
+        self.assertEqual(code, 0, output)
+
+    def test_arming_prints_the_restart_commands_rather_than_running_them(self) -> None:
+        _, output = self._arm(holders_after=())
+        self.assertIn("systemctl --user restart wireplumber.service", output)
+        self.assertIn("systemctl --user restart gamescope-session.target", output)
+
+    def test_a_cleared_device_reports_success_without_removal(self) -> None:
+        code, output = self._arm(holders_after=())
+        self.assertIn("clients_clear: every holder released", output)
+        self.assertIn("NOT removal clearance", output)
+        self.assertEqual(code, 0)
+
+    def test_remaining_holders_fail_and_are_named(self) -> None:
+        code, output = self._arm(holders_after=("wireplumber.service",))
+        self.assertIn("holders remain", output)
+        self.assertEqual(code, 1)
+
+    def test_unverified_enforcement_stops_before_restart_instructions(self) -> None:
+        code, output = self._arm(enforced=False)
+        self.assertIn("enforcement unverified", output)
+        # The restore commands in the detach block still appear; what must not
+        # appear is the step-6 instruction to apply the plan.
+        self.assertNotIn("run these, as the session user", output)
+        self.assertNotIn("clients_clear", output)
+        self.assertEqual(code, 1)
+
+    def test_the_filter_is_always_reported_detached(self) -> None:
+        for kwargs in ({"holders_after": ()}, {"holders_after": ("a.service",)},
+                       {"enforced": False}):
+            _, output = self._arm(**kwargs)
+            self.assertIn("detached", output)
