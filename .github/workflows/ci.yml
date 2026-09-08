@@ -34,6 +34,17 @@ jobs:
         run: python -m unittest discover -s tests -v
       - name: Compile Python sources
         run: python -m compileall -q backend tests scripts
+      - name: Check for undefined and redefined names
+        # compileall proves the sources parse, not that every name resolves.
+        # 0.3.57 shipped a NameError on a code path no test executed, because a
+        # deleted function's call site survived a failed edit. These four rules
+        # catch that statically and are deliberately narrow: a broader lint gate
+        # would fail on 50 pre-existing unused imports and star imports that are
+        # not correctness defects, and would have to be cleaned before it could
+        # be enforced at all.
+        run: |
+          python -m pip install --quiet ruff
+          python -m ruff check --select F821,F811,F822,F823 --no-cache backend main.py scripts tests
       - name: Check whitespace
         run: git diff --check
       - name: Smoke read-only diagnostics CLI
