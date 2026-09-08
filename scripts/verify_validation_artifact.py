@@ -22,9 +22,9 @@ ARCHIVE_RE = re.compile(r"^(?:Re-Gear|HandheldDockMode)-([0-9]+(?:\.[0-9]+){2}(?
 REVISION_RE = re.compile(r"^[0-9a-f]{40}$")
 REVISION_PREFIX_RE = re.compile(r"^[0-9a-f]{12}$")
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
-PLUGIN_DIRECTORY = "HandheldDockMode"
-BUILD_INFO_NAME = f"{PLUGIN_DIRECTORY}/build_info.json"
-PACKAGE_NAME = f"{PLUGIN_DIRECTORY}/package.json"
+# Read-only historical verification accepts either single root. New build,
+# candidate and deployment tools accept only Re-Gear.
+PLUGIN_DIRECTORIES = frozenset(("Re-Gear", "HandheldDockMode"))
 
 
 def _sha256(path: Path) -> str:
@@ -82,10 +82,12 @@ def _embedded_build(archive: Path, expected_revision: str) -> tuple[str | None, 
     try:
         with zipfile.ZipFile(archive) as value:
             names = tuple(value.namelist())
-            if not names or {name.split("/", 1)[0] for name in names} != {PLUGIN_DIRECTORY}:
+            roots = {name.split("/", 1)[0] for name in names}
+            if not names or len(roots) != 1 or not roots <= PLUGIN_DIRECTORIES:
                 return None, "artifact.package_layout_invalid"
-            build = json.loads(value.read(BUILD_INFO_NAME).decode("utf-8"))
-            package = json.loads(value.read(PACKAGE_NAME).decode("utf-8"))
+            plugin_root = next(iter(roots))
+            build = json.loads(value.read(f"{plugin_root}/build_info.json").decode("utf-8"))
+            package = json.loads(value.read(f"{plugin_root}/package.json").decode("utf-8"))
     except (OSError, KeyError, UnicodeDecodeError, ValueError, zipfile.BadZipFile):
         return None, "artifact.package_metadata_invalid"
     if (

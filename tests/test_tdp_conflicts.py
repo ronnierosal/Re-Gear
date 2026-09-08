@@ -36,7 +36,7 @@ class TdpConflictTests(unittest.TestCase):
 
     def test_regular_process_and_plugin_are_not_known_conflicts(self):
         self.process(1)
-        self.plugin("HandheldDockMode", "Handheld Dock Mode")
+        self.plugin("Re-Gear", "Re-Gear")
         result = self.scanner.scan()
         self.assertTrue(result.complete)
         self.assertEqual(result.conflicts, ())

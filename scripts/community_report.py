@@ -102,7 +102,7 @@ def os_info(release=Path('/etc/os-release'), kernel=Path('/proc/sys/kernel/osrel
 
 
 def find_plugin(explicit=None, home=None):
-    root = Path(explicit) if explicit else (home or Path.home()) / 'homebrew/plugins/HandheldDockMode'
+    root = Path(explicit) if explicit else (home or Path.home()) / 'homebrew/plugins/Re-Gear'
     if (root / 'backend/hdm/cli.py').is_file() and (root / 'plugin.json').is_file():
         return root.resolve()
     return None

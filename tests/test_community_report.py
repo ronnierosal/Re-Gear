@@ -80,7 +80,7 @@ class CommunityReportTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             home = Path(directory)
             self.assertIsNone(report.find_plugin(home=home))
-            root = home / 'homebrew/plugins/HandheldDockMode'
+            root = home / 'homebrew/plugins/Re-Gear'
             (root / 'backend/hdm').mkdir(parents=True)
             (root / 'backend/hdm/cli.py').write_text('')
             (root / 'plugin.json').write_text('{}')

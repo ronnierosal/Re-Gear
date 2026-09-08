@@ -17,7 +17,7 @@ from typing import Any, Callable
 
 
 SCHEMA_VERSION = 1
-PLUGIN_ROOT = Path("/home/deck/homebrew/plugins/HandheldDockMode")
+PLUGIN_ROOT = Path("/home/deck/homebrew/plugins/Re-Gear")
 BUILD_INFO_FILENAME = "build_info.json"
 REVISION_RE = frozenset("0123456789abcdef")
 CRITICAL_FILES = (

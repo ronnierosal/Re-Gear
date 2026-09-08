@@ -1,0 +1,9 @@
+{
+  "source": "src/assets/regear-icon.svg",
+  "source_sha256_lf": "1d6bd082e11b930983f157cc1cdb1cfbc121fbfb588964f916d33c937f8f883f",
+  "output": "docs/images/re-gear-listing-icon.png",
+  "output_sha256": "ae2681f5b56855b4391dc4e35b5217f21a83f294c1fa9cebbbca316192097727",
+  "renderer": "@resvg/resvg-js@2.6.2",
+  "width": 512,
+  "height": 512
+}

@@ -24,7 +24,7 @@ entry point, install anything, change services, run a hardware test, or upload.
    results, and whether picture, controls and audio worked afterward.
 
 Run without sudo. The helper looks only in your own
-`~/homebrew/plugins/HandheldDockMode`. If it cannot find the plugin, it still
+`~/homebrew/plugins/Re-Gear`. If it cannot find the plugin, it still
 previews available OS information with `plugin_not_found`. For a different
 installation location, a maintainer can confirm the directory; then use
 `python3 community_report.py --plugin-root "/path/to/your/trusted/plugin"`.
