@@ -77,11 +77,12 @@ Wiki slugs and redirects; do not rename local worktrees or internal identifiers
 as a prose cleanup. Public descriptions use Re-Gear; exact legacy identifiers
 remain only where compatibility, commands or historical evidence require them.
 
-The [internal identity migration plan](IDENTITY_MIGRATION_PLAN.md) is planning
-only. It inventories a future move from the legacy installed directory to a
-Re-Gear identity, including prior manual GitHub-candidate installs. Implementation
-requires a separate focused task/PR, recovery coverage and supervised validation.
-Until then the compatibility table above remains the executable contract.
+The [internal identity migration plan](IDENTITY_MIGRATION_PLAN.md) covers the
+separate authorized cutover now in implementation. This documentation change
+does not perform it. The clean cutover includes controlled rollback for the
+maintainer's legacy test installation and separate supervised validation.
+Until that implementation PR lands, the compatibility table above remains the
+executable contract.
 
 Documentation publication does not install a build, migrate settings or
 identifiers, certify hardware, or change licensing terms.
