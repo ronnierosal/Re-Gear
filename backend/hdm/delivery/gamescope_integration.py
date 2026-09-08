@@ -53,6 +53,10 @@ class GamescopeIntegrationResult:
 
 
 class GamescopeIntegrationStore:
+    SERVICE = 'gamescope-session.service'
+    SHIM_NAME = 'gamescope'
+    SHIM_MARKER = SHIM_MARKER
+    DROPIN_NAME = DROPIN_NAME
     def __init__(
         self,
         *,
@@ -65,16 +69,16 @@ class GamescopeIntegrationStore:
             raise ValueError("Gamescope integration paths must be absolute")
         self._plugin_root = plugin_root
         self._user = user
-        self._shim = plugin_root / "bin" / "gamescope"
+        self._shim = plugin_root / "bin" / self.SHIM_NAME
         self._state_root = user.home / ".local" / "share" / "handheld-dock-mode"
         self._dropin_root = (
             user.home
             / ".config"
             / "systemd"
             / "user"
-            / "gamescope-session.service.d"
+            / (self.SERVICE + '.d')
         )
-        self._target = self._dropin_root / DROPIN_NAME
+        self._target = self._dropin_root / self.DROPIN_NAME
         self._effective_uid = effective_uid or getattr(os, "geteuid", lambda: -1)
         self._set_owner = set_owner or self._chown
         self._lock = threading.Lock()
@@ -181,7 +185,7 @@ class GamescopeIntegrationStore:
                     Path(".config")
                     / "systemd"
                     / "user"
-                    / "gamescope-session.service.d",
+                    / (self.SERVICE + '.d'),
                     0o700,
                 )
                 if not before.installed:
@@ -252,7 +256,7 @@ class GamescopeIntegrationStore:
             if os.name != "nt" and not mode & stat.S_IXUSR:
                 return False
             data = self._shim.read_bytes()
-            return len(data) <= MAX_DROPIN_BYTES and SHIM_MARKER.encode() in data
+            return len(data) <= MAX_DROPIN_BYTES and self.SHIM_MARKER.encode() in data
         except OSError:
             return False
 
@@ -323,7 +327,7 @@ class GamescopeIntegrationStore:
         data = value.encode("utf-8")
         if len(data) > MAX_DROPIN_BYTES:
             raise ValueError("managed drop-in exceeds its bound")
-        temporary = path.parent / f".{DROPIN_NAME}.{secrets.token_hex(8)}.tmp"
+        temporary = path.parent / f".{self.DROPIN_NAME}.{secrets.token_hex(8)}.tmp"
         flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
         descriptor = os.open(temporary, flags, 0o600)
         try:

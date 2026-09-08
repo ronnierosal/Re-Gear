@@ -329,7 +329,18 @@ def main() -> int:
     )
     arguments = tuple(os.sys.argv[1:])
     environment = dict(os.environ)
+    if state_root.is_absolute():
+        from .portable_trial_launch import consume_launch_candidate
+        candidate = consume_launch_candidate(
+            state_root, config=config, argv=arguments, environment=environment,
+            raw_boot_id=raw_boot_id,
+        )
+        if candidate is not None:
+            trial_arguments, trial_environment = candidate
+            os.execve(REAL_GAMESCOPE, (REAL_GAMESCOPE, *trial_arguments), trial_environment)
+            return 127
     environment.pop("MESA_VK_DEVICE_SELECT", None)
+    environment.pop("MESA_VK_DEVICE_SELECT_FORCE_DEFAULT_DEVICE", None)
     arguments = rewrite_gamescope_argv(
         arguments,
         output_order=output_order,

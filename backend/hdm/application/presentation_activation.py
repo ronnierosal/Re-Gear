@@ -117,12 +117,14 @@ class PresentationActivationService:
         commands: UserServiceCommandPort,
         resolve_user: Callable[[], GamescopeUserResolution],
         approvals: PresentationActivationApprovalStore | None = None,
+        verify_prepared: Callable[[], bool] | None = None,
     ) -> None:
         self._observations = observations
         self._integration = integration
         self._commands = commands
         self._resolve_user = resolve_user
         self._approvals = approvals or PresentationActivationApprovalStore()
+        self._verify_prepared = verify_prepared
         self._lock = threading.Lock()
 
     def preview(self, *, user_confirmed: bool) -> PresentationActivationPreview:
@@ -206,6 +208,13 @@ class PresentationActivationService:
             return self._rollback(result.changed, "activation.daemon_reload_failed", user)
         if not self._run(UserServiceOperation.VERIFY_GAMESCOPE_UNIT, user):
             return self._rollback(result.changed, "activation.unit_unavailable", user)
+        if self._verify_prepared is not None:
+            try:
+                verified = self._verify_prepared() is True
+            except Exception:
+                verified = False
+            if not verified:
+                return self._rollback(result.changed, 'activation.unit_mismatch', user)
         return PresentationActivationOutcome(True, result.changed, "activation.prepared")
 
     def _preflight(self, snapshot):

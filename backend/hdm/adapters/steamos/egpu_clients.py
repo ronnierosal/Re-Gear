@@ -29,7 +29,7 @@ class EgpuClientScan:
 
 
 class EgpuClientDiscovery:
-    """Inspect procfs descriptors without retaining command lines or raw paths."""
+    """Inspect procfs descriptors and mappings without retaining raw paths."""
 
     def __init__(
         self,
@@ -193,6 +193,24 @@ class EgpuClientDiscovery:
                 kind = targets.get(self._normalize_target(target))
                 if kind is not None:
                     resources.add(kind)
+            # A mapping can outlive its descriptor. An empty fd directory is
+            # therefore not evidence that this process released the device.
+            try:
+                with (process_path / "maps").open(encoding="utf-8", errors="strict") as source:
+                    for index, line in enumerate(iter(lambda: source.readline(8193), "")):
+                        if index >= 65536 or len(line) > 8192:
+                            raise ValueError("Process mappings exceed inspection bounds")
+                        fields = line.split(None, 5)
+                        if len(fields) < 5:
+                            raise ValueError("Malformed process mapping")
+                        if len(fields) == 6:
+                            target = fields[5].rstrip("\n").removesuffix(" (deleted)")
+                            kind = targets.get(self._normalize_target(target))
+                            if kind is not None:
+                                resources.add(kind)
+            except (OSError, UnicodeError, ValueError):
+                if process_path.exists():
+                    incomplete = True
             if not resources:
                 continue
             try:

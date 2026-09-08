@@ -35,6 +35,8 @@ def add_process(
     write(process / "comm", name + "\n")
     write(process / "stat", process_stat(pid, name, start_time))
     write(process / "cgroup", cgroup)
+    write(process / "maps", "")
+    (process / "fd").mkdir(exist_ok=True)
     for index, target in enumerate(targets):
         write(process / "fd" / str(index), target)
 
@@ -191,6 +193,49 @@ class EgpuClientDiscoveryTests(unittest.TestCase):
             self.assertEqual(by_pid[303].name, "editorwith-control")
             self.assertEqual(by_pid[303].resources, (EgpuResourceKind.AUDIO_PCM,))
             self.assertNotIn("renderD131", repr(result.clients))
+
+    def test_mapping_without_open_descriptor_is_still_a_protected_client(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            discovery = self.make_discovery(root)
+            add_process(root / "proc", 202, "gamescope", "0::/session\n", (), 600)
+            write(root / "proc" / "202" / "maps",
+                  "1000-2000 rw-s 00000000 00:01 1 /dev/dri/renderD131\n"
+                  "2000-3000 rw-s 00000000 00:01 1 /dev/dri/renderD131\n")
+            result = self.scan(discovery)
+            self.assertTrue(result.complete)
+            self.assertEqual(len(result.clients), 1)
+            self.assertEqual(result.clients[0].resources, (EgpuResourceKind.DRM_RENDER,))
+            self.assertFalse(result.clients[0].close_eligible)
+
+    def test_missing_or_malformed_mappings_block_empty_scan(self):
+        for contents in (None, "invalid\n", "x" * 8193):
+            with self.subTest(contents=contents), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                discovery = self.make_discovery(root)
+                add_process(root / "proc", 202, "gamescope", "0::/session\n", (), 600)
+                maps = root / "proc" / "202" / "maps"
+                if contents is None:
+                    maps.unlink()
+                else:
+                    write(maps, contents)
+                result = self.scan(discovery)
+                self.assertFalse(result.complete)
+                self.assertEqual(result.clients, ())
+
+    def test_unreadable_mappings_preserve_known_descriptor_client(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            discovery = self.make_discovery(root)
+            add_process(root / "proc", 202, "gamescope", "0::/session\n",
+                        ("/dev/dri/renderD131",), 600)
+            maps = root / "proc" / "202" / "maps"
+            maps.unlink()
+            maps.mkdir()
+            result = self.scan(discovery)
+            self.assertFalse(result.complete)
+            self.assertEqual(len(result.clients), 1)
+            self.assertFalse(result.clients[0].close_eligible)
 
     def test_process_instance_id_changes_with_start_time(self):
         with tempfile.TemporaryDirectory() as temporary:
