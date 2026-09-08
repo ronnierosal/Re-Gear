@@ -1,5 +1,21 @@
 # Maintainer and agent handoff
 
+## Independent Auto TDP checkpoint — 2026-09-05
+
+The isolated TDP workstream implements and locally tests manual TDP controls,
+Auto TDP evidence and policy, a read-only benchmark, explicit lifecycle RPCs,
+and per-mode FPS/watt preferences. Saving preferences never activates power
+control. Its latest branch checkpoint reports 1,150 backend tests passing
+(15 platform skips), 99 frontend tests passing, and successful architecture,
+compileall, typecheck, build, and package checks. Mock browser rendering was
+unavailable for the preference editor. Nothing was installed or hardware tested.
+
+Remaining gates are coordinated integration, actual device benchmark and provider
+evidence, justified thermal configuration, Linux filesystem behavior, and native
+Decky/controller validation. The workstream does not own G1 lifecycle or Offline
+Play changes. See [TDP control](TDP_CONTROL.md) and the
+[independent work plan](AUTO_TDP_INDEPENDENT_PLAN.md).
+
 ## Ally ZIP placement policy — 2026-09-04
 
 Place every Re-Gear/HDM ZIP staged on the Ally directly in `/home/deck/`.

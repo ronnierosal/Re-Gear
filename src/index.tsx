@@ -70,6 +70,7 @@ import { deliverBlockedAttempt } from "./blocked-attempt-delivery";
 import { diagnosticOverlayRows } from "./diagnostics-overlay";
 import { DashboardSurface, QuickAccessOverview } from "./quick-access-overview";
 import { DashboardAction } from "./dashboard-action";
+import { TdpControls } from "./tdp-controls";
 import { hardwareDetailRows } from "./quick-access-dashboard";
 import { healthAttentionMessages, healthStatusLabel } from "./health-ui";
 import { decideLinkHealthNotification } from "./link-health-notification";
@@ -1449,6 +1450,7 @@ function Content({ preflight, connection, shortcut }: { preflight: SleepPrefligh
           <ConnectionQuickStatus store={connection.store} visible={quickAccessVisible}
             onOpen={openConnectionProgress} />
         </PanelSection>}
+      <TdpControls visible={quickAccessVisible} />
       <PanelSection title="Docking & actions">
         <div ref={primaryControlAnchor}>
           <DashboardSurface>

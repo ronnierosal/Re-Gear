@@ -535,3 +535,79 @@ export const acknowledgeProcessRelease = callable<
   [string],
   ProcessReleaseAcknowledgementPayload
 >("acknowledge_process_release");
+
+export interface TdpStatusPayload {
+  schema_version: 1;
+  enabled: boolean;
+  can_enable: boolean;
+  ready: boolean;
+  code: string;
+  current_watts: number | null;
+  minimum_watts: number | null;
+  maximum_watts: number | null;
+  restore_available: boolean;
+  recovery_required: boolean;
+  auto_tdp_available: boolean;
+  last_result: null | {
+    state: string;
+    code: string;
+    requested_watts: number | null;
+    observed_watts: number | null;
+  };
+}
+
+export const getTdpStatus = callable<[], TdpStatusPayload>("get_tdp_status");
+export const setTdpEnabled = callable<[boolean], TdpStatusPayload>("set_tdp_enabled");
+export const applyTdpLimit = callable<[number], TdpStatusPayload>("apply_tdp_limit");
+export const restoreTdpLimit = callable<[], TdpStatusPayload>("restore_tdp_limit");
+
+export interface AutoTdpStatusPayload {
+  schema_version: 1;
+  can_start: boolean;
+  enabled: boolean;
+  running: boolean;
+  stopping: boolean;
+  code: string;
+  activity_code: string | null;
+  target_fps: number | null;
+  minimum_watts: number | null;
+  maximum_watts: number | null;
+}
+
+export const getAutoTdpStatus = callable<[], AutoTdpStatusPayload>("get_auto_tdp_status");
+export const startAutoTdp = callable<[number, number, number], AutoTdpStatusPayload>("start_auto_tdp");
+export const stopAutoTdp = callable<[], AutoTdpStatusPayload>("stop_auto_tdp");
+
+export interface TdpBenchmarkResult {
+  code: string;
+  attempts: number;
+  usable_samples: number;
+  consecutive_samples: number;
+  maximum_collection_and_revalidation_ms: number | null;
+  elapsed_ms: number;
+  interval_ms: number;
+}
+export interface TdpBenchmarkStatus {
+  schema_version: 1;
+  running: boolean;
+  cancelling: boolean;
+  code: string;
+  result: TdpBenchmarkResult | null;
+}
+export const getTdpBenchmarkStatus = callable<[], TdpBenchmarkStatus>("get_auto_tdp_benchmark_status");
+export const runTdpBenchmark = callable<[], TdpBenchmarkStatus>("run_auto_tdp_benchmark");
+export const cancelTdpBenchmark = callable<[], TdpBenchmarkStatus>("cancel_auto_tdp_benchmark");
+
+export interface AutoTdpSavedPreference {
+  placement: string;
+  target_fps: number;
+  minimum_watts: number;
+  maximum_watts: number;
+}
+export interface AutoTdpPreferencesPayload {
+  schema_version: 1;
+  code: string;
+  preferences: AutoTdpSavedPreference[];
+}
+export const getAutoTdpPreferences = callable<[], AutoTdpPreferencesPayload>("get_auto_tdp_preferences");
+export const saveAutoTdpPreference = callable<[string, number, number, number], AutoTdpPreferencesPayload>("save_auto_tdp_preference");

@@ -9,7 +9,40 @@ are dated evidence, not current installed-state assertions.
 See [the review record](PR3_INTEGRATION_REVIEW.md) for scope and checks.
 Final CI and merge status are recorded in PR #3 and issue #34.
 
+## Independent Auto TDP checkpoint — 2026-09-05
 
+The isolated TDP branch now persists explicit per-mode FPS/watt preferences through
+strict private storage, two RPCs and an expandable editor. Saving never activates
+power control; unsupported modes remain unavailable. The Auto policy holds after
+two ineffective verified increases, requires sustained changed FPS before reassessing,
+and preserves response evidence across only verified frame rewarming. Pause/recovery
+replays and UI explanations cover unavailable game/render/ownership/power evidence.
+1,150 backend tests pass (15 platform skips), 99 frontend tests pass, and architecture,
+compileall, typecheck, build and package checks pass. Rendered preference-editor
+validation could not run because no browser provider is available. No device action
+or release. See [independent work plan](AUTO_TDP_INDEPENDENT_PLAN.md) for all five
+requested items, integration preparation and remaining device/UI gates.
+
+## TDP workstream development checkpoint — 2026-09-04
+
+The isolated `codex/tdp-control` workstream starts from `75f441f`. It contains
+the thermal non-finite validation fix, read-only ASUS power-limit inventory,
+and an original pure Auto TDP proposal policy. A SteamOS Manager ASUS provider,
+fixed D-Bus read/write runner, serialized apply/verify/restore service and atomic
+recovery journal are implemented and simulated. Manual controls are now wired
+into Decky through four explicit RPCs and an on-demand, initially disabled panel.
+Runtime preflight requires detached Portable mode, known game state, no active
+transition, and a complete scan without known competing controllers. A process
+lease coordinates Re-Gear writers; it does not lock out Steam or unknown tools.
+923 backend tests ran successfully (13 platform-specific skips), and 84 frontend
+tests passed. Architecture, compilation, typecheck, build and package checks pass.
+Browser fixture apply/restore and keyboard interaction passed with substitute HTML
+controls; native Decky/controller behavior remains unverified. Nothing is installed.
+Linux filesystem and real-device behavior, measured telemetry and the live Auto
+TDP loop remain pending.
+Current-source research and remaining device/API checks are recorded in
+[TDP control](TDP_CONTROL.md). The online Ally address is awaited for remote
+inspection. This workstream does not own G1 lifecycle or Offline Play changes.
 
 ## Re-Gear 0.3.43 compact popup candidate
 
