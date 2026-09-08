@@ -9,8 +9,10 @@ critical engineering contracts.
 
 ## Read first
 
-1. [Current state](CURRENT_STATE.md) — branch/build/deployment truth and active
-   workstream boundaries.
+1. [Current state](CURRENT_STATE.md) — retained branch/build/deployment records;
+   [September 8 documentation reconciliation](DOCUMENTATION_CLEANUP.md) supplies
+   the later source review and open owner-integration follow-up. Neither is a
+   live device observation.
 2. [Product](PRODUCT.md) — product scope, placements, and player experience.
 3. [Safety invariants](SAFETY_INVARIANTS.md) — non-negotiable mutation gates.
 4. [Architecture](ARCHITECTURE.md) — components, state, and dependency rules.
@@ -61,6 +63,10 @@ issue**. Architectural possibility is not support.
 - Supervised disconnect launch trial: [Portable Vulkan trial](PORTABLE_VULKAN_TRIAL.md)
 
 - Public entry point: [README](../README.md)
+- Detailed feature guides: [Command Center](../wiki/Command-Center.md),
+  [eGPU and docking](../wiki/eGPU-and-Docking.md),
+  [performance and power](../wiki/Performance-and-Power.md),
+  [controllers](../wiki/Controllers.md), [Offline Readiness](../wiki/Offline-Readiness.md)
 - Status and work: [Current state](CURRENT_STATE.md), [Roadmap](ROADMAP.md),
   [Worker queue](WORK_QUEUE.md), [release coordination](CHAT_COORDINATION.md),
   [agent coordination](AGENT_COORDINATION.md)
@@ -83,3 +89,9 @@ issue**. Architectural possibility is not support.
 
 The existing focused design documents remain valid references. Consolidation
 should classify and link them before moving or deleting them.
+
+
+## Documentation templates and planned identity migration
+
+- [Wiki troubleshooting/lessons template](templates/WIKI_TROUBLESHOOTING_TEMPLATE.md): reusable evidence-aware guide structure.
+- [Internal identity migration plan](IDENTITY_MIGRATION_PLAN.md): planning only; existing installed paths and runtime identities remain unchanged.

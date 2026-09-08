@@ -1,17 +1,19 @@
 # Release-candidate pipeline
 
-## Ally ZIP location and cleanup
+## Candidate availability and archive preservation
 
-Every Re-Gear/HDM ZIP transferred to the Ally must be placed directly in
-`/home/deck/`. Do not stage ZIP builds in `/home/deck/Downloads/`.
+GitHub has published development candidates, including v0.3.57 and v0.3.58.
+Their release titles identify the development status; publication is not Decky
+Store/channel registration or general hardware support. The maintainer reports only his own legacy test installs; their controlled
+cutover and rollback are covered in [the identity migration plan](IDENTITY_MIGRATION_PLAN.md).
 
-Before transferring a new ZIP, verify the currently installed Re-Gear version
-and identify the newest candidate. Then delete superseded Re-Gear/HDM ZIP builds
-from both `/home/deck/` and `/home/deck/Downloads/`. Keep the newest required
-candidate only. Setup scripts, public keys, and other non-ZIP files may remain
-in Downloads when their documented setup flow requires it.
+For supervised staging on the recorded test handheld, the established ZIP
+location is `/home/deck/`. Follow [release coordination](CHAT_COORDINATION.md):
+plain immutable archive names, exact provenance/checksums, and no clobbering.
+Do not delete historical artifacts as routine pre-staging cleanup. Any separately
+authorized cleanup must preserve the required rollback artifacts and evidence.
 
-HDM has a local, publish-ready candidate contract, not an automated release
+Re-Gear has a local, publish-ready candidate contract, not an automated release
 channel. `package.json` is the semantic-version source. The pipeline rejects a
 non-semantic version, a mismatched Python package version, a ZIP whose filename
 or embedded package/build metadata disagree, or an invalid source revision.
@@ -41,8 +43,8 @@ contact Decky, register a store channel, deploy, or use publication secrets.
 ## Candidate versioning
 
 New player-facing archives use `Re-Gear-<version>.zip`. The internal archive
-folder and installed Decky identity remain `HandheldDockMode` / `Handheld Dock
-Mode` to preserve upgrades and settings. Historical rollback validation accepts
+folder and installed directory remain `HandheldDockMode`; the visible manifest
+label is `Re-Gear`. These separate contracts preserve upgrades and settings. Historical rollback validation accepts
 both archive prefixes; new release candidates require Re-Gear naming.
 
 Version 0.3.0 starts the combined dashboard and event-triggered docking candidate.

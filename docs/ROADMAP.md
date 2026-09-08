@@ -25,7 +25,20 @@ HDM uses these labels consistently:
 
 No broader label may be inferred from a narrower one.
 
-## Current baseline: 0.2.0 on `main`
+## Source checkpoint — 2026-09-08
+
+Reviewed main `de90cd4` declares 0.3.58. The [documentation reconciliation](DOCUMENTATION_CLEANUP.md)
+records merged source and separate open work. Manual/Auto TDP and selected-game
+Offline delivery are integrated; the new Command Center remains in development.
+The eGPU release/removal components are not an installed end-to-end live-disconnect
+feature. Installation and hardware observations retain their original dates.
+
+Active focus is eGPU reliability and recovery, the Command Center/module rebuild,
+and capability-based controller work, alongside Offline and power validation.
+Use the shared hub and live PRs for ownership; the milestone descriptions below
+are engineering gates, not a claim that every earlier next-step is still pending.
+
+## Capability evidence and remaining gates
 
 | Capability | Current evidence | Remaining gate |
 |---|---|---|
@@ -45,7 +58,7 @@ No broader label may be inferred from a narrower one.
 | Physical G1 live removal | Unsupported. One idle pull natively recovered after approximately 80 seconds, but did not prove clean teardown or repeatability. A bounded local supervisor now observes and verifies native Portable recovery without restarting Gamescope. | A separate teardown experiment must prove removal safe before capability enablement; the supervisor and post-recovery audio restore remain simulated. |
 | Typed placement/workflow/capability and journal contracts | Implemented and unit tested | Decky request facade and mechanism wiring remain gated. |
 | Atomic fixed-path transition journal store | Implemented and unit tested; constructed for process release | Presentation/sleep orchestration wiring and supervised persistence proof remain. |
-| Transition snapshot replay and failure injection | Implemented and simulated | No production display/GPU mechanism endpoint exists. |
+| Transition snapshot replay and failure injection | Implemented and simulated | Simulation does not validate the production display/GPU mechanism or hardware behavior. |
 | Remote read-only capture harness | Implemented and hardware tested unprivileged; captures the static archive build label and compares its short revision only against a clean local checkout, alongside fixed-file hashes | Its fixed root read-only mode is locally verified but unavailable on the current Ally because non-interactive sudo is refused. Neither mode can observe the Decky-owned sleep lease. Build metadata is provenance only, not hardware validation. |
 | Guarded process-release approvals | Implemented and simulated in Decky-native flow | Supervised disposable-process proof remains. |
 | Process-release signal/re-scan runner, audit, and journal | Implemented and simulated | Supervised mechanism proof remains; hardware removal authority is always false. |
@@ -456,13 +469,13 @@ they are not authorization for a separate optimizer or launcher.
   goals. It resolves only exact stable observed modes and has no display,
   GPU, power, audio, controller, or game-setting mechanism authority. Future
   consumers still require capability proof and TRY/VERIFY.
-- **Implemented (pure contract):** Offline Readiness maps supplied categorical
-  local install/download/entitlement/cloud-save and online-check evidence to
-  ready-to-try, attention, online-check, or Unknown. It has no Steam collector,
-  storage scan, account/game identity, UI, persistence, or launch authority.
-  A future source must first pass the reviewed, local-only, identity-minimized,
-  benchmarked, bounded-cost admission contract; stale or unadmitted evidence
-  remains Unknown. It still has no collector or delivery integration.
+- **Implemented (policy and delivery):** Offline Readiness classifies supplied
+  categorical evidence conservatively and now includes local Steam selected-game
+  projection, request delivery, guidance and temporary badges. Missing, stale or
+  unadmitted evidence remains uncertain. See [source review](OFFLINE_EVIDENCE_SOURCE_REVIEW.md)
+  and [UI contract](OFFLINE_READINESS_UI.md) for native-validation limits and the
+  separate frontend confidence layer. No automatic launch/network change or
+  persistent play history is authorized.
 - **Implemented (pure contract):** a reviewed Game Adapter must use typed
   allowlisted settings and exact opaque revisions. Its future mechanism is
   constrained to compare-before-write, backup, atomic staging, validation,
@@ -478,26 +491,22 @@ they are not authorization for a separate optimizer or launcher.
   The existing snapshot refresh also records only verified topology candidates
   there; no detection result is a recovery or transition authority.
 
-## Smallest safe next milestone
+## Current continuation and retained milestone checkpoints
 
-Independent Offline Readiness delivery work is tracked in the
-[workstream handoff](OFFLINE_READINESS_HANDOFF.md). A candidate local Steam
-overview projection, guarded request service, reason guidance, and source
-research are implemented on its isolated branch;
-live source validation, cost measurement, game context, and production wiring
-remain open. This does not change the G1 journey or release gates below.
+Selected-game Offline Readiness delivery is integrated in development source;
+its [workstream handoff](OFFLINE_READINESS_HANDOFF.md) preserves implementation
+history. Native Steam view/controller behavior, runtime cost, and real offline
+launches require their own validation; source tests do not establish those results.
 
-Unattended-safe R1 policy/replay, guarded process-release implementation,
-canonical sleep policy/coordinator, compatibility policy, temporary logging
-policy, and the optional overlay are complete. The next release-facing gates are
-R0's supervised controller-visible warning/support-preview acceptance and R2's
-separate supervised disposable-process validation.
+For the current merged/open checkpoint and next integration gates, use
+[documentation reconciliation](DOCUMENTATION_CLEANUP.md) and the live shared hub.
+Milestone R0/R2 acceptance, repeatable presentation/recovery, installable build
+provenance and the live-disconnect integration/contract questions remain distinct.
+Earlier presentation tests are historical results; repeatability is not implied.
 
-Without physical supervision, continue implementation, simulator, schema, UI,
-and recovery work but do not deploy or invoke process signals,
-display/GPU/audio/controller mutation, original-sleep continuation, reboot,
-suspend, or physical-removal actions. The first future live presentation
-transition remains R3 and requires its documented supervised rollback tests.
+Local implementation, simulation and review do not authorize device operations.
+Hardware continuation requires the current supervised plan, exact build and
+fresh evidence under [deployment validation](DEPLOYMENT_VALIDATION.md).
 
 ### Interrupted docked sleep recovery checkpoint
 

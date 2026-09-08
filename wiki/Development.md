@@ -1,7 +1,7 @@
 # Development
 
 **Audience:** contributors<br>
-**Reviewed:** 2026-09-06<br>
+**Reviewed:** 2026-09-08<br>
 **Maturity:** active development with safety-critical boundaries
 
 Read [Contributing](https://github.com/ronnierosal/Re-Gear/blob/main/CONTRIBUTING.md),
@@ -35,26 +35,35 @@ and package checks. Documentation changes need local-link review and
 `git diff --check`. Hardware-affecting changes require all local gates before a
 separately approved supervised session with redacted before/live/after evidence.
 
-Maintainers control pushes, tags, releases, Decky publication, history rewrites,
-and hardware deployment.
+## Coordination and publication
 
-## Disconnect work review checkpoint
+Follow [AGENTS.md](https://github.com/ronnierosal/Re-Gear/blob/main/AGENTS.md) and
+the [agent lifecycle](https://github.com/ronnierosal/Re-Gear/blob/main/docs/AGENT_COORDINATION.md)
+for isolated ownership, current PR claims, and validated routine integration.
+Releases, hardware operations, and other high-risk changes retain their separate gates.
 
-Existing resource-release work is published as draft PRs. Use
-[issue #55](https://github.com/ronnierosal/Re-Gear/issues/55) for the dependency map
-through #81 and [issue #51](https://github.com/ronnierosal/Re-Gear/issues/51) for
-remaining experiment acceptance. The staged 0.3.56 candidate is
-[PR #82](https://github.com/ronnierosal/Re-Gear/pull/82); it follows a separate
-trial/diagnostics/return-control branch and excludes the experimental filter series.
+README introduces the project; Wiki guides explain it; repository docs own
+contracts and exact evidence. The
+[documentation workflow](https://github.com/ronnierosal/Re-Gear/blob/main/docs/DOCUMENTATION_WORKFLOW.md)
+describes evidence handoffs and the separate Wiki publication/readback step.
 
-The September 6 review checked 26 G1/audio drafts in the #53–#82 range: 25 had
-successful foundation checks. [PR #62](https://github.com/ronnierosal/Re-Gear/pull/62)
-failed committed frontend source-map verification; [issue #59](https://github.com/ronnierosal/Re-Gear/issues/59)
-tracks the required repair and installed acceptance. Recheck live CI before review
-or integration. Passing against a stacked base is not proof of integration with main.
+## Working from current evidence
 
-Publication is complete for the recorded series; review/integration, audio runtime
-activation, software removal, and hardware evidence remain separate open work.
-The maintainer has prioritized GitHub review and documentation before hardware
-continuation. See the [dated review notes](https://github.com/ronnierosal/Re-Gear/blob/codex/disconnect-progress-docs/docs/DISCONNECT_PROGRESS_2026-09-06.md)
-for exact candidate provenance, verification scope, and remaining gates.
+Use [Current State](Current-State) for the reviewed merged/open checkpoint and
+inspect live PR state before integration. Historical draft-series reviews and
+device records keep their dates. Passing against a stacked base is not proof of
+combined main behavior, an installable build, or a successful device operation.
+
+The earlier [disconnect review](https://github.com/ronnierosal/Re-Gear/blob/main/docs/DISCONNECT_PROGRESS_2026-09-06.md)
+is historical evidence. It does not override newer merged work or authorize
+resuming that session's hardware instructions.
+
+## Writing troubleshooting guides
+
+Use the lightweight
+[troubleshooting and lessons template](https://github.com/ronnierosal/Re-Gear/blob/main/docs/templates/WIKI_TROUBLESHOOTING_TEMPLATE.md)
+for recurring symptoms or device-specific investigations. Link the guide under
+its feature and navigation; keep exact dates and evidence, distinguish likely
+causes from observations, and preserve safety boundaries. Broader sections such
+as performance and Offline Readiness can adopt it when there is a concrete
+incident to explain; no placeholder pages are needed.

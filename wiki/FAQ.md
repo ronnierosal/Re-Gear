@@ -1,7 +1,7 @@
 # Frequently asked questions
 
 **Audience:** players, testers, and contributors<br>
-**Reviewed:** 2026-09-06<br>
+**Reviewed:** 2026-09-08<br>
 **Maturity:** answers reflect the current development baseline
 
 ## Can I install Re-Gear as an ordinary Decky plugin today?
@@ -17,6 +17,20 @@ General features and hardware-dependent actions have separate requirements.
 Broader product scope does not mean every device is tested: see [Supported Hardware](Supported-Hardware)
 for exact combinations and [Confirmed Hardware Testing](Confirmed-Hardware-Testing)
 for recorded results. Additional devices need their own profile and capability evidence.
+
+## Is the new Command Center available?
+
+The complete rebuild is in development. Existing Quick Access navigation is
+implemented; the approved layout and new module foundation have separate
+delivery gates. See [Command Center](Command-Center) for status and future
+screenshots of the actual interface.
+
+## Are power and controller settings supported on every handheld?
+
+No. [Performance and Power](Performance-and-Power) depends on verified provider
+limits and ownership. [Controller capabilities](Controllers) vary by device,
+transport and input stack; research and a visible design control do not establish
+working support.
 
 ## Does TV Docked work now?
 
