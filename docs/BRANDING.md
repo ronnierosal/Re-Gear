@@ -70,15 +70,19 @@ Decky's plugin list and panel display Re-Gear. Installer internals and technical
 logs may still show compatibility identifiers. Changing the installed folder,
 package names, RPC/state keys, or helper paths remains outside this label change.
 
-## GitHub and checkout rename — pending maintainer action
+## Repository name and future internal migration
 
-The maintainer will rename the GitHub repository when ready. Do not change the
-remote URL, badges, repository links, Wiki publication target, checkout folder
-or worktree paths in advance. No new repository slug has been assumed here.
-After the maintainer supplies the final name, update links and remote mappings
-in a focused follow-up and verify redirects, CI and Wiki access. Keep existing
-Wiki page filenames/slugs stable unless links are migrated together.
+The GitHub repository and public Wiki are already Re-Gear. Preserve existing
+Wiki slugs and redirects; do not rename local worktrees or internal identifiers
+as a prose cleanup. Public descriptions use Re-Gear; exact legacy identifiers
+remain only where compatibility, commands or historical evidence require them.
 
-Local source edits do not publish the GitHub README/Wiki, rename the repository,
-or install a new build on the Ally. The product name change adds no hardware
-support or live-removal claim, and does not change licensing terms.
+The [internal identity migration plan](IDENTITY_MIGRATION_PLAN.md) covers the
+separate authorized cutover now in implementation. This documentation change
+does not perform it. The clean cutover includes controlled rollback for the
+maintainer's legacy test installation and separate supervised validation.
+Until that implementation PR lands, the compatibility table above remains the
+executable contract.
+
+Documentation publication does not install a build, migrate settings or
+identifiers, certify hardware, or change licensing terms.

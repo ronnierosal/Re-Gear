@@ -48,6 +48,20 @@ For a routine delegated documentation update:
 5. Commit with a public GitHub no-reply identity, push without force, and verify
    live content and navigation. Keep these repository sources synchronized.
 
+The README introduces the overall project. Feature guides in this Wiki carry
+module details, evidence labels and usage limits; `Home.md` and `_Sidebar.md`
+route readers to them. The Command Center guide owns screenshot context; the
+README can show reviewed real captures once the interface is validated. Keep
+mockups labelled as design work. See the [information map](../docs/WIKI_INFORMATION_ARCHITECTURE.md).
+
 Release and player-visible behavior changes should include a review of affected
 guides. GitHub Issues owns bug tracking; the Wiki explains behavior and links to
 evidence. No automatic publication job is configured.
+
+## Troubleshooting authoring
+
+Use [the repository troubleshooting/lessons template](../docs/templates/WIKI_TROUBLESHOOTING_TEMPLATE.md)
+when a feature has a recurring symptom or enough device-specific evidence for a
+useful guide. Link it from its parent feature and `_Sidebar.md`; preserve source,
+merged, installed and hardware-tested distinctions. The template stays in the
+repository and is never published as a status page.

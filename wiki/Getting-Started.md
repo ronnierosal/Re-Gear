@@ -1,12 +1,20 @@
 # Getting started
 
 **Audience:** prospective users and developers<br>
-**Reviewed:** 2026-09-06<br>
+**Reviewed:** 2026-09-08<br>
 **Maturity:** development-only; no general public release or supported installer
 
-Check the [README candidate status](https://github.com/ronnierosal/Re-Gear#-current-status), the repository [current state](https://github.com/ronnierosal/Re-Gear/blob/main/docs/CURRENT_STATE.md)
+Check [Current State](Current-State), the repository [evidence index](https://github.com/ronnierosal/Re-Gear/blob/main/docs/INDEX.md)
 and [deployment validation contract](https://github.com/ronnierosal/Re-Gear/blob/main/docs/DEPLOYMENT_VALIDATION.md)
 before using a build.
+
+## Development releases and compatibility
+
+[GitHub releases](https://github.com/ronnierosal/Re-Gear/releases) include
+development candidates. Publicly downloadable does not mean supported,
+hardware-validated or Decky Store registered. The maintainer reports legacy use only on recent test devices; see the [compatibility note](Project-Overview).
+The internal identity cutover is a separate implementation task; this documentation
+update changes no installation.
 
 ## Players and hardware testers
 
