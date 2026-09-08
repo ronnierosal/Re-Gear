@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/images/re-gear-icon.png" alt="Re-Gear: handheld today, console tomorrow" width="320">
+<img src="docs/images/re-gear-readme-logo.png" alt="Re-Gear: handheld today, console tomorrow" width="560">
 
 # Re-Gear
 
