@@ -4,7 +4,12 @@
 **Reviewed:** 2026-09-08<br>
 **Maturity:** experimental development; no general public release
 
-Use the [README status](https://github.com/ronnierosal/Re-Gear#-current-status) for the development candidate and source branch. The [repository status](https://github.com/ronnierosal/Re-Gear/blob/main/docs/CURRENT_STATE.md) and dated validation records distinguish implementation, installation, and hardware evidence. While newer work remains on an integration branch, consult that branch's records too; older main-branch snapshots do not establish the newest candidate's status.
+The [repository status](https://github.com/ronnierosal/Re-Gear/blob/main/docs/CURRENT_STATE.md)
+and [September 8 source/evidence snapshot](https://github.com/ronnierosal/Re-Gear/blob/main/docs/STATUS_SNAPSHOT_2026-09-08.md)
+distinguish merged implementation, reported installation, and hardware validation.
+The reviewed main revision `5b18edf` declares 0.3.58 and includes the reconciled
+release line. Separate candidates retain their own review and validation gates;
+a higher version number alone does not establish ancestry or installation.
 
 ## Available development work
 
@@ -18,7 +23,7 @@ Use the [README status](https://github.com/ronnierosal/Re-Gear#-current-status) 
 | Offline Readiness | Newer candidates read selected-game local Steam evidence; badges are guidance, not a guarantee of offline launch |
 | Sleep protection and support export | Implemented with capability-specific controller and hardware acceptance gates |
 | Disconnect status | Observes blockers; Portable return and a clear client scan do not authorize physical unplug |
-| eGPU client release | Hardware tested on the documented configuration: every process holding the eGPU released it under a verified device filter. Operator CLI only, not a player control, and not unplug clearance |
+| eGPU client release | Operator reported a clear holder result under a device filter; no archived capture and known scan gaps prevent treating it as complete-release proof. Operator CLI only; no unplug clearance |
 | Boosted Handheld | Unproven and unavailable |
 | Physical live eGPU removal | Unsupported; shutdown before disconnect remains required |
 
@@ -30,15 +35,12 @@ A watched shutdown lost networking while the handheld fan and LEDs remained on. 
 
 ## Resource-release experiment: September 8 update
 
-**Priority: active disconnect work.** On installed **0.3.58**, a device filter was
-compiled, attached at the user manager cgroup, and verified as enforced before
-anything was disrupted. With the filter held and the approved unit restarts run,
-every process holding the eGPU released it. This supersedes the September 6 result,
-which recorded installed 0.3.54 and reported that resource release did not succeed.
-
-Separately, and driven from a source checkout rather than the installed plugin,
-both eGPU functions were detached with a clean kernel teardown and restored by a
-bus rescan with drivers rebound.
+**Priority: active disconnect work.** The September 8 operator account reports
+installed **0.3.58**, an enforced device filter, approved unit restarts, and a clear
+holder result. It separately reports source-driven removal and rescan recovery.
+No redacted before/live/after capture is archived for this run. Known scan gaps
+mean the clear verdict is not proof that every resource was released. The
+September 6 failure on 0.3.54 remains historical evidence for that earlier run.
 
 **This is not unplug clearance.** Physical live removal remains unsupported and
 shutdown before disconnect remains required. Three limits keep this from being a
@@ -47,7 +49,7 @@ disconnect precondition: the holder scan can report clear while holders remain
 not persist because the filter detaches as success is reported
 ([#123](https://github.com/ronnierosal/Re-Gear/issues/123)), and no reviewed
 software-removal tool exists on the installed build
-([PR #122](https://github.com/ronnierosal/Re-Gear/pull/122), unmerged). Nothing is
+([PR #122](https://github.com/ronnierosal/Re-Gear/pull/122), unmerged at this review). Nothing is
 wired to a player-facing control; the capability is operator CLI only.
 
 The earlier OpenGL and Vulkan selection experiment is packaged in **0.3.56**, tracked
@@ -59,6 +61,10 @@ and [remaining audio ownership (#52)](https://github.com/ronnierosal/Re-Gear/iss
 See the [dated evidence summary](https://github.com/ronnierosal/Re-Gear/blob/main/docs/DISCONNECT_PROGRESS_2026-09-08.md)
 and the [device filter release record](https://github.com/ronnierosal/Re-Gear/blob/main/docs/DEVICE_FILTER_RELEASE_2026-09-08.md)
 for the tested configuration, measurements, and limits.
+
+Scan completeness is being addressed in [PR #137](https://github.com/ronnierosal/Re-Gear/pull/137),
+stacked on the filter-lifetime work in [PR #124](https://github.com/ronnierosal/Re-Gear/pull/124).
+Both were open at this review; their tests do not upgrade the historical hardware report.
 
 ## Remaining gates
 

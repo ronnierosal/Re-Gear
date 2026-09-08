@@ -10,7 +10,7 @@ Re-Gear aims to make handheld gaming console-simple: status first, low overhead,
 and no avoidable surprises. It verifies GPU, display, Gamescope, game, and
 hardware state before a guarded dock-mode action.
 
-[![CI](https://github.com/ronnierosal/Re-Gear/actions/workflows/ci.yml/badge.svg)](https://github.com/ronnierosal/Re-Gear/actions/workflows/ci.yml) [![Last commit](https://img.shields.io/github/last-commit/ronnierosal/Re-Gear)](https://github.com/ronnierosal/Re-Gear/commits/main/) [![Development candidate](https://img.shields.io/badge/development_candidate-0.3.55-6f42c1)](https://github.com/ronnierosal/Re-Gear/tree/codex/release-batch-2026-09-06) ![Platform](https://img.shields.io/badge/platform-SteamOS-1b2838?logo=steam) [![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-2ea44f)](LICENSE)
+[![CI](https://github.com/ronnierosal/Re-Gear/actions/workflows/ci.yml/badge.svg)](https://github.com/ronnierosal/Re-Gear/actions/workflows/ci.yml) [![Last commit](https://img.shields.io/github/last-commit/ronnierosal/Re-Gear)](https://github.com/ronnierosal/Re-Gear/commits/main/) [![Development](https://img.shields.io/badge/status-in_development-6f42c1)](#-current-status) ![Platform](https://img.shields.io/badge/platform-SteamOS-1b2838?logo=steam) [![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-2ea44f)](LICENSE)
 
 [Wiki / Player Guide](https://github.com/ronnierosal/Re-Gear/wiki) · [Current status](#-current-status) · [Safety](#-safety-first) · [Development](#-development) · [Documentation](#-documentation)
 
@@ -21,7 +21,7 @@ hardware state before a guarded dock-mode action.
 > Implemented features include diagnostics, eGPU sleep protection, reviewed
 > support bundles, and guarded TV/Portable transitions. Automatic TV docking is
 > experimental and requires an explicit, off-by-default player opt-in.
-> Supervised Ally X/GPD G1 successes do not establish repeatable operation or
+> Supervised successes on the documented test configuration do not establish repeatable operation or
 > general hardware support. Physical live eGPU removal remains unsupported.
 
 > [!CAUTION]
@@ -80,101 +80,38 @@ It cannot restart Gamescope, switch a display, or select a GPU.
 
 ## 🚦 Current status
 
-**Current development candidate: Re-Gear 0.3.55** (verified **2026-09-06**).
-The newer implementation is on the
-[release-integration branch](https://github.com/ronnierosal/Re-Gear/tree/codex/release-batch-2026-09-06),
-whose [version metadata](https://github.com/ronnierosal/Re-Gear/blob/870157dda43d500241703fb5bfcea3f21c5f170d/package.json)
-records 0.3.55. The `main` implementation still carries 0.2.0 while integration
-is pending; that older number does not describe the latest development candidate.
-No public GitHub Release is published yet.
+**Development source: Re-Gear 0.3.58 on `main`** (reviewed **2026-09-08**).
+The 0.3.55 release line has been integrated into main. See the
+[dated status snapshot](docs/STATUS_SNAPSHOT_2026-09-08.md) for the exact reviewed
+revision and the distinction between source, installation reports, and validation.
+Re-Gear remains experimental and is not a supported general-availability release.
 
-The 0.3.x work includes compact connection/disconnect status, local Steam
-Offline Readiness badges, embedded offline icons, and guarded connection and
-recovery improvements. Version **0.3.55** specifically resumes focused offline
-checks after interrupted activity and bounds refresh retries; see the
-[integrated fix](https://github.com/ronnierosal/Re-Gear/commit/fd9e30b2b4acd0b98ead62180b21fd9cba0cb58b).
-These candidate features are separate from the older `main` implementation.
+Main includes compact connection/disconnect status, local Steam Offline Readiness
+badges and refresh recovery, and guarded TV/Portable workflows. Quick Access
+navigation, Auto TDP, and eGPU release/removal improvements have separate review
+and validation gates; an open PR is not part of main merely because its tests pass.
 
-Candidate version, packaged archive, installed version, and hardware validation
-are separate facts. The
-[release-batch record](https://github.com/ronnierosal/Re-Gear/blob/560ec33/docs/RELEASE_BATCH_2026-09-06.md)
-identifies 0.3.54 as its installed-source baseline; this README does not assert
-that 0.3.55 is installed. Consult the candidate branch's evidence and exact build
-metadata before a deployment. Re-Gear remains experimental.
+The September 8 operator record reports installed **0.3.58**. This documentation
+review did not inspect a device or verify a fresh installed revision or archive
+checksum. The separate **0.3.56** graphics-trial candidate remains recorded as
+staged and unvalidated; version numbers alone do not order different branch work.
+Use exact source ancestry, artifact metadata, and a fresh deployment handoff before
+selecting a build.
 
-## Resource-release experiment: September 8 update
+### Validation and limitations
 
-**Priority: active disconnect work.** On installed **0.3.58**, a cgroup device
-filter was compiled, attached at the user manager cgroup, and verified as enforced
-before anything was disrupted. With the filter held and the approved unit restarts
-run, every process holding the eGPU released it. This supersedes the September 6
-result, which recorded installed 0.3.54 and reported that resource release did not
-succeed.
+Individual supervised docking successes do not establish repeatable operation or
+support for other hardware. Physical live eGPU removal remains unsupported, and
+reliable shutdown, recovery, and repeated transition cycles still need validation.
 
-Separately, and driven from a source checkout rather than the installed plugin,
-both eGPU PCI functions were detached with a clean kernel teardown and restored by
-a bus rescan with drivers rebound.
+The September 8 resource-release account reports a clear scan and source-driven
+software removal/rescan. Known scan gaps and the absence of an archived capture
+prevent treating that report as complete-release proof or unplug clearance.
 
-**This is not unplug clearance.** Physical live removal remains unsupported, and
-shutdown before disconnecting remains the tested policy. Three limits keep the
-result from being a disconnect precondition today: the holder scan can report clear
-while holders remain ([#120](https://github.com/ronnierosal/Re-Gear/issues/120)),
-the clear state does not persist because the filter detaches as success is reported
-([#123](https://github.com/ronnierosal/Re-Gear/issues/123)), and no reviewed
-software-removal tool exists on the installed build
-([PR #122](https://github.com/ronnierosal/Re-Gear/pull/122), unmerged). None of it
-is wired to a player-facing control; the capability is operator CLI only.
-
-The earlier OpenGL and Vulkan selection experiment is packaged in **0.3.56**, tracked
-in [draft PR #82](https://github.com/ronnierosal/Re-Gear/pull/82). That candidate is
-staged, **not installed or hardware validated**.
-
-Follow [the resource-release experiment (#51)](https://github.com/ronnierosal/Re-Gear/issues/51)
-and [remaining audio ownership (#52)](https://github.com/ronnierosal/Re-Gear/issues/52).
-See the [dated evidence summary](docs/DISCONNECT_PROGRESS_2026-09-08.md) for the
-tested configuration and limits, and the
-[device filter release record](docs/DEVICE_FILTER_RELEASE_2026-09-08.md) for the
-measurements and the session-topology findings behind them.
-
-Evidence labels matter: **Implemented** means code and deterministic checks;
-**Remotely observed** means bounded read-only device evidence; **Hardware
-Validation Required** means a player-present supervised test still decides the
-claim. Neither a simulation nor a clean UI promotes hardware support.
-
-| Capability | Evidence | Availability |
-|---|---|---|
-| Decky lifecycle and typed RPC | Implemented and hardware tested | Available |
-| Read-only certified-profile discovery | Implemented and hardware tested | Available |
-| Portable placement inference | Implemented and hardware tested | Available |
-| eGPU sleep inhibitor and Steam preflight | Implemented and hardware tested | Available; persistent warning needs one final supervised visible proof |
-| Redacted support preview and approved save | Implemented and simulated | Available; controller-visible preview/save acceptance remains pending hardware proof |
-| Docked-iGPU natural-exit observer | Implemented and simulated | Read-only categorical status available in troubleshooting; hardware proof pending |
-| Journey and link/recovery explanations | Implemented; delivery depends on the build | Newer 0.3.x candidates include compact connection/disconnect readiness views |
-| Offline Readiness | Local Steam evidence and badges implemented in the 0.3.x candidate; focused refresh recovery updated in 0.3.55 | Read-only guidance for the selected game; installation or Steam readiness flags do not guarantee offline launch |
-| Temporary verbose diagnostics | Implemented and simulated | Explicit controller consent, bounded countdown, disable control, and reboot reset available; visible acceptance pending |
-| Gamescope integration preparation | Implemented and simulated | Available only through an explicit, short-lived approval |
-| Guarded TV/Portable transitions | Implemented; bounded supervised Ally X/G1 successes recorded | Experimental; repeat-cycle and recovery acceptance remain open |
-| G1 HDMI audio handoff | Implemented; automatic default-sink selection recorded in a supervised cycle | Experimental; readiness and repeated-cycle validation remain open |
-| Prepare G1 disconnect | Implemented; return to Portable hardware tested | Requires complete physical shutdown before disconnect; shutdown acceptance remains failed |
-| Guarded process release | Implemented and simulated | Decky-native experimental flow; supervised disposable-process proof pending |
-| Physical eGPU live removal | Known unsafe/unsupported on the current certified profile | Not available |
-| Automatic TV docking | Implemented; supervised Ally X/G1 attach successes recorded | Experimental, off by default; exact identity, stable readiness, idle game state, and recovery gates apply |
-
-Recorded milestones include a watched TV activation with RX 7600M XT selection
-on build `0d66127cd0c2`, and a later automatic retry with G1 HDMI default-sink
-selection followed by verified Portable return on `a988c0cf1d61`. These are
-historical, bounded results, not certification of every transition or build.
-
-Remaining gates include repeatable attach/TV/audio/Portable cycles, reconnect
-and startup recovery, controller-visible sleep/support acceptance, and reliable
-physical shutdown. A watched shutdown lost networking but left the Ally fan and
-LEDs on, requiring a player-forced power-off. Black-TV recovery and delayed or
-unbound G1 enumeration also remain relevant failure cases. See the
-[deployment gates](docs/DEPLOYMENT_VALIDATION.md) and
-[operator evidence](docs/OPERATOR_HANDOFF.md).
-
-See the [authoritative roadmap](docs/ROADMAP.md) for the complete evidence ledger
-and ordered milestones.
+See the Wiki's [Current State](https://github.com/ronnierosal/Re-Gear/wiki/Current-State)
+for feature status and blockers, [Confirmed Hardware Testing](https://github.com/ronnierosal/Re-Gear/wiki/Confirmed-Hardware-Testing)
+for capability-specific evidence, and the [dated source/evidence snapshot](docs/STATUS_SNAPSHOT_2026-09-08.md)
+for build provenance. Detailed engineering records remain linked from those pages.
 
 ## 🕹️ Player-facing placements
 
@@ -268,9 +205,10 @@ Decky Store/channel registration remain separate manual gates.
 Hardware validation must follow the staged
 [deployment and validation strategy](docs/DEPLOYMENT_VALIDATION.md), beginning
 with one clean, provenance-recorded package and the eGPU disconnected.
-The current player-present preparation record is
+A historical player-present preparation record is
 [Supervised Ally session preparation](docs/SUPERVISED_SESSION_2026-09-01.md);
-it is a local artifact/readiness record, not a deployment or hardware result.
+it is a dated artifact/readiness record, not current deployment authority or a
+hardware result. Use a fresh deployment handoff for any supervised session.
 
 ## 🛠️ Development
 
@@ -304,8 +242,7 @@ Build the deterministic Decky archive:
 python scripts/build_plugin.py
 ```
 
-The 0.3.55 candidate writes `out/Re-Gear-<version>.zip`; the older `main` build
-script writes `out/HandheldDockMode-<version>.zip`. The internal Decky directory
+The build script writes `out/Re-Gear-<version>.zip`. The internal Decky directory
 remains `HandheldDockMode` for compatibility. Never deploy if a
 check fails, the worktree contains unexplained changes, or artifact provenance
 cannot be matched to one commit.

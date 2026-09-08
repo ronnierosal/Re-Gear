@@ -8,7 +8,7 @@ Re-Gear is designed for SteamOS handheld PCs, docks, eGPUs, and external display
 
 Each result below applies only to the exact hardware and software configuration documented in its linked evidence. The entries currently summarize one recorded test configuration; they do not establish cross-device validation. Device models belong to those individual test records, not the definition of Re-Gear. See [Supported Hardware](Supported-Hardware) for compatibility details.
 
-## Confirmed observations
+## Recorded observations and evidence limits
 
 | Test | Recorded result | Evidence and limits |
 |---|---|---|
@@ -16,17 +16,18 @@ Each result below applies only to the exact hardware and software configuration 
 | Automatic TV docking and external rendering | Steam visible on TV; external GPU selected; transition committed | [September 2 incident](https://github.com/ronnierosal/Re-Gear/blob/main/docs/ALLY_X_GPD_G1_DOCKING_INCIDENT_2026-09-02.md); bounded watched success |
 | Automatic external HDMI selection and Portable return | Later retry selected external HDMI as default; the disconnect-preparation workflow returned to the internal display | Same incident record; default-sink observation is distinct from player-confirmed audible output |
 | Portable trial: screen, audio, and controls | Player confirmed normal handheld screen, audio, and controls after returning to Portable on September 5 | [Dated trial evidence](https://github.com/ronnierosal/Re-Gear/blob/560ec33/docs/CURRENT_STATE.md); external GPU references remained, so this did not prove resource release |
-| eGPU client release under a device filter | Every process holding the eGPU released it; the filter was verified as enforced before any restart | [Device filter release record, September 8](https://github.com/ronnierosal/Re-Gear/blob/main/docs/DEVICE_FILTER_RELEASE_2026-09-08.md); installed 0.3.58, operator CLI only. Recorded from the supervised session, not yet backed by a capture artifact. Release is not unplug clearance, and the clear verdict has known scan gaps ([#120](https://github.com/ronnierosal/Re-Gear/issues/120)) |
-| eGPU software removal and rescan recovery | Both PCI functions detached with a clean kernel teardown; a bus rescan restored both with drivers rebound | Same record; driven from a source checkout rather than the installed plugin, so this is evidence about the kernel and device, not about an installed feature |
+| eGPU client release under a device filter | Operator reported enforcement before restart and a clear holder verdict; complete release is not independently established | [Device filter release record, September 8](https://github.com/ronnierosal/Re-Gear/blob/main/docs/DEVICE_FILTER_RELEASE_2026-09-08.md); installed 0.3.58, operator CLI only. Recorded from the supervised session, not yet backed by a capture artifact. Release is not unplug clearance, and the clear verdict has known scan gaps ([#120](https://github.com/ronnierosal/Re-Gear/issues/120)) |
+| eGPU software removal and rescan recovery | Operator reported both PCI functions detached and restored by rescan with drivers rebound | Same record; driven from a source checkout rather than the installed plugin, so this is evidence about the kernel and device, not about an installed feature |
 
-The [September 6 return-run summary](https://github.com/ronnierosal/Re-Gear/blob/codex/disconnect-progress-docs/docs/DISCONNECT_PROGRESS_2026-09-06.md)
+The [September 6 return-run summary](https://github.com/ronnierosal/Re-Gear/blob/main/docs/DISCONNECT_PROGRESS_2026-09-06.md)
 records installed 0.3.54: TV output followed by player-confirmed normal internal
 display, controls, and audio. Steam and Gamescope retained external allocations;
 WirePlumber retained audio control. This adds evidence of the resource-release
 blocker, not live-removal validation. Follow [#51](https://github.com/ronnierosal/Re-Gear/issues/51)
 and [#52](https://github.com/ronnierosal/Re-Gear/issues/52).
 
-That resource-release blocker was later cleared on installed 0.3.58; see the
+A later operator account reported a clear result on installed 0.3.58, with scan
+gaps and no archived capture preventing independent confirmation; see the
 [September 8 summary](https://github.com/ronnierosal/Re-Gear/blob/main/docs/DISCONNECT_PROGRESS_2026-09-08.md).
 Client release is not live-removal validation: physical live unplug remains
 unsupported and shutdown before disconnect remains required.

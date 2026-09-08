@@ -4,9 +4,9 @@ This directory is the reviewed source for the Re-Gear GitHub Wiki.
 The player guide is published at [Re-Gear Wiki](https://github.com/ronnierosal/Re-Gear/wiki).
 It is not the engineering source of truth. Start at [Home](Home.md).
 
-The GitHub repository name and existing Wiki page slugs remain unchanged until
-the maintainer renames the repository. Historical HDM references identify the
-same project; see [branding compatibility](../docs/BRANDING.md).
+The repository is named Re-Gear. Existing Wiki slugs, including How-HDM-Works,
+are retained for link compatibility. Historical HDM references identify the same
+project; see [branding compatibility](../docs/BRANDING.md).
 
 Repository contracts own product, safety, architecture, support, and current
 implementation claims. Wiki pages explain those contracts in shorter player and
@@ -16,7 +16,10 @@ document before updating the Wiki.
 
 ## Publishing rules
 
-- Do not publish, push, or sync these pages without maintainer authorization.
+- Codex/ChatGPT owns routine evidence-backed publication under the standing
+  delegation in [AGENTS.md](../AGENTS.md#public-documentation). Follow the
+  [shared documentation workflow](../docs/DOCUMENTATION_WORKFLOW.md) for review
+  and the narrow human-approval boundaries; do not request approval per update.
 - Preserve the evidence labels: designed, implemented, simulated, installed,
   hardware tested, certified, and unknown.
 - Never turn a code or simulation result into a hardware-support claim.
@@ -33,10 +36,11 @@ The planned information architecture and review rules are recorded in
 The initial 14 guides and sidebar were published on 2026-09-06. GitHub keeps
 the live Wiki in a separate Git repository; changes here do not sync automatically.
 
-For an authorized documentation update:
+For a routine delegated documentation update:
 
 1. Review the owning documents and exact candidate branch, then update these pages.
-2. Preserve historical incident dates and link version details to the README.
+2. Preserve historical incident dates and link exact version/evidence details to
+   repository technical records. Publish only after referenced files are on main.
 3. Check page links, evidence labels, and private-data exclusions.
 4. Clone or pull `https://github.com/ronnierosal/Re-Gear.wiki.git`, inspect live
    edits, and copy reviewed page Markdown plus `_Sidebar.md`. Do not publish this
