@@ -1,7 +1,7 @@
 # Diagnostics and privacy
 
 **Audience:** players, support reviewers, and contributors<br>
-**Reviewed:** 2026-09-06<br>
+**Reviewed:** 2026-09-08<br>
 **Maturity:** privacy-safe snapshot and reviewed support export implemented
 
 The authoritative contracts are
@@ -11,6 +11,19 @@ and [Support bundle](https://github.com/ronnierosal/Re-Gear/blob/main/docs/SUPPO
 Re-Gear collects enough categorical state to explain hardware and workflow health
 without exposing the user's environment by default. The Decky view and support
 projection use explicit allowlists instead of dumping raw system data.
+
+## Why Re-Gear requests root permission
+
+Decky Loader runs Re-Gear's backend with root privileges as requested in the
+plugin manifest. This allows limited SteamOS hardware and system-state operations,
+including protected observations, sleep protection and approved device actions.
+The Quick Access interface itself is not a root process; it uses a narrow,
+validated backend request surface rather than a general command prompt.
+
+Root access does not make every operation automatic or supported on every device.
+User-facing confirmations, fresh-state checks and documented support boundaries
+still apply. See [Safety and eGPU Handling](Safety-and-eGPU-Handling) and
+[Troubleshooting](Troubleshooting). This notice changes no runtime privileges.
 
 ## Appropriate diagnostic fields
 
