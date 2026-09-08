@@ -117,36 +117,87 @@ class PathsPresentTests(unittest.TestCase):
     """A broken ref must never be reported as an absent path."""
 
     @contextlib.contextmanager
-    def _git(self, returncode: int, stderr: str):
+    def _git(self, *, ref_ok: bool = True, present: bool = True):
+        """Answer the ref check and the per-path checks independently."""
         original = check_pr_collisions.subprocess.run
-        check_pr_collisions.subprocess.run = lambda argv, **kwargs: FakeCompleted(
-            returncode, stderr
-        )
+
+        def fake(argv, **kwargs):
+            if "rev-parse" in argv:
+                return FakeCompleted(0 if ref_ok else 1, "" if ref_ok else "fatal: bad")
+            return FakeCompleted(0 if present else 128, "" if present else "fatal: no")
+
+        check_pr_collisions.subprocess.run = fake
         try:
             yield
         finally:
             check_pr_collisions.subprocess.run = original
 
     def test_a_path_on_the_ref_is_present(self) -> None:
-        with self._git(0, ""):
+        with self._git(present=True):
             self.assertEqual(paths_present(["a.py"]), ("a.py",))
 
     def test_a_path_missing_from_the_ref_is_absent(self) -> None:
-        message = "fatal: path 'a.py' does not exist in 'origin/main'"
-        with self._git(128, message):
+        with self._git(present=False):
             self.assertEqual(paths_present(["a.py"]), ())
 
     def test_an_unresolvable_ref_raises_rather_than_reporting_absent(self) -> None:
-        # Both cases exit 128; only the message separates them. Reporting this
-        # as absent would relabel every claim as duplicated work.
-        with self._git(128, "fatal: invalid object name 'origin/nope'."):
+        # Reporting this as absent would relabel every ordinary claim as
+        # duplicated work, which is the one line a reader must not learn to skip.
+        with self._git(ref_ok=False):
             with self.assertRaises(RuntimeError):
                 paths_present(["a.py"], "origin/nope")
 
-    def test_an_empty_error_still_raises(self) -> None:
-        with self._git(1, ""):
-            with self.assertRaises(RuntimeError):
-                paths_present(["a.py"])
+    def test_the_ref_is_resolved_once_rather_than_per_path(self) -> None:
+        calls: list = []
+        original = check_pr_collisions.subprocess.run
+
+        def fake(argv, **kwargs):
+            calls.append(argv)
+            return FakeCompleted(0, "")
+
+        check_pr_collisions.subprocess.run = fake
+        try:
+            paths_present(["a.py", "b.py"])
+        finally:
+            check_pr_collisions.subprocess.run = original
+        self.assertEqual(sum("rev-parse" in call for call in calls), 1)
+
+
+class PathsPresentLiveTests(unittest.TestCase):
+    """Against real git, because the bug this covers was a wrong guess at it.
+
+    `paths_present` first decided absence by matching `git`'s error text. Two
+    messages mean absent -- "does not exist in" for a path not in the tree, and
+    "exists on disk, but not in" for one that is also in the working copy --
+    and only the first was matched. A newly added file therefore raised instead
+    of reporting absent, which is precisely the case this report exists for.
+    Mocks agreed with the wrong assumption, so these ask git directly.
+    """
+
+    def test_a_tracked_file_is_present(self) -> None:
+        self.assertEqual(
+            paths_present(["scripts/check_pr_collisions.py"], "HEAD"),
+            ("scripts/check_pr_collisions.py",),
+        )
+
+    def test_a_path_absent_everywhere_is_absent(self) -> None:
+        self.assertEqual(paths_present(["no/such/file.py"], "HEAD"), ())
+
+    def test_a_file_on_disk_but_not_in_the_ref_is_absent(self) -> None:
+        """The case that broke: present in the working copy, not in the ref."""
+        with tempfile.NamedTemporaryFile(
+            suffix=".py", dir=ROOT, delete=False
+        ) as handle:
+            created = Path(handle.name)
+        try:
+            relative = created.relative_to(ROOT).as_posix()
+            self.assertEqual(paths_present([relative], "HEAD"), ())
+        finally:
+            created.unlink()
+
+    def test_an_unresolvable_ref_raises(self) -> None:
+        with self.assertRaises(RuntimeError):
+            paths_present(["scripts/check_pr_collisions.py"], "origin/no-such-ref")
 
 
 class BaseCollectionTests(unittest.TestCase):

@@ -307,39 +307,49 @@ def collect_open_pull_request_bases(repository: str | None = None) -> dict[int, 
     }
 
 
+def _git(*argv: str) -> subprocess.CompletedProcess:
+    git = shutil.which("git")
+    if git is None:
+        raise RuntimeError("git was not found on PATH")
+    return subprocess.run(
+        (git, *argv),
+        capture_output=True,
+        check=False,
+        shell=False,
+        text=True,
+        timeout=30,
+    )
+
+
 def paths_present(paths: Iterable[str], ref: str = "origin/main") -> tuple[str, ...]:
     """Return which of `paths` already exist on `ref`.
 
     A path missing here is the signal that separates duplicated work from
-    contention, so a failed lookup must not read as "absent": an unreachable
-    ref would relabel every ordinary claim as duplicated work and train the
-    reader to ignore the loudest line in the report. Failure raises instead.
+    contention, so an unreadable ref must never read as "absent": it would
+    relabel every ordinary claim as duplicated work and train a reader to
+    ignore the loudest line in the report.
+
+    The ref is therefore resolved once, up front, and a failure there raises.
+    After that every per-path failure is unambiguous and means absent. The
+    earlier version of this decided by matching `git`'s error text, which was
+    wrong twice over: the strings differ from what the messages look like, and
+    `git` distinguishes a path absent from the tree ("does not exist in") from
+    one that is absent from the tree but present in the working copy ("exists
+    on disk, but not in"). The second is the ordinary case for a file you are
+    about to add -- the exact case this report exists to catch -- and it was
+    being raised as a broken lookup. Error text is not a contract; the ref
+    check is.
     """
-    git = shutil.which("git")
-    if git is None:
-        raise RuntimeError("git was not found on PATH")
-    present: list[str] = []
-    for path in dict.fromkeys(paths):
-        completed = subprocess.run(
-            (git, "cat-file", "-e", f"{ref}:{path}"),
-            capture_output=True,
-            check=False,
-            shell=False,
-            text=True,
-            timeout=30,
+    resolved = _git("rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}")
+    if resolved.returncode != 0:
+        raise RuntimeError(
+            f"could not resolve {ref}: {resolved.stderr.strip() or 'no such ref'}"
         )
-        if completed.returncode == 0:
-            present.append(path)
-            continue
-        error = completed.stderr.strip()
-        # Both a missing path and an unresolvable ref exit 128, and only the
-        # message tells them apart: "does not exist in" is an answer, anything
-        # else is a broken lookup. Treating the second as "absent" would relabel
-        # every ordinary claim as duplicated work, so only the known-absent
-        # message is accepted as one.
-        if "does not exist in" not in error:
-            raise RuntimeError(f"could not read {ref}: {error or 'unknown error'}")
-    return tuple(present)
+    return tuple(
+        path
+        for path in dict.fromkeys(paths)
+        if _git("cat-file", "-e", f"{ref}:{path}").returncode == 0
+    )
 
 
 def render(collisions: Iterable[Collision]) -> str:
