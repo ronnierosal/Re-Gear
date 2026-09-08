@@ -102,28 +102,39 @@ identifies 0.3.54 as its installed-source baseline; this README does not assert
 that 0.3.55 is installed. Consult the candidate branch's evidence and exact build
 metadata before a deployment. Re-Gear remains experimental.
 
-## Resource-release experiment: September 6 update
+## Resource-release experiment: September 8 update
 
-**Priority: active disconnect work.** The latest recorded hardware run used installed
-**0.3.54 / e765fad4b928**. TV output and return to the internal display worked;
-the player confirmed normal controls and audio afterward. Steam and Gamescope
-still retained external GPU allocations, and WirePlumber retained an audio-control
-handle even with playback endpoints closed. A working handheld screen therefore
-does not mean the external GPU has been released.
+**Priority: active disconnect work.** On installed **0.3.58**, a cgroup device
+filter was compiled, attached at the user manager cgroup, and verified as enforced
+before anything was disrupted. With the filter held and the approved unit restarts
+run, every process holding the eGPU released it. This supersedes the September 6
+result, which recorded installed 0.3.54 and reported that resource release did not
+succeed.
 
-The OpenGL and Vulkan selection experiment is packaged in **0.3.56**, tracked in
-[draft PR #82](https://github.com/ronnierosal/Re-Gear/pull/82). The candidate is staged,
-**not installed or hardware validated**. It combines the graphics trial, allocation
-diagnostics, and return-control correction; the separate experimental filter series
-is excluded. The current priority is GitHub review and documentation; hardware
-installation and testing are paused pending a separate supervised continuation.
-Preparation-only tests and repeated unchanged display switches do not complete it.
-Physical live removal remains unsupported.
+Separately, and driven from a source checkout rather than the installed plugin,
+both eGPU PCI functions were detached with a clean kernel teardown and restored by
+a bus rescan with drivers rebound.
+
+**This is not unplug clearance.** Physical live removal remains unsupported, and
+shutdown before disconnecting remains the tested policy. Three limits keep the
+result from being a disconnect precondition today: the holder scan can report clear
+while holders remain ([#120](https://github.com/ronnierosal/Re-Gear/issues/120)),
+the clear state does not persist because the filter detaches as success is reported
+([#123](https://github.com/ronnierosal/Re-Gear/issues/123)), and no reviewed
+software-removal tool exists on the installed build
+([PR #122](https://github.com/ronnierosal/Re-Gear/pull/122), unmerged). None of it
+is wired to a player-facing control; the capability is operator CLI only.
+
+The earlier OpenGL and Vulkan selection experiment is packaged in **0.3.56**, tracked
+in [draft PR #82](https://github.com/ronnierosal/Re-Gear/pull/82). That candidate is
+staged, **not installed or hardware validated**.
 
 Follow [the resource-release experiment (#51)](https://github.com/ronnierosal/Re-Gear/issues/51)
 and [remaining audio ownership (#52)](https://github.com/ronnierosal/Re-Gear/issues/52).
-See the [dated evidence summary](https://github.com/ronnierosal/Re-Gear/blob/codex/disconnect-progress-docs/docs/DISCONNECT_PROGRESS_2026-09-06.md)
-for the tested configuration and limits.
+See the [dated evidence summary](docs/DISCONNECT_PROGRESS_2026-09-08.md) for the
+tested configuration and limits, and the
+[device filter release record](docs/DEVICE_FILTER_RELEASE_2026-09-08.md) for the
+measurements and the session-topology findings behind them.
 
 Evidence labels matter: **Implemented** means code and deterministic checks;
 **Remotely observed** means bounded read-only device evidence; **Hardware
