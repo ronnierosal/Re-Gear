@@ -10,6 +10,10 @@ This revision implements that instruction in the local mockup only.
   or Configure otherwise. Back restores the invoking tile.
 - Compact eGPU and Controller summaries follow the grid; deeper pages remain
   behind Modules. Removed the mock header's unnecessary Decky label.
+- User follow-up: label these rows **eGPU status** and **Controller status**.
+  They open read-only status detail, not the configuration module. The top-right
+  Modules button opens the module chooser for configuration/actions. Back returns
+  to the invoking status row. Preserve this distinction during implementation.
 - Approved gauge/eGPU artwork is used on relevant tiles; monitor/lightning
   reuse existing simple vector vocabulary. No ASUS artwork copied.
 

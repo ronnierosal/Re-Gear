@@ -11,7 +11,7 @@ const assert = require('node:assert/strict');
   page.on('pageerror', error => errors.push(error.message));
   const base = pathToFileURL(path.join(__dirname, 'review.html')).href;
   const output = path.join(__dirname, 'captures/review02'); fs.mkdirSync(output, { recursive: true });
-  const views = ['home', 'modules', 'egpu', 'tdp', 'controller', 'troubleshoot'];
+  const views = ['home', 'modules', 'egpu', 'tdp', 'controller', 'troubleshoot', 'egpu-status', 'controller-status'];
   let checks = 0;
   for (const width of [268, 310, 320]) for (const height of [387, 600]) for (const view of views) {
     await page.goto(`${base}?page=${view}&width=${width}&height=${height}`);
@@ -28,6 +28,13 @@ const assert = require('node:assert/strict');
     }
   }
   await page.goto(base);
+  await page.locator('#open-egpu-status').click();
+  assert.equal(await page.locator('#page').inputValue(), 'egpu-status');
+  assert.equal(await page.locator('#restore').count(), 0);
+  await page.locator('#go-back').click();
+  await page.locator('#open-controller-status').click();
+  assert.equal(await page.locator('#page').inputValue(), 'controller-status');
+  await page.locator('#go-back').click();
   await page.locator('#modules-open').click();
   await page.locator('#open-tdp').click();
   assert.equal(await page.locator('#page').inputValue(), 'tdp');
@@ -70,8 +77,8 @@ const assert = require('node:assert/strict');
   await page.goto(`${base}?width=268&height=387`);
   await page.locator('#modules-open').focus();
   await page.locator('.qam').screenshot({ path: path.join(output, 'focus-short-268.png') });
-  await page.locator('#open-controller').focus();
-  assert(await page.locator('#open-controller').evaluate(el => {
+  await page.locator('#open-controller-status').focus();
+  assert(await page.locator('#open-controller-status').evaluate(el => {
     const box = el.getBoundingClientRect(), parent = el.closest('.content').getBoundingClientRect();
     return box.top >= parent.top && box.bottom <= parent.bottom;
   }), 'Focused control did not scroll into view');

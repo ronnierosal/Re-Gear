@@ -2,7 +2,7 @@
   "date": "2026-09-08",
   "kind": "local HTML fixture; not native Decky",
   "browser": "152.0.4191.66",
-  "layoutCases": 72,
+  "layoutCases": 96,
   "interactionChecks": [
     "Modules/page/Back route",
     "focus return",
