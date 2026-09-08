@@ -31,6 +31,7 @@ ALLOWED_DETAIL_KEYS = frozenset(
         "step_code",
         "support_tier",
         "target_placement",
+        "launch_policy",
     }
 )
 
