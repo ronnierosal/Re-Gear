@@ -25,11 +25,23 @@ someone to have established both that restarting the unit is acceptable and
 whether the session target already reaches it.
 
 An earlier permission-based experiment cleared the same holders *without*
-restarting the audio units, which made this requirement invisible. `chmod`
-emits a udev change event and WirePlumber, which watches udev for ALSA devices,
-re-evaluated on its own. A cgroup filter is silent to userspace, so it gets no
-such help. Evidence from permission experiments must not be read as evidence
-that holders will release under the filter.
+restarting the audio units, which made this requirement invisible. What was
+observed is only that: denying by permission released `wireplumber` without a
+restart, and denying by cgroup filter did not. The mechanism behind that
+difference has not been established — a plausible explanation is that changing
+the node's mode produces a udev event WirePlumber reacts to, while a cgroup
+program is silent to userspace, but that has not been verified and should not
+be relied on.
+
+The conclusion does not depend on the explanation: permission experiments
+released a holder the filter did not, so their results must not be read as
+evidence about how holders behave under the filter.
+
+Membership in the approved sets is evidence from one tested profile. A service
+name alone does not establish identical restart behaviour across installations,
+so an integrator must re-verify holders after executing a plan rather than
+treating a composed plan as proof that the device was cleared. The hardware runs
+behind this module re-probed after every restart for that reason.
 
 Pure: no I/O, no service action, no removal claim. Composing a plan authorises
 nothing on its own.
