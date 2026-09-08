@@ -49,4 +49,5 @@ The conflicted main checkout must be resolved by its owner, not used as a build 
 
 For agent preflight, ownership, issue/PR handoffs, and integration review, follow
 [Agent coordination](AGENT_COORDINATION.md). Both documents apply; release
-coordination does not grant merge, release, or hardware authority.
+coordination does not grant release or hardware authority. Routine merge
+standing authorization and its validation gates are defined in `AGENTS.md`.
