@@ -25,15 +25,18 @@ What it does, in order:
 Without ``--remove`` or ``--rescan`` nothing is written. The default is a plan:
 it reports what would happen and stops.
 
-On revalidation, which is easy to get subtly wrong. Evidence identity is
-per-sample: a fresh observation always carries a new ``sample_id``, so checking
-a plan composed at step 2 against a later observation could never succeed, and
-would not mean anything if it did. What must not change is the *device*. So
-``--remove`` recomposes the plan from the fresh observation, asserts
-``plan_is_current`` against that same observation, and separately requires the
-attachment binding to be identical to the one planning saw. A device that
-changed underneath is a different device, and its plan is discarded rather
-than executed.
+On revalidation, which is easy to get subtly wrong. What must not change is
+the *device*, and identity alone does not establish that removing it is still
+safe, so ``--remove`` checks four separate things and refuses on any of them:
+the fresh observation is ready in its own right, its attachment binding is the
+one planning saw, its generation is unchanged, and the plan recomposed from it
+has the same addresses as the plan that was reviewed.
+
+This originally worked around a defect in ``plan_is_current``, which compared
+a per-observation ``sample_id`` and so could never be satisfied by a fresh
+reading. That is fixed upstream (issue #127): the predicate now compares
+identity only, and states that identity is necessary and not sufficient. The
+checks around it are still required and are kept.
 
 Three things this deliberately does not do. It never spawns a process, keeping
 ``subprocess`` confined to the one adapter an architecture check permits it in.
@@ -244,11 +247,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     if current.state is not RemovalPlanState.COMPOSED:
         report(f"  refusing to remove: recompose failed / {current.code}")
         return 1
+    if current.generation != plan.generation:
+        # The observed device set changed while the plan was being reviewed.
+        # The binding can stay identical across that, so this is a separate
+        # question from whether the same eGPU is attached.
+        report("  refusing to remove: the observation changed since planning.")
+        return 1
     if not plan_is_current(
         current,
-        attachment_binding=fresh_binding,
-        generation=current.generation,
-        sample_id=current.sample_id,
+        attachment_binding=planned_binding,
+        generation=plan.generation,
     ):
         report("  refusing to remove: the plan does not bind the fresh observation.")
         return 1

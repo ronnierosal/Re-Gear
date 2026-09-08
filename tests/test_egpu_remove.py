@@ -29,12 +29,14 @@ AUDIO_BDF = "0000:08:00.1"
 BINDING = "egpu-stable-id"
 
 
-def ready(sample: str = "sample-1") -> RemovalSafety:
+def ready(
+    sample: str = "sample-1", generation: str = "generation-1"
+) -> RemovalSafety:
     """A readiness verdict whose sample differs per call, as real ones do."""
     return RemovalSafety(
         RemovalSafetyState.READY_FOR_SUPERVISED_REMOVAL,
         "removal_safety.ready_for_supervised_removal",
-        SafeUndockRevalidation(BINDING, "generation-1", sample),
+        SafeUndockRevalidation(BINDING, generation, sample),
     )
 
 
@@ -147,6 +149,24 @@ class MainTests(unittest.TestCase):
         # invalidate the plan; only the device identity has to hold.
         self.assertEqual(removal.removed, [AUDIO_BDF, GPU_BDF])
 
+    def test_a_changed_generation_refuses_the_removal(self) -> None:
+        """The binding can stay identical while the observed set changes.
+
+        The attachment binding identifies which eGPU is attached and the
+        addresses are derived from the argument, so both are unchanged by
+        construction across a recompose. The generation is the value that
+        actually moves when the observation changes underneath.
+        """
+        status, removal = self.run_main(
+            ["--remove"],
+            [
+                (ready("sample-1", "generation-1"), BINDING),
+                (ready("sample-2", "generation-2"), BINDING),
+            ],
+        )
+        self.assertEqual(status, 1)
+        self.assertEqual(removal.removed, [])
+
     def test_a_changed_attachment_refuses_the_removal(self) -> None:
         status, removal = self.run_main(
             ["--remove"], [(ready(), BINDING), (ready("sample-2"), "a-different-egpu")]
@@ -166,6 +186,38 @@ class MainTests(unittest.TestCase):
         self.assertEqual(status, 0)
         self.assertEqual(removal.rescanned, [(AUDIO_BDF, GPU_BDF)])
         self.assertEqual(removal.removed, [])
+
+
+class BoundaryTests(unittest.TestCase):
+    """This is the tool that detaches hardware, so the boundary is load bearing.
+
+    `check_architecture.py` constrains the adapter; nothing stops a later edit
+    to this module from opening a sysfs path directly, which is exactly the
+    thing the single-writer boundary exists to prevent. The equivalent
+    assertions guard `hdm.egpu_release`, which does strictly less than this.
+    """
+
+    TOOL = ROOT / "backend/hdm/egpu_remove.py"
+
+    def test_the_tool_never_spawns_a_process(self) -> None:
+        source = self.TOOL.read_text(encoding="utf-8")
+        for line in source.splitlines():
+            stripped = line.strip()
+            self.assertFalse(
+                stripped.startswith(("import subprocess", "from subprocess")),
+                "the tool must not import subprocess",
+            )
+        self.assertNotIn("os.system", source)
+        self.assertNotIn("Popen", source)
+
+    def test_every_write_goes_through_the_port(self) -> None:
+        source = self.TOOL.read_text(encoding="utf-8")
+        self.assertNotIn("write_text", source)
+        self.assertNotIn("/sys/bus/pci", source)
+
+    def test_the_tool_states_that_this_is_not_clearance_to_unplug(self) -> None:
+        source = self.TOOL.read_text(encoding="utf-8")
+        self.assertIn("NOT clearance to unplug", source)
 
 
 if __name__ == "__main__":
