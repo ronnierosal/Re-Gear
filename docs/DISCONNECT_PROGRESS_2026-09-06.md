@@ -3,6 +3,12 @@
 This public summary records the hardware driver's dated return-run evidence.
 It does not replace deployment contracts or establish support for other devices.
 
+> **Superseded for the resource-release conclusion.** This record is accurate for
+> installed 0.3.54 and is retained as history. Resource release later succeeded on
+> installed 0.3.58; see
+> [disconnect progress, 2026-09-08](DISCONNECT_PROGRESS_2026-09-08.md). The
+> shutdown-before-disconnect policy below is unchanged.
+
 ## Recorded hardware run
 
 - Configuration: ASUS ROG Ally X with GPD G1; installed Re-Gear **0.3.54 / e765fad4b928**.
