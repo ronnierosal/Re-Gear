@@ -14,7 +14,7 @@ PACKAGE_VERSION = str(
     json.loads((ROOT / "package.json").read_text(encoding="utf-8"))["version"]
 )
 OUTPUT = ROOT / "out" / f"Re-Gear-{PACKAGE_VERSION}.zip"
-PLUGIN_DIRECTORY = "HandheldDockMode"
+PLUGIN_DIRECTORY = "Re-Gear"
 BUILD_INFO_FILENAME = "build_info.json"
 REVISION_RE = re.compile(r"^[0-9a-f]{40}$")
 GENERATED_BUILD_OUTPUTS = frozenset(("dist/index.js", "dist/index.js.map"))

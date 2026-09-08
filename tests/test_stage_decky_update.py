@@ -23,17 +23,31 @@ class StageDeckyUpdateTests(unittest.TestCase):
     def package(self, root: Path, *, revision: str = REVISION, version: str = "0.2.0") -> Path:
         path = root / "candidate.zip"
         with zipfile.ZipFile(path, "w") as archive:
-            archive.writestr("HandheldDockMode/plugin.json", "{}")
-            archive.writestr("HandheldDockMode/package.json", json.dumps({"version": version}))
-            archive.writestr("HandheldDockMode/build_info.json", json.dumps({"schema_version": 1, "version": version, "revision": revision}))
+            archive.writestr("Re-Gear/plugin.json", "{}")
+            archive.writestr("Re-Gear/package.json", json.dumps({"version": version}))
+            archive.writestr("Re-Gear/build_info.json", json.dumps({"schema_version": 1, "version": version, "revision": revision}))
         return path
+
+    def test_legacy_and_mixed_roots_are_not_stageable(self):
+        with tempfile.TemporaryDirectory() as value:
+            root = Path(value)
+            for mixed in (False, True):
+                package = self.package(root)
+                if mixed:
+                    with zipfile.ZipFile(package, "a") as archive:
+                        archive.writestr("HandheldDockMode/plugin.json", "{}")
+                else:
+                    with zipfile.ZipFile(package, "w") as archive:
+                        archive.writestr("HandheldDockMode/plugin.json", "{}")
+                with self.assertRaisesRegex(ValueError, "metadata"):
+                    stage_decky_update.inspect_package(package)
 
     def test_inspection_and_fixed_filename(self):
         with tempfile.TemporaryDirectory() as value:
             package = self.package(Path(value))
             metadata = stage_decky_update.inspect_package(package)
         self.assertEqual(metadata["revision"], REVISION)
-        self.assertEqual(stage_decky_update.staged_filename(metadata), "HDM-update-0.2.0-aaaaaaaaaaaa.zip")
+        self.assertEqual(stage_decky_update.staged_filename(metadata), "Re-Gear-update-0.2.0-aaaaaaaaaaaa.zip")
         self.assertRegex(metadata["sha256"], r"^[0-9a-f]{64}$")
 
     def test_bad_metadata_and_unsafe_paths_fail_closed(self):
@@ -44,14 +58,14 @@ class StageDeckyUpdateTests(unittest.TestCase):
                 stage_decky_update.inspect_package(package)
             unsafe = root / "unsafe.zip"
             with zipfile.ZipFile(unsafe, "w") as archive:
-                archive.writestr("HandheldDockMode/../outside", "x")
-                archive.writestr("HandheldDockMode/package.json", json.dumps({"version": "0.2.0"}))
-                archive.writestr("HandheldDockMode/build_info.json", json.dumps({"schema_version": 1, "version": "0.2.0", "revision": REVISION}))
+                archive.writestr("Re-Gear/../outside", "x")
+                archive.writestr("Re-Gear/package.json", json.dumps({"version": "0.2.0"}))
+                archive.writestr("Re-Gear/build_info.json", json.dumps({"schema_version": 1, "version": "0.2.0", "revision": REVISION}))
             with self.assertRaisesRegex(ValueError, "metadata"):
                 stage_decky_update.inspect_package(unsafe)
 
     def test_commands_constrain_destination_and_remote_path(self):
-        filename = "HDM-update-0.2.0-aaaaaaaaaaaa.zip"
+        filename = "Re-Gear-update-0.2.0-aaaaaaaaaaaa.zip"
         argv = stage_decky_update.build_hash_argv(host="192.0.2.146", user="deck", port=22, timeout_seconds=15, identity_file=None, filename=filename)
         self.assertEqual(argv[-3:], ["sha256sum", "--", f"/home/deck/{filename}"])
         with self.assertRaises(ValueError):
@@ -68,7 +82,7 @@ class StageDeckyUpdateTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as value:
             package = self.package(Path(value))
             digest = hashlib.sha256(package.read_bytes()).hexdigest()
-            expected_name = "HDM-update-0.2.0-aaaaaaaaaaaa.zip"
+            expected_name = "Re-Gear-update-0.2.0-aaaaaaaaaaaa.zip"
             results = [Result(), Result()]
             results[1].stdout = f"{digest}  /home/deck/{expected_name}\n"
             with patch.object(stage_decky_update.subprocess, "run", side_effect=results) as run:
@@ -78,7 +92,7 @@ class StageDeckyUpdateTests(unittest.TestCase):
 
     def test_unexpected_remote_response_is_rejected(self):
         with self.assertRaisesRegex(ValueError, "unexpected"):
-            stage_decky_update.parse_remote_digest("bad\n", user="deck", filename="HDM-update-0.2.0-aaaaaaaaaaaa.zip")
+            stage_decky_update.parse_remote_digest("bad\n", user="deck", filename="Re-Gear-update-0.2.0-aaaaaaaaaaaa.zip")
 
 
 if __name__ == "__main__":

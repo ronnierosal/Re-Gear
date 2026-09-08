@@ -21,7 +21,7 @@ from typing import Any
 from remote_capture import ssh_failure_code, validate_destination
 
 
-PLUGIN_DIRECTORY = "HandheldDockMode"
+PLUGIN_DIRECTORY = "Re-Gear"
 BUILD_INFO_NAME = f"{PLUGIN_DIRECTORY}/build_info.json"
 PACKAGE_NAME = f"{PLUGIN_DIRECTORY}/package.json"
 REVISION_RE = re.compile(r"^[0-9a-f]{40}$")
@@ -76,7 +76,7 @@ def staged_filename(metadata: dict[str, str]) -> str:
     revision = metadata.get("revision", "")
     if not VERSION_RE.fullmatch(version) or not REVISION_RE.fullmatch(revision):
         raise ValueError("package metadata is invalid")
-    return f"HDM-update-{version}-{revision[:12]}.zip"
+    return f"Re-Gear-update-{version}-{revision[:12]}.zip"
 
 
 def connection_options(*, timeout_seconds: int, identity_file: Path | None) -> list[str]:
@@ -91,7 +91,7 @@ def connection_options(*, timeout_seconds: int, identity_file: Path | None) -> l
 
 
 def _validate_filename(filename: str) -> None:
-    if not re.fullmatch(r"HDM-update-[A-Za-z0-9.+-]+-[0-9a-f]{12}\.zip", filename):
+    if not re.fullmatch(r"Re-Gear-update-[A-Za-z0-9.+-]+-[0-9a-f]{12}\.zip", filename):
         raise ValueError("remote filename is invalid")
 
 

@@ -12,7 +12,7 @@ from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[1]
-PLUGIN_DIRECTORY = "HandheldDockMode"
+PLUGIN_DIRECTORY = "Re-Gear"
 NUMERIC_IDENTIFIER = r"(?:0|[1-9]\d*)"
 PRERELEASE_IDENTIFIER = r"(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)"
 SEMVER_RE = re.compile(
@@ -50,6 +50,9 @@ def prepare_release_candidate(archive: Path, *, project_root: Path = ROOT) -> di
         raise ValueError("release.archive_name_invalid")
     try:
         with zipfile.ZipFile(archive) as value:
+            names = value.namelist()
+            if not names or {name.split("/", 1)[0] for name in names} != {PLUGIN_DIRECTORY}:
+                raise ValueError("release.archive_layout_invalid")
             build = json.loads(value.read(f"{PLUGIN_DIRECTORY}/build_info.json").decode("utf-8"))
             package = json.loads(value.read(f"{PLUGIN_DIRECTORY}/package.json").decode("utf-8"))
     except (OSError, KeyError, UnicodeDecodeError, ValueError, zipfile.BadZipFile) as error:

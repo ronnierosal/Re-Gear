@@ -4,7 +4,7 @@ param(
     [ValidatePattern("^[A-Za-z_][A-Za-z0-9_-]*$")] [string]$UserName = "deck",
     [ValidateRange(1, 65535)] [int]$Port = 22,
     [string]$IdentityFile = "",
-    [ValidatePattern("^/home/[A-Za-z_][A-Za-z0-9_-]*/homebrew/plugins/HandheldDockMode$")] [string]$RemotePluginDir = "",
+    [ValidatePattern("^/home/[A-Za-z_][A-Za-z0-9_-]*/homebrew/plugins/Re-Gear$")] [string]$RemotePluginDir = "",
     [switch]$ConfirmDeploy,
     [switch]$InteractiveSudo
 )
@@ -24,7 +24,7 @@ if ($UseCorepackPnpm -and -not (Get-Command "corepack" -ErrorAction SilentlyCont
 }
 
 $RepositoryRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
-if ([string]::IsNullOrWhiteSpace($RemotePluginDir)) { $RemotePluginDir = "/home/$UserName/homebrew/plugins/HandheldDockMode" }
+if ([string]::IsNullOrWhiteSpace($RemotePluginDir)) { $RemotePluginDir = "/home/$UserName/homebrew/plugins/Re-Gear" }
 $SshHost = if ($HostName.Contains(":")) { "[$HostName]" } else { $HostName }
 $Target = "$UserName@$SshHost"
 $SshArgs = @("-p", [string]$Port, "-o", "BatchMode=yes", "-o", "IdentitiesOnly=yes", "-o", "ConnectTimeout=15")
@@ -82,9 +82,11 @@ PLUGIN_DIR='$RemotePluginDir'
 ARCHIVE='$remoteArchive'
 STAMP='$stamp'
 PLUGIN_PARENT=`$(dirname "`$PLUGIN_DIR")
+LEGACY_DIR="`$PLUGIN_PARENT/HandheldDockMode"
+if test -e "`$LEGACY_DIR" || test -L "`$LEGACY_DIR"; then echo "Legacy installation requires supervised cutover; see docs/IDENTITY_CUTOVER.md" >&2; exit 1; fi
 BACKUP_ROOT="`$PLUGIN_PARENT/.hdm-deploy-backups"
 STAGING="`$PLUGIN_PARENT/.hdm-staging-`$STAMP"
-BACKUP="`$BACKUP_ROOT/HandheldDockMode.backup-`$STAMP"
+BACKUP="`$BACKUP_ROOT/Re-Gear.backup-`$STAMP"
 rollback() { if test ! -d "`$PLUGIN_DIR" && test -d "`$BACKUP"; then mv "`$BACKUP" "`$PLUGIN_DIR"; fi; }
 cleanup() { rm -rf -- "`$STAGING"; rm -f -- "`$ARCHIVE"; }
 trap 'rollback; cleanup' ERR
@@ -96,14 +98,14 @@ from pathlib import Path, PurePosixPath
 archive, target = map(Path, sys.argv[1:])
 with zipfile.ZipFile(archive) as z:
     members = z.infolist(); names = [m.filename for m in members]
-    if not members or len(names) != len(set(names)) or sum(m.file_size for m in members) > 96 * 1024 * 1024 or any(PurePosixPath(m.filename).parts[:1] != ('HandheldDockMode',) or '..' in PurePosixPath(m.filename).parts or m.is_dir() or ((m.external_attr >> 16) & 0o170000) == 0o120000 for m in members): raise SystemExit('invalid archive layout')
-    build = json.loads(z.read('HandheldDockMode/build_info.json')); package = json.loads(z.read('HandheldDockMode/package.json'))
+    if not members or len(names) != len(set(names)) or sum(m.file_size for m in members) > 96 * 1024 * 1024 or any(PurePosixPath(m.filename).parts[:1] != ('Re-Gear',) or '..' in PurePosixPath(m.filename).parts or m.is_dir() or ((m.external_attr >> 16) & 0o170000) == 0o120000 for m in members): raise SystemExit('invalid archive layout')
+    build = json.loads(z.read('Re-Gear/build_info.json')); package = json.loads(z.read('Re-Gear/package.json'))
     if set(build) != {'schema_version','version','revision'} or build.get('schema_version') != 1 or package.get('version') != build.get('version') or not re.fullmatch(r'[0-9a-f]{40}', str(build.get('revision'))): raise SystemExit('invalid package provenance')
     z.extractall(target)
 PY
-test -f "`$STAGING/HandheldDockMode/plugin.json"; test -f "`$STAGING/HandheldDockMode/main.py"; test -f "`$STAGING/HandheldDockMode/dist/index.js"
+test -f "`$STAGING/Re-Gear/plugin.json"; test -f "`$STAGING/Re-Gear/main.py"; test -f "`$STAGING/Re-Gear/dist/index.js"
 if test -d "`$PLUGIN_DIR"; then mv "`$PLUGIN_DIR" "`$BACKUP"; fi
-mv "`$STAGING/HandheldDockMode" "`$PLUGIN_DIR"
+mv "`$STAGING/Re-Gear" "`$PLUGIN_DIR"
 # Persistent HDM state/config is outside the plugin tree and is intentionally preserved.
 chmod 0755 "`$PLUGIN_DIR/bin/gamescope"
 rm -f -- "`$ARCHIVE"; trap - ERR
