@@ -125,6 +125,16 @@ class DisplayObservation:
     edid_ready: bool | None
     confidence: Confidence
     evidence: tuple[Evidence, ...] = field(default_factory=tuple)
+    #: Whether DRM still has a mode committed on this connector. Distinct
+    #: from `active`, which records only which output the compositor
+    #: prefers: a connector can stop being preferred while still driving a
+    #: display and holding its GPU's scanout resources.
+    mode_committed: bool | None = None
+    #: Grade of `active` specifically. `confidence` records whether the
+    #: connector's *connection* was observable, which says nothing about
+    #: whether the output is live; grading one fact with the other's
+    #: confidence is how a never-verified claim came to read as verified.
+    active_confidence: Confidence = Confidence.UNKNOWN
 
 
 @dataclass(frozen=True, slots=True)

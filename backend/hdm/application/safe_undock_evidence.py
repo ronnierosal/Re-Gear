@@ -140,6 +140,24 @@ def _topology_exact(
     return up, link.confidence
 
 
+def _inactive_grade(display) -> Confidence:
+    """Grade a claim that this display is inactive, checking it against the mode.
+
+    The producing adapter already refuses to verify a not-preferred connector
+    that still has a mode committed. This repeats the check where the fact is
+    consumed, because the grade and the signal it rests on travel separately:
+    they survive serialization, and a second adapter or a hand-built observation
+    could present a verified inactive display whose mode is still committed.
+
+    A safety gate should not accept a producer's grade that contradicts a raw
+    signal it holds itself, so anything but a definitely released connector is
+    unknown here rather than verified inactive.
+    """
+    if display.mode_committed is False:
+        return display.active_confidence
+    return Confidence.UNKNOWN
+
+
 def _display_active(
     snapshot: ObservedSnapshot, kind: DisplayKind
 ) -> tuple[bool | None, Confidence]:
@@ -148,16 +166,24 @@ def _display_active(
     Safety invariant 6: a connected connector is not proof of an active display,
     so this reads `active` and never falls back to `connected`. A mixed set with
     no active member is unknown rather than inactive.
+
+    The grade comes from `active_confidence`, not `confidence`. The latter
+    records whether the connector's connection was observable, and reading it
+    here is how `external_display_active` came to report a verified false for a
+    connector that was no longer preferred but still had a mode committed --
+    still potentially holding the external GPU's scanout resources.
     """
     matching = tuple(display for display in snapshot.displays if display.kind is kind)
     if not matching:
         return False, Confidence.UNKNOWN
     active = tuple(display for display in matching if display.active is True)
     if active:
-        return True, min((item.confidence for item in active), key=_confidence_rank)
+        return True, min(
+            (item.active_confidence for item in active), key=_confidence_rank
+        )
     if all(display.active is False for display in matching):
         return False, min(
-            (item.confidence for item in matching), key=_confidence_rank
+            (_inactive_grade(item) for item in matching), key=_confidence_rank
         )
     return None, Confidence.UNKNOWN
 

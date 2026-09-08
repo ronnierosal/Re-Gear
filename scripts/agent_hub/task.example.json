@@ -1,0 +1,10 @@
+{
+  "op": "create_task",
+  "id": "replace-with-unique-task-id",
+  "stream": "coordination",
+  "title": "Describe one concrete problem",
+  "branch": "agent/replace-with-task-topic",
+  "paths": [],
+  "dependencies": [],
+  "note": "Scope: ... Out of scope: ... Done when: ... Next: claim and inspect."
+}

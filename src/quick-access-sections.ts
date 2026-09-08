@@ -79,9 +79,14 @@ export function quickAccessSections(input: QuickAccessSectionInput = {}): QuickA
   return [egpu, controller, tdp, display, system];
 }
 
-/** The section a fresh panel opens on: the first available one, else eGPU. */
+/** The section a fresh panel opens on: the first available one.
+ *
+ * When none is available the first listed section is used rather than a fixed
+ * id, so this never names a section the caller was not given and a nav row can
+ * always resolve its selection to a target it actually draws.
+ */
 export function defaultSectionId(sections: QuickAccessSection[]): QuickAccessSectionId {
-  return sections.find((section) => section.available)?.id ?? "egpu";
+  return sections.find((section) => section.available)?.id ?? sections[0]?.id ?? "egpu";
 }
 
 /** Resolve a remembered selection, falling back when it is gone or unusable. */

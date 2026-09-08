@@ -67,6 +67,8 @@ def snapshot_to_dict(snapshot: ObservedSnapshot, *, include_presentation: bool =
                 "active": display.active,
                 "edid_ready": display.edid_ready,
                 "confidence": display.confidence.value,
+                "mode_committed": display.mode_committed,
+                "active_confidence": display.active_confidence.value,
                 "evidence": _evidence_to_dict(display.evidence),
             }
             for display in snapshot.displays
@@ -205,6 +207,12 @@ def snapshot_from_dict(value: dict[str, Any]) -> ObservedSnapshot:
             active=_optional_bool(display.get("active"), "display.active"),
             edid_ready=_optional_bool(display.get("edid_ready"), "display.edid_ready"),
             confidence=Confidence(display.get("confidence", "unknown")),
+            mode_committed=_optional_bool(
+                display.get("mode_committed"), "display.mode_committed"
+            ),
+            active_confidence=Confidence(
+                display.get("active_confidence", "unknown")
+            ),
             evidence=_evidence(display.get("evidence")),
         )
         for display in value["displays"]

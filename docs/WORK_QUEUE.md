@@ -1,7 +1,8 @@
 # HDM worker queue
 
 This is the ordered work and durable checkpoint index. Live cross-agent ownership
-comes from issue claims under [the coordination playbook](AGENT_COORDINATION.md);
+comes from the shared hub tasks and linked cross-machine issue/PR claims under
+[the coordination playbook](AGENT_COORDINATION.md);
 dated owners here are not exclusive current claims. This index
 does not replace executable behavior, [the roadmap](ROADMAP.md), or the
 [safety invariants](SAFETY_INVARIANTS.md). The North Star is console-simple,

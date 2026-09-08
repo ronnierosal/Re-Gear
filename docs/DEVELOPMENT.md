@@ -75,8 +75,9 @@ driver's ownership.
   starting point.
 - Merge only after ancestry, conflicts, diff scope, and relevant checks are
   known. Prefer fast-forward integration for bounded worker branches.
-- Never push, tag, publish, create a release, force-push, rewrite published
-  history, or delete remote refs without explicit maintainer authorization.
+- Scoped commits, branch pushes, PRs, and validated routine merges have standing
+  authorization under `AGENTS.md`. Its narrow high-risk boundaries govern release,
+  publication, history rewriting, credentials, and hardware actions.
 
 ## Concurrent chats and agents
 

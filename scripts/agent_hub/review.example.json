@@ -1,0 +1,10 @@
+{
+  "op": "create_task",
+  "id": "docs-source-task-id",
+  "stream": "documentation",
+  "title": "Review public documentation impact of source task",
+  "branch": "codex/docs-source-task-id",
+  "paths": [],
+  "dependencies": ["source-task-id"],
+  "note": "Documentation review: source-task-id\nScope: verify source evidence and choose README/Wiki/Discussion/no change. Done when: decision and any published URLs/readback are recorded. Next: claim, inspect and set paths before edits."
+}

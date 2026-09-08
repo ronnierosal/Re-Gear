@@ -22,14 +22,15 @@ page.
 
 `wiki/_Sidebar.md` defines navigation. `wiki/README.md` records publishing and
 authority rules and is not intended to replace the Wiki Home page. Publication
-or synchronization to GitHub requires explicit maintainer authorization for
-each publishing task.
+and synchronization follow the standing documentation delegation in `AGENTS.md`
+and [Documentation workflow](DOCUMENTATION_WORKFLOW.md), including its narrow
+human-review exceptions.
 
 ## Initial publish set
 
 | Page | Purpose | Repository authority |
 |---|---|---|
-| Home | Product promise, maturity, placements, safe navigation | `README.md`, `PRODUCT.md` |
+| Home | Product overview, maturity, placements, safe navigation | `PRODUCT.md`, verified engineering evidence |
 | Project Overview | Goals, non-goals, workflow, and profile direction | `PRODUCT.md`, `ARCHITECTURE.md` |
 | Current State | Evidence-aware implementation and hardware snapshot | `CURRENT_STATE.md`, `ROADMAP.md` |
 | Issues Fixed | Selected fixes with proof level and remaining gates | `CURRENT_STATE.md`, audit and validation records |
@@ -72,3 +73,33 @@ workflows have evidence.
 - Do not put engineering invariants, secrets, SSH coordinates, raw identities,
   or unpublished recovery procedures only in the Wiki.
 - Review Wiki pages when the owning repository contract materially changes.
+
+## Module-oriented direction (approved, not an implementation claim)
+
+README is the stable project landing page: a broader console-experience/tool
+platform, with eGPU as an important module. Use a short module summary and links,
+with approved screenshots/mockups near the top when available. Label mockups as
+concepts. Move detailed validation/status tables deeper; do not start that rewrite
+until the existing reconciliation draft and current evidence are reviewed.
+
+The detailed Wiki can grow around architecture, eGPU & Docking, Auto TDP,
+Controller Management, Device Profiles, Quick Access / Command Center,
+installation, compatibility, troubleshooting, validation and known limitations.
+Add useful pages when evidence/content exists; preserve existing slugs and links.
+Internal `docs/` retains contracts, dated evidence and engineering history.
+
+Approved future Quick Access direction:
+
+- Main page: **Command Center**, for resolution, frame/refresh targets, Auto TDP
+  toggle/target, eGPU/controller status, and immediate quick actions.
+- Module pages/tabs: eGPU, Auto TDP, Controller, and future tools, for deeper
+  configuration and personalization. The structure must accept new modules.
+
+**Quick Access is for actions now. Module pages are for configuration and
+personalization.** This is design direction only, with no availability, delivery
+schedule, completed UI implementation or hardware-validation claim.
+
+The future eGPU guide should explain Portable, Boosted Handheld and TV Docked
+modes, detection, GPU selection, display/controller handoff, disconnect/shutdown,
+hardware quirks, tested configurations, blockers and validation. Link each claim
+to exact evidence; documentation work does not investigate or operate hardware.

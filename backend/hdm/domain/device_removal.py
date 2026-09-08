@@ -66,7 +66,13 @@ class RemovalFunction:
 
 @dataclass(frozen=True, slots=True)
 class RemovalPlan:
-    """An ordered, revalidation-bound removal plan, or why there is not one."""
+    """An ordered removal plan bound to its authorising observation, or why
+    there is not one.
+
+    `attachment_binding` and `generation` identify the device the plan was
+    composed for. `sample_id` records which observation authorised it, for
+    audit rather than for staleness checking.
+    """
 
     state: RemovalPlanState
     code: str
@@ -101,11 +107,15 @@ def compose_removal_plan(
 ) -> RemovalPlan:
     """Compose the removal plan for an eGPU whose holders are already clear.
 
-    The plan is bound to the observation that authorised it. An executor must
-    revalidate against the same attachment, generation and sample immediately
-    before acting: readiness established at compose time says nothing about the
-    state at execute time, and a device that changed underneath is a different
-    device.
+    The plan is bound to the observation that authorised it. Readiness
+    established at compose time says nothing about the state at execute time,
+    so an executor must do two separate things immediately before acting:
+    confirm the device is the same one with `plan_is_current`, and re-run the
+    readiness assessment against fresh evidence. The first catches a plan
+    pointed at a different device; only the second establishes that removing
+    it is still safe. The sample id recorded here identifies the authorising
+    observation for audit and is deliberately not a staleness signal -- see
+    `plan_is_current`.
     """
     if type(readiness) is not RemovalSafety or type(functions) is not tuple:
         return RemovalPlan(RemovalPlanState.INVALID, "device_removal.input_invalid")
@@ -168,18 +178,33 @@ def plan_is_current(
     *,
     attachment_binding: str,
     generation: str,
-    sample_id: str,
 ) -> bool:
-    """Return whether `plan` still matches a freshly taken observation.
+    """Return whether `plan` still describes the same device as a fresh reading.
 
-    An executor calls this immediately before acting. A changed attachment, or
-    a newer generation or sample, means the plan describes a device state that
-    no longer holds and must be recomposed rather than executed.
+    This answers **identity**, not state: is the thing in front of the executor
+    the thing the plan was composed for. A changed attachment binding is a
+    different device; a changed generation is a different observed device set.
+    Either means the plan must be recomposed rather than executed.
+
+    It used to compare the sample id as well, which made it unsatisfiable. Sample
+    ids are minted per observation -- a counter in the peripheral adapter, and a
+    fresh one again in a new process -- so no genuinely fresh observation could
+    ever match a composed plan. The only call that passed was one replaying the
+    composing observation's own values, which checks nothing. The sample id is
+    still carried on the plan, because it records which observation authorised
+    it and that is worth auditing; it is simply not a staleness signal.
+
+    Identity is necessary and **not sufficient**, and the caller carries the
+    rest. `generation` is derived from the peripheral inventory alone, so
+    neither it nor the attachment binding moves when display or GPU state
+    changes underneath. An executor must therefore also re-run the readiness
+    assessment against fresh evidence and refuse on anything short of ready.
+    This predicate exists to catch a plan pointed at the wrong device, not to
+    certify that removing it is still safe.
     """
     if not plan.usable:
         return False
     return (
         plan.attachment_binding == attachment_binding
         and plan.generation == generation
-        and plan.sample_id == sample_id
     )
