@@ -20,6 +20,10 @@ rollback remain separately supervised under the
 
 ## Players and hardware testers
 
+For the future supported-release ZIP route through Decky, see
+[Manual Installation](Manual-Installation). There is no public supported Re-Gear
+release yet; ordinary users must not install development artifacts.
+
 Re-Gear is not ready for an ordinary self-service installation. Hardware-facing
 builds are provenance-bound and validated in supervised sessions. Do not select
 an archive by filename or age, copy an unverified build onto a handheld, or use
