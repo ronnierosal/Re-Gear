@@ -62,6 +62,26 @@ def _gpu_role(card: DrmCardRecord, g1: GpdG1Match) -> GpuRole:
     return GpuRole.UNKNOWN
 
 
+def _grade_active(active: bool | None, mode_committed: bool | None) -> Confidence:
+    """Grade the `active` fact against the connector's own mode state.
+
+    Two independent signals bear on whether an output is live: which output the
+    compositor prefers, and whether DRM still has a mode committed. Agreement
+    verifies the fact; anything else is unknown.
+
+    The case this exists for is `active=False` with a mode still committed. The
+    compositor no longer prefers the connector, but it is still driving a
+    display and can still hold its GPU's scanout resources, so "not preferred"
+    is not evidence of "not active". Reporting that as a verified inactive
+    display is what let `external_display_active` read verified-false while an
+    external connector was still enabled -- fail-open on a safety gate, since
+    removal safety requires that fact verified false.
+    """
+    if active is None or mode_committed is None:
+        return Confidence.UNKNOWN
+    return Confidence.VERIFIED if active is mode_committed else Confidence.UNKNOWN
+
+
 def _display_stable_id(connector: DrmConnectorRecord) -> str:
     if connector.edid_sha256:
         return f"display:{connector.edid_sha256[:16]}"
@@ -364,6 +384,8 @@ class SteamOsDiscovery:
                 else None
             )
             confidence = Confidence.VERIFIED if status_known else Confidence.UNKNOWN
+            committed = connector.mode_committed
+            active_confidence = _grade_active(active, committed)
             rows.append(
                 DisplayObservation(
                     stable_id=_display_stable_id(connector),
@@ -375,12 +397,14 @@ class SteamOsDiscovery:
                     active=active,
                     edid_ready=bool(connector.edid_sha256),
                     confidence=confidence,
+                    mode_committed=committed,
+                    active_confidence=active_confidence,
                     evidence=(
                         Evidence("drm-sysfs", confidence, "Connector state was observed"),
                         Evidence(
                             "gamescope-process",
-                            Confidence.VERIFIED if active is not None else Confidence.UNKNOWN,
-                            "Active output is derived from the unique live output preference",
+                            active_confidence,
+                            "Active output is the unique compositor preference, corroborated by the connector mode state",
                         ),
                     ),
                 )

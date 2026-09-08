@@ -142,7 +142,16 @@ def returned_to_portable(**kwargs) -> SnapshotReport:
     base = json.loads((FIXTURES / "tv-docked.json").read_text(encoding="utf-8"))
     snapshot = snapshot_from_dict(base)
     displays = tuple(
-        dataclasses.replace(display, active=display.kind.value == "internal")
+        dataclasses.replace(
+            display,
+            active=display.kind.value == "internal",
+            # The external connector has genuinely stopped driving a display.
+            # Stating the mode state is now required to claim a verified
+            # inactive external display: not-preferred alone does not establish
+            # it, because a connector can stop being preferred while still
+            # scanning out. See issue 141.
+            mode_committed=display.kind.value == "internal",
+        )
         for display in snapshot.displays
     )
     gpus = tuple(
@@ -197,7 +206,7 @@ class DisplayEvidenceTests(unittest.TestCase):
     def test_unverified_display_confidence_is_not_verified(self) -> None:
         base = returned_to_portable()
         displays = tuple(
-            dataclasses.replace(display, confidence=Confidence.OBSERVED)
+            dataclasses.replace(display, active_confidence=Confidence.OBSERVED)
             for display in base.snapshot.displays
         )
         evidence = build_safe_undock_evidence(
@@ -297,7 +306,9 @@ class ReadinessTests(unittest.TestCase):
     def test_unverified_active_external_display_blocks(self) -> None:
         base = returned_to_portable()
         displays = tuple(
-            dataclasses.replace(display, active=True, confidence=Confidence.OBSERVED)
+            dataclasses.replace(
+                display, active=True, active_confidence=Confidence.OBSERVED
+            )
             if display.kind.value == "external"
             else display
             for display in base.snapshot.displays
@@ -401,6 +412,70 @@ class ReadinessTests(unittest.TestCase):
         assert readiness.revalidation is not None
         self.assertEqual(readiness.revalidation.attachment_binding, EGPU_ID)
         self.assertEqual(readiness.code, "safe_undock.ready_for_revalidation")
+
+
+class EnabledConnectorGradingTests(unittest.TestCase):
+    """Issue 141: not-preferred is not evidence of not-active.
+
+    A connector the compositor stopped preferring can still have a mode
+    committed, still be scanning out, and still hold the external GPU's
+    resources. Before this, such a connector reported a verified inactive
+    external display, which is fail-open on a gate removal safety depends on.
+    """
+
+    def _external_still_committed(self):
+        base = returned_to_portable()
+        return tuple(
+            dataclasses.replace(display, mode_committed=True)
+            if display.kind.value == "external"
+            else display
+            for display in base.snapshot.displays
+        )
+
+    def test_a_still_committed_external_connector_is_not_verified_inactive(self) -> None:
+        evidence = build_safe_undock_evidence(
+            returned_to_portable(displays=self._external_still_committed())
+        ).evidence
+        assert evidence is not None
+        external = evidence.external_display_active
+        self.assertIs(external.value, False)
+        # The value is unchanged; only the claim to have verified it is gone.
+        self.assertFalse(external.verified)
+
+    def test_an_unreadable_mode_state_is_not_verified_inactive(self) -> None:
+        base = returned_to_portable()
+        displays = tuple(
+            dataclasses.replace(display, mode_committed=None)
+            if display.kind.value == "external"
+            else display
+            for display in base.snapshot.displays
+        )
+        evidence = build_safe_undock_evidence(
+            returned_to_portable(displays=displays)
+        ).evidence
+        assert evidence is not None
+        self.assertFalse(evidence.external_display_active.verified)
+
+    def test_a_released_external_connector_is_still_verified_inactive(self) -> None:
+        """The change must not make the honest case unreachable."""
+        evidence = build_safe_undock_evidence(returned_to_portable()).evidence
+        assert evidence is not None
+        self.assertIs(evidence.external_display_active.value, False)
+        self.assertTrue(evidence.external_display_active.verified)
+
+    def test_the_connected_grade_no_longer_decides_the_active_fact(self) -> None:
+        # Two separate observations, two separate grades. Degrading the
+        # connection grade must not silently regrade whether the output is live.
+        base = returned_to_portable()
+        displays = tuple(
+            dataclasses.replace(display, confidence=Confidence.OBSERVED)
+            for display in base.snapshot.displays
+        )
+        evidence = build_safe_undock_evidence(
+            returned_to_portable(displays=displays)
+        ).evidence
+        assert evidence is not None
+        self.assertTrue(evidence.external_display_active.verified)
 
 
 if __name__ == "__main__":
