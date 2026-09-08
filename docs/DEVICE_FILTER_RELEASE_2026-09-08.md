@@ -12,6 +12,15 @@ It supersedes the resource-release conclusion in
 recorded installed 0.3.54 and reported that resource release did not succeed.
 That record stands as history; this one records the later result.
 
+## Provenance of this record
+
+This is written from the supervised session's own record of the run, not from a
+captured evidence artifact. No redacted before/live/after capture for this run
+exists in the repository, and this document does not stand in for one. Treat the
+measurements below as the operator's recorded observations, and attach a capture
+before this record is cited as validation evidence rather than as an engineering
+account.
+
 ## Configuration and evidence tier
 
 | Item | Value |

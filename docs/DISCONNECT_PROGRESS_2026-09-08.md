@@ -6,6 +6,11 @@ work. It succeeds
 installed 0.3.54 and remains accurate for that build. It does not replace
 deployment contracts or establish support for other devices.
 
+This summary is written from the supervised session's own record of the run. No
+redacted before/live/after capture for it exists in the repository yet, so the
+results below are the operator's recorded observations rather than artifact-backed
+validation evidence.
+
 ## What changed since September 6
 
 The September 6 record concluded: visible return succeeded, resource release did
