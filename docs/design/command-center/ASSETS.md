@@ -1,5 +1,38 @@
 # Review 01 asset manifest
 
+## GitHub candidate pack received
+
+PR [144](https://github.com/ronnierosal/Re-Gear/pull/144), branch
+`design/command-center-assets-v1`, exact reviewed commit
+`370f39e97023bd4de98f43eab47d2b570104e0d0` supplies ten SVG candidates.
+[Pinned source folder](https://github.com/ronnierosal/Re-Gear/tree/370f39e97023bd4de98f43eab47d2b570104e0d0/docs/design/command-center/assets/v1)
+and [pinned manifest](https://github.com/ronnierosal/Re-Gear/blob/370f39e97023bd4de98f43eab47d2b570104e0d0/docs/design/command-center/assets/v1/ASSET_MANIFEST.json)
+are available to both coding agents. Use this revision, not a moving branch URL.
+
+[Intake evidence](GITHUB_ASSET_INTAKE.json): all ten SHA-256 values match;
+bounded XML inspection found only allowed vector/text elements and no external
+resources or scripts. Local Edge renders have visible artwork, transparent pixels
+and transparent corners. Antivirus was not run; this is passive asset verification,
+not a malware-safety certification. Original asset files were not modified.
+
+The uploaded manifest says `candidate-unapproved`. Availability and transparency
+are verified; visual approval, small-size acceptance and provenance/license claims
+remain separate. This supersedes the earlier statement that no pack was generated;
+the original reuse table below remains the review-01 baseline.
+
+Integration notes: currentColor monochrome assets require inline SVG or an
+appropriate mask; a plain img does not inherit its parent's color. Preserve each
+viewBox/aspect ratio. Namespace repeated title/desc and gradient IDs when inlining
+multiple assets. The wordmark uses font-dependent text; check its actual SteamOS
+font rendering before approving an exact lettering match. Do not replace the
+current review's icons silently or interpret this pack as approval of the layout.
+
+Navigation coordination also received explicit owner agreement: land PR #129
+first, then evolve to the labelled Modules stack while retaining its single
+showDiagnostics state semantics. The owner confirmed/fixed the unavailable-section
+resolver at `4a24d7f29ac282e16443cb52b89b2b17511772d8`. #129 was still open at
+this intake; no merge or integration is claimed here.
+
 No new custom artwork is required to review this design. Existing repository
 assets are referenced directly, not replaced. Their original author/license
 provenance was not independently established in this task; repository inclusion

@@ -1,0 +1,139 @@
+{
+  "commit": "370f39e97023bd4de98f43eab47d2b570104e0d0",
+  "pr": "https://github.com/ronnierosal/Re-Gear/pull/144",
+  "approval_status": "candidate-unapproved",
+  "assets": [
+    {
+      "filename": "regear-mark.svg",
+      "sha256": "1be36fe6e2b16ff12205ce50480f8a9c9d223dd96613cca00e8e4b09a1af61f0",
+      "bytes": 714,
+      "viewBox": "0 0 256 256",
+      "hash_matches": true,
+      "rendered_alpha_range": [
+        0,
+        255
+      ],
+      "transparent_fraction": 0.7073,
+      "transparent_corners": true
+    },
+    {
+      "filename": "regear-wordmark.svg",
+      "sha256": "916f84b4c75c4e8a3c7e9ddd1ca4bbd755eb1b26b74d9db7231f85a3bbf03be7",
+      "bytes": 913,
+      "viewBox": "0 0 640 160",
+      "hash_matches": true,
+      "rendered_alpha_range": [
+        0,
+        255
+      ],
+      "transparent_fraction": 0.9644,
+      "transparent_corners": true
+    },
+    {
+      "filename": "module-egpu.svg",
+      "sha256": "465e6cd39326d3cbe02543afe94f02b28b4b258c8710d101c70feb78c1445c4f",
+      "bytes": 780,
+      "viewBox": "0 0 64 64",
+      "hash_matches": true,
+      "rendered_alpha_range": [
+        0,
+        255
+      ],
+      "transparent_fraction": 0.7756,
+      "transparent_corners": true
+    },
+    {
+      "filename": "module-auto-tdp.svg",
+      "sha256": "d8d09ee4863c5e5864b80c748db57ea5c6b9a05d5afc0ba37687d991bf0ffd48",
+      "bytes": 687,
+      "viewBox": "0 0 64 64",
+      "hash_matches": true,
+      "rendered_alpha_range": [
+        0,
+        255
+      ],
+      "transparent_fraction": 0.8562,
+      "transparent_corners": true
+    },
+    {
+      "filename": "module-controller.svg",
+      "sha256": "c97ad0a61ac337ed5fc95f9c7e5954faada30d686b232840f10db95f3f0b78aa",
+      "bytes": 578,
+      "viewBox": "0 0 64 64",
+      "hash_matches": true,
+      "rendered_alpha_range": [
+        0,
+        255
+      ],
+      "transparent_fraction": 0.8576,
+      "transparent_corners": true
+    },
+    {
+      "filename": "mode-portable.svg",
+      "sha256": "0d569d04d91227cbaf20747218c708741704171d24e3a82c680009fea48e6a6c",
+      "bytes": 772,
+      "viewBox": "0 0 96 64",
+      "hash_matches": true,
+      "rendered_alpha_range": [
+        0,
+        255
+      ],
+      "transparent_fraction": 0.8476,
+      "transparent_corners": true
+    },
+    {
+      "filename": "mode-boosted-handheld.svg",
+      "sha256": "bbb9fb740e25308104a62390b7f411236f1b3e5c1e26e3d8bfb4398b599a8f89",
+      "bytes": 929,
+      "viewBox": "0 0 96 64",
+      "hash_matches": true,
+      "rendered_alpha_range": [
+        0,
+        255
+      ],
+      "transparent_fraction": 0.837,
+      "transparent_corners": true
+    },
+    {
+      "filename": "mode-tv-docked.svg",
+      "sha256": "1208fbdd39ef8addc6697550e127bef358b108886cb07bd7219e896fd0f1b992",
+      "bytes": 740,
+      "viewBox": "0 0 96 64",
+      "hash_matches": true,
+      "rendered_alpha_range": [
+        0,
+        255
+      ],
+      "transparent_fraction": 0.8598,
+      "transparent_corners": true
+    },
+    {
+      "filename": "mode-docked-igpu.svg",
+      "sha256": "a6b3d372342b83d5f22dd4a8753df097c1e1a53188ef8ffb25a8ebb87c54a758",
+      "bytes": 847,
+      "viewBox": "0 0 96 64",
+      "hash_matches": true,
+      "rendered_alpha_range": [
+        0,
+        255
+      ],
+      "transparent_fraction": 0.8854,
+      "transparent_corners": true
+    },
+    {
+      "filename": "action-restore-portable.svg",
+      "sha256": "3f71df5395f7a4f6f352cfa52f4bf7a3945d3ab542de773ac6c08ccb76bafac7",
+      "bytes": 754,
+      "viewBox": "0 0 64 64",
+      "hash_matches": true,
+      "rendered_alpha_range": [
+        0,
+        255
+      ],
+      "transparent_fraction": 0.8472,
+      "transparent_corners": true
+    }
+  ],
+  "antimalware": "Not run; passive bounded XML inspection, not an antivirus result.",
+  "validation": "10 manifest hashes match; bounded SVG XML allowlist passed; Edge transparent renders contain artwork and zero-alpha pixels with transparent corners. No external resources/scripts/images in SVG. Small-size visual approval remains pending."
+}
