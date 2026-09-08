@@ -234,27 +234,24 @@ def main(argv: Sequence[str] | None = None) -> int:
                 return 1
             report("  enforcement verified")
 
-            section("6. restart exactly the planned units")
-            for unit in plan.units:
-                ok = restart_unit(unit, arguments.uid)
-                report(f"  {unit}: {'restarted' if ok else 'FAILED'}")
-                if not ok:
-                    report("  detaching after a failed restart")
-                    return 1
-            for _ in range(40):
-                time.sleep(3)
-                if not holder_units(nodes):
-                    break
+            section("6. run these, as the session user, in another terminal")
+            for command in restart_commands(plan.units, arguments.uid):
+                report(f"  {command}")
+            report("")
+            report(f"  The filter is held for up to {arguments.hold}s while you do.")
+            report("  Holders are re-checked every few seconds.")
 
             section("7. verify")
+            deadline = time.monotonic() + max(0, arguments.hold)
             remaining = holder_units(nodes)
+            while remaining and time.monotonic() < deadline:
+                time.sleep(3)
+                remaining = holder_units(nodes)
             if remaining:
                 report(f"  holders remain: {remaining}")
                 return 1
             report("  clients_clear: every holder released")
             report("\n  The eGPU is released. This is NOT removal clearance.")
-            report(f"  Holding the filter for {arguments.hold}s, then detaching.")
-            time.sleep(max(0, arguments.hold))
     finally:
         os.close(cgroup_fd)
         section("detached")
