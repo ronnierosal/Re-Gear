@@ -111,6 +111,18 @@ class AutoTdpSession:
             self._pending_response = None
         return self._result("auto_tdp.stopped")
 
+    @staticmethod
+    def _maps_onto_provider(reading: TdpReading, policy: AutoTdpPolicy) -> bool:
+        """Boost ceilings are separate registers and can sit below the sustained
+        maximum. Every proposable watt must map onto all of them, so a policy the
+        provider cannot express is refused rather than raised out of the tick."""
+        try:
+            reading.target_values(policy.minimum_watts)
+            reading.target_values(policy.maximum_watts)
+        except ValueError:
+            return False
+        return True
+
     def _context(self, activation: str) -> AutoTdpDispatchContext | None:
         if self._activation != activation:
             return None
@@ -128,7 +140,11 @@ class AutoTdpSession:
                 return self._result("auto_tdp.disabled")
             now = self._clock()
             if type(now) is not int or now < 0 or (self._last_collection_ms is not None and now < self._last_collection_ms):
-                raise ValueError("Auto TDP clock is invalid")
+                # Fail closed, but name the cause instead of a generic shutdown.
+                self._state = AutoTdpState()
+                self._pending_response = None
+                self._activation = None
+                return self._result("auto_tdp.clock_invalid")
             if self._last_collection_ms is not None and now - self._last_collection_ms < self._contract.interval_ms:
                 return self._result("auto_tdp.waiting_interval")
             self._last_collection_ms = now
@@ -155,11 +171,10 @@ class AutoTdpSession:
             sample, reading = evidence.observation, evidence.reading
             if (sample.configured_watts != reading.sustained.current
                     or policy.minimum_watts < reading.sustained.minimum
-                    or policy.maximum_watts > reading.sustained.maximum):
+                    or policy.maximum_watts > reading.sustained.maximum
+                    or not self._maps_onto_provider(reading, policy)):
                 self._state = AutoTdpState()
                 return self._result("auto_tdp.readback_invalid")
-            reading.target_values(policy.minimum_watts)
-            reading.target_values(policy.maximum_watts)
             if self._provider_context is not None and not self._provider_context.same_context(reading):
                 self._state = AutoTdpState()
             self._provider_context = reading

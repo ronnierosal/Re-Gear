@@ -7,7 +7,7 @@ from hdm.application.tdp_control import TdpControlService
 from hdm.domain.auto_tdp import AutoTdpObservation, AutoTdpPolicy
 from hdm.domain.models import GameState
 from hdm.domain.telemetry import TelemetryCollectionContract, TelemetryConsumer, TelemetryMetric
-from hdm.ports.tdp import TdpWriteOutcome
+from hdm.ports.tdp import TdpReading, TdpRegister, TdpWriteOutcome
 
 
 class GuardedProvider(Provider):
@@ -110,6 +110,27 @@ class AutoSessionTests(unittest.TestCase):
         result = self.feed(9000)
         self.assertEqual(result.transaction.state, "applied")
         self.assertEqual(self.provider.current.values, (14, 15, 15))
+
+    def test_policy_above_boost_ceiling_is_refused_without_disabling(self):
+        # Sustained admits 30 W, but this provider's boost registers stop at 25 W.
+        self.provider.current = TdpReading("opaque-binding", TdpRegister(15, 7, 30),
+                                           TdpRegister(15, 15, 25), TdpRegister(15, 15, 25))
+        self.session.start(self.policy)
+        result = self.session.tick()
+        self.assertEqual(result.code, "auto_tdp.readback_invalid")
+        self.assertTrue(result.enabled)
+        self.assertTrue(self.session.enabled)
+        self.assertEqual(self.provider.writes, [])
+
+    def test_backward_clock_reports_its_own_code_and_stops(self):
+        self.session.start(self.policy)
+        self.now = 5000
+        self.session.tick()
+        self.now = 4000
+        result = self.session.tick()
+        self.assertEqual(result.code, "auto_tdp.clock_invalid")
+        self.assertFalse(self.session.enabled)
+        self.assertEqual(self.provider.writes, [])
 
     def test_known_idle_unknown_or_unready_samples_never_adjust(self):
         self.session.start(self.policy)

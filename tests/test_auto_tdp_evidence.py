@@ -84,6 +84,15 @@ class AutoEvidenceTests(unittest.TestCase):
         self.assertNotEqual(after.observation.context_key, before.observation.context_key)
         self.assertEqual(self.frames.resets, 3)
 
+    def test_game_change_under_one_compositor_changes_dispatch_identity(self):
+        # The compositor and its process generations are unchanged, so the
+        # target's own context_key is identical; only the active AppID differs.
+        before = self.collector.collect()
+        self.target = replace(self.target, app_id=self.target.app_id + 1)
+        self.assertEqual(self.target.context_key, "workload")
+        after = self.collector.collect()
+        self.assertNotEqual(after.observation.context_key, before.observation.context_key)
+
     def test_setting_or_provider_restart_resets_frame_history(self):
         self.collector.collect()
         self.collector.collect()
