@@ -129,7 +129,9 @@ class RemovalSafetyTests(unittest.TestCase):
     def test_active_external_display_still_blocks_removal(self) -> None:
         base = as_shipped()
         displays = tuple(
-            dataclasses.replace(display, active=True, confidence=Confidence.OBSERVED)
+            dataclasses.replace(
+                display, active=True, active_confidence=Confidence.OBSERVED
+            )
             if display.kind.value == "external"
             else display
             for display in base.snapshot.displays
@@ -172,6 +174,22 @@ class RemovalSafetyTests(unittest.TestCase):
             RemovalSafety(
                 RemovalSafetyState.READY_FOR_SUPERVISED_REMOVAL, "code", None
             )
+
+
+class EnabledConnectorRemovalTests(unittest.TestCase):
+    """Issue 141: removal safety must decline while an external mode is committed."""
+
+    def test_a_still_committed_external_connector_blocks_removal(self) -> None:
+        base = as_shipped()
+        displays = tuple(
+            dataclasses.replace(display, mode_committed=True)
+            if display.kind.value == "external"
+            else display
+            for display in base.snapshot.displays
+        )
+        removal = assess_removal_safety_report(as_shipped(displays=displays))
+        self.assertIs(removal.state, RemovalSafetyState.NOT_READY)
+        self.assertEqual(removal.code, "removal_safety.external_display_still_active")
 
 
 if __name__ == "__main__":

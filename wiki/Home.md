@@ -1,7 +1,7 @@
 # Re-Gear Wiki
 
 **Audience:** players, testers, and contributors<br>
-**Reviewed:** 2026-09-06<br>
+**Reviewed:** 2026-09-08<br>
 **Maturity:** experimental development; no general public release
 
 Welcome to the player and contributor guide for Re-Gear, a Decky Loader companion for SteamOS handhelds. Re-Gear is designed for SteamOS handheld PCs across hardware vendors. It explains system state and provides capability-aware docking, recovery, and offline play guidance. Features depend on the device profile and available evidence; the project is not limited in scope to one handheld or eGPU brand.
@@ -33,6 +33,10 @@ Our immediate priorities are **reliability and recovery**, **offline play confid
 
 Read [Project Overview](Project-Overview), [How Re-Gear Works](How-HDM-Works), [Development](Development), and [Diagnostics and Privacy](Diagnostics-and-Privacy). [Issues Fixed](Issues-Fixed) links selected changes to their evidence; the [historical docking incident](Ally-X-and-GPD-G1-Docking-Incident) explains earlier failures.
 
-The [repository README](https://github.com/ronnierosal/Re-Gear#-current-status) identifies the current development candidate and integration branch. The Wiki explains the product; [repository contracts](https://github.com/ronnierosal/Re-Gear/blob/main/docs/INDEX.md) own engineering and support claims. A newer candidate is not automatically installed or hardware certified.
+The [repository README](https://github.com/ronnierosal/Re-Gear) introduces the project.
+This Wiki explains behavior; [repository contracts](https://github.com/ronnierosal/Re-Gear/blob/main/docs/INDEX.md)
+and the [dated source/evidence snapshot](https://github.com/ronnierosal/Re-Gear/blob/main/docs/STATUS_SNAPSHOT_2026-09-08.md)
+own implementation and validation claims. A newer candidate is not automatically
+installed or hardware certified.
 
 > **eGPU safety:** follow the verified disconnect policy for your exact hardware. Current Re-Gear testing does not establish physical live-removal support. Restore or retain a known-good state and fully shut down before disconnecting. A Portable display or an accepted shutdown request does not prove safe removal.

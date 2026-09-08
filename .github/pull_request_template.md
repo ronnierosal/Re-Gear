@@ -2,7 +2,7 @@
 
 What user or engineering problem does this solve?
 
-Linked issue (required for code changes):
+Linked issue / hub task (publish the issue link when remote access is available):
 
 ## Ownership and dependencies
 
