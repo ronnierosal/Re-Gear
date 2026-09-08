@@ -57,6 +57,7 @@ import argparse
 import os
 import time
 from collections.abc import Sequence
+from dataclasses import dataclass
 from pathlib import Path
 
 from .adapters.steamos.egpu_device_nodes import SteamOsEgpuDeviceNodeDiscovery
@@ -92,62 +93,183 @@ def egpu_functions(gpu_bdf: str) -> tuple[str, str]:
     return gpu_bdf, f"{prefix}.{int(function) + 1}"
 
 
-def holder_units(nodes: tuple[str, ...], proc_root: Path = Path("/proc")) -> tuple[str, ...]:
-    """Read the systemd unit of every process holding one of `nodes`."""
+@dataclass(frozen=True, slots=True)
+class HolderScan:
+    """What a holder scan found, and whether it managed to look everywhere.
+
+    The previous version of this returned a bare tuple of unit names, so the
+    four ways a scan can fail to see a holder were all indistinguishable from
+    "nothing holds the device". An empty tuple then read as clear. This keeps
+    the failures, because a scan that could not finish looking is not evidence
+    of absence, and `clients_clear` is the fact the whole release sequence is
+    judged on.
+    """
+
+    units: tuple[str, ...]
+    unreadable_processes: int = 0
+    unreadable_descriptors: int = 0
+    unattributed_holders: int = 0
+    nodes_incomplete: bool = False
+
+    @property
+    def complete(self) -> bool:
+        """Whether the scan looked everywhere it needed to."""
+        return not (
+            self.unreadable_processes
+            or self.unreadable_descriptors
+            or self.unattributed_holders
+            or self.nodes_incomplete
+        )
+
+    @property
+    def clear(self) -> bool:
+        """Whether the device is demonstrably held by nothing.
+
+        Both halves are required. An incomplete scan that found no holders is
+        not a clear device; it is an unanswered question, and answering it with
+        "clear" is the failure this type exists to prevent.
+        """
+        return self.complete and not self.units
+
+    def why_not_clear(self) -> tuple[str, ...]:
+        """The specific reasons, so a refusal can be acted on rather than read."""
+        reasons: list[str] = []
+        if self.units:
+            reasons.append(f"holders remain: {', '.join(self.units)}")
+        if self.unreadable_processes:
+            reasons.append(
+                f"{self.unreadable_processes} process(es) could not be read;"
+                " any of them may hold the device"
+            )
+        if self.unreadable_descriptors:
+            reasons.append(
+                f"{self.unreadable_descriptors} descriptor(s) could not be"
+                " resolved; any of them may be an eGPU node"
+            )
+        if self.unattributed_holders:
+            reasons.append(
+                f"{self.unattributed_holders} holder(s) found but not"
+                " attributable to a unit"
+            )
+        if self.nodes_incomplete:
+            reasons.append(
+                "the device node set was incomplete, so the scan looked for"
+                " fewer nodes than the device exposes"
+            )
+        return tuple(reasons)
+
+
+def scan_holders(
+    nodes: tuple[str, ...],
+    proc_root: Path = Path("/proc"),
+    *,
+    nodes_incomplete: bool = False,
+) -> HolderScan:
+    """Find every process holding one of `nodes`, and record what was missed.
+
+    Holders are returned whatever their cgroup leaf. The earlier version kept
+    only leaves ending in `.service`, which silently dropped a holder living in
+    a `.scope` -- it was found, attributed, and then discarded. An unrestartable
+    holder is a reason to refuse, not a reason to look away: the restart plan
+    classifies it as unapproved downstream and declines, which is the outcome a
+    `.scope` holder should produce.
+    """
     wanted = set(nodes)
     units: set[str] = set()
-    for entry in proc_root.iterdir():
+    unreadable_processes = 0
+    unreadable_descriptors = 0
+    unattributed = 0
+    for entry in sorted(proc_root.iterdir()):
         if not entry.name.isdigit():
             continue
         try:
             descriptors = list((entry / "fd").iterdir())
+        except FileNotFoundError:
+            # The process exited between listing and reading. Nothing was
+            # missed: a process that no longer exists holds nothing.
+            continue
         except OSError:
+            unreadable_processes += 1
             continue
         held = False
+        unresolved = 0
         for descriptor in descriptors:
             try:
                 if os.readlink(descriptor) in wanted:
                     held = True
                     break
-            except OSError:
+            except FileNotFoundError:
                 continue
+            except OSError:
+                unresolved += 1
         if not held:
+            # Only count unresolved descriptors for a process that did not
+            # otherwise prove to be a holder; once it is known to hold the
+            # device, its remaining descriptors change nothing.
+            unreadable_descriptors += unresolved
             continue
         try:
             cgroup = (entry / "cgroup").read_text(encoding="utf-8").strip()
         except OSError:
+            unattributed += 1
             continue
         leaf = cgroup.rsplit("/", 1)[-1]
-        if leaf.endswith(".service"):
+        if leaf:
             units.add(leaf)
-    return tuple(sorted(units))
+        else:
+            unattributed += 1
+    return HolderScan(
+        tuple(sorted(units)),
+        unreadable_processes,
+        unreadable_descriptors,
+        unattributed,
+        nodes_incomplete,
+    )
 
 
-def node_paths(gpu_bdf: str, audio_bdf: str) -> tuple[str, ...]:
-    """Resolve the device node paths for both functions, for holder matching."""
+def node_paths(gpu_bdf: str, audio_bdf: str) -> tuple[tuple[str, ...], bool]:
+    """Resolve the device node paths for both functions, for holder matching.
+
+    Returns the resolved paths and whether the set is complete. A node that
+    could not be resolved is not a node that does not exist: the scan then looks
+    for fewer nodes than the device exposes, and a holder of the missing one is
+    invisible to it. The completeness flag travels with the scan so that shows
+    up as an incomplete answer rather than as a clear device.
+    """
     resolved: list[str] = []
+    complete = True
     for suffix in DRI_NODES:
         link = Path(f"/dev/dri/by-path/pci-{gpu_bdf}-{suffix}")
         try:
             resolved.append(str(link.resolve(strict=True)))
         except OSError:
-            continue
+            complete = False
     control = Path(f"/dev/snd/by-path/pci-{audio_bdf}")
     try:
         target = control.resolve(strict=True)
     except OSError:
-        return tuple(resolved)
+        # Without the control node the audio function's other nodes cannot be
+        # enumerated either, so the shortfall is the whole audio side.
+        return tuple(resolved), False
     resolved.append(str(target))
     index = target.name.removeprefix("controlC")
-    for entry in sorted(Path("/dev/snd").iterdir()):
+    try:
+        entries = sorted(Path("/dev/snd").iterdir())
+    except OSError:
+        return tuple(resolved), False
+    for entry in entries:
         if entry.name.startswith((f"hwC{index}D", f"pcmC{index}D")):
             resolved.append(str(entry))
-    return tuple(resolved)
+    return tuple(resolved), complete
 
 
 def hold_open(
-    nodes: tuple[str, ...], seconds: int, interval: float = 3.0
-) -> tuple[str, ...]:
+    nodes: tuple[str, ...],
+    seconds: int,
+    interval: float = 3.0,
+    *,
+    nodes_incomplete: bool = False,
+) -> HolderScan | None:
     """Keep the caller inside the filter's lifetime for `seconds`.
 
     `clients_clear` is true only while the filter is attached: the filter is
@@ -156,17 +278,20 @@ def hold_open(
     window, so this holds it open and watches it, rather than returning as soon
     as the device is first observed clear.
 
-    Returns the units that reopened the device, or an empty tuple if it stayed
-    clear for the whole window. A returning holder ends the wait immediately:
-    waiting it out would end by reporting a device that is no longer clear.
+    Returns the scan that ended the window, or None if the device stayed clear
+    for its whole length. Anything short of clear ends it immediately, including
+    a scan that could no longer see everywhere: an operator inside this window is
+    about to remove a device, so a lost ability to check must end it exactly as a
+    returning holder does. Waiting either out would end by reporting a device
+    that is no longer known to be clear.
     """
     deadline = time.monotonic() + max(0, seconds)
     while time.monotonic() < deadline:
         time.sleep(max(0.0, min(interval, deadline - time.monotonic())))
-        returned = holder_units(nodes)
-        if returned:
-            return returned
-    return ()
+        scan = scan_holders(nodes, nodes_incomplete=nodes_incomplete)
+        if not scan.clear:
+            return scan
+    return None
 
 
 def restart_commands(units: tuple[str, ...], uid: int) -> tuple[str, ...]:
@@ -236,9 +361,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     report(f"  {len(program)} bytes, {len(program) // 8} instructions")
 
     section("4. observe holders")
-    nodes = node_paths(gpu_bdf, audio_bdf)
-    observed = holder_units(nodes)
+    nodes, nodes_complete = node_paths(gpu_bdf, audio_bdf)
+    scan = scan_holders(nodes, nodes_incomplete=not nodes_complete)
+    observed = scan.units
     report(f"  holder units: {observed or '(none)'}")
+    report(f"  scan complete: {scan.complete}")
+    for reason in scan.why_not_clear():
+        report(f"    - {reason}")
     coverage = classify_holder_units(observed)
     report(f"  reached by session target : {coverage.reached}")
     report(f"  need explicit restart     : {coverage.requires_explicit_restart}")
@@ -289,14 +418,20 @@ def main(argv: Sequence[str] | None = None) -> int:
 
             section("7. verify")
             deadline = time.monotonic() + max(0, arguments.hold)
-            remaining = holder_units(nodes)
-            while remaining and time.monotonic() < deadline:
+            verified = scan_holders(nodes, nodes_incomplete=not nodes_complete)
+            while not verified.clear and time.monotonic() < deadline:
                 time.sleep(3)
-                remaining = holder_units(nodes)
-            if remaining:
-                report(f"  holders remain: {remaining}")
+                verified = scan_holders(
+                    nodes, nodes_incomplete=not nodes_complete
+                )
+            if not verified.clear:
+                # An incomplete scan lands here too. It is not a clear device,
+                # and the reasons say which of the two happened.
+                report("  clients_clear NOT established:")
+                for reason in verified.why_not_clear():
+                    report(f"    - {reason}")
                 return 1
-            report("  clients_clear: every holder released")
+            report("  clients_clear: every holder released, scan complete")
 
             if arguments.hold_open > 0:
                 section("8. hold the filter open")
@@ -312,9 +447,15 @@ def main(argv: Sequence[str] | None = None) -> int:
                 )
                 report("")
                 report(f"  The window is {arguments.hold_open}s. Holders are re-checked.")
-                returned = hold_open(nodes, arguments.hold_open)
-                if returned:
-                    report(f"\n  a holder reopened the device: {returned}")
+                ended = hold_open(
+                    nodes,
+                    arguments.hold_open,
+                    nodes_incomplete=not nodes_complete,
+                )
+                if ended is not None:
+                    report("\n  the window ended early:")
+                    for reason in ended.why_not_clear():
+                        report(f"    - {reason}")
                     report("  clients_clear no longer holds; do not remove.")
                     return 1
                 report("  the window closed with the device still clear.")
