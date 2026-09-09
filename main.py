@@ -2403,7 +2403,7 @@ class Plugin:
 
     def _support_versions(self) -> dict[str, str]:
         return {
-            "hdm": "0.3.64",
+            "hdm": "0.3.65",
             "decky": str(getattr(decky, "DECKY_VERSION", "unknown")),
             "steamos": self._version_info.steamos,
             "kernel": self._version_info.kernel,
