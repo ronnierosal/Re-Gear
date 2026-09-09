@@ -7,7 +7,7 @@ const source = readFileSync(new URL("../src/quick-access/unplug-clearance.ts", i
 const { outputText } = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2020 } });
 const { unplugClearance } = await import(`data:text/javascript;base64,${Buffer.from(outputText).toString("base64")}`);
 
-/** A status reading taken after a successful removal: the device is gone. */
+/** Ambiguous unavailable status: also returned when observation fails. */
 const goneStatus = (over = {}) => ({
   schema_version: 1, availability: "unavailable", code: "live_disconnect.egpu_unavailable",
   ready: false, attemptable: false, busy: false, holders: [], scan_complete: true,
@@ -28,9 +28,10 @@ const GRANTS_UNPLUG =
   /you can now disconnect|safe to (unplug|disconnect)|you can unplug|remove the cable|ok to (unplug|disconnect)/i;
 const failing = (c) => c.checks.filter((entry) => !entry.passed).map((entry) => entry.label);
 
-test("full evidence verifies the removal", () => {
+test("v1 unavailable status never verifies bus absence", () => {
   const c = unplugClearance(goneStatus(), goodOutcome());
-  assert.equal(c.removalVerified, true, `unexpected failures: ${failing(c).join(", ")}`);
+  assert.equal(c.removalVerified, false);
+  assert.ok(failing(c).includes("eGPU no longer connected to the system"));
   assert.ok(c.checks.length >= 6);
 });
 
@@ -39,9 +40,9 @@ test("a verified removal is still not clearance to unplug", () => {
   // controller, the bridges above it and the tunnel are all still attached.
   const c = unplugClearance(goneStatus(), goodOutcome());
 
-  assert.equal(c.removalVerified, true);
+  assert.equal(c.removalVerified, false);
   assert.doesNotMatch(c.statement, GRANTS_UNPLUG);
-  assert.match(c.statement, /not yet clearance to unplug/i);
+  assert.match(c.statement, /do not disconnect/i);
 });
 
 test("no statement this module can produce ever grants an unplug", () => {
@@ -87,12 +88,13 @@ test("the dock teardown is listed as an outstanding check, not omitted", () => {
   assert.match(outstanding.detail, /not checked/i);
 });
 
-test("the outstanding dock check does not fail the removal itself", () => {
+test("the software outcome stays successful while verification is unavailable", () => {
   // The eGPU removal did succeed. Reporting it as failed because a different,
   // unbuilt step has not run would make a working disconnect look broken.
-  const c = unplugClearance(goneStatus(), goodOutcome());
-
-  assert.equal(c.removalVerified, true);
+  const outcome = goodOutcome();
+  const c = unplugClearance(goneStatus(), outcome);
+  assert.equal(outcome.ok, true);
+  assert.equal(c.removalVerified, false);
   assert.ok(failing(c).includes("Dock USB and Thunderbolt link brought down"));
 });
 

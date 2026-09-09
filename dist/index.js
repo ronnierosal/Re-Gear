@@ -1,3 +1,276 @@
+/** Informational controller stop, not an action or an invisible button. */
+const SectionFocus = SP_REACT.forwardRef(function SectionFocus({ label, children, onFocused }, ref) {
+    // Generic Focusable containers can route to children without becoming a
+    // selectable leaf. Field explicitly registers this read-only focus stop.
+    return SP_JSX.jsx(DFL.Field, { ref: ref, focusable: true, highlightOnFocus: false, padding: "none", bottomSeparator: "none", childrenLayout: "below", className: "rg-section-focus", onGamepadFocus: (event) => {
+            if (event.currentTarget instanceof HTMLElement) {
+                event.currentTarget.scrollIntoView({ block: "nearest", inline: "nearest" });
+            }
+            onFocused?.();
+        }, children: SP_JSX.jsx("div", { role: "group", "aria-label": label, style: { minWidth: 0, width: "100%" }, children: children }) });
+});
+
+/** Exactly one destination is mounted. Configuration never trails the grid. */
+function PageLayout(p) {
+    switch (p.route.kind) {
+        case "command-center": return p.commandCenter;
+        case "modules": return p.modules;
+        case "troubleshoot": return p.troubleshoot;
+        case "status": return p.route.id === "egpu" ? p.egpuStatus : p.controllerStatus;
+        case "module":
+            switch (p.route.id) {
+                case "egpu": return p.egpu;
+                case "auto-tdp": return p.autoTdp;
+                case "controller": return p.controller;
+            }
+    }
+}
+function CommandCenterHeader({ mode, display, game, health, navigation, summaryRef, onSummaryFocus }) {
+    return SP_JSX.jsxs("div", { style: { minWidth: 0, marginBottom: 12, color: "#f4f7fb" }, children: [SP_JSX.jsxs("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 10 }, children: [SP_JSX.jsx("span", { style: { fontSize: 15, fontWeight: 700, minWidth: 0 }, children: "Command Center" }), navigation] }), SP_JSX.jsx(SectionFocus, { ref: summaryRef, label: "Command Center: current state", onFocused: onSummaryFocus, children: SP_JSX.jsxs("div", { style: { border: "1px solid #294665", borderRadius: 12, padding: "10px 12px", background: "#0a1727", overflowWrap: "anywhere" }, children: [SP_JSX.jsx("div", { style: { fontSize: 16, fontWeight: 700 }, children: mode }), SP_JSX.jsxs("div", { style: { fontSize: 12, lineHeight: "18px", color: "#9eb2ca" }, children: [display, " \u00B7 ", game] }), health !== "Ready" && SP_JSX.jsx("div", { style: { fontSize: 12, lineHeight: "18px", color: "#ffc247" }, children: health })] }) })] });
+}
+
+/** eGPU module page: rendering only, no policy, no requests, no device action.
+ *
+ * Every reading comes from egpu-presentation, which derives each one from
+ * exactly one source. They are drawn as separate rows on purpose: a single
+ * "eGPU: connected" summary is what makes a player believe the link, the
+ * renderer and the display agree when they do not.
+ *
+ * This page performs nothing. Recovery is surfaced as an entry that calls back
+ * into the panel control that already owns its guards and confirmation; this
+ * file neither starts a transition nor removes a device.
+ *
+ * The disconnect row never claims a safe unplug, whatever the readings say.
+ */
+const C$6 = {
+    cyan: "#39d8ff", text: "#f4f7fb", muted: "#9eb2ca",
+    border: "#294665", amber: "#ffc247", dim: "#5d7a99",
+};
+const SURFACE$2 = "linear-gradient(135deg, rgba(19,36,58,.96), rgba(9,21,36,.98))";
+function Row$1({ label, value }) {
+    return SP_JSX.jsxs("div", { style: {
+            display: "flex", justifyContent: "space-between", alignItems: "baseline",
+            gap: 8, padding: "5px 0", borderBottom: `1px solid ${C$6.border}`, minWidth: 0,
+        }, children: [SP_JSX.jsx("span", { style: { fontSize: 12, color: C$6.muted, flex: "0 1 auto" }, children: label }), SP_JSX.jsxs("span", { style: {
+                    fontSize: 13, fontWeight: 700, textAlign: "right", minWidth: 0,
+                    // Absent evidence is dimmed, never coloured as though it were a result.
+                    color: value.known ? C$6.text : C$6.dim,
+                }, children: [value.text, value.known && !value.verified && (SP_JSX.jsx("span", { style: { fontSize: 11, fontWeight: 400, color: C$6.muted }, children: " \u00B7 observed" }))] })] });
+}
+function EgpuModule({ presentation, onOpenRecovery }) {
+    const p = presentation;
+    return SP_JSX.jsxs("div", { style: { color: C$6.text, minWidth: 0, margin: "0 2px" }, children: [p.model && (SP_JSX.jsx("div", { style: { fontSize: 13, fontWeight: 760, marginBottom: 6 }, children: p.model })), SP_JSX.jsx(Row$1, { label: "Connection", value: p.connection }), SP_JSX.jsx(Row$1, { label: "Rendering", value: p.renderGpu }), SP_JSX.jsx(Row$1, { label: "External display", value: p.displayConnected }), SP_JSX.jsx(Row$1, { label: "Display output", value: p.displayActive }), SP_JSX.jsx(Row$1, { label: "Session", value: p.session }), SP_JSX.jsx(Row$1, { label: "Game", value: p.game }), SP_JSX.jsx(Row$1, { label: "Lifecycle", value: p.lifecycle }), SP_JSX.jsxs("div", { style: {
+                    marginTop: 12, padding: "8px 10px", borderRadius: 10,
+                    background: SURFACE$2, border: `1px solid ${C$6.border}`,
+                }, children: [SP_JSX.jsxs("div", { style: { fontSize: 12, fontWeight: 700, color: C$6.amber, marginBottom: 2 }, children: ["Safe to disconnect: ", p.disconnect.text] }), SP_JSX.jsx("div", { style: { fontSize: 12, lineHeight: "16px", color: C$6.muted }, children: p.disconnect.reason })] }), p.recovery.note && (SP_JSX.jsx("div", { style: { fontSize: 12, lineHeight: "16px", color: C$6.muted, marginTop: 8 }, children: p.recovery.note })), onOpenRecovery && (SP_JSX.jsx(DFL.Focusable, { style: { marginTop: 10 }, children: SP_JSX.jsx(DFL.DialogButton, { onClick: onOpenRecovery, style: {
+                        width: "100%", minHeight: 40, margin: 0, padding: "6px 10px",
+                        borderRadius: 10, background: SURFACE$2, border: `1px solid ${C$6.border}`,
+                        color: C$6.cyan, fontSize: 13, fontWeight: 700,
+                    }, children: "Recovery and troubleshooting" }) }))] });
+}
+
+/** eGPU module presentation: pure, no React, no I/O, no requests.
+ *
+ * The safety rule this file exists to enforce is in AGENTS.md: physical
+ * connection, render GPU, display target, Gamescope session and running-game
+ * state are INDEPENDENT. Each reading below is derived from exactly one source
+ * and never from another. A link that is up does not mean the eGPU is
+ * rendering; a connected external display does not mean it is active; a
+ * present GPU does not mean it was selected. Collapsing any of those into one
+ * "eGPU: connected" line is the failure this module is built to prevent,
+ * because a player acts on it and the device does not agree.
+ *
+ * Two further rules:
+ *
+ * - Unknown fails closed. Absent or unverified evidence renders as unknown and
+ *   never as a working state, and confidence is carried so the page can say
+ *   "observed" rather than implying a verified reading.
+ * - Nothing here claims a disconnect is safe. Re-Gear cannot confirm live
+ *   removal, so `disconnect` reports what is known and always refuses the
+ *   claim, whatever the readings say. That refusal is not conditional.
+ *
+ * `model_name` is documented in the payload as presentation only, never a
+ * readiness or identity input, so it is shown only when a single external GPU
+ * is reported and never used in any decision here.
+ */
+const UNKNOWN$1 = { text: "Unknown", known: false, verified: false };
+function evidence(text, confidence) {
+    if (text === null)
+        return UNKNOWN$1;
+    return { text, known: true, verified: confidence === "verified" };
+}
+const LINK_TEXT = { up: "Link up", down: "Link down" };
+const LIFECYCLE_TEXT = {
+    disconnected: "Disconnected",
+    transport_detected: "Transport detected",
+    waiting_for_pci: "Waiting for PCI",
+    waiting_for_driver: "Waiting for driver",
+    waiting_for_link: "Waiting for link",
+    waiting_for_hdmi: "Waiting for display",
+    waiting_for_audio: "Waiting for audio",
+    waiting_for_session: "Waiting for session",
+    game_running: "Game running",
+    stabilizing: "Stabilizing",
+    ready_idle: "Ready",
+    link_training_failed: "Link training failed",
+    timed_out: "Timed out",
+    action_required: "Needs attention",
+};
+function bool(value, yes, no) {
+    return value === true ? yes : value === false ? no : null;
+}
+function egpuPresentation(payload) {
+    const snapshot = payload?.snapshot;
+    const link = snapshot?.egpu_link;
+    const gpus = snapshot?.gpus ?? [];
+    const displays = snapshot?.displays ?? [];
+    const external = gpus.filter((gpu) => gpu.role === "external");
+    const externalDisplays = displays.filter((display) => display.kind === "external");
+    // Each of the following reads exactly one source. Deliberately no cross-use.
+    const connection = link && link.applicable
+        ? evidence(LINK_TEXT[link.state] ?? null, link.confidence)
+        : UNKNOWN$1;
+    const rendering = external.find((gpu) => gpu.selected_for_render === true);
+    const renderGpu = external.length === 0 ? UNKNOWN$1
+        : rendering ? evidence("External GPU", rendering.confidence)
+            : external.some((gpu) => gpu.selected_for_render === false)
+                ? evidence("Internal GPU", external[0].confidence)
+                : UNKNOWN$1;
+    const connectedDisplay = externalDisplays[0];
+    const displayConnected = connectedDisplay
+        ? evidence(bool(connectedDisplay.connected, "Connected", "Not connected"), connectedDisplay.confidence)
+        : UNKNOWN$1;
+    const displayActive = connectedDisplay
+        ? evidence(bool(connectedDisplay.active, "Active", "Not active"), connectedDisplay.confidence)
+        : UNKNOWN$1;
+    const session = snapshot?.gamescope
+        ? evidence(bool(snapshot.gamescope.running, "Running", "Not running"), snapshot.gamescope.confidence)
+        : UNKNOWN$1;
+    const game = snapshot?.game_state
+        ? evidence(snapshot.game_state === "idle" ? "No game running" : "Game running")
+        : UNKNOWN$1;
+    // Presentation only. One unambiguous external GPU, or nothing.
+    const model = external.length === 1 && typeof external[0].model_name === "string"
+        && external[0].model_name.trim() !== "" ? external[0].model_name : null;
+    const stage = payload?.connection_readiness?.stage;
+    const lifecycle = stage ? evidence(LIFECYCLE_TEXT[stage] ?? null) : UNKNOWN$1;
+    return {
+        connection, renderGpu, displayConnected, displayActive, session, game, model, lifecycle,
+        // Unconditional. No combination of readings turns this into a safe claim,
+        // because Re-Gear cannot confirm live removal is safe.
+        disconnect: {
+            text: "Not confirmed",
+            safeClaim: false,
+            reason: "Re-Gear cannot confirm that disconnecting now is safe. Shut down before unplugging.",
+        },
+        // Recovery is the control a player needs precisely when readings are stale
+        // or missing, so it is never gated on fresh evidence.
+        recovery: {
+            reachable: true,
+            note: connection.known ? null : "Readings are unavailable; recovery is still available.",
+        },
+    };
+}
+
+/** Controller module page: rendering only, no policy, no requests.
+ *
+ * Read-only. Every value comes from controller-presentation, which reports only
+ * what the backend observed, so this file cannot invent a device name, a
+ * Player 1 badge, or a presence claim derived from the shortcut source.
+ *
+ * Planned capabilities are listed as not yet available rather than drawn as
+ * disabled switches. A greyed-out toggle still reads as a control that exists
+ * and is temporarily off; a line of text saying "not yet available" does not.
+ */
+const C$5 = {
+    text: "#f4f7fb", muted: "#9eb2ca",
+    border: "#294665", amber: "#ffc247", dim: "#5d7a99",
+};
+function Row({ label, fact }) {
+    return SP_JSX.jsxs("div", { style: {
+            display: "flex", justifyContent: "space-between", alignItems: "baseline",
+            gap: 8, padding: "5px 0", borderBottom: `1px solid ${C$5.border}`, minWidth: 0,
+        }, children: [SP_JSX.jsx("span", { style: { fontSize: 12, color: C$5.muted, flex: "0 1 auto" }, children: label }), SP_JSX.jsx("span", { style: {
+                    fontSize: 13, fontWeight: 700, textAlign: "right", minWidth: 0,
+                    // An unknown reading is dimmed, never coloured as though it were a result.
+                    color: fact.known ? C$5.text : C$5.dim,
+                }, children: fact.text })] });
+}
+function ControllerModule({ presentation }) {
+    return SP_JSX.jsxs("div", { style: { color: C$5.text, minWidth: 0, margin: "0 2px" }, children: [presentation.reason && (SP_JSX.jsx("div", { style: { fontSize: 12, lineHeight: "16px", color: C$5.amber, marginBottom: 8 }, children: presentation.reason })), SP_JSX.jsx(Row, { label: "Built-in controls", fact: presentation.builtin }), SP_JSX.jsx(Row, { label: "External controller", fact: presentation.external }), SP_JSX.jsx(Row, { label: "Shortcut input", fact: presentation.shortcut }), presentation.precisionNote && (SP_JSX.jsx("div", { style: { fontSize: 11, lineHeight: "15px", color: C$5.muted, marginTop: 8 }, children: presentation.precisionNote })), SP_JSX.jsxs("div", { style: { marginTop: 12 }, children: [SP_JSX.jsx("div", { style: { fontSize: 12, fontWeight: 700, color: C$5.muted, marginBottom: 4 }, children: "Not yet available" }), presentation.planned.map((feature) => (SP_JSX.jsx("div", { style: { fontSize: 12, lineHeight: "17px", color: C$5.dim }, children: feature }, feature)))] })] });
+}
+
+/** Controller module presentation: pure, no React, no I/O, no requests.
+ *
+ * Every field here is an observation the backend actually reported. The
+ * temptation in a controller page is to fill gaps with plausible detail -- a
+ * device name, a Player 1 badge, "connected" inferred from a working shortcut.
+ * All of those are inventions, and a player reading an invented fact while
+ * hunting a controller problem is worse served than one reading "Unknown".
+ *
+ * Three separations this file exists to keep:
+ *
+ * 1. Presence is not shortcut availability. A usable shortcut input source says
+ *    Re-Gear can read a button combination. It does not say which controller is
+ *    attached, whether the built-in pad is alive, or who is Player 1. They are
+ *    reported as different facts because they can disagree.
+ *
+ * 2. Incomplete is not absent. `complete` and `exact` describe how much of the
+ *    reading is trustworthy; a partial reading still shows what it knows and
+ *    says the rest is unverified, rather than collapsing to "no controller".
+ *
+ * 3. Planned is not available. Player order, shortcut customization and
+ *    priority handoff are named in the plan and have no implementation. They
+ *    are listed as not yet available, never rendered as controls that appear to
+ *    work.
+ */
+const UNKNOWN = { text: "Unknown", known: false };
+/** Planned capabilities, listed so their absence is explicit rather than a gap
+ * a player has to notice. Each is stated as not yet available. */
+const PLANNED_CONTROLLER_FEATURES = [
+    "Player order",
+    "Shortcut customization",
+    "Priority handoff",
+];
+function fact(value, yes, no) {
+    if (value === true)
+        return { text: yes, known: true };
+    if (value === false)
+        return { text: no, known: true };
+    // null or absent: the backend did not establish this, so neither do we.
+    return UNKNOWN;
+}
+function controllerPresentation(input) {
+    const controller = input.peripheral?.controller;
+    const shortcut = fact(input.shortcutAvailable, "Available", "Unavailable");
+    if (!controller) {
+        return {
+            available: false,
+            reason: "Controller status unavailable. No peripheral reading has been received.",
+            builtin: UNKNOWN, external: UNKNOWN, precision: "unknown", precisionNote: null,
+            // The shortcut source is observed separately, so it can still be reported
+            // even when no peripheral reading exists.
+            shortcut, planned: PLANNED_CONTROLLER_FEATURES,
+        };
+    }
+    const exact = controller.exact === true && controller.complete === true;
+    const precision = exact ? "exact"
+        : controller.complete === true || controller.exact === true ? "partial" : "unknown";
+    const builtin = fact(controller.builtin_available, "Available", "Not available");
+    const external = fact(controller.external_connected, "Connected", "Not connected");
+    const anyFact = builtin.known || external.known;
+    return {
+        available: anyFact,
+        reason: anyFact ? null
+            : "Controller status unavailable. The reading contained no usable facts.",
+        builtin, external, precision,
+        precisionNote: precision === "exact" ? null
+            : "This reading is incomplete; some controller details are unverified.",
+        shortcut,
+        planned: PLANNED_CONTROLLER_FEATURES,
+    };
+}
+
 // SteamClient.Input.ControllerInputGamepadButton, not browser Gamepad indices.
 const VIEW_BUTTON = 9;
 const Y_BUTTON = 3;
@@ -477,18 +750,6 @@ const regearControlCss = `
 }
 .rg-dashboard-action:disabled { opacity: .7; }
 `;
-
-/** Informational controller stop, not an action or an invisible button. */
-const SectionFocus = SP_REACT.forwardRef(function SectionFocus({ label, children, onFocused }, ref) {
-    // Generic Focusable containers can route to children without becoming a
-    // selectable leaf. Field explicitly registers this read-only focus stop.
-    return SP_JSX.jsx(DFL.Field, { ref: ref, focusable: true, highlightOnFocus: false, padding: "none", bottomSeparator: "none", childrenLayout: "below", className: "rg-section-focus", onGamepadFocus: (event) => {
-            if (event.currentTarget instanceof HTMLElement) {
-                event.currentTarget.scrollIntoView({ block: "nearest", inline: "nearest" });
-            }
-            onFocused?.();
-        }, children: SP_JSX.jsx("div", { role: "group", "aria-label": label, style: { minWidth: 0, width: "100%" }, children: children }) });
-});
 
 const labels = {
     "GPU and driver": "GPU driver",
@@ -1822,17 +2083,7 @@ function diagnosticLoggingLabel(status) {
     return `on · ${countdown}`;
 }
 
-var handheldModeIcon = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1MTIiIGhlaWdodD0iNTEyIiB2aWV3Qm94PSIwIDAgNTEyIDUxMiIgZmlsbD0ibm9uZSI+CiAgPGc+CiAgICA8cmVjdCB4PSI0OCIgeT0iMTMyIiB3aWR0aD0iNDE2IiBoZWlnaHQ9IjI0OCIgcng9Ijc4IiBmaWxsPSIjMDgxODJBIiBzdHJva2U9IiMzNWQ2ZjUiIHN0cm9rZS13aWR0aD0iMTIiLz4KICAgIDxyZWN0IHg9IjE2NiIgeT0iMTY2IiB3aWR0aD0iMTgwIiBoZWlnaHQ9IjE4MCIgcng9IjE0IiBmaWxsPSIjMDIwQTE0IiBzdHJva2U9IiMwRDJCNTAiIHN0cm9rZS13aWR0aD0iOCIvPgogICAgPHJlY3QgeD0iMTg0IiB5PSIxODQiIHdpZHRoPSIxNDQiIGhlaWdodD0iMTQ0IiByeD0iOCIgZmlsbD0iIzEwMjIzNyIvPgogICAgPGNpcmNsZSBjeD0iMTA0IiBjeT0iMjAwIiByPSIyNCIgZmlsbD0iIzBBMTkzMCIgc3Ryb2tlPSIjMzVkNmY1IiBzdHJva2Utd2lkdGg9IjkiLz4KICAgIDxjaXJjbGUgY3g9IjQwOCIgY3k9IjIwMCIgcj0iMjQiIGZpbGw9IiMwQTE5MzAiIHN0cm9rZT0iIzM1ZDZmNSIgc3Ryb2tlLXdpZHRoPSI5Ii8+CiAgICA8cGF0aCBkPSJNOTUgMjY2aDE4djE4aDE4djE4aC0xOHYxOEg5NXYtMThINzd2LTE4aDE4di0xOFoiIGZpbGw9IiMzNWQ2ZjUiLz4KICAgIDxjaXJjbGUgY3g9IjQwMiIgY3k9IjI3OCIgcj0iOSIgZmlsbD0iIzM1ZDZmNSIvPgogICAgPGNpcmNsZSBjeD0iNDI4IiBjeT0iMjk0IiByPSI5IiBmaWxsPSIjMzVkNmY1Ii8+CiAgICA8Y2lyY2xlIGN4PSIzNzYiIGN5PSIyOTQiIHI9IjkiIGZpbGw9IiMzNWQ2ZjUiLz4KICAgIDxjaXJjbGUgY3g9IjQwMiIgY3k9IjMxMCIgcj0iOSIgZmlsbD0iIzM1ZDZmNSIvPgogICAgPHJlY3QgeD0iOTEiIHk9IjMzNyIgd2lkdGg9IjMwIiBoZWlnaHQ9IjgiIHJ4PSI0IiBmaWxsPSIjMzVkNmY1Ii8+CiAgICA8cmVjdCB4PSIzOTEiIHk9IjMzNyIgd2lkdGg9IjMwIiBoZWlnaHQ9IjgiIHJ4PSI0IiBmaWxsPSIjMzVkNmY1Ii8+CiAgPC9nPgo8L3N2Zz4K";
-
-var tvModeIcon = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1MTIiIGhlaWdodD0iNTEyIiB2aWV3Qm94PSIwIDAgNTEyIDUxMiIgZmlsbD0ibm9uZSI+CiAgPGc+CiAgICA8cmVjdCB4PSI2NiIgeT0iMTAwIiB3aWR0aD0iMzgwIiBoZWlnaHQ9IjI0OCIgcng9IjI4IiBmaWxsPSIjMDcxNTI2IiBzdHJva2U9IiMzNWQ2ZjUiIHN0cm9rZS13aWR0aD0iMTIiLz4KICAgIDxyZWN0IHg9IjkyIiB5PSIxMjYiIHdpZHRoPSIzMjgiIGhlaWdodD0iMTk2IiByeD0iMTIiIGZpbGw9IiMxMDIyMzciIHN0cm9rZT0iIzBEMkI1MCIgc3Ryb2tlLXdpZHRoPSI4Ii8+CiAgICA8cGF0aCBkPSJNMjM2IDM0OGg0MHY1Mmg3MGMxMiAwIDIyIDEwIDIyIDIySDE0NGMwLTEyIDEwLTIyIDIyLTIyaDcwdi01MloiIGZpbGw9IiMwODE4MkEiIHN0cm9rZT0iIzM1ZDZmNSIgc3Ryb2tlLXdpZHRoPSIxMCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIvPgogIDwvZz4KPC9zdmc+Cg==";
-
 /** Selection represents observed placement, never a clickable transition target. */
-function placementCards(mode, loading = false) {
-    return [
-        { name: "Portable", detail: "Internal GPU · Handheld screen", active: !loading && mode === "portable" },
-        { name: "TV Docked", detail: "External GPU · TV", active: !loading && (mode === "tv_docked" || mode === "docked_egpu") },
-    ];
-}
 /** Bounded snapshot-only facts; opening this disclosure starts no extra requests. */
 function hardwareDetailRows(payload) {
     const snapshot = payload?.snapshot;
@@ -1856,10 +2107,7 @@ function hardwareDetailRows(payload) {
 }
 
 const C$3 = {
-    cyan: "#39d8ff",
-    green: "#5eea8a",
     text: "#f4f7fb",
-    muted: "#9eb2ca",
     border: "#294665"};
 const paths = {
     handheld: "M5 6h14l3 12h-5l-2-3H9l-2 3H2z M6 10h5 M8.5 7.5v5 M16 9h.1 M18 11h.1",
@@ -1885,59 +2133,6 @@ function DashboardSurface({ children, primary = false }) {
             color: C$3.text,
             boxShadow: primary ? "inset 0 0 28px rgba(255,185,48,.05)" : "inset 0 0 24px rgba(0,170,255,.025)",
         }, children: children });
-}
-function CurrentStateCard({ modeLabel, health, game, loading }) {
-    return SP_JSX.jsxs("div", { style: {
-            padding: "10px 12px",
-            marginBottom: 14,
-            borderRadius: 14,
-            border: `1px solid ${regearTheme.border}`,
-            background: regearTheme.surface,
-        }, children: [SP_JSX.jsx("div", { style: {
-                    color: C$3.cyan,
-                    fontSize: 12,
-                    fontWeight: 760,
-                    letterSpacing: "1.5px",
-                    marginBottom: 5,
-                }, children: "CURRENT STATE" }), SP_JSX.jsx("div", { style: {
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    gap: 10,
-                    marginBottom: 12,
-                }, children: SP_JSX.jsx("div", { style: { fontSize: 18, fontWeight: 700, lineHeight: 1.4 }, children: modeLabel }) }), [["Health", loading ? "Reading…" : health], ["Game", loading ? "Reading…" : game]].map(([name, value]) => SP_JSX.jsxs("div", { style: { display: "grid", gridTemplateColumns: "64px minmax(0,1fr)", gap: 8,
-                    padding: "8px 0", borderTop: `1px solid ${regearTheme.border}`, fontSize: 13, lineHeight: 1.4 }, children: [SP_JSX.jsx("span", { style: { color: regearTheme.muted }, children: name }), SP_JSX.jsx("span", { style: { textAlign: "right", overflowWrap: "anywhere",
-                            color: name === "Health" && !loading && health === "Ready" ? C$3.green : regearTheme.text }, children: value })] }, name))] });
-}
-function ModeCard({ name, detail, active, loading }) {
-    const isPortable = name === "Portable";
-    return SP_JSX.jsxs("div", { style: {
-            minWidth: 0,
-            minHeight: 130,
-            padding: "18px 12px 14px",
-            borderRadius: 20,
-            border: `2px solid ${active ? C$3.cyan : "#36516f"}`,
-            background: active
-                ? "linear-gradient(145deg, rgba(4,53,82,.98), rgba(9,26,45,.98))"
-                : "linear-gradient(145deg, rgba(12,28,47,.98), rgba(7,17,30,.98))",
-            boxShadow: active ? `0 0 20px ${C$3.cyan}20, inset 0 0 24px ${C$3.cyan}0b` : "none",
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            justifyContent: "center",
-            textAlign: "center",
-            color: active ? C$3.text : "#d7e3f1",
-        }, children: [SP_JSX.jsx("div", { style: { color: active ? C$3.cyan : "#a6bfdc", marginBottom: 10 }, children: SP_JSX.jsx("img", { src: isPortable ? handheldModeIcon : tvModeIcon, width: 56, height: 56, alt: "", "aria-hidden": "true", style: { display: "block", objectFit: "contain" } }) }), SP_JSX.jsx("div", { style: { fontSize: 18, fontWeight: 760, marginBottom: 6 }, children: name }), SP_JSX.jsx("div", { style: { fontSize: 12, lineHeight: "16px", color: C$3.muted, minHeight: 32 }, children: detail }), SP_JSX.jsx("div", { style: { marginTop: 10, color: active ? C$3.cyan : C$3.muted, fontSize: 12, fontWeight: 700 }, children: active ? "ACTIVE" : loading ? "READING…" : "Not active" })] });
-}
-function QuickAccessOverview({ mode, modeLabel, health, game, loading, summaryRef, onSummaryFocus }) {
-    const cards = placementCards(mode, loading);
-    return SP_JSX.jsxs("div", { style: { color: C$3.text, minWidth: 0 }, children: [SP_JSX.jsx(SectionFocus, { ref: summaryRef, label: "At a glance: current state", onFocused: onSummaryFocus, children: SP_JSX.jsx(CurrentStateCard, { modeLabel: modeLabel, health: health, game: game, loading: loading }) }), SP_JSX.jsxs(SectionFocus, { label: "Your setup", children: [SP_JSX.jsx("div", { style: {
-                            color: C$3.muted,
-                            fontSize: 11,
-                            fontWeight: 760,
-                            letterSpacing: "1.6px",
-                            margin: "2px 2px 8px",
-                        }, children: "YOUR SETUP" }), SP_JSX.jsx("div", { style: { display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10 }, children: cards.map((card) => SP_JSX.jsx(ModeCard, { ...card, loading: loading }, card.name)) })] })] });
 }
 
 /** Re-Gear action card: one controller focus target with mockup-style hierarchy. */
@@ -2820,14 +3015,9 @@ function backRoute(stack) {
 function hasInternalLevel(stack) {
     return stack.length > 1;
 }
-/** Whether the diagnostics surfaces are actually on screen.
- *
- * `showDiagnostics` says the player opened them; it does not say they are
- * visible. On any pushed route the Command Center body is not rendered, so
- * collecting for surfaces nobody can see is work the player did not ask for.
- */
+/** Collect optional diagnostics only while their dedicated route is visible. */
 function diagnosticsVisible(stack, showDiagnostics) {
-    return showDiagnostics && currentRoute(stack).kind === "command-center";
+    return showDiagnostics && currentRoute(stack).kind === "troubleshoot";
 }
 /** A fresh Quick Access entry starts at Command Center.
  *
@@ -2837,16 +3027,6 @@ function diagnosticsVisible(stack, showDiagnostics) {
  */
 function stackOnPanelOpen() {
     return INITIAL_STACK;
-}
-/** The Troubleshooting control's open/close rule.
- *
- * This is the surviving owner of the open-edge behaviour that the deleted
- * quick-access-section-state helper used to hold: opening asks for fresh
- * evidence, closing does not, and re-opening an already-open surface must not
- * request again.
- */
-function troubleshootingToggle(open) {
-    return { next: !open, refresh: !open };
 }
 
 /** Command Center navigation shell: rendering only, no policy, no requests.
@@ -2910,9 +3090,9 @@ function StatusLinks({ entries, onOpen }) {
 function PendingContent({ what }) {
     return SP_JSX.jsxs("div", { style: { margin: "0 2px", fontSize: 12, lineHeight: "16px", color: C$2.muted }, children: [what, " has not moved here yet. It is still reachable on the main panel."] });
 }
-function ShellBody({ route, modules, children, onOpenModule, onOpenStatus, statusEntries }) {
+function ShellBody({ route, modules, children, onOpenModule, onOpenStatus, statusEntries, onOpenTroubleshoot }) {
     if (route.kind === "modules") {
-        return SP_JSX.jsxs(SP_JSX.Fragment, { children: [SP_JSX.jsx(RouteHeader, { title: "Modules", reason: null }), SP_JSX.jsx(ModulesList, { modules: modules, onOpen: onOpenModule })] });
+        return SP_JSX.jsxs(SP_JSX.Fragment, { children: [SP_JSX.jsx(RouteHeader, { title: "Modules", reason: null }), SP_JSX.jsx(ModulesList, { modules: modules, onOpen: onOpenModule }), onOpenTroubleshoot && SP_JSX.jsx(NavRow, { title: "Troubleshoot", detail: "Diagnostics and support", blocked: false, focusKey: "troubleshoot", onClick: onOpenTroubleshoot })] });
     }
     if (route.kind === "module") {
         const entry = modules.find((candidate) => candidate.id === route.id);
@@ -3249,43 +3429,13 @@ function commandCenterTiles(input) {
     return TILE_ORDER.map((id) => tiles[id]);
 }
 
-/** What a completed disconnect actually established: pure, no I/O.
- *
- * This is the block shown after a disconnect, and it exists so that what a
- * player is told is *earned from evidence* rather than asserted, with the exact
- * evidence beside it so it can be argued with.
- *
- * WHAT THESE CHECKS COVER, AND WHAT THEY DO NOT.
- *
- * They cover the eGPU: both PCI functions removed, nothing still holding them,
- * the filter disarmed, and -- decisively -- the bus itself reporting no eGPU
- * connected. That last one is the difference between trusting an action and
- * observing its result, and it is why the removal is a fact about this machine
- * rather than a claim about the design.
- *
- * They do **not** cover the dock. A software removal detaches `0000:08:00.0`
- * and `0000:08:00.1`. It leaves the dock's own Thunderbolt USB controller on a
- * sibling port of the same switch, the bridges above it, and the tunnel itself
- * -- all still enumerated, all still live. Issue #105 records that this exact
- * branch carries uncorrectable ACS violations with `xhci_hcd` unable to
- * recover, against zero on the GPU branch.
- *
- * SO NOTHING HERE CLEARS THE CABLE. An earlier version of this module said
- * "You can now disconnect the eGPU cable" once every check passed. Every one of
- * those checks was about the GPU, so the sentence was a claim about devices
- * none of them had looked at. Safety invariant 10 stands, and issue #147 --
- * whether that invariant covers unplug-while-bound and unplug-after-verified-
- * removal as one operation or two -- is undecided. It is not this module's to
- * decide, and copy is not the place to decide it.
- *
- * The honest answer today is the one below: say what was detached, say what is
- * still attached, and give the player the route that is known to be safe.
- *
- * If a check cannot be evaluated, it fails. Absent evidence is never a pass:
- * this is the one place in the product where an optimistic default would read
- * as permission to act on hardware.
+/** Software-removal evidence, without physical cable clearance.
+ * The v1 status has no positive post-removal PCI observation. In particular,
+ * egpu_unavailable also means observation failed or attachment identity is
+ * missing. Neither verifies absence. Dock teardown is separately unverified;
+ * safety invariant 10 and issue #147 remain the owning contract.
  */
-const VERIFIED_STATEMENT = "The eGPU is detached in software and the Ally no longer sees it. " +
+const VERIFIED_STATEMENT = "The eGPU is detached in software and the handheld no longer sees it. " +
     "The dock is still connected, so this is not yet clearance to unplug the cable.";
 const UNVERIFIED_STATEMENT = "Do not disconnect anything yet. Re-Gear could not confirm every check " +
     "below. Shut the handheld down first, then disconnect it.";
@@ -3324,14 +3474,11 @@ function unplugClearance(status, outcome) {
     // 5. Re-Gear released its own hold.
     checks.push(check("Re-Gear's device filter disarmed", outcome?.filter_disarmed === true, outcome?.filter_disarmed === true ? "The filter was disarmed."
         : "The filter was not reported as disarmed."));
-    // 6. The decisive one for the GPU: the bus, not the command. Note what it
-    //    does and does not say -- "no eGPU is connected" is a statement about
-    //    the graphics device, not about the dock it arrived through.
-    const gone = status?.availability === "unavailable"
-        && status.code === "live_disconnect.egpu_unavailable";
-    checks.push(check("eGPU no longer connected to the system", gone, !status ? "No current status reading."
-        : gone ? "The system reports no eGPU connected."
-            : "The system still reports an eGPU present."));
+    // v1 reports egpu_unavailable for observation exceptions and missing
+    // attachment identity too. It contains no positive post-removal bus proof.
+    // Keep this check closed until the backend exposes that explicit evidence.
+    checks.push(check("eGPU no longer connected to the system", false, !status ? "No current status reading."
+        : "The current status cannot verify that the eGPU is absent from the bus."));
     // Computed before the outstanding check below is appended, rather than over
     // a slice: an index would silently take in whatever a later edit inserts.
     const removalVerified = checks.every((entry) => entry.passed);
@@ -4168,7 +4315,7 @@ function Content({ preflight, connection, shortcut }) {
     // Read by the refresh callback, which must not be rebuilt on every navigation:
     // adding navStack to its dependencies would restart the refresh cycle on a
     // route change.
-    const diagnosticsOnScreen = SP_REACT.useRef(true);
+    const diagnosticsOnScreen = SP_REACT.useRef(false);
     SP_REACT.useEffect(() => {
         diagnosticsOnScreen.current = diagnosticsVisible(navStack, showDiagnostics);
     }, [navStack, showDiagnostics]);
@@ -4942,6 +5089,7 @@ function Content({ preflight, connection, shortcut }) {
         setShowDiagnostics(compact.showDiagnostics);
         setShowJourneyDetails(compact.showJourneyDetails);
         setShowHardwareDetails(false);
+        setNavStack(INITIAL_STACK);
         // Wait for the diagnostics section to collapse, then reset Steam's owning
         // scroll panel and move focus to a native in-panel control. A non-focusable
         // status div leaves controller navigation at Steam's QAM Back control.
@@ -4953,11 +5101,6 @@ function Content({ preflight, connection, shortcut }) {
             restoreQuickAccessFocus(() => statusFocusAnchor.current ?? primaryControlAnchor.current?.querySelector("button, [role='button'], input, select") ?? null);
         }, 0);
     }, []);
-    // The Troubleshoot route is deliberately not wired here. Its content is the
-    // six surfaces the existing `showDiagnostics` boolean gates, and moving them
-    // behind a route is its own slice; opening an empty Troubleshoot destination
-    // would be a screen that claims to hold controls it does not have. The
-    // existing Troubleshooting control stays the way in until then.
     /** Read the disconnect status. The backend documents this call as observing
      * and mutating nothing -- no filter armed, no DRM master taken, no display
      * touched -- so it is safe to call whenever the screen showing it is open. */
@@ -5011,16 +5154,15 @@ function Content({ preflight, connection, shortcut }) {
     const popRoute = SP_REACT.useCallback(() => {
         setNavStack((stack) => backRoute(stack).stack);
     }, []);
-    // The open-edge rule lives in troubleshootingToggle: opening asks for fresh
-    // evidence, closing does not, and re-opening does not request again. That is
-    // the surviving owner of what the deleted quick-access-section-state helper
-    // held, and it is covered by its own tests.
+    // Request optional evidence once per panel opening. The dedicated route
+    // controls ongoing visibility; revisiting does not create a second poller.
     const toggleTroubleshooting = SP_REACT.useCallback(() => {
-        const result = troubleshootingToggle(showDiagnostics);
-        if (result.refresh)
+        diagnosticsOnScreen.current = true;
+        if (!showDiagnostics)
             void refresh(true);
-        setShowDiagnostics(result.next);
-    }, [refresh, showDiagnostics]);
+        setShowDiagnostics(true);
+        openRoute({ kind: "troubleshoot" });
+    }, [refresh, showDiagnostics, openRoute]);
     // Only while the panel is open and the Command Center is the visible route:
     // reading for a screen nobody is looking at is work the player did not ask
     // for, and the tile is the only consumer.
@@ -5071,10 +5213,13 @@ function Content({ preflight, connection, shortcut }) {
             // no handler is attached at all, so the press reaches Steam's own QAM
             // Back instead of being swallowed by a handler that chose to do
             // nothing. Native confirmation of that propagation stays pending.
-            , { ...(hasInternalLevel(navStack) ? { onCancelButton: popRoute } : {}), style: { minWidth: 0 }, children: SP_JSX.jsxs("div", { ref: statusAnchor, tabIndex: -1, children: [!onCommandCenter && (SP_JSX.jsx(DFL.PanelSection, { children: SP_JSX.jsx(ShellBody, { route: route, modules: modules, statusEntries: statusEntries, onOpenModule: (id) => openRoute({ kind: "module", id }), onOpenStatus: (id) => openRoute({ kind: "status", id }), children: null }) })), onCommandCenter && (SP_JSX.jsxs(SP_JSX.Fragment, { children: [SP_JSX.jsx(DFL.PanelSection, { title: "At a glance", children: SP_JSX.jsx(QuickAccessOverview, { summaryRef: statusFocusAnchor, onSummaryFocus: () => {
-                                            if (statusAnchor.current)
-                                                scrollToTopOfOwningPanel(statusAnchor.current);
-                                        }, mode: payload?.inference.mode ?? "unknown", modeLabel: loading ? "Reading…" : label(payload?.inference.mode ?? "unknown"), health: healthStatusLabel(payload?.health, loading), game: label(snapshot?.game_state ?? "unknown"), loading: loading }) }), SP_JSX.jsxs(DFL.PanelSection, { children: [SP_JSX.jsx("div", { style: { display: "flex", flexDirection: "column", minWidth: 0 }, children: SP_JSX.jsx(ModulesButton, { onOpen: () => openRoute({ kind: "modules" }) }) }), SP_JSX.jsx(DisconnectResultNotice, { result: disconnectResult(resultDismissed ? null : egpuDisconnect?.last, egpuDisconnect), onDismiss: () => setResultDismissed(true) }), SP_JSX.jsx(CommandCenterGrid, { tiles: tiles, onActivate: (id) => {
+            , { ...(hasInternalLevel(navStack) ? { onCancelButton: popRoute } : {}), style: { minWidth: 0 }, children: SP_JSX.jsxs("div", { ref: statusAnchor, tabIndex: -1, children: [!onCommandCenter && SP_JSX.jsx(DFL.PanelSection, { children: SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", onClick: popRoute, children: "Back" }) }) }), SP_JSX.jsx(PageLayout, { route: route, modules: SP_JSX.jsx(DFL.PanelSection, { children: SP_JSX.jsx(ShellBody, { route: route, modules: modules, statusEntries: statusEntries, onOpenModule: (id) => openRoute({ kind: "module", id }), onOpenStatus: (id) => openRoute({ kind: "status", id }), onOpenTroubleshoot: toggleTroubleshooting, children: null }) }), controller: SP_JSX.jsx(DFL.PanelSection, { title: "Controller", children: SP_JSX.jsx(ControllerModule, { presentation: controllerPresentation({ peripheral: peripheralStatus, shortcutAvailable: controllerShortcutAvailable }) }) }), egpuStatus: SP_JSX.jsx(DFL.PanelSection, { title: "eGPU status", children: SP_JSX.jsx(EgpuModule, { presentation: egpuPresentation(payload) }) }), controllerStatus: SP_JSX.jsx(DFL.PanelSection, { title: "Controller status", children: SP_JSX.jsx(ControllerModule, { presentation: controllerPresentation({ peripheral: peripheralStatus, shortcutAvailable: controllerShortcutAvailable }) }) }), autoTdp: SP_JSX.jsx(TdpControls, { visible: quickAccessVisible && route.kind === "module" && route.id === "auto-tdp" }), commandCenter: SP_JSX.jsx(SP_JSX.Fragment, { children: SP_JSX.jsxs(DFL.PanelSection, { children: [SP_JSX.jsx(CommandCenterHeader, { summaryRef: statusFocusAnchor, onSummaryFocus: () => {
+                                                if (statusAnchor.current)
+                                                    scrollToTopOfOwningPanel(statusAnchor.current);
+                                            }, mode: loading ? "Reading…" : label(payload?.inference.mode ?? "unknown"), display: snapshot?.displays.some((d) => d.active === true && d.kind === "external")
+                                                ? "External display"
+                                                : snapshot?.displays.some((d) => d.active === true && d.kind === "internal")
+                                                    ? "Handheld display" : "Display unknown", game: loading ? "Reading…" : label(snapshot?.game_state ?? "unknown"), health: healthStatusLabel(payload?.health, loading), navigation: SP_JSX.jsx(ModulesButton, { onOpen: () => openRoute({ kind: "modules" }) }) }), SP_JSX.jsx(DisconnectResultNotice, { result: disconnectResult(resultDismissed ? null : egpuDisconnect?.last, egpuDisconnect), onDismiss: () => setResultDismissed(true) }), SP_JSX.jsx(CommandCenterGrid, { tiles: tiles, onActivate: (id) => {
                                                 setSelectedTile(id);
                                                 const tile = tiles.find((candidate) => candidate.id === id);
                                                 if (!tile)
@@ -5097,63 +5242,63 @@ function Content({ preflight, connection, shortcut }) {
                                                 openRoute(id === "display"
                                                     ? { kind: "module", id: "egpu" }
                                                     : { kind: "module", id: "auto-tdp" });
-                                            } }), SP_JSX.jsx(TileReason, { tile: shownTile }), disconnectMessage && (SP_JSX.jsx(DFL.PanelSectionRow, { children: disconnectMessage })), SP_JSX.jsx(ShellBody, { route: route, modules: modules, statusEntries: statusEntries, onOpenModule: (id) => openRoute({ kind: "module", id }), onOpenStatus: (id) => openRoute({ kind: "status", id }), children: null })] }), payload?.connection_readiness && payload.connection_readiness.stage !== "disconnected" &&
-                                    SP_JSX.jsx(DFL.PanelSection, { title: "eGPU readiness", children: SP_JSX.jsx(ConnectionQuickStatus, { store: connection.store, visible: quickAccessVisible, onOpen: openConnectionProgress }) }), SP_JSX.jsx(TdpControls, { visible: quickAccessVisible }), SP_JSX.jsxs(DFL.PanelSection, { title: "Docking & actions", children: [SP_JSX.jsxs("div", { ref: primaryControlAnchor, children: [SP_JSX.jsx(DashboardSurface, { children: SP_JSX.jsx("div", { style: { padding: "4px 12px" }, children: SP_JSX.jsx(DFL.ToggleField, { label: "Automatic TV docking", layout: "inline", description: automaticDockBusy
-                                                                ? "Saving…"
-                                                                : !automaticDockStatus
-                                                                    ? "Status unavailable"
-                                                                    : automaticDockStatus.enabled
-                                                                        ? label(automaticDockStatus.code)
-                                                                        : "Off · Ask before enabling", checked: automaticDockStatus?.enabled === true, disabled: automaticDockBusy || !automaticDockStatus, highlightOnFocus: true, onChange: toggleAutomaticDock }) }) }), automaticDockMessage && (SP_JSX.jsx(DFL.PanelSectionRow, { children: automaticDockMessage })), SP_JSX.jsx(DashboardSurface, { primary: true, children: SP_JSX.jsx(DashboardAction, { icon: "bolt", tone: "primary", title: tvSwitchBusy || safeDisconnectBusy
-                                                            ? "Switching…"
-                                                            : payload?.inference.mode === "docked_egpu"
-                                                                ? "Switch to handheld"
-                                                                : "Switch to TV", description: controllerShortcutAvailable
-                                                            ? "Hold Back/View + Y for 3 seconds to switch."
-                                                            : "Checks readiness before switching. Controller shortcut unavailable.", onClick: () => {
-                                                            if (payload?.inference.mode === "docked_egpu")
-                                                                requestControllerDisplaySwitch("ally");
-                                                            else if (payload?.inference.mode === "portable")
-                                                                void executeTvSwitch();
-                                                        }, disabled: tvSwitchBusy
-                                                            || safeDisconnectBusy
-                                                            || (payload?.inference.mode !== "portable" && payload?.inference.mode !== "docked_egpu")
-                                                            || Boolean(tvSwitchAcknowledgementId)
-                                                            || Boolean(journalStatus && journalStatus.code !== "journal.idle") }) }), tvSwitchMessage && SP_JSX.jsx(DFL.PanelSectionRow, { children: tvSwitchMessage }), SP_JSX.jsx(DashboardSurface, { children: SP_JSX.jsx(DashboardAction, { icon: "connection", title: "Disconnect status", description: "Live checks \u00B7 keep eGPU connected", onClick: () => {
-                                                            if (!disconnectProgressModal.current)
-                                                                disconnectProgressModal.current = showDisconnectProgress(() => { disconnectProgressModal.current = null; });
-                                                        } }) }), SP_JSX.jsx(DashboardSurface, { children: SP_JSX.jsx(DashboardAction, { icon: "power", title: safeDisconnectBusy
-                                                            ? "Checking…"
-                                                            : payload?.inference.mode === "portable"
-                                                                ? "Shut down before unplugging"
-                                                                : "Prepare to disconnect", description: "Keep the eGPU connected until fully powered off.", onClick: requestSafeDisconnect, disabled: safeDisconnectBusy
-                                                            || !disconnect?.applicable
-                                                            || Boolean(tvSwitchAcknowledgementId)
-                                                            || Boolean(journalStatus && journalStatus.code !== "journal.idle") }) }), safeDisconnectMessage && (SP_JSX.jsx(DFL.PanelSectionRow, { children: safeDisconnectMessage })), journalStatus && journalStatus.code !== "journal.idle" && (SP_JSX.jsx(DiagnosticRow, { name: "Safety journal", value: label(journalStatus.owner) })), journalMessage && SP_JSX.jsx(DFL.PanelSectionRow, { children: journalMessage }), journalStatus?.owner === "sleep"
-                                                    && journalStatus.acknowledgement_required
-                                                    && journalStatus.acknowledgement_id && (SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", onClick: () => void acknowledgePriorSleep(), disabled: journalBusy, children: journalBusy ? "Acknowledging…" : "Acknowledge prior sleep result" }) })), tvSwitchAcknowledgementId && (SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", onClick: () => void acknowledgeTvSwitch(), disabled: tvSwitchBusy, children: "Acknowledge prior display transition result" }) })), SP_JSX.jsx(DashboardSurface, { children: SP_JSX.jsx(DashboardAction, { title: "Troubleshoot", icon: "tools", description: "Safety checks, details & support", expanded: showDiagnostics, onClick: toggleTroubleshooting }) })] }), needsAttention && (SP_JSX.jsx(DFL.PanelSectionRow, { children: error || healthAttention[0] || `${snapshot?.blockers.length} safety check${snapshot?.blockers.length === 1 ? "" : "s"} needs attention.` })), sectionVisibility.diagnostics && (SP_JSX.jsx(DFL.PanelSectionRow, { children: "Read-only status refreshes while this panel is open." })), sectionVisibility.diagnostics && sleepGuard?.required && sleepWarningHidden && (SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", onClick: showSleepWarning, children: "Show sleep warning again" }) }))] }), sectionVisibility.journey && (SP_JSX.jsxs(SP_JSX.Fragment, { children: [SP_JSX.jsxs(DFL.PanelSection, { title: "Journey status", children: [journeyRows.map((row) => (SP_JSX.jsx(DiagnosticRow, { name: row.name, value: row.value }, row.name))), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", onClick: toggleJourneyDetails, children: showJourneyDetails ? "Hide journey details" : "Open journey details" }) })] }), showJourneyDetails && (SP_JSX.jsx("div", { ref: journeyDetailsAnchor, children: SP_JSX.jsxs(DFL.PanelSection, { title: "Journey details", children: [SP_JSX.jsx(DFL.PanelSectionRow, { children: "Read-only local policy status. It does not perform dock, undock, recovery, or game actions." }), journeyDetailRows.map((row) => (SP_JSX.jsx(DiagnosticRow, { name: row.name, value: row.detail }, row.name)))] }) }))] })), sectionVisibility.sleepProtection && SP_JSX.jsxs(DFL.PanelSection, { title: "Sleep protection", children: [SP_JSX.jsx(DiagnosticRow, { name: "System inhibitor", value: loading
-                                                ? "Checking…"
-                                                : sleepGuard?.required
-                                                    ? sleepGuard.active
+                                            } }), SP_JSX.jsx(TileReason, { tile: shownTile }), disconnectMessage && (SP_JSX.jsx(DFL.PanelSectionRow, { children: disconnectMessage })), SP_JSX.jsx(ShellBody, { route: route, modules: modules, statusEntries: statusEntries, onOpenModule: (id) => openRoute({ kind: "module", id }), onOpenStatus: (id) => openRoute({ kind: "status", id }), children: null })] }) }), egpu: SP_JSX.jsxs(SP_JSX.Fragment, { children: [SP_JSX.jsx(DFL.PanelSection, { title: "eGPU", children: SP_JSX.jsx(EgpuModule, { presentation: egpuPresentation(payload), onOpenRecovery: toggleTroubleshooting }) }), payload?.connection_readiness && payload.connection_readiness.stage !== "disconnected" &&
+                                        SP_JSX.jsx(DFL.PanelSection, { title: "eGPU readiness", children: SP_JSX.jsx(ConnectionQuickStatus, { store: connection.store, visible: quickAccessVisible, onOpen: openConnectionProgress }) }), SP_JSX.jsxs(DFL.PanelSection, { title: "Docking & actions", children: [SP_JSX.jsxs("div", { ref: primaryControlAnchor, children: [SP_JSX.jsx(DashboardSurface, { children: SP_JSX.jsx("div", { style: { padding: "4px 12px" }, children: SP_JSX.jsx(DFL.ToggleField, { label: "Automatic TV docking", layout: "inline", description: automaticDockBusy
+                                                                    ? "Saving…"
+                                                                    : !automaticDockStatus
+                                                                        ? "Status unavailable"
+                                                                        : automaticDockStatus.enabled
+                                                                            ? label(automaticDockStatus.code)
+                                                                            : "Off · Ask before enabling", checked: automaticDockStatus?.enabled === true, disabled: automaticDockBusy || !automaticDockStatus, highlightOnFocus: true, onChange: toggleAutomaticDock }) }) }), automaticDockMessage && (SP_JSX.jsx(DFL.PanelSectionRow, { children: automaticDockMessage })), SP_JSX.jsx(DashboardSurface, { primary: true, children: SP_JSX.jsx(DashboardAction, { icon: "bolt", tone: "primary", title: tvSwitchBusy || safeDisconnectBusy
+                                                                ? "Switching…"
+                                                                : payload?.inference.mode === "docked_egpu"
+                                                                    ? "Switch to handheld"
+                                                                    : "Switch to TV", description: controllerShortcutAvailable
+                                                                ? "Hold Back/View + Y for 3 seconds to switch."
+                                                                : "Checks readiness before switching. Controller shortcut unavailable.", onClick: () => {
+                                                                if (payload?.inference.mode === "docked_egpu")
+                                                                    requestControllerDisplaySwitch("ally");
+                                                                else if (payload?.inference.mode === "portable")
+                                                                    void executeTvSwitch();
+                                                            }, disabled: tvSwitchBusy
+                                                                || safeDisconnectBusy
+                                                                || (payload?.inference.mode !== "portable" && payload?.inference.mode !== "docked_egpu")
+                                                                || Boolean(tvSwitchAcknowledgementId)
+                                                                || Boolean(journalStatus && journalStatus.code !== "journal.idle") }) }), tvSwitchMessage && SP_JSX.jsx(DFL.PanelSectionRow, { children: tvSwitchMessage }), SP_JSX.jsx(DashboardSurface, { children: SP_JSX.jsx(DashboardAction, { icon: "connection", title: "Disconnect status", description: "Live checks \u00B7 keep eGPU connected", onClick: () => {
+                                                                if (!disconnectProgressModal.current)
+                                                                    disconnectProgressModal.current = showDisconnectProgress(() => { disconnectProgressModal.current = null; });
+                                                            } }) }), SP_JSX.jsx(DashboardSurface, { children: SP_JSX.jsx(DashboardAction, { icon: "power", title: safeDisconnectBusy
+                                                                ? "Checking…"
+                                                                : payload?.inference.mode === "portable"
+                                                                    ? "Shut down before unplugging"
+                                                                    : "Prepare to disconnect", description: "Keep the eGPU connected until fully powered off.", onClick: requestSafeDisconnect, disabled: safeDisconnectBusy
+                                                                || !disconnect?.applicable
+                                                                || Boolean(tvSwitchAcknowledgementId)
+                                                                || Boolean(journalStatus && journalStatus.code !== "journal.idle") }) }), safeDisconnectMessage && (SP_JSX.jsx(DFL.PanelSectionRow, { children: safeDisconnectMessage })), journalStatus && journalStatus.code !== "journal.idle" && (SP_JSX.jsx(DiagnosticRow, { name: "Safety journal", value: label(journalStatus.owner) })), journalMessage && SP_JSX.jsx(DFL.PanelSectionRow, { children: journalMessage }), journalStatus?.owner === "sleep"
+                                                        && journalStatus.acknowledgement_required
+                                                        && journalStatus.acknowledgement_id && (SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", onClick: () => void acknowledgePriorSleep(), disabled: journalBusy, children: journalBusy ? "Acknowledging…" : "Acknowledge prior sleep result" }) })), tvSwitchAcknowledgementId && (SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", onClick: () => void acknowledgeTvSwitch(), disabled: tvSwitchBusy, children: "Acknowledge prior display transition result" }) })), SP_JSX.jsx(DashboardSurface, { children: SP_JSX.jsx(DashboardAction, { title: "Troubleshoot", icon: "tools", description: "Safety checks, details & support", expanded: showDiagnostics, onClick: toggleTroubleshooting }) })] }), needsAttention && (SP_JSX.jsx(DFL.PanelSectionRow, { children: error || healthAttention[0] || `${snapshot?.blockers.length} safety check${snapshot?.blockers.length === 1 ? "" : "s"} needs attention.` })), sectionVisibility.diagnostics && (SP_JSX.jsx(DFL.PanelSectionRow, { children: "Read-only status refreshes while this panel is open." })), sectionVisibility.diagnostics && sleepGuard?.required && sleepWarningHidden && (SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", onClick: showSleepWarning, children: "Show sleep warning again" }) }))] })] }), troubleshoot: SP_JSX.jsxs(SP_JSX.Fragment, { children: [sectionVisibility.journey && (SP_JSX.jsxs(SP_JSX.Fragment, { children: [SP_JSX.jsxs(DFL.PanelSection, { title: "Journey status", children: [journeyRows.map((row) => (SP_JSX.jsx(DiagnosticRow, { name: row.name, value: row.value }, row.name))), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", onClick: toggleJourneyDetails, children: showJourneyDetails ? "Hide journey details" : "Open journey details" }) })] }), showJourneyDetails && (SP_JSX.jsx("div", { ref: journeyDetailsAnchor, children: SP_JSX.jsxs(DFL.PanelSection, { title: "Journey details", children: [SP_JSX.jsx(DFL.PanelSectionRow, { children: "Read-only local policy status. It does not perform dock, undock, recovery, or game actions." }), journeyDetailRows.map((row) => (SP_JSX.jsx(DiagnosticRow, { name: row.name, value: row.detail }, row.name)))] }) }))] })), sectionVisibility.sleepProtection && SP_JSX.jsxs(DFL.PanelSection, { title: "Sleep protection", children: [SP_JSX.jsx(DiagnosticRow, { name: "System inhibitor", value: loading
+                                                    ? "Checking…"
+                                                    : sleepGuard?.required
+                                                        ? sleepGuard.active
+                                                            ? "Active"
+                                                            : "Inactive"
+                                                        : "Not required" }), SP_JSX.jsx(DiagnosticRow, { name: "Steam preflight", value: preflightStatus.state === "active"
+                                                    ? preflightStatus.attemptWarningAvailable
                                                         ? "Active"
-                                                        : "Inactive"
-                                                    : "Not required" }), SP_JSX.jsx(DiagnosticRow, { name: "Steam preflight", value: preflightStatus.state === "active"
-                                                ? preflightStatus.attemptWarningAvailable
-                                                    ? "Active"
-                                                    : "Blocked; warning unavailable"
-                                                : preflightStatus.state === "inactive"
-                                                    ? "Standby — eGPU verified absent"
-                                                    : "Unavailable" }), SP_JSX.jsx(DiagnosticRow, { name: "Blocked sleep attempts", value: preflightStatus.blockedAttemptCount
-                                                ? `${preflightStatus.blockedAttemptCount} observed this session`
-                                                : "None observed this session" }), preflightStatus.error && (SP_JSX.jsx(DFL.PanelSectionRow, { children: preflightStatus.error })), sleepGuard?.required && (SP_JSX.jsxs(SP_JSX.Fragment, { children: [!sleepWarningHidden && (SP_JSX.jsxs(SP_JSX.Fragment, { children: [SP_JSX.jsx(DFL.PanelSectionRow, { children: gameUsesEgpu
-                                                                ? "A game is using the eGPU. Sleep is blocked to prevent the known immediate-wake behavior and workload risk."
-                                                                : "The attached eGPU is known to wake this handheld immediately after sleep. Sleep remains blocked until the eGPU is verified absent." }), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", onClick: hideSleepWarning, children: "Never show this explanation again" }) })] })), sleepWarningHidden && (SP_JSX.jsx(DFL.PanelSectionRow, { children: "The explanation is hidden. Sleep protection remains active." }))] }))] }), sectionVisibility.disconnectReadiness && SP_JSX.jsxs(DFL.PanelSection, { title: "Disconnect readiness", children: [SP_JSX.jsx(DiagnosticRow, { name: "Status", value: disconnectStatus }), disconnect?.applicable && (SP_JSX.jsx(DiagnosticRow, { name: "Resource clients", value: String(disconnect.clients.length) })), (disconnect?.storage_devices ?? 0) > 0 && (SP_JSX.jsx(DiagnosticRow, { name: "eGPU storage", value: disconnect?.storage_in_use ? "In use — blocked" : "Not mounted" })), disconnect?.error && SP_JSX.jsx(DFL.PanelSectionRow, { children: disconnect.error }), closeEligibleClientCount > 0 && !processAcknowledgementId && (SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", onClick: () => void inspectProcessRelease("graceful"), disabled: processBusy, children: processBusy ? "Checking…" : "Close eligible eGPU processes" }) })), forceReceiptToken && (SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", onClick: () => void reviewForceClose(), disabled: processBusy, children: "Review force close" }) })), processAcknowledgementId && !forceReceiptToken && (SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", onClick: () => void acknowledgeProcessResult(), disabled: processBusy, children: "Acknowledge process-release result" }) })), processMessage && SP_JSX.jsx(DFL.PanelSectionRow, { children: processMessage }), SP_JSX.jsx(DFL.PanelSectionRow, { children: "Process closure always requires confirmation. Software readiness never authorizes physical eGPU removal." })] }), needsAttention && (SP_JSX.jsxs(DFL.PanelSection, { title: "Needs attention", children: [error && SP_JSX.jsx(DFL.PanelSectionRow, { children: error }), healthAttention.map((message) => (SP_JSX.jsx(DFL.PanelSectionRow, { children: message }, message))), snapshot?.blockers.map((blocker) => (SP_JSX.jsx(DFL.PanelSectionRow, { children: blocker.message }, blocker.code)))] })), sectionVisibility.support && SP_JSX.jsxs(DFL.PanelSection, { title: "Support bundle", children: [SP_JSX.jsx(DFL.PanelSectionRow, { children: "Preview a bounded Re-Gear-only report before copying or saving it. Raw hardware IDs, addresses, usernames, home paths, and command lines are excluded or redacted." }), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", onClick: () => void createSupportPreview(), disabled: supportBusy, children: supportBusy ? "Working…" : "Preview redacted support bundle" }) }), supportPreview && (SP_JSX.jsxs(SP_JSX.Fragment, { children: [SP_JSX.jsx(DiagnosticRow, { name: "Preview size", value: `${supportPreview.size_bytes} bytes` }), SP_JSX.jsx(DiagnosticRow, { name: "Recent events", value: String(supportPreview.event_count) }), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", onClick: reviewSupportPreview, disabled: supportBusy, children: "Review exact redacted JSON" }) }), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", onClick: () => void copySupportPreview(), disabled: supportBusy, children: "Copy reviewed JSON" }) }), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", onClick: () => void saveApprovedSupportPreview(), disabled: supportBusy, children: "Save reviewed bundle to Downloads" }) })] })), supportMessage && SP_JSX.jsx(DFL.PanelSectionRow, { children: supportMessage })] }), sectionVisibility.diagnostics && (SP_JSX.jsxs(DFL.PanelSection, { title: "Troubleshooting details", children: [SP_JSX.jsxs(DashboardSurface, { children: [SP_JSX.jsx(DashboardAction, { title: "Dock / eGPU", description: progress.label, icon: "connection", expanded: showHardwareDetails, onClick: () => setShowHardwareDetails((visible) => !visible) }), showHardwareDetails && SP_JSX.jsxs("div", { children: [hardwareDetailRows(payload).map(([name, value]) => SP_JSX.jsx(DiagnosticRow, { name: name, value: value }, name)), SP_JSX.jsx(DFL.PanelSectionRow, { children: progress.detail })] })] }), SP_JSX.jsx(DFL.PanelSectionRow, { children: "Read-only technical evidence. Raw hardware identities, connector names, and process IDs are hidden." }), optionalDiagnosticsDeferred && (SP_JSX.jsx(DFL.PanelSectionRow, { children: "Additional troubleshooting checks wait until Re-Gear confirms no game is running." })), overlayRows.map((row) => (SP_JSX.jsx(DiagnosticRow, { name: row.name, value: row.value }, row.name))), dockedIgpuStatus?.acknowledgement_required && (SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", onClick: () => void acknowledgeDockedIgpuWatch(), children: "Acknowledge Docked-iGPU watcher state" }) })), dockedIgpuMessage && (SP_JSX.jsx(DFL.PanelSectionRow, { children: dockedIgpuMessage })), SP_JSX.jsx(DFL.DropdownItem, { label: "Verbose logging duration", description: "Temporary, sanitized, capped, and off by default", rgOptions: DIAGNOSTIC_LOGGING_OPTIONS, selectedOption: diagnosticLoggingDuration, disabled: diagnosticLoggingBusy || diagnosticLoggingStatus?.enabled === true, onChange: (option) => {
-                                                setDiagnosticLoggingDuration(option.data);
-                                            } }), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", onClick: diagnosticLoggingStatus?.enabled
-                                                    ? () => void stopDiagnosticLogging()
-                                                    : requestDiagnosticLogging, disabled: diagnosticLoggingBusy, children: diagnosticLoggingStatus?.enabled
-                                                    ? "Disable verbose diagnostics"
-                                                    : "Enable verbose diagnostics" }) }), diagnosticLoggingMessage && (SP_JSX.jsx(DFL.PanelSectionRow, { children: diagnosticLoggingMessage })), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", onClick: () => void inspectPresentationPreparation(), disabled: presentationBusy, children: presentationBusy ? "Checking…" : "Prepare supervised display validation" }) }), SP_JSX.jsx(DFL.PanelSectionRow, { children: "Preparation only. This control cannot restart Gamescope or switch displays." }), presentationMessage && SP_JSX.jsx(DFL.PanelSectionRow, { children: presentationMessage })] })), sectionVisibility.navigation && SP_JSX.jsx(DFL.PanelSection, { title: "Navigation", children: SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", onClick: returnToStatus, children: "Back to top" }) }) })] }))] }) })] }));
+                                                        : "Blocked; warning unavailable"
+                                                    : preflightStatus.state === "inactive"
+                                                        ? "Standby — eGPU verified absent"
+                                                        : "Unavailable" }), SP_JSX.jsx(DiagnosticRow, { name: "Blocked sleep attempts", value: preflightStatus.blockedAttemptCount
+                                                    ? `${preflightStatus.blockedAttemptCount} observed this session`
+                                                    : "None observed this session" }), preflightStatus.error && (SP_JSX.jsx(DFL.PanelSectionRow, { children: preflightStatus.error })), sleepGuard?.required && (SP_JSX.jsxs(SP_JSX.Fragment, { children: [!sleepWarningHidden && (SP_JSX.jsxs(SP_JSX.Fragment, { children: [SP_JSX.jsx(DFL.PanelSectionRow, { children: gameUsesEgpu
+                                                                    ? "A game is using the eGPU. Sleep is blocked to prevent the known immediate-wake behavior and workload risk."
+                                                                    : "The attached eGPU is known to wake this handheld immediately after sleep. Sleep remains blocked until the eGPU is verified absent." }), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", onClick: hideSleepWarning, children: "Never show this explanation again" }) })] })), sleepWarningHidden && (SP_JSX.jsx(DFL.PanelSectionRow, { children: "The explanation is hidden. Sleep protection remains active." }))] }))] }), sectionVisibility.disconnectReadiness && SP_JSX.jsxs(DFL.PanelSection, { title: "Disconnect readiness", children: [SP_JSX.jsx(DiagnosticRow, { name: "Status", value: disconnectStatus }), disconnect?.applicable && (SP_JSX.jsx(DiagnosticRow, { name: "Resource clients", value: String(disconnect.clients.length) })), (disconnect?.storage_devices ?? 0) > 0 && (SP_JSX.jsx(DiagnosticRow, { name: "eGPU storage", value: disconnect?.storage_in_use ? "In use — blocked" : "Not mounted" })), disconnect?.error && SP_JSX.jsx(DFL.PanelSectionRow, { children: disconnect.error }), closeEligibleClientCount > 0 && !processAcknowledgementId && (SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", onClick: () => void inspectProcessRelease("graceful"), disabled: processBusy, children: processBusy ? "Checking…" : "Close eligible eGPU processes" }) })), forceReceiptToken && (SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", onClick: () => void reviewForceClose(), disabled: processBusy, children: "Review force close" }) })), processAcknowledgementId && !forceReceiptToken && (SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", onClick: () => void acknowledgeProcessResult(), disabled: processBusy, children: "Acknowledge process-release result" }) })), processMessage && SP_JSX.jsx(DFL.PanelSectionRow, { children: processMessage }), SP_JSX.jsx(DFL.PanelSectionRow, { children: "Process closure always requires confirmation. Software readiness never authorizes physical eGPU removal." })] }), needsAttention && (SP_JSX.jsxs(DFL.PanelSection, { title: "Needs attention", children: [error && SP_JSX.jsx(DFL.PanelSectionRow, { children: error }), healthAttention.map((message) => (SP_JSX.jsx(DFL.PanelSectionRow, { children: message }, message))), snapshot?.blockers.map((blocker) => (SP_JSX.jsx(DFL.PanelSectionRow, { children: blocker.message }, blocker.code)))] })), sectionVisibility.support && SP_JSX.jsxs(DFL.PanelSection, { title: "Support bundle", children: [SP_JSX.jsx(DFL.PanelSectionRow, { children: "Preview a bounded Re-Gear-only report before copying or saving it. Raw hardware IDs, addresses, usernames, home paths, and command lines are excluded or redacted." }), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", onClick: () => void createSupportPreview(), disabled: supportBusy, children: supportBusy ? "Working…" : "Preview redacted support bundle" }) }), supportPreview && (SP_JSX.jsxs(SP_JSX.Fragment, { children: [SP_JSX.jsx(DiagnosticRow, { name: "Preview size", value: `${supportPreview.size_bytes} bytes` }), SP_JSX.jsx(DiagnosticRow, { name: "Recent events", value: String(supportPreview.event_count) }), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", onClick: reviewSupportPreview, disabled: supportBusy, children: "Review exact redacted JSON" }) }), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", onClick: () => void copySupportPreview(), disabled: supportBusy, children: "Copy reviewed JSON" }) }), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", onClick: () => void saveApprovedSupportPreview(), disabled: supportBusy, children: "Save reviewed bundle to Downloads" }) })] })), supportMessage && SP_JSX.jsx(DFL.PanelSectionRow, { children: supportMessage })] }), sectionVisibility.diagnostics && (SP_JSX.jsxs(DFL.PanelSection, { title: "Troubleshooting details", children: [SP_JSX.jsxs(DashboardSurface, { children: [SP_JSX.jsx(DashboardAction, { title: "Dock / eGPU", description: progress.label, icon: "connection", expanded: showHardwareDetails, onClick: () => setShowHardwareDetails((visible) => !visible) }), showHardwareDetails && SP_JSX.jsxs("div", { children: [hardwareDetailRows(payload).map(([name, value]) => SP_JSX.jsx(DiagnosticRow, { name: name, value: value }, name)), SP_JSX.jsx(DFL.PanelSectionRow, { children: progress.detail })] })] }), SP_JSX.jsx(DFL.PanelSectionRow, { children: "Read-only technical evidence. Raw hardware identities, connector names, and process IDs are hidden." }), optionalDiagnosticsDeferred && (SP_JSX.jsx(DFL.PanelSectionRow, { children: "Additional troubleshooting checks wait until Re-Gear confirms no game is running." })), overlayRows.map((row) => (SP_JSX.jsx(DiagnosticRow, { name: row.name, value: row.value }, row.name))), dockedIgpuStatus?.acknowledgement_required && (SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", onClick: () => void acknowledgeDockedIgpuWatch(), children: "Acknowledge Docked-iGPU watcher state" }) })), dockedIgpuMessage && (SP_JSX.jsx(DFL.PanelSectionRow, { children: dockedIgpuMessage })), SP_JSX.jsx(DFL.DropdownItem, { label: "Verbose logging duration", description: "Temporary, sanitized, capped, and off by default", rgOptions: DIAGNOSTIC_LOGGING_OPTIONS, selectedOption: diagnosticLoggingDuration, disabled: diagnosticLoggingBusy || diagnosticLoggingStatus?.enabled === true, onChange: (option) => {
+                                                    setDiagnosticLoggingDuration(option.data);
+                                                } }), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", onClick: diagnosticLoggingStatus?.enabled
+                                                        ? () => void stopDiagnosticLogging()
+                                                        : requestDiagnosticLogging, disabled: diagnosticLoggingBusy, children: diagnosticLoggingStatus?.enabled
+                                                        ? "Disable verbose diagnostics"
+                                                        : "Enable verbose diagnostics" }) }), diagnosticLoggingMessage && (SP_JSX.jsx(DFL.PanelSectionRow, { children: diagnosticLoggingMessage })), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", onClick: () => void inspectPresentationPreparation(), disabled: presentationBusy, children: presentationBusy ? "Checking…" : "Prepare supervised display validation" }) }), SP_JSX.jsx(DFL.PanelSectionRow, { children: "Preparation only. This control cannot restart Gamescope or switch displays." }), presentationMessage && SP_JSX.jsx(DFL.PanelSectionRow, { children: presentationMessage })] })), sectionVisibility.navigation && SP_JSX.jsx(DFL.PanelSection, { title: "Navigation", children: SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", onClick: returnToStatus, children: "Back to top" }) }) })] }) })] }) })] }));
 }
 /** Confirm a software disconnect.
  *
