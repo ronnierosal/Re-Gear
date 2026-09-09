@@ -1,20 +1,21 @@
 import type { ControllerInputSource } from "./controller-safe-disconnect";
 
-export type MenuBinding = "start-select" | "bumpers" | "disabled";
+export type MenuBinding = "view-y" | "sticks" | "disabled";
 export const menuBindingOptions = [
-  { label: "Start + Select", data: "start-select" as MenuBinding },
-  { label: "LB + RB", data: "bumpers" as MenuBinding },
+  { label: "View / Back + Y", data: "view-y" as MenuBinding },
+  { label: "L3 + R3", data: "sticks" as MenuBinding },
   { label: "Disabled", data: "disabled" as MenuBinding },
 ];
 const STORAGE_KEY = "regear.menu-shortcut.v1";
 const validBinding = (value: unknown): value is MenuBinding =>
-  value === "start-select" || value === "bumpers" || value === "disabled";
+  value === "view-y" || value === "sticks" || value === "disabled";
 
 export function loadMenuBinding(storage?: Pick<Storage, "getItem">): MenuBinding {
   try {
     const value = (storage ?? globalThis.localStorage)?.getItem(STORAGE_KEY);
-    return validBinding(value) ? value : "start-select";
-  } catch { return "start-select"; }
+    // Legacy start-select/bumpers choices migrate to the new default. Disabled stays disabled.
+    return validBinding(value) ? value : "view-y";
+  } catch { return "view-y"; }
 }
 
 export function saveMenuBinding(binding: MenuBinding, storage?: Pick<Storage, "setItem">): boolean {
@@ -63,8 +64,8 @@ export function startMenuShortcut(deps: {
     let binding: MenuBinding;
     try { binding = deps.readBinding(); } catch { reset(); return; }
     const pair = (a: number, b: number) => buttons.has(a) && buttons.has(b);
-    const matches = binding === "start-select" ? pair(8, 9) || pair(35, 36)
-      : binding === "bumpers" && pair(30, 31);
+    const matches = binding === "view-y" ? pair(9, 3)
+      : binding === "sticks" && pair(25, 41);
     if (!matches) return;
     latched.add(id);
     try { deps.open(); } catch { /* Never retry uncertain menu delivery until release. */ }

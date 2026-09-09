@@ -46,7 +46,7 @@ export function nextTab(tab: Tab, direction: -1 | 1): Tab {
   return tabs[(tabs.indexOf(tab) + direction + tabs.length) % tabs.length];
 }
 export function columnsForWidth(width: number): number {
-  return width >= 620 ? 4 : width >= 430 ? 3 : width >= 250 ? 2 : 1;
+  return width >= 500 ? 4 : width >= 340 ? 3 : width >= 250 ? 2 : 1;
 }
 export function restoreTarget(ids: readonly string[], remembered?: string): string | undefined {
   return ids.includes(remembered ?? "") ? remembered : ids[0];

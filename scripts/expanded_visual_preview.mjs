@@ -35,7 +35,7 @@ if (args.includes('--playwright')) {
   const { chromium } = require(resolve(option('--playwright')));
   const browser = await chromium.launch({headless:true, ...(args.includes('--channel') ? {channel:option('--channel')} : {})});
   const report = { limitation: 'Synthetic React and keyboard only. Native Steam overlay, physical LB/RB and hardware actions UNVERIFIED.', captures: [], failures: [] };
-  for (const [width,height] of [[1920,1080],[1280,720],[960,600],[320,720]]) {
+  for (const [width,height] of [[1920,1080],[1280,720],[960,600],[854,480],[320,720]]) {
     for (const tab of ['quick','performance','egpu','controllers','settings']) {
       const page = await browser.newPage({viewport:{width,height},deviceScaleFactor:1});
       const errors=[]; page.on('pageerror', e=>errors.push(e.message));

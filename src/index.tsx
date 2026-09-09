@@ -540,7 +540,7 @@ function preflightObservation(payload: SnapshotPayload): PreflightObservation {
   }, Date.now(), SNAPSHOT_STALE_AFTER_MS);
 }
 
-function Content({ preflight, connection, shortcut, openExpanded }: { preflight: SleepPreflightCoordinator; connection: ReturnType<typeof startConnectionMonitor>; shortcut: ReturnType<typeof createDisplayShortcutRuntime>; openExpanded(): void }) {
+function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAvailable }: { preflight: SleepPreflightCoordinator; connection: ReturnType<typeof startConnectionMonitor>; shortcut: ReturnType<typeof createDisplayShortcutRuntime>; openExpanded(): void; menuShortcutAvailable: boolean }) {
   const quickAccessVisible = useQuickAccessVisible();
   const statusAnchor = useRef<HTMLDivElement | null>(null);
   const statusFocusAnchor = useRef<HTMLDivElement | null>(null);
@@ -1643,9 +1643,9 @@ function Content({ preflight, connection, shortcut, openExpanded }: { preflight:
           onOpenModule={(id: ModuleId) => openRoute({ kind: "module", id }, `module:${id}`)}
           onOpenStatus={(id: StatusId) => openRoute({ kind: "status", id }, `status:${id}`)}
           onOpenTroubleshoot={toggleTroubleshooting}>{null}</ShellBody></PanelSection>}
-        controller={<PanelSection title="Controller"><ControllerModule presentation={controllerPresentation({ peripheral: peripheralStatus, shortcutAvailable: controllerShortcutAvailable })} /></PanelSection>}
+        controller={<PanelSection title="Controller"><ControllerModule presentation={controllerPresentation({ peripheral: peripheralStatus, shortcutAvailable: menuShortcutAvailable })} /></PanelSection>}
         egpuStatus={<PanelSection title="eGPU status"><EgpuModule presentation={egpuPresentation(payload)} /></PanelSection>}
-        controllerStatus={<PanelSection title="Controller status"><ControllerModule presentation={controllerPresentation({ peripheral: peripheralStatus, shortcutAvailable: controllerShortcutAvailable })} /></PanelSection>}
+        controllerStatus={<PanelSection title="Controller status"><ControllerModule presentation={controllerPresentation({ peripheral: peripheralStatus, shortcutAvailable: menuShortcutAvailable })} /></PanelSection>}
         autoTdp={<AutoTdpModule controller={performance} />}
         picker={route.kind === "picker" && route.id === "tdp"
           ? <TdpPicker status={performance.manual} busy={performance.busy} onApply={watts => void performance.apply(watts)}
@@ -2197,9 +2197,12 @@ function showBlockedAttempt(
 }
 
 export default definePlugin(() => {
-  const expandedMenu = createExpandedMenu(steamControllerInput(window), window);
+  const expandedMenu = createExpandedMenu(steamControllerInput(window), window, () =>
+    !shortcut.modal.current && !shortcut.portableBusy.current && !shortcut.tvBusy.current && !warningModal);
   const shortcut = createDisplayShortcutRuntime({
-    input: steamControllerInput(window),
+    // View+Y now belongs exclusively to the menu. Explicit display requests
+    // below retain their existing approval/confirmation path.
+    input: undefined,
     readContext: async () => {
       const [snapshot, journal] = await Promise.all([getSnapshot(), getTransitionJournalStatus()]);
       return { snapshot, journal };
@@ -2273,7 +2276,7 @@ export default definePlugin(() => {
   return {
     name: PRODUCT_NAME,
     titleView: <div className={staticClasses.Title} style={{ display: "flex", alignItems: "center" }}><BrandHeader /></div>,
-    content: <Content preflight={preflight} connection={connection} shortcut={shortcut} openExpanded={expandedMenu.open} />,
+    content: <Content preflight={preflight} connection={connection} shortcut={shortcut} openExpanded={expandedMenu.open} menuShortcutAvailable={expandedMenu.available} />,
     icon: <BrandIcon />,
     alwaysRender: true,
     onDismount() {
