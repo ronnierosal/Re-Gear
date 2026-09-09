@@ -4,6 +4,7 @@ import hashlib
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 
@@ -294,6 +295,51 @@ gamescope-session.scope loaded active running compositor
 
 
 class ReadOnlyCommandRunnerTests(unittest.TestCase):
+    def test_rejects_a_path_resolved_systemctl(self):
+        """A basename match accepted any systemctl reachable through PATH."""
+        for executable in (
+            "/tmp/evil/systemctl",
+            "systemctl",
+            "./systemctl",
+            "/usr/local/bin/systemctl",
+            "/usr/bin/SYSTEMCTL",
+        ):
+            with self.subTest(executable=executable):
+                with self.assertRaisesRegex(ValueError, "not approved"):
+                    ReadOnlyCommandRunner.validate(
+                        (executable, *ReadOnlyCommandRunner.SYSTEMCTL_SCOPE_QUERY)
+                    )
+
+    def test_accepts_only_the_exact_absolute_systemctl(self):
+        command = (
+            ReadOnlyCommandRunner.SYSTEMCTL,
+            *ReadOnlyCommandRunner.SYSTEMCTL_SCOPE_QUERY,
+        )
+        self.assertEqual(ReadOnlyCommandRunner.validate(command), command)
+        self.assertEqual(ReadOnlyCommandRunner.SYSTEMCTL, "/usr/bin/systemctl")
+
+    def test_child_gets_a_clean_environment_not_the_plugin_inheritance(self):
+        """The other three runners in commands.py already do this."""
+        captured = {}
+
+        def fake_run(argv, **kwargs):
+            captured.update(kwargs)
+
+            class Done:
+                returncode, stdout, stderr = 0, "", ""
+
+            return Done()
+
+        command = (
+            ReadOnlyCommandRunner.SYSTEMCTL,
+            *ReadOnlyCommandRunner.SYSTEMCTL_SCOPE_QUERY,
+        )
+        with patch("hdm.adapters.steamos.commands.subprocess.run", fake_run):
+            ReadOnlyCommandRunner().run(command)
+
+        self.assertEqual(captured["env"], ReadOnlyCommandRunner.CLEAN_ENVIRONMENT)
+        self.assertFalse(captured["shell"])
+
     def test_rejects_unapproved_executable(self):
         with self.assertRaisesRegex(ValueError, "not approved"):
             ReadOnlyCommandRunner.validate(("bash", "-c", "true"))

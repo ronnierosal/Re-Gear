@@ -140,7 +140,8 @@ class Login1SleepInhibitorTests(unittest.TestCase):
         self.assertTrue(argv[1].endswith("inhibitor_guard.py"))
         self.assertGreater(int(argv[3]), 1)
 
-    def test_system_process_does_not_inherit_decky_loader_overrides(self):
+    def test_system_process_inherits_no_variable_at_all(self):
+        """An allowlist, so a new influential variable needs no denylist entry."""
         with patch.dict(
             "os.environ",
             {
@@ -148,13 +149,18 @@ class Login1SleepInhibitorTests(unittest.TestCase):
                 "LD_PRELOAD": "/tmp/injected.so",
                 "PYTHONHOME": "/tmp/python",
                 "PYTHONPATH": "/tmp/modules",
-                "PATH": "/usr/bin",
+                "PATH": "/tmp/evil",
+                # Not on any denylist, and must still not reach the child.
+                "PYTHONWARNINGS": "all",
+                "XDG_RUNTIME_DIR": "/tmp/runtime",
             },
             clear=True,
         ):
             environment = SleepInhibitorProcess.environment()
 
-        self.assertEqual(environment, {"PATH": "/usr/bin"})
+        self.assertEqual(environment, SleepInhibitorProcess.CLEAN_ENVIRONMENT)
+        self.assertNotIn("PYTHONWARNINGS", environment)
+        self.assertEqual(environment["PATH"], "/usr/bin:/bin")
 
     def test_acquire_is_idempotent_and_release_stops_exact_process(self):
         process = FakeProcess()
