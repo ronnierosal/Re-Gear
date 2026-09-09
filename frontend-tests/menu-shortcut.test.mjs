@@ -33,7 +33,7 @@ test("default View/Back + Y chord opens immediately in either press order", t =>
 test("different controllers, old shortcuts and alias substitutions never open", t => {
   const s = setup(t); s.send(0, 9, true); s.send(1, 3, true);
   assert.equal(s.opens(), 0);
-  for (const pair of [[8, 9], [35, 36], [30, 31], [35, 3], [8, 3], [9, 2]]) {
+  for (const pair of [[8, 9], [35, 36], [30, 31], [8, 3], [9, 2]]) {
     s.handle.reset(); s.chord(...pair); assert.equal(s.opens(), 0);
   }
 });
@@ -83,7 +83,7 @@ test("stop unregisters every subscription once and leaves delivered callbacks in
   assert.equal(s.opens(), 0); assert.equal(s.removed(), 3);
 });
 
-test("missing lifecycle provider or failed registration is unavailable and cleans up", () => {
+test("missing input provider or failed registration is unavailable and cleans up", () => {
   assert.equal(startMenuShortcut({ readBinding: () => "view-y", open() {} }).available, false);
   let removed = 0;
   const handle = startMenuShortcut({ input: {
@@ -137,4 +137,23 @@ test("Steam batch chords do not aggregate different controllers", t => {
   s.send([{ nC: 0, nA: 3, bS: true }]); assert.equal(s.opens(), 1);
   s.handle.stop();
   s.send([{ nC: 1, nA: 9, bS: true }]); assert.equal(s.opens(), 1);
+});
+
+
+test("captured Ally Select+Y sequence and optional analog arguments open", t => {
+  const s=setup(t);
+  for(const row of [[0,35,true],[0,3,true],[0,3,false],[0,35,false]]) s.send(...row);
+  assert.equal(s.opens(),1);
+  for(const row of [[0,35,true,0,0],[0,3,true,0,0],[0,35,false,0,0],[0,3,false,0,0]]) s.send(...row);
+  assert.equal(s.opens(),2);
+});
+
+
+test("Ally input-only provider works and expires incomplete chords", t => {
+  let send, time=0, opens=0;
+  const handle=startMenuShortcut({input:{RegisterForControllerInputMessages(cb){send=cb;return {unregister(){}};}},readBinding:()=>"view-y",open:()=>opens++,now:()=>time});
+  t.after(handle.stop);assert.equal(handle.available,true);
+  send(0,35,true);time=2000;send(0,3,true);assert.equal(opens,0);
+  send(0,35,false);send(0,3,false);send(0,35,true);send(0,3,true);assert.equal(opens,1);
+  time=5000;send(0,35,true);send(0,3,true);assert.equal(opens,1,"timeout must not release a matched latch");
 });

@@ -15,7 +15,7 @@ export const expandedStyles = `
 .rg-expanded h2{margin:0 0 3px;font-size:24px;line-height:1.2}.rg-expanded h3{margin:0;font-size:18px}
 .rg-expanded-context{margin:0 0 8px;color:#b1c9df;font-size:13px;line-height:1.35}
 .rg-expanded .rg-expanded-grid{display:grid;grid-template-columns:repeat(var(--ec-columns),minmax(0,1fr));gap:10px;min-width:0}
-.rg-expanded .rg-expanded-tile{width:100%;max-width:100%;min-width:0;height:auto;min-height:104px;margin:0;padding:12px;display:block;background:#102331;border:1px solid #365569;border-radius:11px;box-shadow:none;text-align:left;word-break:normal;overflow-wrap:normal}
+.rg-expanded .rg-expanded-tile{width:100%;max-width:100%;min-width:0;height:auto;min-height:104px;margin:0;padding:12px;display:flex;align-items:flex-start;justify-content:flex-start;background:#102331;border:1px solid #365569;border-radius:11px;box-shadow:none;text-align:left;word-break:normal;overflow-wrap:normal}
 .rg-expanded .rg-expanded-tile-body{display:flex;flex-direction:column;align-items:flex-start;gap:5px;width:100%;min-width:0;text-align:left}
 .rg-expanded .rg-expanded-tile-heading{display:flex;align-items:center;gap:7px;width:100%;min-width:0}
 .rg-expanded .rg-expanded-tile-heading svg{width:20px;height:20px;flex:0 0 20px}
@@ -50,6 +50,16 @@ export const expandedStyles = `
  .rg-expanded-brand{font-size:20px}.rg-expanded-demo{font-size:9px}
  .rg-expanded .rg-expanded-value{font-size:18px}.rg-expanded .rg-expanded-label{font-size:12px}.rg-expanded .rg-expanded-detail{font-size:11px}
  .rg-expanded-footer{font-size:10px;padding:6px;gap:3px}.rg-expanded kbd{font-size:10px;padding:1px 3px}
+}
+@container rg-menu (max-width:599px){
+ .rg-expanded .rg-expanded-grid{gap:6px}
+ .rg-expanded .rg-expanded-tile{padding:6px;min-height:88px}
+ .rg-expanded .rg-expanded-tile-heading{gap:4px}
+ .rg-expanded .rg-expanded-tile-heading svg{width:13px;height:13px;flex-basis:13px}
+ .rg-expanded .rg-expanded-label{font-size:10px}
+ .rg-expanded .rg-expanded-value{font-size:12px}
+ .rg-expanded .rg-expanded-detail{font-size:10px}
+ .rg-expanded .rg-expanded-tile[data-tone=warning] .rg-expanded-value{font-size:12px}
 }
 @media(max-width:600px){.rg-expanded-backdrop{padding-left:3vw}.rg-expanded{width:94vw;height:90vh}}
 @media(prefers-reduced-motion:no-preference){.rg-expanded-tab{transition:border-color .12s}}

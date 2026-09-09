@@ -10,8 +10,9 @@ preference is real. In the browser harness the game backdrop is a CSS illustrati
 The default menu chord is **View / Back + Y**. Settings > Open Re-Gear offers
 that chord, **L3 + R3**, or Disabled. Preferences remain client-local under
 `regear.menu-shortcut.v1`. Legacy Start+Select/LB+RB settings migrate to the
-new default; Disabled remains disabled. The declared Steam raw codes are9+3
-and25+41 respectively; physical delivery still needs native validation.
+new default; Disabled remains disabled. The Ally physical capture emits35+3 for View/Back+Y and25+41 for L3+R3.
+The separate VIEW9 action remains accepted for other providers. Capturing those
+events does not by itself prove the menu opening lifecycle.
 
 The previous View+Y display shortcut is disabled at plugin composition so one
 chord cannot open both menus. Explicit display actions retain approval and
@@ -33,8 +34,8 @@ batch is validated before processing. [Provider API declarations](https://jsr.io
 establish the shape, but do not prove physical button codes or native delivery.
 The opening chord remains non-exclusive; actual opening needs device retest.
 
-Latest design choice: four columns at 600 or more measured content pixels,
-three at 420–599, two at 280–419, and one below 280 for the extreme fallback.
+Latest design choice: four columns at 390 or more measured content pixels,
+three at 300–389, two at 220–299, and one below 220 for the extreme fallback.
 Safe Disconnect spans two columns in four-column mode and the full row otherwise.
 Short tile copy retains an explicit no-unplug-clearance statement. No hardware
 wiring or semantics changed. This supersedes the intermediate two-column-first
@@ -135,3 +136,39 @@ then LB/RB tabs, D-pad, A and B. Inspect dark focus, label separation, the Setti
 label and footer at native scale. Physical shortcut mapping and revised native
 appearance remain unverified until that trial. Expanded hardware tiles remain
 sample-only. The one-time identity rename is not included.
+
+## 0.3.72 native-scale correction
+
+Installed0.3.71 readback matched45ffdfc. Using the existing Steam CEF debugger
+through SSH (without enabling debugging or changing services), measured the
+actual main UI at828×466 CSS pixels, DPR2.32, and the panel at438.85×382.43.
+The previous600/420 breakpoints selected two columns at that scale.
+
+The new narrow-container typography/padding fits four cards at this measured
+width. A temporary application of the actual stylesheet to the installed native
+DOM showed four roughly100px columns with no clipped button/span text. Native
+before and temporary style-preview screenshots are in
+`out/native-validation/native-071-before.png` and
+`out/native-validation/native-072-live-style-preview.png`. This is live CSS
+preview evidence, not a new installed package or complete navigation acceptance.
+
+The user's physical capture recorded `[0,35,true]`, `[0,3,true]` and corresponding
+releases; L3/R3 recorded25/41. The installed Steam client exposes input messages
+but neither optional controller-list nor active-controller callback. The prior
+launcher therefore returned unavailable without subscribing. Input-only clients
+are now accepted; incomplete chords expire after1.5 seconds of inactivity,
+while matched chords stay latched until full release. Both batched messages and
+three-to-five positional arguments are accepted; only controller/button/pressed
+participate. The installed Steam UI handler declares five parameters, while the
+actual captured digital events contain three. Regression tests cover both.
+
+No display/power/eGPU action, identity migration, service restart or settings
+migration is part of this correction. Physical opening is checked separately
+with a temporary nonpersistent listener and again after candidate installation.
+Temporary native shortcut verification succeeded: user closed with B and reopened
+with physical View/Back + Y. The retained installed menu handler was invoked by
+the candidate listener twice; captured events were Y3/SELECT35 with full releases,
+with two matches and no handler errors. This validates the temporary listener and
+existing menu together; installation of the packaged correction is still separate.
+The first temporary trial was invalid because it looked up a launcher button after
+the Decky page had closed. No permanent device changes were made by either trial.

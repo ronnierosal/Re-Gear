@@ -22,7 +22,7 @@ test("focus restoration retains unavailable FPS and falls back after removal", (
   assert.equal(m.restoreTarget([], "fps"), undefined);
 });
 test("responsive grid prefers four columns with three before narrow fallback", () => {
-  assert.deepEqual([600, 599, 420, 419, 280, 279].map(m.columnsForWidth), [4, 3, 3, 2, 2, 1]);
+  assert.deepEqual([390, 389, 300, 299, 220, 219].map(m.columnsForWidth), [4, 3, 3, 2, 2, 1]);
 });
 test("four-column navigation respects the spanning disconnect tile", () => {
   const cells = m.gridCells(m.sampleTiles.quick, 4);

@@ -27,18 +27,22 @@ export function saveMenuBinding(binding: MenuBinding, storage?: Pick<Storage, "s
   } catch { return false; }
 }
 
-/** Declaration-derived button codes; physical Ally delivery still needs validation.
+/** Ally capture: physical View/Back emits SELECT35, Y3; stick clicks25/41.
+ * VIEW9 is retained for providers emitting the separate View action.
  * This non-exclusive listener opens only a menu and cannot suppress game input. */
 export function startMenuShortcut(deps: {
   input?: ControllerInputSource;
   readBinding(): MenuBinding;
   open(): void;
+  now?(): number;
 }): { available: boolean; reset(): void; stop(): void } {
   const subscriptions: { unregister(): void }[] = [];
   const controllers = new Map<number, Set<number>>();
   const latched = new Set<number>();
+  const lastInput = new Map<number, number>();
+  const now = deps.now ?? Date.now;
   let active = false;
-  const reset = () => { controllers.clear(); latched.clear(); };
+  const reset = () => { controllers.clear(); latched.clear(); lastInput.clear(); };
   const stop = () => {
     active = false;
     reset();
@@ -50,6 +54,10 @@ export function startMenuShortcut(deps: {
     if (!active) return;
     if (!Number.isInteger(id) || id < 0 || id > 255 || !Number.isInteger(button)
       || button < 0 || button > 255 || typeof pressed !== "boolean") { reset(); return; }
+    // Missing disconnect callbacks must not preserve half a chord indefinitely.
+    const time = now();
+    if (!latched.has(id) && time - (lastInput.get(id) ?? time) > 1500) controllers.delete(id);
+    lastInput.set(id, time);
     if (!controllers.has(id)) {
       if (!pressed) return;
       if (controllers.size >= 8) { reset(); return; }
@@ -58,13 +66,13 @@ export function startMenuShortcut(deps: {
     const buttons = controllers.get(id)!;
     if (buttons.has(button) === pressed) return;
     if (pressed) buttons.add(button); else buttons.delete(button);
-    if (buttons.size === 0) { controllers.delete(id); latched.delete(id); return; }
+    if (buttons.size === 0) { controllers.delete(id); latched.delete(id); lastInput.delete(id); return; }
     // A release cannot turn a larger held combination into a new shortcut.
     if (!pressed || buttons.size !== 2 || latched.has(id)) return;
     let binding: MenuBinding;
     try { binding = deps.readBinding(); } catch { reset(); return; }
     const pair = (a: number, b: number) => buttons.has(a) && buttons.has(b);
-    const matches = binding === "view-y" ? pair(9, 3)
+    const matches = binding === "view-y" ? (pair(35, 3) || pair(9, 3))
       : binding === "sticks" && pair(25, 41);
     if (!matches) return;
     latched.add(id);
@@ -73,12 +81,13 @@ export function startMenuShortcut(deps: {
   const onMessages = (...args: unknown[]) => {
     if (!active) return;
     // Steam delivers ControllerInputMessage[] ({nC, nA, bS}); the positional
-    // form is retained for older adapters and existing isolated test fixtures.
+    // form is emitted by the installed Ally client; its handler also declares
+    // two optional analog arguments, which do not participate in button chords.
     // Validate and copy the WHOLE batch before any row can open the menu.
     const rows: [number, number, boolean][] = [];
     try {
       const batch = args.length === 1 && Array.isArray(args[0]) ? args[0]
-        : args.length === 3 ? [{ nC: args[0], nA: args[1], bS: args[2] }] : null;
+        : args.length >= 3 && args.length <= 5 ? [{ nC: args[0], nA: args[1], bS: args[2] }] : null;
       if (!batch || batch.length > 128) { reset(); return; }
       for (const row of batch) {
         if (!row || typeof row !== "object" || Array.isArray(row)) { reset(); return; }
@@ -103,7 +112,8 @@ export function startMenuShortcut(deps: {
     if (typeof input.RegisterForActiveControllerChanges === "function") {
       registrations.push(() => input.RegisterForActiveControllerChanges!(reset));
     }
-    if (!registrations.length) return { available: false, reset, stop };
+    // Some installed Steam clients expose neither optional lifecycle callback.
+    // Input subscription alone is sufficient for this non-hardware menu opener.
     registrations.push(() => input.RegisterForControllerInputMessages(onMessages));
     for (const register of registrations) {
       const subscription = register();
