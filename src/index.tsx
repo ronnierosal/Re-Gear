@@ -65,6 +65,8 @@ import {
   type ProcessReleasePreviewPayload,
   type SupportBundlePreviewPayload,
   type TransitionJournalStatusPayload,
+  getEgpuDisconnectStatus,
+  executeEgpuDisconnect,
 } from "./backend";
 import { createDeckySteamSuspendAdapter } from "./decky-steam-suspend";
 import { deliverBlockedAttempt } from "./blocked-attempt-delivery";
@@ -101,6 +103,11 @@ import {
 } from "./quick-access/module-registry";
 import type { ModuleId, NavStack, Route, StatusId } from "./quick-access/module-registry";
 import { ModulesButton, ShellBody } from "./quick-access/shell";
+import type { DisconnectStatusPayload } from "./backend";
+import { commandCenterTiles } from "./quick-access/command-center";
+import type { TileId } from "./quick-access/command-center";
+import { CommandCenterGrid, TileReason } from "./quick-access/command-center-grid";
+import { performanceState } from "./quick-access/performance-state";
 import { quickAccessSections } from "./quick-access-sections";
 import { connectionProgress, refreshDelayForVisibility } from "./refresh-policy";
 import { canOfferForce, processReleaseOutcomeMessage } from "./process-release-ui";
@@ -560,6 +567,13 @@ function Content({ preflight, connection, shortcut }: { preflight: SleepPrefligh
   // Center sits at the bottom and is never popped; Back delegates to Steam's own
   // QAM Back once no internal level is left. See quick-access/module-registry.
   const [navStack, setNavStack] = useState<NavStack>(INITIAL_STACK);
+  // The owning backend's disconnect status. Null means not read yet, which is
+  // not the same as "no": the tile renders that distinction itself.
+  const [egpuDisconnect, setEgpuDisconnect] = useState<DisconnectStatusPayload | null>(null);
+  const [disconnectBusy, setDisconnectBusy] = useState(false);
+  const [disconnectMessage, setDisconnectMessage] = useState("");
+  /** The tile whose reason is shown under the grid. */
+  const [selectedTile, setSelectedTile] = useState<TileId | null>(null);
   const route = currentRoute(navStack);
   const onCommandCenter = route.kind === "command-center";
   // Read by the refresh callback, which must not be rebuilt on every navigation:
@@ -1448,6 +1462,47 @@ function Content({ preflight, connection, shortcut }: { preflight: SleepPrefligh
   // behind a route is its own slice; opening an empty Troubleshoot destination
   // would be a screen that claims to hold controls it does not have. The
   // existing Troubleshooting control stays the way in until then.
+  /** Read the disconnect status. The backend documents this call as observing
+   * and mutating nothing -- no filter armed, no DRM master taken, no display
+   * touched -- so it is safe to call whenever the screen showing it is open. */
+  const refreshDisconnect = useCallback(async () => {
+    try {
+      setEgpuDisconnect(await getEgpuDisconnectStatus());
+    } catch {
+      // A failed read is not evidence about the device. Leaving the previous
+      // status would show a stale offer, so it falls back to not-read.
+      setEgpuDisconnect(null);
+    }
+  }, []);
+
+  /** Run the disconnect the player just confirmed.
+   *
+   * The confirmation text and the display approval both come from the owning
+   * backend's presentation; neither is composed here. `release_display` is
+   * passed exactly as that presentation reported it and is never defaulted on,
+   * because turning the output off is visible to whoever is watching the TV.
+   */
+  const runDisconnect = useCallback(async (releaseDisplay: boolean) => {
+    setDisconnectBusy(true);
+    setDisconnectMessage("");
+    try {
+      const outcome = await executeEgpuDisconnect(releaseDisplay);
+      // A software removal is not clearance to unplug, so the result says what
+      // happened and nothing about the cable.
+      setDisconnectMessage(
+        outcome.ok
+          ? "The eGPU has been detached in software. Keep the cable connected."
+          : `Disconnect did not complete: ${label(outcome.code)}.`,
+      );
+    } catch {
+      setDisconnectMessage("Re-Gear could not complete the disconnect request.");
+    } finally {
+      setDisconnectBusy(false);
+      // Re-read rather than assuming what the attempt left behind.
+      void refreshDisconnect();
+    }
+  }, [refreshDisconnect]);
+
   const openRoute = useCallback((route: Route) => {
     setNavStack((stack) => pushRoute(stack, route));
   }, []);
@@ -1471,6 +1526,14 @@ function Content({ preflight, connection, shortcut }: { preflight: SleepPrefligh
     setShowDiagnostics(result.next);
   }, [refresh, showDiagnostics]);
 
+  // Only while the panel is open and the Command Center is the visible route:
+  // reading for a screen nobody is looking at is work the player did not ask
+  // for, and the tile is the only consumer.
+  useEffect(() => {
+    if (!quickAccessVisible || !onCommandCenter) return;
+    void refreshDisconnect();
+  }, [quickAccessVisible, onCommandCenter, refreshDisconnect]);
+
   const toggleJourneyDetails = useCallback(() => {
     setShowJourneyDetails((visible) => {
       const next = !visible;
@@ -1492,6 +1555,16 @@ function Content({ preflight, connection, shortcut }: { preflight: SleepPrefligh
     healthKnown: payload?.health != null,
   });
   const modules = quickAccessModules(sections);
+  // Auto TDP status is not observable from here yet: it lives inside
+  // TdpControls, and lifting it is qa-performance-controls-lift. Until then the
+  // performance tiles report not-yet-observed rather than guessing a value.
+  const tiles = commandCenterTiles({
+    performance: performanceState({ status: null, busy: disconnectBusy }),
+    displayTarget: payload ? label(payload.inference.mode) : undefined,
+    disconnectStatus: egpuDisconnect,
+  });
+  const shownTile = tiles.find((tile) => tile.id === selectedTile);
+
   // Read-only status destinations, kept distinct from the configuration
   // modules: these open detail, never controls.
   const statusEntries: Array<{ id: StatusId; title: string; detail: string }> = [
@@ -1545,6 +1618,34 @@ function Content({ preflight, connection, shortcut }: { preflight: SleepPrefligh
         <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
           <ModulesButton onOpen={() => openRoute({ kind: "modules" })} />
         </div>
+        <CommandCenterGrid
+          tiles={tiles}
+          onActivate={(id: TileId) => {
+            setSelectedTile(id);
+            const tile = tiles.find((candidate) => candidate.id === id);
+            if (!tile) return;
+            if (id === "safe-disconnect") {
+              // Only an offer the owning backend actually made is actionable.
+              // Anything else selects the tile so its reason is read.
+              if (tile.activation !== "act" || !tile.confirmation || disconnectBusy) return;
+              const releaseDisplay = tile.displayApprovalRequired === true;
+              showDisconnectConfirmation(tile.confirmation, () => {
+                void runDisconnect(releaseDisplay);
+              });
+              return;
+            }
+            if (tile.activation !== "open") return;
+            // Performance tiles route to Auto TDP; the display target routes to
+            // the eGPU module, which owns the guarded transition.
+            openRoute(id === "display"
+              ? { kind: "module", id: "egpu" }
+              : { kind: "module", id: "auto-tdp" });
+          }}
+        />
+        <TileReason tile={shownTile} />
+        {disconnectMessage && (
+          <PanelSectionRow>{disconnectMessage}</PanelSectionRow>
+        )}
         <ShellBody
           route={route}
           modules={modules}
@@ -1972,6 +2073,42 @@ function Content({ preflight, connection, shortcut }: { preflight: SleepPrefligh
       </Focusable>
     </>
   );
+}
+
+/** Confirm a software disconnect.
+ *
+ * The body is the owning backend's confirmation string, rendered verbatim. It
+ * already states that the Steam session will restart, that the external
+ * display turns off when that applies, and that the cable stays connected.
+ * Rewriting or supplementing it here would create a second source of truth for
+ * the one piece of copy that must not drift.
+ */
+function showDisconnectConfirmation(
+  confirmation: string,
+  onConfirm: () => void,
+): ReturnType<typeof showModal> {
+  let modal: ReturnType<typeof showModal>;
+  const close = () => modal.Close();
+  modal = showModal(
+    <ConfirmModal
+      strTitle="Disconnect the eGPU?"
+      strOKButtonText="Disconnect"
+      strCancelButtonText="Cancel"
+      bDestructiveWarning={true}
+      bDisableBackgroundDismiss={true}
+      bHideCloseIcon={true}
+      onOK={() => {
+        close();
+        onConfirm();
+      }}
+      onCancel={close}
+    >
+      <div style={{ fontSize: "12px", lineHeight: "17px" }}>{confirmation}</div>
+    </ConfirmModal>,
+    window,
+    { strTitle: PRODUCT_NAME, bNeverPopOut: true },
+  );
+  return modal;
 }
 
 function showBlockedAttempt(
