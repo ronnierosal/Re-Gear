@@ -256,6 +256,41 @@ export interface DisconnectGamePayload {
   egpu_handoff: string;
   /** False when the catalog has nothing on this game. */
   save_known: boolean;
+  /** False when something is rendering that could not be named. Still a game
+   * with a save to lose, but nothing that can be matched to a remembered
+   * answer or reopened afterwards. */
+  identity_exact: boolean;
+}
+
+/** What to do before closing whatever is running.
+ *
+ * `nothing_to_close` is the only value that clears the way without asking, and
+ * it is reported only over a scan that finished. A scan that failed reports
+ * `confirm` with code `game_close.scan_incomplete`, because not finding a game
+ * is evidence only when the looking finished.
+ */
+export type CloseDecision = "nothing_to_close" | "confirm" | "remembered";
+
+export interface ClosePromptPayload {
+  schema_version: number;
+  decision: CloseDecision;
+  /** Stable reason code. Render through a mapping, never raw. */
+  code: string;
+  /** The action that is about to end the game. */
+  intent: "disconnect" | "sleep";
+  /** True when no further player interaction is needed. */
+  may_proceed: boolean;
+  /** True when the reviewed catalog says closing this game loses progress. */
+  progress_at_risk: boolean;
+  /** False when the catalog has nothing on this game either way. */
+  save_known: boolean;
+  /** Whether to offer "do not ask again for this game". Never true for a game
+   * with reviewed evidence of losing progress. */
+  remember_offered: boolean;
+  /** Whether to offer reopening the game afterwards. */
+  relaunch_offered: boolean;
+  /** Whether the player has already asked for that reopen. */
+  relaunch_requested: boolean;
 }
 
 export interface DisconnectStatusPayload {
@@ -279,6 +314,10 @@ export interface DisconnectStatusPayload {
    * *or* its identity could not be established; the `code` says which, and
    * null must not be read as "there is nothing to close". */
   game: DisconnectGamePayload | null;
+  /** What to ask before closing that game, and whether the player already
+   * answered. This is the field to branch on: `decision` alone says whether to
+   * act, ask, or stop. Null only when there is no eGPU at all. */
+  close_prompt: ClosePromptPayload | null;
   last: DisconnectOutcomePayload | null;
 }
 
@@ -718,3 +757,28 @@ export const executeEgpuDisconnect = callable<
   [releaseDisplay: boolean],
   DisconnectOutcomePayload
 >("execute_egpu_disconnect");
+
+export interface GameClosePreferenceResult {
+  ok: boolean;
+  /** Stable reason code; `game_close.progress_at_risk` when the backend
+   * refused to store a skip for a game known to lose progress. */
+  code: string;
+}
+
+/** Store the player's answer about closing one game before a disconnect.
+ *
+ * The backend re-derives what may be stored from a fresh status rather than
+ * trusting this call, so an answer filed against the wrong game, or a "do not
+ * ask again" for a game the catalog says loses progress, is refused rather
+ * than written. Check `ok` before telling a player the box was remembered.
+ */
+export const rememberGameCloseChoice = callable<
+  [steamAppId: string, skipConfirmation: boolean, relaunchAfter: boolean],
+  GameClosePreferenceResult
+>("remember_game_close_choice");
+
+/** Return one game to being asked about before a disconnect. */
+export const forgetGameCloseChoice = callable<
+  [steamAppId: string],
+  GameClosePreferenceResult
+>("forget_game_close_choice");

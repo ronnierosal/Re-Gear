@@ -314,6 +314,16 @@ callable("get_egpu_disconnect_status");
  * when the player has agreed to the external display turning off.
  */
 callable("execute_egpu_disconnect");
+/** Store the player's answer about closing one game before a disconnect.
+ *
+ * The backend re-derives what may be stored from a fresh status rather than
+ * trusting this call, so an answer filed against the wrong game, or a "do not
+ * ask again" for a game the catalog says loses progress, is refused rather
+ * than written. Check `ok` before telling a player the box was remembered.
+ */
+callable("remember_game_close_choice");
+/** Return one game to being asked about before a disconnect. */
+callable("forget_game_close_choice");
 
 function disconnectProgress(payload, failed = false, now = Date.now()) {
     const s = payload?.snapshot;
