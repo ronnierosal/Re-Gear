@@ -433,15 +433,38 @@ fixed `/home/deck/` directory, validates the embedded HDM provenance,
 then atomically replaces only `Re-Gear`. A legacy `HandheldDockMode` root
 (including a dangling symlink) refuses normal deployment; follow the separately
 supervised [cutover procedure](IDENTITY_CUTOVER.md) first. It moves the prior plugin to
-a root-owned rollback directory. It does not reload Decky, restart Gamescope,
-or alter displays, sleep, hardware, or the active session.
+a root-owned rollback directory. It restarts and checks only
+`plugin_loader.service`; failed health verification restores the saved prior
+tree (or removes the failed fresh installation) and retries that same service.
+It does not restart Gamescope or alter displays, sleep, hardware, or the active
+session.
+
+The helper requires Linux root with procfs and an existing Decky plugin parent.
+It rejects symlinks throughout the plugin-parent path. Existing backup storage
+must already be root-owned mode 0700; unsafe ownership, permissions, or symlinks
+are rejected without repairing or taking ownership of user directories.
+Before verification it copies bounded regular-file package and signature inputs
+into private storage. Verification and extraction consume only those snapshots,
+so changes to downloaded names or open source inodes cannot replace verified
+bytes. Private staging, cleanup, publication, and rollback use retained directory
+descriptors even if an outer directory name changes. Staging stays on the target
+filesystem. These guarantees cover the helper's snapshots and publication into
+the pinned directory; they do not establish what the independently restarted
+loader opens through its canonical plugin path.
 
 The public verification key is installed once at
 `/var/lib/handheld-dock-mode/deploy-public-key.pem`; the corresponding private key
 must remain off the Ally and outside the repository. A package that is merely
 copied to `/home/deck/` is rejected unless its signature validates against that
-key. The helper therefore avoids turning a passwordless `sudo` rule into an
-arbitrary root-plugin installer.
+key. This binds extracted bytes to a verified snapshot, but the broader loader
+execution trust boundary remains unresolved. A user able to rename an ancestor
+of the plugin directory can substitute a different canonical path before the
+service restart, while the helper publishes verified content into its retained
+original directory. A successful service health check does not detect that
+substitution. The hardening PR remains a draft pending an architecture decision
+about loader-path authority; it is not a complete fix for arbitrary root-plugin
+execution. A pathname identity check alone would leave another race before the
+loader opens its files.
 
 One-time setup (after the development machine has created an Ed25519 key pair
 and copied the **public** key and helper scripts to Downloads) is:
@@ -459,9 +482,9 @@ sudo /var/lib/handheld-dock-mode/hdm-deploy-plugin Re-Gear-update-<version>-<rev
   Re-Gear-update-<version>-<revision>.zip.sig
 ```
 
-Successful replacement alone is not a runtime validation and the helper does
-not invent a plugin reload. Inspect the installed build after Decky naturally
-reloads it or use a watched, explicitly approved plugin reload workflow later.
+Successful replacement and service health alone are not plugin runtime or
+hardware validation. Inspect the installed build and use the supervised
+validation workflow separately.
 
 ### Direct developer deploy (maintainer-owned SSH)
 
