@@ -1,8 +1,31 @@
 # Expanded Command Center prototype
 
-This is a local synthetic design and keyboard-navigation prototype. It does not
-replace the installed Quick Access panel or connect to backend/device APIs.
-All displayed values are sample data. The game backdrop is a CSS illustration.
+This is a sample-data design with a native Decky test launcher. The compact
+Quick Access panel offers **Open expanded demo**. The expanded hardware tiles
+remain synthetic and cannot execute hardware operations; the launcher shortcut
+preference is real. In the browser harness the game backdrop is a CSS illustration.
+
+## Menu shortcut and native adapter
+
+The default menu chord is Start + Select. Settings > Open Re-Gear offers that
+chord, LB + RB, or Disabled. The preference is stored on this Steam client under
+`regear.menu-shortcut.v1`; failed saves retain the active setting. Opening is
+immediate when the exact pair is down on one controller, once per full release.
+Controller changes, invalid events, settings changes and unload reset the listener.
+The offered chords do not overlap the current View+Y display shortcut or PR173's
+View+X alternative. Any future expansion of either binding catalog must recheck
+cross-listener conflicts.
+
+The default recognizes either MENU/VIEW (8/9) or START/SELECT (36/35), independently.
+These are community declaration codes, not confirmed physical Ally delivery.
+The native adapter maps shoulder buttons to tabs, D-pad to movement, A to select,
+and B to Back/Close while the demo is open. The Steam input subscription is
+non-exclusive: it does not promise to suppress a game's pause/back response.
+Touch and the compact-panel launch button remain available for testing.
+
+The modal uses only scoped Re-Gear classes and closes subscriptions on dismissal
+or plugin unload. It does not resize Steam's built-in Quick Access UI. Placement,
+focus, mappings and input isolation still require the native checks below.
 
 The approved direction uses a large left-side panel, approximately 53% of screen
 width and 82% of screen height at a spacious landscape resolution, with icon
@@ -71,7 +94,8 @@ SteamOS/Decky candidate. Do not describe the prototype as native-ready.
    support. Keep unknown state explicit, Auto TDP configuration explicit, and
    Safe Disconnect distinct from display switching and cable-clearance claims.
 
-No release ZIP, installation, Steam restart, display switch, power write or eGPU
-operation is part of this synthetic prototype.
+No display switch, power write or eGPU operation is connected to the expanded
+demo. A separately prepared and supervised candidate is required for installation.
 
-Documentation impact: none (internal prototype and validation instructions only).
+Documentation impact: Wiki (native test launcher and configurable menu shortcut;
+installed and hardware-validated status must be reported separately).

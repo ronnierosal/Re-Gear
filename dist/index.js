@@ -30,6 +30,503 @@ function CommandCenterHeader({ mode, display, game, health, navigation, summaryR
     return SP_JSX.jsxs("div", { style: { minWidth: 0, marginBottom: 12, color: "#f4f7fb" }, children: [SP_JSX.jsxs("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 10 }, children: [SP_JSX.jsx("span", { style: { fontSize: 15, fontWeight: 700, minWidth: 0 }, children: "Command Center" }), navigation] }), SP_JSX.jsx(SectionFocus, { ref: summaryRef, label: "Command Center: current state", onFocused: onSummaryFocus, children: SP_JSX.jsxs("div", { style: { border: "1px solid #294665", borderRadius: 12, padding: "10px 12px", background: "#0a1727", overflowWrap: "anywhere" }, children: [SP_JSX.jsx("div", { style: { fontSize: 16, fontWeight: 700 }, children: mode }), SP_JSX.jsxs("div", { style: { fontSize: 12, lineHeight: "18px", color: "#9eb2ca" }, children: [display, " \u00B7 ", game] }), health !== "Ready" && SP_JSX.jsx("div", { style: { fontSize: 12, lineHeight: "18px", color: "#ffc247" }, children: health })] }) })] });
 }
 
+const menuBindingOptions = [
+    { label: "Start + Select", data: "start-select" },
+    { label: "LB + RB", data: "bumpers" },
+    { label: "Disabled", data: "disabled" },
+];
+const STORAGE_KEY = "regear.menu-shortcut.v1";
+const validBinding = (value) => value === "start-select" || value === "bumpers" || value === "disabled";
+function loadMenuBinding(storage) {
+    try {
+        const value = (storage ?? globalThis.localStorage)?.getItem(STORAGE_KEY);
+        return validBinding(value) ? value : "start-select";
+    }
+    catch {
+        return "start-select";
+    }
+}
+function saveMenuBinding(binding, storage) {
+    try {
+        const target = storage ?? globalThis.localStorage;
+        if (!validBinding(binding) || !target)
+            return false;
+        target.setItem(STORAGE_KEY, binding);
+        return true;
+    }
+    catch {
+        return false;
+    }
+}
+/** Declaration-derived button codes; physical Ally delivery still needs validation.
+ * This non-exclusive listener opens only a menu and cannot suppress game input. */
+function startMenuShortcut(deps) {
+    const subscriptions = [];
+    const controllers = new Map();
+    const latched = new Set();
+    let active = false;
+    const reset = () => { controllers.clear(); latched.clear(); };
+    const stop = () => {
+        active = false;
+        reset();
+        for (const subscription of subscriptions.splice(0)) {
+            try {
+                subscription.unregister();
+            }
+            catch { /* Callbacks remain inert. */ }
+        }
+    };
+    const onInput = (id, button, pressed) => {
+        if (!active)
+            return;
+        if (!Number.isInteger(id) || id < 0 || id > 255 || !Number.isInteger(button)
+            || button < 0 || button > 255 || typeof pressed !== "boolean") {
+            reset();
+            return;
+        }
+        if (!controllers.has(id)) {
+            if (!pressed)
+                return;
+            if (controllers.size >= 8) {
+                reset();
+                return;
+            }
+            controllers.set(id, new Set());
+        }
+        const buttons = controllers.get(id);
+        if (buttons.has(button) === pressed)
+            return;
+        if (pressed)
+            buttons.add(button);
+        else
+            buttons.delete(button);
+        if (buttons.size === 0) {
+            controllers.delete(id);
+            latched.delete(id);
+            return;
+        }
+        // A release cannot turn a larger held combination into a new shortcut.
+        if (!pressed || buttons.size !== 2 || latched.has(id))
+            return;
+        let binding;
+        try {
+            binding = deps.readBinding();
+        }
+        catch {
+            reset();
+            return;
+        }
+        const pair = (a, b) => buttons.has(a) && buttons.has(b);
+        const matches = binding === "start-select" ? pair(8, 9) || pair(35, 36)
+            : binding === "bumpers" && pair(30, 31);
+        if (!matches)
+            return;
+        latched.add(id);
+        try {
+            deps.open();
+        }
+        catch { /* Never retry uncertain menu delivery until release. */ }
+    };
+    try {
+        const input = deps.input;
+        if (typeof input?.RegisterForControllerInputMessages !== "function") {
+            return { available: false, reset, stop };
+        }
+        const registrations = [];
+        if (typeof input.RegisterForControllerListChanges === "function") {
+            registrations.push(() => input.RegisterForControllerListChanges(reset));
+        }
+        if (typeof input.RegisterForActiveControllerChanges === "function") {
+            registrations.push(() => input.RegisterForActiveControllerChanges(reset));
+        }
+        if (!registrations.length)
+            return { available: false, reset, stop };
+        registrations.push(() => input.RegisterForControllerInputMessages(onInput));
+        for (const register of registrations) {
+            const subscription = register();
+            if (typeof subscription?.unregister !== "function") {
+                stop();
+                return { available: false, reset, stop };
+            }
+            subscriptions.push(subscription);
+        }
+        active = true;
+        return { available: true, reset, stop };
+    }
+    catch {
+        stop();
+        return { available: false, reset, stop };
+    }
+}
+
+function ApprovedIcon({ id, size = 24 }) {
+    const props = { width: size, height: size, fill: "none", "aria-hidden": true, style: { flexShrink: 0 } };
+    switch (id) {
+        case "module-auto-tdp": return SP_JSX.jsxs("svg", { viewBox: "0 0 64 64", ...props, children: [SP_JSX.jsx("path", { d: "M13 43a21 21 0 1 1 38 0", stroke: "currentColor", strokeWidth: "3", strokeLinecap: "round" }), SP_JSX.jsx("path", { d: "M18 38l4-2M23 27l3 3M32 22v4M41 27l-3 3M46 38l-4-2", stroke: "currentColor", strokeWidth: "3", strokeLinecap: "round" }), SP_JSX.jsx("path", { d: "M32 40 43 29", stroke: "currentColor", strokeWidth: "4", strokeLinecap: "round" }), SP_JSX.jsx("circle", { cx: "32", cy: "40", r: "4", fill: "currentColor" }), SP_JSX.jsx("path", { d: "M20 49h24", stroke: "currentColor", strokeWidth: "3", strokeLinecap: "round" })] });
+        case "module-egpu": return SP_JSX.jsxs("svg", { viewBox: "0 0 64 64", ...props, children: [SP_JSX.jsx("rect", { x: "8", y: "14", width: "48", height: "36", rx: "8", stroke: "currentColor", strokeWidth: "3" }), SP_JSX.jsx("circle", { cx: "37", cy: "32", r: "11", stroke: "currentColor", strokeWidth: "3" }), SP_JSX.jsx("circle", { cx: "37", cy: "32", r: "3", fill: "currentColor" }), SP_JSX.jsx("path", { d: "M37 21c4 2 5 5 4 8M48 32c-2 4-5 5-8 4M37 43c-4-2-5-5-4-8M26 32c2-4 5-5 8-4", stroke: "currentColor", strokeWidth: "3", strokeLinecap: "round" }), SP_JSX.jsx("path", { d: "M15 24h5M15 32h5M15 40h5", stroke: "currentColor", strokeWidth: "3", strokeLinecap: "round" }), SP_JSX.jsx("path", { d: "M20 50v4M44 50v4", stroke: "currentColor", strokeWidth: "3", strokeLinecap: "round" })] });
+        case "module-controller": return SP_JSX.jsxs("svg", { viewBox: "0 0 64 64", ...props, children: [SP_JSX.jsx("path", { d: "M19 25h26c5 0 8 3 9 8l3 12c1 5-5 8-8 4l-7-8H22l-7 8c-3 4-9 1-8-4l3-12c1-5 4-8 9-8Z", stroke: "currentColor", strokeWidth: "3", strokeLinejoin: "round" }), SP_JSX.jsx("path", { d: "M20 31v8M16 35h8", stroke: "currentColor", strokeWidth: "3", strokeLinecap: "round" }), SP_JSX.jsx("circle", { cx: "43", cy: "33", r: "2.5", fill: "currentColor" }), SP_JSX.jsx("circle", { cx: "49", cy: "38", r: "2.5", fill: "currentColor" })] });
+        case "mode-tv-docked": return SP_JSX.jsxs("svg", { viewBox: "0 0 96 64", ...props, children: [SP_JSX.jsx("rect", { x: "8", y: "10", width: "54", height: "34", rx: "5", stroke: "currentColor", strokeWidth: "3" }), SP_JSX.jsx("path", { d: "M30 44v8M20 54h30", stroke: "currentColor", strokeWidth: "3", strokeLinecap: "round" }), SP_JSX.jsx("rect", { x: "68", y: "19", width: "18", height: "26", rx: "4", stroke: "currentColor", strokeWidth: "3" }), SP_JSX.jsx("circle", { cx: "77", cy: "31", r: "5", stroke: "currentColor", strokeWidth: "2.5" }), SP_JSX.jsx("path", { d: "M68 32h-6", stroke: "currentColor", strokeWidth: "3", strokeLinecap: "round" }), SP_JSX.jsx("path", { d: "M20 20h30v14H20z", stroke: "currentColor", strokeWidth: "2.5" })] });
+    }
+}
+
+/** Synthetic presentation only. No production state or hardware requests. */
+const tabs = ["quick", "performance", "egpu", "controllers", "settings"];
+const tabLabels = {
+    quick: "Quick Access", performance: "Performance", egpu: "eGPU",
+    controllers: "Controllers", settings: "Settings",
+};
+const sampleTiles = {
+    quick: [
+        { id: "fps", title: "FPS Target", value: "Unavailable", detail: "No provider", tone: "unavailable" },
+        { id: "manual", title: "Manual TDP", value: "18 W", detail: "Current limit", tone: "active" },
+        { id: "auto", title: "Auto TDP", value: "Off", detail: "Configure to start" },
+        { id: "display", title: "Display Target", value: "1080p · 60 Hz", detail: "Internal display", tone: "active" },
+        { id: "egpu", title: "eGPU Status", value: "Connected", detail: "RX 7600M XT" },
+        { id: "controller", title: "Controller Status", value: "External (P1)", detail: "Built-in controller off" },
+        { id: "disconnect", title: "Safe Disconnect", value: "Readiness check required", detail: "Review games and apps using the eGPU. No unplug clearance.", tone: "warning", wide: true },
+    ],
+    performance: [
+        { id: "manual", title: "Manual TDP", value: "18 W", detail: "View limit configuration", tone: "active" },
+        { id: "auto", title: "Auto TDP", value: "Off", detail: "Not configured · Configure to start" },
+        { id: "fps", title: "FPS Target", value: "Unavailable", detail: "No provider", tone: "unavailable" },
+        { id: "display", title: "Display context", value: "1080p · 60 Hz", detail: "Display target is separate from FPS control" },
+    ],
+    egpu: [
+        { id: "egpu", title: "Connection", value: "Connected", detail: "RX 7600M XT · sample identity" },
+        { id: "render", title: "Render GPU", value: "Unknown", detail: "Connection does not identify the render GPU", tone: "unavailable" },
+        { id: "display", title: "Display target", value: "Internal", detail: "1080p · 60 Hz" },
+        { id: "game", title: "Game state", value: "Unknown", detail: "No running-game observation", tone: "unavailable" },
+        { id: "disconnect", title: "Safe Disconnect", value: "Readiness check required", detail: "Connection, display and command success do not establish unplug readiness.", tone: "warning", wide: true },
+    ],
+    controllers: [
+        { id: "controller", title: "Player 1", value: "External controller", detail: "Sample assignment" },
+        { id: "builtin", title: "Built-in controller", value: "Off", detail: "Sample state · no device operation" },
+        { id: "priority", title: "Controller priority", value: "Preview only", detail: "Configuration is not connected", tone: "unavailable" },
+    ],
+    settings: [
+        { id: "appearance", title: "Appearance", value: "Expanded concept", detail: "Prototype placeholder · no preference saved" },
+        { id: "diagnostics", title: "Diagnostics", value: "Not connected", detail: "No diagnostics collected in this preview", tone: "unavailable" },
+        { id: "about", title: "About", value: "Re-Gear", detail: "Expanded Command Center · synthetic prototype" },
+    ],
+};
+function nextTab(tab, direction) {
+    return tabs[(tabs.indexOf(tab) + direction + tabs.length) % tabs.length];
+}
+function columnsForWidth(width) {
+    return width >= 620 ? 4 : width >= 430 ? 3 : width >= 250 ? 2 : 1;
+}
+function restoreTarget(ids, remembered) {
+    return ids.includes(remembered ?? "") ? remembered : ids[0];
+}
+/** Same packing as the CSS grid, including the prominent two-column tile. */
+function gridCells(tiles, columns) {
+    let row = 0, column = 0;
+    return tiles.map(tile => {
+        const span = tile.wide && columns >= 3 ? 2 : 1;
+        if (column + span > columns) {
+            row++;
+            column = 0;
+        }
+        const cell = { id: tile.id, row, column, span };
+        column += span;
+        if (column === columns) {
+            row++;
+            column = 0;
+        }
+        return cell;
+    });
+}
+function moveInGrid(cells, id, direction) {
+    const current = cells.find(cell => cell.id === id) ?? cells[0];
+    if (!current)
+        return undefined;
+    const horizontal = direction === "left" || direction === "right";
+    const sign = direction === "left" || direction === "up" ? -1 : 1;
+    const candidates = cells.filter(cell => horizontal
+        ? cell.row === current.row && (cell.column - current.column) * sign > 0
+        : cell.row === current.row + sign);
+    const distance = (cell) => horizontal ? Math.abs(cell.column - current.column)
+        : Math.max(cell.column - (current.column + current.span - 1), current.column - (cell.column + cell.span - 1), 0);
+    candidates.sort((a, b) => distance(a) - distance(b) || a.column - b.column);
+    return candidates[0]?.id ?? current.id;
+}
+
+/** Scoped prototype styling. Never targets Steam or Decky containers. */
+const expandedStyles = `
+.rg-expanded-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.44);z-index:10;display:flex;align-items:center;padding-left:2vw;color:#f4f7fb;font-family:Arial,sans-serif}
+.rg-expanded{box-sizing:border-box;width:53vw;height:82vh;display:flex;flex-direction:column;min-width:0;border:1px solid #496379;border-radius:18px;background:linear-gradient(145deg,rgba(17,36,52,.98),rgba(5,17,27,.98));box-shadow:0 16px 60px #0008;overflow:hidden;font-size:15px}
+.rg-expanded *{box-sizing:border-box}
+.rg-expanded button{font:inherit;color:inherit;cursor:pointer}
+.rg-expanded button:focus-visible{outline:3px solid #83e8ff;outline-offset:-4px;box-shadow:inset 0 0 18px #39d8ff25}
+.rg-expanded-brand{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:15px 22px 12px;font-size:22px;font-weight:700}
+.rg-expanded-demo{font-size:12px;color:#b5c9dd;font-weight:400;text-align:right}
+.rg-expanded-tabs{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));margin:0 14px;border:1px solid #294665;border-radius:12px;overflow:hidden;flex-shrink:0}
+.rg-expanded-tab{min-width:0;min-height:74px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;padding:8px 2px;border:0;border-bottom:4px solid transparent;background:#0a1725;font-size:13px!important;overflow-wrap:anywhere}
+.rg-expanded-tab[aria-selected=true]{border-bottom-color:#39d8ff;background:#153446;color:#55ddff}
+.rg-expanded-content{min-height:0;overflow-y:auto;overflow-x:hidden;flex:1;padding:18px 22px;scrollbar-color:#527087 #0a1725;scrollbar-width:thin}
+.rg-expanded h2{margin:0 0 5px;font-size:25px}.rg-expanded h3{margin:0;font-size:18px}
+.rg-expanded-context{margin:0 0 17px;color:#b1c9df;font-size:14px;line-height:1.45}
+.rg-expanded-grid{display:grid;grid-template-columns:repeat(var(--ec-columns),minmax(0,1fr));gap:12px}
+.rg-expanded-tile{background:linear-gradient(130deg,#1c3343,#102331);border:1px solid #365569;border-radius:13px;min-width:0;min-height:132px;padding:16px;display:flex;flex-direction:column;align-items:flex-start;justify-content:flex-start;gap:9px;text-align:left;overflow-wrap:anywhere}
+.rg-expanded-tile svg{flex-shrink:0}
+.rg-expanded-label{font-size:15px;font-weight:700}.rg-expanded-value{font-size:20px;font-weight:700;line-height:1.2}.rg-expanded-detail{font-size:13px;line-height:1.45;color:#b1c9df}
+.rg-expanded-tile[data-tone=active] .rg-expanded-value{color:#51dfff}
+.rg-expanded-tile[data-tone=warning] .rg-expanded-value{color:#ffca62;font-size:18px}
+.rg-expanded-tile[data-tone=unavailable]{background:#1a2935}.rg-expanded-tile[data-tone=unavailable] .rg-expanded-value{color:#b9c4cf}
+.rg-expanded-summary{border-top:1px solid #294665;margin-top:16px;padding-top:12px;color:#b1c9df;font-size:13px;line-height:1.5}
+.rg-expanded-footer{display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px;border-top:1px solid #294665;padding:12px 18px;flex-shrink:0;background:#071522;font-size:12px}
+.rg-expanded-footer button,.rg-expanded-back{border:1px solid #4c6a81;border-radius:7px;background:#162e40;padding:7px 10px;min-height:36px}
+.rg-expanded-footer span{color:#b1c9df}
+.rg-expanded-detail-page{padding:18px;border:1px solid #365569;border-radius:12px;background:#102331;line-height:1.6;overflow-wrap:anywhere}.rg-expanded-detail-page p{color:#b1c9df}.rg-expanded-detail-page strong{color:#f4f7fb}
+@media(max-width:1100px){.rg-expanded-brand{padding:10px 16px;font-size:19px}.rg-expanded-content{padding:14px}.rg-expanded-tabs{margin:0 10px}.rg-expanded-tab{font-size:12px!important;min-height:64px}.rg-expanded-tile{padding:12px;gap:7px}.rg-expanded h2{font-size:22px}.rg-expanded-value{font-size:18px}}
+@media(max-height:800px) and (min-width:801px){.rg-expanded-brand{padding:10px 16px;font-size:19px}.rg-expanded-tab{min-height:60px;padding:5px 2px;font-size:12px!important}.rg-expanded-tab svg{width:26px;height:26px}.rg-expanded-content{padding:12px 16px}.rg-expanded h2{font-size:22px}.rg-expanded-context{margin-bottom:10px;font-size:13px}.rg-expanded-tile{padding:10px;gap:5px;min-height:132px}.rg-expanded-tile svg{width:26px;height:26px}.rg-expanded-label{font-size:14px}.rg-expanded-value{font-size:18px}.rg-expanded-detail{font-size:12px}.rg-expanded-summary{margin-top:8px;padding-top:8px;font-size:12px}.rg-expanded-footer{padding:9px 14px;gap:8px}}
+@media(max-width:800px){.rg-expanded-backdrop{padding-left:3vw}.rg-expanded{width:94vw;height:90vh}.rg-expanded-brand{font-size:18px}.rg-expanded-footer{gap:6px;padding:8px}.rg-expanded-tab{font-size:11px!important}.rg-expanded-label{font-size:14px}.rg-expanded-content{padding:12px}}
+@media(prefers-reduced-motion:no-preference){.rg-expanded-tab{transition:background .12s}}
+`;
+
+function Icon({ id }) {
+    if (id === "controllers" || id === "controller" || id === "builtin")
+        return SP_JSX.jsx(ApprovedIcon, { id: "module-controller", size: 30 });
+    if (id === "egpu")
+        return SP_JSX.jsx(ApprovedIcon, { id: "module-egpu", size: 30 });
+    if (id === "display")
+        return SP_JSX.jsx(ApprovedIcon, { id: "mode-tv-docked", size: 30 });
+    if (["performance", "auto"].includes(id))
+        return SP_JSX.jsx(ApprovedIcon, { id: "module-auto-tdp", size: 30 });
+    // Minimal line icons follow the approved currentColor icon geometry/style.
+    return SP_JSX.jsx("svg", { width: "30", height: "30", viewBox: "0 0 32 32", fill: "none", stroke: "currentColor", strokeWidth: "2", "aria-hidden": "true", children: id === "quick" ? SP_JSX.jsx("path", { d: "m4 15 12-11 12 11M8 12v16h6v-9h4v9h6V12" })
+            : id === "manual" ? SP_JSX.jsxs(SP_JSX.Fragment, { children: [SP_JSX.jsx("rect", { x: "8", y: "8", width: "16", height: "16", rx: "2" }), SP_JSX.jsx("rect", { x: "12", y: "12", width: "8", height: "8" }), SP_JSX.jsx("path", { d: "M12 3v5m8-5v5M12 24v5m8-5v5M3 12h5m-5 8h5m16-8h5m-5 8h5" })] })
+                : id === "fps" ? SP_JSX.jsxs(SP_JSX.Fragment, { children: [SP_JSX.jsx("path", { d: "M3 22V4h22M7 26V8h22" }), SP_JSX.jsx("rect", { x: "11", y: "12", width: "18", height: "16", rx: "1" }), SP_JSX.jsx("path", { d: "M14 23v-6h4m-4 3h3m4 3v-6h5" })] })
+                    : id === "disconnect" ? SP_JSX.jsx("path", { d: "M11 3v8m10-8v8M8 11h16v5a8 8 0 0 1-16 0Zm8 13v6" })
+                        : SP_JSX.jsxs(SP_JSX.Fragment, { children: [SP_JSX.jsx("circle", { cx: "16", cy: "16", r: "8" }), SP_JSX.jsx("circle", { cx: "16", cy: "16", r: "3" }), SP_JSX.jsx("path", { d: "M16 2v6m0 16v6M2 16h6m16 0h6M6 6l5 5m10 10 5 5M26 6l-5 5M11 21l-5 5" })] }) });
+}
+/** Developer-only browser prototype. Intentionally not imported by the plugin. */
+function ExpandedCommandCenter({ onClose, initialTab = "quick", longReasons = false, settings, native = false }) {
+    const [tab, setTab] = SP_REACT.useState(initialTab);
+    const [nested, setNested] = SP_REACT.useState(null);
+    const [columns, setColumns] = SP_REACT.useState(4);
+    const panel = SP_REACT.useRef(null);
+    const content = SP_REACT.useRef(null);
+    const memory = SP_REACT.useRef({});
+    const launcher = SP_REACT.useRef(undefined);
+    const pendingFocus = SP_REACT.useRef(undefined);
+    const opener = SP_REACT.useRef(null);
+    const items = sampleTiles[tab];
+    const gridColumns = tab === "performance" ? Math.min(columns, 2) : columns;
+    const focus = (id) => {
+        const target = Array.from(panel.current?.querySelectorAll("[data-ec-control]") ?? []).find(el => el.dataset.ecControl === id);
+        target?.focus();
+        target?.scrollIntoView({ block: "nearest" });
+    };
+    const controlIds = () => Array.from(panel.current?.querySelectorAll("[data-ec-control]") ?? []).map(el => el.dataset.ecControl);
+    SP_REACT.useLayoutEffect(() => {
+        opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+        return () => { if (opener.current?.isConnected)
+            opener.current.focus(); };
+    }, []);
+    SP_REACT.useLayoutEffect(() => {
+        if (!content.current)
+            return;
+        const observer = new ResizeObserver(entries => setColumns(columnsForWidth(entries[0].contentRect.width)));
+        observer.observe(content.current);
+        return () => observer.disconnect();
+    }, []);
+    SP_REACT.useLayoutEffect(() => {
+        focus(nested ? "nested-back" : restoreTarget(controlIds(), pendingFocus.current ?? memory.current[tab]));
+        pendingFocus.current = undefined;
+    }, [tab, nested]);
+    function switchTab(direction) { setNested(null); setTab(nextTab(tab, direction)); }
+    function back() {
+        if (nested) {
+            pendingFocus.current = launcher.current;
+            setNested(null);
+        }
+        else
+            onClose();
+    }
+    function onKeyDown(event) {
+        if (event.altKey || event.ctrlKey || event.metaKey)
+            return;
+        if (["q", "Q", "e", "E", "Escape"].includes(event.key)) {
+            event.preventDefault();
+            event.stopPropagation();
+            if (event.repeat)
+                return;
+            if (event.key === "Escape")
+                back();
+            else
+                switchTab(event.key.toLowerCase() === "q" ? -1 : 1);
+            return;
+        }
+        if (event.key === "Tab") {
+            const buttons = Array.from(panel.current?.querySelectorAll("button") ?? []);
+            const index = buttons.indexOf(document.activeElement);
+            if ((event.shiftKey && index <= 0) || (!event.shiftKey && index === buttons.length - 1)) {
+                event.preventDefault();
+                buttons[event.shiftKey ? buttons.length - 1 : 0]?.focus();
+            }
+            return;
+        }
+        if (!event.key.startsWith("Arrow"))
+            return;
+        const target = event.target;
+        const tabTarget = target.closest("[data-ec-tab]");
+        const direction = event.key.slice(5).toLowerCase();
+        if (tabTarget) {
+            event.preventDefault();
+            if (direction === "down")
+                focus(restoreTarget(controlIds(), memory.current[tab]));
+            if (direction === "left" || direction === "right") {
+                const adjacent = nextTab(tabTarget.dataset.ecTab, direction === "left" ? -1 : 1);
+                panel.current?.querySelector(`[data-ec-tab="${adjacent}"]`)?.focus();
+            }
+        }
+        else if (!nested && target.dataset.ecControl && items.some(item => item.id === target.dataset.ecControl)) {
+            event.preventDefault();
+            event.stopPropagation();
+            const cells = gridCells(items, gridColumns);
+            const cell = cells.find(item => item.id === target.dataset.ecControl);
+            if (direction === "up" && cell?.row === 0) {
+                const settingsControls = controlIds().filter(id => id.startsWith("binding-"));
+                if (settingsControls.length)
+                    focus(settingsControls.at(-1));
+                else
+                    panel.current?.querySelector(`[data-ec-tab="${tab}"]`)?.focus();
+            }
+            else {
+                const next = moveInGrid(cells, target.dataset.ecControl, direction);
+                if (direction === "down" && next === target.dataset.ecControl)
+                    panel.current?.querySelector("footer button")?.focus();
+                else
+                    focus(next);
+            }
+        }
+        else {
+            event.preventDefault();
+            event.stopPropagation();
+            const buttons = Array.from(panel.current?.querySelectorAll("button") ?? []);
+            const index = buttons.indexOf(target);
+            const next = Math.max(0, Math.min(buttons.length - 1, index + (direction === "up" || direction === "left" ? -1 : 1)));
+            buttons[next]?.focus();
+            buttons[next]?.scrollIntoView({ block: "nearest" });
+        }
+    }
+    return SP_JSX.jsxs("div", { className: "rg-expanded-backdrop", children: [SP_JSX.jsx("style", { children: expandedStyles }), SP_JSX.jsxs("div", { ref: panel, "data-ec-panel": true, className: "rg-expanded", role: "dialog", "aria-modal": "true", "aria-label": "Re-Gear expanded Command Center prototype", onKeyDown: onKeyDown, onFocus: event => { const id = event.target.dataset.ecControl; if (id && !nested)
+                    memory.current[tab] = id; }, children: [SP_JSX.jsxs("header", { className: "rg-expanded-brand", children: [SP_JSX.jsx("span", { children: "Re-Gear" }), SP_JSX.jsxs("span", { className: "rg-expanded-demo", children: ["Demo \u00B7 Sample data", SP_JSX.jsx("br", {}), "Hardware controls not connected"] })] }), SP_JSX.jsx("nav", { className: "rg-expanded-tabs", role: "tablist", "aria-label": "Command Center sections", children: tabs.map(id => SP_JSX.jsxs("button", { id: `ec-tab-${id}`, type: "button", role: "tab", "aria-selected": tab === id, "aria-controls": "ec-tabpanel", "data-ec-tab": id, className: "rg-expanded-tab", onClick: () => { setNested(null); setTab(id); if (id === tab)
+                                focus(restoreTarget(controlIds(), memory.current[tab])); }, children: [SP_JSX.jsx(Icon, { id: id }), SP_JSX.jsx("span", { children: tabLabels[id] })] }, id)) }), SP_JSX.jsxs("div", { ref: content, className: "rg-expanded-content", id: "ec-tabpanel", role: "tabpanel", "aria-labelledby": `ec-tab-${tab}`, children: [SP_JSX.jsx("h2", { children: nested ? nested.title : tabLabels[tab] }), SP_JSX.jsx("p", { className: "rg-expanded-context", children: nested ? "Configuration preview · no changes are applied" : tab === "quick" ? "Essential controls while you play" : tab === "performance" ? "Configure performance for your play style" : "Status and configuration preview" }), nested ? SP_JSX.jsxs("section", { className: "rg-expanded-detail-page", children: [SP_JSX.jsx("h3", { children: nested.value }), SP_JSX.jsx("p", { children: nested.id === "auto" ? "Auto TDP is off and not configured. Target and limit selection must precede Start. This prototype cannot start, stop or tune the controller." : nested.detail }), nested.id === "auto" && SP_JSX.jsxs("p", { children: [SP_JSX.jsx("strong", { children: "State vocabulary:" }), " Off \u00B7 Running \u00B7 Stopping\u2026 \u00B7 Unknown \u00B7 Needs configuration"] }), nested.id === "disconnect" && SP_JSX.jsxs("p", { children: [SP_JSX.jsx("strong", { children: "No unplug clearance." }), " Backend readiness and confirmation are not connected. A display change, missing observation or successful command does not establish safety."] }), SP_JSX.jsx("p", { children: "Sample data only. No hardware operation is available." }), SP_JSX.jsxs("button", { type: "button", className: "rg-expanded-back", "data-ec-control": "nested-back", onClick: back, children: ["Back to ", tabLabels[tab]] })] }) : SP_JSX.jsxs(SP_JSX.Fragment, { children: [tab === "settings" && settings, tab === "performance" && SP_JSX.jsx("p", { className: "rg-expanded-context", children: "Manual limit: 18 W \u00B7 Auto TDP: Off / not configured \u00B7 FPS provider: unavailable. All values are samples." }), SP_JSX.jsx("div", { className: "rg-expanded-grid", style: { "--ec-columns": gridColumns }, children: items.map(item => SP_JSX.jsxs("button", { type: "button", "data-ec-control": item.id, "data-tone": item.tone ?? "quiet", className: "rg-expanded-tile", style: { gridColumn: item.wide && columns >= 3 ? "span 2" : undefined }, "aria-label": `${item.title}: ${item.value}. ${item.detail}. Sample data. View details.`, onFocus: () => { memory.current[tab] = item.id; }, onClick: () => { launcher.current = item.id; setNested(item); }, children: [SP_JSX.jsx(Icon, { id: item.id }), SP_JSX.jsx("span", { className: "rg-expanded-label", children: item.title }), SP_JSX.jsxs("span", { className: "rg-expanded-value", children: [item.tone === "warning" ? "⚠ " : "", item.value] }), SP_JSX.jsxs("span", { className: "rg-expanded-detail", children: [item.detail, longReasons && item.tone === "unavailable" ? " — Provider observations are unavailable in this synthetic preview. No capability or successful operation can be inferred from the displayed sample." : ""] })] }, item.id)) }), SP_JSX.jsxs("div", { className: "rg-expanded-summary", children: ["Sample scenario \u00B7 eGPU connected \u00B7 external controller active", SP_JSX.jsx("br", {}), "Connection status does not establish rendering or disconnect readiness."] })] })] }), SP_JSX.jsxs("footer", { className: "rg-expanded-footer", "data-ec-footer": true, children: [SP_JSX.jsx("button", { type: "button", "aria-label": "Previous tab (LB equivalent, Q)", onClick: () => switchTab(-1), children: "LB" }), SP_JSX.jsx("button", { type: "button", "aria-label": "Next tab (RB equivalent, E)", onClick: () => switchTab(1), children: "RB" }), SP_JSX.jsx("span", { children: native ? "Switch tab" : "Switch tab · Q / E" }), SP_JSX.jsx("span", { children: native ? "D-pad Navigate · A Select" : "Arrows Navigate · Enter Select" }), SP_JSX.jsxs("button", { type: "button", onClick: back, children: ["B ", nested ? "Back" : "Close", native ? "" : " · Esc"] })] })] })] });
+}
+
+/** Native test adapter; only opens a demo and saves its launcher preference. */
+function createExpandedMenu(input, host) {
+    const storage = (() => { try {
+        return host.localStorage;
+    }
+    catch {
+        return undefined;
+    } })();
+    let binding = loadMenuBinding(storage);
+    let modal = null;
+    let stopped = false;
+    let generation = 0;
+    let navigation;
+    const resets = [];
+    const pressed = new Set();
+    const detach = () => {
+        try {
+            navigation?.unregister();
+        }
+        catch { /* Late callbacks check modal. */ }
+        navigation = undefined;
+        for (const lease of resets.splice(0)) {
+            try {
+                lease.unregister();
+            }
+            catch { /* No state retained. */ }
+        }
+        pressed.clear();
+    };
+    const close = () => {
+        const previous = modal;
+        modal = null;
+        generation++;
+        detach();
+        previous?.Close();
+    };
+    function View({ token }) {
+        SP_REACT.useEffect(() => () => { if (generation === token) {
+            modal = null;
+            generation++;
+            detach();
+        } }, [token]);
+        return SP_JSX.jsx(ExpandedCommandCenter, { onClose: close, native: true, settings: SP_JSX.jsx(Settings, {}) });
+    }
+    function Settings() {
+        const [selected, setSelected] = SP_REACT.useState(binding);
+        const [error, setError] = SP_REACT.useState("");
+        function change(value) {
+            if (!saveMenuBinding(value, storage)) {
+                setError("Could not save the shortcut. Your previous choice remains active.");
+                return;
+            }
+            binding = value;
+            shortcut.reset();
+            setSelected(value);
+            setError("");
+        }
+        return SP_JSX.jsxs("section", { className: "rg-expanded-detail-page", style: { marginBottom: 14 }, children: [SP_JSX.jsx("h3", { children: "Open Re-Gear" }), SP_JSX.jsx("p", { children: "Menu shortcut \u00B7 saved on this Steam client" }), SP_JSX.jsx("div", { style: { display: "flex", flexWrap: "wrap", gap: 8 }, children: menuBindingOptions.map(option => SP_JSX.jsxs("button", { className: "rg-expanded-back", type: "button", "data-ec-control": `binding-${option.data}`, "aria-pressed": selected === option.data, onClick: () => change(option.data), children: [selected === option.data ? "✓ " : "", option.label] }, option.data)) }), SP_JSX.jsx("p", { children: shortcut.available ? "Press both buttons together. Release both before opening again." : "Controller input is unavailable. Use the Open expanded demo button in Quick Access." }), SP_JSX.jsx("p", { children: "Steam or the game may also respond to these buttons. Native button delivery is under validation." }), error && SP_JSX.jsx("p", { role: "alert", children: error })] });
+    }
+    const open = () => {
+        if (stopped || modal)
+            return;
+        const token = ++generation;
+        modal = DFL.showModal(SP_JSX.jsxs(DFL.ModalRoot, { closeModal: close, bAllowFullSize: true, bHideCloseIcon: true, bDisableBackgroundDismiss: true, bCancelDisabled: true, className: "rg-expanded-modal-root", modalClassName: "rg-expanded-modal-frame", children: [SP_JSX.jsx("style", { children: `.rg-expanded-modal-root,.rg-expanded-modal-frame{position:fixed!important;inset:0!important;width:100vw!important;height:100vh!important;max-width:none!important;max-height:none!important;padding:0!important;margin:0!important;background:transparent!important;box-shadow:none!important}` }), SP_JSX.jsx(View, { token: token })] }), host, { strTitle: "Re-Gear expanded demo", bNeverPopOut: true });
+        // Raw Steam callback codes, not browser Gamepad indices. No event suppression
+        // claim: the native lifecycle must still prove exclusive game-input focus.
+        const keys = { 1: "Escape", 4: "ArrowUp", 5: "ArrowRight", 6: "ArrowDown", 7: "ArrowLeft", 30: "q", 31: "e" };
+        try {
+            for (const register of [input?.RegisterForControllerListChanges, input?.RegisterForActiveControllerChanges]) {
+                if (register) {
+                    const lease = register.call(input, () => { if (generation === token)
+                        pressed.clear(); });
+                    if (typeof lease?.unregister === "function")
+                        resets.push(lease);
+                }
+            }
+            navigation = input?.RegisterForControllerInputMessages((controller, button, down) => {
+                if (!modal || stopped || generation !== token || !Number.isInteger(controller) || !Number.isInteger(button) || typeof down !== "boolean")
+                    return;
+                const key = `${controller}:${button}`;
+                if (!down) {
+                    pressed.delete(key);
+                    return;
+                }
+                if (pressed.has(key))
+                    return;
+                if (pressed.size >= 64) {
+                    pressed.clear();
+                    return;
+                }
+                pressed.add(key);
+                const panel = host.document.querySelector("[data-ec-panel]");
+                if (!panel)
+                    return;
+                const active = host.document.activeElement;
+                const target = active && panel.contains(active) ? active : panel;
+                if (button === 0) {
+                    if (target.tagName === "BUTTON")
+                        target.click();
+                    return;
+                }
+                if (keys[button])
+                    target.dispatchEvent(new KeyboardEvent("keydown", { key: keys[button], bubbles: true, cancelable: true }));
+            });
+        }
+        catch { /* Touch and native modal UI remain available if subscription fails. */ }
+    };
+    const shortcut = startMenuShortcut({ input, readBinding: () => binding, open });
+    return { open, stop() { stopped = true; shortcut.stop(); close(); } };
+}
+
 /** eGPU module page: rendering only, no policy, no requests, no device action.
  *
  * Every reading comes from egpu-presentation, which derives each one from
@@ -3158,16 +3655,6 @@ function stackOnPanelOpen() {
     return INITIAL_STACK;
 }
 
-function ApprovedIcon({ id, size = 24 }) {
-    const props = { width: size, height: size, fill: "none", "aria-hidden": true, style: { flexShrink: 0 } };
-    switch (id) {
-        case "module-auto-tdp": return SP_JSX.jsxs("svg", { viewBox: "0 0 64 64", ...props, children: [SP_JSX.jsx("path", { d: "M13 43a21 21 0 1 1 38 0", stroke: "currentColor", strokeWidth: "3", strokeLinecap: "round" }), SP_JSX.jsx("path", { d: "M18 38l4-2M23 27l3 3M32 22v4M41 27l-3 3M46 38l-4-2", stroke: "currentColor", strokeWidth: "3", strokeLinecap: "round" }), SP_JSX.jsx("path", { d: "M32 40 43 29", stroke: "currentColor", strokeWidth: "4", strokeLinecap: "round" }), SP_JSX.jsx("circle", { cx: "32", cy: "40", r: "4", fill: "currentColor" }), SP_JSX.jsx("path", { d: "M20 49h24", stroke: "currentColor", strokeWidth: "3", strokeLinecap: "round" })] });
-        case "module-egpu": return SP_JSX.jsxs("svg", { viewBox: "0 0 64 64", ...props, children: [SP_JSX.jsx("rect", { x: "8", y: "14", width: "48", height: "36", rx: "8", stroke: "currentColor", strokeWidth: "3" }), SP_JSX.jsx("circle", { cx: "37", cy: "32", r: "11", stroke: "currentColor", strokeWidth: "3" }), SP_JSX.jsx("circle", { cx: "37", cy: "32", r: "3", fill: "currentColor" }), SP_JSX.jsx("path", { d: "M37 21c4 2 5 5 4 8M48 32c-2 4-5 5-8 4M37 43c-4-2-5-5-4-8M26 32c2-4 5-5 8-4", stroke: "currentColor", strokeWidth: "3", strokeLinecap: "round" }), SP_JSX.jsx("path", { d: "M15 24h5M15 32h5M15 40h5", stroke: "currentColor", strokeWidth: "3", strokeLinecap: "round" }), SP_JSX.jsx("path", { d: "M20 50v4M44 50v4", stroke: "currentColor", strokeWidth: "3", strokeLinecap: "round" })] });
-        case "module-controller": return SP_JSX.jsxs("svg", { viewBox: "0 0 64 64", ...props, children: [SP_JSX.jsx("path", { d: "M19 25h26c5 0 8 3 9 8l3 12c1 5-5 8-8 4l-7-8H22l-7 8c-3 4-9 1-8-4l3-12c1-5 4-8 9-8Z", stroke: "currentColor", strokeWidth: "3", strokeLinejoin: "round" }), SP_JSX.jsx("path", { d: "M20 31v8M16 35h8", stroke: "currentColor", strokeWidth: "3", strokeLinecap: "round" }), SP_JSX.jsx("circle", { cx: "43", cy: "33", r: "2.5", fill: "currentColor" }), SP_JSX.jsx("circle", { cx: "49", cy: "38", r: "2.5", fill: "currentColor" })] });
-        case "mode-tv-docked": return SP_JSX.jsxs("svg", { viewBox: "0 0 96 64", ...props, children: [SP_JSX.jsx("rect", { x: "8", y: "10", width: "54", height: "34", rx: "5", stroke: "currentColor", strokeWidth: "3" }), SP_JSX.jsx("path", { d: "M30 44v8M20 54h30", stroke: "currentColor", strokeWidth: "3", strokeLinecap: "round" }), SP_JSX.jsx("rect", { x: "68", y: "19", width: "18", height: "26", rx: "4", stroke: "currentColor", strokeWidth: "3" }), SP_JSX.jsx("circle", { cx: "77", cy: "31", r: "5", stroke: "currentColor", strokeWidth: "2.5" }), SP_JSX.jsx("path", { d: "M68 32h-6", stroke: "currentColor", strokeWidth: "3", strokeLinecap: "round" }), SP_JSX.jsx("path", { d: "M20 20h30v14H20z", stroke: "currentColor", strokeWidth: "2.5" })] });
-    }
-}
-
 /** Command Center navigation shell: rendering only, no policy, no requests.
  *
  * Which destinations exist, whether they are usable and what a blocked one says
@@ -4423,7 +4910,7 @@ function preflightObservation(payload) {
         gameUsesEgpu: snapshot.disconnect_readiness.clients.some((client) => client.kind === "game"),
     }, Date.now(), SNAPSHOT_STALE_AFTER_MS);
 }
-function Content({ preflight, connection, shortcut }) {
+function Content({ preflight, connection, shortcut, openExpanded }) {
     const quickAccessVisible = useQuickAccessVisible();
     const statusAnchor = SP_REACT.useRef(null);
     const statusFocusAnchor = SP_REACT.useRef(null);
@@ -5410,38 +5897,38 @@ function Content({ preflight, connection, shortcut }) {
             // nothing. Native confirmation of that propagation stays pending.
             , { ...(hasInternalLevel(navStack) ? { onCancelButton: popRoute } : {}), style: { minWidth: 0 }, children: SP_JSX.jsxs("div", { ref: statusAnchor, tabIndex: -1, children: [!onCommandCenter && SP_JSX.jsx(DFL.PanelSection, { children: SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", onClick: popRoute, children: "Back" }) }) }), SP_JSX.jsx(PageLayout, { route: route, modules: SP_JSX.jsx(DFL.PanelSection, { children: SP_JSX.jsx(ShellBody, { route: route, modules: modules, statusEntries: statusEntries, onOpenModule: (id) => openRoute({ kind: "module", id }, `module:${id}`), onOpenStatus: (id) => openRoute({ kind: "status", id }, `status:${id}`), onOpenTroubleshoot: toggleTroubleshooting, children: null }) }), controller: SP_JSX.jsx(DFL.PanelSection, { title: "Controller", children: SP_JSX.jsx(ControllerModule, { presentation: controllerPresentation({ peripheral: peripheralStatus, shortcutAvailable: controllerShortcutAvailable }) }) }), egpuStatus: SP_JSX.jsx(DFL.PanelSection, { title: "eGPU status", children: SP_JSX.jsx(EgpuModule, { presentation: egpuPresentation(payload) }) }), controllerStatus: SP_JSX.jsx(DFL.PanelSection, { title: "Controller status", children: SP_JSX.jsx(ControllerModule, { presentation: controllerPresentation({ peripheral: peripheralStatus, shortcutAvailable: controllerShortcutAvailable }) }) }), autoTdp: SP_JSX.jsx(AutoTdpModule, { controller: performance }), picker: route.kind === "picker" && route.id === "tdp"
                                 ? SP_JSX.jsx(TdpPicker, { status: performance.manual, busy: performance.busy, onApply: watts => void performance.apply(watts), onConfigure: () => openRoute({ kind: "module", id: "auto-tdp" }, "picker:configure") })
-                                : SP_JSX.jsx(DisplayPicker, { current: tiles.find(tile => tile.id === "display")?.value.text ?? "Unknown", action: primaryDisplayAction, onSwitch: activateDisplay, onConfigure: () => openRoute({ kind: "module", id: "egpu" }, "picker:configure") }), commandCenter: SP_JSX.jsx(SP_JSX.Fragment, { children: SP_JSX.jsxs(DFL.PanelSection, { children: [SP_JSX.jsx(CommandCenterHeader, { summaryRef: statusFocusAnchor, onSummaryFocus: () => {
-                                                if (statusAnchor.current)
-                                                    scrollToTopOfOwningPanel(statusAnchor.current);
-                                            }, mode: loading ? "Reading…" : label(payload?.inference.mode ?? "unknown"), display: snapshot?.displays.some((d) => d.active === true && d.kind === "external")
-                                                ? "External display"
-                                                : snapshot?.displays.some((d) => d.active === true && d.kind === "internal")
-                                                    ? "Handheld display" : "Display unknown", game: loading ? "Reading…" : label(snapshot?.game_state ?? "unknown"), health: healthStatusLabel(payload?.health, loading), navigation: SP_JSX.jsx(ModulesButton, { onOpen: () => openRoute({ kind: "modules" }, "modules") }) }), SP_JSX.jsx(DisconnectResultNotice, { result: disconnectResult(resultDismissed ? null : egpuDisconnect?.last, egpuDisconnect), onDismiss: () => setResultDismissed(true) }), SP_JSX.jsx(CommandCenterGrid, { tiles: tiles, onActivate: (id) => {
-                                                setSelectedTile(id);
-                                                const tile = tiles.find((candidate) => candidate.id === id);
-                                                if (!tile)
-                                                    return;
-                                                if (id === "safe-disconnect") {
-                                                    // Only an offer the owning backend actually made is actionable.
-                                                    // Anything else selects the tile so its reason is read.
-                                                    if (tile.activation !== "act" || !tile.confirmation || disconnectBusy)
+                                : SP_JSX.jsx(DisplayPicker, { current: tiles.find(tile => tile.id === "display")?.value.text ?? "Unknown", action: primaryDisplayAction, onSwitch: activateDisplay, onConfigure: () => openRoute({ kind: "module", id: "egpu" }, "picker:configure") }), commandCenter: SP_JSX.jsxs(SP_JSX.Fragment, { children: [SP_JSX.jsx(DFL.PanelSection, { children: SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", onClick: openExpanded, children: "Open expanded demo" }) }) }), SP_JSX.jsxs(DFL.PanelSection, { children: [SP_JSX.jsx(CommandCenterHeader, { summaryRef: statusFocusAnchor, onSummaryFocus: () => {
+                                                    if (statusAnchor.current)
+                                                        scrollToTopOfOwningPanel(statusAnchor.current);
+                                                }, mode: loading ? "Reading…" : label(payload?.inference.mode ?? "unknown"), display: snapshot?.displays.some((d) => d.active === true && d.kind === "external")
+                                                    ? "External display"
+                                                    : snapshot?.displays.some((d) => d.active === true && d.kind === "internal")
+                                                        ? "Handheld display" : "Display unknown", game: loading ? "Reading…" : label(snapshot?.game_state ?? "unknown"), health: healthStatusLabel(payload?.health, loading), navigation: SP_JSX.jsx(ModulesButton, { onOpen: () => openRoute({ kind: "modules" }, "modules") }) }), SP_JSX.jsx(DisconnectResultNotice, { result: disconnectResult(resultDismissed ? null : egpuDisconnect?.last, egpuDisconnect), onDismiss: () => setResultDismissed(true) }), SP_JSX.jsx(CommandCenterGrid, { tiles: tiles, onActivate: (id) => {
+                                                    setSelectedTile(id);
+                                                    const tile = tiles.find((candidate) => candidate.id === id);
+                                                    if (!tile)
                                                         return;
-                                                    const releaseDisplay = tile.displayApprovalRequired === true;
-                                                    showDisconnectConfirmation(tile.confirmation, () => {
-                                                        void runDisconnect(releaseDisplay);
-                                                    });
-                                                    return;
-                                                }
-                                                if (id === "auto-tdp" && tile.actionLabel === "Stop") {
-                                                    void performance.stop();
-                                                    return;
-                                                }
-                                                if (tile.activation !== "open")
-                                                    return;
-                                                openRoute(id === "display" || id === "tdp"
-                                                    ? { kind: "picker", id }
-                                                    : { kind: "module", id: "auto-tdp" }, `tile:${id}`);
-                                            } }), SP_JSX.jsx(TileReason, { tile: shownTile }), SP_JSX.jsx(DFL.ButtonItem, { layout: "below", onClick: toggleTroubleshooting, children: "Troubleshoot" }), disconnectMessage && (SP_JSX.jsx(DFL.PanelSectionRow, { children: disconnectMessage })), SP_JSX.jsx(ShellBody, { route: route, modules: modules, statusEntries: statusEntries, onOpenModule: (id) => openRoute({ kind: "module", id }, `module:${id}`), onOpenStatus: (id) => openRoute({ kind: "status", id }, `status:${id}`), children: null })] }) }), egpu: SP_JSX.jsxs(SP_JSX.Fragment, { children: [SP_JSX.jsx(DFL.PanelSection, { title: "eGPU", children: SP_JSX.jsx(EgpuModule, { presentation: egpuPresentation(payload), onOpenRecovery: toggleTroubleshooting }) }), payload?.connection_readiness && payload.connection_readiness.stage !== "disconnected" &&
+                                                    if (id === "safe-disconnect") {
+                                                        // Only an offer the owning backend actually made is actionable.
+                                                        // Anything else selects the tile so its reason is read.
+                                                        if (tile.activation !== "act" || !tile.confirmation || disconnectBusy)
+                                                            return;
+                                                        const releaseDisplay = tile.displayApprovalRequired === true;
+                                                        showDisconnectConfirmation(tile.confirmation, () => {
+                                                            void runDisconnect(releaseDisplay);
+                                                        });
+                                                        return;
+                                                    }
+                                                    if (id === "auto-tdp" && tile.actionLabel === "Stop") {
+                                                        void performance.stop();
+                                                        return;
+                                                    }
+                                                    if (tile.activation !== "open")
+                                                        return;
+                                                    openRoute(id === "display" || id === "tdp"
+                                                        ? { kind: "picker", id }
+                                                        : { kind: "module", id: "auto-tdp" }, `tile:${id}`);
+                                                } }), SP_JSX.jsx(TileReason, { tile: shownTile }), SP_JSX.jsx(DFL.ButtonItem, { layout: "below", onClick: toggleTroubleshooting, children: "Troubleshoot" }), disconnectMessage && (SP_JSX.jsx(DFL.PanelSectionRow, { children: disconnectMessage })), SP_JSX.jsx(ShellBody, { route: route, modules: modules, statusEntries: statusEntries, onOpenModule: (id) => openRoute({ kind: "module", id }, `module:${id}`), onOpenStatus: (id) => openRoute({ kind: "status", id }, `status:${id}`), children: null })] })] }), egpu: SP_JSX.jsxs(SP_JSX.Fragment, { children: [SP_JSX.jsx(DFL.PanelSection, { title: "eGPU", children: SP_JSX.jsx(EgpuModule, { presentation: egpuPresentation(payload), onOpenRecovery: toggleTroubleshooting }) }), payload?.connection_readiness && payload.connection_readiness.stage !== "disconnected" &&
                                         SP_JSX.jsx(DFL.PanelSection, { title: "eGPU readiness", children: SP_JSX.jsx(ConnectionQuickStatus, { store: connection.store, visible: quickAccessVisible, onOpen: openConnectionProgress }) }), SP_JSX.jsxs(DFL.PanelSection, { title: "Docking & actions", children: [SP_JSX.jsxs("div", { ref: primaryControlAnchor, children: [SP_JSX.jsx(DashboardSurface, { children: SP_JSX.jsx("div", { style: { padding: "4px 12px" }, children: SP_JSX.jsx(DFL.ToggleField, { label: "Automatic TV docking", layout: "inline", description: automaticDockBusy
                                                                     ? "Saving…"
                                                                     : !automaticDockStatus
@@ -5513,6 +6000,7 @@ function showBlockedAttempt(warning, onClose) {
     return modal;
 }
 var index = definePlugin(() => {
+    const expandedMenu = createExpandedMenu(steamControllerInput(window), window);
     const shortcut = createDisplayShortcutRuntime({
         input: steamControllerInput(window),
         readContext: async () => {
@@ -5585,10 +6073,11 @@ var index = definePlugin(() => {
     return {
         name: PRODUCT_NAME,
         titleView: SP_JSX.jsx("div", { className: DFL.staticClasses.Title, style: { display: "flex", alignItems: "center" }, children: SP_JSX.jsx(BrandHeader, {}) }),
-        content: SP_JSX.jsx(Content, { preflight: preflight, connection: connection, shortcut: shortcut }),
+        content: SP_JSX.jsx(Content, { preflight: preflight, connection: connection, shortcut: shortcut, openExpanded: expandedMenu.open }),
         icon: SP_JSX.jsx(BrandIcon, {}),
         alwaysRender: true,
         onDismount() {
+            expandedMenu.stop();
             shortcut.stop();
             if (warningTimer !== null) {
                 window.clearTimeout(warningTimer);

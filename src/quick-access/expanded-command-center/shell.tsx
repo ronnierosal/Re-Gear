@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, useState } from "react";
-import type { CSSProperties, KeyboardEvent } from "react";
+import type { CSSProperties, KeyboardEvent, ReactNode } from "react";
 import { ApprovedIcon } from "../approved-icons";
 import { columnsForWidth, gridCells, moveInGrid, nextTab, restoreTarget, sampleTiles, tabLabels, tabs } from "./model";
 import type { Tab, Tile } from "./model";
@@ -21,8 +21,8 @@ function Icon({ id }: { id: string }) {
 }
 
 /** Developer-only browser prototype. Intentionally not imported by the plugin. */
-export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReasons = false }: {
-  onClose(): void; initialTab?: Tab; longReasons?: boolean;
+export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReasons = false, settings, native = false }: {
+  onClose(): void; initialTab?: Tab; longReasons?: boolean; settings?: ReactNode; native?: boolean;
 }) {
   const [tab, setTab] = useState<Tab>(initialTab);
   const [nested, setNested] = useState<Tile | null>(null);
@@ -40,6 +40,7 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
     target?.focus();
     target?.scrollIntoView({ block: "nearest" });
   };
+  const controlIds = () => Array.from(panel.current?.querySelectorAll<HTMLElement>("[data-ec-control]") ?? []).map(el => el.dataset.ecControl!);
   useLayoutEffect(() => {
     opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     return () => { if (opener.current?.isConnected) opener.current.focus(); };
@@ -51,7 +52,7 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
     return () => observer.disconnect();
   }, []);
   useLayoutEffect(() => {
-    focus(nested ? "nested-back" : restoreTarget(items.map(item => item.id), pendingFocus.current ?? memory.current[tab]));
+    focus(nested ? "nested-back" : restoreTarget(controlIds(), pendingFocus.current ?? memory.current[tab]));
     pendingFocus.current = undefined;
   }, [tab, nested]);
 
@@ -82,7 +83,7 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
     const direction = event.key.slice(5).toLowerCase() as "left" | "right" | "up" | "down";
     if (tabTarget) {
       event.preventDefault();
-      if (direction === "down") focus(restoreTarget(items.map(item => item.id), memory.current[tab]));
+      if (direction === "down") focus(restoreTarget(controlIds(), memory.current[tab]));
       if (direction === "left" || direction === "right") {
         const adjacent = nextTab(tabTarget.dataset.ecTab as Tab, direction === "left" ? -1 : 1);
         panel.current?.querySelector<HTMLButtonElement>(`[data-ec-tab="${adjacent}"]`)?.focus();
@@ -91,18 +92,33 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
       event.preventDefault(); event.stopPropagation();
       const cells = gridCells(items, gridColumns);
       const cell = cells.find(item => item.id === target.dataset.ecControl);
-      if (direction === "up" && cell?.row === 0) panel.current?.querySelector<HTMLButtonElement>(`[data-ec-tab="${tab}"]`)?.focus();
-      else focus(moveInGrid(cells, target.dataset.ecControl, direction));
+      if (direction === "up" && cell?.row === 0) {
+        const settingsControls = controlIds().filter(id => id.startsWith("binding-"));
+        if (settingsControls.length) focus(settingsControls.at(-1));
+        else panel.current?.querySelector<HTMLButtonElement>(`[data-ec-tab="${tab}"]`)?.focus();
+      }
+      else {
+        const next = moveInGrid(cells, target.dataset.ecControl, direction);
+        if (direction === "down" && next === target.dataset.ecControl) panel.current?.querySelector<HTMLButtonElement>("footer button")?.focus();
+        else focus(next);
+      }
+    } else {
+      event.preventDefault(); event.stopPropagation();
+      const buttons = Array.from(panel.current?.querySelectorAll<HTMLButtonElement>("button") ?? []);
+      const index = buttons.indexOf(target as HTMLButtonElement);
+      const next = Math.max(0, Math.min(buttons.length - 1, index + (direction === "up" || direction === "left" ? -1 : 1)));
+      buttons[next]?.focus(); buttons[next]?.scrollIntoView({ block: "nearest" });
     }
   }
 
   return <div className="rg-expanded-backdrop">
     <style>{expandedStyles}</style>
-    <div ref={panel} data-ec-panel className="rg-expanded" role="dialog" aria-modal="true" aria-label="Re-Gear expanded Command Center prototype" onKeyDown={onKeyDown}>
-      <header className="rg-expanded-brand"><span>Re-Gear</span><span className="rg-expanded-demo">Prototype · Sample data<br/>No device connected</span></header>
+    <div ref={panel} data-ec-panel className="rg-expanded" role="dialog" aria-modal="true" aria-label="Re-Gear expanded Command Center prototype" onKeyDown={onKeyDown}
+      onFocus={event => { const id = (event.target as HTMLElement).dataset.ecControl; if (id && !nested) memory.current[tab] = id; }}>
+      <header className="rg-expanded-brand"><span>Re-Gear</span><span className="rg-expanded-demo">Demo · Sample data<br/>Hardware controls not connected</span></header>
       <nav className="rg-expanded-tabs" role="tablist" aria-label="Command Center sections">
         {tabs.map(id => <button key={id} id={`ec-tab-${id}`} type="button" role="tab" aria-selected={tab === id} aria-controls="ec-tabpanel" data-ec-tab={id} className="rg-expanded-tab"
-          onClick={() => { setNested(null); setTab(id); if (id === tab) focus(restoreTarget(items.map(item => item.id), memory.current[tab])); }}>
+          onClick={() => { setNested(null); setTab(id); if (id === tab) focus(restoreTarget(controlIds(), memory.current[tab])); }}>
           <Icon id={id}/><span>{tabLabels[id]}</span>
         </button>)}
       </nav>
@@ -117,6 +133,7 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
           <p>Sample data only. No hardware operation is available.</p>
           <button type="button" className="rg-expanded-back" data-ec-control="nested-back" onClick={back}>Back to {tabLabels[tab]}</button>
         </section> : <>
+          {tab === "settings" && settings}
           {tab === "performance" && <p className="rg-expanded-context">Manual limit: 18 W · Auto TDP: Off / not configured · FPS provider: unavailable. All values are samples.</p>}
           <div className="rg-expanded-grid" style={{ "--ec-columns": gridColumns } as CSSProperties}>
             {items.map(item => <button type="button" key={item.id} data-ec-control={item.id} data-tone={item.tone ?? "quiet"} className="rg-expanded-tile"
@@ -134,8 +151,8 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
       <footer className="rg-expanded-footer" data-ec-footer>
         <button type="button" aria-label="Previous tab (LB equivalent, Q)" onClick={() => switchTab(-1)}>LB</button>
         <button type="button" aria-label="Next tab (RB equivalent, E)" onClick={() => switchTab(1)}>RB</button>
-        <span>Switch tab · Q / E</span><span>Arrows Navigate · Enter Select</span>
-        <button type="button" onClick={back}>B {nested ? "Back" : "Close"} · Esc</button>
+        <span>{native ? "Switch tab" : "Switch tab · Q / E"}</span><span>{native ? "D-pad Navigate · A Select" : "Arrows Navigate · Enter Select"}</span>
+        <button type="button" onClick={back}>B {nested ? "Back" : "Close"}{native ? "" : " · Esc"}</button>
       </footer>
     </div>
   </div>;
