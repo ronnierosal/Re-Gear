@@ -162,3 +162,48 @@ export function stepGrid(
   const lastRow = Math.floor((count - 1) / columns);
   return row < lastRow ? count - 1 : clamped;
 }
+
+// ------------------------------------------------- what the route implies
+
+/** True when Back has an internal level to pop.
+ *
+ * The caller uses this to decide whether to attach a cancel handler at all.
+ * Deciding inside a React state updater does not work: an updater may be
+ * deferred or replayed, so a value assigned from inside one and read straight
+ * afterwards is not a reliable answer, and a handler that is attached but
+ * declines to act has already swallowed the press.
+ */
+export function hasInternalLevel(stack: NavStack): boolean {
+  return stack.length > 1;
+}
+
+/** Whether the diagnostics surfaces are actually on screen.
+ *
+ * `showDiagnostics` says the player opened them; it does not say they are
+ * visible. On any pushed route the Command Center body is not rendered, so
+ * collecting for surfaces nobody can see is work the player did not ask for.
+ */
+export function diagnosticsVisible(stack: NavStack, showDiagnostics: boolean): boolean {
+  return showDiagnostics && currentRoute(stack).kind === "command-center";
+}
+
+/** A fresh Quick Access entry starts at Command Center.
+ *
+ * Steam may keep the plugin mounted between openings, so the stack survives a
+ * close unless it is reset. Reopening into a pushed route would make the panel
+ * resume somewhere the player did not choose this time.
+ */
+export function stackOnPanelOpen(): NavStack {
+  return INITIAL_STACK;
+}
+
+/** The Troubleshooting control's open/close rule.
+ *
+ * This is the surviving owner of the open-edge behaviour that the deleted
+ * quick-access-section-state helper used to hold: opening asks for fresh
+ * evidence, closing does not, and re-opening an already-open surface must not
+ * request again.
+ */
+export function troubleshootingToggle(open: boolean): { next: boolean; refresh: boolean } {
+  return { next: !open, refresh: !open };
+}

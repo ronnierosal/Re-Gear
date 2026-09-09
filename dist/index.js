@@ -2797,6 +2797,46 @@ function backRoute(stack) {
         return { stack, delegate: true };
     return { stack: stack.slice(0, -1), delegate: false };
 }
+// ------------------------------------------------- what the route implies
+/** True when Back has an internal level to pop.
+ *
+ * The caller uses this to decide whether to attach a cancel handler at all.
+ * Deciding inside a React state updater does not work: an updater may be
+ * deferred or replayed, so a value assigned from inside one and read straight
+ * afterwards is not a reliable answer, and a handler that is attached but
+ * declines to act has already swallowed the press.
+ */
+function hasInternalLevel(stack) {
+    return stack.length > 1;
+}
+/** Whether the diagnostics surfaces are actually on screen.
+ *
+ * `showDiagnostics` says the player opened them; it does not say they are
+ * visible. On any pushed route the Command Center body is not rendered, so
+ * collecting for surfaces nobody can see is work the player did not ask for.
+ */
+function diagnosticsVisible(stack, showDiagnostics) {
+    return showDiagnostics && currentRoute(stack).kind === "command-center";
+}
+/** A fresh Quick Access entry starts at Command Center.
+ *
+ * Steam may keep the plugin mounted between openings, so the stack survives a
+ * close unless it is reset. Reopening into a pushed route would make the panel
+ * resume somewhere the player did not choose this time.
+ */
+function stackOnPanelOpen() {
+    return INITIAL_STACK;
+}
+/** The Troubleshooting control's open/close rule.
+ *
+ * This is the surviving owner of the open-edge behaviour that the deleted
+ * quick-access-section-state helper used to hold: opening asks for fresh
+ * evidence, closing does not, and re-opening an already-open surface must not
+ * request again.
+ */
+function troubleshootingToggle(open) {
+    return { next: !open, refresh: !open };
+}
 
 /** Command Center navigation shell: rendering only, no policy, no requests.
  *
@@ -3496,6 +3536,15 @@ function Content({ preflight, connection, shortcut }) {
     // Center sits at the bottom and is never popped; Back delegates to Steam's own
     // QAM Back once no internal level is left. See quick-access/module-registry.
     const [navStack, setNavStack] = SP_REACT.useState(INITIAL_STACK);
+    const route = currentRoute(navStack);
+    const onCommandCenter = route.kind === "command-center";
+    // Read by the refresh callback, which must not be rebuilt on every navigation:
+    // adding navStack to its dependencies would restart the refresh cycle on a
+    // route change.
+    const diagnosticsOnScreen = SP_REACT.useRef(true);
+    SP_REACT.useEffect(() => {
+        diagnosticsOnScreen.current = diagnosticsVisible(navStack, showDiagnostics);
+    }, [navStack, showDiagnostics]);
     const [showJourneyDetails, setShowJourneyDetails] = SP_REACT.useState(false);
     const [presentationBusy, setPresentationBusy] = SP_REACT.useState(false);
     const [presentationMessage, setPresentationMessage] = SP_REACT.useState("");
@@ -3661,7 +3710,12 @@ function Content({ preflight, connection, shortcut }) {
                     // read-only snapshot into an apparent hardware failure.
                 }
             }
-            const optionalDiagnostics = await collectOptionalDiagnostics(shouldCollectOptionalDiagnostics(quickAccessVisible && showDiagnostics, nextPayload.snapshot.game_state), {
+            const optionalDiagnostics = await collectOptionalDiagnostics(shouldCollectOptionalDiagnostics(
+            // `showDiagnostics` says the player opened these surfaces, not that
+            // they are on screen: on a pushed route the Command Center body is
+            // not rendered, and collecting for surfaces nobody can see is work
+            // the player did not ask for.
+            quickAccessVisible && diagnosticsOnScreen.current, nextPayload.snapshot.game_state), {
                 getDockedIgpuStatus,
                 getDiagnosticLoggingStatus,
                 getPeripheralStatus,
@@ -3701,6 +3755,10 @@ function Content({ preflight, connection, shortcut }) {
         setShowDiagnostics(compact.showDiagnostics);
         setShowJourneyDetails(compact.showJourneyDetails);
         setShowHardwareDetails(false);
+        // Steam may keep the plugin mounted between openings, so the route resets
+        // with the rest of the compact state; otherwise the panel reopens wherever
+        // it was left instead of at Command Center.
+        setNavStack(stackOnPanelOpen());
         setDockedIgpuStatus(null);
         setDiagnosticLoggingStatus(null);
         setPeripheralStatus(null);
@@ -4276,20 +4334,23 @@ function Content({ preflight, connection, shortcut }) {
     const openRoute = SP_REACT.useCallback((route) => {
         setNavStack((stack) => pushRoute(stack, route));
     }, []);
-    const goBack = SP_REACT.useCallback(() => {
-        let delegated = false;
-        setNavStack((stack) => {
-            const result = backRoute(stack);
-            delegated = result.delegate;
-            return result.stack;
-        });
-        return delegated;
+    // Pops one internal level. Whether Back is ours to handle at all is decided
+    // by `hasInternalLevel` in the render below, not here: a handler that is
+    // attached and then declines has already swallowed the press, and a decision
+    // computed inside a state updater is not reliable because React may defer or
+    // replay it.
+    const popRoute = SP_REACT.useCallback(() => {
+        setNavStack((stack) => backRoute(stack).stack);
     }, []);
+    // The open-edge rule lives in troubleshootingToggle: opening asks for fresh
+    // evidence, closing does not, and re-opening does not request again. That is
+    // the surviving owner of what the deleted quick-access-section-state helper
+    // held, and it is covered by its own tests.
     const toggleTroubleshooting = SP_REACT.useCallback(() => {
-        if (!showDiagnostics) {
+        const result = troubleshootingToggle(showDiagnostics);
+        if (result.refresh)
             void refresh(true);
-        }
-        setShowDiagnostics((visible) => !visible);
+        setShowDiagnostics(result.next);
     }, [refresh, showDiagnostics]);
     const toggleJourneyDetails = SP_REACT.useCallback(() => {
         setShowJourneyDetails((visible) => {
@@ -4310,8 +4371,6 @@ function Content({ preflight, connection, shortcut }) {
         healthKnown: payload?.health != null,
     });
     const modules = quickAccessModules(sections);
-    const route = currentRoute(navStack);
-    const onCommandCenter = route.kind === "command-center";
     // Read-only status destinations, kept distinct from the configuration
     // modules: these open detail, never controls.
     const statusEntries = [
@@ -4322,12 +4381,11 @@ function Content({ preflight, connection, shortcut }) {
     ];
     const sectionVisibility = quickAccessSectionVisibility(showDiagnostics);
     return (SP_JSX.jsxs(SP_JSX.Fragment, { children: [SP_JSX.jsx("style", { children: regearControlCss }), SP_JSX.jsx(DFL.Focusable
-            // B pops one internal level; once none is left the press must reach
-            // Steam's own QAM Back, or the player is trapped inside the panel.
-            , { 
-                // B pops one internal level; once none is left the press must reach
-                // Steam's own QAM Back, or the player is trapped inside the panel.
-                onCancelButton: () => { goBack(); }, style: { minWidth: 0 }, children: SP_JSX.jsxs("div", { ref: statusAnchor, tabIndex: -1, children: [!onCommandCenter && (SP_JSX.jsx(DFL.PanelSection, { children: SP_JSX.jsx(ShellBody, { route: route, modules: modules, statusEntries: statusEntries, onOpenModule: (id) => openRoute({ kind: "module", id }), onOpenStatus: (id) => openRoute({ kind: "status", id }), children: null }) })), onCommandCenter && (SP_JSX.jsxs(SP_JSX.Fragment, { children: [SP_JSX.jsx(DFL.PanelSection, { title: "At a glance", children: SP_JSX.jsx(QuickAccessOverview, { summaryRef: statusFocusAnchor, onSummaryFocus: () => {
+            // B is handled only while an internal level exists. At Command Center
+            // no handler is attached at all, so the press reaches Steam's own QAM
+            // Back instead of being swallowed by a handler that chose to do
+            // nothing. Native confirmation of that propagation stays pending.
+            , { ...(hasInternalLevel(navStack) ? { onCancelButton: popRoute } : {}), style: { minWidth: 0 }, children: SP_JSX.jsxs("div", { ref: statusAnchor, tabIndex: -1, children: [!onCommandCenter && (SP_JSX.jsx(DFL.PanelSection, { children: SP_JSX.jsx(ShellBody, { route: route, modules: modules, statusEntries: statusEntries, onOpenModule: (id) => openRoute({ kind: "module", id }), onOpenStatus: (id) => openRoute({ kind: "status", id }), children: null }) })), onCommandCenter && (SP_JSX.jsxs(SP_JSX.Fragment, { children: [SP_JSX.jsx(DFL.PanelSection, { title: "At a glance", children: SP_JSX.jsx(QuickAccessOverview, { summaryRef: statusFocusAnchor, onSummaryFocus: () => {
                                             if (statusAnchor.current)
                                                 scrollToTopOfOwningPanel(statusAnchor.current);
                                         }, mode: payload?.inference.mode ?? "unknown", modeLabel: loading ? "Reading…" : label(payload?.inference.mode ?? "unknown"), health: healthStatusLabel(payload?.health, loading), game: label(snapshot?.game_state ?? "unknown"), loading: loading }) }), SP_JSX.jsxs(DFL.PanelSection, { children: [SP_JSX.jsx("div", { style: { display: "flex", flexDirection: "column", minWidth: 0 }, children: SP_JSX.jsx(ModulesButton, { onOpen: () => openRoute({ kind: "modules" }) }) }), SP_JSX.jsx(ShellBody, { route: route, modules: modules, statusEntries: statusEntries, onOpenModule: (id) => openRoute({ kind: "module", id }), onOpenStatus: (id) => openRoute({ kind: "status", id }), children: null })] }), payload?.connection_readiness && payload.connection_readiness.stage !== "disconnected" &&

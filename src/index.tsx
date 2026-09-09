@@ -92,8 +92,12 @@ import {
   INITIAL_STACK,
   backRoute,
   currentRoute,
+  diagnosticsVisible,
+  hasInternalLevel,
   pushRoute,
   quickAccessModules,
+  stackOnPanelOpen,
+  troubleshootingToggle,
 } from "./quick-access/module-registry";
 import type { ModuleId, NavStack, Route, StatusId } from "./quick-access/module-registry";
 import { ModulesButton, ShellBody } from "./quick-access/shell";
@@ -556,6 +560,15 @@ function Content({ preflight, connection, shortcut }: { preflight: SleepPrefligh
   // Center sits at the bottom and is never popped; Back delegates to Steam's own
   // QAM Back once no internal level is left. See quick-access/module-registry.
   const [navStack, setNavStack] = useState<NavStack>(INITIAL_STACK);
+  const route = currentRoute(navStack);
+  const onCommandCenter = route.kind === "command-center";
+  // Read by the refresh callback, which must not be rebuilt on every navigation:
+  // adding navStack to its dependencies would restart the refresh cycle on a
+  // route change.
+  const diagnosticsOnScreen = useRef(true);
+  useEffect(() => {
+    diagnosticsOnScreen.current = diagnosticsVisible(navStack, showDiagnostics);
+  }, [navStack, showDiagnostics]);
   const [showJourneyDetails, setShowJourneyDetails] = useState(false);
   const [presentationBusy, setPresentationBusy] = useState(false);
   const [presentationMessage, setPresentationMessage] = useState("");
@@ -741,7 +754,11 @@ function Content({ preflight, connection, shortcut }: { preflight: SleepPrefligh
       }
       const optionalDiagnostics = await collectOptionalDiagnostics(
         shouldCollectOptionalDiagnostics(
-          quickAccessVisible && showDiagnostics,
+          // `showDiagnostics` says the player opened these surfaces, not that
+          // they are on screen: on a pushed route the Command Center body is
+          // not rendered, and collecting for surfaces nobody can see is work
+          // the player did not ask for.
+          quickAccessVisible && diagnosticsOnScreen.current,
           nextPayload.snapshot.game_state,
         ),
         {
@@ -784,6 +801,10 @@ function Content({ preflight, connection, shortcut }: { preflight: SleepPrefligh
     setShowDiagnostics(compact.showDiagnostics);
     setShowJourneyDetails(compact.showJourneyDetails);
     setShowHardwareDetails(false);
+    // Steam may keep the plugin mounted between openings, so the route resets
+    // with the rest of the compact state; otherwise the panel reopens wherever
+    // it was left instead of at Command Center.
+    setNavStack(stackOnPanelOpen());
     setDockedIgpuStatus(null);
     setDiagnosticLoggingStatus(null);
     setPeripheralStatus(null);
@@ -1431,21 +1452,23 @@ function Content({ preflight, connection, shortcut }: { preflight: SleepPrefligh
     setNavStack((stack) => pushRoute(stack, route));
   }, []);
 
-  const goBack = useCallback((): boolean => {
-    let delegated = false;
-    setNavStack((stack) => {
-      const result = backRoute(stack);
-      delegated = result.delegate;
-      return result.stack;
-    });
-    return delegated;
+  // Pops one internal level. Whether Back is ours to handle at all is decided
+  // by `hasInternalLevel` in the render below, not here: a handler that is
+  // attached and then declines has already swallowed the press, and a decision
+  // computed inside a state updater is not reliable because React may defer or
+  // replay it.
+  const popRoute = useCallback(() => {
+    setNavStack((stack) => backRoute(stack).stack);
   }, []);
 
+  // The open-edge rule lives in troubleshootingToggle: opening asks for fresh
+  // evidence, closing does not, and re-opening does not request again. That is
+  // the surviving owner of what the deleted quick-access-section-state helper
+  // held, and it is covered by its own tests.
   const toggleTroubleshooting = useCallback(() => {
-    if (!showDiagnostics) {
-      void refresh(true);
-    }
-    setShowDiagnostics((visible) => !visible);
+    const result = troubleshootingToggle(showDiagnostics);
+    if (result.refresh) void refresh(true);
+    setShowDiagnostics(result.next);
   }, [refresh, showDiagnostics]);
 
   const toggleJourneyDetails = useCallback(() => {
@@ -1469,8 +1492,6 @@ function Content({ preflight, connection, shortcut }: { preflight: SleepPrefligh
     healthKnown: payload?.health != null,
   });
   const modules = quickAccessModules(sections);
-  const route = currentRoute(navStack);
-  const onCommandCenter = route.kind === "command-center";
   // Read-only status destinations, kept distinct from the configuration
   // modules: these open detail, never controls.
   const statusEntries: Array<{ id: StatusId; title: string; detail: string }> = [
@@ -1485,9 +1506,11 @@ function Content({ preflight, connection, shortcut }: { preflight: SleepPrefligh
     <>
       <style>{regearControlCss}</style>
       <Focusable
-        // B pops one internal level; once none is left the press must reach
-        // Steam's own QAM Back, or the player is trapped inside the panel.
-        onCancelButton={() => { goBack(); }}
+        // B is handled only while an internal level exists. At Command Center
+        // no handler is attached at all, so the press reaches Steam's own QAM
+        // Back instead of being swallowed by a handler that chose to do
+        // nothing. Native confirmation of that propagation stays pending.
+        {...(hasInternalLevel(navStack) ? { onCancelButton: popRoute } : {})}
         style={{ minWidth: 0 }}
       >
       <div ref={statusAnchor} tabIndex={-1}>

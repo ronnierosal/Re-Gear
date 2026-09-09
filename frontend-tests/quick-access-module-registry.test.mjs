@@ -154,3 +154,55 @@ test("a degenerate grid cannot produce an invalid index", () => {
   assert.equal(stepGrid(-4, 5, 2, "up"), 0);
   assert.equal(stepGrid(99, 5, 2, "up"), 2, "clamps to the last tile, then moves a row");
 });
+
+// ------------------------------------------- wiring decisions the panel makes
+
+test("Back has an internal level only once something is pushed", () => {
+  assert.equal(m.hasInternalLevel(INITIAL_STACK), false, "at root Steam must get the press");
+  assert.equal(m.hasInternalLevel(pushRoute(INITIAL_STACK, { kind: "modules" })), true);
+});
+
+test("the cancel decision does not depend on a state updater running", () => {
+  // The defect this replaces: a handler that computed its answer inside a React
+  // updater and returned it immediately, while the caller discarded it. This
+  // form is a pure function of the stack the render already holds.
+  const stack = pushRoute(INITIAL_STACK, { kind: "modules" });
+  assert.equal(m.hasInternalLevel(stack), m.hasInternalLevel(stack));
+  assert.equal(m.hasInternalLevel(backRoute(stack).stack), false);
+});
+
+test("diagnostics count as visible only on Command Center", () => {
+  assert.equal(m.diagnosticsVisible(INITIAL_STACK, true), true);
+  assert.equal(m.diagnosticsVisible(INITIAL_STACK, false), false);
+});
+
+test("navigating away stops diagnostics being treated as on screen", () => {
+  // Otherwise collection continues for surfaces nobody can see.
+  const pushed = pushRoute(INITIAL_STACK, { kind: "module", id: "egpu" });
+  assert.equal(m.diagnosticsVisible(pushed, true), false);
+  // Returning restores it without the player re-opening anything.
+  assert.equal(m.diagnosticsVisible(backRoute(pushed).stack, true), true);
+});
+
+test("a fresh panel opening resets to Command Center", () => {
+  // Steam may keep the plugin mounted, so the stack survives a close.
+  assert.deepEqual(m.stackOnPanelOpen(), INITIAL_STACK);
+  assert.deepEqual(currentRoute(m.stackOnPanelOpen()), { kind: "command-center" });
+});
+
+test("Troubleshooting refreshes on the closed to open edge only", () => {
+  const opening = m.troubleshootingToggle(false);
+  assert.equal(opening.next, true);
+  assert.equal(opening.refresh, true);
+  const closing = m.troubleshootingToggle(true);
+  assert.equal(closing.next, false);
+  assert.equal(closing.refresh, false, "closing must not request evidence");
+});
+
+test("re-opening an already open Troubleshooting does not request again", () => {
+  // Toggling twice returns to closed, having requested exactly once.
+  const first = m.troubleshootingToggle(false);
+  const second = m.troubleshootingToggle(first.next);
+  assert.equal(second.refresh, false);
+  assert.equal(second.next, false);
+});
