@@ -27,7 +27,7 @@
  * told before rather than surprised after.
  */
 
-import type { DisconnectStatusPayload } from "./backend";
+import type { DisconnectGamePayload, DisconnectStatusPayload } from "./backend";
 
 export type DisconnectPresentation = {
   /** Whether the tile may be activated. */
@@ -44,6 +44,8 @@ export type DisconnectPresentation = {
   displayApprovalRequired: boolean;
   /** True when this is a system state needing attention, not a failed action. */
   attention: boolean;
+  /** The game that would have to close first, when one is running. */
+  game: DisconnectGamePayload | null;
 };
 
 /** What each blocking code means to a player.
@@ -84,6 +86,32 @@ const KEEP_CABLE = "Keep the cable connected: this does not make unplugging safe
 
 const SESSION_WARNING = "Your Steam session will restart.";
 
+/** What closing this game will cost, in words a player can act on.
+ *
+ * Driven by the reviewed catalog. The default is the honest one: for a game
+ * nobody has reported on, Re-Gear does not know whether it saves, and says so
+ * rather than implying it is fine.
+ */
+export function gameCloseAdvice(game: DisconnectGamePayload): string {
+  switch (game.save_capability) {
+    case "verified_triggerable_autosave":
+    case "verified_save_on_exit":
+    case "graceful_exit_verified":
+      return "Closing it saves your progress.";
+    case "manual_save_recommended":
+    case "manual_save_required":
+      return "Save your progress first: this game does not save when it closes.";
+    case "unsafe_unknown":
+      return "Closing it may lose progress. Save your game first.";
+    default:
+      return "Re-Gear cannot confirm this game saves when it closes. Save it first.";
+  }
+}
+
+function gameName(game: DisconnectGamePayload): string {
+  return game.title || "A game";
+}
+
 export function disconnectPresentation(
   status: DisconnectStatusPayload | null,
 ): DisconnectPresentation {
@@ -96,6 +124,7 @@ export function disconnectPresentation(
       confirmation: null,
       displayApprovalRequired: false,
       attention: false,
+      game: null,
     };
   }
 
@@ -110,6 +139,7 @@ export function disconnectPresentation(
       confirmation: null,
       displayApprovalRequired: false,
       attention: true,
+      game: null,
     };
   }
 
@@ -122,6 +152,7 @@ export function disconnectPresentation(
       confirmation: null,
       displayApprovalRequired: false,
       attention: false,
+      game: null,
     };
   }
 
@@ -134,6 +165,23 @@ export function disconnectPresentation(
       confirmation: null,
       displayApprovalRequired: false,
       attention: false,
+      game: null,
+    };
+  }
+
+  if (status.code === "removal_safety.game_running" && status.game !== null) {
+    // Named, because "close the running game" is not advice a player can act
+    // on when they are looking at a Steam overlay and cannot see which game
+    // the eGPU is holding.
+    return {
+      available: false,
+      value: "Game running",
+      reason: `${gameName(status.game)} is using the eGPU. ${gameCloseAdvice(status.game)}`,
+      actionLabel: null,
+      confirmation: null,
+      displayApprovalRequired: false,
+      attention: false,
+      game: status.game,
     };
   }
 
@@ -148,6 +196,7 @@ export function disconnectPresentation(
       confirmation: null,
       displayApprovalRequired: false,
       attention: false,
+      game: null,
     };
   }
 
@@ -170,6 +219,7 @@ export function disconnectPresentation(
       .join(" "),
     displayApprovalRequired: display,
     attention: false,
+    game: status.game,
   };
 }
 

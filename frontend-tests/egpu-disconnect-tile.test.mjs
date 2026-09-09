@@ -25,6 +25,7 @@ const status = (over = {}) => ({
   scan_complete: true,
   external_display_committed: false,
   display_release_required: false,
+  game: null,
   last: null,
   ...over,
 });
@@ -158,6 +159,73 @@ test("an attemptable device says it will try, not that it will succeed", () => {
 test("a ready device does not hedge its confirmation", () => {
   const view = disconnectPresentation(status());
   assert.doesNotMatch(view.confirmation, /will try/i);
+});
+
+const game = (over = {}) => ({
+  app_id: "1145360", title: "Hades", save_capability: "untested",
+  egpu_handoff: "untested", save_known: false, ...over,
+});
+
+test("a running game is named, because 'close the running game' is not actionable", () => {
+  const view = disconnectPresentation(
+    status({ availability: "blocked", ready: false, attemptable: false,
+             code: "removal_safety.game_running", game: game() }),
+  );
+
+  assert.equal(view.available, false);
+  assert.equal(view.value, "Game running");
+  assert.match(view.reason, /Hades is using the eGPU/);
+  assert.equal(view.game.app_id, "1145360");
+});
+
+test("an untested game is told to save, never reassured", () => {
+  const view = disconnectPresentation(
+    status({ availability: "blocked", ready: false, attemptable: false,
+             code: "removal_safety.game_running", game: game() }),
+  );
+
+  assert.match(view.reason, /cannot confirm this game saves/i);
+  assert.doesNotMatch(view.reason, /saves your progress/i);
+});
+
+test("a game known to save on exit says so", () => {
+  const view = disconnectPresentation(
+    status({ availability: "blocked", ready: false, attemptable: false,
+             code: "removal_safety.game_running",
+             game: game({ save_capability: "verified_save_on_exit", save_known: true }) }),
+  );
+
+  assert.match(view.reason, /saves your progress/i);
+});
+
+test("a game needing a manual save says that plainly", () => {
+  for (const capability of ["manual_save_required", "manual_save_recommended"]) {
+    const view = disconnectPresentation(
+      status({ availability: "blocked", ready: false, attemptable: false,
+               code: "removal_safety.game_running",
+               game: game({ save_capability: capability, save_known: true }) }),
+    );
+    assert.match(view.reason, /Save your progress first/i);
+  }
+});
+
+test("an unnamed game still produces a usable sentence", () => {
+  const view = disconnectPresentation(
+    status({ availability: "blocked", ready: false, attemptable: false,
+             code: "removal_safety.game_running", game: game({ title: "" }) }),
+  );
+
+  assert.match(view.reason, /^A game is using the eGPU/);
+});
+
+test("a game running with no identity falls back rather than claiming none", () => {
+  const view = disconnectPresentation(
+    status({ availability: "blocked", ready: false, attemptable: false,
+             code: "removal_safety.game_running", game: null }),
+  );
+
+  assert.equal(view.available, false);
+  assert.match(view.reason, /Close the running game first/i);
 });
 
 test("only a disturbed device raises an alert after an attempt", () => {

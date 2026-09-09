@@ -49,8 +49,15 @@ from ..adapters.steamos.drm_crtc import DrmCrtcProbe
 from ..adapters.steamos.drm_display_release import DrmDisplayRelease
 from ..adapters.steamos.egpu_clients import EgpuClientDiscovery
 from ..adapters.steamos.egpu_device_nodes import SteamOsEgpuDeviceNodeDiscovery
+from ..adapters.game_session import (
+    GameScopeSessionObservationAdapter,
+    UserBoundGameScopeScanAdapter,
+)
 from ..adapters.steamos.commands import UserServiceCommandRunner
+from ..adapters.steamos.game_scopes import SystemdGameScopeDiscovery
 from ..domain.filter_arm_sequence import classify_holder_units
+from ..domain.game_compatibility import EgpuHandoffStatus, GameSaveCapability
+from ..domain.models import GameState
 from ..adapters.steamos.egpu_holders import (
     egpu_functions,
     node_paths,
@@ -80,6 +87,7 @@ from ..domain.removal_safety import (
 from ..domain.removal_transaction import RecoveryState, reconcile
 from ..ports.removal_transaction import RemovalTransactionStore
 from .device_filter_program import compile_device_filter
+from .compatibility_catalog_store import FileCompatibilityCatalogStore
 from .removal_transaction_store import FileRemovalTransactionStore
 
 
@@ -97,6 +105,9 @@ def removal_functions(gpu_bdf: str, audio_bdf: str) -> tuple[RemovalFunction, ..
 
 #: Where the durable removal record lives. Root-owned, outside any user's home.
 STORE_ROOT = Path("/var/lib/regear/egpu")
+#: Where the reviewed compatibility catalog lives. The store appends its own
+#: filename, so this is the directory rather than the file.
+CATALOG_ROOT = Path("/var/lib/regear")
 PCI_DEVICE_ROOT = Path("/sys/bus/pci/devices")
 INTERNAL_CARD = "/dev/dri/card0"
 EXTERNAL_CARD = "/dev/dri/card1"
@@ -121,6 +132,34 @@ class DisconnectAvailability(StrEnum):
 
 
 @dataclass(frozen=True, slots=True)
+class GameContext:
+    """The game currently rendering on the eGPU, and what is known about it.
+
+    A disconnect cannot happen while a game is using the eGPU: the device it
+    renders on is going away, and no live graphics context survives that. So
+    the game has to end first, and a caller has to be able to say which game
+    and what closing it will cost.
+
+    `save_capability` is the fact that decides the tone of that sentence.
+    `UNTESTED` is the common case and means Re-Gear does not know whether the
+    game saves on exit -- which a caller must say plainly rather than round to
+    reassurance.
+    """
+
+    app_id: str
+    #: From the reviewed catalog when it holds this game, otherwise empty. A
+    #: caller resolves a display name itself rather than being handed a guess.
+    title: str
+    save_capability: GameSaveCapability
+    egpu_handoff: EgpuHandoffStatus
+
+    @property
+    def save_known(self) -> bool:
+        """Whether the catalog says how this game handles being closed."""
+        return self.save_capability is not GameSaveCapability.UNTESTED
+
+
+@dataclass(frozen=True, slots=True)
 class DisconnectStatus:
     """Everything a caller needs to render, and nothing it has to infer."""
 
@@ -132,6 +171,10 @@ class DisconnectStatus:
     #: Whether a disconnect would need to turn the external display off. A
     #: separate approval, because it is visible to whoever is watching it.
     display_release_required: bool = False
+    #: The game holding the eGPU, when one is. None means no game is running,
+    #: or that its identity could not be established -- which are different
+    #: things, and the readiness code says which.
+    game: GameContext | None = None
     last: LiveDisconnectResult | None = None
 
     @property
@@ -168,6 +211,7 @@ class DisconnectObservation:
     removal: FreshRemovalObservation
     display: DisplayReleaseEvidence
     present: tuple[str, ...]
+    game: GameContext | None = None
 
     @property
     def readiness(self) -> RemovalSafety:
@@ -262,6 +306,7 @@ class LiveDisconnectRuntime:
             external_display_committed=observation.display.external_complete
             and committed,
             display_release_required=committed,
+            game=observation.game,
             last=self._last,
         )
 
@@ -480,6 +525,20 @@ def disconnect_status_to_payload(status) -> dict[str, object]:
         "scan_complete": status.scan_complete,
         "external_display_committed": status.external_display_committed,
         "display_release_required": status.display_release_required,
+        # The game holding the eGPU, when one is. Null means no game is
+        # running or its identity could not be established; the code says
+        # which, and a caller must not read null as "safe to close nothing".
+        "game": (
+            None
+            if status.game is None
+            else {
+                "app_id": status.game.app_id,
+                "title": status.game.title,
+                "save_capability": status.game.save_capability.value,
+                "egpu_handoff": status.game.egpu_handoff.value,
+                "save_known": status.game.save_known,
+            }
+        ),
         "last": disconnect_result_to_payload(last) if last is not None else None,
     }
 
@@ -546,11 +605,44 @@ def build_live_disconnect_runtime(
             raise RuntimeError(policy.code)
         return compile_device_filter(policy.devices)
 
+    def observe_game() -> GameContext | None:
+        """Identify the game holding the eGPU, and what the catalog knows.
+
+        Every failure is None rather than a guess. A caller reading None asks
+        the readiness code what is actually going on; it must never read it as
+        "no game is running", because an unidentifiable game is still a game
+        whose progress a close would put at risk.
+        """
+        try:
+            observation = GameScopeSessionObservationAdapter(
+                UserBoundGameScopeScanAdapter(SystemdGameScopeDiscovery(), uid)
+            ).observe()
+        except Exception:
+            return None
+        if observation.state is not GameState.RUNNING or observation.identity is None:
+            return None
+        app_id = observation.identity.steam_app_id
+        try:
+            records = FileCompatibilityCatalogStore(CATALOG_ROOT).load_games()
+        except Exception:
+            records = ()
+        for record in records:
+            if record.steam_app_id == app_id:
+                return GameContext(
+                    app_id, record.title, record.save_sleep, record.egpu_handoff
+                )
+        # Known to be running, absent from the catalog. Untested is the honest
+        # answer and is what makes a caller say so.
+        return GameContext(
+            app_id, "", GameSaveCapability.UNTESTED, EgpuHandoffStatus.UNTESTED
+        )
+
     def observe() -> DisconnectObservation:
         return DisconnectObservation(
             observe_removal(disconnect_snapshot_service()),
             observe_display(nodes, nodes_incomplete=not nodes_complete),
             present_addresses(gpu, audio),
+            observe_game(),
         )
 
     def authorize(observation: DisconnectObservation):

@@ -232,6 +232,32 @@ export interface DisconnectOutcomePayload {
   device_disturbed: boolean;
 }
 
+/** What the reviewed catalog knows about closing a game.
+ *
+ * `untested` is the common case and the only honest answer for a game nobody
+ * has reported on yet. It must be shown as "Re-Gear does not know", never
+ * rounded to reassurance.
+ */
+export type GameSaveCapability =
+  | "untested"
+  | "verified_triggerable_autosave"
+  | "verified_save_on_exit"
+  | "graceful_exit_verified"
+  | "manual_save_recommended"
+  | "manual_save_required"
+  | "unsafe_unknown";
+
+export interface DisconnectGamePayload {
+  app_id: string;
+  /** From the catalog when it holds this game, otherwise empty. Resolve a
+   * display name yourself rather than showing an empty string. */
+  title: string;
+  save_capability: GameSaveCapability;
+  egpu_handoff: string;
+  /** False when the catalog has nothing on this game. */
+  save_known: boolean;
+}
+
 export interface DisconnectStatusPayload {
   schema_version: number;
   availability: DisconnectAvailability;
@@ -249,6 +275,10 @@ export interface DisconnectStatusPayload {
   /** The disconnect would turn the external display off. A separate approval
    * from the disconnect itself, because it is visible to whoever is watching. */
   display_release_required: boolean;
+  /** The game holding the eGPU, when one is. Null means no game is running
+   * *or* its identity could not be established; the `code` says which, and
+   * null must not be read as "there is nothing to close". */
+  game: DisconnectGamePayload | null;
   last: DisconnectOutcomePayload | null;
 }
 

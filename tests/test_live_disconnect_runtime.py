@@ -34,7 +34,12 @@ from hdm.delivery.live_disconnect_runtime import (  # noqa: E402
     present_addresses,
 )
 from hdm.egpu_release import HolderScan  # noqa: E402
+from hdm.delivery.live_disconnect_runtime import GameContext  # noqa: E402
 from hdm.domain.display_release import DisplayReleaseEvidence  # noqa: E402
+from hdm.domain.game_compatibility import (  # noqa: E402
+    EgpuHandoffStatus,
+    GameSaveCapability,
+)
 from hdm.domain.removal_safety import RemovalSafety, RemovalSafetyState  # noqa: E402
 from hdm.domain.removal_transaction import (  # noqa: E402
     FunctionProgress,
@@ -121,6 +126,7 @@ def build(
     service=None,
     authorize=lambda binding: object(),
     observe_raises=False,
+    game=None,
 ):
     def observe():
         if observe_raises:
@@ -129,6 +135,7 @@ def build(
             FreshRemovalObservation(readiness, binding, "generation", "sample"),
             display,
             present,
+            game,
         )
 
     runtime = LiveDisconnectRuntime(
@@ -548,6 +555,39 @@ class PayloadTests(unittest.TestCase):
         encoded = json.dumps(disconnect_status_to_payload(runtime.status()))
 
         self.assertIn("display_release_required", encoded)
+
+
+class GameContextTests(unittest.TestCase):
+    """The dialog cannot say anything useful without these facts."""
+
+    def test_a_running_game_travels_with_its_catalog_knowledge(self) -> None:
+        context = GameContext(
+            "1145360", "Hades",
+            GameSaveCapability.VERIFIED_SAVE_ON_EXIT,
+            EgpuHandoffStatus.VERIFIED,
+        )
+        payload = disconnect_status_to_payload(
+            build(readiness=CLIENTS_BLOCKED, game=context).status()
+        )
+
+        self.assertEqual(payload["game"]["app_id"], "1145360")
+        self.assertEqual(payload["game"]["save_capability"], "verified_save_on_exit")
+        self.assertIs(payload["game"]["save_known"], True)
+
+    def test_an_uncatalogued_game_reports_untested_rather_than_nothing(self) -> None:
+        context = GameContext(
+            "999", "", GameSaveCapability.UNTESTED, EgpuHandoffStatus.UNTESTED
+        )
+        payload = disconnect_status_to_payload(
+            build(readiness=CLIENTS_BLOCKED, game=context).status()
+        )
+
+        self.assertEqual(payload["game"]["save_capability"], "untested")
+        self.assertIs(payload["game"]["save_known"], False)
+        self.assertEqual(payload["game"]["title"], "")
+
+    def test_no_game_is_null_rather_than_an_empty_object(self) -> None:
+        self.assertIsNone(disconnect_status_to_payload(build().status())["game"])
 
 
 if __name__ == "__main__":
