@@ -171,9 +171,10 @@ test("the cancel decision does not depend on a state updater running", () => {
   assert.equal(m.hasInternalLevel(backRoute(stack).stack), false);
 });
 
-test("diagnostics count as visible only on Command Center", () => {
-  assert.equal(m.diagnosticsVisible(INITIAL_STACK, true), true);
+test("diagnostics count as visible only on their dedicated route", () => {
+  assert.equal(m.diagnosticsVisible(INITIAL_STACK, true), false);
   assert.equal(m.diagnosticsVisible(INITIAL_STACK, false), false);
+  assert.equal(m.diagnosticsVisible(pushRoute(INITIAL_STACK, { kind: "troubleshoot" }), true), true);
 });
 
 test("navigating away stops diagnostics being treated as on screen", () => {
@@ -181,7 +182,7 @@ test("navigating away stops diagnostics being treated as on screen", () => {
   const pushed = pushRoute(INITIAL_STACK, { kind: "module", id: "egpu" });
   assert.equal(m.diagnosticsVisible(pushed, true), false);
   // Returning restores it without the player re-opening anything.
-  assert.equal(m.diagnosticsVisible(backRoute(pushed).stack, true), true);
+  assert.equal(m.diagnosticsVisible(backRoute(pushed).stack, true), false);
 });
 
 test("a fresh panel opening resets to Command Center", () => {

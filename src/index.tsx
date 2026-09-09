@@ -1,3 +1,8 @@
+import { PageLayout, CommandCenterHeader } from "./quick-access/page-layout";
+import { EgpuModule } from "./quick-access/modules/egpu";
+import { egpuPresentation } from "./quick-access/modules/egpu-presentation";
+import { ControllerModule } from "./quick-access/modules/controller";
+import { controllerPresentation } from "./quick-access/modules/controller-presentation";
 import { createDisplayShortcutRuntime } from "./display-shortcut-runtime";
 import { showDisconnectProgress } from "./disconnect-progress-panel";
 import { ConnectionQuickStatus } from "./connection-quick-status";
@@ -71,7 +76,7 @@ import {
 import { createDeckySteamSuspendAdapter } from "./decky-steam-suspend";
 import { deliverBlockedAttempt } from "./blocked-attempt-delivery";
 import { diagnosticOverlayRows } from "./diagnostics-overlay";
-import { DashboardSurface, QuickAccessOverview } from "./quick-access-overview";
+import { DashboardSurface } from "./quick-access-overview";
 import { DashboardAction } from "./dashboard-action";
 import { TdpControls } from "./tdp-controls";
 import { hardwareDetailRows } from "./quick-access-dashboard";
@@ -99,7 +104,6 @@ import {
   pushRoute,
   quickAccessModules,
   stackOnPanelOpen,
-  troubleshootingToggle,
 } from "./quick-access/module-registry";
 import type { ModuleId, NavStack, Route, StatusId } from "./quick-access/module-registry";
 import { ModulesButton, ShellBody } from "./quick-access/shell";
@@ -585,7 +589,7 @@ function Content({ preflight, connection, shortcut }: { preflight: SleepPrefligh
   // Read by the refresh callback, which must not be rebuilt on every navigation:
   // adding navStack to its dependencies would restart the refresh cycle on a
   // route change.
-  const diagnosticsOnScreen = useRef(true);
+  const diagnosticsOnScreen = useRef(false);
   useEffect(() => {
     diagnosticsOnScreen.current = diagnosticsVisible(navStack, showDiagnostics);
   }, [navStack, showDiagnostics]);
@@ -1448,6 +1452,7 @@ function Content({ preflight, connection, shortcut }: { preflight: SleepPrefligh
     setShowDiagnostics(compact.showDiagnostics);
     setShowJourneyDetails(compact.showJourneyDetails);
     setShowHardwareDetails(false);
+    setNavStack(INITIAL_STACK);
     // Wait for the diagnostics section to collapse, then reset Steam's owning
     // scroll panel and move focus to a native in-panel control. A non-focusable
     // status div leaves controller navigation at Steam's QAM Back control.
@@ -1463,11 +1468,6 @@ function Content({ preflight, connection, shortcut }: { preflight: SleepPrefligh
     }, 0);
   }, []);
 
-  // The Troubleshoot route is deliberately not wired here. Its content is the
-  // six surfaces the existing `showDiagnostics` boolean gates, and moving them
-  // behind a route is its own slice; opening an empty Troubleshoot destination
-  // would be a screen that claims to hold controls it does not have. The
-  // existing Troubleshooting control stays the way in until then.
   /** Read the disconnect status. The backend documents this call as observing
    * and mutating nothing -- no filter armed, no DRM master taken, no display
    * touched -- so it is safe to call whenever the screen showing it is open. */
@@ -1524,15 +1524,14 @@ function Content({ preflight, connection, shortcut }: { preflight: SleepPrefligh
     setNavStack((stack) => backRoute(stack).stack);
   }, []);
 
-  // The open-edge rule lives in troubleshootingToggle: opening asks for fresh
-  // evidence, closing does not, and re-opening does not request again. That is
-  // the surviving owner of what the deleted quick-access-section-state helper
-  // held, and it is covered by its own tests.
+  // Request optional evidence once per panel opening. The dedicated route
+  // controls ongoing visibility; revisiting does not create a second poller.
   const toggleTroubleshooting = useCallback(() => {
-    const result = troubleshootingToggle(showDiagnostics);
-    if (result.refresh) void refresh(true);
-    setShowDiagnostics(result.next);
-  }, [refresh, showDiagnostics]);
+    diagnosticsOnScreen.current = true;
+    if (!showDiagnostics) void refresh(true);
+    setShowDiagnostics(true);
+    openRoute({ kind: "troubleshoot" });
+  }, [refresh, showDiagnostics, openRoute]);
 
   // Only while the panel is open and the Command Center is the visible route:
   // reading for a screen nobody is looking at is work the player did not ask
@@ -1595,37 +1594,36 @@ function Content({ preflight, connection, shortcut }: { preflight: SleepPrefligh
         style={{ minWidth: 0 }}
       >
       <div ref={statusAnchor} tabIndex={-1}>
-      {!onCommandCenter && (
-        <PanelSection>
-          <ShellBody
-            route={route}
-            modules={modules}
-            statusEntries={statusEntries}
-            onOpenModule={(id: ModuleId) => openRoute({ kind: "module", id })}
-            onOpenStatus={(id: StatusId) => openRoute({ kind: "status", id })}
-          >{null}</ShellBody>
-        </PanelSection>
-      )}
-      {onCommandCenter && (<>
-      <PanelSection title="At a glance">
-        <QuickAccessOverview
+      {!onCommandCenter && <PanelSection><PanelSectionRow>
+        <ButtonItem layout="below" onClick={popRoute}>Back</ButtonItem>
+      </PanelSectionRow></PanelSection>}
+      <PageLayout route={route}
+        modules={<PanelSection><ShellBody route={route} modules={modules}
+          statusEntries={statusEntries}
+          onOpenModule={(id: ModuleId) => openRoute({ kind: "module", id })}
+          onOpenStatus={(id: StatusId) => openRoute({ kind: "status", id })}
+          onOpenTroubleshoot={toggleTroubleshooting}>{null}</ShellBody></PanelSection>}
+        controller={<PanelSection title="Controller"><ControllerModule presentation={controllerPresentation({ peripheral: peripheralStatus, shortcutAvailable: controllerShortcutAvailable })} /></PanelSection>}
+        egpuStatus={<PanelSection title="eGPU status"><EgpuModule presentation={egpuPresentation(payload)} /></PanelSection>}
+        controllerStatus={<PanelSection title="Controller status"><ControllerModule presentation={controllerPresentation({ peripheral: peripheralStatus, shortcutAvailable: controllerShortcutAvailable })} /></PanelSection>}
+        autoTdp={<TdpControls visible={quickAccessVisible && route.kind === "module" && route.id === "auto-tdp"} />}
+        commandCenter={<>
+
+      <PanelSection>
+        <CommandCenterHeader
           summaryRef={statusFocusAnchor}
           onSummaryFocus={() => {
             if (statusAnchor.current) scrollToTopOfOwningPanel(statusAnchor.current);
           }}
-          mode={payload?.inference.mode ?? "unknown"}
-          modeLabel={loading ? "Readingâ€¦" : label(payload?.inference.mode ?? "unknown")}
+          mode={loading ? "Reading…" : label(payload?.inference.mode ?? "unknown")}
+          display={snapshot?.displays.some((d) => d.active === true && d.kind === "external")
+            ? "External display"
+            : snapshot?.displays.some((d) => d.active === true && d.kind === "internal")
+              ? "Handheld display" : "Display unknown"}
+          game={loading ? "Reading…" : label(snapshot?.game_state ?? "unknown")}
           health={healthStatusLabel(payload?.health, loading)}
-          game={label(snapshot?.game_state ?? "unknown")}
-          loading={loading}
+          navigation={<ModulesButton onOpen={() => openRoute({ kind: "modules" })} />}
         />
-
-      </PanelSection>
-
-      <PanelSection>
-        <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
-          <ModulesButton onOpen={() => openRoute({ kind: "modules" })} />
-        </div>
         {/* Answers "what just happened to my hardware" the moment the panel
             comes back after the session restart, above everything else,
             because an answer a player has to scroll to find is one they will
@@ -1674,12 +1672,14 @@ function Content({ preflight, connection, shortcut }: { preflight: SleepPrefligh
         >{null}</ShellBody>
       </PanelSection>
 
+      </>}
+      egpu={<>
+      <PanelSection title="eGPU"><EgpuModule presentation={egpuPresentation(payload)} onOpenRecovery={toggleTroubleshooting} /></PanelSection>
       {payload?.connection_readiness && payload.connection_readiness.stage !== "disconnected" &&
         <PanelSection title="eGPU readiness">
           <ConnectionQuickStatus store={connection.store} visible={quickAccessVisible}
             onOpen={openConnectionProgress} />
         </PanelSection>}
-      <TdpControls visible={quickAccessVisible} />
       <PanelSection title="Docking & actions">
         <div ref={primaryControlAnchor}>
           <DashboardSurface>
@@ -1811,6 +1811,8 @@ function Content({ preflight, connection, shortcut }: { preflight: SleepPrefligh
         )}
       </PanelSection>
 
+      </>}
+      troubleshoot={<>
       {sectionVisibility.journey && (
         <>
           <PanelSection title="Journey status">
@@ -2087,7 +2089,8 @@ function Content({ preflight, connection, shortcut }: { preflight: SleepPrefligh
           </ButtonItem>
         </PanelSectionRow>
       </PanelSection>}
-      </>)}
+      </>}
+      />
       </div>
       </Focusable>
     </>
