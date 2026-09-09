@@ -644,7 +644,7 @@ function startConnectionMonitor(deps) {
 
 var brandIcon = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNTYgMjU2IiByb2xlPSJpbWciIGFyaWEtbGFiZWxsZWRieT0idGl0bGUgZGVzYyI+CiAgPHRpdGxlIGlkPSJ0aXRsZSI+UmUtR2VhciBpY29uPC90aXRsZT4KICA8ZGVzYyBpZD0iZGVzYyI+Q3lhbiBzZWdtZW50ZWQgaGV4YWdvbmFsIFJlLUdlYXIgUiBlbWJsZW0gZm9yIERlY2t5IFVJLjwvZGVzYz4KICA8ZyBmaWxsPSJub25lIiBzdHJva2U9IiMzNWQ2ZjUiIHN0cm9rZS13aWR0aD0iMTQiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+CiAgICA8cGF0aCBkPSJNNzggMzEgMTIxIDhsNDMgMjMiLz4KICAgIDxwYXRoIGQ9Ik0xODEgNDEgMjIwIDYzdjQ3Ii8+CiAgICA8cGF0aCBkPSJNMjIwIDE0NXY0OGwtNDIgMjQiLz4KICAgIDxwYXRoIGQ9Im0xNjQgMjI1LTQzIDIzLTQzLTIzIi8+CiAgICA8cGF0aCBkPSJNNjEgMjE2IDIwIDE5M3YtNDciLz4KICAgIDxwYXRoIGQ9Ik0yMCAxMTFWNjNsNDItMjMiLz4KICA8L2c+CiAgPHBhdGggZmlsbD0iIzM1ZDZmNSIgZD0iTTc1IDYyaDY5YzI5IDAgNDYgMTQgNDYgMzkgMCAyMC0xMSAzMy0zMSAzOGwzMCA1NWgtMzRsLTI3LTUwaC0yMmwtMTkgNTBINTNsMzgtMTAxaDU1YzggMCAxMi0zIDEyLTEwIDAtNi00LTktMTItOUg4M0w3NSA2MlptNDEgNThoMjljOCAwIDEyLTQgMTItMTBzLTQtOS0xMi05aC0yMmwtNyAxOVoiLz4KPC9zdmc+Cg==";
 
-const C$3 = {
+const C$4 = {
     bg: "#06101c",
     panel: "#0a1727",
     panel2: "#0d1b2d",
@@ -659,19 +659,19 @@ const C$3 = {
     red: "#ff6578",
 };
 const stateColor = {
-    ready: C$3.green,
-    checking: C$3.amber,
-    pending: C$3.muted,
-    switching: C$3.cyan,
-    blocked: C$3.amber,
-    error: C$3.red,
+    ready: C$4.green,
+    checking: C$4.amber,
+    pending: C$4.muted,
+    switching: C$4.cyan,
+    blocked: C$4.amber,
+    error: C$4.red,
 };
 function StatusGlyph({ state }) {
     if (state === "ready") {
         return SP_JSX.jsx("span", { "aria-hidden": "true", style: {
-                width: 14, height: 14, borderRadius: 999, border: `2px solid ${C$3.green}`,
-                display: "grid", placeItems: "center", color: C$3.green, fontWeight: 900, fontSize: 13,
-                boxShadow: `0 0 12px ${C$3.green}18`, boxSizing: "border-box",
+                width: 14, height: 14, borderRadius: 999, border: `2px solid ${C$4.green}`,
+                display: "grid", placeItems: "center", color: C$4.green, fontWeight: 900, fontSize: 13,
+                boxShadow: `0 0 12px ${C$4.green}18`, boxSizing: "border-box",
             }, children: "\u2713" });
     }
     if (state === "blocked" || state === "error") {
@@ -697,9 +697,9 @@ function ConnectionProgressOverlay(props) {
     const elapsed = props.elapsedSeconds != null ? ` · ${props.elapsedSeconds} seconds` : "";
     return SP_JSX.jsxs("div", { style: {
             width: "100%", maxWidth: 420, minWidth: 0, boxSizing: "border-box", padding: 6,
-            borderRadius: 22, background: `linear-gradient(180deg, ${C$3.bg} 0%, #071322 100%)`,
-            border: `1px solid ${C$3.borderStrong}`, boxShadow: "0 26px 90px rgba(0,0,0,.58)",
-            lineHeight: 1.2, color: C$3.text, fontFamily: "Motiva Sans, Inter, system-ui, sans-serif",
+            borderRadius: 22, background: `linear-gradient(180deg, ${C$4.bg} 0%, #071322 100%)`,
+            border: `1px solid ${C$4.borderStrong}`, boxShadow: "0 26px 90px rgba(0,0,0,.58)",
+            lineHeight: 1.2, color: C$4.text, fontFamily: "Motiva Sans, Inter, system-ui, sans-serif",
         }, children: [SP_JSX.jsx("style", { children: `
       @keyframes regear-spin { to { transform: rotate(360deg); } }
       @keyframes regear-sweep { 0% { opacity:.35; transform:scaleX(.35); transform-origin:left; } 50% { opacity:1; transform:scaleX(.78); transform-origin:left; } 100% { opacity:.35; transform:scaleX(.35); transform-origin:right; } }
@@ -707,20 +707,20 @@ function ConnectionProgressOverlay(props) {
       .regear-progress-sweep { animation: regear-sweep 1.25s ease-in-out infinite; }
       .regear-hide-button:focus { outline: 3px solid rgba(57,216,255,.42); outline-offset: 3px; }
       @media (prefers-reduced-motion: reduce) { .regear-progress-spinner, .regear-progress-sweep { animation: none; } }
-    ` }), SP_JSX.jsxs("div", { style: { display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 3, minWidth: 0 }, children: [SP_JSX.jsx("img", { src: brandIcon, alt: "", "aria-hidden": "true", width: 20, height: 20, style: { objectFit: "contain", flexShrink: 0 } }), SP_JSX.jsx("div", { style: { fontSize: 16, fontWeight: 820, letterSpacing: "-.02em" }, children: "Re-Gear" }), SP_JSX.jsx("div", { style: { color: C$3.muted, fontSize: 13, margin: "0 2px" }, children: "/" }), SP_JSX.jsx("div", { style: { fontSize: 13, fontWeight: 620 }, children: "Connection progress" })] }), SP_JSX.jsx("div", { style: { display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 6, marginTop: 4, marginBottom: 4 }, children: ["Connecting", "Switching", "Ready"].map((name, i) => {
+    ` }), SP_JSX.jsxs("div", { style: { display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 3, minWidth: 0 }, children: [SP_JSX.jsx("img", { src: brandIcon, alt: "", "aria-hidden": "true", width: 20, height: 20, style: { objectFit: "contain", flexShrink: 0 } }), SP_JSX.jsx("div", { style: { fontSize: 16, fontWeight: 820, letterSpacing: "-.02em" }, children: "Re-Gear" }), SP_JSX.jsx("div", { style: { color: C$4.muted, fontSize: 13, margin: "0 2px" }, children: "/" }), SP_JSX.jsx("div", { style: { fontSize: 13, fontWeight: 620 }, children: "Connection progress" })] }), SP_JSX.jsx("div", { style: { display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 6, marginTop: 4, marginBottom: 4 }, children: ["Connecting", "Switching", "Ready"].map((name, i) => {
                     const active = i === activeIndex;
                     const complete = i < activeIndex;
-                    return SP_JSX.jsxs("div", { children: [SP_JSX.jsxs("div", { style: { display: "flex", alignItems: "baseline", gap: 4, color: active ? C$3.text : C$3.muted, marginBottom: 4 }, children: [SP_JSX.jsxs("span", { style: { color: complete || active ? C$3.cyan : C$3.muted, fontWeight: 820, fontSize: 13 }, children: ["0", i + 1] }), SP_JSX.jsx("span", { style: { fontWeight: active ? 780 : 600, fontSize: 13 }, children: name })] }), SP_JSX.jsx("div", { style: { height: 4, borderRadius: 999, background: "rgba(105,130,155,.28)", overflow: "hidden" }, children: (complete || active) && SP_JSX.jsx("div", { className: active && props.phase === "switching" ? "regear-progress-sweep" : undefined, style: { width: "100%", height: "100%", borderRadius: 999, background: C$3.cyan, boxShadow: `0 0 12px ${C$3.cyan}66` } }) })] }, name);
+                    return SP_JSX.jsxs("div", { children: [SP_JSX.jsxs("div", { style: { display: "flex", alignItems: "baseline", gap: 4, color: active ? C$4.text : C$4.muted, marginBottom: 4 }, children: [SP_JSX.jsxs("span", { style: { color: complete || active ? C$4.cyan : C$4.muted, fontWeight: 820, fontSize: 13 }, children: ["0", i + 1] }), SP_JSX.jsx("span", { style: { fontWeight: active ? 780 : 600, fontSize: 13 }, children: name })] }), SP_JSX.jsx("div", { style: { height: 4, borderRadius: 999, background: "rgba(105,130,155,.28)", overflow: "hidden" }, children: (complete || active) && SP_JSX.jsx("div", { className: active && props.phase === "switching" ? "regear-progress-sweep" : undefined, style: { width: "100%", height: "100%", borderRadius: 999, background: C$4.cyan, boxShadow: `0 0 12px ${C$4.cyan}66` } }) })] }, name);
                 }) }), SP_JSX.jsxs("div", { style: {
-                    border: `1px solid ${C$3.border}`, borderRadius: 18,
-                    background: `linear-gradient(180deg, ${C$3.panel} 0%, ${C$3.panel2} 100%)`, padding: "6px",
-                }, children: [SP_JSX.jsx("div", { style: { fontSize: 16, fontWeight: 830, letterSpacing: "-.02em", marginBottom: 3 }, children: headline(props.phase) }), SP_JSX.jsxs("div", { style: { color: C$3.muted, fontSize: 13, marginBottom: 6 }, children: [props.deviceLabel, elapsed] }), props.phase === "ready" && SP_JSX.jsx("div", { style: { display: "grid", placeItems: "center", margin: "2px 0 6px" }, children: SP_JSX.jsx("div", { style: { width: 36, height: 36, borderRadius: 999, border: `4px solid ${C$3.green}`, color: C$3.green, display: "grid", placeItems: "center", fontSize: 24, fontWeight: 500, boxShadow: `0 0 28px ${C$3.green}18` }, children: "\u2713" }) }), SP_JSX.jsx("div", { style: { border: `1px solid ${C$3.border}`, borderRadius: 14, overflow: "hidden", background: C$3.row }, children: props.rows.map((row, index) => SP_JSX.jsxs("div", { style: {
+                    border: `1px solid ${C$4.border}`, borderRadius: 18,
+                    background: `linear-gradient(180deg, ${C$4.panel} 0%, ${C$4.panel2} 100%)`, padding: "6px",
+                }, children: [SP_JSX.jsx("div", { style: { fontSize: 16, fontWeight: 830, letterSpacing: "-.02em", marginBottom: 3 }, children: headline(props.phase) }), SP_JSX.jsxs("div", { style: { color: C$4.muted, fontSize: 13, marginBottom: 6 }, children: [props.deviceLabel, elapsed] }), props.phase === "ready" && SP_JSX.jsx("div", { style: { display: "grid", placeItems: "center", margin: "2px 0 6px" }, children: SP_JSX.jsx("div", { style: { width: 36, height: 36, borderRadius: 999, border: `4px solid ${C$4.green}`, color: C$4.green, display: "grid", placeItems: "center", fontSize: 24, fontWeight: 500, boxShadow: `0 0 28px ${C$4.green}18` }, children: "\u2713" }) }), SP_JSX.jsx("div", { style: { border: `1px solid ${C$4.border}`, borderRadius: 14, overflow: "hidden", background: C$4.row }, children: props.rows.map((row, index) => SP_JSX.jsxs("div", { style: {
                                 minHeight: 19, padding: "1px 6px", display: "grid", gridTemplateColumns: row.icon ? "20px minmax(0,1fr) auto" : "minmax(0,1fr) auto",
-                                alignItems: "center", gap: 6, borderBottom: index === props.rows.length - 1 ? "none" : `1px solid ${C$3.border}`,
-                            }, children: [row.icon && SP_JSX.jsx("div", { style: { color: C$3.text, opacity: .95 }, children: row.icon }), SP_JSX.jsx("div", { style: { fontSize: 13, minWidth: 0, overflowWrap: "anywhere" }, children: row.label }), SP_JSX.jsxs("div", { style: { display: "flex", alignItems: "center", gap: 6, color: stateColor[row.state], fontWeight: 700, fontSize: 13, whiteSpace: "nowrap" }, children: [SP_JSX.jsx(StatusGlyph, { state: row.state }), SP_JSX.jsx("span", { children: row.stateLabel ?? (row.state === "ready" ? "Ready" : row.state === "checking" ? "Checking" : row.state === "switching" ? "Switching" : row.state === "pending" ? "Next" : row.state === "blocked" ? "Blocked" : "Error") })] })] }, row.key)) }), props.detail && SP_JSX.jsx("div", { style: { marginTop: 4, color: C$3.muted, fontSize: 13 }, children: props.detail }), props.keepConnectedMessage && SP_JSX.jsx("div", { style: { marginTop: 6, color: C$3.muted, fontSize: 13 }, children: props.keepConnectedMessage }), SP_JSX.jsxs("div", { style: { display: "flex", gap: 8, marginTop: 6 }, children: [SP_JSX.jsx(DFL.DialogButton, { className: "rg-dashboard-action regear-hide-button", onClick: props.onHide, style: {
+                                alignItems: "center", gap: 6, borderBottom: index === props.rows.length - 1 ? "none" : `1px solid ${C$4.border}`,
+                            }, children: [row.icon && SP_JSX.jsx("div", { style: { color: C$4.text, opacity: .95 }, children: row.icon }), SP_JSX.jsx("div", { style: { fontSize: 13, minWidth: 0, overflowWrap: "anywhere" }, children: row.label }), SP_JSX.jsxs("div", { style: { display: "flex", alignItems: "center", gap: 6, color: stateColor[row.state], fontWeight: 700, fontSize: 13, whiteSpace: "nowrap" }, children: [SP_JSX.jsx(StatusGlyph, { state: row.state }), SP_JSX.jsx("span", { children: row.stateLabel ?? (row.state === "ready" ? "Ready" : row.state === "checking" ? "Checking" : row.state === "switching" ? "Switching" : row.state === "pending" ? "Next" : row.state === "blocked" ? "Blocked" : "Error") })] })] }, row.key)) }), props.detail && SP_JSX.jsx("div", { style: { marginTop: 4, color: C$4.muted, fontSize: 13 }, children: props.detail }), props.keepConnectedMessage && SP_JSX.jsx("div", { style: { marginTop: 6, color: C$4.muted, fontSize: 13 }, children: props.keepConnectedMessage }), SP_JSX.jsxs("div", { style: { display: "flex", gap: 8, marginTop: 6 }, children: [SP_JSX.jsx(DFL.DialogButton, { className: "rg-dashboard-action regear-hide-button", onClick: props.onHide, style: {
                                     margin: 0, padding: "4px 10px", height: 32, lineHeight: "22px", width: "100%", minWidth: 0, minHeight: 32, borderRadius: 12,
-                                    border: `2px solid ${C$3.cyan}`, background: "rgba(5,16,28,.74)", color: C$3.text,
-                                    fontSize: 17, fontWeight: 720, cursor: "pointer", boxShadow: `inset 0 0 18px ${C$3.cyan}08`,
+                                    border: `2px solid ${C$4.cyan}`, background: "rgba(5,16,28,.74)", color: C$4.text,
+                                    fontSize: 17, fontWeight: 720, cursor: "pointer", boxShadow: `inset 0 0 18px ${C$4.cyan}08`,
                                 }, children: "Hide" }), props.onSwitch && SP_JSX.jsx(DFL.DialogButton, { className: "rg-dashboard-action", onClick: props.onSwitch, style: { width: "100%", minWidth: 0, margin: 0, padding: "4px 10px", height: 32, minHeight: 32, lineHeight: "22px", fontSize: 14 }, children: "Switch to TV" })] })] })] });
 }
 
@@ -1880,7 +1880,7 @@ function hardwareDetailRows(payload) {
     ];
 }
 
-const C$2 = {
+const C$3 = {
     cyan: "#39d8ff",
     green: "#5eea8a",
     text: "#f4f7fb",
@@ -1903,11 +1903,11 @@ function DashboardSurface({ children, primary = false }) {
             marginBottom: 12,
             minWidth: 0,
             overflow: "hidden",
-            border: `1px solid ${primary ? "#9d7635" : C$2.border}`,
+            border: `1px solid ${primary ? "#9d7635" : C$3.border}`,
             background: primary
                 ? "linear-gradient(115deg, rgba(82,58,16,.72), rgba(12,25,42,.98))"
                 : "linear-gradient(120deg, rgba(14,31,52,.98), rgba(7,17,30,.98))",
-            color: C$2.text,
+            color: C$3.text,
             boxShadow: primary ? "inset 0 0 28px rgba(255,185,48,.05)" : "inset 0 0 24px rgba(0,170,255,.025)",
         }, children: children });
 }
@@ -1919,7 +1919,7 @@ function CurrentStateCard({ modeLabel, health, game, loading }) {
             border: `1px solid ${regearTheme.border}`,
             background: regearTheme.surface,
         }, children: [SP_JSX.jsx("div", { style: {
-                    color: C$2.cyan,
+                    color: C$3.cyan,
                     fontSize: 12,
                     fontWeight: 760,
                     letterSpacing: "1.5px",
@@ -1932,7 +1932,7 @@ function CurrentStateCard({ modeLabel, health, game, loading }) {
                     marginBottom: 12,
                 }, children: SP_JSX.jsx("div", { style: { fontSize: 18, fontWeight: 700, lineHeight: 1.4 }, children: modeLabel }) }), [["Health", loading ? "Reading…" : health], ["Game", loading ? "Reading…" : game]].map(([name, value]) => SP_JSX.jsxs("div", { style: { display: "grid", gridTemplateColumns: "64px minmax(0,1fr)", gap: 8,
                     padding: "8px 0", borderTop: `1px solid ${regearTheme.border}`, fontSize: 13, lineHeight: 1.4 }, children: [SP_JSX.jsx("span", { style: { color: regearTheme.muted }, children: name }), SP_JSX.jsx("span", { style: { textAlign: "right", overflowWrap: "anywhere",
-                            color: name === "Health" && !loading && health === "Ready" ? C$2.green : regearTheme.text }, children: value })] }, name))] });
+                            color: name === "Health" && !loading && health === "Ready" ? C$3.green : regearTheme.text }, children: value })] }, name))] });
 }
 function ModeCard({ name, detail, active, loading }) {
     const isPortable = name === "Portable";
@@ -1941,23 +1941,23 @@ function ModeCard({ name, detail, active, loading }) {
             minHeight: 130,
             padding: "18px 12px 14px",
             borderRadius: 20,
-            border: `2px solid ${active ? C$2.cyan : "#36516f"}`,
+            border: `2px solid ${active ? C$3.cyan : "#36516f"}`,
             background: active
                 ? "linear-gradient(145deg, rgba(4,53,82,.98), rgba(9,26,45,.98))"
                 : "linear-gradient(145deg, rgba(12,28,47,.98), rgba(7,17,30,.98))",
-            boxShadow: active ? `0 0 20px ${C$2.cyan}20, inset 0 0 24px ${C$2.cyan}0b` : "none",
+            boxShadow: active ? `0 0 20px ${C$3.cyan}20, inset 0 0 24px ${C$3.cyan}0b` : "none",
             display: "flex",
             flexDirection: "column",
             alignItems: "center",
             justifyContent: "center",
             textAlign: "center",
-            color: active ? C$2.text : "#d7e3f1",
-        }, children: [SP_JSX.jsx("div", { style: { color: active ? C$2.cyan : "#a6bfdc", marginBottom: 10 }, children: SP_JSX.jsx("img", { src: isPortable ? handheldModeIcon : tvModeIcon, width: 56, height: 56, alt: "", "aria-hidden": "true", style: { display: "block", objectFit: "contain" } }) }), SP_JSX.jsx("div", { style: { fontSize: 18, fontWeight: 760, marginBottom: 6 }, children: name }), SP_JSX.jsx("div", { style: { fontSize: 12, lineHeight: "16px", color: C$2.muted, minHeight: 32 }, children: detail }), SP_JSX.jsx("div", { style: { marginTop: 10, color: active ? C$2.cyan : C$2.muted, fontSize: 12, fontWeight: 700 }, children: active ? "ACTIVE" : loading ? "READING…" : "Not active" })] });
+            color: active ? C$3.text : "#d7e3f1",
+        }, children: [SP_JSX.jsx("div", { style: { color: active ? C$3.cyan : "#a6bfdc", marginBottom: 10 }, children: SP_JSX.jsx("img", { src: isPortable ? handheldModeIcon : tvModeIcon, width: 56, height: 56, alt: "", "aria-hidden": "true", style: { display: "block", objectFit: "contain" } }) }), SP_JSX.jsx("div", { style: { fontSize: 18, fontWeight: 760, marginBottom: 6 }, children: name }), SP_JSX.jsx("div", { style: { fontSize: 12, lineHeight: "16px", color: C$3.muted, minHeight: 32 }, children: detail }), SP_JSX.jsx("div", { style: { marginTop: 10, color: active ? C$3.cyan : C$3.muted, fontSize: 12, fontWeight: 700 }, children: active ? "ACTIVE" : loading ? "READING…" : "Not active" })] });
 }
 function QuickAccessOverview({ mode, modeLabel, health, game, loading, summaryRef, onSummaryFocus }) {
     const cards = placementCards(mode, loading);
-    return SP_JSX.jsxs("div", { style: { color: C$2.text, minWidth: 0 }, children: [SP_JSX.jsx(SectionFocus, { ref: summaryRef, label: "At a glance: current state", onFocused: onSummaryFocus, children: SP_JSX.jsx(CurrentStateCard, { modeLabel: modeLabel, health: health, game: game, loading: loading }) }), SP_JSX.jsxs(SectionFocus, { label: "Your setup", children: [SP_JSX.jsx("div", { style: {
-                            color: C$2.muted,
+    return SP_JSX.jsxs("div", { style: { color: C$3.text, minWidth: 0 }, children: [SP_JSX.jsx(SectionFocus, { ref: summaryRef, label: "At a glance: current state", onFocused: onSummaryFocus, children: SP_JSX.jsx(CurrentStateCard, { modeLabel: modeLabel, health: health, game: game, loading: loading }) }), SP_JSX.jsxs(SectionFocus, { label: "Your setup", children: [SP_JSX.jsx("div", { style: {
+                            color: C$3.muted,
                             fontSize: 11,
                             fontWeight: 760,
                             letterSpacing: "1.6px",
@@ -2887,7 +2887,7 @@ function troubleshootingToggle(open) {
  * Nothing here implies a backend operation is supported. Content for each
  * module arrives in its own slice; this shell only establishes the routes.
  */
-const C$1 = {
+const C$2 = {
     cyan: "#39d8ff", text: "#f4f7fb", muted: "#9eb2ca",
     border: "#294665", amber: "#ffc247", dim: "#5d7a99",
 };
@@ -2902,38 +2902,38 @@ function NavRow({ title, detail, blocked, onClick, focusKey }) {
         style: {
             width: "100%", minHeight: 44, margin: "0 0 6px", padding: "8px 10px",
             display: "flex", alignItems: "center", gap: 8, textAlign: "left",
-            background: SURFACE$1, border: `1px solid ${C$1.border}`, borderRadius: 12,
-            color: blocked ? C$1.dim : C$1.text,
+            background: SURFACE$1, border: `1px solid ${C$2.border}`, borderRadius: 12,
+            color: blocked ? C$2.dim : C$2.text,
         }, children: [SP_JSX.jsxs("span", { style: { flex: "1 1 auto", minWidth: 0 }, children: [SP_JSX.jsx("span", { style: { display: "block", fontSize: 14, fontWeight: 700 }, children: title }), SP_JSX.jsx("span", { style: { display: "block", fontSize: 12, lineHeight: "16px",
-                            color: blocked ? C$1.amber : C$1.muted, whiteSpace: "normal" }, children: detail })] }), SP_JSX.jsx(Chevron, {})] });
+                            color: blocked ? C$2.amber : C$2.muted, whiteSpace: "normal" }, children: detail })] }), SP_JSX.jsx(Chevron, {})] });
 }
 function ModulesList({ modules, onOpen }) {
-    return SP_JSX.jsx(DFL.Focusable, { style: { color: C$1.text }, "flow-children": "vertical", children: modules.map((entry) => (SP_JSX.jsx(NavRow, { focusKey: `module:${entry.id}`, title: entry.title, 
+    return SP_JSX.jsx(DFL.Focusable, { style: { color: C$2.text }, "flow-children": "vertical", children: modules.map((entry) => (SP_JSX.jsx(NavRow, { focusKey: `module:${entry.id}`, title: entry.title, 
             // A blocked module shows why, not a summary of controls it cannot reach.
             detail: entry.available ? entry.summary : entry.reason ?? "", blocked: !entry.available, onClick: () => onOpen(entry.id) }, entry.id))) });
 }
 /** Heading for a pushed level, with the reason when the destination is blocked. */
 function RouteHeader({ title, reason }) {
-    return SP_JSX.jsxs("div", { style: { margin: "0 2px 10px", color: C$1.text }, children: [SP_JSX.jsx("div", { style: { fontSize: 15, fontWeight: 760, marginBottom: 2 }, children: title }), reason && SP_JSX.jsx("div", { style: { fontSize: 12, lineHeight: "16px", color: C$1.amber }, children: reason })] });
+    return SP_JSX.jsxs("div", { style: { margin: "0 2px 10px", color: C$2.text }, children: [SP_JSX.jsx("div", { style: { fontSize: 15, fontWeight: 760, marginBottom: 2 }, children: title }), reason && SP_JSX.jsx("div", { style: { fontSize: 12, lineHeight: "16px", color: C$2.amber }, children: reason })] });
 }
 /** The Modules entry on Command Center. Labelled, not an icon-only target. */
 function ModulesButton({ onOpen }) {
     return SP_JSX.jsx(DFL.DialogButton, { "data-regear-focus": "modules", onClick: onOpen, style: {
             width: "auto", minHeight: 36, margin: 0, padding: "4px 12px",
             alignSelf: "flex-end", borderRadius: 10, fontSize: 13, fontWeight: 700,
-            background: SURFACE$1, border: `1px solid ${C$1.border}`, color: C$1.cyan,
+            background: SURFACE$1, border: `1px solid ${C$2.border}`, color: C$2.cyan,
         }, children: "Modules" });
 }
 /** Read-only status entries, deliberately not routed to configuration. */
 function StatusLinks({ entries, onOpen }) {
-    return SP_JSX.jsx(DFL.Focusable, { style: { color: C$1.text }, "flow-children": "vertical", children: entries.map((entry) => (SP_JSX.jsx(NavRow, { focusKey: `status:${entry.id}`, title: entry.title, detail: entry.detail, blocked: false, onClick: () => onOpen(entry.id) }, entry.id))) });
+    return SP_JSX.jsx(DFL.Focusable, { style: { color: C$2.text }, "flow-children": "vertical", children: entries.map((entry) => (SP_JSX.jsx(NavRow, { focusKey: `status:${entry.id}`, title: entry.title, detail: entry.detail, blocked: false, onClick: () => onOpen(entry.id) }, entry.id))) });
 }
 /** Placeholder body for a route whose content has not been migrated yet.
  *
  * Stated plainly rather than left blank: an empty pane reads as a broken
  * screen, and this shell must not imply a control exists where none does. */
 function PendingContent({ what }) {
-    return SP_JSX.jsxs("div", { style: { margin: "0 2px", fontSize: 12, lineHeight: "16px", color: C$1.muted }, children: [what, " has not moved here yet. It is still reachable on the main panel."] });
+    return SP_JSX.jsxs("div", { style: { margin: "0 2px", fontSize: 12, lineHeight: "16px", color: C$2.muted }, children: [what, " has not moved here yet. It is still reachable on the main panel."] });
 }
 function ShellBody({ route, modules, children, onOpenModule, onOpenStatus, statusEntries }) {
     if (route.kind === "modules") {
@@ -3451,6 +3451,229 @@ function commandCenterTiles(input) {
         })(),
     };
     return TILE_ORDER.map((id) => tiles[id]);
+}
+
+/** Whether the evidence supports disconnecting the eGPU cable: pure, no I/O.
+ *
+ * This is the gate behind the only screen in Re-Gear that tells a player they
+ * may physically disconnect the eGPU. It exists so that statement is *earned
+ * from evidence* rather than asserted, and so the exact evidence is shown next
+ * to it and can be argued with.
+ *
+ * WHY THIS IS NOT THE OPERATION INVARIANT 10 FORBIDS.
+ *
+ * Invariant 10 was written about a live unplug: pulling the cable while the
+ * eGPU is bound, with a driver attached and transactions possible. That is the
+ * operation with no containment for in-flight DMA, and it stays forbidden.
+ *
+ * A safe disconnect is a different operation. The sequence removes both PCI
+ * functions and verifies they are gone, so by the time a cable is touched
+ * there is no bound device left to disconnect from. The checks below are what
+ * make that a fact about this machine rather than a claim about the design:
+ * clearance is refused unless the system itself reports no eGPU connected.
+ *
+ * Every check must pass. They are deliberately not collapsed into one boolean
+ * from the backend, because a player deciding whether to pull a cable deserves
+ * to see which specific facts were established, and because a single opaque
+ * flag is impossible to audit when it is wrong.
+ *
+ * The decisive check is the last one. "Remove ran and returned success" is a
+ * statement about a command; "no eGPU is connected" is a statement about the
+ * bus. Only the second one justifies touching the cable, and the difference is
+ * between trusting an action and observing its result.
+ *
+ * Scope: the eGPU. NOT the dock as a whole. Issue #105 records an xhci
+ * recovery failure on the USB branch, a separate device path that a clean GPU
+ * removal says nothing about, so the caveat below is always carried.
+ *
+ * If a check cannot be evaluated, it fails. Absent evidence is never a pass:
+ * this is the one place in the product where an optimistic default would read
+ * as permission to act on hardware.
+ */
+const CLEARED_STATEMENT = "The eGPU is detached and no longer connected to the Ally. You can now disconnect the eGPU cable.";
+const NOT_CLEARED_STATEMENT = "Do not disconnect the eGPU yet. Re-Gear could not confirm every check below. Shut the handheld down first, then disconnect it.";
+const DOCK_CAVEAT = "This covers the eGPU only. Other devices behind the dock, such as USB controllers and storage, are not checked here.";
+function check(label, passed, detail) {
+    return { label, passed, detail };
+}
+function unplugClearance(status, outcome) {
+    const checks = [];
+    // 1. The attempt itself.
+    checks.push(check("Removal completed", outcome?.ok === true && outcome.released === true, !outcome ? "No disconnect has been run."
+        : outcome.ok && outcome.released ? "The disconnect reported success."
+            : "The disconnect did not report a completed release."));
+    // 2. Not left half attached. This outranks a success flag: a device moved
+    //    somewhere it has never been is the worst state to pull a cable from.
+    checks.push(check("Device not left half detached", outcome != null && outcome.device_disturbed === false, !outcome ? "No disconnect has been run."
+        : outcome.device_disturbed ? "The device was left partly detached."
+            : "The device was not left in a partial state."));
+    // 3. Functions actually came out and stayed out.
+    const removedCount = outcome?.removed.length ?? 0;
+    const restoredCount = outcome?.restored.length ?? 0;
+    checks.push(check("PCI functions removed", removedCount > 0 && restoredCount === 0, removedCount === 0 ? "No functions were reported removed."
+        : restoredCount > 0
+            ? `${removedCount} removed, but ${restoredCount} were restored again.`
+            : `${removedCount} eGPU function${removedCount === 1 ? "" : "s"} removed.`));
+    // 4. Nothing still holds it. An empty holder list is only meaningful with a
+    //    completed scan: an unfinished scan that found nothing found nothing.
+    const holders = status?.holders ?? null;
+    const scanComplete = status?.scan_complete === true;
+    checks.push(check("Nothing still using the eGPU", holders !== null && holders.length === 0 && scanComplete, holders === null ? "No current status reading."
+        : !scanComplete ? "The check of running processes did not finish."
+            : holders.length > 0 ? `Still held by ${holders.length} unit${holders.length === 1 ? "" : "s"}.`
+                : "No process is holding the eGPU."));
+    // 5. Re-Gear released its own hold.
+    checks.push(check("Re-Gear's device filter disarmed", outcome?.filter_disarmed === true, outcome?.filter_disarmed === true ? "The filter was disarmed."
+        : "The filter was not reported as disarmed."));
+    // 6. The decisive one: the bus, not the command. This is what makes the
+    //    disconnect safe rather than live -- there is nothing bound to pull from.
+    const gone = status?.availability === "unavailable"
+        && status.code === "live_disconnect.egpu_unavailable";
+    checks.push(check("eGPU no longer connected to the system", gone, !status ? "No current status reading."
+        : gone ? "The system reports no eGPU connected."
+            : "The system still reports an eGPU present."));
+    const cleared = checks.every((entry) => entry.passed);
+    return {
+        cleared,
+        checks,
+        statement: cleared ? CLEARED_STATEMENT : NOT_CLEARED_STATEMENT,
+        caveat: DOCK_CAVEAT,
+    };
+}
+
+/** What to tell a player after a disconnect attempt: pure, no React, no I/O.
+ *
+ * The problem this solves is specific. A disconnect restarts the Steam session,
+ * the panel remounts, and the player is left looking at a panel that has
+ * forgotten what just happened to their hardware. The one question they have --
+ * "can I unplug it now?" -- goes unanswered, which is the worst possible time
+ * for silence.
+ *
+ * `status.last` survives that restart, so the answer is available. This turns
+ * it into something a player can act on.
+ *
+ * THE ANSWER TO "CAN I DISCONNECT IT" IS EARNED, NOT ASSERTED.
+ *
+ * Invariant 10 forbids a *live* unplug: pulling the cable while the eGPU is
+ * bound, with a driver attached and transactions possible. A safe disconnect
+ * is a different operation, and the difference is checkable rather than
+ * argued: the functions are removed and the system is asked whether an eGPU is
+ * still connected. This module never composes that answer itself; it delegates
+ * to `unplugClearance`, which refuses unless every check passes and shows the
+ * evidence beside its verdict.
+ *
+ * The clearance is scoped to the eGPU and always carries the caveat that the
+ * USB branch behind the dock (#105) is a separate path this says nothing
+ * about.
+ */
+const ATTENTION_HEADLINE = "The eGPU needs attention";
+const REMOVED_HEADLINE = "The eGPU is detached in software";
+const FAILED_HEADLINE = "The disconnect did not complete";
+function describe(outcome) {
+    const detail = [];
+    if (outcome.removed.length > 0) {
+        detail.push(outcome.removed.length === 1
+            ? "One eGPU function was removed."
+            : `${outcome.removed.length} eGPU functions were removed.`);
+    }
+    if (outcome.restored.length > 0) {
+        // Restoration after a failure is the difference between a tidy no-op and a
+        // device left half detached, so it is worth saying explicitly.
+        detail.push(outcome.restored.length === 1
+            ? "One function was restored."
+            : `${outcome.restored.length} functions were restored.`);
+    }
+    if (outcome.display_released.length > 0) {
+        detail.push("The external display was turned off.");
+    }
+    if (outcome.session_disturbed) {
+        detail.push("Your Steam session was restarted to free the device.");
+    }
+    if (outcome.filter_disarmed) {
+        detail.push("Re-Gear's device filter was disarmed.");
+    }
+    return detail;
+}
+function disconnectResult(outcome, status) {
+    const clearance = unplugClearance(status, outcome);
+    if (!outcome) {
+        return { show: false, tone: "done", headline: "", detail: [], clearance, attention: false };
+    }
+    // Attention outranks success and failure alike. A device left somewhere it
+    // has never been is not a failed button press, and reporting it as one would
+    // invite the player to simply try again.
+    if (outcome.device_disturbed) {
+        return {
+            show: true, tone: "attention", headline: ATTENTION_HEADLINE,
+            detail: [
+                "A disconnect stopped partway and the eGPU is half detached.",
+                ...describe(outcome),
+                "Restore it before trying again or shutting down.",
+            ],
+            clearance, attention: true,
+        };
+    }
+    if (outcome.ok && outcome.released) {
+        return {
+            // The headline reflects the checked state, not the command's return code.
+            show: true, tone: "done",
+            headline: clearance.cleared ? "The eGPU is disconnected" : REMOVED_HEADLINE,
+            detail: describe(outcome),
+            clearance, attention: false,
+        };
+    }
+    return {
+        show: true, tone: "failed", headline: FAILED_HEADLINE,
+        detail: [
+            // A failure that restored cleanly left the device where it started, which
+            // is materially different from one that did not.
+            outcome.restored.length > 0
+                ? "The eGPU was left as it was."
+                : "The eGPU was not detached.",
+            ...describe(outcome),
+        ],
+        clearance, attention: false,
+    };
+}
+
+/** Post-disconnect result notice: rendering only, no policy, no requests.
+ *
+ * Placed at the top of Command Center because it answers the question a player
+ * has the moment the panel comes back after the session restart, and an answer
+ * they have to scroll to find is one they will act without.
+ *
+ * The unplug line is styled as the most prominent thing in the block on
+ * purpose. It is the one sentence that must survive being skim-read.
+ */
+const C$1 = {
+    cyan: "#39d8ff", text: "#f4f7fb", muted: "#9eb2ca",
+    border: "#294665", amber: "#ffc247", red: "#ff6b6b",
+};
+const TONE_COLOR = {
+    done: "#39d8ff", attention: "#ffc247", failed: "#ff6b6b",
+};
+function DisconnectResultNotice({ result, onDismiss }) {
+    if (!result.show)
+        return null;
+    const accent = TONE_COLOR[result.tone];
+    return SP_JSX.jsxs("div", { style: {
+            margin: "0 2px 10px", padding: "10px", borderRadius: 12, minWidth: 0,
+            background: "linear-gradient(135deg, rgba(19,36,58,.96), rgba(9,21,36,.98))",
+            border: `1px solid ${accent}`,
+        }, children: [SP_JSX.jsx("div", { style: { fontSize: 14, fontWeight: 760, color: accent, marginBottom: 4 }, children: result.headline }), result.detail.map((line) => (SP_JSX.jsx("div", { style: { fontSize: 12, lineHeight: "17px", color: C$1.muted }, children: line }, line))), SP_JSX.jsx("div", { style: { marginTop: 8 }, children: result.clearance.checks.map((entry) => (SP_JSX.jsxs("div", { style: {
+                        display: "flex", gap: 6, alignItems: "baseline",
+                        fontSize: 11, lineHeight: "16px", minWidth: 0,
+                    }, children: [SP_JSX.jsx("span", { style: { color: entry.passed ? C$1.cyan : C$1.red, fontWeight: 760 }, children: entry.passed ? "✓" : "✗" }), SP_JSX.jsxs("span", { style: { color: C$1.muted, minWidth: 0 }, children: [SP_JSX.jsx("span", { style: { color: entry.passed ? C$1.text : C$1.red }, children: entry.label }), " · ", entry.detail] })] }, entry.label))) }), SP_JSX.jsx("div", { style: {
+                    marginTop: 8, padding: "7px 9px", borderRadius: 9,
+                    background: result.clearance.cleared ? "rgba(57,216,255,.10)" : "rgba(255,194,71,.10)",
+                    border: `1px solid ${result.clearance.cleared ? C$1.cyan : C$1.amber}`,
+                    fontSize: 13, fontWeight: 760, lineHeight: "18px",
+                    color: result.clearance.cleared ? C$1.cyan : C$1.amber,
+                }, children: result.clearance.statement }), SP_JSX.jsx("div", { style: { marginTop: 6, fontSize: 11, lineHeight: "15px", color: C$1.muted }, children: result.clearance.caveat }), SP_JSX.jsx(DFL.Focusable, { style: { marginTop: 8 }, children: SP_JSX.jsx(DFL.DialogButton, { onClick: onDismiss, style: {
+                        width: "100%", minHeight: 36, margin: 0, padding: "5px 10px",
+                        borderRadius: 9, fontSize: 12, fontWeight: 700, color: C$1.text,
+                        background: "rgba(41,70,101,.5)", border: `1px solid ${C$1.border}`,
+                    }, children: "Dismiss" }) })] });
 }
 
 /** Command Center first screen: rendering only, no policy, no requests.
@@ -4129,6 +4352,10 @@ function Content({ preflight, connection, shortcut }) {
     const [disconnectMessage, setDisconnectMessage] = SP_REACT.useState("");
     /** The tile whose reason is shown under the grid. */
     const [selectedTile, setSelectedTile] = SP_REACT.useState(null);
+    /** Dismissal of the last-attempt notice, for this panel session only. It is
+     * not persisted: the outcome is the answer to "what just happened to my
+     * hardware", and a stored dismissal would hide it after a later restart. */
+    const [resultDismissed, setResultDismissed] = SP_REACT.useState(false);
     const route = currentRoute(navStack);
     const onCommandCenter = route.kind === "command-center";
     // Read by the refresh callback, which must not be rebuilt on every navigation:
@@ -4960,6 +5187,8 @@ function Content({ preflight, connection, shortcut }) {
         }
         finally {
             setDisconnectBusy(false);
+            // A new attempt is a new answer, so an earlier dismissal must not hide it.
+            setResultDismissed(false);
             // Re-read rather than assuming what the attempt left behind.
             void refreshDisconnect();
         }
@@ -5038,7 +5267,7 @@ function Content({ preflight, connection, shortcut }) {
             , { ...(hasInternalLevel(navStack) ? { onCancelButton: popRoute } : {}), style: { minWidth: 0 }, children: SP_JSX.jsxs("div", { ref: statusAnchor, tabIndex: -1, children: [!onCommandCenter && (SP_JSX.jsx(DFL.PanelSection, { children: SP_JSX.jsx(ShellBody, { route: route, modules: modules, statusEntries: statusEntries, onOpenModule: (id) => openRoute({ kind: "module", id }), onOpenStatus: (id) => openRoute({ kind: "status", id }), children: null }) })), onCommandCenter && (SP_JSX.jsxs(SP_JSX.Fragment, { children: [SP_JSX.jsx(DFL.PanelSection, { title: "At a glance", children: SP_JSX.jsx(QuickAccessOverview, { summaryRef: statusFocusAnchor, onSummaryFocus: () => {
                                             if (statusAnchor.current)
                                                 scrollToTopOfOwningPanel(statusAnchor.current);
-                                        }, mode: payload?.inference.mode ?? "unknown", modeLabel: loading ? "Reading…" : label(payload?.inference.mode ?? "unknown"), health: healthStatusLabel(payload?.health, loading), game: label(snapshot?.game_state ?? "unknown"), loading: loading }) }), SP_JSX.jsxs(DFL.PanelSection, { children: [SP_JSX.jsx("div", { style: { display: "flex", flexDirection: "column", minWidth: 0 }, children: SP_JSX.jsx(ModulesButton, { onOpen: () => openRoute({ kind: "modules" }) }) }), SP_JSX.jsx(CommandCenterGrid, { tiles: tiles, onActivate: (id) => {
+                                        }, mode: payload?.inference.mode ?? "unknown", modeLabel: loading ? "Reading…" : label(payload?.inference.mode ?? "unknown"), health: healthStatusLabel(payload?.health, loading), game: label(snapshot?.game_state ?? "unknown"), loading: loading }) }), SP_JSX.jsxs(DFL.PanelSection, { children: [SP_JSX.jsx("div", { style: { display: "flex", flexDirection: "column", minWidth: 0 }, children: SP_JSX.jsx(ModulesButton, { onOpen: () => openRoute({ kind: "modules" }) }) }), SP_JSX.jsx(DisconnectResultNotice, { result: disconnectResult(resultDismissed ? null : egpuDisconnect?.last, egpuDisconnect), onDismiss: () => setResultDismissed(true) }), SP_JSX.jsx(CommandCenterGrid, { tiles: tiles, onActivate: (id) => {
                                                 setSelectedTile(id);
                                                 const tile = tiles.find((candidate) => candidate.id === id);
                                                 if (!tile)
