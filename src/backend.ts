@@ -759,7 +759,7 @@ export const getEgpuDisconnectStatus = callable<[], DisconnectStatusPayload>(
  * `takePendingRelaunch` rather than remembering it here.
  */
 export const executeEgpuDisconnect = callable<
-  [releaseDisplay: boolean, relaunchAppId: string],
+  [releaseDisplay: boolean, relaunchAppId?: string],
   DisconnectOutcomePayload
 >("execute_egpu_disconnect");
 
