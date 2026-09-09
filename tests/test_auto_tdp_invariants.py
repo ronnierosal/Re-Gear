@@ -1,10 +1,17 @@
 """Seeded closed-loop invariants for Auto TDP over arbitrary workloads.
 
 The named replays in test_auto_tdp_replays cover chosen scenarios. These cover
-the space between them: for any frame-rate sequence a device might produce, the
-loop must stay inside its configured range, keep one restorable baseline, honour
-its settling window, and stop writing the moment it is disabled. Seeds are fixed
-so a failure is reproducible rather than merely observed once.
+the space between them: across a spread of workload shapes the loop must stay
+inside its configured range, keep one restorable baseline, honour its settling
+window, and stop writing the moment it is disabled. Seeds are fixed so a failure
+is reproducible rather than merely observed once.
+
+These are finite simulated trajectories, not a proof over arbitrary workloads.
+Their value is conditional on each one actually driving the loop, so the
+non-vacuity test below asserts that every workload writes, that a journal record
+is created, and that the runs collectively reach both the floor and the ceiling.
+Without that last check a workload set can quietly stop exercising a clamp: the
+upper-clamp mutation survived this suite until a workload reached 30 W.
 """
 
 import random
@@ -125,6 +132,19 @@ class AutoTdpInvariantTests(unittest.TestCase):
             # Each verified write costs at least one settling window, so the run
             # length bounds how many the loop can possibly have made.
             self.assertLessEqual(len(writes), DURATION_MS // case.policy.settling_ms)
+
+    def test_every_workload_actually_drives_the_loop(self):
+        """Guards the invariants above from passing vacuously."""
+        reached = set()
+        for case, writes, _ in self.each_run():
+            policy = case.policy
+            self.assertGreater(len(writes), 0)
+            self.assertIsNotNone(case.journal.record)
+            reached.update(watts for _, watts in writes)
+        # Both clamps must be exercised by the set as a whole, or a mutation
+        # that removes one can survive unnoticed.
+        self.assertIn(policy.minimum_watts, reached)
+        self.assertIn(policy.maximum_watts, reached)
 
     def test_a_stopped_session_writes_nothing_further(self):
         for case, writes, requests in self.each_run():
