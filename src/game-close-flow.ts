@@ -43,6 +43,9 @@ import type {
 export interface CloseFlowRequest {
   /** The game to close, or null when there is nothing Re-Gear can close. */
   appId: string | null;
+  /** What the player asked for. Sleep does not reopen the game before the
+   * machine suspends -- the record waits and is claimed after waking. */
+  intent?: "disconnect" | "sleep";
   /** Approval to turn the external display off, from the tile confirmation. */
   releaseDisplay: boolean;
   /** The player ticked "don't ask again for this game". */
@@ -59,6 +62,7 @@ export interface CloseFlowEffects {
   disconnect(
     releaseDisplay: boolean,
     relaunchAppId: string,
+    relaunchIntent: string,
   ): Promise<DisconnectOutcomePayload>;
   relaunchGame(appId: string): Promise<void>;
   /** Claim the game the backend recorded for reopening, or "" for none. */
@@ -173,21 +177,27 @@ export async function runDisconnectWithGameClose(
   // Asked for with the removal, so the wish survives this panel being torn
   // down by the session restart the removal performs.
   const wanted = request.relaunch && gameClosed && appId !== null ? appId : "";
+  const intent = request.intent ?? "disconnect";
+  // Sleeping means the machine is about to be off. Reopening the game now
+  // would launch it seconds before a suspend, so the record is left for the
+  // panel that comes up after waking.
+  const reopenNow = intent !== "sleep";
 
   let outcome: DisconnectOutcomePayload;
   try {
-    outcome = await effects.disconnect(request.releaseDisplay, wanted);
+    outcome = await effects.disconnect(request.releaseDisplay, wanted, intent);
   } catch {
     // The game is already closed, so put it back before reporting. The call
     // may have failed before the backend recorded anything, so this is the one
     // place a fallback is needed -- and it is safe, because claiming already
-    // consumed any record that did get written.
+    // consumed any record that did get written. A sleep that never happened
+    // leaves the player awake with a closed game, so this reopens either way.
     const relaunched = await restore(effects, false, wanted);
     return failed("flow.disconnect_failed", { gameClosed, relaunched });
   }
 
   const disturbed = outcome.device_disturbed === true;
-  const relaunched = await restore(effects, disturbed);
+  const relaunched = reopenNow ? await restore(effects, disturbed) : false;
   return {
     ok: outcome.ok === true,
     code: outcome.code,
@@ -264,6 +274,47 @@ export async function claimPendingRelaunch(
   }
 }
 
+export interface SleepFlowEffects extends CloseFlowEffects {
+  /** Steam's own suspend. Re-Gear never suspends the machine itself. */
+  suspend(): Promise<void>;
+}
+
+/** Close the game, disconnect the eGPU, then let Steam sleep the handheld.
+ *
+ * Sleeping while the eGPU is attached is refused outright on this hardware --
+ * the dock wakes the handheld immediately -- so the only honest offer is
+ * *disconnect, then sleep*. That makes this the disconnect flow plus one step,
+ * and the ordering of that step is the whole safety argument:
+ *
+ * **Nothing suspends unless the disconnect succeeded.** A machine put to sleep
+ * with the eGPU still attached is the state the sleep guard exists to prevent,
+ * and it wakes seconds later having closed the player's game for nothing.
+ *
+ * **The game is not reopened before the suspend.** Launching it seconds before
+ * the machine goes off would be worse than not reopening it at all. The wish
+ * is recorded and waits; the panel that comes up after waking claims it.
+ */
+export async function runSleepWithGameClose(
+  request: CloseFlowRequest,
+  effects: SleepFlowEffects,
+): Promise<CloseFlowResult> {
+  const result = await runDisconnectWithGameClose(
+    { ...request, intent: "sleep" },
+    effects,
+  );
+  if (!result.ok) {
+    // Whatever went wrong, the eGPU is still attached and sleeping would wake
+    // the handheld straight back up.
+    return result;
+  }
+  try {
+    await effects.suspend();
+  } catch {
+    return { ...result, ok: false, code: "flow.suspend_failed" };
+  }
+  return { ...result, code: "flow.slept" };
+}
+
 /** What to tell the player when the flow ends.
  *
  * Codes absent here quote themselves, so an unmapped outcome reads as
@@ -276,9 +327,17 @@ const FLOW_MESSAGE: Record<string, string> = {
     "The game did not close, so the eGPU was left connected. Close it yourself and try again.",
   "flow.disconnect_failed":
     "The game closed, but the eGPU could not be disconnected.",
+  "flow.suspend_failed":
+    "The eGPU is detached in software, but Steam did not sleep the handheld. Try sleeping again.",
 };
 
 export function closeFlowMessage(result: CloseFlowResult): string {
+  if (result.code === "flow.slept") {
+    // Read after waking, so it is written in the past tense.
+    return result.gameClosed
+      ? "Your game was closed and the eGPU detached in software before sleeping. Keep the cable connected: this does not make unplugging safe."
+      : "The eGPU was detached in software before sleeping. Keep the cable connected: this does not make unplugging safe.";
+  }
   if (result.attention) {
     return "The disconnect stopped partway and the eGPU is in an unexpected state. Check it before using it again.";
   }

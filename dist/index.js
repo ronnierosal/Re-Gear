@@ -319,6 +319,8 @@ const getEgpuDisconnectStatus = callable("get_egpu_disconnect_status");
  * `takePendingRelaunch` rather than remembering it here.
  */
 const executeEgpuDisconnect = callable("execute_egpu_disconnect");
+/** Read-only. What sleeping would take right now; sleeps nothing. */
+callable("get_sleep_readiness");
 /** Claim the game a disconnect closed, if it may still be reopened.
  *
  * Consuming, and consuming on refusal too, so a relaunch that happens cannot
@@ -3036,33 +3038,52 @@ function gameCloseAdvice(game) {
 function gameName(game) {
     return game?.title || "the running game";
 }
-/** The dialog shown before a disconnect closes whatever is running.
+/** Why the game has to close, in the words of the thing the player asked for.
+ *
+ * Both actions end the game for the same underlying reason -- the eGPU is
+ * going away -- but a player who pressed Sleep is not thinking about the eGPU,
+ * and telling them their game must close "before it can be disconnected" would
+ * answer a question they did not ask.
+ */
+function becauseOf(intent) {
+    return intent === "sleep"
+        ? "has to close before the handheld can sleep"
+        : "has to close before it can be disconnected";
+}
+/** The dialog shown before a disconnect or a sleep closes what is running.
  *
  * Returns null when nothing has to be asked: either nothing is running, or
- * the player already gave a standing answer for this game.
+ * the player already gave a standing answer for this game and this action.
  *
  * The body is ordered the way a player needs it -- what is about to happen,
  * what it costs them, then the two things they must not be surprised by. The
  * cable sentence is last in every branch, for the same reason it is last in
  * the tile confirmation: it is the sentence that must survive skim-reading.
+ *
+ * Sleeping says it will disconnect too, because it will: sleeping with the
+ * eGPU attached is refused on this hardware, so the eGPU going away is not an
+ * implementation detail the player can be spared.
  */
 function gameCloseDialog(prompt, game) {
     if (prompt === null || prompt.decision !== "confirm") {
         return null;
     }
     const named = game !== null && game.identity_exact;
+    const sleeping = prompt.intent === "sleep";
     if (prompt.code === "game_close.scan_incomplete") {
         // Not "nothing is running": Re-Gear could not look. Saying the first
         // would close a player's game without a word about it.
         return {
-            title: "Disconnect the eGPU?",
+            title: sleeping ? "Sleep the handheld?" : "Disconnect the eGPU?",
             body: [
-                "Re-Gear could not check whether a game is running, so it cannot tell you what disconnecting will close.",
+                sleeping
+                    ? "Re-Gear could not check whether a game is running, so it cannot tell you what sleeping will close. The eGPU will be disconnected first."
+                    : "Re-Gear could not check whether a game is running, so it cannot tell you what disconnecting will close.",
                 "Save anything you have open first.",
                 SESSION_WARNING,
                 KEEP_CABLE,
             ].join(" "),
-            confirmLabel: "Disconnect anyway",
+            confirmLabel: sleeping ? "Sleep anyway" : "Disconnect anyway",
             cancelLabel: "Cancel",
             rememberLabel: null,
             relaunchLabel: null,
@@ -3075,7 +3096,7 @@ function gameCloseDialog(prompt, game) {
         return {
             title: "Close your game first",
             body: [
-                "A game is using the eGPU and has to close before it can be disconnected.",
+                `A game is using the eGPU and ${becauseOf(prompt.intent)}.`,
                 "Re-Gear could not identify which game, so it cannot close it for you, cannot tell you whether closing it saves your progress, and cannot reopen it afterwards.",
                 "Save and close your game, then try again.",
                 SESSION_WARNING,
@@ -3084,7 +3105,7 @@ function gameCloseDialog(prompt, game) {
             // Not "Close and disconnect": without an app id there is nothing to
             // close, and offering a close that cannot happen is a promise broken
             // one second after it is made.
-            confirmLabel: "Try disconnect anyway",
+            confirmLabel: sleeping ? "Try sleeping anyway" : "Try disconnect anyway",
             cancelLabel: "Cancel",
             rememberLabel: null,
             relaunchLabel: null,
@@ -3095,20 +3116,30 @@ function gameCloseDialog(prompt, game) {
     }
     const name = gameName(game);
     return {
-        title: `Close ${name}?`,
+        title: sleeping ? `Close ${name} and sleep?` : `Close ${name}?`,
         body: [
-            `${name} is using the eGPU and has to close before it can be disconnected.`,
+            `${name} is using the eGPU and ${becauseOf(prompt.intent)}.`,
             gameCloseAdvice(game),
+            // Sleeping disconnects too, and a player must not discover that after
+            // waking to find their eGPU detached.
+            sleeping ? "The eGPU will be disconnected first." : null,
             SESSION_WARNING,
             KEEP_CABLE,
-        ].join(" "),
-        confirmLabel: "Close and disconnect",
+        ]
+            .filter((line) => line !== null)
+            .join(" "),
+        confirmLabel: sleeping ? "Close and sleep" : "Close and disconnect",
         cancelLabel: "Cancel",
         // Absent, not unticked, when the catalog says closing loses progress:
         // that prompt carries something to act on now, which a box ticked last
         // week cannot carry.
+        // Named with the action as well as the game: the stored answer is keyed
+        // by both, and a label that said only the game would collect consent
+        // broader than what is recorded.
         rememberLabel: prompt.remember_offered
-            ? `Don't ask again for ${name}`
+            ? sleeping
+                ? `Don't ask again when sleeping with ${name} open`
+                : `Don't ask again for ${name}`
             : null,
         relaunchLabel: prompt.relaunch_offered
             ? `Reopen ${name} afterwards`

@@ -21,7 +21,7 @@ import threading
 from pathlib import Path
 
 from ..domain.game_compatibility import STEAM_APP_ID_RE
-from ..domain.relaunch_intent import RelaunchIntent
+from ..domain.relaunch_intent import RelaunchClock, RelaunchIntent
 
 
 FILENAME = "relaunch-intent.json"
@@ -47,6 +47,8 @@ class RelaunchIntentStore:
             raise ValueError("relaunch intent boot identity is invalid")
         if not isinstance(intent.recorded_boot_seconds, (int, float)):
             raise ValueError("relaunch intent timestamp is invalid")
+        if not isinstance(intent.clock, RelaunchClock):
+            raise ValueError("relaunch intent clock is invalid")
         raw = (
             json.dumps(
                 {
@@ -54,6 +56,7 @@ class RelaunchIntentStore:
                     "steam_app_id": intent.steam_app_id,
                     "boot_hash": intent.boot_hash,
                     "recorded_boot_seconds": float(intent.recorded_boot_seconds),
+                    "clock": intent.clock.value,
                 },
                 sort_keys=True,
                 separators=(",", ":"),
@@ -110,13 +113,20 @@ class RelaunchIntentStore:
         app_id = value.get("steam_app_id")
         boot_hash = value.get("boot_hash")
         recorded = value.get("recorded_boot_seconds")
+        clock = value.get("clock", RelaunchClock.BOOTTIME.value)
         if not isinstance(app_id, str) or not TOKEN_RE.fullmatch(app_id):
             return None
         if not isinstance(boot_hash, str) or not boot_hash or len(boot_hash) > 128:
             return None
         if type(recorded) not in (int, float) or isinstance(recorded, bool):
             return None
-        return RelaunchIntent(app_id, boot_hash, float(recorded))
+        try:
+            parsed_clock = RelaunchClock(clock)
+        except ValueError:
+            # A record whose clock cannot be read cannot be aged, and an intent
+            # that cannot be aged is one that might fire at any time.
+            return None
+        return RelaunchIntent(app_id, boot_hash, float(recorded), parsed_clock)
 
     def _clear_locked(self) -> None:
         try:

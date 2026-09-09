@@ -110,6 +110,7 @@ class DeckyContractTests(unittest.TestCase):
                 "remember_game_close_choice",
                 "forget_game_close_choice",
                 "take_pending_relaunch",
+                "get_sleep_readiness",
             },
         )
         source = path.read_text(encoding="utf-8")

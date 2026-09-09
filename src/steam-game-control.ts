@@ -1,4 +1,4 @@
-/** Steam's own close and launch, for the disconnect flow.
+/** Steam's own close, launch and suspend, for the disconnect and sleep flows.
  *
  * These are native interfaces, so they are checked at use time rather than
  * trusted: a Steam update may rename or remove either of them, and a flow that
@@ -17,9 +17,20 @@ type AppsInterface = {
   RunGame?(gameId: string, launch: string, unknown: number, source: number): unknown;
 };
 
+type SystemInterface = {
+  SuspendPC?(): unknown;
+};
+
 function steamApps(): AppsInterface | null {
   const host = globalThis as unknown as { SteamClient?: { Apps?: AppsInterface } };
   return host?.SteamClient?.Apps ?? null;
+}
+
+function steamSystem(): SystemInterface | null {
+  const host = globalThis as unknown as {
+    SteamClient?: { System?: SystemInterface };
+  };
+  return host?.SteamClient?.System ?? null;
 }
 
 /** Ask Steam to close one app the way its own Exit button does.
@@ -44,6 +55,29 @@ export async function relaunchGame(appId: string): Promise<void> {
     throw new Error("SteamClient.Apps.RunGame is unavailable");
   }
   await apps.RunGame(appId, "", -1, 100);
+}
+
+/** Ask Steam to sleep the handheld.
+ *
+ * Re-Gear never suspends the machine itself. The backend has no suspend
+ * adapter and deliberately never gained one: sleeping is the player's own
+ * action, performed by the same code path their power button uses. What
+ * Re-Gear does is get out of the way first, by releasing the eGPU.
+ *
+ * Rejects when Steam cannot be asked, so a caller can say the handheld did
+ * not sleep rather than leaving a player staring at a screen that stayed on.
+ */
+export async function suspendHandheld(): Promise<void> {
+  const system = steamSystem();
+  if (typeof system?.SuspendPC !== "function") {
+    throw new Error("SteamClient.System.SuspendPC is unavailable");
+  }
+  await system.SuspendPC();
+}
+
+/** Whether Steam can be asked to sleep the handheld. */
+export function steamCanSuspend(): boolean {
+  return typeof steamSystem()?.SuspendPC === "function";
 }
 
 /** Whether Steam can be asked to close a game at all.

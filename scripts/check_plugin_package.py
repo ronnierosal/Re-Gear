@@ -286,6 +286,9 @@ def main() -> int:
             # The game a disconnect closed, claimed once by whichever panel is
             # alive after the session restart that freed the device.
             "take_pending_relaunch",
+            # Read-only: what sleeping would take while the eGPU is attached.
+            # Sleeps nothing itself; Steam still performs the suspend.
+            "get_sleep_readiness",
         }
         if public_methods != allowed_methods:
             failures.append(

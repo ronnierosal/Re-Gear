@@ -32,6 +32,7 @@ from hdm.application.live_disconnect import (  # noqa: E402
     LiveDisconnectStage,
 )
 from hdm.delivery.relaunch_intent_store import RelaunchIntentStore  # noqa: E402
+from hdm.domain.relaunch_intent import RelaunchClock  # noqa: E402
 
 
 HADES = RunningGame("1145360", "Hades", GameSaveCapability.UNTESTED)
@@ -355,6 +356,157 @@ class PendingRelaunchTests(unittest.TestCase):
 
         self.assertIs(result["ok"], True)
         self.assertEqual(self.runtime.calls, [False])
+
+
+class IntentKeyedChoiceTests(unittest.TestCase):
+    """The action is part of the key, not a detail.
+
+    Agreeing that a game may be closed for sleep is not agreeing that it may
+    be closed for a disconnect. The two cost the player different things.
+    """
+
+    def setUp(self) -> None:
+        self.module = load_main_module()
+        self._temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self._temporary.cleanup)
+        self.root = Path(self._temporary.name).resolve()
+        patcher = patch.object(self.module, "CATALOG_ROOT", self.root)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.plugin = self.module.Plugin()
+
+    def remember(self, **kwargs):
+        with patch.object(
+            self.module.Plugin,
+            "_live_disconnect_runtime",
+            lambda _self: FakeRuntime(HADES),
+        ):
+            return asyncio.run(self.plugin.remember_game_close_choice(**kwargs))
+
+    def stored(self, intent):
+        return GameClosePreferenceStore(self.root).load("1145360", intent)
+
+    def test_a_sleep_answer_is_filed_under_sleep(self) -> None:
+        result = self.remember(
+            steam_app_id="1145360", intent="sleep", skip_confirmation=True
+        )
+
+        self.assertIs(result["ok"], True)
+        self.assertEqual(result["intent"], "sleep")
+        self.assertIsNotNone(self.stored(InterruptIntent.SLEEP))
+        self.assertIsNone(self.stored(InterruptIntent.DISCONNECT))
+
+    def test_an_unknown_action_is_refused_rather_than_defaulted(self) -> None:
+        # Filing an answer against the wrong action files an answer the player
+        # did not give.
+        result = self.remember(
+            steam_app_id="1145360", intent="shutdown", skip_confirmation=True
+        )
+
+        self.assertIs(result["ok"], False)
+        self.assertEqual(result["code"], "game_close.intent_invalid")
+        self.assertIsNone(self.stored(InterruptIntent.SLEEP))
+        self.assertIsNone(self.stored(InterruptIntent.DISCONNECT))
+
+    def test_both_actions_can_be_answered_for_one_game(self) -> None:
+        self.remember(steam_app_id="1145360", intent="sleep", skip_confirmation=True)
+        self.remember(
+            steam_app_id="1145360", intent="disconnect", relaunch_after=True
+        )
+
+        sleep = self.stored(InterruptIntent.SLEEP)
+        disconnect = self.stored(InterruptIntent.DISCONNECT)
+        self.assertTrue(sleep.skip_confirmation)
+        self.assertFalse(disconnect.skip_confirmation)
+        self.assertTrue(disconnect.relaunch_after)
+
+    def test_forgetting_one_action_leaves_the_other_answered(self) -> None:
+        self.remember(steam_app_id="1145360", intent="sleep", skip_confirmation=True)
+        self.remember(
+            steam_app_id="1145360", intent="disconnect", skip_confirmation=True
+        )
+
+        result = asyncio.run(
+            self.plugin.forget_game_close_choice("1145360", "sleep")
+        )
+
+        self.assertIs(result["ok"], True)
+        self.assertIsNone(self.stored(InterruptIntent.SLEEP))
+        self.assertIsNotNone(self.stored(InterruptIntent.DISCONNECT))
+
+    def test_forgetting_an_unknown_action_is_refused(self) -> None:
+        result = asyncio.run(
+            self.plugin.forget_game_close_choice("1145360", "shutdown")
+        )
+
+        self.assertIs(result["ok"], False)
+        self.assertEqual(result["code"], "game_close.intent_invalid")
+
+
+class RelaunchClockChoiceTests(unittest.TestCase):
+    """A sleep is meant to outlive the suspend; a disconnect is not."""
+
+    def setUp(self) -> None:
+        self.module = load_main_module()
+        self._temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self._temporary.cleanup)
+        self.root = Path(self._temporary.name).resolve()
+        for name, value in (("CATALOG_ROOT", self.root),):
+            patcher = patch.object(self.module, name, value)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        boot = patch.object(self.module, "read_boot_hash", lambda: BOOT)
+        boot.start()
+        self.addCleanup(boot.stop)
+        self.plugin = self.module.Plugin()
+        self.runtime = DisconnectRuntime()
+
+    def disconnect(self, **kwargs):
+        with patch.object(
+            self.module.Plugin,
+            "_live_disconnect_runtime",
+            lambda _self: self.runtime,
+        ):
+            return asyncio.run(self.plugin.execute_egpu_disconnect(**kwargs))
+
+    def stored(self):
+        return RelaunchIntentStore(self.root).peek()
+
+    def test_a_disconnect_reopen_is_aged_across_a_suspend(self) -> None:
+        self.disconnect(relaunch_app_id="1145360", relaunch_intent="disconnect")
+
+        self.assertIs(self.stored().clock, RelaunchClock.BOOTTIME)
+
+    def test_a_sleep_reopen_is_aged_on_awake_time_only(self) -> None:
+        # The player who ticked "reopen afterwards" before sleeping meant when
+        # they come back, not within five minutes of pressing sleep.
+        self.disconnect(relaunch_app_id="1145360", relaunch_intent="sleep")
+
+        self.assertIs(self.stored().clock, RelaunchClock.MONOTONIC)
+
+    def test_the_default_is_the_stricter_of_the_two(self) -> None:
+        self.disconnect(relaunch_app_id="1145360")
+
+        self.assertIs(self.stored().clock, RelaunchClock.BOOTTIME)
+
+    def test_an_unknown_action_records_no_wish_at_all(self) -> None:
+        # Rather than guessing which clock ages it, and therefore when a game
+        # might start itself.
+        result = self.disconnect(
+            relaunch_app_id="1145360", relaunch_intent="shutdown"
+        )
+
+        self.assertIs(result["ok"], True)
+        self.assertIsNone(self.stored())
+
+    def test_a_sleep_reopen_is_claimable_after_a_long_suspend(self) -> None:
+        # MONOTONIC does not advance while suspended, so the record survives.
+        self.disconnect(relaunch_app_id="1145360", relaunch_intent="sleep")
+
+        result = asyncio.run(self.plugin.take_pending_relaunch())
+
+        self.assertEqual(result["steam_app_id"], "1145360")
+        self.assertEqual(result["code"], "relaunch.approved")
 
 
 if __name__ == "__main__":

@@ -17,6 +17,7 @@ from hdm.delivery.relaunch_intent_store import (  # noqa: E402
 )
 from hdm.domain.relaunch_intent import (  # noqa: E402
     MAX_AGE_SECONDS,
+    RelaunchClock,
     RelaunchIntent,
     RelaunchVerdict,
     decide_relaunch,
@@ -225,6 +226,94 @@ class StoreTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.store.record(replace(INTENT, boot_hash=""))
 
+
+
+class ClockChoiceTests(unittest.TestCase):
+    """Five minutes means something different either side of a suspend.
+
+    A disconnect happens with the handheld awake throughout, so a suspend in
+    the middle of one means something went wrong. A sleep is the opposite: the
+    device being off is the point, and a player who ticked "reopen afterwards"
+    meant when they come back.
+    """
+
+    def test_a_disconnect_intent_is_aged_across_a_suspend(self) -> None:
+        # BOOTTIME keeps counting while suspended, so an intent that lived
+        # through one is stale.
+        intent = replace(INTENT, clock=RelaunchClock.BOOTTIME)
+
+        decision = decide_relaunch(
+            intent, boot_hash=BOOT, now_boot_seconds=1200.0 + 8 * 3600
+        )
+
+        self.assertEqual(decision.code, "relaunch.expired")
+
+    def test_a_sleep_intent_survives_an_eight_hour_night(self) -> None:
+        # MONOTONIC does not advance while suspended, so a long sleep costs the
+        # intent nothing and the player gets their game back on waking.
+        intent = replace(INTENT, clock=RelaunchClock.MONOTONIC)
+
+        decision = decide_relaunch(intent, boot_hash=BOOT, now_boot_seconds=1203.0)
+
+        self.assertTrue(decision.should_relaunch)
+
+    def test_a_sleep_intent_still_expires_on_awake_time(self) -> None:
+        # Woken, then left alone. A game must not start itself ten minutes
+        # after someone glanced at the screen and walked away.
+        intent = replace(INTENT, clock=RelaunchClock.MONOTONIC)
+
+        decision = decide_relaunch(
+            intent, boot_hash=BOOT, now_boot_seconds=1200.0 + MAX_AGE_SECONDS + 1
+        )
+
+        self.assertEqual(decision.code, "relaunch.expired")
+
+    def test_the_clock_survives_a_round_trip(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = RelaunchIntentStore(Path(directory).resolve())
+            store.record(replace(INTENT, clock=RelaunchClock.MONOTONIC))
+
+            self.assertIs(store.peek().clock, RelaunchClock.MONOTONIC)
+
+    def test_a_record_written_before_this_field_reads_as_boottime(self) -> None:
+        # The disconnect intent was the only kind when the format was written,
+        # and it is the stricter of the two.
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            (root / FILENAME).write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "steam_app_id": "1145360",
+                        "boot_hash": BOOT,
+                        "recorded_boot_seconds": 1200.0,
+                    }
+                ),
+                encoding="ascii",
+            )
+
+            self.assertIs(
+                RelaunchIntentStore(root).peek().clock, RelaunchClock.BOOTTIME
+            )
+
+    def test_an_unreadable_clock_discards_the_record(self) -> None:
+        # An intent that cannot be aged is one that might fire at any time.
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            (root / FILENAME).write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "steam_app_id": "1145360",
+                        "boot_hash": BOOT,
+                        "recorded_boot_seconds": 1200.0,
+                        "clock": "sundial",
+                    }
+                ),
+                encoding="ascii",
+            )
+
+            self.assertIsNone(RelaunchIntentStore(root).peek())
 
 if __name__ == "__main__":
     unittest.main()

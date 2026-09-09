@@ -453,3 +453,60 @@ test("an unfinished scan promises no close either", () => {
   assert.equal(view.dialog.canCloseGame, false);
   assert.equal(view.dialog.confirmLabel, "Disconnect anyway");
 });
+
+test("a sleep prompt talks about sleeping, not about disconnecting", () => {
+  // A player who pressed Sleep is not thinking about the eGPU. Telling them
+  // the game must close "before it can be disconnected" answers a question
+  // they did not ask.
+  const view = disconnectPresentation(running({ intent: "sleep" }));
+
+  assert.match(view.dialog.title, /Close Hades and sleep\?/);
+  assert.match(view.dialog.body, /before the handheld can sleep/);
+  assert.equal(view.dialog.confirmLabel, "Close and sleep");
+});
+
+test("a sleep prompt still says the eGPU will be disconnected", () => {
+  // Because it will. A player must not wake to find it detached without
+  // having been told.
+  const view = disconnectPresentation(running({ intent: "sleep" }));
+
+  assert.match(view.dialog.body, /eGPU will be disconnected first/i);
+  assert.match(view.dialog.body, /Keep the cable connected/i);
+});
+
+test("the sleep checkbox names the action as well as the game", () => {
+  // The stored answer is keyed by both. A label naming only the game would
+  // collect consent broader than what is recorded.
+  const view = disconnectPresentation(running({ intent: "sleep" }));
+
+  assert.equal(
+    view.dialog.rememberLabel,
+    "Don't ask again when sleeping with Hades open",
+  );
+});
+
+test("a disconnect prompt is unchanged by the sleep wording", () => {
+  const view = disconnectPresentation(running());
+
+  assert.match(view.dialog.body, /before it can be disconnected/);
+  assert.doesNotMatch(view.dialog.body, /sleep/i);
+  assert.equal(view.dialog.confirmLabel, "Close and disconnect");
+});
+
+test("every sleep dialog keeps the cable sentence last too", () => {
+  for (const over of [
+    { intent: "sleep" },
+    { intent: "sleep", code: "game_close.scan_incomplete" },
+    { intent: "sleep", code: "game_close.identity_unverified" },
+  ]) {
+    const view = disconnectPresentation(
+      running(over, over.code === "game_close.identity_unverified" ? { identity_exact: false } : {}),
+    );
+    assert.ok(
+      view.dialog.body
+        .trimEnd()
+        .endsWith("Keep the cable connected: this does not make unplugging safe."),
+      view.dialog.body,
+    );
+  }
+});

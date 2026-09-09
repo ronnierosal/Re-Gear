@@ -759,9 +759,33 @@ export const getEgpuDisconnectStatus = callable<[], DisconnectStatusPayload>(
  * `takePendingRelaunch` rather than remembering it here.
  */
 export const executeEgpuDisconnect = callable<
-  [releaseDisplay: boolean, relaunchAppId?: string],
+  [releaseDisplay: boolean, relaunchAppId?: string, relaunchIntent?: string],
   DisconnectOutcomePayload
 >("execute_egpu_disconnect");
+
+export interface SleepReadinessPayload {
+  schema_version: number;
+  /** `sleep.available`, `sleep.requires_disconnect`, or
+   * `sleep.readiness_unknown`. Render through a mapping, never raw. */
+  code: string;
+  /** True when sleeping means disconnecting the eGPU first. On this hardware
+   * sleeping with it attached is refused: the dock wakes the handheld
+   * immediately. */
+  requires_disconnect: boolean;
+  game: DisconnectGamePayload | null;
+  /** Re-derived for the sleep intent, so a player who agreed a game may be
+   * closed for a disconnect is still asked before it closes for a sleep. */
+  close_prompt: ClosePromptPayload;
+  /** The disconnect status behind this reading, when there is one. Passed
+   * through so a caller renders one set of facts rather than reconciling two
+   * readings taken moments apart. */
+  disconnect?: DisconnectStatusPayload;
+}
+
+/** Read-only. What sleeping would take right now; sleeps nothing. */
+export const getSleepReadiness = callable<[], SleepReadinessPayload>(
+  "get_sleep_readiness",
+);
 
 export interface PendingRelaunchPayload {
   /** The game to reopen, or "" when there is none to reopen. */

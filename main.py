@@ -56,11 +56,13 @@ from hdm.delivery.game_close_preferences import (  # noqa: E402
 )
 from hdm.delivery.relaunch_intent_store import RelaunchIntentStore  # noqa: E402
 from hdm.domain.relaunch_intent import (  # noqa: E402
+    RelaunchClock,
     RelaunchIntent,
     decide_relaunch,
 )
 from hdm.delivery.live_disconnect_runtime import (  # noqa: E402
     CATALOG_ROOT,
+    close_prompt_to_payload,
     DisconnectAvailability,
     LiveDisconnectRuntime,
     build_live_disconnect_runtime,
@@ -70,6 +72,7 @@ from hdm.delivery.live_disconnect_runtime import (  # noqa: E402
 from hdm.domain.game_close_consent import (  # noqa: E402
     GameClosePreference,
     InterruptIntent,
+    decide_game_close,
 )
 from hdm.domain.game_compatibility import STEAM_APP_ID_RE  # noqa: E402
 from hdm.adapters.steamos.sleep_inhibitor import (  # noqa: E402
@@ -232,21 +235,45 @@ UNLOAD_OBSERVER_TIMEOUT_SECONDS = 1.0
 UNLOAD_GUARD_TIMEOUT_SECONDS = 3.0
 
 
-def _boot_seconds() -> float:
-    """Seconds since boot, from a clock a wall-clock correction cannot move.
+def _relaunch_now(clock: RelaunchClock) -> float:
+    """Read the clock a relaunch intent is aged against.
 
-    The relaunch intent is aged against this rather than against the date,
-    because an NTP step during a session restart must not make a stale intent
-    look fresh. `CLOCK_BOOTTIME` also keeps counting across a suspend, which is
-    what makes it usable for the sleep flow as well as the disconnect one.
+    Never the wall clock: an NTP step during a session restart must not make a
+    stale intent look fresh. Which of the two matters, and the record says
+    which it was written for -- `BOOTTIME` keeps counting through a suspend,
+    `MONOTONIC` does not, and that difference is the whole reason a sleep can
+    be reopened hours later while a disconnect cannot.
     """
-    boottime = getattr(time, "CLOCK_BOOTTIME", None)
-    if boottime is not None:
-        try:
-            return time.clock_gettime(boottime)
-        except OSError:
-            pass
+    if clock is RelaunchClock.BOOTTIME:
+        boottime = getattr(time, "CLOCK_BOOTTIME", None)
+        if boottime is not None:
+            try:
+                return time.clock_gettime(boottime)
+            except OSError:
+                pass
     return time.monotonic()
+
+
+def _relaunch_clock_for(intent: InterruptIntent) -> RelaunchClock:
+    """Which clock ages a reopen asked for by this action."""
+    return (
+        RelaunchClock.MONOTONIC
+        if intent is InterruptIntent.SLEEP
+        else RelaunchClock.BOOTTIME
+    )
+
+
+def _parse_intent(value: object) -> InterruptIntent | None:
+    """The action a caller names, or None when it names nothing known.
+
+    Not defaulted. An answer filed against the wrong action is an answer the
+    player did not give, and guessing which one they meant is exactly the
+    mistake the per-intent key exists to prevent.
+    """
+    try:
+        return InterruptIntent(value)
+    except ValueError:
+        return None
 
 
 def _can_remember_portable_audio(snapshot) -> bool:
@@ -1061,7 +1088,10 @@ class Plugin:
         return disconnect_status_to_payload(status)
 
     async def execute_egpu_disconnect(
-        self, release_display: bool = False, relaunch_app_id: str = ""
+        self,
+        release_display: bool = False,
+        relaunch_app_id: str = "",
+        relaunch_intent: str = "disconnect",
     ) -> dict[str, object]:
         """Remove the eGPU in software. NOT clearance to unplug anything.
 
@@ -1076,14 +1106,28 @@ class Plugin:
         record is picked up by `take_pending_relaunch`, from whichever panel is
         alive to ask, and it is cleared if the removal leaves the device
         somewhere it has never been.
+
+        `relaunch_intent` says what the player was doing, which decides how the
+        wish ages: a disconnect that lived through a suspend has gone wrong and
+        expires, while a sleep is meant to be reopened when they come back. An
+        unrecognised value records nothing rather than guessing.
         """
         relaunch = RelaunchIntentStore(CATALOG_ROOT)
-        if relaunch_app_id and STEAM_APP_ID_RE.fullmatch(str(relaunch_app_id)):
+        parsed_intent = _parse_intent(relaunch_intent)
+        if (
+            relaunch_app_id
+            and parsed_intent is not None
+            and STEAM_APP_ID_RE.fullmatch(str(relaunch_app_id))
+        ):
+            clock = _relaunch_clock_for(parsed_intent)
             try:
                 await asyncio.to_thread(
                     relaunch.record,
                     RelaunchIntent(
-                        str(relaunch_app_id), read_boot_hash(), _boot_seconds()
+                        str(relaunch_app_id),
+                        read_boot_hash(),
+                        _relaunch_now(clock),
+                        clock,
                     ),
                 )
             except Exception:
@@ -1139,20 +1183,132 @@ class Plugin:
         except Exception:
             boot_hash = ""
         decision = decide_relaunch(
-            intent, boot_hash=boot_hash, now_boot_seconds=_boot_seconds()
+            intent,
+            boot_hash=boot_hash,
+            # Read the same clock the record was written against; comparing a
+            # suspend-excluding reading to a suspend-including one would give
+            # an age that means nothing.
+            now_boot_seconds=_relaunch_now(
+                RelaunchClock.BOOTTIME if intent is None else intent.clock
+            ),
         )
         return {
             "steam_app_id": decision.steam_app_id if decision.should_relaunch else "",
             "code": decision.code,
         }
 
+    async def get_sleep_readiness(
+        self, _request: object = None
+    ) -> dict[str, object]:
+        """Report what sleeping would take right now. Changes nothing.
+
+        Sleep is blocked outright while the eGPU is attached, because the dock
+        is known to wake this handheld immediately. So on this hardware
+        "sleep with a game running on the eGPU" is not a thing that can happen:
+        the honest offer is *disconnect, then sleep*, and this says whether
+        that is what pressing sleep would mean and what it would cost.
+
+        The close prompt is re-derived for the sleep intent rather than reusing
+        the disconnect one, so a player who agreed that a game may be closed
+        for a disconnect is still asked before it is closed for a sleep.
+        """
+        try:
+            presence = await asyncio.to_thread(
+                self._sleep_hardware.observe_presence
+            )
+        except Exception:
+            presence = EgpuPresence.UNKNOWN
+        if presence is EgpuPresence.ABSENT:
+            # Nothing of ours is in the way. Steam sleeps as it always does.
+            return {
+                "schema_version": 1,
+                "code": "sleep.available",
+                "requires_disconnect": False,
+                "game": None,
+                "close_prompt": close_prompt_to_payload(
+                    decide_game_close(InterruptIntent.SLEEP, None)
+                ),
+            }
+        if presence is not EgpuPresence.PRESENT:
+            # Presence could not be established, so neither can what sleeping
+            # would take. Saying "just sleep" here would be a guess about the
+            # one thing the guard exists to prevent.
+            return {
+                "schema_version": 1,
+                "code": "sleep.readiness_unknown",
+                "requires_disconnect": True,
+                "game": None,
+                "close_prompt": close_prompt_to_payload(
+                    decide_game_close(
+                        InterruptIntent.SLEEP, None, scan_complete=False
+                    )
+                ),
+            }
+        try:
+            runtime = await asyncio.to_thread(self._live_disconnect_runtime)
+            status = (
+                None if runtime is None else await asyncio.to_thread(runtime.status)
+            )
+        except Exception:
+            status = None
+        if status is None:
+            return {
+                "schema_version": 1,
+                "code": "sleep.readiness_unknown",
+                "requires_disconnect": True,
+                "game": None,
+                "close_prompt": close_prompt_to_payload(
+                    decide_game_close(
+                        InterruptIntent.SLEEP, None, scan_complete=False
+                    )
+                ),
+            }
+        game = status.game
+        preference = None
+        if game is not None and game.identity_exact:
+            try:
+                preference = await asyncio.to_thread(
+                    GameClosePreferenceStore(CATALOG_ROOT).load,
+                    game.app_id,
+                    InterruptIntent.SLEEP,
+                )
+            except Exception:
+                preference = None
+        prompt = decide_game_close(
+            InterruptIntent.SLEEP,
+            None if game is None else game.as_running_game(),
+            preference,
+            # A status that could answer at all looked; a status that could not
+            # was handled above.
+            scan_complete=True,
+        )
+        payload = disconnect_status_to_payload(status)
+        return {
+            "schema_version": 1,
+            "code": "sleep.requires_disconnect",
+            # The eGPU is attached, so sleeping means disconnecting first.
+            "requires_disconnect": True,
+            "game": payload["game"],
+            "close_prompt": close_prompt_to_payload(prompt),
+            # Passed through so a caller renders one set of facts rather than
+            # asking twice and reconciling two readings taken moments apart.
+            "disconnect": payload,
+        }
+
     async def remember_game_close_choice(
         self,
         steam_app_id: str,
+        intent: str = "disconnect",
         skip_confirmation: bool = False,
         relaunch_after: bool = False,
     ) -> dict[str, object]:
-        """Store the player's answer for one game, before a disconnect.
+        """Store the player's answer for one game and one action.
+
+        `intent` is part of the key, not a detail: agreeing that a game may be
+        closed for sleep is not agreeing that it may be closed for a
+        disconnect. An unrecognised value is refused rather than defaulted,
+        because filing an answer against the wrong action files an answer the
+        player did not give.
 
         Two things are checked here rather than trusted from the caller, both
         because a frontend can be stale and neither failure is visible to the
@@ -1171,6 +1327,9 @@ class Plugin:
             steam_app_id
         ):
             return {"ok": False, "code": "game_close.app_id_invalid"}
+        parsed_intent = _parse_intent(intent)
+        if parsed_intent is None:
+            return {"ok": False, "code": "game_close.intent_invalid"}
         try:
             runtime = await asyncio.to_thread(self._live_disconnect_runtime)
         except Exception:
@@ -1190,7 +1349,7 @@ class Plugin:
             return {"ok": False, "code": "game_close.progress_at_risk"}
         preference = GameClosePreference(
             steam_app_id,
-            InterruptIntent.DISCONNECT,
+            parsed_intent,
             skip_confirmation=bool(skip_confirmation),
             relaunch_after=bool(relaunch_after),
         )
@@ -1204,24 +1363,27 @@ class Plugin:
             "ok": True,
             "code": "game_close.preference_stored",
             "steam_app_id": steam_app_id,
-            "intent": InterruptIntent.DISCONNECT.value,
+            "intent": parsed_intent.value,
             "skip_confirmation": preference.skip_confirmation,
             "relaunch_after": preference.relaunch_after,
         }
 
     async def forget_game_close_choice(
-        self, steam_app_id: str
+        self, steam_app_id: str, intent: str = "disconnect"
     ) -> dict[str, object]:
-        """Return one game to being asked about before a disconnect."""
+        """Return one game to being asked about before one action."""
         if not isinstance(steam_app_id, str) or not STEAM_APP_ID_RE.fullmatch(
             steam_app_id
         ):
             return {"ok": False, "code": "game_close.app_id_invalid"}
+        parsed_intent = _parse_intent(intent)
+        if parsed_intent is None:
+            return {"ok": False, "code": "game_close.intent_invalid"}
         try:
             await asyncio.to_thread(
                 GameClosePreferenceStore(CATALOG_ROOT).forget,
                 steam_app_id,
-                InterruptIntent.DISCONNECT,
+                parsed_intent,
             )
         except Exception:
             return {"ok": False, "code": "game_close.preference_write_failed"}

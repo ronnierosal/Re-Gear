@@ -10,7 +10,12 @@ const source = readFileSync(
 const js = ts.transpileModule(source, {
   compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 },
 }).outputText;
-const { runDisconnectWithGameClose, claimPendingRelaunch, closeFlowMessage } = await import(
+const {
+  runDisconnectWithGameClose,
+  runSleepWithGameClose,
+  claimPendingRelaunch,
+  closeFlowMessage,
+} = await import(
   "data:text/javascript;base64," + Buffer.from(js).toString("base64")
 );
 
@@ -69,11 +74,15 @@ function rig({ closesAfter = 1, disconnectOutcome = outcome(), throwOn = null } 
         if (throwOn === "status") throw new Error("unreadable");
         return status(polls >= closesAfter ? "nothing_to_close" : "confirm");
       },
-      async disconnect(releaseDisplay, relaunchAppId) {
-        calls.push(["disconnect", releaseDisplay, relaunchAppId]);
+      async disconnect(releaseDisplay, relaunchAppId, relaunchIntent) {
+        calls.push(["disconnect", releaseDisplay, relaunchAppId, relaunchIntent]);
         if (throwOn === "disconnect") throw new Error("rpc down");
         recorded = relaunchAppId;
         return disconnectOutcome;
+      },
+      async suspend() {
+        calls.push(["suspend"]);
+        if (throwOn === "suspend") throw new Error("steam refused");
       },
       async takePendingRelaunch() {
         calls.push(["take", recorded]);
@@ -313,7 +322,7 @@ test("the display approval is passed through, never assumed", async () => {
 
   assert.deepEqual(
     r.calls.find(([name]) => name === "disconnect"),
-    ["disconnect", true, ""],
+    ["disconnect", true, "", "disconnect"],
   );
 });
 
@@ -350,7 +359,7 @@ test("the reopen is asked for with the removal, not remembered by this panel", (
 
     assert.deepEqual(
       r.calls.find(([name]) => name === "disconnect"),
-      ["disconnect", false, "1145360"],
+      ["disconnect", false, "1145360", "disconnect"],
     );
   })();
 });
@@ -361,7 +370,7 @@ test("no reopen is recorded when none was asked for", async () => {
 
   assert.deepEqual(
     r.calls.find(([name]) => name === "disconnect"),
-    ["disconnect", false, ""],
+    ["disconnect", false, "", "disconnect"],
   );
 });
 
@@ -374,7 +383,7 @@ test("a reopen is never recorded for a game that did not close", async () => {
 
   assert.deepEqual(
     r.calls.find(([name]) => name === "disconnect"),
-    ["disconnect", false, ""],
+    ["disconnect", false, "", "disconnect"],
   );
 });
 
@@ -456,4 +465,104 @@ test("a refused claim launches nothing", async () => {
 
   assert.equal(appId, null);
   assert.deepEqual(launched, []);
+});
+
+test("sleeping closes the game, disconnects, then suspends in that order", async () => {
+  const r = rig();
+  const result = await runSleepWithGameClose(request(), r.effects);
+
+  assert.equal(result.ok, true);
+  assert.equal(result.code, "flow.slept");
+  assert.deepEqual(names(r.calls), ["terminate", "status", "disconnect", "suspend"]);
+});
+
+test("nothing suspends unless the disconnect succeeded", async () => {
+  // A handheld put to sleep with the eGPU still attached is the state the
+  // sleep guard exists to prevent, and it wakes seconds later having closed
+  // the player's game for nothing.
+  const r = rig({
+    disconnectOutcome: outcome({ ok: false, stage: "holders_remain", code: "removal_safety.holders_remain" }),
+  });
+  const result = await runSleepWithGameClose(request(), r.effects);
+
+  assert.equal(result.ok, false);
+  assert.ok(!names(r.calls).includes("suspend"));
+});
+
+test("a game that will not close never reaches the suspend", async () => {
+  const r = rig({ closesAfter: Number.POSITIVE_INFINITY });
+  const result = await runSleepWithGameClose(request(), r.effects);
+
+  assert.equal(result.code, "flow.game_did_not_close");
+  assert.ok(!names(r.calls).includes("suspend"));
+  assert.ok(!names(r.calls).includes("disconnect"));
+});
+
+test("sleeping records the reopen against the sleep clock", async () => {
+  // Which decides how it ages: a sleep is meant to be reopened when the
+  // player comes back, not within five minutes of pressing sleep.
+  const r = rig();
+  await runSleepWithGameClose(request({ relaunch: true }), r.effects);
+
+  assert.deepEqual(
+    r.calls.find(([name]) => name === "disconnect"),
+    ["disconnect", false, "1145360", "sleep"],
+  );
+});
+
+test("the game is not reopened before the machine suspends", async () => {
+  // Launching it seconds before the machine goes off is worse than not
+  // reopening it at all. The record waits for the panel that comes up after.
+  const r = rig();
+  const result = await runSleepWithGameClose(request({ relaunch: true }), r.effects);
+
+  assert.equal(result.relaunched, false);
+  assert.ok(!names(r.calls).includes("relaunch"));
+  assert.ok(!names(r.calls).includes("take"));
+});
+
+test("the waiting record is claimable after waking", async () => {
+  const r = rig();
+  await runSleepWithGameClose(request({ relaunch: true }), r.effects);
+
+  assert.equal(await claimPendingRelaunch(r.effects), "1145360");
+});
+
+test("a suspend Steam refuses is reported, not hidden", async () => {
+  const r = rig({ throwOn: "suspend" });
+  const result = await runSleepWithGameClose(request(), r.effects);
+
+  assert.equal(result.ok, false);
+  assert.equal(result.code, "flow.suspend_failed");
+  assert.match(closeFlowMessage(result), /did not sleep the handheld/i);
+});
+
+test("a sleep whose disconnect failed still puts the game back", async () => {
+  // The player is awake with a closed game and no sleep. Reopening is the
+  // only thing left that helps them.
+  const r = rig({ throwOn: "disconnect" });
+  const result = await runSleepWithGameClose(request({ relaunch: true }), r.effects);
+
+  assert.equal(result.relaunched, true);
+  assert.ok(!names(r.calls).includes("suspend"));
+});
+
+test("the sleep message keeps the cable sentence too", async () => {
+  const r = rig();
+  const result = await runSleepWithGameClose(request(), r.effects);
+  const message = closeFlowMessage(result);
+
+  assert.match(message, /Keep the cable connected/i);
+  assert.doesNotMatch(message, /safe to unplug|you can unplug|remove the cable/i);
+});
+
+test("a disconnect asked for as a disconnect still reopens immediately", async () => {
+  // The sleep behaviour must not leak into the ordinary path.
+  const r = rig();
+  const result = await runDisconnectWithGameClose(
+    request({ relaunch: true }),
+    r.effects,
+  );
+
+  assert.equal(result.relaunched, true);
 });
