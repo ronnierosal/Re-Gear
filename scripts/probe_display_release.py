@@ -92,6 +92,42 @@ def holders(node: str, render_node: str) -> tuple[tuple[str, ...], bool]:
     return tuple(sorted(found)), complete
 
 
+def sysfs_view(card: str) -> tuple[str, ...]:
+    """What the existing removal-safety gate would see, read from sysfs.
+
+    The gate grades `external_display_active` from `DrmConnectorRecord`, whose
+    `mode_committed` comes from `enabled` -- which reports whether an encoder
+    is attached, not whether a mode is committed. Capturing it beside the CRTC
+    reading is the only way to learn whether turning the CRTC off is enough for
+    the gate as it stands, or whether the gate has to read the CRTC too.
+    """
+    lines = []
+    root = Path("/sys/class/drm")
+    try:
+        connectors = sorted(root.glob(f"{card}-*"))
+    except OSError:
+        return ("  (sysfs unreadable)",)
+    for connector in connectors:
+        try:
+            status = (connector / "status").read_text(encoding="utf-8").strip()
+            enabled = (connector / "enabled").read_text(encoding="utf-8").strip()
+            dpms = (connector / "dpms").read_text(encoding="utf-8").strip()
+        except OSError:
+            continue
+        if status != "connected":
+            continue
+        lines.append(f"  {connector.name}: status={status} enabled={enabled} dpms={dpms}")
+    for address in ("0000:08:00.0",):
+        device = Path("/sys/bus/pci/devices") / address
+        try:
+            power = (device / "power_state").read_text(encoding="utf-8").strip()
+            runtime = (device / "power/runtime_status").read_text(encoding="utf-8").strip()
+        except OSError:
+            continue
+        lines.append(f"  {address}: power_state={power} runtime_status={runtime}")
+    return tuple(lines) or ("  (no connected connector found)",)
+
+
 def main(argv: Sequence[str] = ()) -> int:
     parser = argparse.ArgumentParser(
         prog="probe_display_release.py", description=__doc__.split("\n\n")[0]
@@ -124,14 +160,18 @@ def main(argv: Sequence[str] = ()) -> int:
                     f" {record.width}x{record.height}"
                 )
 
-    section("2. who holds the eGPU nodes")
+    section("2. what the existing gate sees, from sysfs")
+    for line in sysfs_view(Path(arguments.card).name):
+        report(line)
+
+    section("3. who holds the eGPU nodes")
     units, complete = holders(arguments.card, arguments.render)
     report(f"  holders: {units or '(none)'}")
     report(f"  scan complete: {complete}")
     if not complete and getattr(os, "geteuid", lambda: 0)() != 0:
         report("  (unprivileged: some processes could not be read; run with sudo)")
 
-    section("3. decide")
+    section("4. decide")
     evidence = DisplayReleaseEvidence(
         external_committed=tuple(record.crtc_id for record in external.committed),
         external_complete=external.complete,
@@ -156,7 +196,7 @@ def main(argv: Sequence[str] = ()) -> int:
         report("\n  refusing to release.")
         return 1
 
-    section("4. release, hold, restore")
+    section("5. release, hold, restore")
     result, held = DrmDisplayRelease().release(arguments.card, decision.crtcs)
     report(f"  {result.outcome.value} / {result.code}")
     if held is None:
@@ -165,17 +205,23 @@ def main(argv: Sequence[str] = ()) -> int:
         report(f"  still_released={held.still_released()}")
         after = probe.observe(arguments.card)
         report(f"  external committed while held: {after.mode_committed}")
+        section("6. what the existing gate sees WHILE the release is held")
+        for line in sysfs_view(Path(arguments.card).name):
+            report(line)
+        report("")
         report(f"  holding {arguments.hold}s")
         time.sleep(max(0.0, arguments.hold))
     finally:
         held.restore()
         report("  restored: descriptor closed, console mode returns")
 
-    section("5. after restore")
+    section("7. after restore")
     final = probe.observe(arguments.card)
     report(f"  external committed: {final.mode_committed}")
     for record in final.committed:
         report(f"      crtc={record.crtc_id} fb={record.fb_id} {record.width}x{record.height}")
+    for line in sysfs_view(Path(arguments.card).name):
+        report(line)
     return 0
 
 
