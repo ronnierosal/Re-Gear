@@ -16,8 +16,21 @@ from hdm.domain.filter_arm_sequence import (  # noqa: E402
     ArmRestartPlan,
     ArmSequenceState,
     classify_holder_units,
-    compose_restart_plan,
 )
+from hdm.domain.filter_arm_sequence import (  # noqa: E402
+    compose_restart_plan as _compose_restart_plan,
+)
+
+
+def compose_restart_plan(holder_units, *, scan_complete=True):
+    """Compose over a scan that finished, which is what these tests are about.
+
+    Completeness is a required argument on the real function, deliberately: an
+    empty result from a scan that could not look needs the opposite answer from
+    an empty result from one that did. The tests for that distinction call the
+    real function directly, in `EmptyScanTests`.
+    """
+    return _compose_restart_plan(holder_units, scan_complete=scan_complete)
 
 
 #: Units of the holders measured on the tested profile, portable placement.
@@ -127,11 +140,44 @@ class CoverageTests(unittest.TestCase):
         self.assertIn("wireplumber.service", coverage.requires_explicit_restart)
 
 
-class PlanValidationTests(unittest.TestCase):
-    def test_no_holders_is_incomplete_not_an_empty_success(self) -> None:
-        plan = compose_restart_plan(())
+class EmptyScanTests(unittest.TestCase):
+    """An empty result means opposite things depending on the scan."""
+
+    def test_a_scan_that_could_not_finish_is_not_a_clear_device(self) -> None:
+        plan = _compose_restart_plan((), scan_complete=False)
+
         self.assertIs(plan.state, ArmSequenceState.EVIDENCE_INCOMPLETE)
         self.assertEqual(plan.code, "arm_sequence.no_holders_observed")
+        self.assertFalse(plan.usable)
+
+    def test_a_finished_scan_that_found_nothing_has_nothing_to_restart(self) -> None:
+        """The ordinary state of an idle eGPU before a disconnect.
+
+        This used to be indistinguishable from the case above, because the
+        completeness the caller already had was dropped at this boundary, and
+        a device nothing holds could not be armed at all.
+        """
+        plan = _compose_restart_plan((), scan_complete=True)
+
+        self.assertIs(plan.state, ArmSequenceState.NOTHING_TO_RESTART)
+        self.assertEqual(plan.code, "arm_sequence.device_already_clear")
+        self.assertTrue(plan.usable)
+        self.assertEqual(plan.units, ())
+
+    def test_nothing_to_restart_cannot_name_units(self) -> None:
+        with self.assertRaises(ValueError):
+            ArmRestartPlan(
+                ArmSequenceState.NOTHING_TO_RESTART, "code", ("wireplumber.service",)
+            )
+
+    def test_a_completeness_that_is_not_a_boolean_is_invalid(self) -> None:
+        self.assertIs(
+            _compose_restart_plan(MEASURED_HOLDERS, scan_complete="yes").state,
+            ArmSequenceState.INVALID,
+        )
+
+
+class PlanValidationTests(unittest.TestCase):
 
     def test_non_tuple_input_is_invalid(self) -> None:
         self.assertIs(

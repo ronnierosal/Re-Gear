@@ -1,3 +1,13 @@
+> [!IMPORTANT]
+> **Re-Gear needs administrator (sudo/root) access to work.** Decky Loader runs
+> its backend as root so it can read protected SteamOS hardware state and perform
+> supported system operations, such as power-limit changes and sleep protection,
+> that a normal user process cannot perform. The Quick Access interface itself
+> does not run as root; it sends a narrow set of validated backend requests.
+> Confirmations and hardware-support limits still apply. Read the
+> [permission and privacy guide](https://github.com/ronnierosal/Re-Gear/wiki/Diagnostics-and-Privacy)
+> and [troubleshooting guidance](https://github.com/ronnierosal/Re-Gear/wiki/Troubleshooting).
+
 <div align="center">
 
 <img src="docs/images/re-gear-readme-logo.png" alt="Re-Gear: handheld today, console tomorrow" width="560">
@@ -71,17 +81,6 @@ Current builds are controlled validation artifacts. Selecting a ZIP by its
 version number alone does not establish that it is suitable for installation.
 Hardware testing uses an exact revision, verified checksum, and a supervised
 validation plan.
-
-### Permissions
-
-Re-Gear requests that Decky Loader run its backend with **root privileges** for
-limited SteamOS hardware and system-state operations. The Quick Access interface
-itself does not run as root; it calls a narrow set of validated backend requests.
-Root access does not make every action automatic: user-facing confirmations and
-documented support limits still apply. Read the
-[permission and privacy guide](https://github.com/ronnierosal/Re-Gear/wiki/Diagnostics-and-Privacy)
-and [troubleshooting guidance](https://github.com/ronnierosal/Re-Gear/wiki/Troubleshooting)
-before controlled testing.
 
 ## 🛡️ Safety first
 

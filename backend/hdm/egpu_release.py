@@ -373,17 +373,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     report(f"  need explicit restart     : {coverage.requires_explicit_restart}")
     report(f"  unapproved                : {coverage.unapproved}")
 
-    plan = compose_restart_plan(observed)
+    plan = compose_restart_plan(observed, scan_complete=scan.complete)
     report(f"  plan: {plan.state.value} / {plan.code}")
-    if plan.state is ArmSequenceState.COMPOSED:
-        report(f"  units: {plan.units}")
+    if plan.usable:
+        report(f"  units: {plan.units or '(none)'}")
 
     if not arguments.arm:
         section("plan only")
         report("  nothing was loaded, attached or restarted.")
         report("  re-run with --arm to apply this plan.")
         return 0
-    if plan.state is not ArmSequenceState.COMPOSED:
+    if not plan.usable:
         report("\n  refusing to arm: the restart plan is not approved.")
         return 1
 
