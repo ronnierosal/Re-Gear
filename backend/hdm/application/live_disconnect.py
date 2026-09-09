@@ -90,6 +90,10 @@ class FreshRemovalObservation:
     readiness: RemovalSafety
     attachment_binding: str
     generation: str
+    #: Which observation this verdict came from. Recorded for audit and for
+    #: binding a filter grant to the reading that justified it; deliberately
+    #: not a staleness signal, for the reason `plan_is_current` gives.
+    sample_id: str = ""
 
 
 class LiveDisconnectStage(StrEnum):
