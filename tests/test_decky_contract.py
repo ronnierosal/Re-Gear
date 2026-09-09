@@ -109,6 +109,7 @@ class DeckyContractTests(unittest.TestCase):
                 "execute_egpu_disconnect",
                 "remember_game_close_choice",
                 "forget_game_close_choice",
+                "take_pending_relaunch",
             },
         )
         source = path.read_text(encoding="utf-8")

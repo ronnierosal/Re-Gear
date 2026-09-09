@@ -312,8 +312,21 @@ callable("get_egpu_disconnect_status");
  *
  * `releaseDisplay` is a separate approval from the disconnect. Pass true only
  * when the player has agreed to the external display turning off.
+ *
+ * `relaunchAppId` records a wish to reopen one game afterwards, written down
+ * by the backend because this panel is about to be destroyed: freeing the
+ * device restarts the Steam session. Pass "" for no relaunch. Claim it with
+ * `takePendingRelaunch` rather than remembering it here.
  */
 callable("execute_egpu_disconnect");
+/** Claim the game a disconnect closed, if it may still be reopened.
+ *
+ * Consuming, and consuming on refusal too, so a relaunch that happens cannot
+ * happen twice. Call it after a disconnect returns, and again when the panel
+ * loads: freeing the eGPU restarts the Steam session, so the panel that asked
+ * for the relaunch is usually not the one that gets to perform it.
+ */
+callable("take_pending_relaunch");
 /** Store the player's answer about closing one game before a disconnect.
  *
  * The backend re-derives what may be stored from a fresh status rather than

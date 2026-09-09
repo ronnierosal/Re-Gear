@@ -10,7 +10,7 @@ const source = readFileSync(
 const js = ts.transpileModule(source, {
   compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 },
 }).outputText;
-const { runDisconnectWithGameClose, closeFlowMessage } = await import(
+const { runDisconnectWithGameClose, claimPendingRelaunch, closeFlowMessage } = await import(
   "data:text/javascript;base64," + Buffer.from(js).toString("base64")
 );
 
@@ -53,6 +53,9 @@ function rig({ closesAfter = 1, disconnectOutcome = outcome(), throwOn = null } 
   const calls = [];
   let polls = 0;
   let clock = 0;
+  // Stands in for the backend's durable record: written with the disconnect,
+  // consumed exactly once by claiming.
+  let recorded = "";
   return {
     calls,
     effects: {
@@ -66,10 +69,18 @@ function rig({ closesAfter = 1, disconnectOutcome = outcome(), throwOn = null } 
         if (throwOn === "status") throw new Error("unreadable");
         return status(polls >= closesAfter ? "nothing_to_close" : "confirm");
       },
-      async disconnect(releaseDisplay) {
-        calls.push(["disconnect", releaseDisplay]);
+      async disconnect(releaseDisplay, relaunchAppId) {
+        calls.push(["disconnect", releaseDisplay, relaunchAppId]);
         if (throwOn === "disconnect") throw new Error("rpc down");
+        recorded = relaunchAppId;
         return disconnectOutcome;
+      },
+      async takePendingRelaunch() {
+        calls.push(["take", recorded]);
+        if (throwOn === "take") throw new Error("unreadable");
+        const claimed = recorded;
+        recorded = "";
+        return { steam_app_id: claimed, code: claimed ? "relaunch.approved" : "relaunch.nothing_recorded" };
       },
       async relaunchGame(appId) {
         calls.push(["relaunch", appId]);
@@ -106,7 +117,7 @@ test("the happy path closes, waits for the backend, then disconnects", async () 
 
   assert.equal(result.ok, true);
   assert.equal(result.gameClosed, true);
-  assert.deepEqual(names(r.calls), ["terminate", "status", "disconnect"]);
+  assert.deepEqual(names(r.calls), ["terminate", "status", "disconnect", "take"]);
 });
 
 test("nothing is removed until the backend says the game is gone", async () => {
@@ -116,7 +127,8 @@ test("nothing is removed until the backend says the game is gone", async () => {
 
   const order = names(r.calls);
   assert.deepEqual(order.slice(0, 5), ["terminate", "status", "status", "status", "status"]);
-  assert.equal(order.at(-1), "disconnect");
+  // Every status came first; the removal came last of the two.
+  assert.ok(order.indexOf("disconnect") > order.lastIndexOf("status"));
 });
 
 test("a game that will not close stops the flow rather than escalating", async () => {
@@ -184,7 +196,7 @@ test("no game to close goes straight to the disconnect", async () => {
 
   assert.equal(result.ok, true);
   assert.equal(result.gameClosed, false);
-  assert.deepEqual(names(r.calls), ["disconnect"]);
+  assert.deepEqual(names(r.calls), ["disconnect", "take"]);
 });
 
 test("the answer is stored before it is acted on", async () => {
@@ -301,7 +313,7 @@ test("the display approval is passed through, never assumed", async () => {
 
   assert.deepEqual(
     r.calls.find(([name]) => name === "disconnect"),
-    ["disconnect", true],
+    ["disconnect", true, ""],
   );
 });
 
@@ -326,4 +338,122 @@ test("an unmapped failure still says something a bug report can carry", () => {
   });
 
   assert.match(message, /live_disconnect\.some_future_fact/);
+});
+
+
+test("the reopen is asked for with the removal, not remembered by this panel", () => {
+  // The session restart that frees the eGPU destroys this panel. A wish held
+  // only in this closure dies with it.
+  return (async () => {
+    const r = rig();
+    await runDisconnectWithGameClose(request({ relaunch: true }), r.effects);
+
+    assert.deepEqual(
+      r.calls.find(([name]) => name === "disconnect"),
+      ["disconnect", false, "1145360"],
+    );
+  })();
+});
+
+test("no reopen is recorded when none was asked for", async () => {
+  const r = rig();
+  await runDisconnectWithGameClose(request(), r.effects);
+
+  assert.deepEqual(
+    r.calls.find(([name]) => name === "disconnect"),
+    ["disconnect", false, ""],
+  );
+});
+
+test("a reopen is never recorded for a game that did not close", async () => {
+  const r = rig();
+  await runDisconnectWithGameClose(
+    request({ appId: null, relaunch: true }),
+    r.effects,
+  );
+
+  assert.deepEqual(
+    r.calls.find(([name]) => name === "disconnect"),
+    ["disconnect", false, ""],
+  );
+});
+
+test("the record is claimed exactly once, so no one launches it twice", async () => {
+  const r = rig();
+  const result = await runDisconnectWithGameClose(
+    request({ relaunch: true }),
+    r.effects,
+  );
+
+  assert.equal(result.relaunched, true);
+  // The record is now empty: a panel loading afterwards gets nothing.
+  assert.equal(await claimPendingRelaunch(r.effects), null);
+});
+
+test("a disturbed device does not even claim the record", async () => {
+  // Leaving it to expire is better than firing it later at something that
+  // still needs a person.
+  const r = rig({ disconnectOutcome: outcome({ device_disturbed: true, stage: "removal_unrecoverable", ok: false }) });
+  await runDisconnectWithGameClose(request({ relaunch: true }), r.effects);
+
+  assert.ok(!names(r.calls).includes("take"));
+});
+
+test("a transport failure still puts the game back", async () => {
+  // The call may have failed before the backend recorded anything. Claiming
+  // first means the fallback cannot double-launch.
+  const r = rig({ throwOn: "disconnect" });
+  const result = await runDisconnectWithGameClose(
+    request({ relaunch: true }),
+    r.effects,
+  );
+
+  assert.equal(result.relaunched, true);
+  assert.deepEqual(r.calls.at(-1), ["relaunch", "1145360"]);
+});
+
+test("a panel loading afterwards claims and launches what is pending", async () => {
+  const launched = [];
+  const appId = await claimPendingRelaunch({
+    async takePendingRelaunch() {
+      return { steam_app_id: "1145360", code: "relaunch.approved" };
+    },
+    async relaunchGame(id) {
+      launched.push(id);
+    },
+  });
+
+  assert.equal(appId, "1145360");
+  assert.deepEqual(launched, ["1145360"]);
+});
+
+test("a panel loading with nothing pending launches nothing", async () => {
+  const launched = [];
+  const appId = await claimPendingRelaunch({
+    async takePendingRelaunch() {
+      return { steam_app_id: "", code: "relaunch.nothing_recorded" };
+    },
+    async relaunchGame(id) {
+      launched.push(id);
+    },
+  });
+
+  assert.equal(appId, null);
+  assert.deepEqual(launched, []);
+});
+
+test("a refused claim launches nothing", async () => {
+  // Every guard lives in the backend's decision; this must not widen them.
+  const launched = [];
+  const appId = await claimPendingRelaunch({
+    async takePendingRelaunch() {
+      return { steam_app_id: "", code: "relaunch.different_boot" };
+    },
+    async relaunchGame(id) {
+      launched.push(id);
+    },
+  });
+
+  assert.equal(appId, null);
+  assert.deepEqual(launched, []);
 });

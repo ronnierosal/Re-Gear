@@ -27,6 +27,11 @@ from hdm.domain.game_close_consent import (  # noqa: E402
     decide_game_close,
 )
 from hdm.domain.game_compatibility import GameSaveCapability  # noqa: E402
+from hdm.application.live_disconnect import (  # noqa: E402
+    LiveDisconnectResult,
+    LiveDisconnectStage,
+)
+from hdm.delivery.relaunch_intent_store import RelaunchIntentStore  # noqa: E402
 
 
 HADES = RunningGame("1145360", "Hades", GameSaveCapability.UNTESTED)
@@ -201,6 +206,155 @@ class RememberChoiceTests(unittest.TestCase):
 
         self.assertIs(result["ok"], False)
         self.assertEqual(result["code"], "game_close.app_id_invalid")
+
+
+BOOT = "b" * 64
+
+
+class DisconnectRuntime:
+    """Just enough of the runtime to exercise the delivery around it."""
+
+    def __init__(self, *, disturbed: bool = False) -> None:
+        self.disturbed = disturbed
+        self.calls: list[bool] = []
+
+    def status(self):
+        raise AssertionError("status is not part of this path")
+
+    def execute(self, *, release_display: bool):
+        # Real stages, because ok and device_disturbed are derived from them
+        # and a fake that sets them directly would test nothing.
+        self.calls.append(release_display)
+        if self.disturbed:
+            return LiveDisconnectResult(
+                LiveDisconnectStage.REMOVAL_UNRECOVERABLE,
+                "live_disconnect.removal_unrecoverable",
+                restored=("0000:08:00.1",),
+            )
+        return LiveDisconnectResult(
+            LiveDisconnectStage.REMOVED,
+            "live_disconnect.removed",
+            removed=("0000:08:00.1", "0000:08:00.0"),
+        )
+
+
+class PendingRelaunchTests(unittest.TestCase):
+    """The panel that asks for a relaunch does not survive to perform it.
+
+    Freeing the eGPU restarts the Steam session, and a running game is exactly
+    the case that makes that necessary. So the wish is written down here.
+    """
+
+    def setUp(self) -> None:
+        self.module = load_main_module()
+        self._temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self._temporary.cleanup)
+        self.root = Path(self._temporary.name).resolve()
+        for name, value in (("CATALOG_ROOT", self.root),):
+            patcher = patch.object(self.module, name, value)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        boot = patch.object(self.module, "read_boot_hash", lambda: BOOT)
+        boot.start()
+        self.addCleanup(boot.stop)
+        self.plugin = self.module.Plugin()
+        self.runtime = DisconnectRuntime()
+
+    def disconnect(self, **kwargs):
+        with patch.object(
+            self.module.Plugin,
+            "_live_disconnect_runtime",
+            lambda _self: self.runtime,
+        ):
+            return asyncio.run(self.plugin.execute_egpu_disconnect(**kwargs))
+
+    def stored(self):
+        return RelaunchIntentStore(self.root).peek()
+
+    def test_a_requested_relaunch_is_written_before_the_removal(self) -> None:
+        self.disconnect(release_display=False, relaunch_app_id="1145360")
+
+        intent = self.stored()
+        self.assertIsNotNone(intent)
+        self.assertEqual(intent.steam_app_id, "1145360")
+        self.assertEqual(intent.boot_hash, BOOT)
+
+    def test_no_relaunch_asked_for_writes_nothing(self) -> None:
+        self.disconnect(release_display=False)
+
+        self.assertIsNone(self.stored())
+
+    def test_a_malformed_app_id_is_never_written(self) -> None:
+        self.disconnect(release_display=False, relaunch_app_id="../../etc")
+
+        self.assertIsNone(self.stored())
+
+    def test_a_disturbed_device_clears_the_wish(self) -> None:
+        # A half-detached eGPU needs a person, not a game launching into it.
+        self.runtime.disturbed = True
+
+        self.disconnect(release_display=False, relaunch_app_id="1145360")
+
+        self.assertIsNone(self.stored())
+
+    def test_the_game_is_claimed_once_and_only_once(self) -> None:
+        self.disconnect(release_display=False, relaunch_app_id="1145360")
+
+        first = asyncio.run(self.plugin.take_pending_relaunch())
+        second = asyncio.run(self.plugin.take_pending_relaunch())
+
+        self.assertEqual(first["steam_app_id"], "1145360")
+        self.assertEqual(first["code"], "relaunch.approved")
+        self.assertEqual(second["steam_app_id"], "")
+        self.assertEqual(second["code"], "relaunch.nothing_recorded")
+
+    def test_nothing_pending_reads_as_nothing_rather_than_an_error(self) -> None:
+        result = asyncio.run(self.plugin.take_pending_relaunch())
+
+        self.assertEqual(result["steam_app_id"], "")
+        self.assertEqual(result["code"], "relaunch.nothing_recorded")
+
+    def test_a_reboot_between_the_wish_and_the_claim_refuses_it(self) -> None:
+        self.disconnect(release_display=False, relaunch_app_id="1145360")
+
+        with patch.object(self.module, "read_boot_hash", lambda: "c" * 64):
+            result = asyncio.run(self.plugin.take_pending_relaunch())
+
+        self.assertEqual(result["steam_app_id"], "")
+        self.assertEqual(result["code"], "relaunch.different_boot")
+
+    def test_a_refused_wish_is_still_consumed(self) -> None:
+        # An intent that could not be honoured now is not one to keep offering.
+        self.disconnect(release_display=False, relaunch_app_id="1145360")
+
+        with patch.object(self.module, "read_boot_hash", lambda: "c" * 64):
+            asyncio.run(self.plugin.take_pending_relaunch())
+
+        self.assertIsNone(self.stored())
+
+    def test_an_unidentifiable_boot_refuses_rather_than_launching(self) -> None:
+        self.disconnect(release_display=False, relaunch_app_id="1145360")
+
+        with patch.object(self.module, "read_boot_hash", lambda: ""):
+            result = asyncio.run(self.plugin.take_pending_relaunch())
+
+        self.assertEqual(result["steam_app_id"], "")
+
+    def test_a_wish_that_cannot_be_written_does_not_refuse_the_disconnect(
+        self,
+    ) -> None:
+        # It costs a manual relaunch, not the action the player pressed for.
+        with patch.object(
+            self.module.RelaunchIntentStore,
+            "record",
+            lambda *args, **kwargs: (_ for _ in ()).throw(OSError("read-only")),
+        ):
+            result = self.disconnect(
+                release_display=False, relaunch_app_id="1145360"
+            )
+
+        self.assertIs(result["ok"], True)
+        self.assertEqual(self.runtime.calls, [False])
 
 
 if __name__ == "__main__":

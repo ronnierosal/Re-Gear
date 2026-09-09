@@ -283,6 +283,9 @@ def main() -> int:
             # backend still re-derives whether that answer may be stored.
             "remember_game_close_choice",
             "forget_game_close_choice",
+            # The game a disconnect closed, claimed once by whichever panel is
+            # alive after the session restart that freed the device.
+            "take_pending_relaunch",
         }
         if public_methods != allowed_methods:
             failures.append(

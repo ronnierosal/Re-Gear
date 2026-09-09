@@ -752,11 +752,34 @@ export const getEgpuDisconnectStatus = callable<[], DisconnectStatusPayload>(
  *
  * `releaseDisplay` is a separate approval from the disconnect. Pass true only
  * when the player has agreed to the external display turning off.
+ *
+ * `relaunchAppId` records a wish to reopen one game afterwards, written down
+ * by the backend because this panel is about to be destroyed: freeing the
+ * device restarts the Steam session. Pass "" for no relaunch. Claim it with
+ * `takePendingRelaunch` rather than remembering it here.
  */
 export const executeEgpuDisconnect = callable<
-  [releaseDisplay: boolean],
+  [releaseDisplay: boolean, relaunchAppId: string],
   DisconnectOutcomePayload
 >("execute_egpu_disconnect");
+
+export interface PendingRelaunchPayload {
+  /** The game to reopen, or "" when there is none to reopen. */
+  steam_app_id: string;
+  /** Why. `relaunch.approved`, `relaunch.nothing_recorded`, or a refusal. */
+  code: string;
+}
+
+/** Claim the game a disconnect closed, if it may still be reopened.
+ *
+ * Consuming, and consuming on refusal too, so a relaunch that happens cannot
+ * happen twice. Call it after a disconnect returns, and again when the panel
+ * loads: freeing the eGPU restarts the Steam session, so the panel that asked
+ * for the relaunch is usually not the one that gets to perform it.
+ */
+export const takePendingRelaunch = callable<[], PendingRelaunchPayload>(
+  "take_pending_relaunch",
+);
 
 export interface GameClosePreferenceResult {
   ok: boolean;

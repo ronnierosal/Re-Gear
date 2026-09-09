@@ -25,6 +25,14 @@
  *    instead of stacking a second problem on it.
  * 4. **The player's answer is stored before anything is done with it**, so a
  *    flow that fails halfway does not also lose the box they ticked.
+ *
+ * The relaunch itself is claimed from the backend rather than remembered here,
+ * and that is the point of the whole arrangement: the session restart that
+ * frees the eGPU destroys this panel, and a running game is precisely the case
+ * that makes the restart necessary. So this asks for the reopen by recording
+ * it with the disconnect, then claims it -- and if this panel is gone by then,
+ * the next one claims it instead. The record is consumed by claiming, so
+ * exactly one of them can.
  */
 
 import type {
@@ -48,8 +56,13 @@ export interface CloseFlowEffects {
   terminateGame(appId: string): Promise<void>;
   /** A fresh read of the disconnect status. */
   readStatus(): Promise<DisconnectStatusPayload | null>;
-  disconnect(releaseDisplay: boolean): Promise<DisconnectOutcomePayload>;
+  disconnect(
+    releaseDisplay: boolean,
+    relaunchAppId: string,
+  ): Promise<DisconnectOutcomePayload>;
   relaunchGame(appId: string): Promise<void>;
+  /** Claim the game the backend recorded for reopening, or "" for none. */
+  takePendingRelaunch(): Promise<{ steam_app_id: string; code: string }>;
   rememberChoice(
     appId: string,
     skipConfirmation: boolean,
@@ -157,17 +170,24 @@ export async function runDisconnectWithGameClose(
     }
   }
 
+  // Asked for with the removal, so the wish survives this panel being torn
+  // down by the session restart the removal performs.
+  const wanted = request.relaunch && gameClosed && appId !== null ? appId : "";
+
   let outcome: DisconnectOutcomePayload;
   try {
-    outcome = await effects.disconnect(request.releaseDisplay);
+    outcome = await effects.disconnect(request.releaseDisplay, wanted);
   } catch {
-    // The game is already closed, so put it back before reporting.
-    const relaunched = await restore(request, effects, gameClosed, false);
+    // The game is already closed, so put it back before reporting. The call
+    // may have failed before the backend recorded anything, so this is the one
+    // place a fallback is needed -- and it is safe, because claiming already
+    // consumed any record that did get written.
+    const relaunched = await restore(effects, false, wanted);
     return failed("flow.disconnect_failed", { gameClosed, relaunched });
   }
 
   const disturbed = outcome.device_disturbed === true;
-  const relaunched = await restore(request, effects, gameClosed, disturbed);
+  const relaunched = await restore(effects, disturbed);
   return {
     ok: outcome.ok === true,
     code: outcome.code,
@@ -180,24 +200,67 @@ export async function runDisconnectWithGameClose(
 
 /** Put the game back, unless doing so would make things worse.
  *
+ * The game to reopen comes from the backend's record rather than from this
+ * function's caller, so that this panel and a panel that replaced it cannot
+ * both launch it. Claiming consumes the record, which is what makes that true.
+ *
  * A half-detached eGPU is not somewhere to start a game. That state needs a
  * person, and launching into it would stack a second problem on the one that
- * already needs attention.
+ * already needs attention -- so this does not even claim the record, leaving
+ * it to expire rather than firing later.
  */
 async function restore(
-  request: CloseFlowRequest,
   effects: CloseFlowEffects,
-  gameClosed: boolean,
   disturbed: boolean,
+  fallbackAppId = "",
 ): Promise<boolean> {
-  if (!request.relaunch || !gameClosed || request.appId === null || disturbed) {
+  if (disturbed) {
+    return false;
+  }
+  let appId: string;
+  try {
+    appId = (await effects.takePendingRelaunch()).steam_app_id;
+  } catch {
+    appId = "";
+  }
+  if (!appId) {
+    appId = fallbackAppId;
+  }
+  if (!appId) {
     return false;
   }
   try {
-    await effects.relaunchGame(request.appId);
+    await effects.relaunchGame(appId);
     return true;
   } catch {
     return false;
+  }
+}
+
+/** Claim and perform any relaunch a previous disconnect left pending.
+ *
+ * For a panel on load. The session restart that frees the eGPU destroys the
+ * panel that asked for the reopen, so the one that comes up afterwards is
+ * usually the one that has to do it. Safe to call unconditionally: with
+ * nothing recorded it does nothing.
+ */
+export async function claimPendingRelaunch(
+  effects: Pick<CloseFlowEffects, "takePendingRelaunch" | "relaunchGame">,
+): Promise<string | null> {
+  let appId: string;
+  try {
+    appId = (await effects.takePendingRelaunch()).steam_app_id;
+  } catch {
+    return null;
+  }
+  if (!appId) {
+    return null;
+  }
+  try {
+    await effects.relaunchGame(appId);
+    return appId;
+  } catch {
+    return null;
   }
 }
 

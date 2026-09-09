@@ -50,8 +50,14 @@ from hdm.adapters.steamos.gamescope_session import (  # noqa: E402
     GamescopeSessionObservationAdapter,
 )
 from hdm.adapters.steamos.gamescope_user import resolve_gamescope_user  # noqa: E402
+from hdm.adapters.steamos.owner_identity import read_boot_hash  # noqa: E402
 from hdm.delivery.game_close_preferences import (  # noqa: E402
     GameClosePreferenceStore,
+)
+from hdm.delivery.relaunch_intent_store import RelaunchIntentStore  # noqa: E402
+from hdm.domain.relaunch_intent import (  # noqa: E402
+    RelaunchIntent,
+    decide_relaunch,
 )
 from hdm.delivery.live_disconnect_runtime import (  # noqa: E402
     CATALOG_ROOT,
@@ -224,6 +230,23 @@ from hdm.profiles.gpd_g1 import match_gpd_g1  # noqa: E402
 MAX_JOURNEY_ELAPSED_MS = 24 * 60 * 60 * 1000
 UNLOAD_OBSERVER_TIMEOUT_SECONDS = 1.0
 UNLOAD_GUARD_TIMEOUT_SECONDS = 3.0
+
+
+def _boot_seconds() -> float:
+    """Seconds since boot, from a clock a wall-clock correction cannot move.
+
+    The relaunch intent is aged against this rather than against the date,
+    because an NTP step during a session restart must not make a stale intent
+    look fresh. `CLOCK_BOOTTIME` also keeps counting across a suspend, which is
+    what makes it usable for the sleep flow as well as the disconnect one.
+    """
+    boottime = getattr(time, "CLOCK_BOOTTIME", None)
+    if boottime is not None:
+        try:
+            return time.clock_gettime(boottime)
+        except OSError:
+            pass
+    return time.monotonic()
 
 
 def _can_remember_portable_audio(snapshot) -> bool:
@@ -1038,14 +1061,35 @@ class Plugin:
         return disconnect_status_to_payload(status)
 
     async def execute_egpu_disconnect(
-        self, release_display: bool = False
+        self, release_display: bool = False, relaunch_app_id: str = ""
     ) -> dict[str, object]:
         """Remove the eGPU in software. NOT clearance to unplug anything.
 
         `release_display` is a separate approval from the disconnect itself:
         it turns the external output off for the duration, which is visible to
         whoever is watching it, so a caller has to ask for it explicitly.
+
+        `relaunch_app_id` records a wish to reopen one game afterwards, and is
+        written down here rather than remembered by the caller because the
+        caller is about to be destroyed: freeing the device restarts the Steam
+        session, which is exactly what happens when a game was running. The
+        record is picked up by `take_pending_relaunch`, from whichever panel is
+        alive to ask, and it is cleared if the removal leaves the device
+        somewhere it has never been.
         """
+        relaunch = RelaunchIntentStore(CATALOG_ROOT)
+        if relaunch_app_id and STEAM_APP_ID_RE.fullmatch(str(relaunch_app_id)):
+            try:
+                await asyncio.to_thread(
+                    relaunch.record,
+                    RelaunchIntent(
+                        str(relaunch_app_id), read_boot_hash(), _boot_seconds()
+                    ),
+                )
+            except Exception:
+                # A wish that could not be written costs a manual relaunch. It
+                # is not a reason to refuse the disconnect the player asked for.
+                pass
         try:
             runtime = await asyncio.to_thread(self._live_disconnect_runtime)
         except Exception:
@@ -1068,7 +1112,39 @@ class Plugin:
                 "code": "live_disconnect.attempt_failed",
                 "ok": False,
             }
+        if result.device_disturbed:
+            # A half-detached eGPU needs a person, not a game launching into it.
+            try:
+                await asyncio.to_thread(relaunch.clear)
+            except Exception:
+                pass
         return disconnect_result_to_payload(result)
+
+    async def take_pending_relaunch(
+        self, _request: object = None
+    ) -> dict[str, object]:
+        """Claim the game a disconnect closed, if it may still be reopened.
+
+        Consuming, and consuming on refusal too: an intent that could not be
+        honoured now is not one to keep offering. Every guard lives in
+        `decide_relaunch`, so a panel calling this cannot widen them.
+        """
+        store = RelaunchIntentStore(CATALOG_ROOT)
+        try:
+            intent = await asyncio.to_thread(store.take)
+        except Exception:
+            return {"steam_app_id": "", "code": "relaunch.record_unreadable"}
+        try:
+            boot_hash = await asyncio.to_thread(read_boot_hash)
+        except Exception:
+            boot_hash = ""
+        decision = decide_relaunch(
+            intent, boot_hash=boot_hash, now_boot_seconds=_boot_seconds()
+        )
+        return {
+            "steam_app_id": decision.steam_app_id if decision.should_relaunch else "",
+            "code": decision.code,
+        }
 
     async def remember_game_close_choice(
         self,
