@@ -102,6 +102,7 @@ class EgpuClientDiscoveryTests(unittest.TestCase):
         block_device_resolver=None,
         fd_target_reader=None,
         descriptor_reader=None,
+        exclude_pids=(),
     ) -> EgpuClientDiscovery:
         pci = root / "pci"
         pci_path = lambda bdf: pci / bdf.replace(":", "_")
@@ -130,6 +131,7 @@ class EgpuClientDiscoveryTests(unittest.TestCase):
             pci_path_resolver=pci_path,
             block_device_resolver=block_device_resolver,
             descriptor_reader=descriptor_reader,
+            exclude_pids=exclude_pids,
         )
 
     def scan(self, discovery: EgpuClientDiscovery):
@@ -329,6 +331,59 @@ class EgpuClientDiscoveryTests(unittest.TestCase):
             self.assertFalse(result.complete)
             self.assertEqual(len(result.clients), 1)
             self.assertEqual(result.clients[0].pid, 202)
+
+    def test_an_excluded_process_is_not_reported_as_a_client(self):
+        """The disconnect holds the card open to keep DRM master.
+
+        Counting that made the disconnect report itself as the thing blocking
+        the disconnect.
+        """
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            discovery = self.make_discovery(root, exclude_pids=(999,))
+            add_process(root / 'proc', 999, 'hdm-disconnect', '0::/session\n',
+                        ('/dev/dri/renderD131',), 900)
+            result = self.scan(discovery)
+            self.assertTrue(result.complete)
+            self.assertEqual(result.clients, ())
+
+    def test_excluding_one_process_does_not_hide_another(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            discovery = self.make_discovery(root, exclude_pids=(999,))
+            add_process(root / 'proc', 999, 'hdm-disconnect', '0::/session\n',
+                        ('/dev/dri/renderD131',), 900)
+            add_process(root / 'proc', 202, 'gamescope', '0::/session\n',
+                        ('/dev/dri/renderD131',), 900)
+            result = self.scan(discovery)
+            self.assertEqual([client.pid for client in result.clients], [202])
+
+    def test_the_exclusion_is_opt_in_and_off_by_default(self):
+        """A caller has to name a pid; nothing excludes anything on its own."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            discovery = self.make_discovery(root)
+            add_process(root / 'proc', 999, 'hdm-disconnect', '0::/session\n',
+                        ('/dev/dri/renderD131',), 900)
+            result = self.scan(discovery)
+            self.assertEqual([client.pid for client in result.clients], [999])
+
+    def test_an_excluded_process_cannot_make_the_scan_incomplete(self):
+        """Its descriptors are the ones changing under a caller mid-disconnect."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+
+            def denied(_path):
+                raise PermissionError('fixture')
+
+            discovery = self.make_discovery(
+                root, fd_target_reader=denied, exclude_pids=(999,)
+            )
+            add_process(root / 'proc', 999, 'hdm-disconnect', '0::/session\n',
+                        ('/dev/dri/renderD131',), 900)
+            result = self.scan(discovery)
+            self.assertTrue(result.complete)
+            self.assertEqual(result.error, '')
 
     def test_a_descriptor_closed_while_the_process_lives_is_not_a_gap(self):
         """The case that made this scan never complete on real hardware.

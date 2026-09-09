@@ -64,6 +64,7 @@ from .adapters.steamos.cgroup_identity import observe_user_manager_cgroup
 from .adapters.steamos.device_filter import CgroupDeviceFilter
 from .adapters.steamos.device_removal import SysfsDeviceRemoval
 from .adapters.steamos.discovery import SteamOsDiscovery
+from .adapters.steamos.egpu_clients import EgpuClientDiscovery
 from .adapters.steamos.drm_crtc import DrmCrtcProbe
 from .adapters.steamos.drm_display_release import DrmDisplayRelease
 from .adapters.steamos.egpu_device_nodes import SteamOsEgpuDeviceNodeDiscovery
@@ -132,6 +133,28 @@ def await_unit_release(
         if remaining <= 0:
             return False
         sleep(max(0.0, min(interval, remaining)))
+
+
+def disconnect_snapshot_service() -> SnapshotService:
+    """The observation path, with this process excluded from the client scan.
+
+    The disconnect holds the eGPU's card node open while it keeps DRM master
+    to turn the external display off, so a scan taken inside that window sees
+    this process holding the device and reports `clients_active_or_protected`
+    -- the disconnect blocking itself. Observed on hardware: the client
+    appeared only once the release was held, and only this process could have
+    opened the node, because the filter was armed and enforced on the session's
+    cgroup at the time and this tool runs outside it.
+
+    Excluding only this pid is the narrow claim: this process will not be
+    surprised by the device going away, because it is the thing removing it.
+    Every other holder is still reported, and the exclusion is passed here at
+    the composition root rather than defaulted anywhere.
+    """
+    return SnapshotService(
+        SteamOsDiscovery(egpu_clients=EgpuClientDiscovery(exclude_pids=(os.getpid(),))),
+        peripheral_observation=SteamOsPeripheralObservationAdapter(),
+    )
 
 
 def observe_removal(service: SnapshotService) -> FreshRemovalObservation:
@@ -313,12 +336,7 @@ def main(argv: Sequence[str] = ()) -> int:
     cgroup = observe_user_manager_cgroup(arguments.uid)
     owner = observe_owner_identity()
     boot_hash = read_boot_hash()
-    observation = observe_removal(
-        SnapshotService(
-            SteamOsDiscovery(),
-            peripheral_observation=SteamOsPeripheralObservationAdapter(),
-        )
-    )
+    observation = observe_removal(disconnect_snapshot_service())
     report(f"  cgroup: {cgroup.path if cgroup else '(unreadable)'}")
     report(f"  owner: {owner}")
     report(f"  boot hash: {'read' if boot_hash else '(unreadable)'}")
@@ -398,12 +416,7 @@ def main(argv: Sequence[str] = ()) -> int:
         removal=SysfsDeviceRemoval(),
         display_release=DrmDisplayRelease(),
         store=FileRemovalTransactionStore(store_root),
-        observe=lambda: observe_removal(
-            SnapshotService(
-                SteamOsDiscovery(),
-                peripheral_observation=SteamOsPeripheralObservationAdapter(),
-            )
-        ),
+        observe=lambda: observe_removal(disconnect_snapshot_service()),
         observe_display=lambda: observe_display(
             nodes, nodes_incomplete=not nodes_complete
         ),

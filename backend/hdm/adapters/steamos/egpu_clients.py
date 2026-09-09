@@ -44,6 +44,7 @@ class EgpuClientDiscovery:
         pci_path_resolver: Callable[[str], Path] | None = None,
         block_device_resolver: Callable[[Path], Path] | None = None,
         descriptor_reader: Callable[[Path], tuple[Path, ...]] | None = None,
+        exclude_pids: tuple[int, ...] = (),
     ) -> None:
         self._pci_root = pci_root
         self._proc_root = proc_root
@@ -61,6 +62,19 @@ class EgpuClientDiscovery:
         self._descriptor_reader = descriptor_reader or (
             lambda directory: tuple(directory.iterdir())
         )
+        #: Processes whose descriptors are not evidence about other holders.
+        #:
+        #: Empty by default, and never populated by this module: a caller has
+        #: to name a pid deliberately. The one caller that does is the live
+        #: disconnect, which holds the eGPU's card node open in order to keep
+        #: DRM master while it turns the external display off. Counting that as
+        #: a client made the disconnect report itself as the thing blocking the
+        #: disconnect.
+        #:
+        #: This narrows what the scan reports on, so it is deliberately not a
+        #: default: any process excluded here is one the caller has asserted
+        #: will not be surprised by the device going away.
+        self._exclude_pids = frozenset(exclude_pids)
 
     def scan(
         self,
@@ -160,6 +174,21 @@ class EgpuClientDiscovery:
             return EgpuResourceKind.AUDIO_CONTROL
         return EgpuResourceKind.AUDIO_HARDWARE
 
+    def _is_excluded(self, process_path: Path) -> bool:
+        """Whether this process was named as not being a client.
+
+        Skipped entirely rather than scanned and filtered: an excluded process
+        cannot contribute a holder, and it must not be able to make the scan
+        incomplete either, since its descriptors are exactly the ones changing
+        underneath a caller that is mid-disconnect.
+        """
+        if not self._exclude_pids:
+            return False
+        try:
+            return int(process_path.name) in self._exclude_pids
+        except ValueError:
+            return False
+
     def _scan_processes(
         self,
         targets: dict[str, EgpuResourceKind],
@@ -178,6 +207,8 @@ class EgpuClientDiscovery:
         clients: list[EgpuClientObservation] = []
         incomplete = False
         for process_path in process_paths:
+            if self._is_excluded(process_path):
+                continue
             try:
                 descriptors = self._descriptor_reader(process_path / "fd")
             except OSError:
