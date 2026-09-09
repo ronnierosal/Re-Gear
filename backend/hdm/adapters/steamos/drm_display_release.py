@@ -161,7 +161,7 @@ class DrmDisplayRelease:
 
     @staticmethod
     def _open_node(node: str) -> int:
-        return os.open(node, os.O_RDWR | os.O_CLOEXEC)
+        return os.open(node, os.O_RDWR | getattr(os, "O_CLOEXEC", 0))
 
     def release(
         self, node: str, crtcs: tuple[int, ...]

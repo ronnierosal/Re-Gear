@@ -189,7 +189,7 @@ class DrmCrtcProbe:
 
     @staticmethod
     def _open_node(node: str) -> int:
-        return os.open(node, os.O_RDWR | os.O_CLOEXEC)
+        return os.open(node, os.O_RDWR | getattr(os, "O_CLOEXEC", 0))
 
     def observe(self, node: str) -> CardCrtcState:
         """Read every CRTC on `node`, or report why the read did not finish."""
