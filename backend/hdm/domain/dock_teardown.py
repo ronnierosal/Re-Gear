@@ -1,0 +1,237 @@
+"""Decide whether the rest of the dock may be taken down after the GPU.
+
+A live disconnect today removes two PCI functions: the GPU and its audio. That
+is enough to stop the eGPU rendering, and it is *not* enough to make the cable
+safe to pull. The dock's own Thunderbolt USB controller sits on a sibling port
+of the same switch, the bridges above it are still enumerated, and the tunnel
+itself is still up. Unplugging then is a surprise removal of everything this
+step never touched.
+
+So this is the second half: bring the USB branch down, deauthorize the tunnel,
+and verify both, so that what a player is told about the cable is a claim about
+a dock that is actually detached rather than about a GPU that happens to be.
+
+It is a far more dangerous operation than removing the GPU was, and for one
+reason above all others: **the USB branch is where a player's files are.** A
+mounted USB drive on the dock, removed with dirty pages outstanding, is data
+loss with no recovery and no warning. The GPU branch had nothing comparable at
+stake -- a lost frame is a lost frame.
+
+Hence the rules, each of which refuses on its own:
+
+- **mounted storage is an absolute refusal**, never a warning to click through.
+  A filesystem on this branch means the answer is no until the player unmounts
+  it themselves. Re-Gear does not unmount anything to make a disconnect look
+  possible, for the same reason it never force-closes a process to make one
+  look safe;
+- **an unfinished scan is not an empty branch.** "Found no mounts" is evidence
+  only when the looking finished. This codebase has had to remove that exact
+  fail-open more than once, and here it would cost someone their save files
+  rather than a prompt;
+- **the GPU goes first.** Deauthorizing the tunnel while the GPU is still bound
+  *is* the surprise removal invariant 10 forbids -- the same operation, reached
+  from software instead of from the cable. Teardown is the last step or it is
+  nothing;
+- **the tunnel must be identified and deauthorizable before anything starts.**
+  Taking the USB branch down and then discovering the tunnel cannot be brought
+  down leaves the player with no dock USB, no clearance, and a recovery to
+  perform. Refusing early costs them nothing.
+
+Input, audio and network devices on the branch are **reported, not refused**.
+They will disconnect and the player must be told so, but on a handheld the
+built-in controller survives, so this is information they can act on rather
+than a reason to override their decision.
+
+Pure. It removes nothing, writes to no sysfs file and authorizes nothing.
+Producing a permitted decision authorises one bounded teardown and nothing
+else. It is **not** a finding that any cable may be pulled: that claim needs
+this teardown to have actually run and been verified, and it needs the owner's
+decision on issue #147, which is about whether invariant 10 covers one
+operation or two.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from enum import StrEnum
+
+
+@dataclass(frozen=True, slots=True)
+class UsbBranchEvidence:
+    """One reading of the dock's USB controller and what hangs off it.
+
+    Every field carries its own completeness, because the failure this guards
+    against is a reading that did not finish being taken for a reading that
+    found nothing.
+    """
+
+    #: The dock's USB host controller, e.g. "0000:09:00.0".
+    controller_bdf: str
+    #: Whether that controller is still enumerated. False means this half of
+    #: the teardown is already done.
+    present: bool
+    #: Whether the enumeration of the branch finished.
+    scan_complete: bool
+    #: Mount points backed by block devices on this branch. Any entry refuses.
+    mounted_storage: tuple[str, ...] = ()
+    #: Whether the search for those mounts finished. False refuses on its own.
+    storage_scan_complete: bool = False
+    #: Input devices that will disconnect. Reported, never a refusal.
+    input_devices: tuple[str, ...] = ()
+    #: Audio, network and anything else that will disconnect with the branch.
+    other_devices: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class TunnelEvidence:
+    """One reading of the Thunderbolt link the whole dock hangs from."""
+
+    #: The thunderbolt sysfs id, e.g. "0-1". Empty when none was identified.
+    sysfs_id: str
+    #: Whether the link is authorized. None means it could not be read, which
+    #: is not the same as "not authorized" and must not be treated as done.
+    authorized: bool | None
+    #: Whether this process could deauthorize it. Checked before anything is
+    #: torn down, so a failure costs nothing rather than half a dock.
+    deauthorizable: bool
+    #: Whether the thunderbolt reading finished.
+    scan_complete: bool
+
+
+class DockTeardownState(StrEnum):
+    #: The USB branch is gone and the tunnel is down. Nothing left to do.
+    ALREADY_DOWN = "already_down"
+    #: Every fact holds and the step is approved.
+    PERMITTED = "permitted"
+    #: A substantive fact refuses, and the code says which.
+    REFUSED = "refused"
+    #: The facts allow it but the step was not approved.
+    APPROVAL_REQUIRED = "approval_required"
+
+
+@dataclass(frozen=True, slots=True)
+class DockTeardownDecision:
+    state: DockTeardownState
+    code: str
+    #: Mount points that must be unmounted first, when that is the blocker.
+    #: Named so a player can act rather than hunt.
+    blocking_mounts: tuple[str, ...] = field(default_factory=tuple)
+    #: What will disconnect if this proceeds. Not blockers; consequences.
+    disconnecting: tuple[str, ...] = field(default_factory=tuple)
+
+    @property
+    def permitted(self) -> bool:
+        return self.state is DockTeardownState.PERMITTED
+
+
+def decide_dock_teardown(
+    *,
+    usb: UsbBranchEvidence,
+    tunnel: TunnelEvidence,
+    gpu_functions_present: tuple[str, ...],
+    gpu_scan_complete: bool,
+    approved: bool = False,
+) -> DockTeardownDecision:
+    """Whether the USB branch and the tunnel may be brought down now.
+
+    ``gpu_functions_present`` is the eGPU's own PCI functions that are still
+    enumerated. It must be empty over a finished scan: teardown is what happens
+    *after* a verified removal, and running it before one is the operation
+    invariant 10 forbids rather than a faster route to the same place.
+
+    Approval is checked last on purpose. A caller that has not approved still
+    learns which substantive fact would have blocked it, which is what an
+    operator working through a sequence needs.
+    """
+
+    consequences = tuple(usb.input_devices) + tuple(usb.other_devices)
+
+    # Completeness first, and for the GPU before anything else: a teardown that
+    # cannot prove the GPU is gone cannot prove it is not a surprise removal.
+    if not gpu_scan_complete:
+        return DockTeardownDecision(
+            DockTeardownState.REFUSED,
+            "dock_teardown.gpu_scan_incomplete",
+            disconnecting=consequences,
+        )
+    if gpu_functions_present:
+        return DockTeardownDecision(
+            DockTeardownState.REFUSED,
+            "dock_teardown.gpu_still_attached",
+            disconnecting=consequences,
+        )
+
+    if not tunnel.scan_complete:
+        return DockTeardownDecision(
+            DockTeardownState.REFUSED,
+            "dock_teardown.tunnel_scan_incomplete",
+            disconnecting=consequences,
+        )
+    if not tunnel.sysfs_id:
+        return DockTeardownDecision(
+            DockTeardownState.REFUSED,
+            "dock_teardown.tunnel_unidentified",
+            disconnecting=consequences,
+        )
+
+    if not usb.scan_complete:
+        return DockTeardownDecision(
+            DockTeardownState.REFUSED,
+            "dock_teardown.usb_scan_incomplete",
+            disconnecting=consequences,
+        )
+
+    if not usb.present and tunnel.authorized is False:
+        return DockTeardownDecision(
+            DockTeardownState.ALREADY_DOWN,
+            "dock_teardown.already_down",
+        )
+
+    # The tunnel's own state has to be readable. Unknown is not down, and
+    # acting as though it were would report a dock as detached on the strength
+    # of a file that could not be read.
+    if tunnel.authorized is None:
+        return DockTeardownDecision(
+            DockTeardownState.REFUSED,
+            "dock_teardown.tunnel_state_unknown",
+            disconnecting=consequences,
+        )
+    if tunnel.authorized and not tunnel.deauthorizable:
+        # Checked before anything comes down. Discovering this afterwards
+        # leaves a player with no dock USB, no clearance, and a recovery to
+        # perform; discovering it now costs them nothing.
+        return DockTeardownDecision(
+            DockTeardownState.REFUSED,
+            "dock_teardown.tunnel_not_deauthorizable",
+            disconnecting=consequences,
+        )
+
+    # Storage last among the refusals, because it is the one a player can
+    # clear themselves and the one worth naming precisely.
+    if usb.present:
+        if not usb.storage_scan_complete:
+            return DockTeardownDecision(
+                DockTeardownState.REFUSED,
+                "dock_teardown.storage_scan_incomplete",
+                disconnecting=consequences,
+            )
+        if usb.mounted_storage:
+            return DockTeardownDecision(
+                DockTeardownState.REFUSED,
+                "dock_teardown.mounted_storage",
+                blocking_mounts=tuple(usb.mounted_storage),
+                disconnecting=consequences,
+            )
+
+    if not approved:
+        return DockTeardownDecision(
+            DockTeardownState.APPROVAL_REQUIRED,
+            "dock_teardown.approval_required",
+            disconnecting=consequences,
+        )
+
+    return DockTeardownDecision(
+        DockTeardownState.PERMITTED,
+        "dock_teardown.permitted",
+        disconnecting=consequences,
+    )
