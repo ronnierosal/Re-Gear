@@ -1,6 +1,6 @@
 # Confirmed Hardware Testing
 
-**Reviewed:** 2026-09-08. This ledger records historical supervised results, not a new test session or blanket certification.
+**Reviewed:** 2026-09-09. This ledger records historical supervised results, not a new test session or blanket certification.
 
 ## Hardware testing scope
 
@@ -18,6 +18,9 @@ Each result below applies only to the exact hardware and software configuration 
 | Portable trial: screen, audio, and controls | Player confirmed normal handheld screen, audio, and controls after returning to Portable on September 5 | [Dated trial evidence](https://github.com/ronnierosal/Re-Gear/blob/560ec33/docs/CURRENT_STATE.md); external GPU references remained, so this did not prove resource release |
 | eGPU client release under a device filter | Operator reported enforcement before restart and a clear holder verdict; complete release is not independently established | [Device filter release record, September 8](https://github.com/ronnierosal/Re-Gear/blob/main/docs/DEVICE_FILTER_RELEASE_2026-09-08.md); installed 0.3.58, operator CLI only. Recorded from the supervised session, not yet backed by a capture artifact. Release is not unplug clearance, and the clear verdict has known scan gaps ([#120](https://github.com/ronnierosal/Re-Gear/issues/120)) |
 | eGPU software removal and rescan recovery | Operator reported both PCI functions detached and restored by rescan with drivers rebound | Same record; driven from a source checkout rather than the installed plugin, so this is evidence about the kernel and device, not about an installed feature |
+| External display release and automatic restore, September 9 | With the compositor on the internal panel, the eGPU still had a mode committed on one CRTC. Taking DRM master on that card and turning the CRTC off cleared it; closing the descriptor restored the console's mode on the same framebuffer | Two supervised runs, root, cable attached. Scoped to the eGPU's card: the internal panel was never opened. Recovery is the descriptor closing, so it also happens if the process dies. One configuration only |
+| Live eGPU software removal with the handheld powered, September 9 | The full sequence ran end to end: filter armed with enforcement verified, approved restarts performed, holders cleared, display released, removal safety assessed against fresh evidence, durable record written, both PCI functions detached and verified absent, display restored, filter disarmed. Confirmed independently of the tool's own report | Driven from a source checkout on the device, not the installed plugin. The player's Steam session **restarted**, because that is what released the holders. No capture artifact archived ([#136](https://github.com/ronnierosal/Re-Gear/issues/136)). **Not unplug clearance** |
+| Restore after live removal, September 9 | A bus rescan returned both functions with `amdgpu` and `snd_hda_intel` rebound, DRM nodes back, no durable record left and no filter attached | Same session. The connector returned without a committed mode, because nothing had driven the external display since |
 
 The [September 6 return-run summary](https://github.com/ronnierosal/Re-Gear/blob/main/docs/DISCONNECT_PROGRESS_2026-09-06.md)
 records installed 0.3.54: TV output followed by player-confirmed normal internal
@@ -29,8 +32,14 @@ and [#52](https://github.com/ronnierosal/Re-Gear/issues/52).
 A later operator account reported a clear result on installed 0.3.58, with scan
 gaps and no archived capture preventing independent confirmation; see the
 [September 8 summary](https://github.com/ronnierosal/Re-Gear/blob/main/docs/DISCONNECT_PROGRESS_2026-09-08.md).
-Client release is not live-removal validation: physical live unplug remains
-unsupported and shutdown before disconnect remains required.
+Those scan gaps are now understood rather than merely noted: the client scan
+could not complete on a live system at all, because a descriptor closing during
+the scan marked the whole reading incomplete. See
+[Fixes and issue tracking](Issues-Fixed).
+
+Client release is not live-removal validation, and neither is software removal:
+physical live unplug remains unsupported and shutdown before disconnect remains
+required.
 
 ## Failed or incomplete gates
 
@@ -39,7 +48,10 @@ unsupported and shutdown before disconnect remains required.
 | Full physical shutdown | A watched request lost networking but left fan and LEDs on; forced player power-off was required |
 | External resource release after Portable return | Retained Gamescope/Steam render references and audio control were observed in the September 5 trial |
 | Repeated attach, audio, gameplay, return, and reconnect | Individual successes do not establish repeatability; complete acceptance remains pending |
-| Live eGPU removal | Unsupported; no safe-removal certification |
+| Live eGPU **physical** removal | Unsupported; no safe-removal certification. Software removal having succeeded does not change this |
+| Live disconnect without disturbing the session | Not achieved. The September 9 removal restarted the player's Steam session, which is what released the holders ([#178](https://github.com/ronnierosal/Re-Gear/issues/178)) |
+| Live disconnect from the installed plugin | Not achieved. A backend RPC exists but has not run on a device; every hardware run so far used a source checkout |
+| Interrupted-removal recovery | Implemented and never exercised: no run has been interrupted deliberately to observe the restore |
 | Boosted Handheld | Unproven |
 | Offline game launch | No confirmed game-specific offline-launch result is asserted by this page; badges and local tests are not launch proof |
 
