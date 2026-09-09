@@ -70,6 +70,27 @@ export function startMenuShortcut(deps: {
     latched.add(id);
     try { deps.open(); } catch { /* Never retry uncertain menu delivery until release. */ }
   };
+  const onMessages = (...args: unknown[]) => {
+    if (!active) return;
+    // Steam delivers ControllerInputMessage[] ({nC, nA, bS}); the positional
+    // form is retained for older adapters and existing isolated test fixtures.
+    // Validate and copy the WHOLE batch before any row can open the menu.
+    const rows: [number, number, boolean][] = [];
+    try {
+      const batch = args.length === 1 && Array.isArray(args[0]) ? args[0]
+        : args.length === 3 ? [{ nC: args[0], nA: args[1], bS: args[2] }] : null;
+      if (!batch || batch.length > 128) { reset(); return; }
+      for (const row of batch) {
+        if (!row || typeof row !== "object" || Array.isArray(row)) { reset(); return; }
+        const { nC, nA, bS } = row as { nC: unknown; nA: unknown; bS: unknown };
+        if (typeof nC !== "number" || !Number.isInteger(nC) || nC < 0 || nC > 255
+          || typeof nA !== "number" || !Number.isInteger(nA) || nA < 0 || nA > 255
+          || typeof bS !== "boolean") { reset(); return; }
+        rows.push([nC, nA, bS]);
+      }
+    } catch { reset(); return; }
+    for (const row of rows) onInput(...row);
+  };
   try {
     const input = deps.input;
     if (typeof input?.RegisterForControllerInputMessages !== "function") {
@@ -83,7 +104,7 @@ export function startMenuShortcut(deps: {
       registrations.push(() => input.RegisterForActiveControllerChanges!(reset));
     }
     if (!registrations.length) return { available: false, reset, stop };
-    registrations.push(() => input.RegisterForControllerInputMessages(onInput));
+    registrations.push(() => input.RegisterForControllerInputMessages(onMessages));
     for (const register of registrations) {
       const subscription = register();
       if (typeof subscription?.unregister !== "function") {

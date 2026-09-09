@@ -107,3 +107,34 @@ test("persistence is namespaced and invalid or inaccessible storage uses default
   assert.equal(saveMenuBinding("disabled", { setItem() { throw Error("denied"); } }), false);
   assert.equal(saveMenuBinding("invalid", storage), false);
 });
+
+test("Steam batch messages open once and rearm only on full release", t => {
+  const s = setup(t);
+  const press = [{ nC: 0, nA: 9, bS: true }, { nC: 0, nA: 3, bS: true }];
+  s.send(press); s.send(press); assert.equal(s.opens(), 1);
+  s.send([{ nC: 0, nA: 9, bS: false }]); s.send(press); assert.equal(s.opens(), 1);
+  s.send(press.map(row => ({ ...row, bS: false })));
+  s.send(press); assert.equal(s.opens(), 2);
+});
+
+test("whole malformed batch is rejected before a valid prefix can open", t => {
+  const s = setup(t);
+  for (const bad of [null, {}, { nC: 0, nA: 3, bS: 1 }, { nC: -1, nA: 3, bS: true }]) {
+    s.handle.reset();
+    s.send([{ nC: 0, nA: 9, bS: true }, { nC: 0, nA: 3, bS: true }, bad]);
+    assert.equal(s.opens(), 0);
+    s.send([{ nC: 0, nA: 3, bS: true }]); assert.equal(s.opens(), 0);
+  }
+  s.handle.reset();
+  s.send(Array.from({ length: 129 }, (_, i) => ({ nC: 0, nA: i % 2 ? 3 : 9, bS: true })));
+  assert.equal(s.opens(), 0);
+});
+
+test("Steam batch chords do not aggregate different controllers", t => {
+  const s = setup(t);
+  s.send([{ nC: 0, nA: 9, bS: true }, { nC: 1, nA: 3, bS: true }]);
+  assert.equal(s.opens(), 0);
+  s.send([{ nC: 0, nA: 3, bS: true }]); assert.equal(s.opens(), 1);
+  s.handle.stop();
+  s.send([{ nC: 1, nA: 9, bS: true }]); assert.equal(s.opens(), 1);
+});

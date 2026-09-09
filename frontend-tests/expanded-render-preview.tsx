@@ -9,7 +9,7 @@ function Preview() {
   const [open, setOpen] = useState(true);
   return <>
     <div className="sample-world" aria-hidden="true"><span>SIMULATED GAME BACKDROP</span><div className="sample-road" /></div>
-    {open ? <ExpandedCommandCenter initialTab={initialTab} longReasons={query.has('long')} onClose={() => setOpen(false)} /> :
+    {open ? <ExpandedCommandCenter initialTab={initialTab} previewColumns={query.get("columns") === "3" ? 3 : query.get("columns") === "4" ? 4 : undefined} longReasons={query.has('long')} onClose={() => setOpen(false)} /> :
       <button id="reopen" onClick={() => setOpen(true)}>Reopen sample Command Center</button>}
     <div className="preview-disclaimer">SYNTHETIC PREVIEW · SAMPLE DATA · NO DEVICE ACTIONS</div>
   </>;

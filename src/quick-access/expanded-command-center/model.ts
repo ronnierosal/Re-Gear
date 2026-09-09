@@ -11,11 +11,11 @@ export const sampleTiles: Record<Tab, readonly Tile[]> = {
   quick: [
     { id: "fps", title: "FPS Target", value: "Unavailable", detail: "No provider", tone: "unavailable" },
     { id: "manual", title: "Manual TDP", value: "18 W", detail: "Current limit", tone: "active" },
-    { id: "auto", title: "Auto TDP", value: "Off", detail: "Configure to start" },
-    { id: "display", title: "Display Target", value: "1080p · 60 Hz", detail: "Internal display", tone: "active" },
-    { id: "egpu", title: "eGPU Status", value: "Connected", detail: "RX 7600M XT" },
-    { id: "controller", title: "Controller Status", value: "External (P1)", detail: "Built-in controller off" },
-    { id: "disconnect", title: "Safe Disconnect", value: "Readiness check required", detail: "Review games and apps using the eGPU. No unplug clearance.", tone: "warning", wide: true },
+    { id: "auto", title: "Auto TDP", value: "Off", detail: "Configure" },
+    { id: "display", title: "Display", value: "1080p · 60Hz", detail: "Internal", tone: "active" },
+    { id: "egpu", title: "eGPU", value: "Connected", detail: "RX 7600M XT" },
+    { id: "controller", title: "Controller", value: "External (P1)", detail: "Built-in off" },
+    { id: "disconnect", title: "Safe Disconnect", value: "Readiness check required", detail: "Review apps using the eGPU. No unplug clearance.", tone: "warning", wide: true },
   ],
   performance: [
     { id: "manual", title: "Manual TDP", value: "18 W", detail: "View limit configuration", tone: "active" },
@@ -46,7 +46,7 @@ export function nextTab(tab: Tab, direction: -1 | 1): Tab {
   return tabs[(tabs.indexOf(tab) + direction + tabs.length) % tabs.length];
 }
 export function columnsForWidth(width: number): number {
-  return width >= 500 ? 4 : width >= 340 ? 3 : width >= 250 ? 2 : 1;
+  return width >= 600 ? 4 : width >= 420 ? 3 : width >= 280 ? 2 : 1;
 }
 export function restoreTarget(ids: readonly string[], remembered?: string): string | undefined {
   return ids.includes(remembered ?? "") ? remembered : ids[0];
@@ -56,7 +56,7 @@ export type Cell = { id: string; row: number; column: number; span: number };
 export function gridCells(tiles: readonly Tile[], columns: number): Cell[] {
   let row = 0, column = 0;
   return tiles.map(tile => {
-    const span = tile.wide && columns >= 3 ? 2 : 1;
+    const span = tile.wide ? (columns === 4 ? 2 : columns) : 1;
     if (column + span > columns) { row++; column = 0; }
     const cell = { id: tile.id, row, column, span };
     column += span;

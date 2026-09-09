@@ -21,8 +21,8 @@ test("focus restoration retains unavailable FPS and falls back after removal", (
   assert.equal(m.restoreTarget(ids, "removed"), "fps");
   assert.equal(m.restoreTarget([], "fps"), undefined);
 });
-test("responsive grid preserves readable fallback and four-to-three boundary", () => {
-  assert.deepEqual([700, 500, 499, 340, 339, 249].map(m.columnsForWidth), [4, 4, 3, 3, 2, 1]);
+test("responsive grid prefers four columns with three before narrow fallback", () => {
+  assert.deepEqual([600, 599, 420, 419, 280, 279].map(m.columnsForWidth), [4, 3, 3, 2, 2, 1]);
 });
 test("four-column navigation respects the spanning disconnect tile", () => {
   const cells = m.gridCells(m.sampleTiles.quick, 4);
@@ -36,6 +36,7 @@ test("three-column packing does not navigate through an empty grid cell", () => 
   assert.equal(cells.at(-1).row, 2);
   assert.equal(m.moveInGrid(cells, "controller", "down"), "disconnect");
   assert.equal(m.moveInGrid(cells, "disconnect", "up"), "display");
+  assert.equal(cells.at(-1).span, 3);
 });
 test("every tile is reachable by arrows in every responsive grid", () => {
   for (const tiles of Object.values(m.sampleTiles)) for (const columns of [1, 2, 3, 4]) {
@@ -68,7 +69,7 @@ test("native modal uses Decky controls without a second raw navigation listener"
     export const views=[], effects=[], listeners=[];
     export let opens=0, clicks=0;
     const React={createElement:(type,props,...children)=>({type,props:{...props,children}})};
-    const ModalRoot='modal', ExpandedCommandCenter='shell',DialogButton='native-button',Focusable='native-focus';
+    const ModalRoot='modal', ExpandedCommandCenter='shell',Button='native-button',Focusable='native-focus';
     const useEffect=fn=>effects.push(fn()), useState=v=>[v,()=>{}];
     const loadMenuBinding=()=> 'start-select',saveMenuBinding=()=>true,menuBindingOptions=[];
     const startMenuShortcut=()=>({available:true,reset(){},stop(){}});
