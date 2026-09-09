@@ -1138,8 +1138,33 @@ const getEgpuDisconnectStatus = callable("get_egpu_disconnect_status");
  *
  * `releaseDisplay` is a separate approval from the disconnect. Pass true only
  * when the player has agreed to the external display turning off.
+ *
+ * `relaunchAppId` records a wish to reopen one game afterwards, written down
+ * by the backend because this panel is about to be destroyed: freeing the
+ * device restarts the Steam session. Pass "" for no relaunch. Claim it with
+ * `takePendingRelaunch` rather than remembering it here.
  */
 const executeEgpuDisconnect = callable("execute_egpu_disconnect");
+/** Read-only. What sleeping would take right now; sleeps nothing. */
+callable("get_sleep_readiness");
+/** Claim the game a disconnect closed, if it may still be reopened.
+ *
+ * Consuming, and consuming on refusal too, so a relaunch that happens cannot
+ * happen twice. Call it after a disconnect returns, and again when the panel
+ * loads: freeing the eGPU restarts the Steam session, so the panel that asked
+ * for the relaunch is usually not the one that gets to perform it.
+ */
+callable("take_pending_relaunch");
+/** Store the player's answer about closing one game before a disconnect.
+ *
+ * The backend re-derives what may be stored from a fresh status rather than
+ * trusting this call, so an answer filed against the wrong game, or a "do not
+ * ask again" for a game the catalog says loses progress, is refused rather
+ * than written. Check `ok` before telling a player the box was remembered.
+ */
+callable("remember_game_close_choice");
+/** Return one game to being asked about before a disconnect. */
+callable("forget_game_close_choice");
 
 function disconnectProgress(payload, failed = false, now = Date.now()) {
     const s = payload?.snapshot;
@@ -3735,7 +3760,7 @@ function ShellBody({ route, modules, children, onOpenModule, onOpenStatus, statu
  * exists so the things a caller must not infer are enforced in one place
  * instead of described in a document nobody rereads.
  *
- * Four of those, because each one has already gone wrong somewhere:
+ * Five of those, because each one has already gone wrong somewhere:
  *
  * 1. **An empty holder list is not a clear device.** `holders` and
  *    `scanComplete` travel separately; an empty list from a scan that could
@@ -3749,13 +3774,20 @@ function ShellBody({ route, modules, children, onOpenModule, onOpenStatus, statu
  *    disconnected.
  * 3. **A half-detached device is not a failed action.** It is a system that
  *    needs attention, and it outranks every other state.
- * 4. **Nothing here may imply that unplugging is safe.** Re-Gear detaches the
+ * 4. **A running game is not a blocker either.** Closing it is exactly what
+ *    the flow does. Reporting it as a dead end would refuse the action at the
+ *    only moment a player wants it -- while they are playing on the eGPU.
+ * 5. **Nothing here may imply that unplugging is safe.** Re-Gear detaches the
  *    eGPU in software; the cable stays connected. That distinction is the
  *    whole safety position and no string below softens it.
  *
  * The confirmation also states that the Steam session will restart, because
  * today it does -- that is what releases the device -- and a player must be
  * told before rather than surprised after.
+ *
+ * What it does *not* decide is whether a game may be closed unasked. That is
+ * the backend's `close_prompt`, which is read here and never re-derived: a
+ * second opinion about someone's unsaved progress is one too many.
  */
 /** What each blocking code means to a player.
  *
@@ -3766,6 +3798,8 @@ function ShellBody({ route, modules, children, onOpenModule, onOpenStatus, statu
 const BLOCKED_REASON = {
     "removal_safety.clients_active_or_protected": "Something is still using the eGPU.",
     "removal_safety.client_scan_incomplete": "Re-Gear could not check every process, so it cannot confirm the eGPU is free.",
+    // Reached only when a status names a running game but carries no prompt to
+    // act on it; the ordinary path offers the close instead of reporting this.
     "removal_safety.game_running": "Close the running game first.",
     "removal_safety.evidence_insufficient": "Re-Gear does not have enough information about the eGPU yet.",
     "live_disconnect.egpu_unavailable": "No eGPU is connected.",
@@ -3784,6 +3818,141 @@ const ATTENTION_REASON = {
  */
 const KEEP_CABLE = "Keep the cable connected: this does not make unplugging safe.";
 const SESSION_WARNING = "Your Steam session will restart.";
+/** What closing this game will cost, in words a player can act on.
+ *
+ * Driven by the reviewed catalog. The default is the honest one: for a game
+ * nobody has reported on, Re-Gear does not know whether it saves, and says so
+ * rather than implying it is fine.
+ */
+function gameCloseAdvice(game) {
+    switch (game.save_capability) {
+        case "verified_triggerable_autosave":
+        case "verified_save_on_exit":
+        case "graceful_exit_verified":
+            return "Closing it saves your progress.";
+        case "manual_save_recommended":
+        case "manual_save_required":
+            return "Save your progress first: this game does not save when it closes.";
+        case "unsafe_unknown":
+            return "Closing it may lose progress. Save your game first.";
+        default:
+            return "Re-Gear cannot confirm this game saves when it closes. Save it first.";
+    }
+}
+function gameName(game) {
+    return game?.title || "the running game";
+}
+/** Why the game has to close, in the words of the thing the player asked for.
+ *
+ * Both actions end the game for the same underlying reason -- the eGPU is
+ * going away -- but a player who pressed Sleep is not thinking about the eGPU,
+ * and telling them their game must close "before it can be disconnected" would
+ * answer a question they did not ask.
+ */
+function becauseOf(intent) {
+    return intent === "sleep"
+        ? "has to close before the handheld can sleep"
+        : "has to close before it can be disconnected";
+}
+/** The dialog shown before a disconnect or a sleep closes what is running.
+ *
+ * Returns null when nothing has to be asked: either nothing is running, or
+ * the player already gave a standing answer for this game and this action.
+ *
+ * The body is ordered the way a player needs it -- what is about to happen,
+ * what it costs them, then the two things they must not be surprised by. The
+ * cable sentence is last in every branch, for the same reason it is last in
+ * the tile confirmation: it is the sentence that must survive skim-reading.
+ *
+ * Sleeping says it will disconnect too, because it will: sleeping with the
+ * eGPU attached is refused on this hardware, so the eGPU going away is not an
+ * implementation detail the player can be spared.
+ */
+function gameCloseDialog(prompt, game) {
+    if (prompt === null || prompt.decision !== "confirm") {
+        return null;
+    }
+    const named = game !== null && game.identity_exact;
+    const sleeping = prompt.intent === "sleep";
+    if (prompt.code === "game_close.scan_incomplete") {
+        // Not "nothing is running": Re-Gear could not look. Saying the first
+        // would close a player's game without a word about it.
+        return {
+            title: sleeping ? "Sleep the handheld?" : "Disconnect the eGPU?",
+            body: [
+                sleeping
+                    ? "Re-Gear could not check whether a game is running, so it cannot tell you what sleeping will close. The eGPU will be disconnected first."
+                    : "Re-Gear could not check whether a game is running, so it cannot tell you what disconnecting will close.",
+                "Save anything you have open first.",
+                SESSION_WARNING,
+                KEEP_CABLE,
+            ].join(" "),
+            confirmLabel: sleeping ? "Sleep anyway" : "Disconnect anyway",
+            cancelLabel: "Cancel",
+            rememberLabel: null,
+            relaunchLabel: null,
+            relaunchChecked: false,
+            canCloseGame: false,
+            progressAtRisk: false,
+        };
+    }
+    if (!named) {
+        return {
+            title: "Close your game first",
+            body: [
+                `A game is using the eGPU and ${becauseOf(prompt.intent)}.`,
+                "Re-Gear could not identify which game, so it cannot close it for you, cannot tell you whether closing it saves your progress, and cannot reopen it afterwards.",
+                "Save and close your game, then try again.",
+                SESSION_WARNING,
+                KEEP_CABLE,
+            ].join(" "),
+            // Not "Close and disconnect": without an app id there is nothing to
+            // close, and offering a close that cannot happen is a promise broken
+            // one second after it is made.
+            confirmLabel: sleeping ? "Try sleeping anyway" : "Try disconnect anyway",
+            cancelLabel: "Cancel",
+            rememberLabel: null,
+            relaunchLabel: null,
+            relaunchChecked: false,
+            canCloseGame: false,
+            progressAtRisk: prompt.progress_at_risk,
+        };
+    }
+    const name = gameName(game);
+    return {
+        title: sleeping ? `Close ${name} and sleep?` : `Close ${name}?`,
+        body: [
+            `${name} is using the eGPU and ${becauseOf(prompt.intent)}.`,
+            gameCloseAdvice(game),
+            // Sleeping disconnects too, and a player must not discover that after
+            // waking to find their eGPU detached.
+            sleeping ? "The eGPU will be disconnected first." : null,
+            SESSION_WARNING,
+            KEEP_CABLE,
+        ]
+            .filter((line) => line !== null)
+            .join(" "),
+        confirmLabel: sleeping ? "Close and sleep" : "Close and disconnect",
+        cancelLabel: "Cancel",
+        // Absent, not unticked, when the catalog says closing loses progress:
+        // that prompt carries something to act on now, which a box ticked last
+        // week cannot carry.
+        // Named with the action as well as the game: the stored answer is keyed
+        // by both, and a label that said only the game would collect consent
+        // broader than what is recorded.
+        rememberLabel: prompt.remember_offered
+            ? sleeping
+                ? `Don't ask again when sleeping with ${name} open`
+                : `Don't ask again for ${name}`
+            : null,
+        relaunchLabel: prompt.relaunch_offered
+            ? `Reopen ${name} afterwards`
+            : null,
+        relaunchChecked: prompt.relaunch_requested,
+        canCloseGame: true,
+        progressAtRisk: prompt.progress_at_risk,
+    };
+}
 function disconnectPresentation(status) {
     if (status === null) {
         return {
@@ -3794,6 +3963,9 @@ function disconnectPresentation(status) {
             confirmation: null,
             displayApprovalRequired: false,
             attention: false,
+            game: null,
+            dialog: null,
+            closesGame: false,
         };
     }
     if (status.availability === "recovery_required") {
@@ -3806,6 +3978,9 @@ function disconnectPresentation(status) {
             confirmation: null,
             displayApprovalRequired: false,
             attention: true,
+            game: null,
+            dialog: null,
+            closesGame: false,
         };
     }
     if (status.availability === "busy") {
@@ -3817,6 +3992,9 @@ function disconnectPresentation(status) {
             confirmation: null,
             displayApprovalRequired: false,
             attention: false,
+            game: null,
+            dialog: null,
+            closesGame: false,
         };
     }
     if (status.availability === "unavailable") {
@@ -3828,9 +4006,26 @@ function disconnectPresentation(status) {
             confirmation: null,
             displayApprovalRequired: false,
             attention: false,
+            game: null,
+            dialog: null,
+            closesGame: false,
         };
     }
-    if (!status.attemptable) {
+    // A running game is the fifth thing that must not be reported as a blocker.
+    // Closing it is exactly what the flow does, so declining here would tell a
+    // player their eGPU can never be disconnected while they are playing --
+    // which is the only time they would want to.
+    const gameIsTheBlocker = status.code === "removal_safety.game_running";
+    // A backend too old to send the field is not a backend reporting a running
+    // game, so a missing prompt reads the same as no prompt rather than as an
+    // undefined that leaks into every comparison below.
+    const prompt = status.close_prompt ?? null;
+    // Either signal is enough. A backend that names a running game in its
+    // readiness code but reports no prompt is a backend mid-upgrade, and the
+    // safe reading of the disagreement is that a game will close.
+    const closesGame = gameIsTheBlocker ||
+        (prompt !== null && prompt.decision !== "nothing_to_close");
+    if (!status.attemptable && !gameIsTheBlocker) {
         return {
             available: false,
             value: "Not ready",
@@ -3840,19 +4035,25 @@ function disconnectPresentation(status) {
             confirmation: null,
             displayApprovalRequired: false,
             attention: false,
+            game: null,
+            dialog: null,
+            closesGame: false,
         };
     }
     const display = status.display_release_required;
-    const ready = status.availability === "ready";
+    const ready = status.availability === "ready" && !closesGame;
+    const dialog = gameCloseDialog(prompt, status.game ?? null);
     return {
         available: true,
-        value: ready ? "Ready" : "Try disconnect",
+        value: closesGame ? "Close game" : ready ? "Ready" : "Try disconnect",
         reason: null,
         actionLabel: "Disconnect",
         confirmation: [
-            ready
-                ? "Re-Gear will detach the eGPU in software."
-                : "Re-Gear will try to free the eGPU and detach it in software.",
+            closesGame
+                ? `Re-Gear will close ${gameName(status.game)}, then detach the eGPU in software.`
+                : ready
+                    ? "Re-Gear will detach the eGPU in software."
+                    : "Re-Gear will try to free the eGPU and detach it in software.",
             display ? "The external display will turn off." : null,
             SESSION_WARNING,
             KEEP_CABLE,
@@ -3861,6 +4062,9 @@ function disconnectPresentation(status) {
             .join(" "),
         displayApprovalRequired: display,
         attention: false,
+        game: status.game ?? null,
+        dialog,
+        closesGame,
     };
 }
 
