@@ -273,10 +273,15 @@ def main() -> int:
             "approve_process_release",
             "execute_process_release",
             "acknowledge_process_release",
+            # Live eGPU disconnect: a read-only status a caller may poll,
+            # and one serialized removal that needs an explicit display
+            # approval of its own. Neither is clearance to unplug.
+            "get_egpu_disconnect_status",
+            "execute_egpu_disconnect",
         }
         if public_methods != allowed_methods:
             failures.append(
-                "Decky RPCs must remain limited to diagnostics/logging, read-only offline report classification and peripheral/watcher/action-history status, automatic-dock preference/status, explicit manual/automatic TDP controls and read-only benchmarks/preferences, approved support export, supervised presentation, confirmed shutdown-before-disconnect, and guarded process release"
+                "Decky RPCs must remain limited to diagnostics/logging, read-only offline report classification and peripheral/watcher/action-history status, automatic-dock preference/status, explicit manual/automatic TDP controls and read-only benchmarks/preferences, approved support export, supervised presentation, confirmed shutdown-before-disconnect, and guarded process release, and live eGPU software disconnect"
             )
 
     sources = {}

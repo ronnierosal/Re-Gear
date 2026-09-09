@@ -407,6 +407,49 @@ def present_addresses(gpu_bdf: str, audio_bdf: str) -> tuple[str, ...]:
     )
 
 
+def disconnect_status_to_payload(status) -> dict[str, object]:
+    """Project the runtime's status onto what a caller renders.
+
+    Every fact travels separately. A caller must not infer permission from a
+    connection, an empty holder list, or a display mode, so `holders` and
+    `scan_complete` are both reported and neither is summarised into the
+    other.
+    """
+    last = status.last
+    return {
+        "schema_version": 1,
+        "availability": status.availability.value,
+        "code": status.code,
+        "ready": status.ready,
+        "busy": status.busy,
+        "holders": list(status.holders),
+        "scan_complete": status.scan_complete,
+        "external_display_committed": status.external_display_committed,
+        "display_release_required": status.display_release_required,
+        "last": disconnect_result_to_payload(last) if last is not None else None,
+    }
+
+
+def disconnect_result_to_payload(result) -> dict[str, object]:
+    """Project one attempt's outcome, including what it left behind."""
+    return {
+        "schema_version": 1,
+        "stage": result.stage.value,
+        "code": result.code,
+        "ok": result.ok,
+        "released": result.released,
+        "session_disturbed": result.session_disturbed,
+        "removed": list(result.removed),
+        "restored": list(result.restored),
+        "display_released": list(result.display_released),
+        "display_release_code": result.display_release_code,
+        "filter_disarmed": result.filter_disarmed,
+        # A device left somewhere it has never been. A caller showing this is
+        # reporting a system that needs attention, not a failed action.
+        "device_disturbed": result.device_disturbed,
+    }
+
+
 def build_live_disconnect_runtime(
     *,
     gpu_bdf: str,

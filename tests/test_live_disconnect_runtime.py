@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import sys
 import threading
@@ -26,7 +27,9 @@ from hdm.delivery.live_disconnect_runtime import (  # noqa: E402
     DisconnectAvailability,
     DisconnectObservation,
     LiveDisconnectRuntime,
+    disconnect_result_to_payload,
     disconnect_snapshot_service,
+    disconnect_status_to_payload,
     observe_display,
     present_addresses,
 )
@@ -433,6 +436,71 @@ class SelfExclusionTests(unittest.TestCase):
         scanner = disconnect_snapshot_service()._discovery._egpu_clients
 
         self.assertEqual(scanner._exclude_pids, frozenset({os.getpid()}))
+
+
+class PayloadTests(unittest.TestCase):
+    """What a caller receives, and what it must not have to work out."""
+
+    def test_holders_and_completeness_are_both_reported_never_summarised(
+        self,
+    ) -> None:
+        """A caller must not infer a clear device from an empty holder list."""
+        evidence = replace(
+            NO_DISPLAY, client_holders=("steam.service",), client_scan_complete=False
+        )
+        payload = disconnect_status_to_payload(
+            build(readiness=CLIENTS_BLOCKED, display=evidence).status()
+        )
+
+        self.assertEqual(payload["holders"], ["steam.service"])
+        self.assertIs(payload["scan_complete"], False)
+        self.assertIs(payload["ready"], False)
+        self.assertEqual(payload["code"], "removal_safety.clients_active_or_protected")
+
+    def test_a_standing_display_is_ready_and_says_the_approval_is_needed(
+        self,
+    ) -> None:
+        payload = disconnect_status_to_payload(
+            build(readiness=DISPLAY_BLOCKED, display=DISPLAY_HELD).status()
+        )
+
+        self.assertIs(payload["ready"], True)
+        self.assertIs(payload["display_release_required"], True)
+
+    def test_a_status_with_no_prior_attempt_reports_none_rather_than_omitting_it(
+        self,
+    ) -> None:
+        payload = disconnect_status_to_payload(build().status())
+        self.assertIsNone(payload["last"])
+
+    def test_the_last_outcome_travels_with_the_status(self) -> None:
+        runtime = build()
+        runtime.execute(release_display=False)
+
+        payload = disconnect_status_to_payload(runtime.status())
+
+        self.assertIsNotNone(payload["last"])
+        self.assertEqual(payload["last"]["removed"], [AUDIO, GPU])
+
+    def test_a_removal_that_left_the_device_disturbed_says_so(self) -> None:
+        """A caller showing this reports a system needing attention."""
+        result = LiveDisconnectResult(
+            LiveDisconnectStage.REMOVAL_UNRECOVERABLE, "device_removal.rescan_failed"
+        )
+
+        payload = disconnect_result_to_payload(result)
+
+        self.assertIs(payload["ok"], False)
+        self.assertIs(payload["device_disturbed"], True)
+
+    def test_every_payload_value_survives_json(self) -> None:
+        """These cross an RPC boundary, so tuples and enums cannot travel."""
+        runtime = build(readiness=DISPLAY_BLOCKED, display=DISPLAY_HELD)
+        runtime.execute(release_display=True)
+
+        encoded = json.dumps(disconnect_status_to_payload(runtime.status()))
+
+        self.assertIn("display_release_required", encoded)
 
 
 if __name__ == "__main__":
