@@ -103,6 +103,40 @@ class SavedTvDecision:
         return self.state is SavedTvState.READY
 
 
+def remember_docked_tv(
+    *,
+    display: DisplayObservation | None,
+    transition_succeeded: bool,
+    label: str = "",
+) -> SavedTvProfile | None:
+    """The profile a completed dock earns, or ``None`` if it earned none.
+
+    "Explicitly successful" is the whole test. A transition that was abandoned,
+    refused, or merely attempted leaves nothing behind, because remembering one
+    would later resume a player to a TV they never actually got to -- and they
+    would have no idea why.
+
+    A display that was not verifiably an external one, connected, is likewise
+    not a TV anybody docked to. ``edid_identified`` is recorded honestly rather
+    than demanded: a profile without it is still worth remembering, it simply
+    waits for a manual switch instead of resuming by itself.
+    """
+
+    if not transition_succeeded or display is None:
+        return None
+    if display.kind is not DisplayKind.EXTERNAL:
+        return None
+    if display.connected is not True or display.confidence is not Confidence.VERIFIED:
+        return None
+    if not display.stable_id:
+        return None
+    return SavedTvProfile(
+        display_stable_id=display.stable_id,
+        edid_identified=display.edid_ready is True,
+        label=label,
+    )
+
+
 def decide_saved_tv(
     *,
     profile: SavedTvProfile | None,
