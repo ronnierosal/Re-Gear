@@ -123,6 +123,60 @@ class GamescopeIntegrationStoreTests(unittest.TestCase):
             self.assertFalse(store.deactivate().changed)
             self.assertEqual(store.target.read_text(encoding="utf-8"), "user content\n")
 
+    def legacy_dropin_text(self, store, root: Path) -> str:
+        """The exact file an install written under the old plugin name still has.
+
+        It differs from the current rendering only in the plugin directory, which
+        is what the rename moved.
+        """
+        current = (root / "plugin" / "bin").as_posix()
+        legacy = (root / "HandheldDockMode" / "bin").as_posix()
+        text = store.expected_text()
+        self.assertIn(current, text)
+        return text.replace(current, legacy)
+
+    def test_dropin_from_a_previous_plugin_name_is_migrated_not_stranded(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            store, _ = self.make_store(root)
+            store.target.parent.mkdir(parents=True)
+            stranded = self.legacy_dropin_text(store, root)
+            store.target.write_text(stranded, encoding="utf-8", newline="\n")
+
+            before = store.status()
+            self.assertTrue(before.installed)
+            self.assertFalse(before.matches)
+            self.assertFalse(before.ready)
+            self.assertEqual(before.error_code, "managed_dropin_superseded")
+
+            result = store.activate()
+            self.assertTrue(result.ok, result.status)
+            self.assertEqual(
+                store.target.read_text(encoding="utf-8"), store.expected_text()
+            )
+            after = store.status()
+            self.assertTrue(after.ready)
+            self.assertEqual(after.error_code, "")
+
+            # Migration must leave the drop-in reversible through HDM.
+            self.assertTrue(store.deactivate().changed)
+            self.assertFalse(store.target.exists())
+
+    def test_managed_marker_with_an_unknown_plugin_path_is_still_refused(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            store, _ = self.make_store(root)
+            store.target.parent.mkdir(parents=True)
+            # Carries our marker, but renders a directory we never shipped.
+            foreign = store.expected_text().replace(
+                (root / "plugin" / "bin").as_posix(), "/opt/somewhere/bin"
+            )
+            store.target.write_text(foreign, encoding="utf-8", newline="\n")
+
+            self.assertEqual(store.status().error_code, "managed_dropin_modified")
+            self.assertFalse(store.activate().ok)
+            self.assertEqual(store.target.read_text(encoding="utf-8"), foreign)
+
     def test_non_root_activation_and_missing_shim_are_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
             store, _ = self.make_store(Path(directory), effective_uid=1000)
@@ -147,3 +201,48 @@ class GamescopeIntegrationStoreTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+#: The stranded drop-in observed on the tested Ally X while validating #161.
+#: Byte-for-byte what an install written under the old plugin name still has;
+#: it differs from the current rendering only in the plugin directory.
+DEVICE_STRANDED_DROPIN = (
+    "# Managed by Handheld Dock Mode. Remove only through HDM.\n"
+    "[Service]\n"
+    'Environment="PATH=/home/deck/homebrew/plugins/HandheldDockMode/bin:'
+    '/usr/local/sbin:/usr/local/bin:/usr/bin:/usr/sbin:/bin:/sbin"\n'
+    'Environment="HDM_STATE_ROOT=/home/deck/.local/share/handheld-dock-mode"\n'
+)
+
+#: Those device paths are absolute only on POSIX; Windows cannot represent them
+#: as absolute, and the store rejects non-absolute roots by design.
+REQUIRES_POSIX_PATHS = unittest.skipUnless(
+    os.name != "nt", "absolute POSIX paths are unavailable on this host"
+)
+
+
+@REQUIRES_POSIX_PATHS
+class StrandedDeviceDropinTests(unittest.TestCase):
+    """Pin the exact file that stranded display switching on the Ally."""
+
+    def make_device_store(self):
+        home = Path("/home/deck")
+        user = GamescopeUserContext(
+            "deck", 1000, 1000, home, Path("/run/user/1000"), Path("/run/user/1000/bus")
+        )
+        return GamescopeIntegrationStore(
+            plugin_root=Path("/home/deck/homebrew/plugins/Re-Gear"),
+            user=user,
+            effective_uid=lambda: 0,
+            set_owner=lambda path, uid, gid: None,
+        )
+
+    def test_observed_dropin_is_recognised_as_our_own_prior_rendering(self):
+        store = self.make_device_store()
+        self.assertEqual(len(DEVICE_STRANDED_DROPIN.encode("utf-8")), 269)
+        # It genuinely does not match the current rendering -- that is the bug.
+        self.assertNotEqual(store.expected_text(), DEVICE_STRANDED_DROPIN)
+        # ...but it is ours, so it is migratable rather than a player edit.
+        self.assertIn(DEVICE_STRANDED_DROPIN, store._superseded_renderings())
+
+    def test_current_rendering_points_at_the_new_plugin_directory(self):
+        store = self.make_device_store()
+        self.assertIn("/home/deck/homebrew/plugins/Re-Gear/bin", store.expected_text())
