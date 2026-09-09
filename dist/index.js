@@ -59,14 +59,17 @@ function saveMenuBinding(binding, storage) {
         return false;
     }
 }
-/** Declaration-derived button codes; physical Ally delivery still needs validation.
+/** Ally capture: physical View/Back emits SELECT35, Y3; stick clicks25/41.
+ * VIEW9 is retained for providers emitting the separate View action.
  * This non-exclusive listener opens only a menu and cannot suppress game input. */
 function startMenuShortcut(deps) {
     const subscriptions = [];
     const controllers = new Map();
     const latched = new Set();
+    const lastInput = new Map();
+    const now = deps.now ?? Date.now;
     let active = false;
-    const reset = () => { controllers.clear(); latched.clear(); };
+    const reset = () => { controllers.clear(); latched.clear(); lastInput.clear(); };
     const stop = () => {
         active = false;
         reset();
@@ -85,6 +88,11 @@ function startMenuShortcut(deps) {
             reset();
             return;
         }
+        // Missing disconnect callbacks must not preserve half a chord indefinitely.
+        const time = now();
+        if (!latched.has(id) && time - (lastInput.get(id) ?? time) > 1500)
+            controllers.delete(id);
+        lastInput.set(id, time);
         if (!controllers.has(id)) {
             if (!pressed)
                 return;
@@ -104,6 +112,7 @@ function startMenuShortcut(deps) {
         if (buttons.size === 0) {
             controllers.delete(id);
             latched.delete(id);
+            lastInput.delete(id);
             return;
         }
         // A release cannot turn a larger held combination into a new shortcut.
@@ -118,7 +127,7 @@ function startMenuShortcut(deps) {
             return;
         }
         const pair = (a, b) => buttons.has(a) && buttons.has(b);
-        const matches = binding === "view-y" ? pair(9, 3)
+        const matches = binding === "view-y" ? (pair(35, 3) || pair(9, 3))
             : binding === "sticks" && pair(25, 41);
         if (!matches)
             return;
@@ -132,12 +141,13 @@ function startMenuShortcut(deps) {
         if (!active)
             return;
         // Steam delivers ControllerInputMessage[] ({nC, nA, bS}); the positional
-        // form is retained for older adapters and existing isolated test fixtures.
+        // form is emitted by the installed Ally client; its handler also declares
+        // two optional analog arguments, which do not participate in button chords.
         // Validate and copy the WHOLE batch before any row can open the menu.
         const rows = [];
         try {
             const batch = args.length === 1 && Array.isArray(args[0]) ? args[0]
-                : args.length === 3 ? [{ nC: args[0], nA: args[1], bS: args[2] }] : null;
+                : args.length >= 3 && args.length <= 5 ? [{ nC: args[0], nA: args[1], bS: args[2] }] : null;
             if (!batch || batch.length > 128) {
                 reset();
                 return;
@@ -176,8 +186,8 @@ function startMenuShortcut(deps) {
         if (typeof input.RegisterForActiveControllerChanges === "function") {
             registrations.push(() => input.RegisterForActiveControllerChanges(reset));
         }
-        if (!registrations.length)
-            return { available: false, reset, stop };
+        // Some installed Steam clients expose neither optional lifecycle callback.
+        // Input subscription alone is sufficient for this non-hardware menu opener.
         registrations.push(() => input.RegisterForControllerInputMessages(onMessages));
         for (const register of registrations) {
             const subscription = register();
@@ -250,7 +260,7 @@ function nextTab(tab, direction) {
     return tabs[(tabs.indexOf(tab) + direction + tabs.length) % tabs.length];
 }
 function columnsForWidth(width) {
-    return width >= 600 ? 4 : width >= 420 ? 3 : width >= 280 ? 2 : 1;
+    return width >= 390 ? 4 : width >= 300 ? 3 : width >= 220 ? 2 : 1;
 }
 function restoreTarget(ids, remembered) {
     return ids.includes(remembered ?? "") ? remembered : ids[0];
@@ -305,7 +315,7 @@ const expandedStyles = `
 .rg-expanded h2{margin:0 0 3px;font-size:24px;line-height:1.2}.rg-expanded h3{margin:0;font-size:18px}
 .rg-expanded-context{margin:0 0 8px;color:#b1c9df;font-size:13px;line-height:1.35}
 .rg-expanded .rg-expanded-grid{display:grid;grid-template-columns:repeat(var(--ec-columns),minmax(0,1fr));gap:10px;min-width:0}
-.rg-expanded .rg-expanded-tile{width:100%;max-width:100%;min-width:0;height:auto;min-height:104px;margin:0;padding:12px;display:block;background:#102331;border:1px solid #365569;border-radius:11px;box-shadow:none;text-align:left;word-break:normal;overflow-wrap:normal}
+.rg-expanded .rg-expanded-tile{width:100%;max-width:100%;min-width:0;height:auto;min-height:104px;margin:0;padding:12px;display:flex;align-items:flex-start;justify-content:flex-start;background:#102331;border:1px solid #365569;border-radius:11px;box-shadow:none;text-align:left;word-break:normal;overflow-wrap:normal}
 .rg-expanded .rg-expanded-tile-body{display:flex;flex-direction:column;align-items:flex-start;gap:5px;width:100%;min-width:0;text-align:left}
 .rg-expanded .rg-expanded-tile-heading{display:flex;align-items:center;gap:7px;width:100%;min-width:0}
 .rg-expanded .rg-expanded-tile-heading svg{width:20px;height:20px;flex:0 0 20px}
@@ -340,6 +350,16 @@ const expandedStyles = `
  .rg-expanded-brand{font-size:20px}.rg-expanded-demo{font-size:9px}
  .rg-expanded .rg-expanded-value{font-size:18px}.rg-expanded .rg-expanded-label{font-size:12px}.rg-expanded .rg-expanded-detail{font-size:11px}
  .rg-expanded-footer{font-size:10px;padding:6px;gap:3px}.rg-expanded kbd{font-size:10px;padding:1px 3px}
+}
+@container rg-menu (max-width:599px){
+ .rg-expanded .rg-expanded-grid{gap:6px}
+ .rg-expanded .rg-expanded-tile{padding:6px;min-height:88px}
+ .rg-expanded .rg-expanded-tile-heading{gap:4px}
+ .rg-expanded .rg-expanded-tile-heading svg{width:13px;height:13px;flex-basis:13px}
+ .rg-expanded .rg-expanded-label{font-size:10px}
+ .rg-expanded .rg-expanded-value{font-size:12px}
+ .rg-expanded .rg-expanded-detail{font-size:10px}
+ .rg-expanded .rg-expanded-tile[data-tone=warning] .rg-expanded-value{font-size:12px}
 }
 @media(max-width:600px){.rg-expanded-backdrop{padding-left:3vw}.rg-expanded{width:94vw;height:90vh}}
 @media(prefers-reduced-motion:no-preference){.rg-expanded-tab{transition:border-color .12s}}

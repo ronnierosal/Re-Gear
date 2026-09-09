@@ -35,7 +35,7 @@ if (args.includes('--playwright')) {
   const { chromium } = require(resolve(option('--playwright')));
   const browser = await chromium.launch({headless:true, ...(args.includes('--channel') ? {channel:option('--channel')} : {})});
   const report = { limitation: 'Synthetic React and keyboard only. Native Steam overlay, physical LB/RB and hardware actions UNVERIFIED.', captures: [], failures: [] };
-  for (const [width,height] of [[1920,1080],[1280,720],[960,600],[854,480],[320,720]]) {
+  for (const [width,height] of [[1920,1080],[1280,720],[960,600],[854,480],[828,466],[320,720]]) {
     for (const tab of ['quick','performance','egpu','controllers','settings']) {
       const page = await browser.newPage({viewport:{width,height},deviceScaleFactor:1});
       const errors=[]; page.on('pageerror', e=>errors.push(e.message));
@@ -74,7 +74,7 @@ if (args.includes('--playwright')) {
       });
       if(polish.overlap||polish.brightFocus||polish.footerButtons||polish.footerHeight>52||!polish.safeVisible)
         report.failures.push(`${width}/${tab}: polish regression ${JSON.stringify(polish)}`);
-      if(tab==='quick' && [1280,960,854].includes(width) && polish.columns!==(width===1280?4:3))
+      if(tab==='quick' && [1280,960,854,828].includes(width) && polish.columns!==4)
         report.failures.push(`${width}: responsive grid density mismatch`);
       await page.screenshot({path:join(output,`${tab}-${width}.png`)});
       await page.close();
