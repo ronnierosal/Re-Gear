@@ -189,6 +189,8 @@ class EgpuClientDiscovery:
                 try:
                     target = self._fd_target_reader(descriptor)
                 except OSError:
+                    if process_path.exists():
+                        incomplete = True
                     continue
                 kind = targets.get(self._normalize_target(target))
                 if kind is not None:
