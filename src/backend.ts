@@ -194,6 +194,55 @@ export interface SnapshotPayload {
   };
 }
 
+/** How far a live eGPU disconnect could get right now.
+ *
+ * `ready` does not mean nothing is in the way: a standing external display
+ * reports ready with `display_release_required`, because that is the one
+ * blocker the disconnect can clear itself given approval.
+ */
+export type DisconnectAvailability =
+  | "unavailable"
+  | "recovery_required"
+  | "busy"
+  | "blocked"
+  | "ready";
+
+export interface DisconnectOutcomePayload {
+  schema_version: number;
+  stage: string;
+  code: string;
+  ok: boolean;
+  released: boolean;
+  /** True when the player's Steam session was restarted to free the device. */
+  session_disturbed: boolean;
+  removed: string[];
+  restored: string[];
+  display_released: number[];
+  display_release_code: string;
+  filter_disarmed: boolean;
+  /** The device was left somewhere it has never been. Needs attention, and is
+   * not the same as the action having failed. */
+  device_disturbed: boolean;
+}
+
+export interface DisconnectStatusPayload {
+  schema_version: number;
+  availability: DisconnectAvailability;
+  /** Stable reason code. Render through a mapping, never raw. */
+  code: string;
+  ready: boolean;
+  busy: boolean;
+  /** Units holding the eGPU. Meaningless without `scan_complete`: an empty
+   * list from an unfinished scan is not a free device. */
+  holders: string[];
+  scan_complete: boolean;
+  external_display_committed: boolean | null;
+  /** The disconnect would turn the external display off. A separate approval
+   * from the disconnect itself, because it is visible to whoever is watching. */
+  display_release_required: boolean;
+  last: DisconnectOutcomePayload | null;
+}
+
 export const getSnapshot = callable<[], SnapshotPayload>("get_snapshot");
 
 export interface PeripheralStatusPayload {
@@ -611,3 +660,22 @@ export interface AutoTdpPreferencesPayload {
 }
 export const getAutoTdpPreferences = callable<[], AutoTdpPreferencesPayload>("get_auto_tdp_preferences");
 export const saveAutoTdpPreference = callable<[string, number, number, number], AutoTdpPreferencesPayload>("save_auto_tdp_preference");
+
+
+/** Read-only. Observes and changes nothing, so it is safe to poll. */
+export const getEgpuDisconnectStatus = callable<[], DisconnectStatusPayload>(
+  "get_egpu_disconnect_status",
+);
+
+/** Detach the eGPU in software. NOT clearance to unplug anything.
+ *
+ * Serialized by the backend: a second call while one runs returns immediately
+ * with `live_disconnect.busy` and does nothing.
+ *
+ * `releaseDisplay` is a separate approval from the disconnect. Pass true only
+ * when the player has agreed to the external display turning off.
+ */
+export const executeEgpuDisconnect = callable<
+  [releaseDisplay: boolean],
+  DisconnectOutcomePayload
+>("execute_egpu_disconnect");
