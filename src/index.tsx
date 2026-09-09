@@ -1575,9 +1575,13 @@ function Content({ preflight, connection, shortcut }: { preflight: SleepPrefligh
       detail: controllerShortcutAvailable ? "Shortcut input available" : "Status unavailable" },
   ];
   const sectionVisibility = quickAccessSectionVisibility(showDiagnostics);
-  const primaryDisplayAction = displayAction(payload?.inference.mode,
-    tvSwitchBusy || safeDisconnectBusy, Boolean(tvSwitchAcknowledgementId),
-    Boolean(journalStatus && journalStatus.code !== "journal.idle"), controllerShortcutAvailable);
+  const primaryDisplayAction = displayAction({
+    mode: payload?.inference.mode,
+    busy: tvSwitchBusy || safeDisconnectBusy,
+    acknowledgementRequired: Boolean(tvSwitchAcknowledgementId),
+    journalBlocked: Boolean(journalStatus && journalStatus.code !== "journal.idle"),
+    shortcutAvailable: controllerShortcutAvailable,
+  });
 
 
   return (

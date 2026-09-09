@@ -17,7 +17,11 @@ test("display action names its target and keeps the shortcut separate from shutd
   assert.match(card, /if \(primaryDisplayAction.target === "ally"\) requestControllerDisplaySwitch\("ally"\)/);
   assert.match(card, /if \(primaryDisplayAction.disabled\) return/);
   assert.match(card, /disabled=\{primaryDisplayAction.disabled\}/);
-  assert.match(source, /tvSwitchBusy \|\| safeDisconnectBusy, Boolean\(tvSwitchAcknowledgementId\)/);
+  // The gates reach displayAction by name, so a second caller cannot transpose
+  // two booleans and silently offer a switch that should be blocked.
+  assert.match(source, /busy: tvSwitchBusy \|\| safeDisconnectBusy,/);
+  assert.match(source, /acknowledgementRequired: Boolean\(tvSwitchAcknowledgementId\),/);
+  assert.match(source, /journalBlocked: Boolean\(journalStatus && journalStatus\.code !== "journal\.idle"\),/);
   assert.doesNotMatch(card, /executeSafeDisconnect\(true\)/);
   const disconnect = source.slice(source.indexOf('icon="power"'), source.indexOf('{safeDisconnectMessage &&'));
   assert.doesNotMatch(disconnect, /Back\/View \+ Y/);
