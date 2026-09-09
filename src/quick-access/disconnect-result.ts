@@ -9,23 +9,24 @@
  * `status.last` survives that restart, so the answer is available. This turns
  * it into something a player can act on.
  *
- * THE ANSWER TO "CAN I UNPLUG IT" IS ALWAYS NO, AND THAT IS NOT A HEDGE.
+ * THE ANSWER TO "CAN I DISCONNECT IT" IS EARNED, NOT ASSERTED.
  *
- * Safety invariant 10: the tested Ally X / GPD G1 combination does not support
- * physical live unplug; restore internal operation and shut down before
- * disconnecting. Issue #147 asks whether that invariant should be *scoped* to
- * separate unplug-while-bound from unplug-after-verified-removal, and it is
- * open and undecided. Until it is decided, a successful software removal is
- * not clearance to pull the cable, and this module states that every single
- * time rather than only when something went wrong. A reassurance that appears
- * conditionally teaches a player that its absence means "go ahead".
+ * Invariant 10 forbids a *live* unplug: pulling the cable while the eGPU is
+ * bound, with a driver attached and transactions possible. A safe disconnect
+ * is a different operation, and the difference is checkable rather than
+ * argued: the functions are removed and the system is asked whether an eGPU is
+ * still connected. This module never composes that answer itself; it delegates
+ * to `unplugClearance`, which refuses unless every check passes and shows the
+ * evidence beside its verdict.
  *
- * Even under the optimistic reading of #147, the residual risk it names is the
- * USB branch behind the dock and its xhci recovery failure (#105) -- so "the
- * GPU path is clean" would still not be "the dock is safe to unplug".
+ * The clearance is scoped to the eGPU and always carries the caveat that the
+ * USB branch behind the dock (#105) is a separate path this says nothing
+ * about.
  */
 
-import type { DisconnectOutcomePayload } from "../backend";
+import type { DisconnectOutcomePayload, DisconnectStatusPayload } from "../backend";
+import { unplugClearance } from "./unplug-clearance";
+import type { UnplugClearance } from "./unplug-clearance";
 
 export type ResultTone = "done" | "attention" | "failed";
 
@@ -36,17 +37,12 @@ export type DisconnectResult = {
   headline: string;
   /** Precise statements about what happened. Never speculation. */
   detail: string[];
-  /** The unplug answer. Present whenever anything is shown, never omitted. */
-  unplug: string;
+  /** The disconnect answer, earned from evidence. Present whenever anything is
+   * shown, never omitted, and never composed here. */
+  clearance: UnplugClearance;
   /** True when the device was left somewhere it has never been. */
   attention: boolean;
 };
-
-/** The sentence that does not vary. Invariant 10 with the action a player
- * needs, not just a refusal: telling someone "no" without telling them how is
- * how they end up guessing. */
-const UNPLUG_ANSWER =
-  "Do not unplug the eGPU. Shut the handheld down first, then disconnect it.";
 
 const ATTENTION_HEADLINE = "The eGPU needs attention";
 const REMOVED_HEADLINE = "The eGPU is detached in software";
@@ -80,9 +76,11 @@ function describe(outcome: DisconnectOutcomePayload): string[] {
 
 export function disconnectResult(
   outcome: DisconnectOutcomePayload | null | undefined,
+  status?: DisconnectStatusPayload | null,
 ): DisconnectResult {
+  const clearance = unplugClearance(status, outcome);
   if (!outcome) {
-    return { show: false, tone: "done", headline: "", detail: [], unplug: "", attention: false };
+    return { show: false, tone: "done", headline: "", detail: [], clearance, attention: false };
   }
 
   // Attention outranks success and failure alike. A device left somewhere it
@@ -96,15 +94,17 @@ export function disconnectResult(
         ...describe(outcome),
         "Restore it before trying again or shutting down.",
       ],
-      unplug: UNPLUG_ANSWER, attention: true,
+      clearance, attention: true,
     };
   }
 
   if (outcome.ok && outcome.released) {
     return {
-      show: true, tone: "done", headline: REMOVED_HEADLINE,
+      // The headline reflects the checked state, not the command's return code.
+      show: true, tone: "done",
+      headline: clearance.cleared ? "The eGPU is disconnected" : REMOVED_HEADLINE,
       detail: describe(outcome),
-      unplug: UNPLUG_ANSWER, attention: false,
+      clearance, attention: false,
     };
   }
 
@@ -118,6 +118,6 @@ export function disconnectResult(
         : "The eGPU was not detached.",
       ...describe(outcome),
     ],
-    unplug: UNPLUG_ANSWER, attention: false,
+    clearance, attention: false,
   };
 }

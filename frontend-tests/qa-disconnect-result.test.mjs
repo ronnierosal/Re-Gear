@@ -3,9 +3,21 @@ import test from "node:test";
 import { readFileSync } from "node:fs";
 import ts from "typescript";
 
-const source = readFileSync(new URL("../src/quick-access/disconnect-result.ts", import.meta.url), "utf8");
-const { outputText } = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2020 } });
-const { disconnectResult } = await import(`data:text/javascript;base64,${Buffer.from(outputText).toString("base64")}`);
+const load = (name) => {
+  const src = readFileSync(new URL(`../src/quick-access/${name}.ts`, import.meta.url), "utf8");
+  return ts.transpileModule(src, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2020 } }).outputText;
+};
+// disconnect-result imports unplug-clearance by relative path, which cannot
+// resolve inside a data: URL, so the two are concatenated with imports removed.
+const bundle = load("unplug-clearance") + load("disconnect-result").replace(/^import[^;]*;$/gm, "");
+const { disconnectResult } = await import(`data:text/javascript;base64,${Buffer.from(bundle).toString("base64")}`);
+
+/** A status reading in which the eGPU is still present: clearance is refused. */
+const presentStatus = () => ({
+  schema_version: 1, availability: "ready", code: "removal_safety.clear", ready: true,
+  attemptable: true, busy: false, holders: [], scan_complete: true,
+  external_display_committed: false, display_release_required: false, last: null,
+});
 
 const outcome = (over = {}) => ({
   schema_version: 1, stage: "removed", code: "live_disconnect.ok", ok: true, released: true,
@@ -37,39 +49,39 @@ test("a successful removal says what happened", () => {
   assert.ok(r.detail.some((d) => /external display was turned off/i.test(d)));
 });
 
-test("the unplug answer is present on every outcome, not only failures", () => {
-  // A reassurance that appears conditionally teaches a player that its absence
-  // means go ahead. This one never varies.
+test("every shown result answers the disconnect question", () => {
+  // The answer is now earned from evidence rather than fixed, but it is never
+  // absent: silence at this moment is what sends a player guessing.
   const cases = [
     outcome(),
     outcome({ ok: false, released: false, removed: [], restored: ["0000:08:00.0"] }),
     outcome({ device_disturbed: true }),
     outcome({ session_disturbed: false, display_released: [], filter_disarmed: false }),
   ];
-  const answers = new Set();
   for (const value of cases) {
-    const r = disconnectResult(value);
-    assert.ok(r.unplug.length > 0, "every shown result answers the unplug question");
-    assert.match(r.unplug, /do not unplug/i);
-    assert.match(r.unplug, /shut the handheld down first/i, "a refusal must say what to do instead");
-    answers.add(r.unplug);
+    const r = disconnectResult(value, presentStatus());
+    assert.ok(r.clearance.statement.length > 0);
+    assert.ok(r.clearance.checks.length > 0, "the evidence is always shown with the answer");
   }
-  assert.equal(answers.size, 1, "the answer does not vary with the outcome");
 });
 
-test("no outcome ever produces an unplug clearance, in any field", () => {
-  // Invariant 10 forbids physical live unplug for this hardware, and issue 147
-  // asking whether to scope it is open and undecided.
+test("without verified evidence no outcome clears the cable, whatever it returned", () => {
+  // The status here still reports an eGPU present, so nothing has been shown
+  // to be detached and a success code alone must not grant clearance.
   const cases = [
     outcome(), outcome({ ok: true, released: true, device_disturbed: false }),
     outcome({ ok: false, released: false }), outcome({ device_disturbed: true }),
     outcome({ removed: [], restored: [], display_released: [], session_disturbed: false }),
   ];
   for (const value of cases) {
-    const rendered = JSON.stringify(disconnectResult(value));
+    const r = disconnectResult(value, presentStatus());
+    assert.equal(r.clearance.cleared, false, JSON.stringify(value.code));
     for (const claim of UNPLUG_CLAIMS) {
-      assert.doesNotMatch(rendered, claim, `${claim} appeared for ${JSON.stringify(value.code)}`);
+      assert.doesNotMatch(JSON.stringify(r), claim);
     }
+    assert.match(r.clearance.statement, /do not disconnect/i);
+    assert.match(r.clearance.statement, /shut the handheld down first/i,
+      "a refusal must say what to do instead");
   }
 });
 

@@ -3249,6 +3249,94 @@ function commandCenterTiles(input) {
     return TILE_ORDER.map((id) => tiles[id]);
 }
 
+/** Whether the evidence supports disconnecting the eGPU cable: pure, no I/O.
+ *
+ * This is the gate behind the only screen in Re-Gear that tells a player they
+ * may physically disconnect the eGPU. It exists so that statement is *earned
+ * from evidence* rather than asserted, and so the exact evidence is shown next
+ * to it and can be argued with.
+ *
+ * WHY THIS IS NOT THE OPERATION INVARIANT 10 FORBIDS.
+ *
+ * Invariant 10 was written about a live unplug: pulling the cable while the
+ * eGPU is bound, with a driver attached and transactions possible. That is the
+ * operation with no containment for in-flight DMA, and it stays forbidden.
+ *
+ * A safe disconnect is a different operation. The sequence removes both PCI
+ * functions and verifies they are gone, so by the time a cable is touched
+ * there is no bound device left to disconnect from. The checks below are what
+ * make that a fact about this machine rather than a claim about the design:
+ * clearance is refused unless the system itself reports no eGPU connected.
+ *
+ * Every check must pass. They are deliberately not collapsed into one boolean
+ * from the backend, because a player deciding whether to pull a cable deserves
+ * to see which specific facts were established, and because a single opaque
+ * flag is impossible to audit when it is wrong.
+ *
+ * The decisive check is the last one. "Remove ran and returned success" is a
+ * statement about a command; "no eGPU is connected" is a statement about the
+ * bus. Only the second one justifies touching the cable, and the difference is
+ * between trusting an action and observing its result.
+ *
+ * Scope: the eGPU. NOT the dock as a whole. Issue #105 records an xhci
+ * recovery failure on the USB branch, a separate device path that a clean GPU
+ * removal says nothing about, so the caveat below is always carried.
+ *
+ * If a check cannot be evaluated, it fails. Absent evidence is never a pass:
+ * this is the one place in the product where an optimistic default would read
+ * as permission to act on hardware.
+ */
+const CLEARED_STATEMENT = "The eGPU is detached and no longer connected to the Ally. You can now disconnect the eGPU cable.";
+const NOT_CLEARED_STATEMENT = "Do not disconnect the eGPU yet. Re-Gear could not confirm every check below. Shut the handheld down first, then disconnect it.";
+const DOCK_CAVEAT = "This covers the eGPU only. Other devices behind the dock, such as USB controllers and storage, are not checked here.";
+function check(label, passed, detail) {
+    return { label, passed, detail };
+}
+function unplugClearance(status, outcome) {
+    const checks = [];
+    // 1. The attempt itself.
+    checks.push(check("Removal completed", outcome?.ok === true && outcome.released === true, !outcome ? "No disconnect has been run."
+        : outcome.ok && outcome.released ? "The disconnect reported success."
+            : "The disconnect did not report a completed release."));
+    // 2. Not left half attached. This outranks a success flag: a device moved
+    //    somewhere it has never been is the worst state to pull a cable from.
+    checks.push(check("Device not left half detached", outcome != null && outcome.device_disturbed === false, !outcome ? "No disconnect has been run."
+        : outcome.device_disturbed ? "The device was left partly detached."
+            : "The device was not left in a partial state."));
+    // 3. Functions actually came out and stayed out.
+    const removedCount = outcome?.removed.length ?? 0;
+    const restoredCount = outcome?.restored.length ?? 0;
+    checks.push(check("PCI functions removed", removedCount > 0 && restoredCount === 0, removedCount === 0 ? "No functions were reported removed."
+        : restoredCount > 0
+            ? `${removedCount} removed, but ${restoredCount} were restored again.`
+            : `${removedCount} eGPU function${removedCount === 1 ? "" : "s"} removed.`));
+    // 4. Nothing still holds it. An empty holder list is only meaningful with a
+    //    completed scan: an unfinished scan that found nothing found nothing.
+    const holders = status?.holders ?? null;
+    const scanComplete = status?.scan_complete === true;
+    checks.push(check("Nothing still using the eGPU", holders !== null && holders.length === 0 && scanComplete, holders === null ? "No current status reading."
+        : !scanComplete ? "The check of running processes did not finish."
+            : holders.length > 0 ? `Still held by ${holders.length} unit${holders.length === 1 ? "" : "s"}.`
+                : "No process is holding the eGPU."));
+    // 5. Re-Gear released its own hold.
+    checks.push(check("Re-Gear's device filter disarmed", outcome?.filter_disarmed === true, outcome?.filter_disarmed === true ? "The filter was disarmed."
+        : "The filter was not reported as disarmed."));
+    // 6. The decisive one: the bus, not the command. This is what makes the
+    //    disconnect safe rather than live -- there is nothing bound to pull from.
+    const gone = status?.availability === "unavailable"
+        && status.code === "live_disconnect.egpu_unavailable";
+    checks.push(check("eGPU no longer connected to the system", gone, !status ? "No current status reading."
+        : gone ? "The system reports no eGPU connected."
+            : "The system still reports an eGPU present."));
+    const cleared = checks.every((entry) => entry.passed);
+    return {
+        cleared,
+        checks,
+        statement: cleared ? CLEARED_STATEMENT : NOT_CLEARED_STATEMENT,
+        caveat: DOCK_CAVEAT,
+    };
+}
+
 /** What to tell a player after a disconnect attempt: pure, no React, no I/O.
  *
  * The problem this solves is specific. A disconnect restarts the Steam session,
@@ -3260,25 +3348,20 @@ function commandCenterTiles(input) {
  * `status.last` survives that restart, so the answer is available. This turns
  * it into something a player can act on.
  *
- * THE ANSWER TO "CAN I UNPLUG IT" IS ALWAYS NO, AND THAT IS NOT A HEDGE.
+ * THE ANSWER TO "CAN I DISCONNECT IT" IS EARNED, NOT ASSERTED.
  *
- * Safety invariant 10: the tested Ally X / GPD G1 combination does not support
- * physical live unplug; restore internal operation and shut down before
- * disconnecting. Issue #147 asks whether that invariant should be *scoped* to
- * separate unplug-while-bound from unplug-after-verified-removal, and it is
- * open and undecided. Until it is decided, a successful software removal is
- * not clearance to pull the cable, and this module states that every single
- * time rather than only when something went wrong. A reassurance that appears
- * conditionally teaches a player that its absence means "go ahead".
+ * Invariant 10 forbids a *live* unplug: pulling the cable while the eGPU is
+ * bound, with a driver attached and transactions possible. A safe disconnect
+ * is a different operation, and the difference is checkable rather than
+ * argued: the functions are removed and the system is asked whether an eGPU is
+ * still connected. This module never composes that answer itself; it delegates
+ * to `unplugClearance`, which refuses unless every check passes and shows the
+ * evidence beside its verdict.
  *
- * Even under the optimistic reading of #147, the residual risk it names is the
- * USB branch behind the dock and its xhci recovery failure (#105) -- so "the
- * GPU path is clean" would still not be "the dock is safe to unplug".
+ * The clearance is scoped to the eGPU and always carries the caveat that the
+ * USB branch behind the dock (#105) is a separate path this says nothing
+ * about.
  */
-/** The sentence that does not vary. Invariant 10 with the action a player
- * needs, not just a refusal: telling someone "no" without telling them how is
- * how they end up guessing. */
-const UNPLUG_ANSWER = "Do not unplug the eGPU. Shut the handheld down first, then disconnect it.";
 const ATTENTION_HEADLINE = "The eGPU needs attention";
 const REMOVED_HEADLINE = "The eGPU is detached in software";
 const FAILED_HEADLINE = "The disconnect did not complete";
@@ -3307,9 +3390,10 @@ function describe(outcome) {
     }
     return detail;
 }
-function disconnectResult(outcome) {
+function disconnectResult(outcome, status) {
+    const clearance = unplugClearance(status, outcome);
     if (!outcome) {
-        return { show: false, tone: "done", headline: "", detail: [], unplug: "", attention: false };
+        return { show: false, tone: "done", headline: "", detail: [], clearance, attention: false };
     }
     // Attention outranks success and failure alike. A device left somewhere it
     // has never been is not a failed button press, and reporting it as one would
@@ -3322,14 +3406,16 @@ function disconnectResult(outcome) {
                 ...describe(outcome),
                 "Restore it before trying again or shutting down.",
             ],
-            unplug: UNPLUG_ANSWER, attention: true,
+            clearance, attention: true,
         };
     }
     if (outcome.ok && outcome.released) {
         return {
-            show: true, tone: "done", headline: REMOVED_HEADLINE,
+            // The headline reflects the checked state, not the command's return code.
+            show: true, tone: "done",
+            headline: clearance.cleared ? "The eGPU is disconnected" : REMOVED_HEADLINE,
             detail: describe(outcome),
-            unplug: UNPLUG_ANSWER, attention: false,
+            clearance, attention: false,
         };
     }
     return {
@@ -3342,7 +3428,7 @@ function disconnectResult(outcome) {
                 : "The eGPU was not detached.",
             ...describe(outcome),
         ],
-        unplug: UNPLUG_ANSWER, attention: false,
+        clearance, attention: false,
     };
 }
 
@@ -3356,8 +3442,9 @@ function disconnectResult(outcome) {
  * purpose. It is the one sentence that must survive being skim-read.
  */
 const C$1 = {
-    text: "#f4f7fb", muted: "#9eb2ca",
-    border: "#294665", amber: "#ffc247"};
+    cyan: "#39d8ff", text: "#f4f7fb", muted: "#9eb2ca",
+    border: "#294665", amber: "#ffc247", red: "#ff6b6b",
+};
 const TONE_COLOR = {
     done: "#39d8ff", attention: "#ffc247", failed: "#ff6b6b",
 };
@@ -3369,11 +3456,16 @@ function DisconnectResultNotice({ result, onDismiss }) {
             margin: "0 2px 10px", padding: "10px", borderRadius: 12, minWidth: 0,
             background: "linear-gradient(135deg, rgba(19,36,58,.96), rgba(9,21,36,.98))",
             border: `1px solid ${accent}`,
-        }, children: [SP_JSX.jsx("div", { style: { fontSize: 14, fontWeight: 760, color: accent, marginBottom: 4 }, children: result.headline }), result.detail.map((line) => (SP_JSX.jsx("div", { style: { fontSize: 12, lineHeight: "17px", color: C$1.muted }, children: line }, line))), SP_JSX.jsx("div", { style: {
+        }, children: [SP_JSX.jsx("div", { style: { fontSize: 14, fontWeight: 760, color: accent, marginBottom: 4 }, children: result.headline }), result.detail.map((line) => (SP_JSX.jsx("div", { style: { fontSize: 12, lineHeight: "17px", color: C$1.muted }, children: line }, line))), SP_JSX.jsx("div", { style: { marginTop: 8 }, children: result.clearance.checks.map((entry) => (SP_JSX.jsxs("div", { style: {
+                        display: "flex", gap: 6, alignItems: "baseline",
+                        fontSize: 11, lineHeight: "16px", minWidth: 0,
+                    }, children: [SP_JSX.jsx("span", { style: { color: entry.passed ? C$1.cyan : C$1.red, fontWeight: 760 }, children: entry.passed ? "✓" : "✗" }), SP_JSX.jsxs("span", { style: { color: C$1.muted, minWidth: 0 }, children: [SP_JSX.jsx("span", { style: { color: entry.passed ? C$1.text : C$1.red }, children: entry.label }), " · ", entry.detail] })] }, entry.label))) }), SP_JSX.jsx("div", { style: {
                     marginTop: 8, padding: "7px 9px", borderRadius: 9,
-                    background: "rgba(255,194,71,.10)", border: `1px solid ${C$1.amber}`,
-                    fontSize: 13, fontWeight: 760, lineHeight: "18px", color: C$1.amber,
-                }, children: result.unplug }), SP_JSX.jsx(DFL.Focusable, { style: { marginTop: 8 }, children: SP_JSX.jsx(DFL.DialogButton, { onClick: onDismiss, style: {
+                    background: result.clearance.cleared ? "rgba(57,216,255,.10)" : "rgba(255,194,71,.10)",
+                    border: `1px solid ${result.clearance.cleared ? C$1.cyan : C$1.amber}`,
+                    fontSize: 13, fontWeight: 760, lineHeight: "18px",
+                    color: result.clearance.cleared ? C$1.cyan : C$1.amber,
+                }, children: result.clearance.statement }), SP_JSX.jsx("div", { style: { marginTop: 6, fontSize: 11, lineHeight: "15px", color: C$1.muted }, children: result.clearance.caveat }), SP_JSX.jsx(DFL.Focusable, { style: { marginTop: 8 }, children: SP_JSX.jsx(DFL.DialogButton, { onClick: onDismiss, style: {
                         width: "100%", minHeight: 36, margin: 0, padding: "5px 10px",
                         borderRadius: 9, fontSize: 12, fontWeight: 700, color: C$1.text,
                         background: "rgba(41,70,101,.5)", border: `1px solid ${C$1.border}`,
@@ -4971,9 +5063,7 @@ function Content({ preflight, connection, shortcut }) {
             , { ...(hasInternalLevel(navStack) ? { onCancelButton: popRoute } : {}), style: { minWidth: 0 }, children: SP_JSX.jsxs("div", { ref: statusAnchor, tabIndex: -1, children: [!onCommandCenter && (SP_JSX.jsx(DFL.PanelSection, { children: SP_JSX.jsx(ShellBody, { route: route, modules: modules, statusEntries: statusEntries, onOpenModule: (id) => openRoute({ kind: "module", id }), onOpenStatus: (id) => openRoute({ kind: "status", id }), children: null }) })), onCommandCenter && (SP_JSX.jsxs(SP_JSX.Fragment, { children: [SP_JSX.jsx(DFL.PanelSection, { title: "At a glance", children: SP_JSX.jsx(QuickAccessOverview, { summaryRef: statusFocusAnchor, onSummaryFocus: () => {
                                             if (statusAnchor.current)
                                                 scrollToTopOfOwningPanel(statusAnchor.current);
-                                        }, mode: payload?.inference.mode ?? "unknown", modeLabel: loading ? "Reading…" : label(payload?.inference.mode ?? "unknown"), health: healthStatusLabel(payload?.health, loading), game: label(snapshot?.game_state ?? "unknown"), loading: loading }) }), SP_JSX.jsxs(DFL.PanelSection, { children: [SP_JSX.jsx("div", { style: { display: "flex", flexDirection: "column", minWidth: 0 }, children: SP_JSX.jsx(ModulesButton, { onOpen: () => openRoute({ kind: "modules" }) }) }), SP_JSX.jsx(DisconnectResultNotice, { result: resultDismissed
-                                                ? { show: false, tone: "done", headline: "", detail: [], unplug: "", attention: false }
-                                                : disconnectResult(egpuDisconnect?.last), onDismiss: () => setResultDismissed(true) }), SP_JSX.jsx(CommandCenterGrid, { tiles: tiles, onActivate: (id) => {
+                                        }, mode: payload?.inference.mode ?? "unknown", modeLabel: loading ? "Reading…" : label(payload?.inference.mode ?? "unknown"), health: healthStatusLabel(payload?.health, loading), game: label(snapshot?.game_state ?? "unknown"), loading: loading }) }), SP_JSX.jsxs(DFL.PanelSection, { children: [SP_JSX.jsx("div", { style: { display: "flex", flexDirection: "column", minWidth: 0 }, children: SP_JSX.jsx(ModulesButton, { onOpen: () => openRoute({ kind: "modules" }) }) }), SP_JSX.jsx(DisconnectResultNotice, { result: disconnectResult(resultDismissed ? null : egpuDisconnect?.last, egpuDisconnect), onDismiss: () => setResultDismissed(true) }), SP_JSX.jsx(CommandCenterGrid, { tiles: tiles, onActivate: (id) => {
                                                 setSelectedTile(id);
                                                 const tile = tiles.find((candidate) => candidate.id === id);
                                                 if (!tile)

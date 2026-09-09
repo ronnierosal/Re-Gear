@@ -1631,9 +1631,10 @@ function Content({ preflight, connection, shortcut }: { preflight: SleepPrefligh
             because an answer a player has to scroll to find is one they will
             act without. `status.last` survives the restart; this reads it. */}
         <DisconnectResultNotice
-          result={resultDismissed
-            ? { show: false, tone: "done", headline: "", detail: [], unplug: "", attention: false }
-            : disconnectResult(egpuDisconnect?.last)}
+          result={disconnectResult(
+            resultDismissed ? null : egpuDisconnect?.last,
+            egpuDisconnect,
+          )}
           onDismiss={() => setResultDismissed(true)}
         />
         <CommandCenterGrid
