@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
+  <title id="title">Re-Gear mark</title>
+  <desc id="desc">Established segmented hexagonal Re-Gear R emblem.</desc>
+  <g fill="none" stroke="#35d6f5" stroke-width="14" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M78 31 121 8l43 23"/><path d="M181 41 220 63v47"/><path d="M220 145v48l-42 24"/><path d="m164 225-43 23-43-23"/><path d="M61 216 20 193v-47"/><path d="M20 111V63l42-23"/>
+  </g>
+  <path fill="#35d6f5" d="M75 62h69c29 0 46 14 46 39 0 20-11 33-31 38l30 55h-34l-27-50h-22l-19 50H53l38-101h55c8 0 12-3 12-10 0-6-4-9-12-9H83L75 62Zm41 58h29c8 0 12-4 12-10s-4-9-12-9h-22l-7 19Z"/>
+</svg>
