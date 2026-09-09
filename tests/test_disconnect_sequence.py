@@ -43,7 +43,7 @@ class OrderingTests(unittest.TestCase):
     """Removal safety is only meaningful after the release has run."""
 
     def test_a_release_that_was_never_attempted_requires_one(self) -> None:
-        decision = decide_disconnect(ReleaseOutcome.NOT_ATTEMPTED, ready(), BOTH)
+        decision = decide_disconnect(ReleaseOutcome.NOT_ATTEMPTED, ready(), BOTH, released_attachment="binding")
         self.assertIs(decision.stage, DisconnectStage.RELEASE_REQUIRED)
         self.assertFalse(decision.may_remove)
 
@@ -54,17 +54,17 @@ class OrderingTests(unittest.TestCase):
         verdict here describes a moment before the sequence began.
         """
         for outcome in (ReleaseOutcome.NOT_ATTEMPTED, ReleaseOutcome.REFUSED):
-            decision = decide_disconnect(outcome, ready(), BOTH)
+            decision = decide_disconnect(outcome, ready(), BOTH, released_attachment="binding")
             self.assertFalse(decision.may_remove, outcome)
             self.assertIsNone(decision.plan)
 
     def test_a_refused_release_does_not_consult_readiness(self) -> None:
-        decision = decide_disconnect(ReleaseOutcome.REFUSED, ready(), BOTH)
+        decision = decide_disconnect(ReleaseOutcome.REFUSED, ready(), BOTH, released_attachment="binding")
         self.assertIs(decision.stage, DisconnectStage.RELEASE_REFUSED)
         self.assertEqual(decision.code, "disconnect.release_refused")
 
     def test_remaining_holders_stop_the_sequence(self) -> None:
-        decision = decide_disconnect(ReleaseOutcome.HOLDERS_REMAIN, ready(), BOTH)
+        decision = decide_disconnect(ReleaseOutcome.HOLDERS_REMAIN, ready(), BOTH, released_attachment="binding")
         self.assertIs(decision.stage, DisconnectStage.HOLDERS_REMAIN)
         self.assertFalse(decision.released)
 
@@ -74,14 +74,14 @@ class AfterReleaseTests(unittest.TestCase):
 
     def test_released_but_unsafe_is_not_a_failed_release(self) -> None:
         """The state observed on hardware: holders clear, display retained."""
-        decision = decide_disconnect(ReleaseOutcome.CLEAR, blocked(), BOTH)
+        decision = decide_disconnect(ReleaseOutcome.CLEAR, blocked(), BOTH, released_attachment="binding")
         self.assertIs(decision.stage, DisconnectStage.NOT_SAFE_AFTER_RELEASE)
         self.assertFalse(decision.may_remove)
         # The release worked. A caller must not tell a player it failed.
         self.assertTrue(decision.released)
 
     def test_the_blocking_fact_is_passed_through_untranslated(self) -> None:
-        decision = decide_disconnect(ReleaseOutcome.CLEAR, blocked(), BOTH)
+        decision = decide_disconnect(ReleaseOutcome.CLEAR, blocked(), BOTH, released_attachment="binding")
         self.assertEqual(
             decision.code, "removal_safety.external_display_still_active"
         )
@@ -93,7 +93,7 @@ class AfterReleaseTests(unittest.TestCase):
         self.assertEqual(decision.code, "removal_safety.game_running")
 
     def test_a_clear_release_with_a_ready_verdict_composes_a_plan(self) -> None:
-        decision = decide_disconnect(ReleaseOutcome.CLEAR, ready(), BOTH)
+        decision = decide_disconnect(ReleaseOutcome.CLEAR, ready(), BOTH, released_attachment="binding")
         self.assertIs(decision.stage, DisconnectStage.READY_TO_REMOVE)
         self.assertTrue(decision.may_remove)
         assert decision.plan is not None
@@ -101,23 +101,23 @@ class AfterReleaseTests(unittest.TestCase):
         self.assertEqual(decision.plan.addresses, ("0000:08:00.1", "0000:08:00.0"))
 
     def test_an_incomplete_function_set_is_not_ready(self) -> None:
-        decision = decide_disconnect(ReleaseOutcome.CLEAR, ready(), (GPU,))
+        decision = decide_disconnect(ReleaseOutcome.CLEAR, ready(), (GPU,), released_attachment="binding")
         self.assertIs(decision.stage, DisconnectStage.NOT_SAFE_AFTER_RELEASE)
         self.assertFalse(decision.may_remove)
 
     def test_a_missing_readiness_after_a_clear_release_is_invalid(self) -> None:
-        decision = decide_disconnect(ReleaseOutcome.CLEAR, None, BOTH)
+        decision = decide_disconnect(ReleaseOutcome.CLEAR, None, BOTH, released_attachment="binding")
         self.assertIs(decision.stage, DisconnectStage.INVALID)
         self.assertFalse(decision.may_remove)
 
 
 class InputTests(unittest.TestCase):
     def test_a_non_outcome_is_refused(self) -> None:
-        decision = decide_disconnect("clear", ready(), BOTH)
+        decision = decide_disconnect("clear", ready(), BOTH, released_attachment="binding")
         self.assertIs(decision.stage, DisconnectStage.INVALID)
 
     def test_a_non_tuple_function_set_is_refused(self) -> None:
-        decision = decide_disconnect(ReleaseOutcome.CLEAR, ready(), [GPU, AUDIO])
+        decision = decide_disconnect(ReleaseOutcome.CLEAR, ready(), [GPU, AUDIO], released_attachment="binding")
         self.assertIs(decision.stage, DisconnectStage.INVALID)
 
 
@@ -136,9 +136,42 @@ class SafetyPropertyTests(unittest.TestCase):
             DisconnectDecision(DisconnectStage.READY_TO_REMOVE, "code")
 
     def test_only_a_ready_decision_carries_a_plan(self) -> None:
-        composed = decide_disconnect(ReleaseOutcome.CLEAR, ready(), BOTH).plan
+        composed = decide_disconnect(
+            ReleaseOutcome.CLEAR, ready(), BOTH, released_attachment="binding"
+        ).plan
         with self.assertRaises(ValueError):
             DisconnectDecision(DisconnectStage.HOLDERS_REMAIN, "code", composed)
+
+
+class AttachmentIdentityTests(unittest.TestCase):
+    """Finding 4: a release carries no device identity of its own.
+
+    A release performed on one eGPU, combined with ready evidence taken over
+    another, previously composed a plan and reported that removal could
+    proceed.
+    """
+
+    def test_a_release_for_a_different_device_is_refused(self) -> None:
+        decision = decide_disconnect(
+            ReleaseOutcome.CLEAR,
+            ready(),
+            BOTH,
+            released_attachment="a-different-egpu",
+        )
+        self.assertIs(decision.stage, DisconnectStage.INVALID)
+        self.assertEqual(decision.code, "disconnect.attachment_mismatch")
+        self.assertFalse(decision.may_remove)
+
+    def test_an_unstated_attachment_is_refused_rather_than_assumed(self) -> None:
+        decision = decide_disconnect(ReleaseOutcome.CLEAR, ready(), BOTH)
+        self.assertIs(decision.stage, DisconnectStage.INVALID)
+        self.assertFalse(decision.may_remove)
+
+    def test_the_same_device_still_composes(self) -> None:
+        decision = decide_disconnect(
+            ReleaseOutcome.CLEAR, ready(), BOTH, released_attachment="binding"
+        )
+        self.assertTrue(decision.may_remove)
 
 
 if __name__ == "__main__":

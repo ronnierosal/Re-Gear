@@ -47,6 +47,24 @@ from ..domain.filter_authorization import (
 from ..ports.device_filter import ArmedFilter, DeviceFilterPort
 
 
+@dataclass(frozen=True, slots=True)
+class HolderObservation:
+    """Holders seen, and whether the scan managed to look everywhere.
+
+    A bare tuple cannot say the difference between nothing holding the
+    device and a scan that could not finish, so an empty one read as a
+    clear device. That is the fail-open removed from the operator scan in
+    #137, and it returned here because this layer took only names.
+    """
+
+    units: tuple[str, ...]
+    complete: bool
+
+    @property
+    def clear(self) -> bool:
+        return self.complete and not self.units
+
+
 class ArmStage(StrEnum):
     """How far the sequence reached, so a caller knows what was disturbed."""
 
@@ -57,6 +75,8 @@ class ArmStage(StrEnum):
     PLAN_BLOCKED = "plan_blocked"
     RESTART_FAILED = "restart_failed"
     HOLDERS_REMAIN = "holders_remain"
+    #: The device may be clear; the scan could not establish it.
+    SCAN_INCOMPLETE = "scan_incomplete"
     ARMED_AND_CLEAR = "armed_and_clear"
 
 
@@ -105,13 +125,13 @@ class FilterArmCoordinator:
         *,
         device_filter: DeviceFilterPort,
         restart: Callable[[str], bool],
-        observe_holder_units: Callable[[], tuple[str, ...]],
+        observe_holders: Callable[[], HolderObservation],
         observe_cgroup,
         monotonic: Callable[[], float],
     ) -> None:
         self._filter = device_filter
         self._restart = restart
-        self._observe_holder_units = observe_holder_units
+        self._observe_holders = observe_holders
         self._observe_cgroup = observe_cgroup
         self._monotonic = monotonic
 
@@ -153,34 +173,81 @@ class FilterArmCoordinator:
                 ArmStage.ENFORCEMENT_UNVERIFIED, "filter_arm.enforcement_unverified"
             )
 
-        plan = compose_restart_plan(self._observe_holder_units())
+        plan = compose_restart_plan(self._observe_holders().units)
         if plan.state is not ArmSequenceState.COMPOSED:
             return self._recover(ArmStage.PLAN_BLOCKED, plan.code)
 
         restarted: list[str] = []
-        for unit in plan.units:
-            if not self._restart(unit):
-                return self._recover(
-                    ArmStage.RESTART_FAILED,
-                    f"filter_arm.restart_failed:{unit}",
-                    tuple(restarted),
-                )
-            restarted.append(unit)
+        try:
+            for unit in plan.units:
+                # Authorization is rechecked before every disruption, not
+                # once before the first. A grant that expired partway
+                # through the restarts previously allowed the remaining
+                # ones and still reported a clear device.
+                if not self._still_authorized(authorization, boot_hash):
+                    return self._recover(
+                        ArmStage.AUTHORIZATION_STALE,
+                        "filter_arm.authorization_expired_mid_restart",
+                        tuple(restarted),
+                    )
+                if not self._filter.enforced(
+                    authorization.cgroup, armed.filter.program_id
+                ):
+                    return self._recover(
+                        ArmStage.ENFORCEMENT_UNVERIFIED,
+                        "filter_arm.enforcement_lost_mid_restart",
+                        tuple(restarted),
+                    )
+                if not self._restart(unit):
+                    return self._recover(
+                        ArmStage.RESTART_FAILED,
+                        f"filter_arm.restart_failed:{unit}",
+                        tuple(restarted),
+                    )
+                restarted.append(unit)
 
-        # A composed plan is not evidence the device was cleared; re-observe.
-        remaining = self._observe_holder_units()
-        if remaining:
+            # A composed plan is not evidence the device was cleared, and an
+            # empty result is not evidence either unless the scan finished.
+            observed = self._observe_holders()
+        except Exception:
+            # Anything raised after the filter is attached must still take
+            # it down. Previously an OSError from a restart escaped and
+            # left the filter armed with no disarm attempted at all.
+            return self._recover(
+                ArmStage.RESTART_FAILED,
+                "filter_arm.disruption_raised",
+                tuple(restarted),
+            )
+        if observed.units:
             return self._recover(
                 ArmStage.HOLDERS_REMAIN,
                 "filter_arm.holders_remain",
                 tuple(restarted),
-                remaining,
+                observed.units,
+            )
+        if not observed.complete:
+            return self._recover(
+                ArmStage.SCAN_INCOMPLETE,
+                "filter_arm.scan_incomplete",
+                tuple(restarted),
             )
         return ArmSequenceResult(
             ArmStage.ARMED_AND_CLEAR,
             "filter_arm.armed_and_clear",
             armed.filter,
             tuple(restarted),
+        )
+
+    def _still_authorized(
+        self, authorization: ParentScopeAuthorization, boot_hash: str
+    ) -> bool:
+        """Whether the grant still describes the scope in front of us."""
+        observed = self._observe_cgroup()
+        return observed is not None and authorization_is_current(
+            authorization,
+            boot_hash=boot_hash,
+            cgroup=observed,
+            now=self._monotonic(),
         )
 
     def _recover(
