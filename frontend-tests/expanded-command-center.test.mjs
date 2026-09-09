@@ -22,7 +22,7 @@ test("focus restoration retains unavailable FPS and falls back after removal", (
   assert.equal(m.restoreTarget([], "fps"), undefined);
 });
 test("responsive grid preserves readable fallback and four-to-three boundary", () => {
-  assert.deepEqual([700, 620, 619, 430, 429, 249].map(m.columnsForWidth), [4, 4, 3, 3, 2, 1]);
+  assert.deepEqual([700, 500, 499, 340, 339, 249].map(m.columnsForWidth), [4, 4, 3, 3, 2, 1]);
 });
 test("four-column navigation respects the spanning disconnect tile", () => {
   const cells = m.gridCells(m.sampleTiles.quick, 4);
@@ -61,14 +61,14 @@ test("demo rendering import graph cannot reach backend or native runtime", () =>
   visit(new URL("../src/quick-access/expanded-command-center/shell.tsx", import.meta.url).pathname.replace(/^\/(\w:)/, "$1"));
 });
 
-test("late native modal cleanup and stale button callbacks cannot affect a reopened view", async () => {
+test("native modal uses Decky controls without a second raw navigation listener", async () => {
   const nativeSource = readFileSync(new URL("../src/quick-access/expanded-command-center/native.tsx", import.meta.url), "utf8");
   const nativeJs = ts.transpileModule(nativeSource, { compilerOptions: { module: ts.ModuleKind.ESNext, jsx: ts.JsxEmit.React } }).outputText.replace(/^import .*;$/gm, "");
   const fixtures = `
     export const views=[], effects=[], listeners=[];
     export let opens=0, clicks=0;
     const React={createElement:(type,props,...children)=>({type,props:{...props,children}})};
-    const ModalRoot='modal', ExpandedCommandCenter='shell';
+    const ModalRoot='modal', ExpandedCommandCenter='shell',DialogButton='native-button',Focusable='native-focus';
     const useEffect=fn=>effects.push(fn()), useState=v=>[v,()=>{}];
     const loadMenuBinding=()=> 'start-select',saveMenuBinding=()=>true,menuBindingOptions=[];
     const startMenuShortcut=()=>({available:true,reset(){},stop(){}});
@@ -81,12 +81,11 @@ test("late native modal cleanup and stale button callbacks cannot affect a reope
   runtime.open(); runtime.open(); assert.equal(native.opens, 1);
   const view = native.views[0].props.children[1];
   const shell = view.type(view.props); // Mount its cleanup and obtain close callback.
-  const oldListener = native.listeners[0];
+  assert.equal(shell.props.primitives.Button, 'native-button');
+  assert.equal(shell.props.primitives.Focusable, 'native-focus');
+  assert.equal(native.listeners.length, 0, 'Only the launcher may subscribe to raw input');
   shell.props.onClose(); runtime.open(); assert.equal(native.opens, 2);
   native.effects[0](); // Old animated unmount arrives after reopening.
   runtime.open(); assert.equal(native.opens, 2, "old unmount must not clear new modal");
-  oldListener(0, 0, true); assert.equal(native.clicks, 0, "failed unsubscribe stays inert");
-  native.listeners[1](0, 0, true); assert.equal(native.clicks, 1);
-  runtime.stop(); native.listeners[1](0, 0, false); native.listeners[1](0, 0, true);
-  assert.equal(native.clicks, 1, "unload must disable navigation");
+  runtime.stop(); runtime.open(); assert.equal(native.opens, 2, "unload must prevent opening");
 });

@@ -7,30 +7,28 @@ preference is real. In the browser harness the game backdrop is a CSS illustrati
 
 ## Menu shortcut and native adapter
 
-The default menu chord is Start + Select. Settings > Open Re-Gear offers that
-chord, LB + RB, or Disabled. The preference is stored on this Steam client under
-`regear.menu-shortcut.v1`; failed saves retain the active setting. Opening is
-immediate when the exact pair is down on one controller, once per full release.
-Controller changes, invalid events, settings changes and unload reset the listener.
-The offered chords do not overlap the current View+Y display shortcut or PR173's
-View+X alternative. Any future expansion of either binding catalog must recheck
-cross-listener conflicts.
+The default menu chord is **View / Back + Y**. Settings > Open Re-Gear offers
+that chord, **L3 + R3**, or Disabled. Preferences remain client-local under
+`regear.menu-shortcut.v1`. Legacy Start+Select/LB+RB settings migrate to the
+new default; Disabled remains disabled. The declared Steam raw codes are9+3
+and25+41 respectively; physical delivery still needs native validation.
 
-The default recognizes either MENU/VIEW (8/9) or START/SELECT (36/35), independently.
-These are community declaration codes, not confirmed physical Ally delivery.
-The native adapter maps shoulder buttons to tabs, D-pad to movement, A to select,
-and B to Back/Close while the demo is open. The Steam input subscription is
-non-exclusive: it does not promise to suppress a game's pause/back response.
-Touch and the compact-panel launch button remain available for testing.
+The previous View+Y display shortcut is disabled at plugin composition so one
+chord cannot open both menus. Explicit display actions retain approval and
+confirmation. Future PR173 integration must preserve this reservation.
 
-The modal uses only scoped Re-Gear classes and closes subscriptions on dismissal
-or plugin unload. It does not resize Steam's built-in Quick Access UI. Placement,
-focus, mappings and input isolation still require the native checks below.
+The0.3.68 native trial demonstrated that raw keyboard-event forwarding did not
+capture controller navigation, and tiles were too large at Steam's UI scale.
+The0.3.69 candidate replaces browser buttons with Decky DialogButton and uses
+Focusable containers, preferred focus and native bumper/cancel events. It
+removes the separate raw navigation subscription; raw input only launches the
+menu. A pending display confirmation or action prevents menu opening.
 
-The approved direction uses a large left-side panel, approximately 53% of screen
-width and 82% of screen height at a spacious landscape resolution, with icon
-tabs, cyan selection, dark navy surfaces and a fixed controller-hint footer.
-Smaller viewports prioritize legibility and scrolling over exact proportions.
+Smaller panel containers use18px icons and compact tiles; the grid supports
+three columns from340px of content and four from500px. The native trial's
+input focus and sizing defects are not considered resolved until retested.
+The opening chord subscription remains non-exclusive and cannot promise to
+suppress a game's own chord handling.
 
 ## Run the browser preview
 

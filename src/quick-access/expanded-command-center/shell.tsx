@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, useState } from "react";
-import type { CSSProperties, KeyboardEvent, ReactNode } from "react";
+import type { CSSProperties, KeyboardEvent, ReactNode, ElementType } from "react";
 import { ApprovedIcon } from "../approved-icons";
 import { columnsForWidth, gridCells, moveInGrid, nextTab, restoreTarget, sampleTiles, tabLabels, tabs } from "./model";
 import type { Tab, Tile } from "./model";
@@ -21,9 +21,12 @@ function Icon({ id }: { id: string }) {
 }
 
 /** Developer-only browser prototype. Intentionally not imported by the plugin. */
-export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReasons = false, settings, native = false }: {
+export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReasons = false, settings, native = false, primitives }: {
   onClose(): void; initialTab?: Tab; longReasons?: boolean; settings?: ReactNode; native?: boolean;
+  primitives?: { Button: ElementType; Focusable: ElementType };
 }) {
+  const Button = primitives?.Button ?? "button";
+  const Container = primitives?.Focusable ?? "div";
   const [tab, setTab] = useState<Tab>(initialTab);
   const [nested, setNested] = useState<Tile | null>(null);
   const [columns, setColumns] = useState(4);
@@ -61,6 +64,16 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
     if (nested) { pendingFocus.current = launcher.current; setNested(null); }
     else onClose();
   }
+  const nativeHandlers = native ? {
+    "flow-children": "vertical",
+    onCancelButton: (event: CustomEvent) => { event.preventDefault(); event.stopPropagation(); back(); },
+    onButtonDown: (event: CustomEvent<{ button: number; is_repeat?: boolean }>) => {
+      // Steam UI GamepadButton enum (5/6), not raw controller callback codes.
+      if (event.detail.button !== 5 && event.detail.button !== 6) return;
+      event.preventDefault(); event.stopPropagation();
+      if (!event.detail.is_repeat) switchTab(event.detail.button === 5 ? -1 : 1);
+    },
+  } : {};
   function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
     if (event.altKey || event.ctrlKey || event.metaKey) return;
     if (["q", "Q", "e", "E", "Escape"].includes(event.key)) {
@@ -113,15 +126,15 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
 
   return <div className="rg-expanded-backdrop">
     <style>{expandedStyles}</style>
-    <div ref={panel} data-ec-panel className="rg-expanded" role="dialog" aria-modal="true" aria-label="Re-Gear expanded Command Center prototype" onKeyDown={onKeyDown}
-      onFocus={event => { const id = (event.target as HTMLElement).dataset.ecControl; if (id && !nested) memory.current[tab] = id; }}>
+    <Container ref={panel} data-ec-panel className="rg-expanded" role="dialog" aria-modal="true" aria-label="Re-Gear expanded Command Center prototype" onKeyDown={onKeyDown} {...nativeHandlers}
+      onFocus={(event: { target: EventTarget }) => { const id = (event.target as HTMLElement).dataset.ecControl; if (id && !nested) memory.current[tab] = id; }}>
       <header className="rg-expanded-brand"><span>Re-Gear</span><span className="rg-expanded-demo">Demo · Sample data<br/>Hardware controls not connected</span></header>
-      <nav className="rg-expanded-tabs" role="tablist" aria-label="Command Center sections">
-        {tabs.map(id => <button key={id} id={`ec-tab-${id}`} type="button" role="tab" aria-selected={tab === id} aria-controls="ec-tabpanel" data-ec-tab={id} className="rg-expanded-tab"
+      <Container className="rg-expanded-tabs" role="tablist" aria-label="Command Center sections" {...(native ? { "flow-children": "horizontal" } : {})}>
+        {tabs.map(id => <Button key={id} id={`ec-tab-${id}`} type="button" role="tab" aria-selected={tab === id} aria-controls="ec-tabpanel" data-ec-tab={id} className="rg-expanded-tab"
           onClick={() => { setNested(null); setTab(id); if (id === tab) focus(restoreTarget(controlIds(), memory.current[tab])); }}>
           <Icon id={id}/><span>{tabLabels[id]}</span>
-        </button>)}
-      </nav>
+        </Button>)}
+      </Container>
       <div ref={content} className="rg-expanded-content" id="ec-tabpanel" role="tabpanel" aria-labelledby={`ec-tab-${tab}`}>
         <h2>{nested ? nested.title : tabLabels[tab]}</h2>
         <p className="rg-expanded-context">{nested ? "Configuration preview · no changes are applied" : tab === "quick" ? "Essential controls while you play" : tab === "performance" ? "Configure performance for your play style" : "Status and configuration preview"}</p>
@@ -131,29 +144,30 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
           {nested.id === "auto" && <p><strong>State vocabulary:</strong> Off · Running · Stopping… · Unknown · Needs configuration</p>}
           {nested.id === "disconnect" && <p><strong>No unplug clearance.</strong> Backend readiness and confirmation are not connected. A display change, missing observation or successful command does not establish safety.</p>}
           <p>Sample data only. No hardware operation is available.</p>
-          <button type="button" className="rg-expanded-back" data-ec-control="nested-back" onClick={back}>Back to {tabLabels[tab]}</button>
+          <Button type="button" className="rg-expanded-back" data-ec-control="nested-back" {...(native ? { preferredFocus: true } : {})} onClick={back}>Back to {tabLabels[tab]}</Button>
         </section> : <>
           {tab === "settings" && settings}
           {tab === "performance" && <p className="rg-expanded-context">Manual limit: 18 W · Auto TDP: Off / not configured · FPS provider: unavailable. All values are samples.</p>}
-          <div className="rg-expanded-grid" style={{ "--ec-columns": gridColumns } as CSSProperties}>
-            {items.map(item => <button type="button" key={item.id} data-ec-control={item.id} data-tone={item.tone ?? "quiet"} className="rg-expanded-tile"
+          <Container className="rg-expanded-grid" style={{ "--ec-columns": gridColumns } as CSSProperties} {...(native ? { "flow-children": "grid", preferredFocus: true } : {})}>
+            {items.map(item => <Button type="button" key={item.id} data-ec-control={item.id} data-tone={item.tone ?? "quiet"} className="rg-expanded-tile"
+              {...(native ? { preferredFocus: item.id === restoreTarget(items.map(tile => tile.id), memory.current[tab]), onGamepadFocus: () => { memory.current[tab] = item.id; } } : {})}
               style={{ gridColumn: item.wide && columns >= 3 ? "span 2" : undefined }}
               aria-label={`${item.title}: ${item.value}. ${item.detail}. Sample data. View details.`}
               onFocus={() => { memory.current[tab] = item.id; }} onClick={() => { launcher.current = item.id; setNested(item); }}>
               <Icon id={item.id}/><span className="rg-expanded-label">{item.title}</span>
               <span className="rg-expanded-value">{item.tone === "warning" ? "⚠ " : ""}{item.value}</span>
               <span className="rg-expanded-detail">{item.detail}{longReasons && item.tone === "unavailable" ? " — Provider observations are unavailable in this synthetic preview. No capability or successful operation can be inferred from the displayed sample." : ""}</span>
-            </button>)}
-          </div>
+            </Button>)}
+          </Container>
           <div className="rg-expanded-summary">Sample scenario · eGPU connected · external controller active<br/>Connection status does not establish rendering or disconnect readiness.</div>
         </>}
       </div>
       <footer className="rg-expanded-footer" data-ec-footer>
-        <button type="button" aria-label="Previous tab (LB equivalent, Q)" onClick={() => switchTab(-1)}>LB</button>
-        <button type="button" aria-label="Next tab (RB equivalent, E)" onClick={() => switchTab(1)}>RB</button>
+        <Button type="button" aria-label="Previous tab (LB equivalent, Q)" onClick={() => switchTab(-1)}>LB</Button>
+        <Button type="button" aria-label="Next tab (RB equivalent, E)" onClick={() => switchTab(1)}>RB</Button>
         <span>{native ? "Switch tab" : "Switch tab · Q / E"}</span><span>{native ? "D-pad Navigate · A Select" : "Arrows Navigate · Enter Select"}</span>
-        <button type="button" onClick={back}>B {nested ? "Back" : "Close"}{native ? "" : " · Esc"}</button>
+        <Button type="button" onClick={back}>B {nested ? "Back" : "Close"}{native ? "" : " · Esc"}</Button>
       </footer>
-    </div>
+    </Container>
   </div>;
 }

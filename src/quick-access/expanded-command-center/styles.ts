@@ -3,6 +3,9 @@ export const expandedStyles = `
 .rg-expanded-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.44);z-index:10;display:flex;align-items:center;padding-left:2vw;color:#f4f7fb;font-family:Arial,sans-serif}
 .rg-expanded{box-sizing:border-box;width:53vw;height:82vh;display:flex;flex-direction:column;min-width:0;border:1px solid #496379;border-radius:18px;background:linear-gradient(145deg,rgba(17,36,52,.98),rgba(5,17,27,.98));box-shadow:0 16px 60px #0008;overflow:hidden;font-size:15px}
 .rg-expanded *{box-sizing:border-box}
+.rg-expanded{container-type:inline-size;container-name:rg-menu}
+.rg-expanded button,.rg-expanded [role=button]{min-width:0;width:auto;margin:0;line-height:1.3}
+.rg-expanded .gpfocus,.rg-expanded .gpfocuswithin,.rg-expanded button:focus{outline:2px solid #83e8ff;outline-offset:-3px}
 .rg-expanded button{font:inherit;color:inherit;cursor:pointer}
 .rg-expanded button:focus-visible{outline:3px solid #83e8ff;outline-offset:-4px;box-shadow:inset 0 0 18px #39d8ff25}
 .rg-expanded-brand{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:15px 22px 12px;font-size:22px;font-weight:700}
@@ -29,4 +32,14 @@ export const expandedStyles = `
 @media(max-height:800px) and (min-width:801px){.rg-expanded-brand{padding:10px 16px;font-size:19px}.rg-expanded-tab{min-height:60px;padding:5px 2px;font-size:12px!important}.rg-expanded-tab svg{width:26px;height:26px}.rg-expanded-content{padding:12px 16px}.rg-expanded h2{font-size:22px}.rg-expanded-context{margin-bottom:10px;font-size:13px}.rg-expanded-tile{padding:10px;gap:5px;min-height:132px}.rg-expanded-tile svg{width:26px;height:26px}.rg-expanded-label{font-size:14px}.rg-expanded-value{font-size:18px}.rg-expanded-detail{font-size:12px}.rg-expanded-summary{margin-top:8px;padding-top:8px;font-size:12px}.rg-expanded-footer{padding:9px 14px;gap:8px}}
 @media(max-width:800px){.rg-expanded-backdrop{padding-left:3vw}.rg-expanded{width:94vw;height:90vh}.rg-expanded-brand{font-size:18px}.rg-expanded-footer{gap:6px;padding:8px}.rg-expanded-tab{font-size:11px!important}.rg-expanded-label{font-size:14px}.rg-expanded-content{padding:12px}}
 @media(prefers-reduced-motion:no-preference){.rg-expanded-tab{transition:background .12s}}
+@container rg-menu (max-width:600px){
+ .rg-expanded-brand{padding:7px 12px;font-size:17px}.rg-expanded-demo{font-size:10px}
+ .rg-expanded-tabs{margin:0 8px}.rg-expanded-tab{min-height:46px;padding:4px 1px;font-size:10px!important;gap:3px}
+ .rg-expanded-tab svg{width:18px;height:18px}
+ .rg-expanded-content{padding:10px}.rg-expanded h2{font-size:18px}.rg-expanded-context{font-size:11px;margin-bottom:8px}
+ .rg-expanded-grid{gap:7px}.rg-expanded-tile{min-height:98px;padding:8px;gap:4px}
+ .rg-expanded-tile svg{width:18px;height:18px}.rg-expanded-label{font-size:12px}.rg-expanded-value{font-size:15px}.rg-expanded-detail{font-size:11px}
+ .rg-expanded-tile[data-tone=warning] .rg-expanded-value{font-size:14px}.rg-expanded-summary{font-size:11px;margin-top:7px;padding-top:7px}
+ .rg-expanded-footer{padding:6px 9px;gap:5px 8px;font-size:10px}.rg-expanded-footer button{min-height:28px;padding:4px 7px}
+}
 `;
