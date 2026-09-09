@@ -2,6 +2,7 @@
 
 No PCI configuration reads, process termination, subprocesses or sysfs writes.
 Router identity is inventory evidence, not a verified binding to a render GPU.
+Persistent hardware identifiers are omitted from the returned/public inventory.
 """
 import json
 from pathlib import Path
@@ -50,7 +51,6 @@ def collect(root=Path("/sys/bus/thunderbolt/devices")):
             "authorized": flag(node / "authorized"),
             "vendor": read(node / "vendor"), "device": read(node / "device"),
             "device_name": read(node / "device_name"),
-            "unique_id": read(node / "unique_id"),
             "nvm_version": read(node / "nvm_version")})
     # Detect disappearance/replacement during observation. This is not an atomic
     # snapshot, and even unchanged paths must never grant mutation authority.
