@@ -13,6 +13,7 @@ import {
   ButtonItem,
   ConfirmModal,
   DropdownItem,
+  Focusable,
   ToggleField,
   PanelSection,
   PanelSectionRow,
@@ -87,11 +88,16 @@ import {
   collectOptionalDiagnostics,
   shouldCollectOptionalDiagnostics,
 } from "./optional-diagnostics-refresh";
-import { quickAccessNavView } from "./quick-access-nav";
-import { QuickAccessNav } from "./quick-access-nav-row";
+import {
+  INITIAL_STACK,
+  backRoute,
+  currentRoute,
+  pushRoute,
+  quickAccessModules,
+} from "./quick-access/module-registry";
+import type { ModuleId, NavStack, Route, StatusId } from "./quick-access/module-registry";
+import { ModulesButton, ShellBody } from "./quick-access/shell";
 import { quickAccessSections } from "./quick-access-sections";
-import type { QuickAccessSectionId } from "./quick-access-sections";
-import { applySectionSelection, requestedSectionId } from "./quick-access-section-state";
 import { connectionProgress, refreshDelayForVisibility } from "./refresh-policy";
 import { canOfferForce, processReleaseOutcomeMessage } from "./process-release-ui";
 import {
@@ -546,10 +552,10 @@ function Content({ preflight, connection, shortcut }: { preflight: SleepPrefligh
   const [supportBusy, setSupportBusy] = useState(false);
   const [supportMessage, setSupportMessage] = useState("");
   const [showDiagnostics, setShowDiagnostics] = useState(false);
-  // The row target to return to when the System section closes. `showDiagnostics`
-  // stays the single source of truth for whether System is open; see
-  // quick-access-section-state.ts for why this is not a second copy of it.
-  const [chosenSection, setChosenSection] = useState<QuickAccessSectionId>("egpu");
+  // The approved layout replaces the icon row with a navigation stack. Command
+  // Center sits at the bottom and is never popped; Back delegates to Steam's own
+  // QAM Back once no internal level is left. See quick-access/module-registry.
+  const [navStack, setNavStack] = useState<NavStack>(INITIAL_STACK);
   const [showJourneyDetails, setShowJourneyDetails] = useState(false);
   const [presentationBusy, setPresentationBusy] = useState(false);
   const [presentationMessage, setPresentationMessage] = useState("");
@@ -1416,12 +1422,24 @@ function Content({ preflight, connection, shortcut }: { preflight: SleepPrefligh
     }, 0);
   }, []);
 
-  const selectSection = useCallback((id: QuickAccessSectionId) => {
-    const result = applySectionSelection({ showDiagnostics, chosen: chosenSection }, id);
-    if (result.refresh) void refresh(true);
-    setShowDiagnostics(result.next.showDiagnostics);
-    setChosenSection(result.next.chosen);
-  }, [chosenSection, refresh, showDiagnostics]);
+  // The Troubleshoot route is deliberately not wired here. Its content is the
+  // six surfaces the existing `showDiagnostics` boolean gates, and moving them
+  // behind a route is its own slice; opening an empty Troubleshoot destination
+  // would be a screen that claims to hold controls it does not have. The
+  // existing Troubleshooting control stays the way in until then.
+  const openRoute = useCallback((route: Route) => {
+    setNavStack((stack) => pushRoute(stack, route));
+  }, []);
+
+  const goBack = useCallback((): boolean => {
+    let delegated = false;
+    setNavStack((stack) => {
+      const result = backRoute(stack);
+      delegated = result.delegate;
+      return result.stack;
+    });
+    return delegated;
+  }, []);
 
   const toggleTroubleshooting = useCallback(() => {
     if (!showDiagnostics) {
@@ -1450,15 +1468,41 @@ function Content({ preflight, connection, shortcut }: { preflight: SleepPrefligh
     shortcutAvailable: controllerShortcutAvailable,
     healthKnown: payload?.health != null,
   });
-  const navView = quickAccessNavView(
-    sections, requestedSectionId({ showDiagnostics, chosen: chosenSection }),
-  );
+  const modules = quickAccessModules(sections);
+  const route = currentRoute(navStack);
+  const onCommandCenter = route.kind === "command-center";
+  // Read-only status destinations, kept distinct from the configuration
+  // modules: these open detail, never controls.
+  const statusEntries: Array<{ id: StatusId; title: string; detail: string }> = [
+    { id: "egpu", title: "eGPU status",
+      detail: label(payload?.inference.mode ?? "unknown") },
+    { id: "controller", title: "Controller status",
+      detail: controllerShortcutAvailable ? "Shortcut input available" : "Status unavailable" },
+  ];
   const sectionVisibility = quickAccessSectionVisibility(showDiagnostics);
 
   return (
     <>
       <style>{regearControlCss}</style>
+      <Focusable
+        // B pops one internal level; once none is left the press must reach
+        // Steam's own QAM Back, or the player is trapped inside the panel.
+        onCancelButton={() => { goBack(); }}
+        style={{ minWidth: 0 }}
+      >
       <div ref={statusAnchor} tabIndex={-1}>
+      {!onCommandCenter && (
+        <PanelSection>
+          <ShellBody
+            route={route}
+            modules={modules}
+            statusEntries={statusEntries}
+            onOpenModule={(id: ModuleId) => openRoute({ kind: "module", id })}
+            onOpenStatus={(id: StatusId) => openRoute({ kind: "status", id })}
+          >{null}</ShellBody>
+        </PanelSection>
+      )}
+      {onCommandCenter && (<>
       <PanelSection title="At a glance">
         <QuickAccessOverview
           summaryRef={statusFocusAnchor}
@@ -1475,7 +1519,16 @@ function Content({ preflight, connection, shortcut }: { preflight: SleepPrefligh
       </PanelSection>
 
       <PanelSection>
-        <QuickAccessNav view={navView} onSelect={selectSection} />
+        <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
+          <ModulesButton onOpen={() => openRoute({ kind: "modules" })} />
+        </div>
+        <ShellBody
+          route={route}
+          modules={modules}
+          statusEntries={statusEntries}
+          onOpenModule={(id: ModuleId) => openRoute({ kind: "module", id })}
+          onOpenStatus={(id: StatusId) => openRoute({ kind: "status", id })}
+        >{null}</ShellBody>
       </PanelSection>
 
       {payload?.connection_readiness && payload.connection_readiness.stage !== "disconnected" &&
@@ -1891,7 +1944,9 @@ function Content({ preflight, connection, shortcut }: { preflight: SleepPrefligh
           </ButtonItem>
         </PanelSectionRow>
       </PanelSection>}
+      </>)}
       </div>
+      </Focusable>
     </>
   );
 }
