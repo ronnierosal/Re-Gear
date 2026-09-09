@@ -16,6 +16,9 @@ from ..ports.presentation_activation import GamescopeUserContext
 
 
 DROPIN_NAME = "90-handheld-dock-mode.conf"
+# Plugin directory names this project shipped under before the current one.
+# A drop-in rendered for one of these is ours, not a player edit.
+SUPERSEDED_PLUGIN_NAMES = ("HandheldDockMode",)
 MAX_DROPIN_BYTES = 16 * 1024
 SHIM_MARKER = "Handheld Dock Mode Gamescope argument shim"
 SAFE_POSIX_PATH = re.compile(r"^/[A-Za-z0-9_.@+/-]+$")
@@ -97,7 +100,10 @@ class GamescopeIntegrationStore:
         return self._target
 
     def expected_text(self) -> str:
-        shim_directory = self._path_text(self._shim.parent)
+        return self._render(self._shim.parent)
+
+    def _render(self, shim_directory: Path) -> str:
+        shim_directory = self._path_text(shim_directory)
         state_root = self._path_text(self._state_root)
         path_value = (
             f"{shim_directory}:/usr/local/sbin:/usr/local/bin:"
@@ -109,6 +115,25 @@ class GamescopeIntegrationStore:
             f'Environment="PATH={path_value}"\n'
             f'Environment="HDM_STATE_ROOT={state_root}"\n'
         )
+
+    def _superseded_renderings(self) -> tuple[str, ...]:
+        """Renderings this project wrote under an earlier plugin directory name.
+
+        Renaming the plugin moves the shim directory, so every existing install
+        keeps a drop-in that no longer matches. Recognising our own prior output
+        lets activate() migrate it, while anything matching no known rendering is
+        still refused as a player edit.
+        """
+        current = self._plugin_root.name
+        renderings: list[str] = []
+        for name in SUPERSEDED_PLUGIN_NAMES:
+            if name == current:
+                continue
+            try:
+                renderings.append(self._render(self._plugin_root.parent / name / "bin"))
+            except ValueError:
+                continue
+        return tuple(renderings)
 
     def activation_fingerprint(self) -> str:
         if not self._shim_ready():
@@ -133,7 +158,14 @@ class GamescopeIntegrationStore:
             state_ready = self._owned_real_directory(self._state_root)
             error = ""
             if installed and not matches:
-                error = "managed_dropin_modified"
+                # Our own earlier rendering can be migrated; anything else is a
+                # player edit and stays refused.
+                superseded = managed_safe and actual in self._superseded_renderings()
+                error = (
+                    "managed_dropin_superseded"
+                    if superseded
+                    else "managed_dropin_modified"
+                )
             elif installed and not managed_safe:
                 error = "managed_dropin_unsafe"
             elif conflicts:
@@ -163,7 +195,7 @@ class GamescopeIntegrationStore:
             before = self.status()
             if before.ready:
                 return GamescopeIntegrationResult(False, before)
-            if before.error_code:
+            if before.error_code and before.error_code != "managed_dropin_superseded":
                 return GamescopeIntegrationResult(False, before)
             if not before.shim_ready:
                 return GamescopeIntegrationResult(
@@ -190,6 +222,10 @@ class GamescopeIntegrationStore:
                 )
                 if not before.installed:
                     self._atomic_write(self._target, self.expected_text())
+                elif before.error_code == "managed_dropin_superseded":
+                    self._atomic_write(
+                        self._target, self.expected_text(), replace=True
+                    )
             except (OSError, ValueError):
                 return GamescopeIntegrationResult(
                     False,
@@ -321,8 +357,8 @@ class GamescopeIntegrationStore:
                 current.mkdir(mode=mode)
                 self._own(current)
 
-    def _atomic_write(self, path: Path, value: str) -> None:
-        if path.is_symlink() or path.exists():
+    def _atomic_write(self, path: Path, value: str, *, replace: bool = False) -> None:
+        if path.is_symlink() or (path.exists() and not replace):
             raise ValueError("managed drop-in already exists")
         data = value.encode("utf-8")
         if len(data) > MAX_DROPIN_BYTES:
