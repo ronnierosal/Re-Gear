@@ -43,7 +43,8 @@ polish and pinned Safe Disconnect experiment.
 The same-size synthetic comparison uses a 1280×720 viewport and a measured
 678.39×590.39 panel. Both four and three columns show all controls without
 scrolling or text clipping; four is the preferred design. Native acceptance is
-still pending. No new package or deployment was performed for this preview.
+still pending. The preview pass made no package or deployment. The user subsequently authorized
+a combined UI/shortcut test package; 0.3.71 is being prepared separately.
 
 ## Run the browser preview
 
@@ -124,3 +125,13 @@ without buttons, responsive columns, clipping and keyboard navigation. The
 comparison files are `comparison-4-columns.png` and `comparison-3-columns.png`.
 These are browser previews, not after-deployment screenshots. The user's 0.3.69
 photo remains the native before evidence. Native after evidence is outstanding.
+
+## 0.3.71 test candidate
+
+Includes the denser native UI polish and batch-form Steam input callback repair.
+Default opening shortcut remains View / Back + Y; L3 + R3 is selectable in
+Settings > Open Re-Gear. Test opening after releasing both buttons completely,
+then LB/RB tabs, D-pad, A and B. Inspect dark focus, label separation, the Settings
+label and footer at native scale. Physical shortcut mapping and revised native
+appearance remain unverified until that trial. Expanded hardware tiles remain
+sample-only. The one-time identity rename is not included.
