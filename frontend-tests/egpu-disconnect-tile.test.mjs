@@ -353,7 +353,7 @@ test("an unnamed game is asked about and never offered a checkbox", () => {
   assert.equal(view.dialog.rememberLabel, null);
   assert.equal(view.dialog.relaunchLabel, null);
   assert.match(view.dialog.body, /could not identify which game/i);
-  assert.match(view.dialog.body, /Save your game first/i);
+  assert.match(view.dialog.body, /Save and close your game/i);
 });
 
 test("a game scan that failed is never presented as an empty screen", () => {
@@ -422,4 +422,34 @@ test("gameCloseDialog returns null unless a confirmation is required", () => {
     gameCloseDialog(prompt({ decision: "remembered" }), hades()),
     null,
   );
+});
+
+test("a game Re-Gear cannot name is not promised a close it cannot perform", () => {
+  // Without an app id there is nothing to terminate. Offering "Close and
+  // disconnect" would break the promise one second after making it.
+  const view = disconnectPresentation(
+    running({ code: "game_close.identity_unverified", remember_offered: false, relaunch_offered: false },
+      { identity_exact: false, title: "", app_id: "" }),
+  );
+
+  assert.equal(view.dialog.canCloseGame, false);
+  assert.equal(view.dialog.confirmLabel, "Try disconnect anyway");
+  assert.match(view.dialog.body, /cannot close it for you/i);
+  assert.match(view.dialog.body, /close your game, then try again/i);
+});
+
+test("a named game is the only case that promises to close it", () => {
+  const view = disconnectPresentation(running());
+
+  assert.equal(view.dialog.canCloseGame, true);
+  assert.equal(view.dialog.confirmLabel, "Close and disconnect");
+});
+
+test("an unfinished scan promises no close either", () => {
+  const view = disconnectPresentation(
+    status({ close_prompt: prompt({ code: "game_close.scan_incomplete", remember_offered: false, relaunch_offered: false }) }),
+  );
+
+  assert.equal(view.dialog.canCloseGame, false);
+  assert.equal(view.dialog.confirmLabel, "Disconnect anyway");
 });

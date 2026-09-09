@@ -86,6 +86,12 @@ export type GameCloseDialog = {
   relaunchLabel: string | null;
   /** Whether the reopen box starts ticked, from the player's stored answer. */
   relaunchChecked: boolean;
+  /** Whether Re-Gear can close the game itself.
+   *
+   * False when there is no app id to close -- an unnamed game, or a scan that
+   * did not finish. Confirming then runs the disconnect and nothing else, so a
+   * panel must not promise a close it cannot perform. */
+  canCloseGame: boolean;
   /** True when the catalog has reviewed evidence that closing loses progress.
    * A panel may emphasise this; it must not use it to hide the dialog. */
   progressAtRisk: boolean;
@@ -193,25 +199,30 @@ export function gameCloseDialog(
       rememberLabel: null,
       relaunchLabel: null,
       relaunchChecked: false,
+      canCloseGame: false,
       progressAtRisk: false,
     };
   }
 
   if (!named) {
     return {
-      title: "Close the running game?",
+      title: "Close your game first",
       body: [
         "A game is using the eGPU and has to close before it can be disconnected.",
-        "Re-Gear could not identify which game, so it cannot tell you whether closing it saves your progress, and cannot reopen it afterwards.",
-        "Save your game first.",
+        "Re-Gear could not identify which game, so it cannot close it for you, cannot tell you whether closing it saves your progress, and cannot reopen it afterwards.",
+        "Save and close your game, then try again.",
         SESSION_WARNING,
         KEEP_CABLE,
       ].join(" "),
-      confirmLabel: "Close and disconnect",
+      // Not "Close and disconnect": without an app id there is nothing to
+      // close, and offering a close that cannot happen is a promise broken
+      // one second after it is made.
+      confirmLabel: "Try disconnect anyway",
       cancelLabel: "Cancel",
       rememberLabel: null,
       relaunchLabel: null,
       relaunchChecked: false,
+      canCloseGame: false,
       progressAtRisk: prompt.progress_at_risk,
     };
   }
@@ -237,6 +248,7 @@ export function gameCloseDialog(
       ? `Reopen ${name} afterwards`
       : null,
     relaunchChecked: prompt.relaunch_requested,
+    canCloseGame: true,
     progressAtRisk: prompt.progress_at_risk,
   };
 }
