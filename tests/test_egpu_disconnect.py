@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import sys
 import unittest
 from pathlib import Path
@@ -11,18 +10,12 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
 from hdm import egpu_disconnect  # noqa: E402
-from hdm.adapters.steamos.drm_crtc import CardCrtcState, CrtcRecord  # noqa: E402
 from hdm.application.live_disconnect import LiveDisconnectStage  # noqa: E402
 from hdm.domain.filter_arm_sequence import (  # noqa: E402
     SESSION_TARGET,
     units_cleared_by,
 )
-from hdm.egpu_disconnect import (  # noqa: E402
-    NEXT_ACTION,
-    disconnect_snapshot_service,
-    observe_display,
-    present_addresses,
-)
+from hdm.egpu_disconnect import NEXT_ACTION  # noqa: E402
 from hdm.egpu_release import HolderScan  # noqa: E402
 
 
@@ -97,106 +90,6 @@ class UnitsClearedByTests(unittest.TestCase):
         self.assertEqual(cleared, ("gamescope-session.service",))
 
 
-class FakeEntry:
-    def __init__(self, exists: bool) -> None:
-        self._exists = exists
-
-    def is_dir(self) -> bool:
-        return self._exists
-
-
-class FakePciRoot:
-    """A bus that enumerates exactly the given addresses.
-
-    A real directory tree cannot stand in here: PCI addresses contain colons,
-    which Windows will not accept as a path component, and this test has to run
-    wherever the suite does.
-    """
-
-    def __init__(self, present) -> None:
-        self._present = set(present)
-
-    def __truediv__(self, name: str) -> FakeEntry:
-        return FakeEntry(name in self._present)
-
-
-class PresentAddressTests(unittest.TestCase):
-    def _enumerate(self, *addresses):
-        return patch.object(
-            egpu_disconnect, "PCI_DEVICE_ROOT", FakePciRoot(addresses)
-        )
-
-    def test_both_functions_are_reported_when_the_bus_has_them(self) -> None:
-        with self._enumerate(GPU, AUDIO):
-            self.assertEqual(present_addresses(GPU, AUDIO), (AUDIO, GPU))
-
-    def test_a_half_detached_device_reports_only_what_remains(self) -> None:
-        """This is the reading `reconcile` treats as needing recovery."""
-        with self._enumerate(GPU):
-            self.assertEqual(present_addresses(GPU, AUDIO), (GPU,))
-
-    def test_a_fully_removed_device_reports_nothing(self) -> None:
-        with self._enumerate():
-            self.assertEqual(present_addresses(GPU, AUDIO), ())
-
-
-class FakeProbe:
-    def __init__(self, states) -> None:
-        self._states = states
-
-    def observe(self, node):
-        return self._states[node]
-
-
-def crtc_state(node, *, committed=True, complete=True):
-    records = (CrtcRecord(98, 133 if committed else 0, committed, 3840, 2160),)
-    return CardCrtcState(node, "fake", records if complete else (), complete)
-
-
-class ObserveDisplayTests(unittest.TestCase):
-    def _observe(self, *, external, internal, scan):
-        probe = FakeProbe(
-            {"/dev/dri/card1": external, "/dev/dri/card0": internal}
-        )
-        with patch.object(egpu_disconnect, "DrmCrtcProbe", lambda: probe), patch.object(
-            egpu_disconnect, "scan_holders", lambda *a, **k: scan
-        ):
-            return observe_display(NODES, nodes_incomplete=False)
-
-    def test_the_reading_carries_both_displays_and_the_holders(self) -> None:
-        evidence = self._observe(
-            external=crtc_state("/dev/dri/card1"),
-            internal=crtc_state("/dev/dri/card0"),
-            scan=HolderScan(()),
-        )
-
-        self.assertEqual(evidence.external_committed, (98,))
-        self.assertTrue(evidence.external_complete)
-        self.assertIs(evidence.internal_committed, True)
-        self.assertEqual(evidence.client_holders, ())
-        self.assertTrue(evidence.client_scan_complete)
-
-    def test_an_incomplete_holder_scan_travels_into_the_evidence(self) -> None:
-        """An empty holder list from a scan that could not finish is not clear."""
-        evidence = self._observe(
-            external=crtc_state("/dev/dri/card1"),
-            internal=crtc_state("/dev/dri/card0"),
-            scan=HolderScan((), unreadable_processes=2),
-        )
-
-        self.assertEqual(evidence.client_holders, ())
-        self.assertFalse(evidence.client_scan_complete)
-
-    def test_an_unreadable_internal_panel_is_unknown_rather_than_absent(self) -> None:
-        evidence = self._observe(
-            external=crtc_state("/dev/dri/card1"),
-            internal=crtc_state("/dev/dri/card0", complete=False),
-            scan=HolderScan(()),
-        )
-
-        self.assertIsNone(evidence.internal_committed)
-
-
 class HolderProjectionTests(unittest.TestCase):
     def test_scan_completeness_reaches_the_coordinator(self) -> None:
         """Dropping it is what made an empty tuple read as a clear device."""
@@ -207,21 +100,6 @@ class HolderProjectionTests(unittest.TestCase):
         self.assertEqual(observation.units, ())
         self.assertFalse(observation.complete)
         self.assertFalse(observation.clear)
-
-
-class SelfExclusionTests(unittest.TestCase):
-    def test_the_disconnect_excludes_itself_from_its_own_client_scan(self) -> None:
-        """It holds the card open to keep DRM master while releasing the display.
-
-        Without this the scan sees this process holding the device and the
-        disconnect reports itself as the thing blocking the disconnect.
-        """
-        service = disconnect_snapshot_service()
-        scanner = service._discovery._egpu_clients
-
-        self.assertIn(os.getpid(), scanner._exclude_pids)
-        # Exactly this process, and nothing else.
-        self.assertEqual(scanner._exclude_pids, frozenset({os.getpid()}))
 
 
 class NextActionTests(unittest.TestCase):

@@ -58,38 +58,32 @@ import sys
 import time
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Callable
 
 from .adapters.steamos.cgroup_identity import observe_user_manager_cgroup
 from .adapters.steamos.device_filter import CgroupDeviceFilter
 from .adapters.steamos.device_removal import SysfsDeviceRemoval
-from .adapters.steamos.discovery import SteamOsDiscovery
-from .adapters.steamos.egpu_clients import EgpuClientDiscovery
-from .adapters.steamos.drm_crtc import DrmCrtcProbe
 from .adapters.steamos.drm_display_release import DrmDisplayRelease
 from .adapters.steamos.egpu_device_nodes import SteamOsEgpuDeviceNodeDiscovery
 from .adapters.steamos.owner_identity import observe_owner_identity, read_boot_hash
-from .adapters.steamos.peripherals import SteamOsPeripheralObservationAdapter
 from .adapters.steamos.session_restart import await_units_released
+from .delivery.live_disconnect_runtime import (
+    EXTERNAL_CARD,
+    STORE_ROOT,
+    disconnect_snapshot_service,
+    observe_display,
+    observe_removal,
+    present_addresses,
+)
 from .application.filter_arm import FilterArmCoordinator, HolderObservation
 from .application.live_disconnect import (
-    FreshRemovalObservation,
     LiveDisconnectService,
     LiveDisconnectStage,
 )
-from .application.safe_undock_evidence import build_safe_undock_evidence
-from .application.snapshot import SnapshotService
 from .delivery.device_filter_program import compile_device_filter
 from .delivery.removal_transaction_store import FileRemovalTransactionStore
-from .domain.display_release import DisplayReleaseEvidence
 from .domain.egpu_device_policy import DevicePolicyState, compose_egpu_device_policy
 from .domain.filter_arm_sequence import units_cleared_by
 from .domain.filter_authorization import authorize_parent_scope
-from .domain.removal_safety import (
-    RemovalSafety,
-    RemovalSafetyState,
-    assess_removal_safety,
-)
 from .egpu_release import (
     egpu_functions,
     node_paths,
@@ -101,97 +95,6 @@ from .egpu_release import (
 from .egpu_remove import removal_functions
 
 
-#: Where the durable removal record lives. Root-owned, outside any user's home.
-STORE_ROOT = Path("/var/lib/regear/egpu")
-PCI_DEVICE_ROOT = Path("/sys/bus/pci/devices")
-INTERNAL_CARD = "/dev/dri/card0"
-EXTERNAL_CARD = "/dev/dri/card1"
-
-
-def disconnect_snapshot_service() -> SnapshotService:
-    """The observation path, with this process excluded from the client scan.
-
-    The disconnect holds the eGPU's card node open while it keeps DRM master
-    to turn the external display off, so a scan taken inside that window sees
-    this process holding the device and reports `clients_active_or_protected`
-    -- the disconnect blocking itself. Observed on hardware: the client
-    appeared only once the release was held, and only this process could have
-    opened the node, because the filter was armed and enforced on the session's
-    cgroup at the time and this tool runs outside it.
-
-    Excluding only this pid is the narrow claim: this process will not be
-    surprised by the device going away, because it is the thing removing it.
-    Every other holder is still reported, and the exclusion is passed here at
-    the composition root rather than defaulted anywhere.
-    """
-    return SnapshotService(
-        SteamOsDiscovery(egpu_clients=EgpuClientDiscovery(exclude_pids=(os.getpid(),))),
-        peripheral_observation=SteamOsPeripheralObservationAdapter(),
-    )
-
-
-def observe_removal(service: SnapshotService) -> FreshRemovalObservation:
-    """Classify one fresh observation, carrying the identity it was taken over.
-
-    The identity travels with the verdict because the transaction refuses a
-    release and an assessment that describe different devices.
-    """
-    composed = build_safe_undock_evidence(service.observe())
-    evidence = composed.evidence
-    if evidence is None:
-        return FreshRemovalObservation(
-            RemovalSafety(RemovalSafetyState.EVIDENCE_INSUFFICIENT, composed.code),
-            "",
-            "",
-            "",
-        )
-    return FreshRemovalObservation(
-        assess_removal_safety(
-            evidence,
-            expected_attachment_binding=evidence.attachment_binding,
-            expected_generation=evidence.generation,
-            expected_sample_id=evidence.sample_id,
-        ),
-        evidence.attachment_binding,
-        evidence.generation,
-        evidence.sample_id,
-    )
-
-
-def observe_display(
-    nodes: tuple[str, ...],
-    *,
-    nodes_incomplete: bool,
-    external: str = EXTERNAL_CARD,
-    internal: str = INTERNAL_CARD,
-) -> DisplayReleaseEvidence:
-    """Read both displays and who holds the eGPU, as one reading.
-
-    The holder list covers every eGPU node rather than the card alone. That is
-    stricter than the decision needs -- a render-node holder cannot be
-    presenting to a display -- and being stricter about turning someone's
-    display off is the right direction to err in.
-    """
-    probe = DrmCrtcProbe()
-    outside = probe.observe(external)
-    inside = probe.observe(internal)
-    scan = scan_holders(nodes, nodes_incomplete=nodes_incomplete)
-    return DisplayReleaseEvidence(
-        external_committed=tuple(record.crtc_id for record in outside.committed),
-        external_complete=outside.complete,
-        internal_committed=inside.mode_committed,
-        client_holders=scan.units,
-        client_scan_complete=scan.complete,
-    )
-
-
-def present_addresses(gpu_bdf: str, audio_bdf: str) -> tuple[str, ...]:
-    """Which of the eGPU's functions the bus currently enumerates."""
-    return tuple(
-        address
-        for address in (audio_bdf, gpu_bdf)
-        if (PCI_DEVICE_ROOT / address).is_dir()
-    )
 
 
 #: What to do about each outcome. A refusal a reader cannot act on sends them
