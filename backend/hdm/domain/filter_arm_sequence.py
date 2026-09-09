@@ -168,6 +168,29 @@ def classify_holder_units(holder_units: tuple[str, ...]) -> RestartCoverage:
     )
 
 
+def units_cleared_by(unit: str, holders: tuple[str, ...]) -> tuple[str, ...]:
+    """Which observed holders a restart of `unit` is expected to release.
+
+    A target is not a holder. Holders are reported by their leaf cgroup name
+    and a systemd target has no cgroup, so nothing in a holder scan is ever
+    named `gamescope-session.target`. Waiting for the target's own name to
+    disappear therefore succeeded on the first scan, instantly and always,
+    without the session having been restarted at all -- observed on hardware,
+    where the sequence then re-observed and refused with the very holders the
+    restart was supposed to clear.
+
+    What a session-target restart actually clears is its member services, so
+    that is what a caller watches. A plain service clears itself.
+
+    Only approved members are ever named. An unapproved holder is refused by
+    `compose_restart_plan` and must not become something a caller waits for.
+    """
+    observed = set(holders)
+    if unit == SESSION_TARGET:
+        return tuple(sorted(observed & APPROVED_SESSION_REACHED))
+    return (unit,) if unit in observed else ()
+
+
 def compose_restart_plan(
     holder_units: tuple[str, ...], *, scan_complete: bool
 ) -> ArmRestartPlan:

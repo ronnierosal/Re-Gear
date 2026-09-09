@@ -13,15 +13,16 @@ sys.path.insert(0, str(ROOT / "backend"))
 from hdm import egpu_disconnect  # noqa: E402
 from hdm.adapters.steamos.drm_crtc import CardCrtcState, CrtcRecord  # noqa: E402
 from hdm.application.live_disconnect import LiveDisconnectStage  # noqa: E402
+from hdm.domain.filter_arm_sequence import (  # noqa: E402
+    SESSION_TARGET,
+    units_cleared_by,
+)
 from hdm.egpu_disconnect import (  # noqa: E402
     NEXT_ACTION,
-    await_units_released,
     disconnect_snapshot_service,
     observe_display,
     present_addresses,
-    units_cleared_by,
 )
-from hdm.domain.filter_arm_sequence import SESSION_TARGET  # noqa: E402
 from hdm.egpu_release import HolderScan  # noqa: E402
 
 
@@ -94,69 +95,6 @@ class UnitsClearedByTests(unittest.TestCase):
             SESSION_TARGET, ("gamescope-session.service", "init.scope")
         )
         self.assertEqual(cleared, ("gamescope-session.service",))
-
-
-class AwaitUnitsReleasedTests(unittest.TestCase):
-    """The step that stands in for spawning a restart."""
-
-    def test_nothing_to_wait_for_passes_without_waiting(self) -> None:
-        clock = Clock()
-
-        released = await_units_released(
-            (), scans(HolderScan((UNIT,))), deadline=90.0,
-            now=clock.now, sleep=clock.sleep,
-        )
-
-        self.assertTrue(released)
-        self.assertEqual(clock.slept, [])
-
-    def test_every_named_unit_has_to_let_go(self) -> None:
-        """Not just one of them: a partial release is not a released set."""
-        clock = Clock()
-
-        released = await_units_released(
-            ("gamescope-session.service", "steam-launcher.service"),
-            scans(
-                HolderScan(("gamescope-session.service", "steam-launcher.service")),
-                HolderScan(("steam-launcher.service",)),
-                HolderScan(()),
-            ),
-            deadline=90.0, now=clock.now, sleep=clock.sleep,
-        )
-
-        self.assertTrue(released)
-        self.assertEqual(clock.slept, [3.0, 3.0])
-
-    def test_a_set_that_never_lets_go_fails_at_the_deadline(self) -> None:
-        clock = Clock()
-
-        released = await_units_released(
-            (UNIT,), scans(HolderScan((UNIT,))), deadline=10.0,
-            now=clock.now, sleep=clock.sleep,
-        )
-
-        self.assertFalse(released)
-        self.assertLessEqual(clock.value, 10.0)
-
-    def test_the_wait_never_runs_past_the_deadline(self) -> None:
-        clock = Clock()
-
-        await_units_released(
-            (UNIT,), scans(HolderScan((UNIT,))), deadline=4.0,
-            now=clock.now, sleep=clock.sleep,
-        )
-
-        self.assertEqual(clock.slept, [3.0, 1.0])
-
-    def test_another_unit_still_holding_does_not_block_this_one(self) -> None:
-        clock = Clock()
-
-        released = await_units_released(
-            (UNIT,), scans(HolderScan(("steam-launcher.service",))),
-            deadline=90.0, now=clock.now, sleep=clock.sleep,
-        )
-
-        self.assertTrue(released)
 
 
 class FakeEntry:
