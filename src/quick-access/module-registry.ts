@@ -177,14 +177,9 @@ export function hasInternalLevel(stack: NavStack): boolean {
   return stack.length > 1;
 }
 
-/** Whether the diagnostics surfaces are actually on screen.
- *
- * `showDiagnostics` says the player opened them; it does not say they are
- * visible. On any pushed route the Command Center body is not rendered, so
- * collecting for surfaces nobody can see is work the player did not ask for.
- */
+/** Collect optional diagnostics only while their dedicated route is visible. */
 export function diagnosticsVisible(stack: NavStack, showDiagnostics: boolean): boolean {
-  return showDiagnostics && currentRoute(stack).kind === "command-center";
+  return showDiagnostics && currentRoute(stack).kind === "troubleshoot";
 }
 
 /** A fresh Quick Access entry starts at Command Center.

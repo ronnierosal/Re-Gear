@@ -113,12 +113,13 @@ export function PendingContent({ what }: { what: string }) {
   </div>;
 }
 
-export function ShellBody({ route, modules, children, onOpenModule, onOpenStatus, statusEntries }: {
+export function ShellBody({ route, modules, children, onOpenModule, onOpenStatus, statusEntries, onOpenTroubleshoot }: {
   route: Route;
   modules: ModuleEntry[];
   /** Command Center body, supplied by the caller during migration. */
   children: ReactNode;
   statusEntries: Array<{ id: StatusId; title: string; detail: string }>;
+  onOpenTroubleshoot?(): void;
   onOpenModule(id: ModuleId): void;
   onOpenStatus(id: StatusId): void;
 }) {
@@ -126,6 +127,8 @@ export function ShellBody({ route, modules, children, onOpenModule, onOpenStatus
     return <>
       <RouteHeader title="Modules" reason={null} />
       <ModulesList modules={modules} onOpen={onOpenModule} />
+      {onOpenTroubleshoot && <NavRow title="Troubleshoot" detail="Diagnostics and support"
+        blocked={false} focusKey="troubleshoot" onClick={onOpenTroubleshoot} />}
     </>;
   }
   if (route.kind === "module") {
