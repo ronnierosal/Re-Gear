@@ -8,6 +8,17 @@ Use Re-Gear's bounded snapshot and support preview described in
 [Diagnostics](https://github.com/ronnierosal/Re-Gear/blob/main/docs/DIAGNOSTICS.md).
 Do not begin by posting raw logs or hardware identities.
 
+## Focused troubleshooting and lessons
+
+- [Ally X and GPD G1](Ally-X-and-GPD-G1-Troubleshooting): display/audio, retained resources, shutdown and later source fixes.
+- [Raikiri II extra buttons](Raikiri-II-Troubleshooting): transport differences, vendor-event research and mapping limits.
+
+Each guide separates who/what/where/when, evidence and likely cause, safe steps,
+verification status and unresolved work. Contributors can use the repository
+[troubleshooting template](https://github.com/ronnierosal/Re-Gear/blob/main/docs/templates/WIKI_TROUBLESHOOTING_TEMPLATE.md)
+for another major feature when useful evidence exists. Do not publish empty
+templates or treat a completed form as current hardware validation.
+
 ## Common symptoms
 
 ### The eGPU is connected but Re-Gear does not recognize it

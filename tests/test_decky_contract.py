@@ -20,6 +20,22 @@ from scripts.build_plugin import (  # noqa: E402
 
 
 class DeckyContractTests(unittest.TestCase):
+    def test_publish_image_uses_canonical_svg_listing_derivative(self):
+        manifest = json.loads((ROOT / "plugin.json").read_text(encoding="utf-8"))
+        self.assertEqual(manifest["publish"]["image"], "https://raw.githubusercontent.com/ronnierosal/Re-Gear/main/docs/images/re-gear-listing-icon.png")
+        logo = (ROOT / "docs/images/re-gear-listing-icon.png").read_bytes()
+        self.assertEqual(logo[:8], b"\x89PNG\r\n\x1a\n")
+        width, height = int.from_bytes(logo[16:20], "big"), int.from_bytes(logo[20:24], "big")
+        self.assertEqual((width, height), (512, 512))
+        self.assertEqual(logo[25], 6)  # RGBA, preserving transparent background.
+        import hashlib
+        provenance = json.loads((ROOT / "docs/images/re-gear-listing-icon.json").read_text(encoding="utf-8"))
+        self.assertEqual(provenance["source"], "src/assets/regear-icon.svg")
+        source = (ROOT / provenance["source"]).read_text(encoding="utf-8").replace("\r\n", "\n").encode()
+        self.assertEqual(hashlib.sha256(source).hexdigest(), provenance["source_sha256_lf"])
+        self.assertEqual(hashlib.sha256(logo).hexdigest(), provenance["output_sha256"])
+        self.assertEqual(provenance["renderer"], "@resvg/resvg-js@2.6.2")
+
     def test_manifest_requests_root_for_observation_and_sleep_guard(self):
         manifest = json.loads((ROOT / "plugin.json").read_text(encoding="utf-8"))
         self.assertEqual(manifest["name"], "Re-Gear")
@@ -246,7 +262,7 @@ class DeckyContractTests(unittest.TestCase):
         self.assertNotIn("    undefined,\n    { strTitle", warning)
 
     def test_decky_archive_has_one_top_level_plugin_directory(self):
-        self.assertEqual(PLUGIN_DIRECTORY, "HandheldDockMode")
+        self.assertEqual(PLUGIN_DIRECTORY, "Re-Gear")
         self.assertEqual(
             archive_name(ROOT / "plugin.json"),
             f"{PLUGIN_DIRECTORY}/plugin.json",

@@ -68,8 +68,9 @@ Any measurable game-performance regression attributable to Re-Gear is a defect.
 
 Observed placement is not a complete player experience. Re-Gear's target model uses
 a separate health dimension: **Ready**, **Recovering**, **Degraded**, or
-**Attention Required**. Its future typed aggregation will report whether
-verified display, input, audio, eGPU/link, and session evidence is usable; it
+**Attention Required**. Implemented typed aggregation uses available observations;
+independent controller/audio inputs and production integration retain their own
+validation gates in [Roadmap](ROADMAP.md). It
 must never guess a healthy experience merely because a device is present.
 Detailed diagnostics remain optional and technical evidence stays out of the
 happy path.
@@ -95,26 +96,32 @@ result is acknowledged, the same control may request a normal shutdown from a
 fresh idle Portable observation. “Safe” means the Ally has completely powered
 off; this workflow does not promise powered live removal.
 
-TDP control and optional Auto TDP are now an active development workstream;
-see [TDP control](TDP_CONTROL.md) for intended behavior, research and evidence
-gates. They are not yet available or hardware validated. Current scope does
-not include automatic graphics tuning, game
-configuration writes, Steam Library badges, travel automation, or controller
-wake. Future work must place those behind narrow telemetry, device-profile,
-and game-adapter boundaries and preserve the same recovery and explicit-consent
-rules.
+Manual TDP and optional Auto TDP controls are implemented in the development
+source. Provider support, installed behavior and hardware validation remain
+separately gated; see [TDP control](TDP_CONTROL.md). Saving preferences never
+activates control. This does not authorize automatic graphics tuning, game
+configuration writes, travel automation, or controller wake.
 
-**Implemented foundation only:** Offline Readiness is a pure local classifier
-for supplied categorical install, download, entitlement, cloud-save, storage,
-and known online-check evidence. Its strongest positive result is **ready to
-try offline**, never a launch guarantee. It has no Steam collector, account or
-game-title delivery, persistence, UI, or automation.
+Offline Readiness combines bounded local Steam evidence with selected-game
+guidance, confidence labels, and temporary game-tile badges. A reviewed,
+local-only, identity-minimized source must meet the bounded-cost admission
+contract; missing or stale evidence remains uncertain. There is no automatic
+game launch, network change, or offline-launch guarantee. See
+[source evidence and limits](OFFLINE_EVIDENCE_SOURCE_REVIEW.md),
+[UI contract](OFFLINE_READINESS_UI.md), and the confidence semantics below.
 
-**Implemented admission contract only:** a future source may supply evidence
-only after a reviewed, local-only, identity-minimized, benchmarked declaration
-passes its bounded-cost gate. Results must be fresh; stale, unreviewed, or
-cost-unverified evidence is **Unknown**, never offline-ready. No collector is
-implemented or authorized.
+## Command Center and module direction
+
+The approved interface direction puts immediate controls and status in Command
+Center, with deeper configuration in Modules. The complete rebuild remains in
+development; existing Quick Access navigation is not evidence that the new shell
+has shipped. See [Wiki/interface structure](WIKI_INFORMATION_ARCHITECTURE.md) for
+the approved layout and screenshot policy, and [UI specification](UI_SPEC.md)
+for implemented interaction contracts.
+
+eGPU, performance and controller controls share existing state and guarded action
+ownership. Read-only status links never mutate hardware. Unsupported capabilities
+remain unavailable; a prepared Safe Disconnect tile does not authorize live unplug.
 
 ## Interrupted docked-sleep recovery policy
 
@@ -143,43 +150,22 @@ adapter, recovery verification, and supervised hardware validation.
 Re-Gear is a Decky Loader-native plugin. Its player interface uses Decky's Quick
 Access components and typed Decky RPC. The Python backend runs under Decky's
 managed plugin lifecycle; there is no separate web dashboard or general-purpose
-command endpoint. Root privilege is isolated to narrow observation and future
+command endpoint. Root privilege is isolated to narrow observation and explicitly
 approved mechanisms, while policy remains pure and testable.
 
-## Initial scope
+## Initial scope and current evidence
 
-The first certified profile is:
+Initial work established read-only discovery, sleep protection, and guarded
+process-release foundations. Later development added guarded display transitions,
+audio handling, support export, local Offline Readiness delivery and power
+controls. These are not all equally validated or installed.
 
-- ASUS ROG Ally X
-- SteamOS
-- GPD G1 with AMD Radeon RX 7600M XT
-- TV connected through the G1 display output
-
-Milestone 0.1 implements reliable read-only discovery and diagnostics. The first
-approved 0.2 mechanism is a reversible login1 sleep-inhibitor lease for the G1;
-display/GPU transitions remain unavailable. Guarded non-game process release is
-implemented as an experimental Decky-native 0.2 flow with redacted inspection,
-explicit approval, durable journaling, mandatory rescans, and separate force
-confirmation; supervised disposable-process validation remains pending.
-
-The proposed eGPUBridge-derived feature selection, including sleep blocking and
-guarded process closure, is documented in
-[eGPUBridge feature review for Re-Gear](EGPUBRIDGE_FEATURE_REVIEW.md). These are 0.2
-candidates. The sleep guard and guarded process release are now explicitly in
-0.2 scope; other mutation boundaries remain closed until their own design and
-validation gates pass.
-The complementary [Steam sleep preflight](ADR_STEAM_SLEEP_PREFLIGHT.md) is now
-implemented and has passed its non-sleep lease-lifecycle proof. Sleep protection
-is not considered complete until its supervised request proof also passes.
-Read-only responsiveness instrumentation, adaptive Decky refresh, progressive
-connection states, and the [privacy-safe support bundle](SUPPORT_BUNDLE.md) are
-also implemented in 0.2. They do not authorize display/GPU mutation or live
-hardware removal.
-
-The reconciled product ordering and evidence status are maintained in the
-[authoritative roadmap](ROADMAP.md). Its staged
-[deployment and validation strategy](DEPLOYMENT_VALIDATION.md) is a release
-gate for hardware-facing work.
+Exact profiles and certification limits belong in [Hardware support](HARDWARE_SUPPORT.md).
+The [roadmap](ROADMAP.md) and [dated reconciliation](DOCUMENTATION_CLEANUP.md)
+link current source evidence; historical device records remain dated. The
+[deployment strategy](DEPLOYMENT_VALIDATION.md) defines separate hardware gates.
+Neither the growing implementation nor the live-disconnect development objective
+changes the current physical-disconnect safety contract.
 
 ## Non-goals for the initial release
 
@@ -203,5 +189,5 @@ bound to the displayed account/build and a fresh matching recheck. Confirmation
 lasts at most 24 hours in the current plugin session, with a Forget control.
 No automatic game launch, network change, external query, or persistent play
 history is introduced. Source handling and limits are owned by
-OFFLINE_EVIDENCE_SOURCE_REVIEW.md. Earlier foundation-only snapshots above do
-not describe this later frontend delivery.
+OFFLINE_EVIDENCE_SOURCE_REVIEW.md. This delivery extends the pure classifier without changing its conservative
+backend evidence contract.

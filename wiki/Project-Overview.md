@@ -1,49 +1,46 @@
 # Project overview
 
 **Audience:** anyone evaluating or contributing to Re-Gear<br>
-**Reviewed:** 2026-09-06<br>
-**Maturity:** product and architecture are defined; capabilities remain evidence-gated
+**Reviewed:** 2026-09-08<br>
+**Maturity:** shared product direction with capabilities at different development stages
 
-The authoritative scope is the repository
-[product definition](https://github.com/ronnierosal/Re-Gear/blob/main/docs/PRODUCT.md)
-and [architecture](https://github.com/ronnierosal/Re-Gear/blob/main/docs/ARCHITECTURE.md).
+Re-Gear is a Decky Loader companion for console-like SteamOS handheld gaming.
+Its [product definition](https://github.com/ronnierosal/Re-Gear/blob/main/docs/PRODUCT.md)
+and [architecture](https://github.com/ronnierosal/Re-Gear/blob/main/docs/ARCHITECTURE.md)
+own scope and technical contracts.
 
-## What Re-Gear is trying to solve
+## The experience
 
-Docking a handheld with an eGPU is not one binary event. The eGPU may be
-physically present while the game still renders on the internal GPU; an external
-connector may be connected while Gamescope is using the internal panel; and a
-running game may make an otherwise valid display change unsafe.
+The project brings everyday controls and understandable system status together:
+handheld and docked play, performance and power, controllers, offline readiness,
+and guided recovery. Different areas have different implementation and validation
+levels; see [Current State](Current-State).
 
-Re-Gear models those facts independently, then uses one guarded workflow:
+The [Command Center](Command-Center) is the approved direction for immediate
+controls and status. Modules provide deeper configuration. Technical detail
+belongs in optional troubleshooting, while the main experience answers what is
+available, what needs attention, and what action is supported.
 
-```text
-DETECT -> VALIDATE -> PLAN -> PREPARE -> APPLY -> VERIFY -> COMMIT
-                                            |
-                                            +-> ROLL BACK or retain known-good state
-```
+## Shared principles
 
-Unknown or conflicting evidence fails closed. An already-satisfied request is a
-no-op. A failed transition must retain or restore a known-good state instead of
-claiming success from an attempted command.
+- **Games first:** keep background work bounded and avoid unnecessary activity during play.
+- **Evidence before action:** observe device, display, render, input, game and provider state independently.
+- **One guarded path:** common controls and shortcuts share authorization, verification and recovery behavior.
+- **Capability-based support:** profiles and adapters hold exact device requirements; unknown hardware does not inherit support.
+- **Honest status:** an attempted command, passed simulation, installed build and validated device result mean different things.
 
-## Design direction
+## Scope limits
 
-Core policy should ask what the current host, eGPU, display path, and session can
-do. Product-specific identity and quirks belong in profiles or platform
-adapters. Each validated hardware profile remains intentionally exact while
-additional profiles should be added through capabilities and bounded mechanisms,
-not scattered product-name branches.
+Current scope does not include Windows or arbitrary desktop Linux support,
+universal hardware compatibility, moving a running game between GPUs, arbitrary
+overclocking/fan control/driver installation, or a cloud plugin marketplace.
+Physical live eGPU removal remains unsupported while its separately gated
+development continues.
 
-## Current non-goals
-
-- Windows support or arbitrary desktop Linux distributions
-- support for every handheld, dock, or eGPU by inference
-- physical live eGPU removal without capability-specific validation
-- moving a running game between GPUs
-- arbitrary GPU overclocking, fan control, or driver installation
-- cloud services or a general plugin ecosystem
-
-Re-Gear is not a port of eGPUBridge. Prior eGPUBridge observations are reference
-evidence; native Re-Gear behavior must earn its own implementation and hardware
-proof.
+**Compatibility note:** Re-Gear was formerly Handheld Dock Mode. New repository
+builds use the `Re-Gear` Decky directory. Older test installs may still use
+`HandheldDockMode` and require the separately supervised
+[cutover procedure](https://github.com/ronnierosal/Re-Gear/blob/main/docs/IDENTITY_CUTOVER.md);
+merged code does not migrate an installed device. Internal state identifiers and
+legacy Wiki slugs remain stable. eGPUBridge provides reference evidence; Re-Gear
+must establish its own behavior and hardware proof.

@@ -21,6 +21,17 @@ ARCHIVE_NAME = "HandheldDockMode-0.2.0.zip"
 
 
 class ValidationArtifactTests(unittest.TestCase):
+    def test_new_root_and_mixed_root_verification(self):
+        with tempfile.TemporaryDirectory() as value:
+            root = Path(value)
+            archive = self._artifact(root, plugin_root="Re-Gear")
+            self.assertEqual(verify_validation_artifact(root)["state"], "verified")
+            with zipfile.ZipFile(archive, "a") as package:
+                package.writestr("HandheldDockMode/plugin.json", "{}")
+            digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+            (root / "SHA256SUMS.txt").write_text(f"{digest}  {archive.name}\n")
+            self.assertEqual(verify_validation_artifact(root)["reason"], "artifact.package_layout_invalid")
+
     def test_regear_archive_preserves_legacy_install_layout(self):
         with tempfile.TemporaryDirectory() as value:
             root = Path(value)
@@ -39,16 +50,17 @@ class ValidationArtifactTests(unittest.TestCase):
         revision: str = REVISION,
         build_revision: str | None = None,
         version: str = "0.2.0",
+        plugin_root: str = "HandheldDockMode",
     ) -> Path:
         archive = directory / ARCHIVE_NAME
         build_revision = build_revision or revision
         with zipfile.ZipFile(archive, "w") as value:
-            value.writestr("HandheldDockMode/plugin.json", "{}")
+            value.writestr(f"{plugin_root}/plugin.json", "{}")
             value.writestr(
-                "HandheldDockMode/package.json", json.dumps({"version": version})
+                f"{plugin_root}/package.json", json.dumps({"version": version})
             )
             value.writestr(
-                "HandheldDockMode/build_info.json",
+                f"{plugin_root}/build_info.json",
                 json.dumps(
                     {
                         "schema_version": 1,

@@ -2,41 +2,52 @@
 
 **Audience:** players, testers, and contributors<br>
 **Reviewed:** 2026-09-08<br>
-**Maturity:** experimental development; no general public release
+**Maturity:** experimental development; no supported public release
 
-Welcome to the player and contributor guide for Re-Gear, a Decky Loader companion for SteamOS handhelds. Re-Gear is designed for SteamOS handheld PCs across hardware vendors. It explains system state and provides capability-aware docking, recovery, and offline play guidance. Features depend on the device profile and available evidence; the project is not limited in scope to one handheld or eGPU brand.
+> **Release status — 2026-09-08:** No public supported Re-Gear release is available.
+> Current [GitHub releases](https://github.com/ronnierosal/Re-Gear/releases) are
+> development candidates; ordinary users must not install them. The
+> [Manual Installation](Manual-Installation) guide is conditional on a future
+> verified, supported release ZIP and published checksum.
 
-## Our core goal
+<!-- Keep this dated status aligned with Getting-Started.md. When a supported
+release is verified, update both with its exact release, checksum and support scope.
+Only add real Quick Access screenshots from an installed, visually verified build;
+record the build and capture context. Do not use mockups or generated images. -->
 
-**Make SteamOS handheld PCs feel more like consoles:** help players get into their games, move between handheld and docked play, and recover from problems with less troubleshooting, across hardware vendors.
-
-Our immediate priorities are **reliability and recovery**, **offline play confidence**, and **everyday controller-friendly usability**. See the [Feature Roadmap](Feature-Roadmap) for the focus order and development status.
-
-## Featured guides
-
-- **[Confirmed Hardware Testing](Confirmed-Hardware-Testing)** — tested devices, observed successes, failed gates, and remaining validation.
-- **[Offline Play Readiness](Offline-Readiness)** — where to find checks, what the badges mean, and preparing a game before leaving Wi-Fi.
-
-- **[Help Improve Re-Gear](Help-Improve-Re-Gear)** — report a problem, collect reviewed diagnostics, and contribute useful compatibility evidence.
+Re-Gear is a Decky Loader companion for SteamOS handheld gaming: clear status,
+useful controls, and guided recovery across handheld and docked play. The
+[README](https://github.com/ronnierosal/Re-Gear) introduces the project; this Wiki
+explains its features, limitations, and evidence.
 
 ## Start here
 
-- [Getting Started](Getting-Started): availability and controlled testing.
-- [Current State](Current-State): implemented features and remaining validation.
-- [Supported Hardware](Supported-Hardware): the exact profiles with evidence.
-- [Safety and eGPU Handling](Safety-and-eGPU-Handling): connection, sleep, and shutdown boundaries.
-- [Offline Play Readiness](Offline-Readiness): what game badges can and cannot tell you.
-- [Troubleshooting](Troubleshooting): common symptoms and reporting a bug.
-- [FAQ](FAQ): quick answers.
+- [Getting Started](Getting-Started) — availability and controlled testing.
+- [Manual Installation](Manual-Installation) — the future verified-release ZIP route; no public supported release is available yet.
+- [Current State](Current-State) — what is merged, what is still in development, and what has been tested.
+- [Feature Roadmap](Feature-Roadmap) — focus areas and the gates ahead.
+- [Supported Hardware](Supported-Hardware) and [Confirmed Hardware Testing](Confirmed-Hardware-Testing) — exact compatibility and recorded results.
 
-## For contributors
+## Feature guides
 
-Read [Project Overview](Project-Overview), [How Re-Gear Works](How-HDM-Works), [Development](Development), and [Diagnostics and Privacy](Diagnostics-and-Privacy). [Issues Fixed](Issues-Fixed) links selected changes to their evidence; the [historical docking incident](Ally-X-and-GPD-G1-Docking-Incident) explains earlier failures.
+| Guide | What you will find |
+|---|---|
+| [Command Center](Command-Center) | Quick controls, status links, modules, and the interface rebuild |
+| [eGPU and Docking](eGPU-and-Docking) | Placement, guarded display changes, disconnect development, and recovery limits |
+| [Performance and Power](Performance-and-Power) | Manual TDP, Auto TDP, provider requirements, and validation |
+| [Controllers](Controllers) | Navigation, shortcuts, extra buttons, and capability research |
+| [Offline Readiness](Offline-Readiness) | Selected-game checks, confidence labels, badges, and offline-test limits |
 
-The [repository README](https://github.com/ronnierosal/Re-Gear) introduces the project.
-This Wiki explains behavior; [repository contracts](https://github.com/ronnierosal/Re-Gear/blob/main/docs/INDEX.md)
-and the [dated source/evidence snapshot](https://github.com/ronnierosal/Re-Gear/blob/main/docs/STATUS_SNAPSHOT_2026-09-08.md)
-own implementation and validation claims. A newer candidate is not automatically
-installed or hardware certified.
+## Help and contribution
 
-> **eGPU safety:** follow the verified disconnect policy for your exact hardware. Current Re-Gear testing does not establish physical live-removal support. Restore or retain a known-good state and fully shut down before disconnecting. A Portable display or an accepted shutdown request does not prove safe removal.
+[Troubleshooting](Troubleshooting), [FAQ](FAQ), and
+[Diagnostics and Privacy](Diagnostics-and-Privacy) explain common questions and
+reviewed diagnostic collection. [Help Improve Re-Gear](Help-Improve-Re-Gear)
+describes useful reports. Contributors start with [Project Overview](Project-Overview),
+[How Re-Gear Works](How-HDM-Works), and [Development](Development).
+
+Repository [contracts and evidence](https://github.com/ronnierosal/Re-Gear/blob/main/docs/INDEX.md)
+remain authoritative. A Wiki guide or screenshot is not a hardware-support claim.
+For current eGPU handling, read [Safety and eGPU Handling](Safety-and-eGPU-Handling):
+current testing does not establish live unplug safety; complete shutdown remains
+required before physical disconnect.

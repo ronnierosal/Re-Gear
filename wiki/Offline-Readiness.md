@@ -1,10 +1,10 @@
 # Offline Play Readiness
 
 **Audience:** players, testers, and contributors<br>
-**Reviewed:** 2026-09-06<br>
+**Reviewed:** 2026-09-08<br>
 **Maturity:** experimental development; no general public release
 
-Newer Re-Gear development candidates show selected-game readiness guidance using local Steam evidence. See the [current candidate](https://github.com/ronnierosal/Re-Gear#-current-status) and [source review](https://github.com/ronnierosal/Re-Gear/blob/main/docs/OFFLINE_EVIDENCE_SOURCE_REVIEW.md).
+Re-Gear development source includes selected-game readiness guidance using local Steam evidence. See [Current State](Current-State) and [source review](https://github.com/ronnierosal/Re-Gear/blob/main/docs/OFFLINE_EVIDENCE_SOURCE_REVIEW.md).
 
 ## Where to find it
 
@@ -12,12 +12,28 @@ On a development build containing Offline Readiness delivery, use Re-Gear's Quic
 
 ## What the statuses mean
 
-| Status or evidence | How to interpret it |
+The selected-game confidence layer uses these labels:
+
+| Status | How to interpret it |
 |---|---|
-| Needs attention | A reported condition, such as an update or cloud conflict, needs review |
-| Online check needed / unknown / unavailable | Re-Gear lacks sufficient current evidence; do not interpret it as ready |
-| Ready to try offline | A cautious readiness label, not proof of a successful launch; limited Steam evidence alone cannot establish it |
-| Installed or Steam ready-to-launch | Installation/launch metadata only; not proof that a launcher, entitlement, or network requirement is satisfied |
+| Needs preparation | Steam reports a preparation or authorization blocker; inspect the explanation |
+| Likely offline-ready | Independent local preparation and cached single-player internet-compatibility evidence support trying; no launch guarantee |
+| Tested offline | Your explicit report for the matching account/game build, retained only in the current plugin session for at most 24 hours |
+| Unverified | Evidence is missing, stale, unavailable, or no longer matches the game context |
+
+The underlying readiness classifier also uses cautious terms such as **ready to
+try offline**, **online check needed**, and **needs attention**. These are not
+automatic offline-test results. An installed game or Steam ready-to-launch flag
+does not prove entitlement, launcher behavior, or network independence.
+
+After you independently reach playable content with the internet disconnected,
+the panel can accept a confirmation only after a fresh matching check. It is
+your attestation, not a test Re-Gear ran. Use **Forget this offline test** to
+remove it; a plugin restart or expired/mismatched context invalidates it.
+
+**Priority:** ongoing offline confidence and usability validation. Native Home,
+Library, controller behavior, and exact-game offline launches remain separate
+acceptance evidence; the source implementation does not establish those results.
 
 ## Before leaving Wi-Fi
 

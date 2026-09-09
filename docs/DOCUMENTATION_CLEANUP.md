@@ -1,8 +1,87 @@
-# Documentation cleanup inventory — 2026-09-08
+# Documentation reconciliation and follow-ups — 2026-09-08
 
-This is a bounded follow-up inventory, not product work or an assertion of
-current installed behavior. The original inventory inspected `e73f57d` (product
-base `8de0ed4`). The reconciliation below reviewed merged main `5b18edf`.
+## Latest source review
+
+Ronnie requested a generic overall-project README, detailed module Wiki guides,
+future actual Command Center screenshots, and consistency with internal notes.
+This review uses merged main `de90cd412885c7069a19823de68dbc3e3c770db6` (0.3.58).
+GitHub source and PR states were checked on September 8. No device was contacted;
+no installed build, archive or new hardware result is verified here.
+
+README now summarizes the project and links feature guides. The Wiki explains
+Command Center, eGPU/docking, power, controllers and Offline Readiness. Internal
+PRODUCT/ROADMAP statements saying Offline has no collector/UI or that power
+delivery is only isolated work are reconciled against current source. Older
+operator and device reports remain dated history, with a current navigation note.
+
+### Evidence reviewed
+
+| Work | Verified source / PR | Documentation disposition and limits |
+|---|---|---|
+| Hub foundation, coordination and publication | #138 / `227cb81`, #139 / `5b18edf`; current AGENTS and DOCUMENTATION_WORKFLOW | Contributor workflow links; no player capability promotion. Covers hub-foundation, coordination-hardening and coordination-publication |
+| Holder scan | #137 / `5591a7a` | Merged-source correction in Wiki; historical clear scans retain gaps. Covers egpu-holder-scan-evidence |
+| Active display grading | #142 / `9c49bc6` | Active-state evidence must be fresh; device reachability #143 remains. Covers egpu-display-active-grading |
+| Quick Access navigation | #129 / `ed47965` | Existing navigation merged; complete Command Center remains in development. Covers qa-section-wiring |
+| Removal plan revalidation | #145 / `5c218be` | Merged implementation; no independent hardware promotion. Covers egpu-plan-revalidation-contract |
+| Removal tool | #148 / `547d095`, incorporating #122 | Operator software-removal source exists; runtime/player path #146 remains open. Covers egpu-removal-tool-landing |
+| Filter ownership record and retirement | #150 / `7c29bc8`, then #155 / `de90cd4` | Duplicate model was removed; existing filter stack still needs integration. Covers egpu-filter-ownership-record and egpu-retire-duplicate-ownership |
+| Interrupted removal record | #152 / `6410250` | Pure model and storage port, not durable adapter/runtime completion. Covers egpu-removal-transaction-record |
+| Gyro research | #154 / `62dc3dd`, open and unmerged | Public guide labels research only. Working-support/detail promotion deferred until reviewed implementation and exact-device evidence; continue through #154. Covers controller-gyro-compatibility |
+| TDP and Auto TDP | #49 / `0ded4cd`; `main.py` RPCs and `src/index.tsx` controls | Implemented development source; #132 guard changes remain open, provider/device acceptance pending |
+| Offline Readiness | `main.py`, `src/offline-confidence.ts`, `src/offline-confidence-session.ts`, `src/offline-test-memory.ts`, `src/offline-readiness-panel.tsx`, focus/badge delivery | Current confidence labels and session-limited player attestation documented; no automatic offline test or launch guarantee |
+
+### Remaining owner integration and evidence gates
+
+- **CURRENT_STATE.md:** open PR #82 owns this file. Its historical content is
+  preserved. Owner/integrator follow-up: add a short opening link to this review
+  and [the earlier snapshot](STATUS_SNAPSHOT_2026-09-08.md), explicitly saying the
+  retained dated entries do not establish current installation. INDEX and
+  OPERATOR_HANDOFF provide that navigation in the meantime. No ownership transfer
+  or completion of this follow-up is claimed.
+- **Build and live disconnect:** #116, #146, #147, #143, #136 and #105 remain
+  separate integration, contract or device-evidence gates. No documentation
+  change turns merged components into safe live physical unplug.
+- **UI and screenshots:** #153 is a draft foundation; #144 is the asset proposal.
+  Real Command Center screenshots await native implementation and validation.
+  The README reserves a comment location; no invented screenshot is published.
+- **Controller research:** #154 and the existing rumble/LED/player-order hub
+  tasks continue under their owners. Source API possibilities are not installed
+  support; the Wiki states the boundary without publishing internal inbox text.
+
+### Additional requested documentation scope
+
+Dedicated Ally X/GPD G1 and Raikiri II troubleshooting guides use the repository
+template and link original evidence. Raikiri PC-mode source/activation leads are
+not promoted to repeatable SteamOS menu-delivery proof. Public prose uses Re-Gear;
+the installed directory compatibility note and exact historical paths remain.
+
+The [identity migration plan](IDENTITY_MIGRATION_PLAN.md) is documentation-only here;
+repository implementation is now authorized in a separate task/worktree/PR. GitHub API
+confirmed v0.3.57 and v0.3.58 development-candidate releases (their prerelease flag
+is false, so the flag alone is not a readiness signal). This corrects any broad
+“no public release” wording without claiming general availability. Ronnie reports only his own recent legacy test installs; the plan uses a clean
+cutover with one controlled supervised migration/rollback check. No runtime identity,
+package layout, script, artifact or installed system changed.
+
+### Verification and publication record
+
+This file records source review, not its own future merge or Wiki publication.
+The `docs-project-consolidation` hub task and associated documentation PR hold
+the final check results, source revision, separate Wiki commit and readback.
+The previous Wiki head was `21052c2`; direct Git comparison found one substantive
+source/publication mismatch: Offline Readiness's source-review link still used
+an older development branch. Web search returned cached older pages, so direct
+Wiki Git readback is required before claiming synchronization.
+
+The review covers the 12 completed engineering items listed above. No public
+Discussion announcement is needed for this consolidation. Historical completed
+task notes remain immutable; this linked review records the current disposition.
+
+## Historical cleanup inventory
+
+The sections below preserve the earlier pass and its original findings. Statements
+about then-pending cleanup/publication are historical; current dispositions are
+above and in the linked hub/PR evidence.
 
 ## Reconciliation pass — September 8
 
