@@ -1,7 +1,7 @@
 # Deferred dock intent
 
 When a player directly requests Dock while the game state is exactly Running,
-HDM may retain one pure, bounded desired-action record. It carries only an
+Re-Gear may retain one pure, bounded desired-action record. It carries only an
 opaque player-request ID, source, opaque attach binding, and monotonic expiry.
 It does not carry a game identity, hardware identity, display connector, or
 transition plan.

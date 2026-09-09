@@ -1,6 +1,6 @@
 # Active game runtime evidence
 
-HDM has a dormant read-only adapter for enriching one already exact Steam game
+Re-Gear has a dormant read-only adapter for enriching one already exact Steam game
 scope identity with private process/runtime evidence. It does not close,
 relaunch, signal, or otherwise affect a game.
 

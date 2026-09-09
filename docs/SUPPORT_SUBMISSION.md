@@ -1,6 +1,6 @@
 # Secure support-bundle submission design
 
-Support submission is not enabled. HDM currently previews, copies, and saves a
+Support submission is not enabled. Re-Gear currently previews, copies, and saves a
 bundle locally. This document defines the later security boundary without
 embedding a server address, credential, or upload token.
 
@@ -23,7 +23,7 @@ credential is accepted from the frontend or stored in this approval object.
 The future deployment should use one backend-owned HTTPS endpoint:
 
 ```text
-HDM -> HTTPS -> narrowly scoped Cloudflare Worker -> private R2 bucket
+Re-Gear -> HTTPS -> narrowly scoped Cloudflare Worker -> private R2 bucket
 ```
 
 The Worker must:
@@ -38,12 +38,12 @@ The Worker must:
 - store uploads in a private bucket with a roughly 30-day lifecycle policy
 - have only the minimum R2 write permission needed for that bucket/prefix
 - never execute, unpack, render, or serve submitted content as active content
-- return only `{ "ok": true, "report_id": "HDM-..." }`
+- return only `{ "ok": true, "report_id": "Re-Gear-..." }`
 - record an auditable categorical outcome without copying bundle contents into
   general Worker logs
 
 The client parser accepts only the exact success response and a bounded
-`HDM-[A-Z0-9]` report ID. Redirect URLs, object URLs, extra fields, and
+`Re-Gear-[A-Z0-9]` report ID. Redirect URLs, object URLs, extra fields, and
 client-chosen IDs are rejected.
 
 ## Dormant client adapter

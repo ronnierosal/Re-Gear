@@ -24,14 +24,15 @@ from typing import Any
 
 PACKAGE_ROOT = Path("/home/deck")
 PLUGIN_PARENT = Path("/home/deck/homebrew/plugins")
-PLUGIN_NAME = "HandheldDockMode"
+PLUGIN_NAME = "Re-Gear"
+LEGACY_NAME = "HandheldDockMode"
 TARGET = PLUGIN_PARENT / PLUGIN_NAME
 BACKUPS = PLUGIN_PARENT / ".hdm-deploy-backups"
 # SteamOS keeps /usr immutable.  /var/lib/handheld-dock-mode is the existing
 # root-owned, mode-0700 HDM runtime authority and survives system updates.
 PUBLIC_KEY = Path("/var/lib/handheld-dock-mode/deploy-public-key.pem")
 SYSTEMCTL = "/usr/bin/systemctl"
-PACKAGE_RE = re.compile(r"HDM-update-([0-9]+(?:\.[0-9]+){2}(?:[-+][A-Za-z0-9.-]+)?)-([0-9a-f]{12})\.zip")
+PACKAGE_RE = re.compile(r"Re-Gear-update-([0-9]+(?:\.[0-9]+){2}(?:[-+][A-Za-z0-9.-]+)?)-([0-9a-f]{12})\.zip")
 MAX_ARCHIVE_BYTES = 32 * 1024 * 1024
 MAX_UNPACKED_BYTES = 96 * 1024 * 1024
 
@@ -131,6 +132,9 @@ def install(package_name: str, signature_name: str) -> dict[str, str]:
     match = PACKAGE_RE.fullmatch(package_name)
     if match is None or signature_name != f"{package_name}.sig":
         raise DeploymentError("package name is invalid")
+    legacy = PLUGIN_PARENT / LEGACY_NAME
+    if legacy.exists() or legacy.is_symlink():
+        raise DeploymentError("legacy installation requires supervised cutover; see docs/IDENTITY_CUTOVER.md")
     package = fixed_download(package_name, ".zip")
     signature = fixed_download(signature_name, ".sig")
     if signature.stat().st_size > 16 * 1024:

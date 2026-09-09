@@ -1,7 +1,7 @@
 # Frequently asked questions
 
 **Audience:** players, testers, and contributors<br>
-**Evidence reviewed:** 2026-09-02<br>
+**Reviewed:** 2026-09-08<br>
 **Maturity:** answers reflect the current development baseline
 
 ## Can I install Re-Gear as an ordinary Decky plugin today?
@@ -10,26 +10,39 @@ Not as a supported public release. Current hardware builds use controlled,
 provenance-verified deployment and supervised validation. See
 [Getting Started](Getting-Started).
 
-## Does Re-Gear only support the Ally X and GPD G1?
+## Is Re-Gear limited to one handheld or eGPU brand?
 
-They are the first exact validated profile, not the intended architectural
-limit. Other hardware is not yet certified. Several first-profile couplings
-remain open and are being moved behind capability/profile seams incrementally.
+No. Re-Gear is designed as a SteamOS handheld companion across hardware vendors.
+General features and hardware-dependent actions have separate requirements.
+Broader product scope does not mean every device is tested: see [Supported Hardware](Supported-Hardware)
+for exact combinations and [Confirmed Hardware Testing](Confirmed-Hardware-Testing)
+for recorded results. Additional devices need their own profile and capability evidence.
+
+## Is the new Command Center available?
+
+The complete rebuild is in development. Existing Quick Access navigation is
+implemented; the approved layout and new module foundation have separate
+delivery gates. See [Command Center](Command-Center) for status and future
+screenshots of the actual interface.
+
+## Are power and controller settings supported on every handheld?
+
+No. [Performance and Power](Performance-and-Power) depends on verified provider
+limits and ownership. [Controller capabilities](Controllers) vary by device,
+transport and input stack; research and a visible design control do not establish
+working support.
 
 ## Does TV Docked work now?
 
-The exact-profile automatic workflow is implemented and reached a real
-Gamescope restart on hardware. The TV received a signal but remained black, and
-Re-Gear recovered to Portable. Two launch-config defects were then fixed in source;
-the latest fix still needs a clean-build supervised hardware proof. See
-[Current State](Current-State).
+Yes, bounded supervised sessions on the documented test profile have activated the TV and selected the external GPU. Automatic docking is experimental and off by default. Repeatable operation, recovery, and audio must still be verified for the exact build. See [Current State](Current-State).
 
-## Can I unplug the GPD G1 while the handheld is running?
+## Can I unplug an eGPU while the handheld is running?
 
-No. Physical live G1 removal is unsupported. Shut down before disconnecting it.
-An accepted shutdown request is not proof of physical power-off. If the fan
-remains on, keep the G1 connected and hold the Ally power button until the fan
-stops; only then remove the cable.
+Current Re-Gear validation does not establish safe live removal. Follow the
+verified policy for your exact hardware; unknown profiles cannot authorize removal.
+Under shutdown-before-disconnect, an accepted shutdown request is not proof of
+physical power-off. Keep the eGPU connected if shutdown is incomplete and follow
+the device-specific recovery instructions.
 
 ## Can Re-Gear move a running game between GPUs?
 

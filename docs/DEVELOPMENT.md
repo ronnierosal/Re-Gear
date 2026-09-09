@@ -75,8 +75,24 @@ driver's ownership.
   starting point.
 - Merge only after ancestry, conflicts, diff scope, and relevant checks are
   known. Prefer fast-forward integration for bounded worker branches.
-- Never push, tag, publish, create a release, force-push, rewrite published
-  history, or delete remote refs without explicit maintainer authorization.
+- Scoped commits, branch pushes, PRs, and validated routine merges have standing
+  authorization under `AGENTS.md`. Its narrow high-risk boundaries govern release,
+  publication, history rewriting, credentials, and hardware actions.
+
+## Concurrent chats and agents
+
+Follow [Agent coordination](AGENT_COORDINATION.md) and
+[release coordination](CHAT_COORDINATION.md) whenever more than one chat or
+agent may modify the repository. Active implementation never happens in the
+shared `main` checkout. Before an integration, run:
+
+```text
+python scripts/check_integration_preflight.py
+```
+
+The check rejects a dirty workspace, unresolved conflicts, an in-progress Git
+operation, a detached checkout, a non-integration branch, or an integration
+branch that no longer contains the current `origin/main`.
 
 Before any authorized push report branch, HEAD, ahead/behind state, dirty/clean
 state, tests performed, and generated artifacts included. A GitHub CI result

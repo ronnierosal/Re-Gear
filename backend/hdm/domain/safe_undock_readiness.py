@@ -103,7 +103,9 @@ def assess_safe_undock_readiness(
     expected_sample_id: str,
 ) -> SafeUndockReadiness:
     """Classify one fresh explicit observation without invoking any action."""
-    invalid = _invalidation(evidence, expected_attachment_binding, expected_generation, expected_sample_id)
+    invalid = invalidation_code(
+        evidence, expected_attachment_binding, expected_generation, expected_sample_id
+    )
     if invalid:
         return SafeUndockReadiness(SafeUndockReadinessState.INVALIDATED, invalid)
     if evidence.game_state is GameState.RUNNING:
@@ -145,12 +147,17 @@ def assess_safe_undock_readiness(
     )
 
 
-def _invalidation(
+def invalidation_code(
     evidence: SafeUndockEvidence,
     expected_attachment_binding: str,
     expected_generation: str,
     expected_sample_id: str,
 ) -> str:
+    """Return the invalidation code for one observation, or an empty string.
+
+    Shared with `hdm.domain.removal_safety`, which classifies a narrower
+    subset of the same evidence under identical staleness rules.
+    """
     if not all((expected_attachment_binding, expected_generation, expected_sample_id)):
         return "safe_undock.expected_observation_invalid"
     if evidence.attachment_binding != expected_attachment_binding:

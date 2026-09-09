@@ -2,7 +2,7 @@
 
 ## Purpose
 
-HDM can prepare a bounded JSON report for troubleshooting without exporting an
+Re-Gear can prepare a bounded JSON report for troubleshooting without exporting an
 unrestricted journal or raw hardware/session identity. The player must preview
 the exact redacted JSON before copying it or approving a save.
 
@@ -30,7 +30,7 @@ bundle content.
 
 The Decky delivery adapter resolves the Decky user's home through Decky's own
 runtime value, requires that resolved home to be one direct child of `/home`,
-and writes a new `HDM-support-<UTC timestamp>.json` file under the resolved
+and writes a new `Re-Gear-support-<UTC timestamp>.json` file under the resolved
 `Downloads` directory with exclusive-create and no-follow flags. It returns
 only the relative `Downloads/...` path to the UI.
 
@@ -49,11 +49,11 @@ a general system log or durable audit journal.
 
 The bundle includes:
 
-- HDM, Decky, SteamOS, and kernel versions
+- Re-Gear, Decky, SteamOS, and kernel versions
 - categorical certified-profile checks
 - privacy-safe snapshot stage timings
 - a reduced current snapshot
-- recent HDM-only events
+- recent Re-Gear-only events
 - up to four reduced categorical transition histories with at most 32 recent
   entries each when a dormant/future transition owner explicitly supplies them
 - up to eight reduced game and hardware compatibility records of each kind

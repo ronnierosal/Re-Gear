@@ -1,7 +1,7 @@
 # Development
 
 **Audience:** contributors<br>
-**Evidence reviewed:** 2026-09-02<br>
+**Reviewed:** 2026-09-08<br>
 **Maturity:** active development with safety-critical boundaries
 
 Read [Contributing](https://github.com/ronnierosal/Re-Gear/blob/main/CONTRIBUTING.md),
@@ -35,5 +35,35 @@ and package checks. Documentation changes need local-link review and
 `git diff --check`. Hardware-affecting changes require all local gates before a
 separately approved supervised session with redacted before/live/after evidence.
 
-Maintainers control pushes, tags, releases, Decky publication, history rewrites,
-and hardware deployment.
+## Coordination and publication
+
+Follow [AGENTS.md](https://github.com/ronnierosal/Re-Gear/blob/main/AGENTS.md) and
+the [agent lifecycle](https://github.com/ronnierosal/Re-Gear/blob/main/docs/AGENT_COORDINATION.md)
+for isolated ownership, current PR claims, and validated routine integration.
+Releases, hardware operations, and other high-risk changes retain their separate gates.
+
+README introduces the project; Wiki guides explain it; repository docs own
+contracts and exact evidence. The
+[documentation workflow](https://github.com/ronnierosal/Re-Gear/blob/main/docs/DOCUMENTATION_WORKFLOW.md)
+describes evidence handoffs and the separate Wiki publication/readback step.
+
+## Working from current evidence
+
+Use [Current State](Current-State) for the reviewed merged/open checkpoint and
+inspect live PR state before integration. Historical draft-series reviews and
+device records keep their dates. Passing against a stacked base is not proof of
+combined main behavior, an installable build, or a successful device operation.
+
+The earlier [disconnect review](https://github.com/ronnierosal/Re-Gear/blob/main/docs/DISCONNECT_PROGRESS_2026-09-06.md)
+is historical evidence. It does not override newer merged work or authorize
+resuming that session's hardware instructions.
+
+## Writing troubleshooting guides
+
+Use the lightweight
+[troubleshooting and lessons template](https://github.com/ronnierosal/Re-Gear/blob/main/docs/templates/WIKI_TROUBLESHOOTING_TEMPLATE.md)
+for recurring symptoms or device-specific investigations. Link the guide under
+its feature and navigation; keep exact dates and evidence, distinguish likely
+causes from observations, and preserve safety boundaries. Broader sections such
+as performance and Offline Readiness can adopt it when there is a concrete
+incident to explain; no placeholder pages are needed.

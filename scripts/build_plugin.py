@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 import re
 import subprocess
+import sys
 import zipfile
+from collections.abc import Sequence
 from pathlib import Path
 
 
@@ -14,7 +17,7 @@ PACKAGE_VERSION = str(
     json.loads((ROOT / "package.json").read_text(encoding="utf-8"))["version"]
 )
 OUTPUT = ROOT / "out" / f"Re-Gear-{PACKAGE_VERSION}.zip"
-PLUGIN_DIRECTORY = "HandheldDockMode"
+PLUGIN_DIRECTORY = "Re-Gear"
 BUILD_INFO_FILENAME = "build_info.json"
 REVISION_RE = re.compile(r"^[0-9a-f]{40}$")
 GENERATED_BUILD_OUTPUTS = frozenset(("dist/index.js", "dist/index.js.map"))
@@ -127,7 +130,14 @@ def build_info_bytes(revision: str) -> bytes:
     ).encode("utf-8")
 
 
-def main() -> int:
+def main(argv: Sequence[str] = ()) -> int:
+    argparse.ArgumentParser(
+        prog="build_plugin.py",
+        description=(
+            "Package the built plugin and reserve its version. Takes no arguments; "
+            "every invocation performs a real build and consumes a reservation."
+        ),
+    ).parse_args(argv)
     manifest = json.loads((ROOT / "plugin.json").read_text(encoding="utf-8"))
     if manifest.get("flags") != ["root"]:
         raise SystemExit("Refusing to package a manifest without the root delivery flag")
@@ -170,4 +180,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(main(sys.argv[1:]))

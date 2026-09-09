@@ -9,8 +9,10 @@ critical engineering contracts.
 
 ## Read first
 
-1. [Current state](CURRENT_STATE.md) — branch/build/deployment truth and active
-   workstream boundaries.
+1. [Current state](CURRENT_STATE.md) — retained branch/build/deployment records;
+   [September 8 documentation reconciliation](DOCUMENTATION_CLEANUP.md) supplies
+   the later source review and open owner-integration follow-up. Neither is a
+   live device observation.
 2. [Product](PRODUCT.md) — product scope, placements, and player experience.
 3. [Safety invariants](SAFETY_INVARIANTS.md) — non-negotiable mutation gates.
 4. [Architecture](ARCHITECTURE.md) — components, state, and dependency rules.
@@ -18,6 +20,10 @@ critical engineering contracts.
 
 Agents should also read `AGENTS.md`, which is the concise operating contract
 loaded at the start of repository work.
+
+Documentation owners start at [Documentation workflow](DOCUMENTATION_WORKFLOW.md):
+README introduces, Wiki explains, Discussions report developments. Engineering
+state and evidence flow outward; public summaries never override them.
 
 ## Authority by question
 
@@ -30,6 +36,8 @@ loaded at the start of repository work.
 | What version is built or installed? | Immutable build metadata plus `CURRENT_STATE.md` | Artifact checksum and deployment evidence |
 | What hardware is supported? | `HARDWARE_SUPPORT.md` | Dated hardware validation records |
 | What may workers change and how? | `AGENTS.md`, `DEVELOPMENT.md`, `WORK_QUEUE.md` | Active driver coordination |
+| Who owns active work, and what is available next? | Shared hub `status` / `snapshot`, linked issue/PR claims | `AGENT_COORDINATION.md`; chats are context only |
+| How do concurrent agents share the repository? | `MULTI_AGENT_WORKSPACE.md`, `CHAT_COORDINATION.md` | Live `git worktree list` |
 
 When sources conflict, do not select the most convenient statement. Verify the
 current code, build, or device as appropriate, then correct the document that
@@ -55,11 +63,18 @@ issue**. Architectural possibility is not support.
 - Supervised disconnect launch trial: [Portable Vulkan trial](PORTABLE_VULKAN_TRIAL.md)
 
 - Public entry point: [README](../README.md)
+- Detailed feature guides: [Command Center](../wiki/Command-Center.md),
+  [eGPU and docking](../wiki/eGPU-and-Docking.md),
+  [performance and power](../wiki/Performance-and-Power.md),
+  [controllers](../wiki/Controllers.md), [Offline Readiness](../wiki/Offline-Readiness.md)
 - Status and work: [Current state](CURRENT_STATE.md), [Roadmap](ROADMAP.md),
-  [Worker queue](WORK_QUEUE.md)
+  [Worker queue](WORK_QUEUE.md), [release coordination](CHAT_COORDINATION.md),
+  [agent coordination](AGENT_COORDINATION.md)
 - Hardware and compatibility: [Hardware support](HARDWARE_SUPPORT.md),
   [hardware-agnostic audit](HARDWARE_AGNOSTIC_AUDIT.md)
 - UX: [UI specification](UI_SPEC.md)
+- Agent workspaces: [multi-agent workspace](MULTI_AGENT_WORKSPACE.md)
+- Power management: [TDP and Auto TDP workstream](TDP_CONTROL.md)
 - Operations: [Deployment validation](DEPLOYMENT_VALIDATION.md),
   [operator handoff](OPERATOR_HANDOFF.md), [diagnostics](DIAGNOSTICS.md),
   [release pipeline](RELEASE_PIPELINE.md)
@@ -74,3 +89,9 @@ issue**. Architectural possibility is not support.
 
 The existing focused design documents remain valid references. Consolidation
 should classify and link them before moving or deleting them.
+
+
+## Documentation templates and planned identity migration
+
+- [Wiki troubleshooting/lessons template](templates/WIKI_TROUBLESHOOTING_TEMPLATE.md): reusable evidence-aware guide structure.
+- [Internal identity migration plan](IDENTITY_MIGRATION_PLAN.md): repository cutover implemented; installed migration and rollback remain supervised. See [changed contracts and procedure](IDENTITY_CUTOVER.md).

@@ -1,7 +1,7 @@
 # G1 suspend/wake diagnostics
 
 The Ally X + GPD G1 currently has an observed immediate-wake/suspend reliability
-issue. HDM does not infer its cause from the G1 being connected, nor does it
+issue. Re-Gear does not infer its cause from the G1 being connected, nor does it
 change any wake-source setting while unattended.
 
 ## Read-only evidence
@@ -23,7 +23,7 @@ safe. This evidence cannot release the G1 sleep guard, authorize disconnect, or
 change device configuration.
 
 Support-bundle collection is explicit and previewed before export. Wake evidence
-is collected only for that preview; it is not part of HDM's regular snapshot or
+is collected only for that preview; it is not part of Re-Gear's regular snapshot or
 polling loop.
 
 The remote-capture parser accepts wake evidence only when it matches this exact

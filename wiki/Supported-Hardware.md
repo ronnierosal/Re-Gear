@@ -1,13 +1,21 @@
 # Supported hardware
 
 **Audience:** players, testers, and profile contributors<br>
-**Evidence reviewed:** 2026-09-02<br>
+**Reviewed:** 2026-09-06<br>
 **Maturity:** one exact first profile; capability status varies
 
 The authoritative compatibility model is
 [Hardware support](https://github.com/ronnierosal/Re-Gear/blob/main/docs/HARDWARE_SUPPORT.md).
 
-## Initial validated profile
+## Product scope and compatibility
+
+Re-Gear is designed for SteamOS handheld PCs across vendors, with capability-based
+support for docks, displays, and eGPUs. The combination below is the current
+recorded test baseline, not the product boundary. Offline Play Readiness is a
+local Steam evidence feature; it is not conceptually tied to a particular eGPU.
+Its installed delivery still needs validation on each relevant software environment.
+
+## Recorded test baseline
 
 | Component | Profile |
 |---|---|
@@ -39,3 +47,5 @@ quirks while core policy remains product-neutral. It needs synthetic boundary
 tests and then capability-specific hardware evidence. Fuzzy device-name
 matching or falling back to `card0`, `card1`, or a connector name is not
 acceptable.
+
+See **[Confirmed Hardware Testing](Confirmed-Hardware-Testing)** for the capability-by-capability test ledger and **[Offline Play Readiness](Offline-Readiness)** for game checks.

@@ -1,69 +1,79 @@
 # GitHub Wiki information architecture
 
-The Wiki is the human guide; repository docs remain engineering authority. Its
-reviewed source lives in [`wiki/`](../wiki/README.md).
-Create pages only when useful content exists, and link back to the owning
-repository contract rather than duplicating it.
+The README introduces Re-Gear as a SteamOS handheld companion. The Wiki explains
+features and usage. Repository docs own contracts, exact evidence and historical
+records. Reviewed Wiki source is in [`wiki/`](../wiki/README.md); publication uses
+the separate Git repository and live readback in [the documentation workflow](DOCUMENTATION_WORKFLOW.md).
 
-## Current source set
+## Information placement
 
-The source set contains Home, Project Overview, Current State, Issues
-Fixed, Getting Started, How HDM Works, Supported Hardware, Safety and eGPU
-Handling, Diagnostics and Privacy, Troubleshooting, Development, FAQ, and the
-dated Ally X/GPD G1 docking incident. The
-combined safety page covers connection, disconnect, and sleep guidance until
-each workflow has enough independently proven player content to justify its own
-page.
-
-`wiki/_Sidebar.md` defines navigation. `wiki/README.md` records publishing and
-authority rules and is not intended to replace the Wiki Home page. Publication
-or synchronization to GitHub requires explicit maintainer authorization for
-each publishing task.
-
-## Initial publish set
-
-| Page | Purpose | Repository authority |
+| Layer | Keep here | Link elsewhere for |
 |---|---|---|
-| Home | Product promise, maturity, placements, safe navigation | `README.md`, `PRODUCT.md` |
-| Project Overview | Goals, non-goals, workflow, and profile direction | `PRODUCT.md`, `ARCHITECTURE.md` |
-| Current State | Evidence-aware implementation and hardware snapshot | `CURRENT_STATE.md`, `ROADMAP.md` |
-| Issues Fixed | Selected fixes with proof level and remaining gates | `CURRENT_STATE.md`, audit and validation records |
-| Ally X and GPD G1 Docking Incident | Full causal chain, fixes, evidence, and reusable diagnostic lessons | dated incident record, `CURRENT_STATE.md` |
-| Getting Started | Current availability, prerequisites, development-only install status | `CURRENT_STATE.md`, `DEPLOYMENT_VALIDATION.md` |
-| How HDM Works | Plain-language placement/health/workflow model | `PRODUCT.md`, `ARCHITECTURE.md` |
-| Supported Hardware | Compatibility vocabulary and current profile | `HARDWARE_SUPPORT.md` |
-| Safety and eGPU Handling | Current connect, sleep, and shutdown-before-disconnect rules | `SAFETY_INVARIANTS.md`, `DEPLOYMENT_VALIDATION.md` |
-| Diagnostics and Privacy | Bounded privacy-safe evidence and support sharing | `DIAGNOSTICS.md`, `SUPPORT_BUNDLE.md` |
-| Troubleshooting | Symptom-to-diagnostic guidance without raw log dumping | `DIAGNOSTICS.md`, recovery docs |
-| Development | Contributor entry point | `CONTRIBUTING.md`, `docs/DEVELOPMENT.md` |
-| FAQ | Repeated user questions with links to authority | owning repository documents |
+| README | Project purpose, platform, short module summary, maturity, entry links, future real screenshots | Detailed mode/support tables, dated PR status, installation procedures and engineering history |
+| Wiki | Feature benefits, implementation level, usage, limitations, priority and remaining validation | Exact technical contracts and original device/test evidence |
+| Repository docs | Product/safety/architecture contracts, focused technical specifications, immutable dated evidence | Player-oriented explanations and active task ownership |
+| Shared hub / GitHub | Task ownership, inbox handoffs, issues and PR state | Permanent engineering contracts and public feature guides |
 
-## Add after evidence exists
+## Guide map
 
-- Gaming with an eGPU
-- Portable Mode
-- Boosted Handheld Mode
-- TV Docked Mode
-- Connecting an eGPU
-- Disconnecting an eGPU
-- Sleep & Wake
-- Controllers
-- Display / HDR / VRR
-- Audio
-- Compatibility Matrix
-- ASUS ROG Ally X
-- GPD G1
+`wiki/_Sidebar.md` is the navigation inventory. Preserve existing slugs, including
+`How-HDM-Works`, so old links continue working. Do not publish `wiki/README.md`.
 
-These pages should not be empty placeholders or imply certification before their
-workflows have evidence.
+| Guides | Primary authority |
+|---|---|
+| Home, Project Overview, Feature Roadmap | PRODUCT, ROADMAP, verified merged/open evidence |
+| Command Center | UI_SPEC and approved direction below; implementation PRs |
+| eGPU and Docking; Safety and eGPU Handling | PRODUCT, SAFETY_INVARIANTS, HARDWARE_SUPPORT, deployment records |
+| Performance and Power | TDP_CONTROL and merged power service/UI evidence |
+| Controllers | PRODUCT/UI_SPEC; exact-device research and routing evidence |
+| Offline Readiness | OFFLINE_EVIDENCE_SOURCE_REVIEW and OFFLINE_READINESS_UI |
+| Current State; Issues Fixed | Dated engineering reconciliation, source and linked PR/test evidence |
+| Supported Hardware; Confirmed Hardware Testing; device incident | HARDWARE_SUPPORT and original dated validation records |
+| Getting Started; Development | DEVELOPMENT, DEPLOYMENT_VALIDATION, RELEASE_PIPELINE and AGENTS |
+| Troubleshooting; FAQ; Diagnostics and Privacy; Help Improve Re-Gear | Relevant feature contracts, DIAGNOSTICS and SUPPORT_BUNDLE |
 
-## Page rules
+New guides require useful evidence-backed content. Research can be explained as
+research; no empty placeholders, unavailable controls presented as working, or
+support promises inferred from architecture.
 
-- Start with audience, evidence date, and maturity.
-- Link to the authoritative repository document near the top.
-- Use player language and short procedures.
-- Do not reproduce volatile commit/build/deployment values; link to
-  `CURRENT_STATE.md`.
-- Do not put engineering invariants, secrets, SSH coordinates, raw identities,
-  or unpublished recovery procedures only in the Wiki.
-- Review Wiki pages when the owning repository contract materially changes.
+## Command Center direction and screenshots
+
+The approved layout uses a compact placement/display/game header; quick controls
+for FPS, TDP, Auto TDP and display target; a prepared Safe Disconnect tile;
+read-only eGPU/controller status links; and a Modules chooser for deeper settings.
+This incorporates the later approved tile-grid refinement of the original plan.
+It is design direction, not proof of a completed shell or supported backend.
+
+Quick controls and module pages share state and action ownership. Opening status
+is read-only. FPS needs a real provider; TDP options come from supported limits;
+display actions retain guards. Safe Disconnect stays unavailable until a reviewed
+backend capability and validation exist. Controller traversal, activation, Back
+and focus restoration require native Decky validation.
+
+The README reserves an HTML-comment location for future actual Command Center
+screenshots. Add captures only when the implemented interface is reviewed; link
+build/view and native validation evidence from the Wiki guide. Keep private game,
+account and diagnostic details out. Prototype mockups remain clearly labelled
+design concepts and never substitute for shipped-interface screenshots.
+
+## Maintenance
+
+Start feature pages with audience, evidence date and maturity. Describe benefit,
+priority, implementation status and remaining validation. Keep volatile source
+checkpoints in the Current State guide and link exact repository evidence;
+historical device reports retain their original dates and limitations.
+
+Before publication verify links, terminology, privacy, existing live changes and
+the referenced merged source. Record source and Wiki revisions separately. Routine
+factual updates follow standing delegation; no release, hardware, licensing or
+readiness authority is created by editing documentation.
+
+## Troubleshooting and lessons
+
+Use [the lightweight template](templates/WIKI_TROUBLESHOOTING_TEMPLATE.md) for
+who/what/when/where/why, symptoms, evidence, Re-Gear behavior, safe steps,
+verification tiers and unresolved work. Dedicated Ally X/GPD G1 and Raikiri II
+guides apply it now. Other major sections use the same pattern when concrete
+evidence warrants a page; never publish empty placeholders or generic promises.
+Link each page from its feature, Troubleshooting and navigation. Original dated
+incident records remain independently linked evidence.

@@ -64,6 +64,12 @@ be admitted only after that cost is benchmarked and stays within one tenth of
 the configured interval. Admission delegates to the existing game-aware runtime
 budget: optional background collection defers during running or unknown game
 state, while player-requested diagnostics use the narrower diagnostic delay.
+Auto TDP collection has a separate opt-in: the consumer must be AUTO_TDP,
+explicitly enabled, benchmarked at no more than one percent of its interval,
+and bound to known running-game state. Idle/unknown state defers it. This pure
+admission rule starts no timer and authorizes no power write; other consumers
+retain the existing game-time deferral. The one-percent threshold is a development
+budget, not a measured device-impact claim.
 Samples contain only typed numeric metrics; this contract has no collector,
 scheduler, optimization, TDP, or mutation authority.
 

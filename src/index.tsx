@@ -14,6 +14,7 @@ import {
   ButtonItem,
   ConfirmModal,
   DropdownItem,
+  Focusable,
   ToggleField,
   PanelSection,
   PanelSectionRow,
@@ -65,12 +66,15 @@ import {
   type ProcessReleasePreviewPayload,
   type SupportBundlePreviewPayload,
   type TransitionJournalStatusPayload,
+  getEgpuDisconnectStatus,
+  executeEgpuDisconnect,
 } from "./backend";
 import { createDeckySteamSuspendAdapter } from "./decky-steam-suspend";
 import { deliverBlockedAttempt } from "./blocked-attempt-delivery";
 import { diagnosticOverlayRows } from "./diagnostics-overlay";
 import { DashboardSurface, QuickAccessOverview } from "./quick-access-overview";
 import { DashboardAction } from "./dashboard-action";
+import { TdpControls } from "./tdp-controls";
 import { hardwareDetailRows } from "./quick-access-dashboard";
 import { healthAttentionMessages, healthStatusLabel } from "./health-ui";
 import { decideLinkHealthNotification } from "./link-health-notification";
@@ -87,6 +91,25 @@ import {
   collectOptionalDiagnostics,
   shouldCollectOptionalDiagnostics,
 } from "./optional-diagnostics-refresh";
+import {
+  INITIAL_STACK,
+  backRoute,
+  currentRoute,
+  diagnosticsVisible,
+  hasInternalLevel,
+  pushRoute,
+  quickAccessModules,
+  stackOnPanelOpen,
+  troubleshootingToggle,
+} from "./quick-access/module-registry";
+import type { ModuleId, NavStack, Route, StatusId } from "./quick-access/module-registry";
+import { ModulesButton, ShellBody } from "./quick-access/shell";
+import type { DisconnectStatusPayload } from "./backend";
+import { commandCenterTiles } from "./quick-access/command-center";
+import type { TileId } from "./quick-access/command-center";
+import { CommandCenterGrid, TileReason } from "./quick-access/command-center-grid";
+import { performanceState } from "./quick-access/performance-state";
+import { quickAccessSections } from "./quick-access-sections";
 import { connectionProgress, refreshDelayForVisibility } from "./refresh-policy";
 import { canOfferForce, processReleaseOutcomeMessage } from "./process-release-ui";
 import {
@@ -541,6 +564,26 @@ function Content({ preflight, connection, shortcut }: { preflight: SleepPrefligh
   const [supportBusy, setSupportBusy] = useState(false);
   const [supportMessage, setSupportMessage] = useState("");
   const [showDiagnostics, setShowDiagnostics] = useState(false);
+  // The approved layout replaces the icon row with a navigation stack. Command
+  // Center sits at the bottom and is never popped; Back delegates to Steam's own
+  // QAM Back once no internal level is left. See quick-access/module-registry.
+  const [navStack, setNavStack] = useState<NavStack>(INITIAL_STACK);
+  // The owning backend's disconnect status. Null means not read yet, which is
+  // not the same as "no": the tile renders that distinction itself.
+  const [egpuDisconnect, setEgpuDisconnect] = useState<DisconnectStatusPayload | null>(null);
+  const [disconnectBusy, setDisconnectBusy] = useState(false);
+  const [disconnectMessage, setDisconnectMessage] = useState("");
+  /** The tile whose reason is shown under the grid. */
+  const [selectedTile, setSelectedTile] = useState<TileId | null>(null);
+  const route = currentRoute(navStack);
+  const onCommandCenter = route.kind === "command-center";
+  // Read by the refresh callback, which must not be rebuilt on every navigation:
+  // adding navStack to its dependencies would restart the refresh cycle on a
+  // route change.
+  const diagnosticsOnScreen = useRef(true);
+  useEffect(() => {
+    diagnosticsOnScreen.current = diagnosticsVisible(navStack, showDiagnostics);
+  }, [navStack, showDiagnostics]);
   const [showJourneyDetails, setShowJourneyDetails] = useState(false);
   const [presentationBusy, setPresentationBusy] = useState(false);
   const [presentationMessage, setPresentationMessage] = useState("");
@@ -726,7 +769,11 @@ function Content({ preflight, connection, shortcut }: { preflight: SleepPrefligh
       }
       const optionalDiagnostics = await collectOptionalDiagnostics(
         shouldCollectOptionalDiagnostics(
-          quickAccessVisible && showDiagnostics,
+          // `showDiagnostics` says the player opened these surfaces, not that
+          // they are on screen: on a pushed route the Command Center body is
+          // not rendered, and collecting for surfaces nobody can see is work
+          // the player did not ask for.
+          quickAccessVisible && diagnosticsOnScreen.current,
           nextPayload.snapshot.game_state,
         ),
         {
@@ -769,6 +816,10 @@ function Content({ preflight, connection, shortcut }: { preflight: SleepPrefligh
     setShowDiagnostics(compact.showDiagnostics);
     setShowJourneyDetails(compact.showJourneyDetails);
     setShowHardwareDetails(false);
+    // Steam may keep the plugin mounted between openings, so the route resets
+    // with the rest of the compact state; otherwise the panel reopens wherever
+    // it was left instead of at Command Center.
+    setNavStack(stackOnPanelOpen());
     setDockedIgpuStatus(null);
     setDiagnosticLoggingStatus(null);
     setPeripheralStatus(null);
@@ -1407,12 +1458,82 @@ function Content({ preflight, connection, shortcut }: { preflight: SleepPrefligh
     }, 0);
   }, []);
 
-  const toggleTroubleshooting = useCallback(() => {
-    if (!showDiagnostics) {
-      void refresh(true);
+  // The Troubleshoot route is deliberately not wired here. Its content is the
+  // six surfaces the existing `showDiagnostics` boolean gates, and moving them
+  // behind a route is its own slice; opening an empty Troubleshoot destination
+  // would be a screen that claims to hold controls it does not have. The
+  // existing Troubleshooting control stays the way in until then.
+  /** Read the disconnect status. The backend documents this call as observing
+   * and mutating nothing -- no filter armed, no DRM master taken, no display
+   * touched -- so it is safe to call whenever the screen showing it is open. */
+  const refreshDisconnect = useCallback(async () => {
+    try {
+      setEgpuDisconnect(await getEgpuDisconnectStatus());
+    } catch {
+      // A failed read is not evidence about the device. Leaving the previous
+      // status would show a stale offer, so it falls back to not-read.
+      setEgpuDisconnect(null);
     }
-    setShowDiagnostics((visible) => !visible);
+  }, []);
+
+  /** Run the disconnect the player just confirmed.
+   *
+   * The confirmation text and the display approval both come from the owning
+   * backend's presentation; neither is composed here. `release_display` is
+   * passed exactly as that presentation reported it and is never defaulted on,
+   * because turning the output off is visible to whoever is watching the TV.
+   */
+  const runDisconnect = useCallback(async (releaseDisplay: boolean) => {
+    setDisconnectBusy(true);
+    setDisconnectMessage("");
+    try {
+      const outcome = await executeEgpuDisconnect(releaseDisplay);
+      // A software removal is not clearance to unplug, so the result says what
+      // happened and nothing about the cable.
+      setDisconnectMessage(
+        outcome.ok
+          ? "The eGPU has been detached in software. Keep the cable connected."
+          : `Disconnect did not complete: ${label(outcome.code)}.`,
+      );
+    } catch {
+      setDisconnectMessage("Re-Gear could not complete the disconnect request.");
+    } finally {
+      setDisconnectBusy(false);
+      // Re-read rather than assuming what the attempt left behind.
+      void refreshDisconnect();
+    }
+  }, [refreshDisconnect]);
+
+  const openRoute = useCallback((route: Route) => {
+    setNavStack((stack) => pushRoute(stack, route));
+  }, []);
+
+  // Pops one internal level. Whether Back is ours to handle at all is decided
+  // by `hasInternalLevel` in the render below, not here: a handler that is
+  // attached and then declines has already swallowed the press, and a decision
+  // computed inside a state updater is not reliable because React may defer or
+  // replay it.
+  const popRoute = useCallback(() => {
+    setNavStack((stack) => backRoute(stack).stack);
+  }, []);
+
+  // The open-edge rule lives in troubleshootingToggle: opening asks for fresh
+  // evidence, closing does not, and re-opening does not request again. That is
+  // the surviving owner of what the deleted quick-access-section-state helper
+  // held, and it is covered by its own tests.
+  const toggleTroubleshooting = useCallback(() => {
+    const result = troubleshootingToggle(showDiagnostics);
+    if (result.refresh) void refresh(true);
+    setShowDiagnostics(result.next);
   }, [refresh, showDiagnostics]);
+
+  // Only while the panel is open and the Command Center is the visible route:
+  // reading for a screen nobody is looking at is work the player did not ask
+  // for, and the tile is the only consumer.
+  useEffect(() => {
+    if (!quickAccessVisible || !onCommandCenter) return;
+    void refreshDisconnect();
+  }, [quickAccessVisible, onCommandCenter, refreshDisconnect]);
 
   const toggleJourneyDetails = useCallback(() => {
     setShowJourneyDetails((visible) => {
@@ -1424,6 +1545,35 @@ function Content({ preflight, connection, shortcut }: { preflight: SleepPrefligh
     });
   }, []);
 
+  // Only System is wired to the row in this slice; the other four targets change
+  // the selection and nothing else yet. TDP evidence lives inside TdpControls, so
+  // its readiness is not observable here and the section reads unavailable --
+  // unknown state is not a capability claim.
+  const sections = quickAccessSections({
+    mode: payload?.inference.mode,
+    fresh: !loading && payload != null,
+    shortcutAvailable: controllerShortcutAvailable,
+    healthKnown: payload?.health != null,
+  });
+  const modules = quickAccessModules(sections);
+  // Auto TDP status is not observable from here yet: it lives inside
+  // TdpControls, and lifting it is qa-performance-controls-lift. Until then the
+  // performance tiles report not-yet-observed rather than guessing a value.
+  const tiles = commandCenterTiles({
+    performance: performanceState({ status: null, busy: disconnectBusy }),
+    displayTarget: payload ? label(payload.inference.mode) : undefined,
+    disconnectStatus: egpuDisconnect,
+  });
+  const shownTile = tiles.find((tile) => tile.id === selectedTile);
+
+  // Read-only status destinations, kept distinct from the configuration
+  // modules: these open detail, never controls.
+  const statusEntries: Array<{ id: StatusId; title: string; detail: string }> = [
+    { id: "egpu", title: "eGPU status",
+      detail: label(payload?.inference.mode ?? "unknown") },
+    { id: "controller", title: "Controller status",
+      detail: controllerShortcutAvailable ? "Shortcut input available" : "Status unavailable" },
+  ];
   const sectionVisibility = quickAccessSectionVisibility(showDiagnostics);
   const primaryDisplayAction = displayAction(payload?.inference.mode,
     tvSwitchBusy || safeDisconnectBusy, Boolean(tvSwitchAcknowledgementId),
@@ -1433,7 +1583,27 @@ function Content({ preflight, connection, shortcut }: { preflight: SleepPrefligh
   return (
     <>
       <style>{regearControlCss}</style>
+      <Focusable
+        // B is handled only while an internal level exists. At Command Center
+        // no handler is attached at all, so the press reaches Steam's own QAM
+        // Back instead of being swallowed by a handler that chose to do
+        // nothing. Native confirmation of that propagation stays pending.
+        {...(hasInternalLevel(navStack) ? { onCancelButton: popRoute } : {})}
+        style={{ minWidth: 0 }}
+      >
       <div ref={statusAnchor} tabIndex={-1}>
+      {!onCommandCenter && (
+        <PanelSection>
+          <ShellBody
+            route={route}
+            modules={modules}
+            statusEntries={statusEntries}
+            onOpenModule={(id: ModuleId) => openRoute({ kind: "module", id })}
+            onOpenStatus={(id: StatusId) => openRoute({ kind: "status", id })}
+          >{null}</ShellBody>
+        </PanelSection>
+      )}
+      {onCommandCenter && (<>
       <PanelSection title="At a glance">
         <QuickAccessOverview
           summaryRef={statusFocusAnchor}
@@ -1449,11 +1619,53 @@ function Content({ preflight, connection, shortcut }: { preflight: SleepPrefligh
 
       </PanelSection>
 
+      <PanelSection>
+        <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
+          <ModulesButton onOpen={() => openRoute({ kind: "modules" })} />
+        </div>
+        <CommandCenterGrid
+          tiles={tiles}
+          onActivate={(id: TileId) => {
+            setSelectedTile(id);
+            const tile = tiles.find((candidate) => candidate.id === id);
+            if (!tile) return;
+            if (id === "safe-disconnect") {
+              // Only an offer the owning backend actually made is actionable.
+              // Anything else selects the tile so its reason is read.
+              if (tile.activation !== "act" || !tile.confirmation || disconnectBusy) return;
+              const releaseDisplay = tile.displayApprovalRequired === true;
+              showDisconnectConfirmation(tile.confirmation, () => {
+                void runDisconnect(releaseDisplay);
+              });
+              return;
+            }
+            if (tile.activation !== "open") return;
+            // Performance tiles route to Auto TDP; the display target routes to
+            // the eGPU module, which owns the guarded transition.
+            openRoute(id === "display"
+              ? { kind: "module", id: "egpu" }
+              : { kind: "module", id: "auto-tdp" });
+          }}
+        />
+        <TileReason tile={shownTile} />
+        {disconnectMessage && (
+          <PanelSectionRow>{disconnectMessage}</PanelSectionRow>
+        )}
+        <ShellBody
+          route={route}
+          modules={modules}
+          statusEntries={statusEntries}
+          onOpenModule={(id: ModuleId) => openRoute({ kind: "module", id })}
+          onOpenStatus={(id: StatusId) => openRoute({ kind: "status", id })}
+        >{null}</ShellBody>
+      </PanelSection>
+
       {payload?.connection_readiness && payload.connection_readiness.stage !== "disconnected" &&
         <PanelSection title="eGPU readiness">
           <ConnectionQuickStatus store={connection.store} visible={quickAccessVisible}
             onOpen={openConnectionProgress} />
         </PanelSection>}
+      <TdpControls visible={quickAccessVisible} />
       <PanelSection title="Docking & actions">
         <div ref={primaryControlAnchor}>
           <DashboardSurface>
@@ -1508,7 +1720,7 @@ function Content({ preflight, connection, shortcut }: { preflight: SleepPrefligh
               title={safeDisconnectBusy
                 ? "Checking…"
                 : payload?.inference.mode === "portable"
-                  ? "Shut down to disconnect"
+                  ? "Shut down before unplugging"
                   : "Prepare to disconnect"}
               description="Keep the eGPU connected until fully powered off."
               onClick={requestSafeDisconnect}
@@ -1850,9 +2062,47 @@ function Content({ preflight, connection, shortcut }: { preflight: SleepPrefligh
           </ButtonItem>
         </PanelSectionRow>
       </PanelSection>}
+      </>)}
       </div>
+      </Focusable>
     </>
   );
+}
+
+/** Confirm a software disconnect.
+ *
+ * The body is the owning backend's confirmation string, rendered verbatim. It
+ * already states that the Steam session will restart, that the external
+ * display turns off when that applies, and that the cable stays connected.
+ * Rewriting or supplementing it here would create a second source of truth for
+ * the one piece of copy that must not drift.
+ */
+function showDisconnectConfirmation(
+  confirmation: string,
+  onConfirm: () => void,
+): ReturnType<typeof showModal> {
+  let modal: ReturnType<typeof showModal>;
+  const close = () => modal.Close();
+  modal = showModal(
+    <ConfirmModal
+      strTitle="Disconnect the eGPU?"
+      strOKButtonText="Disconnect"
+      strCancelButtonText="Cancel"
+      bDestructiveWarning={true}
+      bDisableBackgroundDismiss={true}
+      bHideCloseIcon={true}
+      onOK={() => {
+        close();
+        onConfirm();
+      }}
+      onCancel={close}
+    >
+      <div style={{ fontSize: "12px", lineHeight: "17px" }}>{confirmation}</div>
+    </ConfirmModal>,
+    window,
+    { strTitle: PRODUCT_NAME, bNeverPopOut: true },
+  );
+  return modal;
 }
 
 function showBlockedAttempt(

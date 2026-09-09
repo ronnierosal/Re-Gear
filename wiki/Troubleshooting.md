@@ -1,12 +1,23 @@
 # Troubleshooting
 
 **Audience:** supervised testers and support reviewers<br>
-**Evidence reviewed:** 2026-09-02<br>
+**Reviewed:** 2026-09-06<br>
 **Maturity:** diagnostic guidance; not permission to mutate hardware
 
 Use Re-Gear's bounded snapshot and support preview described in
 [Diagnostics](https://github.com/ronnierosal/Re-Gear/blob/main/docs/DIAGNOSTICS.md).
 Do not begin by posting raw logs or hardware identities.
+
+## Focused troubleshooting and lessons
+
+- [Ally X and GPD G1](Ally-X-and-GPD-G1-Troubleshooting): display/audio, retained resources, shutdown and later source fixes.
+- [Raikiri II extra buttons](Raikiri-II-Troubleshooting): transport differences, vendor-event research and mapping limits.
+
+Each guide separates who/what/where/when, evidence and likely cause, safe steps,
+verification status and unresolved work. Contributors can use the repository
+[troubleshooting template](https://github.com/ronnierosal/Re-Gear/blob/main/docs/templates/WIKI_TROUBLESHOOTING_TEMPLATE.md)
+for another major feature when useful evidence exists. Do not publish empty
+templates or treat a completed form as current hardware validation.
 
 ## Common symptoms
 
@@ -14,7 +25,7 @@ Do not begin by posting raw logs or hardware identities.
 
 Check the categorical host profile, eGPU profile, USB4 authorization, required
 topology functions, driver bindings, and link state. A GPU ID alone is not proof
-of the exact GPD G1 profile. Incomplete or ambiguous evidence should remain
+of a supported eGPU profile. Incomplete or ambiguous evidence should remain
 Unknown.
 
 ### The display connector says connected, but the TV is blank
@@ -26,7 +37,7 @@ symptom and safely returned to Portable. The cause was first a mismatched
 private launch binding and then a root-created config that the Gamescope user
 could not read. The corrected path subsequently completed one watched TV
 transition. See the detailed
-[Ally X and GPD G1 incident](Ally-X-and-GPD-G1-Docking-Incident).
+[historical device-specific incident](Ally-X-and-GPD-G1-Docking-Incident).
 
 ### The TV works, but sound still comes from the handheld
 
@@ -34,8 +45,8 @@ Display success does not establish audio success. Inspect the current default
 SteamOS loopback sink and associate an external candidate with the freshly
 verified eGPU audio function. PipeWire numeric node IDs are transient: resolve
 one immediately before use, never store or accept one from the UI, and preserve
-a verified Portable rollback target. The guarded automatic audio path still
-needs watched hardware validation.
+a verified Portable rollback target. Automatic default-sink selection has been observed in a supervised cycle, but
+each new build and repeated cycle still needs its own verification.
 
 ### A TV transition falls back to the handheld
 
@@ -47,8 +58,8 @@ divergence.
 ### Sleep or disconnect remains blocked
 
 Treat stale, loading, incomplete, unavailable, or unknown evidence as a real
-blocker. Clearing process clients alone does not make physical G1 removal safe.
-The current profile still requires shutdown before disconnect.
+blocker. Clearing process clients alone does not establish safe physical eGPU removal.
+Follow the exact profile policy; current validation requires shutdown before disconnect.
 
 ### The installed result does not match the source checkout
 
@@ -58,8 +69,31 @@ Do not claim a fix is installed until the runtime reports the expected identity.
 
 ## Reporting an issue
 
+Start with [Help Improve Re-Gear](Help-Improve-Re-Gear) for support-preview steps, optional diagnostic commands, and a report checklist.
+
+Search [open and closed GitHub issues](https://github.com/ronnierosal/Re-Gear/issues?q=is%3Aissue) first and update a matching issue when appropriate.
+
 Include the symptom, expected behavior, Re-Gear version/revision, evidence category,
 reproduction steps, and the redacted support preview. State whether the result
 was simulated, installed, or intentionally tested on named hardware. Never
 include credentials, private addresses, raw identifiers, or an unrestricted log
 dump.
+
+## Known disconnect and reconnect findings
+
+Returning to the handheld can restore picture, controls, and sound while Steam,
+Gamescope, or the audio service still owns external resources. This is the active
+[resource-release experiment (#51)](https://github.com/ronnierosal/Re-Gear/issues/51),
+with [audio ownership tracked separately (#52)](https://github.com/ronnierosal/Re-Gear/issues/52).
+Do not interpret a normal Portable screen or silent audio as unplug permission.
+Use the reviewed support preview above when reporting a result; no raw logs or
+experimental probe scripts are needed for a player report.
+
+Keep these distinct symptoms separate until evidence establishes a shared cause:
+
+- [Delayed eGPU detection (#17)](https://github.com/ronnierosal/Re-Gear/issues/17).
+- [Shutdown not completing (#18)](https://github.com/ronnierosal/Re-Gear/issues/18): lost networking alone does not establish power-off.
+- [Built-in controls missing after startup (#19)](https://github.com/ronnierosal/Re-Gear/issues/19).
+- [Sleep/power button failing when detached (#16)](https://github.com/ronnierosal/Re-Gear/issues/16): deferred separately from resource release.
+- [Popup dismissal interrupting docking (#27)](https://github.com/ronnierosal/Re-Gear/issues/27) and [TV profile/HDMI readiness (#28)](https://github.com/ronnierosal/Re-Gear/issues/28).
+- [Future sleep/wake restoration (#29)](https://github.com/ronnierosal/Re-Gear/issues/29): design and validation work, not an available live-disconnect capability.

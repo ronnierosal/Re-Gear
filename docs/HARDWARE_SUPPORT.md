@@ -27,7 +27,7 @@ live observers, mechanisms, and supervised rollback proof remain required.
 
 Simulation and passive observation cannot promote either a combination or a
 capability. Promotion requires an intentional reviewed test with exact
-host/eGPU profiles, HDM and SteamOS versions, and a timestamp. Read-only hardware
+host/eGPU profiles, Re-Gear and SteamOS versions, and a timestamp. Read-only hardware
 evidence may verify identity/detection/output observation, but a mutating
 capability needs supervised hardware evidence plus verified rollback or
 recovery. Live-removal verification additionally requires expected removal,
@@ -97,8 +97,8 @@ not promote a capability or add hardware observation.
 - Running-game transition blocking without restarting Gamescope
 - Idempotent internal restore
 
-These observations informed HDM design but are not proof that native HDM has
-implemented or certified the corresponding mutations. Current native HDM
+These observations informed Re-Gear design but are not proof that native Re-Gear has
+implemented or certified the corresponding mutations. Current native Re-Gear
 hardware evidence is listed in the dated validation record and the
 [authoritative roadmap](ROADMAP.md).
 
@@ -115,5 +115,5 @@ hardware evidence is listed in the dated validation record and the
 All addresses and connector names observed during validation are ephemeral and
 must be rediscovered after boot, reconnect, and resume.
 
-See [HDM 0.1 read-only hardware validation](HARDWARE_VALIDATION_2026-08-31.md)
+See [Re-Gear 0.1 read-only hardware validation](HARDWARE_VALIDATION_2026-08-31.md)
 for the first native snapshot result and its privilege-boundary finding.

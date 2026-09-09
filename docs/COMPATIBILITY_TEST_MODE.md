@@ -36,7 +36,7 @@ race cannot record a false eGPU result. It does not dock, undock, close a game,
 save, relaunch, signal a process, request sleep, or publish a catalog result.
 
 The save/exit dimension can additionally record **Graceful Exit Verified**
-through a read-only bracket: HDM must first observe the exact active Steam AppID
+through a read-only bracket: Re-Gear must first observe the exact active Steam AppID
 and later observe a fresh exact idle sample after the player exits it. It cannot
 close a game, trigger a save, or claim that progress was preserved. A different
 game, stale sample, unknown state, missing observer, or missing prior watch

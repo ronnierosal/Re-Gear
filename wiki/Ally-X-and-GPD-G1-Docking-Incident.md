@@ -1,5 +1,7 @@
 # Ally X and GPD G1 docking incident
 
+> Historical September 2 evidence. Statements about pending candidates below describe that session, not the current build. See [Current State](Current-State) for the maintained summary.
+
 **Audience:** developers, maintainers, and supervised hardware testers<br>
 **Evidence reviewed:** 2026-09-02<br>
 **Maturity:** display/render fix hardware tested once; guarded automatic audio
@@ -12,10 +14,10 @@ Current capability truth remains in
 
 ## What users saw
 
-The G1 was physically attached and the TV was on the correct HDMI input, but
-HDM initially reported incomplete eGPU evidence. Later attempts progressed far
+The G1 was physically attached and the TV was on the correct Re-GearI input, but
+Re-Gear initially reported incomplete eGPU evidence. Later attempts progressed far
 enough to restart Gamescope: the Ally display briefly turned off and the TV
-reported a signal, yet the TV stayed black and HDM returned to Portable. Once
+reported a signal, yet the TV stayed black and Re-Gear returned to Portable. Once
 the display path was fixed, Steam appeared on the TV and the RX 7600M XT was
 selected, but sound initially remained on the Ally.
 
@@ -27,11 +29,11 @@ one at a time by the previous fix.
 | Stage | Root cause | Correction | Evidence |
 |---|---|---|---|
 | Readiness | SteamOS supplied negotiated PCIe width in a valid form the parser rejected | Accept that form while preserving strict link validation | Regression tested |
-| Transition | HDM had not connected exact G1/TV readiness to the proven Gamescope restart mechanism | Add an off-by-default, one-request-per-attachment automatic coordinator behind existing gates | Implemented and simulated, then exercised during later success |
+| Transition | Re-Gear had not connected exact G1/TV readiness to the proven Gamescope restart mechanism | Add an off-by-default, one-request-per-attachment automatic coordinator behind existing gates | Implemented and simulated, then exercised during later success |
 | Journal | A shared terminal journal was shown without identifying the workflow that owned acknowledgement | Route acknowledgement by categorical owner and re-arm only after an exact valid acknowledgement | Hardware tested for routing and retry |
 | Launch binding | Writer used the raw boot ID while the shim re-hashed an already-hashed value | Use raw boot identity only in memory for the private binding; serialize only its hash | Hardware diagnosed; regression tested |
 | File access | Root wrote `presentation.json` as `0600`, so the `deck`-owned Gamescope shim could not read it | Make the identity-minimized config root-owned and world-readable (`0644`), retaining launch-time hardware revalidation | Hardware tested once: TV active and RX 7600M XT selected |
-| Audio | Display success left the internal SteamOS loopback sink as default | Resolve the exact G1 HDMI loopback's transient node ID just in time, select and verify it, and retain a Portable rollback target | Direct selection hardware tested; automatic path simulated |
+| Audio | Display success left the internal SteamOS loopback sink as default | Resolve the exact G1 Re-GearI loopback's transient node ID just in time, select and verify it, and retain a Portable rollback target | Direct selection hardware tested; automatic path simulated |
 
 ## Why “connected” was not enough
 
@@ -48,17 +50,17 @@ These facts must remain independent:
 - transition journal owned and resolved.
 
 The black-screen attempts are a useful example. The TV detected a signal, but
-the restarted Gamescope session had selected the internal panel. HDM's verifier
+the restarted Gamescope session had selected the internal panel. Re-Gear's verifier
 correctly rejected that as TV success and recovered to Portable.
 
 ## What finally worked
 
 With the readable launch config installed, one supervised attach resolved the
 exact Ally X/G1 profile, one EDID-ready TV, an observed-Up link, and Idle game
-state. HDM restarted Gamescope, made the TV the only active display, selected
+state. Re-Gear restarted Gamescope, made the TV the only active display, selected
 the RX 7600M XT, showed Steam on the TV, and committed the presentation journal.
 
-Read-only PipeWire inspection then located the G1 HDMI output. A supervised
+Read-only PipeWire inspection then located the G1 Re-GearI output. A supervised
 selection moved sound to the TV and the player confirmed it. The follow-up code
 now treats audio as a guarded child transaction: capture Portable default,
 freshly resolve the G1 sink, switch and verify, and restore it on rollback or
@@ -95,7 +97,7 @@ operating system, network, and Decky stayed alive. Roughly 80 seconds later,
 SteamOS restarted Gamescope on the internal panel and restarted Steam; the
 player confirmed both the interface and built-in controller worked.
 
-That is recovery evidence, not safe-removal certification. HDM's follow-up code
+That is recovery evidence, not safe-removal certification. Re-Gear's follow-up code
 therefore observes the native path instead of racing it with another restart.
 It arms only from exact idle TV Docked, waits up to 120 seconds, verifies a
 fresh Portable state, and then restores the previously captured Portable audio
@@ -106,7 +108,7 @@ display mutation. Shutdown-before-disconnect remains the supported rule.
 
 After the native recovery supervisor was installed, a later G1 attach produced
 USB4 and PCI evidence for the RX 7600M XT but no bound `amdgpu` driver, DRM card,
-or TV connector. HDM correctly refused to dock. This separates successful
+or TV connector. Re-Gear correctly refused to dock. This separates successful
 Portable fallback from subsequent driver/tunnel recovery; one does not prove
 the other. No driver probe, unbind, or USB4 reset was attempted.
 
@@ -121,7 +123,7 @@ enumeration and Gamescope restart remain independent timing budgets.
 ## What the first shutdown-before-disconnect test taught us
 
 The 2026-09-02 installed `a988c0cf1d61` run automatically reached the TV on a
-second attempt, selected G1 HDMI audio, and returned to the Ally display through
+second attempt, selected G1 Re-GearI audio, and returned to the Ally display through
 **Prepare G1 disconnect**. Two additional defects were then observed:
 
 - acknowledging the intentional Portable transition re-armed automatic docking,
@@ -134,7 +136,7 @@ acknowledgement suppresses redocking until G1 removal. They also rename and
 describe shutdown as an unverified request: an accepted system command is not
 proof that the Ally reached physical off. The firmware-level hang is unresolved.
 Keep the G1 connected if the fan remains on; after 60 seconds use a manual long
-power-button hold, and remove the cable only after the fan stops. HDM does not
+power-button hold, and remove the cable only after the fan stops. Re-Gear does not
 automate forced power-off.
 
 See [Troubleshooting](Troubleshooting),
