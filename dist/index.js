@@ -3523,8 +3523,10 @@ function commandCenterTiles(input) {
 /** Three separate verdicts about a disconnect: pure, no I/O.
  *
  * They were one, and collapsing them produced two opposite bugs in two days.
- * First the block said "You can now disconnect the eGPU cable" once the GPU
- * checks passed, which was a claim about a dock none of them had looked at.
+ * First the block granted cable clearance outright once the GPU checks passed,
+ * which was a claim about a dock none of them had looked at. (The exact wording
+ * is deliberately not quoted here: it would then sit in the shipped bundle as a
+ * comment and defeat any grep of a built archive, including the audit below.)
  * Then closing that gap by failing one check made *every* verdict false, so a
  * disconnect that worked perfectly told the player Re-Gear could not confirm
  * anything. Safe, and equally untrue.
@@ -3542,7 +3544,7 @@ function commandCenterTiles(input) {
  *   *presence* can be positively observed, so a status that still reports a
  *   device contradicts the removal and counts against it -- absence simply
  *   cannot be read the same way round.
- * - `cableClearance` -- the whole dock is down and it is safe to unplug.
+ * - `cableClearance` -- the whole dock is down and the cable may be pulled.
  *   Requires both of the above *plus* fresh, positive, bound dock teardown
  *   evidence, and is refused unless every one of them holds.
  *
