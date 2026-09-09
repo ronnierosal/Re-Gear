@@ -36,6 +36,11 @@ from hdm.delivery.live_disconnect_runtime import (  # noqa: E402
 from hdm.egpu_release import HolderScan  # noqa: E402
 from hdm.delivery.live_disconnect_runtime import GameContext  # noqa: E402
 from hdm.domain.display_release import DisplayReleaseEvidence  # noqa: E402
+from hdm.domain.game_close_consent import (  # noqa: E402
+    ConsentDecision,
+    GameClosePreference,
+    InterruptIntent,
+)
 from hdm.domain.game_compatibility import (  # noqa: E402
     EgpuHandoffStatus,
     GameSaveCapability,
@@ -127,6 +132,8 @@ def build(
     authorize=lambda binding: object(),
     observe_raises=False,
     game=None,
+    game_scan_complete=True,
+    close_preference=None,
 ):
     def observe():
         if observe_raises:
@@ -136,6 +143,7 @@ def build(
             display,
             present,
             game,
+            game_scan_complete,
         )
 
     runtime = LiveDisconnectRuntime(
@@ -145,6 +153,7 @@ def build(
         authorize=authorize,
         program=lambda: b"\x00" * 8,
         boot_hash=lambda: "a" * 64,
+        close_preference=close_preference,
     )
     runtime.service = runtime._service  # type: ignore[attr-defined]
     return runtime
@@ -588,6 +597,133 @@ class GameContextTests(unittest.TestCase):
 
     def test_no_game_is_null_rather_than_an_empty_object(self) -> None:
         self.assertIsNone(disconnect_status_to_payload(build().status())["game"])
+
+
+HADES = GameContext(
+    "1145360", "Hades", GameSaveCapability.UNTESTED, EgpuHandoffStatus.UNTESTED
+)
+
+
+class ClosePromptTests(unittest.TestCase):
+    """The status carries the decision, so the dialog does not re-derive it."""
+
+    def test_a_running_game_asks_before_anything_closes(self) -> None:
+        payload = disconnect_status_to_payload(
+            build(readiness=CLIENTS_BLOCKED, game=HADES).status()
+        )
+
+        self.assertEqual(payload["close_prompt"]["decision"], "confirm")
+        self.assertIs(payload["close_prompt"]["may_proceed"], False)
+        self.assertEqual(payload["close_prompt"]["intent"], "disconnect")
+
+    def test_no_game_over_a_finished_look_has_nothing_to_close(self) -> None:
+        payload = disconnect_status_to_payload(build().status())
+
+        self.assertEqual(payload["close_prompt"]["decision"], "nothing_to_close")
+        self.assertIs(payload["close_prompt"]["may_proceed"], True)
+
+    def test_a_look_that_failed_is_not_reported_as_an_empty_screen(self) -> None:
+        # The failure this guards: the scan throws, the status says there is
+        # nothing to close, and a player's game is closed without a word.
+        payload = disconnect_status_to_payload(
+            build(game=None, game_scan_complete=False).status()
+        )
+
+        self.assertEqual(payload["close_prompt"]["decision"], "confirm")
+        self.assertEqual(payload["close_prompt"]["code"], "game_close.scan_incomplete")
+        self.assertIsNone(payload["game"])
+
+    def test_a_standing_answer_for_this_game_is_honoured(self) -> None:
+        status = build(
+            readiness=CLIENTS_BLOCKED,
+            game=HADES,
+            close_preference=lambda app_id: GameClosePreference(
+                app_id, InterruptIntent.DISCONNECT, skip_confirmation=True
+            ),
+        ).status()
+
+        self.assertEqual(status.close_prompt.decision, ConsentDecision.REMEMBERED)
+
+    def test_an_unreadable_preference_asks_rather_than_assumes_consent(self) -> None:
+        # Failing the other way would close a game on an answer nobody can
+        # produce.
+        def explode(app_id: str):
+            raise OSError("preferences unreadable")
+
+        status = build(
+            readiness=CLIENTS_BLOCKED, game=HADES, close_preference=explode
+        ).status()
+
+        self.assertEqual(status.close_prompt.decision, ConsentDecision.CONFIRM)
+
+    def test_an_unnamed_game_is_never_matched_to_a_stored_answer(self) -> None:
+        asked: list[str] = []
+
+        def record(app_id: str):
+            asked.append(app_id)
+            return GameClosePreference(
+                app_id, InterruptIntent.DISCONNECT, skip_confirmation=True
+            )
+
+        unnamed = replace(HADES, app_id="", title="", identity_exact=False)
+        status = build(
+            readiness=CLIENTS_BLOCKED, game=unnamed, close_preference=record
+        ).status()
+
+        self.assertEqual(asked, [])
+        self.assertEqual(status.close_prompt.decision, ConsentDecision.CONFIRM)
+        self.assertEqual(status.close_prompt.code, "game_close.identity_unverified")
+
+    def test_the_payload_carries_what_a_dialog_has_to_render(self) -> None:
+        payload = disconnect_status_to_payload(
+            build(readiness=CLIENTS_BLOCKED, game=HADES).status()
+        )
+        prompt = payload["close_prompt"]
+
+        self.assertEqual(
+            set(prompt),
+            {
+                "schema_version",
+                "decision",
+                "code",
+                "intent",
+                "may_proceed",
+                "progress_at_risk",
+                "save_known",
+                "remember_offered",
+                "relaunch_offered",
+                "relaunch_requested",
+            },
+        )
+        self.assertIs(prompt["remember_offered"], True)
+        self.assertIs(prompt["relaunch_offered"], True)
+
+    def test_a_game_known_to_lose_progress_never_offers_the_checkbox(self) -> None:
+        game = replace(
+            HADES, save_capability=GameSaveCapability.MANUAL_SAVE_REQUIRED
+        )
+        payload = disconnect_status_to_payload(
+            build(
+                readiness=CLIENTS_BLOCKED,
+                game=game,
+                close_preference=lambda app_id: GameClosePreference(
+                    app_id, InterruptIntent.DISCONNECT, skip_confirmation=True
+                ),
+            ).status()
+        )
+
+        self.assertEqual(payload["close_prompt"]["decision"], "confirm")
+        self.assertIs(payload["close_prompt"]["remember_offered"], False)
+        self.assertIs(payload["close_prompt"]["progress_at_risk"], True)
+
+    def test_the_payload_survives_serialization(self) -> None:
+        encoded = json.dumps(
+            disconnect_status_to_payload(
+                build(readiness=CLIENTS_BLOCKED, game=HADES).status()
+            )
+        )
+
+        self.assertIn("close_prompt", encoded)
 
 
 if __name__ == "__main__":

@@ -56,6 +56,14 @@ from ..adapters.game_session import (
 from ..adapters.steamos.commands import UserServiceCommandRunner
 from ..adapters.steamos.game_scopes import SystemdGameScopeDiscovery
 from ..domain.filter_arm_sequence import classify_holder_units
+from ..domain.game_close_consent import (
+    ConsentDecision,
+    GameClosePreference,
+    GameClosePrompt,
+    InterruptIntent,
+    RunningGame,
+    decide_game_close,
+)
 from ..domain.game_compatibility import EgpuHandoffStatus, GameSaveCapability
 from ..domain.models import GameState
 from ..adapters.steamos.egpu_holders import (
@@ -88,6 +96,7 @@ from ..domain.removal_transaction import RecoveryState, reconcile
 from ..ports.removal_transaction import RemovalTransactionStore
 from .device_filter_program import compile_device_filter
 from .compatibility_catalog_store import FileCompatibilityCatalogStore
+from .game_close_preferences import GameClosePreferenceStore
 from .removal_transaction_store import FileRemovalTransactionStore
 
 
@@ -152,11 +161,24 @@ class GameContext:
     title: str
     save_capability: GameSaveCapability
     egpu_handoff: EgpuHandoffStatus
+    #: Whether the running game was named exactly. False means something is
+    #: rendering that could not be identified -- still a game, still a save,
+    #: but nothing that can be matched to a remembered answer or reopened.
+    identity_exact: bool = True
 
     @property
     def save_known(self) -> bool:
         """Whether the catalog says how this game handles being closed."""
         return self.save_capability is not GameSaveCapability.UNTESTED
+
+    def as_running_game(self) -> RunningGame:
+        """The same game, as the consent decision needs to see it."""
+        return RunningGame(
+            self.app_id,
+            self.title,
+            self.save_capability,
+            identity_exact=self.identity_exact,
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -171,10 +193,14 @@ class DisconnectStatus:
     #: Whether a disconnect would need to turn the external display off. A
     #: separate approval, because it is visible to whoever is watching it.
     display_release_required: bool = False
-    #: The game holding the eGPU, when one is. None means no game is running,
-    #: or that its identity could not be established -- which are different
-    #: things, and the readiness code says which.
+    #: The game holding the eGPU, when one is. None means no game is running
+    #: *or* the look did not finish; `close_prompt` is where those two part
+    #: company, and neither may be read as "nothing to close".
     game: GameContext | None = None
+    #: What to ask the player before closing that game, and whether they have
+    #: already answered. None only when there is no device to disconnect at
+    #: all, so a caller with a device always has a decision to act on.
+    close_prompt: GameClosePrompt | None = None
     last: LiveDisconnectResult | None = None
 
     @property
@@ -212,6 +238,10 @@ class DisconnectObservation:
     display: DisplayReleaseEvidence
     present: tuple[str, ...]
     game: GameContext | None = None
+    #: Whether the look for a running game finished. False with `game` None
+    #: means "could not tell", which is not the same fact as "nothing running"
+    #: and must never be collapsed into it.
+    game_scan_complete: bool = False
 
     @property
     def readiness(self) -> RemovalSafety:
@@ -240,6 +270,7 @@ class LiveDisconnectRuntime:
         program: Callable[[], bytes],
         boot_hash: Callable[[], str],
         monotonic: Callable[[], float] = time.monotonic,
+        close_preference: Callable[[str], GameClosePreference | None] | None = None,
     ) -> None:
         self._service = service
         self._store = store
@@ -248,6 +279,9 @@ class LiveDisconnectRuntime:
         self._program = program
         self._boot_hash = boot_hash
         self._monotonic = monotonic
+        # A caller with no preference source gets asked every time, which is
+        # the state a player is in before they tick anything.
+        self._close_preference = close_preference or (lambda app_id: None)
         self._lock = threading.Lock()
         self._busy = False
         self._last: LiveDisconnectResult | None = None
@@ -307,7 +341,30 @@ class LiveDisconnectRuntime:
             and committed,
             display_release_required=committed,
             game=observation.game,
+            close_prompt=self._close_prompt(observation),
             last=self._last,
+        )
+
+    def _close_prompt(self, observation: DisconnectObservation) -> GameClosePrompt:
+        """What to ask before closing whatever is running, if anything is.
+
+        A preference that cannot be read is no preference: the player is asked,
+        which is exactly where they were before they ticked the box. Failing
+        the other way -- treating an unreadable file as standing consent --
+        would close a game on an answer nobody can produce.
+        """
+        game = observation.game
+        preference = None
+        if game is not None and game.identity_exact:
+            try:
+                preference = self._close_preference(game.app_id)
+            except Exception:
+                preference = None
+        return decide_game_close(
+            InterruptIntent.DISCONNECT,
+            None if game is None else game.as_running_game(),
+            preference,
+            scan_complete=observation.game_scan_complete,
         )
 
     def _recovery_state(self, present: tuple[str, ...]) -> str | None:
@@ -526,8 +583,8 @@ def disconnect_status_to_payload(status) -> dict[str, object]:
         "external_display_committed": status.external_display_committed,
         "display_release_required": status.display_release_required,
         # The game holding the eGPU, when one is. Null means no game is
-        # running or its identity could not be established; the code says
-        # which, and a caller must not read null as "safe to close nothing".
+        # running or the look did not finish; `close_prompt.decision` says
+        # which, and a caller must not read null as "nothing to close".
         "game": (
             None
             if status.game is None
@@ -537,9 +594,39 @@ def disconnect_status_to_payload(status) -> dict[str, object]:
                 "save_capability": status.game.save_capability.value,
                 "egpu_handoff": status.game.egpu_handoff.value,
                 "save_known": status.game.save_known,
+                "identity_exact": status.game.identity_exact,
             }
         ),
+        # What to ask before closing that game. This is the field a caller
+        # branches on: `decision` alone says whether to act, ask, or stop.
+        "close_prompt": (
+            None
+            if status.close_prompt is None
+            else close_prompt_to_payload(status.close_prompt)
+        ),
         "last": disconnect_result_to_payload(last) if last is not None else None,
+    }
+
+
+def close_prompt_to_payload(prompt: GameClosePrompt) -> dict[str, object]:
+    """Project the consent decision onto what a dialog renders.
+
+    Facts, not sentences. Whether a checkbox appears and how urgent the save
+    warning is are decided here; the English belongs to the delivery surface
+    that already owns every other player-facing string.
+    """
+    return {
+        "schema_version": 1,
+        "decision": prompt.decision.value,
+        "code": prompt.code,
+        "intent": prompt.intent.value,
+        # True when a caller may act with no further player interaction.
+        "may_proceed": prompt.may_proceed_without_asking,
+        "progress_at_risk": prompt.progress_at_risk,
+        "save_known": prompt.save_known,
+        "remember_offered": prompt.remember_offered,
+        "relaunch_offered": prompt.relaunch_offered,
+        "relaunch_requested": prompt.relaunch_requested,
     }
 
 
@@ -605,22 +692,40 @@ def build_live_disconnect_runtime(
             raise RuntimeError(policy.code)
         return compile_device_filter(policy.devices)
 
-    def observe_game() -> GameContext | None:
-        """Identify the game holding the eGPU, and what the catalog knows.
+    def observe_game() -> tuple[GameContext | None, bool]:
+        """Identify the game holding the eGPU, and say whether the look worked.
 
-        Every failure is None rather than a guess. A caller reading None asks
-        the readiness code what is actually going on; it must never read it as
-        "no game is running", because an unidentifiable game is still a game
-        whose progress a close would put at risk.
+        Three outcomes that a single None would have flattened into one:
+
+        - the scan failed, so nothing is known. `(None, False)`;
+        - the scan finished and nothing is running. `(None, True)`;
+        - something is running. A context, with `identity_exact` false when it
+          could not be named -- because an unnamed game still has a save.
+
+        Only the second of those is clearance to skip the prompt, and the flag
+        is what keeps the other two out of it.
         """
         try:
             observation = GameScopeSessionObservationAdapter(
                 UserBoundGameScopeScanAdapter(SystemdGameScopeDiscovery(), uid)
             ).observe()
         except Exception:
-            return None
-        if observation.state is not GameState.RUNNING or observation.identity is None:
-            return None
+            return None, False
+        if observation.state is not GameState.RUNNING:
+            return None, True
+        if observation.identity is None or not observation.exact:
+            # Running, unnamed. Not matchable to a stored answer and not
+            # reopenable, so it is asked about every time.
+            return (
+                GameContext(
+                    "",
+                    "",
+                    GameSaveCapability.UNTESTED,
+                    EgpuHandoffStatus.UNTESTED,
+                    identity_exact=False,
+                ),
+                True,
+            )
         app_id = observation.identity.steam_app_id
         try:
             records = FileCompatibilityCatalogStore(CATALOG_ROOT).load_games()
@@ -628,21 +733,29 @@ def build_live_disconnect_runtime(
             records = ()
         for record in records:
             if record.steam_app_id == app_id:
-                return GameContext(
-                    app_id, record.title, record.save_sleep, record.egpu_handoff
+                return (
+                    GameContext(
+                        app_id, record.title, record.save_sleep, record.egpu_handoff
+                    ),
+                    True,
                 )
         # Known to be running, absent from the catalog. Untested is the honest
         # answer and is what makes a caller say so.
-        return GameContext(
-            app_id, "", GameSaveCapability.UNTESTED, EgpuHandoffStatus.UNTESTED
+        return (
+            GameContext(
+                app_id, "", GameSaveCapability.UNTESTED, EgpuHandoffStatus.UNTESTED
+            ),
+            True,
         )
 
     def observe() -> DisconnectObservation:
+        game, game_scan_complete = observe_game()
         return DisconnectObservation(
             observe_removal(disconnect_snapshot_service()),
             observe_display(nodes, nodes_incomplete=not nodes_complete),
             present_addresses(gpu, audio),
-            observe_game(),
+            game,
+            game_scan_complete,
         )
 
     def authorize(observation: DisconnectObservation):
@@ -701,6 +814,11 @@ def build_live_disconnect_runtime(
         owner_id="regear",
         device_set=gpu,
     )
+    preferences = GameClosePreferenceStore(CATALOG_ROOT)
+
+    def close_preference(app_id: str) -> GameClosePreference | None:
+        return preferences.load(app_id, InterruptIntent.DISCONNECT)
+
     return LiveDisconnectRuntime(
         service=service,
         store=store,
@@ -708,4 +826,5 @@ def build_live_disconnect_runtime(
         authorize=authorize,
         program=program,
         boot_hash=read_boot_hash,
+        close_preference=close_preference,
     )

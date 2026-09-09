@@ -50,13 +50,22 @@ from hdm.adapters.steamos.gamescope_session import (  # noqa: E402
     GamescopeSessionObservationAdapter,
 )
 from hdm.adapters.steamos.gamescope_user import resolve_gamescope_user  # noqa: E402
+from hdm.delivery.game_close_preferences import (  # noqa: E402
+    GameClosePreferenceStore,
+)
 from hdm.delivery.live_disconnect_runtime import (  # noqa: E402
+    CATALOG_ROOT,
     DisconnectAvailability,
     LiveDisconnectRuntime,
     build_live_disconnect_runtime,
     disconnect_result_to_payload,
     disconnect_status_to_payload,
 )
+from hdm.domain.game_close_consent import (  # noqa: E402
+    GameClosePreference,
+    InterruptIntent,
+)
+from hdm.domain.game_compatibility import STEAM_APP_ID_RE  # noqa: E402
 from hdm.adapters.steamos.sleep_inhibitor import (  # noqa: E402
     G1SleepGuardHardwareDiscovery,
     SleepGuardController,
@@ -1060,6 +1069,87 @@ class Plugin:
                 "ok": False,
             }
         return disconnect_result_to_payload(result)
+
+    async def remember_game_close_choice(
+        self,
+        steam_app_id: str,
+        skip_confirmation: bool = False,
+        relaunch_after: bool = False,
+    ) -> dict[str, object]:
+        """Store the player's answer for one game, before a disconnect.
+
+        Two things are checked here rather than trusted from the caller, both
+        because a frontend can be stale and neither failure is visible to the
+        player until it costs them a save:
+
+        - the game must be the one actually running and named exactly, so an
+          answer cannot be filed against a game the player was not looking at;
+        - "do not ask again" is refused for a game the catalog has reviewed
+          evidence loses progress on close, which is the same rule the consent
+          decision applies when reading a stored answer back.
+
+        Forgetting is not guarded the same way, because forgetting only ever
+        results in the player being asked more often.
+        """
+        if not isinstance(steam_app_id, str) or not STEAM_APP_ID_RE.fullmatch(
+            steam_app_id
+        ):
+            return {"ok": False, "code": "game_close.app_id_invalid"}
+        try:
+            runtime = await asyncio.to_thread(self._live_disconnect_runtime)
+        except Exception:
+            runtime = None
+        if runtime is None:
+            return {"ok": False, "code": "live_disconnect.session_unavailable"}
+        try:
+            status = await asyncio.to_thread(runtime.status)
+        except Exception:
+            return {"ok": False, "code": "live_disconnect.status_unavailable"}
+        prompt = status.close_prompt
+        if prompt is None or prompt.game is None or not prompt.game.identity_exact:
+            return {"ok": False, "code": "game_close.identity_unverified"}
+        if prompt.game.steam_app_id != steam_app_id:
+            return {"ok": False, "code": "game_close.preference_game_mismatch"}
+        if skip_confirmation and not prompt.remember_offered:
+            return {"ok": False, "code": "game_close.progress_at_risk"}
+        preference = GameClosePreference(
+            steam_app_id,
+            InterruptIntent.DISCONNECT,
+            skip_confirmation=bool(skip_confirmation),
+            relaunch_after=bool(relaunch_after),
+        )
+        try:
+            await asyncio.to_thread(
+                GameClosePreferenceStore(CATALOG_ROOT).remember, preference
+            )
+        except Exception:
+            return {"ok": False, "code": "game_close.preference_write_failed"}
+        return {
+            "ok": True,
+            "code": "game_close.preference_stored",
+            "steam_app_id": steam_app_id,
+            "intent": InterruptIntent.DISCONNECT.value,
+            "skip_confirmation": preference.skip_confirmation,
+            "relaunch_after": preference.relaunch_after,
+        }
+
+    async def forget_game_close_choice(
+        self, steam_app_id: str
+    ) -> dict[str, object]:
+        """Return one game to being asked about before a disconnect."""
+        if not isinstance(steam_app_id, str) or not STEAM_APP_ID_RE.fullmatch(
+            steam_app_id
+        ):
+            return {"ok": False, "code": "game_close.app_id_invalid"}
+        try:
+            await asyncio.to_thread(
+                GameClosePreferenceStore(CATALOG_ROOT).forget,
+                steam_app_id,
+                InterruptIntent.DISCONNECT,
+            )
+        except Exception:
+            return {"ok": False, "code": "game_close.preference_write_failed"}
+        return {"ok": True, "code": "game_close.preference_cleared"}
 
     async def preview_support_bundle(self, _request: object = None) -> dict[str, object]:
         """Return a redacted preview and one-time approval token."""

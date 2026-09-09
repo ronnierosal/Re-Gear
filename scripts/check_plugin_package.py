@@ -278,10 +278,15 @@ def main() -> int:
             # approval of its own. Neither is clearance to unplug.
             "get_egpu_disconnect_status",
             "execute_egpu_disconnect",
+            # The player's standing answer about closing one game before a
+            # disconnect. Writes a per-game preference and nothing else; the
+            # backend still re-derives whether that answer may be stored.
+            "remember_game_close_choice",
+            "forget_game_close_choice",
         }
         if public_methods != allowed_methods:
             failures.append(
-                "Decky RPCs must remain limited to diagnostics/logging, read-only offline report classification and peripheral/watcher/action-history status, automatic-dock preference/status, explicit manual/automatic TDP controls and read-only benchmarks/preferences, approved support export, supervised presentation, confirmed shutdown-before-disconnect, and guarded process release, and live eGPU software disconnect"
+                "Decky RPCs must remain limited to diagnostics/logging, read-only offline report classification and peripheral/watcher/action-history status, automatic-dock preference/status, explicit manual/automatic TDP controls and read-only benchmarks/preferences, approved support export, supervised presentation, confirmed shutdown-before-disconnect, and guarded process release, and live eGPU software disconnect with its per-game close preference"
             )
 
     sources = {}
