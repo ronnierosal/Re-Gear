@@ -13,6 +13,7 @@ from hdm.application.filter_arm import (  # noqa: E402
     ArmSequenceResult,
     ArmStage,
     FilterArmCoordinator,
+    HolderObservation,
     release_outcome,
 )
 from hdm.domain.device_removal import (  # noqa: E402
@@ -97,15 +98,21 @@ def coordinator(
     restart_fails=None,
     cgroup=CGROUP,
     now=1.0,
+    complete=True,
+    restart_raises=None,
+    clock=None,
 ):
     """Build a coordinator whose holder scan returns each value in turn."""
     sequence = list(holders)
     restarted: list[str] = []
 
     def observe():
-        return sequence.pop(0) if len(sequence) > 1 else sequence[0]
+        units = sequence.pop(0) if len(sequence) > 1 else sequence[0]
+        return HolderObservation(tuple(units), complete)
 
     def restart(unit):
+        if restart_raises and unit == restart_raises:
+            raise OSError('restart exploded')
         if restart_fails and unit == restart_fails:
             return False
         restarted.append(unit)
@@ -114,9 +121,9 @@ def coordinator(
     instance = FilterArmCoordinator(
         device_filter=device_filter or FakeFilter(),
         restart=restart,
-        observe_holder_units=observe,
+        observe_holders=observe,
         observe_cgroup=lambda: cgroup,
-        monotonic=lambda: now,
+        monotonic=clock or (lambda: now),
     )
     instance.restarted = restarted  # type: ignore[attr-defined]
     return instance
@@ -334,6 +341,7 @@ class ReleaseOutcomeProjectionTests(unittest.TestCase):
                 RemovalFunction(RemovalFunctionKind.GPU, "0000:08:00.0"),
                 RemovalFunction(RemovalFunctionKind.AUDIO, "0000:08:00.1"),
             ),
+            released_attachment="binding",
         )
         self.assertTrue(decision.may_remove)
 
@@ -345,6 +353,7 @@ class ReleaseOutcomeProjectionTests(unittest.TestCase):
                 RemovalFunction(RemovalFunctionKind.GPU, "0000:08:00.0"),
                 RemovalFunction(RemovalFunctionKind.AUDIO, "0000:08:00.1"),
             ),
+            released_attachment="binding",
         )
         self.assertFalse(decision.may_remove)
 
@@ -358,6 +367,64 @@ def _ready_removal_safety():
         "removal_safety.ready_for_supervised_removal",
         SafeUndockRevalidation("binding", "generation", "sample"),
     )
+
+
+class ReviewFindingRegressionTests(unittest.TestCase):
+    """One case per defect reproduced by the 2026-09-08 review harness.
+
+    Each of these passed before the repair, which is the point: they are the
+    fake reproducer's cases turned into standing coverage.
+    """
+
+    def test_an_incomplete_final_scan_is_not_a_clear_device(self) -> None:
+        """Finding 1: the fail-open removed in #137, returned at this layer.
+
+        A bare tuple could not say the difference between nothing holding the
+        device and a scan that could not finish, so an empty one reported
+        armed_and_clear.
+        """
+        result = coordinator(holders=(HOLDERS, ()), complete=False).arm(
+            grant(), PROGRAM, boot_hash=BOOT
+        )
+        self.assertIs(result.stage, ArmStage.SCAN_INCOMPLETE)
+        self.assertIsNot(result.stage, ArmStage.ARMED_AND_CLEAR)
+        self.assertTrue(result.disarmed)
+
+    def test_a_raised_restart_still_takes_the_filter_down(self) -> None:
+        """Finding 2: an OSError escaped and left the filter armed."""
+        fake = FakeFilter()
+        result = coordinator(
+            device_filter=fake, restart_raises="wireplumber.service"
+        ).arm(grant(), PROGRAM, boot_hash=BOOT)
+        self.assertIs(result.stage, ArmStage.RESTART_FAILED)
+        self.assertTrue(result.disarmed)
+        self.assertGreaterEqual(fake.disarm_calls, 1)
+
+    def test_authorization_expiring_mid_restart_stops_the_remaining_ones(
+        self,
+    ) -> None:
+        """Finding 3: an expired grant still allowed the next restart."""
+        ticks = iter([1.0, 1.0, 2000.0, 2000.0, 2000.0, 2000.0])
+        instance = coordinator(clock=lambda: next(ticks, 2000.0))
+        result = instance.arm(grant(), PROGRAM, boot_hash=BOOT)
+        self.assertIs(result.stage, ArmStage.AUTHORIZATION_STALE)
+        self.assertTrue(result.disarmed)
+        # The second unit was never restarted.
+        self.assertLess(len(instance.restarted), 2)
+
+    def test_a_clear_scan_still_reaches_armed_and_clear(self) -> None:
+        """The repair must not make the honest case unreachable."""
+        result = coordinator(holders=(HOLDERS, ()), complete=True).arm(
+            grant(), PROGRAM, boot_hash=BOOT
+        )
+        self.assertIs(result.stage, ArmStage.ARMED_AND_CLEAR)
+        self.assertIs(release_outcome(result), ReleaseOutcome.CLEAR)
+
+    def test_an_incomplete_scan_refuses_a_removal(self) -> None:
+        result = coordinator(holders=(HOLDERS, ()), complete=False).arm(
+            grant(), PROGRAM, boot_hash=BOOT
+        )
+        self.assertIs(release_outcome(result), ReleaseOutcome.REFUSED)
 
 
 if __name__ == "__main__":

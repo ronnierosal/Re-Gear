@@ -120,6 +120,8 @@ def decide_disconnect(
     release: ReleaseOutcome,
     readiness_after_release: RemovalSafety | None,
     functions: tuple[RemovalFunction, ...],
+    *,
+    released_attachment: str = "",
 ) -> DisconnectDecision:
     """Decide the next step of a live disconnect.
 
@@ -131,6 +133,17 @@ def decide_disconnect(
     The release outcome is consulted first and on its own. A removal-safety
     verdict is not evidence that a release happened, and a device that was
     never released must not be removed however clean it looks.
+
+    `released_attachment` is the attachment the release actually ran against.
+    It must match the one the readiness evidence was taken over, because a
+    release outcome carries no device identity of its own: without this, a
+    release performed on one eGPU combined with ready evidence for another
+    composed a plan and reported that removal could proceed. Callers that
+    cannot supply it get a refusal rather than an unchecked pass.
+
+    This decision stays advisory. It establishes that the same device was
+    released and assessed; the application still has to hold enforcement
+    across the removal and revalidate immediately before writing.
     """
     if type(release) is not ReleaseOutcome or type(functions) is not tuple:
         return DisconnectDecision(
@@ -165,6 +178,18 @@ def decide_disconnect(
         # removal_safety.external_display_still_active here.
         return DisconnectDecision(
             DisconnectStage.NOT_SAFE_AFTER_RELEASE, readiness_after_release.code
+        )
+
+    revalidation = readiness_after_release.revalidation
+    if revalidation is None:
+        return DisconnectDecision(
+            DisconnectStage.INVALID, "disconnect.revalidation_missing"
+        )
+    if not released_attachment or released_attachment != revalidation.attachment_binding:
+        # The release and the evidence describe different devices, or the
+        # caller could not say which device it released.
+        return DisconnectDecision(
+            DisconnectStage.INVALID, "disconnect.attachment_mismatch"
         )
 
     plan = compose_removal_plan(readiness_after_release, functions)
