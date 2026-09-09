@@ -35,6 +35,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Callable
 
+from ..domain.disconnect_sequence import ReleaseOutcome
 from ..domain.filter_arm_sequence import (
     ArmSequenceState,
     compose_restart_plan,
@@ -192,3 +193,24 @@ class FilterArmCoordinator:
         """Take the filter down and report what the attempt disturbed."""
         disarmed = self._filter.disarm().ok
         return ArmSequenceResult(stage, code, None, restarted, remaining, disarmed)
+
+
+def release_outcome(result: ArmSequenceResult) -> ReleaseOutcome:
+    """Project an arm attempt onto what the disconnect sequence needs to know.
+
+    `hdm.domain.disconnect_sequence` decides whether a removal may proceed, and
+    the only thing it needs from the release is how far it got. Eight stages
+    collapse to three outcomes, because the difference between failing to
+    authorise and failing to restart matters to whoever fixes the release and
+    not at all to whether a device may now be detached.
+
+    The collapse is deliberately lossy in one direction only. Every stage short
+    of a clear device maps to something that refuses removal, so a stage added
+    later cannot accidentally read as permission: the mapping names the two
+    permissive cases and treats everything else as refused.
+    """
+    if result.stage is ArmStage.ARMED_AND_CLEAR:
+        return ReleaseOutcome.CLEAR
+    if result.stage is ArmStage.HOLDERS_REMAIN:
+        return ReleaseOutcome.HOLDERS_REMAIN
+    return ReleaseOutcome.REFUSED

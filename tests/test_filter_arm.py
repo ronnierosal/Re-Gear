@@ -13,6 +13,15 @@ from hdm.application.filter_arm import (  # noqa: E402
     ArmSequenceResult,
     ArmStage,
     FilterArmCoordinator,
+    release_outcome,
+)
+from hdm.domain.device_removal import (  # noqa: E402
+    RemovalFunction,
+    RemovalFunctionKind,
+)
+from hdm.domain.disconnect_sequence import (  # noqa: E402
+    ReleaseOutcome,
+    decide_disconnect,
 )
 from hdm.domain.filter_authorization import (  # noqa: E402
     CgroupIdentity,
@@ -270,6 +279,85 @@ class ResultInvariantTests(unittest.TestCase):
         )
         self.assertNotIn("device_removal", source)
         self.assertNotIn("rescan", source)
+
+
+class ReleaseOutcomeProjectionTests(unittest.TestCase):
+    """The seam between the release half and the disconnect decision.
+
+    Only a demonstrably clear device may lead to a removal, so the mapping
+    names its permissive cases and treats every other stage as refused. A
+    stage added later therefore cannot accidentally read as permission.
+    """
+
+    def result(self, stage: ArmStage) -> ArmSequenceResult:
+        if stage is ArmStage.ARMED_AND_CLEAR:
+            return ArmSequenceResult(stage, "code", FILTER)
+        return ArmSequenceResult(stage, "code")
+
+    def test_a_clear_device_is_the_only_clear_outcome(self) -> None:
+        self.assertIs(
+            release_outcome(self.result(ArmStage.ARMED_AND_CLEAR)),
+            ReleaseOutcome.CLEAR,
+        )
+
+    def test_remaining_holders_keep_their_own_outcome(self) -> None:
+        self.assertIs(
+            release_outcome(self.result(ArmStage.HOLDERS_REMAIN)),
+            ReleaseOutcome.HOLDERS_REMAIN,
+        )
+
+    def test_every_other_stage_refuses(self) -> None:
+        for stage in ArmStage:
+            if stage in (ArmStage.ARMED_AND_CLEAR, ArmStage.HOLDERS_REMAIN):
+                continue
+            self.assertIs(
+                release_outcome(self.result(stage)),
+                ReleaseOutcome.REFUSED,
+                f"{stage} must not permit a removal",
+            )
+
+    def test_no_stage_maps_to_not_attempted(self) -> None:
+        # NOT_ATTEMPTED means no release ran at all, which an arm result by
+        # definition contradicts. Producing it here would let a caller believe
+        # the sequence had not started when it had.
+        for stage in ArmStage:
+            self.assertIsNot(
+                release_outcome(self.result(stage)), ReleaseOutcome.NOT_ATTEMPTED
+            )
+
+    def test_a_clear_arm_composes_into_a_removal_decision(self) -> None:
+        """The two halves join without an adapter in between."""
+        decision = decide_disconnect(
+            release_outcome(self.result(ArmStage.ARMED_AND_CLEAR)),
+            _ready_removal_safety(),
+            (
+                RemovalFunction(RemovalFunctionKind.GPU, "0000:08:00.0"),
+                RemovalFunction(RemovalFunctionKind.AUDIO, "0000:08:00.1"),
+            ),
+        )
+        self.assertTrue(decision.may_remove)
+
+    def test_holders_remaining_stops_the_removal_decision(self) -> None:
+        decision = decide_disconnect(
+            release_outcome(self.result(ArmStage.HOLDERS_REMAIN)),
+            _ready_removal_safety(),
+            (
+                RemovalFunction(RemovalFunctionKind.GPU, "0000:08:00.0"),
+                RemovalFunction(RemovalFunctionKind.AUDIO, "0000:08:00.1"),
+            ),
+        )
+        self.assertFalse(decision.may_remove)
+
+
+def _ready_removal_safety():
+    from hdm.domain.removal_safety import RemovalSafety, RemovalSafetyState
+    from hdm.domain.safe_undock_readiness import SafeUndockRevalidation
+
+    return RemovalSafety(
+        RemovalSafetyState.READY_FOR_SUPERVISED_REMOVAL,
+        "removal_safety.ready_for_supervised_removal",
+        SafeUndockRevalidation("binding", "generation", "sample"),
+    )
 
 
 if __name__ == "__main__":
