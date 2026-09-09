@@ -38,10 +38,9 @@ from __future__ import annotations
 
 import ctypes
 import os
-from dataclasses import dataclass
-from enum import StrEnum
 from typing import Callable
 
+from ...ports.display_release import DisplayReleaseOutcome, DisplayReleaseResult
 from .drm_crtc import GET_CRTC, KernelCrtc, ioctl_call, iowr
 
 
@@ -49,28 +48,6 @@ from .drm_crtc import GET_CRTC, KernelCrtc, ioctl_call, iowr
 SET_MASTER = (0x64 << 8) | 0x1E
 DROP_MASTER = (0x64 << 8) | 0x1F
 SET_CRTC = iowr(0xA2, ctypes.sizeof(KernelCrtc))
-
-
-class DisplayReleaseOutcome(StrEnum):
-    RELEASED = "released"
-    #: The card could not be opened, so nothing was attempted.
-    UNAVAILABLE = "unavailable"
-    #: Master was refused. Something else holds the device, or the kernel
-    #: declined; either way this must not continue.
-    NOT_MASTER = "not_master"
-    #: The write failed, or returned without error and left a mode committed.
-    STILL_COMMITTED = "still_committed"
-
-
-@dataclass(frozen=True, slots=True)
-class DisplayReleaseResult:
-    outcome: DisplayReleaseOutcome
-    code: str = ""
-    released: tuple[int, ...] = ()
-
-    @property
-    def ok(self) -> bool:
-        return self.outcome is DisplayReleaseOutcome.RELEASED
 
 
 class HeldDisplayRelease:

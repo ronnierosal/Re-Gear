@@ -54,6 +54,7 @@ from enum import StrEnum
 from typing import Callable
 
 from ..domain.device_removal import RemovalFunction, RemovalPlan, plan_is_current
+from ..domain.display_release import DisplayReleaseEvidence, decide_display_release
 from ..domain.disconnect_sequence import (
     DisconnectStage,
     ReleaseOutcome,
@@ -72,6 +73,7 @@ from ..domain.removal_transaction import (
 from ..domain.removal_transaction import plan as plan_transaction
 from ..ports.device_filter import DeviceFilterPort
 from ..ports.device_removal import DeviceRemovalPort
+from ..ports.display_release import DisplayReleasePort
 from ..ports.removal_transaction import RemovalTransactionStore
 from .filter_arm import ArmSequenceResult, FilterArmCoordinator, release_outcome
 
@@ -160,6 +162,13 @@ class LiveDisconnectResult:
     removed: tuple[str, ...] = ()
     restored: tuple[str, ...] = ()
     filter_disarmed: bool = False
+    #: CRTCs turned off for the duration of the assessment and removal, and
+    #: given back before this returned.
+    display_released: tuple[int, ...] = ()
+    #: Why the display release happened, was not needed, or was refused. A
+    #: refusal here is not fatal: a committed mode that is still standing is
+    #: reported by the readiness code, not by this.
+    display_release_code: str = ""
 
     def __post_init__(self) -> None:
         if self.stage is LiveDisconnectStage.REMOVED and not self.removed:
@@ -193,8 +202,11 @@ class LiveDisconnectService:
         coordinator: FilterArmCoordinator,
         device_filter: DeviceFilterPort,
         removal: DeviceRemovalPort,
+        display_release: DisplayReleasePort,
         store: RemovalTransactionStore,
         observe: Callable[[], FreshRemovalObservation],
+        observe_display: Callable[[], DisplayReleaseEvidence],
+        display_node: str,
         present_addresses: Callable[[], tuple[str, ...]],
         removal_functions: Callable[[], tuple[RemovalFunction, ...]],
         now_ns: Callable[[], int],
@@ -204,8 +216,11 @@ class LiveDisconnectService:
         self._coordinator = coordinator
         self._filter = device_filter
         self._removal = removal
+        self._display_release = display_release
         self._store = store
         self._observe = observe
+        self._observe_display = observe_display
+        self._display_node = display_node
         self._present = present_addresses
         self._removal_functions = removal_functions
         self._now_ns = now_ns
@@ -218,8 +233,15 @@ class LiveDisconnectService:
         program: bytes,
         *,
         boot_hash: str,
+        release_display: bool,
     ) -> LiveDisconnectResult:
-        """Attempt the whole sequence, leaving nothing armed behind it."""
+        """Attempt the whole sequence, leaving nothing armed behind it.
+
+        `release_display` is a separate authority from the disconnect itself:
+        turning an output off is visible to whoever is in front of it, so the
+        caller says whether that is approved rather than it following from
+        having approved a removal.
+        """
         try:
             recovery = self._recover()
         except Exception:
@@ -239,13 +261,67 @@ class LiveDisconnectService:
             return self._refused(arm)
 
         # From here the filter is live and must stay live until the removal has
-        # finished either way, so every exit runs through the disarm below.
+        # finished either way, so every exit runs through the disarm below. The
+        # display is given back first, so the system is put back in the order
+        # it was taken apart.
         try:
-            result = self._after_release(arm, authorization)
+            result = self._with_display_released(arm, authorization, release_display)
         except BaseException:
             self._filter.disarm()
             raise
         return replace(result, filter_disarmed=self._filter.disarm().ok)
+
+    # -- the display ------------------------------------------------------
+
+    def _with_display_released(
+        self,
+        arm: ArmSequenceResult,
+        authorization: ParentScopeAuthorization,
+        approved: bool,
+    ) -> LiveDisconnectResult:
+        """Take the external display down for the assessment and the removal.
+
+        The holders let go, and on the tested hardware the eGPU still had a
+        mode committed afterwards, because the kernel's fbdev client restores
+        the console's mode when the compositor gives the output back. No
+        holder release can clear that; a DRM master turning the CRTC off can,
+        and the console's mode returns when the descriptor closes.
+
+        A refusal here is deliberately **not** fatal. If a committed mode is
+        still standing, the assessment below declines with the readiness code
+        that names it, which is the same answer the sequence gave before this
+        step existed. This enables a removal; it does not gate one.
+        """
+        decision = decide_display_release(self._observe_display(), approved=approved)
+        if not decision.permitted:
+            return replace(
+                self._after_release(arm, authorization),
+                display_release_code=decision.code,
+            )
+
+        outcome, held = self._display_release.release(
+            self._display_node, decision.crtcs
+        )
+        if held is None:
+            return replace(
+                self._after_release(arm, authorization),
+                display_release_code=outcome.code,
+            )
+        try:
+            # Held across both the assessment and the removal. An assessment
+            # taken while the display is down, acted on after it came back,
+            # would describe a moment that no longer exists.
+            result = self._after_release(arm, authorization)
+        finally:
+            # The removal detaches the device underneath this descriptor.
+            # `drm_dev_unplug` is built for exactly that: the node stops
+            # answering and closing it is still correct.
+            held.restore()
+        return replace(
+            result,
+            display_released=outcome.released,
+            display_release_code=outcome.code,
+        )
 
     # -- recovery ---------------------------------------------------------
 

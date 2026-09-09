@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 import unittest
+from dataclasses import replace
 from pathlib import Path
 
 
@@ -27,6 +28,7 @@ from hdm.domain.filter_authorization import (  # noqa: E402
     OwnerIdentity,
     authorize_parent_scope,
 )
+from hdm.domain.display_release import DisplayReleaseEvidence  # noqa: E402
 from hdm.domain.removal_safety import RemovalSafety, RemovalSafetyState  # noqa: E402
 from hdm.domain.removal_transaction import (  # noqa: E402
     FunctionProgress,
@@ -40,6 +42,10 @@ from hdm.ports.device_filter import (  # noqa: E402
     ArmResult,
     DisarmOutcome,
     DisarmResult,
+)
+from hdm.ports.display_release import (  # noqa: E402
+    DisplayReleaseOutcome,
+    DisplayReleaseResult,
 )
 from hdm.ports.device_removal import (  # noqa: E402
     RemovalOutcome,
@@ -185,6 +191,64 @@ class FakeStore:
         self.record = None
 
 
+#: No committed external mode, so most tests take no display step at all.
+NO_DISPLAY = DisplayReleaseEvidence(
+    external_committed=(),
+    external_complete=True,
+    internal_committed=True,
+    client_holders=(),
+    client_scan_complete=True,
+)
+#: The tested hardware after the return: the eGPU still driving CRTC 98.
+DISPLAY_HELD = DisplayReleaseEvidence(
+    external_committed=(98,),
+    external_complete=True,
+    internal_committed=True,
+    client_holders=(),
+    client_scan_complete=True,
+)
+
+
+class FakeHeld:
+    def __init__(self, events, released) -> None:
+        self._events = events
+        self.released = released
+        self.held = True
+
+    def still_released(self):
+        return self.held
+
+    def restore(self):
+        if self.held:
+            self._events.append(("display_restore",))
+            self.held = False
+
+
+class FakeDisplayRelease:
+    def __init__(self, events, *, fails=False) -> None:
+        self._events = events
+        self._fails = fails
+        self.handles = []
+
+    def release(self, node, crtcs):
+        self._events.append(("display_release", crtcs))
+        if self._fails:
+            return (
+                DisplayReleaseResult(
+                    DisplayReleaseOutcome.STILL_COMMITTED, "fake.still_committed"
+                ),
+                None,
+            )
+        handle = FakeHeld(self._events, crtcs)
+        self.handles.append(handle)
+        return (
+            DisplayReleaseResult(
+                DisplayReleaseOutcome.RELEASED, "display_release.released", crtcs
+            ),
+            handle,
+        )
+
+
 class Harness:
     """One assembled service with every collaborator faked and observable."""
 
@@ -202,10 +266,14 @@ class Harness:
         load_raises=False,
         fail_save=None,
         lose_enforcement=False,
+        display=NO_DISPLAY,
+        display_fails=False,
     ) -> None:
         self.events: list[tuple] = []
         self.filter = FakeFilter(arm_ok=arm_ok)
         self.removal = FakeRemoval(self.events, fails=fails, rescan_ok=rescan_ok)
+        self.display = FakeDisplayRelease(self.events, fails=display_fails)
+        self._display_evidence = display
         self.store = FakeStore(
             self.events, record=record, load_raises=load_raises, fail_save=fail_save
         )
@@ -239,8 +307,11 @@ class Harness:
             ),
             device_filter=self.filter,
             removal=self.removal,
+            display_release=self.display,
             store=self.store,
             observe=self._next_observation,
+            observe_display=lambda: self._display_evidence,
+            display_node="/dev/dri/card1",
             present_addresses=self._next_present,
             removal_functions=lambda: FUNCTIONS,
             now_ns=lambda: 1_700_000_000_000_000_000,
@@ -258,8 +329,10 @@ class Harness:
             return self._present.pop(0)
         return tuple(self._present[0])
 
-    def run(self):
-        return self.service.disconnect(grant(), PROGRAM, boot_hash=BOOT)
+    def run(self, release_display=True):
+        return self.service.disconnect(
+            grant(), PROGRAM, boot_hash=BOOT, release_display=release_display
+        )
 
     @property
     def detached(self) -> tuple[str, ...]:
@@ -459,6 +532,115 @@ class RemovalTests(unittest.TestCase):
             harness.run()
         self.assertFalse(harness.filter.armed)
         self.assertEqual(harness.filter.disarm_calls, 1)
+
+
+
+class DisplayReleaseTests(unittest.TestCase):
+    """The step that unblocked #168 on the tested hardware."""
+
+    def test_the_display_is_released_before_the_assessment_and_given_back_after(
+        self,
+    ) -> None:
+        """Held across both.
+
+        An assessment taken while the display was down, acted on after it came
+        back, would describe a moment that no longer exists.
+        """
+        harness = Harness(
+            observations=[ready(), ready()], present=[(), ()], display=DISPLAY_HELD
+        )
+        result = harness.run()
+
+        self.assertIs(result.stage, LiveDisconnectStage.REMOVED)
+        self.assertEqual(result.display_released, (98,))
+        self.assertEqual(
+            harness.events,
+            [
+                ("display_release", (98,)),
+                ("save", "planned"),
+                ("remove", AUDIO),
+                ("save", "in_progress"),
+                ("remove", GPU),
+                ("save", "complete"),
+                ("clear",),
+                ("display_restore",),
+            ],
+        )
+
+    def test_a_card_driving_nothing_takes_no_display_step(self) -> None:
+        harness = Harness(observations=[ready(), ready()], present=[(), ()])
+        result = harness.run()
+
+        self.assertIs(result.stage, LiveDisconnectStage.REMOVED)
+        self.assertEqual(result.display_released, ())
+        self.assertEqual(
+            result.display_release_code, "display_release.not_driving_a_display"
+        )
+        self.assertEqual(harness.display.handles, [])
+
+    def test_without_approval_no_display_is_touched_and_the_sequence_continues(
+        self,
+    ) -> None:
+        """Turning an output off is a separate authority from removing a device."""
+        harness = Harness(observations=[blocked()], display=DISPLAY_HELD)
+        result = harness.run(release_display=False)
+
+        self.assertEqual(result.display_release_code, "display_release.not_approved")
+        self.assertEqual(harness.display.handles, [])
+        self.assertIs(result.stage, LiveDisconnectStage.NOT_SAFE_AFTER_RELEASE)
+        self.assertEqual(result.code, "removal_safety.external_display_still_active")
+
+    def test_a_refused_release_is_not_fatal_and_readiness_still_names_the_blocker(
+        self,
+    ) -> None:
+        """This enables a removal; it does not gate one.
+
+        A client holding the card refuses the release, and the sequence gives
+        the same answer it gave before this step existed.
+        """
+        evidence = replace(DISPLAY_HELD, client_holders=("gamescope-session.service",))
+        harness = Harness(observations=[blocked()], display=evidence)
+        result = harness.run()
+
+        self.assertIs(result.stage, LiveDisconnectStage.NOT_SAFE_AFTER_RELEASE)
+        self.assertEqual(result.code, "removal_safety.external_display_still_active")
+        self.assertEqual(
+            result.display_release_code, "display_release.client_holds_the_card"
+        )
+        self.assertEqual(harness.display.handles, [])
+
+    def test_a_release_that_fails_is_not_fatal_either(self) -> None:
+        harness = Harness(
+            observations=[blocked()], display=DISPLAY_HELD, display_fails=True
+        )
+        result = harness.run()
+
+        self.assertIs(result.stage, LiveDisconnectStage.NOT_SAFE_AFTER_RELEASE)
+        self.assertEqual(result.display_release_code, "fake.still_committed")
+        self.assertEqual(result.display_released, ())
+
+    def test_the_display_is_given_back_when_the_removal_refuses(self) -> None:
+        harness = Harness(
+            observations=[ready(), ready()],
+            display=DISPLAY_HELD,
+            lose_enforcement=True,
+        )
+        result = harness.run()
+
+        self.assertIs(result.stage, LiveDisconnectStage.ENFORCEMENT_LOST)
+        self.assertEqual(harness.events[-1], ("display_restore",))
+        self.assertFalse(harness.display.handles[0].held)
+
+    def test_the_display_is_given_back_when_the_removal_raises(self) -> None:
+        harness = Harness(observations=[ready(), ready()], display=DISPLAY_HELD)
+        harness.removal.remove = lambda address: (_ for _ in ()).throw(
+            OSError("bus exploded")
+        )
+        with self.assertRaises(OSError):
+            harness.run()
+
+        self.assertFalse(harness.display.handles[0].held)
+        self.assertFalse(harness.filter.armed)
 
 
 class RecoveryTests(unittest.TestCase):

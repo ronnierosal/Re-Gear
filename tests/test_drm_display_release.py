@@ -13,9 +13,9 @@ from hdm.adapters.steamos.drm_display_release import (  # noqa: E402
     DROP_MASTER,
     SET_CRTC,
     SET_MASTER,
-    DisplayReleaseOutcome,
     DrmDisplayRelease,
 )
+from hdm.ports.display_release import DisplayReleaseOutcome  # noqa: E402
 
 
 EGPU = "/dev/dri/card1"
