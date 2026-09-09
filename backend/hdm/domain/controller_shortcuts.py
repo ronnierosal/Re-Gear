@@ -10,8 +10,16 @@ from .logical_actions import ActionSurface, LogicalAction, LogicalActionRequest
 
 
 class ControllerButton(StrEnum):
+    """Platform-independent button names, never a platform button index.
+
+    A delivery adapter owns the mapping from its own numbering to these names
+    and must establish each index from its platform's source, not from the
+    order of this enum.
+    """
+
     GUIDE = "guide"
     VIEW = "view"
+    X = "x"
     Y = "y"
 
 
