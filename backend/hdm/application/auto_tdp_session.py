@@ -173,7 +173,11 @@ class AutoTdpSession:
                     or policy.minimum_watts < reading.sustained.minimum
                     or policy.maximum_watts > reading.sustained.maximum
                     or not self._maps_onto_provider(reading, policy)):
+                # This refusal is recoverable, so the response baseline must not
+                # outlive it: a bounds discontinuity invalidates the evidence for
+                # the increase that produced it, not merely this one sample.
                 self._state = AutoTdpState()
+                self._pending_response = None
                 return self._result("auto_tdp.readback_invalid")
             if self._provider_context is not None and not self._provider_context.same_context(reading):
                 self._state = AutoTdpState()

@@ -93,6 +93,15 @@ class AutoEvidenceTests(unittest.TestCase):
         after = self.collector.collect()
         self.assertNotEqual(after.observation.context_key, before.observation.context_key)
 
+    def test_game_change_makes_revalidation_present_a_new_dispatch_identity(self):
+        # The dispatch guard compares full identity, so revalidation after a
+        # game switch must not echo the identity the proposal was built on.
+        before = self.collector.collect()
+        self.target = replace(self.target, app_id=self.target.app_id + 1)
+        live = self.collector.revalidate()
+        self.assertIsNotNone(live)
+        self.assertNotEqual(live.workload_key, before.observation.context_key)
+
     def test_setting_or_provider_restart_resets_frame_history(self):
         self.collector.collect()
         self.collector.collect()

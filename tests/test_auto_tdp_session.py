@@ -122,6 +122,25 @@ class AutoSessionTests(unittest.TestCase):
         self.assertTrue(self.session.enabled)
         self.assertEqual(self.provider.writes, [])
 
+    def test_readback_rejection_discards_the_response_baseline(self):
+        # A recoverable refusal must not leave the evidence for the increase
+        # that preceded it, or recovery replays a stale baseline.
+        self.session.start(self.policy)
+        self.feed(7000)
+        self.assertEqual(self.provider.writes, [16])
+        valid = self.provider.current
+        self.provider.current = replace(valid, slow=replace(valid.slow, maximum=25))
+        self.now = 8000
+        result = self.session.tick()
+        self.assertEqual(result.code, "auto_tdp.readback_invalid")
+        self.assertTrue(result.enabled)
+        self.assertIsNone(self.session._pending_response)
+        self.provider.current = valid
+        self.now = 9000
+        self.session.tick()
+        self.assertIsNone(self.session._state.increase_baseline_fps)
+        self.assertEqual(self.provider.writes, [16])
+
     def test_backward_clock_reports_its_own_code_and_stops(self):
         self.session.start(self.policy)
         self.now = 5000
