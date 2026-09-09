@@ -105,6 +105,8 @@ import type { ModuleId, NavStack, Route, StatusId } from "./quick-access/module-
 import { ModulesButton, ShellBody } from "./quick-access/shell";
 import type { DisconnectStatusPayload } from "./backend";
 import { commandCenterTiles } from "./quick-access/command-center";
+import { disconnectResult } from "./quick-access/disconnect-result";
+import { DisconnectResultNotice } from "./quick-access/disconnect-result-notice";
 import type { TileId } from "./quick-access/command-center";
 import { CommandCenterGrid, TileReason } from "./quick-access/command-center-grid";
 import { performanceState } from "./quick-access/performance-state";
@@ -574,6 +576,10 @@ function Content({ preflight, connection, shortcut }: { preflight: SleepPrefligh
   const [disconnectMessage, setDisconnectMessage] = useState("");
   /** The tile whose reason is shown under the grid. */
   const [selectedTile, setSelectedTile] = useState<TileId | null>(null);
+  /** Dismissal of the last-attempt notice, for this panel session only. It is
+   * not persisted: the outcome is the answer to "what just happened to my
+   * hardware", and a stored dismissal would hide it after a later restart. */
+  const [resultDismissed, setResultDismissed] = useState(false);
   const route = currentRoute(navStack);
   const onCommandCenter = route.kind === "command-center";
   // Read by the refresh callback, which must not be rebuilt on every navigation:
@@ -1498,6 +1504,8 @@ function Content({ preflight, connection, shortcut }: { preflight: SleepPrefligh
       setDisconnectMessage("Re-Gear could not complete the disconnect request.");
     } finally {
       setDisconnectBusy(false);
+      // A new attempt is a new answer, so an earlier dismissal must not hide it.
+      setResultDismissed(false);
       // Re-read rather than assuming what the attempt left behind.
       void refreshDisconnect();
     }
@@ -1618,6 +1626,17 @@ function Content({ preflight, connection, shortcut }: { preflight: SleepPrefligh
         <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
           <ModulesButton onOpen={() => openRoute({ kind: "modules" })} />
         </div>
+        {/* Answers "what just happened to my hardware" the moment the panel
+            comes back after the session restart, above everything else,
+            because an answer a player has to scroll to find is one they will
+            act without. `status.last` survives the restart; this reads it. */}
+        <DisconnectResultNotice
+          result={disconnectResult(
+            resultDismissed ? null : egpuDisconnect?.last,
+            egpuDisconnect,
+          )}
+          onDismiss={() => setResultDismissed(true)}
+        />
         <CommandCenterGrid
           tiles={tiles}
           onActivate={(id: TileId) => {
