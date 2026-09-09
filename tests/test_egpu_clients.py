@@ -330,6 +330,65 @@ class EgpuClientDiscoveryTests(unittest.TestCase):
             self.assertEqual(len(result.clients), 1)
             self.assertEqual(result.clients[0].pid, 202)
 
+    def test_a_descriptor_closed_while_the_process_lives_is_not_a_gap(self):
+        """The case that made this scan never complete on real hardware.
+
+        A descriptor closed between enumerating the directory and reading it
+        holds nothing, so nothing was missed. The liveness guard cannot catch
+        it: the process is still there. Steam and the compositor open and
+        close descriptors continuously, so counting it made `clients_clear`
+        permanently unverifiable and removal safety permanently unreachable --
+        measured as root on the tested Ally X.
+        """
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+
+            def closed(path):
+                value = path.read_text(encoding='utf-8')
+                if value == '/closed':
+                    raise FileNotFoundError('descriptor closed')
+                return value
+
+            discovery = self.make_discovery(root, fd_target_reader=closed)
+            add_process(root / 'proc', 202, 'gamescope', '0::/session\n',
+                        ('/dev/dri/renderD131', '/closed'), 900)
+            result = self.scan(discovery)
+            self.assertTrue(result.complete)
+            self.assertEqual(result.error, '')
+            # The holder is still found: a closed descriptor changes nothing
+            # about the ones that were read.
+            self.assertEqual(len(result.clients), 1)
+            self.assertEqual(result.clients[0].pid, 202)
+
+    def test_a_process_whose_only_descriptor_closed_holds_nothing(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+
+            def closed(_path):
+                raise FileNotFoundError('descriptor closed')
+
+            discovery = self.make_discovery(root, fd_target_reader=closed)
+            add_process(root / 'proc', 999, 'client', '0::/session\n',
+                        ('/dev/dri/renderD131',), 900)
+            result = self.scan(discovery)
+            self.assertTrue(result.complete)
+            self.assertEqual(result.clients, ())
+
+    def test_a_descriptor_that_cannot_be_read_is_still_a_gap(self):
+        """Only a vanished descriptor is exempt; an unreadable one is not."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+
+            def denied(_path):
+                raise PermissionError('fixture')
+
+            discovery = self.make_discovery(root, fd_target_reader=denied)
+            add_process(root / 'proc', 999, 'client', '0::/session\n',
+                        ('/dev/dri/renderD131',), 900)
+            result = self.scan(discovery)
+            self.assertFalse(result.complete)
+            self.assertIn('could not be inspected', result.error)
+
     def test_descriptor_target_failure_after_process_exit_is_not_live_gap(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

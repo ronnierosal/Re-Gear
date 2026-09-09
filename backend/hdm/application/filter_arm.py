@@ -173,8 +173,12 @@ class FilterArmCoordinator:
                 ArmStage.ENFORCEMENT_UNVERIFIED, "filter_arm.enforcement_unverified"
             )
 
-        plan = compose_restart_plan(self._observe_holders().units)
-        if plan.state is not ArmSequenceState.COMPOSED:
+        # Completeness travels with the units. Passing only the names is how
+        # a scan that could not finish became indistinguishable from a device
+        # nothing holds, and the two need opposite answers.
+        before = self._observe_holders()
+        plan = compose_restart_plan(before.units, scan_complete=before.complete)
+        if not plan.usable:
             return self._recover(ArmStage.PLAN_BLOCKED, plan.code)
 
         restarted: list[str] = []
