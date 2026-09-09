@@ -105,9 +105,8 @@ class MeasuredHardwareTests(unittest.TestCase):
         """Order is the one measured, not alphabetical: nothing here
         establishes a dependency ordering."""
         plan = compose_restart_plan(("pipewire.service", "wireplumber.service"))
-        self.assertEqual(
-            plan.units, ("wireplumber.service", "pipewire.service", SESSION_TARGET)
-        )
+        # No session unit is holding, so the session target is not in the plan.
+        self.assertEqual(plan.units, ("wireplumber.service", "pipewire.service"))
 
     def test_audio_units_are_the_ones_the_target_misses(self) -> None:
         self.assertEqual(
@@ -175,6 +174,44 @@ class EmptyScanTests(unittest.TestCase):
             _compose_restart_plan(MEASURED_HOLDERS, scan_complete="yes").state,
             ArmSequenceState.INVALID,
         )
+
+
+class SessionTargetTests(unittest.TestCase):
+    """The session target restarts the player's whole session.
+
+    It is by far the most disruptive step a plan can take, so it has to earn
+    its place. Restarting a session that is holding nothing cannot release
+    anything.
+    """
+
+    def test_a_session_unit_holding_earns_the_session_target(self) -> None:
+        plan = compose_restart_plan(MEASURED_HOLDERS)
+
+        self.assertIn(SESSION_TARGET, plan.units)
+        self.assertEqual(plan.units[-1], SESSION_TARGET)
+
+    def test_audio_alone_does_not_restart_the_player_session(self) -> None:
+        """The state measured on the tested Ally X.
+
+        The player had already returned to the handheld, so gamescope and
+        Steam were holding nothing and only the audio daemon remained. The
+        session was restarted anyway, for nothing.
+        """
+        plan = compose_restart_plan(("wireplumber.service",))
+
+        self.assertEqual(plan.units, ("wireplumber.service",))
+        self.assertNotIn(SESSION_TARGET, plan.units)
+        self.assertTrue(plan.usable)
+
+    def test_a_session_unit_alone_restarts_only_the_target(self) -> None:
+        plan = compose_restart_plan(("gamescope-session.service",))
+
+        self.assertEqual(plan.units, (SESSION_TARGET,))
+
+    def test_every_reached_unit_counts_not_just_the_compositor(self) -> None:
+        plan = compose_restart_plan(("steam-launcher.service",))
+
+        self.assertEqual(plan.units, (SESSION_TARGET,))
 
 
 class PlanValidationTests(unittest.TestCase):

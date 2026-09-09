@@ -239,8 +239,18 @@ def compose_restart_plan(
             "arm_sequence.unapproved_holder",
             unapproved=coverage.unapproved,
         )
+    # The session target restarts the player's whole Steam session, which is by
+    # far the most disruptive thing this plan can do. It earns its place only
+    # when a unit it reaches is actually holding the device.
+    #
+    # It used to be appended to every plan. Measured on the tested Ally X: the
+    # player had already returned to the handheld, the only holder was
+    # `wireplumber.service`, and the disconnect restarted their session anyway
+    # for nothing. Restarting a session that is holding nothing cannot release
+    # anything, so the cost bought exactly no progress.
+    units = coverage.requires_explicit_restart
+    if coverage.reached:
+        units = (*units, SESSION_TARGET)
     return ArmRestartPlan(
-        ArmSequenceState.COMPOSED,
-        "arm_sequence.composed",
-        (*coverage.requires_explicit_restart, SESSION_TARGET),
+        ArmSequenceState.COMPOSED, "arm_sequence.composed", units
     )
