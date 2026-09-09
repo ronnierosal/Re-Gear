@@ -15,11 +15,13 @@ from hdm.adapters.steamos.drm_crtc import CardCrtcState, CrtcRecord  # noqa: E40
 from hdm.application.live_disconnect import LiveDisconnectStage  # noqa: E402
 from hdm.egpu_disconnect import (  # noqa: E402
     NEXT_ACTION,
-    await_unit_release,
+    await_units_released,
     disconnect_snapshot_service,
     observe_display,
     present_addresses,
+    units_cleared_by,
 )
+from hdm.domain.filter_arm_sequence import SESSION_TARGET  # noqa: E402
 from hdm.egpu_release import HolderScan  # noqa: E402
 
 
@@ -52,51 +54,85 @@ def scans(*results):
     return scan
 
 
-class AwaitUnitReleaseTests(unittest.TestCase):
+class UnitsClearedByTests(unittest.TestCase):
+    """A target is not a holder, and that distinction cost a hardware run."""
+
+    def test_a_session_target_clears_its_member_services_not_its_own_name(
+        self,
+    ) -> None:
+        """Holders are leaf cgroup names; a systemd target has no cgroup.
+
+        Waiting for "gamescope-session.target" to leave the holder set
+        therefore succeeded on the first scan, instantly and always, without
+        the session having been restarted. The sequence then re-observed and
+        refused with the very holders the restart was meant to clear.
+        """
+        holders = ("gamescope-session.service", "steam-launcher.service",
+                   "wireplumber.service")
+
+        cleared = units_cleared_by(SESSION_TARGET, holders)
+
+        self.assertEqual(
+            cleared, ("gamescope-session.service", "steam-launcher.service")
+        )
+        self.assertNotIn(SESSION_TARGET, cleared)
+
+    def test_a_service_clears_itself(self) -> None:
+        self.assertEqual(
+            units_cleared_by(UNIT, (UNIT, "steam-launcher.service")), (UNIT,)
+        )
+
+    def test_a_unit_that_is_not_holding_clears_nothing(self) -> None:
+        self.assertEqual(units_cleared_by(UNIT, ("steam-launcher.service",)), ())
+
+    def test_a_session_target_with_no_member_holding_clears_nothing(self) -> None:
+        self.assertEqual(units_cleared_by(SESSION_TARGET, (UNIT,)), ())
+
+    def test_only_approved_members_are_waited_on(self) -> None:
+        """An unapproved holder is refused upstream, never waited for here."""
+        cleared = units_cleared_by(
+            SESSION_TARGET, ("gamescope-session.service", "init.scope")
+        )
+        self.assertEqual(cleared, ("gamescope-session.service",))
+
+
+class AwaitUnitsReleasedTests(unittest.TestCase):
     """The step that stands in for spawning a restart."""
 
-    def test_a_unit_that_is_not_holding_passes_without_waiting(self) -> None:
-        """There is nothing to wait for, so waiting would only cost the operator."""
+    def test_nothing_to_wait_for_passes_without_waiting(self) -> None:
         clock = Clock()
 
-        released = await_unit_release(
-            UNIT,
-            scans(HolderScan(())),
-            deadline=90.0,
-            now=clock.now,
-            sleep=clock.sleep,
+        released = await_units_released(
+            (), scans(HolderScan((UNIT,))), deadline=90.0,
+            now=clock.now, sleep=clock.sleep,
         )
 
         self.assertTrue(released)
         self.assertEqual(clock.slept, [])
 
-    def test_a_unit_that_lets_go_partway_through_is_reported_released(self) -> None:
+    def test_every_named_unit_has_to_let_go(self) -> None:
+        """Not just one of them: a partial release is not a released set."""
         clock = Clock()
 
-        released = await_unit_release(
-            UNIT,
-            scans(HolderScan((UNIT,)), HolderScan((UNIT,)), HolderScan(())),
-            deadline=90.0,
-            now=clock.now,
-            sleep=clock.sleep,
+        released = await_units_released(
+            ("gamescope-session.service", "steam-launcher.service"),
+            scans(
+                HolderScan(("gamescope-session.service", "steam-launcher.service")),
+                HolderScan(("steam-launcher.service",)),
+                HolderScan(()),
+            ),
+            deadline=90.0, now=clock.now, sleep=clock.sleep,
         )
 
         self.assertTrue(released)
         self.assertEqual(clock.slept, [3.0, 3.0])
 
-    def test_a_unit_that_never_lets_go_fails_at_the_deadline(self) -> None:
-        """It reports that the unit got restarted, not that a command was run.
-
-        A command that was issued and did nothing must not read as success.
-        """
+    def test_a_set_that_never_lets_go_fails_at_the_deadline(self) -> None:
         clock = Clock()
 
-        released = await_unit_release(
-            UNIT,
-            scans(HolderScan((UNIT,))),
-            deadline=10.0,
-            now=clock.now,
-            sleep=clock.sleep,
+        released = await_units_released(
+            (UNIT,), scans(HolderScan((UNIT,))), deadline=10.0,
+            now=clock.now, sleep=clock.sleep,
         )
 
         self.assertFalse(released)
@@ -105,12 +141,9 @@ class AwaitUnitReleaseTests(unittest.TestCase):
     def test_the_wait_never_runs_past_the_deadline(self) -> None:
         clock = Clock()
 
-        await_unit_release(
-            UNIT,
-            scans(HolderScan((UNIT,))),
-            deadline=4.0,
-            now=clock.now,
-            sleep=clock.sleep,
+        await_units_released(
+            (UNIT,), scans(HolderScan((UNIT,))), deadline=4.0,
+            now=clock.now, sleep=clock.sleep,
         )
 
         self.assertEqual(clock.slept, [3.0, 1.0])
@@ -118,12 +151,9 @@ class AwaitUnitReleaseTests(unittest.TestCase):
     def test_another_unit_still_holding_does_not_block_this_one(self) -> None:
         clock = Clock()
 
-        released = await_unit_release(
-            UNIT,
-            scans(HolderScan(("steam.service",))),
-            deadline=90.0,
-            now=clock.now,
-            sleep=clock.sleep,
+        released = await_units_released(
+            (UNIT,), scans(HolderScan(("steam-launcher.service",))),
+            deadline=90.0, now=clock.now, sleep=clock.sleep,
         )
 
         self.assertTrue(released)

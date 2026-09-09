@@ -82,6 +82,7 @@ from .delivery.device_filter_program import compile_device_filter
 from .delivery.removal_transaction_store import FileRemovalTransactionStore
 from .domain.display_release import DisplayReleaseEvidence
 from .domain.egpu_device_policy import DevicePolicyState, compose_egpu_device_policy
+from .domain.filter_arm_sequence import APPROVED_SESSION_REACHED, SESSION_TARGET
 from .domain.filter_authorization import authorize_parent_scope
 from .domain.removal_safety import (
     RemovalSafety,
@@ -107,8 +108,28 @@ INTERNAL_CARD = "/dev/dri/card0"
 EXTERNAL_CARD = "/dev/dri/card1"
 
 
-def await_unit_release(
-    unit: str,
+def units_cleared_by(unit: str, holders: tuple[str, ...]) -> tuple[str, ...]:
+    """Which observed holders a restart of `unit` is expected to release.
+
+    A target is not a holder. Holders are reported by their leaf cgroup name
+    and a systemd target has no cgroup, so nothing in a holder scan is ever
+    named `gamescope-session.target`. Waiting for the target's own name to
+    disappear therefore succeeded on the first scan, instantly and always,
+    without the session having been restarted at all -- observed on hardware,
+    where the sequence then re-observed and refused with the very holders the
+    target restart was supposed to clear.
+
+    What a session-target restart actually clears is its member services, so
+    that is what the wait watches. A plain service clears itself.
+    """
+    observed = set(holders)
+    if unit == SESSION_TARGET:
+        return tuple(sorted(observed & APPROVED_SESSION_REACHED))
+    return (unit,) if unit in observed else ()
+
+
+def await_units_released(
+    units: tuple[str, ...],
     scan: Callable[[], HolderScan],
     *,
     deadline: float,
@@ -116,18 +137,20 @@ def await_unit_release(
     sleep: Callable[[float], None],
     interval: float = 3.0,
 ) -> bool:
-    """Wait for `unit` to stop holding the device, and report whether it did.
+    """Wait for every unit in `units` to stop holding the device.
 
     This is what stands in for spawning a restart. It succeeds on the fact the
-    sequence actually depends on -- that the unit let go -- rather than on the
-    command having been issued, which is the weaker claim and the one this tool
-    is not in a position to make.
+    sequence actually depends on -- that the holders let go -- rather than on
+    the command having been issued, which is the weaker claim and the one this
+    tool is not in a position to make.
 
-    A unit that is not holding the device passes on the first scan, because
-    there is nothing to wait for. Anything else is polled until the deadline.
+    An empty set passes immediately, because there is nothing to wait for.
     """
+    if not units:
+        return True
+    wanted = set(units)
     while True:
-        if unit not in scan().units:
+        if not wanted & set(scan().units):
             return True
         remaining = deadline - now()
         if remaining <= 0:
@@ -389,14 +412,19 @@ def main(argv: Sequence[str] = ()) -> int:
     restart_deadline = arguments.restart_timeout
 
     def restart(unit: str) -> bool:
-        """Print the command, then wait for the unit to let go of the device."""
+        """Print the command, then wait for what it should release to let go."""
         report("")
         for command in restart_commands((unit,), arguments.uid):
             report(f"  run this now, as the session user: {command}")
-        report(f"  waiting up to {restart_deadline:.0f}s for {unit} to release")
-        released = await_unit_release(
-            unit,
-            lambda: scan_holders(nodes, nodes_incomplete=not nodes_complete),
+        scan = lambda: scan_holders(nodes, nodes_incomplete=not nodes_complete)
+        expected = units_cleared_by(unit, scan().units)
+        if not expected:
+            report(f"  nothing observed is held by {unit}; continuing")
+            return True
+        report(f"  waiting up to {restart_deadline:.0f}s for {', '.join(expected)}")
+        released = await_units_released(
+            expected,
+            scan,
             deadline=time.monotonic() + restart_deadline,
             now=time.monotonic,
             sleep=time.sleep,
