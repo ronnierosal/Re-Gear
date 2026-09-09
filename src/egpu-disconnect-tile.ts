@@ -10,10 +10,12 @@
  *    `scanComplete` travel separately; an empty list from a scan that could
  *    not finish means the check did not complete, not that nothing is using
  *    the eGPU.
- * 2. **A standing external display is not a blocker to report.** It is the one
- *    thing a disconnect can clear itself, so the backend reports `ready` and
- *    asks for approval. Rendering it as blocked would tell a player nothing
- *    can be done when all that is needed is their permission.
+ * 2. **A blocker the disconnect exists to clear is not a blocker to report.**
+ *    Removal safety is assessed before any release, and before one it always
+ *    declines: the holders are still there and the eGPU is still driving a
+ *    display. The backend reports those as `attemptable`, and offering the
+ *    action only on `ready` would tell a player their eGPU can never be
+ *    disconnected.
  * 3. **A half-detached device is not a failed action.** It is a system that
  *    needs attention, and it outranks every other state.
  * 4. **Nothing here may imply that unplugging is safe.** Re-Gear detaches the
@@ -135,7 +137,7 @@ export function disconnectPresentation(
     };
   }
 
-  if (status.availability === "blocked" || !status.ready) {
+  if (!status.attemptable) {
     return {
       available: false,
       value: "Not ready",
@@ -150,13 +152,16 @@ export function disconnectPresentation(
   }
 
   const display = status.display_release_required;
+  const ready = status.availability === "ready";
   return {
     available: true,
-    value: "Ready",
+    value: ready ? "Ready" : "Try disconnect",
     reason: null,
     actionLabel: "Disconnect",
     confirmation: [
-      "Re-Gear will detach the eGPU in software.",
+      ready
+        ? "Re-Gear will detach the eGPU in software."
+        : "Re-Gear will try to free the eGPU and detach it in software.",
       display ? "The external display will turn off." : null,
       SESSION_WARNING,
       KEEP_CABLE,

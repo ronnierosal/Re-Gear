@@ -19,6 +19,7 @@ const status = (over = {}) => ({
   availability: "ready",
   code: "removal_safety.ready_for_supervised_removal",
   ready: true,
+  attemptable: true,
   busy: false,
   holders: [],
   scan_complete: true,
@@ -58,7 +59,7 @@ test("a standing display is offered, not reported as a blocker", () => {
   // The one blocker a disconnect clears itself. Rendering it as blocked would
   // say nothing can be done when only the player's approval is missing.
   const view = disconnectPresentation(
-    status({ code: "removal_safety.external_display_still_active", display_release_required: true }),
+    status({ availability: "attemptable", ready: false, code: "removal_safety.external_display_still_active", display_release_required: true }),
   );
 
   assert.equal(view.available, true);
@@ -74,7 +75,7 @@ test("a display that needs no release does not mention turning one off", () => {
 
 test("a half-detached device outranks everything and reads as attention", () => {
   const view = disconnectPresentation(
-    status({ availability: "recovery_required", code: "removal_transaction.partially_detached", ready: false }),
+    status({ availability: "recovery_required", code: "removal_transaction.partially_detached", ready: false, attemptable: false }),
   );
 
   assert.equal(view.attention, true);
@@ -85,7 +86,7 @@ test("a half-detached device outranks everything and reads as attention", () => 
 
 test("a blocked device explains itself in words, never a raw code", () => {
   const view = disconnectPresentation(
-    status({ availability: "blocked", ready: false, code: "removal_safety.clients_active_or_protected" }),
+    status({ availability: "blocked", ready: false, attemptable: false, code: "removal_safety.clients_active_or_protected" }),
   );
 
   assert.equal(view.available, false);
@@ -94,7 +95,7 @@ test("a blocked device explains itself in words, never a raw code", () => {
 
 test("an unmapped code still produces something a bug report can act on", () => {
   const view = disconnectPresentation(
-    status({ availability: "blocked", ready: false, code: "removal_safety.some_future_fact" }),
+    status({ availability: "blocked", ready: false, attemptable: false, code: "removal_safety.some_future_fact" }),
   );
 
   assert.equal(view.available, false);
@@ -108,6 +109,7 @@ test("an incomplete scan is never presented as a free device", () => {
     status({
       availability: "blocked",
       ready: false,
+      attemptable: false,
       code: "removal_safety.client_scan_incomplete",
       holders: [],
       scan_complete: false,
@@ -120,12 +122,12 @@ test("an incomplete scan is never presented as a free device", () => {
 
 test("ready false is refused even if availability says otherwise", () => {
   // Two fields that should agree; if they ever disagree, refuse.
-  const view = disconnectPresentation(status({ availability: "ready", ready: false }));
+  const view = disconnectPresentation(status({ availability: "ready", ready: false, attemptable: false }));
   assert.equal(view.available, false);
 });
 
 test("busy is not an error and offers nothing to press", () => {
-  const view = disconnectPresentation(status({ availability: "busy", ready: false, code: "live_disconnect.busy" }));
+  const view = disconnectPresentation(status({ availability: "busy", ready: false, attemptable: false, code: "live_disconnect.busy" }));
 
   assert.equal(view.available, false);
   assert.equal(view.attention, false);
@@ -138,6 +140,24 @@ test("no status at all reads as unknown rather than unavailable", () => {
   assert.equal(view.available, false);
   assert.equal(view.attention, false);
   assert.match(view.reason, /has not read/i);
+});
+
+test("an attemptable device says it will try, not that it will succeed", () => {
+  // Removal safety declines before any release, so offering the action only on
+  // ready would tell a player their eGPU can never be disconnected.
+  const view = disconnectPresentation(
+    status({ availability: "attemptable", ready: false, code: "removal_safety.clients_active_or_protected" }),
+  );
+
+  assert.equal(view.available, true);
+  assert.equal(view.actionLabel, "Disconnect");
+  assert.match(view.confirmation, /will try to free the eGPU/i);
+  assert.match(view.confirmation, /Keep the cable connected/i);
+});
+
+test("a ready device does not hedge its confirmation", () => {
+  const view = disconnectPresentation(status());
+  assert.doesNotMatch(view.confirmation, /will try/i);
 });
 
 test("only a disturbed device raises an alert after an attempt", () => {

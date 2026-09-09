@@ -196,15 +196,22 @@ export interface SnapshotPayload {
 
 /** How far a live eGPU disconnect could get right now.
  *
- * `ready` does not mean nothing is in the way: a standing external display
- * reports ready with `display_release_required`, because that is the one
- * blocker the disconnect can clear itself given approval.
+ * `ready` means removal safety says so as things stand. `attemptable` means it
+ * does not, but the blocker is one the disconnect exists to clear -- holders it
+ * is allowed to restart, or an external display it will turn off. Removal
+ * safety is assessed before any release and before one it always declines, so
+ * a caller that offered the action only on `ready` would tell a player their
+ * eGPU can never be disconnected.
+ *
+ * `attemptable` is not a promise. The attempt can still refuse, with a reason
+ * and nothing removed.
  */
 export type DisconnectAvailability =
   | "unavailable"
   | "recovery_required"
   | "busy"
   | "blocked"
+  | "attemptable"
   | "ready";
 
 export interface DisconnectOutcomePayload {
@@ -231,6 +238,8 @@ export interface DisconnectStatusPayload {
   /** Stable reason code. Render through a mapping, never raw. */
   code: string;
   ready: boolean;
+  /** Whether the action may be offered. True for `ready` and `attemptable`. */
+  attemptable: boolean;
   busy: boolean;
   /** Units holding the eGPU. Meaningless without `scan_complete`: an empty
    * list from an unfinished scan is not a free device. */

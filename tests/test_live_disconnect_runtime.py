@@ -151,7 +151,7 @@ class StatusTests(unittest.TestCase):
         self.assertTrue(status.ready)
         self.assertFalse(status.display_release_required)
 
-    def test_a_standing_display_is_ready_with_the_display_approval_required(
+    def test_a_standing_display_is_attemptable_with_the_approval_required(
         self,
     ) -> None:
         """The one blocker a disconnect can clear by itself.
@@ -161,16 +161,61 @@ class StatusTests(unittest.TestCase):
         """
         status = build(readiness=DISPLAY_BLOCKED, display=DISPLAY_HELD).status()
 
-        self.assertIs(status.availability, DisconnectAvailability.READY)
+        self.assertIs(status.availability, DisconnectAvailability.ATTEMPTABLE)
+        self.assertTrue(status.attemptable)
+        self.assertFalse(status.ready)
         self.assertTrue(status.display_release_required)
         self.assertEqual(status.code, "removal_safety.external_display_still_active")
 
-    def test_any_other_blocker_is_reported_as_blocked_with_its_own_code(
+    def test_approved_holders_are_attemptable_because_the_sequence_clears_them(
+        self,
+    ) -> None:
+        """Removal safety is asked before any release, and before one it
+        always declines. Repeating that verdict would tell a player their eGPU
+        can never be disconnected.
+        """
+        evidence = replace(NO_DISPLAY, client_holders=("wireplumber.service",))
+        status = build(readiness=CLIENTS_BLOCKED, display=evidence).status()
+
+        self.assertIs(status.availability, DisconnectAvailability.ATTEMPTABLE)
+        self.assertTrue(status.attemptable)
+        self.assertFalse(status.ready)
+
+    def test_an_unapproved_holder_disqualifies_the_whole_set(self) -> None:
+        """The plan refuses rather than restarting something it may not touch."""
+        evidence = replace(
+            NO_DISPLAY, client_holders=("wireplumber.service", "init.scope")
+        )
+        status = build(readiness=CLIENTS_BLOCKED, display=evidence).status()
+
+        self.assertIs(status.availability, DisconnectAvailability.BLOCKED)
+        self.assertFalse(status.attemptable)
+
+    def test_an_unfinished_scan_is_never_attemptable(self) -> None:
+        evidence = replace(
+            NO_DISPLAY,
+            client_holders=("wireplumber.service",),
+            client_scan_complete=False,
+        )
+        status = build(readiness=CLIENTS_BLOCKED, display=evidence).status()
+
+        self.assertIs(status.availability, DisconnectAvailability.BLOCKED)
+
+    def test_a_blocker_the_sequence_cannot_clear_stays_blocked(self) -> None:
+        """A running game is not something a disconnect can restart away."""
+        game = RemovalSafety(
+            RemovalSafetyState.NOT_READY, "removal_safety.game_running"
+        )
+        status = build(readiness=game, display=DISPLAY_HELD).status()
+
+        self.assertIs(status.availability, DisconnectAvailability.BLOCKED)
+        self.assertFalse(status.attemptable)
+
+    def test_a_blocker_keeps_its_own_code_whatever_the_availability(
         self,
     ) -> None:
         status = build(readiness=CLIENTS_BLOCKED, display=DISPLAY_HELD).status()
 
-        self.assertIs(status.availability, DisconnectAvailability.BLOCKED)
         self.assertEqual(status.code, "removal_safety.clients_active_or_protected")
         # Still reported, so a caller can say what would have to happen.
         self.assertTrue(status.display_release_required)
@@ -455,16 +500,18 @@ class PayloadTests(unittest.TestCase):
         self.assertEqual(payload["holders"], ["steam.service"])
         self.assertIs(payload["scan_complete"], False)
         self.assertIs(payload["ready"], False)
+        self.assertIs(payload["attemptable"], False)
         self.assertEqual(payload["code"], "removal_safety.clients_active_or_protected")
 
-    def test_a_standing_display_is_ready_and_says_the_approval_is_needed(
+    def test_a_standing_display_is_attemptable_and_says_the_approval_is_needed(
         self,
     ) -> None:
         payload = disconnect_status_to_payload(
             build(readiness=DISPLAY_BLOCKED, display=DISPLAY_HELD).status()
         )
 
-        self.assertIs(payload["ready"], True)
+        self.assertIs(payload["attemptable"], True)
+        self.assertIs(payload["ready"], False)
         self.assertIs(payload["display_release_required"], True)
 
     def test_a_status_with_no_prior_attempt_reports_none_rather_than_omitting_it(

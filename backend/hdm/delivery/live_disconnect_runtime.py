@@ -50,6 +50,7 @@ from ..adapters.steamos.drm_display_release import DrmDisplayRelease
 from ..adapters.steamos.egpu_clients import EgpuClientDiscovery
 from ..adapters.steamos.egpu_device_nodes import SteamOsEgpuDeviceNodeDiscovery
 from ..adapters.steamos.commands import UserServiceCommandRunner
+from ..domain.filter_arm_sequence import classify_holder_units
 from ..adapters.steamos.egpu_holders import (
     egpu_functions,
     node_paths,
@@ -108,9 +109,14 @@ class DisconnectAvailability(StrEnum):
     RECOVERY_REQUIRED = "recovery_required"
     #: An attempt is in flight.
     BUSY = "busy"
-    #: Present, and something names why a disconnect would not proceed.
+    #: Something names why a disconnect would not proceed, and the sequence
+    #: cannot change it. A game running, an unapproved holder, evidence that
+    #: never completed.
     BLOCKED = "blocked"
-    #: A disconnect would proceed if asked.
+    #: Not ready yet, and the blocker is one the disconnect exists to clear.
+    #: Worth attempting; not a promise that it will succeed.
+    ATTEMPTABLE = "attemptable"
+    #: Removal safety says ready as things stand.
     READY = "ready"
 
 
@@ -131,6 +137,19 @@ class DisconnectStatus:
     @property
     def ready(self) -> bool:
         return self.availability is DisconnectAvailability.READY
+
+    @property
+    def attemptable(self) -> bool:
+        """Whether a player may press the button.
+
+        True for `ready` and for `attemptable`. The difference matters to what
+        a caller *says*, not to whether it offers the action: one is "this will
+        proceed", the other is "this will try, and here is what it will do".
+        """
+        return self.availability in (
+            DisconnectAvailability.READY,
+            DisconnectAvailability.ATTEMPTABLE,
+        )
 
     @property
     def busy(self) -> bool:
@@ -228,14 +247,15 @@ class LiveDisconnectRuntime:
             observation.readiness.state
             is RemovalSafetyState.READY_FOR_SUPERVISED_REMOVAL
         )
-        # A standing external display is the one blocker a disconnect can clear
-        # by itself, so it does not make the capability unavailable -- it makes
-        # the display approval required.
-        if not ready and committed and _blocked_only_by_display(observation.readiness):
-            ready = True
+        if ready:
+            availability = DisconnectAvailability.READY
+        elif _sequence_would_clear(observation.readiness, observation.display):
+            availability = DisconnectAvailability.ATTEMPTABLE
+        else:
+            availability = DisconnectAvailability.BLOCKED
 
         return DisconnectStatus(
-            DisconnectAvailability.READY if ready else DisconnectAvailability.BLOCKED,
+            availability,
             observation.readiness.code,
             holders=observation.display.client_holders,
             scan_complete=observation.display.client_scan_complete,
@@ -311,14 +331,44 @@ class LiveDisconnectRuntime:
         )
 
 
-def _blocked_only_by_display(readiness: RemovalSafety) -> bool:
-    """Whether the external display is the single fact holding removal back.
+def _sequence_would_clear(
+    readiness: RemovalSafety, display: DisplayReleaseEvidence
+) -> bool:
+    """Whether the reported blocker is one the disconnect exists to clear.
 
-    The disconnect can clear that one itself, so a caller is told it is ready
-    and asked for the display approval, rather than told it is blocked by
-    something it cannot act on.
+    Removal safety is assessed before any release, and before one it always
+    declines: the holders are still there and the eGPU is still driving a
+    display. `hdm.domain.disconnect_sequence` says why -- the verdict is being
+    asked too early, and releasing is what changes the facts it reads. A status
+    that repeated the verdict verbatim would tell a player their eGPU can never
+    be disconnected, which is exactly the reading that module exists to prevent.
+
+    Two blockers qualify, and only two.
+
+    A **standing external display**: the disconnect turns it off itself, given
+    approval. This one is safe to trust because it is the last fact removal
+    safety checks, so nothing is hidden behind it.
+
+    **Holders that are all approved for restart**, over a scan that finished.
+    The restart plan is what clears them. This is deliberately narrower than it
+    looks: an unapproved holder disqualifies the whole set, because the plan
+    refuses rather than restarting something it was never allowed to touch, and
+    an unfinished scan disqualifies it because an empty or partial holder list
+    is not evidence about anything.
+
+    `attemptable` is not a promise. Facts after `clients_clear` -- portable
+    display and render -- are not evaluated once it fails, so an attempt can
+    still refuse on one of them after the holders let go. That is a refusal
+    with a clear reason and nothing removed, which is the right outcome; it is
+    not a claim this function got wrong.
     """
-    return readiness.code == "removal_safety.external_display_still_active"
+    if readiness.code == "removal_safety.external_display_still_active":
+        return True
+    if readiness.code == "removal_safety.clients_active_or_protected":
+        if not display.client_scan_complete or not display.client_holders:
+            return False
+        return not classify_holder_units(display.client_holders).unapproved
+    return False
 
 
 def disconnect_snapshot_service() -> SnapshotService:
@@ -421,6 +471,10 @@ def disconnect_status_to_payload(status) -> dict[str, object]:
         "availability": status.availability.value,
         "code": status.code,
         "ready": status.ready,
+        # Whether the button may be pressed. True for ready and for
+        # attemptable; the difference changes what a caller says, not
+        # whether it offers the action.
+        "attemptable": status.attemptable,
         "busy": status.busy,
         "holders": list(status.holders),
         "scan_complete": status.scan_complete,
