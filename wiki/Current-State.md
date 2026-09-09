@@ -1,7 +1,7 @@
 # Current state
 
 **Audience:** players, testers, and contributors<br>
-**Reviewed:** 2026-09-09, source baseline `1aa43da`<br>
+**Reviewed:** 2026-09-09, source baseline `1235f68`<br>
 **Maturity:** experimental development; no supported public release
 
 This is a dated implementation checkpoint. The repository
@@ -13,7 +13,7 @@ retains historical integration and device records; it is not a live device obser
 
 ## Implementation checkpoint
 
-Main declares **0.3.62** at the reviewed revision. GitHub publishes
+Main declares **0.3.63** at the reviewed revision. GitHub publishes
 [development-candidate releases](https://github.com/ronnierosal/Re-Gear/releases);
 these are distinct from a supported general release or Decky Store registration. The release lineage has been
 reconciled, but [#116](https://github.com/ronnierosal/Re-Gear/issues/116) still
@@ -26,7 +26,8 @@ does not establish a complete installable feature set.
 | Performance | Manual/Auto TDP development source integrated through [#49](https://github.com/ronnierosal/Re-Gear/pull/49) | [#132](https://github.com/ronnierosal/Re-Gear/pull/132) guard refinements remain draft; provider and hardware acceptance pending |
 | Offline Readiness | Local selected-game guidance, confidence labels, badges, and bounded refresh recovery | Native view/controller validation and actual offline launches remain distinct from source tests |
 | eGPU release | Filter lifetime [#124](https://github.com/ronnierosal/Re-Gear/pull/124) and complete holder-scan evidence [#137](https://github.com/ronnierosal/Re-Gear/pull/137) merged; the client scan and arm sequence repaired in [#187](https://github.com/ronnierosal/Re-Gear/pull/187) after both were found to refuse on a live system | Installed behavior and a captured artifact still needed; the September 9 runs were driven from a source checkout on the device |
-| Software removal | Operator tool [#122](https://github.com/ronnierosal/Re-Gear/pull/122) landed through [#148](https://github.com/ronnierosal/Re-Gear/pull/148); the sequence made executable in [#181](https://github.com/ronnierosal/Re-Gear/pull/181) and run end to end on hardware on September 9, both by the operator tool and by the backend RPC's own runtime | No player-facing UI yet; the tile exists and is inert. Decky's transport has not been in the path, and no run has used the shipped build |
+| Software removal | Operator tool [#122](https://github.com/ronnierosal/Re-Gear/pull/122) landed through [#148](https://github.com/ronnierosal/Re-Gear/pull/148); the sequence made executable in [#181](https://github.com/ronnierosal/Re-Gear/pull/181) and run end to end on hardware on September 9, both by the operator tool and by the backend RPC's own runtime | No player-facing UI yet; the Command Center tile exists and is inert pending [#189](https://github.com/ronnierosal/Re-Gear/pull/189). Decky's transport has not been in the path, and no run has used the shipped build |
+| Disconnect presentation | Typed client and a mapping from backend status to what a player is shown merged in [#198](https://github.com/ronnierosal/Re-Gear/pull/198), including the confirmation copy | Nothing renders it yet. 0.3.62 shipped a status defect that reported an approved holder as blocked; 0.3.63 carries the fix |
 | Recovery state | Pure interrupted-removal record and storage port [#152](https://github.com/ronnierosal/Re-Gear/pull/152) merged; durable storage and the restore-never-continue path wired in [#181](https://github.com/ronnierosal/Re-Gear/pull/181) | The recovery path has not been exercised on hardware: no run has been interrupted deliberately |
 | External display release | The eGPU keeps a mode committed after the return, held by the kernel console rather than any client; a DRM master release and its automatic restore merged in [#184](https://github.com/ronnierosal/Re-Gear/pull/184) and [#185](https://github.com/ronnierosal/Re-Gear/pull/185), closing [#168](https://github.com/ronnierosal/Re-Gear/issues/168) | Proven on one configuration only; the release lasts exactly as long as the descriptor holding it |
 | Controllers | Routing/diagnostic foundations; gyro research [#154](https://github.com/ronnierosal/Re-Gear/pull/154) open | Broader configuration, gyro, rumble, LEDs and player order are not established working features; see [Controllers](Controllers) |
