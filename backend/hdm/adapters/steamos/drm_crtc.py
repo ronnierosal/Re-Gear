@@ -57,11 +57,11 @@ _IOC_READ = 2
 MAX_CRTCS = 64
 
 
-def _iowr(number: int, size: int) -> int:
+def iowr(number: int, size: int) -> int:
     return ((_IOC_READ | _IOC_WRITE) << 30) | (size << 16) | (_DRM_IOCTL_BASE << 8) | number
 
 
-class _ModeInfo(ctypes.Structure):
+class KernelModeInfo(ctypes.Structure):
     _fields_ = [
         ("clock", ctypes.c_uint32),
         ("hdisplay", ctypes.c_uint16),
@@ -81,7 +81,7 @@ class _ModeInfo(ctypes.Structure):
     ]
 
 
-class _CardResources(ctypes.Structure):
+class KernelCardResources(ctypes.Structure):
     _fields_ = [
         ("fb_id_ptr", ctypes.c_uint64),
         ("crtc_id_ptr", ctypes.c_uint64),
@@ -98,7 +98,7 @@ class _CardResources(ctypes.Structure):
     ]
 
 
-class _Crtc(ctypes.Structure):
+class KernelCrtc(ctypes.Structure):
     _fields_ = [
         ("set_connectors_ptr", ctypes.c_uint64),
         ("count_connectors", ctypes.c_uint32),
@@ -108,15 +108,15 @@ class _Crtc(ctypes.Structure):
         ("y", ctypes.c_uint32),
         ("gamma_size", ctypes.c_uint32),
         ("mode_valid", ctypes.c_uint32),
-        ("mode", _ModeInfo),
+        ("mode", KernelModeInfo),
     ]
 
 
-GET_RESOURCES = _iowr(0xA0, ctypes.sizeof(_CardResources))
-GET_CRTC = _iowr(0xA1, ctypes.sizeof(_Crtc))
+GET_RESOURCES = iowr(0xA0, ctypes.sizeof(KernelCardResources))
+GET_CRTC = iowr(0xA1, ctypes.sizeof(KernelCrtc))
 
 
-def _ioctl(descriptor: int, request: int, structure: object) -> int:
+def ioctl_call(descriptor: int, request: int, structure: object) -> int:
     """Issue one ioctl, or refuse on a host that has none.
 
     A missing `fcntl` raises here rather than at import, so the failure lands
@@ -184,7 +184,7 @@ class DrmCrtcProbe:
         close_fd: Callable[[int], None] = os.close,
     ) -> None:
         self._open = open_node or self._open_node
-        self._ioctl = ioctl or _ioctl
+        self._ioctl = ioctl or ioctl_call
         self._close_fd = close_fd
 
     @staticmethod
@@ -205,7 +205,7 @@ class DrmCrtcProbe:
             self._close_fd(descriptor)
 
     def _read(self, node: str, descriptor: int) -> CardCrtcState:
-        resources = _CardResources()
+        resources = KernelCardResources()
         self._ioctl(descriptor, GET_RESOURCES, resources)
         count = resources.count_crtcs
         if count == 0:
@@ -233,7 +233,7 @@ class DrmCrtcProbe:
 
         records = []
         for identifier in identifiers:
-            crtc = _Crtc()
+            crtc = KernelCrtc()
             crtc.crtc_id = identifier
             self._ioctl(descriptor, GET_CRTC, crtc)
             records.append(
