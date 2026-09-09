@@ -19,11 +19,16 @@ stake -- a lost frame is a lost frame.
 
 Hence the rules, each of which refuses on its own:
 
-- **mounted storage is an absolute refusal**, never a warning to click through.
+- **storage in use is an absolute refusal**, never a warning to click through.
   A filesystem on this branch means the answer is no until the player unmounts
   it themselves. Re-Gear does not unmount anything to make a disconnect look
   possible, for the same reason it never force-closes a process to make one
   look safe;
+- **and "unmounted" is not "unused".** A drive can be written to with no mount
+  in sight: swap on it, a device-mapper or md layer stacked over it, or a
+  filesystem mounted inside a container with its own mount namespace. Each of
+  those refuses exactly as a mount does, because each of them means the device
+  is being written to;
 - **an unfinished scan is not an empty branch.** "Found no mounts" is evidence
   only when the looking finished. This codebase has had to remove that exact
   fail-open more than once, and here it would cost someone their save files
@@ -74,7 +79,10 @@ class UsbBranchEvidence:
     scan_complete: bool
     #: Mount points backed by block devices on this branch. Any entry refuses.
     mounted_storage: tuple[str, ...] = ()
-    #: Whether the search for those mounts finished. False refuses on its own.
+    #: Claims on those devices that are not mounts -- swap, stacked devices --
+    #: described for a player. Any entry refuses exactly as a mount does.
+    storage_in_use: tuple[str, ...] = ()
+    #: Whether the search for both finished. False refuses on its own.
     storage_scan_complete: bool = False
     #: Input devices that will disconnect. Reported, never a refusal.
     input_devices: tuple[str, ...] = ()
@@ -116,6 +124,9 @@ class DockTeardownDecision:
     #: Mount points that must be unmounted first, when that is the blocker.
     #: Named so a player can act rather than hunt.
     blocking_mounts: tuple[str, ...] = field(default_factory=tuple)
+    #: Non-mount claims that must end first: swap, stacked devices. Named for
+    #: the same reason, and separate because the player clears them differently.
+    blocking_uses: tuple[str, ...] = field(default_factory=tuple)
     #: What will disconnect if this proceeds. Not blockers; consequences.
     disconnecting: tuple[str, ...] = field(default_factory=tuple)
 
@@ -220,6 +231,17 @@ def decide_dock_teardown(
                 DockTeardownState.REFUSED,
                 "dock_teardown.mounted_storage",
                 blocking_mounts=tuple(usb.mounted_storage),
+                blocking_uses=tuple(usb.storage_in_use),
+                disconnecting=consequences,
+            )
+        if usb.storage_in_use:
+            # No mount, and in use all the same. Reported under its own code
+            # because "unmount it" is not the instruction that clears swap or
+            # a stacked device.
+            return DockTeardownDecision(
+                DockTeardownState.REFUSED,
+                "dock_teardown.storage_in_use",
+                blocking_uses=tuple(usb.storage_in_use),
                 disconnecting=consequences,
             )
 

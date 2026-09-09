@@ -10,9 +10,9 @@ What it answers:
 - which of the eGPU's PCI functions are still attached;
 - whether the dock's USB controller is still enumerated, and what is plugged
   into it;
-- whether any filesystem on that branch is mounted -- the one fact that
-  refuses absolutely, because a filesystem removed with dirty pages
-  outstanding is somebody's files;
+- whether anything on that branch is in use -- a mounted filesystem in any
+  namespace, swap, or a stacked device -- which refuses absolutely, because a
+  device removed with writes outstanding is somebody's files;
 - whether the Thunderbolt router is authorized and whether this process could
   deauthorize it.
 
@@ -75,6 +75,9 @@ def main() -> int:
             present=usb.present,
             scan_complete=usb.complete,
             mounted_storage=storage.mounts,
+            storage_in_use=tuple(
+                f"{use.device}: {use.detail}" for use in storage.other_uses
+            ),
             storage_scan_complete=storage.complete,
             input_devices=tuple(
                 device.label for device in usb.devices if "input" in device.kinds
@@ -116,6 +119,10 @@ def main() -> int:
         },
         "storage": {
             "mounted": list(storage.mounts),
+            "other_uses": [
+                {"device": use.device, "kind": use.kind, "detail": use.detail}
+                for use in storage.other_uses
+            ],
             "scan_complete": storage.complete,
         },
         "tunnel": {
@@ -128,6 +135,7 @@ def main() -> int:
             "state": decision.state.value,
             "code": decision.code,
             "blocking_mounts": list(decision.blocking_mounts),
+            "blocking_uses": list(decision.blocking_uses),
             "would_disconnect": list(decision.disconnecting),
         },
     }
@@ -140,6 +148,10 @@ def main() -> int:
         for mount in decision.blocking_mounts:
             print(f"  {mount}")
         print("Unmount it yourself before any teardown. Re-Gear will not.")
+    elif decision.blocking_uses:
+        print("BLOCKED: a drive on the dock is in use without being mounted.")
+        for use in decision.blocking_uses:
+            print(f"  {use}")
     elif decision.code == "dock_teardown.approval_required":
         print("Every substantive fact holds. A teardown would be permitted.")
     else:

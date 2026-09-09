@@ -11,10 +11,24 @@ distinction is load-bearing here in a way it is not elsewhere: "no filesystem
 is mounted on the dock" and "the search for mounted filesystems did not finish"
 lead to opposite actions, and getting them confused costs somebody their files.
 
-Mounts are read from `/proc/self/mountinfo` rather than from `mount` output or
-`/etc/mtab`, because it is the kernel's own view, it needs no subprocess, and
-it carries the major:minor of each mounted device -- which is what lets a mount
-be tied to a block device on this branch rather than matched by name.
+Mounts are read from mountinfo rather than from `mount` output or `/etc/mtab`,
+because it is the kernel's own view and needs no subprocess. Every process's
+mountinfo is read, not just this one's: `/proc/self/mountinfo` shows only this
+mount namespace, and Flatpak apps, Steam's containers and any unit with
+`PrivateMounts` have their own. A drive mounted inside one of those is mounted.
+
+**Unmounted is not unused**, and treating the two as the same is the way this
+reading gets someone's files. Two more kernel-visible claims on a block device,
+both without a mount:
+
+- a stacked device. device-mapper, LVM and md list their consumers in
+  `/sys/block/<dev>/holders`, and a member of an assembled array is thoroughly
+  in use while being mounted nowhere;
+- swap, which `/proc/swaps` names directly.
+
+None of this opens the device. An `O_EXCL` probe would be the definitive test
+and is what `mkfs` uses, but opening a block device node has side effects of its
+own -- spin-up, media access -- and a reading must not have those.
 """
 
 from __future__ import annotations
@@ -104,12 +118,28 @@ class DockUsbReading:
 
 
 @dataclass(frozen=True, slots=True)
+class DockStorageUse:
+    """One claim on a block device that is not a mount in this namespace."""
+
+    #: The block device, e.g. "sda".
+    device: str
+    #: What holds it: "swap", or a stacked device such as "dm-0" or "md0".
+    kind: str
+    #: What the holder is, for a player: "swap" or the holder's name.
+    detail: str
+
+
+@dataclass(frozen=True, slots=True)
 class DockStorageReading:
-    #: Mount points backed by block devices on this branch.
+    #: Mount points backed by block devices on this branch, across every mount
+    #: namespace that could be read.
     mounts: tuple[str, ...]
-    #: Whether both the block-device walk and the mount read finished. False
-    #: means an empty `mounts` proves nothing.
-    complete: bool
+    #: Claims on those devices that are not mounts: swap, and stacked devices.
+    #: Any entry blocks a teardown exactly as a mount does.
+    other_uses: tuple[DockStorageUse, ...] = ()
+    #: Whether the block-device walk, the mount read and the other-use checks
+    #: all finished. False means an empty result proves nothing.
+    complete: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -129,11 +159,15 @@ class DockBranchDiscovery:
         thunderbolt_root: Path = Path("/sys/bus/thunderbolt/devices"),
         block_root: Path = Path("/sys/block"),
         mountinfo: Path = Path("/proc/self/mountinfo"),
+        proc_root: Path = Path("/proc"),
+        swaps: Path = Path("/proc/swaps"),
     ) -> None:
         self._pci_root = pci_root
         self._thunderbolt_root = thunderbolt_root
         self._block_root = block_root
         self._mountinfo = mountinfo
+        self._proc_root = proc_root
+        self._swaps = swaps
 
     # -- the USB branch ---------------------------------------------------
 
@@ -224,26 +258,77 @@ class DockBranchDiscovery:
     # -- storage on that branch -------------------------------------------
 
     def observe_storage(self, controller_bdf: str) -> DockStorageReading:
-        """Mount points backed by block devices behind this controller.
+        """Every claim on a block device behind this controller.
 
-        Both halves must finish for the result to mean anything: the walk that
-        finds this branch's block devices, and the read that maps them to
-        mounts. Either failing reports incomplete, and the decision that
-        consumes this refuses rather than reading an empty list as safety.
+        Mounts in any namespace, swap, and stacked devices. Each part must
+        finish for the result to mean anything, and any one failing reports
+        incomplete -- the decision that consumes this refuses rather than
+        reading an empty list as safety.
         """
         if not PCI_PATTERN.fullmatch(controller_bdf):
-            return DockStorageReading((), False)
+            return DockStorageReading((), (), False)
         try:
             if not (self._pci_root / controller_bdf).is_dir():
-                # No controller, so nothing of this branch is mounted. A
+                # No controller, so nothing of this branch is in use. A
                 # finished reading of an absent thing.
-                return DockStorageReading((), True)
+                return DockStorageReading((), (), True)
         except OSError:
-            return DockStorageReading((), False)
+            return DockStorageReading((), (), False)
 
         devices, devices_complete = self._branch_block_devices(controller_bdf)
         mounts, mounts_complete = self._mounts_for(devices)
-        return DockStorageReading(mounts, devices_complete and mounts_complete)
+        uses, uses_complete = self._other_uses(devices)
+        return DockStorageReading(
+            mounts,
+            uses,
+            devices_complete and mounts_complete and uses_complete,
+        )
+
+    def _other_uses(
+        self, devices: set[str]
+    ) -> tuple[tuple[DockStorageUse, ...], bool]:
+        """Claims on these devices that are not mounts.
+
+        Swap and stacked devices. Both are ordinary states that a mount table
+        says nothing about, and both mean the device is being written to.
+        """
+        if not devices:
+            return (), True
+        uses: list[DockStorageUse] = []
+        complete = True
+
+        try:
+            raw = self._swaps.read_text(encoding="utf-8", errors="replace")
+        except FileNotFoundError:
+            # No swap file at all is a real answer on a system without one.
+            raw = ""
+        except OSError:
+            complete = False
+            raw = ""
+        for line in raw.splitlines()[1:]:
+            leaf = line.split()[0].rsplit("/", 1)[-1] if line.split() else ""
+            if not leaf:
+                continue
+            if leaf in devices or any(
+                _is_partition_of(leaf, name) for name in devices
+            ):
+                uses.append(DockStorageUse(leaf, "swap", "in use as swap"))
+
+        for device in sorted(devices):
+            holders = self._block_root / device / "holders"
+            try:
+                entries = sorted(entry.name for entry in holders.iterdir())
+            except FileNotFoundError:
+                # No holders directory means no stacked consumers.
+                continue
+            except OSError:
+                complete = False
+                continue
+            for name in entries:
+                uses.append(
+                    DockStorageUse(device, "stacked", f"in use by {name}")
+                )
+        return tuple(uses), complete
 
     def _branch_block_devices(self, controller_bdf: str) -> tuple[set[str], bool]:
         """Block device names whose sysfs path runs through this controller."""
@@ -268,14 +353,56 @@ class DockBranchDiscovery:
                 names.add(entry.name)
         return names, complete
 
+    def _mount_tables(self) -> tuple[tuple[str, ...], bool]:
+        """Every process's mountinfo, so no mount namespace is missed.
+
+        A drive mounted inside a Flatpak app or a Steam container does not
+        appear in this process's own table, and it is mounted all the same.
+        This process's table is read first and separately, so a `/proc` that
+        cannot be walked still leaves the reading with the namespace it is in
+        -- degraded to incomplete rather than to nothing.
+        """
+        tables: list[str] = []
+        complete = True
+        try:
+            tables.append(
+                self._mountinfo.read_text(encoding="utf-8", errors="replace")
+            )
+        except OSError:
+            complete = False
+        try:
+            entries = sorted(self._proc_root.iterdir(), key=lambda item: item.name)
+        except OSError:
+            return tuple(tables), False
+        for entry in entries:
+            if not entry.name.isdigit():
+                continue
+            try:
+                tables.append(
+                    (entry / "mountinfo").read_text(
+                        encoding="utf-8", errors="replace"
+                    )
+                )
+            except FileNotFoundError:
+                # The process exited between the listing and the read. It is
+                # not holding a mount now.
+                continue
+            except PermissionError:
+                # A namespace that could not be read is a namespace that was
+                # not checked, and an unchecked namespace may hold a mount.
+                complete = False
+            except OSError:
+                complete = False
+        return tuple(tables), complete
+
     def _mounts_for(self, devices: set[str]) -> tuple[tuple[str, ...], bool]:
         """Mount points whose source device is one of, or part of, `devices`."""
         if not devices:
             return (), True
-        try:
-            raw = self._mountinfo.read_text(encoding="utf-8", errors="replace")
-        except OSError:
+        tables, complete = self._mount_tables()
+        if not tables:
             return (), False
+        raw = "\n".join(tables)
         mounts: list[str] = []
         for line in raw.splitlines():
             fields = line.split(" ")
@@ -294,7 +421,7 @@ class DockBranchDiscovery:
                 _is_partition_of(leaf, name) for name in devices
             ):
                 mounts.append(mount_point)
-        return tuple(sorted(set(mounts))), True
+        return tuple(sorted(set(mounts))), complete
 
     # -- the tunnel -------------------------------------------------------
 

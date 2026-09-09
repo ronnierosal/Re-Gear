@@ -33,9 +33,12 @@ class Fake:
         self.thunderbolt = root / "thunderbolt"
         self.block = root / "block"
         self.mountinfo = root / "mountinfo"
-        for directory in (self.pci, self.thunderbolt, self.block):
+        self.proc = root / "proc"
+        self.swaps = root / "swaps"
+        for directory in (self.pci, self.thunderbolt, self.block, self.proc):
             directory.mkdir(parents=True, exist_ok=True)
         self.mountinfo.write_text("", encoding="utf-8")
+        self.swaps.write_text("Filename\t\t\t\tType\t\tSize\n", encoding="utf-8")
 
     def discovery(self) -> DockBranchDiscovery:
         return DockBranchDiscovery(
@@ -43,6 +46,8 @@ class Fake:
             thunderbolt_root=self.thunderbolt,
             block_root=self.block,
             mountinfo=self.mountinfo,
+            proc_root=self.proc,
+            swaps=self.swaps,
         )
 
     def controller(self, bdf: str = CONTROLLER) -> Path:
@@ -82,6 +87,25 @@ class Fake:
         existing = self.mountinfo.read_text(encoding="utf-8")
         line = f"36 25 8:1 / {mount_point} rw,relatime - ext4 {source} rw\n"
         self.mountinfo.write_text(existing + line, encoding="utf-8")
+
+    def namespace_mount(self, pid: str, source: str, mount_point: str) -> None:
+        """A mount visible only inside another process's mount namespace."""
+        directory = self.proc / pid
+        directory.mkdir(parents=True, exist_ok=True)
+        (directory / "mountinfo").write_text(
+            f"36 25 8:1 / {mount_point} rw,relatime - ext4 {source} rw\n",
+            encoding="utf-8",
+        )
+
+    def swap_on(self, source: str) -> None:
+        self.swaps.write_text(
+            "Filename\t\t\t\tType\t\tSize\n"
+            f"{source}\t\t\t\tpartition\t8388604\n",
+            encoding="utf-8",
+        )
+
+    def holder(self, device: str, holder: str) -> None:
+        (self.block / device / "holders" / holder).mkdir(parents=True, exist_ok=True)
 
     def tunnel(self, name: str, *, authorized: str | None = "1") -> Path:
         path = self.thunderbolt / "0-1"
@@ -398,6 +422,150 @@ class MountinfoParsingTests(Harness):
         )
 
         self.assertEqual(found, ())
+
+
+class OtherStorageUseTests(Harness):
+    """Unmounted is not unused, and treating the two as the same loses files.
+
+    A drive can be written to with no mount in this namespace at all: swap on
+    it, a device-mapper or md layer stacked over it, or a filesystem mounted
+    inside a container that has its own mount namespace.
+    """
+
+    def uses(self, devices):
+        return self.discovery._other_uses(set(devices))
+
+    def test_a_quiet_system_reports_no_other_use(self) -> None:
+        found, complete = self.uses({"sda"})
+
+        self.assertEqual(found, ())
+        self.assertTrue(complete)
+
+    def test_no_devices_needs_no_checks(self) -> None:
+        found, complete = self.uses(())
+
+        self.assertEqual(found, ())
+        self.assertTrue(complete)
+
+    def test_swap_on_a_branch_partition_is_a_use(self) -> None:
+        self.fake.swap_on("/dev/sda2")
+
+        found, complete = self.uses({"sda"})
+
+        self.assertEqual(len(found), 1)
+        self.assertEqual(found[0].kind, "swap")
+        self.assertEqual(found[0].device, "sda2")
+        self.assertTrue(complete)
+
+    def test_swap_elsewhere_is_not_this_branch(self) -> None:
+        self.fake.swap_on("/dev/nvme0n1p2")
+
+        found, _ = self.uses({"sda"})
+
+        self.assertEqual(found, ())
+
+    def test_a_missing_swaps_file_is_a_real_answer(self) -> None:
+        # A system with no swap configured at all.
+        self.fake.swaps.unlink()
+
+        found, complete = self.uses({"sda"})
+
+        self.assertEqual(found, ())
+        self.assertTrue(complete)
+
+    def test_a_stacked_device_holds_its_member(self) -> None:
+        # A member of an assembled array is thoroughly in use while being
+        # mounted nowhere.
+        (self.fake.block / "sda").mkdir(parents=True, exist_ok=True)
+        self.fake.holder("sda", "dm-0")
+
+        found, complete = self.uses({"sda"})
+
+        self.assertEqual(len(found), 1)
+        self.assertEqual(found[0].kind, "stacked")
+        self.assertIn("dm-0", found[0].detail)
+        self.assertTrue(complete)
+
+    def test_several_holders_are_all_reported(self) -> None:
+        (self.fake.block / "sda").mkdir(parents=True, exist_ok=True)
+        self.fake.holder("sda", "dm-0")
+        self.fake.holder("sda", "md0")
+
+        found, _ = self.uses({"sda"})
+
+        self.assertEqual({use.detail for use in found}, {"in use by dm-0", "in use by md0"})
+
+    def test_no_holders_directory_is_no_holders(self) -> None:
+        (self.fake.block / "sda").mkdir(parents=True, exist_ok=True)
+
+        found, complete = self.uses({"sda"})
+
+        self.assertEqual(found, ())
+        self.assertTrue(complete)
+
+
+class MountNamespaceTests(Harness):
+    """A drive mounted inside a container is mounted.
+
+    /proc/self/mountinfo shows this process's namespace. Flatpak apps, Steam's
+    own containers and any unit with PrivateMounts have their own, and a mount
+    in one of those is invisible here while being very much a mount.
+    """
+
+    def test_a_mount_in_another_namespace_is_found(self) -> None:
+        self.fake.namespace_mount("4242", "/dev/sda1", "/run/host/media/BACKUP")
+
+        found, complete = self.discovery._mounts_for({"sda"})
+
+        self.assertEqual(found, ("/run/host/media/BACKUP",))
+        self.assertTrue(complete)
+
+    def test_this_namespace_is_still_read(self) -> None:
+        self.fake.mount("/dev/sda1", "/run/media/deck/BACKUP")
+
+        found, _ = self.discovery._mounts_for({"sda"})
+
+        self.assertEqual(found, ("/run/media/deck/BACKUP",))
+
+    def test_the_same_mount_seen_from_two_processes_is_reported_once(self) -> None:
+        self.fake.mount("/dev/sda1", "/run/media/deck/BACKUP")
+        self.fake.namespace_mount("4242", "/dev/sda1", "/run/media/deck/BACKUP")
+
+        found, _ = self.discovery._mounts_for({"sda"})
+
+        self.assertEqual(found, ("/run/media/deck/BACKUP",))
+
+    def test_non_numeric_proc_entries_are_skipped(self) -> None:
+        (self.fake.proc / "self").mkdir(parents=True, exist_ok=True)
+        (self.fake.proc / "self" / "mountinfo").write_text(
+            "36 25 8:1 / /ignored rw - ext4 /dev/sda1 rw\n", encoding="utf-8"
+        )
+
+        found, _ = self.discovery._mounts_for({"sda"})
+
+        self.assertEqual(found, ())
+
+    def test_a_process_that_exited_mid_walk_holds_nothing(self) -> None:
+        (self.fake.proc / "4242").mkdir(parents=True, exist_ok=True)
+
+        found, complete = self.discovery._mounts_for({"sda"})
+
+        self.assertEqual(found, ())
+        self.assertTrue(complete)
+
+    def test_an_unwalkable_proc_leaves_this_namespace_readable(self) -> None:
+        # Degraded to incomplete rather than to nothing: the namespace this
+        # process is in was still read, and the decision refuses on incomplete
+        # anyway.
+        self.fake.mount("/dev/sda1", "/run/media/deck/BACKUP")
+        for child in list(self.fake.proc.iterdir()):
+            child.rmdir()
+        self.fake.proc.rmdir()
+
+        found, complete = self.discovery._mounts_for({"sda"})
+
+        self.assertEqual(found, ("/run/media/deck/BACKUP",))
+        self.assertFalse(complete)
 
 
 class TunnelTests(Harness):

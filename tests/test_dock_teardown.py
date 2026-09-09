@@ -164,6 +164,79 @@ class MountedStorageTests(unittest.TestCase):
         self.assertTrue(decision.permitted)
 
 
+class StorageInUseTests(unittest.TestCase):
+    """Unmounted is not unused, and the difference costs files.
+
+    A drive can be written to with no mount in sight: swap on it, a stacked
+    device over it, or a filesystem mounted in a container's own namespace.
+    """
+
+    def test_swap_on_the_branch_refuses(self) -> None:
+        decision = decide(
+            usb=replace(USB, storage_in_use=("sda2: in use as swap",))
+        )
+
+        self.assertIs(decision.state, DockTeardownState.REFUSED)
+        self.assertEqual(decision.code, "dock_teardown.storage_in_use")
+
+    def test_a_stacked_device_refuses(self) -> None:
+        decision = decide(usb=replace(USB, storage_in_use=("sda: in use by dm-0",)))
+
+        self.assertEqual(decision.code, "dock_teardown.storage_in_use")
+
+    def test_the_blocking_uses_are_named_so_a_player_can_act(self) -> None:
+        decision = decide(
+            usb=replace(
+                USB, storage_in_use=("sda2: in use as swap", "sdb: in use by md0")
+            )
+        )
+
+        self.assertEqual(
+            decision.blocking_uses,
+            ("sda2: in use as swap", "sdb: in use by md0"),
+        )
+
+    def test_approval_never_overrides_a_device_in_use(self) -> None:
+        decision = decide(
+            usb=replace(USB, storage_in_use=("sda: in use by dm-0",)), approved=True
+        )
+
+        self.assertIs(decision.state, DockTeardownState.REFUSED)
+
+    def test_a_mount_is_reported_under_its_own_code(self) -> None:
+        # "Unmount it" is not the instruction that clears swap, so the two
+        # blockers do not share a code.
+        mounted = decide(usb=replace(USB, mounted_storage=("/run/media/deck/A",)))
+        in_use = decide(usb=replace(USB, storage_in_use=("sda: in use by dm-0",)))
+
+        self.assertNotEqual(mounted.code, in_use.code)
+
+    def test_a_mount_carries_the_other_uses_alongside_it(self) -> None:
+        # So a player clearing the mount also learns what else is holding it.
+        decision = decide(
+            usb=replace(
+                USB,
+                mounted_storage=("/run/media/deck/A",),
+                storage_in_use=("sda2: in use as swap",),
+            )
+        )
+
+        self.assertEqual(decision.blocking_mounts, ("/run/media/deck/A",))
+        self.assertEqual(decision.blocking_uses, ("sda2: in use as swap",))
+
+    def test_use_on_a_branch_already_gone_cannot_block(self) -> None:
+        decision = decide(
+            usb=replace(
+                USB,
+                present=False,
+                storage_in_use=("sda: stale",),
+                storage_scan_complete=False,
+            )
+        )
+
+        self.assertTrue(decision.permitted)
+
+
 class TunnelTests(unittest.TestCase):
     def test_an_unidentified_tunnel_refuses(self) -> None:
         decision = decide(tunnel=replace(TUNNEL, sysfs_id=""))
