@@ -7,7 +7,7 @@ const source = readFileSync(new URL("../src/quick-access/unplug-clearance.ts", i
 const { outputText } = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2020 } });
 const { unplugClearance } = await import(`data:text/javascript;base64,${Buffer.from(outputText).toString("base64")}`);
 
-/** A status reading taken after a successful removal: the device is gone. */
+/** Ambiguous v1 unavailable status, not verified PCI absence. */
 const goneStatus = (over = {}) => ({
   schema_version: 1, availability: "unavailable", code: "live_disconnect.egpu_unavailable",
   ready: false, attemptable: false, busy: false, holders: [], scan_complete: true,
@@ -24,12 +24,12 @@ const goodOutcome = (over = {}) => ({
 const CLEARED = /you can now disconnect the eGPU cable/i;
 const failing = (c) => c.checks.filter((entry) => !entry.passed).map((entry) => entry.label);
 
-test("full evidence clears the disconnect", () => {
+test("unavailable cannot clear the cable even with a successful release and clean scan", () => {
   const c = unplugClearance(goneStatus(), goodOutcome());
-  assert.equal(c.cleared, true, `unexpected failures: ${failing(c).join(", ")}`);
-  assert.match(c.statement, CLEARED);
+  assert.equal(c.cleared, false);
+  assert.doesNotMatch(c.statement, CLEARED);
   assert.ok(c.checks.length >= 6);
-  assert.ok(c.checks.every((entry) => entry.passed));
+  assert.deepEqual(failing(c), ["eGPU no longer connected to the system"]);
 });
 
 test("the decisive check is the bus, not the command", () => {
@@ -83,9 +83,8 @@ test("an armed filter never clears", () => {
   assert.ok(failing(c).includes("Re-Gear's device filter disarmed"));
 });
 
-test("every single check is load bearing", () => {
-  // Removing any one piece of evidence must withdraw the clearance. If one
-  // could be dropped without effect it was decoration on a safety decision.
+test("missing evidence continues to refuse clearance", () => {
+  // Other evidence remains visible, but none bypasses the missing contract.
   const breakers = [
     [goneStatus(), goodOutcome({ ok: false })],
     [goneStatus(), goodOutcome({ released: false })],

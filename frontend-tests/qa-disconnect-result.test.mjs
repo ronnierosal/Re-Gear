@@ -120,3 +120,14 @@ test("singular and plural removals both read correctly", () => {
   const two = disconnectResult(outcome());
   assert.ok(two.detail.some((d) => /2 eGPU functions were removed/i.test(d)));
 });
+
+
+test("ambiguous unavailable status preserves software-only success", () => {
+  const status = { ...presentStatus(), availability: "unavailable",
+    code: "live_disconnect.egpu_unavailable", ready: false, attemptable: false };
+  const r = disconnectResult(outcome(), status);
+  assert.equal(r.tone, "done");
+  assert.match(r.headline, /detached in software/i);
+  assert.equal(r.clearance.cleared, false);
+  for (const claim of UNPLUG_CLAIMS) assert.doesNotMatch(JSON.stringify(r), claim);
+});
