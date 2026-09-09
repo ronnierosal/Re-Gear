@@ -18,6 +18,15 @@ from .user_directory import UserDirectory
 DROPIN_NAME = "90-handheld-dock-mode.conf"
 MAX_DROPIN_BYTES = 16 * 1024
 SHIM_MARKER = "Handheld Dock Mode Gamescope argument shim"
+#: The first line of every managed drop-in this project has ever written.
+MANAGED_HEADER = "# Managed by Handheld Dock Mode. Remove only through HDM."
+#: Recovers the shim directory from a candidate drop-in so it can be
+#: re-rendered and compared exactly. Matching only extracts; it decides
+#: nothing on its own.
+MANAGED_PATH_LINE = re.compile(
+    r'^Environment="PATH=(?P<shim>[^:"]+):/usr/local/sbin:',
+    re.MULTILINE,
+)
 SAFE_POSIX_PATH = re.compile(r"^/[A-Za-z0-9_.@+/-]+$")
 
 
@@ -96,19 +105,45 @@ class GamescopeIntegrationStore:
     def target(self) -> Path:
         return self._target
 
-    def expected_text(self) -> str:
-        shim_directory = self._path_text(self._shim.parent)
+    def _render(self, shim_directory: str) -> str:
+        """Render the managed drop-in for one shim directory."""
         state_root = self._path_text(self._state_root)
         path_value = (
             f"{shim_directory}:/usr/local/sbin:/usr/local/bin:"
             "/usr/bin:/usr/sbin:/bin:/sbin"
         )
         return (
-            "# Managed by Handheld Dock Mode. Remove only through HDM.\n"
+            f"{MANAGED_HEADER}\n"
             "[Service]\n"
             f'Environment="PATH={path_value}"\n'
             f'Environment="HDM_STATE_ROOT={state_root}"\n'
         )
+
+    def expected_text(self) -> str:
+        return self._render(self._path_text(self._shim.parent))
+
+    def _stale_managed_rendering(self, actual: str) -> bool:
+        """Whether `actual` is one of our own renderings for another plugin path.
+
+        A plugin rename moves the shim directory, so a drop-in this project
+        wrote itself stops matching `expected_text` and is indistinguishable,
+        by equality alone, from a file the player edited. Refusing to
+        overwrite an edited file is correct and stays; this narrows that
+        refusal to files we cannot account for.
+
+        Recognition is deliberately exact rather than fuzzy: the candidate
+        must equal a rendering of this same template for some other shim
+        directory, with our state root and our fixed system PATH tail. Any
+        added line, reordered key, altered tail or foreign state root fails
+        to match and is still treated as modified.
+        """
+        match = MANAGED_PATH_LINE.search(actual)
+        if match is None:
+            return False
+        candidate = match.group("shim")
+        if not SAFE_POSIX_PATH.fullmatch(candidate):
+            return False
+        return actual == self._render(candidate)
 
     def activation_fingerprint(self) -> str:
         if not self._shim_ready():
@@ -133,7 +168,13 @@ class GamescopeIntegrationStore:
             state_ready = self._owned_real_directory(self._state_root)
             error = ""
             if installed and not matches:
-                error = "managed_dropin_modified"
+                # Ours, for a plugin path that has since moved, versus one we
+                # cannot account for. Only the first is safe to rewrite.
+                error = (
+                    "managed_dropin_stale"
+                    if self._stale_managed_rendering(actual or "")
+                    else "managed_dropin_modified"
+                )
             elif installed and not managed_safe:
                 error = "managed_dropin_unsafe"
             elif conflicts:
@@ -163,7 +204,10 @@ class GamescopeIntegrationStore:
             before = self.status()
             if before.ready:
                 return GamescopeIntegrationResult(False, before)
-            if before.error_code:
+            # A stale rendering is the one error activation may resolve: the
+            # file is ours and only its plugin path moved. Every other error
+            # still refuses, including a file we cannot account for.
+            if before.error_code and before.error_code != "managed_dropin_stale":
                 return GamescopeIntegrationResult(False, before)
             if not before.shim_ready:
                 return GamescopeIntegrationResult(
@@ -188,7 +232,18 @@ class GamescopeIntegrationStore:
                     / (self.SERVICE + '.d'),
                     0o700,
                 )
-                if not before.installed:
+                if before.error_code == "managed_dropin_stale":
+                    # The delivery writer publishes by exclusive create and
+                    # cannot replace, deliberately. Migrating therefore reuses
+                    # the same compare-and-remove primitive deactivation uses:
+                    # the stale file is removed only while its content is still
+                    # exactly the rendering that was recognised, so a file that
+                    # changed between the check and the act is refused rather
+                    # than overwritten.
+                    self._remove_exact(self._read_required(self._target))
+                if not before.installed or (
+                    before.error_code == "managed_dropin_stale"
+                ):
                     self._atomic_write(self._target, self.expected_text())
             except (OSError, ValueError):
                 return GamescopeIntegrationResult(
@@ -310,6 +365,20 @@ class GamescopeIntegrationStore:
                            create_from=self._user.home, create=True,
                            final_mode=final_mode, set_owner=self._set_owner):
             pass
+
+    def _remove_exact(self, expected: str) -> None:
+        """Remove the managed drop-in only while it still holds `expected`.
+
+        Shares deactivation's primitive rather than introducing a second way to
+        unlink a delivered file: it re-reads through a pinned descriptor,
+        checks ownership and content, and confirms the name still refers to the
+        same inode before unlinking.
+        """
+        with UserDirectory(self._dropin_root, self._user.uid, self._user.gid,
+                           create_from=self._user.home) as directory:
+            directory.remove_matching(
+                self.DROPIN_NAME, expected.encode("utf-8"), MAX_DROPIN_BYTES
+            )
 
     def _atomic_write(self, path: Path, value: str) -> None:
         data = value.encode("utf-8")
