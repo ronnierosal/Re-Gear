@@ -303,6 +303,17 @@ const runTdpBenchmark = callable("run_auto_tdp_benchmark");
 const cancelTdpBenchmark = callable("cancel_auto_tdp_benchmark");
 const getAutoTdpPreferences = callable("get_auto_tdp_preferences");
 const saveAutoTdpPreference = callable("save_auto_tdp_preference");
+/** Read-only. Observes and changes nothing, so it is safe to poll. */
+callable("get_egpu_disconnect_status");
+/** Detach the eGPU in software. NOT clearance to unplug anything.
+ *
+ * Serialized by the backend: a second call while one runs returns immediately
+ * with `live_disconnect.busy` and does nothing.
+ *
+ * `releaseDisplay` is a separate approval from the disconnect. Pass true only
+ * when the player has agreed to the external display turning off.
+ */
+callable("execute_egpu_disconnect");
 
 function disconnectProgress(payload, failed = false, now = Date.now()) {
     const s = payload?.snapshot;

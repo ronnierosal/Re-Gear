@@ -50,6 +50,13 @@ from hdm.adapters.steamos.gamescope_session import (  # noqa: E402
     GamescopeSessionObservationAdapter,
 )
 from hdm.adapters.steamos.gamescope_user import resolve_gamescope_user  # noqa: E402
+from hdm.delivery.live_disconnect_runtime import (  # noqa: E402
+    DisconnectAvailability,
+    LiveDisconnectRuntime,
+    build_live_disconnect_runtime,
+    disconnect_result_to_payload,
+    disconnect_status_to_payload,
+)
 from hdm.adapters.steamos.sleep_inhibitor import (  # noqa: E402
     G1SleepGuardHardwareDiscovery,
     SleepGuardController,
@@ -233,6 +240,15 @@ def _exact_g1_link_is_up(snapshot) -> bool:
     )
 
 
+
+#: The eGPU's GPU function on the tested profile, matching the default the
+#: operator tools use, so the backend and the CLI act on the same device.
+#:
+#: Fixed rather than discovered because the supported set is one device on one
+#: host, and a wrong address here would compose a plan for something else. A
+#: second supported eGPU needs this resolved from the observation instead.
+EGPU_GPU_FUNCTION = "0000:08:00.0"
+
 class Plugin:
     def __init__(self) -> None:
         self._unloading = False
@@ -296,6 +312,9 @@ class Plugin:
         self._version_info = SteamOsVersionDiscovery().scan()
         self._build_info = load_public_build_info(PLUGIN_ROOT)
         self._tdp_runtime: TdpRuntime | None = None
+        self._live_disconnect: LiveDisconnectRuntime | None = None
+        self._live_disconnect_key: tuple[str, int] | None = None
+        self._live_disconnect_lock = threading.Lock()
         self._tdp_init_lock = threading.Lock()
         self._tdp_closing = threading.Event()
         self._auto_request_lock = threading.Lock()
@@ -952,6 +971,95 @@ class Plugin:
         if acknowledged:
             scheduler.wake()
         return {"schema_version": 1, "acknowledged": acknowledged}
+
+
+    # -- live eGPU disconnect -------------------------------------------
+
+    def _live_disconnect_runtime(self) -> LiveDisconnectRuntime | None:
+        """Build the runtime for the eGPU and session user in front of us.
+
+        Rebuilt when either changes, because a runtime is bound to one device
+        and one session: a grant taken over a different user manager, or a
+        plan composed for a different eGPU, must not be reused.
+        """
+        user = resolve_gamescope_user(GamescopeDiscovery().scan()).context
+        if user is None:
+            return None
+        key = (EGPU_GPU_FUNCTION, user.uid)
+        with self._live_disconnect_lock:
+            if self._live_disconnect is None or self._live_disconnect_key != key:
+                self._live_disconnect = build_live_disconnect_runtime(
+                    gpu_bdf=EGPU_GPU_FUNCTION,
+                    uid=user.uid,
+                    username=user.username,
+                )
+                self._live_disconnect_key = key
+            return self._live_disconnect
+
+    async def get_egpu_disconnect_status(
+        self, _request: object = None
+    ) -> dict[str, object]:
+        """Report what a live disconnect would do now. Changes nothing.
+
+        Safe to poll. No filter is armed, no DRM master taken, and no display
+        touched by asking.
+        """
+        try:
+            runtime = await asyncio.to_thread(self._live_disconnect_runtime)
+        except Exception:
+            runtime = None
+        if runtime is None:
+            return {
+                "schema_version": 1,
+                "availability": DisconnectAvailability.UNAVAILABLE.value,
+                "code": "live_disconnect.session_unavailable",
+                "ready": False,
+                "busy": False,
+            }
+        try:
+            status = await asyncio.to_thread(runtime.status)
+        except Exception:
+            return {
+                "schema_version": 1,
+                "availability": DisconnectAvailability.UNAVAILABLE.value,
+                "code": "live_disconnect.status_unavailable",
+                "ready": False,
+                "busy": False,
+            }
+        return disconnect_status_to_payload(status)
+
+    async def execute_egpu_disconnect(
+        self, release_display: bool = False
+    ) -> dict[str, object]:
+        """Remove the eGPU in software. NOT clearance to unplug anything.
+
+        `release_display` is a separate approval from the disconnect itself:
+        it turns the external output off for the duration, which is visible to
+        whoever is watching it, so a caller has to ask for it explicitly.
+        """
+        try:
+            runtime = await asyncio.to_thread(self._live_disconnect_runtime)
+        except Exception:
+            runtime = None
+        if runtime is None:
+            return {
+                "schema_version": 1,
+                "stage": "invalid",
+                "code": "live_disconnect.session_unavailable",
+                "ok": False,
+            }
+        try:
+            result = await asyncio.to_thread(
+                lambda: runtime.execute(release_display=bool(release_display))
+            )
+        except Exception:
+            return {
+                "schema_version": 1,
+                "stage": "invalid",
+                "code": "live_disconnect.attempt_failed",
+                "ok": False,
+            }
+        return disconnect_result_to_payload(result)
 
     async def preview_support_bundle(self, _request: object = None) -> dict[str, object]:
         """Return a redacted preview and one-time approval token."""
@@ -2295,7 +2403,7 @@ class Plugin:
 
     def _support_versions(self) -> dict[str, str]:
         return {
-            "hdm": "0.3.58",
+            "hdm": "0.3.62",
             "decky": str(getattr(decky, "DECKY_VERSION", "unknown")),
             "steamos": self._version_info.steamos,
             "kernel": self._version_info.kernel,

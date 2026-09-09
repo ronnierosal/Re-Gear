@@ -18,6 +18,8 @@
  * caller owns every request, and every guard stays where it already lives.
  */
 
+import type { DisconnectStatusPayload } from "../backend";
+import { disconnectPresentation } from "../egpu-disconnect-tile";
 import type { PerformanceState, TileValue } from "./performance-state";
 import { fpsTile, wattsValue } from "./performance-state";
 
@@ -39,6 +41,14 @@ export type CommandCenterTile = {
   actionLabel: string | null;
   /** Shown as In development: present on purpose, not yet functional. */
   developmental: boolean;
+  /** Confirmation the player must accept before this tile acts, or null.
+   * Owned by the surface that owns the operation; never rewritten here. */
+  confirmation?: string | null;
+  /** True when acting also turns the external display off. A separate approval
+   * from the action itself, because it is visible to whoever is watching. */
+  displayApprovalRequired?: boolean;
+  /** True when this is a system state needing attention, not a failed press. */
+  attention?: boolean;
 };
 
 /** Fixed order and fixed length. Two columns; the fifth tile sits alone on the
@@ -51,10 +61,11 @@ export type CommandCenterInput = {
   /** Display target as already observed by the panel, e.g. a mode label.
    * Absent means unknown; it is never inferred from anything else. */
   displayTarget?: string;
-  /** True only when the owning backend reports a usable safe-disconnect path.
-   * Absent or false keeps the tile In development. Never inferred from
-   * topology, connection state, or the fact that two devices are online. */
-  safeDisconnectSupported?: boolean;
+  /** The owning backend's disconnect status, rendered through its own
+   * presentation. Availability is a state the backend computes; it is never
+   * derived here from topology, connection state, holders, or the fact that
+   * two devices are online. Absent means not yet read, which is not "no". */
+  disconnectStatus?: DisconnectStatusPayload | null;
 };
 
 const ACTION_LABEL: Record<PerformanceState["action"], string | null> = {
@@ -105,18 +116,30 @@ export function commandCenterTiles(input: CommandCenterInput): CommandCenterTile
       available: true, reason: null, activation: "open", actionLabel: "Open eGPU",
       developmental: false,
     },
-    // Prepared, not functional. Opens an informational notice and performs no
-    // disconnect. Enablement waits on the owning backend's verified capability
-    // and its confirmation contract; it is never inferred here.
-    "safe-disconnect": {
-      id: "safe-disconnect", title: "Safe Disconnect",
-      value: { text: input.safeDisconnectSupported === true ? "Ready" : "In development",
-        known: false },
-      available: false,
-      reason: "Not yet available. Re-Gear cannot confirm a safe disconnect.",
-      activation: "notice", actionLabel: null,
-      developmental: input.safeDisconnectSupported !== true,
-    },
+    // Wired to the owning backend's contract. Every judgement below comes from
+    // disconnectPresentation: whether the action may be offered, what it says,
+    // whether the display approval is needed, and whether this is a system
+    // needing attention rather than a failed press. Re-deriving any of that
+    // here is how the tile and the operation start disagreeing.
+    //
+    // Software removal is not unplug clearance. The confirmation copy lives in
+    // egpu-disconnect-tile.ts with the tests that pin it, and is passed through
+    // untouched rather than restated here.
+    "safe-disconnect": (() => {
+      const view = disconnectPresentation(input.disconnectStatus ?? null);
+      return {
+        id: "safe-disconnect" as const, title: "Safe Disconnect",
+        value: { text: view.value, known: view.available },
+        available: view.available,
+        reason: view.reason,
+        activation: view.available ? "act" as const : "notice" as const,
+        actionLabel: view.actionLabel,
+        developmental: false,
+        confirmation: view.confirmation,
+        displayApprovalRequired: view.displayApprovalRequired,
+        attention: view.attention,
+      };
+    })(),
   };
 
   return TILE_ORDER.map((id) => tiles[id]);

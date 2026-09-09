@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" role="img" aria-labelledby="title desc">
+  <title id="title">Restore Portable action</title><desc id="desc">Return arrow around a handheld device.</desc>
+  <rect x="18" y="24" width="28" height="18" rx="6" stroke="currentColor" stroke-width="3"/>
+  <rect x="26" y="27" width="12" height="12" rx="2" stroke="currentColor" stroke-width="2.5"/>
+  <path d="M20 17h-7l5-5M13 17l5 5" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M14 17c-5 4-7 10-5 16 2 7 8 12 15 14" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+  <path d="M45 46c5-3 8-8 9-13" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+</svg>
