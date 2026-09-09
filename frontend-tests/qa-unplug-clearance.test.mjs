@@ -21,15 +21,79 @@ const goodOutcome = (over = {}) => ({
   device_disturbed: false, ...over,
 });
 
-const CLEARED = /you can now disconnect the eGPU cable/i;
+// Any wording that would tell a player the cable may come out. Nothing this
+// module produces may match it: every check here is about the GPU, and the
+// dock's USB controller and Thunderbolt link survive a software removal.
+const GRANTS_UNPLUG =
+  /you can now disconnect|safe to (unplug|disconnect)|you can unplug|remove the cable|ok to (unplug|disconnect)/i;
 const failing = (c) => c.checks.filter((entry) => !entry.passed).map((entry) => entry.label);
 
-test("full evidence clears the disconnect", () => {
+test("full evidence verifies the removal", () => {
   const c = unplugClearance(goneStatus(), goodOutcome());
-  assert.equal(c.cleared, true, `unexpected failures: ${failing(c).join(", ")}`);
-  assert.match(c.statement, CLEARED);
+  assert.equal(c.removalVerified, true, `unexpected failures: ${failing(c).join(", ")}`);
   assert.ok(c.checks.length >= 6);
-  assert.ok(c.checks.every((entry) => entry.passed));
+});
+
+test("a verified removal is still not clearance to unplug", () => {
+  // The whole point. Every check above is about the GPU; the dock's USB
+  // controller, the bridges above it and the tunnel are all still attached.
+  const c = unplugClearance(goneStatus(), goodOutcome());
+
+  assert.equal(c.removalVerified, true);
+  assert.doesNotMatch(c.statement, GRANTS_UNPLUG);
+  assert.match(c.statement, /not yet clearance to unplug/i);
+});
+
+test("no statement this module can produce ever grants an unplug", () => {
+  // Swept rather than spot-checked: a future branch that says otherwise fails
+  // here rather than reaching a player.
+  const cases = [
+    [goneStatus(), goodOutcome()],
+    [null, null],
+    [goneStatus(), null],
+    [null, goodOutcome()],
+    [goneStatus({ availability: "ready" }), goodOutcome()],
+    [goneStatus(), goodOutcome({ device_disturbed: true })],
+    [goneStatus(), goodOutcome({ filter_disarmed: false })],
+    [goneStatus({ holders: ["x.service"] }), goodOutcome()],
+  ];
+  for (const args of cases) {
+    const c = unplugClearance(...args);
+    assert.doesNotMatch(c.statement, GRANTS_UNPLUG, JSON.stringify(args));
+    assert.doesNotMatch(c.caveat, GRANTS_UNPLUG, JSON.stringify(args));
+  }
+});
+
+test("what a software removal leaves behind is always named", () => {
+  // A caveat a player has to already know about is not a caveat.
+  for (const args of [[goneStatus(), goodOutcome()], [null, null]]) {
+    const c = unplugClearance(...args);
+    assert.match(c.caveat, /USB controller/i);
+    assert.match(c.caveat, /Thunderbolt/i);
+    assert.match(c.caveat, /shut the handheld down/i);
+  }
+});
+
+test("the dock teardown is listed as an outstanding check, not omitted", () => {
+  // Shown as unverified rather than left off the list, so a player sees that
+  // something was not checked instead of inferring it from prose.
+  const c = unplugClearance(goneStatus(), goodOutcome());
+  const outstanding = c.checks.find(
+    (entry) => entry.label === "Dock USB and Thunderbolt link brought down",
+  );
+
+  assert.ok(outstanding, "the outstanding dock check is missing");
+  assert.equal(outstanding.passed, false);
+  assert.match(outstanding.detail, /not checked/i);
+});
+
+test("the outstanding dock check does not fail the removal itself", () => {
+  // The eGPU removal did succeed. Reporting it as failed because a different,
+  // unbuilt step has not run would make a working disconnect look broken.
+  const c = unplugClearance(goneStatus(), goodOutcome());
+
+  assert.equal(c.removalVerified, true);
+  assert.ok(failing(c).includes("Dock USB and Thunderbolt link brought down"));
 });
 
 test("the decisive check is the bus, not the command", () => {
@@ -39,52 +103,52 @@ test("the decisive check is the bus, not the command", () => {
     goneStatus({ availability: "ready", code: "removal_safety.clear", ready: true, attemptable: true }),
     goodOutcome(),
   );
-  assert.equal(c.cleared, false);
+  assert.equal(c.removalVerified, false);
   assert.ok(failing(c).includes("eGPU no longer connected to the system"));
-  assert.doesNotMatch(c.statement, CLEARED);
+  assert.doesNotMatch(c.statement, GRANTS_UNPLUG);
 });
 
-test("no evidence at all never clears", () => {
+test("no evidence at all never verifies a removal", () => {
   for (const args of [[null, null], [undefined, undefined], [goneStatus(), null], [null, goodOutcome()]]) {
     const c = unplugClearance(...args);
-    assert.equal(c.cleared, false, JSON.stringify(args));
-    assert.doesNotMatch(c.statement, CLEARED);
+    assert.equal(c.removalVerified, false, JSON.stringify(args));
+    assert.doesNotMatch(c.statement, GRANTS_UNPLUG);
   }
 });
 
-test("a half-detached device never clears, even when the command succeeded", () => {
+test("a half-detached device never verifies, even when the command succeeded", () => {
   const c = unplugClearance(goneStatus(), goodOutcome({ device_disturbed: true }));
-  assert.equal(c.cleared, false);
+  assert.equal(c.removalVerified, false);
   assert.ok(failing(c).includes("Device not left half detached"));
 });
 
 test("functions restored after removal do not count as removed", () => {
   const c = unplugClearance(goneStatus(), goodOutcome({ restored: ["0000:08:00.0"] }));
-  assert.equal(c.cleared, false);
+  assert.equal(c.removalVerified, false);
   assert.ok(failing(c).includes("PCI functions removed"));
 });
 
-test("an unfinished holder scan never clears", () => {
+test("an unfinished holder scan never verifies", () => {
   // An empty list from a scan that could not finish found nothing, and that is
   // not the same as there being nothing.
   const c = unplugClearance(goneStatus({ holders: [], scan_complete: false }), goodOutcome());
-  assert.equal(c.cleared, false);
+  assert.equal(c.removalVerified, false);
   assert.ok(failing(c).includes("Nothing still using the eGPU"));
 });
 
-test("a remaining holder never clears", () => {
+test("a remaining holder never verifies", () => {
   const c = unplugClearance(goneStatus({ holders: ["wireplumber.service"] }), goodOutcome());
-  assert.equal(c.cleared, false);
+  assert.equal(c.removalVerified, false);
 });
 
-test("an armed filter never clears", () => {
+test("an armed filter never verifies", () => {
   const c = unplugClearance(goneStatus(), goodOutcome({ filter_disarmed: false }));
-  assert.equal(c.cleared, false);
+  assert.equal(c.removalVerified, false);
   assert.ok(failing(c).includes("Re-Gear's device filter disarmed"));
 });
 
 test("every single check is load bearing", () => {
-  // Removing any one piece of evidence must withdraw the clearance. If one
+  // Removing any one piece of evidence must withdraw the verification. If one
   // could be dropped without effect it was decoration on a safety decision.
   const breakers = [
     [goneStatus(), goodOutcome({ ok: false })],
@@ -98,14 +162,15 @@ test("every single check is load bearing", () => {
     [goneStatus({ code: "removal_safety.clear" }), goodOutcome()],
   ];
   for (const args of breakers) {
-    assert.equal(unplugClearance(...args).cleared, false, JSON.stringify(args[1] ?? args[0]));
+    assert.equal(unplugClearance(...args).removalVerified, false, JSON.stringify(args[1] ?? args[0]));
   }
 });
 
-test("a refused clearance says what to do instead", () => {
+test("an unverified removal says what to do instead", () => {
   const c = unplugClearance(goneStatus({ availability: "ready" }), goodOutcome());
   assert.match(c.statement, /do not disconnect/i);
-  assert.match(c.statement, /shut the handheld down first/i);
+  assert.match(c.statement, /could not confirm every check/i);
+  assert.match(c.statement, /shut the handheld down/i);
 });
 
 test("every check reports what was observed, not just a verdict", () => {
@@ -123,7 +188,8 @@ test("the dock caveat is carried whether or not clearance is granted", () => {
   for (const args of [[goneStatus(), goodOutcome()], [null, null]]) {
     const c = unplugClearance(...args);
     assert.match(c.caveat, /eGPU only/i);
-    assert.match(c.caveat, /USB controllers and storage/i);
+    assert.match(c.caveat, /USB controller/i);
+    assert.match(c.caveat, /Thunderbolt/i);
   }
 });
 

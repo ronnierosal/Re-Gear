@@ -1,35 +1,34 @@
-/** Whether the evidence supports disconnecting the eGPU cable: pure, no I/O.
+/** What a completed disconnect actually established: pure, no I/O.
  *
- * This is the gate behind the only screen in Re-Gear that tells a player they
- * may physically disconnect the eGPU. It exists so that statement is *earned
- * from evidence* rather than asserted, and so the exact evidence is shown next
- * to it and can be argued with.
+ * This is the block shown after a disconnect, and it exists so that what a
+ * player is told is *earned from evidence* rather than asserted, with the exact
+ * evidence beside it so it can be argued with.
  *
- * WHY THIS IS NOT THE OPERATION INVARIANT 10 FORBIDS.
+ * WHAT THESE CHECKS COVER, AND WHAT THEY DO NOT.
  *
- * Invariant 10 was written about a live unplug: pulling the cable while the
- * eGPU is bound, with a driver attached and transactions possible. That is the
- * operation with no containment for in-flight DMA, and it stays forbidden.
+ * They cover the eGPU: both PCI functions removed, nothing still holding them,
+ * the filter disarmed, and -- decisively -- the bus itself reporting no eGPU
+ * connected. That last one is the difference between trusting an action and
+ * observing its result, and it is why the removal is a fact about this machine
+ * rather than a claim about the design.
  *
- * A safe disconnect is a different operation. The sequence removes both PCI
- * functions and verifies they are gone, so by the time a cable is touched
- * there is no bound device left to disconnect from. The checks below are what
- * make that a fact about this machine rather than a claim about the design:
- * clearance is refused unless the system itself reports no eGPU connected.
+ * They do **not** cover the dock. A software removal detaches `0000:08:00.0`
+ * and `0000:08:00.1`. It leaves the dock's own Thunderbolt USB controller on a
+ * sibling port of the same switch, the bridges above it, and the tunnel itself
+ * -- all still enumerated, all still live. Issue #105 records that this exact
+ * branch carries uncorrectable ACS violations with `xhci_hcd` unable to
+ * recover, against zero on the GPU branch.
  *
- * Every check must pass. They are deliberately not collapsed into one boolean
- * from the backend, because a player deciding whether to pull a cable deserves
- * to see which specific facts were established, and because a single opaque
- * flag is impossible to audit when it is wrong.
+ * SO NOTHING HERE CLEARS THE CABLE. An earlier version of this module said
+ * "You can now disconnect the eGPU cable" once every check passed. Every one of
+ * those checks was about the GPU, so the sentence was a claim about devices
+ * none of them had looked at. Safety invariant 10 stands, and issue #147 --
+ * whether that invariant covers unplug-while-bound and unplug-after-verified-
+ * removal as one operation or two -- is undecided. It is not this module's to
+ * decide, and copy is not the place to decide it.
  *
- * The decisive check is the last one. "Remove ran and returned success" is a
- * statement about a command; "no eGPU is connected" is a statement about the
- * bus. Only the second one justifies touching the cable, and the difference is
- * between trusting an action and observing its result.
- *
- * Scope: the eGPU. NOT the dock as a whole. Issue #105 records an xhci
- * recovery failure on the USB branch, a separate device path that a clean GPU
- * removal says nothing about, so the caveat below is always carried.
+ * The honest answer today is the one below: say what was detached, say what is
+ * still attached, and give the player the route that is known to be safe.
  *
  * If a check cannot be evaluated, it fails. Absent evidence is never a pass:
  * this is the one place in the product where an optimistic default would read
@@ -47,23 +46,31 @@ export type ClearanceCheck = {
 };
 
 export type UnplugClearance = {
-  /** True only when every check passed. */
-  cleared: boolean;
+  /** True when every check about the **eGPU** passed.
+   *
+   * Deliberately not called `cleared`: it says the GPU removal is verified,
+   * which is not the same as the cable being safe to pull, and a field named
+   * for the stronger claim is how the two get confused. */
+  removalVerified: boolean;
   checks: ClearanceCheck[];
-  /** The statement to show. Grants nothing unless `cleared`. */
+  /** The statement to show. Grants no cable clearance in either branch. */
   statement: string;
-  /** Always present. A clean eGPU removal says nothing about the USB branch. */
+  /** Always present. Names what a clean eGPU removal leaves behind. */
   caveat: string;
 };
 
-const CLEARED_STATEMENT =
-  "The eGPU is detached and no longer connected to the Ally. You can now disconnect the eGPU cable.";
+const VERIFIED_STATEMENT =
+  "The eGPU is detached in software and the Ally no longer sees it. " +
+  "The dock is still connected, so this is not yet clearance to unplug the cable.";
 
-const NOT_CLEARED_STATEMENT =
-  "Do not disconnect the eGPU yet. Re-Gear could not confirm every check below. Shut the handheld down first, then disconnect it.";
+const UNVERIFIED_STATEMENT =
+  "Do not disconnect anything yet. Re-Gear could not confirm every check " +
+  "below. Shut the handheld down first, then disconnect it.";
 
 const DOCK_CAVEAT =
-  "This covers the eGPU only. Other devices behind the dock, such as USB controllers and storage, are not checked here.";
+  "These checks cover the eGPU only. The dock's own USB controller, the bridges " +
+  "above it and the Thunderbolt link stay attached after a software removal, and " +
+  "nothing here checks them. To disconnect the cable, shut the handheld down first.";
 
 function check(label: string, passed: boolean, detail: string): ClearanceCheck {
   return { label, passed, detail };
@@ -127,8 +134,9 @@ export function unplugClearance(
       : "The filter was not reported as disarmed.",
   ));
 
-  // 6. The decisive one: the bus, not the command. This is what makes the
-  //    disconnect safe rather than live -- there is nothing bound to pull from.
+  // 6. The decisive one for the GPU: the bus, not the command. Note what it
+  //    does and does not say -- "no eGPU is connected" is a statement about
+  //    the graphics device, not about the dock it arrived through.
   const gone = status?.availability === "unavailable"
     && status.code === "live_disconnect.egpu_unavailable";
   checks.push(check(
@@ -139,11 +147,24 @@ export function unplugClearance(
       : "The system still reports an eGPU present.",
   ));
 
-  const cleared = checks.every((entry) => entry.passed);
+  // Computed before the outstanding check below is appended, rather than over
+  // a slice: an index would silently take in whatever a later edit inserts.
+  const removalVerified = checks.every((entry) => entry.passed);
+
+  // Named as an outstanding check rather than left out of the list, so a
+  // player sees that something is unverified instead of inferring it from
+  // prose. It cannot pass until the dock teardown exists and has run, and it
+  // is deliberately outside `removalVerified`: the eGPU removal did succeed.
+  checks.push(check(
+    "Dock USB and Thunderbolt link brought down",
+    false,
+    "Not checked. A software removal leaves them attached.",
+  ));
+
   return {
-    cleared,
+    removalVerified,
     checks,
-    statement: cleared ? CLEARED_STATEMENT : NOT_CLEARED_STATEMENT,
+    statement: removalVerified ? VERIFIED_STATEMENT : UNVERIFIED_STATEMENT,
     caveat: DOCK_CAVEAT,
   };
 }
