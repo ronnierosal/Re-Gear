@@ -47,3 +47,24 @@ test('one existing popup receives timeout, late recovery and completion without 
  await h.step(new Error('unavailable'));assert.equal(h.monitor.store.get().expiresAt,0);
  h.monitor.stop();
 });
+test('hiding the popup does not cancel a pending automatic TV connection',async()=>{
+ // Issue #27: the popup is a view of the transition, never its owner.
+ let value=sample(false),next,dismiss,opened=0;
+ const monitor=startConnectionMonitor({read:async()=>value,
+  show:(store,switchTv,closed)=>{opened++;dismiss=closed;return {Close(){}};},
+  schedule:cb=>{next=cb;return 1;},cancel:()=>{next=null;}});
+ await settle();
+ const step=async v=>{value=v;next();await settle();};
+ const s=sample(true);
+ await step(s);assert.equal(opened,1);
+ // The player hides the popup while the connection is still pending.
+ dismiss();
+ // Polling continues and the transition keeps advancing without the popup.
+ s.automatic.stage='switching';await step(s);
+ assert.equal(monitor.store.get().phase,'switching');
+ s.automatic.stage='docked';s.payload.inference.mode='docked_egpu';await step(s);
+ assert.equal(monitor.store.get().phase,'complete');
+ // Dismissal is not a cancellation, and does not spuriously reopen the popup.
+ assert.equal(opened,1);
+ monitor.stop();
+});
