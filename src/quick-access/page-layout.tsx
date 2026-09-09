@@ -44,7 +44,7 @@ export function CommandCenterHeader({ mode, display, game, health, navigation, s
     <SectionFocus ref={summaryRef} label="Command Center: current state" onFocused={onSummaryFocus}>
     <div style={{ border: "1px solid #294665", borderRadius: 12, padding: "10px 12px", background: "#0a1727", overflowWrap: "anywhere" }}>
       <div style={{ fontSize: 16, fontWeight: 700 }}>{mode}</div>
-      <div style={{ fontSize: 12, lineHeight: "18px", color: "#9eb2ca" }}>{display} Â· {game}</div>
+      <div style={{ fontSize: 12, lineHeight: "18px", color: "#9eb2ca" }}>{display} · {game}</div>
       {health !== "Ready" && <div style={{ fontSize: 12, lineHeight: "18px", color: "#ffc247" }}>{health}</div>}
     </div>
     </SectionFocus>

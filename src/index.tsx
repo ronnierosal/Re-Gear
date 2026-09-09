@@ -832,6 +832,8 @@ function Content({ preflight, connection, shortcut }: { preflight: SleepPrefligh
     setShowDiagnostics(compact.showDiagnostics);
     setShowJourneyDetails(compact.showJourneyDetails);
     setShowHardwareDetails(false);
+    setPendingFocus(null);
+    returnFocus.current.clear();
     // Steam may keep the plugin mounted between openings, so the route resets
     // with the rest of the compact state; otherwise the panel reopens wherever
     // it was left instead of at Command Center.
@@ -1612,6 +1614,12 @@ function Content({ preflight, connection, shortcut }: { preflight: SleepPrefligh
     shortcutAvailable: controllerShortcutAvailable,
   });
 
+  const activateDisplay = () => {
+    if (primaryDisplayAction.disabled) return;
+    if (primaryDisplayAction.target === "ally") requestControllerDisplaySwitch("ally");
+    else if (primaryDisplayAction.target === "tv") void executeTvSwitch();
+  };
+
 
   return (
     <>
@@ -1640,13 +1648,9 @@ function Content({ preflight, connection, shortcut }: { preflight: SleepPrefligh
         autoTdp={<AutoTdpModule controller={performance} />}
         picker={route.kind === "picker" && route.id === "tdp"
           ? <TdpPicker status={performance.manual} busy={performance.busy} onApply={watts => void performance.apply(watts)}
-              onConfigure={() => openRoute({ kind: "module", id: "auto-tdp" })} />
+              onConfigure={() => openRoute({ kind: "module", id: "auto-tdp" }, "picker:configure")} />
           : <DisplayPicker current={tiles.find(tile => tile.id === "display")?.value.text ?? "Unknown"}
-              action={primaryDisplayAction} onSwitch={() => {
-                if (primaryDisplayAction.disabled) return;
-                if (primaryDisplayAction.target === "ally") requestControllerDisplaySwitch("ally");
-                else if (primaryDisplayAction.target === "tv") void executeTvSwitch();
-              }} onConfigure={() => openRoute({ kind: "module", id: "egpu" })} />}
+              action={primaryDisplayAction} onSwitch={activateDisplay} onConfigure={() => openRoute({ kind: "module", id: "egpu" }, "picker:configure")} />}
 
         commandCenter={<>
 
@@ -1754,11 +1758,7 @@ function Content({ preflight, connection, shortcut }: { preflight: SleepPrefligh
               tone="primary"
               title={primaryDisplayAction.title}
               description={primaryDisplayAction.description}
-              onClick={() => {
-                if (primaryDisplayAction.disabled) return;
-                if (primaryDisplayAction.target === "ally") requestControllerDisplaySwitch("ally");
-                else if (primaryDisplayAction.target === "tv") void executeTvSwitch();
-              }}
+              onClick={activateDisplay}
               disabled={primaryDisplayAction.disabled}
             />
           </DashboardSurface>

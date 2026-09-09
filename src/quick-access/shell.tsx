@@ -39,7 +39,6 @@ function NavRow({ title, detail, blocked, onClick, focusKey }: {
     className="rg-quick-control"
     data-regear-focus={focusKey}
     onClick={onClick}
-    // Blocked rows stay focusable: opening one is how its reason is read.
     style={{
       width: "100%", minHeight: 44, margin: "0 0 6px", padding: "8px 10px",
       display: "flex", alignItems: "center", gap: 8, textAlign: "left",

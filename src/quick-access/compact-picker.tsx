@@ -25,7 +25,7 @@ export function TdpPicker({ status, busy, onApply, onConfigure }: {
     <PanelSectionRow><ButtonItem layout="below" disabled={!canApply}
       onClick={() => { if (canApply && selected !== null) onApply(selected); }}>Apply limit</ButtonItem></PanelSectionRow>
     <PanelSectionRow><span style={{ fontSize: 12 }}>This is a power limit, not measured use. Applying it stops Auto TDP.</span></PanelSectionRow>
-    <PanelSectionRow><ButtonItem layout="below" onClick={onConfigure}>Power configuration</ButtonItem></PanelSectionRow>
+    <PanelSectionRow><ButtonItem layout="below" data-regear-focus="picker:configure" onClick={onConfigure}>Power configuration</ButtonItem></PanelSectionRow>
   </PanelSection>;
 }
 
@@ -37,6 +37,6 @@ export function DisplayPicker({ current, action, onSwitch, onConfigure }: {
     <PanelSectionRow>{action.description}</PanelSectionRow>
     <PanelSectionRow><ButtonItem layout="below" disabled={action.disabled}
       onClick={() => { if (!action.disabled) onSwitch(); }}>{action.title}</ButtonItem></PanelSectionRow>
-    <PanelSectionRow><ButtonItem layout="below" onClick={onConfigure}>Docking configuration</ButtonItem></PanelSectionRow>
+    <PanelSectionRow><ButtonItem layout="below" data-regear-focus="picker:configure" onClick={onConfigure}>Docking configuration</ButtonItem></PanelSectionRow>
   </PanelSection>;
 }

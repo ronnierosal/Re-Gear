@@ -14,8 +14,10 @@ test("display action names its target and keeps the shortcut separate from shutd
   const card = source.slice(source.indexOf('<DashboardSurface primary>'), source.indexOf('{tvSwitchMessage &&'));
   assert.match(card, /title=\{primaryDisplayAction.title\}/);
   assert.match(card, /description=\{primaryDisplayAction.description\}/);
-  assert.match(card, /if \(primaryDisplayAction.target === "ally"\) requestControllerDisplaySwitch\("ally"\)/);
-  assert.match(card, /if \(primaryDisplayAction.disabled\) return/);
+  assert.match(card, /onClick=\{activateDisplay\}/);
+  assert.match(source, /if \(primaryDisplayAction.target === "ally"\) requestControllerDisplaySwitch\("ally"\)/);
+  assert.match(source, /if \(primaryDisplayAction.disabled\) return/);
+  assert.match(source, /onSwitch=\{activateDisplay\}/);
   assert.match(card, /disabled=\{primaryDisplayAction.disabled\}/);
   // The gates reach displayAction by name, so a second caller cannot transpose
   // two booleans and silently offer a switch that should be blocked.

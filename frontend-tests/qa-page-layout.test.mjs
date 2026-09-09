@@ -39,7 +39,8 @@ test("production Command Center slot contains quick controls without legacy sett
   assert.doesNotMatch(slot("commandCenter"), /TdpControls|Automatic TV docking|Docking & actions|Support bundle/);
   assert.match(slot("autoTdp"), /AutoTdpModule/);
   assert.match(slot("egpu"), /Automatic TV docking/);
-  assert.match(slot("egpu"), /executeTvSwitch/);
+  assert.match(slot("egpu"), /activateDisplay/);
+  assert.match(slot("picker"), /activateDisplay/);
   assert.match(slot("troubleshoot"), /Support bundle/);
 });
 test("hardware status destinations cannot invoke configuration actions", () => {

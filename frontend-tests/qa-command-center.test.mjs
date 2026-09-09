@@ -195,3 +195,9 @@ test("two-dimensional traversal reaches all five tiles including the lone fifth"
    assert.equal(tile.actionLabel, "Configure");
    assert.equal(by(tilesFor({ status: status({ enabled: true }) }))["auto-tdp"].value.text, "Unknown");
  });
+
+test("stopping loop is named explicitly without a duplicate Stop", () => {
+  const tile = by(tilesFor({ status: status(), autoStatus: {running:true, stopping:true} }))["auto-tdp"];
+  assert.equal(tile.value.text, "Stopping…");
+  assert.equal(tile.activation, "none");
+});

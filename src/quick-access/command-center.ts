@@ -93,11 +93,10 @@ export function commandCenterTiles(input: CommandCenterInput): CommandCenterTile
       actionLabel: performance.supported ? "Choose limit" : null,
       developmental: false,
     },
-    // One context-sensitive action, never a toggle: Stop while running, Start
-    // only when explicitly configured and permitted, otherwise open the module.
+    // Stop a running loop; configure all other states in the module.
     "auto-tdp": {
       id: "auto-tdp", title: "Auto TDP",
-      value: { text: performance.active ? "Running" : performance.autoKnown ? "Off" : "Unknown",
+      value: { text: performance.stopping ? "Stopping…" : performance.active ? "Running" : performance.autoKnown ? "Off" : "Unknown",
         known: performance.autoKnown },
       available: performance.action !== "none",
       reason: performance.reason,

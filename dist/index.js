@@ -15,6 +15,7 @@ function PageLayout(p) {
     switch (p.route.kind) {
         case "command-center": return p.commandCenter;
         case "modules": return p.modules;
+        case "picker": return p.picker ?? null;
         case "troubleshoot": return p.troubleshoot;
         case "status": return p.route.id === "egpu" ? p.egpuStatus : p.controllerStatus;
         case "module":
@@ -799,6 +800,11 @@ const regearControlCss = `
 }
 .rg-dashboard-action:focus-visible, .rg-dashboard-action.gpfocus,
 .gpfocus > .rg-dashboard-action {
+  outline: 2px solid #66d9f7 !important;
+  outline-offset: -3px;
+  background: #213744 !important;
+}
+.rg-quick-control:focus-visible, .rg-quick-control.gpfocus, .gpfocus > .rg-quick-control {
   outline: 2px solid #66d9f7 !important;
   outline-offset: -3px;
   background: #213744 !important;
@@ -2281,20 +2287,6 @@ function tdpMessage(status) {
 function tdpResultMessage(status) {
     return status?.last_result ? reasons[status.last_result.code] ?? "Power settings need verification." : null;
 }
-class TdpRequestGate {
-    active = false;
-    async run(action) {
-        if (this.active)
-            return undefined;
-        this.active = true;
-        try {
-            return await action();
-        }
-        finally {
-            this.active = false;
-        }
-    }
-}
 
 const object = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
 const watts = (value) => typeof value === "number" && Number.isInteger(value) && value > 0 && value <= 0xFFFFFFFF;
@@ -2537,68 +2529,22 @@ function AutoTdpPreferencesControls({ target, minimum, maximum, canSave, onLoad 
                         onLoad(saved); }, children: "Load Portable preferences into controls" }) }), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", disabled: busy, onClick: () => void request(), children: "Refresh saved preferences" }) })] });
 }
 
-function AutoTdpControls({ manual, manualBusy, manualMessage, onChanged }) {
-    const [status, setStatus] = SP_REACT.useState(null);
+function AutoTdpControls({ controller }) {
     const [target, setTarget] = SP_REACT.useState(60);
     const [minimum, setMinimum] = SP_REACT.useState(null);
     const [maximum, setMaximum] = SP_REACT.useState(null);
-    const [busy, setBusy] = SP_REACT.useState(false);
-    const [stopping, setStopping] = SP_REACT.useState(false);
     const [benchmarkVisible, setBenchmarkVisible] = SP_REACT.useState(false);
     const [preferencesVisible, setPreferencesVisible] = SP_REACT.useState(false);
-    const mounted = SP_REACT.useRef(true);
-    const gate = SP_REACT.useRef(new AutoTdpRequestGate());
-    const pendingRefresh = SP_REACT.useRef(false);
-    const request = async (action, kind = "read") => {
-        const generation = gate.current.begin(kind === "stop");
-        if (generation === null)
-            return;
-        setBusy(true);
-        setStopping(kind === "stop");
-        try {
-            const next = sanitizeAutoTdpStatus(await action());
-            if (mounted.current && gate.current.current(generation)) {
-                setStatus(next);
-                if (next?.target_fps != null) {
-                    setTarget(next.target_fps);
-                    setMinimum(next.minimum_watts);
-                    setMaximum(next.maximum_watts);
-                }
-                if (kind !== "read")
-                    onChanged();
-            }
-        }
-        catch {
-            if (mounted.current && gate.current.current(generation))
-                setStatus(null);
-        }
-        finally {
-            if (mounted.current && gate.current.current(generation)) {
-                setBusy(false);
-                setStopping(false);
-            }
-            gate.current.finish(generation);
-            if (mounted.current && gate.current.current(generation) && pendingRefresh.current) {
-                pendingRefresh.current = false;
-                void request(getAutoTdpStatus);
-            }
-        }
-    };
+    const { manual, auto: status, busy, stopping } = controller;
+    const manualBusy = busy;
+    const manualMessage = tdpMessage(manual);
     SP_REACT.useEffect(() => {
-        mounted.current = true;
-        return () => { mounted.current = false; gate.current.invalidate(); };
-    }, []);
-    SP_REACT.useEffect(() => {
-        if (manual?.minimum_watts != null && manual.maximum_watts != null) {
-            setMinimum((value) => value === null || value < manual.minimum_watts || value > manual.maximum_watts ? manual.minimum_watts : value);
-            setMaximum((value) => value === null || value < manual.minimum_watts || value > manual.maximum_watts ? manual.maximum_watts : value);
+        if (status?.target_fps != null) {
+            setTarget(status.target_fps);
+            setMinimum(status.minimum_watts);
+            setMaximum(status.maximum_watts);
         }
-        if (gate.current.busy)
-            pendingRefresh.current = true;
-        else
-            void request(getAutoTdpStatus);
-        // On-demand only: manual state changes and explicit Refresh, never a timer.
-    }, [manual]);
+    }, [status]);
     const watts = manual?.minimum_watts != null && manual.maximum_watts != null
         ? Array.from({ length: manual.maximum_watts - manual.minimum_watts + 1 }, (_, index) => ({ data: manual.minimum_watts + index, label: `${manual.minimum_watts + index} W` })) : [];
     const targets = [...new Set([30, 40, 45, 60, 90, 120, target])].sort((a, b) => a - b).map((value) => ({ data: value, label: `${value} FPS` }));
@@ -2608,71 +2554,199 @@ function AutoTdpControls({ manual, manualBusy, manualMessage, onChanged }) {
                     setTarget(option.data); } }), SP_JSX.jsx(DFL.DropdownItem, { label: "Minimum power", rgOptions: watts, selectedOption: minimum ?? undefined, disabled: locked, onChange: (option) => { if (watts.some((entry) => entry.data === option.data))
                     setMinimum(option.data); } }), SP_JSX.jsx(DFL.DropdownItem, { label: "Maximum power", rgOptions: watts, selectedOption: maximum ?? undefined, disabled: locked, onChange: (option) => { if (watts.some((entry) => entry.data === option.data))
                     setMaximum(option.data); } }), !valid && manual?.ready && SP_JSX.jsxs(DFL.PanelSectionRow, { children: ["Choose a range that includes the last checked limit of ", manual.current_watts, " W."] }), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", disabled: locked || !status?.can_start || !valid, onClick: () => { if (!locked && status?.can_start && valid && minimum !== null && maximum !== null)
-                        void request(() => startAutoTdp(target, minimum, maximum), "start"); }, children: "Start Auto TDP" }) }), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", disabled: stopping, onClick: () => void request(stopAutoTdp, "stop"), children: "Stop Auto TDP" }) }), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", disabled: busy, onClick: () => void request(getAutoTdpStatus), children: "Refresh Auto TDP" }) }), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx("span", { style: { fontSize: "12px", opacity: 0.75 }, children: "Stop keeps the current limit. Restore returns to saved settings. Manual Apply or Restore stops Auto TDP. Closing this panel keeps Auto TDP running." }) }), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ToggleField, { label: "Show saved mode preferences", checked: preferencesVisible, onChange: setPreferencesVisible }) }), preferencesVisible && SP_JSX.jsx(AutoTdpPreferencesControls, { target: target, minimum: minimum, maximum: maximum, canSave: !locked && valid, onLoad: row => { if (!locked) {
+                        void controller.start(target, minimum, maximum); }, children: "Start Auto TDP" }) }), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", disabled: stopping || status?.stopping === true, onClick: () => void controller.stop(), children: "Stop Auto TDP" }) }), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", disabled: busy, onClick: () => void controller.refresh(), children: "Refresh Auto TDP" }) }), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx("span", { style: { fontSize: "12px", opacity: 0.75 }, children: "Stop keeps the current limit. Restore returns to saved settings. Manual Apply or Restore stops Auto TDP. Closing this panel keeps Auto TDP running." }) }), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ToggleField, { label: "Show saved mode preferences", checked: preferencesVisible, onChange: setPreferencesVisible }) }), preferencesVisible && SP_JSX.jsx(AutoTdpPreferencesControls, { target: target, minimum: minimum, maximum: maximum, canSave: !locked && valid, onLoad: row => { if (!locked) {
                     setTarget(row.target_fps);
                     setMinimum(row.minimum_watts);
                     setMaximum(row.maximum_watts);
                 } } }), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ToggleField, { label: "Show collection benchmark", checked: benchmarkVisible, onChange: setBenchmarkVisible }) }), benchmarkVisible && SP_JSX.jsx(TdpBenchmarkControls, { ready: manual?.ready === true && !manualBusy && !busy, autoRunning: status?.running === true })] });
 }
 
-function TdpControls({ visible }) {
-    const [expanded, setExpanded] = SP_REACT.useState(false);
-    const [autoExpanded, setAutoExpanded] = SP_REACT.useState(false);
-    const [status, setStatus] = SP_REACT.useState(null);
-    const [selected, setSelected] = SP_REACT.useState(null);
-    const [busy, setBusy] = SP_REACT.useState(false);
-    const gate = SP_REACT.useRef(new TdpRequestGate());
-    const showing = SP_REACT.useRef(false);
-    showing.current = visible && expanded;
-    const mounted = SP_REACT.useRef(true);
-    const request = (action) => gate.current.run(async () => {
-        if (!showing.current)
+const backend = { getTdpStatus, getAutoTdpStatus, applyTdpLimit, restoreTdpLimit, setTdpEnabled, startAutoTdp, stopAutoTdp };
+/** One owner for reads and writes across routes. Stop can preempt a read/start;
+ * other requests remain locked until every superseded transport has settled. */
+class PerformanceController {
+    port;
+    snapshot = { manual: null, auto: null, busy: false, stopping: false };
+    visible = false;
+    generation = 0;
+    pending = 0;
+    refreshPending = false;
+    listeners = new Set();
+    constructor(port = backend) {
+        this.port = port;
+    }
+    subscribe(listener) {
+        this.listeners.add(listener);
+        return () => { this.listeners.delete(listener); };
+    }
+    publish(value) {
+        this.snapshot = { ...this.snapshot, ...value };
+        for (const listener of this.listeners)
+            listener(this.snapshot);
+    }
+    setVisible(visible) {
+        if (visible === this.visible)
             return;
-        setBusy(true);
+        this.visible = visible;
+        ++this.generation;
+        this.publish({ manual: null, auto: null });
+        this.refreshPending = visible;
+        if (visible && !this.pending)
+            void this.refresh();
+    }
+    async request(action, priority = false) {
+        if (!this.visible || (this.pending > 0 && !priority) || (priority && (this.snapshot.stopping || this.snapshot.auto?.stopping)))
+            return;
+        const generation = ++this.generation;
+        this.pending++;
+        this.publish({ busy: true, stopping: priority || this.snapshot.stopping });
         try {
-            const next = sanitizeTdpStatus(await action());
-            if (mounted.current && showing.current) {
-                setStatus(next);
-                setSelected(next?.current_watts ?? null);
-            }
+            const next = await action();
+            if (this.visible && generation === this.generation)
+                this.publish(next);
         }
         catch {
-            if (mounted.current) {
-                setStatus(null);
-                setSelected(null);
-            }
+            if (this.visible && generation === this.generation)
+                this.publish({ manual: null, auto: null });
         }
         finally {
-            if (mounted.current)
-                setBusy(false);
+            this.pending--;
+            if (!this.pending) {
+                this.publish({ busy: false, stopping: false });
+                if (this.visible && this.refreshPending)
+                    void this.refresh();
+            }
         }
-    });
-    SP_REACT.useEffect(() => {
-        mounted.current = true;
-        return () => { mounted.current = false; };
-    }, []);
-    SP_REACT.useEffect(() => {
-        if (!visible) {
-            setExpanded(false);
-            setAutoExpanded(false);
-            setStatus(null);
-            setSelected(null);
+    }
+    refresh = async () => {
+        if (!this.visible)
+            return;
+        if (this.pending) {
+            this.refreshPending = true;
+            return;
         }
-    }, [visible]);
+        this.refreshPending = false;
+        await this.request(async () => {
+            const [manual, auto] = await Promise.allSettled([this.port.getTdpStatus(), this.port.getAutoTdpStatus()]);
+            return {
+                manual: manual.status === "fulfilled" ? sanitizeTdpStatus(manual.value) : null,
+                auto: auto.status === "fulfilled" ? sanitizeAutoTdpStatus(auto.value) : null,
+            };
+        });
+    };
+    manualRequest(action) {
+        return this.request(async () => {
+            const manual = sanitizeTdpStatus(await action());
+            // A manual write can stop Auto TDP; re-read, never infer its state.
+            let auto = null;
+            try {
+                auto = sanitizeAutoTdpStatus(await this.port.getAutoTdpStatus());
+            }
+            catch { /* unknown */ }
+            return { manual, auto };
+        });
+    }
+    apply = async (watts) => {
+        const manual = this.snapshot.manual;
+        if (!tdpControls(manual).canApply || !Number.isInteger(watts) || manual?.minimum_watts == null || manual.maximum_watts == null
+            || watts < manual.minimum_watts || watts > manual.maximum_watts)
+            return;
+        await this.manualRequest(() => this.port.applyTdpLimit(watts));
+    };
+    restore = async () => {
+        if (tdpControls(this.snapshot.manual).canRestore)
+            await this.manualRequest(this.port.restoreTdpLimit);
+    };
+    setEnabled = async (enabled) => {
+        if (tdpControls(this.snapshot.manual).canToggle && (!enabled || this.snapshot.manual?.can_enable))
+            await this.manualRequest(() => this.port.setTdpEnabled(enabled));
+    };
+    start = async (target, minimum, maximum) => {
+        if (!this.snapshot.auto?.can_start || !validAutoTdpRange(this.snapshot.manual, minimum, maximum, target))
+            return;
+        await this.request(async () => {
+            const auto = sanitizeAutoTdpStatus(await this.port.startAutoTdp(target, minimum, maximum));
+            let manual = null;
+            try {
+                manual = sanitizeTdpStatus(await this.port.getTdpStatus());
+            }
+            catch { /* unknown */ }
+            return { auto, manual };
+        });
+    };
+    stop = async () => {
+        await this.request(async () => {
+            const auto = sanitizeAutoTdpStatus(await this.port.stopAutoTdp());
+            let manual = null;
+            try {
+                manual = sanitizeTdpStatus(await this.port.getTdpStatus());
+            }
+            catch { /* unknown */ }
+            return { auto, manual };
+        }, true);
+    };
+}
+/** Mount once in the panel owner, then pass this handle to tiles and modules. */
+function usePerformance(visible) {
+    const ref = SP_REACT.useRef(null);
+    if (!ref.current)
+        ref.current = new PerformanceController();
+    const controller = ref.current;
+    const [snapshot, setSnapshot] = SP_REACT.useState(controller.snapshot);
+    SP_REACT.useEffect(() => controller.subscribe(setSnapshot), [controller]);
     SP_REACT.useEffect(() => {
-        if (visible && expanded)
-            void request(getTdpStatus);
-        // Visibility/expansion owns the only automatic refresh. No polling timer.
-    }, [visible, expanded]);
+        controller.setVisible(visible);
+        return () => controller.setVisible(false);
+    }, [controller, visible]);
+    return { ...snapshot, refresh: controller.refresh, apply: controller.apply, restore: controller.restore,
+        setEnabled: controller.setEnabled, start: controller.start, stop: controller.stop };
+}
+
+function TdpControls({ visible, controller, expanded = false }) {
+    return controller ? SP_JSX.jsx(SharedTdpControls, { visible: visible, controller: controller, initiallyExpanded: expanded })
+        : SP_JSX.jsx(StandaloneTdpControls, { visible: visible });
+}
+function StandaloneTdpControls({ visible }) {
+    const controller = usePerformance(visible);
+    return SP_JSX.jsx(SharedTdpControls, { visible: visible, controller: controller });
+}
+function SharedTdpControls({ visible, controller, initiallyExpanded = false }) {
+    const [expanded, setExpanded] = SP_REACT.useState(initiallyExpanded);
+    const [autoExpanded, setAutoExpanded] = SP_REACT.useState(initiallyExpanded);
+    const [selected, setSelected] = SP_REACT.useState(null);
+    const { manual: status, busy } = controller;
+    SP_REACT.useEffect(() => { setSelected(status?.current_watts ?? null); }, [status]);
     const controls = tdpControls(status);
     const options = status?.minimum_watts != null && status.maximum_watts != null
-        ? Array.from({ length: status.maximum_watts - status.minimum_watts + 1 }, (_, index) => ({ data: status.minimum_watts + index, label: `${status.minimum_watts + index} W` }))
-        : [];
-    return SP_JSX.jsxs(DFL.PanelSection, { title: "Handheld power", children: [SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", disabled: busy, onClick: () => { setStatus(null); setSelected(null); setAutoExpanded(false); setExpanded((value) => !value); }, children: expanded ? "Hide power controls" : "Show power controls" }) }), visible && expanded && SP_JSX.jsxs(SP_JSX.Fragment, { children: [SP_JSX.jsx(DFL.PanelSectionRow, { children: busy ? "Checking power settings…" : tdpMessage(status) }), !busy && tdpResultMessage(status) && SP_JSX.jsxs(DFL.PanelSectionRow, { children: ["Last request: ", tdpResultMessage(status)] }), SP_JSX.jsx(DFL.PanelSectionRow, { children: status?.current_watts != null ? `Last checked limit: ${status.current_watts} W` : "Last checked limit: unavailable" }), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx("span", { style: { fontSize: "12px", opacity: 0.75 }, children: "This is the configured limit, not measured power use. Enable only after resolving other power controllers." }) }), SP_JSX.jsx(DFL.ToggleField, { label: "Use Re-Gear power control", checked: status?.enabled ?? false, disabled: busy || !controls.canToggle, onChange: (enabled) => { if (controls.canToggle)
-                            void request(() => setTdpEnabled(enabled)); } }), SP_JSX.jsx(DFL.DropdownItem, { label: "Power limit", rgOptions: options, selectedOption: selected ?? undefined, disabled: busy || !controls.canApply, onChange: (option) => { if (options.some((entry) => entry.data === option.data))
-                            setSelected(option.data); } }), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", disabled: busy || !controls.canApply || selected === null, onClick: () => { if (controls.canApply && selected !== null)
-                                void request(() => applyTdpLimit(selected)); }, children: "Apply power limit" }) }), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", disabled: busy || !controls.canRestore, onClick: () => { if (controls.canRestore)
-                                void request(restoreTdpLimit); }, children: "Restore previous power settings" }) }), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", disabled: busy, onClick: () => void request(getTdpStatus), children: "Refresh power settings" }) }), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", onClick: () => setAutoExpanded((value) => !value), children: autoExpanded ? "Hide Auto TDP" : "Show Auto TDP" }) }), autoExpanded && SP_JSX.jsx(AutoTdpControls, { manual: status, manualBusy: busy, manualMessage: tdpMessage(status), onChanged: () => { void request(getTdpStatus); } })] })] });
+        ? Array.from({ length: status.maximum_watts - status.minimum_watts + 1 }, (_, index) => ({ data: status.minimum_watts + index, label: `${status.minimum_watts + index} W` })) : [];
+    if (!visible)
+        return null;
+    return SP_JSX.jsxs(DFL.PanelSection, { title: "Handheld power", children: [!initiallyExpanded && SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", onClick: () => setExpanded(value => !value), children: expanded ? "Hide power controls" : "Show power controls" }) }), expanded && SP_JSX.jsxs(SP_JSX.Fragment, { children: [SP_JSX.jsx(DFL.PanelSectionRow, { children: busy ? "Checking power settings…" : tdpMessage(status) }), !busy && tdpResultMessage(status) && SP_JSX.jsxs(DFL.PanelSectionRow, { children: ["Last request: ", tdpResultMessage(status)] }), SP_JSX.jsx(DFL.PanelSectionRow, { children: status?.current_watts != null ? `Last checked limit: ${status.current_watts} W` : "Last checked limit: unavailable" }), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx("span", { style: { fontSize: "12px", opacity: 0.75 }, children: "This is the configured limit, not measured power use. Enable only after resolving other power controllers." }) }), SP_JSX.jsx(DFL.ToggleField, { label: "Use Re-Gear power control", checked: status?.enabled ?? false, disabled: busy || !controls.canToggle, onChange: (enabled) => { void controller.setEnabled(enabled); } }), SP_JSX.jsx(DFL.DropdownItem, { label: "Power limit", rgOptions: options, selectedOption: selected ?? undefined, disabled: busy || !controls.canApply, onChange: (option) => { if (options.some(entry => entry.data === option.data))
+                            setSelected(option.data); } }), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", disabled: busy || !controls.canApply || selected === null, onClick: () => { if (selected !== null)
+                                void controller.apply(selected); }, children: "Apply power limit" }) }), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", disabled: busy || !controls.canRestore, onClick: () => { void controller.restore(); }, children: "Restore previous power settings" }) }), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", disabled: busy, onClick: () => { void controller.refresh(); }, children: "Refresh power settings" }) }), !initiallyExpanded && SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", onClick: () => setAutoExpanded(value => !value), children: autoExpanded ? "Hide Auto TDP" : "Show Auto TDP" }) }), autoExpanded && SP_JSX.jsx(AutoTdpControls, { controller: controller })] })] });
+}
+
+/** Shares the panel owner's status and requests; opening this page adds no collector. */
+function AutoTdpModule({ controller }) {
+    return SP_JSX.jsx(TdpControls, { visible: true, controller: controller, expanded: true });
+}
+
+/** Only device-reported options; the shared request owner rechecks at Apply. */
+function TdpPicker({ status, busy, onApply, onConfigure }) {
+    const [selected, setSelected] = SP_REACT.useState(status?.current_watts ?? null);
+    SP_REACT.useEffect(() => setSelected(status?.current_watts ?? null), [status]);
+    const options = status?.minimum_watts != null && status.maximum_watts != null
+        ? Array.from({ length: status.maximum_watts - status.minimum_watts + 1 }, (_, index) => ({
+            data: status.minimum_watts + index, label: `${status.minimum_watts + index} W`,
+        })) : [];
+    const canApply = !busy && tdpControls(status).canApply && options.some(o => o.data === selected);
+    return SP_JSX.jsxs(DFL.PanelSection, { title: "TDP limit", children: [SP_JSX.jsx(DFL.PanelSectionRow, { children: busy ? "Checking power settings…" : tdpMessage(status) }), SP_JSX.jsxs(DFL.PanelSectionRow, { children: ["Configured limit: ", status?.current_watts == null ? "Unknown" : `${status.current_watts} W`] }), SP_JSX.jsx(DFL.DropdownItem, { label: "Power limit", rgOptions: options, selectedOption: selected ?? undefined, disabled: busy || !tdpControls(status).canApply, onChange: option => { if (options.some(o => o.data === option.data))
+                    setSelected(option.data); } }), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", disabled: !canApply, onClick: () => { if (canApply && selected !== null)
+                        onApply(selected); }, children: "Apply limit" }) }), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx("span", { style: { fontSize: 12 }, children: "This is a power limit, not measured use. Applying it stops Auto TDP." }) }), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", "data-regear-focus": "picker:configure", onClick: onConfigure, children: "Power configuration" }) })] });
+}
+function DisplayPicker({ current, action, onSwitch, onConfigure }) {
+    return SP_JSX.jsxs(DFL.PanelSection, { title: "Display target", children: [SP_JSX.jsxs(DFL.PanelSectionRow, { children: ["Current: ", current] }), SP_JSX.jsx(DFL.PanelSectionRow, { children: action.description }), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", disabled: action.disabled, onClick: () => { if (!action.disabled)
+                        onSwitch(); }, children: action.title }) }), SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", "data-regear-focus": "picker:configure", onClick: onConfigure, children: "Docking configuration" }) })] });
 }
 
 const HEALTH_BLOCKER_MESSAGES = {
@@ -3006,7 +3080,7 @@ async function collectOptionalDiagnostics(visible, sources) {
  */
 /** Stable identity for a route, used as the focus-restoration key. */
 function routeKey(route) {
-    return route.kind === "module" || route.kind === "status" ? `${route.kind}:${route.id}` : route.kind;
+    return route.kind === "module" || route.kind === "status" || route.kind === "picker" ? `${route.kind}:${route.id}` : route.kind;
 }
 /** Taxonomy section that owns each module's availability evidence. */
 const SECTION_OF = {
@@ -3084,6 +3158,16 @@ function stackOnPanelOpen() {
     return INITIAL_STACK;
 }
 
+function ApprovedIcon({ id, size = 24 }) {
+    const props = { width: size, height: size, fill: "none", "aria-hidden": true, style: { flexShrink: 0 } };
+    switch (id) {
+        case "module-auto-tdp": return SP_JSX.jsxs("svg", { viewBox: "0 0 64 64", ...props, children: [SP_JSX.jsx("path", { d: "M13 43a21 21 0 1 1 38 0", stroke: "currentColor", strokeWidth: "3", strokeLinecap: "round" }), SP_JSX.jsx("path", { d: "M18 38l4-2M23 27l3 3M32 22v4M41 27l-3 3M46 38l-4-2", stroke: "currentColor", strokeWidth: "3", strokeLinecap: "round" }), SP_JSX.jsx("path", { d: "M32 40 43 29", stroke: "currentColor", strokeWidth: "4", strokeLinecap: "round" }), SP_JSX.jsx("circle", { cx: "32", cy: "40", r: "4", fill: "currentColor" }), SP_JSX.jsx("path", { d: "M20 49h24", stroke: "currentColor", strokeWidth: "3", strokeLinecap: "round" })] });
+        case "module-egpu": return SP_JSX.jsxs("svg", { viewBox: "0 0 64 64", ...props, children: [SP_JSX.jsx("rect", { x: "8", y: "14", width: "48", height: "36", rx: "8", stroke: "currentColor", strokeWidth: "3" }), SP_JSX.jsx("circle", { cx: "37", cy: "32", r: "11", stroke: "currentColor", strokeWidth: "3" }), SP_JSX.jsx("circle", { cx: "37", cy: "32", r: "3", fill: "currentColor" }), SP_JSX.jsx("path", { d: "M37 21c4 2 5 5 4 8M48 32c-2 4-5 5-8 4M37 43c-4-2-5-5-4-8M26 32c2-4 5-5 8-4", stroke: "currentColor", strokeWidth: "3", strokeLinecap: "round" }), SP_JSX.jsx("path", { d: "M15 24h5M15 32h5M15 40h5", stroke: "currentColor", strokeWidth: "3", strokeLinecap: "round" }), SP_JSX.jsx("path", { d: "M20 50v4M44 50v4", stroke: "currentColor", strokeWidth: "3", strokeLinecap: "round" })] });
+        case "module-controller": return SP_JSX.jsxs("svg", { viewBox: "0 0 64 64", ...props, children: [SP_JSX.jsx("path", { d: "M19 25h26c5 0 8 3 9 8l3 12c1 5-5 8-8 4l-7-8H22l-7 8c-3 4-9 1-8-4l3-12c1-5 4-8 9-8Z", stroke: "currentColor", strokeWidth: "3", strokeLinejoin: "round" }), SP_JSX.jsx("path", { d: "M20 31v8M16 35h8", stroke: "currentColor", strokeWidth: "3", strokeLinecap: "round" }), SP_JSX.jsx("circle", { cx: "43", cy: "33", r: "2.5", fill: "currentColor" }), SP_JSX.jsx("circle", { cx: "49", cy: "38", r: "2.5", fill: "currentColor" })] });
+        case "mode-tv-docked": return SP_JSX.jsxs("svg", { viewBox: "0 0 96 64", ...props, children: [SP_JSX.jsx("rect", { x: "8", y: "10", width: "54", height: "34", rx: "5", stroke: "currentColor", strokeWidth: "3" }), SP_JSX.jsx("path", { d: "M30 44v8M20 54h30", stroke: "currentColor", strokeWidth: "3", strokeLinecap: "round" }), SP_JSX.jsx("rect", { x: "68", y: "19", width: "18", height: "26", rx: "4", stroke: "currentColor", strokeWidth: "3" }), SP_JSX.jsx("circle", { cx: "77", cy: "31", r: "5", stroke: "currentColor", strokeWidth: "2.5" }), SP_JSX.jsx("path", { d: "M68 32h-6", stroke: "currentColor", strokeWidth: "3", strokeLinecap: "round" }), SP_JSX.jsx("path", { d: "M20 20h30v14H20z", stroke: "currentColor", strokeWidth: "2.5" })] });
+    }
+}
+
 /** Command Center navigation shell: rendering only, no policy, no requests.
  *
  * Which destinations exist, whether they are usable and what a blocked one says
@@ -3107,14 +3191,12 @@ function Chevron() {
 }
 /** One tappable row: icon slot, title, one-line summary or reason, chevron. */
 function NavRow({ title, detail, blocked, onClick, focusKey }) {
-    return SP_JSX.jsxs(DFL.DialogButton, { "data-regear-focus": focusKey, onClick: onClick, 
-        // Blocked rows stay focusable: opening one is how its reason is read.
-        style: {
+    return SP_JSX.jsxs(DFL.DialogButton, { className: "rg-quick-control", "data-regear-focus": focusKey, onClick: onClick, style: {
             width: "100%", minHeight: 44, margin: "0 0 6px", padding: "8px 10px",
             display: "flex", alignItems: "center", gap: 8, textAlign: "left",
             background: SURFACE$1, border: `1px solid ${C$2.border}`, borderRadius: 12,
             color: blocked ? C$2.dim : C$2.text,
-        }, children: [SP_JSX.jsxs("span", { style: { flex: "1 1 auto", minWidth: 0 }, children: [SP_JSX.jsx("span", { style: { display: "block", fontSize: 14, fontWeight: 700 }, children: title }), SP_JSX.jsx("span", { style: { display: "block", fontSize: 12, lineHeight: "16px",
+        }, children: [focusKey.includes("egpu") && SP_JSX.jsx(ApprovedIcon, { id: "module-egpu" }), focusKey.includes("controller") && SP_JSX.jsx(ApprovedIcon, { id: "module-controller" }), focusKey.includes("auto-tdp") && SP_JSX.jsx(ApprovedIcon, { id: "module-auto-tdp" }), SP_JSX.jsxs("span", { style: { flex: "1 1 auto", minWidth: 0 }, children: [SP_JSX.jsx("span", { style: { display: "block", fontSize: 14, fontWeight: 700 }, children: title }), SP_JSX.jsx("span", { style: { display: "block", fontSize: 12, lineHeight: "16px",
                             color: blocked ? C$2.amber : C$2.muted, whiteSpace: "normal" }, children: detail })] }), SP_JSX.jsx(Chevron, {})] });
 }
 function ModulesList({ modules, onOpen }) {
@@ -3128,7 +3210,7 @@ function RouteHeader({ title, reason }) {
 }
 /** The Modules entry on Command Center. Labelled, not an icon-only target. */
 function ModulesButton({ onOpen }) {
-    return SP_JSX.jsx(DFL.DialogButton, { "data-regear-focus": "modules", onClick: onOpen, style: {
+    return SP_JSX.jsx(DFL.DialogButton, { className: "rg-quick-control", "data-regear-focus": "modules", onClick: onOpen, style: {
             width: "auto", minHeight: 36, margin: 0, padding: "4px 12px",
             alignSelf: "flex-end", borderRadius: 10, fontSize: 13, fontWeight: 700,
             background: SURFACE$1, border: `1px solid ${C$2.border}`, color: C$2.cyan,
@@ -3295,75 +3377,30 @@ function disconnectPresentation(status) {
     };
 }
 
-/** Shared performance state for the Command Center tiles and the Auto TDP
- * module: pure, no React, no I/O, no requests.
- *
- * Two consumers now read the same TDP status: the compact tiles on the first
- * screen and the module page behind Modules. Deriving what each shows from the
- * raw payload twice is how they end up disagreeing -- one offering Start while
- * the other says unavailable, from the same bytes. This module is the single
- * derivation, so a disagreement has nowhere to come from.
- *
- * What it deliberately does NOT do:
- *
- * - It never implies enablement and loop start are the same operation. The
- *   approved design is explicit: Stop when active, Start only with an already
- *   valid explicitly configured range and existing permission, otherwise Open
- *   Auto TDP. A single toggle would conflate a power-writer capability with
- *   running a control loop.
- * - It never fabricates a value. Absent watts render as unknown, never as a
- *   plausible default, and never as a number carried over from a stale read.
- * - It never starts anything from guessed defaults.
- *
- * FPS is not modelled here. The approved FPS tile is a proposed new capability,
- * not Auto TDP's target FPS, and no backend provides it; see fpsTile.
- */
 function performanceState(input) {
-    const { status } = input;
+    const { status, autoStatus } = input;
     const busy = input.busy === true;
-    if (!status) {
-        return {
-            active: false, supported: false, configuredWatts: null, configuredIsLimit: false,
-            action: "none", reason: "Performance status not yet observed.", busy,
-        };
-    }
-    const supported = status.auto_tdp_available === true;
-    const active = status.enabled === true;
-    // Stop stays reachable whenever the loop is running, even if permission to
-    // start again has since been withdrawn: a player must always be able to stop
-    // something that is currently changing their device.
-    if (active) {
-        return {
-            active: true, supported, configuredWatts: status.current_watts,
-            configuredIsLimit: true, action: busy ? "none" : "stop",
-            reason: busy ? "Working…" : null, busy,
-        };
-    }
-    if (!supported) {
-        return {
-            active: false, supported: false, configuredWatts: null, configuredIsLimit: false,
-            action: "none", reason: "This device has no verified TDP control.", busy,
-        };
-    }
-    if (busy) {
-        return { active: false, supported, configuredWatts: status.current_watts,
-            configuredIsLimit: true, action: "none", reason: "Working…", busy };
-    }
-    if (status.recovery_required === true) {
-        // Recovery outranks starting: begin a loop over an unrestored limit and the
-        // player keeps whatever the interrupted session left behind.
-        return { active: false, supported, configuredWatts: status.current_watts,
-            configuredIsLimit: true, action: "open", reason: "Needs recovery in Auto TDP.", busy };
-    }
-    const startable = status.can_enable === true && input.configured === true;
-    return {
-        active: false, supported, configuredWatts: status.current_watts, configuredIsLimit: true,
-        action: startable ? "start" : "open",
-        reason: startable ? null
-            : status.can_enable !== true ? "Not available in the current state."
-                : "Set a power range in Auto TDP first.",
-        busy,
+    const active = autoStatus?.running === true;
+    const state = {
+        active, autoKnown: autoStatus != null, stopping: input.stopping === true || autoStatus?.stopping === true, supported: status?.auto_tdp_available === true,
+        configuredWatts: status?.current_watts ?? null,
+        configuredIsLimit: status?.current_watts != null, busy,
     };
+    // Stop preempts ordinary requests and remains available if manual evidence fails.
+    if (active)
+        return { ...state, action: input.stopping || autoStatus?.stopping ? "none" : "stop",
+            reason: input.stopping || autoStatus?.stopping ? "Stopping Auto TDP…" : null };
+    if (!status)
+        return { ...state, action: "open", reason: "Performance status not yet observed." };
+    if (busy)
+        return { ...state, action: "none", reason: "Working…" };
+    if (status.recovery_required)
+        return { ...state, action: "open", reason: "Needs recovery in Auto TDP." };
+    if (!state.supported)
+        return { ...state, action: "open", reason: "This device has no verified TDP control." };
+    if (!autoStatus)
+        return { ...state, action: "open", reason: "Auto TDP status not yet observed." };
+    return { ...state, action: "open", reason: autoStatus.can_start ? "Configure Auto TDP." : "Not available in the current state." };
 }
 /** Format watts for a tile. Unknown stays unknown rather than becoming 0 W. */
 function wattsValue(watts) {
@@ -3411,7 +3448,7 @@ function fpsTile() {
 const TILE_ORDER = ["fps", "tdp", "auto-tdp", "display", "safe-disconnect"];
 const TILE_COLUMNS = 2;
 const ACTION_LABEL = {
-    stop: "Stop", start: "Start", open: "Open Auto TDP", none: null,
+    stop: "Stop", start: "Start", open: "Configure", none: null,
 };
 function commandCenterTiles(input) {
     const performance = input.performance;
@@ -3430,15 +3467,14 @@ function commandCenterTiles(input) {
             available: performance.supported,
             reason: performance.supported ? null : "This device has no verified TDP control.",
             activation: performance.supported ? "open" : "none",
-            actionLabel: performance.supported ? "Open Auto TDP" : null,
+            actionLabel: performance.supported ? "Choose limit" : null,
             developmental: false,
         },
-        // One context-sensitive action, never a toggle: Stop while running, Start
-        // only when explicitly configured and permitted, otherwise open the module.
+        // Stop a running loop; configure all other states in the module.
         "auto-tdp": {
             id: "auto-tdp", title: "Auto TDP",
-            value: { text: performance.active ? "Running" : performance.supported ? "Off" : "Unavailable",
-                known: performance.supported },
+            value: { text: performance.stopping ? "Stopping…" : performance.active ? "Running" : performance.autoKnown ? "Off" : "Unknown",
+                known: performance.autoKnown },
             available: performance.action !== "none",
             reason: performance.reason,
             activation: performance.action === "open" ? "open"
@@ -3453,7 +3489,7 @@ function commandCenterTiles(input) {
             value: input.displayTarget
                 ? { text: input.displayTarget, known: true }
                 : { text: "Unknown", known: false },
-            available: true, reason: null, activation: "open", actionLabel: "Open eGPU",
+            available: true, reason: null, activation: "open", actionLabel: "Choose target",
             developmental: false,
         },
         // Wired to the owning backend's contract. Every judgement below comes from
@@ -3704,24 +3740,23 @@ const C = {
 const SURFACE = "linear-gradient(135deg, rgba(19,36,58,.96), rgba(9,21,36,.98))";
 function Tile({ tile, onActivate }) {
     const usable = tile.available;
-    return SP_JSX.jsxs(DFL.DialogButton, { "data-regear-tile": tile.id, onClick: () => onActivate(tile.id), "aria-label": `${tile.title}: ${tile.value.text}`, style: {
-            minWidth: 0, width: "auto", minHeight: 62, margin: 0, padding: "8px 10px",
-            display: "flex", flexDirection: "column", alignItems: "flex-start",
-            justifyContent: "center", gap: 2, textAlign: "left", borderRadius: 12,
+    return SP_JSX.jsxs(DFL.DialogButton, { className: "rg-quick-control", "data-regear-tile": tile.id, "data-regear-focus": `tile:${tile.id}`, onClick: () => onActivate(tile.id), "aria-label": `${tile.title}: ${tile.value.text}`, style: {
+            minWidth: 0, width: "auto", minHeight: 112, margin: 0, padding: "8px 10px",
+            display: "flex", flexDirection: "column", alignItems: "center",
+            justifyContent: "center", gap: 6, textAlign: "center", borderRadius: 12,
             background: SURFACE,
             border: `1px solid ${usable ? C.border : "#22374f"}`,
             color: usable ? C.text : C.dim,
-            opacity: usable ? 1 : 0.72,
-        }, children: [SP_JSX.jsx("span", { style: { fontSize: 11, letterSpacing: ".02em", color: C.muted,
-                    whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "100%" }, children: tile.title }), SP_JSX.jsx("span", { style: { fontSize: 14, fontWeight: 760,
-                    color: tile.developmental ? C.amber : tile.value.known ? C.cyan : C.dim,
-                    whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "100%" }, children: tile.value.text }), tile.actionLabel && (SP_JSX.jsx("span", { style: { fontSize: 11, color: C.muted }, children: tile.actionLabel }))] });
+            opacity: 1,
+        }, children: [SP_JSX.jsx(ApprovedIcon, { id: tile.id === "display" ? "mode-tv-docked" : tile.id === "safe-disconnect" ? "module-egpu" : "module-auto-tdp" }), SP_JSX.jsx("span", { style: { fontSize: tile.value.text.length > 12 ? 16 : 18, fontWeight: 700, order: 0,
+                    color: tile.developmental ? C.amber : tile.value.known ? C.cyan : C.muted,
+                    whiteSpace: "normal", overflowWrap: "normal", maxWidth: "100%" }, children: tile.value.text }), SP_JSX.jsx("span", { style: { fontSize: 12, color: C.text, whiteSpace: "normal", maxWidth: "100%" }, children: tile.title }), tile.actionLabel && (SP_JSX.jsx("span", { style: { fontSize: 11, color: C.muted }, children: tile.actionLabel }))] });
 }
 function CommandCenterGrid({ tiles, onActivate }) {
     return SP_JSX.jsx(DFL.Focusable, { style: {
             display: "grid",
             gridTemplateColumns: `repeat(${TILE_COLUMNS}, minmax(0, 1fr))`,
-            gap: 6, minWidth: 0, marginBottom: 10,
+            gap: 8, minWidth: 0, marginBottom: 10,
         }, "flow-children": "grid", children: tiles.map((tile) => SP_JSX.jsx(Tile, { tile: tile, onActivate: onActivate }, tile.id)) });
 }
 /** Reason for the tile a player just selected, shown under the grid rather
@@ -4353,6 +4388,8 @@ function Content({ preflight, connection, shortcut }) {
     // The approved layout replaces the icon row with a navigation stack. Command
     // Center sits at the bottom and is never popped; Back delegates to Steam's own
     // QAM Back once no internal level is left. See quick-access/module-registry.
+    const returnFocus = SP_REACT.useRef(new Map());
+    const [pendingFocus, setPendingFocus] = SP_REACT.useState(null);
     const [navStack, setNavStack] = SP_REACT.useState(INITIAL_STACK);
     // The owning backend's disconnect status. Null means not read yet, which is
     // not the same as "no": the tile renders that distinction itself.
@@ -4366,6 +4403,7 @@ function Content({ preflight, connection, shortcut }) {
      * hardware", and a stored dismissal would hide it after a later restart. */
     const [resultDismissed, setResultDismissed] = SP_REACT.useState(false);
     const route = currentRoute(navStack);
+    const performance = usePerformance(quickAccessVisible);
     const onCommandCenter = route.kind === "command-center";
     // Read by the refresh callback, which must not be rebuilt on every navigation:
     // adding navStack to its dependencies would restart the refresh cycle on a
@@ -4584,6 +4622,8 @@ function Content({ preflight, connection, shortcut }) {
         setShowDiagnostics(compact.showDiagnostics);
         setShowJourneyDetails(compact.showJourneyDetails);
         setShowHardwareDetails(false);
+        setPendingFocus(null);
+        returnFocus.current.clear();
         // Steam may keep the plugin mounted between openings, so the route resets
         // with the rest of the compact state; otherwise the panel reopens wherever
         // it was left instead of at Command Center.
@@ -5198,8 +5238,12 @@ function Content({ preflight, connection, shortcut }) {
             void refreshDisconnect();
         }
     }, [refreshDisconnect]);
-    const openRoute = SP_REACT.useCallback((route) => {
-        setNavStack((stack) => pushRoute(stack, route));
+    const openRoute = SP_REACT.useCallback((destination, opener) => {
+        const active = statusAnchor.current?.ownerDocument.activeElement;
+        const key = opener ?? (active instanceof HTMLElement ? active.closest("[data-regear-focus]")?.dataset.regearFocus : undefined);
+        if (key)
+            returnFocus.current.set(routeKey(destination), key);
+        setNavStack((stack) => pushRoute(stack, destination));
     }, []);
     // Pops one internal level. Whether Back is ours to handle at all is decided
     // by `hasInternalLevel` in the render below, not here: a handler that is
@@ -5207,8 +5251,23 @@ function Content({ preflight, connection, shortcut }) {
     // computed inside a state updater is not reliable because React may defer or
     // replay it.
     const popRoute = SP_REACT.useCallback(() => {
+        setPendingFocus(returnFocus.current.get(routeKey(route)) ?? null);
         setNavStack((stack) => backRoute(stack).stack);
-    }, []);
+    }, [route]);
+    SP_REACT.useEffect(() => {
+        if (!pendingFocus || !quickAccessVisible)
+            return;
+        const timer = window.setTimeout(() => {
+            const target = Array.from(statusAnchor.current?.querySelectorAll("[data-regear-focus]") ?? [])
+                .find(element => element.dataset.regearFocus === pendingFocus);
+            if (target) {
+                target.scrollIntoView({ block: "nearest", inline: "nearest" });
+                restoreQuickAccessFocus(() => target);
+            }
+            setPendingFocus(null);
+        }, 0);
+        return () => window.clearTimeout(timer);
+    }, [route, pendingFocus, quickAccessVisible]);
     // Request optional evidence once per panel opening. The dedicated route
     // controls ongoing visibility; revisiting does not create a second poller.
     const toggleTroubleshooting = SP_REACT.useCallback(() => {
@@ -5235,22 +5294,20 @@ function Content({ preflight, connection, shortcut }) {
             return next;
         });
     }, []);
-    // Only System is wired to the row in this slice; the other four targets change
-    // the selection and nothing else yet. TDP evidence lives inside TdpControls, so
-    // its readiness is not observable here and the section reads unavailable --
-    // unknown state is not a capability claim.
+    // One shared observation powers both quick controls and module configuration.
     const sections = quickAccessSections({
         fresh: !loading && payload != null,
         shortcutAvailable: controllerShortcutAvailable,
         healthKnown: payload?.health != null,
+        autoTdpAvailable: performance.manual?.auto_tdp_available,
+        tdpCanEnable: performance.manual?.can_enable,
     });
     const modules = quickAccessModules(sections);
-    // Auto TDP status is not observable from here yet: it lives inside
-    // TdpControls, and lifting it is qa-performance-controls-lift. Until then the
-    // performance tiles report not-yet-observed rather than guessing a value.
+    // Manual power enablement and Auto TDP activity are separate observations.
     const tiles = commandCenterTiles({
-        performance: performanceState({ status: null, busy: disconnectBusy }),
-        displayTarget: payload ? label(payload.inference.mode) : undefined,
+        performance: performanceState({ status: performance.manual, autoStatus: performance.auto, busy: performance.busy, stopping: performance.stopping }),
+        displayTarget: !loading && snapshot?.displays.some(d => d.active === true && d.kind === "external")
+            ? "External" : !loading && snapshot?.displays.some(d => d.active === true && d.kind === "internal") ? "Handheld" : undefined,
         disconnectStatus: egpuDisconnect,
     });
     const shownTile = tiles.find((tile) => tile.id === selectedTile);
@@ -5270,18 +5327,28 @@ function Content({ preflight, connection, shortcut }) {
         journalBlocked: Boolean(journalStatus && journalStatus.code !== "journal.idle"),
         shortcutAvailable: controllerShortcutAvailable,
     });
+    const activateDisplay = () => {
+        if (primaryDisplayAction.disabled)
+            return;
+        if (primaryDisplayAction.target === "ally")
+            requestControllerDisplaySwitch("ally");
+        else if (primaryDisplayAction.target === "tv")
+            void executeTvSwitch();
+    };
     return (SP_JSX.jsxs(SP_JSX.Fragment, { children: [SP_JSX.jsx("style", { children: regearControlCss }), SP_JSX.jsx(DFL.Focusable
             // B is handled only while an internal level exists. At Command Center
             // no handler is attached at all, so the press reaches Steam's own QAM
             // Back instead of being swallowed by a handler that chose to do
             // nothing. Native confirmation of that propagation stays pending.
-            , { ...(hasInternalLevel(navStack) ? { onCancelButton: popRoute } : {}), style: { minWidth: 0 }, children: SP_JSX.jsxs("div", { ref: statusAnchor, tabIndex: -1, children: [!onCommandCenter && SP_JSX.jsx(DFL.PanelSection, { children: SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", onClick: popRoute, children: "Back" }) }) }), SP_JSX.jsx(PageLayout, { route: route, modules: SP_JSX.jsx(DFL.PanelSection, { children: SP_JSX.jsx(ShellBody, { route: route, modules: modules, statusEntries: statusEntries, onOpenModule: (id) => openRoute({ kind: "module", id }), onOpenStatus: (id) => openRoute({ kind: "status", id }), onOpenTroubleshoot: toggleTroubleshooting, children: null }) }), controller: SP_JSX.jsx(DFL.PanelSection, { title: "Controller", children: SP_JSX.jsx(ControllerModule, { presentation: controllerPresentation({ peripheral: peripheralStatus, shortcutAvailable: controllerShortcutAvailable }) }) }), egpuStatus: SP_JSX.jsx(DFL.PanelSection, { title: "eGPU status", children: SP_JSX.jsx(EgpuModule, { presentation: egpuPresentation(payload) }) }), controllerStatus: SP_JSX.jsx(DFL.PanelSection, { title: "Controller status", children: SP_JSX.jsx(ControllerModule, { presentation: controllerPresentation({ peripheral: peripheralStatus, shortcutAvailable: controllerShortcutAvailable }) }) }), autoTdp: SP_JSX.jsx(TdpControls, { visible: quickAccessVisible && route.kind === "module" && route.id === "auto-tdp" }), commandCenter: SP_JSX.jsx(SP_JSX.Fragment, { children: SP_JSX.jsxs(DFL.PanelSection, { children: [SP_JSX.jsx(CommandCenterHeader, { summaryRef: statusFocusAnchor, onSummaryFocus: () => {
+            , { ...(hasInternalLevel(navStack) ? { onCancelButton: popRoute } : {}), style: { minWidth: 0 }, children: SP_JSX.jsxs("div", { ref: statusAnchor, tabIndex: -1, children: [!onCommandCenter && SP_JSX.jsx(DFL.PanelSection, { children: SP_JSX.jsx(DFL.PanelSectionRow, { children: SP_JSX.jsx(DFL.ButtonItem, { layout: "below", onClick: popRoute, children: "Back" }) }) }), SP_JSX.jsx(PageLayout, { route: route, modules: SP_JSX.jsx(DFL.PanelSection, { children: SP_JSX.jsx(ShellBody, { route: route, modules: modules, statusEntries: statusEntries, onOpenModule: (id) => openRoute({ kind: "module", id }, `module:${id}`), onOpenStatus: (id) => openRoute({ kind: "status", id }, `status:${id}`), onOpenTroubleshoot: toggleTroubleshooting, children: null }) }), controller: SP_JSX.jsx(DFL.PanelSection, { title: "Controller", children: SP_JSX.jsx(ControllerModule, { presentation: controllerPresentation({ peripheral: peripheralStatus, shortcutAvailable: controllerShortcutAvailable }) }) }), egpuStatus: SP_JSX.jsx(DFL.PanelSection, { title: "eGPU status", children: SP_JSX.jsx(EgpuModule, { presentation: egpuPresentation(payload) }) }), controllerStatus: SP_JSX.jsx(DFL.PanelSection, { title: "Controller status", children: SP_JSX.jsx(ControllerModule, { presentation: controllerPresentation({ peripheral: peripheralStatus, shortcutAvailable: controllerShortcutAvailable }) }) }), autoTdp: SP_JSX.jsx(AutoTdpModule, { controller: performance }), picker: route.kind === "picker" && route.id === "tdp"
+                                ? SP_JSX.jsx(TdpPicker, { status: performance.manual, busy: performance.busy, onApply: watts => void performance.apply(watts), onConfigure: () => openRoute({ kind: "module", id: "auto-tdp" }, "picker:configure") })
+                                : SP_JSX.jsx(DisplayPicker, { current: tiles.find(tile => tile.id === "display")?.value.text ?? "Unknown", action: primaryDisplayAction, onSwitch: activateDisplay, onConfigure: () => openRoute({ kind: "module", id: "egpu" }, "picker:configure") }), commandCenter: SP_JSX.jsx(SP_JSX.Fragment, { children: SP_JSX.jsxs(DFL.PanelSection, { children: [SP_JSX.jsx(CommandCenterHeader, { summaryRef: statusFocusAnchor, onSummaryFocus: () => {
                                                 if (statusAnchor.current)
                                                     scrollToTopOfOwningPanel(statusAnchor.current);
                                             }, mode: loading ? "Reading…" : label(payload?.inference.mode ?? "unknown"), display: snapshot?.displays.some((d) => d.active === true && d.kind === "external")
                                                 ? "External display"
                                                 : snapshot?.displays.some((d) => d.active === true && d.kind === "internal")
-                                                    ? "Handheld display" : "Display unknown", game: loading ? "Reading…" : label(snapshot?.game_state ?? "unknown"), health: healthStatusLabel(payload?.health, loading), navigation: SP_JSX.jsx(ModulesButton, { onOpen: () => openRoute({ kind: "modules" }) }) }), SP_JSX.jsx(DisconnectResultNotice, { result: disconnectResult(resultDismissed ? null : egpuDisconnect?.last, egpuDisconnect), onDismiss: () => setResultDismissed(true) }), SP_JSX.jsx(CommandCenterGrid, { tiles: tiles, onActivate: (id) => {
+                                                    ? "Handheld display" : "Display unknown", game: loading ? "Reading…" : label(snapshot?.game_state ?? "unknown"), health: healthStatusLabel(payload?.health, loading), navigation: SP_JSX.jsx(ModulesButton, { onOpen: () => openRoute({ kind: "modules" }, "modules") }) }), SP_JSX.jsx(DisconnectResultNotice, { result: disconnectResult(resultDismissed ? null : egpuDisconnect?.last, egpuDisconnect), onDismiss: () => setResultDismissed(true) }), SP_JSX.jsx(CommandCenterGrid, { tiles: tiles, onActivate: (id) => {
                                                 setSelectedTile(id);
                                                 const tile = tiles.find((candidate) => candidate.id === id);
                                                 if (!tile)
@@ -5297,28 +5364,23 @@ function Content({ preflight, connection, shortcut }) {
                                                     });
                                                     return;
                                                 }
+                                                if (id === "auto-tdp" && tile.actionLabel === "Stop") {
+                                                    void performance.stop();
+                                                    return;
+                                                }
                                                 if (tile.activation !== "open")
                                                     return;
-                                                // Performance tiles route to Auto TDP; the display target routes to
-                                                // the eGPU module, which owns the guarded transition.
-                                                openRoute(id === "display"
-                                                    ? { kind: "module", id: "egpu" }
-                                                    : { kind: "module", id: "auto-tdp" });
-                                            } }), SP_JSX.jsx(TileReason, { tile: shownTile }), disconnectMessage && (SP_JSX.jsx(DFL.PanelSectionRow, { children: disconnectMessage })), SP_JSX.jsx(ShellBody, { route: route, modules: modules, statusEntries: statusEntries, onOpenModule: (id) => openRoute({ kind: "module", id }), onOpenStatus: (id) => openRoute({ kind: "status", id }), children: null })] }) }), egpu: SP_JSX.jsxs(SP_JSX.Fragment, { children: [SP_JSX.jsx(DFL.PanelSection, { title: "eGPU", children: SP_JSX.jsx(EgpuModule, { presentation: egpuPresentation(payload), onOpenRecovery: toggleTroubleshooting }) }), payload?.connection_readiness && payload.connection_readiness.stage !== "disconnected" &&
+                                                openRoute(id === "display" || id === "tdp"
+                                                    ? { kind: "picker", id }
+                                                    : { kind: "module", id: "auto-tdp" }, `tile:${id}`);
+                                            } }), SP_JSX.jsx(TileReason, { tile: shownTile }), SP_JSX.jsx(DFL.ButtonItem, { layout: "below", onClick: toggleTroubleshooting, children: "Troubleshoot" }), disconnectMessage && (SP_JSX.jsx(DFL.PanelSectionRow, { children: disconnectMessage })), SP_JSX.jsx(ShellBody, { route: route, modules: modules, statusEntries: statusEntries, onOpenModule: (id) => openRoute({ kind: "module", id }, `module:${id}`), onOpenStatus: (id) => openRoute({ kind: "status", id }, `status:${id}`), children: null })] }) }), egpu: SP_JSX.jsxs(SP_JSX.Fragment, { children: [SP_JSX.jsx(DFL.PanelSection, { title: "eGPU", children: SP_JSX.jsx(EgpuModule, { presentation: egpuPresentation(payload), onOpenRecovery: toggleTroubleshooting }) }), payload?.connection_readiness && payload.connection_readiness.stage !== "disconnected" &&
                                         SP_JSX.jsx(DFL.PanelSection, { title: "eGPU readiness", children: SP_JSX.jsx(ConnectionQuickStatus, { store: connection.store, visible: quickAccessVisible, onOpen: openConnectionProgress }) }), SP_JSX.jsxs(DFL.PanelSection, { title: "Docking & actions", children: [SP_JSX.jsxs("div", { ref: primaryControlAnchor, children: [SP_JSX.jsx(DashboardSurface, { children: SP_JSX.jsx("div", { style: { padding: "4px 12px" }, children: SP_JSX.jsx(DFL.ToggleField, { label: "Automatic TV docking", layout: "inline", description: automaticDockBusy
                                                                     ? "Saving…"
                                                                     : !automaticDockStatus
                                                                         ? "Status unavailable"
                                                                         : automaticDockStatus.enabled
                                                                             ? label(automaticDockStatus.code)
-                                                                            : "Off · Ask before enabling", checked: automaticDockStatus?.enabled === true, disabled: automaticDockBusy || !automaticDockStatus, highlightOnFocus: true, onChange: toggleAutomaticDock }) }) }), automaticDockMessage && (SP_JSX.jsx(DFL.PanelSectionRow, { children: automaticDockMessage })), SP_JSX.jsx(DashboardSurface, { primary: true, children: SP_JSX.jsx(DashboardAction, { icon: "bolt", tone: "primary", title: primaryDisplayAction.title, description: primaryDisplayAction.description, onClick: () => {
-                                                                if (primaryDisplayAction.disabled)
-                                                                    return;
-                                                                if (primaryDisplayAction.target === "ally")
-                                                                    requestControllerDisplaySwitch("ally");
-                                                                else if (primaryDisplayAction.target === "tv")
-                                                                    void executeTvSwitch();
-                                                            }, disabled: primaryDisplayAction.disabled }) }), tvSwitchMessage && SP_JSX.jsx(DFL.PanelSectionRow, { children: tvSwitchMessage }), SP_JSX.jsx(DashboardSurface, { children: SP_JSX.jsx(DashboardAction, { icon: "connection", title: "Disconnect status", description: "Live checks \u00B7 keep eGPU connected", onClick: () => {
+                                                                            : "Off · Ask before enabling", checked: automaticDockStatus?.enabled === true, disabled: automaticDockBusy || !automaticDockStatus, highlightOnFocus: true, onChange: toggleAutomaticDock }) }) }), automaticDockMessage && (SP_JSX.jsx(DFL.PanelSectionRow, { children: automaticDockMessage })), SP_JSX.jsx(DashboardSurface, { primary: true, children: SP_JSX.jsx(DashboardAction, { icon: "bolt", tone: "primary", title: primaryDisplayAction.title, description: primaryDisplayAction.description, onClick: activateDisplay, disabled: primaryDisplayAction.disabled }) }), tvSwitchMessage && SP_JSX.jsx(DFL.PanelSectionRow, { children: tvSwitchMessage }), SP_JSX.jsx(DashboardSurface, { children: SP_JSX.jsx(DashboardAction, { icon: "connection", title: "Disconnect status", description: "Live checks \u00B7 keep eGPU connected", onClick: () => {
                                                                 if (!disconnectProgressModal.current)
                                                                     disconnectProgressModal.current = showDisconnectProgress(() => { disconnectProgressModal.current = null; });
                                                             } }) }), SP_JSX.jsx(DashboardSurface, { children: SP_JSX.jsx(DashboardAction, { icon: "power", title: safeDisconnectBusy
