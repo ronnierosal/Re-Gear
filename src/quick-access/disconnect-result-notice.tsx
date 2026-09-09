@@ -62,10 +62,10 @@ export function DisconnectResultNotice({ result, onDismiss }: {
     {/* The sentence that must survive a skim. */}
     <div style={{
       marginTop: 8, padding: "7px 9px", borderRadius: 9,
-      background: result.clearance.cleared ? "rgba(57,216,255,.10)" : "rgba(255,194,71,.10)",
-      border: `1px solid ${result.clearance.cleared ? C.cyan : C.amber}`,
+      background: result.clearance.removalVerified ? "rgba(57,216,255,.10)" : "rgba(255,194,71,.10)",
+      border: `1px solid ${result.clearance.removalVerified ? C.cyan : C.amber}`,
       fontSize: 13, fontWeight: 760, lineHeight: "18px",
-      color: result.clearance.cleared ? C.cyan : C.amber,
+      color: result.clearance.removalVerified ? C.cyan : C.amber,
     }}>
       {result.clearance.statement}
     </div>
