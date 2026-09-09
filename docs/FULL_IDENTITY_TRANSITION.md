@@ -4,6 +4,10 @@ Status: requested by Ronnie on 2026-09-09; implementation and device acceptance
 remain open. This extends the earlier directory-only cutover. It does not claim
 that existing HDM runtime contracts have already changed.
 
+Ronnie confirmed there is no external deployment cohort and requested a one-time
+backup and restore during the rename. Do not build indefinite dual-name support.
+An absent preference is normal and must not be replaced with an enabled default.
+
 ## Verified baseline
 
 - Ally readback: `Re-Gear/build_info.json` reports 0.3.69 at
@@ -77,3 +81,47 @@ controller-shortcut-bindings or PR216. The existing native menu acceptance stays
 open: installed 0.3.69 is verified, successful controller routing is not.
 
 Documentation impact: Wiki
+
+## Offline backup and restore tool
+
+`scripts/regear_settings_backup.py` provides explicit `backup`, `verify`, and
+`restore` operations. Stop the plugin before either copying or restoring state.
+Use trusted, private directories: this is an operator tool, not a privileged
+service accepting untrusted backup uploads. Checksums establish integrity,
+not authenticity. Windows uses the parent directory ACL; POSIX backups use 0700
+directories and 0600 files. Restore preserves recorded POSIX modes and ownership.
+
+Example command shape (paths are operator-selected, not an installation script):
+
+```text
+python3 scripts/regear_settings_backup.py backup SOURCE NEW_PRIVATE_BACKUP
+python3 scripts/regear_settings_backup.py verify NEW_PRIVATE_BACKUP
+python3 scripts/regear_settings_backup.py restore NEW_PRIVATE_BACKUP ABSENT_DESTINATION
+```
+
+The tool refuses existing restore destinations, links, special files, unsafe
+paths, corrupt/incomplete manifests and oversized snapshots. Restore validates
+all contents before writing, then stages content privately. Final publication
+is exclusive but not crash-atomic: leave the plugin stopped through verification.
+An interrupted publication requires inspection of the partial target; it is not
+silently overwritten on retry. The source and backup remain unchanged.
+
+Inventory each actual directory separately; record absent directories rather
+than creating invented settings. Observed/in-scope locations are:
+
+| Location | Treatment |
+| --- | --- |
+| `/var/lib/handheld-dock-mode` | Root-only state: inventory and back up privately; migration must distinguish preferences, recovery records, keys and live authorizations |
+| `/home/deck/.local/share/handheld-dock-mode` | Saved presentation and trial state observed; old trial authorization is not a setting to reactivate |
+| Decky `settings/HandheldDockMode` and `settings/Re-Gear` | Both directories exist; reconcile explicitly, never merge by modification time |
+| Decky `data/HandheldDockMode` and `data/Re-Gear` | Both directories exist; same conflict rule |
+| Frontend local storage | Menu shortcut already uses `regear.menu-shortcut.v1`; separately migrate the two legacy sleep-warning keys |
+
+Preference code supports `automatic-dock.json`, `auto-tdp.json`,
+`auto-tdp-preferences.json` and `game-close-preferences.json`. File existence in
+the protected directory has not been established. SSH cannot read it without
+administrator execution; no actual complete device backup is claimed yet.
+
+The source migration must not restore stale approval tokens, filter handles or
+process leases as active authority. Recovery journals remain available for
+reconciliation. No general-purpose restore is automatically invoked on startup.
