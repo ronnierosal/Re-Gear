@@ -36,9 +36,10 @@ test("UI uses the approved compact Re-Gear assets while README keeps its artwork
 
 test("committed bundle embeds compact transparent SVG artwork without unpackaged asset URLs", () => {
   const bundle = read("../dist/index.js");
-  for (const name of ["regear-icon", "mode-handheld", "mode-tv"]) {
+  for (const name of ["regear-icon"]) {
     const image = readFileSync(new URL(`../src/assets/${name}.svg`, import.meta.url));
     assert.ok(bundle.includes("data:image/svg+xml;base64," + image.toString("base64")), `${name} must be embedded`);
   }
+  assert.match(bundle, /M13 43a21 21 0 1 1 38 0/); // Approved inline Auto TDP gauge.
   assert.doesNotMatch(bundle, /\/assets\/(?:regear|mode)-/);
 });

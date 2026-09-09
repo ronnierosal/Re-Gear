@@ -75,7 +75,7 @@ test("without verified evidence no outcome clears the cable, whatever it returne
   ];
   for (const value of cases) {
     const r = disconnectResult(value, presentStatus());
-    assert.equal(r.clearance.cleared, false, JSON.stringify(value.code));
+    assert.equal(r.clearance.removalVerified, false, JSON.stringify(value.code));
     for (const claim of UNPLUG_CLAIMS) {
       assert.doesNotMatch(JSON.stringify(r), claim);
     }

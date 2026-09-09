@@ -1,39 +1,8 @@
-/** Whether the evidence supports disconnecting the eGPU cable: pure, no I/O.
- *
- * This is the gate behind the only screen in Re-Gear that tells a player they
- * may physically disconnect the eGPU. It exists so that statement is *earned
- * from evidence* rather than asserted, and so the exact evidence is shown next
- * to it and can be argued with.
- *
- * WHY THIS IS NOT THE OPERATION INVARIANT 10 FORBIDS.
- *
- * Invariant 10 was written about a live unplug: pulling the cable while the
- * eGPU is bound, with a driver attached and transactions possible. That is the
- * operation with no containment for in-flight DMA, and it stays forbidden.
- *
- * A safe disconnect is a different operation. The sequence removes both PCI
- * functions and verifies they are gone, so by the time a cable is touched
- * there is no bound device left to disconnect from. The checks below are what
- * make that a fact about this machine rather than a claim about the design:
- * clearance is refused unless the system itself reports no eGPU connected.
- *
- * Every check must pass. They are deliberately not collapsed into one boolean
- * from the backend, because a player deciding whether to pull a cable deserves
- * to see which specific facts were established, and because a single opaque
- * flag is impossible to audit when it is wrong.
- *
- * The decisive check is the last one. "Remove ran and returned success" is a
- * statement about a command; "no eGPU is connected" is a statement about the
- * bus. Only the second one justifies touching the cable, and the difference is
- * between trusting an action and observing its result.
- *
- * Scope: the eGPU. NOT the dock as a whole. Issue #105 records an xhci
- * recovery failure on the USB branch, a separate device path that a clean GPU
- * removal says nothing about, so the caveat below is always carried.
- *
- * If a check cannot be evaluated, it fails. Absent evidence is never a pass:
- * this is the one place in the product where an optimistic default would read
- * as permission to act on hardware.
+/** Software-removal evidence, without physical cable clearance.
+ * The v1 status has no positive post-removal PCI observation. In particular,
+ * egpu_unavailable also means observation failed or attachment identity is
+ * missing. Neither verifies absence. Dock teardown is separately unverified;
+ * safety invariant 10 and issue #147 remain the owning contract.
  */
 
 import type { DisconnectOutcomePayload, DisconnectStatusPayload } from "../backend";
@@ -47,23 +16,31 @@ export type ClearanceCheck = {
 };
 
 export type UnplugClearance = {
-  /** True only when every check passed. */
-  cleared: boolean;
+  /** True when every check about the **eGPU** passed.
+   *
+   * Deliberately not called `cleared`: it says the GPU removal is verified,
+   * which is not the same as the cable being safe to pull, and a field named
+   * for the stronger claim is how the two get confused. */
+  removalVerified: boolean;
   checks: ClearanceCheck[];
-  /** The statement to show. Grants nothing unless `cleared`. */
+  /** The statement to show. Grants no cable clearance in either branch. */
   statement: string;
-  /** Always present. A clean eGPU removal says nothing about the USB branch. */
+  /** Always present. Names what a clean eGPU removal leaves behind. */
   caveat: string;
 };
 
-const CLEARED_STATEMENT =
-  "The eGPU is detached and no longer connected to the Ally. You can now disconnect the eGPU cable.";
+const VERIFIED_STATEMENT =
+  "The eGPU is detached in software and the handheld no longer sees it. " +
+  "The dock is still connected, so this is not yet clearance to unplug the cable.";
 
-const NOT_CLEARED_STATEMENT =
-  "Do not disconnect the eGPU yet. Re-Gear could not confirm every check below. Shut the handheld down first, then disconnect it.";
+const UNVERIFIED_STATEMENT =
+  "Do not disconnect anything yet. Re-Gear could not confirm every check " +
+  "below. Shut the handheld down first, then disconnect it.";
 
 const DOCK_CAVEAT =
-  "This covers the eGPU only. Other devices behind the dock, such as USB controllers and storage, are not checked here.";
+  "These checks cover the eGPU only. The dock's own USB controller, the bridges " +
+  "above it and the Thunderbolt link stay attached after a software removal, and " +
+  "nothing here checks them. To disconnect the cable, shut the handheld down first.";
 
 function check(label: string, passed: boolean, detail: string): ClearanceCheck {
   return { label, passed, detail };
@@ -127,23 +104,34 @@ export function unplugClearance(
       : "The filter was not reported as disarmed.",
   ));
 
-  // 6. The decisive one: the bus, not the command. This is what makes the
-  //    disconnect safe rather than live -- there is nothing bound to pull from.
-  const gone = status?.availability === "unavailable"
-    && status.code === "live_disconnect.egpu_unavailable";
+  // v1 reports egpu_unavailable for observation exceptions and missing
+  // attachment identity too. It contains no positive post-removal bus proof.
+  // Keep this check closed until the backend exposes that explicit evidence.
   checks.push(check(
     "eGPU no longer connected to the system",
-    gone,
+    false,
     !status ? "No current status reading."
-      : gone ? "The system reports no eGPU connected."
-      : "The system still reports an eGPU present.",
+      : "The current status cannot verify that the eGPU is absent from the bus.",
   ));
 
-  const cleared = checks.every((entry) => entry.passed);
+  // Computed before the outstanding check below is appended, rather than over
+  // a slice: an index would silently take in whatever a later edit inserts.
+  const removalVerified = checks.every((entry) => entry.passed);
+
+  // Named as an outstanding check rather than left out of the list, so a
+  // player sees that something is unverified instead of inferring it from
+  // prose. It cannot pass until the dock teardown exists and has run, and it
+  // is deliberately outside `removalVerified`: the eGPU removal did succeed.
+  checks.push(check(
+    "Dock USB and Thunderbolt link brought down",
+    false,
+    "Not checked. A software removal leaves them attached.",
+  ));
+
   return {
-    cleared,
+    removalVerified,
     checks,
-    statement: cleared ? CLEARED_STATEMENT : NOT_CLEARED_STATEMENT,
+    statement: removalVerified ? VERIFIED_STATEMENT : UNVERIFIED_STATEMENT,
     caveat: DOCK_CAVEAT,
   };
 }

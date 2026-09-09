@@ -69,7 +69,7 @@ export type CommandCenterInput = {
 };
 
 const ACTION_LABEL: Record<PerformanceState["action"], string | null> = {
-  stop: "Stop", start: "Start", open: "Open Auto TDP", none: null,
+  stop: "Stop", start: "Start", open: "Configure", none: null,
 };
 
 export function commandCenterTiles(input: CommandCenterInput): CommandCenterTile[] {
@@ -90,15 +90,14 @@ export function commandCenterTiles(input: CommandCenterInput): CommandCenterTile
       available: performance.supported,
       reason: performance.supported ? null : "This device has no verified TDP control.",
       activation: performance.supported ? "open" : "none",
-      actionLabel: performance.supported ? "Open Auto TDP" : null,
+      actionLabel: performance.supported ? "Choose limit" : null,
       developmental: false,
     },
-    // One context-sensitive action, never a toggle: Stop while running, Start
-    // only when explicitly configured and permitted, otherwise open the module.
+    // Stop a running loop; configure all other states in the module.
     "auto-tdp": {
       id: "auto-tdp", title: "Auto TDP",
-      value: { text: performance.active ? "Running" : performance.supported ? "Off" : "Unavailable",
-        known: performance.supported },
+      value: { text: performance.stopping ? "Stopping…" : performance.active ? "Running" : performance.autoKnown ? "Off" : "Unknown",
+        known: performance.autoKnown },
       available: performance.action !== "none",
       reason: performance.reason,
       activation: performance.action === "open" ? "open"
@@ -113,7 +112,7 @@ export function commandCenterTiles(input: CommandCenterInput): CommandCenterTile
       value: input.displayTarget
         ? { text: input.displayTarget, known: true }
         : { text: "Unknown", known: false },
-      available: true, reason: null, activation: "open", actionLabel: "Open eGPU",
+      available: true, reason: null, activation: "open", actionLabel: "Choose target",
       developmental: false,
     },
     // Wired to the owning backend's contract. Every judgement below comes from
