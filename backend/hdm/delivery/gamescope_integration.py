@@ -5,7 +5,6 @@ from __future__ import annotations
 import hashlib
 import os
 import re
-import secrets
 import stat
 import threading
 from dataclasses import dataclass
@@ -13,6 +12,7 @@ from pathlib import Path
 from typing import Callable
 
 from ..ports.presentation_activation import GamescopeUserContext
+from .user_directory import UserDirectory
 
 
 DROPIN_NAME = "90-handheld-dock-mode.conf"
@@ -63,7 +63,7 @@ class GamescopeIntegrationStore:
         plugin_root: Path,
         user: GamescopeUserContext,
         effective_uid: Callable[[], int] | None = None,
-        set_owner: Callable[[Path, int, int], None] | None = None,
+        set_owner: Callable[[Path | int, int, int], None] | None = None,
     ) -> None:
         if not plugin_root.is_absolute() or not user.home.is_absolute():
             raise ValueError("Gamescope integration paths must be absolute")
@@ -80,7 +80,7 @@ class GamescopeIntegrationStore:
         )
         self._target = self._dropin_root / self.DROPIN_NAME
         self._effective_uid = effective_uid or getattr(os, "geteuid", lambda: -1)
-        self._set_owner = set_owner or self._chown
+        self._set_owner = set_owner
         self._lock = threading.Lock()
         self._validate_rendered_paths()
 
@@ -215,10 +215,11 @@ class GamescopeIntegrationStore:
             if not before.matches:
                 return GamescopeIntegrationResult(False, before)
             try:
-                if self._target.is_symlink():
-                    raise ValueError("managed drop-in cannot be a symlink")
-                self._target.unlink()
-                self._sync_directory(self._dropin_root)
+                with UserDirectory(self._dropin_root, self._user.uid, self._user.gid,
+                                   create_from=self._user.home) as directory:
+                    directory.remove_matching(self.DROPIN_NAME,
+                                              self.expected_text().encode("utf-8"),
+                                              MAX_DROPIN_BYTES)
             except (OSError, ValueError):
                 return GamescopeIntegrationResult(
                     False,
@@ -305,46 +306,18 @@ class GamescopeIntegrationStore:
         return data.decode("utf-8")
 
     def _ensure_relative_directory(self, relative: Path, final_mode: int) -> None:
-        if not self._owned_real_directory(self._user.home):
-            raise ValueError("Gamescope user home is unsafe")
-        current = self._user.home
-        parts = relative.parts
-        for index, part in enumerate(parts):
-            if part in {"", ".", ".."}:
-                raise ValueError("Gamescope integration directory is unsafe")
-            current = current / part
-            mode = final_mode if index == len(parts) - 1 else 0o700
-            if current.exists():
-                if not self._owned_real_directory(current):
-                    raise ValueError("Gamescope integration directory is unsafe")
-            else:
-                current.mkdir(mode=mode)
-                self._own(current)
+        with UserDirectory(self._user.home / relative, self._user.uid, self._user.gid,
+                           create_from=self._user.home, create=True,
+                           final_mode=final_mode, set_owner=self._set_owner):
+            pass
 
     def _atomic_write(self, path: Path, value: str) -> None:
-        if path.is_symlink() or path.exists():
-            raise ValueError("managed drop-in already exists")
         data = value.encode("utf-8")
         if len(data) > MAX_DROPIN_BYTES:
             raise ValueError("managed drop-in exceeds its bound")
-        temporary = path.parent / f".{self.DROPIN_NAME}.{secrets.token_hex(8)}.tmp"
-        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
-        descriptor = os.open(temporary, flags, 0o600)
-        try:
-            with os.fdopen(descriptor, "wb") as target:
-                target.write(data)
-                target.flush()
-                os.fsync(target.fileno())
-            os.chmod(temporary, 0o644)
-            self._own(temporary)
-            os.replace(temporary, path)
-            self._sync_directory(path.parent)
-        except Exception:
-            try:
-                temporary.unlink(missing_ok=True)
-            except OSError:
-                pass
-            raise
+        with UserDirectory(path.parent, self._user.uid, self._user.gid,
+                           create_from=self._user.home) as directory:
+            directory.publish(path.name, data, 0o644)
 
     @staticmethod
     def _real_directory(path: Path) -> bool:
@@ -372,22 +345,3 @@ class GamescopeIntegrationStore:
             )
         except (AttributeError, OSError):
             return False
-
-    def _own(self, path: Path) -> None:
-        self._set_owner(path, self._user.uid, self._user.gid)
-
-    @staticmethod
-    def _chown(path: Path, uid: int, gid: int) -> None:
-        os.chown(path, uid, gid, follow_symlinks=False)
-
-    @staticmethod
-    def _sync_directory(path: Path) -> None:
-        flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
-        try:
-            descriptor = os.open(path, flags)
-        except OSError:
-            return
-        try:
-            os.fsync(descriptor)
-        finally:
-            os.close(descriptor)
