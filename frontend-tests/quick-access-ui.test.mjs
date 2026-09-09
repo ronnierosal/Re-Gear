@@ -20,7 +20,14 @@ test("backend-retired display success releases stale acknowledgement UI", () => 
 
 test("upward navigation reaches the native status focus stop before leaving HDM", () => {
   const source = readFileSync(new URL("../src/index.tsx", import.meta.url), "utf8");
-  const summary = source.slice(source.indexOf('<PanelSection title="At a glance">'), source.indexOf('<PanelSection title="Docking & actions">'));
+  // Scoped to the At a glance section itself, not to everything before the
+  // next titled section. The subject is the summary: it must stay a passive
+  // focus stop so upward navigation reaches it and then leaves to Steam's QAM.
+  // The old slice ran to "Docking & actions" and only held because nothing
+  // interactive sat between; the Command Center tile grid legitimately does,
+  // and it is below the summary, so navigating up still passes through here.
+  const summaryStart = source.indexOf('<PanelSection title="At a glance">');
+  const summary = source.slice(summaryStart, source.indexOf("</PanelSection>", summaryStart));
   assert.match(summary, /<QuickAccessOverview[\s\S]*summaryRef=\{statusFocusAnchor\}/);
   assert.match(summary, /onSummaryFocus=\{[\s\S]*scrollToTopOfOwningPanel\(statusAnchor.current\)/);
   assert.doesNotMatch(summary, /onActivate|onCancel|onGamepadDirection/);
