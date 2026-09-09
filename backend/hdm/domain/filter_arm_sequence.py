@@ -94,6 +94,9 @@ APPROVED_HOLDER_UNITS: frozenset[str] = (
 class ArmSequenceState(StrEnum):
     COMPOSED = "composed"
     BLOCKED_UNAPPROVED_HOLDER = "blocked_unapproved_holder"
+    #: The scan finished and found no holder. There is nothing to restart, and
+    #: that is a usable answer rather than a missing one.
+    NOTHING_TO_RESTART = "nothing_to_restart"
     EVIDENCE_INCOMPLETE = "evidence_incomplete"
     INVALID = "invalid"
 
@@ -113,6 +116,9 @@ class ArmRestartPlan:
                 raise ValueError("a composed restart plan needs units")
             if self.unapproved:
                 raise ValueError("a composed restart plan has no unapproved holders")
+        elif self.state is ArmSequenceState.NOTHING_TO_RESTART:
+            if self.units or self.unapproved:
+                raise ValueError("nothing to restart names no units")
         elif self.units:
             raise ValueError("only a composed restart plan exposes units")
         if self.state is ArmSequenceState.BLOCKED_UNAPPROVED_HOLDER and not self.unapproved:
@@ -120,7 +126,15 @@ class ArmRestartPlan:
 
     @property
     def usable(self) -> bool:
-        return self.state is ArmSequenceState.COMPOSED
+        """Whether the caller may proceed with this plan.
+
+        Two states qualify. A plan with units is one thing to do; a device that
+        nothing holds is another, and both leave the sequence able to continue.
+        """
+        return self.state in (
+            ArmSequenceState.COMPOSED,
+            ArmSequenceState.NOTHING_TO_RESTART,
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -154,7 +168,9 @@ def classify_holder_units(holder_units: tuple[str, ...]) -> RestartCoverage:
     )
 
 
-def compose_restart_plan(holder_units: tuple[str, ...]) -> ArmRestartPlan:
+def compose_restart_plan(
+    holder_units: tuple[str, ...], *, scan_complete: bool
+) -> ArmRestartPlan:
     """Return the approved restart plan for the observed holders.
 
     The plan restarts only approved units the session target does not reach,
@@ -168,11 +184,29 @@ def compose_restart_plan(holder_units: tuple[str, ...]) -> ArmRestartPlan:
         return ArmRestartPlan(
             ArmSequenceState.INVALID, "arm_sequence.holder_units_invalid"
         )
-    if not holder_units:
-        # No observed holders is not the same as nothing to restart: it means
-        # the scan found nothing, and arming on that basis would be unfounded.
+    if type(scan_complete) is not bool:
         return ArmRestartPlan(
-            ArmSequenceState.EVIDENCE_INCOMPLETE, "arm_sequence.no_holders_observed"
+            ArmSequenceState.INVALID, "arm_sequence.holder_units_invalid"
+        )
+    if not holder_units:
+        if not scan_complete:
+            # A scan that could not finish looking found nothing because it
+            # stopped looking. Arming on that basis would be unfounded.
+            return ArmRestartPlan(
+                ArmSequenceState.EVIDENCE_INCOMPLETE,
+                "arm_sequence.no_holders_observed",
+            )
+        # The scan looked everywhere and the device is held by nothing. There
+        # is nothing to restart, and the sequence may still arm: the filter is
+        # what stops a holder reappearing during the window that follows.
+        #
+        # This used to be indistinguishable from the case above, because the
+        # completeness the caller already had was dropped at this boundary --
+        # the same weakening that made an empty holder tuple read as a clear
+        # device. An idle eGPU that nothing holds is the ordinary state before
+        # a disconnect, and it could not be armed at all.
+        return ArmRestartPlan(
+            ArmSequenceState.NOTHING_TO_RESTART, "arm_sequence.device_already_clear"
         )
 
     coverage = classify_holder_units(holder_units)

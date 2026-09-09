@@ -129,6 +129,36 @@ def coordinator(
     return instance
 
 
+
+class ClearDeviceTests(unittest.TestCase):
+    """A device nothing holds is the ordinary state before a disconnect."""
+
+    def test_a_finished_scan_that_found_nothing_still_arms(self) -> None:
+        """Arming is still worth doing with no holders to restart.
+
+        The filter is what stops a holder reappearing during the window that
+        follows, so a clear device is a reason to arm and restart nothing --
+        not a reason to refuse.
+        """
+        instance = coordinator(holders=((), ()))
+
+        result = instance.arm(grant(), PROGRAM, boot_hash=BOOT)
+
+        self.assertIs(result.stage, ArmStage.ARMED_AND_CLEAR)
+        self.assertEqual(result.restarted, ())
+        self.assertFalse(result.session_disturbed)
+        self.assertEqual(instance.restarted, [])
+
+    def test_an_unfinished_scan_that_found_nothing_still_refuses(self) -> None:
+        instance = coordinator(holders=((), ()), complete=False)
+
+        result = instance.arm(grant(), PROGRAM, boot_hash=BOOT)
+
+        self.assertIs(result.stage, ArmStage.PLAN_BLOCKED)
+        self.assertEqual(result.code, "arm_sequence.no_holders_observed")
+        self.assertTrue(result.disarmed)
+
+
 class SuccessTests(unittest.TestCase):
     def test_the_measured_sequence_arms_and_clears(self) -> None:
         fake = FakeFilter()

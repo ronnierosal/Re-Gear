@@ -188,6 +188,20 @@ class EgpuClientDiscovery:
             for descriptor in descriptors:
                 try:
                     target = self._fd_target_reader(descriptor)
+                except FileNotFoundError:
+                    # The descriptor was closed between enumerating the
+                    # directory and reading it. One that no longer exists holds
+                    # nothing, so nothing was missed.
+                    #
+                    # The liveness guard below cannot catch this: it asks
+                    # whether the *process* is still there, and it is. On a
+                    # system where Steam and the compositor open and close
+                    # descriptors continuously that made the scan report
+                    # incomplete every time, so `clients_clear` could never be
+                    # verified and removal safety could never reach ready --
+                    # measured as root on the tested Ally X, while the operator
+                    # scan reported complete at the same moment.
+                    continue
                 except OSError:
                     if process_path.exists():
                         incomplete = True
