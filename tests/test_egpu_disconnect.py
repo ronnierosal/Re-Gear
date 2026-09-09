@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import sys
 import unittest
 from pathlib import Path
@@ -15,6 +16,7 @@ from hdm.application.live_disconnect import LiveDisconnectStage  # noqa: E402
 from hdm.egpu_disconnect import (  # noqa: E402
     NEXT_ACTION,
     await_unit_release,
+    disconnect_snapshot_service,
     observe_display,
     present_addresses,
 )
@@ -237,6 +239,21 @@ class HolderProjectionTests(unittest.TestCase):
         self.assertEqual(observation.units, ())
         self.assertFalse(observation.complete)
         self.assertFalse(observation.clear)
+
+
+class SelfExclusionTests(unittest.TestCase):
+    def test_the_disconnect_excludes_itself_from_its_own_client_scan(self) -> None:
+        """It holds the card open to keep DRM master while releasing the display.
+
+        Without this the scan sees this process holding the device and the
+        disconnect reports itself as the thing blocking the disconnect.
+        """
+        service = disconnect_snapshot_service()
+        scanner = service._discovery._egpu_clients
+
+        self.assertIn(os.getpid(), scanner._exclude_pids)
+        # Exactly this process, and nothing else.
+        self.assertEqual(scanner._exclude_pids, frozenset({os.getpid()}))
 
 
 class NextActionTests(unittest.TestCase):
