@@ -44,18 +44,49 @@ test("every tile is reachable by arrows in every responsive grid", () => {
     assert.equal(visited.size, tiles.length);
   }
 });
-test("production import graph cannot reach synthetic prototype", () => {
+test("demo rendering import graph cannot reach backend or native runtime", () => {
   const visited = new Set();
   function visit(file) {
     if (visited.has(file)) return;
     visited.add(file);
-    assert.ok(!file.includes("expanded-command-center"), `Production imports sample prototype: ${file}`);
+    assert.ok(!file.endsWith("backend.ts") && !file.endsWith("native.tsx"), `Demo rendering imports action runtime: ${file}`);
     const body = readFileSync(file, "utf8");
+    assert.ok(!body.includes('from "@decky/api"'), "Demo renderer must not import RPCs");
     for (const match of body.matchAll(/(?:from\s*|import\s*\(\s*|import\s*)["'](\.[^"']+)["']/g)) {
       const base = resolve(dirname(file), match[1]);
       const next = [base, `${base}.ts`, `${base}.tsx`, resolve(base, "index.ts"), resolve(base, "index.tsx")].find(path => /\.tsx?$/.test(path) && existsSync(path));
       if (next) visit(next);
     }
   }
-  visit(new URL("../src/index.tsx", import.meta.url).pathname.replace(/^\/(\w:)/, "$1"));
+  visit(new URL("../src/quick-access/expanded-command-center/shell.tsx", import.meta.url).pathname.replace(/^\/(\w:)/, "$1"));
+});
+
+test("late native modal cleanup and stale button callbacks cannot affect a reopened view", async () => {
+  const nativeSource = readFileSync(new URL("../src/quick-access/expanded-command-center/native.tsx", import.meta.url), "utf8");
+  const nativeJs = ts.transpileModule(nativeSource, { compilerOptions: { module: ts.ModuleKind.ESNext, jsx: ts.JsxEmit.React } }).outputText.replace(/^import .*;$/gm, "");
+  const fixtures = `
+    export const views=[], effects=[], listeners=[];
+    export let opens=0, clicks=0;
+    const React={createElement:(type,props,...children)=>({type,props:{...props,children}})};
+    const ModalRoot='modal', ExpandedCommandCenter='shell';
+    const useEffect=fn=>effects.push(fn()), useState=v=>[v,()=>{}];
+    const loadMenuBinding=()=> 'start-select',saveMenuBinding=()=>true,menuBindingOptions=[];
+    const startMenuShortcut=()=>({available:true,reset(){},stop(){}});
+    const showModal=view=>{opens++;views.push(view);return {Close(){}}};
+    export const input={RegisterForControllerInputMessages(fn){listeners.push(fn);return {unregister(){throw Error('late provider')}}}};
+    export const host={localStorage:{},document:{querySelector(){return {contains(){return true}}},activeElement:{tagName:'BUTTON',click(){clicks++}}}};
+  `;
+  const native = await import(`data:text/javascript;base64,${Buffer.from(fixtures + nativeJs).toString("base64")}`);
+  const runtime = native.createExpandedMenu(native.input, native.host);
+  runtime.open(); runtime.open(); assert.equal(native.opens, 1);
+  const view = native.views[0].props.children[1];
+  const shell = view.type(view.props); // Mount its cleanup and obtain close callback.
+  const oldListener = native.listeners[0];
+  shell.props.onClose(); runtime.open(); assert.equal(native.opens, 2);
+  native.effects[0](); // Old animated unmount arrives after reopening.
+  runtime.open(); assert.equal(native.opens, 2, "old unmount must not clear new modal");
+  oldListener(0, 0, true); assert.equal(native.clicks, 0, "failed unsubscribe stays inert");
+  native.listeners[1](0, 0, true); assert.equal(native.clicks, 1);
+  runtime.stop(); native.listeners[1](0, 0, false); native.listeners[1](0, 0, true);
+  assert.equal(native.clicks, 1, "unload must disable navigation");
 });
