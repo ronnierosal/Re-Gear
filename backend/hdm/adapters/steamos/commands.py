@@ -337,6 +337,16 @@ class UserServiceCommandRunner:
             "restart",
             "gamescope-session.target",
         ),
+        UserServiceOperation.RESTART_WIREPLUMBER: (
+            "--no-block",
+            "restart",
+            "wireplumber.service",
+        ),
+        UserServiceOperation.RESTART_PIPEWIRE: (
+            "--no-block",
+            "restart",
+            "pipewire.service",
+        ),
     }
     CLEAN_ENVIRONMENT = {
         "LANG": "C",

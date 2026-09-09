@@ -70,6 +70,7 @@ from .adapters.steamos.drm_display_release import DrmDisplayRelease
 from .adapters.steamos.egpu_device_nodes import SteamOsEgpuDeviceNodeDiscovery
 from .adapters.steamos.owner_identity import observe_owner_identity, read_boot_hash
 from .adapters.steamos.peripherals import SteamOsPeripheralObservationAdapter
+from .adapters.steamos.session_restart import await_units_released
 from .application.filter_arm import FilterArmCoordinator, HolderObservation
 from .application.live_disconnect import (
     FreshRemovalObservation,
@@ -82,7 +83,7 @@ from .delivery.device_filter_program import compile_device_filter
 from .delivery.removal_transaction_store import FileRemovalTransactionStore
 from .domain.display_release import DisplayReleaseEvidence
 from .domain.egpu_device_policy import DevicePolicyState, compose_egpu_device_policy
-from .domain.filter_arm_sequence import APPROVED_SESSION_REACHED, SESSION_TARGET
+from .domain.filter_arm_sequence import units_cleared_by
 from .domain.filter_authorization import authorize_parent_scope
 from .domain.removal_safety import (
     RemovalSafety,
@@ -90,7 +91,6 @@ from .domain.removal_safety import (
     assess_removal_safety,
 )
 from .egpu_release import (
-    HolderScan,
     egpu_functions,
     node_paths,
     report,
@@ -106,56 +106,6 @@ STORE_ROOT = Path("/var/lib/regear/egpu")
 PCI_DEVICE_ROOT = Path("/sys/bus/pci/devices")
 INTERNAL_CARD = "/dev/dri/card0"
 EXTERNAL_CARD = "/dev/dri/card1"
-
-
-def units_cleared_by(unit: str, holders: tuple[str, ...]) -> tuple[str, ...]:
-    """Which observed holders a restart of `unit` is expected to release.
-
-    A target is not a holder. Holders are reported by their leaf cgroup name
-    and a systemd target has no cgroup, so nothing in a holder scan is ever
-    named `gamescope-session.target`. Waiting for the target's own name to
-    disappear therefore succeeded on the first scan, instantly and always,
-    without the session having been restarted at all -- observed on hardware,
-    where the sequence then re-observed and refused with the very holders the
-    target restart was supposed to clear.
-
-    What a session-target restart actually clears is its member services, so
-    that is what the wait watches. A plain service clears itself.
-    """
-    observed = set(holders)
-    if unit == SESSION_TARGET:
-        return tuple(sorted(observed & APPROVED_SESSION_REACHED))
-    return (unit,) if unit in observed else ()
-
-
-def await_units_released(
-    units: tuple[str, ...],
-    scan: Callable[[], HolderScan],
-    *,
-    deadline: float,
-    now: Callable[[], float],
-    sleep: Callable[[float], None],
-    interval: float = 3.0,
-) -> bool:
-    """Wait for every unit in `units` to stop holding the device.
-
-    This is what stands in for spawning a restart. It succeeds on the fact the
-    sequence actually depends on -- that the holders let go -- rather than on
-    the command having been issued, which is the weaker claim and the one this
-    tool is not in a position to make.
-
-    An empty set passes immediately, because there is nothing to wait for.
-    """
-    if not units:
-        return True
-    wanted = set(units)
-    while True:
-        if not wanted & set(scan().units):
-            return True
-        remaining = deadline - now()
-        if remaining <= 0:
-            return False
-        sleep(max(0.0, min(interval, remaining)))
 
 
 def disconnect_snapshot_service() -> SnapshotService:
@@ -416,15 +366,17 @@ def main(argv: Sequence[str] = ()) -> int:
         report("")
         for command in restart_commands((unit,), arguments.uid):
             report(f"  run this now, as the session user: {command}")
-        scan = lambda: scan_holders(nodes, nodes_incomplete=not nodes_complete)
-        expected = units_cleared_by(unit, scan().units)
+        observe = lambda: scan_holders(
+            nodes, nodes_incomplete=not nodes_complete
+        ).units
+        expected = units_cleared_by(unit, observe())
         if not expected:
             report(f"  nothing observed is held by {unit}; continuing")
             return True
         report(f"  waiting up to {restart_deadline:.0f}s for {', '.join(expected)}")
         released = await_units_released(
             expected,
-            scan,
+            observe,
             deadline=time.monotonic() + restart_deadline,
             now=time.monotonic,
             sleep=time.sleep,
