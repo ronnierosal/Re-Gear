@@ -220,5 +220,44 @@ class BoundaryTests(unittest.TestCase):
         self.assertIn("NOT clearance to unplug", source)
 
 
+class RefusalAdviceTests(unittest.TestCase):
+    """A refusal a reader cannot act on sends them somewhere useless.
+
+    The generic line this replaced told the operator to clear holders
+    whatever the reason. Run unprivileged with the holders already clear -
+    the exact state reached on hardware - it advised re-running the release,
+    which would have achieved nothing.
+    """
+
+    def test_an_unprivileged_incomplete_scan_names_privilege(self) -> None:
+        lines = " ".join(
+            egpu_remove.next_action("removal_safety.client_scan_incomplete", euid=1000)
+        )
+        self.assertIn("sudo", lines)
+        self.assertNotIn("clear them", lines)
+
+    def test_a_privileged_incomplete_scan_does_not_blame_privilege(self) -> None:
+        lines = " ".join(
+            egpu_remove.next_action("removal_safety.client_scan_incomplete", euid=0)
+        )
+        self.assertNotIn("sudo", lines)
+
+    def test_an_active_display_is_not_described_as_a_holder_problem(self) -> None:
+        lines = " ".join(
+            egpu_remove.next_action("removal_safety.external_display_still_active", euid=0)
+        )
+        self.assertIn("no holder release fixes", lines)
+        self.assertIn("168", lines)
+
+    def test_active_holders_still_point_at_the_release(self) -> None:
+        lines = " ".join(
+            egpu_remove.next_action("removal_safety.clients_active_or_protected", euid=0)
+        )
+        self.assertIn("egpu_release", lines)
+
+    def test_an_unknown_code_still_says_something_true(self) -> None:
+        self.assertTrue(egpu_remove.next_action("removal_safety.something_new", euid=0))
+
+
 if __name__ == "__main__":
     unittest.main()

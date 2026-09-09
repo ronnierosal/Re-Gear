@@ -162,6 +162,44 @@ def execute(plan: RemovalPlan, removal: DeviceRemovalPort) -> int:
     return 0
 
 
+#: What to do about each refusal, keyed by the readiness code that caused it.
+#: A refusal a reader cannot act on sends them somewhere useless, and the
+#: generic advice this replaced did exactly that: run as an unprivileged user
+#: with the holders already clear, it told the operator to go and clear the
+#: holders.
+NEXT_ACTION: dict[str, tuple[str, ...]] = {
+    "removal_safety.clients_active_or_protected": (
+        "holders are the blocker: clear them with hdm.egpu_release --arm.",
+    ),
+    "removal_safety.external_display_still_active": (
+        "the external display is still active, which no holder release fixes.",
+        "on the tested hardware this is the kernel console holding the eGPU",
+        "CRTC after the compositor left it; see issue 168.",
+    ),
+    "removal_safety.game_running": (
+        "a game is running; close it and re-observe.",
+    ),
+}
+
+
+def next_action(code: str, euid: int) -> tuple[str, ...]:
+    """Say what to do about this refusal, not merely that it happened.
+
+    An incomplete client scan is reported specially when unprivileged,
+    because the cause is almost always that this process cannot read other
+    processes rather than anything about the device. Telling an operator to
+    clear holders in that case is worse than saying nothing: the holders may
+    already be clear, and re-running the release would achieve nothing.
+    """
+    if code == "removal_safety.client_scan_incomplete" and euid != 0:
+        return (
+            "the client scan could not finish, which unprivileged it usually",
+            "cannot: it cannot read other processes. Re-run with sudo before",
+            "concluding anything about holders.",
+        )
+    return NEXT_ACTION.get(code, ("re-observe once the reported fact changes.",))
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="hdm-egpu-remove", description=__doc__.split("\n\n")[0]
@@ -225,7 +263,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             report("  re-run with --remove to execute this plan.")
         else:
             report("  the plan is not executable; the code above says why.")
-            report("  if holders are the blocker, clear them with hdm.egpu_release.")
+            for line in next_action(readiness.code, os.geteuid() if hasattr(os, "geteuid") else 0):
+                report(f"  {line}")
         return 0 if plan.usable else 1
 
     if not plan.usable:
