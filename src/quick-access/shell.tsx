@@ -1,3 +1,4 @@
+import { ApprovedIcon } from "./approved-icons";
 import { DialogButton, Focusable } from "@decky/ui";
 import type { ReactNode } from "react";
 import type { ModuleEntry, ModuleId, Route, StatusId } from "./module-registry";
@@ -35,6 +36,7 @@ function NavRow({ title, detail, blocked, onClick, focusKey }: {
   onClick(): void; focusKey: string;
 }) {
   return <DialogButton
+    className="rg-quick-control"
     data-regear-focus={focusKey}
     onClick={onClick}
     // Blocked rows stay focusable: opening one is how its reason is read.
@@ -44,6 +46,9 @@ function NavRow({ title, detail, blocked, onClick, focusKey }: {
       background: SURFACE, border: `1px solid ${C.border}`, borderRadius: 12,
       color: blocked ? C.dim : C.text,
     }}>
+    {focusKey.includes("egpu") && <ApprovedIcon id="module-egpu" />}
+    {focusKey.includes("controller") && <ApprovedIcon id="module-controller" />}
+    {focusKey.includes("auto-tdp") && <ApprovedIcon id="module-auto-tdp" />}
     <span style={{ flex: "1 1 auto", minWidth: 0 }}>
       <span style={{ display: "block", fontSize: 14, fontWeight: 700 }}>{title}</span>
       <span style={{ display: "block", fontSize: 12, lineHeight: "16px",
@@ -79,6 +84,7 @@ export function RouteHeader({ title, reason }: { title: string; reason: string |
 /** The Modules entry on Command Center. Labelled, not an icon-only target. */
 export function ModulesButton({ onOpen }: { onOpen(): void }) {
   return <DialogButton
+    className="rg-quick-control"
     data-regear-focus="modules"
     onClick={onOpen}
     style={{

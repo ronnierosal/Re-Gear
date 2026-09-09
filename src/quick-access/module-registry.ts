@@ -36,11 +36,12 @@ export type Route =
   | { kind: "modules" }
   | { kind: "module"; id: ModuleId }
   | { kind: "status"; id: StatusId }
-  | { kind: "troubleshoot" };
+  | { kind: "troubleshoot" }
+  | { kind: "picker"; id: "tdp" | "display" };
 
 /** Stable identity for a route, used as the focus-restoration key. */
 export function routeKey(route: Route): string {
-  return route.kind === "module" || route.kind === "status" ? `${route.kind}:${route.id}` : route.kind;
+  return route.kind === "module" || route.kind === "status" || route.kind === "picker" ? `${route.kind}:${route.id}` : route.kind;
 }
 
 export type ModuleEntry = {

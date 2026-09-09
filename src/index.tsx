@@ -79,7 +79,9 @@ import { deliverBlockedAttempt } from "./blocked-attempt-delivery";
 import { diagnosticOverlayRows } from "./diagnostics-overlay";
 import { DashboardSurface } from "./quick-access-overview";
 import { DashboardAction } from "./dashboard-action";
-import { TdpControls } from "./tdp-controls";
+import { AutoTdpModule } from "./quick-access/modules/auto-tdp";
+import { usePerformance } from "./quick-access/use-performance";
+import { TdpPicker, DisplayPicker } from "./quick-access/compact-picker";
 import { hardwareDetailRows } from "./quick-access-dashboard";
 import { healthAttentionMessages, healthStatusLabel } from "./health-ui";
 import { decideLinkHealthNotification } from "./link-health-notification";
@@ -102,6 +104,7 @@ import {
   currentRoute,
   diagnosticsVisible,
   hasInternalLevel,
+  routeKey,
   pushRoute,
   quickAccessModules,
   stackOnPanelOpen,
@@ -573,6 +576,8 @@ function Content({ preflight, connection, shortcut }: { preflight: SleepPrefligh
   // The approved layout replaces the icon row with a navigation stack. Command
   // Center sits at the bottom and is never popped; Back delegates to Steam's own
   // QAM Back once no internal level is left. See quick-access/module-registry.
+  const returnFocus = useRef(new Map<string, string>());
+  const [pendingFocus, setPendingFocus] = useState<string | null>(null);
   const [navStack, setNavStack] = useState<NavStack>(INITIAL_STACK);
   // The owning backend's disconnect status. Null means not read yet, which is
   // not the same as "no": the tile renders that distinction itself.
@@ -586,6 +591,7 @@ function Content({ preflight, connection, shortcut }: { preflight: SleepPrefligh
    * hardware", and a stored dismissal would hide it after a later restart. */
   const [resultDismissed, setResultDismissed] = useState(false);
   const route = currentRoute(navStack);
+  const performance = usePerformance(quickAccessVisible);
   const onCommandCenter = route.kind === "command-center";
   // Read by the refresh callback, which must not be rebuilt on every navigation:
   // adding navStack to its dependencies would restart the refresh cycle on a
@@ -1512,8 +1518,11 @@ function Content({ preflight, connection, shortcut }: { preflight: SleepPrefligh
     }
   }, [refreshDisconnect]);
 
-  const openRoute = useCallback((route: Route) => {
-    setNavStack((stack) => pushRoute(stack, route));
+  const openRoute = useCallback((destination: Route, opener?: string) => {
+    const active = statusAnchor.current?.ownerDocument.activeElement;
+    const key = opener ?? (active instanceof HTMLElement ? active.closest<HTMLElement>("[data-regear-focus]")?.dataset.regearFocus : undefined);
+    if (key) returnFocus.current.set(routeKey(destination), key);
+    setNavStack((stack) => pushRoute(stack, destination));
   }, []);
 
   // Pops one internal level. Whether Back is ours to handle at all is decided
@@ -1522,8 +1531,23 @@ function Content({ preflight, connection, shortcut }: { preflight: SleepPrefligh
   // computed inside a state updater is not reliable because React may defer or
   // replay it.
   const popRoute = useCallback(() => {
+    setPendingFocus(returnFocus.current.get(routeKey(route)) ?? null);
     setNavStack((stack) => backRoute(stack).stack);
-  }, []);
+  }, [route]);
+
+  useEffect(() => {
+    if (!pendingFocus || !quickAccessVisible) return;
+    const timer = window.setTimeout(() => {
+      const target = Array.from(statusAnchor.current?.querySelectorAll<HTMLElement>("[data-regear-focus]") ?? [])
+        .find(element => element.dataset.regearFocus === pendingFocus);
+      if (target) {
+        target.scrollIntoView({ block: "nearest", inline: "nearest" });
+        restoreQuickAccessFocus(() => target);
+      }
+      setPendingFocus(null);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [route, pendingFocus, quickAccessVisible]);
 
   // Request optional evidence once per panel opening. The dedicated route
   // controls ongoing visibility; revisiting does not create a second poller.
@@ -1552,23 +1576,21 @@ function Content({ preflight, connection, shortcut }: { preflight: SleepPrefligh
     });
   }, []);
 
-  // Only System is wired to the row in this slice; the other four targets change
-  // the selection and nothing else yet. TDP evidence lives inside TdpControls, so
-  // its readiness is not observable here and the section reads unavailable --
-  // unknown state is not a capability claim.
+  // One shared observation powers both quick controls and module configuration.
   const sections = quickAccessSections({
     mode: payload?.inference.mode,
     fresh: !loading && payload != null,
     shortcutAvailable: controllerShortcutAvailable,
     healthKnown: payload?.health != null,
+    autoTdpAvailable: performance.manual?.auto_tdp_available,
+    tdpCanEnable: performance.manual?.can_enable,
   });
   const modules = quickAccessModules(sections);
-  // Auto TDP status is not observable from here yet: it lives inside
-  // TdpControls, and lifting it is qa-performance-controls-lift. Until then the
-  // performance tiles report not-yet-observed rather than guessing a value.
+  // Manual power enablement and Auto TDP activity are separate observations.
   const tiles = commandCenterTiles({
-    performance: performanceState({ status: null, busy: disconnectBusy }),
-    displayTarget: payload ? label(payload.inference.mode) : undefined,
+    performance: performanceState({ status: performance.manual, autoStatus: performance.auto, busy: performance.busy, stopping: performance.stopping }),
+    displayTarget: !loading && snapshot?.displays.some(d => d.active === true && d.kind === "external")
+      ? "External" : !loading && snapshot?.displays.some(d => d.active === true && d.kind === "internal") ? "Handheld" : undefined,
     disconnectStatus: egpuDisconnect,
   });
   const shownTile = tiles.find((tile) => tile.id === selectedTile);
@@ -1609,13 +1631,23 @@ function Content({ preflight, connection, shortcut }: { preflight: SleepPrefligh
       <PageLayout route={route}
         modules={<PanelSection><ShellBody route={route} modules={modules}
           statusEntries={statusEntries}
-          onOpenModule={(id: ModuleId) => openRoute({ kind: "module", id })}
-          onOpenStatus={(id: StatusId) => openRoute({ kind: "status", id })}
+          onOpenModule={(id: ModuleId) => openRoute({ kind: "module", id }, `module:${id}`)}
+          onOpenStatus={(id: StatusId) => openRoute({ kind: "status", id }, `status:${id}`)}
           onOpenTroubleshoot={toggleTroubleshooting}>{null}</ShellBody></PanelSection>}
         controller={<PanelSection title="Controller"><ControllerModule presentation={controllerPresentation({ peripheral: peripheralStatus, shortcutAvailable: controllerShortcutAvailable })} /></PanelSection>}
         egpuStatus={<PanelSection title="eGPU status"><EgpuModule presentation={egpuPresentation(payload)} /></PanelSection>}
         controllerStatus={<PanelSection title="Controller status"><ControllerModule presentation={controllerPresentation({ peripheral: peripheralStatus, shortcutAvailable: controllerShortcutAvailable })} /></PanelSection>}
-        autoTdp={<TdpControls visible={quickAccessVisible && route.kind === "module" && route.id === "auto-tdp"} />}
+        autoTdp={<AutoTdpModule controller={performance} />}
+        picker={route.kind === "picker" && route.id === "tdp"
+          ? <TdpPicker status={performance.manual} busy={performance.busy} onApply={watts => void performance.apply(watts)}
+              onConfigure={() => openRoute({ kind: "module", id: "auto-tdp" })} />
+          : <DisplayPicker current={tiles.find(tile => tile.id === "display")?.value.text ?? "Unknown"}
+              action={primaryDisplayAction} onSwitch={() => {
+                if (primaryDisplayAction.disabled) return;
+                if (primaryDisplayAction.target === "ally") requestControllerDisplaySwitch("ally");
+                else if (primaryDisplayAction.target === "tv") void executeTvSwitch();
+              }} onConfigure={() => openRoute({ kind: "module", id: "egpu" })} />}
+
         commandCenter={<>
 
       <PanelSection>
@@ -1631,7 +1663,7 @@ function Content({ preflight, connection, shortcut }: { preflight: SleepPrefligh
               ? "Handheld display" : "Display unknown"}
           game={loading ? "Reading…" : label(snapshot?.game_state ?? "unknown")}
           health={healthStatusLabel(payload?.health, loading)}
-          navigation={<ModulesButton onOpen={() => openRoute({ kind: "modules" })} />}
+          navigation={<ModulesButton onOpen={() => openRoute({ kind: "modules" }, "modules")} />}
         />
         {/* Answers "what just happened to my hardware" the moment the panel
             comes back after the session restart, above everything else,
@@ -1660,15 +1692,18 @@ function Content({ preflight, connection, shortcut }: { preflight: SleepPrefligh
               });
               return;
             }
+            if (id === "auto-tdp" && tile.actionLabel === "Stop") {
+              void performance.stop();
+              return;
+            }
             if (tile.activation !== "open") return;
-            // Performance tiles route to Auto TDP; the display target routes to
-            // the eGPU module, which owns the guarded transition.
-            openRoute(id === "display"
-              ? { kind: "module", id: "egpu" }
-              : { kind: "module", id: "auto-tdp" });
+            openRoute(id === "display" || id === "tdp"
+              ? { kind: "picker", id }
+              : { kind: "module", id: "auto-tdp" }, `tile:${id}`);
           }}
         />
         <TileReason tile={shownTile} />
+        <ButtonItem layout="below" onClick={toggleTroubleshooting}>Troubleshoot</ButtonItem>
         {disconnectMessage && (
           <PanelSectionRow>{disconnectMessage}</PanelSectionRow>
         )}
@@ -1676,8 +1711,8 @@ function Content({ preflight, connection, shortcut }: { preflight: SleepPrefligh
           route={route}
           modules={modules}
           statusEntries={statusEntries}
-          onOpenModule={(id: ModuleId) => openRoute({ kind: "module", id })}
-          onOpenStatus={(id: StatusId) => openRoute({ kind: "status", id })}
+          onOpenModule={(id: ModuleId) => openRoute({ kind: "module", id }, `module:${id}`)}
+          onOpenStatus={(id: StatusId) => openRoute({ kind: "status", id }, `status:${id}`)}
         >{null}</ShellBody>
       </PanelSection>
 

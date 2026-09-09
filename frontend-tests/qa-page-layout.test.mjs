@@ -8,13 +8,15 @@ const compiled = ts.transpileModule(source, { compilerOptions: {
   module: ts.ModuleKind.ESNext, jsx: ts.JsxEmit.React, target: ts.ScriptTarget.ES2020,
 } }).outputText.replace(/^import[^;]*;$/gm, "");
 const { PageLayout } = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString("base64")}`);
-const slots = Object.fromEntries(["commandCenter", "modules", "egpu", "autoTdp", "controller", "egpuStatus", "controllerStatus", "troubleshoot"].map(key => [key, Object.freeze({ screen: key })]));
+const slots = Object.fromEntries(["commandCenter", "modules", "egpu", "autoTdp", "controller", "egpuStatus", "controllerStatus", "troubleshoot", "picker"].map(key => [key, Object.freeze({ screen: key })]));
 for (const [route, expected] of [
   [{ kind: "command-center" }, "commandCenter"], [{ kind: "modules" }, "modules"],
   [{ kind: "module", id: "egpu" }, "egpu"], [{ kind: "module", id: "auto-tdp" }, "autoTdp"],
   [{ kind: "module", id: "controller" }, "controller"],
   [{ kind: "status", id: "egpu" }, "egpuStatus"], [{ kind: "status", id: "controller" }, "controllerStatus"],
   [{ kind: "troubleshoot" }, "troubleshoot"],
+  [{ kind: "picker", id: "tdp" }, "picker"],
+  [{ kind: "picker", id: "display" }, "picker"],
 ]) test(`${JSON.stringify(route)} mounts only ${expected}`, () => {
   assert.equal(PageLayout({ ...slots, route }), slots[expected]);
 });
@@ -35,7 +37,7 @@ test("production Command Center slot contains quick controls without legacy sett
   assert.match(slot("commandCenter"), /CommandCenterGrid/);
   assert.match(slot("commandCenter"), /ModulesButton/);
   assert.doesNotMatch(slot("commandCenter"), /TdpControls|Automatic TV docking|Docking & actions|Support bundle/);
-  assert.match(slot("autoTdp"), /TdpControls/);
+  assert.match(slot("autoTdp"), /AutoTdpModule/);
   assert.match(slot("egpu"), /Automatic TV docking/);
   assert.match(slot("egpu"), /executeTvSwitch/);
   assert.match(slot("troubleshoot"), /Support bundle/);

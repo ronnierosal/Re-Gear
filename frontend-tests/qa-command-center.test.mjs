@@ -145,13 +145,13 @@ test("the confirmation is passed through untouched, not restated here", () => {
 });
 
 test("Auto TDP offers one context action, never a toggle", () => {
-  assert.equal(by(tilesFor({ status: status({ enabled: true }) }))["auto-tdp"].actionLabel, "Stop");
-  assert.equal(by(tilesFor({ status: status(), configured: true }))["auto-tdp"].actionLabel, "Start");
-  assert.equal(by(tilesFor({ status: status(), configured: false }))["auto-tdp"].actionLabel, "Open Auto TDP");
+  assert.equal(by(tilesFor({ status: status({ enabled: true }), autoStatus: { running: true } }))["auto-tdp"].actionLabel, "Stop");
+  assert.equal(by(tilesFor({ status: status(), configured: true }))["auto-tdp"].actionLabel, "Configure");
+  assert.equal(by(tilesFor({ status: status(), configured: false }))["auto-tdp"].actionLabel, "Configure");
 });
 
 test("Stop remains offered when starting is no longer permitted", () => {
-  const tile = by(tilesFor({ status: status({ enabled: true, can_enable: false }) }))["auto-tdp"];
+  const tile = by(tilesFor({ status: status({ enabled: true, can_enable: false }), autoStatus: { running: true } }))["auto-tdp"];
   assert.equal(tile.actionLabel, "Stop");
   assert.equal(tile.activation, "act");
 });
@@ -188,3 +188,10 @@ test("two-dimensional traversal reaches all five tiles including the lone fifth"
   assert.equal(stepGrid(tileIndex("auto-tdp"), count, TILE_COLUMNS, "down"), tileIndex("safe-disconnect"));
   assert.equal(stepGrid(tileIndex("display"), count, TILE_COLUMNS, "down"), tileIndex("safe-disconnect"));
 });
+
+ test("manual power enablement never claims a running Auto TDP loop", () => {
+   const tile = by(tilesFor({ status: status({ enabled: true }), autoStatus: { running: false } }))["auto-tdp"];
+   assert.equal(tile.value.text, "Off");
+   assert.equal(tile.actionLabel, "Configure");
+   assert.equal(by(tilesFor({ status: status({ enabled: true }) }))["auto-tdp"].value.text, "Unknown");
+ });

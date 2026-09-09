@@ -12,6 +12,7 @@ type Pages = {
   egpuStatus: ReactNode;
   controllerStatus: ReactNode;
   troubleshoot: ReactNode;
+  picker?: ReactNode;
 };
 
 /** Exactly one destination is mounted. Configuration never trails the grid. */
@@ -19,6 +20,7 @@ export function PageLayout(p: Pages): ReactNode {
   switch (p.route.kind) {
     case "command-center": return p.commandCenter;
     case "modules": return p.modules;
+    case "picker": return p.picker ?? null;
     case "troubleshoot": return p.troubleshoot;
     case "status": return p.route.id === "egpu" ? p.egpuStatus : p.controllerStatus;
     case "module":
@@ -42,7 +44,7 @@ export function CommandCenterHeader({ mode, display, game, health, navigation, s
     <SectionFocus ref={summaryRef} label="Command Center: current state" onFocused={onSummaryFocus}>
     <div style={{ border: "1px solid #294665", borderRadius: 12, padding: "10px 12px", background: "#0a1727", overflowWrap: "anywhere" }}>
       <div style={{ fontSize: 16, fontWeight: 700 }}>{mode}</div>
-      <div style={{ fontSize: 12, lineHeight: "18px", color: "#9eb2ca" }}>{display} · {game}</div>
+      <div style={{ fontSize: 12, lineHeight: "18px", color: "#9eb2ca" }}>{display} Â· {game}</div>
       {health !== "Ready" && <div style={{ fontSize: 12, lineHeight: "18px", color: "#ffc247" }}>{health}</div>}
     </div>
     </SectionFocus>
