@@ -6024,7 +6024,7 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
     // One shared observation powers both quick controls and module configuration.
     const sections = quickAccessSections({
         fresh: !loading && payload != null,
-        shortcutAvailable: controllerShortcutAvailable,
+        shortcutAvailable: menuShortcutAvailable,
         healthKnown: payload?.health != null,
         autoTdpAvailable: performance.manual?.auto_tdp_available,
         tdpCanEnable: performance.manual?.can_enable,
@@ -6044,7 +6044,7 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
         { id: "egpu", title: "eGPU status",
             detail: label(payload?.inference.mode ?? "unknown") },
         { id: "controller", title: "Controller status",
-            detail: controllerShortcutAvailable ? "Shortcut input available" : "Status unavailable" },
+            detail: menuShortcutAvailable ? "Menu shortcut input available" : "Menu shortcut unavailable" },
     ];
     const sectionVisibility = quickAccessSectionVisibility(showDiagnostics);
     const primaryDisplayAction = displayAction({
