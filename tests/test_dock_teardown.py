@@ -11,6 +11,7 @@ sys.path.insert(0, str(ROOT / "backend"))
 
 from hdm.domain.dock_teardown import (  # noqa: E402
     DockTeardownState,
+    TeardownApproval,
     TunnelEvidence,
     UsbBranchEvidence,
     decide_dock_teardown,
@@ -33,15 +34,25 @@ TUNNEL = TunnelEvidence(
 )
 
 
+def approval_for(usb, tunnel):
+    """The answer an operator would give having been shown exactly this reading."""
+    return TeardownApproval(
+        controller_bdf=usb.controller_bdf,
+        tunnel_sysfs_id=tunnel.sysfs_id,
+        disconnecting=tuple(usb.input_devices) + tuple(usb.other_devices),
+    )
+
+
 def decide(**over):
     request = {
         "usb": USB,
         "tunnel": TUNNEL,
         "gpu_functions_present": (),
         "gpu_scan_complete": True,
-        "approved": True,
     }
     request.update(over)
+    # An approval about this exact reading, unless the case supplies its own.
+    request.setdefault("approval", approval_for(request["usb"], request["tunnel"]))
     return decide_dock_teardown(**request)
 
 
@@ -55,13 +66,13 @@ class PermittedTests(unittest.TestCase):
     def test_approval_is_the_last_thing_checked(self) -> None:
         # An operator working a sequence learns the substantive blocker even
         # when it has not approved the step yet.
-        decision = decide(approved=False)
+        decision = decide(approval=None)
 
         self.assertIs(decision.state, DockTeardownState.APPROVAL_REQUIRED)
         self.assertFalse(decision.permitted)
 
     def test_a_substantive_refusal_outranks_a_missing_approval(self) -> None:
-        decision = decide(approved=False, gpu_functions_present=("0000:08:00.0",))
+        decision = decide(approval=None, gpu_functions_present=("0000:08:00.0",))
 
         self.assertEqual(decision.code, "dock_teardown.gpu_still_attached")
 
@@ -130,7 +141,6 @@ class MountedStorageTests(unittest.TestCase):
         # make a disconnect look possible.
         decision = decide(
             usb=replace(USB, mounted_storage=("/run/media/deck/BACKUP",)),
-            approved=True,
         )
 
         self.assertIs(decision.state, DockTeardownState.REFUSED)
@@ -198,7 +208,7 @@ class StorageInUseTests(unittest.TestCase):
 
     def test_approval_never_overrides_a_device_in_use(self) -> None:
         decision = decide(
-            usb=replace(USB, storage_in_use=("sda: in use by dm-0",)), approved=True
+            usb=replace(USB, storage_in_use=("sda: in use by dm-0",))
         )
 
         self.assertIs(decision.state, DockTeardownState.REFUSED)
@@ -326,7 +336,8 @@ class ClaimTests(unittest.TestCase):
     def test_no_code_this_function_emits_mentions_unplugging(self) -> None:
         decisions = [
             decide(),
-            decide(approved=False),
+            decide(approval=None),
+            decide(approval=approval_for(USB, replace(TUNNEL, sysfs_id="0-9"))),
             decide(gpu_scan_complete=False),
             decide(gpu_functions_present=("0000:08:00.0",)),
             decide(tunnel=replace(TUNNEL, sysfs_id="")),
@@ -351,7 +362,7 @@ class ClaimTests(unittest.TestCase):
         # without saying which fact refused it.
         codes = {
             decide().code,
-            decide(approved=False).code,
+            decide(approval=None).code,
             decide(gpu_functions_present=("0000:08:00.0",)).code,
             decide(
                 usb=replace(USB, present=False),
@@ -360,6 +371,73 @@ class ClaimTests(unittest.TestCase):
         }
 
         self.assertEqual(len(codes), 4)
+
+
+class ApprovalBindingTests(unittest.TestCase):
+    """An approval is an answer about one reading, not a standing permission.
+
+    Every substantive fact is re-read on each decision, so a stale answer can
+    never outvote one. What binding adds is that an answer cannot quietly
+    transfer to a *different* teardown that happens to also be permitted.
+    """
+
+    def test_an_answer_about_another_dock_does_not_carry_over(self) -> None:
+        # Same cable, different dock. Every fact still permits, and it is still
+        # not the teardown anybody agreed to.
+        other = replace(USB, controller_bdf="0000:0c:00.0")
+
+        decision = decide(usb=other, approval=approval_for(USB, TUNNEL))
+
+        self.assertIs(decision.state, DockTeardownState.APPROVAL_REQUIRED)
+        self.assertEqual(decision.code, "dock_teardown.approval_superseded")
+        self.assertFalse(decision.permitted)
+
+    def test_an_answer_about_another_tunnel_does_not_carry_over(self) -> None:
+        decision = decide(approval=approval_for(USB, replace(TUNNEL, sysfs_id="0-9")))
+
+        self.assertEqual(decision.code, "dock_teardown.approval_superseded")
+
+    def test_an_answer_shown_different_consequences_does_not_carry_over(self) -> None:
+        # The operator agreed knowing a keyboard would drop. A headset has
+        # since appeared on the branch, so they were shown a different list
+        # than the one that would now happen.
+        agreed = replace(USB, input_devices=("Keyboard",))
+        now = replace(USB, input_devices=("Keyboard",), other_devices=("Headset",))
+
+        decision = decide(usb=now, approval=approval_for(agreed, TUNNEL))
+
+        self.assertEqual(decision.code, "dock_teardown.approval_superseded")
+        self.assertEqual(decision.disconnecting, ("Keyboard", "Headset"))
+
+    def test_the_matching_answer_still_permits(self) -> None:
+        now = replace(USB, input_devices=("Keyboard",), other_devices=("Headset",))
+
+        decision = decide(usb=now, approval=approval_for(now, TUNNEL))
+
+        self.assertIs(decision.state, DockTeardownState.PERMITTED)
+
+    def test_never_answered_and_answered_about_something_else_are_distinct(self) -> None:
+        # Downstream must be able to tell "you have not been asked" from
+        # "things changed since you answered".
+        missing = decide(approval=None).code
+        superseded = decide(
+            approval=approval_for(USB, replace(TUNNEL, sysfs_id="0-9"))
+        ).code
+
+        self.assertNotEqual(missing, superseded)
+        self.assertEqual(missing, "dock_teardown.approval_required")
+
+    def test_a_substantive_refusal_still_outranks_a_superseded_answer(self) -> None:
+        # Binding must not reorder the refusals. A mounted filesystem is the
+        # answer, not a stale approval, because unmounting is what the player
+        # has to do either way.
+        decision = decide(
+            usb=replace(USB, mounted_storage=("/run/media/deck/BACKUP",)),
+            approval=approval_for(USB, replace(TUNNEL, sysfs_id="0-9")),
+        )
+
+        self.assertIs(decision.state, DockTeardownState.REFUSED)
+        self.assertEqual(decision.code, "dock_teardown.mounted_storage")
 
 
 if __name__ == "__main__":

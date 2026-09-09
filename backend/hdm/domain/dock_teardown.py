@@ -37,6 +37,12 @@ Hence the rules, each of which refuses on its own:
   *is* the surprise removal invariant 10 forbids -- the same operation, reached
   from software instead of from the cable. Teardown is the last step or it is
   nothing;
+- **an approval names what it approved.** A bare yes cannot say what was
+  agreed to. Every substantive fact above is re-read on each decision, so a
+  stale yes can never outvote them -- but the facts can still change into a
+  *different* permitted teardown: another dock on the same cable, or the same
+  dock with different things hanging off it. An answer given about one reading
+  is not an answer about that one, so it is asked again;
 - **the tunnel must be identified and deauthorizable before anything starts.**
   Taking the USB branch down and then discovering the tunnel cannot be brought
   down leaves the player with no dock USB, no clearance, and a recovery to
@@ -106,6 +112,40 @@ class TunnelEvidence:
     scan_complete: bool
 
 
+@dataclass(frozen=True, slots=True)
+class TeardownApproval:
+    """An operator's answer to one specific teardown, not to teardown as such.
+
+    It names the dock the answer was given about and the disconnections the
+    operator was actually shown. A later reading describing a different
+    controller, a different tunnel, or a different set of things that will drop
+    is a different question, and gets asked again rather than inheriting a yes.
+
+    Deliberately not a token or a timestamp: the point is not that the answer
+    is recent, it is that the answer is *about this*.
+    """
+
+    #: The USB controller named in the reading the operator was shown.
+    controller_bdf: str
+    #: The Thunderbolt router that same reading identified.
+    tunnel_sysfs_id: str
+    #: Exactly what the operator was told would disconnect.
+    disconnecting: tuple[str, ...] = field(default_factory=tuple)
+
+    def covers(
+        self,
+        usb: "UsbBranchEvidence",
+        tunnel: "TunnelEvidence",
+        disconnecting: tuple[str, ...],
+    ) -> bool:
+        """Whether this answer was given about the reading now in hand."""
+        return (
+            self.controller_bdf == usb.controller_bdf
+            and self.tunnel_sysfs_id == tunnel.sysfs_id
+            and tuple(self.disconnecting) == tuple(disconnecting)
+        )
+
+
 class DockTeardownState(StrEnum):
     #: The USB branch is gone and the tunnel is down. Nothing left to do.
     ALREADY_DOWN = "already_down"
@@ -141,7 +181,7 @@ def decide_dock_teardown(
     tunnel: TunnelEvidence,
     gpu_functions_present: tuple[str, ...],
     gpu_scan_complete: bool,
-    approved: bool = False,
+    approval: TeardownApproval | None = None,
 ) -> DockTeardownDecision:
     """Whether the USB branch and the tunnel may be brought down now.
 
@@ -153,6 +193,11 @@ def decide_dock_teardown(
     Approval is checked last on purpose. A caller that has not approved still
     learns which substantive fact would have blocked it, which is what an
     operator working through a sequence needs.
+
+    ``approval`` must have been given about *this* reading. Every substantive
+    fact is re-read here, so a stale answer can never outvote one; what binding
+    adds is that an answer cannot silently transfer to a different dock, or to
+    the same dock with a different set of things about to be disconnected.
     """
 
     consequences = tuple(usb.input_devices) + tuple(usb.other_devices)
@@ -245,10 +290,20 @@ def decide_dock_teardown(
                 disconnecting=consequences,
             )
 
-    if not approved:
+    if approval is None:
         return DockTeardownDecision(
             DockTeardownState.APPROVAL_REQUIRED,
             "dock_teardown.approval_required",
+            disconnecting=consequences,
+        )
+    if not approval.covers(usb, tunnel, consequences):
+        # The facts still permit a teardown -- just not the one that was agreed
+        # to. Reported apart from a missing approval so that "you never
+        # answered" and "you answered about something else" are not the same
+        # event to anything downstream.
+        return DockTeardownDecision(
+            DockTeardownState.APPROVAL_REQUIRED,
+            "dock_teardown.approval_superseded",
             disconnecting=consequences,
         )
 
