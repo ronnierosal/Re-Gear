@@ -17,18 +17,34 @@ The previous View+Y display shortcut is disabled at plugin composition so one
 chord cannot open both menus. Explicit display actions retain approval and
 confirmation. Future PR173 integration must preserve this reservation.
 
-The0.3.68 native trial demonstrated that raw keyboard-event forwarding did not
-capture controller navigation, and tiles were too large at Steam's UI scale.
-The0.3.69 candidate replaces browser buttons with Decky DialogButton and uses
-Focusable containers, preferred focus and native bumper/cancel events. It
-removes the separate raw navigation subscription; raw input only launches the
-menu. A pending display confirmation or action prevents menu opening.
+The 0.3.68 native trial showed controller navigation leaking to Steam. The
+0.3.69 trial confirms navigation now works, but shows concatenated tile text,
+oversized native dialog buttons and a non-working opening shortcut.
 
-Smaller panel containers use18px icons and compact tiles; the grid supports
-three columns from340px of content and four from500px. The native trial's
-input focus and sizing defects are not considered resolved until retested.
-The opening chord subscription remains non-exclusive and cannot promise to
-suppress a game's own chord handling.
+The current polish uses Decky's base Button with Focusable containers, explicit
+icon/label heading and separate value/detail rows. DialogButton layout classes
+are no longer applied. The footer is non-focusable controller hints, and focus
+keeps the tile dark with a cyan outline. Raw input remains launcher-only.
+
+The launcher now normalizes the documented batch callback
+`ControllerInputMessage[]` (`nC`, `nA`, `bS`) before chord handling; the old
+three-positional-argument assumption rejected native batches. The whole bounded
+batch is validated before processing. [Provider API declarations](https://jsr.io/@steamclienthomebrew/millennium/doc)
+establish the shape, but do not prove physical button codes or native delivery.
+The opening chord remains non-exclusive; actual opening needs device retest.
+
+Latest design choice: four columns at 600 or more measured content pixels,
+three at 420–599, two at 280–419, and one below 280 for the extreme fallback.
+Safe Disconnect spans two columns in four-column mode and the full row otherwise.
+Short tile copy retains an explicit no-unplug-clearance statement. No hardware
+wiring or semantics changed. This supersedes the intermediate two-column-first
+polish and pinned Safe Disconnect experiment.
+
+The same-size synthetic comparison uses a 1280×720 viewport and a measured
+678.39×590.39 panel. Both four and three columns show all controls without
+scrolling or text clipping; four is the preferred design. Native acceptance is
+still pending. The preview pass made no package or deployment. The user subsequently authorized
+a combined UI/shortcut test package; 0.3.71 is being prepared separately.
 
 ## Run the browser preview
 
@@ -42,7 +58,8 @@ node scripts/expanded_visual_preview.mjs --runtime C:/Users/SLDD/AppData/Local/T
 Open `http://127.0.0.1:4184`. In this browser prototype, Q/E represent LB/RB;
 arrow keys navigate, Enter/Space select, and Escape represents Back/Close.
 The prototype accepts `?tab=performance` (also `quick`, `egpu`, `controllers`,
-`settings`) and `&long=1` to stress unavailable-reason wrapping.
+`settings`), `&long=1` to stress unavailable-reason wrapping, and synthetic-only
+`?columns=4` / `?columns=3` for identical-dimension density comparison.
 
 To capture all five tabs at 1920×1080, 1280×720, 960×600 and a narrow 320×720
 fallback, add these options:
@@ -69,8 +86,9 @@ wraps some tab labels across lines.
 
 ## Native implementation and validation gates
 
-All items below remain **UNVERIFIED** until captured on the actual installed
-SteamOS/Decky candidate. Do not describe the prototype as native-ready.
+The user reports basic controller navigation working on 0.3.69. The complete
+checks below, including this revised styling and opening shortcut, remain open
+until captured on the actual new SteamOS/Decky candidate.
 
 1. Open a custom expanded view from Re-Gear without resizing Steam's global
    Quick Access panel. Confirm positioning and scaling at the handheld's actual
@@ -97,3 +115,23 @@ demo. A separately prepared and supervised candidate is required for installatio
 
 Documentation impact: Wiki (native test launcher and configurable menu shortcut;
 installed and hardware-validated status must be reported separately).
+
+## Latest verification evidence
+
+`out/density-preview/report.json` records 25 viewport/tab cases, 50 standard and
+stress screenshots plus two identical-dimension comparison screenshots, no
+failures. Checks include separate tile rows, dark focus, a footer below 52px
+without buttons, responsive columns, clipping and keyboard navigation. The
+comparison files are `comparison-4-columns.png` and `comparison-3-columns.png`.
+These are browser previews, not after-deployment screenshots. The user's 0.3.69
+photo remains the native before evidence. Native after evidence is outstanding.
+
+## 0.3.71 test candidate
+
+Includes the denser native UI polish and batch-form Steam input callback repair.
+Default opening shortcut remains View / Back + Y; L3 + R3 is selectable in
+Settings > Open Re-Gear. Test opening after releasing both buttons completely,
+then LB/RB tabs, D-pad, A and B. Inspect dark focus, label separation, the Settings
+label and footer at native scale. Physical shortcut mapping and revised native
+appearance remain unverified until that trial. Expanded hardware tiles remain
+sample-only. The one-time identity rename is not included.

@@ -20,16 +20,18 @@ function Icon({ id }: { id: string }) {
   </svg>;
 }
 
-/** Developer-only browser prototype. Intentionally not imported by the plugin. */
-export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReasons = false, settings, native = false, primitives }: {
+/** Shared synthetic presentation for browser preview and native Decky shell. */
+export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReasons = false, settings, native = false, primitives, previewColumns }: {
   onClose(): void; initialTab?: Tab; longReasons?: boolean; settings?: ReactNode; native?: boolean;
   primitives?: { Button: ElementType; Focusable: ElementType };
+  /** Synthetic comparison only; native callers never pass this. */
+  previewColumns?: 3 | 4;
 }) {
   const Button = primitives?.Button ?? "button";
   const Container = primitives?.Focusable ?? "div";
   const [tab, setTab] = useState<Tab>(initialTab);
   const [nested, setNested] = useState<Tile | null>(null);
-  const [columns, setColumns] = useState(4);
+  const [columns, setColumns] = useState<number>(previewColumns ?? 4);
   const panel = useRef<HTMLDivElement>(null);
   const content = useRef<HTMLDivElement>(null);
   const memory = useRef<Partial<Record<Tab, string>>>({});
@@ -50,7 +52,7 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
   }, []);
   useLayoutEffect(() => {
     if (!content.current) return;
-    const observer = new ResizeObserver(entries => setColumns(columnsForWidth(entries[0].contentRect.width)));
+    const observer = new ResizeObserver(entries => setColumns(previewColumns ?? columnsForWidth(entries[0].contentRect.width)));
     observer.observe(content.current);
     return () => observer.disconnect();
   }, []);
@@ -66,6 +68,7 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
   }
   const nativeHandlers = native ? {
     "flow-children": "vertical",
+    noFocusRing: true,
     onCancelButton: (event: CustomEvent) => { event.preventDefault(); event.stopPropagation(); back(); },
     onButtonDown: (event: CustomEvent<{ button: number; is_repeat?: boolean }>) => {
       // Steam UI GamepadButton enum (5/6), not raw controller callback codes.
@@ -112,8 +115,7 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
       }
       else {
         const next = moveInGrid(cells, target.dataset.ecControl, direction);
-        if (direction === "down" && next === target.dataset.ecControl) panel.current?.querySelector<HTMLButtonElement>("footer button")?.focus();
-        else focus(next);
+        focus(next);
       }
     } else {
       event.preventDefault(); event.stopPropagation();
@@ -124,15 +126,25 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
     }
   }
 
+  const renderTile = (item: Tile) => <Button type="button" key={item.id} data-ec-control={item.id} data-tone={item.tone ?? "quiet"} className="rg-expanded-tile"
+              {...(native ? { preferredFocus: item.id === restoreTarget(items.map(tile => tile.id), memory.current[tab]), onGamepadFocus: () => { memory.current[tab] = item.id; } } : {})}
+              style={{ gridColumn: item.wide ? (gridColumns === 4 ? "span 2" : "1 / -1") : undefined }}
+              aria-label={`${item.title}: ${item.value}. ${item.detail}. Sample data. View details.`}
+              onFocus={() => { memory.current[tab] = item.id; }} onClick={() => { launcher.current = item.id; setNested(item); }}>
+              <span className="rg-expanded-tile-body"><span className="rg-expanded-tile-heading"><Icon id={item.id}/><span className="rg-expanded-label">{item.title}</span></span>
+              <span className="rg-expanded-value">{item.tone === "warning" ? "⚠ " : ""}{item.value}</span>
+              <span className="rg-expanded-detail">{item.detail}{longReasons && item.tone === "unavailable" ? " — Provider observations are unavailable in this synthetic preview. No capability or successful operation can be inferred from the displayed sample." : ""}</span></span>
+            </Button>;
+
   return <div className="rg-expanded-backdrop">
     <style>{expandedStyles}</style>
     <Container ref={panel} data-ec-panel className="rg-expanded" role="dialog" aria-modal="true" aria-label="Re-Gear expanded Command Center prototype" onKeyDown={onKeyDown} {...nativeHandlers}
       onFocus={(event: { target: EventTarget }) => { const id = (event.target as HTMLElement).dataset.ecControl; if (id && !nested) memory.current[tab] = id; }}>
       <header className="rg-expanded-brand"><span>Re-Gear</span><span className="rg-expanded-demo">Demo · Sample data<br/>Hardware controls not connected</span></header>
-      <Container className="rg-expanded-tabs" role="tablist" aria-label="Command Center sections" {...(native ? { "flow-children": "horizontal" } : {})}>
+      <Container className="rg-expanded-tabs" role="tablist" aria-label="Command Center sections" {...(native ? { "flow-children": "horizontal", noFocusRing: true } : {})}>
         {tabs.map(id => <Button key={id} id={`ec-tab-${id}`} type="button" role="tab" aria-selected={tab === id} aria-controls="ec-tabpanel" data-ec-tab={id} className="rg-expanded-tab"
           onClick={() => { setNested(null); setTab(id); if (id === tab) focus(restoreTarget(controlIds(), memory.current[tab])); }}>
-          <Icon id={id}/><span>{tabLabels[id]}</span>
+          <span className="rg-expanded-tab-body"><Icon id={id}/><span>{tabLabels[id]}</span></span>
         </Button>)}
       </Container>
       <div ref={content} className="rg-expanded-content" id="ec-tabpanel" role="tabpanel" aria-labelledby={`ec-tab-${tab}`}>
@@ -148,25 +160,17 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
         </section> : <>
           {tab === "settings" && settings}
           {tab === "performance" && <p className="rg-expanded-context">Manual limit: 18 W · Auto TDP: Off / not configured · FPS provider: unavailable. All values are samples.</p>}
-          <Container className="rg-expanded-grid" style={{ "--ec-columns": gridColumns } as CSSProperties} {...(native ? { "flow-children": "grid", preferredFocus: true } : {})}>
-            {items.map(item => <Button type="button" key={item.id} data-ec-control={item.id} data-tone={item.tone ?? "quiet"} className="rg-expanded-tile"
-              {...(native ? { preferredFocus: item.id === restoreTarget(items.map(tile => tile.id), memory.current[tab]), onGamepadFocus: () => { memory.current[tab] = item.id; } } : {})}
-              style={{ gridColumn: item.wide && columns >= 3 ? "span 2" : undefined }}
-              aria-label={`${item.title}: ${item.value}. ${item.detail}. Sample data. View details.`}
-              onFocus={() => { memory.current[tab] = item.id; }} onClick={() => { launcher.current = item.id; setNested(item); }}>
-              <Icon id={item.id}/><span className="rg-expanded-label">{item.title}</span>
-              <span className="rg-expanded-value">{item.tone === "warning" ? "⚠ " : ""}{item.value}</span>
-              <span className="rg-expanded-detail">{item.detail}{longReasons && item.tone === "unavailable" ? " — Provider observations are unavailable in this synthetic preview. No capability or successful operation can be inferred from the displayed sample." : ""}</span>
-            </Button>)}
+          <Container className="rg-expanded-grid" style={{ "--ec-columns": gridColumns } as CSSProperties} {...(native ? { "flow-children": "grid", preferredFocus: true, noFocusRing: true } : {})}>
+            {items.map(renderTile)}
           </Container>
-          <div className="rg-expanded-summary">Sample scenario · eGPU connected · external controller active<br/>Connection status does not establish rendering or disconnect readiness.</div>
+          {tab !== "quick" && <div className="rg-expanded-summary">Sample data only. Connection status does not establish rendering or disconnect readiness.</div>}
         </>}
       </div>
       <footer className="rg-expanded-footer" data-ec-footer>
-        <Button type="button" aria-label="Previous tab (LB equivalent, Q)" onClick={() => switchTab(-1)}>LB</Button>
-        <Button type="button" aria-label="Next tab (RB equivalent, E)" onClick={() => switchTab(1)}>RB</Button>
-        <span>{native ? "Switch tab" : "Switch tab · Q / E"}</span><span>{native ? "D-pad Navigate · A Select" : "Arrows Navigate · Enter Select"}</span>
-        <Button type="button" onClick={back}>B {nested ? "Back" : "Close"}{native ? "" : " · Esc"}</Button>
+        <span><kbd>LB</kbd><kbd>RB</kbd> Tabs</span>
+        <span><b aria-hidden="true">✚</b> Navigate</span>
+        <span><kbd>A</kbd> Select</span>
+        <span><kbd>B</kbd> {nested ? "Back" : "Close"}</span>
       </footer>
     </Container>
   </div>;

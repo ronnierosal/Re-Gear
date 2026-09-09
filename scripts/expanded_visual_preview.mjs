@@ -59,9 +59,43 @@ if (args.includes('--playwright')) {
       report.captures.push({width,height,tab,...layout,errors});
       report.failures.push(...failures.map(f=>`${width}/${tab}: ${f}`));
       await page.goto(`${url}/?tab=${tab}`); await page.locator('[data-ec-panel]').waitFor();
+      const polish = await page.evaluate(() => {
+        const panel=document.querySelector('[data-ec-panel]'), footer=panel.querySelector('footer');
+        const grid=panel.querySelector('.rg-expanded-grid'), safe=panel.querySelector('.rg-expanded-pinned');
+        const overlap=[...panel.querySelectorAll('.rg-expanded-tile-body')].some(body => {
+          const rows=[...body.children].map(e=>e.getBoundingClientRect());
+          return rows.some((r,i)=>i>0 && r.top<rows[i-1].bottom-1);
+        });
+        const rgb=getComputedStyle(document.activeElement).backgroundColor.match(/\d+/g)?.slice(0,3).map(Number)??[];
+        return {overlap, brightFocus:rgb.length===3&&rgb.every(v=>v>200), footerButtons:footer.querySelectorAll('button').length,
+          footerHeight:footer.getBoundingClientRect().height,
+          columns:grid?getComputedStyle(grid).gridTemplateColumns.split(' ').length:0,
+          safeVisible:!safe||(safe.getBoundingClientRect().top>=panel.getBoundingClientRect().top&&safe.getBoundingClientRect().bottom<=footer.getBoundingClientRect().top+1)};
+      });
+      if(polish.overlap||polish.brightFocus||polish.footerButtons||polish.footerHeight>52||!polish.safeVisible)
+        report.failures.push(`${width}/${tab}: polish regression ${JSON.stringify(polish)}`);
+      if(tab==='quick' && [1280,960,854].includes(width) && polish.columns!==(width===1280?4:3))
+        report.failures.push(`${width}: responsive grid density mismatch`);
       await page.screenshot({path:join(output,`${tab}-${width}.png`)});
       await page.close();
     }
+  }
+  report.comparisons=[];
+  for(const columns of [4,3]) {
+    const comparison=await browser.newPage({viewport:{width:1280,height:720},deviceScaleFactor:1});
+    await comparison.goto(`${url}/?columns=${columns}`);
+    await comparison.locator('[data-ec-panel]').waitFor();
+    const geometry=await comparison.evaluate(()=>{
+      const box=e=>{const r=e.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height,bottom:r.bottom};};
+      const panel=document.querySelector('[data-ec-panel]'),content=panel.querySelector('.rg-expanded-content');
+      return {panel:box(panel),content:box(content),tiles:[...panel.querySelectorAll('[data-ec-control]')].map(e=>({id:e.dataset.ecControl,...box(e)})),
+        clipped:[...panel.querySelectorAll('button,span')].filter(e=>e.clientWidth>0&&e.scrollWidth>e.clientWidth+1).map(e=>e.textContent)};
+    });
+    if(geometry.clipped.length)report.failures.push(`Comparison ${columns}: clipped ${geometry.clipped.join(' | ')}`);
+    if(geometry.tiles.some(t=>t.bottom>geometry.content.bottom+1))report.failures.push(`Comparison ${columns}: Quick Access requires scroll`);
+    report.comparisons.push({columns,...geometry});
+    await comparison.screenshot({path:join(output,`comparison-${columns}-columns.png`)});
+    await comparison.close();
   }
   const page=await browser.newPage({viewport:{width:1280,height:720}});
   await page.goto(url); await page.locator('[data-ec-panel]').waitFor();

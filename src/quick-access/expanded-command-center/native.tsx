@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { DialogButton, Focusable, ModalRoot, showModal } from "@decky/ui";
+import { Button, Focusable, ModalRoot, showModal } from "@decky/ui";
 import type { ControllerInputSource } from "../../controller-safe-disconnect";
 import { loadMenuBinding, saveMenuBinding, menuBindingOptions, startMenuShortcut } from "../../menu-shortcut";
 import type { MenuBinding } from "../../menu-shortcut";
@@ -20,7 +20,7 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
   };
   function View({ token }: { token: number }) {
     useEffect(() => () => { if (generation === token) { modal = null; generation++; } }, [token]);
-    return <ExpandedCommandCenter onClose={close} native primitives={{ Button: DialogButton, Focusable }} settings={<Settings/>}/>;
+    return <ExpandedCommandCenter onClose={close} native primitives={{ Button: Button, Focusable }} settings={<Settings/>}/>;
   }
   function Settings() {
     const [selected, setSelected] = useState(binding);
@@ -32,8 +32,8 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
     return <section className="rg-expanded-detail-page" style={{ marginBottom: 14 }}>
       <h3>Open Re-Gear</h3><p>Menu shortcut · saved on this Steam client</p>
       <Focusable flow-children="horizontal" style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-        {menuBindingOptions.map(option => <DialogButton className="rg-expanded-back" key={option.data} data-ec-control={`binding-${option.data}`} aria-pressed={selected === option.data}
-          onClick={() => change(option.data)}>{selected === option.data ? "✓ " : ""}{option.label}</DialogButton>)}
+        {menuBindingOptions.map(option => <Button className="rg-expanded-back" key={option.data} data-ec-control={`binding-${option.data}`} aria-pressed={selected === option.data}
+          onClick={() => change(option.data)}>{selected === option.data ? "✓ " : ""}{option.label}</Button>)}
       </Focusable>
       <p>{shortcut.available ? "Press both buttons together. Release both before opening again." : "Controller input is unavailable. Use the Open expanded demo button in Quick Access."}</p>
       <p>Steam or the game may also respond to these buttons. Native button delivery is under validation.</p>

@@ -128,6 +128,42 @@ function startMenuShortcut(deps) {
         }
         catch { /* Never retry uncertain menu delivery until release. */ }
     };
+    const onMessages = (...args) => {
+        if (!active)
+            return;
+        // Steam delivers ControllerInputMessage[] ({nC, nA, bS}); the positional
+        // form is retained for older adapters and existing isolated test fixtures.
+        // Validate and copy the WHOLE batch before any row can open the menu.
+        const rows = [];
+        try {
+            const batch = args.length === 1 && Array.isArray(args[0]) ? args[0]
+                : args.length === 3 ? [{ nC: args[0], nA: args[1], bS: args[2] }] : null;
+            if (!batch || batch.length > 128) {
+                reset();
+                return;
+            }
+            for (const row of batch) {
+                if (!row || typeof row !== "object" || Array.isArray(row)) {
+                    reset();
+                    return;
+                }
+                const { nC, nA, bS } = row;
+                if (typeof nC !== "number" || !Number.isInteger(nC) || nC < 0 || nC > 255
+                    || typeof nA !== "number" || !Number.isInteger(nA) || nA < 0 || nA > 255
+                    || typeof bS !== "boolean") {
+                    reset();
+                    return;
+                }
+                rows.push([nC, nA, bS]);
+            }
+        }
+        catch {
+            reset();
+            return;
+        }
+        for (const row of rows)
+            onInput(...row);
+    };
     try {
         const input = deps.input;
         if (typeof input?.RegisterForControllerInputMessages !== "function") {
@@ -142,7 +178,7 @@ function startMenuShortcut(deps) {
         }
         if (!registrations.length)
             return { available: false, reset, stop };
-        registrations.push(() => input.RegisterForControllerInputMessages(onInput));
+        registrations.push(() => input.RegisterForControllerInputMessages(onMessages));
         for (const register of registrations) {
             const subscription = register();
             if (typeof subscription?.unregister !== "function") {
@@ -180,11 +216,11 @@ const sampleTiles = {
     quick: [
         { id: "fps", title: "FPS Target", value: "Unavailable", detail: "No provider", tone: "unavailable" },
         { id: "manual", title: "Manual TDP", value: "18 W", detail: "Current limit", tone: "active" },
-        { id: "auto", title: "Auto TDP", value: "Off", detail: "Configure to start" },
-        { id: "display", title: "Display Target", value: "1080p · 60 Hz", detail: "Internal display", tone: "active" },
-        { id: "egpu", title: "eGPU Status", value: "Connected", detail: "RX 7600M XT" },
-        { id: "controller", title: "Controller Status", value: "External (P1)", detail: "Built-in controller off" },
-        { id: "disconnect", title: "Safe Disconnect", value: "Readiness check required", detail: "Review games and apps using the eGPU. No unplug clearance.", tone: "warning", wide: true },
+        { id: "auto", title: "Auto TDP", value: "Off", detail: "Configure" },
+        { id: "display", title: "Display", value: "1080p · 60Hz", detail: "Internal", tone: "active" },
+        { id: "egpu", title: "eGPU", value: "Connected", detail: "RX 7600M XT" },
+        { id: "controller", title: "Controller", value: "External (P1)", detail: "Built-in off" },
+        { id: "disconnect", title: "Safe Disconnect", value: "Readiness check required", detail: "Review apps using the eGPU. No unplug clearance.", tone: "warning", wide: true },
     ],
     performance: [
         { id: "manual", title: "Manual TDP", value: "18 W", detail: "View limit configuration", tone: "active" },
@@ -214,7 +250,7 @@ function nextTab(tab, direction) {
     return tabs[(tabs.indexOf(tab) + direction + tabs.length) % tabs.length];
 }
 function columnsForWidth(width) {
-    return width >= 500 ? 4 : width >= 340 ? 3 : width >= 250 ? 2 : 1;
+    return width >= 600 ? 4 : width >= 420 ? 3 : width >= 280 ? 2 : 1;
 }
 function restoreTarget(ids, remembered) {
     return ids.includes(remembered ?? "") ? remembered : ids[0];
@@ -223,7 +259,7 @@ function restoreTarget(ids, remembered) {
 function gridCells(tiles, columns) {
     let row = 0, column = 0;
     return tiles.map(tile => {
-        const span = tile.wide && columns >= 3 ? 2 : 1;
+        const span = tile.wide ? (columns === 4 ? 2 : columns) : 1;
         if (column + span > columns) {
             row++;
             column = 0;
@@ -252,50 +288,61 @@ function moveInGrid(cells, id, direction) {
     return candidates[0]?.id ?? current.id;
 }
 
-/** Scoped prototype styling. Never targets Steam or Decky containers. */
+/** Scoped layout: native base buttons retain focus behavior, without Dialog styling. */
 const expandedStyles = `
 .rg-expanded-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.44);z-index:10;display:flex;align-items:center;padding-left:2vw;color:#f4f7fb;font-family:Arial,sans-serif}
-.rg-expanded{box-sizing:border-box;width:53vw;height:82vh;display:flex;flex-direction:column;min-width:0;border:1px solid #496379;border-radius:18px;background:linear-gradient(145deg,rgba(17,36,52,.98),rgba(5,17,27,.98));box-shadow:0 16px 60px #0008;overflow:hidden;font-size:15px}
+.rg-expanded{box-sizing:border-box;width:53vw;height:82vh;display:flex;flex-direction:column;min-width:0;border:1px solid #496379;border-radius:14px;background:linear-gradient(145deg,#112434fa,#05111bfa);box-shadow:0 16px 60px #0008;overflow:hidden;font-size:15px;container:rg-menu / inline-size}
 .rg-expanded *{box-sizing:border-box}
-.rg-expanded{container-type:inline-size;container-name:rg-menu}
-.rg-expanded button,.rg-expanded [role=button]{min-width:0;width:auto;margin:0;line-height:1.3}
-.rg-expanded .gpfocus,.rg-expanded .gpfocuswithin,.rg-expanded button:focus{outline:2px solid #83e8ff;outline-offset:-3px}
-.rg-expanded button{font:inherit;color:inherit;cursor:pointer}
-.rg-expanded button:focus-visible{outline:3px solid #83e8ff;outline-offset:-4px;box-shadow:inset 0 0 18px #39d8ff25}
-.rg-expanded-brand{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:15px 22px 12px;font-size:22px;font-weight:700}
-.rg-expanded-demo{font-size:12px;color:#b5c9dd;font-weight:400;text-align:right}
-.rg-expanded-tabs{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));margin:0 14px;border:1px solid #294665;border-radius:12px;overflow:hidden;flex-shrink:0}
-.rg-expanded-tab{min-width:0;min-height:74px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;padding:8px 2px;border:0;border-bottom:4px solid transparent;background:#0a1725;font-size:13px!important;overflow-wrap:anywhere}
-.rg-expanded-tab[aria-selected=true]{border-bottom-color:#39d8ff;background:#153446;color:#55ddff}
-.rg-expanded-content{min-height:0;overflow-y:auto;overflow-x:hidden;flex:1;padding:18px 22px;scrollbar-color:#527087 #0a1725;scrollbar-width:thin}
-.rg-expanded h2{margin:0 0 5px;font-size:25px}.rg-expanded h3{margin:0;font-size:18px}
-.rg-expanded-context{margin:0 0 17px;color:#b1c9df;font-size:14px;line-height:1.45}
-.rg-expanded-grid{display:grid;grid-template-columns:repeat(var(--ec-columns),minmax(0,1fr));gap:12px}
-.rg-expanded-tile{background:linear-gradient(130deg,#1c3343,#102331);border:1px solid #365569;border-radius:13px;min-width:0;min-height:132px;padding:16px;display:flex;flex-direction:column;align-items:flex-start;justify-content:flex-start;gap:9px;text-align:left;overflow-wrap:anywhere}
-.rg-expanded-tile svg{flex-shrink:0}
-.rg-expanded-label{font-size:15px;font-weight:700}.rg-expanded-value{font-size:20px;font-weight:700;line-height:1.2}.rg-expanded-detail{font-size:13px;line-height:1.45;color:#b1c9df}
-.rg-expanded-tile[data-tone=active] .rg-expanded-value{color:#51dfff}
-.rg-expanded-tile[data-tone=warning] .rg-expanded-value{color:#ffca62;font-size:18px}
-.rg-expanded-tile[data-tone=unavailable]{background:#1a2935}.rg-expanded-tile[data-tone=unavailable] .rg-expanded-value{color:#b9c4cf}
-.rg-expanded-summary{border-top:1px solid #294665;margin-top:16px;padding-top:12px;color:#b1c9df;font-size:13px;line-height:1.5}
-.rg-expanded-footer{display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px;border-top:1px solid #294665;padding:12px 18px;flex-shrink:0;background:#071522;font-size:12px}
-.rg-expanded-footer button,.rg-expanded-back{border:1px solid #4c6a81;border-radius:7px;background:#162e40;padding:7px 10px;min-height:36px}
-.rg-expanded-footer span{color:#b1c9df}
-.rg-expanded-detail-page{padding:18px;border:1px solid #365569;border-radius:12px;background:#102331;line-height:1.6;overflow-wrap:anywhere}.rg-expanded-detail-page p{color:#b1c9df}.rg-expanded-detail-page strong{color:#f4f7fb}
-@media(max-width:1100px){.rg-expanded-brand{padding:10px 16px;font-size:19px}.rg-expanded-content{padding:14px}.rg-expanded-tabs{margin:0 10px}.rg-expanded-tab{font-size:12px!important;min-height:64px}.rg-expanded-tile{padding:12px;gap:7px}.rg-expanded h2{font-size:22px}.rg-expanded-value{font-size:18px}}
-@media(max-height:800px) and (min-width:801px){.rg-expanded-brand{padding:10px 16px;font-size:19px}.rg-expanded-tab{min-height:60px;padding:5px 2px;font-size:12px!important}.rg-expanded-tab svg{width:26px;height:26px}.rg-expanded-content{padding:12px 16px}.rg-expanded h2{font-size:22px}.rg-expanded-context{margin-bottom:10px;font-size:13px}.rg-expanded-tile{padding:10px;gap:5px;min-height:132px}.rg-expanded-tile svg{width:26px;height:26px}.rg-expanded-label{font-size:14px}.rg-expanded-value{font-size:18px}.rg-expanded-detail{font-size:12px}.rg-expanded-summary{margin-top:8px;padding-top:8px;font-size:12px}.rg-expanded-footer{padding:9px 14px;gap:8px}}
-@media(max-width:800px){.rg-expanded-backdrop{padding-left:3vw}.rg-expanded{width:94vw;height:90vh}.rg-expanded-brand{font-size:18px}.rg-expanded-footer{gap:6px;padding:8px}.rg-expanded-tab{font-size:11px!important}.rg-expanded-label{font-size:14px}.rg-expanded-content{padding:12px}}
-@media(prefers-reduced-motion:no-preference){.rg-expanded-tab{transition:background .12s}}
-@container rg-menu (max-width:600px){
- .rg-expanded-brand{padding:7px 12px;font-size:17px}.rg-expanded-demo{font-size:10px}
- .rg-expanded-tabs{margin:0 8px}.rg-expanded-tab{min-height:46px;padding:4px 1px;font-size:10px!important;gap:3px}
- .rg-expanded-tab svg{width:18px;height:18px}
- .rg-expanded-content{padding:10px}.rg-expanded h2{font-size:18px}.rg-expanded-context{font-size:11px;margin-bottom:8px}
- .rg-expanded-grid{gap:7px}.rg-expanded-tile{min-height:98px;padding:8px;gap:4px}
- .rg-expanded-tile svg{width:18px;height:18px}.rg-expanded-label{font-size:12px}.rg-expanded-value{font-size:15px}.rg-expanded-detail{font-size:11px}
- .rg-expanded-tile[data-tone=warning] .rg-expanded-value{font-size:14px}.rg-expanded-summary{font-size:11px;margin-top:7px;padding-top:7px}
- .rg-expanded-footer{padding:6px 9px;gap:5px 8px;font-size:10px}.rg-expanded-footer button{min-height:28px;padding:4px 7px}
+.rg-expanded button{font:inherit;color:inherit;cursor:pointer;line-height:1.3;white-space:normal;text-transform:none;letter-spacing:normal}
+.rg-expanded-brand{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 16px;font-size:26px;font-weight:700;flex-shrink:0}
+.rg-expanded-demo{font-size:11px;line-height:1.3;color:#a9bdce;font-weight:400;text-align:right}
+.rg-expanded .rg-expanded-tabs{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:0;margin:0 12px;border-bottom:1px solid #294665;flex-shrink:0;min-width:0}
+.rg-expanded .rg-expanded-tab{width:100%;min-width:0;max-width:100%;height:52px;min-height:0;margin:0;padding:4px 1px;display:block;border:0;border-bottom:2px solid transparent;border-radius:0;background:transparent;font-size:12px;box-shadow:none}
+.rg-expanded .rg-expanded-tab-body{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;width:100%;white-space:nowrap}
+.rg-expanded .rg-expanded-tab svg{width:20px;height:20px;flex-shrink:0}
+.rg-expanded .rg-expanded-tab[aria-selected=true]{border-bottom-color:#39d8ff;color:#55ddff}
+.rg-expanded-content{min-height:0;overflow-y:auto;overflow-x:hidden;flex:1;padding:10px 14px;scrollbar-color:#527087 #0a1725;scrollbar-width:thin}
+.rg-expanded h2{margin:0 0 3px;font-size:24px;line-height:1.2}.rg-expanded h3{margin:0;font-size:18px}
+.rg-expanded-context{margin:0 0 8px;color:#b1c9df;font-size:13px;line-height:1.35}
+.rg-expanded .rg-expanded-grid{display:grid;grid-template-columns:repeat(var(--ec-columns),minmax(0,1fr));gap:10px;min-width:0}
+.rg-expanded .rg-expanded-tile{width:100%;max-width:100%;min-width:0;height:auto;min-height:104px;margin:0;padding:12px;display:block;background:#102331;border:1px solid #365569;border-radius:11px;box-shadow:none;text-align:left;word-break:normal;overflow-wrap:normal}
+.rg-expanded .rg-expanded-tile-body{display:flex;flex-direction:column;align-items:flex-start;gap:5px;width:100%;min-width:0;text-align:left}
+.rg-expanded .rg-expanded-tile-heading{display:flex;align-items:center;gap:7px;width:100%;min-width:0}
+.rg-expanded .rg-expanded-tile-heading svg{width:20px;height:20px;flex:0 0 20px}
+.rg-expanded .rg-expanded-label{font-size:14px;font-weight:600;line-height:1.2}
+.rg-expanded .rg-expanded-value{display:block;font-size:22px;font-weight:700;line-height:1.15;white-space:normal;word-break:normal;overflow-wrap:normal}
+.rg-expanded .rg-expanded-detail{display:block;font-size:12px;line-height:1.3;color:#b1c9df;white-space:normal;word-break:normal;overflow-wrap:normal}
+.rg-expanded .rg-expanded-tile[data-tone=active] .rg-expanded-value{color:#51dfff}
+.rg-expanded .rg-expanded-tile[data-tone=warning]{min-height:88px}
+.rg-expanded .rg-expanded-tile[data-tone=warning] .rg-expanded-value{color:#ffca62;font-size:18px}
+.rg-expanded .rg-expanded-tile[data-tone=unavailable]{background:#142530}
+.rg-expanded .rg-expanded-tile[data-tone=unavailable] .rg-expanded-value{color:#b9c4cf}
+.rg-expanded button.gpfocus,.rg-expanded button:focus,.rg-expanded button:focus-visible{outline:2px solid #55ddff!important;outline-offset:-2px;color:#f4f7fb!important;background:#143044!important;box-shadow:0 0 9px #39d8ff35!important}
+.rg-expanded-summary{margin-top:10px;color:#a9bdce;font-size:12px;line-height:1.35}
+.rg-expanded-footer{display:flex;flex-wrap:nowrap;align-items:center;justify-content:space-between;gap:7px;border-top:1px solid #294665;padding:8px 12px;min-height:40px;flex-shrink:0;background:#071522;font-size:12px;white-space:nowrap}
+.rg-expanded-footer>span{display:inline-flex;align-items:center;gap:4px;color:#b1c9df}
+.rg-expanded kbd{font:600 11px Arial,sans-serif;border:1px solid #567082;border-radius:4px;padding:2px 4px;color:#e8f3fb;background:#182e3b}
+.rg-expanded .rg-expanded-back{width:auto;min-width:0;margin:0;border:1px solid #4c6a81;border-radius:7px;background:#162e40;padding:7px 10px;min-height:32px}
+.rg-expanded-detail-page{padding:12px;border:1px solid #365569;border-radius:11px;background:#102331;line-height:1.5;word-break:normal;overflow-wrap:normal}.rg-expanded-detail-page p{color:#b1c9df}
+@container rg-menu (max-width:699px){
+ .rg-expanded-brand{padding:7px 12px;font-size:22px}.rg-expanded-demo{font-size:10px}
+ .rg-expanded .rg-expanded-tabs{margin:0 8px}.rg-expanded .rg-expanded-tab{height:48px;font-size:11px}
+ .rg-expanded-content{padding:8px 10px}.rg-expanded h2{font-size:22px}.rg-expanded-context{font-size:12px;margin-bottom:7px}
+ .rg-expanded .rg-expanded-grid{gap:8px}.rg-expanded .rg-expanded-tile{min-height:96px;padding:10px}
+ .rg-expanded .rg-expanded-tile[data-tone=warning]{min-height:76px}
+ .rg-expanded .rg-expanded-value{font-size:20px}.rg-expanded .rg-expanded-label{font-size:13px}
+ .rg-expanded .rg-expanded-tile-body{gap:4px}.rg-expanded .rg-expanded-tile-heading{gap:6px}
+ .rg-expanded .rg-expanded-tile-heading svg{width:18px;height:18px;flex-basis:18px}
+ .rg-expanded-footer{min-height:36px;padding:6px 10px;font-size:11px;gap:5px}
 }
+@container rg-menu (max-width:470px){
+ .rg-expanded .rg-expanded-tab{font-size:10px;height:44px}.rg-expanded .rg-expanded-tab svg{width:18px;height:18px}
+ .rg-expanded-brand{font-size:20px}.rg-expanded-demo{font-size:9px}
+ .rg-expanded .rg-expanded-value{font-size:18px}.rg-expanded .rg-expanded-label{font-size:12px}.rg-expanded .rg-expanded-detail{font-size:11px}
+ .rg-expanded-footer{font-size:10px;padding:6px;gap:3px}.rg-expanded kbd{font-size:10px;padding:1px 3px}
+}
+@media(max-width:600px){.rg-expanded-backdrop{padding-left:3vw}.rg-expanded{width:94vw;height:90vh}}
+@media(prefers-reduced-motion:no-preference){.rg-expanded-tab{transition:border-color .12s}}
 `;
 
 function Icon({ id }) {
@@ -314,13 +361,13 @@ function Icon({ id }) {
                     : id === "disconnect" ? SP_JSX.jsx("path", { d: "M11 3v8m10-8v8M8 11h16v5a8 8 0 0 1-16 0Zm8 13v6" })
                         : SP_JSX.jsxs(SP_JSX.Fragment, { children: [SP_JSX.jsx("circle", { cx: "16", cy: "16", r: "8" }), SP_JSX.jsx("circle", { cx: "16", cy: "16", r: "3" }), SP_JSX.jsx("path", { d: "M16 2v6m0 16v6M2 16h6m16 0h6M6 6l5 5m10 10 5 5M26 6l-5 5M11 21l-5 5" })] }) });
 }
-/** Developer-only browser prototype. Intentionally not imported by the plugin. */
-function ExpandedCommandCenter({ onClose, initialTab = "quick", longReasons = false, settings, native = false, primitives }) {
+/** Shared synthetic presentation for browser preview and native Decky shell. */
+function ExpandedCommandCenter({ onClose, initialTab = "quick", longReasons = false, settings, native = false, primitives, previewColumns }) {
     const Button = primitives?.Button ?? "button";
     const Container = primitives?.Focusable ?? "div";
     const [tab, setTab] = SP_REACT.useState(initialTab);
     const [nested, setNested] = SP_REACT.useState(null);
-    const [columns, setColumns] = SP_REACT.useState(4);
+    const [columns, setColumns] = SP_REACT.useState(previewColumns ?? 4);
     const panel = SP_REACT.useRef(null);
     const content = SP_REACT.useRef(null);
     const memory = SP_REACT.useRef({});
@@ -343,7 +390,7 @@ function ExpandedCommandCenter({ onClose, initialTab = "quick", longReasons = fa
     SP_REACT.useLayoutEffect(() => {
         if (!content.current)
             return;
-        const observer = new ResizeObserver(entries => setColumns(columnsForWidth(entries[0].contentRect.width)));
+        const observer = new ResizeObserver(entries => setColumns(previewColumns ?? columnsForWidth(entries[0].contentRect.width)));
         observer.observe(content.current);
         return () => observer.disconnect();
     }, []);
@@ -362,6 +409,7 @@ function ExpandedCommandCenter({ onClose, initialTab = "quick", longReasons = fa
     }
     const nativeHandlers = native ? {
         "flow-children": "vertical",
+        noFocusRing: true,
         onCancelButton: (event) => { event.preventDefault(); event.stopPropagation(); back(); },
         onButtonDown: (event) => {
             // Steam UI GamepadButton enum (5/6), not raw controller callback codes.
@@ -424,10 +472,7 @@ function ExpandedCommandCenter({ onClose, initialTab = "quick", longReasons = fa
             }
             else {
                 const next = moveInGrid(cells, target.dataset.ecControl, direction);
-                if (direction === "down" && next === target.dataset.ecControl)
-                    panel.current?.querySelector("footer button")?.focus();
-                else
-                    focus(next);
+                focus(next);
             }
         }
         else {
@@ -440,9 +485,10 @@ function ExpandedCommandCenter({ onClose, initialTab = "quick", longReasons = fa
             buttons[next]?.scrollIntoView({ block: "nearest" });
         }
     }
+    const renderTile = (item) => SP_JSX.jsx(Button, { type: "button", "data-ec-control": item.id, "data-tone": item.tone ?? "quiet", className: "rg-expanded-tile", ...(native ? { preferredFocus: item.id === restoreTarget(items.map(tile => tile.id), memory.current[tab]), onGamepadFocus: () => { memory.current[tab] = item.id; } } : {}), style: { gridColumn: item.wide ? (gridColumns === 4 ? "span 2" : "1 / -1") : undefined }, "aria-label": `${item.title}: ${item.value}. ${item.detail}. Sample data. View details.`, onFocus: () => { memory.current[tab] = item.id; }, onClick: () => { launcher.current = item.id; setNested(item); }, children: SP_JSX.jsxs("span", { className: "rg-expanded-tile-body", children: [SP_JSX.jsxs("span", { className: "rg-expanded-tile-heading", children: [SP_JSX.jsx(Icon, { id: item.id }), SP_JSX.jsx("span", { className: "rg-expanded-label", children: item.title })] }), SP_JSX.jsxs("span", { className: "rg-expanded-value", children: [item.tone === "warning" ? "⚠ " : "", item.value] }), SP_JSX.jsxs("span", { className: "rg-expanded-detail", children: [item.detail, longReasons && item.tone === "unavailable" ? " — Provider observations are unavailable in this synthetic preview. No capability or successful operation can be inferred from the displayed sample." : ""] })] }) }, item.id);
     return SP_JSX.jsxs("div", { className: "rg-expanded-backdrop", children: [SP_JSX.jsx("style", { children: expandedStyles }), SP_JSX.jsxs(Container, { ref: panel, "data-ec-panel": true, className: "rg-expanded", role: "dialog", "aria-modal": "true", "aria-label": "Re-Gear expanded Command Center prototype", onKeyDown: onKeyDown, ...nativeHandlers, onFocus: (event) => { const id = event.target.dataset.ecControl; if (id && !nested)
-                    memory.current[tab] = id; }, children: [SP_JSX.jsxs("header", { className: "rg-expanded-brand", children: [SP_JSX.jsx("span", { children: "Re-Gear" }), SP_JSX.jsxs("span", { className: "rg-expanded-demo", children: ["Demo \u00B7 Sample data", SP_JSX.jsx("br", {}), "Hardware controls not connected"] })] }), SP_JSX.jsx(Container, { className: "rg-expanded-tabs", role: "tablist", "aria-label": "Command Center sections", ...(native ? { "flow-children": "horizontal" } : {}), children: tabs.map(id => SP_JSX.jsxs(Button, { id: `ec-tab-${id}`, type: "button", role: "tab", "aria-selected": tab === id, "aria-controls": "ec-tabpanel", "data-ec-tab": id, className: "rg-expanded-tab", onClick: () => { setNested(null); setTab(id); if (id === tab)
-                                focus(restoreTarget(controlIds(), memory.current[tab])); }, children: [SP_JSX.jsx(Icon, { id: id }), SP_JSX.jsx("span", { children: tabLabels[id] })] }, id)) }), SP_JSX.jsxs("div", { ref: content, className: "rg-expanded-content", id: "ec-tabpanel", role: "tabpanel", "aria-labelledby": `ec-tab-${tab}`, children: [SP_JSX.jsx("h2", { children: nested ? nested.title : tabLabels[tab] }), SP_JSX.jsx("p", { className: "rg-expanded-context", children: nested ? "Configuration preview · no changes are applied" : tab === "quick" ? "Essential controls while you play" : tab === "performance" ? "Configure performance for your play style" : "Status and configuration preview" }), nested ? SP_JSX.jsxs("section", { className: "rg-expanded-detail-page", children: [SP_JSX.jsx("h3", { children: nested.value }), SP_JSX.jsx("p", { children: nested.id === "auto" ? "Auto TDP is off and not configured. Target and limit selection must precede Start. This prototype cannot start, stop or tune the controller." : nested.detail }), nested.id === "auto" && SP_JSX.jsxs("p", { children: [SP_JSX.jsx("strong", { children: "State vocabulary:" }), " Off \u00B7 Running \u00B7 Stopping\u2026 \u00B7 Unknown \u00B7 Needs configuration"] }), nested.id === "disconnect" && SP_JSX.jsxs("p", { children: [SP_JSX.jsx("strong", { children: "No unplug clearance." }), " Backend readiness and confirmation are not connected. A display change, missing observation or successful command does not establish safety."] }), SP_JSX.jsx("p", { children: "Sample data only. No hardware operation is available." }), SP_JSX.jsxs(Button, { type: "button", className: "rg-expanded-back", "data-ec-control": "nested-back", ...(native ? { preferredFocus: true } : {}), onClick: back, children: ["Back to ", tabLabels[tab]] })] }) : SP_JSX.jsxs(SP_JSX.Fragment, { children: [tab === "settings" && settings, tab === "performance" && SP_JSX.jsx("p", { className: "rg-expanded-context", children: "Manual limit: 18 W \u00B7 Auto TDP: Off / not configured \u00B7 FPS provider: unavailable. All values are samples." }), SP_JSX.jsx(Container, { className: "rg-expanded-grid", style: { "--ec-columns": gridColumns }, ...(native ? { "flow-children": "grid", preferredFocus: true } : {}), children: items.map(item => SP_JSX.jsxs(Button, { type: "button", "data-ec-control": item.id, "data-tone": item.tone ?? "quiet", className: "rg-expanded-tile", ...(native ? { preferredFocus: item.id === restoreTarget(items.map(tile => tile.id), memory.current[tab]), onGamepadFocus: () => { memory.current[tab] = item.id; } } : {}), style: { gridColumn: item.wide && columns >= 3 ? "span 2" : undefined }, "aria-label": `${item.title}: ${item.value}. ${item.detail}. Sample data. View details.`, onFocus: () => { memory.current[tab] = item.id; }, onClick: () => { launcher.current = item.id; setNested(item); }, children: [SP_JSX.jsx(Icon, { id: item.id }), SP_JSX.jsx("span", { className: "rg-expanded-label", children: item.title }), SP_JSX.jsxs("span", { className: "rg-expanded-value", children: [item.tone === "warning" ? "⚠ " : "", item.value] }), SP_JSX.jsxs("span", { className: "rg-expanded-detail", children: [item.detail, longReasons && item.tone === "unavailable" ? " — Provider observations are unavailable in this synthetic preview. No capability or successful operation can be inferred from the displayed sample." : ""] })] }, item.id)) }), SP_JSX.jsxs("div", { className: "rg-expanded-summary", children: ["Sample scenario \u00B7 eGPU connected \u00B7 external controller active", SP_JSX.jsx("br", {}), "Connection status does not establish rendering or disconnect readiness."] })] })] }), SP_JSX.jsxs("footer", { className: "rg-expanded-footer", "data-ec-footer": true, children: [SP_JSX.jsx(Button, { type: "button", "aria-label": "Previous tab (LB equivalent, Q)", onClick: () => switchTab(-1), children: "LB" }), SP_JSX.jsx(Button, { type: "button", "aria-label": "Next tab (RB equivalent, E)", onClick: () => switchTab(1), children: "RB" }), SP_JSX.jsx("span", { children: native ? "Switch tab" : "Switch tab · Q / E" }), SP_JSX.jsx("span", { children: native ? "D-pad Navigate · A Select" : "Arrows Navigate · Enter Select" }), SP_JSX.jsxs(Button, { type: "button", onClick: back, children: ["B ", nested ? "Back" : "Close", native ? "" : " · Esc"] })] })] })] });
+                    memory.current[tab] = id; }, children: [SP_JSX.jsxs("header", { className: "rg-expanded-brand", children: [SP_JSX.jsx("span", { children: "Re-Gear" }), SP_JSX.jsxs("span", { className: "rg-expanded-demo", children: ["Demo \u00B7 Sample data", SP_JSX.jsx("br", {}), "Hardware controls not connected"] })] }), SP_JSX.jsx(Container, { className: "rg-expanded-tabs", role: "tablist", "aria-label": "Command Center sections", ...(native ? { "flow-children": "horizontal", noFocusRing: true } : {}), children: tabs.map(id => SP_JSX.jsx(Button, { id: `ec-tab-${id}`, type: "button", role: "tab", "aria-selected": tab === id, "aria-controls": "ec-tabpanel", "data-ec-tab": id, className: "rg-expanded-tab", onClick: () => { setNested(null); setTab(id); if (id === tab)
+                                focus(restoreTarget(controlIds(), memory.current[tab])); }, children: SP_JSX.jsxs("span", { className: "rg-expanded-tab-body", children: [SP_JSX.jsx(Icon, { id: id }), SP_JSX.jsx("span", { children: tabLabels[id] })] }) }, id)) }), SP_JSX.jsxs("div", { ref: content, className: "rg-expanded-content", id: "ec-tabpanel", role: "tabpanel", "aria-labelledby": `ec-tab-${tab}`, children: [SP_JSX.jsx("h2", { children: nested ? nested.title : tabLabels[tab] }), SP_JSX.jsx("p", { className: "rg-expanded-context", children: nested ? "Configuration preview · no changes are applied" : tab === "quick" ? "Essential controls while you play" : tab === "performance" ? "Configure performance for your play style" : "Status and configuration preview" }), nested ? SP_JSX.jsxs("section", { className: "rg-expanded-detail-page", children: [SP_JSX.jsx("h3", { children: nested.value }), SP_JSX.jsx("p", { children: nested.id === "auto" ? "Auto TDP is off and not configured. Target and limit selection must precede Start. This prototype cannot start, stop or tune the controller." : nested.detail }), nested.id === "auto" && SP_JSX.jsxs("p", { children: [SP_JSX.jsx("strong", { children: "State vocabulary:" }), " Off \u00B7 Running \u00B7 Stopping\u2026 \u00B7 Unknown \u00B7 Needs configuration"] }), nested.id === "disconnect" && SP_JSX.jsxs("p", { children: [SP_JSX.jsx("strong", { children: "No unplug clearance." }), " Backend readiness and confirmation are not connected. A display change, missing observation or successful command does not establish safety."] }), SP_JSX.jsx("p", { children: "Sample data only. No hardware operation is available." }), SP_JSX.jsxs(Button, { type: "button", className: "rg-expanded-back", "data-ec-control": "nested-back", ...(native ? { preferredFocus: true } : {}), onClick: back, children: ["Back to ", tabLabels[tab]] })] }) : SP_JSX.jsxs(SP_JSX.Fragment, { children: [tab === "settings" && settings, tab === "performance" && SP_JSX.jsx("p", { className: "rg-expanded-context", children: "Manual limit: 18 W \u00B7 Auto TDP: Off / not configured \u00B7 FPS provider: unavailable. All values are samples." }), SP_JSX.jsx(Container, { className: "rg-expanded-grid", style: { "--ec-columns": gridColumns }, ...(native ? { "flow-children": "grid", preferredFocus: true, noFocusRing: true } : {}), children: items.map(renderTile) }), tab !== "quick" && SP_JSX.jsx("div", { className: "rg-expanded-summary", children: "Sample data only. Connection status does not establish rendering or disconnect readiness." })] })] }), SP_JSX.jsxs("footer", { className: "rg-expanded-footer", "data-ec-footer": true, children: [SP_JSX.jsxs("span", { children: [SP_JSX.jsx("kbd", { children: "LB" }), SP_JSX.jsx("kbd", { children: "RB" }), " Tabs"] }), SP_JSX.jsxs("span", { children: [SP_JSX.jsx("b", { "aria-hidden": "true", children: "\u271A" }), " Navigate"] }), SP_JSX.jsxs("span", { children: [SP_JSX.jsx("kbd", { children: "A" }), " Select"] }), SP_JSX.jsxs("span", { children: [SP_JSX.jsx("kbd", { children: "B" }), " ", nested ? "Back" : "Close"] })] })] })] });
 }
 
 /** Native test adapter; only opens a demo and saves its launcher preference. */
@@ -468,7 +514,7 @@ function createExpandedMenu(input, host, canOpen = () => true) {
             modal = null;
             generation++;
         } }, [token]);
-        return SP_JSX.jsx(ExpandedCommandCenter, { onClose: close, native: true, primitives: { Button: DFL.DialogButton, Focusable: DFL.Focusable }, settings: SP_JSX.jsx(Settings, {}) });
+        return SP_JSX.jsx(ExpandedCommandCenter, { onClose: close, native: true, primitives: { Button: DFL.Button, Focusable: DFL.Focusable }, settings: SP_JSX.jsx(Settings, {}) });
     }
     function Settings() {
         const [selected, setSelected] = SP_REACT.useState(binding);
@@ -483,7 +529,7 @@ function createExpandedMenu(input, host, canOpen = () => true) {
             setSelected(value);
             setError("");
         }
-        return SP_JSX.jsxs("section", { className: "rg-expanded-detail-page", style: { marginBottom: 14 }, children: [SP_JSX.jsx("h3", { children: "Open Re-Gear" }), SP_JSX.jsx("p", { children: "Menu shortcut \u00B7 saved on this Steam client" }), SP_JSX.jsx(DFL.Focusable, { "flow-children": "horizontal", style: { display: "flex", flexWrap: "wrap", gap: 8 }, children: menuBindingOptions.map(option => SP_JSX.jsxs(DFL.DialogButton, { className: "rg-expanded-back", "data-ec-control": `binding-${option.data}`, "aria-pressed": selected === option.data, onClick: () => change(option.data), children: [selected === option.data ? "✓ " : "", option.label] }, option.data)) }), SP_JSX.jsx("p", { children: shortcut.available ? "Press both buttons together. Release both before opening again." : "Controller input is unavailable. Use the Open expanded demo button in Quick Access." }), SP_JSX.jsx("p", { children: "Steam or the game may also respond to these buttons. Native button delivery is under validation." }), error && SP_JSX.jsx("p", { role: "alert", children: error })] });
+        return SP_JSX.jsxs("section", { className: "rg-expanded-detail-page", style: { marginBottom: 14 }, children: [SP_JSX.jsx("h3", { children: "Open Re-Gear" }), SP_JSX.jsx("p", { children: "Menu shortcut \u00B7 saved on this Steam client" }), SP_JSX.jsx(DFL.Focusable, { "flow-children": "horizontal", style: { display: "flex", flexWrap: "wrap", gap: 8 }, children: menuBindingOptions.map(option => SP_JSX.jsxs(DFL.Button, { className: "rg-expanded-back", "data-ec-control": `binding-${option.data}`, "aria-pressed": selected === option.data, onClick: () => change(option.data), children: [selected === option.data ? "✓ " : "", option.label] }, option.data)) }), SP_JSX.jsx("p", { children: shortcut.available ? "Press both buttons together. Release both before opening again." : "Controller input is unavailable. Use the Open expanded demo button in Quick Access." }), SP_JSX.jsx("p", { children: "Steam or the game may also respond to these buttons. Native button delivery is under validation." }), error && SP_JSX.jsx("p", { role: "alert", children: error })] });
     }
     const open = () => {
         if (stopped || modal || !canOpen())
