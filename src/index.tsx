@@ -1,4 +1,5 @@
 import { PageLayout, CommandCenterHeader } from "./quick-access/page-layout";
+import { createExpandedMenu } from "./quick-access/expanded-command-center/native";
 import { EgpuModule } from "./quick-access/modules/egpu";
 import { egpuPresentation } from "./quick-access/modules/egpu-presentation";
 import { ControllerModule } from "./quick-access/modules/controller";
@@ -539,7 +540,7 @@ function preflightObservation(payload: SnapshotPayload): PreflightObservation {
   }, Date.now(), SNAPSHOT_STALE_AFTER_MS);
 }
 
-function Content({ preflight, connection, shortcut }: { preflight: SleepPreflightCoordinator; connection: ReturnType<typeof startConnectionMonitor>; shortcut: ReturnType<typeof createDisplayShortcutRuntime> }) {
+function Content({ preflight, connection, shortcut, openExpanded }: { preflight: SleepPreflightCoordinator; connection: ReturnType<typeof startConnectionMonitor>; shortcut: ReturnType<typeof createDisplayShortcutRuntime>; openExpanded(): void }) {
   const quickAccessVisible = useQuickAccessVisible();
   const statusAnchor = useRef<HTMLDivElement | null>(null);
   const statusFocusAnchor = useRef<HTMLDivElement | null>(null);
@@ -1653,6 +1654,7 @@ function Content({ preflight, connection, shortcut }: { preflight: SleepPrefligh
               action={primaryDisplayAction} onSwitch={activateDisplay} onConfigure={() => openRoute({ kind: "module", id: "egpu" }, "picker:configure")} />}
 
         commandCenter={<>
+      <PanelSection><PanelSectionRow><ButtonItem layout="below" onClick={openExpanded}>Open expanded demo</ButtonItem></PanelSectionRow></PanelSection>
 
       <PanelSection>
         <CommandCenterHeader
@@ -2195,6 +2197,7 @@ function showBlockedAttempt(
 }
 
 export default definePlugin(() => {
+  const expandedMenu = createExpandedMenu(steamControllerInput(window), window);
   const shortcut = createDisplayShortcutRuntime({
     input: steamControllerInput(window),
     readContext: async () => {
@@ -2270,10 +2273,11 @@ export default definePlugin(() => {
   return {
     name: PRODUCT_NAME,
     titleView: <div className={staticClasses.Title} style={{ display: "flex", alignItems: "center" }}><BrandHeader /></div>,
-    content: <Content preflight={preflight} connection={connection} shortcut={shortcut} />,
+    content: <Content preflight={preflight} connection={connection} shortcut={shortcut} openExpanded={expandedMenu.open} />,
     icon: <BrandIcon />,
     alwaysRender: true,
     onDismount() {
+      expandedMenu.stop();
       shortcut.stop();
       if (warningTimer !== null) {
         window.clearTimeout(warningTimer);
