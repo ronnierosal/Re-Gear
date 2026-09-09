@@ -102,7 +102,7 @@ export function disconnectResult(
     return {
       // The headline reflects the checked state, not the command's return code.
       show: true, tone: "done",
-      headline: clearance.cleared ? "The eGPU is disconnected" : REMOVED_HEADLINE,
+      headline: clearance.removalVerified ? "The eGPU is disconnected" : REMOVED_HEADLINE,
       detail: describe(outcome),
       clearance, attention: false,
     };

@@ -1,106 +1,37 @@
-/** Shared performance state for the Command Center tiles and the Auto TDP
- * module: pure, no React, no I/O, no requests.
- *
- * Two consumers now read the same TDP status: the compact tiles on the first
- * screen and the module page behind Modules. Deriving what each shows from the
- * raw payload twice is how they end up disagreeing -- one offering Start while
- * the other says unavailable, from the same bytes. This module is the single
- * derivation, so a disagreement has nowhere to come from.
- *
- * What it deliberately does NOT do:
- *
- * - It never implies enablement and loop start are the same operation. The
- *   approved design is explicit: Stop when active, Start only with an already
- *   valid explicitly configured range and existing permission, otherwise Open
- *   Auto TDP. A single toggle would conflate a power-writer capability with
- *   running a control loop.
- * - It never fabricates a value. Absent watts render as unknown, never as a
- *   plausible default, and never as a number carried over from a stale read.
- * - It never starts anything from guessed defaults.
- *
- * FPS is not modelled here. The approved FPS tile is a proposed new capability,
- * not Auto TDP's target FPS, and no backend provides it; see fpsTile.
- */
-
-import type { TdpStatusPayload } from "../backend";
-
-/** The one action the compact tile offers, chosen by state rather than by a
- * toggle. `open` means send the player to the module instead of acting. */
+/** Shared tile presentation. Writer enablement and the Auto TDP loop are separate contracts. */
+import type { AutoTdpStatusPayload, TdpStatusPayload } from "../backend";
 export type PerformanceAction = "stop" | "start" | "open" | "none";
-
 export type PerformanceState = {
-  /** Auto TDP is running now. */
-  active: boolean;
-  /** The device has a proven TDP writer at all. */
-  supported: boolean;
-  /** Configured power limit in watts, or null when not known. Never guessed. */
-  configuredWatts: number | null;
-  /** True when the value shown is a configured limit rather than telemetry. */
-  configuredIsLimit: boolean;
-  action: PerformanceAction;
-  /** Why the tile cannot act, or null when it can. */
-  reason: string | null;
-  /** A request is in flight; the tile must not issue another. */
-  busy: boolean;
+  active: boolean; autoKnown: boolean; stopping: boolean; supported: boolean; configuredWatts: number | null;
+  configuredIsLimit: boolean; action: PerformanceAction; reason: string | null; busy: boolean;
 };
-
 export type PerformanceInput = {
   status: TdpStatusPayload | null;
+  autoStatus?: AutoTdpStatusPayload | null;
   busy?: boolean;
-  /** True once the player has an explicitly configured, valid range. Start is
-   * never offered without it: starting from guessed defaults writes power
-   * limits nobody chose. */
+  stopping?: boolean;
+  /** Retained for callers; compact tiles never start a loop from configuration. */
   configured?: boolean;
 };
-
 export function performanceState(input: PerformanceInput): PerformanceState {
-  const { status } = input;
+  const { status, autoStatus } = input;
   const busy = input.busy === true;
-  if (!status) {
-    return {
-      active: false, supported: false, configuredWatts: null, configuredIsLimit: false,
-      action: "none", reason: "Performance status not yet observed.", busy,
-    };
-  }
-  const supported = status.auto_tdp_available === true;
-  const active = status.enabled === true;
-  // Stop stays reachable whenever the loop is running, even if permission to
-  // start again has since been withdrawn: a player must always be able to stop
-  // something that is currently changing their device.
-  if (active) {
-    return {
-      active: true, supported, configuredWatts: status.current_watts,
-      configuredIsLimit: true, action: busy ? "none" : "stop",
-      reason: busy ? "Working…" : null, busy,
-    };
-  }
-  if (!supported) {
-    return {
-      active: false, supported: false, configuredWatts: null, configuredIsLimit: false,
-      action: "none", reason: "This device has no verified TDP control.", busy,
-    };
-  }
-  if (busy) {
-    return { active: false, supported, configuredWatts: status.current_watts,
-      configuredIsLimit: true, action: "none", reason: "Working…", busy };
-  }
-  if (status.recovery_required === true) {
-    // Recovery outranks starting: begin a loop over an unrestored limit and the
-    // player keeps whatever the interrupted session left behind.
-    return { active: false, supported, configuredWatts: status.current_watts,
-      configuredIsLimit: true, action: "open", reason: "Needs recovery in Auto TDP.", busy };
-  }
-  const startable = status.can_enable === true && input.configured === true;
-  return {
-    active: false, supported, configuredWatts: status.current_watts, configuredIsLimit: true,
-    action: startable ? "start" : "open",
-    reason: startable ? null
-      : status.can_enable !== true ? "Not available in the current state."
-      : "Set a power range in Auto TDP first.",
-    busy,
+  const active = autoStatus?.running === true;
+  const state = {
+    active, autoKnown: autoStatus != null, stopping: input.stopping === true || autoStatus?.stopping === true, supported: status?.auto_tdp_available === true,
+    configuredWatts: status?.current_watts ?? null,
+    configuredIsLimit: status?.current_watts != null, busy,
   };
+  // Stop preempts ordinary requests and remains available if manual evidence fails.
+  if (active) return { ...state, action: input.stopping || autoStatus?.stopping ? "none" : "stop",
+    reason: input.stopping || autoStatus?.stopping ? "Stopping Auto TDP…" : null };
+  if (!status) return { ...state, action: "open", reason: "Performance status not yet observed." };
+  if (busy) return { ...state, action: "none", reason: "Working…" };
+  if (status.recovery_required) return { ...state, action: "open", reason: "Needs recovery in Auto TDP." };
+  if (!state.supported) return { ...state, action: "open", reason: "This device has no verified TDP control." };
+  if (!autoStatus) return { ...state, action: "open", reason: "Auto TDP status not yet observed." };
+  return { ...state, action: "open", reason: autoStatus.can_start ? "Configure Auto TDP." : "Not available in the current state." };
 }
-
 /** Late responses must not overwrite newer state. A request is only allowed to
  * apply while it is still the newest one issued; otherwise a slow reply lands
  * on top of a fresh read and the tile shows the past. */

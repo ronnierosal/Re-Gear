@@ -1,3 +1,9 @@
+import { PageLayout, CommandCenterHeader } from "./quick-access/page-layout";
+import { EgpuModule } from "./quick-access/modules/egpu";
+import { egpuPresentation } from "./quick-access/modules/egpu-presentation";
+import { ControllerModule } from "./quick-access/modules/controller";
+import { controllerPresentation } from "./quick-access/modules/controller-presentation";
+import { displayAction } from "./display-action";
 import { createDisplayShortcutRuntime } from "./display-shortcut-runtime";
 import { showDisconnectProgress } from "./disconnect-progress-panel";
 import { ConnectionQuickStatus } from "./connection-quick-status";
@@ -71,9 +77,11 @@ import {
 import { createDeckySteamSuspendAdapter } from "./decky-steam-suspend";
 import { deliverBlockedAttempt } from "./blocked-attempt-delivery";
 import { diagnosticOverlayRows } from "./diagnostics-overlay";
-import { DashboardSurface, QuickAccessOverview } from "./quick-access-overview";
+import { DashboardSurface } from "./quick-access-overview";
 import { DashboardAction } from "./dashboard-action";
-import { TdpControls } from "./tdp-controls";
+import { AutoTdpModule } from "./quick-access/modules/auto-tdp";
+import { usePerformance } from "./quick-access/use-performance";
+import { TdpPicker, DisplayPicker } from "./quick-access/compact-picker";
 import { hardwareDetailRows } from "./quick-access-dashboard";
 import { healthAttentionMessages, healthStatusLabel } from "./health-ui";
 import { decideLinkHealthNotification } from "./link-health-notification";
@@ -96,10 +104,10 @@ import {
   currentRoute,
   diagnosticsVisible,
   hasInternalLevel,
+  routeKey,
   pushRoute,
   quickAccessModules,
   stackOnPanelOpen,
-  troubleshootingToggle,
 } from "./quick-access/module-registry";
 import type { ModuleId, NavStack, Route, StatusId } from "./quick-access/module-registry";
 import { ModulesButton, ShellBody } from "./quick-access/shell";
@@ -568,6 +576,8 @@ function Content({ preflight, connection, shortcut }: { preflight: SleepPrefligh
   // The approved layout replaces the icon row with a navigation stack. Command
   // Center sits at the bottom and is never popped; Back delegates to Steam's own
   // QAM Back once no internal level is left. See quick-access/module-registry.
+  const returnFocus = useRef(new Map<string, string>());
+  const [pendingFocus, setPendingFocus] = useState<string | null>(null);
   const [navStack, setNavStack] = useState<NavStack>(INITIAL_STACK);
   // The owning backend's disconnect status. Null means not read yet, which is
   // not the same as "no": the tile renders that distinction itself.
@@ -581,11 +591,12 @@ function Content({ preflight, connection, shortcut }: { preflight: SleepPrefligh
    * hardware", and a stored dismissal would hide it after a later restart. */
   const [resultDismissed, setResultDismissed] = useState(false);
   const route = currentRoute(navStack);
+  const performance = usePerformance(quickAccessVisible);
   const onCommandCenter = route.kind === "command-center";
   // Read by the refresh callback, which must not be rebuilt on every navigation:
   // adding navStack to its dependencies would restart the refresh cycle on a
   // route change.
-  const diagnosticsOnScreen = useRef(true);
+  const diagnosticsOnScreen = useRef(false);
   useEffect(() => {
     diagnosticsOnScreen.current = diagnosticsVisible(navStack, showDiagnostics);
   }, [navStack, showDiagnostics]);
@@ -821,6 +832,8 @@ function Content({ preflight, connection, shortcut }: { preflight: SleepPrefligh
     setShowDiagnostics(compact.showDiagnostics);
     setShowJourneyDetails(compact.showJourneyDetails);
     setShowHardwareDetails(false);
+    setPendingFocus(null);
+    returnFocus.current.clear();
     // Steam may keep the plugin mounted between openings, so the route resets
     // with the rest of the compact state; otherwise the panel reopens wherever
     // it was left instead of at Command Center.
@@ -1448,6 +1461,7 @@ function Content({ preflight, connection, shortcut }: { preflight: SleepPrefligh
     setShowDiagnostics(compact.showDiagnostics);
     setShowJourneyDetails(compact.showJourneyDetails);
     setShowHardwareDetails(false);
+    setNavStack(INITIAL_STACK);
     // Wait for the diagnostics section to collapse, then reset Steam's owning
     // scroll panel and move focus to a native in-panel control. A non-focusable
     // status div leaves controller navigation at Steam's QAM Back control.
@@ -1463,11 +1477,6 @@ function Content({ preflight, connection, shortcut }: { preflight: SleepPrefligh
     }, 0);
   }, []);
 
-  // The Troubleshoot route is deliberately not wired here. Its content is the
-  // six surfaces the existing `showDiagnostics` boolean gates, and moving them
-  // behind a route is its own slice; opening an empty Troubleshoot destination
-  // would be a screen that claims to hold controls it does not have. The
-  // existing Troubleshooting control stays the way in until then.
   /** Read the disconnect status. The backend documents this call as observing
    * and mutating nothing -- no filter armed, no DRM master taken, no display
    * touched -- so it is safe to call whenever the screen showing it is open. */
@@ -1511,8 +1520,11 @@ function Content({ preflight, connection, shortcut }: { preflight: SleepPrefligh
     }
   }, [refreshDisconnect]);
 
-  const openRoute = useCallback((route: Route) => {
-    setNavStack((stack) => pushRoute(stack, route));
+  const openRoute = useCallback((destination: Route, opener?: string) => {
+    const active = statusAnchor.current?.ownerDocument.activeElement;
+    const key = opener ?? (active instanceof HTMLElement ? active.closest<HTMLElement>("[data-regear-focus]")?.dataset.regearFocus : undefined);
+    if (key) returnFocus.current.set(routeKey(destination), key);
+    setNavStack((stack) => pushRoute(stack, destination));
   }, []);
 
   // Pops one internal level. Whether Back is ours to handle at all is decided
@@ -1521,18 +1533,32 @@ function Content({ preflight, connection, shortcut }: { preflight: SleepPrefligh
   // computed inside a state updater is not reliable because React may defer or
   // replay it.
   const popRoute = useCallback(() => {
+    setPendingFocus(returnFocus.current.get(routeKey(route)) ?? null);
     setNavStack((stack) => backRoute(stack).stack);
-  }, []);
+  }, [route]);
 
-  // The open-edge rule lives in troubleshootingToggle: opening asks for fresh
-  // evidence, closing does not, and re-opening does not request again. That is
-  // the surviving owner of what the deleted quick-access-section-state helper
-  // held, and it is covered by its own tests.
+  useEffect(() => {
+    if (!pendingFocus || !quickAccessVisible) return;
+    const timer = window.setTimeout(() => {
+      const target = Array.from(statusAnchor.current?.querySelectorAll<HTMLElement>("[data-regear-focus]") ?? [])
+        .find(element => element.dataset.regearFocus === pendingFocus);
+      if (target) {
+        target.scrollIntoView({ block: "nearest", inline: "nearest" });
+        restoreQuickAccessFocus(() => target);
+      }
+      setPendingFocus(null);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [route, pendingFocus, quickAccessVisible]);
+
+  // Request optional evidence once per panel opening. The dedicated route
+  // controls ongoing visibility; revisiting does not create a second poller.
   const toggleTroubleshooting = useCallback(() => {
-    const result = troubleshootingToggle(showDiagnostics);
-    if (result.refresh) void refresh(true);
-    setShowDiagnostics(result.next);
-  }, [refresh, showDiagnostics]);
+    diagnosticsOnScreen.current = true;
+    if (!showDiagnostics) void refresh(true);
+    setShowDiagnostics(true);
+    openRoute({ kind: "troubleshoot" });
+  }, [refresh, showDiagnostics, openRoute]);
 
   // Only while the panel is open and the Command Center is the visible route:
   // reading for a screen nobody is looking at is work the player did not ask
@@ -1552,23 +1578,21 @@ function Content({ preflight, connection, shortcut }: { preflight: SleepPrefligh
     });
   }, []);
 
-  // Only System is wired to the row in this slice; the other four targets change
-  // the selection and nothing else yet. TDP evidence lives inside TdpControls, so
-  // its readiness is not observable here and the section reads unavailable --
-  // unknown state is not a capability claim.
+  // One shared observation powers both quick controls and module configuration.
   const sections = quickAccessSections({
     mode: payload?.inference.mode,
     fresh: !loading && payload != null,
     shortcutAvailable: controllerShortcutAvailable,
     healthKnown: payload?.health != null,
+    autoTdpAvailable: performance.manual?.auto_tdp_available,
+    tdpCanEnable: performance.manual?.can_enable,
   });
   const modules = quickAccessModules(sections);
-  // Auto TDP status is not observable from here yet: it lives inside
-  // TdpControls, and lifting it is qa-performance-controls-lift. Until then the
-  // performance tiles report not-yet-observed rather than guessing a value.
+  // Manual power enablement and Auto TDP activity are separate observations.
   const tiles = commandCenterTiles({
-    performance: performanceState({ status: null, busy: disconnectBusy }),
-    displayTarget: payload ? label(payload.inference.mode) : undefined,
+    performance: performanceState({ status: performance.manual, autoStatus: performance.auto, busy: performance.busy, stopping: performance.stopping }),
+    displayTarget: !loading && snapshot?.displays.some(d => d.active === true && d.kind === "external")
+      ? "External" : !loading && snapshot?.displays.some(d => d.active === true && d.kind === "internal") ? "Handheld" : undefined,
     disconnectStatus: egpuDisconnect,
   });
   const shownTile = tiles.find((tile) => tile.id === selectedTile);
@@ -1582,6 +1606,20 @@ function Content({ preflight, connection, shortcut }: { preflight: SleepPrefligh
       detail: controllerShortcutAvailable ? "Shortcut input available" : "Status unavailable" },
   ];
   const sectionVisibility = quickAccessSectionVisibility(showDiagnostics);
+  const primaryDisplayAction = displayAction({
+    mode: payload?.inference.mode,
+    busy: tvSwitchBusy || safeDisconnectBusy,
+    acknowledgementRequired: Boolean(tvSwitchAcknowledgementId),
+    journalBlocked: Boolean(journalStatus && journalStatus.code !== "journal.idle"),
+    shortcutAvailable: controllerShortcutAvailable,
+  });
+
+  const activateDisplay = () => {
+    if (primaryDisplayAction.disabled) return;
+    if (primaryDisplayAction.target === "ally") requestControllerDisplaySwitch("ally");
+    else if (primaryDisplayAction.target === "tv") void executeTvSwitch();
+  };
+
 
   return (
     <>
@@ -1595,37 +1633,42 @@ function Content({ preflight, connection, shortcut }: { preflight: SleepPrefligh
         style={{ minWidth: 0 }}
       >
       <div ref={statusAnchor} tabIndex={-1}>
-      {!onCommandCenter && (
-        <PanelSection>
-          <ShellBody
-            route={route}
-            modules={modules}
-            statusEntries={statusEntries}
-            onOpenModule={(id: ModuleId) => openRoute({ kind: "module", id })}
-            onOpenStatus={(id: StatusId) => openRoute({ kind: "status", id })}
-          >{null}</ShellBody>
-        </PanelSection>
-      )}
-      {onCommandCenter && (<>
-      <PanelSection title="At a glance">
-        <QuickAccessOverview
+      {!onCommandCenter && <PanelSection><PanelSectionRow>
+        <ButtonItem layout="below" onClick={popRoute}>Back</ButtonItem>
+      </PanelSectionRow></PanelSection>}
+      <PageLayout route={route}
+        modules={<PanelSection><ShellBody route={route} modules={modules}
+          statusEntries={statusEntries}
+          onOpenModule={(id: ModuleId) => openRoute({ kind: "module", id }, `module:${id}`)}
+          onOpenStatus={(id: StatusId) => openRoute({ kind: "status", id }, `status:${id}`)}
+          onOpenTroubleshoot={toggleTroubleshooting}>{null}</ShellBody></PanelSection>}
+        controller={<PanelSection title="Controller"><ControllerModule presentation={controllerPresentation({ peripheral: peripheralStatus, shortcutAvailable: controllerShortcutAvailable })} /></PanelSection>}
+        egpuStatus={<PanelSection title="eGPU status"><EgpuModule presentation={egpuPresentation(payload)} /></PanelSection>}
+        controllerStatus={<PanelSection title="Controller status"><ControllerModule presentation={controllerPresentation({ peripheral: peripheralStatus, shortcutAvailable: controllerShortcutAvailable })} /></PanelSection>}
+        autoTdp={<AutoTdpModule controller={performance} />}
+        picker={route.kind === "picker" && route.id === "tdp"
+          ? <TdpPicker status={performance.manual} busy={performance.busy} onApply={watts => void performance.apply(watts)}
+              onConfigure={() => openRoute({ kind: "module", id: "auto-tdp" }, "picker:configure")} />
+          : <DisplayPicker current={tiles.find(tile => tile.id === "display")?.value.text ?? "Unknown"}
+              action={primaryDisplayAction} onSwitch={activateDisplay} onConfigure={() => openRoute({ kind: "module", id: "egpu" }, "picker:configure")} />}
+
+        commandCenter={<>
+
+      <PanelSection>
+        <CommandCenterHeader
           summaryRef={statusFocusAnchor}
           onSummaryFocus={() => {
             if (statusAnchor.current) scrollToTopOfOwningPanel(statusAnchor.current);
           }}
-          mode={payload?.inference.mode ?? "unknown"}
-          modeLabel={loading ? "Reading…" : label(payload?.inference.mode ?? "unknown")}
+          mode={loading ? "Reading…" : label(payload?.inference.mode ?? "unknown")}
+          display={snapshot?.displays.some((d) => d.active === true && d.kind === "external")
+            ? "External display"
+            : snapshot?.displays.some((d) => d.active === true && d.kind === "internal")
+              ? "Handheld display" : "Display unknown"}
+          game={loading ? "Reading…" : label(snapshot?.game_state ?? "unknown")}
           health={healthStatusLabel(payload?.health, loading)}
-          game={label(snapshot?.game_state ?? "unknown")}
-          loading={loading}
+          navigation={<ModulesButton onOpen={() => openRoute({ kind: "modules" }, "modules")} />}
         />
-
-      </PanelSection>
-
-      <PanelSection>
-        <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
-          <ModulesButton onOpen={() => openRoute({ kind: "modules" })} />
-        </div>
         {/* Answers "what just happened to my hardware" the moment the panel
             comes back after the session restart, above everything else,
             because an answer a player has to scroll to find is one they will
@@ -1653,15 +1696,18 @@ function Content({ preflight, connection, shortcut }: { preflight: SleepPrefligh
               });
               return;
             }
+            if (id === "auto-tdp" && tile.actionLabel === "Stop") {
+              void performance.stop();
+              return;
+            }
             if (tile.activation !== "open") return;
-            // Performance tiles route to Auto TDP; the display target routes to
-            // the eGPU module, which owns the guarded transition.
-            openRoute(id === "display"
-              ? { kind: "module", id: "egpu" }
-              : { kind: "module", id: "auto-tdp" });
+            openRoute(id === "display" || id === "tdp"
+              ? { kind: "picker", id }
+              : { kind: "module", id: "auto-tdp" }, `tile:${id}`);
           }}
         />
         <TileReason tile={shownTile} />
+        <ButtonItem layout="below" onClick={toggleTroubleshooting}>Troubleshoot</ButtonItem>
         {disconnectMessage && (
           <PanelSectionRow>{disconnectMessage}</PanelSectionRow>
         )}
@@ -1669,17 +1715,19 @@ function Content({ preflight, connection, shortcut }: { preflight: SleepPrefligh
           route={route}
           modules={modules}
           statusEntries={statusEntries}
-          onOpenModule={(id: ModuleId) => openRoute({ kind: "module", id })}
-          onOpenStatus={(id: StatusId) => openRoute({ kind: "status", id })}
+          onOpenModule={(id: ModuleId) => openRoute({ kind: "module", id }, `module:${id}`)}
+          onOpenStatus={(id: StatusId) => openRoute({ kind: "status", id }, `status:${id}`)}
         >{null}</ShellBody>
       </PanelSection>
 
+      </>}
+      egpu={<>
+      <PanelSection title="eGPU"><EgpuModule presentation={egpuPresentation(payload)} onOpenRecovery={toggleTroubleshooting} /></PanelSection>
       {payload?.connection_readiness && payload.connection_readiness.stage !== "disconnected" &&
         <PanelSection title="eGPU readiness">
           <ConnectionQuickStatus store={connection.store} visible={quickAccessVisible}
             onOpen={openConnectionProgress} />
         </PanelSection>}
-      <TdpControls visible={quickAccessVisible} />
       <PanelSection title="Docking & actions">
         <div ref={primaryControlAnchor}>
           <DashboardSurface>
@@ -1708,25 +1756,10 @@ function Content({ preflight, connection, shortcut }: { preflight: SleepPrefligh
             <DashboardAction
               icon="bolt"
               tone="primary"
-              title={tvSwitchBusy || safeDisconnectBusy
-                ? "Switching…"
-                : payload?.inference.mode === "docked_egpu"
-                  ? "Switch to handheld"
-                  : "Switch to TV"}
-              description={controllerShortcutAvailable
-                ? "Hold Back/View + Y for 3 seconds to switch."
-                : "Checks readiness before switching. Controller shortcut unavailable."}
-              onClick={() => {
-                if (payload?.inference.mode === "docked_egpu") requestControllerDisplaySwitch("ally");
-                else if (payload?.inference.mode === "portable") void executeTvSwitch();
-              }}
-              disabled={
-                tvSwitchBusy
-                || safeDisconnectBusy
-                || (payload?.inference.mode !== "portable" && payload?.inference.mode !== "docked_egpu")
-                || Boolean(tvSwitchAcknowledgementId)
-                || Boolean(journalStatus && journalStatus.code !== "journal.idle")
-              }
+              title={primaryDisplayAction.title}
+              description={primaryDisplayAction.description}
+              onClick={activateDisplay}
+              disabled={primaryDisplayAction.disabled}
             />
           </DashboardSurface>
           {tvSwitchMessage && <PanelSectionRow>{tvSwitchMessage}</PanelSectionRow>}
@@ -1811,6 +1844,8 @@ function Content({ preflight, connection, shortcut }: { preflight: SleepPrefligh
         )}
       </PanelSection>
 
+      </>}
+      troubleshoot={<>
       {sectionVisibility.journey && (
         <>
           <PanelSection title="Journey status">
@@ -2087,7 +2122,8 @@ function Content({ preflight, connection, shortcut }: { preflight: SleepPrefligh
           </ButtonItem>
         </PanelSectionRow>
       </PanelSection>}
-      </>)}
+      </>}
+      />
       </div>
       </Focusable>
     </>

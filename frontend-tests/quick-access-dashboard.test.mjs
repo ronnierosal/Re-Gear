@@ -42,7 +42,7 @@ test("compact dashboard keeps native controls, single guarded action and local d
   const source = readFileSync(new URL("../src/index.tsx", import.meta.url), "utf8");
   const overview = readFileSync(new URL("../src/quick-access-overview.tsx", import.meta.url), "utf8");
   assert.doesNotMatch(overview, /onClick|onActivate|<button|setInterval|fetch\(/);
-  assert.equal((source.match(/else if \(payload\?\.inference.mode === "portable"\) void executeTvSwitch\(\);/g) ?? []).length, 1);
+  assert.equal((source.match(/else if \(primaryDisplayAction.target === "tv"\) void executeTvSwitch\(\);/g) ?? []).length, 1);
   assert.match(source, /<ToggleField\s+label="Automatic TV docking"\s+layout="inline"/);
   assert.match(source, /onClick=\{\(\) => setShowHardwareDetails\(\(visible\) => !visible\)\}/);
   assert.match(source, /showHardwareDetails &&[\s\S]*hardwareDetailRows\(payload\)/);

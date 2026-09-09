@@ -1,3 +1,4 @@
+import { ApprovedIcon } from "./approved-icons";
 import { DialogButton, Focusable } from "@decky/ui";
 import type { ReactNode } from "react";
 import type { ModuleEntry, ModuleId, Route, StatusId } from "./module-registry";
@@ -35,15 +36,18 @@ function NavRow({ title, detail, blocked, onClick, focusKey }: {
   onClick(): void; focusKey: string;
 }) {
   return <DialogButton
+    className="rg-quick-control"
     data-regear-focus={focusKey}
     onClick={onClick}
-    // Blocked rows stay focusable: opening one is how its reason is read.
     style={{
       width: "100%", minHeight: 44, margin: "0 0 6px", padding: "8px 10px",
       display: "flex", alignItems: "center", gap: 8, textAlign: "left",
       background: SURFACE, border: `1px solid ${C.border}`, borderRadius: 12,
       color: blocked ? C.dim : C.text,
     }}>
+    {focusKey.includes("egpu") && <ApprovedIcon id="module-egpu" />}
+    {focusKey.includes("controller") && <ApprovedIcon id="module-controller" />}
+    {focusKey.includes("auto-tdp") && <ApprovedIcon id="module-auto-tdp" />}
     <span style={{ flex: "1 1 auto", minWidth: 0 }}>
       <span style={{ display: "block", fontSize: 14, fontWeight: 700 }}>{title}</span>
       <span style={{ display: "block", fontSize: 12, lineHeight: "16px",
@@ -79,6 +83,7 @@ export function RouteHeader({ title, reason }: { title: string; reason: string |
 /** The Modules entry on Command Center. Labelled, not an icon-only target. */
 export function ModulesButton({ onOpen }: { onOpen(): void }) {
   return <DialogButton
+    className="rg-quick-control"
     data-regear-focus="modules"
     onClick={onOpen}
     style={{
@@ -113,12 +118,13 @@ export function PendingContent({ what }: { what: string }) {
   </div>;
 }
 
-export function ShellBody({ route, modules, children, onOpenModule, onOpenStatus, statusEntries }: {
+export function ShellBody({ route, modules, children, onOpenModule, onOpenStatus, statusEntries, onOpenTroubleshoot }: {
   route: Route;
   modules: ModuleEntry[];
   /** Command Center body, supplied by the caller during migration. */
   children: ReactNode;
   statusEntries: Array<{ id: StatusId; title: string; detail: string }>;
+  onOpenTroubleshoot?(): void;
   onOpenModule(id: ModuleId): void;
   onOpenStatus(id: StatusId): void;
 }) {
@@ -126,6 +132,8 @@ export function ShellBody({ route, modules, children, onOpenModule, onOpenStatus
     return <>
       <RouteHeader title="Modules" reason={null} />
       <ModulesList modules={modules} onOpen={onOpenModule} />
+      {onOpenTroubleshoot && <NavRow title="Troubleshoot" detail="Diagnostics and support"
+        blocked={false} focusKey="troubleshoot" onClick={onOpenTroubleshoot} />}
     </>;
   }
   if (route.kind === "module") {

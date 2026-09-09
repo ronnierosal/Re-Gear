@@ -36,11 +36,12 @@ export type Route =
   | { kind: "modules" }
   | { kind: "module"; id: ModuleId }
   | { kind: "status"; id: StatusId }
-  | { kind: "troubleshoot" };
+  | { kind: "troubleshoot" }
+  | { kind: "picker"; id: "tdp" | "display" };
 
 /** Stable identity for a route, used as the focus-restoration key. */
 export function routeKey(route: Route): string {
-  return route.kind === "module" || route.kind === "status" ? `${route.kind}:${route.id}` : route.kind;
+  return route.kind === "module" || route.kind === "status" || route.kind === "picker" ? `${route.kind}:${route.id}` : route.kind;
 }
 
 export type ModuleEntry = {
@@ -177,14 +178,9 @@ export function hasInternalLevel(stack: NavStack): boolean {
   return stack.length > 1;
 }
 
-/** Whether the diagnostics surfaces are actually on screen.
- *
- * `showDiagnostics` says the player opened them; it does not say they are
- * visible. On any pushed route the Command Center body is not rendered, so
- * collecting for surfaces nobody can see is work the player did not ask for.
- */
+/** Collect optional diagnostics only while their dedicated route is visible. */
 export function diagnosticsVisible(stack: NavStack, showDiagnostics: boolean): boolean {
-  return showDiagnostics && currentRoute(stack).kind === "command-center";
+  return showDiagnostics && currentRoute(stack).kind === "troubleshoot";
 }
 
 /** A fresh Quick Access entry starts at Command Center.

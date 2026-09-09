@@ -29,5 +29,10 @@ export const regearControlCss = `
   outline-offset: -3px;
   background: #213744 !important;
 }
+.rg-quick-control:focus-visible, .rg-quick-control.gpfocus, .gpfocus > .rg-quick-control {
+  outline: 2px solid #66d9f7 !important;
+  outline-offset: -3px;
+  background: #213744 !important;
+}
 .rg-dashboard-action:disabled { opacity: .7; }
 `;

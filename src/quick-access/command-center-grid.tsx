@@ -1,3 +1,4 @@
+import { ApprovedIcon } from "./approved-icons";
 import { DialogButton, Focusable } from "@decky/ui";
 import type { CommandCenterTile, TileId } from "./command-center";
 import { TILE_COLUMNS } from "./command-center";
@@ -59,27 +60,29 @@ function Tile({ tile, onActivate }: {
 }) {
   const usable = tile.available;
   return <DialogButton
+    className="rg-quick-control"
     data-regear-tile={tile.id}
+    data-regear-focus={`tile:${tile.id}`}
     onClick={() => onActivate(tile.id)}
     // Unusable tiles stay focusable: pressing one is how its reason is read.
     aria-label={`${tile.title}: ${tile.value.text}`}
     style={{
-      minWidth: 0, width: "auto", minHeight: 62, margin: 0, padding: "8px 10px",
-      display: "flex", flexDirection: "column", alignItems: "flex-start",
-      justifyContent: "center", gap: 2, textAlign: "left", borderRadius: 12,
+      minWidth: 0, width: "auto", minHeight: 112, margin: 0, padding: "8px 10px",
+      display: "flex", flexDirection: "column", alignItems: "center",
+      justifyContent: "center", gap: 6, textAlign: "center", borderRadius: 12,
       background: SURFACE,
       border: `1px solid ${usable ? C.border : "#22374f"}`,
       color: usable ? C.text : C.dim,
-      opacity: usable ? 1 : 0.72,
+      opacity: 1,
     }}>
-    <span style={{ fontSize: 11, letterSpacing: ".02em", color: C.muted,
-      whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "100%" }}>
-      {tile.title}
-    </span>
-    <span style={{ fontSize: 14, fontWeight: 760,
-      color: tile.developmental ? C.amber : tile.value.known ? C.cyan : C.dim,
-      whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "100%" }}>
+    <ApprovedIcon id={tile.id === "display" ? "mode-tv-docked" : tile.id === "safe-disconnect" ? "module-egpu" : "module-auto-tdp"} />
+    <span style={{ fontSize: tile.value.text.length > 12 ? 16 : 18, fontWeight: 700, order: 0,
+      color: tile.developmental ? C.amber : tile.value.known ? C.cyan : C.muted,
+      whiteSpace: "normal", overflowWrap: "normal", maxWidth: "100%" }}>
       {tile.value.text}
+    </span>
+    <span style={{ fontSize: 12, color: C.text, whiteSpace: "normal", maxWidth: "100%" }}>
+      {tile.title}
     </span>
     {tile.actionLabel && (
       <span style={{ fontSize: 11, color: C.muted }}>{tile.actionLabel}</span>
@@ -94,7 +97,7 @@ export function CommandCenterGrid({ tiles, onActivate }: {
     style={{
       display: "grid",
       gridTemplateColumns: `repeat(${TILE_COLUMNS}, minmax(0, 1fr))`,
-      gap: 6, minWidth: 0, marginBottom: 10,
+      gap: 8, minWidth: 0, marginBottom: 10,
     }}
     // Native two-dimensional traversal: left/right within a row, up/down
     // between rows. The lone fifth tile is reachable from either cell above.
