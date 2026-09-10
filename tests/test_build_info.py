@@ -61,6 +61,13 @@ class BuildInfoTests(unittest.TestCase):
         )
 
     def test_clean_porcelain_status_requires_a_valid_head(self):
+        """This is also the state `pnpm build` leaves behind.
+
+        `dist/` is ignored rather than tracked, and porcelain status does not
+        report ignored paths without `--ignored`, so the build that runs
+        immediately before packaging dirties nothing. The exemption that used
+        to be needed for the two tracked UI outputs is gone with it.
+        """
         with patch.object(
             build_plugin,
             "_git_status",
@@ -71,24 +78,13 @@ class BuildInfoTests(unittest.TestCase):
         ):
             self.assertEqual(build_plugin.source_revision(), "a" * 40)
 
-    def test_only_expected_generated_ui_outputs_are_accepted_after_build(self):
-        with patch.object(
-            build_plugin,
-            "_git_status",
-            side_effect=(
-                CompletedProcess(
-                    ("git", "status"),
-                    0,
-                    stdout=" M dist/index.js\n M dist/index.js.map\n",
-                ),
-                CompletedProcess(("git", "rev-parse", "HEAD"), 0, stdout="a" * 40),
-            ),
-        ):
-            self.assertEqual(build_plugin.source_revision(), "a" * 40)
-
-    def test_any_other_dirty_path_still_refuses_a_clean_revision(self):
+    def test_any_dirty_path_refuses_a_clean_revision(self):
         for status in (
             " M src/index.tsx\n",
+            # dist/ is ignored now, so these can only mean someone put the
+            # generated bundle back under version control. That must fail
+            # closed exactly like any other pending change.
+            " M dist/index.js\n M dist/index.js.map\n",
             "M  dist/index.js\n",
             "?? dist/untracked.js\n",
             "R  dist/index.js -> dist/renamed.js\n",

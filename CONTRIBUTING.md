@@ -42,6 +42,7 @@ expected to own the maintainer's Ally/G1 session.
 
 Small local commits are encouraged. Maintainers control branch integration,
 pushes, tags, releases, Decky publication, and hardware deployment. Generated
-`dist/` outputs are intentional package inputs; `out/` archives are not tracked.
+`dist/` and `out/` outputs are package inputs and artifacts, not tracked files:
+run `pnpm build` before packaging, and never commit the result.
 
 See [Development workflow](docs/DEVELOPMENT.md) for commands and Git rules.

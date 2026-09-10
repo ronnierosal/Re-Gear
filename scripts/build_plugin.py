@@ -20,7 +20,9 @@ OUTPUT = ROOT / "out" / f"Re-Gear-{PACKAGE_VERSION}.zip"
 PLUGIN_DIRECTORY = "Re-Gear"
 BUILD_INFO_FILENAME = "build_info.json"
 REVISION_RE = re.compile(r"^[0-9a-f]{40}$")
-GENERATED_BUILD_OUTPUTS = frozenset(("dist/index.js", "dist/index.js.map"))
+#: Produced by `pnpm build` and deliberately absent from version control, so
+#: this script cannot find them in a fresh clone until that build has run.
+GENERATED_BUILD_OUTPUTS = ("dist/index.js", "dist/index.js.map")
 TOP_LEVEL_FILES = (
     "LICENSE",
     "THIRD_PARTY_NOTICES.md",
@@ -105,18 +107,17 @@ def source_revision() -> str:
 
 
 def _has_unexpected_worktree_changes(status: str) -> bool:
-    """Accept only the two tracked UI outputs produced immediately before packaging.
+    """Refuse a clean-commit claim for any pending change at all.
 
-    The archive is built after ``pnpm build``.  That build deterministically
-    refreshes these tracked outputs in CI, so treating those exact unstaged
-    changes as source dirtiness would make every CI archive unverifiable.
-    Every other tracked, staged, renamed, or untracked path remains a hard
-    refusal: it may influence the package or make the claimed commit ambiguous.
+    The archive is built after ``pnpm build``.  That build used to rewrite the
+    two tracked UI outputs, so this had to tolerate exactly those unstaged
+    modifications or no CI archive could ever claim a commit.  ``dist/`` is now
+    ignored rather than tracked, so the build no longer dirties anything and no
+    exemption is needed: every tracked, staged, renamed, or untracked path is a
+    hard refusal, because it may influence the package or make the claimed
+    commit ambiguous.
     """
-    for line in status.splitlines():
-        if not line.startswith(" M ") or line[3:] not in GENERATED_BUILD_OUTPUTS:
-            return True
-    return False
+    return bool(status.strip())
 
 
 def build_info_bytes(revision: str) -> bytes:
@@ -143,9 +144,18 @@ def main(argv: Sequence[str] = ()) -> int:
         raise SystemExit("Refusing to package a manifest without the root delivery flag")
     files = included_files()
     build_info = build_info_bytes(source_revision())
-    missing = [str(path.relative_to(ROOT)) for path in files if not path.is_file()]
+    missing = [path.relative_to(ROOT).as_posix() for path in files if not path.is_file()]
     if missing:
-        raise SystemExit("Missing package inputs: " + ", ".join(missing))
+        message = "Missing package inputs: " + ", ".join(missing)
+        # dist/ is generated, ignored, and absent from a fresh clone, so this is
+        # the expected first failure for anyone who packages before building.
+        # Name the command instead of leaving them to infer it from a path.
+        if any(relative in GENERATED_BUILD_OUTPUTS for relative in missing):
+            message += (
+                "\nThe dist/ bundle is generated and is not in version control."
+                "\nRun `pnpm build` first; this script packages what that produced."
+            )
+        raise SystemExit(message)
     OUTPUT.parent.mkdir(parents=True, exist_ok=True)
     from release_coordination import reserve
     if OUTPUT.exists():

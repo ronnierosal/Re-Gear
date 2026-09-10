@@ -36,11 +36,17 @@ python scripts/check_architecture.py
 python -m unittest discover -s tests -v
 python -m compileall -q backend tests scripts
 pnpm typecheck
-pnpm test:frontend
 pnpm build
+pnpm test:frontend
 python scripts/check_plugin_package.py .
 git diff --check
 ```
+
+`pnpm build` runs before `pnpm test:frontend`, not after: the branding and
+bundle-clearance tests audit `dist/index.js`, and `dist/` is generated rather
+than committed, so a fresh clone has nothing for them to read until the build
+has run. `scripts/check_plugin_package.py` and `scripts/build_plugin.py` read
+the same built bundle and fail with that instruction if it is absent.
 
 Do not repeatedly run the full matrix after tiny documentation edits. Do not
 skip the full matrix when producing or deploying an artifact.
@@ -67,8 +73,11 @@ driver's ownership.
 - Keep commits small, focused, and descriptive.
 - Do not mix unrelated cleanup with a fix.
 - Inspect staged paths and diff before committing.
-- Generated `dist/index.js` and its source map belong in Git only as the
-  intentional Decky package outputs; `out/` artifacts do not.
+- Generated `dist/index.js` and its source map are not in Git, and neither are
+  `out/` artifacts. `pnpm build` produces the bundle; packaging consumes what
+  that build left on disk. Committing it made a generated file the most
+  contended path in the repository, conflicting in pull requests whose source
+  merged cleanly, so CI now rebuilds it and refuses to let it be tracked again.
 - A worker may create a local commit for a coherent verified slice when its
   driver owns the worktree or has coordinated the shared paths.
 - Create a branch when isolation is useful or explicitly requested; report its
