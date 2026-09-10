@@ -15,11 +15,15 @@ const iconIds: Record<string, CommandCenterIconId> = {
 function Icon({ id }: { id: string }) { return <CommandCenterIcon id={iconIds[id] ?? "status-unknown"} size={34}/>; }
 
 /** Shared synthetic presentation for browser preview and native Decky shell. */
-export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReasons = false, settings, native = false, primitives, previewColumns }: {
+export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReasons = false, settings, native = false, primitives, previewColumns, tiles }: {
   onClose(): void; initialTab?: Tab; longReasons?: boolean; settings?: ReactNode; native?: boolean;
   primitives?: { Button: ElementType; Focusable: ElementType };
   /** Synthetic comparison only; native callers never pass this. */
   previewColumns?: 3 | 4;
+  /** Real observations for the tabs that have them. A tab left out keeps its
+   *  synthetic tiles, so this can be filled in one tab at a time without the
+   *  rest of the prototype claiming to be live. */
+  tiles?: Partial<Record<Tab, readonly Tile[]>>;
 }) {
   const Button = primitives?.Button ?? "button";
   const Container = primitives?.Focusable ?? "div";
@@ -32,7 +36,10 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
   const launcher = useRef<string | undefined>(undefined);
   const pendingFocus = useRef<string | undefined>(undefined);
   const opener = useRef<HTMLElement | null>(null);
-  const items = sampleTiles[tab];
+  const supplied = tiles?.[tab];
+  // A tab with real readings must stop describing itself as sample data.
+  const synthetic = supplied === undefined;
+  const items = supplied ?? sampleTiles[tab];
   const gridColumns = columns;
   const focus = (id?: string) => {
     const target = Array.from(panel.current?.querySelectorAll<HTMLElement>("[data-ec-control]") ?? []).find(el => el.dataset.ecControl === id);
@@ -157,7 +164,7 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
   const renderTile = (item: Tile) => <Button type="button" key={item.id} data-ec-control={item.id} data-tone={item.tone ?? "quiet"} className="rg-expanded-tile"
               {...(native ? { preferredFocus: item.id === restoreTarget(items.map(tile => tile.id), memory.current[tab]), onGamepadFocus: () => { memory.current[tab] = item.id; const target = panel.current?.querySelector<HTMLElement>(`[data-ec-control="${item.id}"]`); if(target) { if(tab === "settings") reveal(target); else target.scrollIntoView({block:"nearest"}); } } } : {})}
               style={{ gridColumn: item.wide ? (gridColumns === 4 ? "span 2" : "1 / -1") : undefined }}
-              aria-label={`${item.title}: ${item.value}. ${item.detail}. Sample data. View details.`}
+              aria-label={`${item.title}: ${item.value}. ${item.detail}.${synthetic ? " Sample data." : ""} View details.`}
               onFocus={(event: { target: EventTarget }) => { memory.current[tab] = item.id; (event.target as HTMLElement).scrollIntoView({ block: "nearest" }); }} onClick={() => { launcher.current = item.id; setNested(item); }}>
               <span className="rg-expanded-tile-body">
                 <span className="rg-expanded-tile-icon"><Icon id={item.id}/></span>
