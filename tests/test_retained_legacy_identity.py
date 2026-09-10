@@ -19,6 +19,34 @@ found the boundary between the product's name and its installed footprint.
 
 None of this argues against the rename. It argues for doing it everywhere the
 name is only a name, and nowhere it is an address.
+
+Pinned elsewhere, listed here so the inventory is findable in one place. Each
+already has an assertion in the test named beside it; what those lack is the
+reason, which is how a sweep talks itself past them:
+
+- ``X-HDM-Content-SHA256`` -- an HTTP header a server reads.
+  ``tests/test_support_submission_adapter.py``
+- ``REPORT_ID_RE = ^HDM-[A-Z0-9]{6,16}$`` -- validates ids the *server* returns,
+  so the format is not ours to change unilaterally.
+  ``tests/test_support_submission.py``
+- the ``"hdm"`` version key in the support-bundle payload -- a wire format a
+  reader already parses. ``tests/test_support_bundle.py``
+- ``HDM-support-<timestamp>.json`` -- the filename written into a player's
+  Downloads, which they may already have sent somewhere.
+  ``tests/test_support_bundle.py``
+- ``HDM_STATE_ROOT`` -- an environment variable rendered into the installed
+  drop-in, so it is bytes on disk as well as a name. Covered below.
+- ``HDM shutdown checkpoint: stage=`` -- emitted to journald and parsed by a
+  regex in ``scripts/capture_shutdown_evidence.py``. Renaming one side breaks
+  the scraper contract silently, since nothing fails until evidence is missing.
+- ``hdm.hideAttachedEgpuSleepWarning`` and its legacy partner -- localStorage
+  keys holding a player's dismissal.
+  ``frontend-tests/retained-legacy-identity.test.mjs``
+
+Deliberately not frozen: ``backend/hdm/`` is packaged into the Decky archive and
+validated by the signed installer, so renaming it changes the installed tree.
+That is a coordinated release, not a sweep -- out of scope here rather than
+forbidden forever.
 """
 
 from __future__ import annotations
