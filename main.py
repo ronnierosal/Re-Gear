@@ -1,4 +1,4 @@
-"""Root Decky delivery adapter for the read-only HDM diagnostics API."""
+"""Root Decky delivery adapter for the read-only Re-Gear diagnostics API."""
 
 from __future__ import annotations
 
@@ -803,12 +803,12 @@ class Plugin:
             )
         except Exception:
             try:
-                decky.logger.exception("HDM G1 journey support event failed")
+                decky.logger.exception("Re-Gear G1 journey support event failed")
             except Exception:
                 pass
         try:
             decky.logger.info(
-                "HDM G1 journey: component=%s stage=%s code=%s elapsed_ms=%s stage_elapsed_ms=%s",
+                "Re-Gear G1 journey: component=%s stage=%s code=%s elapsed_ms=%s stage_elapsed_ms=%s",
                 component,
                 stage,
                 code,
@@ -873,7 +873,7 @@ class Plugin:
             }
 
     async def get_action_history(self, _request: object = None) -> dict[str, object]:
-        """Return the bounded, identity-free projection of existing HDM events."""
+        """Return the bounded, identity-free projection of existing Re-Gear events."""
         try:
             return await asyncio.to_thread(
                 lambda: action_history_to_payload(
@@ -2143,7 +2143,7 @@ class Plugin:
         build_version = str(self._build_info.get("version", "unknown"))
         build_revision = str(self._build_info.get("revision", "unavailable"))
         decky.logger.info(
-            "HDM plugin started: version=%s revision=%s",
+            "Re-Gear plugin started: version=%s revision=%s",
             build_version,
             build_revision,
         )
@@ -2183,7 +2183,7 @@ class Plugin:
             inference = payload["inference"]
             blocker_codes = [item["code"] for item in snapshot["blockers"]]
             decky.logger.info(
-                "HDM diagnostics ready: mode=%s game=%s support=%s blockers=%s",
+                "Re-Gear diagnostics ready: mode=%s game=%s support=%s blockers=%s",
                 inference["mode"],
                 snapshot["game_state"],
                 snapshot["support_tier"],
@@ -2202,7 +2202,7 @@ class Plugin:
                 },
             )
         except Exception:
-            decky.logger.exception("HDM initial read-only snapshot failed")
+            decky.logger.exception("Re-Gear initial read-only snapshot failed")
             self._events.append(
                 severity="error",
                 code="diagnostics.initial_failed",
@@ -2641,7 +2641,7 @@ class Plugin:
                 else {}
             )
             decky.logger.info(
-                "HDM sleep guard: presence=%s active=%s error=%s elapsed_ms=%s",
+                "Re-Gear sleep guard: presence=%s active=%s error=%s elapsed_ms=%s",
                 presence.value,
                 status.active,
                 bool(status.error),
@@ -2666,7 +2666,7 @@ class Plugin:
             try:
                 await self._reconcile_sleep_guard()
             except Exception:
-                decky.logger.exception("HDM sleep guard reconciliation failed")
+                decky.logger.exception("Re-Gear sleep guard reconciliation failed")
                 self._events.append(
                     severity="error",
                     code="sleep_guard.reconcile_failed",
@@ -2783,7 +2783,7 @@ class Plugin:
         # Waiting without a deadline can hold
         # Decky's unload hook past its five-second deadline and cause a forced
         # stop. Decky owns backend-process retirement after this hook returns;
-        # HDM only owns and stops the tasks and resources it created.
+        # Re-Gear only owns and stops the tasks and resources it created.
 
     def _record_shutdown_checkpoint(self, stage: str, started_ns: int) -> None:
         """Existing journal only: no new collector, disk sync, or shutdown hook.
