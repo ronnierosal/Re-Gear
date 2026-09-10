@@ -14,9 +14,12 @@ This is repository evidence, not an installed-device readback.
 | Live bridge | `command-center-data-source` is owned by Claude `claude-a224c5ea-bc89-4cb3-9bd2-93893d3c48f8`, covering index.tsx/native.tsx. Combined bridge plus detail controls require a fresh exact-commit check. |
 
 The previous device session measured 828×466 CSS pixels at DPR approximately
-2.32. The expanded layout uses four columns at that available content width,
-with Safe Disconnect spanning two columns. A temporary native stylesheet preview
-showed no clipped text. A temporary corrected View/Back + Y listener opened the
+2.32. Current column selection uses measured content width: four columns at 640px or
+more, three at 430–639px, two at 280–429px, and one below 280px. Viewport and
+outer panel width are not content width. The earlier approximately 438.85px
+panel therefore does not establish four-column behavior under current thresholds.
+The historical temporary four-column native stylesheet trial, with Safe Disconnect
+spanning two columns, showed no clipped text; it is not current-layout proof. A temporary corrected View/Back + Y listener opened the
 menu twice; that evidence does not establish installation of later UI/bridge work.
 
 ## Next combined and native checks
@@ -33,7 +36,7 @@ menu twice; that evidence does not establish installation of later UI/bridge wor
 5. Verify unavailable, pending, failure, retry and cancellation presentation with
    the application's action guards. Rendering or status refresh must not dispatch
    actions. Hardware-affecting execution stays within its supervised plan.
-6. Inspect four-column fit, Settings label, compact footer, dark cyan focus and
+6. Inspect responsive column fit, Settings label, compact footer, dark cyan focus and
    scrolling at the measured native scale; capture privacy-safe before/after images.
 7. Verify configured menu shortcuts after full release, including close/reopen.
    Non-exclusive shortcut observation does not guarantee suppression of Steam or
