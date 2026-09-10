@@ -81,6 +81,7 @@ from ..application.live_disconnect import (
     LiveDisconnectService,
     LiveDisconnectStage,
 )
+from ..application.owned_filter import OwnedDeviceFilter
 from ..application.safe_undock_evidence import build_safe_undock_evidence
 from ..application.snapshot import SnapshotService
 from ..domain.display_release import DisplayReleaseEvidence
@@ -96,6 +97,7 @@ from ..domain.removal_transaction import RecoveryState, reconcile
 from ..ports.removal_transaction import RemovalTransactionStore
 from .device_filter_program import compile_device_filter
 from .compatibility_catalog_store import FileCompatibilityCatalogStore
+from .filter_ownership_store import FileFilterOwnershipStore
 from .game_close_preferences import GameClosePreferenceStore
 from .removal_transaction_store import FileRemovalTransactionStore
 
@@ -672,7 +674,18 @@ def build_live_disconnect_runtime(
     """
     gpu, audio = egpu_functions(gpu_bdf)
     nodes, nodes_complete = node_paths(gpu, audio)
-    device_filter = CgroupDeviceFilter()
+    # Every attach goes through the ownership journal. The link underneath is
+    # unpinned, so without this a crash between arming and disarming returns the
+    # system to unfiltered with nothing recording that a filter was ever there.
+    device_filter = OwnedDeviceFilter(
+        device_filter=CgroupDeviceFilter(),
+        store=FileFilterOwnershipStore(store_root),
+        observe_owner=observe_owner_identity,
+        observe_cgroup=lambda: observe_user_manager_cgroup(uid),
+        boot_hash=read_boot_hash,
+        monotonic=time.monotonic,
+        now_ns=time.time_ns,
+    )
 
     def holder_units() -> tuple[str, ...]:
         return scan_holders(nodes, nodes_incomplete=not nodes_complete).units
@@ -763,6 +776,13 @@ def build_live_disconnect_runtime(
 
         Returns None when any of them cannot be established, which the runtime
         reports as a refusal: a grant that cannot be bound is not a grant.
+
+        The durable ownership claim is taken here rather than inside the arm,
+        because it has to be on stable storage before anything can attach and a
+        prior record has to be reconciled before a fresh grant is used. A claim
+        that is refused -- because an earlier owner may still hold the scope, or
+        because its record cannot be read or written -- refuses the attempt, for
+        the same reason an unbindable grant does.
         """
         cgroup = observe_user_manager_cgroup(uid)
         owner = observe_owner_identity()
@@ -780,7 +800,9 @@ def build_live_disconnect_runtime(
             sample_id=observation.removal.sample_id,
             deadline=time.monotonic() + grant_seconds,
         )
-        return authorization if authorization.granted else None
+        if not authorization.granted:
+            return None
+        return authorization if device_filter.claim(authorization).ok else None
 
     store = FileRemovalTransactionStore(store_root)
     service = LiveDisconnectService(
