@@ -461,9 +461,9 @@ execution trust boundary remains unresolved. A user able to rename an ancestor
 of the plugin directory can substitute a different canonical path before the
 service restart, while the helper publishes verified content into its retained
 original directory. A successful service health check does not detect that
-substitution. The hardening PR remains a draft pending an architecture decision
-about loader-path authority; it is not a complete fix for arbitrary root-plugin
-execution. A pathname identity check alone would leave another race before the
+substitution. Snapshot and directory-operation hardening can be integrated
+independently, but it is not a complete fix for arbitrary root-plugin execution.
+The loader-path authority decision remains a separate unresolved security item. A pathname identity check alone would leave another race before the
 loader opens its files.
 
 One-time setup (after the development machine has created an Ed25519 key pair
