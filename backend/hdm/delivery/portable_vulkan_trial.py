@@ -41,7 +41,9 @@ def build_candidate(argv: tuple[str, ...], environment: Mapping[str, str], *,
     conflicts = ("DRI_PRIME", "VK_ICD_FILENAMES", "VK_DRIVER_FILES",
                  "VK_LOADER_DRIVERS_SELECT", "VK_LOADER_DRIVERS_DISABLE",
                  "VK_LOADER_LAYERS_DISABLE", "VK_LAYER_PATH", "VK_INSTANCE_LAYERS",
-                 "NODEVICE_SELECT")
+                 "NODEVICE_SELECT", "MESA_LOADER_DRIVER_OVERRIDE",
+                 "GALLIUM_DRIVER", "LIBGL_ALWAYS_SOFTWARE",
+                 "__GLX_VENDOR_LIBRARY_NAME")
     if any(key in environment for key in conflicts):
         raise ValueError("conflicting GPU environment requires review")
     candidate = dict(environment)

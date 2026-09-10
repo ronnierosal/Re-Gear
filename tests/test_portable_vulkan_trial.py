@@ -52,6 +52,16 @@ class PortableVulkanTrialTests(unittest.TestCase):
             with self.subTest(key=key), self.assertRaises(ValueError):
                 self.build(env={key: "1"})
 
+    def test_does_not_override_conflicting_opengl_routing(self):
+        # Schema 2 routes OpenGL as well as Vulkan, so an inherited OpenGL
+        # override must abort rather than silently defeat the OpenGL half and
+        # yield trial evidence that looks like a clean run.
+        for key in ("MESA_LOADER_DRIVER_OVERRIDE", "GALLIUM_DRIVER",
+                    "LIBGL_ALWAYS_SOFTWARE", "__GLX_VENDOR_LIBRARY_NAME"):
+            for schema in (1, 2):
+                with self.subTest(key=key, schema=schema), self.assertRaises(ValueError):
+                    self.build(schema_version=schema, env={key: "1"})
+
     def test_rollback_removes_new_keys_and_preserves_unrelated_changes(self):
         _, env = self.build()
         env["OTHER"] = "new"
