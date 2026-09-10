@@ -9,7 +9,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from regear.domain.dock_teardown import (  # noqa: E402
+from regear.domain.dock_teardown import (
+    TunnelCapability,
+    WritePermission,  # noqa: E402
     DockTeardownState,
     TeardownApproval,
     TunnelEvidence,
@@ -30,7 +32,11 @@ USB = UsbBranchEvidence(
 
 #: The G1's Thunderbolt router, authorized and writable.
 TUNNEL = TunnelEvidence(
-    sysfs_id="0-1", authorized=True, deauthorizable=True, scan_complete=True
+    sysfs_id="0-1",
+    authorized=True,
+    capability=TunnelCapability.SUPPORTED,
+    write_permission=WritePermission.WRITABLE,
+    scan_complete=True,
 )
 
 
@@ -263,11 +269,81 @@ class TunnelTests(unittest.TestCase):
     def test_a_tunnel_that_cannot_be_brought_down_refuses_before_anything_else(
         self,
     ) -> None:
-        # Discovering this afterwards leaves a player with no dock USB, no
-        # clearance, and a recovery to perform.
-        decision = decide(tunnel=replace(TUNNEL, deauthorizable=False))
+        # Discovering any of these afterwards leaves a player with no dock
+        # USB, no clearance, and a recovery to perform. They were one refusal
+        # that could not say which of three things was wrong.
+        cases = {
+            replace(
+                TUNNEL, capability=TunnelCapability.UNKNOWN
+            ): "dock_teardown.tunnel_capability_unknown",
+            replace(
+                TUNNEL, capability=TunnelCapability.NOT_SUPPORTED
+            ): "dock_teardown.tunnel_capability_unsupported",
+            replace(
+                TUNNEL, write_permission=WritePermission.UNKNOWN
+            ): "dock_teardown.tunnel_write_permission_unknown",
+            replace(
+                TUNNEL, write_permission=WritePermission.DENIED
+            ): "dock_teardown.tunnel_write_permission_denied",
+        }
+        for tunnel, code in cases.items():
+            with self.subTest(code=code):
+                self.assertEqual(decide(tunnel=tunnel).code, code)
 
-        self.assertEqual(decision.code, "dock_teardown.tunnel_not_deauthorizable")
+    def test_an_unsupported_dock_is_not_an_unprivileged_look(self) -> None:
+        """The distinction the single flag could not make.
+
+        One says this dock cannot do it and never will. The other says we did
+        not look with enough privilege. A player can act on the second.
+        """
+        unsupported = decide(
+            tunnel=replace(TUNNEL, capability=TunnelCapability.NOT_SUPPORTED)
+        )
+        denied = decide(
+            tunnel=replace(TUNNEL, write_permission=WritePermission.DENIED)
+        )
+
+        self.assertNotEqual(unsupported.code, denied.code)
+
+    def test_evidence_this_function_has_never_heard_of_never_permits(self) -> None:
+        """A type annotation is not a runtime check.
+
+        Refusing the values that mean no leaves anything else -- None, or a
+        member added to either enum later -- matching no guard at all, and
+        falling through to permitted. Only the value that means yes may pass.
+        """
+        unrecognised = (
+            replace(TUNNEL, capability=None),
+            replace(TUNNEL, capability="future_capability"),
+            replace(TUNNEL, write_permission=None),
+            replace(TUNNEL, write_permission="future_permission"),
+        )
+        for tunnel in unrecognised:
+            with self.subTest(
+                capability=tunnel.capability, permission=tunnel.write_permission
+            ):
+                decision = decide(tunnel=tunnel)
+
+                self.assertFalse(decision.permitted)
+                self.assertIn(
+                    decision.code,
+                    {
+                        "dock_teardown.tunnel_capability_unknown",
+                        "dock_teardown.tunnel_write_permission_unknown",
+                    },
+                )
+
+    def test_capability_is_asked_before_permission(self) -> None:
+        """Whether the dock can do this outranks whether we may ask it to."""
+        decision = decide(
+            tunnel=replace(
+                TUNNEL,
+                capability=TunnelCapability.NOT_SUPPORTED,
+                write_permission=WritePermission.DENIED,
+            )
+        )
+
+        self.assertEqual(decision.code, "dock_teardown.tunnel_capability_unsupported")
 
     def test_a_tunnel_scan_that_did_not_finish_refuses(self) -> None:
         decision = decide(tunnel=replace(TUNNEL, scan_complete=False))
@@ -278,7 +354,12 @@ class TunnelTests(unittest.TestCase):
         # Nothing left to deauthorize, so being unable to is not a blocker.
         decision = decide(
             usb=replace(USB, present=False),
-            tunnel=replace(TUNNEL, authorized=False, deauthorizable=False),
+            tunnel=replace(
+                TUNNEL,
+                authorized=False,
+                capability=TunnelCapability.NOT_SUPPORTED,
+                write_permission=WritePermission.DENIED,
+            ),
         )
 
         self.assertIs(decision.state, DockTeardownState.ALREADY_DOWN)
@@ -342,7 +423,16 @@ class ClaimTests(unittest.TestCase):
             decide(gpu_functions_present=("0000:08:00.0",)),
             decide(tunnel=replace(TUNNEL, sysfs_id="")),
             decide(tunnel=replace(TUNNEL, authorized=None)),
-            decide(tunnel=replace(TUNNEL, deauthorizable=False)),
+            decide(tunnel=replace(TUNNEL, capability=TunnelCapability.UNKNOWN)),
+            decide(
+                tunnel=replace(TUNNEL, capability=TunnelCapability.NOT_SUPPORTED)
+            ),
+            decide(
+                tunnel=replace(TUNNEL, write_permission=WritePermission.UNKNOWN)
+            ),
+            decide(
+                tunnel=replace(TUNNEL, write_permission=WritePermission.DENIED)
+            ),
             decide(tunnel=replace(TUNNEL, scan_complete=False)),
             decide(usb=replace(USB, scan_complete=False)),
             decide(usb=replace(USB, storage_scan_complete=False)),

@@ -138,7 +138,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         tunnel=TunnelEvidence(
             sysfs_id=tunnel.sysfs_id,
             authorized=tunnel.authorized,
-            deauthorizable=tunnel.deauthorizable,
+            capability=tunnel.capability,
+            write_permission=tunnel.write_permission,
             scan_complete=tunnel.complete,
         ),
         gpu_functions_present=gpu_present,
@@ -193,6 +194,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         "tunnel": {
             "sysfs_id": tunnel.sysfs_id,
             "authorized": tunnel.authorized,
+            "capability": tunnel.capability.value,
+            "write_permission": tunnel.write_permission.value,
+            # Derived, and reported alongside rather than instead of the two
+            # axes: it is true only when support is established AND the file
+            # is writable, so a reader who sees false can see which half.
             "deauthorizable": tunnel.deauthorizable,
             "scan_complete": tunnel.complete,
             # An ambiguous reading is incomplete, so the decision refuses
