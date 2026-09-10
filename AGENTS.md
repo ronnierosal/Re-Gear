@@ -85,6 +85,18 @@ and correct the owning repository document.
 - Local hub state is the live workspace record; GitHub issue/PR links carry
   cross-machine coordination. Chat history is not required. An unavailable remote
   blocks remote integration, not explicitly assigned, nonconflicting local work.
+- PR and issue cleanup is part of completing a task. Search open and closed items
+  before creating another; update the existing PR for the same unfinished change.
+  Default to one active PR per bounded task; record why a dependency stack or
+  independently reviewable split is needed. Finish ready work before starting
+  another slice of the same task; keep newly discovered problems visible.
+- After integration and before handoff, reconcile the PRs, issues and hub records
+  in your scope: close completed items with merge/acceptance evidence, and close
+  duplicates or superseded items with a linked canonical item or successor after
+  accounting for unique work. Retained items need an owner, remaining acceptance
+  criteria, blocker and next action. Follow [backlog cleanup](docs/AGENT_COORDINATION.md#pr-and-issue-cleanup).
+  Age, green CI or a merged partial fix alone never justify closure; preserve
+  hardware gates, other owners' work, branches and history.
 - Validated routine work may be committed and merged autonomously by the owning
   agent. Human approval is the exception for defined high-risk actions, not the
   default merge mechanism. Before merging: recheck claims/dependencies, fetch the
