@@ -62,10 +62,11 @@ The directory cutover preserves existing data and recovery authority:
 | --- | --- |
 | Decky visible manifest label | `Re-Gear` |
 | New plugin/archive directory | `Re-Gear` |
-| npm and Python distribution name | `handheld-dock-mode-steamos` |
-| Python package and diagnostic command | `hdm`, `hdm-diagnose` |
-| Helper/state paths | existing `handheld-dock-mode` paths |
-| Settings, managed markers and diagnostic codes | existing keys and HDM identifiers |
+| npm and Python distribution name | `handheld-dock-mode-steamos` — build metadata, renameable, not yet done |
+| Diagnostic command | `hdm-diagnose` — not installed on any device, renameable, not yet done |
+| Python package | `hdm` — archived and installer-validated; moves in a coordinated release |
+| Helper/state paths | existing `handheld-dock-mode` paths — addresses on installed devices |
+| Settings, managed markers and diagnostic codes | existing keys and HDM identifiers — persisted or scraped identities |
 
 Decky's plugin list and panel display Re-Gear. `publish.image` references the
 512px transparent `docs/images/re-gear-listing-icon.png`, rasterized directly
@@ -74,8 +75,9 @@ are retained. Regenerate with `scripts/render_listing_icon.cjs` using the
 pinned renderer documented in its header; provenance hashes are checked by
 the Decky contract test. Historical installs may
 still use `HandheldDockMode`; normal new deployment refuses that root until the
-controlled supervised cutover. Package names, RPC/state keys and helper paths
-remain stable for the reasons in the cutover inventory.
+controlled supervised cutover. Every retained old name above has a specific
+reason and removal criteria in the cutover inventory; none is frozen merely
+because it is old.
 
 ## Repository name and supervised installation
 
