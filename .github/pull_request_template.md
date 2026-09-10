@@ -12,6 +12,13 @@ Claimed files or modules:
 Overlapping PRs and agreed integration order (or evidence checked with none found):
 Stacked base / prerequisite PRs:
 
+## Backlog disposition
+
+Canonical issue (`Closes` only for fully met acceptance; otherwise `Refs`):
+Existing PR updated, or reason a separate PR/stack is needed:
+Predecessors/duplicates to reconcile after merge (links and unique-work disposition):
+Remaining work/hardware gates, owner and next action (or none):
+
 ## Approach
 
 Describe the focused change and important tradeoffs.

@@ -53,8 +53,41 @@ commands. ChatGPT/voice hands in task descriptions and reads a fresh snapshot.
    local main ref behind a dirty shared checkout.
 10. Mark `done` only when acceptance is met, with commit/PR and evidence. If merge
     is still required but unavailable, retain `review` or `blocked` with the exact
-    next action. Refresh a snapshot for handoff; do not start another task unless
+    next action. Complete the scoped backlog cleanup below and refresh a snapshot
+    for handoff; do not start another task unless
     the user's scope includes continuing the queue.
+
+## PR and issue cleanup
+
+The owner maintains the queue for the problem they are handling; a cleanup request
+does not authorize taking over another owner's task or sweeping unrelated issues.
+
+1. **Before opening:** search open and closed issues/PRs and inspect the relevant
+   hub claim. Reuse the canonical issue and update the existing open PR for the
+   same change, including review fixes. Split only for a distinct reviewable scope
+   or dependency, and record the relationship and merge order. A local mockup or
+   iteration does not need its own PR unless publication/integration is requested.
+2. **After merging:** verify the remote merge and compare each linked issue's
+   acceptance criteria with the evidence. Use `Closes #N` only when this merge
+   satisfies all criteria; otherwise use `Refs #N`, update completed criteria and
+   retain explicit remaining work, including device validation. Recheck automatic
+   closures so a partial implementation does not silently close a hardware gate.
+3. **Reconcile predecessors:** inspect unique changes before closing old drafts.
+   Close a duplicate or superseded PR/issue with the canonical item or successor
+   link and a brief explanation of where its useful work went. Do not close an
+   owned active item without coordination or accepted transfer. Closing a PR does
+   not authorize deleting its branch, worktree or artifacts, or rewriting history.
+4. **Before marking done or handing off:** reconcile your hub state with GitHub.
+   Record opened, merged and closed item links, plus anything retained with its
+   owner, remaining acceptance criteria, blocker (or explicitly none) and next
+   action. If remote access or another owner prevents cleanup, record that exact
+   follow-up rather than claiming it happened. A validated merge-ready PR should
+   be integrated under the existing gates, not left open while its owner starts
+   more slices of the same task.
+
+Keep counts separate from outcomes: a merged implementation may still need a
+hardware check, and a new validated finding is useful work, not queue inflation.
+The aim is no orphaned or duplicate work, not an arbitrary zero-open-items target.
 
 ## Task states and handoffs
 
