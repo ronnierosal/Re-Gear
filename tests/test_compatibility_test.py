@@ -8,7 +8,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.domain.compatibility_test import (  # noqa: E402
+from regear.domain.compatibility_test import (  # noqa: E402
     CompatibilityBaseline,
     CompatibilityTestDirective,
     CompatibilityTestOptions,
@@ -20,8 +20,8 @@ from hdm.domain.compatibility_test import (  # noqa: E402
     review_compatibility_test,
     start_compatibility_test,
 )
-from hdm.domain.control_plane import PlacementState  # noqa: E402
-from hdm.domain.game_compatibility import (  # noqa: E402
+from regear.domain.control_plane import PlacementState  # noqa: E402
+from regear.domain.game_compatibility import (  # noqa: E402
     CompatibilityEvidenceKind,
     EgpuHandoffStatus,
     GameCompatibilityRecord,
@@ -29,7 +29,7 @@ from hdm.domain.game_compatibility import (  # noqa: E402
     SaveTestOutcome,
     promote_egpu_handoff,
 )
-from hdm.domain.models import GameState  # noqa: E402
+from regear.domain.models import GameState  # noqa: E402
 
 
 def start(*, kind=CompatibilityEvidenceKind.SIMULATION, ttl_ms=1000):

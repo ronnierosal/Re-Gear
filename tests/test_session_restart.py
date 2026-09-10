@@ -9,17 +9,17 @@ from types import SimpleNamespace
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.adapters.steamos.commands import UserServiceCommandRunner  # noqa: E402
-from hdm.adapters.steamos.session_restart import (  # noqa: E402
+from regear.adapters.steamos.commands import UserServiceCommandRunner  # noqa: E402
+from regear.adapters.steamos.session_restart import (  # noqa: E402
     APPROVED_RESTARTS,
     SessionUnitRestart,
     await_units_released,
 )
-from hdm.domain.filter_arm_sequence import (  # noqa: E402
+from regear.domain.filter_arm_sequence import (  # noqa: E402
     APPROVED_HOLDER_UNITS,
     SESSION_TARGET,
 )
-from hdm.ports.presentation_activation import UserServiceOperation  # noqa: E402
+from regear.ports.presentation_activation import UserServiceOperation  # noqa: E402
 
 
 UID = 1000

@@ -25,8 +25,8 @@ CRITICAL_FILES = (
     Path("package.json"),
     Path("main.py"),
     Path("dist/index.js"),
-    Path("backend/hdm/domain/models.py"),
-    Path("backend/hdm/profiles/gpd_g1.py"),
+    Path("backend/regear/domain/models.py"),
+    Path("backend/regear/profiles/gpd_g1.py"),
 )
 
 
@@ -121,9 +121,9 @@ def _diagnostics() -> dict[str, Any]:
     if not backend.is_dir():
         raise RuntimeError("plugin_backend_missing")
     sys.path.insert(0, str(backend))
-    from hdm.adapters.steamos.version_info import SteamOsVersionDiscovery
-    from hdm.api import DiagnosticsApi
-    from hdm.application.support_bundle import SupportBundleService
+    from regear.adapters.steamos.version_info import SteamOsVersionDiscovery
+    from regear.api import DiagnosticsApi
+    from regear.application.support_bundle import SupportBundleService
 
     report = DiagnosticsApi().get_snapshot()
     snapshot = report.get("snapshot", {})
@@ -142,7 +142,7 @@ def _diagnostics() -> dict[str, Any]:
         report,
         (),
         {
-            "hdm": _plugin_version(),
+            "regear": _plugin_version(),
             "decky": "unknown",
             "steamos": versions.steamos,
             "kernel": versions.kernel,
@@ -163,10 +163,10 @@ def _wake_diagnostics() -> dict[str, Any]:
     if not backend.is_dir():
         raise RuntimeError("plugin_backend_missing")
     sys.path.insert(0, str(backend))
-    from hdm.adapters.steamos.drm import DrmDiscovery
-    from hdm.adapters.steamos.pci import PciUsb4Discovery
-    from hdm.adapters.steamos.wake_diagnostics import WakeDiagnosticsDiscovery
-    from hdm.profiles.gpd_g1 import match_gpd_g1
+    from regear.adapters.steamos.drm import DrmDiscovery
+    from regear.adapters.steamos.pci import PciUsb4Discovery
+    from regear.adapters.steamos.wake_diagnostics import WakeDiagnosticsDiscovery
+    from regear.profiles.gpd_g1 import match_gpd_g1
 
     pci = PciUsb4Discovery()
     g1 = match_gpd_g1(DrmDiscovery().scan(), pci.scan_pci(), pci.scan_usb4())

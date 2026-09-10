@@ -10,21 +10,21 @@ from types import SimpleNamespace
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.adapters.presentation_transition import (  # noqa: E402
+from regear.adapters.presentation_transition import (  # noqa: E402
     PresentationTransitionMechanism,
 )
-from hdm.adapters.steamos.commands import UserServiceOperation  # noqa: E402
-from hdm.adapters.steamos.gamescope_user import (  # noqa: E402
+from regear.adapters.steamos.commands import UserServiceOperation  # noqa: E402
+from regear.adapters.steamos.gamescope_user import (  # noqa: E402
     GamescopeUserContext,
     GamescopeUserResolution,
 )
-from hdm.domain.control_plane import (  # noqa: E402
+from regear.domain.control_plane import (  # noqa: E402
     PlacementState,
     PlannedStep,
     TransitionBinding,
     TransitionStepCode,
 )
-from hdm.domain.serialization import snapshot_from_dict  # noqa: E402
+from regear.domain.serialization import snapshot_from_dict  # noqa: E402
 
 
 FIXTURES = ROOT / "tests" / "fixtures"

@@ -9,16 +9,16 @@ from types import SimpleNamespace
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.application.canonical_sleep import CanonicalSleepResult  # noqa: E402
-from hdm.application.canonical_sleep_process_release import (  # noqa: E402
+from regear.application.canonical_sleep import CanonicalSleepResult  # noqa: E402
+from regear.application.canonical_sleep_process_release import (  # noqa: E402
     CanonicalSleepProcessReleaseCoordinator,
 )
-from hdm.application.guarded_process_release import (  # noqa: E402
+from regear.application.guarded_process_release import (  # noqa: E402
     GuardedProcessReleaseExecution,
     GuardedProcessReleasePreview,
 )
-from hdm.domain.process_release import ReleasePhase  # noqa: E402
-from hdm.domain.sleep_workflow import SleepFlowEvent  # noqa: E402
+from regear.domain.process_release import ReleasePhase  # noqa: E402
+from regear.domain.sleep_workflow import SleepFlowEvent  # noqa: E402
 
 
 class Sleep:

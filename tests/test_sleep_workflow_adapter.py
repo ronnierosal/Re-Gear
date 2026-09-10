@@ -10,13 +10,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.adapters.sleep_workflow import (  # noqa: E402
+from regear.adapters.sleep_workflow import (  # noqa: E402
     SnapshotSleepWorkflowObservationAdapter,
 )
-from hdm.domain.control_plane import PlacementState, RemovalBehavior  # noqa: E402
-from hdm.domain.models import Blocker, Confidence, EgpuPresence  # noqa: E402
-from hdm.domain.serialization import snapshot_from_dict  # noqa: E402
-from hdm.ports.transition import VersionedObservation  # noqa: E402
+from regear.domain.control_plane import PlacementState, RemovalBehavior  # noqa: E402
+from regear.domain.models import Blocker, Confidence, EgpuPresence  # noqa: E402
+from regear.domain.serialization import snapshot_from_dict  # noqa: E402
+from regear.ports.transition import VersionedObservation  # noqa: E402
 
 
 FIXTURES = ROOT / "tests" / "fixtures"

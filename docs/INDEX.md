@@ -97,4 +97,5 @@ should classify and link them before moving or deleting them.
 ## Documentation templates and planned identity migration
 
 - [Wiki troubleshooting/lessons template](templates/WIKI_TROUBLESHOOTING_TEMPLATE.md): reusable evidence-aware guide structure.
+- [Rebrand completion](REBRAND_COMPLETION_2026-09-10.md): current repository namespace and retained compatibility identities; installation remains separate.
 - [Internal identity migration plan](IDENTITY_MIGRATION_PLAN.md): repository cutover implemented; installed migration and rollback remain supervised. See [changed contracts and procedure](IDENTITY_CUTOVER.md).

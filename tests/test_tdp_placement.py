@@ -6,9 +6,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 
-from hdm.domain.models import Confidence, DisplayKind, EgpuPresence, GpuRole
-from hdm.domain.serialization import snapshot_from_dict
-from hdm.domain.tdp_placement import tdp_placement_readiness
+from regear.domain.models import Confidence, DisplayKind, EgpuPresence, GpuRole
+from regear.domain.serialization import snapshot_from_dict
+from regear.domain.tdp_placement import tdp_placement_readiness
 
 
 class TdpPlacementTests(unittest.TestCase):

@@ -7,11 +7,11 @@ from copy import deepcopy
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
-from hdm.delivery.auto_tdp_configuration import (
+from regear.delivery.auto_tdp_configuration import (
     FILENAME, MAX_BYTES, FileAutoTdpConfiguration, decode_auto_tdp_configuration,
 )
-from hdm.domain.models import GameState
-from hdm.domain.telemetry import TelemetryAdmissionKind, admit_telemetry_collection
+from regear.domain.models import GameState
+from regear.domain.telemetry import TelemetryAdmissionKind, admit_telemetry_collection
 
 
 class AutoConfigurationTests(unittest.TestCase):

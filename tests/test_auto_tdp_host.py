@@ -4,7 +4,7 @@ from dataclasses import replace
 from pathlib import Path
 
 import test_tdp_control as control_fixtures
-from hdm.adapters.steamos.auto_tdp_host import AutoTdpHostDiscovery
+from regear.adapters.steamos.auto_tdp_host import AutoTdpHostDiscovery
 
 
 class AutoHostTests(unittest.TestCase):

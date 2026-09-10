@@ -6,7 +6,7 @@ from unittest.mock import patch
 from io import BytesIO
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
-from hdm.adapters.steamos.gamescope_performance import GamescopePerformanceReader, PerformanceTarget
+from regear.adapters.steamos.gamescope_performance import GamescopePerformanceReader, PerformanceTarget
 
 
 def words(*values):
@@ -60,7 +60,7 @@ class PerformanceReaderTests(unittest.TestCase):
         values = dict(clock=lambda: 10.0, connect=lambda target, timeout: self.stream, same_process=lambda target: True)
         values.update(changes)
         # POSIX recvmsg constants are unavailable on the Windows fixture host.
-        import hdm.adapters.steamos.gamescope_performance as module
+        import regear.adapters.steamos.gamescope_performance as module
         with patch.multiple(module.socket, CMSG_SPACE=lambda size: size + 16, SCM_RIGHTS=1, MSG_CTRUNC=8, MSG_TRUNC=32, create=True):
             return GamescopePerformanceReader(**values).observe(self.target)
 
@@ -131,7 +131,7 @@ class PerformanceReaderTests(unittest.TestCase):
             self.assertEqual(result.received_at_ms, 10_000 if delay < 0.5 else None)
 
     def test_dead_process_generation_is_not_live_identity(self):
-        from hdm.adapters.steamos.gamescope_performance import _same_process
+        from regear.adapters.steamos.gamescope_performance import _same_process
         for state, expected in ((b"S", True), (b"Z", False), (b"X", False), (b"x", False)):
             data = b"4321 (gamescope) " + state + b" 0" * 18 + b" 12345"
             with patch.object(Path, "open", return_value=BytesIO(data)):
@@ -150,7 +150,7 @@ class PerformanceReaderTests(unittest.TestCase):
             PerformanceTarget(Path("relative"), 1000, 10, 42, "key", 1)
 
     def test_unexpected_descriptor_is_closed_and_never_processed(self):
-        import hdm.adapters.steamos.gamescope_performance as module
+        import regear.adapters.steamos.gamescope_performance as module
         stream = Stream(handshake())
         stream.recvmsg = lambda size, budget: (words(2, 8 << 16), [(module.socket.SOL_SOCKET, 1, struct.pack("=i", 123))], 0, None)
         with patch.multiple(module.socket, CMSG_SPACE=lambda size: size + 16, SCM_RIGHTS=1, MSG_CTRUNC=8, MSG_TRUNC=32, create=True), patch.object(module.os, "close") as close:

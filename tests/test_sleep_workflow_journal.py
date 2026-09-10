@@ -9,21 +9,21 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.application.sleep_workflow_journal import (  # noqa: E402
+from regear.application.sleep_workflow_journal import (  # noqa: E402
     advance_sleep_journal,
     recover_interrupted_sleep_journal,
     start_sleep_journal,
 )
-from hdm.delivery.transition_journal_store import (  # noqa: E402
+from regear.delivery.transition_journal_store import (  # noqa: E402
     FileTransitionJournalStore,
 )
-from hdm.domain.control_plane import (  # noqa: E402
+from regear.domain.control_plane import (  # noqa: E402
     PlacementState,
     WorkflowState,
 )
-from hdm.domain.game_compatibility import GameSaveCapability  # noqa: E402
-from hdm.domain.sleep_workflow import SleepFlow, SleepFlowStage  # noqa: E402
-from hdm.domain.transition_journal import (  # noqa: E402
+from regear.domain.game_compatibility import GameSaveCapability  # noqa: E402
+from regear.domain.sleep_workflow import SleepFlow, SleepFlowStage  # noqa: E402
+from regear.domain.transition_journal import (  # noqa: E402
     MAX_JOURNAL_ENTRIES,
     JournalEventKind,
     append_journal_entry,

@@ -9,15 +9,15 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.delivery.gamescope_wrapper import GamescopeLaunchConfig  # noqa: E402
-from hdm.domain.control_plane import (  # noqa: E402
+from regear.delivery.gamescope_wrapper import GamescopeLaunchConfig  # noqa: E402
+from regear.domain.control_plane import (  # noqa: E402
     CapabilitySupport,
     EgpuCapabilities,
     HostCapabilities,
     PlacementState,
     compose_capabilities,
 )
-from hdm.domain.display_render_modes import (  # noqa: E402
+from regear.domain.display_render_modes import (  # noqa: E402
     COMBINATIONS,
     DisplayTarget,
     RenderGpu,
@@ -25,12 +25,12 @@ from hdm.domain.display_render_modes import (  # noqa: E402
     classify_change,
     combination_for,
 )
-from hdm.domain.inference import infer_operating_mode  # noqa: E402
-from hdm.domain.manual_transition import (  # noqa: E402
+from regear.domain.inference import infer_operating_mode  # noqa: E402
+from regear.domain.manual_transition import (  # noqa: E402
     ManualTransitionEvidence,
     plan_manual_transition,
 )
-from hdm.domain.models import (  # noqa: E402
+from regear.domain.models import (  # noqa: E402
     Confidence,
     DisplayKind,
     DisplayObservation,
@@ -42,8 +42,8 @@ from hdm.domain.models import (  # noqa: E402
     OperatingMode,
     SupportTier,
 )
-from hdm.profiles.ally_x import CAPABILITIES as ALLY_X  # noqa: E402
-from hdm.profiles.gpd_g1 import CAPABILITIES as GPD_G1  # noqa: E402
+from regear.profiles.ally_x import CAPABILITIES as ALLY_X  # noqa: E402
+from regear.profiles.gpd_g1 import CAPABILITIES as GPD_G1  # noqa: E402
 
 
 PLACEMENTS = (
@@ -167,7 +167,7 @@ class CombinationTableTests(unittest.TestCase):
     def test_described_axes_match_placement_inference(self):
         """The table's display/render axes are the ones inference derives."""
         for placement in PLACEMENTS:
-            from hdm.domain.inference import infer_placement
+            from regear.domain.inference import infer_placement
 
             self.assertIs(infer_placement(snapshot_for(placement)), placement)
 

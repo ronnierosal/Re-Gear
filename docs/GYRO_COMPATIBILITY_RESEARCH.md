@@ -19,7 +19,7 @@ last three by itself. This is an engineering recommendation, not an accepted new
 runtime authority or a promise that Re-Gear can fix every input stack.
 
 Re-Gear base inspected: `ed47965e818977fedaaf8cf2fa020208f5df1ff6`.
-`backend/hdm/adapters/steamos/peripherals.py` currently inventories gamepad key
+`backend/regear/adapters/steamos/peripherals.py` currently inventories gamepad key
 capabilities and returns opaque bindings. It does not inspect motion delivery.
 Do not reinterpret its `complete` flag as gyro readiness or widen its existing
 controller/audio mutation contract. Follow `docs/DIAGNOSTICS.md` for bounded,

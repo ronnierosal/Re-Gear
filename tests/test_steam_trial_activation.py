@@ -8,8 +8,8 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'backend'))
-from hdm.delivery.steam_trial_activation import SteamTrialIntegrationStore, OS_UNIT, OS_LAUNCHER
-from hdm.ports.presentation_activation import GamescopeUserContext
+from regear.delivery.steam_trial_activation import SteamTrialIntegrationStore, OS_UNIT, OS_LAUNCHER
+from regear.ports.presentation_activation import GamescopeUserContext
 
 
 class SteamActivationTests(unittest.TestCase):
@@ -32,7 +32,7 @@ class SteamActivationTests(unittest.TestCase):
         self.shim.chmod(0o755)
         for name in ('steam_trial_wrapper.py', 'portable_trial_store.py',
                      'portable_trial_launch.py', 'portable_vulkan_trial.py'):
-            p = self.plugin / 'backend/hdm/delivery' / name
+            p = self.plugin / 'backend/regear/delivery' / name
             p.parent.mkdir(parents=True, exist_ok=True)
             p.write_text('# fixture\n')
         for value in (OS_UNIT, OS_LAUNCHER):
@@ -40,7 +40,7 @@ class SteamActivationTests(unittest.TestCase):
             p.parent.mkdir(parents=True, exist_ok=True)
             p.write_bytes(b'fixture\n')
         for name in ('UNIT_SHA256', 'LAUNCHER_SHA256'):
-            p = patch('hdm.delivery.steam_trial_activation.' + name,
+            p = patch('regear.delivery.steam_trial_activation.' + name,
                       hashlib.sha256(b'fixture\n').hexdigest())
             p.start()
             self.addCleanup(p.stop)
@@ -104,5 +104,5 @@ class SteamActivationTests(unittest.TestCase):
 
     def test_wrapper_changes_invalidate_fingerprint(self):
         before = self.store.activation_fingerprint()
-        (self.plugin / 'backend/hdm/delivery/steam_trial_wrapper.py').write_text('# changed\n')
+        (self.plugin / 'backend/regear/delivery/steam_trial_wrapper.py').write_text('# changed\n')
         self.assertNotEqual(before, self.store.activation_fingerprint())

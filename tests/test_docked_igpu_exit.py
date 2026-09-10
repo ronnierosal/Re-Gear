@@ -9,20 +9,20 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.application.docked_igpu_exit import (  # noqa: E402
+from regear.application.docked_igpu_exit import (  # noqa: E402
     DockedIgpuExitStage,
     DockedIgpuGameExitWatcher,
 )
-from hdm.delivery.docked_igpu_exit import arm_result_to_payload  # noqa: E402
-from hdm.domain.control_plane import PlacementState  # noqa: E402
-from hdm.domain.game_session import (  # noqa: E402
+from regear.delivery.docked_igpu_exit import arm_result_to_payload  # noqa: E402
+from regear.domain.control_plane import PlacementState  # noqa: E402
+from regear.domain.game_session import (  # noqa: E402
     ActiveGameIdentity,
     GameSessionObservation,
 )
-from hdm.domain.gamescope_session import GamescopeSessionObservation  # noqa: E402
-from hdm.domain.models import GameState  # noqa: E402
-from hdm.domain.serialization import snapshot_from_dict  # noqa: E402
-from hdm.ports.transition import VersionedObservation  # noqa: E402
+from regear.domain.gamescope_session import GamescopeSessionObservation  # noqa: E402
+from regear.domain.models import GameState  # noqa: E402
+from regear.domain.serialization import snapshot_from_dict  # noqa: E402
+from regear.ports.transition import VersionedObservation  # noqa: E402
 
 
 FIXTURES = ROOT / "tests" / "fixtures"

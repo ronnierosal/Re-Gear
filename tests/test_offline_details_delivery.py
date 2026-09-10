@@ -7,9 +7,9 @@ from unittest.mock import Mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 
-from hdm.adapters.steamos.offline_steam_details import project_steam_app_details
-from hdm.application.offline_details import classify_minimized_steam_details
-from hdm.domain.models import GameState
+from regear.adapters.steamos.offline_steam_details import project_steam_app_details
+from regear.application.offline_details import classify_minimized_steam_details
+from regear.domain.models import GameState
 from test_main_process_delivery import load_main_module
 
 

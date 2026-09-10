@@ -54,13 +54,13 @@ RISK_CLASSES: tuple[tuple[str, str, str], ...] = (
         " change",
     ),
     (
-        "backend/hdm/adapters/steamos/commands.py",
+        "backend/regear/adapters/steamos/commands.py",
         "safety-critical",
         "sole subprocess boundary; overlapping edits can widen executed command"
         " shapes without a single reviewer seeing the combined result",
     ),
     (
-        "backend/hdm/domain/",
+        "backend/regear/domain/",
         "safety-critical",
         "pure decision layer; overlapping edits can compose into unreviewed"
         " state-machine behavior",

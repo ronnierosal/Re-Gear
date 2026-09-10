@@ -14,25 +14,25 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.delivery.game_close_preferences import (  # noqa: E402
+from regear.delivery.game_close_preferences import (  # noqa: E402
     GameClosePreferenceStore,
 )
-from hdm.delivery.live_disconnect_runtime import DisconnectStatus  # noqa: E402
-from hdm.delivery.live_disconnect_runtime import (  # noqa: E402
+from regear.delivery.live_disconnect_runtime import DisconnectStatus  # noqa: E402
+from regear.delivery.live_disconnect_runtime import (  # noqa: E402
     DisconnectAvailability,
 )
-from hdm.domain.game_close_consent import (  # noqa: E402
+from regear.domain.game_close_consent import (  # noqa: E402
     InterruptIntent,
     RunningGame,
     decide_game_close,
 )
-from hdm.domain.game_compatibility import GameSaveCapability  # noqa: E402
-from hdm.application.live_disconnect import (  # noqa: E402
+from regear.domain.game_compatibility import GameSaveCapability  # noqa: E402
+from regear.application.live_disconnect import (  # noqa: E402
     LiveDisconnectResult,
     LiveDisconnectStage,
 )
-from hdm.delivery.relaunch_intent_store import RelaunchIntentStore  # noqa: E402
-from hdm.domain.relaunch_intent import RelaunchClock  # noqa: E402
+from regear.delivery.relaunch_intent_store import RelaunchIntentStore  # noqa: E402
+from regear.domain.relaunch_intent import RelaunchClock  # noqa: E402
 
 
 HADES = RunningGame("1145360", "Hades", GameSaveCapability.UNTESTED)

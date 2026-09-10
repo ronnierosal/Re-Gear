@@ -2,7 +2,7 @@
 
 Status: **Implemented (pure two-sample assessment); Hardware Validation Required**
 
-`hdm.domain.link_instability` compares exactly two supplied opaque-bound eGPU
+`regear.domain.link_instability` compares exactly two supplied opaque-bound eGPU
 link observations. It accepts only fresh same-binding, applicable, observed
 Up/Down states. A change is `instability_observed`; equal observed states are
 `stable_observed`; stale, changed, unavailable, unobserved, or Unknown facts

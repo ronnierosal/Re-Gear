@@ -7,13 +7,13 @@ import sys
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'backend'))
-from hdm.adapters.steamos.audio_trial_context import AudioTrialContextSource
-from hdm.adapters.steamos.drm import DrmCardRecord, DrmConnectorRecord
-from hdm.adapters.steamos.pci import PciDeviceRecord, Usb4DeviceRecord
-from hdm.adapters.steamos.host import HostRecord
-from hdm.adapters.steamos.gamescope import GamescopeScan, GamescopeProcessRecord
-from hdm.domain.serialization import snapshot_from_dict
-from hdm.domain.models import GameState, Confidence
+from regear.adapters.steamos.audio_trial_context import AudioTrialContextSource
+from regear.adapters.steamos.drm import DrmCardRecord, DrmConnectorRecord
+from regear.adapters.steamos.pci import PciDeviceRecord, Usb4DeviceRecord
+from regear.adapters.steamos.host import HostRecord
+from regear.adapters.steamos.gamescope import GamescopeScan, GamescopeProcessRecord
+from regear.domain.serialization import snapshot_from_dict
+from regear.domain.models import GameState, Confidence
 
 
 class AudioTrialContextTests(unittest.TestCase):

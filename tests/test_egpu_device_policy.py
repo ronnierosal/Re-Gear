@@ -8,7 +8,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.domain.egpu_device_policy import (  # noqa: E402
+from regear.domain.egpu_device_policy import (  # noqa: E402
     MAX_POLICY_DEVICES,
     DevicePolicyState,
     EgpuDeviceNode,
@@ -16,7 +16,7 @@ from hdm.domain.egpu_device_policy import (  # noqa: E402
     compose_egpu_device_policy,
     missing_required_kinds,
 )
-from hdm.domain.models import EgpuResourceKind  # noqa: E402
+from regear.domain.models import EgpuResourceKind  # noqa: E402
 
 
 #: The exact set measured on an Ally X with a GPD G1 attached, from

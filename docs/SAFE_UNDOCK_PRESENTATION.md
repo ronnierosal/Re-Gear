@@ -2,7 +2,7 @@
 
 Status: **Implemented (pure contract); Hardware Validation Required**
 
-`hdm.domain.safe_undock_presentation` converts only a Stage 1.5
+`regear.domain.safe_undock_presentation` converts only a Stage 1.5
 `SafeUndockReadiness` result into a human-facing category. It has no operating
 system access, action dispatch, persistence, timer, or device-control path.
 

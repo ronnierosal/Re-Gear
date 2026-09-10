@@ -10,22 +10,22 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 sys.path.insert(0, str(ROOT / "tests"))
 
-from hdm.application.safe_undock_evidence import (  # noqa: E402
+from regear.application.safe_undock_evidence import (  # noqa: E402
     assess_removal_safety_report,
     build_safe_undock_evidence,
 )
-from hdm.domain.models import Confidence, GameState  # noqa: E402
-from hdm.domain.peripheral_handoff import (  # noqa: E402
+from regear.domain.models import Confidence, GameState  # noqa: E402
+from regear.domain.peripheral_handoff import (  # noqa: E402
     AudioOutput,
     AudioPeripheralState,
     ControllerPeripheralState,
 )
-from hdm.domain.removal_safety import (  # noqa: E402
+from regear.domain.removal_safety import (  # noqa: E402
     REMOVAL_SAFETY_FACTS,
     RemovalSafetyState,
     assess_removal_safety,
 )
-from hdm.domain.safe_undock_readiness import (  # noqa: E402
+from regear.domain.safe_undock_readiness import (  # noqa: E402
     SafeUndockReadinessState,
     assess_safe_undock_readiness,
 )
@@ -169,7 +169,7 @@ class RemovalSafetyTests(unittest.TestCase):
 
     def test_ready_state_requires_revalidation_evidence(self) -> None:
         with self.assertRaises(ValueError):
-            from hdm.domain.removal_safety import RemovalSafety
+            from regear.domain.removal_safety import RemovalSafety
 
             RemovalSafety(
                 RemovalSafetyState.READY_FOR_SUPERVISED_REMOVAL, "code", None

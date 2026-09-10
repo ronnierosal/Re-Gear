@@ -4,12 +4,12 @@ from unittest.mock import patch
 
 import test_tdp_runtime as runtime_fixtures
 import test_tdp_control as control_fixtures
-from hdm.application.auto_tdp_session import AutoTdpSessionResult
-from hdm.application.tdp_control import TdpControlService
-from hdm.delivery.tdp_runtime import TdpRuntime
-from hdm.delivery.auto_tdp_worker import AutoTdpWorker
-from hdm.domain.auto_tdp import AutoTdpPolicy
-from hdm.ports.tdp import TdpWriteOutcome
+from regear.application.auto_tdp_session import AutoTdpSessionResult
+from regear.application.tdp_control import TdpControlService
+from regear.delivery.tdp_runtime import TdpRuntime
+from regear.delivery.auto_tdp_worker import AutoTdpWorker
+from regear.domain.auto_tdp import AutoTdpPolicy
+from regear.ports.tdp import TdpWriteOutcome
 
 
 class Provider(runtime_fixtures.GuardedProvider):

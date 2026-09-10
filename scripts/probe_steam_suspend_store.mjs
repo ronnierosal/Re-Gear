@@ -55,7 +55,7 @@ const expression = String.raw`(() => {
   if (!chunk?.push) {
     return { resolved: false, blockerCount: null, hdmLoaded, hdmDisabled, reloadLocked, reloadQueueLength };
   }
-  chunk.push([[Symbol("hdm-read-only-probe")], {}, (value) => {
+  chunk.push([[Symbol("regear-read-only-probe")], {}, (value) => {
     webpackRequire = value;
   }]);
   if (!webpackRequire?.m) {

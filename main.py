@@ -19,48 +19,48 @@ BACKEND_ROOT = PLUGIN_ROOT / "backend"
 if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
-from hdm.adapters.steamos.discovery import SteamOsDiscovery  # noqa: E402
-from hdm.adapters.steamos.topology_wakeup import LinuxTopologyWakeup  # noqa: E402
-from hdm.adapters.steamos.tdp_provider import SteamOsManagerTdpProvider  # noqa: E402
-from hdm.adapters.steamos.tdp_conflicts import KnownTdpControllerScan  # noqa: E402
-from hdm.delivery.tdp_journal import FileTdpJournal  # noqa: E402
-from hdm.delivery.tdp_runtime import TdpRuntime, unavailable_status  # noqa: E402
-from hdm.delivery.tdp_writer_lease import FileTdpWriterLease  # noqa: E402
-from hdm.delivery.auto_tdp_configuration import FileAutoTdpConfiguration  # noqa: E402
-from hdm.delivery.auto_tdp_factory import AutoTdpSessionFactory  # noqa: E402
-from hdm.delivery.auto_tdp_evidence import AutoTdpEligibility  # noqa: E402
-from hdm.delivery.auto_tdp_status import auto_tdp_status  # noqa: E402
-from hdm.delivery.auto_tdp_benchmark import benchmark_auto_tdp  # noqa: E402
-from hdm.adapters.steamos.auto_tdp_host import AutoTdpHostDiscovery  # noqa: E402
-from hdm.adapters.steamos.gamescope_performance_target import GamescopePerformanceTargetResolver, PerformanceTargetResolution  # noqa: E402
-from hdm.domain.auto_tdp import AutoTdpPolicy  # noqa: E402
-from hdm.domain.telemetry import TelemetryAdmissionKind, admit_telemetry_collection  # noqa: E402
-from hdm.adapters.steamos.drm import DrmDiscovery  # noqa: E402
-from hdm.adapters.steamos.pci import PciUsb4Discovery  # noqa: E402
-from hdm.adapters.steamos.wake_diagnostics import WakeDiagnosticsDiscovery  # noqa: E402
-from hdm.adapters.steamos.commands import (  # noqa: E402
+from regear.adapters.steamos.discovery import SteamOsDiscovery  # noqa: E402
+from regear.adapters.steamos.topology_wakeup import LinuxTopologyWakeup  # noqa: E402
+from regear.adapters.steamos.tdp_provider import SteamOsManagerTdpProvider  # noqa: E402
+from regear.adapters.steamos.tdp_conflicts import KnownTdpControllerScan  # noqa: E402
+from regear.delivery.tdp_journal import FileTdpJournal  # noqa: E402
+from regear.delivery.tdp_runtime import TdpRuntime, unavailable_status  # noqa: E402
+from regear.delivery.tdp_writer_lease import FileTdpWriterLease  # noqa: E402
+from regear.delivery.auto_tdp_configuration import FileAutoTdpConfiguration  # noqa: E402
+from regear.delivery.auto_tdp_factory import AutoTdpSessionFactory  # noqa: E402
+from regear.delivery.auto_tdp_evidence import AutoTdpEligibility  # noqa: E402
+from regear.delivery.auto_tdp_status import auto_tdp_status  # noqa: E402
+from regear.delivery.auto_tdp_benchmark import benchmark_auto_tdp  # noqa: E402
+from regear.adapters.steamos.auto_tdp_host import AutoTdpHostDiscovery  # noqa: E402
+from regear.adapters.steamos.gamescope_performance_target import GamescopePerformanceTargetResolver, PerformanceTargetResolution  # noqa: E402
+from regear.domain.auto_tdp import AutoTdpPolicy  # noqa: E402
+from regear.domain.telemetry import TelemetryAdmissionKind, admit_telemetry_collection  # noqa: E402
+from regear.adapters.steamos.drm import DrmDiscovery  # noqa: E402
+from regear.adapters.steamos.pci import PciUsb4Discovery  # noqa: E402
+from regear.adapters.steamos.wake_diagnostics import WakeDiagnosticsDiscovery  # noqa: E402
+from regear.adapters.steamos.commands import (  # noqa: E402
     PipeWireCommandRunner,
     SystemPowerCommandRunner,
     UserServiceCommandRunner,
 )
-from hdm.adapters.steamos.audio_handoff import G1AudioHandoff, G1AudioReadiness  # noqa: E402
-from hdm.adapters.steamos.connection_readiness import G1ConnectionTopologyDiscovery  # noqa: E402
-from hdm.adapters.steamos.gamescope import GamescopeDiscovery  # noqa: E402
-from hdm.adapters.steamos.gamescope_session import (  # noqa: E402
+from regear.adapters.steamos.audio_handoff import G1AudioHandoff, G1AudioReadiness  # noqa: E402
+from regear.adapters.steamos.connection_readiness import G1ConnectionTopologyDiscovery  # noqa: E402
+from regear.adapters.steamos.gamescope import GamescopeDiscovery  # noqa: E402
+from regear.adapters.steamos.gamescope_session import (  # noqa: E402
     GamescopeSessionObservationAdapter,
 )
-from hdm.adapters.steamos.gamescope_user import resolve_gamescope_user  # noqa: E402
-from hdm.adapters.steamos.owner_identity import read_boot_hash  # noqa: E402
-from hdm.delivery.game_close_preferences import (  # noqa: E402
+from regear.adapters.steamos.gamescope_user import resolve_gamescope_user  # noqa: E402
+from regear.adapters.steamos.owner_identity import read_boot_hash  # noqa: E402
+from regear.delivery.game_close_preferences import (  # noqa: E402
     GameClosePreferenceStore,
 )
-from hdm.delivery.relaunch_intent_store import RelaunchIntentStore  # noqa: E402
-from hdm.domain.relaunch_intent import (  # noqa: E402
+from regear.delivery.relaunch_intent_store import RelaunchIntentStore  # noqa: E402
+from regear.domain.relaunch_intent import (  # noqa: E402
     RelaunchClock,
     RelaunchIntent,
     decide_relaunch,
 )
-from hdm.delivery.live_disconnect_runtime import (  # noqa: E402
+from regear.delivery.live_disconnect_runtime import (  # noqa: E402
     CATALOG_ROOT,
     close_prompt_to_payload,
     DisconnectAvailability,
@@ -69,117 +69,117 @@ from hdm.delivery.live_disconnect_runtime import (  # noqa: E402
     disconnect_result_to_payload,
     disconnect_status_to_payload,
 )
-from hdm.domain.game_close_consent import (  # noqa: E402
+from regear.domain.game_close_consent import (  # noqa: E402
     GameClosePreference,
     InterruptIntent,
     decide_game_close,
 )
-from hdm.domain.game_compatibility import STEAM_APP_ID_RE  # noqa: E402
-from hdm.adapters.steamos.sleep_inhibitor import (  # noqa: E402
+from regear.domain.game_compatibility import STEAM_APP_ID_RE  # noqa: E402
+from regear.adapters.steamos.sleep_inhibitor import (  # noqa: E402
     G1SleepGuardHardwareDiscovery,
     SleepGuardController,
 )
-from hdm.adapters.steamos.process_signal import PosixProcessSignalAdapter  # noqa: E402
-from hdm.adapters.game_runtime import CgroupProcGameRuntimeAdapter  # noqa: E402
-from hdm.adapters.game_session import (  # noqa: E402
+from regear.adapters.steamos.process_signal import PosixProcessSignalAdapter  # noqa: E402
+from regear.adapters.game_runtime import CgroupProcGameRuntimeAdapter  # noqa: E402
+from regear.adapters.game_session import (  # noqa: E402
     GameScopeSessionObservationAdapter,
     UserBoundGameScopeScanAdapter,
 )
-from hdm.adapters.drm_engine_activity import (  # noqa: E402
+from regear.adapters.drm_engine_activity import (  # noqa: E402
     ProcfsDrmEngineCounterAdapter,
 )
-from hdm.adapters.steamos.game_render_binding import (  # noqa: E402
+from regear.adapters.steamos.game_render_binding import (  # noqa: E402
     AllyInternalDrmRenderBindingResolver,
     GpdG1DrmRenderBindingResolver,
 )
-from hdm.adapters.steamos.game_scopes import SystemdGameScopeDiscovery  # noqa: E402
-from hdm.adapters.steamos.version_info import SteamOsVersionDiscovery  # noqa: E402
-from hdm.adapters.steamos.peripherals import (  # noqa: E402
+from regear.adapters.steamos.game_scopes import SystemdGameScopeDiscovery  # noqa: E402
+from regear.adapters.steamos.version_info import SteamOsVersionDiscovery  # noqa: E402
+from regear.adapters.steamos.peripherals import (  # noqa: E402
     SteamOsPeripheralObservationAdapter,
     peripheral_status_to_public_payload,
 )
-from hdm.api import DiagnosticsApi  # noqa: E402
-from hdm.adapters.steamos.offline_steam_details import project_steam_app_details  # noqa: E402
-from hdm.application.offline_details import classify_minimized_steam_details  # noqa: E402
-from hdm.adapters.transition_runtime import (  # noqa: E402
+from regear.api import DiagnosticsApi  # noqa: E402
+from regear.adapters.steamos.offline_steam_details import project_steam_app_details  # noqa: E402
+from regear.application.offline_details import classify_minimized_steam_details  # noqa: E402
+from regear.adapters.transition_runtime import (  # noqa: E402
     BoundedDeadlineWaiter,
     SnapshotTransitionObservationAdapter,
     SystemMonotonicClock,
     versioned_snapshot_observation,
 )
-from hdm.adapters.presentation_transition import (  # noqa: E402
+from regear.adapters.presentation_transition import (  # noqa: E402
     PresentationTransitionMechanism,
 )
-from hdm.application.game_evidence_support import (  # noqa: E402
+from regear.application.game_evidence_support import (  # noqa: E402
     SupportGameEvidenceService,
 )
-from hdm.application.game_gpu_client import GameEgpuClientEvidenceService  # noqa: E402
-from hdm.application.game_render_activity import (  # noqa: E402
+from regear.application.game_gpu_client import GameEgpuClientEvidenceService  # noqa: E402
+from regear.application.game_render_activity import (  # noqa: E402
     GameRenderActivityComparisonService,
 )
-from hdm.application.diagnostic_logging import (  # noqa: E402
+from regear.application.diagnostic_logging import (  # noqa: E402
     DiagnosticLoggingController,
     DiagnosticLoggingDuration,
     DiagnosticVerbosity,
 )
-from hdm.application.action_history import project_action_history  # noqa: E402
-from hdm.application.snapshot import report_to_public_dict  # noqa: E402
-from hdm.application.attach_readiness import (  # noqa: E402
+from regear.application.action_history import project_action_history  # noqa: E402
+from regear.application.snapshot import report_to_public_dict  # noqa: E402
+from regear.application.attach_readiness import (  # noqa: E402
     AttachReadinessLifecycle,
     AttachReadinessStage,
 )
-from hdm.application.connection_readiness import (  # noqa: E402
+from regear.application.connection_readiness import (  # noqa: E402
     ConnectionReadinessLifecycle,
     ConnectionReadinessObservation,
     ConnectionReadinessStage,
 )
-from hdm.application.automatic_dock import (  # noqa: E402
+from regear.application.automatic_dock import (  # noqa: E402
     AutomaticDockCoordinator,
     AutomaticDockStage,
     verified_egpu_absent,
 )
-from hdm.application.saved_tv_search import SavedTvSearch  # noqa: E402
-from hdm.application.native_portable_recovery import (  # noqa: E402
+from regear.application.saved_tv_search import SavedTvSearch  # noqa: E402
+from regear.application.native_portable_recovery import (  # noqa: E402
     NativePortableRecoverySupervisor,
     NativeRecoveryStage,
 )
-from hdm.application.safe_disconnect_shutdown import (  # noqa: E402
+from regear.application.safe_disconnect_shutdown import (  # noqa: E402
     SafeDisconnectShutdownApprovalStore,
     SafeDisconnectShutdownService,
 )
-from hdm.application.topology_event_detection import (  # noqa: E402
+from regear.application.topology_event_detection import (  # noqa: E402
     TopologyDetectionStatus,
     detect_topology_event,
 )
-from hdm.application.docked_igpu_exit import DockedIgpuGameExitWatcher  # noqa: E402
-from hdm.application.docked_igpu_lifecycle import DockedIgpuWatchLifecycle  # noqa: E402
-from hdm.application.docked_igpu_promotion import DockedIgpuPromotionFacade  # noqa: E402
-from hdm.application.presentation_activation import (  # noqa: E402
+from regear.application.docked_igpu_exit import DockedIgpuGameExitWatcher  # noqa: E402
+from regear.application.docked_igpu_lifecycle import DockedIgpuWatchLifecycle  # noqa: E402
+from regear.application.docked_igpu_promotion import DockedIgpuPromotionFacade  # noqa: E402
+from regear.application.presentation_activation import (  # noqa: E402
     PresentationActivationApprovalStore,
     PresentationActivationService,
 )
-from hdm.application.experimental_transition import (  # noqa: E402
+from regear.application.experimental_transition import (  # noqa: E402
     ExperimentalTransitionApprovalStore,
 )
-from hdm.application.supervised_transition import (  # noqa: E402
+from regear.application.supervised_transition import (  # noqa: E402
     SupervisedPresentationTransitionService,
 )
-from hdm.application.shared_transition_journal import (  # noqa: E402
+from regear.application.shared_transition_journal import (  # noqa: E402
     SharedTransitionJournalService,
 )
-from hdm.application.transition_orchestrator import TransitionOrchestrator  # noqa: E402
-from hdm.application.guarded_process_release import (  # noqa: E402
+from regear.application.transition_orchestrator import TransitionOrchestrator  # noqa: E402
+from regear.application.guarded_process_release import (  # noqa: E402
     GuardedProcessReleaseService,
 )
-from hdm.application.process_release import (  # noqa: E402
+from regear.application.process_release import (  # noqa: E402
     GracefulReleaseReceiptStore,
     ProcessReleaseApprovalStore,
 )
-from hdm.application.process_release_replay import (  # noqa: E402
+from regear.application.process_release_replay import (  # noqa: E402
     ProcessReleaseJournalRecovery,
     ProcessReleaseRunner,
 )
-from hdm.application.support_bundle import (  # noqa: E402
+from regear.application.support_bundle import (  # noqa: E402
     BoundedEventLog,
     SupportBundle,
     SupportBundleContext,
@@ -187,51 +187,51 @@ from hdm.application.support_bundle import (  # noqa: E402
     SupportBundleService,
     WakeDiagnosticsSupportStatus,
 )
-from hdm.delivery.support_export import SupportBundleFileWriter  # noqa: E402
-from hdm.delivery.gamescope_integration import GamescopeIntegrationStore  # noqa: E402
-from hdm.delivery.presentation_config import PresentationConfigStore  # noqa: E402
-from hdm.delivery.process_release import (  # noqa: E402
+from regear.delivery.support_export import SupportBundleFileWriter  # noqa: E402
+from regear.delivery.gamescope_integration import GamescopeIntegrationStore  # noqa: E402
+from regear.delivery.presentation_config import PresentationConfigStore  # noqa: E402
+from regear.delivery.process_release import (  # noqa: E402
     execution_to_payload,
     preview_to_payload,
     status_to_payload,
 )
-from hdm.delivery.presentation_transition import (  # noqa: E402
+from regear.delivery.presentation_transition import (  # noqa: E402
     status_to_payload as presentation_transition_status_to_payload,
 )
-from hdm.delivery.game_evidence_support import (  # noqa: E402
+from regear.delivery.game_evidence_support import (  # noqa: E402
     game_evidence_to_event_details,
 )
-from hdm.delivery.diagnostic_logging import (  # noqa: E402
+from regear.delivery.diagnostic_logging import (  # noqa: E402
     diagnostic_logging_status_to_payload,
 )
-from hdm.delivery.build_info import load_public_build_info  # noqa: E402
-from hdm.delivery.action_history import action_history_to_payload  # noqa: E402
-from hdm.delivery.attach_readiness import attach_readiness_to_payload  # noqa: E402
-from hdm.delivery.docked_igpu_lifecycle import lifecycle_status_to_payload  # noqa: E402
-from hdm.delivery.peripheral_support import peripheral_support_status  # noqa: E402
-from hdm.delivery.docked_igpu_scheduler import (  # noqa: E402
+from regear.delivery.build_info import load_public_build_info  # noqa: E402
+from regear.delivery.action_history import action_history_to_payload  # noqa: E402
+from regear.delivery.attach_readiness import attach_readiness_to_payload  # noqa: E402
+from regear.delivery.docked_igpu_lifecycle import lifecycle_status_to_payload  # noqa: E402
+from regear.delivery.peripheral_support import peripheral_support_status  # noqa: E402
+from regear.delivery.docked_igpu_scheduler import (  # noqa: E402
     DockedIgpuLifecycleScheduler,
 )
-from hdm.delivery.runtime_state import RootOwnedRuntimeState  # noqa: E402
-from hdm.delivery.automatic_dock_preferences import (  # noqa: E402
+from regear.delivery.runtime_state import RootOwnedRuntimeState  # noqa: E402
+from regear.delivery.automatic_dock_preferences import (  # noqa: E402
     AutomaticDockPreferenceStore,
 )
-from hdm.delivery.saved_tv_store import SavedTvStore  # noqa: E402
-from hdm.delivery.audio_state import PortableAudioStateStore  # noqa: E402
-from hdm.delivery.transition_journal_store import FileTransitionJournalStore  # noqa: E402
-from hdm.domain.process_release import ReleasePhase  # noqa: E402
-from hdm.domain.control_plane import (  # noqa: E402
+from regear.delivery.saved_tv_store import SavedTvStore  # noqa: E402
+from regear.delivery.audio_state import PortableAudioStateStore  # noqa: E402
+from regear.delivery.transition_journal_store import FileTransitionJournalStore  # noqa: E402
+from regear.domain.process_release import ReleasePhase  # noqa: E402
+from regear.domain.control_plane import (  # noqa: E402
     PlacementState,
     TransitionOutcomeKind,
 )
-from hdm.domain.models import Confidence, EgpuLinkState, GameState, GpuRole, EgpuPresence, OperatingMode  # noqa: E402
-from hdm.domain.inference import infer_operating_mode  # noqa: E402
-from hdm.domain.tdp_placement import tdp_placement_readiness  # noqa: E402
-from hdm.domain.auto_tdp_preferences import AutoTdpModePreference  # noqa: E402
-from hdm.delivery.auto_tdp_preferences import FileAutoTdpPreferences  # noqa: E402
-from hdm.domain.inference import infer_placement  # noqa: E402
-from hdm.domain.saved_tv import DEFAULT_MAX_ATTEMPTS  # noqa: E402
-from hdm.profiles.gpd_g1 import match_gpd_g1  # noqa: E402
+from regear.domain.models import Confidence, EgpuLinkState, GameState, GpuRole, EgpuPresence, OperatingMode  # noqa: E402
+from regear.domain.inference import infer_operating_mode  # noqa: E402
+from regear.domain.tdp_placement import tdp_placement_readiness  # noqa: E402
+from regear.domain.auto_tdp_preferences import AutoTdpModePreference  # noqa: E402
+from regear.delivery.auto_tdp_preferences import FileAutoTdpPreferences  # noqa: E402
+from regear.domain.inference import infer_placement  # noqa: E402
+from regear.domain.saved_tv import DEFAULT_MAX_ATTEMPTS  # noqa: E402
+from regear.profiles.gpd_g1 import match_gpd_g1  # noqa: E402
 
 
 MAX_JOURNEY_ELAPSED_MS = 24 * 60 * 60 * 1000
@@ -2845,7 +2845,7 @@ class Plugin:
         }
 
     def _steam_trial_integration(self):
-        from hdm.delivery.steam_trial_activation import SteamTrialIntegrationStore
+        from regear.delivery.steam_trial_activation import SteamTrialIntegrationStore
         resolution = resolve_gamescope_user(GamescopeDiscovery().scan())
         if not resolution.ok or resolution.context is None:
             raise ValueError('Gamescope user unavailable')
@@ -2893,9 +2893,9 @@ class Plugin:
         )
         observations = SnapshotTransitionObservationAdapter(self._discovery)
         journal = FileTransitionJournalStore(journal_root)
-        from hdm.delivery.portable_trial_store import PortableTrialStore
-        from hdm.delivery.portable_trial_launch import mesa_layer_available
-        from hdm.delivery.steam_trial_wait import wait_for_steam_trial
+        from regear.delivery.portable_trial_store import PortableTrialStore
+        from regear.delivery.portable_trial_launch import mesa_layer_available
+        from regear.delivery.steam_trial_wait import wait_for_steam_trial
         steam_integration = self._steam_trial_integration()
 
         def active_operation():

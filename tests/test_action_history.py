@@ -8,13 +8,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.application.action_history import (  # noqa: E402
+from regear.application.action_history import (  # noqa: E402
     ActionHistoryEntry,
     ActionHistoryKind,
     ActionHistoryOutcome,
     project_action_history,
 )
-from hdm.application.support_bundle import SupportEvent  # noqa: E402
+from regear.application.support_bundle import SupportEvent  # noqa: E402
 
 
 def event(

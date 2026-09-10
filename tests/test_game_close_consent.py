@@ -9,14 +9,14 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.domain.game_close_consent import (  # noqa: E402
+from regear.domain.game_close_consent import (  # noqa: E402
     ConsentDecision,
     GameClosePreference,
     InterruptIntent,
     RunningGame,
     decide_game_close,
 )
-from hdm.domain.game_compatibility import GameSaveCapability  # noqa: E402
+from regear.domain.game_compatibility import GameSaveCapability  # noqa: E402
 
 
 #: The common case by a wide margin: a game that is running and that nobody has
@@ -252,7 +252,7 @@ class ProgressAtRiskTests(unittest.TestCase):
     def test_every_reviewed_save_outcome_lands_on_exactly_one_side(self) -> None:
         # A capability added later must be classified deliberately rather than
         # falling through to whichever branch happens to catch it.
-        from hdm.domain.game_close_consent import PROGRESS_AT_RISK, PROGRESS_SAFE
+        from regear.domain.game_close_consent import PROGRESS_AT_RISK, PROGRESS_SAFE
 
         self.assertEqual(PROGRESS_AT_RISK & PROGRESS_SAFE, frozenset())
         unclassified = (

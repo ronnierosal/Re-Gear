@@ -9,8 +9,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.domain.models import GameState  # noqa: E402
-from hdm.domain.unexpected_removal_recovery import (  # noqa: E402
+from regear.domain.models import GameState  # noqa: E402
+from regear.domain.unexpected_removal_recovery import (  # noqa: E402
     GameOutcomeObservation,
     RecoveryFactState,
     UnexpectedRemovalFact,

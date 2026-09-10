@@ -54,10 +54,10 @@ reads it" described a server that does not exist:
   changes; a file already sitting in a player's Downloads keeps the name it was
   written with, and nothing in this repository parses the filename to find it.
 
-Deliberately not frozen: ``backend/hdm/`` is packaged into the Decky archive and
-validated by the signed installer, so renaming it changes the installed tree.
-That is a coordinated release, not a sweep -- out of scope here rather than
-forbidden forever.
+The implementation namespace is now ``backend/regear/``. Packaging, installer
+validation and imports move together; ``test_plugin_package`` and
+``test_regear_namespace`` prove the new tree without a legacy import fallback.
+These retained on-device identifiers remain independent of that package move.
 """
 
 from __future__ import annotations
@@ -73,10 +73,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.adapters.steamos import inhibitor_guard  # noqa: E402
-from hdm.adapters.steamos.gamescope_user import GamescopeUserContext  # noqa: E402
-from hdm.delivery import gamescope_integration, runtime_state  # noqa: E402
-from hdm.delivery.gamescope_integration import GamescopeIntegrationStore  # noqa: E402
+from regear.adapters.steamos import inhibitor_guard  # noqa: E402
+from regear.adapters.steamos.gamescope_user import GamescopeUserContext  # noqa: E402
+from regear.delivery import gamescope_integration, runtime_state  # noqa: E402
+from regear.delivery.gamescope_integration import GamescopeIntegrationStore  # noqa: E402
 
 SPEC = importlib.util.spec_from_file_location(
     "ally_deploy_helper_identity", ROOT / "scripts" / "ally_deploy_helper.py"

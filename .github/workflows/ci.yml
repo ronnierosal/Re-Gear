@@ -62,7 +62,7 @@ jobs:
       - name: Smoke read-only diagnostics CLI
         env:
           PYTHONPATH: backend
-        run: python -m hdm.cli --compact
+        run: python -m regear.cli --compact
       - name: Type-check Decky UI
         run: pnpm typecheck
       - name: Test Steam sleep preflight

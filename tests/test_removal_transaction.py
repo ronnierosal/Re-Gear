@@ -8,7 +8,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.domain.removal_transaction import (  # noqa: E402
+from regear.domain.removal_transaction import (  # noqa: E402
     REMOVAL_TRANSACTION_SCHEMA_VERSION,
     FunctionProgress,
     Recovery,

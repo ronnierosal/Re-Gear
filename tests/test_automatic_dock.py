@@ -10,18 +10,18 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.application.attach_readiness import (  # noqa: E402
+from regear.application.attach_readiness import (  # noqa: E402
     AttachReadinessStage,
     AttachReadinessStatus,
 )
-from hdm.application.automatic_dock import (  # noqa: E402
+from regear.application.automatic_dock import (  # noqa: E402
     AutomaticDockCoordinator,
     AutomaticDockStage,
 )
-from hdm.domain.models import Confidence, EgpuLinkObservation, EgpuLinkState, GpuRole  # noqa: E402
-from hdm.profiles.registry import ProfileResolutionStatus, resolve_runtime_profiles  # noqa: E402
-from hdm.domain.serialization import snapshot_from_dict  # noqa: E402
-from hdm.ports.transition import VersionedObservation  # noqa: E402
+from regear.domain.models import Confidence, EgpuLinkObservation, EgpuLinkState, GpuRole  # noqa: E402
+from regear.profiles.registry import ProfileResolutionStatus, resolve_runtime_profiles  # noqa: E402
+from regear.domain.serialization import snapshot_from_dict  # noqa: E402
+from regear.ports.transition import VersionedObservation  # noqa: E402
 
 
 FIXTURES = ROOT / "tests" / "fixtures"

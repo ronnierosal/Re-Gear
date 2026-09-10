@@ -35,18 +35,18 @@ Labels and availability can vary by build. If the control is absent, report the 
 For users comfortable with a terminal, an existing read-only Python diagnostic module can print a redacted snapshot. From a Re-Gear source checkout on SteamOS:
 
 ```sh
-PYTHONPATH=backend python3 -m hdm.cli --compact
+PYTHONPATH=backend python3 -m regear.cli --compact
 ```
 
-For a Decky-installed copy, have a maintainer confirm the plugin directory for your setup, replace `/path/to/plugin` below with that directory, and run:
+For a Decky-installed copy, have a maintainer confirm the plugin directory and namespace. The published `v0.3.73` archive uses `hdm.cli`; packages built after the namespace change use `regear.cli` as shown below. Replace `/path/to/plugin` with the confirmed directory and use the module belonging to that package:
 
 ```sh
-PYTHONPATH="/path/to/plugin/backend" python3 -m hdm.cli --compact
+PYTHONPATH="/path/to/plugin/backend" python3 -m regear.cli --compact
 ```
 
 These commands print JSON locally; review it before copying it into an issue. They do not upload data, restart services, switch GPUs, close games, or perform a hardware stress test. Run without sudo; permission-limited fields can remain unknown. This separate CLI snapshot does not contain all in-memory plugin events, so the built-in support preview is preferable when available.
 
-The Decky ZIP does not install a global `hdm-diagnose` command. There is no separate public download-and-run diagnostic script yet. A packaged helper should reuse this reviewed collection path, show what it collects, and require review before sharing.
+The Decky ZIP does not install a global `regear-diagnose` command. For guided collection, follow the reviewed [community-report helper procedure](https://github.com/ronnierosal/Re-Gear/blob/main/docs/COMMUNITY_REPORT.md), which keeps preview and sharing separate.
 
 ## Privacy and follow-up
 

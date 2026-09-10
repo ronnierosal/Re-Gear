@@ -8,7 +8,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.application.filter_arm import (  # noqa: E402
+from regear.application.filter_arm import (  # noqa: E402
     UNDISTURBED_STAGES,
     ArmSequenceResult,
     ArmStage,
@@ -16,20 +16,20 @@ from hdm.application.filter_arm import (  # noqa: E402
     HolderObservation,
     release_outcome,
 )
-from hdm.domain.device_removal import (  # noqa: E402
+from regear.domain.device_removal import (  # noqa: E402
     RemovalFunction,
     RemovalFunctionKind,
 )
-from hdm.domain.disconnect_sequence import (  # noqa: E402
+from regear.domain.disconnect_sequence import (  # noqa: E402
     ReleaseOutcome,
     decide_disconnect,
 )
-from hdm.domain.filter_authorization import (  # noqa: E402
+from regear.domain.filter_authorization import (  # noqa: E402
     CgroupIdentity,
     OwnerIdentity,
     authorize_parent_scope,
 )
-from hdm.ports.device_filter import (  # noqa: E402
+from regear.ports.device_filter import (  # noqa: E402
     ArmedFilter,
     ArmOutcome,
     ArmResult,
@@ -311,7 +311,7 @@ class ResultInvariantTests(unittest.TestCase):
 
     def test_arming_never_removes_a_device(self) -> None:
         """Reaching armed_and_clear is not removal authority."""
-        source = (ROOT / "backend/hdm/application/filter_arm.py").read_text(
+        source = (ROOT / "backend/regear/application/filter_arm.py").read_text(
             encoding="utf-8"
         )
         self.assertNotIn("device_removal", source)
@@ -389,8 +389,8 @@ class ReleaseOutcomeProjectionTests(unittest.TestCase):
 
 
 def _ready_removal_safety():
-    from hdm.domain.removal_safety import RemovalSafety, RemovalSafetyState
-    from hdm.domain.safe_undock_readiness import SafeUndockRevalidation
+    from regear.domain.removal_safety import RemovalSafety, RemovalSafetyState
+    from regear.domain.safe_undock_readiness import SafeUndockRevalidation
 
     return RemovalSafety(
         RemovalSafetyState.READY_FOR_SUPERVISED_REMOVAL,

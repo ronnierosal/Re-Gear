@@ -8,18 +8,18 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.domain.device_removal import (  # noqa: E402
+from regear.domain.device_removal import (  # noqa: E402
     RemovalFunction,
     RemovalFunctionKind,
 )
-from hdm.domain.disconnect_sequence import (  # noqa: E402
+from regear.domain.disconnect_sequence import (  # noqa: E402
     DisconnectDecision,
     DisconnectStage,
     ReleaseOutcome,
     decide_disconnect,
 )
-from hdm.domain.removal_safety import RemovalSafety, RemovalSafetyState  # noqa: E402
-from hdm.domain.safe_undock_readiness import SafeUndockRevalidation  # noqa: E402
+from regear.domain.removal_safety import RemovalSafety, RemovalSafetyState  # noqa: E402
+from regear.domain.safe_undock_readiness import SafeUndockRevalidation  # noqa: E402
 
 
 GPU = RemovalFunction(RemovalFunctionKind.GPU, "0000:08:00.0")

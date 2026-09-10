@@ -10,12 +10,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.delivery.game_close_preferences import (  # noqa: E402
+from regear.delivery.game_close_preferences import (  # noqa: E402
     FILENAME,
     MAX_RECORDS,
     GameClosePreferenceStore,
 )
-from hdm.domain.game_close_consent import (  # noqa: E402
+from regear.domain.game_close_consent import (  # noqa: E402
     GameClosePreference,
     InterruptIntent,
 )

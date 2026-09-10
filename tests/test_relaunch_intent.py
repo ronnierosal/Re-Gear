@@ -11,11 +11,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.delivery.relaunch_intent_store import (  # noqa: E402
+from regear.delivery.relaunch_intent_store import (  # noqa: E402
     FILENAME,
     RelaunchIntentStore,
 )
-from hdm.domain.relaunch_intent import (  # noqa: E402
+from regear.domain.relaunch_intent import (  # noqa: E402
     MAX_AGE_SECONDS,
     RelaunchClock,
     RelaunchIntent,

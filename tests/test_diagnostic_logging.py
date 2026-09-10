@@ -11,13 +11,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.application.diagnostic_logging import (  # noqa: E402
+from regear.application.diagnostic_logging import (  # noqa: E402
     DiagnosticLoggingController,
     DiagnosticLoggingDuration,
     DiagnosticLoggingMode,
     DiagnosticVerbosity,
 )
-from hdm.application.support_bundle import BoundedEventLog  # noqa: E402
+from regear.application.support_bundle import BoundedEventLog  # noqa: E402
 
 
 class DiagnosticLoggingTests(unittest.TestCase):

@@ -12,19 +12,19 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.delivery.filter_ownership_store import (  # noqa: E402
+from regear.delivery.filter_ownership_store import (  # noqa: E402
     MAX_BYTES,
     RECORD_FILENAME,
     FileFilterOwnershipStore,
     decode,
     encode,
 )
-from hdm.domain.filter_authorization import (  # noqa: E402
+from regear.domain.filter_authorization import (  # noqa: E402
     CgroupIdentity,
     OwnerIdentity,
     authorize_parent_scope,
 )
-from hdm.domain.filter_ownership import (  # noqa: E402
+from regear.domain.filter_ownership import (  # noqa: E402
     AttachedFilter,
     FilterOwnership,
     OwnershipPhase,
@@ -272,7 +272,7 @@ class StoreTests(unittest.TestCase):
     def test_a_failed_save_leaves_no_temporary_file_behind(self) -> None:
         self.store.save(claimed())
         with patch(
-            "hdm.delivery.filter_ownership_store.os.replace",
+            "regear.delivery.filter_ownership_store.os.replace",
             side_effect=OSError("no space"),
         ):
             with self.assertRaises(OSError):
@@ -288,7 +288,7 @@ class StoreTests(unittest.TestCase):
     def test_the_directory_entry_is_synced_on_save_and_clear(self) -> None:
         # A record complete on disk whose directory entry is not durable is the
         # same as having no record, which is the silent failure being fixed.
-        with patch("hdm.delivery.filter_ownership_store.os.fsync") as fsync:
+        with patch("regear.delivery.filter_ownership_store.os.fsync") as fsync:
             self.store.save(armed())
             saves = fsync.call_count
             self.store.clear()

@@ -7,9 +7,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.adapters.steamos.connection_readiness import G1ConnectionTopologyDiscovery
-from hdm.adapters.steamos.drm import DrmCardRecord, DrmConnectorRecord
-from hdm.adapters.steamos.pci import Usb4DeviceRecord
+from regear.adapters.steamos.connection_readiness import G1ConnectionTopologyDiscovery
+from regear.adapters.steamos.drm import DrmCardRecord, DrmConnectorRecord
+from regear.adapters.steamos.pci import Usb4DeviceRecord
 from tests.test_hardware_profiles import GPU_BDF, g1_records
 
 

@@ -9,10 +9,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.application.experimental_transition import (  # noqa: E402
+from regear.application.experimental_transition import (  # noqa: E402
     ExperimentalTransitionApprovalStore,
 )
-from hdm.domain.control_plane import PlacementState  # noqa: E402
+from regear.domain.control_plane import PlacementState  # noqa: E402
 
 
 class ExperimentalTransitionApprovalTests(unittest.TestCase):

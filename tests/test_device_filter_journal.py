@@ -8,10 +8,10 @@ import threading
 import unittest
 from unittest.mock import Mock, patch
 
-from backend.hdm.delivery.device_filter_journal import (
+from backend.regear.delivery.device_filter_journal import (
     FilterJournal, JournalRecord, decode_record, encode_record, _key, _acquire_lock,
 )
-from backend.hdm.delivery.device_filter_lifecycle import FilterLifecycle, LaunchBinding, OwnedFilter, Phase
+from backend.regear.delivery.device_filter_lifecycle import FilterLifecycle, LaunchBinding, OwnedFilter, Phase
 
 
 def binding():
@@ -188,7 +188,7 @@ class JournalFileTests(unittest.TestCase):
             if count == 1:
                 return write(fd, raw[:10])
             raise OSError("injected write failure")
-        with patch("backend.hdm.delivery.device_filter_journal.os.write", side_effect=failing):
+        with patch("backend.regear.delivery.device_filter_journal.os.write", side_effect=failing):
             with self.assertRaises(OSError):
                 self.journal.cancel(*self.args(), 1)
         self.assertEqual(self.journal.read(*self.args()).revision, 1)

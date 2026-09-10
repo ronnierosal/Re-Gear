@@ -7,12 +7,13 @@ Use that spelling and capitalization in new UI and product copy. The existing
 status colors and functional icons remain unchanged; the README and plugin use
 the supplied Re-Gear brand artwork. Historical evidence retains its original name.
 
-This is a compatibility-preserving rebrand. Decky's visible label is `Re-Gear`;
-the installed directory identity `HandheldDockMode`, `hdm` modules and commands,
-`handheld-dock-mode` state/helper paths, stored preference keys, and managed-file
-markers remain unchanged for compatibility. Their migration requires separate
-upgrade, rollback, and safety-state continuity tests. Compatibility identifiers
-may still appear in technical logs and archive internals.
+Current repository builds use the `Re-Gear` Decky directory, the `regear` Python
+package, the `re-gear-steamos` distribution name and the `regear-diagnose` source
+installation entry point. Existing state/helper paths, preference keys and
+managed-file markers retain their exact bytes to preserve recovery and upgrades.
+See [rebrand completion](REBRAND_COMPLETION_2026-09-10.md) for retained identities
+and reasons. Repository changes do not establish a release, installed migration
+or supervised rollback success.
 
 ## Objective
 

@@ -4,7 +4,7 @@ from dataclasses import replace
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
-from hdm.application.auto_tdp_dispatch import AutoTdpDispatchContext, AutoTdpDispatchGuard
+from regear.application.auto_tdp_dispatch import AutoTdpDispatchContext, AutoTdpDispatchGuard
 from test_tdp_control import reading
 
 

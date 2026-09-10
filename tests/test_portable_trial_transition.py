@@ -8,9 +8,9 @@ from test_presentation_transition import (
     GamescopeUserResolution, PresentationTransitionMechanism,
 )
 from test_supervised_transition import Observations, VersionedObservation, service, snapshot
-from hdm.domain.control_plane import PlacementState, PlannedStep, TransitionStepCode
-from hdm.delivery.presentation_config import PresentationConfigStore
-from hdm.delivery.portable_trial_store import PortableTrialStore
+from regear.domain.control_plane import PlacementState, PlannedStep, TransitionStepCode
+from regear.delivery.presentation_config import PresentationConfigStore
+from regear.delivery.portable_trial_store import PortableTrialStore
 
 
 class TrialApprovalTests(unittest.TestCase):
@@ -127,7 +127,7 @@ class TrialMechanismTests(unittest.TestCase):
         self.assertIsNone(self.store.consume())
 
     def test_restart_failure_restores_exact_original_and_burns_trial(self):
-        from hdm.ports.presentation_activation import UserServiceOperation
+        from regear.ports.presentation_activation import UserServiceOperation
         self.mechanism._commands = FakeCommands(self.events, (UserServiceOperation.RESTART_GAMESCOPE_SESSION,))
         self.assertFalse(self.run_trial().succeeded)
         self.assertEqual(self.config.load(), self.original)

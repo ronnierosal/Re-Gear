@@ -7,8 +7,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
-from hdm.delivery.tdp_journal import FileTdpJournal, FILENAME, MAX_BYTES
-from hdm.ports.tdp import TdpReading, TdpRegister, TdpSessionRecord
+from regear.delivery.tdp_journal import FileTdpJournal, FILENAME, MAX_BYTES
+from regear.ports.tdp import TdpReading, TdpRegister, TdpSessionRecord
 
 
 class TdpJournalTests(unittest.TestCase):
@@ -32,7 +32,7 @@ class TdpJournalTests(unittest.TestCase):
 
     def test_replace_failure_preserves_previous_state_and_removes_temporary(self):
         self.journal.save(self.record)
-        with patch("hdm.delivery.tdp_journal.os.replace", side_effect=OSError("failure")):
+        with patch("regear.delivery.tdp_journal.os.replace", side_effect=OSError("failure")):
             with self.assertRaises(OSError):
                 self.journal.save(None)
         self.assertEqual(self.journal.load(), self.record)

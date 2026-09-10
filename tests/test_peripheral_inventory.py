@@ -9,13 +9,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.adapters.steamos.peripherals import (  # noqa: E402
+from regear.adapters.steamos.peripherals import (  # noqa: E402
     PeripheralIdentityHints,
     SteamOsPeripheralInventory,
     SteamOsPeripheralObservationAdapter,
     peripheral_status_to_public_payload,
 )
-from hdm.domain.peripheral_handoff import (  # noqa: E402
+from regear.domain.peripheral_handoff import (  # noqa: E402
     PeripheralMappingEvidence,
     PeripheralMappingEvidenceKind,
 )

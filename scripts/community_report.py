@@ -101,23 +101,35 @@ def os_info(release=Path('/etc/os-release'), kernel=Path('/proc/sys/kernel/osrel
     }
 
 
+def diagnostic_namespace(root):
+    # Read-only compatibility for already published candidates. New packages
+    # contain only regear; never choose arbitrarily from a mixed installation.
+    names = [name for name in ('regear', 'hdm')
+             if (root / 'backend' / name / 'cli.py').is_file()]
+    return names[0] if len(names) == 1 else None
+
+
 def find_plugin(explicit=None, home=None):
     root = Path(explicit) if explicit else (home or Path.home()) / 'homebrew/plugins/Re-Gear'
-    if (root / 'backend/hdm/cli.py').is_file() and (root / 'plugin.json').is_file():
+    if diagnostic_namespace(root) and (root / 'plugin.json').is_file():
         return root.resolve()
     return None
 
 
 def collect(root, timeout=TIMEOUT):
     """Bound child output and duration; never print its errors or raw payload."""
+    namespace = diagnostic_namespace(root)
+    if namespace is None:
+        return {}, 'plugin_not_found'
     env = {key: os.environ[key] for key in
            ('HOME', 'USER', 'LOGNAME', 'XDG_RUNTIME_DIR', 'DBUS_SESSION_BUS_ADDRESS')
            if key in os.environ}
     env.update(PATH='/usr/bin:/bin', LANG='C.UTF-8')
     command = [sys.executable, '-I', '-B', '-c',
-               'import sys; sys.path.insert(0,sys.argv[1]); '
+               'import importlib,sys; sys.path.insert(0,sys.argv[1]); '
+               'main=importlib.import_module(sys.argv[2]+".cli").main; '
                'sys.argv=["regear-diagnose","--compact"]; '
-               'from hdm.cli import main; raise SystemExit(main())', str(root / 'backend')]
+               'raise SystemExit(main())', str(root / 'backend'), namespace]
     process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                                stderr=subprocess.DEVNULL, env=env, cwd=root)
     data = bytearray()

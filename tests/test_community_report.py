@@ -81,8 +81,8 @@ class CommunityReportTests(unittest.TestCase):
             home = Path(directory)
             self.assertIsNone(report.find_plugin(home=home))
             root = home / 'homebrew/plugins/Re-Gear'
-            (root / 'backend/hdm').mkdir(parents=True)
-            (root / 'backend/hdm/cli.py').write_text('')
+            (root / 'backend/regear').mkdir(parents=True)
+            (root / 'backend/regear/cli.py').write_text('')
             (root / 'plugin.json').write_text('{}')
             self.assertEqual(report.find_plugin(home=home), root.resolve())
 
@@ -94,11 +94,31 @@ class CommunityReportTests(unittest.TestCase):
             self.assertEqual(report.main([]), 0)
             save.assert_not_called()
 
-    @unittest.skipUnless(sys.platform == 'linux', 'Linux subprocess pipe selector')
-    def test_real_child_failures_timeout_and_output_bounds(self):
+    def test_discovery_accepts_legacy_and_refuses_mixed_namespaces(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            module = root / 'backend/hdm'
+            (root / 'plugin.json').write_text('{}')
+            for name in ('hdm', 'regear'):
+                module = root / 'backend' / name
+                module.mkdir(parents=True)
+                (module / 'cli.py').write_text('')
+                if name == 'hdm':
+                    self.assertEqual(report.find_plugin(explicit=root), root.resolve())
+                    self.assertEqual(report.diagnostic_namespace(root), 'hdm')
+                else:
+                    self.assertIsNone(report.find_plugin(explicit=root))
+                    self.assertEqual(report.collect(root), ({}, 'plugin_not_found'))
+
+    @unittest.skipUnless(sys.platform == 'linux', 'Linux subprocess pipe selector')
+    def test_real_child_failures_timeout_and_output_bounds(self):
+        for namespace in ('regear', 'hdm'):
+            with self.subTest(namespace=namespace):
+                self._assert_child_results(namespace)
+
+    def _assert_child_results(self, namespace):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            module = root / 'backend' / namespace
             module.mkdir(parents=True)
             (module / '__init__.py').write_text('')
             for code, expected in [

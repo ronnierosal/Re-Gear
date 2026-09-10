@@ -10,19 +10,19 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.application.process_release import (  # noqa: E402
+from regear.application.process_release import (  # noqa: E402
     GracefulReleaseEvidence,
     GracefulReleaseReceiptStore,
     ProcessReleaseApprovalStore,
     revalidate_process_release,
 )
-from hdm.domain.models import (  # noqa: E402
+from regear.domain.models import (  # noqa: E402
     EgpuClientKind,
     EgpuClientObservation,
     EgpuResourceKind,
 )
-from hdm.domain.serialization import snapshot_from_dict  # noqa: E402
-from hdm.domain.process_release import ReleasePhase  # noqa: E402
+from regear.domain.serialization import snapshot_from_dict  # noqa: E402
+from regear.domain.process_release import ReleasePhase  # noqa: E402
 
 
 FIXTURES = ROOT / "tests" / "fixtures"

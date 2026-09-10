@@ -9,13 +9,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.domain.control_plane import RequestSource  # noqa: E402
-from hdm.domain.models import (  # noqa: E402
+from regear.domain.control_plane import RequestSource  # noqa: E402
+from regear.domain.models import (  # noqa: E402
     Confidence,
     DisplayKind,
     DisplayObservation,
 )
-from hdm.domain.pending_tv_request import (  # noqa: E402
+from regear.domain.pending_tv_request import (  # noqa: E402
     PendingTvHandoff,
     PendingTvRequest,
     PendingTvResolution,
@@ -24,7 +24,7 @@ from hdm.domain.pending_tv_request import (  # noqa: E402
     create_pending_tv_request,
     evaluate_pending_tv_request,
 )
-from hdm.domain.saved_tv import SavedTvProfile  # noqa: E402
+from regear.domain.saved_tv import SavedTvProfile  # noqa: E402
 
 
 ATTACHMENT = "egpu:e3b0c44298fc1c14"

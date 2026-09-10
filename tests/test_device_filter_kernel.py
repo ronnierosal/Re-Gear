@@ -6,7 +6,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
-from hdm.delivery import device_filter_kernel as kernel
+from regear.delivery import device_filter_kernel as kernel
 
 
 class DeviceFilterKernelTests(unittest.TestCase):

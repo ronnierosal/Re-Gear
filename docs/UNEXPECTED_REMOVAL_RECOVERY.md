@@ -2,7 +2,7 @@
 
 Status: **Implemented (pure evidence contract); Hardware Validation Required**
 
-`hdm.domain.unexpected_removal_recovery` compares explicit opaque-bound
+`regear.domain.unexpected_removal_recovery` compares explicit opaque-bound
 before/after observations. It requires a verified docked bridge and topology
 before the incident, then a newer matching-binding observation with both bridge
 and external topology absent before it can report removal detected.

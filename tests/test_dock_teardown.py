@@ -9,7 +9,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.domain.dock_teardown import (  # noqa: E402
+from regear.domain.dock_teardown import (  # noqa: E402
     DockTeardownState,
     TeardownApproval,
     TunnelEvidence,

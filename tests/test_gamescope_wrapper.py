@@ -12,7 +12,7 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.delivery.gamescope_wrapper import (  # noqa: E402
+from regear.delivery.gamescope_wrapper import (  # noqa: E402
     MAX_CONFIG_BYTES,
     GamescopeLaunchConfig,
     _boot_identity,
@@ -23,7 +23,7 @@ from hdm.delivery.gamescope_wrapper import (  # noqa: E402
     rewrite_gamescope_argv,
     select_launch_configuration,
 )
-from hdm.profiles.gpd_g1 import GpdG1Match  # noqa: E402
+from regear.profiles.gpd_g1 import GpdG1Match  # noqa: E402
 
 
 BOOT_HASH = hashlib.sha256(b"boot").hexdigest()
@@ -93,26 +93,26 @@ class GamescopeConfigTests(unittest.TestCase):
 class GamescopeSelectionTests(unittest.TestCase):
     def test_boot_identity_preserves_raw_value_for_binding_and_hash_for_config(self):
         with patch(
-            "hdm.delivery.gamescope_wrapper.Path.read_text",
+            "regear.delivery.gamescope_wrapper.Path.read_text",
             return_value="boot\n",
         ):
             self.assertEqual(_boot_identity(), ("boot", BOOT_HASH))
 
     def test_launch_binding_is_derived_only_from_a_fresh_exact_g1_match(self):
         with patch(
-            "hdm.profiles.gpd_g1.match_gpd_g1",
+            "regear.profiles.gpd_g1.match_gpd_g1",
             return_value=GpdG1Match(True, True, stable_id=EGPU_ID),
         ):
             self.assertEqual(_verified_egpu_binding_sha256("boot"), EGPU_BINDING)
         with patch(
-            "hdm.profiles.gpd_g1.match_gpd_g1",
+            "regear.profiles.gpd_g1.match_gpd_g1",
             return_value=GpdG1Match(True, False, reason="incomplete"),
         ):
             self.assertEqual(_verified_egpu_binding_sha256("boot"), "")
 
     def test_writer_and_launch_revalidation_share_raw_boot_binding_material(self):
         with patch(
-            "hdm.profiles.gpd_g1.match_gpd_g1",
+            "regear.profiles.gpd_g1.match_gpd_g1",
             return_value=GpdG1Match(True, True, stable_id=EGPU_ID),
         ):
             verified_binding = _verified_egpu_binding_sha256("boot")

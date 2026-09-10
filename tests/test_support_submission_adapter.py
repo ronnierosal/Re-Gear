@@ -10,14 +10,14 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.adapters.support_submission import (  # noqa: E402
+from regear.adapters.support_submission import (  # noqa: E402
     BoundedHttpsResponse,
     FixedHttpsEndpoint,
     FixedHttpsSupportSubmissionAdapter,
     StandardLibraryHttpsTransport,
     SupportSubmissionAdapterError,
 )
-from hdm.domain.support_submission import ApprovedSupportUpload  # noqa: E402
+from regear.domain.support_submission import ApprovedSupportUpload  # noqa: E402
 
 
 def upload() -> ApprovedSupportUpload:
@@ -151,7 +151,7 @@ class SupportSubmissionAdapterTests(unittest.TestCase):
         self_limit: list[int] = []
         closed: list[bool] = []
         with patch(
-            "hdm.adapters.support_submission.http.client.HTTPSConnection",
+            "regear.adapters.support_submission.http.client.HTTPSConnection",
             Connection,
         ):
             response = StandardLibraryHttpsTransport().post(

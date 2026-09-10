@@ -56,15 +56,16 @@ must be built with the runtime and UI from the same clean source revision.
 
 ## Current identity contracts
 
-The directory cutover preserves existing data and recovery authority:
+The directory and Python namespace cutover preserves existing data and recovery
+authority. See [repository completion and device gates](REBRAND_COMPLETION_2026-09-10.md):
 
 | Surface | Repository contract |
 | --- | --- |
 | Decky visible manifest label | `Re-Gear` |
 | New plugin/archive directory | `Re-Gear` |
-| npm and Python distribution name | `handheld-dock-mode-steamos` — build metadata, renameable, not yet done |
-| Diagnostic command | `hdm-diagnose` — not installed on any device, renameable, not yet done |
-| Python package | `hdm` — archived and installer-validated; moves in a coordinated release |
+| npm and Python distribution name | `re-gear-steamos` |
+| Diagnostic command | `regear-diagnose` — Python project entry point; Decky does not install a global command |
+| Python package | `regear` under `backend/regear`; current imports and package validation move together |
 | Helper/state paths | existing `handheld-dock-mode` paths — addresses on installed devices |
 | Settings, managed markers and diagnostic codes | existing keys and HDM identifiers — persisted or scraped identities |
 

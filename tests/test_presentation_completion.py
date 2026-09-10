@@ -4,12 +4,12 @@ import unittest
 from dataclasses import replace
 
 from tests.test_supervised_transition import snapshot
-from hdm.application.supervised_transition import SupervisedPresentationTransitionService
-from hdm.application.presentation_completion import reconcile_presentation_completion
-from hdm.domain.control_plane import PlacementState, WorkflowState
-from hdm.domain.models import Confidence, GameState
-from hdm.domain.transition_journal import TransitionJournal, JournalEventKind, append_journal_entry
-from hdm.ports.transition import VersionedObservation
+from regear.application.supervised_transition import SupervisedPresentationTransitionService
+from regear.application.presentation_completion import reconcile_presentation_completion
+from regear.domain.control_plane import PlacementState, WorkflowState
+from regear.domain.models import Confidence, GameState
+from regear.domain.transition_journal import TransitionJournal, JournalEventKind, append_journal_entry
+from regear.ports.transition import VersionedObservation
 
 
 def committed(target=PlacementState.DOCKED_EGPU, capability="presentation_transition"):

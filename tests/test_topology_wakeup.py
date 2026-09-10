@@ -5,7 +5,7 @@ import socket
 import unittest
 from unittest.mock import Mock, patch
 
-from backend.hdm.adapters.steamos import topology_wakeup as module
+from backend.regear.adapters.steamos import topology_wakeup as module
 
 
 def event(subsystem=b"drm", action=b"change"):

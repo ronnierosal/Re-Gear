@@ -9,7 +9,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.delivery.automatic_dock_preferences import (  # noqa: E402
+from regear.delivery.automatic_dock_preferences import (  # noqa: E402
     AutomaticDockPreferenceStore,
 )
 

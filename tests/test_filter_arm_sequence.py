@@ -8,7 +8,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.domain.filter_arm_sequence import (  # noqa: E402
+from regear.domain.filter_arm_sequence import (  # noqa: E402
     APPROVED_EXPLICIT_RESTARTS,
     APPROVED_HOLDER_UNITS,
     APPROVED_SESSION_REACHED,
@@ -17,7 +17,7 @@ from hdm.domain.filter_arm_sequence import (  # noqa: E402
     ArmSequenceState,
     classify_holder_units,
 )
-from hdm.domain.filter_arm_sequence import (  # noqa: E402
+from regear.domain.filter_arm_sequence import (  # noqa: E402
     compose_restart_plan as _compose_restart_plan,
 )
 

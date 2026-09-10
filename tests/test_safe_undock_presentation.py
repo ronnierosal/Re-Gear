@@ -8,11 +8,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.domain.safe_undock_presentation import (
+from regear.domain.safe_undock_presentation import (
     SafeUndockPresentationCategory,
     present_safe_undock_result,
 )
-from hdm.domain.safe_undock_readiness import (
+from regear.domain.safe_undock_readiness import (
     SafeUndockReadiness,
     SafeUndockReadinessState,
     SafeUndockRevalidation,

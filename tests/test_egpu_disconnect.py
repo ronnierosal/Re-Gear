@@ -9,14 +9,14 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm import egpu_disconnect  # noqa: E402
-from hdm.application.live_disconnect import LiveDisconnectStage  # noqa: E402
-from hdm.domain.filter_arm_sequence import (  # noqa: E402
+from regear import egpu_disconnect  # noqa: E402
+from regear.application.live_disconnect import LiveDisconnectStage  # noqa: E402
+from regear.domain.filter_arm_sequence import (  # noqa: E402
     SESSION_TARGET,
     units_cleared_by,
 )
-from hdm.egpu_disconnect import NEXT_ACTION  # noqa: E402
-from hdm.egpu_release import HolderScan  # noqa: E402
+from regear.egpu_disconnect import NEXT_ACTION  # noqa: E402
+from regear.egpu_release import HolderScan  # noqa: E402
 
 
 GPU = "0000:08:00.0"

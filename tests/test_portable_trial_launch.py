@@ -7,9 +7,9 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'backend'))
-from hdm.delivery.gamescope_wrapper import GamescopeLaunchConfig, config_to_dict
-from hdm.delivery.portable_trial_launch import candidate_from_record, consume_launch_candidate
-from hdm.delivery.portable_trial_store import PortableTrialStore
+from regear.delivery.gamescope_wrapper import GamescopeLaunchConfig, config_to_dict
+from regear.delivery.portable_trial_launch import candidate_from_record, consume_launch_candidate
+from regear.delivery.portable_trial_store import PortableTrialStore
 
 
 class TrialLaunchTests(unittest.TestCase):
@@ -62,7 +62,7 @@ class TrialLaunchTests(unittest.TestCase):
                 generation='generation-1', internal_gpu='1002:150e', internal_connector='eDP-1',
                 egpu_binding_sha256='b'*64, original_config=None,
                 expected_config=self.config, expires_at=100)
-            with (patch('hdm.delivery.portable_trial_launch.live_candidate_from_record',
+            with (patch('regear.delivery.portable_trial_launch.live_candidate_from_record',
                         return_value=((), {})),
                   patch.object(PortableTrialStore, 'publish_gamescope_launch', side_effect=OSError)):
                 result = consume_launch_candidate(Path(directory), config=self.config,
@@ -71,7 +71,7 @@ class TrialLaunchTests(unittest.TestCase):
                 self.assertIsNone(store.consume())
 
     def test_normal_gamescope_launch_clears_both_stale_trial_selectors(self):
-        from hdm.delivery import gamescope_wrapper as wrapper
+        from regear.delivery import gamescope_wrapper as wrapper
         with (patch.object(wrapper.os, 'environ', {
                     'MESA_VK_DEVICE_SELECT': 'stale',
                     'MESA_VK_DEVICE_SELECT_FORCE_DEFAULT_DEVICE': '1'}),
@@ -92,11 +92,11 @@ class TrialLaunchTests(unittest.TestCase):
                 generation='generation-1', internal_gpu='1002:150e', internal_connector='eDP-1',
                 egpu_binding_sha256='b' * 64, original_config=None,
                 expected_config=self.config, expires_at=1)
-            with (patch('hdm.delivery.gamescope_wrapper._verified_egpu_binding_sha256', return_value='b'*64),
-                 patch('hdm.adapters.steamos.drm.DrmDiscovery.scan', return_value=(self.card,)),
-                 patch('hdm.adapters.steamos.game_scopes.SystemdGameScopeDiscovery.scan') as game,
-                 patch('hdm.delivery.portable_trial_launch.os.getuid', return_value=1000, create=True)):
-                from hdm.domain.models import GameState
+            with (patch('regear.delivery.gamescope_wrapper._verified_egpu_binding_sha256', return_value='b'*64),
+                 patch('regear.adapters.steamos.drm.DrmDiscovery.scan', return_value=(self.card,)),
+                 patch('regear.adapters.steamos.game_scopes.SystemdGameScopeDiscovery.scan') as game,
+                 patch('regear.delivery.portable_trial_launch.os.getuid', return_value=1000, create=True)):
+                from regear.domain.models import GameState
                 game.return_value.state = GameState.IDLE
                 result = consume_launch_candidate(Path(directory), config=self.config,
                     argv=(), environment={}, raw_boot_id=self.boot)

@@ -8,11 +8,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 
-from hdm.adapters.steamos.auto_tdp_host import AutoTdpHostDiscovery
-from hdm.adapters.steamos.gamescope import GamescopeDiscovery
-from hdm.adapters.steamos.gamescope_user import resolve_gamescope_user
-from hdm.adapters.steamos.tdp_provider import SteamOsManagerTdpProvider
-from hdm.ports.tdp import TdpReading
+from regear.adapters.steamos.auto_tdp_host import AutoTdpHostDiscovery
+from regear.adapters.steamos.gamescope import GamescopeDiscovery
+from regear.adapters.steamos.gamescope_user import resolve_gamescope_user
+from regear.adapters.steamos.tdp_provider import SteamOsManagerTdpProvider
+from regear.ports.tdp import TdpReading
 
 
 def probe(provider=None, host=None) -> dict[str, object]:

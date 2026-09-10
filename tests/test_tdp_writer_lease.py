@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 BACKEND = Path(__file__).resolve().parents[1] / "backend"
 sys.path.insert(0, str(BACKEND))
-from hdm.delivery.tdp_writer_lease import FileTdpWriterLease
+from regear.delivery.tdp_writer_lease import FileTdpWriterLease
 
 
 class TdpWriterLeasePortableTests(unittest.TestCase):
@@ -75,7 +75,7 @@ class TdpWriterLeaseLinuxTests(unittest.TestCase):
         program = (
             "import sys; from pathlib import Path; "
             "sys.path.insert(0, sys.argv[1]); "
-            "from hdm.delivery.tdp_writer_lease import FileTdpWriterLease; "
+            "from regear.delivery.tdp_writer_lease import FileTdpWriterLease; "
             "lease = FileTdpWriterLease(Path(sys.argv[2])); "
             "acquired = lease.acquire(); lease.close(); "
             "sys.exit(0 if acquired else 23)"

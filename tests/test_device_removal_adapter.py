@@ -12,8 +12,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from hdm.adapters.steamos.device_removal import SysfsDeviceRemoval  # noqa: E402
-from hdm.ports.device_removal import (  # noqa: E402
+from regear.adapters.steamos.device_removal import SysfsDeviceRemoval  # noqa: E402
+from regear.ports.device_removal import (  # noqa: E402
     RemovalOutcome,
     RescanOutcome,
 )
@@ -51,7 +51,7 @@ class RemovalTests(unittest.TestCase):
 
     def adapter(self) -> SysfsDeviceRemoval:
         """Patch the module globals; production selection takes no arguments."""
-        import hdm.adapters.steamos.device_removal as module
+        import regear.adapters.steamos.device_removal as module
 
         patcher = patch.multiple(
             module, PCI_DEVICE_ROOT=self.devices, PCI_RESCAN=self.rescan
@@ -123,7 +123,7 @@ class RescanTests(unittest.TestCase):
 
     def adapter(self) -> SysfsDeviceRemoval:
         """Patch the module globals; production selection takes no arguments."""
-        import hdm.adapters.steamos.device_removal as module
+        import regear.adapters.steamos.device_removal as module
 
         patcher = patch.multiple(
             module, PCI_DEVICE_ROOT=self.devices, PCI_RESCAN=self.rescan
@@ -166,7 +166,7 @@ class ArchitectureGateTests(unittest.TestCase):
         """An exact repository-relative path, not a file name."""
         self.assertEqual(
             check_architecture.DEVICE_WRITER,
-            Path("backend/hdm/adapters/steamos/device_removal.py"),
+            Path("backend/regear/adapters/steamos/device_removal.py"),
         )
 
     def test_only_write_text_is_permitted_there(self) -> None:
@@ -198,7 +198,7 @@ class RescanRequestTests(unittest.TestCase):
         self.devices = self.root / "devices"
         self.devices.mkdir()
         self.rescan.write_text("untouched", encoding="ascii")
-        import hdm.adapters.steamos.device_removal as module
+        import regear.adapters.steamos.device_removal as module
 
         patcher = patch.multiple(
             module, PCI_DEVICE_ROOT=self.devices, PCI_RESCAN=self.rescan
@@ -234,8 +234,8 @@ class GateNegativeFixtureTests(unittest.TestCase):
         target = ROOT / relative
         target.parent.mkdir(parents=True, exist_ok=True)
         existed = target.exists()
-        original = target.read_text(encoding="utf-8") if existed else None
-        target.write_text(source, encoding="utf-8")
+        original = target.read_bytes() if existed else None
+        target.write_bytes(source.encode("utf-8"))
         try:
             import io
             import contextlib
@@ -250,11 +250,32 @@ class GateNegativeFixtureTests(unittest.TestCase):
                 if not any(target.parent.iterdir()):
                     target.parent.rmdir()
             else:
-                target.write_text(original, encoding="utf-8")
+                target.write_bytes(original)
+
+    def test_architecture_fixture_restores_exact_bytes_even_on_failure(self) -> None:
+        # Text-mode restoration changes tracked source on Windows and also
+        # normalizes mixed endings on Linux. Packaging reads those exact bytes.
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / "original.py"
+            original = b"# retained CRLF\r\n# retained LF\n"
+            for failure in (False, True):
+                with self.subTest(checker_raises=failure):
+                    target.write_bytes(original)
+                    with patch.dict(self._run_with.__globals__, ROOT=root), patch.object(
+                        check_architecture, "main", return_value=0,
+                        side_effect=RuntimeError("checker failed") if failure else None,
+                    ):
+                        if failure:
+                            with self.assertRaises(RuntimeError):
+                                self._run_with("original.py", "# temporary\n")
+                        else:
+                            self._run_with("original.py", "# temporary\n")
+                    self.assertEqual(target.read_bytes(), original)
 
     def test_same_named_module_elsewhere_gets_no_exemption(self) -> None:
         code, output = self._run_with(
-            "backend/hdm/adapters/other/device_removal.py",
+            "backend/regear/adapters/other/device_removal.py",
             'from pathlib import Path\n\n\ndef sneak(p: Path) -> None:\n    p.write_text("1")\n',
         )
         self.assertEqual(code, 1)
@@ -262,10 +283,10 @@ class GateNegativeFixtureTests(unittest.TestCase):
 
     def test_dynamic_write_destination_is_rejected(self) -> None:
         source = (
-            ROOT / "backend/hdm/adapters/steamos/device_removal.py"
+            ROOT / "backend/regear/adapters/steamos/device_removal.py"
         ).read_text(encoding="utf-8")
         code, output = self._run_with(
-            "backend/hdm/adapters/steamos/device_removal.py",
+            "backend/regear/adapters/steamos/device_removal.py",
             source.replace(
                 "PCI_RESCAN.write_text(TRIGGER", "Path(expected[0]).write_text(TRIGGER"
             ),
@@ -275,10 +296,10 @@ class GateNegativeFixtureTests(unittest.TestCase):
 
     def test_an_extra_write_call_site_is_rejected(self) -> None:
         source = (
-            ROOT / "backend/hdm/adapters/steamos/device_removal.py"
+            ROOT / "backend/regear/adapters/steamos/device_removal.py"
         ).read_text(encoding="utf-8")
         code, output = self._run_with(
-            "backend/hdm/adapters/steamos/device_removal.py",
+            "backend/regear/adapters/steamos/device_removal.py",
             source + '\n\ndef extra(node):\n    node.write_text("1")\n',
         )
         self.assertEqual(code, 1)
@@ -287,5 +308,5 @@ class GateNegativeFixtureTests(unittest.TestCase):
     def test_the_writer_is_matched_by_exact_path(self) -> None:
         self.assertEqual(
             check_architecture.DEVICE_WRITER,
-            Path("backend/hdm/adapters/steamos/device_removal.py"),
+            Path("backend/regear/adapters/steamos/device_removal.py"),
         )

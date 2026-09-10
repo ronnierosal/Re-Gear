@@ -9,19 +9,19 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.application.peripheral_handoff_runner import (  # noqa: E402
+from regear.application.peripheral_handoff_runner import (  # noqa: E402
     PeripheralExecutionOutcome,
     PeripheralHandoffRunner,
     PeripheralMechanismResult,
     PeripheralStepVerification,
 )
-from hdm.domain.control_plane import (  # noqa: E402
+from regear.domain.control_plane import (  # noqa: E402
     CapabilitySupport,
     EgpuCapabilities,
     HostCapabilities,
     compose_capabilities,
 )
-from hdm.domain.peripheral_handoff import (  # noqa: E402
+from regear.domain.peripheral_handoff import (  # noqa: E402
     HandoffDirection,
     PeripheralHandoffPlan,
     PeripheralPlanStatus,

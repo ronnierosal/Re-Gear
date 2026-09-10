@@ -11,12 +11,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.delivery.compatibility_catalog_store import (  # noqa: E402
+from regear.delivery.compatibility_catalog_store import (  # noqa: E402
     GAME_CATALOG_FILENAME,
     HARDWARE_CATALOG_FILENAME,
     FileCompatibilityCatalogStore,
 )
-from hdm.domain.game_compatibility import (  # noqa: E402
+from regear.domain.game_compatibility import (  # noqa: E402
     CompatibilityEvidence,
     CompatibilityEvidenceKind,
     EgpuHandoffStatus,
@@ -24,7 +24,7 @@ from hdm.domain.game_compatibility import (  # noqa: E402
     ObservedRenderGpu,
     promote_egpu_handoff,
 )
-from hdm.domain.hardware_compatibility import (  # noqa: E402
+from regear.domain.hardware_compatibility import (  # noqa: E402
     HardwareCapability,
     HardwareCatalogStatus,
     HardwareCompatibilityRecord,

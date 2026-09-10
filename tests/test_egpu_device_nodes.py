@@ -9,14 +9,14 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.adapters.steamos.egpu_device_nodes import (  # noqa: E402
+from regear.adapters.steamos.egpu_device_nodes import (  # noqa: E402
     SteamOsEgpuDeviceNodeDiscovery,
 )
-from hdm.domain.egpu_device_policy import (  # noqa: E402
+from regear.domain.egpu_device_policy import (  # noqa: E402
     DevicePolicyState,
     compose_egpu_device_policy,
 )
-from hdm.domain.models import EgpuResourceKind  # noqa: E402
+from regear.domain.models import EgpuResourceKind  # noqa: E402
 
 
 GPU_BDF = "0000:08:00.0"
@@ -236,7 +236,7 @@ class PartialScanTests(unittest.TestCase):
 
     def test_a_partial_set_would_have_passed_the_policy_check(self) -> None:
         """Why this matters: the policy alone cannot catch a missing card node."""
-        from hdm.domain.egpu_device_policy import compose_egpu_device_policy
+        from regear.domain.egpu_device_policy import compose_egpu_device_policy
 
         build(self.tree)
         full = self.scan().nodes

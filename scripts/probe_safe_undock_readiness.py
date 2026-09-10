@@ -28,20 +28,20 @@ from typing import Sequence
 if Path(__file__).name != "__main__.py":
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 
-from hdm.adapters.steamos.discovery import SteamOsDiscovery  # noqa: E402
-from hdm.adapters.steamos.peripherals import (  # noqa: E402
+from regear.adapters.steamos.discovery import SteamOsDiscovery  # noqa: E402
+from regear.adapters.steamos.peripherals import (  # noqa: E402
     SteamOsPeripheralObservationAdapter,
 )
-from hdm.application.safe_undock_evidence import (  # noqa: E402
+from regear.application.safe_undock_evidence import (  # noqa: E402
     build_safe_undock_evidence,
 )
-from hdm.domain.removal_safety import (  # noqa: E402
+from regear.domain.removal_safety import (  # noqa: E402
     REMOVAL_SAFETY_FACTS,
     RemovalSafetyState,
     assess_removal_safety,
 )
-from hdm.application.snapshot import SnapshotService  # noqa: E402
-from hdm.domain.safe_undock_readiness import (  # noqa: E402
+from regear.application.snapshot import SnapshotService  # noqa: E402
+from regear.domain.safe_undock_readiness import (  # noqa: E402
     SafeUndockReadinessState,
     assess_safe_undock_readiness,
 )

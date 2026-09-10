@@ -11,11 +11,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.domain.control_plane import CapabilitySupport, PlacementState  # noqa: E402
-from hdm.domain.models import Confidence  # noqa: E402
-from hdm.domain.manual_transition import evidence_from_snapshot  # noqa: E402
-from hdm.domain.serialization import snapshot_from_dict  # noqa: E402
-from hdm.profiles.registry import (  # noqa: E402
+from regear.domain.control_plane import CapabilitySupport, PlacementState  # noqa: E402
+from regear.domain.models import Confidence  # noqa: E402
+from regear.domain.manual_transition import evidence_from_snapshot  # noqa: E402
+from regear.domain.serialization import snapshot_from_dict  # noqa: E402
+from regear.profiles.registry import (  # noqa: E402
     CapabilityAxis,
     CapabilityDiagnostic,
     CapabilityEvidenceBasis,
@@ -27,8 +27,8 @@ from hdm.profiles.registry import (  # noqa: E402
     resolve_runtime_profiles,
     runtime_profile_diagnostics_to_dict,
 )
-from hdm.profiles.ally_x import CAPABILITIES as ALLY_X_CAPABILITIES  # noqa: E402
-from hdm.profiles.gpd_g1 import CAPABILITIES as GPD_G1_CAPABILITIES  # noqa: E402
+from regear.profiles.ally_x import CAPABILITIES as ALLY_X_CAPABILITIES  # noqa: E402
+from regear.profiles.gpd_g1 import CAPABILITIES as GPD_G1_CAPABILITIES  # noqa: E402
 
 
 FIXTURES = ROOT / "tests" / "fixtures"

@@ -62,48 +62,24 @@ and old data; and supervised validation on a supported profile. Until then, do
 not clear or rename. Dated records and old ZIPs keep their original paths, names,
 bytes and checksums regardless.
 
-### Coordinated release, not a sweep
+### Repository identities now changed
 
-- `backend/hdm/` and the `hdm` Python imports. The package is archived into the
-  Decky ZIP and validated by the signed installer, so renaming it changes the
-  installed tree. It also reaches roughly 300 files, including `main.py` and the
-  whole test suite. Removal criteria: a release in which archive contents,
-  installer validation, `scripts/check_plugin_package.py` and the import surface
-  move together, with an old-install upgrade path.
+Current source uses `backend/regear/` and `regear` Python imports. Package contents,
+entry points and installer/package checks move together; there is no second
+`hdm` implementation package. Distribution metadata is `re-gear-steamos` and
+the Python project console command is `regear-diagnose`. Decky still does not
+install that command globally.
 
-### Only a name, renameable, not yet done
+New support exports use `Re-Gear-support-<timestamp>.json`; support-version data
+uses `regear`. The dormant submission adapter uses `X-Re-Gear-Content-SHA256`
+and Re-Gear report IDs. These names do not imply a deployed submission service.
+Old published archives and existing exported files retain their original bytes.
 
-Nothing on a device depends on these. They are listed so they are not mistaken
-for frozen identities.
-
-- `hdm-diagnose` — `docs/DIAGNOSTICS.md` and the wiki both record that the Decky
-  ZIP does not install a global `hdm-diagnose` command, so no installed device
-  exposes it. The entry-point name can change independently of the package path
-  it targets. Blocked only because `pyproject.toml` is held by another task.
-- npm and Python distribution name `handheld-dock-mode-steamos` — build-time
-  metadata. Decky discovers a plugin by its manifest name, which is already
-  `Re-Gear`. Changing it also touches `pnpm-lock.yaml` and the packaging checks.
-  Blocked only because `package.json` and `pyproject.toml` are held elsewhere.
-
-### Dormant contracts with no counterparty
-
-`backend/hdm/adapters/support_submission.py` states the adapter is dormant, that
-production delivery does not construct it, and that no endpoint ships with
-Re-Gear; `backend/hdm/application/support_submission.py` calls it a contract for
-a *future* endpoint. So these are ours to define, and the cheapest time to name
-them correctly is before a server exists. Do not describe them as required by an
-existing server.
-
-- `X-HDM-Content-SHA256` and `REPORT_ID_RE = ^HDM-[A-Z0-9]{6,16}$`. Rename with
-  the dormant adapter, retaining parsing of the old spellings.
-- The `"hdm"` key in the support-bundle payload. Its only reader in this
-  repository is `scripts/check_plugin_package.py`, scoped to
-  `Plugin._support_versions` — an in-repo consumer, so producer and consumer can
-  move together with legacy parsing retained.
-- `HDM-support-<timestamp>.json`. Files already in a player's Downloads keep
-  their names whatever the producer does, so the pin protects them automatically.
-  New exports may become `Re-Gear-support-<timestamp>.json`; no in-repo consumer
-  parses the filename. Keep recognising the old prefix wherever one is read.
+See [September 10 completion](REBRAND_COMPLETION_2026-09-10.md) for scope and
+remaining device gates. The managed-drop-in migration primitive was already
+present in released source, but the application preparation preflight rejected
+its `managed_dropin_superseded` status. The companion application change addresses
+that guarded path; issue #167 still requires supervised installed verification.
 
 `HDM shutdown checkpoint: stage=` stays until both sides move together: it is
 emitted to journald and parsed by a regex in

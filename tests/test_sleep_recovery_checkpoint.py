@@ -8,14 +8,14 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.application.canonical_sleep import CanonicalSleepStatus  # noqa: E402
-from hdm.application.sleep_recovery_checkpoint import (  # noqa: E402
+from regear.application.canonical_sleep import CanonicalSleepStatus  # noqa: E402
+from regear.application.sleep_recovery_checkpoint import (  # noqa: E402
     SleepRecoveryCheckpointKind,
     project_sleep_recovery_checkpoint,
 )
-from hdm.delivery.canonical_sleep import recovery_checkpoint_to_payload  # noqa: E402
-from hdm.domain.control_plane import PlacementState, RequestSource  # noqa: E402
-from hdm.domain.sleep_workflow import SleepFlowStage  # noqa: E402
+from regear.delivery.canonical_sleep import recovery_checkpoint_to_payload  # noqa: E402
+from regear.domain.control_plane import PlacementState, RequestSource  # noqa: E402
+from regear.domain.sleep_workflow import SleepFlowStage  # noqa: E402
 
 
 class SleepRecoveryCheckpointTests(unittest.TestCase):

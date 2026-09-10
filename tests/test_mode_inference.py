@@ -9,10 +9,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.application.snapshot import SnapshotService  # noqa: E402
-from hdm.domain.inference import infer_operating_mode  # noqa: E402
-from hdm.domain.models import OperatingMode  # noqa: E402
-from hdm.domain.serialization import snapshot_from_dict  # noqa: E402
+from regear.application.snapshot import SnapshotService  # noqa: E402
+from regear.domain.inference import infer_operating_mode  # noqa: E402
+from regear.domain.models import OperatingMode  # noqa: E402
+from regear.domain.serialization import snapshot_from_dict  # noqa: E402
 
 
 FIXTURES = ROOT / "tests" / "fixtures"

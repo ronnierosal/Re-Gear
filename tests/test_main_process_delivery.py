@@ -15,41 +15,41 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.application.guarded_process_release import (  # noqa: E402
+from regear.application.guarded_process_release import (  # noqa: E402
     GuardedProcessReleaseExecution,
     GuardedProcessReleasePreview,
     GuardedProcessReleaseStatus,
 )
-from hdm.application.snapshot import SnapshotReport  # noqa: E402
-from hdm.application.docked_igpu_lifecycle import (  # noqa: E402
+from regear.application.snapshot import SnapshotReport  # noqa: E402
+from regear.application.docked_igpu_lifecycle import (  # noqa: E402
     DockedIgpuLifecycleStage,
     DockedIgpuLifecycleStatus,
 )
-from hdm.application.diagnostic_logging import (  # noqa: E402
+from regear.application.diagnostic_logging import (  # noqa: E402
     DiagnosticLoggingController,
 )
-from hdm.application.game_evidence_support import (  # noqa: E402
+from regear.application.game_evidence_support import (  # noqa: E402
     SupportGameEvidence,
     SupportRenderEvidence,
 )
-from hdm.application.support_bundle import WakeDiagnosticsSupportStatus  # noqa: E402
-from hdm.domain.control_plane import (  # noqa: E402
+from regear.application.support_bundle import WakeDiagnosticsSupportStatus  # noqa: E402
+from regear.domain.control_plane import (  # noqa: E402
     PlacementState,
     TransitionOutcomeKind,
 )
-from hdm.domain.inference import infer_operating_mode  # noqa: E402
-from hdm.domain.serialization import snapshot_from_dict  # noqa: E402
-from hdm.domain.game_gpu_client import GameEgpuClientStatus  # noqa: E402
-from hdm.domain.game_render_activity import GameRenderActivityStatus  # noqa: E402
-from hdm.domain.game_runtime import GameRuntimeKind  # noqa: E402
-from hdm.domain.models import (  # noqa: E402
+from regear.domain.inference import infer_operating_mode  # noqa: E402
+from regear.domain.serialization import snapshot_from_dict  # noqa: E402
+from regear.domain.game_gpu_client import GameEgpuClientStatus  # noqa: E402
+from regear.domain.game_render_activity import GameRenderActivityStatus  # noqa: E402
+from regear.domain.game_runtime import GameRuntimeKind  # noqa: E402
+from regear.domain.models import (  # noqa: E402
     Confidence,
     EgpuLinkObservation,
     EgpuLinkState,
     EgpuResourceKind,
     GameState,
 )
-from hdm.domain.process_release import (  # noqa: E402
+from regear.domain.process_release import (  # noqa: E402
     ProcessReleasePreview,
     ProcessReleasePreviewRow,
     ReleasePhase,

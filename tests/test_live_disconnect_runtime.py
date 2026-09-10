@@ -13,15 +13,15 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.application.live_disconnect import (  # noqa: E402
+from regear.application.live_disconnect import (  # noqa: E402
     LiveDisconnectResult,
     LiveDisconnectStage,
 )
-from hdm import delivery  # noqa: E402
-from hdm.adapters.steamos.drm_crtc import CardCrtcState, CrtcRecord  # noqa: E402
-from hdm.application.live_disconnect import FreshRemovalObservation  # noqa: E402
-from hdm.delivery import live_disconnect_runtime  # noqa: E402
-from hdm.delivery.live_disconnect_runtime import (  # noqa: E402
+from regear import delivery  # noqa: E402
+from regear.adapters.steamos.drm_crtc import CardCrtcState, CrtcRecord  # noqa: E402
+from regear.application.live_disconnect import FreshRemovalObservation  # noqa: E402
+from regear.delivery import live_disconnect_runtime  # noqa: E402
+from regear.delivery.live_disconnect_runtime import (  # noqa: E402
     BUSY_CODE,
     UNAVAILABLE_CODE,
     DisconnectAvailability,
@@ -33,25 +33,25 @@ from hdm.delivery.live_disconnect_runtime import (  # noqa: E402
     observe_display,
     present_addresses,
 )
-from hdm.egpu_release import HolderScan  # noqa: E402
-from hdm.delivery.live_disconnect_runtime import GameContext  # noqa: E402
-from hdm.domain.display_release import DisplayReleaseEvidence  # noqa: E402
-from hdm.domain.game_close_consent import (  # noqa: E402
+from regear.egpu_release import HolderScan  # noqa: E402
+from regear.delivery.live_disconnect_runtime import GameContext  # noqa: E402
+from regear.domain.display_release import DisplayReleaseEvidence  # noqa: E402
+from regear.domain.game_close_consent import (  # noqa: E402
     ConsentDecision,
     GameClosePreference,
     InterruptIntent,
 )
-from hdm.domain.game_compatibility import (  # noqa: E402
+from regear.domain.game_compatibility import (  # noqa: E402
     EgpuHandoffStatus,
     GameSaveCapability,
 )
-from hdm.domain.removal_safety import RemovalSafety, RemovalSafetyState  # noqa: E402
-from hdm.domain.removal_transaction import (  # noqa: E402
+from regear.domain.removal_safety import RemovalSafety, RemovalSafetyState  # noqa: E402
+from regear.domain.removal_transaction import (  # noqa: E402
     FunctionProgress,
     record_progress,
 )
-from hdm.domain.removal_transaction import plan as plan_transaction  # noqa: E402
-from hdm.domain.safe_undock_readiness import SafeUndockRevalidation  # noqa: E402
+from regear.domain.removal_transaction import plan as plan_transaction  # noqa: E402
+from regear.domain.safe_undock_readiness import SafeUndockRevalidation  # noqa: E402
 
 
 GPU = "0000:08:00.0"

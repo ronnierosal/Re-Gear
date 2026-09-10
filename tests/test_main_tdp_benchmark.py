@@ -5,7 +5,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from test_main_process_delivery import load_main_module
-from hdm.delivery.auto_tdp_configuration import AutoTdpConfigurationResult
+from regear.delivery.auto_tdp_configuration import AutoTdpConfigurationResult
 
 
 class MainTdpBenchmarkTests(unittest.TestCase):

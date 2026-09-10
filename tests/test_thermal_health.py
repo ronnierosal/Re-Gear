@@ -1,7 +1,7 @@
 import sys,unittest
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT/'backend'))
-from hdm.domain.thermal_health import *
+from regear.domain.thermal_health import *
 class T(unittest.TestCase):
  def test_optional_fresh_sustained_only(self):
   self.assertEqual(assess_thermal(ThermalReading('ally',None,False,False)),ThermalState.UNAVAILABLE)

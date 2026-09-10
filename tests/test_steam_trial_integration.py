@@ -7,7 +7,7 @@ from dataclasses import replace
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'backend'))
-from hdm.delivery.steam_trial_integration import (
+from regear.delivery.steam_trial_integration import (
     SteamIntegrationEvidence, UNIT_SHA256, LAUNCHER_SHA256, OS_UNIT, OS_LAUNCHER,
     plan_integration, rollback_dropin,
 )

@@ -9,11 +9,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.application.docked_igpu_lifecycle import (  # noqa: E402
+from regear.application.docked_igpu_lifecycle import (  # noqa: E402
     DockedIgpuLifecycleStage,
     DockedIgpuLifecycleStatus,
 )
-from hdm.delivery.docked_igpu_scheduler import (  # noqa: E402
+from regear.delivery.docked_igpu_scheduler import (  # noqa: E402
     DockedIgpuLifecycleScheduler,
 )
 

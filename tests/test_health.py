@@ -10,9 +10,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.domain.control_plane import PlacementState  # noqa: E402
-from hdm.domain.control_plane import WorkflowState  # noqa: E402
-from hdm.domain.health import (  # noqa: E402
+from regear.domain.control_plane import PlacementState  # noqa: E402
+from regear.domain.control_plane import WorkflowState  # noqa: E402
+from regear.domain.health import (  # noqa: E402
     HealthComponent,
     HealthComponentObservation,
     HealthEvidenceState,
@@ -20,18 +20,18 @@ from hdm.domain.health import (  # noqa: E402
     assess_health,
     assess_snapshot_health,
 )
-from hdm.domain.models import (  # noqa: E402
+from regear.domain.models import (  # noqa: E402
     Confidence,
     EgpuLinkObservation,
     EgpuLinkState,
 )
-from hdm.domain.peripheral_handoff import (  # noqa: E402
+from regear.domain.peripheral_handoff import (  # noqa: E402
     AudioOutput,
     AudioPeripheralState,
     ControllerPeripheralState,
     PeripheralObservation,
 )
-from hdm.domain.serialization import snapshot_from_dict  # noqa: E402
+from regear.domain.serialization import snapshot_from_dict  # noqa: E402
 
 
 FIXTURES = ROOT / "tests" / "fixtures"

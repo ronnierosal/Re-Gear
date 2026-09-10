@@ -44,7 +44,7 @@ def included_files() -> tuple[Path, ...]:
     paths.append(ROOT / "bin" / "steam-launcher")
     paths.extend(
         path
-        for path in sorted((ROOT / "backend" / "hdm").rglob("*"))
+        for path in sorted((ROOT / "backend" / "regear").rglob("*"))
         if path.is_file() and "__pycache__" not in path.parts and path.suffix != ".pyc"
     )
     return tuple(paths)
@@ -95,7 +95,7 @@ def _git_status(*args: str) -> subprocess.CompletedProcess[str] | None:
 def source_revision() -> str:
     """Return a commit only when no tracked or untracked source is pending.
 
-    ``included_files`` discovers every backend file below ``backend/hdm``. An
+    ``included_files`` discovers every backend file below ``backend/regear``. An
     untracked module could therefore enter an archive even when ``git diff`` is
     empty, so a full porcelain status check is required before the archive may
     claim a clean commit.

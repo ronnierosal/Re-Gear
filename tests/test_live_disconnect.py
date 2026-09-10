@@ -9,45 +9,45 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.application.filter_arm import (  # noqa: E402
+from regear.application.filter_arm import (  # noqa: E402
     FilterArmCoordinator,
     HolderObservation,
 )
-from hdm.application.live_disconnect import (  # noqa: E402
+from regear.application.live_disconnect import (  # noqa: E402
     FreshRemovalObservation,
     LiveDisconnectService,
     LiveDisconnectStage,
 )
-from hdm.domain.device_removal import (  # noqa: E402
+from regear.domain.device_removal import (  # noqa: E402
     RemovalFunction,
     RemovalFunctionKind,
 )
-from hdm.domain.filter_arm_sequence import SESSION_TARGET  # noqa: E402
-from hdm.domain.filter_authorization import (  # noqa: E402
+from regear.domain.filter_arm_sequence import SESSION_TARGET  # noqa: E402
+from regear.domain.filter_authorization import (  # noqa: E402
     CgroupIdentity,
     OwnerIdentity,
     authorize_parent_scope,
 )
-from hdm.domain.display_release import DisplayReleaseEvidence  # noqa: E402
-from hdm.domain.removal_safety import RemovalSafety, RemovalSafetyState  # noqa: E402
-from hdm.domain.removal_transaction import (  # noqa: E402
+from regear.domain.display_release import DisplayReleaseEvidence  # noqa: E402
+from regear.domain.removal_safety import RemovalSafety, RemovalSafetyState  # noqa: E402
+from regear.domain.removal_transaction import (  # noqa: E402
     FunctionProgress,
     record_progress,
 )
-from hdm.domain.removal_transaction import plan as plan_transaction  # noqa: E402
-from hdm.domain.safe_undock_readiness import SafeUndockRevalidation  # noqa: E402
-from hdm.ports.device_filter import (  # noqa: E402
+from regear.domain.removal_transaction import plan as plan_transaction  # noqa: E402
+from regear.domain.safe_undock_readiness import SafeUndockRevalidation  # noqa: E402
+from regear.ports.device_filter import (  # noqa: E402
     ArmedFilter,
     ArmOutcome,
     ArmResult,
     DisarmOutcome,
     DisarmResult,
 )
-from hdm.ports.display_release import (  # noqa: E402
+from regear.ports.display_release import (  # noqa: E402
     DisplayReleaseOutcome,
     DisplayReleaseResult,
 )
-from hdm.ports.device_removal import (  # noqa: E402
+from regear.ports.device_removal import (  # noqa: E402
     RemovalOutcome,
     RemovalResult,
     RescanOutcome,

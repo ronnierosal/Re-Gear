@@ -10,10 +10,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.application.canonical_sleep import (  # noqa: E402
+from regear.application.canonical_sleep import (  # noqa: E402
     CanonicalSleepWorkflowService,
 )
-from hdm.domain.control_plane import (  # noqa: E402
+from regear.domain.control_plane import (  # noqa: E402
     CapabilitySupport,
     EgpuCapabilities,
     HostCapabilities,
@@ -26,23 +26,23 @@ from hdm.domain.control_plane import (  # noqa: E402
     WorkflowState,
     compose_capabilities,
 )
-from hdm.domain.game_compatibility import GameSaveCapability  # noqa: E402
-from hdm.domain.models import EgpuPresence, GameState  # noqa: E402
-from hdm.domain.serialization import snapshot_from_dict  # noqa: E402
-from hdm.domain.sleep_workflow import (  # noqa: E402
+from regear.domain.game_compatibility import GameSaveCapability  # noqa: E402
+from regear.domain.models import EgpuPresence, GameState  # noqa: E402
+from regear.domain.serialization import snapshot_from_dict  # noqa: E402
+from regear.domain.sleep_workflow import (  # noqa: E402
     SleepDirective,
     SleepFlowEvent,
     SleepFlowStage,
     SleepWorkflowContext,
 )
-from hdm.domain.transition_journal import (  # noqa: E402
+from regear.domain.transition_journal import (  # noqa: E402
     JournalEventKind,
     TransitionJournal,
     append_journal_entry,
 )
-from hdm.ports.sleep_workflow import SleepWorkflowObservation  # noqa: E402
-from hdm.profiles.ally_x import CAPABILITIES as ALLY_X  # noqa: E402
-from hdm.profiles.gpd_g1 import CAPABILITIES as GPD_G1  # noqa: E402
+from regear.ports.sleep_workflow import SleepWorkflowObservation  # noqa: E402
+from regear.profiles.ally_x import CAPABILITIES as ALLY_X  # noqa: E402
+from regear.profiles.gpd_g1 import CAPABILITIES as GPD_G1  # noqa: E402
 
 
 FIXTURES = ROOT / "tests" / "fixtures"

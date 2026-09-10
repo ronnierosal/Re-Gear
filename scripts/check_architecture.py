@@ -7,8 +7,8 @@ from pathlib import Path
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
-DOMAIN_ROOT = REPOSITORY_ROOT / "backend" / "hdm" / "domain"
-ADAPTER_ROOT = REPOSITORY_ROOT / "backend" / "hdm" / "adapters"
+DOMAIN_ROOT = REPOSITORY_ROOT / "backend" / "regear" / "domain"
+ADAPTER_ROOT = REPOSITORY_ROOT / "backend" / "regear" / "adapters"
 FORBIDDEN_IMPORT_ROOTS = {
     "asyncio",
     "ctypes",
@@ -28,7 +28,7 @@ FORBIDDEN_IMPORT_ROOTS = {
 #: Matched as an exact repository-relative path, not a file name: a module named
 #: device_removal.py in any other adapter directory must not inherit the
 #: exemption.
-DEVICE_WRITER = Path("backend/hdm/adapters/steamos/device_removal.py")
+DEVICE_WRITER = Path("backend/regear/adapters/steamos/device_removal.py")
 
 #: The exact receiver expressions the device writer may call write_text on, and
 #: how many such calls may exist. Pinning the expressions rather than string
@@ -138,7 +138,7 @@ def main() -> int:
         encoding="utf-8"
     )
     if "shell=True" in command_source.replace(" ", ""):
-        failures.append("backend/hdm/adapters/steamos/commands.py: shell execution is forbidden")
+        failures.append("backend/regear/adapters/steamos/commands.py: shell execution is forbidden")
     failures.extend(device_writer_failures())
     if failures:
         print("Architecture check failed:")

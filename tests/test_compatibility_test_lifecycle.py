@@ -8,35 +8,35 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.application.compatibility_test_lifecycle import (  # noqa: E402
+from regear.application.compatibility_test_lifecycle import (  # noqa: E402
     CompatibilityTestLifecycle,
     CompatibilityTestStart,
 )
-from hdm.application.compatibility_baseline import (  # noqa: E402
+from regear.application.compatibility_baseline import (  # noqa: E402
     CompatibilityBaselineCapture,
 )
-from hdm.application.compatibility_save_exit import (  # noqa: E402
+from regear.application.compatibility_save_exit import (  # noqa: E402
     CompatibilitySaveExitCapture,
     CompatibilitySaveExitWatch,
 )
-from hdm.application.diagnostic_logging import (  # noqa: E402
+from regear.application.diagnostic_logging import (  # noqa: E402
     DiagnosticLoggingController,
 )
-from hdm.application.support_bundle import BoundedEventLog  # noqa: E402
-from hdm.domain.compatibility_test import (  # noqa: E402
+from regear.application.support_bundle import BoundedEventLog  # noqa: E402
+from regear.domain.compatibility_test import (  # noqa: E402
     CompatibilityBaseline,
     CompatibilityTestOptions,
     CompatibilityTestStage,
 )
-from hdm.domain.control_plane import PlacementState  # noqa: E402
-from hdm.domain.game_compatibility import (  # noqa: E402
+from regear.domain.control_plane import PlacementState  # noqa: E402
+from regear.domain.game_compatibility import (  # noqa: E402
     CompatibilityEvidenceKind,
     EgpuHandoffStatus,
     ObservedRenderGpu,
     SaveTestOutcome,
 )
-from hdm.domain.game_session import ActiveGameIdentity  # noqa: E402
-from hdm.domain.models import GameState  # noqa: E402
+from regear.domain.game_session import ActiveGameIdentity  # noqa: E402
+from regear.domain.models import GameState  # noqa: E402
 
 
 class Clock:

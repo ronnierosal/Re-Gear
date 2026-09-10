@@ -6,10 +6,10 @@ from unittest.mock import patch
 
 import test_tdp_provider as provider_fixtures
 from test_tdp_control import MemoryJournal
-from hdm.adapters.steamos.commands import SteamOsTdpCommandRunner
-from hdm.application.auto_tdp_dispatch import AutoTdpDispatchContext, AutoTdpDispatchGuard
-from hdm.application.tdp_control import TdpControlService
-from hdm.ports.tdp import TdpSessionRecord
+from regear.adapters.steamos.commands import SteamOsTdpCommandRunner
+from regear.application.auto_tdp_dispatch import AutoTdpDispatchContext, AutoTdpDispatchGuard
+from regear.application.tdp_control import TdpControlService
+from regear.ports.tdp import TdpSessionRecord
 
 
 class GuardedTransactionTests(unittest.TestCase):
@@ -52,7 +52,7 @@ class GuardedTransactionTests(unittest.TestCase):
         return SimpleNamespace(stdout=output, stderr=b"", returncode=0)
 
     def apply(self):
-        with patch("hdm.adapters.steamos.commands.subprocess.run", side_effect=self.execute):
+        with patch("regear.adapters.steamos.commands.subprocess.run", side_effect=self.execute):
             return self.service.apply(20, dispatch_guard=self.guard)
 
     def test_sample_expiring_during_provider_readback_never_dispatches_or_leaves_pending(self):

@@ -31,19 +31,19 @@ class ClassifyTests(unittest.TestCase):
         self.assertIn("silently discard", reason)
 
     def test_subprocess_boundary_is_safety_critical(self) -> None:
-        risk, _ = classify("backend/hdm/adapters/steamos/commands.py")
+        risk, _ = classify("backend/regear/adapters/steamos/commands.py")
         self.assertEqual(risk, "safety-critical")
 
     def test_domain_prefix_matches_nested_modules(self) -> None:
-        risk, _ = classify("backend/hdm/domain/transition.py")
+        risk, _ = classify("backend/regear/domain/transition.py")
         self.assertEqual(risk, "safety-critical")
 
     def test_unlisted_paths_are_shared(self) -> None:
-        risk, _ = classify("backend/hdm/application/whatever.py")
+        risk, _ = classify("backend/regear/application/whatever.py")
         self.assertEqual(risk, "shared")
 
     def test_prefix_does_not_match_unrelated_sibling(self) -> None:
-        risk, _ = classify("backend/hdm/domain_notes.md")
+        risk, _ = classify("backend/regear/domain_notes.md")
         self.assertEqual(risk, "shared")
 
 

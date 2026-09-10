@@ -36,8 +36,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 
-from hdm.adapters.steamos.dock_branch import DockBranchDiscovery  # noqa: E402
-from hdm.domain.dock_teardown import (  # noqa: E402
+from regear.adapters.steamos.dock_branch import DockBranchDiscovery  # noqa: E402
+from regear.domain.dock_teardown import (  # noqa: E402
     TunnelEvidence,
     UsbBranchEvidence,
     decide_dock_teardown,

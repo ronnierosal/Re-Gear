@@ -5,7 +5,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from scripts.probe_egpu_allocations import bounded_text, capture_processes, summarize
-from hdm.domain.models import EgpuResourceKind
+from regear.domain.models import EgpuResourceKind
 
 
 class AllocationProbeTests(unittest.TestCase):

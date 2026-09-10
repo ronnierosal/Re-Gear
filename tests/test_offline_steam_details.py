@@ -4,8 +4,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 
-from hdm.adapters.steamos.offline_steam_details import project_steam_app_details
-from hdm.domain.offline_readiness import (
+from regear.adapters.steamos.offline_steam_details import project_steam_app_details
+from regear.domain.offline_readiness import (
     CloudSaveState, DownloadState, InstallState, OfflineReadinessStatus,
     classify_offline_readiness, offline_readiness_to_public_dict,
 )

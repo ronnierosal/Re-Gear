@@ -9,10 +9,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.adapters.steamos.process_signal import PosixProcessSignalAdapter  # noqa: E402
-from hdm.domain.models import EgpuResourceKind  # noqa: E402
-from hdm.domain.process_release import ProcessReleaseTarget  # noqa: E402
-from hdm.ports.process_signal import ProcessSignalAction  # noqa: E402
+from regear.adapters.steamos.process_signal import PosixProcessSignalAdapter  # noqa: E402
+from regear.domain.models import EgpuResourceKind  # noqa: E402
+from regear.domain.process_release import ProcessReleaseTarget  # noqa: E402
+from regear.ports.process_signal import ProcessSignalAction  # noqa: E402
 
 
 def target(pid: int = 100) -> ProcessReleaseTarget:

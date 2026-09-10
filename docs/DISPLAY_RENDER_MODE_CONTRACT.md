@@ -34,16 +34,16 @@ There is exactly one mechanism by which Re-Gear selects a display target or a
 render GPU. It is a launch-time argument rewrite, not a runtime modeset.
 
 1. A guarded transition writes a boot-scoped launch configuration
-   (`backend/hdm/delivery/presentation_config.py:81` `build_target`). Its
+   (`backend/regear/delivery/presentation_config.py:81` `build_target`). Its
    `target` is one of `portable`, `docked_igpu`, `docked_egpu`
-   (`backend/hdm/delivery/gamescope_wrapper.py:46`).
+   (`backend/regear/delivery/gamescope_wrapper.py:46`).
 2. The same attempt then queues
    `UserServiceOperation.RESTART_GAMESCOPE_SESSION`
-   (`backend/hdm/adapters/presentation_transition.py:247`). Every presentation
+   (`backend/regear/adapters/presentation_transition.py:247`). Every presentation
    change — including a display-only one — goes through this single call.
 3. On the next Gamescope exec, the packaged shim re-derives the current
    evidence, picks an output order and a Vulkan device
-   (`backend/hdm/delivery/gamescope_wrapper.py:163`
+   (`backend/regear/delivery/gamescope_wrapper.py:163`
    `select_launch_configuration`), rewrites `-O/--prefer-output` and
    `--prefer-vk-device`, and sets `MESA_VK_DEVICE_SELECT`
    (`gamescope_wrapper.py:99` `rewrite_gamescope_argv`, `:312` `main`).
@@ -53,9 +53,9 @@ render GPU. It is a launch-time argument rewrite, not a runtime modeset.
 | Surface | What it can do | Can it switch output or renderer? |
 |---|---|---|
 | Gamescope argv + `MESA_VK_DEVICE_SELECT` via the packaged shim | Select the output order and the Vulkan device **for the session being launched** | Yes — only at exec |
-| `gamescope_control` Wayland protocol client (`backend/hdm/adapters/steamos/gamescope_performance.py`) | Bounded one-shot `request_app_performance_stats` | No. The module is explicitly "no compositor mutations"; only registry, sync, bind and the stats request are emitted |
-| `drm_crtc` reader (`backend/hdm/adapters/steamos/drm_crtc.py`) | `DRM_IOCTL_MODE_GETRESOURCES` / `GETCRTC` observation | No — read-only |
-| `drm_display_release` (`backend/hdm/adapters/steamos/drm_display_release.py`) | Legacy `MODE_SETCRTC` with `fb_id=0` to *release* a CRTC during teardown | No. It blanks a CRTC for removal; it cannot hand an output to another GPU or another session |
+| `gamescope_control` Wayland protocol client (`backend/regear/adapters/steamos/gamescope_performance.py`) | Bounded one-shot `request_app_performance_stats` | No. The module is explicitly "no compositor mutations"; only registry, sync, bind and the stats request are emitted |
+| `drm_crtc` reader (`backend/regear/adapters/steamos/drm_crtc.py`) | `DRM_IOCTL_MODE_GETRESOURCES` / `GETCRTC` observation | No — read-only |
+| `drm_display_release` (`backend/regear/adapters/steamos/drm_display_release.py`) | Legacy `MODE_SETCRTC` with `fb_id=0` to *release* a CRTC during teardown | No. It blanks a CRTC for removal; it cannot hand an output to another GPU or another session |
 
 **Conclusion: no live display-switch API is implemented, and none is wired.**
 Any change of display target or render GPU is a Gamescope session restart.
@@ -85,8 +85,8 @@ a combination, paid once, while idle.
 ## Capability and authority matrix
 
 Rows are the four observable placements
-(`backend/hdm/domain/inference.py:41`-`48`). This table is also executable:
-`backend/hdm/domain/display_render_modes.py` encodes it and
+(`backend/regear/domain/inference.py:41`-`48`). This table is also executable:
+`backend/regear/domain/display_render_modes.py` encodes it and
 `tests/test_display_render_modes.py` asserts it against the real planner and the
 real inference rather than letting prose drift.
 

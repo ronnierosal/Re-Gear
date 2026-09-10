@@ -5,15 +5,15 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 
-from hdm.domain.auto_tdp import AutoTdpPolicy
-from hdm.domain.auto_tdp_preferences import (
+from regear.domain.auto_tdp import AutoTdpPolicy
+from regear.domain.auto_tdp_preferences import (
     AutoTdpModePreference,
     AutoTdpPreferenceSet,
     AutoTdpProviderBounds,
     resolve_auto_tdp_preference,
     validate_auto_tdp_preference_bounds,
 )
-from hdm.domain.control_plane import PlacementState
+from regear.domain.control_plane import PlacementState
 
 
 def preference(placement, minimum, maximum, fps):

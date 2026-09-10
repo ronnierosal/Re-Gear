@@ -2,7 +2,7 @@
 
 Status: **Implemented (pure local assessment); Real measurement required**
 
-`hdm.domain.performance_measurement` assesses one caller-supplied timing sample
+`regear.domain.performance_measurement` assesses one caller-supplied timing sample
 from existing read-only Re-Gear work. It reuses the shared telemetry admission
 contract, accepts only player-diagnostics consumers, and requires benchmarked
 cost within the existing one-tenth interval budget.

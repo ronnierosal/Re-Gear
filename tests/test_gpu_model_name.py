@@ -7,11 +7,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
-from hdm.adapters.steamos.drm import DrmDiscovery
-from hdm.adapters.transition_runtime import versioned_snapshot_observation
-from hdm.application.snapshot import SnapshotReport, report_to_public_dict
-from hdm.domain.inference import infer_operating_mode
-from hdm.domain.serialization import snapshot_from_dict, snapshot_to_dict
+from regear.adapters.steamos.drm import DrmDiscovery
+from regear.adapters.transition_runtime import versioned_snapshot_observation
+from regear.application.snapshot import SnapshotReport, report_to_public_dict
+from regear.domain.inference import infer_operating_mode
+from regear.domain.serialization import snapshot_from_dict, snapshot_to_dict
 
 
 class GpuModelNameTests(unittest.TestCase):

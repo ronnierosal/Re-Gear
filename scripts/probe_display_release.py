@@ -37,9 +37,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.adapters.steamos.drm_crtc import DrmCrtcProbe  # noqa: E402
-from hdm.adapters.steamos.drm_display_release import DrmDisplayRelease  # noqa: E402
-from hdm.domain.display_release import (  # noqa: E402
+from regear.adapters.steamos.drm_crtc import DrmCrtcProbe  # noqa: E402
+from regear.adapters.steamos.drm_display_release import DrmDisplayRelease  # noqa: E402
+from regear.domain.display_release import (  # noqa: E402
     DisplayReleaseEvidence,
     DisplayReleaseState,
     decide_display_release,

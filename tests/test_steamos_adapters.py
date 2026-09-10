@@ -11,23 +11,23 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.adapters.steamos.commands import CommandResult, ReadOnlyCommandRunner  # noqa: E402
-from hdm.adapters.steamos.drm import DrmDiscovery  # noqa: E402
-from hdm.adapters.steamos.game_scopes import (  # noqa: E402
+from regear.adapters.steamos.commands import CommandResult, ReadOnlyCommandRunner  # noqa: E402
+from regear.adapters.steamos.drm import DrmDiscovery  # noqa: E402
+from regear.adapters.steamos.game_scopes import (  # noqa: E402
     SystemdGameScopeDiscovery,
     parse_game_scopes,
 )
-from hdm.adapters.steamos.gamescope import (  # noqa: E402
+from regear.adapters.steamos.gamescope import (  # noqa: E402
     GamescopeDiscovery,
     GamescopeProcessRecord,
     GamescopeScan,
     parse_process_start_time,
 )
-from hdm.adapters.steamos.gamescope_session import (  # noqa: E402
+from regear.adapters.steamos.gamescope_session import (  # noqa: E402
     GamescopeSessionObservationAdapter,
 )
-from hdm.adapters.steamos.pci import PciUsb4Discovery  # noqa: E402
-from hdm.domain.models import GameState  # noqa: E402
+from regear.adapters.steamos.pci import PciUsb4Discovery  # noqa: E402
+from regear.domain.models import GameState  # noqa: E402
 
 
 def write(path: Path, value: str) -> None:
@@ -334,7 +334,7 @@ class ReadOnlyCommandRunnerTests(unittest.TestCase):
             ReadOnlyCommandRunner.SYSTEMCTL,
             *ReadOnlyCommandRunner.SYSTEMCTL_SCOPE_QUERY,
         )
-        with patch("hdm.adapters.steamos.commands.subprocess.run", fake_run):
+        with patch("regear.adapters.steamos.commands.subprocess.run", fake_run):
             ReadOnlyCommandRunner().run(command)
 
         self.assertEqual(captured["env"], ReadOnlyCommandRunner.CLEAN_ENVIRONMENT)

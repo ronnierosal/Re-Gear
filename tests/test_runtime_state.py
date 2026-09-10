@@ -11,7 +11,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.delivery.runtime_state import (  # noqa: E402
+from regear.delivery.runtime_state import (  # noqa: E402
     STATE_DIRECTORY_MODE,
     RootOwnedRuntimeState,
 )
@@ -87,7 +87,7 @@ class RuntimeStateTests(unittest.TestCase):
     def test_rejects_wrong_leaf_symlink_file_owner_and_mode(self):
         with tempfile.TemporaryDirectory() as root:
             parent = Path(root)
-            with self.assertRaisesRegex(ValueError, "fixed HDM"):
+            with self.assertRaisesRegex(ValueError, "fixed legacy"):
                 self.manager(parent / "other")
 
             file_target = parent / "handheld-dock-mode"

@@ -8,8 +8,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.domain.control_plane import PlacementState, WorkflowState  # noqa: E402
-from hdm.domain.transition_journal import (  # noqa: E402
+from regear.domain.control_plane import PlacementState, WorkflowState  # noqa: E402
+from regear.domain.transition_journal import (  # noqa: E402
     MAX_JOURNAL_ENTRIES,
     JournalEntry,
     JournalEventKind,

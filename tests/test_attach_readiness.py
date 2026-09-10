@@ -10,23 +10,23 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.application.attach_readiness import (  # noqa: E402
+from regear.application.attach_readiness import (  # noqa: E402
     AttachReadinessLifecycle,
     AttachReadinessStage,
     READY_STABILITY_SAMPLES,
     arm_attach_readiness,
     observe_attach_readiness,
 )
-from hdm.application.topology_event_detection import detect_topology_event  # noqa: E402
-from hdm.domain.models import (  # noqa: E402
+from regear.application.topology_event_detection import detect_topology_event  # noqa: E402
+from regear.domain.models import (  # noqa: E402
     Confidence,
     DisplayKind,
     EgpuLinkObservation,
     EgpuLinkState,
     GameState,
 )
-from hdm.domain.serialization import snapshot_from_dict  # noqa: E402
-from hdm.ports.transition import VersionedObservation  # noqa: E402
+from regear.domain.serialization import snapshot_from_dict  # noqa: E402
+from regear.ports.transition import VersionedObservation  # noqa: E402
 
 
 FIXTURES = ROOT / "tests" / "fixtures"

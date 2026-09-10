@@ -8,7 +8,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.domain.mode_profiles import (  # noqa: E402
+from regear.domain.mode_profiles import (  # noqa: E402
     DisplayModePreference,
     DisplayPreference,
     ExperienceTarget,
@@ -18,7 +18,7 @@ from hdm.domain.mode_profiles import (  # noqa: E402
     ModeProfileSet,
     resolve_mode_profile,
 )
-from hdm.domain.models import OperatingMode  # noqa: E402
+from regear.domain.models import OperatingMode  # noqa: E402
 
 
 def profile(mode: OperatingMode, profile_id: str = "profile") -> ModeProfile:

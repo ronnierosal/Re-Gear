@@ -6,8 +6,8 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from backend.hdm.delivery.audio_profile_trial_state import AudioTrialRecord, AudioTrialPhase
-from backend.hdm.delivery.audio_profile_trial_store import AudioTrialStore, AudioTrialTransaction, encode_record, decode_record
+from backend.regear.delivery.audio_profile_trial_state import AudioTrialRecord, AudioTrialPhase
+from backend.regear.delivery.audio_profile_trial_store import AudioTrialStore, AudioTrialTransaction, encode_record, decode_record
 
 
 def record():
@@ -166,7 +166,7 @@ class AudioStoreLinuxTests(unittest.TestCase):
             if os.fstat(fd).st_ino == os.fstat(self.fd).st_ino:
                 raise OSError("directory sync failed")
             real_sync(fd)
-        with patch("backend.hdm.delivery.audio_profile_trial_store.os.fsync", side_effect=fail_directory):
+        with patch("backend.regear.delivery.audio_profile_trial_store.os.fsync", side_effect=fail_directory):
             with self.store.transaction() as tx, self.assertRaises(OSError):
                 tx.save(original, changed)
         with self.store.transaction() as tx:
@@ -176,7 +176,7 @@ class AudioStoreLinuxTests(unittest.TestCase):
         with self.store.transaction() as tx:
             tx.create(record())
             tx.save(record(), replace(record(), revision=2, phase=AudioTrialPhase.RESTORED))
-        with patch("backend.hdm.delivery.audio_profile_trial_store.MAX_RECORDS", 1):
+        with patch("backend.regear.delivery.audio_profile_trial_store.MAX_RECORDS", 1):
             with self.store.transaction() as tx, self.assertRaises(ValueError):
                 tx.create(replace(record(), operation="second"))
 

@@ -9,8 +9,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.adapters.steamos.link_health import PcieLinkHealthDiscovery  # noqa: E402
-from hdm.domain.models import Confidence, EgpuLinkState  # noqa: E402
+from regear.adapters.steamos.link_health import PcieLinkHealthDiscovery  # noqa: E402
+from regear.domain.models import Confidence, EgpuLinkState  # noqa: E402
 
 
 def write(path: Path, value: str) -> None:

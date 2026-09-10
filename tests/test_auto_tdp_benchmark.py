@@ -3,10 +3,10 @@ import unittest
 from dataclasses import replace
 
 import test_tdp_control as control_fixtures
-from hdm.application.auto_tdp_session import AutoTdpEvidence, AutoTdpLiveContext
-from hdm.delivery.auto_tdp_benchmark import benchmark_auto_tdp
-from hdm.domain.auto_tdp import AutoTdpObservation
-from hdm.domain.models import GameState
+from regear.application.auto_tdp_session import AutoTdpEvidence, AutoTdpLiveContext
+from regear.delivery.auto_tdp_benchmark import benchmark_auto_tdp
+from regear.domain.auto_tdp import AutoTdpObservation
+from regear.domain.models import GameState
 
 
 class Evidence:

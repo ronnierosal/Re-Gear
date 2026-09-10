@@ -9,7 +9,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.domain.control_plane import (  # noqa: E402
+from regear.domain.control_plane import (  # noqa: E402
     CapabilitySupport,
     EgpuCapabilities,
     ExperimentalTransitionPermit,
@@ -17,13 +17,13 @@ from hdm.domain.control_plane import (  # noqa: E402
     PlacementState,
     compose_capabilities,
 )
-from hdm.domain.manual_transition import (  # noqa: E402
+from regear.domain.manual_transition import (  # noqa: E402
     ManualTransitionEvidence,
     plan_manual_transition,
 )
-from hdm.domain.models import GameState  # noqa: E402
-from hdm.profiles.ally_x import CAPABILITIES as ALLY_X  # noqa: E402
-from hdm.profiles.gpd_g1 import CAPABILITIES as GPD_G1  # noqa: E402
+from regear.domain.models import GameState  # noqa: E402
+from regear.profiles.ally_x import CAPABILITIES as ALLY_X  # noqa: E402
+from regear.profiles.gpd_g1 import CAPABILITIES as GPD_G1  # noqa: E402
 
 
 def verified_capabilities():
