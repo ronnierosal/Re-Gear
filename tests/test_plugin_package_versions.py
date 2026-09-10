@@ -11,12 +11,50 @@ sys.path.insert(0, str(ROOT))
 from scripts.check_plugin_package import (  # noqa: E402
     VERSION_SITES,
     VERSION_SOURCE,
+    _main_version,
     declared_versions,
     version_failures,
 )
 
 
 AGREED = {relative: "0.2.0" for relative in VERSION_SITES}
+
+
+LEGACY_MAIN = '''
+class Plugin:
+    def _support_versions(self):
+        return {"hdm": "0.3.72", "decky": "3.2.8"}
+'''
+
+CURRENT_MAIN = '''
+class Plugin:
+    def _support_versions(self):
+        return {"regear": "0.3.73", "decky": "3.2.8"}
+'''
+
+
+class SupportVersionKeyTests(unittest.TestCase):
+    """The key naming this project's own version moved with the rename.
+
+    The checker reads a `main.py`, and a `main.py` from before the rename
+    still says `"hdm"`. Dropping that read would make this check silently
+    unable to answer for an older build.
+    """
+
+    def test_the_current_key_is_read(self):
+        self.assertEqual(_main_version(CURRENT_MAIN), "0.3.73")
+
+    def test_a_pre_rename_main_is_still_readable(self):
+        self.assertEqual(_main_version(LEGACY_MAIN), "0.3.72")
+
+    def test_an_unrelated_mapping_still_cannot_answer(self):
+        """Widening the key set must not widen the scope it is read from."""
+        source = '''
+class Plugin:
+    def _unrelated(self):
+        return {"regear": "9.9.9", "hdm": "9.9.9"}
+'''
+        self.assertIsNone(_main_version(source))
 
 
 class VersionFailureTests(unittest.TestCase):

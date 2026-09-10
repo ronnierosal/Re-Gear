@@ -19,7 +19,12 @@ from .support_bundle import SupportBundle
 
 
 APPROVAL_TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{16,96}$")
-REPORT_ID_RE = re.compile(r"^HDM-[A-Z0-9]{6,16}$")
+#: Report ids are issued by the support endpoint, not by us, so this parses
+#: what a server returns. The endpoint is still dormant, but if one is ever
+#: stood up it may keep issuing ``HDM-`` ids that were handed out earlier,
+#: so the legacy prefix stays accepted. Removal criterion: a shipped
+#: endpoint that has never issued an ``HDM-`` id.
+REPORT_ID_RE = re.compile(r"^(?:RG|HDM)-[A-Z0-9]{6,16}$")
 
 
 @dataclass(frozen=True, slots=True)

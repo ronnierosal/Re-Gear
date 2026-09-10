@@ -88,10 +88,18 @@ def _pyproject_version(text: str) -> str | None:
     return value if isinstance(value, str) else None
 
 
-def _main_version(text: str) -> str | None:
-    """Read the `"hdm"` entry of `Plugin._support_versions`.
+#: The support-bundle key naming this project's own version. `"regear"` is what
+#: a current build writes; `"hdm"` is what every build before the rename wrote,
+#: and a bundle a player saved earlier still carries it. Reading both keeps this
+#: checker working against an older `main.py` as well as the current one.
+#: Removal criterion: no supported build or retained bundle still writes `"hdm"`.
+SUPPORT_VERSION_KEYS = ("regear", "hdm")
 
-    Scoped to that method rather than to any `"hdm"` key in the module, so an
+
+def _main_version(text: str) -> str | None:
+    """Read this project's version entry from `Plugin._support_versions`.
+
+    Scoped to that method rather than to any matching key in the module, so an
     unrelated mapping cannot start answering for the declared version.
     """
     for function in ast.walk(ast.parse(text)):
@@ -105,7 +113,7 @@ def _main_version(text: str) -> str | None:
             for key, value in zip(node.keys, node.values):
                 if (
                     isinstance(key, ast.Constant)
-                    and key.value == "hdm"
+                    and key.value in SUPPORT_VERSION_KEYS
                     and isinstance(value, ast.Constant)
                     and isinstance(value.value, str)
                 ):

@@ -77,7 +77,7 @@ class SupportSubmissionAdapterTests(unittest.TestCase):
         call = transport.calls[0]
         self.assertEqual(call["body"], upload().body)
         self.assertEqual(call["headers"]["Content-Length"], str(upload().size_bytes))
-        self.assertEqual(call["headers"]["X-HDM-Content-SHA256"], upload().sha256)
+        self.assertEqual(call["headers"]["X-Re-Gear-Content-SHA256"], upload().sha256)
         self.assertNotIn("Authorization", call["headers"])
 
     def test_redirect_error_and_non_exact_json_are_not_followed_or_accepted(self):
