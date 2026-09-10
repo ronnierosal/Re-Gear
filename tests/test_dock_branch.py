@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import ast
+import inspect
 import os
 import sys
 import tempfile
@@ -709,6 +711,35 @@ class StorageGapTests(Harness):
                 self.assertNotIn("/", gap.value)
                 self.assertEqual(gap.value, gap.value.lower())
                 self.assertTrue(gap.value.replace("_", "").isalpha())
+
+    def test_no_reading_is_constructed_with_a_bool_where_gaps_belong(self):
+        """Static, because the cases that caught this skip on Windows.
+
+        `gaps` took the position `complete` used to hold, so a leftover
+        `DockStorageReading((), (), True)` still parses, still runs, and
+        inverts the answer: a truthy non-empty value reads as gaps present,
+        `False` reads as none. Two such returns survived the change and only
+        Linux CI saw them, because they need colon-bearing PCI paths.
+        """
+        source = Path(inspect.getsourcefile(DockBranchDiscovery))
+        offenders = []
+        for node in ast.walk(ast.parse(source.read_text(encoding="utf-8"))):
+            if not isinstance(node, ast.Call):
+                continue
+            if getattr(node.func, "id", None) != "DockStorageReading":
+                continue
+            for argument in list(node.args[2:3]) + [
+                keyword.value
+                for keyword in node.keywords
+                if keyword.arg == "gaps"
+            ]:
+                if isinstance(argument, ast.Constant) and isinstance(
+                    argument.value, bool
+                ):
+                    offenders.append(node.lineno)
+        self.assertEqual(
+            offenders, [], f"bool passed as gaps at line(s) {offenders}"
+        )
 
     def test_a_finished_reading_has_no_gaps_and_says_it_is_complete(self):
         self.fake.block_metadata("sda")

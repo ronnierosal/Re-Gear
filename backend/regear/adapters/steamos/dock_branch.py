@@ -332,14 +332,20 @@ class DockBranchDiscovery:
         reading an empty list as safety.
         """
         if not PCI_PATTERN.fullmatch(controller_bdf):
-            return DockStorageReading((), (), False)
+            # Not an address, so the walk that would have found this branch's
+            # devices never happened.
+            return DockStorageReading(
+                (), (), (StorageEvidenceGap.BLOCK_DEVICE_WALK_INCOMPLETE,)
+            )
         try:
             if not (self._pci_root / controller_bdf).is_dir():
                 # No controller, so nothing of this branch is in use. A
-                # finished reading of an absent thing.
-                return DockStorageReading((), (), True)
+                # finished reading of an absent thing: no gaps.
+                return DockStorageReading((), (), ())
         except OSError:
-            return DockStorageReading((), (), False)
+            return DockStorageReading(
+                (), (), (StorageEvidenceGap.BLOCK_DEVICE_WALK_INCOMPLETE,)
+            )
 
         devices, devices_complete = self._branch_block_devices(controller_bdf)
         device_gaps = (
