@@ -40,6 +40,25 @@ import type {
   DisconnectStatusPayload,
 } from "./backend";
 
+/** The intents that may reopen the game once the flow finishes.
+ *
+ * An allow-list, and the reason is the shape of the mistake it prevents. This
+ * was written as `intent !== "sleep"`, which is only correct while the union has
+ * exactly two members: it asks "is this the one intent that must not reopen",
+ * so every intent added afterwards inherits a relaunch by default. A shutdown
+ * would have reopened a game seconds before the machine powered off -- worse
+ * than the sleep case it was written for, because nothing comes back afterwards
+ * to finish the job, and the player returns to a machine that killed their game
+ * and then launched it again to be killed by the power cut.
+ *
+ * Compared as strings rather than against the narrow union on purpose. An
+ * intent that is not yet part of the contract still has to resolve to "do not
+ * reopen" rather than being unrepresentable, so the rule can be tested before
+ * the journey that needs it exists. Adding a journey means adding it here
+ * deliberately, with its own reason for reopening.
+ */
+const REOPEN_AFTER: readonly string[] = ["disconnect"];
+
 export interface CloseFlowRequest {
   /** The game to close, or null when there is nothing Re-Gear can close. */
   appId: string | null;
@@ -180,8 +199,9 @@ export async function runDisconnectWithGameClose(
   const intent = request.intent ?? "disconnect";
   // Sleeping means the machine is about to be off. Reopening the game now
   // would launch it seconds before a suspend, so the record is left for the
-  // panel that comes up after waking.
-  const reopenNow = intent !== "sleep";
+  // panel that comes up after waking. Anything not named in REOPEN_AFTER is
+  // treated the same way, which is the point of naming them.
+  const reopenNow = REOPEN_AFTER.includes(intent);
 
   let outcome: DisconnectOutcomePayload;
   try {
