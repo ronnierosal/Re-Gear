@@ -12,6 +12,10 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
 from regear.adapters.steamos.dock_branch import DockBranchDiscovery  # noqa: E402
+from regear.domain.dock_teardown import (  # noqa: E402
+    TunnelCapability,
+    WritePermission,
+)
 
 
 CONTROLLER = "0000:09:00.0"
@@ -132,6 +136,19 @@ class Fake:
 
     def holder(self, device: str, holder: str) -> None:
         (self.block / device / "holders" / holder).mkdir(parents=True, exist_ok=True)
+
+    def domain(self, index: str = "0", *, deauthorization: str | None = "1") -> Path:
+        """The Thunderbolt domain, which is where support is published.
+
+        A router id is `<domain index>-<route>`, so the router `0-1` belongs
+        to `domain0`. Passing None leaves the attribute absent, which is a
+        real case: not every kernel or controller publishes it.
+        """
+        path = self.thunderbolt / f"domain{index}"
+        path.mkdir(parents=True, exist_ok=True)
+        if deauthorization is not None:
+            (path / "deauthorization").write_text(deauthorization, encoding="utf-8")
+        return path
 
     def tunnel(self, name: str, *, authorized: str | None = "1") -> Path:
         path = self.thunderbolt / "0-1"
@@ -777,6 +794,80 @@ class TunnelTests(Harness):
         self.assertEqual(reading.sysfs_id, "0-1")
         self.assertIs(reading.authorized, True)
         self.assertTrue(reading.complete)
+
+    def test_support_is_read_from_the_domain_not_guessed_from_the_router(self) -> None:
+        """The kernel publishes this per domain, and it is a separate fact.
+
+        The router file existing says only that there is a file. Whether the
+        domain supports de-authorization at all is answered one level up, and
+        it is the answer that decides whether this dock can ever do it.
+        """
+        self.fake.tunnel("Tapex Creek")
+        self.fake.domain("0", deauthorization="1")
+
+        reading = self.discovery.observe_tunnel("Tapex Creek")
+
+        self.assertIs(reading.capability, TunnelCapability.SUPPORTED)
+
+    def test_a_domain_that_says_no_is_unsupported_not_unknown(self) -> None:
+        self.fake.tunnel("Tapex Creek")
+        self.fake.domain("0", deauthorization="0")
+
+        reading = self.discovery.observe_tunnel("Tapex Creek")
+
+        self.assertIs(reading.capability, TunnelCapability.NOT_SUPPORTED)
+        self.assertFalse(reading.deauthorizable)
+
+    def test_an_absent_domain_attribute_is_unknown_not_unsupported(self) -> None:
+        """Not every kernel publishes it, and silence is not a refusal.
+
+        Reading absence as NOT_SUPPORTED would tell a player their dock
+        cannot do this, permanently, on the strength of a file nobody wrote.
+        """
+        self.fake.tunnel("Tapex Creek")
+        self.fake.domain("0", deauthorization=None)
+
+        reading = self.discovery.observe_tunnel("Tapex Creek")
+
+        self.assertIs(reading.capability, TunnelCapability.UNKNOWN)
+
+    def test_a_nonsense_domain_attribute_is_unknown(self) -> None:
+        self.fake.tunnel("Tapex Creek")
+        self.fake.domain("0", deauthorization="maybe")
+
+        reading = self.discovery.observe_tunnel("Tapex Creek")
+
+        self.assertIs(reading.capability, TunnelCapability.UNKNOWN)
+
+    def test_the_router_of_another_domain_is_not_consulted(self) -> None:
+        """`0-1` belongs to domain0, and domain1 answers for something else."""
+        self.fake.tunnel("Tapex Creek")
+        self.fake.domain("1", deauthorization="1")
+
+        reading = self.discovery.observe_tunnel("Tapex Creek")
+
+        self.assertIs(reading.capability, TunnelCapability.UNKNOWN)
+
+    def test_write_permission_is_its_own_axis(self) -> None:
+        """Supported and writable are two answers, and both are required."""
+        self.fake.tunnel("Tapex Creek")
+        self.fake.domain("0", deauthorization="1")
+
+        reading = self.discovery.observe_tunnel("Tapex Creek")
+
+        self.assertIs(reading.write_permission, WritePermission.WRITABLE)
+        self.assertTrue(reading.deauthorizable)
+
+    def test_an_absent_authorized_file_leaves_permission_unknown(self) -> None:
+        """Absent is unknown here, and support is still the domain's answer."""
+        self.fake.tunnel("Tapex Creek", authorized=None)
+        self.fake.domain("0", deauthorization="1")
+
+        reading = self.discovery.observe_tunnel("Tapex Creek")
+
+        self.assertIs(reading.write_permission, WritePermission.UNKNOWN)
+        self.assertIs(reading.capability, TunnelCapability.SUPPORTED)
+        self.assertFalse(reading.deauthorizable)
 
     def test_two_routers_publishing_one_name_refuse_to_resolve(self) -> None:
         """A device_name is a product string, not an identity.
