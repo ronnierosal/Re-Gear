@@ -294,28 +294,26 @@ def decide_dock_teardown(
         # could not be brought down without saying whether the dock cannot do
         # it, or we were not allowed to look. Those have different remedies
         # and one of them is not the operator's fault.
-        if tunnel.capability is TunnelCapability.UNKNOWN:
+        # Written as "permit only SUPPORTED" rather than "refuse UNKNOWN and
+        # NOT_SUPPORTED", because the second shape asks whether the evidence
+        # is one of the bad values, and anything it has never heard of --
+        # None, or a member added later -- is then neither, and falls through
+        # to permitted. An annotation is not a runtime check. Only the value
+        # that means yes may pass; everything else is unknown by definition.
+        if tunnel.capability is not TunnelCapability.SUPPORTED:
             return DockTeardownDecision(
                 DockTeardownState.REFUSED,
-                "dock_teardown.tunnel_capability_unknown",
+                "dock_teardown.tunnel_capability_unsupported"
+                if tunnel.capability is TunnelCapability.NOT_SUPPORTED
+                else "dock_teardown.tunnel_capability_unknown",
                 disconnecting=consequences,
             )
-        if tunnel.capability is TunnelCapability.NOT_SUPPORTED:
+        if tunnel.write_permission is not WritePermission.WRITABLE:
             return DockTeardownDecision(
                 DockTeardownState.REFUSED,
-                "dock_teardown.tunnel_capability_unsupported",
-                disconnecting=consequences,
-            )
-        if tunnel.write_permission is WritePermission.UNKNOWN:
-            return DockTeardownDecision(
-                DockTeardownState.REFUSED,
-                "dock_teardown.tunnel_write_permission_unknown",
-                disconnecting=consequences,
-            )
-        if tunnel.write_permission is WritePermission.DENIED:
-            return DockTeardownDecision(
-                DockTeardownState.REFUSED,
-                "dock_teardown.tunnel_write_permission_denied",
+                "dock_teardown.tunnel_write_permission_denied"
+                if tunnel.write_permission is WritePermission.DENIED
+                else "dock_teardown.tunnel_write_permission_unknown",
                 disconnecting=consequences,
             )
 
