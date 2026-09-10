@@ -123,3 +123,105 @@ test("every tile carries an id the shell already knows how to focus", () => {
 
   assert.deepEqual(ids, ["egpu", "render", "display", "game", "disconnect"]);
 });
+
+const perfState = (over = {}) => ({
+  active: false, autoKnown: true, stopping: false, supported: true,
+  configuredWatts: 18, configuredIsLimit: true, action: "open", reason: null,
+  busy: false, ...over,
+});
+const fps = { available: false, value: { text: "Unavailable", known: false },
+  reason: "No verified frame-rate provider on this device." };
+const perf = (over = {}, manual = { text: "18 W", known: true }, display = unknown) =>
+  byId(m.performanceTiles({ state: perfState(over), manualWatts: manual, fps, display }));
+
+test("the FPS tile is always present and always unavailable", () => {
+  // fpsTile's own reason: a grid whose shape depends on live evidence moves a
+  // target under a player's thumb.
+  for (const over of [{}, { active: true }, { autoKnown: false }, { supported: false }]) {
+    const tiles = perf(over);
+    assert.equal(tiles.fps.tone, "unavailable");
+    assert.equal(tiles.fps.value, "Unavailable");
+    assert.match(tiles.fps.detail, /No verified frame-rate provider/);
+  }
+});
+
+test("an unreadable TDP limit stays unknown and never becomes a number", () => {
+  const tiles = perf({}, { text: "Unknown", known: false });
+
+  assert.equal(tiles.manual.value, "Unknown");
+  assert.equal(tiles.manual.tone, "unavailable");
+  assert.doesNotMatch(tiles.manual.value, /\d/);
+});
+
+test("Auto TDP distinguishes unknown from off, running and stopping", () => {
+  assert.equal(perf({ autoKnown: false }).auto.value, "Unknown");
+  assert.equal(perf({ autoKnown: false }).auto.tone, "unavailable");
+  assert.equal(perf().auto.value, "Off");
+  assert.equal(perf({ active: true }).auto.value, "Running");
+  assert.equal(perf({ active: true, stopping: true }).auto.value, "Stopping…");
+  // Stopping is in flight, not a working state.
+  assert.notEqual(perf({ active: true, stopping: true }).auto.tone, "active");
+});
+
+test("Auto TDP shows the reason the state machine already produced", () => {
+  const tiles = perf({ supported: false, reason: "This device has no verified TDP control." });
+
+  assert.match(tiles.auto.detail, /no verified TDP control/);
+});
+
+const controller = (over = {}) => ({
+  available: true, reason: null,
+  builtin: { text: "Off", known: true },
+  external: { text: "Player 1", known: true },
+  precision: "exact", precisionNote: null,
+  shortcut: { text: "Available", known: true },
+  planned: ["Player order", "Shortcut customization", "Priority handoff"],
+  ...over,
+});
+
+test("controller tone follows the payload's precision, not just presence", () => {
+  const exact = byId(m.controllerTiles(controller()));
+  assert.equal(exact.controller.tone, "active");
+
+  // A partial reading is known but not exact; it must not use the tone a
+  // player reads as "this is true right now".
+  const partial = byId(m.controllerTiles(controller({
+    precision: "partial", precisionNote: "Only one source reported",
+  })));
+  assert.equal(partial.controller.tone, "quiet");
+  assert.match(partial.controller.detail, /Only one source reported/);
+
+  const none = byId(m.controllerTiles(controller({ precision: "unknown" })));
+  assert.equal(none.controller.tone, "unavailable");
+});
+
+test("no controller reading shows the reason rather than a blank tile", () => {
+  const tiles = byId(m.controllerTiles(controller({
+    available: false, reason: "Peripheral status unavailable.",
+    builtin: { text: "Unknown", known: false },
+    external: { text: "Unknown", known: false },
+    precision: "unknown",
+  })));
+
+  assert.equal(tiles.controller.value, "Unknown");
+  assert.match(tiles.controller.detail, /Peripheral status unavailable/);
+  assert.equal(tiles.builtin.tone, "unavailable");
+});
+
+test("controller priority is never rendered as a working control", () => {
+  for (const precision of ["exact", "partial", "unknown"]) {
+    const tiles = byId(m.controllerTiles(controller({ precision })));
+
+    assert.equal(tiles.priority.tone, "unavailable");
+    assert.equal(tiles.priority.value, "Not available");
+    assert.match(tiles.priority.detail, /Planned, not implemented/);
+  }
+});
+
+test("the new tabs use ids the shell already knows how to focus", () => {
+  assert.deepEqual(m.performanceTiles({
+    state: perfState(), manualWatts: { text: "18 W", known: true }, fps, display: unknown,
+  }).map(t => t.id), ["manual", "auto", "fps", "display"]);
+  assert.deepEqual(m.controllerTiles(controller()).map(t => t.id),
+    ["controller", "builtin", "priority"]);
+});
