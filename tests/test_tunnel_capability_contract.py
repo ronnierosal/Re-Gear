@@ -70,6 +70,36 @@ class CapabilityObservationTests(unittest.TestCase):
         self.assertEqual(reading.write_permission, WritePermission.UNKNOWN)
         self.assertFalse(reading.deauthorizable)
 
+    def test_unreadable_support_cannot_borrow_another_domains_answer(self):
+        self.support.write_text("1", encoding="utf-8")
+        original = Path.read_text
+
+        def read(path, *args, **kwargs):
+            if path == self.support:
+                raise PermissionError("fixture: support unreadable")
+            return original(path, *args, **kwargs)
+
+        with patch.object(Path, "read_text", read):
+            reading = self.reading()
+        self.assertEqual(reading.capability, TunnelCapability.UNKNOWN)
+        self.assertEqual(reading.write_permission, WritePermission.WRITABLE)
+        self.assertFalse(reading.deauthorizable)
+
+    def test_failed_permission_stat_is_unknown_even_when_access_allows(self):
+        self.support.write_text("1", encoding="utf-8")
+        original = Path.stat
+
+        def stat(path, *args, **kwargs):
+            if path == self.router / "authorized":
+                raise PermissionError("fixture: authorization stat unreadable")
+            return original(path, *args, **kwargs)
+
+        with patch.object(Path, "stat", stat):
+            reading = self.reading()
+        self.assertEqual(reading.capability, TunnelCapability.SUPPORTED)
+        self.assertEqual(reading.write_permission, WritePermission.UNKNOWN)
+        self.assertFalse(reading.deauthorizable)
+
 
 class CapabilityDecisionTests(unittest.TestCase):
     def decide(self, capability, permission, already_down=False):
