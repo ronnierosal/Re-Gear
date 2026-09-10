@@ -73,8 +73,21 @@ import {
   type SupportBundlePreviewPayload,
   type TransitionJournalStatusPayload,
   getEgpuDisconnectStatus,
-  executeEgpuDisconnect,
 } from "./backend";
+// executeEgpuDisconnect is dropped deliberately, not merely left unused:
+// importing it here is what made a removal reachable without closing the
+// running game first. The only route to a removal from this file is now the
+// wiring, whose gates cannot be skipped by forgetting them at a call site.
+import { disconnectPresentation } from "./egpu-disconnect-tile";
+import type { GameCloseDialog } from "./egpu-disconnect-tile";
+import { liveGameClosePorts } from "./quick-access/game-close-ports";
+import {
+  claimRelaunchOnMount,
+  gameCloseWiringMessage,
+  pressFromDialog,
+  runGameClosePress,
+  type GameCloseAnswers,
+} from "./quick-access/game-close-wiring";
 import { createDeckySteamSuspendAdapter } from "./decky-steam-suspend";
 import { deliverBlockedAttempt } from "./blocked-attempt-delivery";
 import { diagnosticOverlayRows } from "./diagnostics-overlay";
@@ -1491,25 +1504,36 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
     }
   }, []);
 
-  /** Run the disconnect the player just confirmed.
+  /** Run the press the player just confirmed, through the owning flow.
    *
-   * The confirmation text and the display approval both come from the owning
-   * backend's presentation; neither is composed here. `release_display` is
-   * passed exactly as that presentation reported it and is never defaulted on,
-   * because turning the output off is visible to whoever is watching the TV.
+   * Nothing dangerous happens in this file. Closing the game, waiting for the
+   * backend to say over a finished scan that it is gone, removing the device and
+   * putting the game back all belong to game-close-flow.ts, reached through the
+   * gates in game-close-wiring.ts: a fresh status at the press, consent that
+   * matches both the running game and the pressed intent, and a separate
+   * approval for turning the display off.
+   *
+   * `releaseDisplay` is still passed exactly as the presentation reported it and
+   * is never defaulted on, because turning the output off is visible to whoever
+   * is watching the TV. The message comes from gameCloseWiringMessage, which
+   * keeps the cable sentence: a software removal is not clearance to unplug.
    */
-  const runDisconnect = useCallback(async (releaseDisplay: boolean) => {
+  const runDisconnect = useCallback(async (
+    releaseDisplay: boolean,
+    answers: GameCloseAnswers,
+  ) => {
     setDisconnectBusy(true);
     setDisconnectMessage("");
     try {
-      const outcome = await executeEgpuDisconnect(releaseDisplay);
-      // A software removal is not clearance to unplug, so the result says what
-      // happened and nothing about the cable.
-      setDisconnectMessage(
-        outcome.ok
-          ? "The eGPU has been detached in software. Keep the cable connected."
-          : `Disconnect did not complete: ${label(outcome.code)}.`,
+      // Built from the status this panel already holds, so the dialog the player
+      // answered and the press that follows describe one reading. The wiring
+      // re-reads before it acts regardless, and refuses if that has moved.
+      const view = disconnectPresentation(egpuDisconnect);
+      const result = await runGameClosePress(
+        pressFromDialog(view, "disconnect", { ...answers, releaseDisplay }),
+        liveGameClosePorts(),
       );
+      setDisconnectMessage(gameCloseWiringMessage(result));
     } catch {
       setDisconnectMessage("Re-Gear could not complete the disconnect request.");
     } finally {
@@ -1519,7 +1543,24 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
       // Re-read rather than assuming what the attempt left behind.
       void refreshDisconnect();
     }
-  }, [refreshDisconnect]);
+  }, [egpuDisconnect, refreshDisconnect]);
+
+  /** Perform a reopen a previous disconnect left pending.
+   *
+   * This is why the wish is recorded in the backend rather than remembered in a
+   * component: freeing the eGPU restarts the Steam session, which destroys the
+   * panel that asked for the reopen, so the panel that comes up afterwards is
+   * the one that has to do it. Claiming consumes the record, so exactly one
+   * panel can -- which is also why declining to claim is a real option.
+   *
+   * claimRelaunchOnMount declines on an unknown, busy or half-detached reading,
+   * leaving the record for a later mount rather than launching a game onto a
+   * device that needs a person to look at it.
+   */
+  useEffect(() => {
+    if (!quickAccessVisible) return;
+    void claimRelaunchOnMount(liveGameClosePorts());
+  }, [quickAccessVisible]);
 
   const openRoute = useCallback((destination: Route, opener?: string) => {
     const active = statusAnchor.current?.ownerDocument.activeElement;
@@ -1693,8 +1734,21 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
               // Anything else selects the tile so its reason is read.
               if (tile.activation !== "act" || !tile.confirmation || disconnectBusy) return;
               const releaseDisplay = tile.displayApprovalRequired === true;
+              const view = disconnectPresentation(egpuDisconnect);
+              // A game is going to end. Its own dialog owns that consent, and
+              // the tile confirmation is not a substitute: one is about removing
+              // a device, the other about someone's unsaved progress. The wiring
+              // refuses a press claiming an answer this never collected, so
+              // missing this branch fails closed rather than closing a game
+              // unasked.
+              if (view.dialog !== null) {
+                showGameCloseDialog(view.dialog, (answers) => {
+                  void runDisconnect(releaseDisplay, answers);
+                });
+                return;
+              }
               showDisconnectConfirmation(tile.confirmation, () => {
-                void runDisconnect(releaseDisplay);
+                void runDisconnect(releaseDisplay, { confirmed: true });
               });
               return;
             }
@@ -2161,6 +2215,65 @@ function showDisconnectConfirmation(
       onCancel={close}
     >
       <div style={{ fontSize: "12px", lineHeight: "17px" }}>{confirmation}</div>
+    </ConfirmModal>,
+    window,
+    { strTitle: PRODUCT_NAME, bNeverPopOut: true },
+  );
+  return modal;
+}
+
+/** The confirm-and-close dialog, for a press that will end a running game.
+ *
+ * Every string comes from `dialog` unchanged. gameCloseDialog in
+ * egpu-disconnect-tile.ts owns this copy and the tests that pin it, and it
+ * encodes things that must not be re-decided here: a null rememberLabel means
+ * the choice must not be offered at all rather than starting unticked, and
+ * canCloseGame false means this must not promise a close it cannot perform.
+ *
+ * Cancelling reports the dismissal rather than dropping it, so the caller hands
+ * the wiring an explicit no instead of nothing at all.
+ */
+function showGameCloseDialog(
+  dialog: GameCloseDialog,
+  onAnswer: (answers: GameCloseAnswers) => void,
+): ReturnType<typeof showModal> {
+  let modal: ReturnType<typeof showModal>;
+  // An absent label means the choice was never offered, so these stay false.
+  let remember = false;
+  let relaunch = dialog.relaunchChecked;
+  const close = () => modal.Close();
+  modal = showModal(
+    <ConfirmModal
+      strTitle={dialog.title}
+      strOKButtonText={dialog.confirmLabel}
+      strCancelButtonText={dialog.cancelLabel}
+      bDestructiveWarning={true}
+      bDisableBackgroundDismiss={true}
+      bHideCloseIcon={true}
+      onOK={() => {
+        close();
+        onAnswer({ confirmed: true, remember, relaunch });
+      }}
+      onCancel={() => {
+        close();
+        onAnswer({ confirmed: false });
+      }}
+    >
+      <div style={{ fontSize: "12px", lineHeight: "17px" }}>{dialog.body}</div>
+      {dialog.rememberLabel === null ? null : (
+        <ToggleField
+          label={dialog.rememberLabel}
+          checked={remember}
+          onChange={(value: boolean) => { remember = value; }}
+        />
+      )}
+      {dialog.relaunchLabel === null ? null : (
+        <ToggleField
+          label={dialog.relaunchLabel}
+          checked={relaunch}
+          onChange={(value: boolean) => { relaunch = value; }}
+        />
+      )}
     </ConfirmModal>,
     window,
     { strTitle: PRODUCT_NAME, bNeverPopOut: true },
