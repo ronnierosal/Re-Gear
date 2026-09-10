@@ -11,6 +11,7 @@ from pathlib import Path
 
 REQUIRED_FILES = (
     "LICENSE",
+    "scripts/probe_safe_undock_readiness.py",
     "backend/hdm/api.py",
     "backend/hdm/adapters/steamos/sleep_inhibitor.py",
     "backend/hdm/adapters/steamos/peripherals.py",

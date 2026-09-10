@@ -28,10 +28,14 @@ TOP_LEVEL_FILES = (
     "package.json",
     "plugin.json",
 )
+# Reviewed read-only diagnostics only. Never recursively include scripts/: it
+# also contains deployment and other mutating maintainer helpers.
+READ_ONLY_PROBES = ("scripts/probe_safe_undock_readiness.py",)
 
 
 def included_files() -> tuple[Path, ...]:
     paths = [ROOT / relative for relative in TOP_LEVEL_FILES]
+    paths.extend(ROOT / relative for relative in READ_ONLY_PROBES)
     paths.append(ROOT / "dist" / "index.js")
     paths.append(ROOT / "dist" / "index.js.map")
     paths.append(ROOT / "bin" / "gamescope")

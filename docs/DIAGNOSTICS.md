@@ -33,6 +33,24 @@ PYTHONPATH=<plugin-root>/backend python3 -m hdm.cli --compact
 Do not claim that `hdm-diagnose` is globally installed by Decky until packaging
 adds and verifies that launcher.
 
+The package includes one explicitly allowlisted read-only script,
+`scripts/probe_safe_undock_readiness.py`, together with its backend imports:
+
+```text
+python3 <plugin-root>/scripts/probe_safe_undock_readiness.py --help
+python3 <plugin-root>/scripts/probe_safe_undock_readiness.py --json
+```
+
+It resolves the bundled backend relative to the script, so no `PYTHONPATH` or
+working-directory change is required. Import and `--help` collect no snapshot.
+A report invocation collects one read-only snapshot; it never grants physical
+unplug clearance. Exit status is 0 for the selected readiness verdict, 1 when
+blocked, and 2 on a snapshot collection `OSError`. The default verdict is full
+Safe Undock readiness; `--exit-on removal-safety` selects the narrower supervised
+software-removal verdict. Neither zero status authorizes physical removal.
+Other scripts, including deployment and release helpers, are excluded. Adding
+another probe requires explicit allowlist review and archive regression coverage.
+
 ## Standard diagnostic interface roadmap
 
 The current CLI emits the privacy-safe snapshot only. Phase 2 will provide one
