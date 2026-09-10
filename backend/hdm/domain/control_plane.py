@@ -1,4 +1,4 @@
-"""Pure typed contracts for future HDM transitions and capabilities.
+"""Pure typed contracts for future Re-Gear transitions and capabilities.
 
 These contracts do not authorize or perform a mutation.  They keep observed
 placement, request progress, and hardware capability evidence independent so a

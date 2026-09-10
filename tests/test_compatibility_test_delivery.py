@@ -40,7 +40,7 @@ def awaiting_review():
         game_catalog_id="steam-1234",
         host_profile_id="asus-rog-ally-x",
         egpu_profile_id="gpd-g1-rx7600mxt-titan-ridge",
-        hdm_version="0.2.0",
+        regear_version="0.2.0",
         steamos_version="20260831",
         user_confirmed=True,
         hardware_test_authorized=True,

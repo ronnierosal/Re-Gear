@@ -11,10 +11,10 @@ sys.path.insert(0, str(ROOT / "backend"))
 from hdm.domain.models import GameState  # noqa: E402
 from hdm.domain.performance_measurement import (  # noqa: E402
     GameImpactAssessment,
-    HdmOverheadObservation,
+    RegearOverheadObservation,
     OptionalObserverState,
     PerformanceMeasurementStatus,
-    assess_hdm_overhead,
+    assess_regear_overhead,
     performance_measurement_to_public_dict,
 )
 from hdm.domain.telemetry import (  # noqa: E402
@@ -44,12 +44,12 @@ def observation(**changes):
         "optional_observer_cost_ms": 7,
     }
     values.update(changes)
-    return HdmOverheadObservation(**values)
+    return RegearOverheadObservation(**values)
 
 
 class PerformanceMeasurementTests(unittest.TestCase):
     def assess(self, value=None, policy=None, game=GameState.IDLE, now=101):
-        return assess_hdm_overhead(
+        return assess_regear_overhead(
             value or observation(), policy or contract(), game_state=game, now_monotonic_ms=now
         )
 

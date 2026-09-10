@@ -1,7 +1,7 @@
 """Fixed HTTPS adapter for an explicitly approved support bundle.
 
 This adapter is dormant.  Production delivery does not construct it and no
-endpoint is shipped with HDM.
+endpoint is shipped with Re-Gear.
 """
 
 from __future__ import annotations

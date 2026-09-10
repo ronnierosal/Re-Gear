@@ -91,7 +91,7 @@ class CompatibilityTestStart:
     game_catalog_id: str
     host_profile_id: str
     egpu_profile_id: str
-    hdm_version: str
+    regear_version: str
     steamos_version: str
 
 
@@ -142,7 +142,7 @@ class CompatibilityTestLifecycle:
                 game_catalog_id=request.game_catalog_id,
                 host_profile_id=request.host_profile_id,
                 egpu_profile_id=request.egpu_profile_id,
-                hdm_version=request.hdm_version,
+                regear_version=request.regear_version,
                 steamos_version=request.steamos_version,
                 user_confirmed=user_confirmed,
                 hardware_test_authorized=authorized,

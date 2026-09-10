@@ -1,4 +1,4 @@
-"""Immutable, I/O-free contracts for observed HDM state."""
+"""Immutable, I/O-free contracts for observed Re-Gear state."""
 
 from __future__ import annotations
 

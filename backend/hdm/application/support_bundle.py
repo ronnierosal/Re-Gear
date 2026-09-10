@@ -1,4 +1,4 @@
-"""Bounded, privacy-safe HDM support bundle construction."""
+"""Bounded, privacy-safe Re-Gear support bundle construction."""
 
 from __future__ import annotations
 

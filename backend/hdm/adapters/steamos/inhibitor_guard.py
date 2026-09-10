@@ -60,7 +60,7 @@ def main() -> int:
         else:
             _hold(expected_parent)
     except (OSError, RuntimeError, ValueError) as error:
-        print(f"HDM inhibitor guard failed: {error}", file=sys.stderr)
+        print(f"Re-Gear inhibitor guard failed: {error}", file=sys.stderr)
         return 1
     return 0
 

@@ -1,1 +1,1 @@
-"""Pure HDM domain model."""
+"""Pure Re-Gear domain model."""

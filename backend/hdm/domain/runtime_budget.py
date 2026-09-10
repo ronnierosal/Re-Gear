@@ -1,4 +1,4 @@
-"""Pure performance budget policy for future HDM background work."""
+"""Pure performance budget policy for future Re-Gear background work."""
 
 from __future__ import annotations
 

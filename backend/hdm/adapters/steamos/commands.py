@@ -337,7 +337,7 @@ class ReadOnlyCommandRunner:
 
 
 class UserServiceCommandRunner:
-    """Execute only HDM's fixed Gamescope user-service operations."""
+    """Execute only Re-Gear's fixed Gamescope user-service operations."""
 
     SYSTEMCTL = "/usr/bin/systemctl"
     RUNUSER = "/usr/bin/runuser"

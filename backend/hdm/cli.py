@@ -1,4 +1,4 @@
-"""Read-only HDM diagnostics command-line interface."""
+"""Read-only Re-Gear diagnostics command-line interface."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from .api import DiagnosticsApi
 def parser() -> argparse.ArgumentParser:
     value = argparse.ArgumentParser(
         prog="hdm-diagnose",
-        description="Collect a privacy-safe, read-only HDM state snapshot.",
+        description="Collect a privacy-safe, read-only Re-Gear state snapshot.",
     )
     value.add_argument(
         "--compact",

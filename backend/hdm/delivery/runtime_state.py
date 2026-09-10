@@ -1,4 +1,4 @@
-"""Hardened fixed state directory for root-owned HDM control state."""
+"""Hardened fixed state directory for root-owned Re-Gear control state."""
 
 from __future__ import annotations
 
