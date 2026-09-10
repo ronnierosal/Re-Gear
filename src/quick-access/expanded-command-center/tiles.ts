@@ -26,7 +26,9 @@
  * type error rather than a review comment.
  */
 
+import type { ControllerPresentation } from "../modules/controller-presentation";
 import type { EgpuPresentation, Evidence } from "../modules/egpu-presentation";
+import type { PerformanceState, TileValue } from "../performance-state";
 import type { Tile, Tone } from "./model";
 
 /** Absent evidence is unavailable; ungraded evidence is quiet, never active. */
@@ -86,6 +88,109 @@ export function egpuTiles(presentation: EgpuPresentation): Tile[] {
       // combination of them grants a clearance this product cannot confirm.
       tone: "warning",
       wide: true,
+    },
+  ];
+}
+
+/** The performance tab.
+ *
+ * Values are passed in rather than computed here so this module stays free of
+ * runtime imports and each tile can be tested against an exact reading.
+ *
+ * Every tile keeps a fixed position, including the FPS one that is always
+ * unavailable. `fpsTile` gives the reason: a grid whose shape depends on live
+ * evidence moves a target under a player's thumb mid-press.
+ */
+export function performanceTiles(input: {
+  state: PerformanceState;
+  manualWatts: TileValue;
+  fps: { available: false; value: TileValue; reason: string };
+  display: Evidence;
+}): Tile[] {
+  const { state, manualWatts, fps, display } = input;
+  const auto = !state.autoKnown ? { text: "Unknown", tone: "unavailable" as Tone }
+    : state.stopping ? { text: "Stopping…", tone: "quiet" as Tone }
+    : state.active ? { text: "Running", tone: "active" as Tone }
+    : { text: "Off", tone: "quiet" as Tone };
+  return [
+    {
+      id: "manual",
+      title: "Manual TDP",
+      value: manualWatts.text,
+      // wattsValue keeps an unreadable limit as "Unknown" rather than 0 W, so
+      // there is nothing to second-guess here.
+      detail: manualWatts.known ? "Current limit" : "No limit observed",
+      tone: manualWatts.known ? "active" : "unavailable",
+    },
+    {
+      id: "auto",
+      title: "Auto TDP",
+      value: auto.text,
+      // `reason` already explains an unsupported device, a pending read or a
+      // recovery requirement; it is the honest line whenever it is present.
+      detail: state.reason ?? (state.active ? "Controller running" : "Not running"),
+      tone: auto.tone,
+    },
+    {
+      id: "fps",
+      title: "FPS Target",
+      value: fps.value.text,
+      detail: fps.reason,
+      // Proposed capability with no backend provider. Showing a number here
+      // would be fabricating one.
+      tone: "unavailable",
+    },
+    {
+      id: "display",
+      title: "Display context",
+      value: display.text,
+      detail: "Display target is separate from FPS control",
+      tone: evidenceTone(display),
+    },
+  ];
+}
+
+/** The controllers tab.
+ *
+ * `ControllerFact` carries no verified grade, so tone comes from the payload's
+ * own `precision`: an `exact` reading may use the confident tone, a `partial`
+ * one may not, and `unknown` is unavailable like any other absence.
+ */
+export function controllerTiles(presentation: ControllerPresentation): Tile[] {
+  const tone = (known: boolean): Tone => {
+    if (!known || presentation.precision === "unknown") return "unavailable";
+    return presentation.precision === "exact" ? "active" : "quiet";
+  };
+  const caveat = (base: string) =>
+    presentation.precisionNote ? `${base} · ${presentation.precisionNote}` : base;
+  return [
+    {
+      id: "controller",
+      title: "External controller",
+      value: presentation.external.text,
+      detail: presentation.available
+        ? caveat("Reported by the peripheral status")
+        : presentation.reason ?? "No controller reading available",
+      tone: tone(presentation.external.known),
+    },
+    {
+      id: "builtin",
+      title: "Built-in controller",
+      value: presentation.builtin.text,
+      detail: presentation.available
+        ? caveat("Reported by the peripheral status")
+        : presentation.reason ?? "No controller reading available",
+      tone: tone(presentation.builtin.known),
+    },
+    {
+      id: "priority",
+      title: "Controller priority",
+      // Named in the plan and not implemented. Stated as unavailable so its
+      // absence is explicit rather than a gap a player has to notice, and
+      // never rendered as a working control.
+      value: "Not available",
+      detail: `Planned, not implemented: ${presentation.planned.join(", ")}`,
+      tone: "unavailable",
     },
   ];
 }
