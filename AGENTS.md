@@ -70,6 +70,11 @@ and correct the owning repository document.
   shared hub's `status` and your `inbox`, then Git/worktree state and relevant
   issue/PR claims. Register your own stable session ID. Recheck before integration
   and handoff; explicitly receipt messages you read or accept.
+- During an active collaboration, keep a requested reply pending for up to
+  10 minutes, checking the inbox every 30 seconds (60 seconds after unchanged
+  checks). Do not end the turn merely because the partner is still processing.
+  Follow [reply waiting](docs/AGENT_COORDINATION.md#waiting-for-collaboration-replies)
+  for deadlines, interruptions, late replies and timeout handoffs.
 - One task has one active owner. Claim an available, unblocked task atomically
   before substantive work. A request to work the next appropriate task authorizes
   selecting a bounded routine item. Stream leadership is inbox routing, not a
