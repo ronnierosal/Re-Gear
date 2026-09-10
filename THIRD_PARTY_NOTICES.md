@@ -1,6 +1,6 @@
 # Third-party notices
 
-HDM was designed using validated behavior and engineering lessons from the
+Re-Gear was designed using validated behavior and engineering lessons from the
 MIT-licensed eGPUBridge project:
 
 - Source: https://github.com/ronnierosal/eGPUBridge
