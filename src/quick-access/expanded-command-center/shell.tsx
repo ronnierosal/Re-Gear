@@ -49,6 +49,10 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
   const focus = (id?: string) => {
     const target = Array.from(panel.current?.querySelectorAll<HTMLElement>("[data-ec-control]") ?? []).find(el => el.dataset.ecControl === id);
     const interactive = target?.matches("button,select,[tabindex]") ? target : target?.querySelector<HTMLElement>('button,select,[tabindex="0"]');
+    if (!interactive) {
+      panel.current?.querySelector<HTMLElement>(`[data-ec-tab="${tab}"]`)?.focus();
+      return;
+    }
     interactive?.focus({ preventScroll: true });
     if (interactive) { if (tab === "settings" && !nested) reveal(interactive); else interactive.scrollIntoView({ block: "nearest" }); }
   };

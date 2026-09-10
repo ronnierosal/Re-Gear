@@ -16,11 +16,13 @@ async function fixture() {
     const useState = initial => { const i=cursor++; if (!(i in states)) states[i]=initial;
       return [states[i], value => {states[i]=value}]; };
     const useRef = initial => useState({current: initial})[0];
-    const useLayoutEffect = () => {};
+    let effects=[];
+    const useLayoutEffect = effect => effects.push(effect);
     const CommandCenterIcon='icon', expandedStyles='', brandIcon='';
     ${compile("../src/quick-access/expanded-command-center/model.ts")}
     ${compile("../src/quick-access/expanded-command-center/shell.tsx")}
-    export function render(props) {cursor=0;return ExpandedCommandCenter({onClose(){}, ...props});}
+    export function render(props) {cursor=0;effects=[];return ExpandedCommandCenter({onClose(){}, ...props});}
+    export function restoreFocus() {effects.at(-1)();}
   `;
   return import(`data:text/javascript;base64,${Buffer.from(code).toString("base64")}#${++fixtureId}`);
 }
@@ -64,6 +66,22 @@ test("empty supplied tabs remain unavailable instead of falling back to sample v
   const app = await fixture();
   const tree = app.render({tiles:{quick:[]}});
   assert.doesNotMatch(text(tree), /18 W|Connected|RX 7600M XT|Sample data/);
+});
+
+test("Back from a removed reading focuses the active tab when no controls remain", async () => {
+  const app = await fixture();
+  let tree=app.render({tiles:{quick:[auto("Running", "Controller running")]}});
+  nodes(tree).find(node=>node.props?.["data-ec-control"] === "auto").props.onClick();
+  tree=app.render({tiles:{quick:[]}});
+  nodes(tree).find(node=>node.props?.["data-ec-control"] === "nested-back").props.onClick();
+  tree=app.render({tiles:{quick:[]}});
+  let focused;
+  nodes(tree).find(node=>node.props && "data-ec-panel" in node.props).props.ref.current={
+    querySelectorAll:()=>[],
+    querySelector:selector=>({focus(){focused=selector;}}),
+  };
+  app.restoreFocus();
+  assert.equal(focused, '[data-ec-tab="quick"]');
 });
 
 test("unconnected preview tabs retain explicit sample labeling", async () => {
