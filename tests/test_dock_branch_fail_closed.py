@@ -167,6 +167,15 @@ class DiscoveryFailClosedTests(unittest.TestCase):
         self.assertEqual(reading.mounts, ("/mnt/backup",))
         self.assertTrue(reading.complete)
 
+    def test_partial_device_number_scan_cannot_clear_an_alias_mount(self):
+        (self.block / "sda" / "sda1" / "dev").unlink()
+        self.mount("/dev/disk/by-uuid/backup-volume", "8:1")
+        reading = self.storage()
+        self.assertFalse(
+            reading.complete,
+            "A known whole-disk number does not complete partition identity",
+        )
+
     def test_duplicate_router_names_cannot_select_first_attachment(self):
         self.router("0-1", "Tapex Creek", "0")
         self.router("0-2", "TAPEX CREEK", "1")
