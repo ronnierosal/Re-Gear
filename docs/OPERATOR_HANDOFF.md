@@ -756,7 +756,7 @@ New deployment refuses a legacy plugin root. Complete the separately supervised
 The normal maintainer-operated path is:
 
 ```powershell
-.\scripts\deploy_hdm_to_ally.ps1 `
+.\scripts\deploy_to_ally.ps1 `
   -HostName <current-ally-host> `
   -UserName deck `
   -IdentityFile $key `

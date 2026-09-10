@@ -474,8 +474,8 @@ sudo sh /home/deck/Downloads/install_ally_deploy_helper.sh
 ```
 
 Each later candidate is built and provenance checked as usual, signed locally
-with `scripts/sign_hdm_deploy_package.py`, then staged with
-`scripts/stage_signed_hdm_deploy.py`. The automated, narrow install command is:
+with `scripts/sign_deploy_package.py`, then staged with
+`scripts/stage_signed_deploy.py`. The automated, narrow install command is:
 
 ```text
 sudo /var/lib/handheld-dock-mode/hdm-deploy-plugin Re-Gear-update-<version>-<revision>.zip \
@@ -488,7 +488,7 @@ validation workflow separately.
 
 ### Direct developer deploy (maintainer-owned SSH)
 
-For the maintainer's own Ally, `scripts/deploy_hdm_to_ally.ps1` implements the
+For the maintainer's own Ally, `scripts/deploy_to_ally.ps1` implements the
 explicit direct-deploy workflow after `-ConfirmDeploy` is supplied. It runs the
 complete local check/build matrix, uploads one temporary complete ZIP, validates
 the archive and provenance on the Ally, atomically replaces only the fixed Re-Gear
@@ -503,7 +503,7 @@ Gamescope, suspend/reboot, change display/input/audio/GPU state, or manipulate
 eGPU hardware. Example:
 
 ```text
-powershell -ExecutionPolicy Bypass -File scripts/deploy_hdm_to_ally.ps1 \
+powershell -ExecutionPolicy Bypass -File scripts/deploy_to_ally.ps1 \
   -HostName <handheld-ip> -IdentityFile <ssh-key> -ConfirmDeploy -InteractiveSudo
 ```
 
