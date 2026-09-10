@@ -61,6 +61,9 @@ issue**. Architectural possibility is not support.
 ## Document map
 
 - Supervised disconnect launch trial: [Portable Vulkan trial](PORTABLE_VULKAN_TRIAL.md)
+- Display target versus render GPU: [display-only switching and internal-GPU TV
+  output](DISPLAY_RENDER_MODE_CONTRACT.md) — capability/authority matrix, the one
+  supported output route, and where a game close and relaunch is required
 
 - Public entry point: [README](../README.md)
 - Detailed feature guides: [Command Center](../wiki/Command-Center.md),
