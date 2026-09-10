@@ -2,6 +2,69 @@
 
 > Historical record: HDM was Re-Gear's former name; original wording is retained.
 
+## 0.3.74 staged for supervised testing — 2026-09-10
+
+Staged only. Nothing was installed, no plugin was replaced, `plugin_loader` was
+not restarted, and no Gamescope, sleep, power, display or eGPU action ran.
+Installing this archive remains a separate decision under its own gate.
+
+- Version `0.3.74`, revision `bf03c324853dcadfbe8e24c2ad0f4523e7543ff9`
+- Archive `Re-Gear-0.3.74.zip`, 869,204 bytes
+- SHA-256 `e921fa21d34a535aff895a44675f0e9124a617db586f1ccd391787120bcf2176`,
+  verified equal on the device after an atomic no-clobber hard-link, not only
+  after upload
+- Reserved at `refs/regear/versions/0.3.74`
+- Declared by PR #280, CI green at its final head `93a67f4`
+
+Observed on the device by read-only inspection before staging: the installed
+plugin reports `0.3.72`, and `/home/deck/Re-Gear-0.3.72.zip` remains in place as
+that build's archive. Version `0.3.72` is declared at `bdcaa76`, confirmed an
+ancestor of this candidate, so the ancestry requirement holds. The dated `0.3.53`
+readback in the older entries below is a record of that day and is not superseded
+as history; it simply was the newest entry until now.
+
+Integrated workstreams relative to the previously built `0.3.73` archive, which
+was declared at `54dd03e` while `main` had moved 57 commits ahead. Established by
+diffing the two archives' contents rather than by reading commit lists:
+
+- The `backend/hdm` to `backend/regear` package rename (#264) reaches a device
+  for the first time. Every packaged import moves with it, including `main.py`,
+  `bin/gamescope`, `bin/steam-launcher` and the packaged readiness probe. This is
+  the largest behavioural risk in the archive and the reason it is worth testing.
+- Eleven backend modules changed in substance beyond the rename:
+  `adapters/steamos/dock_branch.py`, `adapters/support_submission.py`,
+  `application/presentation_activation.py`, `application/support_bundle.py`,
+  `application/support_submission.py`, `delivery/build_info.py`,
+  `delivery/gamescope_integration.py`, `delivery/runtime_state.py`,
+  `delivery/support_export.py`, `domain/dock_teardown.py` and
+  `ports/presentation_activation.py`.
+- The safety-relevant pair: `domain/dock_teardown.py` gains the `TunnelCapability`
+  tri-state so absent evidence stops reading as permission (#273), and
+  `dock_branch.py` gains device-number and opaque-source validation so unreadable
+  evidence stops counting as an answer (#266).
+
+One correction worth recording, because the opposite was briefly asserted while
+preparing this build. #265 fixed a `TypeError` that the dock teardown probe raised
+on every run, and that fix is **not** in this archive: it changed
+`scripts/probe_dock_teardown.py`, and `build_plugin.py` packages exactly one
+read-only probe, `scripts/probe_safe_undock_readiness.py`. The teardown probe is
+a repository diagnostic, not a shipped file. Its fix is on `main` and reaches the
+device only if that script is run from a checkout.
+
+Verification at the build tree, a clean detached worktree at the merged base
+rather than the shared `main` checkout, which lags:
+
+- `python scripts/check_architecture.py` passed
+- `python -m unittest discover -s tests` — 2,887 tests OK, 101 platform skips
+- `python -m compileall -q backend tests scripts` clean
+- `tsc --noEmit` clean; `pnpm test:frontend` 599 pass, 0 fail
+- `scripts/check_plugin_package.py` passed against both the source checkout and
+  the extracted archive root
+- Archive contains no `__pycache__` or `.pyc` entries across its 283 files
+
+Local runs skip 101 tests on this platform, so they do not substitute for Linux
+CI; the CI result above is the one that counts.
+
 ## Release-line reconciliation — 2026-09-07
 
 `main` and the 0.3.5x release line had diverged rather than ordered: 117
