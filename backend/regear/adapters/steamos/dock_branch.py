@@ -82,6 +82,20 @@ def _is_partition_of(leaf: str, disk: str) -> bool:
     return suffix.isdigit()
 
 
+def _is_opaque_source(source: str) -> bool:
+    """Whether a mountinfo source cannot be judged by its basename.
+
+    `/dev/sda1` names the kernel device directly. `/dev/disk/by-uuid/...`,
+    `/dev/disk/by-label/...` and `/dev/mapper/...` all name something that
+    resolves to one, and the basename is a UUID, a label or a mapping name
+    that matches no sysfs device. A mount through any of those is still a
+    mount on the branch.
+    """
+    if not source.startswith("/dev/"):
+        return False
+    return "/" in source[len("/dev/"):]
+
+
 def _read_text(path: Path) -> str:
     try:
         return path.read_text(encoding="utf-8", errors="replace").strip()
@@ -148,6 +162,10 @@ class TunnelReading:
     authorized: bool | None
     deauthorizable: bool
     complete: bool
+    #: Two or more routers published the requested name, so no single one is
+    #: the answer. `complete` is False alongside it: an ambiguous scan did not
+    #: settle, and a caller that only checks completeness still fails closed.
+    ambiguous: bool = False
 
 
 class DockBranchDiscovery:
@@ -301,6 +319,12 @@ class DockBranchDiscovery:
             raw = self._swaps.read_text(encoding="utf-8", errors="replace")
         except FileNotFoundError:
             # No swap file at all is a real answer on a system without one.
+            #
+            # Left as-is deliberately. `/proc/swaps` exists on any kernel this
+            # runs on whether or not swap is configured, so an absent one
+            # arguably means the table was not read -- but
+            # `test_a_missing_swaps_file_is_a_real_answer` asserts this reading
+            # by name, so it is raised with its owner rather than reversed here.
             raw = ""
         except OSError:
             complete = False
@@ -320,6 +344,14 @@ class DockBranchDiscovery:
                 entries = sorted(entry.name for entry in holders.iterdir())
             except FileNotFoundError:
                 # No holders directory means no stacked consumers.
+                #
+                # Left as-is deliberately. The kernel does give every block
+                # device a `holders` directory, so on real sysfs an absent one
+                # means this is not the device we think it is -- which argues
+                # for reporting the scan incomplete. But that reading is
+                # asserted by name in `test_no_holders_directory_is_no_holders`
+                # and is someone's decision, not an oversight, so it is raised
+                # with its owner rather than reversed here.
                 continue
             except OSError:
                 complete = False
@@ -403,25 +435,64 @@ class DockBranchDiscovery:
         if not tables:
             return (), False
         raw = "\n".join(tables)
+        devnums = self._branch_devnums(devices)
         mounts: list[str] = []
         for line in raw.splitlines():
+            if not line.strip():
+                continue
             fields = line.split(" ")
-            if len(fields) < 5:
+            separator = fields.index("-") if "-" in fields else -1
+            if len(fields) < 5 or separator < 0 or len(fields) <= separator + 2:
+                # Left skipping quietly, deliberately. A line this parser
+                # cannot read is arguably a mount it cannot rule out, but
+                # `test_a_truncated_line_is_skipped_rather_than_crashing`
+                # asserts the opposite by name, so it is raised with its owner
+                # rather than reversed here.
                 continue
             mount_point = fields[4]
-            separator = fields.index("-") if "-" in fields else -1
-            source = fields[separator + 2] if separator >= 0 and len(fields) > separator + 2 else ""
+            source = fields[separator + 2]
             leaf = source.rsplit("/", 1)[-1]
-            if not leaf:
-                continue
             # sysfs names the disk; mountinfo names the partition mounted from
             # it. Matching on a bare prefix would also match "sdaa1" against
             # "sda", so the remainder has to look like a partition suffix.
-            if leaf in devices or any(
-                _is_partition_of(leaf, name) for name in devices
-            ):
+            by_name = bool(leaf) and (
+                leaf in devices
+                or any(_is_partition_of(leaf, name) for name in devices)
+            )
+            # mountinfo carries the device number the mount actually came
+            # from, which no amount of aliasing changes.
+            by_devnum = fields[2] in devnums
+            if by_name or by_devnum:
                 mounts.append(mount_point)
+                continue
+            if devnums or not _is_opaque_source(source):
+                continue
+            # An alias such as /dev/disk/by-uuid/... or /dev/mapper/... has a
+            # basename that names nothing on this branch even when the mount
+            # is on it, and without device numbers there is nothing left to
+            # compare. Unattributable is not absent.
+            complete = False
         return tuple(sorted(set(mounts))), complete
+
+    def _branch_devnums(self, devices: set[str]) -> set[str]:
+        """`major:minor` for each branch device and any partition of it.
+
+        Empty when sysfs does not publish them, which is why the caller keeps
+        the name comparison rather than replacing it.
+        """
+        devnums: set[str] = set()
+        for device in sorted(devices):
+            root = self._block_root / device
+            devnums.add(_read_text(root / "dev"))
+            try:
+                children = sorted(root.iterdir(), key=lambda item: item.name)
+            except OSError:
+                continue
+            for child in children:
+                if child.name.startswith(device):
+                    devnums.add(_read_text(child / "dev"))
+        devnums.discard("")
+        return devnums
 
     # -- the tunnel -------------------------------------------------------
 
@@ -439,6 +510,7 @@ class DockBranchDiscovery:
         except OSError:
             return TunnelReading("", None, False, False)
         wanted = device_name.casefold()
+        matches: list[Path] = []
         for entry in entries:
             try:
                 if not entry.is_dir():
@@ -447,6 +519,16 @@ class DockBranchDiscovery:
                 return TunnelReading("", None, False, False)
             if _read_text(entry / "device_name").casefold() != wanted:
                 continue
+            matches.append(entry)
+        if len(matches) > 1:
+            # Two routers publishing the same name is the one case where
+            # picking the first is worse than answering nothing. A device_name
+            # is a product string, not an identity, so two identical docks
+            # report the same one. Returning either would name a router the
+            # caller did not mean and, downstream, deauthorize it.
+            return TunnelReading("", None, False, False, ambiguous=True)
+        if matches:
+            entry = matches[0]
             authorized_file = entry / "authorized"
             raw = _read_text(authorized_file)
             authorized = None if raw not in ("0", "1") else raw == "1"

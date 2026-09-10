@@ -504,6 +504,74 @@ class OtherStorageUseTests(Harness):
         self.assertTrue(complete)
 
 
+class AliasMountTests(Harness):
+    """A drive mounted through an alias is mounted.
+
+    Nothing requires a mount to name the kernel device. `/dev/disk/by-uuid/`,
+    `/dev/disk/by-label/` and `/dev/mapper/` are ordinary, and their basenames
+    are a UUID, a label or a mapping name that match no sysfs device. Matching
+    on the basename alone therefore reads a mounted branch as an idle one,
+    which is the reading that lets a teardown proceed over a live filesystem.
+    """
+
+    def mounts(self, devices, lines):
+        self.fake.mountinfo.write_text("".join(lines), encoding="utf-8")
+        return self.discovery._mounts_for(set(devices))
+
+    ALIAS = (
+        "36 25 8:1 / /run/media/deck/BACKUP rw,relatime "
+        "- ext4 /dev/disk/by-uuid/1234-ABCD rw\n"
+    )
+
+    def publish_device_numbers(self) -> None:
+        disk = self.fake.block / "sda"
+        disk.mkdir(parents=True, exist_ok=True)
+        (disk / "dev").write_text("8:0\n", encoding="utf-8")
+        partition = disk / "sda1"
+        partition.mkdir(parents=True, exist_ok=True)
+        (partition / "dev").write_text("8:1\n", encoding="utf-8")
+
+    def test_an_alias_mount_is_matched_by_device_number(self) -> None:
+        self.publish_device_numbers()
+
+        found, complete = self.mounts({"sda"}, [self.ALIAS])
+
+        self.assertEqual(found, ("/run/media/deck/BACKUP",))
+        self.assertTrue(complete)
+
+    def test_an_alias_mount_with_no_device_numbers_is_not_an_idle_branch(self) -> None:
+        """Unattributable is not absent."""
+        found, complete = self.mounts({"sda"}, [self.ALIAS])
+
+        self.assertEqual(found, ())
+        self.assertFalse(complete)
+
+    def test_a_device_number_elsewhere_is_still_not_this_branch(self) -> None:
+        """Reading numbers must not turn every alias into a match."""
+        self.publish_device_numbers()
+
+        found, complete = self.mounts(
+            {"sda"},
+            [
+                "36 25 259:3 / / rw,relatime "
+                "- ext4 /dev/disk/by-uuid/OTHER-DISK rw\n"
+            ],
+        )
+
+        self.assertEqual(found, ())
+        self.assertTrue(complete)
+
+    def test_a_plain_device_source_still_needs_no_numbers(self) -> None:
+        """The existing name comparison is kept, not replaced."""
+        found, complete = self.mounts(
+            {"sda"},
+            ["36 25 8:1 / /mnt/stick rw - ext4 /dev/sda1 rw\n"],
+        )
+
+        self.assertEqual(found, ("/mnt/stick",))
+        self.assertTrue(complete)
+
+
 class MountNamespaceTests(Harness):
     """A drive mounted inside a container is mounted.
 
@@ -576,6 +644,39 @@ class TunnelTests(Harness):
 
         self.assertEqual(reading.sysfs_id, "0-1")
         self.assertIs(reading.authorized, True)
+        self.assertTrue(reading.complete)
+
+    def test_two_routers_publishing_one_name_refuse_to_resolve(self) -> None:
+        """A device_name is a product string, not an identity.
+
+        Two identical docks publish the same one. Returning whichever sorted
+        first would name a router the caller did not mean, and the only thing
+        downstream does with a router is deauthorize it.
+        """
+        self.fake.tunnel("Tapex Creek")
+        second = self.fake.thunderbolt / "0-3"
+        second.mkdir(parents=True, exist_ok=True)
+        (second / "device_name").write_text("Tapex Creek", encoding="utf-8")
+        (second / "authorized").write_text("1", encoding="utf-8")
+
+        reading = self.discovery.observe_tunnel("Tapex Creek")
+
+        self.assertTrue(reading.ambiguous)
+        self.assertFalse(reading.complete)
+        self.assertEqual(reading.sysfs_id, "")
+        self.assertIsNone(reading.authorized)
+
+    def test_one_router_among_others_still_resolves(self) -> None:
+        """Ambiguity is two matches, not two routers."""
+        self.fake.tunnel("Tapex Creek")
+        other = self.fake.thunderbolt / "0-3"
+        other.mkdir(parents=True, exist_ok=True)
+        (other / "device_name").write_text("Some Other Dock", encoding="utf-8")
+
+        reading = self.discovery.observe_tunnel("Tapex Creek")
+
+        self.assertEqual(reading.sysfs_id, "0-1")
+        self.assertFalse(reading.ambiguous)
         self.assertTrue(reading.complete)
 
     def test_a_deauthorized_router_reads_as_down(self) -> None:
