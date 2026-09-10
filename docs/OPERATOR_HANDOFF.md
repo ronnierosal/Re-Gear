@@ -1,5 +1,7 @@
 # Maintainer and agent handoff
 
+> Historical record: HDM was Re-Gear's former name; original wording is retained.
+
 ## Read before using a historical checkpoint
 
 The sections below retain their original dates and device observations. Their
@@ -772,7 +774,7 @@ must never request or handle that password.
 
 An unattended signed updater is being enabled. Its fixed root-owned helper is
 under `/var/lib/handheld-dock-mode/hdm-deploy-plugin` and accepts only a signed,
-strictly validated HDM ZIP plus matching signature. It keeps a rollback backup
+strictly validated Re-Gear ZIP plus matching signature. It keeps a rollback backup
 and restarts only `plugin_loader.service` after a successful replacement.
 
 At this snapshot, the first sudoers rule used SteamOS argument globs that did

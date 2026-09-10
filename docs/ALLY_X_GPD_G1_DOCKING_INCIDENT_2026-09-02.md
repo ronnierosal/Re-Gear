@@ -1,5 +1,7 @@
 # Ally X and GPD G1 automatic docking incident
 
+> Historical record: HDM was Re-Gear's former name; original wording is retained.
+
 **Date:** 2026-09-02<br>
 **Hardware:** ASUS ROG Ally X, GPD G1 (RX 7600M XT), TV connected to the G1<br>
 **Outcome:** automatic TV picture and external rendering hardware validated once;

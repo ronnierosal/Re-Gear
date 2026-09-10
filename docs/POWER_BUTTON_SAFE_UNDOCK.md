@@ -2,14 +2,14 @@
 
 ## Decision
 
-HDM does **not** implement physical power-button double-press Safe Undock.
+Re-Gear does **not** implement physical power-button double-press Safe Undock.
 The current platform boundary cannot distinguish first and second power-button
 presses before Steam handles ordinary Sleep, and the Ally profile marks physical
 button interception Experimental only. Delaying, suppressing, reinjecting, or
 synthetically replaying a first press would change normal Sleep behavior and is
-outside HDM's current authority.
+outside Re-Gear's current authority.
 
-The physical button remains Steam-owned. HDM's existing Steam preflight may
+The physical button remains Steam-owned. Re-Gear's existing Steam preflight may
 block an unsafe G1-attached sleep request, but that is safety enforcement, not
 a double-press gesture implementation.
 
@@ -39,7 +39,7 @@ transition, then issue one confirmed normal shutdown request. The accepted
 request is not a completion result. Physical removal remains prohibited until
 the fan has stopped and the Ally is physically off. The 2026-09-02 watched G1
 test required a manual long power-button hold after user space and networking
-stopped but the fan and two top LEDs remained on; HDM must not automate that
+stopped but the fan and two top LEDs remained on; Re-Gear must not automate that
 forced-off recovery.
 
 ## Future gate

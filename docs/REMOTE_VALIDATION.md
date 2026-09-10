@@ -10,7 +10,7 @@ python scripts/capture_shutdown_evidence.py --host <ally-ip> --identity-file <ss
 ```
 
 It runs one fixed previous-boot journal query, bounded to 2,000 rows, 4 MiB and
-10 seconds. Only allowlisted symptom counts, HDM unload checkpoint timings, and
+10 seconds. Only allowlisted symptom counts, Re-Gear unload checkpoint timings, and
 coverage categories leave the remote process. Raw logs, paths, identities, and
 exception text are not returned. The fixed payload hash identifies the reader,
 not the prior boot's installed build. It writes no remote files, never uses sudo,
@@ -18,7 +18,7 @@ and does not enable persistent journaling or change shutdown behavior.
 
 The schema-2 collector accepts `--boot previous|current` and
 `--scope shutdown|kernel|services|plugin`. Default shutdown scope selects only
-kernel, systemd and HDM-loader records; separate kernel/service/plugin reads
+kernel, systemd and Re-Gear loader records; separate kernel/service/plugin reads
 prevent a busy source from crowding another out of the bounded tail. Byte-array
 MESSAGE values are decoded only within a 4 KiB UTF-8 bound; omitted, undecodable
 and ambiguous values remain explicit coverage gaps. Raw message text never
@@ -66,7 +66,7 @@ python scripts/remote_capture.py --host <ally-ip> --identity-file <ssh-key> --ro
 
 The wrapper validates the destination, invokes OpenSSH without a shell, and
 streams the fixed `remote_capture_payload.py` source to the Ally's `python3 -`
-stdin. The payload imports HDM's installed read-only diagnostics, builds the same
+stdin. The payload imports Re-Gear's installed read-only diagnostics, builds the same
 bounded redacted support representation, and returns one JSON object on stdout.
 It creates, edits, or removes no remote file.
 
@@ -81,7 +81,7 @@ no remote files.
 
 An unprivileged connection failure reports one fixed local category, such as
 `ssh.authentication_failed`, `ssh.host_key_unverified`,
-`ssh.connection_refused`, or `ssh.connection_timed_out`. HDM never prints SSH
+`ssh.connection_refused`, or `ssh.connection_timed_out`. Re-Gear never prints SSH
 stderr, remote commands, credentials, or host details. The harness does not
 retry with a guessed account, key, port, or transport; correct SSH access must
 already be configured before a later read-only capture is attempted.
@@ -92,12 +92,12 @@ Existing files are never overwritten. The report includes:
 - collector source SHA-256 and no-write declaration
 - hashed boot identity and bounded uptime
 - categorical Steam/Gamescope/Decky process health counts without PIDs
-- installed HDM version, static archive build label, and hashes of its fixed
+- installed Re-Gear version, static archive build label, and hashes of its fixed
   package manifest and critical plugin files. The label is only a short source
   revision from a clean archive and its version must agree with the installed
   package manifest; `uncommitted`, `unavailable`, invalid, or internally
   inconsistent metadata remains inconclusive.
-- redacted HDM profile, GPU/display, game, blocker, and disconnect observations
+- redacted Re-Gear profile, GPU/display, game, blocker, and disconnect observations
 - categorical G1 PCI wake-capability/runtime aggregates when the exact profile
   can be resolved (no PCI identity is returned)
 - categorical collection errors

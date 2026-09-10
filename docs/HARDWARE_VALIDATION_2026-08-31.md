@@ -1,5 +1,7 @@
 # HDM 0.1 read-only hardware validation — 2026-08-31
 
+> Historical record: HDM was Re-Gear's former name; original wording is retained.
+
 ## Scope
 
 The in-progress HDM 0.1 diagnostics CLI was copied to a unique `/tmp` directory

@@ -6,7 +6,7 @@
 ## Decision
 
 Version-controlled product, safety, architecture, state, development, and
-evidence documents own HDM engineering truth. Code/tests own executable behavior
+evidence documents own Re-Gear engineering truth. Code/tests own executable behavior
 and immutable build/deployment evidence owns runtime identity. The GitHub Wiki
 is a human guide that links back to these contracts. Issues, pull requests,
 Codex notes, and chat history are context rather than authority.

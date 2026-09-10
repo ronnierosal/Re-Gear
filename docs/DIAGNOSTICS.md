@@ -58,7 +58,7 @@ architecture-appropriate packaged command (target UX: `hdm diagnostics`) backed
 by a shared read-only composition rather than scraping Decky UI output. It must
 remain bounded and include:
 
-- HDM semantic version, full/short commit, build/artifact identity, and installed
+- Re-Gear semantic version, full/short commit, build/artifact identity, and installed
   deployment record when available
 - placement, health, game, host/eGPU profile, display/render, and link state
 - bounded current transaction, recent transitions/failures, and recovery state
@@ -114,12 +114,12 @@ input paths, sound-card paths, device names, addresses, or private bindings,
 and it grants no controller or audio handoff authority.
 
 When a future reviewed read-only source supplies the existing bounded
-HDM-overhead assessment, Troubleshooting can display only observed cost plus
+Re-Gear overhead assessment, Troubleshooting can display only observed cost plus
 **game impact unknown**, deferred, incomplete, or unavailable. It never renders
 the raw code or identity, does not claim performance safety, and does not start
 or schedule a measurement collector.
 
-While Quick Access or that section is hidden, HDM does not request its separate
+While Quick Access or that section is hidden, Re-Gear does not request its separate
 Docked-iGPU, temporary-logging, peripheral-inventory, or action-history
 statuses. Opening the section uses the existing snapshot refresh loop to request
 them once per refresh; hiding Quick Access or the section clears those optional
@@ -147,7 +147,7 @@ at most every five seconds; unknown game state uses the normal three-second
 stable cadence. The player can still request an immediate read-only refresh.
 
 Every packaged Decky archive includes static build metadata. The observed-state
-view shows the HDM version and the first twelve characters of the source commit
+view shows the Re-Gear version and the first twelve characters of the source commit
 only when the archive was built from a clean committed checkout. It shows
 `uncommitted` or `unavailable` instead of guessing. This is provenance for the
 installed package, not hardware-validation or certification evidence.
@@ -254,7 +254,7 @@ including whether the guard is required, active, and verified. A disconnected eG
 error and reports `applicable: false`. With an exact certified G1 present, the
 scan fails closed unless both card and render nodes, every visible process FD,
 and attached-storage usage can be inspected. Any exact resource holder or
-mounted/swap storage makes `ready` false. This is evidence only: HDM does not
+mounted/swap storage makes `ready` false. This is evidence only: Re-Gear does not
 signal a process or remove hardware.
 
 The report also has a top-level diagnostics schema `2`. It retains schema 1's
@@ -277,7 +277,7 @@ release it. Unknown observations hold the current state. The exact
 `systemd-inhibit` holder and its no-op child both carry Linux parent-death
 signals, so plugin failure tears down the holder chain and releases the lock.
 
-HDM verifies Portable only when the unique Steam Gamescope process, its
+Re-Gear verifies Portable only when the unique Steam Gamescope process, its
 environment, one boot VGA GPU, and one active internal connector agree. It
 verifies TV Docked only when the exact certified G1 topology, Gamescope GPU
 selectors, and one connected external connector agree.
@@ -306,7 +306,7 @@ part of this default payload.
 
 Support Preview performs one additional bounded game/GPU evidence pass only
 when the user invokes that existing action. Idle or unknown game state skips
-deep process and DRM inspection. For one exact running Steam game, HDM brackets
+deep process and DRM inspection. For one exact running Steam game, Re-Gear brackets
 private runtime identity and samples the independently resolved internal and G1
 render nodes within one shared snapshot/runtime window. Either target being
 Unknown marks the comparison incomplete. The support event contains only categorical game exactness,
@@ -318,7 +318,7 @@ the base support preview.
 
 ## Temporary verbose logging policy
 
-Normal bounded HDM events remain available for support bundles. Additional
+Normal bounded Re-Gear events remain available for support bundles. Additional
 verbose events are off by default and require explicit player confirmation.
 The only allowed durations are 30 minutes, one hour, two hours (the default
 selection), and until reboot. There is no permanent option.
@@ -352,7 +352,7 @@ automatic or supervised presentation attempts/results, Portable-return results,
 and shutdown-request attempts/results record bounded monotonic `elapsed_ms`,
 `stage_elapsed_ms`, and operation `duration_ms` where applicable. They also
 write the same categorical code and timing to Decky's service journal. The
-timeline begins only after HDM observes relevant hardware or a transition
+timeline begins only after Re-Gear observes relevant hardware or a transition
 request; it cannot measure the player's physical cable action. It resets after
 verified absence and never records PCI IDs, DRM nodes, connector names, stable
 identity, process identity, or physical-power-off success. A successful

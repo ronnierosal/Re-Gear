@@ -1,5 +1,7 @@
 # Supervised Ally session preparation — 2026-09-01
 
+> Historical record: HDM was Re-Gear's former name; original wording is retained.
+
 ## Artifact readiness
 
 This is local package evidence only. It does not prove installation, player
