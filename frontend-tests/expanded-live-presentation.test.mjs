@@ -99,3 +99,58 @@ test("supplied disconnect readiness retains no clearance without claiming its so
   assert.match(text(tree), /No unplug clearance/);
   assert.doesNotMatch(text(tree), /readiness and confirmation are not connected/);
 });
+
+test("application detail controls receive updated tiles and preserve pending and error results", async () => {
+  const app=await fixture();
+  let calls=0;
+  const props={tiles:{quick:[auto("Ready", "Configure")]},renderDetail:(tab,tile)=>{
+    assert.equal(tab,"quick");
+    return {type:"button",props:{disabled:tile.value === "Pending",onClick(){calls++;},children:[`Action: ${tile.value}`]}};
+  }};
+  let tree=app.render(props);
+  assert.equal(calls,0);
+  nodes(tree).find(node=>node.props?.["data-ec-control"] === "auto").props.onClick();
+  tree=app.render(props);
+  assert.match(text(tree),/Status and controls.*Settings and actions.*Action: Ready/);
+  assert.doesNotMatch(text(tree),/No operation is available from this view/);
+  nodes(tree).find(node=>node.props?.children?.[0] === "Action: Ready").props.onClick();
+  assert.equal(calls,1);
+  tree=app.render({...props,tiles:{quick:[auto("Pending", "Waiting")]}});
+  assert.equal(nodes(tree).find(node=>node.props?.children?.[0] === "Action: Pending").props.disabled,true);
+  tree=app.render({...props,tiles:{quick:[auto("Failed", "Try again")]}});
+  assert.match(text(tree),/Action: Failed/);
+  nodes(tree).find(node=>node.props?.["data-ec-control"] === "nested-back").props.onClick();
+  app.render(props);
+  assert.equal(calls,1,"rendering, updates and Back never dispatch an action");
+});
+
+test("sample and removed tiles never invoke application control content", async () => {
+  const app=await fixture();
+  let calls=0;
+  const renderDetail=()=>{calls++;return "Control";};
+  let tree=app.render({renderDetail});
+  nodes(tree).find(node=>node.props?.["data-ec-control"] === "auto").props.onClick();
+  app.render({renderDetail});
+  assert.equal(calls,0);
+  tree=app.render({renderDetail,tiles:{quick:[]}});
+  assert.equal(calls,0);
+  assert.doesNotMatch(text(tree),/Settings and actions/);
+});
+
+test("null detail content keeps unavailable reason readable", async () => {
+  const app=await fixture();
+  const props={tiles:{quick:[auto("Unknown", "Provider unavailable")]},renderDetail:()=>null};
+  let tree=app.render(props);
+  nodes(tree).find(node=>node.props?.["data-ec-control"] === "auto").props.onClick();
+  tree=app.render(props);
+  assert.match(text(tree),/Provider unavailable.*No operation is available/);
+});
+
+test("embedded editing keys are left to the input instead of switching tabs", async () => {
+  const app=await fixture();
+  const tree=app.render({});
+  const panel=nodes(tree).find(node=>node.props && "data-ec-panel" in node.props);
+  for (const key of ["ArrowLeft","ArrowDown","q","e","Home"]) {
+    panel.props.onKeyDown({key,target:{closest:()=>({}),matches:()=>true},preventDefault(){assert.fail("editor key intercepted");},stopPropagation(){assert.fail("editor key intercepted");}});
+  }
+});
