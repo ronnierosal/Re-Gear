@@ -136,7 +136,9 @@ from hdm.application.connection_readiness import (  # noqa: E402
 from hdm.application.automatic_dock import (  # noqa: E402
     AutomaticDockCoordinator,
     AutomaticDockStage,
+    verified_egpu_absent,
 )
+from hdm.application.saved_tv_search import SavedTvSearch  # noqa: E402
 from hdm.application.native_portable_recovery import (  # noqa: E402
     NativePortableRecoverySupervisor,
     NativeRecoveryStage,
@@ -214,6 +216,7 @@ from hdm.delivery.runtime_state import RootOwnedRuntimeState  # noqa: E402
 from hdm.delivery.automatic_dock_preferences import (  # noqa: E402
     AutomaticDockPreferenceStore,
 )
+from hdm.delivery.saved_tv_store import SavedTvStore  # noqa: E402
 from hdm.delivery.audio_state import PortableAudioStateStore  # noqa: E402
 from hdm.delivery.transition_journal_store import FileTransitionJournalStore  # noqa: E402
 from hdm.domain.process_release import ReleasePhase  # noqa: E402
@@ -227,6 +230,7 @@ from hdm.domain.tdp_placement import tdp_placement_readiness  # noqa: E402
 from hdm.domain.auto_tdp_preferences import AutoTdpModePreference  # noqa: E402
 from hdm.delivery.auto_tdp_preferences import FileAutoTdpPreferences  # noqa: E402
 from hdm.domain.inference import infer_placement  # noqa: E402
+from hdm.domain.saved_tv import DEFAULT_MAX_ATTEMPTS  # noqa: E402
 from hdm.profiles.gpd_g1 import match_gpd_g1  # noqa: E402
 
 
@@ -299,6 +303,32 @@ def _exact_g1_link_is_up(snapshot) -> bool:
     )
 
 
+def _display_scan_complete(snapshot) -> bool:
+    """Whether the connector inventory was actually read on this observation.
+
+    An unavailable DRM inventory is not evidence that a TV is absent, and must
+    not spend the bounded saved-TV search: a reader that keeps failing would
+    otherwise exhaust the budget and abandon a TV that was there all along.
+    """
+    return bool(snapshot.displays) and not any(
+        blocker.code == "drm_inventory_unavailable" for blocker in snapshot.blockers
+    )
+
+
+def _docked_tv_display(snapshot):
+    """The one external display a completed dock is actually presenting on.
+
+    Read from the observation rather than taken from the request, so what earns
+    a saved profile is the TV the player ended up on -- external, connected and
+    verifiably driving the session -- and not the target a transition set out
+    to reach.
+    """
+    if infer_placement(snapshot) is not PlacementState.DOCKED_EGPU:
+        return None
+    active = [display for display in snapshot.displays if display.active is True]
+    return active[0] if len(active) == 1 else None
+
+
 
 #: The eGPU's GPU function on the tested profile, matching the default the
 #: operator tools use, so the backend and the CLI act on the same device.
@@ -333,6 +363,13 @@ class Plugin:
         self._native_recovery = NativePortableRecoverySupervisor()
         self._last_native_recovery_code = ""
         self._automatic_dock_preference_store: AutomaticDockPreferenceStore | None = None
+        self._saved_tv: SavedTvSearch | None = None
+        self._saved_tv_decision = None
+        self._saved_tv_attempts = 0
+        # An explicitly successful TV transition, not yet observed presenting.
+        self._saved_tv_pending_dock = False
+        self._saved_tv_armed = False
+        self._last_saved_tv_code = ""
         self._docked_igpu_scheduler: DockedIgpuLifecycleScheduler | None = None
         self._docked_igpu_task: asyncio.Task[None] | None = None
         self._docked_igpu_retry_seconds = 30.0
@@ -664,8 +701,29 @@ class Plugin:
             "checks": getattr(self, "_connection_checks", None),
             "checks_age_ms": max(0, int((time.monotonic() - getattr(self, "_connection_checks_at", 0.0)) * 1000)),
         }
+        payload["saved_tv"] = self._saved_tv_status()
         await asyncio.to_thread(self._record_verbose_snapshot, payload)
         return payload
+
+    def _saved_tv_status(self) -> dict[str, object]:
+        """Categorical state for the waiting half of a dock.
+
+        The saved display identity, and the label EDID gave it, stay on the
+        root-owned record and never cross this boundary. A state and a code are
+        all a caller needs to tell "the eGPU is ready and your saved TV has not
+        appeared" from "it was not found" from a flat failure -- and `searching`
+        says whether a search is running at all, so no state has to be invented
+        for the times one is not.
+        """
+        decision = self._saved_tv_decision
+        return {
+            "schema_version": 1,
+            "searching": decision is not None,
+            "state": decision.state.value if decision is not None else "",
+            "code": decision.code if decision is not None else "",
+            "attempts": self._saved_tv_attempts,
+            "max_attempts": DEFAULT_MAX_ATTEMPTS,
+        }
 
     async def _start_docked_igpu_lifecycle_for(self, report) -> None:
         """Start the exit watcher only for its exact running Docked-iGPU case."""
@@ -1705,6 +1763,10 @@ class Plugin:
         succeeded = bool(
             outcome and outcome.kind is TransitionOutcomeKind.SUCCEEDED
         )
+        if succeeded and requested_target is PlacementState.DOCKED_EGPU:
+            # A player's own TV switch is intent too, and earns a record on the
+            # same evidence: the display the dock is observed presenting on.
+            self._saved_tv_pending_dock = True
         self._append_journey_event(
             severity="info" if succeeded else "warning",
             code=code,
@@ -2269,6 +2331,10 @@ class Plugin:
                         await asyncio.to_thread(
                             lambda: self._audio_handoff_service().remember_portable(resolution.context),
                         )
+                # Before the opt-in gate: a TV the player switched to by hand
+                # is intent too, and the record has to be re-armed when a dock
+                # ends whether or not automatic docking is enabled.
+                await self._update_saved_tv(current, connection)
                 if not enabled:
                     delay_seconds = 5.0
                     await self._wait_for_topology(delay_seconds)
@@ -2359,6 +2425,10 @@ class Plugin:
                     self._automatic_dock.record_result(
                         result.code, succeeded=succeeded
                     )
+                    if succeeded:
+                        # Recorded on a later observation, once the dock is seen
+                        # presenting on the display it actually reached.
+                        self._saved_tv_pending_dock = True
                     self._events.append(
                         severity="info" if succeeded else "warning",
                         code=result.code,
@@ -2891,6 +2961,99 @@ class Plugin:
             DrmDiscovery().scan(), pci.scan_pci(), pci.scan_usb4()
         )
         return matched.audio_bdf if matched.verified else ""
+
+    def _saved_tv_search(self) -> SavedTvSearch:
+        """One bounded search per plugin lifetime, over the root-owned record.
+
+        Constructed lazily against the same state root the other stores use, so
+        a host that cannot own that directory fails here rather than writing a
+        display identity somewhere the player cannot see or clear it.
+        """
+        if self._saved_tv is None:
+            self._saved_tv = SavedTvSearch(
+                SavedTvStore(RootOwnedRuntimeState().ensure())
+            )
+        return self._saved_tv
+
+    async def _update_saved_tv(self, current, connection) -> None:
+        """Carry the saved TV through one dock: re-arm it, record it, wait for it.
+
+        Reporting only. Nothing here authorizes a display change: when the saved
+        TV does appear, HDMI readiness reaches the existing automatic dock the
+        way it always has, and the one transition engine does the rest.
+        """
+        try:
+            search = self._saved_tv_search()
+        except Exception:
+            # No root-owned state root means no search is running, and claiming
+            # one is waiting would be inventing it.
+            self._saved_tv_decision = None
+            return
+        if verified_egpu_absent(current.snapshot):
+            # The dock ended. The budget bounds one search for the TV, not the
+            # lifetime of the plugin, so the next dock asks again from zero --
+            # including a fresh read of the record.
+            if self._saved_tv_armed:
+                search.rearm()
+                self._saved_tv_armed = False
+                self._saved_tv_pending_dock = False
+                self._saved_tv_decision = None
+                self._saved_tv_attempts = 0
+            return
+        self._saved_tv_armed = True
+        if self._saved_tv_pending_dock:
+            display = _docked_tv_display(current.snapshot)
+            if display is not None:
+                # An explicitly successful transition, now observed presenting
+                # on that exact display. Only both facts together earn a record.
+                try:
+                    await asyncio.to_thread(
+                        lambda: search.remember(
+                            display=display, transition_succeeded=True
+                        )
+                    )
+                except (ValueError, OSError):
+                    # An identity the record refuses, or a write that failed.
+                    # Remembering nothing is the safe outcome; retrying it on
+                    # every observation would turn one refusal into a loop.
+                    self._append_journey_event(
+                        severity="warning",
+                        code="saved_tv.record_unwritable",
+                        component="connection",
+                        stage="saved_tv",
+                        create_timeline=False,
+                    )
+                self._saved_tv_pending_dock = False
+                self._saved_tv_decision = None
+                self._saved_tv_attempts = 0
+                return
+        if connection.stage is not ConnectionReadinessStage.WAITING_FOR_HDMI:
+            # Only the stage that means "the eGPU is up and the TV is not there"
+            # is a real look for a saved TV. Counting any other stage would
+            # spend the budget on readings taken before it could have appeared.
+            self._saved_tv_decision = None
+            return
+        decision = await asyncio.to_thread(
+            lambda: search.observe(
+                displays=current.snapshot.displays,
+                scan_complete=_display_scan_complete(current.snapshot),
+            )
+        )
+        self._saved_tv_decision = decision
+        self._saved_tv_attempts = search.attempts
+        if decision.code != self._last_saved_tv_code:
+            self._last_saved_tv_code = decision.code
+            self._append_journey_event(
+                severity="info",
+                code=decision.code,
+                component="connection",
+                stage="saved_tv",
+                details={
+                    "state": decision.state.value,
+                    "attempts": search.attempts,
+                },
+                create_timeline=False,
+            )
 
     def _automatic_dock_preferences(self) -> AutomaticDockPreferenceStore:
         if self._automatic_dock_preference_store is None:
