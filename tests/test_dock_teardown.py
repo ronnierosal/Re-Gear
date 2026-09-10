@@ -305,6 +305,34 @@ class TunnelTests(unittest.TestCase):
 
         self.assertNotEqual(unsupported.code, denied.code)
 
+    def test_evidence_this_function_has_never_heard_of_never_permits(self) -> None:
+        """A type annotation is not a runtime check.
+
+        Refusing the values that mean no leaves anything else -- None, or a
+        member added to either enum later -- matching no guard at all, and
+        falling through to permitted. Only the value that means yes may pass.
+        """
+        unrecognised = (
+            replace(TUNNEL, capability=None),
+            replace(TUNNEL, capability="future_capability"),
+            replace(TUNNEL, write_permission=None),
+            replace(TUNNEL, write_permission="future_permission"),
+        )
+        for tunnel in unrecognised:
+            with self.subTest(
+                capability=tunnel.capability, permission=tunnel.write_permission
+            ):
+                decision = decide(tunnel=tunnel)
+
+                self.assertFalse(decision.permitted)
+                self.assertIn(
+                    decision.code,
+                    {
+                        "dock_teardown.tunnel_capability_unknown",
+                        "dock_teardown.tunnel_write_permission_unknown",
+                    },
+                )
+
     def test_capability_is_asked_before_permission(self) -> None:
         """Whether the dock can do this outranks whether we may ask it to."""
         decision = decide(
