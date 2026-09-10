@@ -13,6 +13,17 @@ from unittest.mock import patch
 from scripts import build_plugin, check_plugin_package
 
 
+#: This packages for real, so it needs the bundle `pnpm build` generates and
+#: that is deliberately not in version control. CI builds before it runs this
+#: suite, so the contract is still proven there; skipping only keeps a
+#: Python-only checkout from failing on a missing Node build.
+BUILT = all(
+    (Path(build_plugin.ROOT) / relative).is_file()
+    for relative in build_plugin.GENERATED_BUILD_OUTPUTS
+)
+
+
+@unittest.skipUnless(BUILT, "requires `pnpm build`: dist/ is generated, not committed")
 class PackagedProbeTests(unittest.TestCase):
     def test_extracted_probe_import_and_help_need_only_packaged_files(self):
         # Exercise the real archive writer without a release reservation or

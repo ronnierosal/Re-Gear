@@ -32,15 +32,27 @@ Use the smallest check that can falsify the current change:
 At integration, deployment, or release gates run:
 
 ```text
+pnpm build
 python scripts/check_architecture.py
 python -m unittest discover -s tests -v
 python -m compileall -q backend tests scripts
 pnpm typecheck
 pnpm test:frontend
-pnpm build
 python scripts/check_plugin_package.py .
 git diff --check
 ```
+
+`pnpm build` runs first, not last. `dist/` is generated rather than committed,
+and three later gates read it from the checkout: `tests/test_capture_provenance.py`
+hashes `dist/index.js` as one of the critical files, and the branding and
+bundle-clearance frontend tests audit the shipped bundle rather than the
+sources. A fresh clone has nothing for them to read until the build has run.
+`scripts/check_plugin_package.py` and `scripts/build_plugin.py` read the same
+built bundle and say so if it is absent.
+
+A Python-only checkout with no Node toolchain can still run the Python suite:
+the provenance tests skip rather than fail when the bundle is missing. CI always
+builds first, so they are always exercised there.
 
 Do not repeatedly run the full matrix after tiny documentation edits. Do not
 skip the full matrix when producing or deploying an artifact.
@@ -67,8 +79,11 @@ driver's ownership.
 - Keep commits small, focused, and descriptive.
 - Do not mix unrelated cleanup with a fix.
 - Inspect staged paths and diff before committing.
-- Generated `dist/index.js` and its source map belong in Git only as the
-  intentional Decky package outputs; `out/` artifacts do not.
+- Generated `dist/index.js` and its source map are not in Git, and neither are
+  `out/` artifacts. `pnpm build` produces the bundle; packaging consumes what
+  that build left on disk. Committing it made a generated file the most
+  contended path in the repository, conflicting in pull requests whose source
+  merged cleanly, so CI now rebuilds it and refuses to let it be tracked again.
 - A worker may create a local commit for a coherent verified slice when its
   driver owns the worktree or has coordinated the shared paths.
 - Create a branch when isolation is useful or explicitly requested; report its

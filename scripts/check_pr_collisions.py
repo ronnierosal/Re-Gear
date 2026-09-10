@@ -48,8 +48,10 @@ RISK_CLASSES: tuple[tuple[str, str, str], ...] = (
     (
         "dist/",
         "build-artifact",
-        "generated output verified byte-for-byte by CI; a rebuild on the second"
-        " merge can silently discard the first pull request's frontend change",
+        "generated output that is no longer tracked; a pull request carrying"
+        " dist/ has re-committed a build, which CI refuses, and a rebuild on the"
+        " second merge can silently discard the first pull request's frontend"
+        " change",
     ),
     (
         "backend/hdm/adapters/steamos/commands.py",
