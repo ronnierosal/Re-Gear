@@ -207,7 +207,7 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
           <h3>{nested.value}</h3>
           <p>{synthetic && nested.id === "auto" ? "Auto TDP is off and not configured. Target and limit selection must precede Start. This prototype cannot start, stop or tune the controller." : nested.detail}</p>
           {synthetic && nested.id === "auto" && <p><strong>State vocabulary:</strong> Off · Running · Stopping… · Unknown · Needs configuration</p>}
-          {nested.id === "disconnect" && <p><strong>No unplug clearance.</strong> Backend readiness and confirmation are not connected. A display change, missing observation or successful command does not establish safety.</p>}
+          {nested.id === "disconnect" && <p><strong>No unplug clearance.</strong> {synthetic ? "Backend readiness and confirmation are not connected. " : "Readiness, confirmation and unplug clearance are separate. "}A display change, missing observation or successful command does not establish safety.</p>}
           <p>{synthetic ? "Sample data only. No hardware operation is available." : "Status details only. No operation is available from this view."}</p>
           <Button type="button" className="rg-expanded-back" data-ec-control="nested-back" {...(native ? { preferredFocus: true } : {})} onClick={back}>Back to {tabLabels[tab]}</Button>
         </section> : <>

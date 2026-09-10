@@ -88,3 +88,14 @@ test("unconnected preview tabs retain explicit sample labeling", async () => {
   const app = await fixture();
   assert.match(text(app.render({})), /Demo · Sample data/);
 });
+
+test("supplied disconnect readiness retains no clearance without claiming its source is disconnected", async () => {
+  const app = await fixture();
+  const props={tiles:{quick:[{id:"disconnect",title:"Safe Disconnect",value:"Blocked",detail:"Game is running"}]}};
+  let tree=app.render(props);
+  nodes(tree).find(node=>node.props?.["data-ec-control"] === "disconnect").props.onClick();
+  tree=app.render(props);
+  assert.match(text(tree), /Game is running/);
+  assert.match(text(tree), /No unplug clearance/);
+  assert.doesNotMatch(text(tree), /readiness and confirmation are not connected/);
+});
