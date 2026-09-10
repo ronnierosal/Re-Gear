@@ -83,6 +83,26 @@ class Fake:
         except (OSError, NotImplementedError):
             raise unittest.SkipTest("symlinks are unavailable on this platform")
 
+    def block_metadata(
+        self, disk: str, *, devnum: str = "", partitions: tuple = ()
+    ) -> None:
+        """What the kernel publishes for a block device that exists.
+
+        Every block device gets a `holders` directory, empty when nothing
+        stacks on it, and a `dev` file naming its major:minor. A fixture that
+        omits them is describing a device that is not there, which the reading
+        now reports as unexamined rather than as idle.
+        """
+        root = self.block / disk
+        (root / "holders").mkdir(parents=True, exist_ok=True)
+        if devnum:
+            (root / "dev").write_text(devnum, encoding="utf-8")
+        for name, number in partitions:
+            partition = root / name
+            (partition / "holders").mkdir(parents=True, exist_ok=True)
+            if number:
+                (partition / "dev").write_text(number, encoding="utf-8")
+
     def mount(self, source: str, mount_point: str) -> None:
         existing = self.mountinfo.read_text(encoding="utf-8")
         line = f"36 25 8:1 / {mount_point} rw,relatime - ext4 {source} rw\n"
@@ -362,7 +382,14 @@ class MountinfoParsingTests(Harness):
 
         self.assertEqual(found, ("/run/media/deck/A",))
 
-    def test_a_truncated_line_is_skipped_rather_than_crashing(self) -> None:
+    def test_a_truncated_line_is_read_past_but_leaves_the_scan_incomplete(self) -> None:
+        """Skipping it must not also claim the table was fully read.
+
+        The mounts that did parse are still reported: a line this parser
+        cannot read is no reason to discard the ones it could. But a truncated
+        table is a table with an unread mount in it, and calling that a
+        finished scan is how a branch in use reads as idle.
+        """
         found, complete = self.mounts(
             {"sda"},
             [
@@ -372,7 +399,7 @@ class MountinfoParsingTests(Harness):
         )
 
         self.assertEqual(found, ("/run/media/deck/A",))
-        self.assertTrue(complete)
+        self.assertFalse(complete)
 
     def test_a_line_with_no_separator_is_skipped(self) -> None:
         found, _ = self.mounts(
@@ -436,6 +463,8 @@ class OtherStorageUseTests(Harness):
         return self.discovery._other_uses(set(devices))
 
     def test_a_quiet_system_reports_no_other_use(self) -> None:
+        self.fake.block_metadata("sda")
+
         found, complete = self.uses({"sda"})
 
         self.assertEqual(found, ())
@@ -448,6 +477,7 @@ class OtherStorageUseTests(Harness):
         self.assertTrue(complete)
 
     def test_swap_on_a_branch_partition_is_a_use(self) -> None:
+        self.fake.block_metadata("sda", partitions=(("sda2", ""),))
         self.fake.swap_on("/dev/sda2")
 
         found, complete = self.uses({"sda"})
@@ -464,14 +494,19 @@ class OtherStorageUseTests(Harness):
 
         self.assertEqual(found, ())
 
-    def test_a_missing_swaps_file_is_a_real_answer(self) -> None:
-        # A system with no swap configured at all.
+    def test_a_missing_swaps_file_is_not_a_system_without_swap(self) -> None:
+        """`/proc/swaps` exists whether or not any swap is configured.
+
+        A system with none has a header row and nothing under it. An absent
+        file therefore means the table was not read at all, which says nothing
+        about what is swapping to the branch.
+        """
         self.fake.swaps.unlink()
 
         found, complete = self.uses({"sda"})
 
         self.assertEqual(found, ())
-        self.assertTrue(complete)
+        self.assertFalse(complete)
 
     def test_a_stacked_device_holds_its_member(self) -> None:
         # A member of an assembled array is thoroughly in use while being
@@ -502,8 +537,8 @@ class OtherStorageUseTests(Harness):
         firmly as one assembled on the whole disk, and reported nothing at
         all -- an idle branch, over a live mapping.
         """
-        holders = self.fake.block / "sda" / "sda1" / "holders" / "dm-0"
-        holders.mkdir(parents=True, exist_ok=True)
+        self.fake.block_metadata("sda", partitions=(("sda1", ""),))
+        (self.fake.block / "sda" / "sda1" / "holders" / "dm-0").mkdir(parents=True)
 
         found, complete = self.uses({"sda"})
 
@@ -514,20 +549,26 @@ class OtherStorageUseTests(Harness):
 
     def test_a_partition_use_names_the_partition_not_the_disk(self) -> None:
         """What a player has to act on is the thing that is held."""
-        holders = self.fake.block / "sda" / "sda1" / "holders" / "dm-0"
-        holders.mkdir(parents=True, exist_ok=True)
+        self.fake.block_metadata("sda", partitions=(("sda1", ""),))
+        (self.fake.block / "sda" / "sda1" / "holders" / "dm-0").mkdir(parents=True)
 
         found, _ = self.uses({"sda"})
 
         self.assertEqual(found[0].device, "sda1")
 
-    def test_no_holders_directory_is_no_holders(self) -> None:
+    def test_no_holders_directory_is_not_no_holders(self) -> None:
+        """The kernel gives every block device one, empty when unused.
+
+        Absent means this is not the device we think it is, or it went away
+        mid-walk. Either way it was never examined, and an unexamined device
+        is not an unused one.
+        """
         (self.fake.block / "sda").mkdir(parents=True, exist_ok=True)
 
         found, complete = self.uses({"sda"})
 
         self.assertEqual(found, ())
-        self.assertTrue(complete)
+        self.assertFalse(complete)
 
 
 class AliasMountTests(Harness):
@@ -586,6 +627,24 @@ class AliasMountTests(Harness):
 
         self.assertEqual(found, ())
         self.assertTrue(complete)
+
+    def test_a_partial_device_number_scan_cannot_clear_an_alias(self) -> None:
+        """Knowing some numbers is not knowing the answer.
+
+        The disk publishes 8:0 and its partition publishes nothing. An alias
+        mounting 8:1 then matches no number held, which is not the same as
+        belonging to someone else. Treating a merely non-empty map as
+        sufficient is what makes that mount disappear.
+        """
+        disk = self.fake.block / "sda"
+        disk.mkdir(parents=True, exist_ok=True)
+        (disk / "dev").write_text("8:0\n", encoding="utf-8")
+        (disk / "sda1").mkdir(parents=True, exist_ok=True)
+
+        found, complete = self.mounts({"sda"}, [self.ALIAS])
+
+        self.assertEqual(found, ())
+        self.assertFalse(complete)
 
     def test_a_plain_device_source_still_needs_no_numbers(self) -> None:
         """The existing name comparison is kept, not replaced."""
