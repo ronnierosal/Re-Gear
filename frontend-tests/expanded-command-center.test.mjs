@@ -142,3 +142,44 @@ test("native shortcut dropdown preserves selection and active chord when saving 
   runtime.stop();
   assert.equal(native.stops, 1);
 });
+
+test("native live source publishes into an open menu and unsubscribes on close", {
+  // The UI branch can land independently; once the bridge module is present,
+  // its consumer must satisfy this contract in the combined CI tree.
+  skip: !existsSync(new URL("../src/quick-access/expanded-command-center/tile-source.ts", import.meta.url)),
+}, async () => {
+  const body=readFileSync(new URL("../src/quick-access/expanded-command-center/native.tsx", import.meta.url),"utf8");
+  const compiled=ts.transpileModule(body,{compilerOptions:{module:ts.ModuleKind.ESNext,jsx:ts.JsxEmit.React}}).outputText.replace(/^import .*;$/gm, "");
+  const fixture=`
+    export const views=[],listeners=new Set();
+    export let current;
+    let unsubscribe,renderView;
+    let snapshot={quick:[{id:'auto',title:'Auto TDP',value:'Running',detail:'Fixture'}],performance:[],egpu:[],controllers:[],settings:[]};
+    const React={createElement:(type,props,...children)=>({type,props:{...props,children}})};
+    const ModalRoot='modal',ExpandedCommandCenter='shell',Button='button',Focusable='focus',Dropdown='dropdown',ShortcutSettings='settings';
+    const useState=v=>[v,()=>{}],useEffect=()=>{};
+    const useSyncExternalStore=(subscribe,read)=>{
+      if(!unsubscribe)unsubscribe=subscribe(()=>{current=renderView();});
+      return read();
+    };
+    const loadMenuBinding=()=> 'view-y',saveMenuBinding=()=>true,menuBindingOptions=[];
+    const startMenuShortcut=()=>({available:true,reset(){},stop(){}});
+    const showModal=view=>{views.push(view);return {Close(){unsubscribe?.();unsubscribe=undefined;}}};
+    export const source={read:()=>snapshot,subscribe(fn){listeners.add(fn);return()=>listeners.delete(fn);}};
+    export function mount(){const view=views.at(-1).props.children[1];renderView=()=>view.type(view.props);current=renderView();}
+    export function publish(){snapshot={...snapshot,quick:[{id:'auto',title:'Auto TDP',value:'Unknown',detail:'Expired'}]};for(const listener of listeners)listener();}
+  `;
+  const native=await import(`data:text/javascript;base64,${Buffer.from(fixture+compiled).toString("base64")}`);
+  const menu=native.createExpandedMenu(undefined,{localStorage:{}},()=>true,native.source);
+  menu.open();native.mount();
+  assert.equal(native.current.props.tiles.quick[0].value,"Running");
+  assert.equal(native.listeners.size,1,"opening must subscribe to the existing publisher");
+  native.publish();
+  assert.equal(native.current.props.tiles.quick[0].value,"Unknown","an open menu must update without reopening");
+  native.current.props.onClose();
+  assert.equal(native.listeners.size,0);
+  menu.open();native.mount();
+  assert.equal(native.listeners.size,1,"reopen installs one fresh subscription");
+  menu.stop();
+  assert.equal(native.listeners.size,0);
+});
