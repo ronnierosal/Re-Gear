@@ -317,16 +317,11 @@ class DockBranchDiscovery:
 
         try:
             raw = self._swaps.read_text(encoding="utf-8", errors="replace")
-        except FileNotFoundError:
-            # No swap file at all is a real answer on a system without one.
-            #
-            # Left as-is deliberately. `/proc/swaps` exists on any kernel this
-            # runs on whether or not swap is configured, so an absent one
-            # arguably means the table was not read -- but
-            # `test_a_missing_swaps_file_is_a_real_answer` asserts this reading
-            # by name, so it is raised with its owner rather than reversed here.
-            raw = ""
         except OSError:
+            # `/proc/swaps` exists on any kernel this runs on whether or not
+            # swap is configured: the no-swap case is a header row and nothing
+            # under it. An absent file therefore means the table was not read,
+            # which is not the same fact as nothing swapping to the branch.
             complete = False
             raw = ""
         for line in raw.splitlines()[1:]:
@@ -375,18 +370,11 @@ class DockBranchDiscovery:
         owner = holders.parent.name
         try:
             entries = sorted(entry.name for entry in holders.iterdir())
-        except FileNotFoundError:
-            # No holders directory means no stacked consumers.
-            #
-            # Left as-is deliberately. The kernel does give every block device
-            # a `holders` directory, so on real sysfs an absent one means this
-            # is not the device we think it is -- which argues for reporting
-            # the scan incomplete. But that reading is asserted by name in
-            # `test_no_holders_directory_is_no_holders` and is someone's
-            # decision, not an oversight, so it is raised with its owner
-            # rather than reversed here.
-            return True
         except OSError:
+            # The kernel gives every block device a `holders` directory, empty
+            # when nothing stacks on it. Absent means this is not the device we
+            # think it is, or it went away mid-walk. Either way it was not
+            # examined, which is not the same as finding it unused.
             return False
         for name in entries:
             uses.append(DockStorageUse(owner, "stacked", f"in use by {name}"))
@@ -465,7 +453,7 @@ class DockBranchDiscovery:
         if not tables:
             return (), False
         raw = "\n".join(tables)
-        devnums = self._branch_devnums(devices)
+        devnums, devnums_complete = self._branch_devnums(devices)
         mounts: list[str] = []
         for line in raw.splitlines():
             if not line.strip():
@@ -473,11 +461,11 @@ class DockBranchDiscovery:
             fields = line.split(" ")
             separator = fields.index("-") if "-" in fields else -1
             if len(fields) < 5 or separator < 0 or len(fields) <= separator + 2:
-                # Left skipping quietly, deliberately. A line this parser
-                # cannot read is arguably a mount it cannot rule out, but
-                # `test_a_truncated_line_is_skipped_rather_than_crashing`
-                # asserts the opposite by name, so it is raised with its owner
-                # rather than reversed here.
+                # A line this parser cannot read is a mount it cannot rule
+                # out. Skipping it quietly is how a truncated table reads as
+                # an idle branch, and the mounts that WERE parsed are still
+                # reported: incomplete, not empty.
+                complete = False
                 continue
             mount_point = fields[4]
             source = fields[separator + 2]
@@ -495,7 +483,7 @@ class DockBranchDiscovery:
             if by_name or by_devnum:
                 mounts.append(mount_point)
                 continue
-            if devnums or not _is_opaque_source(source):
+            if devnums_complete or not _is_opaque_source(source):
                 continue
             # An alias such as /dev/disk/by-uuid/... or /dev/mapper/... has a
             # basename that names nothing on this branch even when the mount
@@ -504,25 +492,38 @@ class DockBranchDiscovery:
             complete = False
         return tuple(sorted(set(mounts))), complete
 
-    def _branch_devnums(self, devices: set[str]) -> set[str]:
+    def _branch_devnums(self, devices: set[str]) -> tuple[set[str], bool]:
         """`major:minor` for each branch device and any partition of it.
 
-        Empty when sysfs does not publish them, which is why the caller keeps
-        the name comparison rather than replacing it.
+        The second value says whether EVERY one of them was resolved. A map
+        that is merely non-empty is not enough to rule a mount out: if the
+        disk published `8:0` and its partition published nothing, an alias
+        mounting `8:1` matches no number we hold and is not thereby somebody
+        else's. Partial knowledge answers no question.
         """
         devnums: set[str] = set()
+        complete = True
         for device in sorted(devices):
             root = self._block_root / device
-            devnums.add(_read_text(root / "dev"))
+            disk = _read_text(root / "dev")
+            if disk:
+                devnums.add(disk)
+            else:
+                complete = False
             try:
                 children = sorted(root.iterdir(), key=lambda item: item.name)
             except OSError:
+                complete = False
                 continue
             for child in children:
-                if child.name.startswith(device):
-                    devnums.add(_read_text(child / "dev"))
-        devnums.discard("")
-        return devnums
+                if not child.name.startswith(device) or child.name == device:
+                    continue
+                partition = _read_text(child / "dev")
+                if partition:
+                    devnums.add(partition)
+                else:
+                    complete = False
+        return devnums, complete
 
     # -- the tunnel -------------------------------------------------------
 
