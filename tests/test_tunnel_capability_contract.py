@@ -106,3 +106,13 @@ class CapabilityDecisionTests(unittest.TestCase):
         decision = self.decide(TunnelCapability.UNKNOWN, WritePermission.UNKNOWN, already_down=True)
         self.assertEqual(decision.state, DockTeardownState.ALREADY_DOWN)
         self.assertFalse(decision.permitted)
+
+    def test_partial_or_unrecognized_evidence_never_permits(self):
+        for capability, permission in (
+            (None, WritePermission.WRITABLE),
+            ("future_capability", WritePermission.WRITABLE),
+            (TunnelCapability.SUPPORTED, None),
+            (TunnelCapability.SUPPORTED, "future_permission"),
+        ):
+            with self.subTest(capability=capability, permission=permission):
+                self.assertFalse(self.decide(capability, permission).permitted)
