@@ -2,6 +2,7 @@ import { PageLayout, CommandCenterHeader } from "./quick-access/page-layout";
 import { createExpandedMenu } from "./quick-access/expanded-command-center/native";
 import { createTilePublisher } from "./quick-access/expanded-command-center/tile-source";
 import type { Readings } from "./quick-access/expanded-command-center/tile-source";
+import { observationAge } from "./quick-access/expanded-command-center/tile-source";
 import { EgpuModule } from "./quick-access/modules/egpu";
 import { egpuPresentation } from "./quick-access/modules/egpu-presentation";
 import { ControllerModule } from "./quick-access/modules/controller";
@@ -1654,9 +1655,15 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
   // idle: without that, readings would stay "fresh" forever simply because
   // nothing re-rendered to notice they had aged.
   const [menuAgeTick, setMenuAgeTick] = useState(0);
-  const menuFresh = !loading && error === "" && payload !== null
-    && lastSnapshotAt.current !== null
-    && Date.now() - lastSnapshotAt.current <= SNAPSHOT_STALE_AFTER_MS;
+  // Age the OBSERVATION, not the response. lastSnapshotAt records when a reply
+  // arrived, which says nothing about when the device was looked at: a reply
+  // can arrive instantly carrying a reading taken minutes ago, and publishing
+  // that as current is how a player acts on eGPU or display state that has
+  // already stopped being true.
+  const menuObservation = observationAge(
+    payload?.snapshot.observed_at, Date.now(), SNAPSHOT_STALE_AFTER_MS,
+  );
+  const menuFresh = !loading && error === "" && payload !== null && menuObservation.fresh;
   const menuPerformance = performanceState({
     status: performance.manual, autoStatus: performance.auto,
     busy: performance.busy, stopping: performance.stopping,
@@ -1685,13 +1692,18 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
       menuPerformance.supported, menuPerformance.action, menuPerformance.busy,
       performance.manual?.current_watts, menuAgeTick, snapshot?.displays]);
 
-  // Re-evaluate age while nothing else re-renders, so a reading cannot remain
-  // "fresh" merely because the panel went quiet.
+  // Re-evaluate when this observation actually expires, so a reading cannot
+  // remain "fresh" merely because the panel went quiet. Scheduling a full
+  // interval instead would let an observation outlive its own lifetime by
+  // however long ago it was taken.
   useEffect(() => {
     if (!menuFresh) return;
-    const timer = window.setTimeout(() => setMenuAgeTick((tick) => tick + 1), SNAPSHOT_STALE_AFTER_MS);
+    const timer = window.setTimeout(
+      () => setMenuAgeTick((tick) => tick + 1),
+      Math.max(0, menuObservation.remainingMs),
+    );
     return () => window.clearTimeout(timer);
-  }, [menuFresh, menuAgeTick]);
+  }, [menuFresh, menuObservation.remainingMs, menuAgeTick]);
 
   // Read-only status destinations, kept distinct from the configuration
   // modules: these open detail, never controls.

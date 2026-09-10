@@ -228,3 +228,37 @@ export function createTilePublisher(initial?: Readings): TilePublisher {
     },
   };
 }
+
+/** How old an observation is allowed to be before it stops counting as fresh.
+ *
+ * The age that matters is when the DEVICE was observed, not when the response
+ * reached us. Those differ: a reply can arrive instantly carrying a reading
+ * taken minutes ago, and treating receipt as freshness publishes known eGPU and
+ * display state from an observation that has since stopped being true. A player
+ * acting on that is the failure this whole bridge exists to prevent.
+ */
+export type ObservationAge = {
+  /** True only for an observation that is parseable, not in the future, and
+   * still within its lifetime. */
+  fresh: boolean;
+  /** Milliseconds of lifetime left, for scheduling the next re-check. Zero
+   * whenever the observation is not fresh. */
+  remainingMs: number;
+};
+
+export function observationAge(
+  observedAt: string | undefined | null, now: number, maxAgeMs: number,
+): ObservationAge {
+  if (typeof observedAt !== "string" || observedAt === "") return { fresh: false, remainingMs: 0 };
+  const observed = Date.parse(observedAt);
+  // An unparseable timestamp is not evidence of recency.
+  if (!Number.isFinite(observed)) return { fresh: false, remainingMs: 0 };
+  const age = now - observed;
+  // A future timestamp means the clocks disagree, and a disagreement is not a
+  // reason to trust the reading more than a stale one.
+  if (age < 0) return { fresh: false, remainingMs: 0 };
+  if (age >= maxAgeMs) return { fresh: false, remainingMs: 0 };
+  // The remaining lifetime, so a re-check happens when this observation
+  // actually expires rather than a full interval after some unrelated render.
+  return { fresh: true, remainingMs: maxAgeMs - age };
+}

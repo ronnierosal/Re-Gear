@@ -237,3 +237,48 @@ test("omitted freshness fails closed rather than accepting the payload", () => {
   const explicit = buildTiles(full());
   assert.notEqual(explicit.egpu[0].value, "Unknown");
 });
+
+// ------------------------------------------------------------ observation age
+
+test("a recently received but long-observed reading is not fresh", () => {
+  // The reproduction from reciprocal review: response receipt is not freshness.
+  // A reply can arrive instantly carrying a reading taken minutes ago.
+  const now = Date.UTC(2026, 8, 10, 12, 0, 0);
+  const fiveMinutesOld = new Date(now - 300_000).toISOString();
+  assert.equal(m.observationAge(fiveMinutesOld, now, 10_000).fresh, false);
+});
+
+test("an observation inside its lifetime is fresh and reports what is left", () => {
+  const now = Date.UTC(2026, 8, 10, 12, 0, 0);
+  const threeSecondsOld = new Date(now - 3_000).toISOString();
+  const age = m.observationAge(threeSecondsOld, now, 10_000);
+  assert.equal(age.fresh, true);
+  assert.equal(age.remainingMs, 7_000, "the re-check must be the remaining lifetime");
+});
+
+test("the boundary is exclusive, so an expired observation is never fresh", () => {
+  const now = Date.UTC(2026, 8, 10, 12, 0, 0);
+  const exactlyExpired = new Date(now - 10_000).toISOString();
+  assert.equal(m.observationAge(exactlyExpired, now, 10_000).fresh, false);
+});
+
+test("a future observation is refused rather than trusted", () => {
+  // Disagreeing clocks are not a reason to trust a reading more than a stale one.
+  const now = Date.UTC(2026, 8, 10, 12, 0, 0);
+  const future = new Date(now + 60_000).toISOString();
+  assert.equal(m.observationAge(future, now, 10_000).fresh, false);
+});
+
+test("an unparseable, empty or missing timestamp is not evidence of recency", () => {
+  const now = Date.UTC(2026, 8, 10, 12, 0, 0);
+  for (const value of ["not-a-date", "", undefined, null]) {
+    const age = m.observationAge(value, now, 10_000);
+    assert.equal(age.fresh, false, String(value));
+    assert.equal(age.remainingMs, 0, String(value));
+  }
+});
+
+test("a stale observation reports no remaining lifetime to schedule against", () => {
+  const now = Date.UTC(2026, 8, 10, 12, 0, 0);
+  assert.equal(m.observationAge(new Date(now - 60_000).toISOString(), now, 10_000).remainingMs, 0);
+});
