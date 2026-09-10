@@ -232,7 +232,7 @@ def load_main_module():
     previous = sys.modules.get("decky")
     sys.modules["decky"] = decky
     try:
-        spec = importlib.util.spec_from_file_location("hdm_test_main", ROOT / "main.py")
+        spec = importlib.util.spec_from_file_location("regear_test_main", ROOT / "main.py")
         module = importlib.util.module_from_spec(spec)
         assert spec.loader is not None
         spec.loader.exec_module(module)

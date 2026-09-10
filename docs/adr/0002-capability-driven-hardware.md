@@ -5,7 +5,7 @@
 
 ## Decision
 
-HDM core policy reasons about observed capabilities and independent state.
+Re-Gear core policy reasons about observed capabilities and independent state.
 Exact model/ID knowledge remains in conservative profiles and platform adapters.
 Runtime observation is authoritative; a profile entry does not certify hardware.
 

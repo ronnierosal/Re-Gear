@@ -6,7 +6,7 @@ body:
   - type: input
     id: build
     attributes:
-      label: HDM version and build
+      label: Re-Gear version and build
       placeholder: "0.2.0 / abc123def456"
     validations:
       required: true

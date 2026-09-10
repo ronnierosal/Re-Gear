@@ -42,4 +42,9 @@ test("committed bundle embeds compact transparent SVG artwork without unpackaged
   }
   assert.match(bundle, /M13 43a21 21 0 1 1 38 0/); // Approved inline Auto TDP gauge.
   assert.doesNotMatch(bundle, /\/assets\/(?:regear|mode)-/);
+  // The approved preview above is a design mock; this is the surface players
+  // actually load, so the old product name must be absent from it too. The
+  // check stays case-sensitive and word-bounded on purpose: the frozen
+  // "hdm.hideAttached*" settings keys and every "hdmi" label must survive.
+  assert.doesNotMatch(bundle, /Handheld Dock Mode|\bHDM\b/);
 });

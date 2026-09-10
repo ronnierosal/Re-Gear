@@ -32,7 +32,7 @@ active display, applicable eGPU storage, and (for external placements) a
 read-only current PCIe link observation bound to the already verified G1 root
 bridge. Link observation reports up, down, or unknown and, when the kernel
 exposes parseable values, preserves the current GT/s and lane-width evidence.
-Those values are observations only: HDM does not apply a universal performance
+Those values are observations only: Re-Gear does not apply a universal performance
 threshold or infer bandwidth, stability, safe removal, or certification.
 Controller and audio are intentionally omitted until independently usable-state
 observations are available. An authoritative workflow owner may additionally
@@ -73,11 +73,11 @@ budget, not a measured device-impact claim.
 Samples contain only typed numeric metrics; this contract has no collector,
 scheduler, optimization, TDP, or mutation authority.
 
-The HDM-overhead measurement assessment consumes at most one caller-supplied
+The Re-Gear overhead measurement assessment consumes at most one caller-supplied
 snapshot/optional-observer timing sample under that same admission gate. It
 reports identity-free bounded cost only when fresh and within the declared
 budget, labels game impact Unknown, and cannot authorize any action. See
-[HDM overhead measurement](PERFORMANCE_MEASUREMENT.md).
+[Re-Gear overhead measurement](PERFORMANCE_MEASUREMENT.md).
 
 The link-instability assessment separately compares exactly two fresh
 opaque-bound observed Up/Down link facts. It exposes only categorical state
@@ -109,7 +109,7 @@ before terminal success is possible. No adapter is yet constructed: the domain
 contract accepts no paths, bytes, commands, PIDs, arbitrary setting names, or
 frontend-provided game identity.
 
-Transparent action history is a bounded projection of the existing HDM event
+Transparent action history is a bounded projection of the existing Re-Gear event
 log, not a second audit or telemetry store. It retains only time, a categorical
 action kind, categorical outcome, and stable event code; it deliberately drops
 event details and correlation IDs. A future Decky history view can therefore
@@ -474,7 +474,7 @@ delivery-independent composite planning foundation. External
 controller promotion is independent from built-in suppression; suppression is
 never planned without verified external input and a verified built-in recovery
 path. Controller loss/undock restores and promotes built-in input first.
-When promotion is verified but suppression is not, HDM keeps the built-in
+When promotion is verified but suppression is not, Re-Gear keeps the built-in
 controller active instead of failing the entire dock handoff.
 External power-off may fall back to an independently verified disconnect
 capability but is never assumed. Audio selection requires a verified usable
@@ -642,8 +642,8 @@ or path inputs. The Decky entrypoint remains an adapter; it is not the domain or
 transition engine.
 
 Presentation activation will use a separately reviewed reversible user-service
-integration. HDM will not patch SteamOS's `/usr/lib/steamos/gamescope-session`
-script. The fixed integration store now installs or removes only HDM's exact
+integration. Re-Gear will not patch SteamOS's `/usr/lib/steamos/gamescope-session`
+script. The fixed integration store now installs or removes only Re-Gear's exact
 `90-handheld-dock-mode.conf`, refuses symlinks, unsafe ownership, modified
 managed content, unknown environment files, and any competing `PATH` directive,
 and retains the state directory on deactivation. File activation remains

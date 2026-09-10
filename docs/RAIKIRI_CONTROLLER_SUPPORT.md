@@ -6,7 +6,7 @@ dongle, and Bluetooth require independent evidence.
 
 Implemented: pure menu routing with exact device/transport matching, explicit
 verification, press-edge deduplication, reconnect baselining, and suppression
-of simultaneous extra-button chords. Menu actions are separate from HDM dock,
+of simultaneous extra-button chords. Menu actions are separate from Re-Gear dock,
 power, and GPU actions. Tests use synthetic button identifiers only.
 
 Also implemented locally: standalone experimental Linux diagnostic

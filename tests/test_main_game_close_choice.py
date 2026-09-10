@@ -61,7 +61,7 @@ def load_main_module():
     sys.modules["decky"] = decky
     try:
         spec = importlib.util.spec_from_file_location(
-            "hdm_test_main_game_close", ROOT / "main.py"
+            "regear_test_main_game_close", ROOT / "main.py"
         )
         module = importlib.util.module_from_spec(spec)
         assert spec.loader is not None

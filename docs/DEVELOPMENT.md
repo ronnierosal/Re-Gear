@@ -1,6 +1,6 @@
 # Development workflow
 
-HDM favors small, reversible progress with validation proportional to blast
+Re-Gear favors small, reversible progress with validation proportional to blast
 radius. Safety is strict around hardware mutation; ordinary repository work
 should not accumulate ceremony.
 
@@ -62,7 +62,7 @@ skip the full matrix when producing or deploying an artifact.
 A failure starts diagnosis:
 
 1. Capture the exact command, failure, timestamp, and relevant revision.
-2. Inspect bounded HDM logs, current transaction/action history, and applicable
+2. Inspect bounded Re-Gear logs, current transaction/action history, and applicable
    system state.
 3. Correlate timestamps and identify the earliest divergence.
 4. Form one concrete hypothesis.

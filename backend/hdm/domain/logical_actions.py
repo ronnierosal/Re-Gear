@@ -1,4 +1,4 @@
-"""Logical player actions that route into existing HDM request vocabulary."""
+"""Logical player actions that route into existing Re-Gear request vocabulary."""
 
 from __future__ import annotations
 

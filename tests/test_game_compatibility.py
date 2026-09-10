@@ -42,7 +42,7 @@ def evidence(**changes) -> CompatibilityEvidence:
         reviewed=True,
         host_profile_id="asus-rog-ally-x",
         egpu_profile_id="gpd-g1-rx7600m-xt",
-        hdm_version="0.2.0",
+        regear_version="0.2.0",
         steamos_version="20260831",
         tested_at="2026-08-31T12:00:00Z",
         observed_render_gpu=ObservedRenderGpu.EXTERNAL,

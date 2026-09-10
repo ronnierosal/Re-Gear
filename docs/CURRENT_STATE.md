@@ -1,5 +1,7 @@
 # Current state
 
+> Historical record: HDM was Re-Gear's former name; original wording is retained.
+
 ## Release-line reconciliation — 2026-09-07
 
 `main` and the 0.3.5x release line had diverged rather than ordered: 117
@@ -886,12 +888,12 @@ hardware-tested behavior.
 ## Immediate gates
 
 1. Build and install the target-aware acknowledgement correction with the G1
-   absent. Keep the Ally Portable long enough for HDM to capture its current
+   absent. Keep the Ally Portable long enough for Re-Gear to capture its current
    default audio sink.
 2. Repeat one watched automatic attach and verify TV picture, RX 7600M XT render
    selection, automatic TV audio, and one committed transition.
 3. Repeat **Prepare G1 disconnect**, acknowledge while automatic docking remains
-   enabled, and verify HDM stays Portable with the shutdown-request control
+   enabled, and verify Re-Gear stays Portable with the shutdown-request control
    available.
 4. Validate ordinary attach/return behavior with the installed native-recovery
    supervisor before any separately approved repeat of an unexpected-loss

@@ -1,4 +1,4 @@
-"""Handheld Dock Mode domain and application package."""
+"""Re-Gear domain and application package."""
 
 from .domain.inference import infer_operating_mode
 from .domain.models import ObservedSnapshot, OperatingMode

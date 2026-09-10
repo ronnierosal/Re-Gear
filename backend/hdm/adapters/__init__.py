@@ -1,1 +1,1 @@
-"""Operating-system and delivery adapters for HDM."""
+"""Operating-system and delivery adapters for Re-Gear."""

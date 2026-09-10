@@ -1,6 +1,6 @@
 """Atomic fixed-path persistence for one validated transition journal.
 
-The Decky runtime constructs this adapter only under HDM's fixed root-owned
+The Decky runtime constructs this adapter only under Re-Gear's fixed root-owned
 state directory. It accepts no path from the frontend and refuses
 cross-operation overwrite or history regression.
 """

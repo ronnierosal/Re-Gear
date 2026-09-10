@@ -67,7 +67,7 @@ class CompatibilityEvidence:
     reviewed: bool
     host_profile_id: str
     egpu_profile_id: str
-    hdm_version: str
+    regear_version: str
     steamos_version: str
     tested_at: str
     observed_render_gpu: ObservedRenderGpu = ObservedRenderGpu.UNKNOWN
@@ -79,7 +79,7 @@ class CompatibilityEvidence:
             self.game_catalog_id,
             self.host_profile_id,
             self.egpu_profile_id,
-            self.hdm_version,
+            self.regear_version,
             self.steamos_version,
         ):
             if not TOKEN_RE.fullmatch(value):

@@ -1,6 +1,6 @@
 """Controller-friendly action-history projection over the existing event log.
 
-This module intentionally stores nothing. It turns already bounded HDM support
+This module intentionally stores nothing. It turns already bounded Re-Gear support
 events into a smaller, user-facing categorical timeline without forwarding
 event details, correlation IDs, or any hardware/process identity.
 """

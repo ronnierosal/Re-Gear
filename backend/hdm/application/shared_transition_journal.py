@@ -1,4 +1,4 @@
-"""Owner-aware inspection of HDM's one shared transition journal.
+"""Owner-aware inspection of Re-Gear's one shared transition journal.
 
 This service does not recover or continue work.  It exposes only categorical
 ownership and permits the otherwise-unwired canonical-sleep owner to clear its

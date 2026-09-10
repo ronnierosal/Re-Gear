@@ -1,4 +1,4 @@
-"""Read explicit maintainer configuration from the private HDM state directory.
+"""Read explicit maintainer configuration from the private Re-Gear state directory.
 
 This file records evidence declarations; parsing never certifies a thermal policy
 or measures overhead. Missing configuration has no defaults and starts no work.

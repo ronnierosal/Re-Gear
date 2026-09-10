@@ -288,5 +288,5 @@ test("native blocker stops the fake Steam store before suspend preparation", () 
   assert.equal(warnings.length, 1);
 
   coordinator.stop();
-  assert.equal(blockerCount, 1, "HDM must preserve an unrelated existing blocker");
+  assert.equal(blockerCount, 1, "Re-Gear must preserve an unrelated existing blocker");
 });

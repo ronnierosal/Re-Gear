@@ -1,4 +1,4 @@
-"""Pure controller-chord policy that emits existing logical HDM requests only."""
+"""Pure controller-chord policy that emits existing logical Re-Gear requests only."""
 
 from __future__ import annotations
 

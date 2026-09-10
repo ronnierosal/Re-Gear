@@ -7,7 +7,7 @@ import { deliverBlockedAttempt } from "../src/blocked-attempt-delivery.ts";
 const warning = {
   kind: "unknown",
   title: "Sleep blocked — safety state is unknown",
-  body: "HDM could not verify safe absence.",
+  body: "Re-Gear could not verify safe absence.",
   critical: true,
 };
 

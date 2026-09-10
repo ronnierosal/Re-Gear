@@ -75,7 +75,7 @@ class CompatibilityTestSession:
     game_catalog_id: str
     host_profile_id: str
     egpu_profile_id: str
-    hdm_version: str
+    regear_version: str
     steamos_version: str
     started_at_ms: int
     expires_at_ms: int
@@ -92,7 +92,7 @@ class CompatibilityTestSession:
         for value in (
             self.host_profile_id,
             self.egpu_profile_id,
-            self.hdm_version,
+            self.regear_version,
             self.steamos_version,
             self.game_catalog_id,
         ):
@@ -147,7 +147,7 @@ def start_compatibility_test(
     game_catalog_id: str,
     host_profile_id: str,
     egpu_profile_id: str,
-    hdm_version: str,
+    regear_version: str,
     steamos_version: str,
     user_confirmed: bool,
     hardware_test_authorized: bool = False,
@@ -175,7 +175,7 @@ def start_compatibility_test(
         game_catalog_id=game_catalog_id,
         host_profile_id=host_profile_id,
         egpu_profile_id=egpu_profile_id,
-        hdm_version=hdm_version,
+        regear_version=regear_version,
         steamos_version=steamos_version,
         started_at_ms=now_ms,
         expires_at_ms=now_ms + ttl_ms,
@@ -332,7 +332,7 @@ def review_compatibility_test(
             reviewed=True,
             host_profile_id=session.host_profile_id,
             egpu_profile_id=session.egpu_profile_id,
-            hdm_version=session.hdm_version,
+            regear_version=session.regear_version,
             steamos_version=session.steamos_version,
             tested_at=tested_at,
             observed_render_gpu=session.observed_render_gpu,

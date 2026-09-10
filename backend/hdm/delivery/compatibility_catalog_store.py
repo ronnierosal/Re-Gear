@@ -1,7 +1,7 @@
 """Fixed-path, atomic persistence for reviewed compatibility catalogs.
 
 The store deliberately has no Decky delivery surface.  A future reviewed catalog
-workflow may construct it beneath HDM's fixed state directory, but a frontend
+workflow may construct it beneath Re-Gear's fixed state directory, but a frontend
 never selects paths, writes raw JSON, or bypasses the domain promotion rules.
 """
 

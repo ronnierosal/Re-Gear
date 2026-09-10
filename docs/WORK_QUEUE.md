@@ -1,4 +1,4 @@
-# HDM worker queue
+# Re-Gear worker queue
 
 This is the ordered work and durable checkpoint index. Live cross-agent ownership
 comes from the shared hub tasks and linked cross-machine issue/PR claims under
@@ -6,7 +6,7 @@ comes from the shared hub tasks and linked cross-machine issue/PR claims under
 dated owners here are not exclusive current claims. This index
 does not replace executable behavior, [the roadmap](ROADMAP.md), or the
 [safety invariants](SAFETY_INVARIANTS.md). The North Star is console-simple,
-games-first SteamOS: HDM stays light, mostly dormant, event-driven where
+games-first SteamOS: Re-Gear stays light, mostly dormant, event-driven where
 practical, and never trades safety or game performance for automation. Licensing
 remains GPLv3+ for community use and separately negotiated for commercial/OEM
 use; see [Licensing](LICENSING.md).
@@ -31,7 +31,7 @@ use; see [Licensing](LICENSING.md).
 ### 1. Ally ↔ G1 end-to-end dock, play, sleep, and undock journey
 
 **Status: Proposed parent journey.** It is the overarching player-facing focus,
-not a claim that the journey is currently supported. HDM must never promise
+not a claim that the journey is currently supported. Re-Gear must never promise
 live GPU migration or game survival. No disruptive hardware action is allowed
 without explicit supervision, and no safe-to-unplug result is allowed without
 verified clients, topology, display, and input evidence. Read-only Ally evidence
