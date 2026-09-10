@@ -103,11 +103,21 @@ work or changing paths clears old validation evidence. Scope/acceptance and the
 next action live in `note`; `evidence` contains tests, exact head, review/CI/merge
 state as applicable. Never equate local tests with installed/hardware proof.
 
-An owner hands off with `offer_transfer`; the recipient must `accept_transfer`.
-The offer binds to a revision, so subsequent edits invalidate it. No timeout steals
+Agents may transfer ownership directly when the current owner and recipient agree
+and communicate the handoff. A consensual transfer needs no additional approval
+from Ronnie or a coordinator. Agree the task/scope and intended files through the
+shared inbox, including the exact branch/commit, evidence, blockers and next action.
+The owner records the handoff with `offer_transfer`; the recipient records agreement
+with `accept_transfer` before taking over. Read back the accepted ownership and
+notify the other agent; reconcile relevant GitHub claims and continue in the
+recipient's isolated worktree, preserving the source checkout and dirty work.
+
+The offer binds to a revision, so subsequent edits invalidate it. Delivery, silence
+or a transfer offer alone is not agreement or accepted ownership. No timeout steals
 ownership. If the owner is unavailable, record the blocker and work elsewhere;
 only a maintainer-authorized recovery may override ownership, preserving the audit
 record. Stream transfers do not transfer tasks. Do not impersonate old session IDs.
+Transfers do not extend release, installation or supervised hardware authority.
 
 ## Ronnie / ChatGPT / voice hand-in
 
