@@ -77,6 +77,11 @@ class Fake:
         else:
             target = target / "internal" / name
         target.mkdir(parents=True, exist_ok=True)
+        # A block device the kernel knows about always has a holders
+        # directory, empty when nothing stacks on it. Leaving it out describes
+        # a device that is not there, which the reading now reports as
+        # unexamined rather than idle.
+        (target / "holders").mkdir(parents=True, exist_ok=True)
         link = self.block / name
         try:
             link.symlink_to(target, target_is_directory=True)
