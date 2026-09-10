@@ -33,4 +33,46 @@ export const expandedStyles = `
 @container rg-menu (max-width:650px){.rg-expanded-brand{padding:12px 15px}.rg-expanded-wordmark{font-size:25px}.rg-expanded-wordmark img{width:36px;height:36px}.rg-expanded-demo{font-size:10px}.rg-expanded-tabs{margin:0 12px}.rg-expanded .rg-expanded-tab{font-size:12px;height:61px}.rg-expanded-tab svg{width:26px;height:26px}.rg-expanded-content{padding:14px}.rg-expanded h2{font-size:25px}.rg-expanded .rg-expanded-tile{padding:12px;min-height:150px}.rg-expanded-value{font-size:18px}.rg-expanded-info{flex-wrap:wrap}.rg-expanded-badges{margin-left:32px}.rg-expanded-footer{font-size:11px;padding:8px 12px}}
 @media(max-width:700px){.rg-expanded{width:94vw;height:94vh}.rg-expanded-backdrop{padding-left:3vw}}
 @container rg-menu (max-width:380px){.rg-expanded-demo{max-width:120px;font-size:9px}.rg-expanded-wordmark{font-size:22px;gap:6px}.rg-expanded-wordmark img{width:30px;height:30px}.rg-expanded .rg-expanded-tab{font-size:10px}.rg-expanded-tab svg{width:24px;height:24px}.rg-expanded-footer{font-size:10px;gap:8px;padding:8px}.rg-expanded-tile[data-ec-control=disconnect] .rg-expanded-tile-body{padding-left:0}.rg-expanded-tile[data-ec-control=disconnect] .rg-expanded-tile-icon{position:static}}
+
+/* Compact approved hierarchy. Scope resets against native button/Focusable styles;
+   do not let the host's flex basis or minimum height overlap menu regions. */
+.rg-expanded-backdrop{padding-block:9vh;box-sizing:border-box}
+.rg-expanded{width:53vw;height:82vh;max-height:100%;border-radius:14px;background:linear-gradient(145deg,#112434fa,#05111bfa)}
+.rg-expanded .rg-expanded-brand{position:relative;flex:0 0 auto;min-height:0;margin:0;padding:8px 12px;gap:8px}
+.rg-expanded .rg-expanded-wordmark{font-size:24px;gap:8px}.rg-expanded .rg-expanded-wordmark img{width:30px;height:30px}
+.rg-expanded .rg-expanded-tabs{position:relative;flex:0 0 auto;min-height:0;min-width:0;margin:0 12px}
+.rg-expanded .rg-expanded-tab{min-height:0;max-width:100%;height:44px;margin:0;padding:4px 1px;display:block;box-shadow:none;font-size:11px}
+.rg-expanded .rg-expanded-tab-body{justify-content:center;gap:3px}.rg-expanded .rg-expanded-tab svg{width:18px;height:18px}
+.rg-expanded .rg-expanded-content{position:relative;flex:1 1 0;min-height:0;margin:0;padding:8px 12px}
+.rg-expanded h2{font-size:22px;margin:0 0 3px;line-height:1.2}.rg-expanded .rg-expanded-context{margin:0 0 8px;font-size:12px}
+.rg-expanded .rg-expanded-grid{gap:7px}
+.rg-expanded .rg-expanded-tile{min-height:96px;padding:8px;display:block;border-radius:11px;background:#102331}
+.rg-expanded .rg-expanded-tile-body{gap:5px;height:auto;padding:0;justify-content:flex-start}
+.rg-expanded .rg-expanded-tile-heading{display:flex;align-items:center;gap:5px;width:100%;min-width:0}
+.rg-expanded .rg-expanded-tile-icon{position:static;margin:0;flex:0 0 auto}
+.rg-expanded .rg-expanded-tile-icon svg{width:20px;height:20px}
+.rg-expanded .rg-expanded-label{font-size:12px;line-height:1.2;overflow-wrap:normal;word-break:normal}
+.rg-expanded .rg-expanded-value{font-size:16px;line-height:1.25;overflow-wrap:normal;word-break:normal;hyphens:none}
+.rg-expanded .rg-expanded-detail{font-size:11px;line-height:1.3;overflow-wrap:normal;word-break:normal}
+.rg-expanded .rg-expanded-tile[data-ec-control=disconnect] .rg-expanded-value{font-size:14px;display:flex;gap:4px}
+.rg-expanded .rg-expanded-footer{position:relative;flex:0 0 auto;min-height:30px;margin:0;padding:5px 10px;font-size:10px;gap:8px}
+.rg-expanded .rg-expanded-footer kbd{font-size:10px;padding:1px 3px}.rg-expanded .rg-expanded-footer kbd.rg-expanded-round{width:18px;height:18px}
+@container rg-menu (max-width:599px){
+.rg-expanded .rg-expanded-brand{padding:7px 10px}.rg-expanded .rg-expanded-wordmark{font-size:21px}.rg-expanded .rg-expanded-demo{font-size:9px}
+.rg-expanded .rg-expanded-tile{padding:6px;min-height:88px}.rg-expanded .rg-expanded-tile-icon svg{width:14px;height:14px}
+.rg-expanded .rg-expanded-label{font-size:10px}.rg-expanded .rg-expanded-value{font-size:12px}.rg-expanded .rg-expanded-detail{font-size:10px}
+.rg-expanded .rg-expanded-tile[data-ec-control=disconnect] .rg-expanded-value{font-size:12px}
+}
+@media(max-width:600px){.rg-expanded{width:94vw;height:82vh}}
+
+.rg-expanded .rg-expanded-tile[data-ec-control=disconnect] .rg-expanded-tile-body{padding:0;justify-content:flex-start;gap:5px}
+.rg-expanded .rg-expanded-tile[data-ec-control=disconnect] .rg-expanded-tile-icon{position:static;margin:0}
+.rg-expanded .rg-expanded-tile[data-ec-control=disconnect] .rg-expanded-tile-icon svg{width:20px;height:20px}
+.rg-expanded .rg-expanded-tile[data-ec-control=disconnect] .rg-expanded-label{font-size:12px}
+.rg-expanded .rg-expanded-tile[data-ec-control=disconnect] .rg-expanded-detail{font-size:11px}
+@container rg-menu (max-width:599px){
+.rg-expanded .rg-expanded-tile[data-ec-control=disconnect] .rg-expanded-tile-icon svg{width:14px;height:14px}
+.rg-expanded .rg-expanded-tile[data-ec-control=disconnect] .rg-expanded-label{font-size:10px}
+.rg-expanded .rg-expanded-tile[data-ec-control=disconnect] .rg-expanded-detail{font-size:10px}
+}
 `;

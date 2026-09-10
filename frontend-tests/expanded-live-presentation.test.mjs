@@ -198,3 +198,13 @@ test("withdrawn focused controls recover Back without stealing retained dialog f
     assert.equal(calls,1);
   }
 });
+
+test("compact cards present icon and label before the value and secondary detail",async()=>{
+ const app=await fixture();const tree=app.render({tiles:{quick:[{id:'manual',title:'Manual TDP',value:'18 W',detail:'Current limit'}]}});
+ const tile=nodes(tree).find(node=>node.props?.['data-ec-control']==='manual');
+ const body=text(tile);assert.ok(body.indexOf('Manual TDP')<body.indexOf('18 W'));
+ assert.ok(body.indexOf('18 W')<body.indexOf('Current limit'));
+ const heading=nodes(tile).find(node=>node.props?.className==='rg-expanded-tile-heading');
+ assert.match(text(heading),/Manual TDP/);
+ assert.ok(nodes(heading).some(node=>node.props?.className==='rg-expanded-tile-icon'));
+});

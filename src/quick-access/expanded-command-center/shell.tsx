@@ -200,14 +200,11 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
               aria-label={`${item.title}: ${item.value}. ${item.detail}.${synthetic ? " Sample data." : ""} View details.`}
               onFocus={(event: { target: EventTarget }) => { memory.current[tab] = item.id; (event.target as HTMLElement).scrollIntoView({ block: "nearest" }); }} onClick={() => { launcher.current = item.id; setNested(item.id); }}>
               <span className="rg-expanded-tile-body">
-                <span className="rg-expanded-tile-icon"><Icon id={item.id}/></span>
-                {item.id === "disconnect" ? <>
-                  <span className="rg-expanded-label">Safe Disconnect</span>
-                  <span className="rg-expanded-value"><CommandCenterIcon id="status-warning" size={20}/>{item.value}</span>
-                </> : <>
-                  <span className="rg-expanded-value">{item.value}</span>
+                <span className="rg-expanded-tile-heading">
+                  <span className="rg-expanded-tile-icon"><Icon id={item.id}/></span>
                   <span className="rg-expanded-label">{item.title}</span>
-                </>}
+                </span>
+                <span className="rg-expanded-value">{item.id === "disconnect" && <CommandCenterIcon id="status-warning" size={16}/>} {item.value}</span>
                 <span className="rg-expanded-detail">{item.detail}{longReasons && item.tone === "unavailable" ? " — Provider observations are unavailable in this synthetic preview. No capability or successful operation can be inferred from the displayed sample." : ""}</span>
                 <span className="rg-expanded-chevron" aria-hidden="true">›</span>
               </span>
