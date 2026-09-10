@@ -155,6 +155,22 @@ class DiscoveryFailClosedTests(unittest.TestCase):
         (self.block / "sda" / "sda1" / "holders").rmdir()
         self.assertFalse(self.storage().complete)
 
+    def test_unreadable_partition_inventory_is_incomplete(self):
+        original = Path.iterdir
+        disk = self.block / "sda"
+
+        def read_directory(path):
+            if path == disk:
+                raise PermissionError("partition inventory unavailable")
+            return original(path)
+
+        with patch.object(Path, "iterdir", read_directory):
+            reading = self.storage()
+        self.assertFalse(
+            reading.complete,
+            "Reading whole-disk holders cannot replace a failed partition scan",
+        )
+
     def test_mount_alias_is_matched_by_partition_device_number(self):
         self.mount("/dev/disk/by-uuid/backup-volume", "8:1")
         reading = self.storage()
