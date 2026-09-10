@@ -18,7 +18,7 @@ test("backend-retired display success releases stale acknowledgement UI", () => 
   assert.match(refresh, /if \(status.code === "journal.idle"\) \{[^}]*setTvSwitchAcknowledgementId\(""\)/);
 });
 
-test("upward navigation reaches the native status focus stop before leaving HDM", () => {
+test("upward navigation reaches the native status focus stop before leaving Re-Gear", () => {
   const source = readFileSync(new URL("../src/index.tsx", import.meta.url), "utf8");
   const summaryStart = source.indexOf('<CommandCenterHeader');
   const summary = source.slice(summaryStart, source.indexOf('/>', summaryStart));

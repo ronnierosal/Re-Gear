@@ -182,7 +182,7 @@ test("overlay exposes useful categorical state without raw identities", () => {
   }
 });
 
-test("HDM overhead presentation is bounded, privacy-safe, and never claims game impact", () => {
+test("Re-Gear overhead presentation is bounded, privacy-safe, and never claims game impact", () => {
   const observed = overheadMeasurementLabel({
     schema_version: 1,
     status: "observed",
