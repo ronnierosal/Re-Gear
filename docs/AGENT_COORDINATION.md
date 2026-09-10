@@ -127,7 +127,9 @@ review, correction or transfer that is needed to continue:
 
 1. Send one concrete request to the partner's registered session. Record its
    message ID, send time, expected response and a deadline 10 minutes after send.
-   Preserve these in the task note so resume/compaction does not restart the clock.
+   Preserve these in your own task note or an inbox checkpoint so resume/compaction
+   does not restart the clock. While a transfer is pending, log waits/timeouts in
+   the inbox instead of revising the offered task and invalidating its transfer.
 2. Read your inbox immediately, then retry after 30 seconds; after two unchanged
    checks use 60-second intervals. Cap the final wait at the remaining deadline.
    Use actual interruptible sleep/wait tools, never simulated elapsed time or a
@@ -148,7 +150,7 @@ review, correction or transfer that is needed to continue:
    actual result. Do not assume a process, receipt or delivery means active work.
 6. At the deadline, perform one final inbox read. If the needed result is absent,
    record the request ID, last response, elapsed wait, blocker and exact next action
-   in the task note. Keep ownership and branches intact; do other authorized work
+   in your task note or the transfer's inbox checkpoint. Keep ownership and branches intact; do other authorized work
    or hand off explicitly as awaiting reply. Do not mark the task complete or
    silently take over. On resume, read late replies before retrying the request.
 
