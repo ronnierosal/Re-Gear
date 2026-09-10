@@ -38,6 +38,8 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
+from ...domain.dock_teardown import TunnelCapability, WritePermission
+
 
 PCI_PATTERN = re.compile(r"[0-9a-fA-F]{4}:[0-9a-fA-F]{2}:[0-9a-fA-F]{2}\.[0-7]")
 #: A USB device directory: "1-1", "1-1.2", "2-3.4.1".
@@ -171,12 +173,31 @@ class DockStorageReading:
 class TunnelReading:
     sysfs_id: str
     authorized: bool | None
-    deauthorizable: bool
+    #: Whether the domain supports de-authorization at all, read from the
+    #: domain rather than inferred from the router.
+    capability: TunnelCapability
+    #: Whether this process could write the router's `authorized` file.
+    write_permission: WritePermission
     complete: bool
     #: Two or more routers published the requested name, so no single one is
     #: the answer. `complete` is False alongside it: an ambiguous scan did not
     #: settle, and a caller that only checks completeness still fails closed.
     ambiguous: bool = False
+
+    @property
+    def deauthorizable(self) -> bool:
+        """Both halves, or neither.
+
+        Kept only for readers that want the single answer. It is derived and
+        never stored, because the stored version was the bug: one flag that
+        answered "is this supported" and "may I write it" together, and so
+        reported an unsupported dock and an under-privileged look identically.
+        Neither half alone can produce True here.
+        """
+        return (
+            self.capability is TunnelCapability.SUPPORTED
+            and self.write_permission is WritePermission.WRITABLE
+        )
 
 
 class DockBranchDiscovery:
@@ -559,7 +580,9 @@ class DockBranchDiscovery:
                 self._thunderbolt_root.iterdir(), key=lambda item: item.name
             )
         except OSError:
-            return TunnelReading("", None, False, False)
+            return TunnelReading(
+                "", None, TunnelCapability.UNKNOWN, WritePermission.UNKNOWN, False
+            )
         wanted = device_name.casefold()
         matches: list[Path] = []
         for entry in entries:
@@ -567,7 +590,9 @@ class DockBranchDiscovery:
                 if not entry.is_dir():
                     continue
             except OSError:
-                return TunnelReading("", None, False, False)
+                return TunnelReading(
+                    "", None, TunnelCapability.UNKNOWN, WritePermission.UNKNOWN, False
+                )
             if _read_text(entry / "device_name").casefold() != wanted:
                 continue
             matches.append(entry)
@@ -577,7 +602,14 @@ class DockBranchDiscovery:
             # is a product string, not an identity, so two identical docks
             # report the same one. Returning either would name a router the
             # caller did not mean and, downstream, deauthorize it.
-            return TunnelReading("", None, False, False, ambiguous=True)
+            return TunnelReading(
+                "",
+                None,
+                TunnelCapability.UNKNOWN,
+                WritePermission.UNKNOWN,
+                False,
+                ambiguous=True,
+            )
         if matches:
             entry = matches[0]
             authorized_file = entry / "authorized"
@@ -586,16 +618,51 @@ class DockBranchDiscovery:
             return TunnelReading(
                 entry.name,
                 authorized,
-                self._writable(authorized_file),
+                self._capability(entry.name),
+                self._write_permission(authorized_file),
                 True,
             )
         # The walk finished and found no such router. That is a real answer:
-        # the dock is not attached by this name.
-        return TunnelReading("", None, False, True)
+        # the dock is not attached by this name. Capability is unknown rather
+        # than unsupported: there was no domain to ask.
+        return TunnelReading(
+            "", None, TunnelCapability.UNKNOWN, WritePermission.UNKNOWN, True
+        )
+
+    def _capability(self, router_id: str) -> TunnelCapability:
+        """Whether the router's DOMAIN supports de-authorization.
+
+        The kernel publishes this per domain, and a router id is
+        `<domain index>-<route>`, so `0-1` belongs to `domain0`. An id that
+        does not carry an index leaves the question unanswered rather than
+        answered by assumption.
+        """
+        index, separator, _ = router_id.partition("-")
+        if not separator or not index.isdigit():
+            return TunnelCapability.UNKNOWN
+        raw = _read_text(self._thunderbolt_root / f"domain{index}" / "deauthorization")
+        if raw == "1":
+            return TunnelCapability.SUPPORTED
+        if raw == "0":
+            return TunnelCapability.NOT_SUPPORTED
+        # Missing, unreadable, or something neither the kernel nor we expect.
+        return TunnelCapability.UNKNOWN
 
     @staticmethod
-    def _writable(path: Path) -> bool:
+    def _write_permission(path: Path) -> WritePermission:
+        """Whether this process could write that file, and nothing more.
+
+        An absent file is UNKNOWN, never NOT_SUPPORTED: support is the
+        domain's answer, and inferring it from a missing router file is
+        exactly the conflation this separation removes.
+        """
         try:
-            return path.is_file() and os.access(path, os.W_OK)
+            if not path.is_file():
+                return WritePermission.UNKNOWN
+            return (
+                WritePermission.WRITABLE
+                if os.access(path, os.W_OK)
+                else WritePermission.DENIED
+            )
         except OSError:
-            return False
+            return WritePermission.UNKNOWN
