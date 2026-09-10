@@ -1,0 +1,637 @@
+{
+  "purpose": "Exact cited source bytes; inventory is not a claim of full-file or executable validation.",
+  "review_date_local": "2026-09-09",
+  "timezone": "America/Los_Angeles",
+  "files": [
+    {
+      "repository": "Hooandee/panel-de-control",
+      "revision": "c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc",
+      "path": ".github/workflows/ci.yml",
+      "url": "https://github.com/Hooandee/panel-de-control/blob/c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc/.github/workflows/ci.yml",
+      "bytes": 5056,
+      "sha256": "ebd40ee9ccdf901d065580d3dc16957877c0951238dc5a0402f41be7f56a6e42",
+      "lines": 143
+    },
+    {
+      "repository": "Hooandee/panel-de-control",
+      "revision": "c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc",
+      "path": ".github/workflows/release-please.yml",
+      "url": "https://github.com/Hooandee/panel-de-control/blob/c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc/.github/workflows/release-please.yml",
+      "bytes": 6450,
+      "sha256": "6b1d579bc27087fd48d090ec883a740ef0f1a73ef71e460ef70c7675d3d21d5a",
+      "lines": 152
+    },
+    {
+      "repository": "Hooandee/panel-de-control",
+      "revision": "c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc",
+      "path": "LICENSE",
+      "url": "https://github.com/Hooandee/panel-de-control/blob/c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc/LICENSE",
+      "bytes": 35149,
+      "sha256": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986",
+      "lines": 674
+    },
+    {
+      "repository": "Hooandee/panel-de-control",
+      "revision": "c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc",
+      "path": "README.md",
+      "url": "https://github.com/Hooandee/panel-de-control/blob/c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc/README.md",
+      "bytes": 22716,
+      "sha256": "febf601629fd7bc0c52b4c68be4239cadf2b04bd83fed0f62be23ce157c79539",
+      "lines": 336
+    },
+    {
+      "repository": "Hooandee/panel-de-control",
+      "revision": "c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc",
+      "path": "THIRD_PARTY_NOTICES.md",
+      "url": "https://github.com/Hooandee/panel-de-control/blob/c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc/THIRD_PARTY_NOTICES.md",
+      "bytes": 5719,
+      "sha256": "58787a1f6025b99b058b0c0e7bd7c3025aaed7fe840b9e961029e1206fac23a5",
+      "lines": 83
+    },
+    {
+      "repository": "Hooandee/panel-de-control",
+      "revision": "c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc",
+      "path": "main.py",
+      "url": "https://github.com/Hooandee/panel-de-control/blob/c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc/main.py",
+      "bytes": 384354,
+      "sha256": "34139f3eea1307a4fb3d2116a78b32ef49b633d77bb1f4b02fb5f6b75fdef31b",
+      "lines": 8875
+    },
+    {
+      "repository": "Hooandee/panel-de-control",
+      "revision": "c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc",
+      "path": "package.json",
+      "url": "https://github.com/Hooandee/panel-de-control/blob/c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc/package.json",
+      "bytes": 1266,
+      "sha256": "0377080deddf07f6334a951938e7ce6a650c5db0de74ca857adedf3fd3c670f3",
+      "lines": 48
+    },
+    {
+      "repository": "Hooandee/panel-de-control",
+      "revision": "c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc",
+      "path": "py_modules/audio/pipewire.py",
+      "url": "https://github.com/Hooandee/panel-de-control/blob/c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc/py_modules/audio/pipewire.py",
+      "bytes": 74659,
+      "sha256": "2b6409c49f81865df1d34cdc9461ce02eb458db87014c027c17451d9480191a2",
+      "lines": 1988
+    },
+    {
+      "repository": "Hooandee/panel-de-control",
+      "revision": "c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc",
+      "path": "py_modules/audio/route.py",
+      "url": "https://github.com/Hooandee/panel-de-control/blob/c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc/py_modules/audio/route.py",
+      "bytes": 1447,
+      "sha256": "6c5a2528fa053076e3def2731df13c3e38b123c3afb39369b4d5924d1b09ff25",
+      "lines": 42
+    },
+    {
+      "repository": "Hooandee/panel-de-control",
+      "revision": "c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc",
+      "path": "py_modules/auto_tdp.py",
+      "url": "https://github.com/Hooandee/panel-de-control/blob/c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc/py_modules/auto_tdp.py",
+      "bytes": 5878,
+      "sha256": "ffc0a170566fe80af7fa49ff10509605d0487c74d8950b613c8b3483c96c0943",
+      "lines": 119
+    },
+    {
+      "repository": "Hooandee/panel-de-control",
+      "revision": "c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc",
+      "path": "py_modules/battery/charge_limit.py",
+      "url": "https://github.com/Hooandee/panel-de-control/blob/c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc/py_modules/battery/charge_limit.py",
+      "bytes": 6023,
+      "sha256": "dbe56eccd1a72b27ddb288197109df00903e368193d3184af4c7abbc050a9f71",
+      "lines": 185
+    },
+    {
+      "repository": "Hooandee/panel-de-control",
+      "revision": "c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc",
+      "path": "py_modules/controllers/inputplumber.py",
+      "url": "https://github.com/Hooandee/panel-de-control/blob/c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc/py_modules/controllers/inputplumber.py",
+      "bytes": 4752,
+      "sha256": "c22186c0b37b1ca160e5708fa135339d1b2041ea734ffca25ddaddc508291dd3",
+      "lines": 96
+    },
+    {
+      "repository": "Hooandee/panel-de-control",
+      "revision": "c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc",
+      "path": "py_modules/display/hdr.py",
+      "url": "https://github.com/Hooandee/panel-de-control/blob/c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc/py_modules/display/hdr.py",
+      "bytes": 585,
+      "sha256": "9c965c293217ff792db62cfe22a93030a66eaa67a8203cf0be636ed6bf997403",
+      "lines": 15
+    },
+    {
+      "repository": "Hooandee/panel-de-control",
+      "revision": "c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc",
+      "path": "py_modules/fans/software_loop.py",
+      "url": "https://github.com/Hooandee/panel-de-control/blob/c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc/py_modules/fans/software_loop.py",
+      "bytes": 17788,
+      "sha256": "713d4adb8a9a5f49166f5ef176eead3ad0bc65c6be6fbf7b46b35e99b32eabbb",
+      "lines": 377
+    },
+    {
+      "repository": "Hooandee/panel-de-control",
+      "revision": "c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc",
+      "path": "py_modules/json_store.py",
+      "url": "https://github.com/Hooandee/panel-de-control/blob/c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc/py_modules/json_store.py",
+      "bytes": 640,
+      "sha256": "18eb43cb09bec39df454f4749c0323c22060b280057605d4c6ee288bf7654f9c",
+      "lines": 22
+    },
+    {
+      "repository": "Hooandee/panel-de-control",
+      "revision": "c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc",
+      "path": "py_modules/lifecycle.py",
+      "url": "https://github.com/Hooandee/panel-de-control/blob/c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc/py_modules/lifecycle.py",
+      "bytes": 10564,
+      "sha256": "080bedc8106165c6360095609d88fdf9c34eecb63a0b6fa7dff5abb38bc294f1",
+      "lines": 273
+    },
+    {
+      "repository": "Hooandee/panel-de-control",
+      "revision": "c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc",
+      "path": "py_modules/mangohud/coordinator.py",
+      "url": "https://github.com/Hooandee/panel-de-control/blob/c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc/py_modules/mangohud/coordinator.py",
+      "bytes": 3717,
+      "sha256": "c5a597a105c36327a325fd1f0f8427c0d871c9fad8ce83318c803c60973b7f38",
+      "lines": 120
+    },
+    {
+      "repository": "Hooandee/panel-de-control",
+      "revision": "c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc",
+      "path": "py_modules/mangohud/ownership.py",
+      "url": "https://github.com/Hooandee/panel-de-control/blob/c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc/py_modules/mangohud/ownership.py",
+      "bytes": 17194,
+      "sha256": "210dc8d6ae046bc650fe8dfd2f6711534416a56b22dd7e24fa6d9c300939a2bf",
+      "lines": 500
+    },
+    {
+      "repository": "Hooandee/panel-de-control",
+      "revision": "c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc",
+      "path": "py_modules/scoped_store.py",
+      "url": "https://github.com/Hooandee/panel-de-control/blob/c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc/py_modules/scoped_store.py",
+      "bytes": 6079,
+      "sha256": "a7b7a5a3a31e09b44a9d9f1ef5800ddb3f971e21255b2eb61f4d04e308fcd8cd",
+      "lines": 139
+    },
+    {
+      "repository": "Hooandee/panel-de-control",
+      "revision": "c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc",
+      "path": "py_modules/telemetry/sampler.py",
+      "url": "https://github.com/Hooandee/panel-de-control/blob/c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc/py_modules/telemetry/sampler.py",
+      "bytes": 2873,
+      "sha256": "9bc6d46cddb1f4c7f7a0da25832f462471a730f8668074026ffcaaf3c4f22282",
+      "lines": 68
+    },
+    {
+      "repository": "Hooandee/panel-de-control",
+      "revision": "c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc",
+      "path": "py_modules/telemetry/store.py",
+      "url": "https://github.com/Hooandee/panel-de-control/blob/c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc/py_modules/telemetry/store.py",
+      "bytes": 11931,
+      "sha256": "137ac6032696acdb51d59500de81a2f795897ffbabe540f29cb1bb37b60b7c6c",
+      "lines": 335
+    },
+    {
+      "repository": "Hooandee/panel-de-control",
+      "revision": "c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc",
+      "path": "scripts/build-ryzenadj.sh",
+      "url": "https://github.com/Hooandee/panel-de-control/blob/c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc/scripts/build-ryzenadj.sh",
+      "bytes": 3091,
+      "sha256": "58406fca9e8f9a68f7945a19671e0e34df22223dc255153a4a106d6a32b1d0a7",
+      "lines": 68
+    },
+    {
+      "repository": "Hooandee/panel-de-control",
+      "revision": "c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc",
+      "path": "src/components/FocusRoot.tsx",
+      "url": "https://github.com/Hooandee/panel-de-control/blob/c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc/src/components/FocusRoot.tsx",
+      "bytes": 1311,
+      "sha256": "71d7dd54e014029c17abf7719cd6b4d47457b67371af0fe14302b99e4efd04b7",
+      "lines": 34
+    },
+    {
+      "repository": "Hooandee/panel-de-control",
+      "revision": "c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc",
+      "path": "src/components/QamPanelGate.test.tsx",
+      "url": "https://github.com/Hooandee/panel-de-control/blob/c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc/src/components/QamPanelGate.test.tsx",
+      "bytes": 14003,
+      "sha256": "95d663e37a6cf9bf42a8962854341630bf63cb0d9bddeca8c127e7e2fe28c487",
+      "lines": 461
+    },
+    {
+      "repository": "Hooandee/panel-de-control",
+      "revision": "c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc",
+      "path": "src/components/QamPanelGate.tsx",
+      "url": "https://github.com/Hooandee/panel-de-control/blob/c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc/src/components/QamPanelGate.tsx",
+      "bytes": 5866,
+      "sha256": "efc9df74dcb30edd627b620b198452c6c3b8db6eb38d1a010e1686f6cfc4564c",
+      "lines": 186
+    },
+    {
+      "repository": "Hooandee/panel-de-control",
+      "revision": "c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc",
+      "path": "src/customize/layout.test.ts",
+      "url": "https://github.com/Hooandee/panel-de-control/blob/c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc/src/customize/layout.test.ts",
+      "bytes": 6420,
+      "sha256": "0e3b6f6a787d750ac4761cb02b44ccd0192c418188cd507e4df8b39c0f08be63",
+      "lines": 180
+    },
+    {
+      "repository": "Hooandee/panel-de-control",
+      "revision": "c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc",
+      "path": "src/customize/layout.ts",
+      "url": "https://github.com/Hooandee/panel-de-control/blob/c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc/src/customize/layout.ts",
+      "bytes": 5828,
+      "sha256": "349e1dc8f9abb41a9fb743931a34d88a5dbfa592469e98824075c3c90d1785a8",
+      "lines": 157
+    },
+    {
+      "repository": "Hooandee/panel-de-control",
+      "revision": "c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc",
+      "path": "src/customize/moduleLogic.test.ts",
+      "url": "https://github.com/Hooandee/panel-de-control/blob/c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc/src/customize/moduleLogic.test.ts",
+      "bytes": 2610,
+      "sha256": "43a5e2c8e65d124b64e78efca70cdb2ae38e82426e0858d5a266c56b01dd0357",
+      "lines": 70
+    },
+    {
+      "repository": "Hooandee/panel-de-control",
+      "revision": "c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc",
+      "path": "src/customize/moduleLogic.ts",
+      "url": "https://github.com/Hooandee/panel-de-control/blob/c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc/src/customize/moduleLogic.ts",
+      "bytes": 2782,
+      "sha256": "851813277de4f0f3efea3a4e7062cae3a4756f6bc6e0b8061cfe119cc3846298",
+      "lines": 69
+    },
+    {
+      "repository": "Hooandee/panel-de-control",
+      "revision": "c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc",
+      "path": "src/launch/compose.test.ts",
+      "url": "https://github.com/Hooandee/panel-de-control/blob/c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc/src/launch/compose.test.ts",
+      "bytes": 4407,
+      "sha256": "c8a88f534c2c31fc90207a92c92830f1d8d533383510e63a2f7bf28507ecf0c1",
+      "lines": 131
+    },
+    {
+      "repository": "Hooandee/panel-de-control",
+      "revision": "c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc",
+      "path": "src/launch/compose.ts",
+      "url": "https://github.com/Hooandee/panel-de-control/blob/c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc/src/launch/compose.ts",
+      "bytes": 6308,
+      "sha256": "5ac41084d389b0f5b9acd978a5850bbce913f59c383f9157e1bb918812480d19",
+      "lines": 171
+    },
+    {
+      "repository": "Hooandee/panel-de-control",
+      "revision": "c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc",
+      "path": "src/launch/gameContextMenu.tsx",
+      "url": "https://github.com/Hooandee/panel-de-control/blob/c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc/src/launch/gameContextMenu.tsx",
+      "bytes": 5376,
+      "sha256": "1f0f1af7577f360a11586ba518de23216094f3a0ad7e2f84aef398524727afa7",
+      "lines": 162
+    },
+    {
+      "repository": "Hooandee/panel-de-control",
+      "revision": "c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc",
+      "path": "src/launch/steamApi.ts",
+      "url": "https://github.com/Hooandee/panel-de-control/blob/c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc/src/launch/steamApi.ts",
+      "bytes": 6710,
+      "sha256": "d6566bc226f926548bf95064e91aab6da7cc84ee5c26edacdc72398a36175fdc",
+      "lines": 183
+    },
+    {
+      "repository": "Hooandee/panel-de-control",
+      "revision": "c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc",
+      "path": "src/launch/useLaunchEditor.test.tsx",
+      "url": "https://github.com/Hooandee/panel-de-control/blob/c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc/src/launch/useLaunchEditor.test.tsx",
+      "bytes": 3571,
+      "sha256": "f3db75e3d53dd1b2150bbc0e41dcd982bd8b6037fd448a0f763ab7b13ff2e547",
+      "lines": 112
+    },
+    {
+      "repository": "Hooandee/panel-de-control",
+      "revision": "c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc",
+      "path": "src/launch/useLaunchEditor.ts",
+      "url": "https://github.com/Hooandee/panel-de-control/blob/c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc/src/launch/useLaunchEditor.ts",
+      "bytes": 6228,
+      "sha256": "669955f98cb631cf801d82bb0ad1c8abef8999d8c4360ff2ada276256ecfa077",
+      "lines": 158
+    },
+    {
+      "repository": "Hooandee/panel-de-control",
+      "revision": "c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc",
+      "path": "src/sections/providerMounts.tsx",
+      "url": "https://github.com/Hooandee/panel-de-control/blob/c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc/src/sections/providerMounts.tsx",
+      "bytes": 4939,
+      "sha256": "1a9b71d62b1062477d6ca5666b38c1fe45d1593e26e35c5eeb0b27f1998db14a",
+      "lines": 123
+    },
+    {
+      "repository": "Hooandee/panel-de-control",
+      "revision": "c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc",
+      "path": "src/system/eco.ts",
+      "url": "https://github.com/Hooandee/panel-de-control/blob/c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc/src/system/eco.ts",
+      "bytes": 880,
+      "sha256": "e05a2cc84c80e5805bae38097743e8397aa9f60f3a2cd5d455bd9ad2fb7100bd",
+      "lines": 27
+    },
+    {
+      "repository": "Hooandee/panel-de-control",
+      "revision": "c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc",
+      "path": "src/tdp/gameIdentity.ts",
+      "url": "https://github.com/Hooandee/panel-de-control/blob/c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc/src/tdp/gameIdentity.ts",
+      "bytes": 2603,
+      "sha256": "5c6490aeb016c67954cecad57d4ae684f1be5544b3701dd2fc90d904e21ae5a9",
+      "lines": 63
+    },
+    {
+      "repository": "Hooandee/panel-de-control",
+      "revision": "c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc",
+      "path": "tests/test_audio_pipewire.py",
+      "url": "https://github.com/Hooandee/panel-de-control/blob/c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc/tests/test_audio_pipewire.py",
+      "bytes": 96953,
+      "sha256": "408f1e16de8d78d02eb6d066983c45584127dccae0aefdfb41b1d906f521b6cb",
+      "lines": 2937
+    },
+    {
+      "repository": "Hooandee/panel-de-control",
+      "revision": "c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc",
+      "path": "tests/test_auto_tdp.py",
+      "url": "https://github.com/Hooandee/panel-de-control/blob/c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc/tests/test_auto_tdp.py",
+      "bytes": 7377,
+      "sha256": "71db2166b46c2188fa733bc79a00c334358e63972cd9443ce25e48814de1b1b0",
+      "lines": 186
+    },
+    {
+      "repository": "Hooandee/panel-de-control",
+      "revision": "c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc",
+      "path": "tests/test_battery_rpc.py",
+      "url": "https://github.com/Hooandee/panel-de-control/blob/c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc/tests/test_battery_rpc.py",
+      "bytes": 45317,
+      "sha256": "ab74eedf7455b4bb8bdb01d164c3c07a960c03f83784110e7fbe16274513733e",
+      "lines": 1390
+    },
+    {
+      "repository": "Hooandee/panel-de-control",
+      "revision": "c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc",
+      "path": "tests/test_color_rpc.py",
+      "url": "https://github.com/Hooandee/panel-de-control/blob/c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc/tests/test_color_rpc.py",
+      "bytes": 26718,
+      "sha256": "fedb19d5de1e23d2843f9bb56c63f07edafe007712f372475faafeed9b77bb4a",
+      "lines": 669
+    },
+    {
+      "repository": "Hooandee/panel-de-control",
+      "revision": "c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc",
+      "path": "tests/test_controllers_backends.py",
+      "url": "https://github.com/Hooandee/panel-de-control/blob/c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc/tests/test_controllers_backends.py",
+      "bytes": 8243,
+      "sha256": "eac879e1e19cda7504e70a809010d69ff6ff56dc207ab96124ff34a4df78dd82",
+      "lines": 219
+    },
+    {
+      "repository": "Hooandee/panel-de-control",
+      "revision": "c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc",
+      "path": "tests/test_fan_software_loop_lifecycle.py",
+      "url": "https://github.com/Hooandee/panel-de-control/blob/c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc/tests/test_fan_software_loop_lifecycle.py",
+      "bytes": 7619,
+      "sha256": "6a8a152c6ca0689d1f342ebf7fec0215fe806d8c7cc616d645d6f297d5d4af93",
+      "lines": 219
+    },
+    {
+      "repository": "Hooandee/panel-de-control",
+      "revision": "c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc",
+      "path": "tests/test_mangohud_coordinator.py",
+      "url": "https://github.com/Hooandee/panel-de-control/blob/c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc/tests/test_mangohud_coordinator.py",
+      "bytes": 3085,
+      "sha256": "633ae198250028805861a9c5453518c93135e449fc716bf3ae47b682ffb93dc5",
+      "lines": 111
+    },
+    {
+      "repository": "Hooandee/panel-de-control",
+      "revision": "c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc",
+      "path": "tests/test_mangohud_ownership.py",
+      "url": "https://github.com/Hooandee/panel-de-control/blob/c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc/tests/test_mangohud_ownership.py",
+      "bytes": 13697,
+      "sha256": "e0e6879598813a04418b74db1009ed231c539e955f1b447efc19b38c4b315121",
+      "lines": 396
+    },
+    {
+      "repository": "Hooandee/panel-de-control",
+      "revision": "c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc",
+      "path": "tests/test_tdp_lifecycle.py",
+      "url": "https://github.com/Hooandee/panel-de-control/blob/c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc/tests/test_tdp_lifecycle.py",
+      "bytes": 12737,
+      "sha256": "12929fe29c613a75c9eb06be99d11b745965def2823171d79dc5316d27b49274",
+      "lines": 390
+    },
+    {
+      "repository": "Hooandee/panel-de-control",
+      "revision": "c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc",
+      "path": "tests/test_tdp_profiles.py",
+      "url": "https://github.com/Hooandee/panel-de-control/blob/c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc/tests/test_tdp_profiles.py",
+      "bytes": 15195,
+      "sha256": "23f09d7002cba76489d6260ddcd85659b43de5620dee2077cac66c599b9ef1cd",
+      "lines": 373
+    },
+    {
+      "repository": "Hooandee/panel-de-control",
+      "revision": "c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc",
+      "path": "tests/test_telemetry_store.py",
+      "url": "https://github.com/Hooandee/panel-de-control/blob/c8b8d1eb363ce42317e0bcfb4c39b8cf8a22c1cc/tests/test_telemetry_store.py",
+      "bytes": 14563,
+      "sha256": "693ab0ab4950937bab00947ffaf358f84e97b287fbde289e98df9b3e4dcc9501",
+      "lines": 366
+    },
+    {
+      "repository": "ronnierosal/Re-Gear",
+      "revision": "c09df57fe03a8d89c69afb0c8d9fb1664d14c741",
+      "path": "LICENSE",
+      "url": "https://github.com/ronnierosal/Re-Gear/blob/c09df57fe03a8d89c69afb0c8d9fb1664d14c741/LICENSE",
+      "bytes": 942,
+      "sha256": "abc0664f4f03f41f9c7162d7ba0681a709db5c7b27bda1328c1dce3d48903dea",
+      "lines": 21
+    },
+    {
+      "repository": "ronnierosal/Re-Gear",
+      "revision": "c09df57fe03a8d89c69afb0c8d9fb1664d14c741",
+      "path": "THIRD_PARTY_NOTICES.md",
+      "url": "https://github.com/ronnierosal/Re-Gear/blob/c09df57fe03a8d89c69afb0c8d9fb1664d14c741/THIRD_PARTY_NOTICES.md",
+      "bytes": 3290,
+      "sha256": "40154014b303eb380dc8677cbe402dc95ef64f2d6bce8d2ce59d20a3bae5ac70",
+      "lines": 63
+    },
+    {
+      "repository": "ronnierosal/Re-Gear",
+      "revision": "c09df57fe03a8d89c69afb0c8d9fb1664d14c741",
+      "path": "backend/hdm/adapters/steamos/audio_handoff.py",
+      "url": "https://github.com/ronnierosal/Re-Gear/blob/c09df57fe03a8d89c69afb0c8d9fb1664d14c741/backend/hdm/adapters/steamos/audio_handoff.py",
+      "bytes": 17428,
+      "sha256": "cc9bd1f3c147ef5ecbf75a8d8d8c76f4b469518a2982f1b46251f69035fd8f33",
+      "lines": 439
+    },
+    {
+      "repository": "ronnierosal/Re-Gear",
+      "revision": "c09df57fe03a8d89c69afb0c8d9fb1664d14c741",
+      "path": "backend/hdm/adapters/steamos/tdp_sensors.py",
+      "url": "https://github.com/ronnierosal/Re-Gear/blob/c09df57fe03a8d89c69afb0c8d9fb1664d14c741/backend/hdm/adapters/steamos/tdp_sensors.py",
+      "bytes": 8018,
+      "sha256": "a1a568c23d07184c36961b7545cf7b8042d42c613558e00d076fbf5967833a5f",
+      "lines": 200
+    },
+    {
+      "repository": "ronnierosal/Re-Gear",
+      "revision": "c09df57fe03a8d89c69afb0c8d9fb1664d14c741",
+      "path": "backend/hdm/application/controller_shortcut_delivery.py",
+      "url": "https://github.com/ronnierosal/Re-Gear/blob/c09df57fe03a8d89c69afb0c8d9fb1664d14c741/backend/hdm/application/controller_shortcut_delivery.py",
+      "bytes": 3093,
+      "sha256": "3c6ab73e057d528f94f2be990f89bcba530b86570da706bc3148255063f9a191",
+      "lines": 81
+    },
+    {
+      "repository": "ronnierosal/Re-Gear",
+      "revision": "c09df57fe03a8d89c69afb0c8d9fb1664d14c741",
+      "path": "backend/hdm/delivery/auto_tdp_preferences.py",
+      "url": "https://github.com/ronnierosal/Re-Gear/blob/c09df57fe03a8d89c69afb0c8d9fb1664d14c741/backend/hdm/delivery/auto_tdp_preferences.py",
+      "bytes": 7831,
+      "sha256": "50e0d4381652f0445c4fdfe451ca89eb19e420eb20ee8b20e5669d2bbae5ecdf",
+      "lines": 191
+    },
+    {
+      "repository": "ronnierosal/Re-Gear",
+      "revision": "c09df57fe03a8d89c69afb0c8d9fb1664d14c741",
+      "path": "backend/hdm/delivery/auto_tdp_worker.py",
+      "url": "https://github.com/ronnierosal/Re-Gear/blob/c09df57fe03a8d89c69afb0c8d9fb1664d14c741/backend/hdm/delivery/auto_tdp_worker.py",
+      "bytes": 3945,
+      "sha256": "cde57a29980f7d98dde2a846a7f7c01adbfa37f4dc00590796a5b06c5d8dbcf8",
+      "lines": 94
+    },
+    {
+      "repository": "ronnierosal/Re-Gear",
+      "revision": "c09df57fe03a8d89c69afb0c8d9fb1664d14c741",
+      "path": "backend/hdm/domain/auto_tdp.py",
+      "url": "https://github.com/ronnierosal/Re-Gear/blob/c09df57fe03a8d89c69afb0c8d9fb1664d14c741/backend/hdm/domain/auto_tdp.py",
+      "bytes": 8444,
+      "sha256": "693182c9f4e0943d56129cdb603bd385e1455f699780386b676b73acf12c61d3",
+      "lines": 188
+    },
+    {
+      "repository": "ronnierosal/Re-Gear",
+      "revision": "c09df57fe03a8d89c69afb0c8d9fb1664d14c741",
+      "path": "backend/hdm/domain/auto_tdp_preferences.py",
+      "url": "https://github.com/ronnierosal/Re-Gear/blob/c09df57fe03a8d89c69afb0c8d9fb1664d14c741/backend/hdm/domain/auto_tdp_preferences.py",
+      "bytes": 5077,
+      "sha256": "2c494a14bf0aff4c56f4182f1176787a711adf2dbd139510582343941a72c8b9",
+      "lines": 139
+    },
+    {
+      "repository": "ronnierosal/Re-Gear",
+      "revision": "c09df57fe03a8d89c69afb0c8d9fb1664d14c741",
+      "path": "backend/hdm/domain/game_adapter.py",
+      "url": "https://github.com/ronnierosal/Re-Gear/blob/c09df57fe03a8d89c69afb0c8d9fb1664d14c741/backend/hdm/domain/game_adapter.py",
+      "bytes": 9295,
+      "sha256": "2f245e68c2cfc9d47fe7f8b04669e76079aad7ad02c5520b1ae7185e5aed1341",
+      "lines": 230
+    },
+    {
+      "repository": "ronnierosal/Re-Gear",
+      "revision": "c09df57fe03a8d89c69afb0c8d9fb1664d14c741",
+      "path": "backend/hdm/domain/mode_profiles.py",
+      "url": "https://github.com/ronnierosal/Re-Gear/blob/c09df57fe03a8d89c69afb0c8d9fb1664d14c741/backend/hdm/domain/mode_profiles.py",
+      "bytes": 5156,
+      "sha256": "2fe775087b55f89cc77c6fbc4a025f26dc92669ee8cf26b60a4610c0f98f17c7",
+      "lines": 143
+    },
+    {
+      "repository": "ronnierosal/Re-Gear",
+      "revision": "c09df57fe03a8d89c69afb0c8d9fb1664d14c741",
+      "path": "backend/hdm/domain/runtime_budget.py",
+      "url": "https://github.com/ronnierosal/Re-Gear/blob/c09df57fe03a8d89c69afb0c8d9fb1664d14c741/backend/hdm/domain/runtime_budget.py",
+      "bytes": 2363,
+      "sha256": "b8fc01b4e7f56621a9b83185b87a4ffa384707e7f01b0583cff102d978626675",
+      "lines": 78
+    },
+    {
+      "repository": "ronnierosal/Re-Gear",
+      "revision": "c09df57fe03a8d89c69afb0c8d9fb1664d14c741",
+      "path": "backend/hdm/domain/telemetry.py",
+      "url": "https://github.com/ronnierosal/Re-Gear/blob/c09df57fe03a8d89c69afb0c8d9fb1664d14c741/backend/hdm/domain/telemetry.py",
+      "bytes": 6109,
+      "sha256": "8e27436b794ebfcdbd456528a2473878cfac577c84c4680a69b54a869f3685ae",
+      "lines": 154
+    },
+    {
+      "repository": "ronnierosal/Re-Gear",
+      "revision": "c09df57fe03a8d89c69afb0c8d9fb1664d14c741",
+      "path": "docs/CHAT_COORDINATION.md",
+      "url": "https://github.com/ronnierosal/Re-Gear/blob/c09df57fe03a8d89c69afb0c8d9fb1664d14c741/docs/CHAT_COORDINATION.md",
+      "bytes": 3160,
+      "sha256": "2410f6d2ff4719ac8f811b9b05d3710d34cb40b32412eb7224b88444b347b5eb",
+      "lines": 53
+    },
+    {
+      "repository": "ronnierosal/Re-Gear",
+      "revision": "c09df57fe03a8d89c69afb0c8d9fb1664d14c741",
+      "path": "docs/LICENSING.md",
+      "url": "https://github.com/ronnierosal/Re-Gear/blob/c09df57fe03a8d89c69afb0c8d9fb1664d14c741/docs/LICENSING.md",
+      "bytes": 1049,
+      "sha256": "7d6c41158d9937a4a6aec8777cbe0b2c8b8583ce2faddef667244fada7792ab5",
+      "lines": 23
+    },
+    {
+      "repository": "ronnierosal/Re-Gear",
+      "revision": "c09df57fe03a8d89c69afb0c8d9fb1664d14c741",
+      "path": "docs/SAFETY_INVARIANTS.md",
+      "url": "https://github.com/ronnierosal/Re-Gear/blob/c09df57fe03a8d89c69afb0c8d9fb1664d14c741/docs/SAFETY_INVARIANTS.md",
+      "bytes": 4310,
+      "sha256": "8cd05d19dc0e7cc2fb6f7da3dc81d6a9411eeb9021d2b4b5c6b1d891e4e26838",
+      "lines": 69
+    },
+    {
+      "repository": "ronnierosal/Re-Gear",
+      "revision": "c09df57fe03a8d89c69afb0c8d9fb1664d14c741",
+      "path": "scripts/build_plugin.py",
+      "url": "https://github.com/ronnierosal/Re-Gear/blob/c09df57fe03a8d89c69afb0c8d9fb1664d14c741/scripts/build_plugin.py",
+      "bytes": 7429,
+      "sha256": "cf6e942f5e207b1e0cdcc5d6c847cc0cd5fa1347604a62d2a8bae34601e6e461",
+      "lines": 183
+    },
+    {
+      "repository": "ronnierosal/Re-Gear",
+      "revision": "c09df57fe03a8d89c69afb0c8d9fb1664d14c741",
+      "path": "src/diagnostics-overlay.ts",
+      "url": "https://github.com/ronnierosal/Re-Gear/blob/c09df57fe03a8d89c69afb0c8d9fb1664d14c741/src/diagnostics-overlay.ts",
+      "bytes": 9285,
+      "sha256": "18ca39a56e579b6d4b741a2f922d76f278ca62b4ffd3d5112bcbbda6379a93ac",
+      "lines": 262
+    },
+    {
+      "repository": "ronnierosal/Re-Gear",
+      "revision": "c09df57fe03a8d89c69afb0c8d9fb1664d14c741",
+      "path": "src/quick-access/module-registry.ts",
+      "url": "https://github.com/ronnierosal/Re-Gear/blob/c09df57fe03a8d89c69afb0c8d9fb1664d14c741/src/quick-access/module-registry.ts",
+      "bytes": 8586,
+      "sha256": "75c4aee5013849d373c6166ca68bf3de61800d2ad5b2db0ca853b92d23dafa2c",
+      "lines": 205
+    },
+    {
+      "repository": "ronnierosal/Re-Gear",
+      "revision": "c09df57fe03a8d89c69afb0c8d9fb1664d14c741",
+      "path": "src/quick-access/use-performance.ts",
+      "url": "https://github.com/ronnierosal/Re-Gear/blob/c09df57fe03a8d89c69afb0c8d9fb1664d14c741/src/quick-access/use-performance.ts",
+      "bytes": 6379,
+      "sha256": "49ef864233d3b1e87816a8096847c5946c2bae8d184f0e8ccebaffd7b7495f8d",
+      "lines": 133
+    },
+    {
+      "repository": "ronnierosal/Re-Gear",
+      "revision": "c09df57fe03a8d89c69afb0c8d9fb1664d14c741",
+      "path": "src/section-focus.tsx",
+      "url": "https://github.com/ronnierosal/Re-Gear/blob/c09df57fe03a8d89c69afb0c8d9fb1664d14c741/src/section-focus.tsx",
+      "bytes": 996,
+      "sha256": "a006e1196c95d6f4575287428e803223cd665df53ccfef74b5ffb90ec09ae97b",
+      "lines": 23
+    }
+  ]
+}
