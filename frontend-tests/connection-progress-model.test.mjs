@@ -73,3 +73,12 @@ test("delay guidance starts at one minute and changes at three without promising
  assert.equal(view({...s,phase:"complete",seconds:180},100).delayNotice,undefined);
  assert.equal(view({...s,seconds:180},200).delayNotice,undefined);
 });
+
+
+test("activation warning remains until fresh completion, never attachment alone",()=>{
+ const s=sample();
+ assert.match(view(s,100).activationNotice,/not yet confirmed/);
+ assert.match(view({...s,phase:"switching"},100).activationNotice,/not yet confirmed/);
+ assert.equal(view({...s,phase:"complete"},100).activationNotice,undefined);
+ assert.match(view({...s,phase:"complete"},200).activationNotice,/unavailable/);
+});

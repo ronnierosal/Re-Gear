@@ -20,6 +20,7 @@ export type ConnectionProgressOverlayProps = {
   rows: ConnectionProgressRow[];
   detail?: string;
   delayNotice?: string;
+  activationNotice?: string;
   keepConnectedMessage?: string;
   onHide: () => void;
   onSwitch?: () => void;
@@ -131,6 +132,7 @@ export function ConnectionProgressOverlay(props: ConnectionProgressOverlayProps)
       </div>
 
       {props.detail && <div style={{ marginTop: 4, color: C.muted, fontSize: 13 }}>{props.detail}</div>}
+      {props.activationNotice && <div role="status" style={{marginTop: 6, color: C.amber, fontSize: 13}}>{props.activationNotice}</div>}
       {props.delayNotice && <div role="status" style={{marginTop: 6, padding: "6px 8px", border: `1px solid ${C.amber}`, borderRadius: 8, color: C.amber, fontSize: 13}}>{props.delayNotice}</div>}
       {props.keepConnectedMessage && <div style={{ marginTop: 6, color: C.muted, fontSize: 13 }}>{props.keepConnectedMessage}</div>}
 
