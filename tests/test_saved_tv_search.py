@@ -273,5 +273,62 @@ class ContractTests(unittest.TestCase):
             )
 
 
+class TargetTests(unittest.TestCase):
+    def test_the_remembered_tv_is_readable(self) -> None:
+        subject, _ = search()
+
+        target = subject.target()
+
+        self.assertTrue(target.readable)
+        self.assertEqual(target.profile, PROFILE)
+
+    def test_nothing_remembered_is_still_readable(self) -> None:
+        # The distinction a caller binding a request depends on: "no saved TV"
+        # is an answer, "cannot tell" is not.
+        subject, _ = search(profile=None)
+
+        target = subject.target()
+
+        self.assertTrue(target.readable)
+        self.assertIsNone(target.profile)
+
+    def test_an_unreadable_record_is_reported_as_cannot_tell(self) -> None:
+        for error in (ValueError("symlink"), OSError("gone")):
+            subject, _ = search(error=error)
+
+            target = subject.target()
+
+            self.assertFalse(target.readable, error)
+            self.assertIsNone(target.profile, error)
+
+    def test_asking_both_questions_reads_the_record_once(self) -> None:
+        subject, store = search()
+
+        subject.target()
+        subject.observe(displays=(PANEL,), scan_complete=True)
+        subject.target()
+
+        self.assertEqual(store.loads, 1)
+
+    def test_rearming_re_reads_the_record_for_the_target_too(self) -> None:
+        subject, store = search()
+        subject.target()
+
+        subject.rearm()
+        store.profile = replace(PROFILE, label="Bedroom TV")
+
+        self.assertEqual(subject.target().profile.label, "Bedroom TV")
+        self.assertEqual(store.loads, 2)
+
+    def test_remembering_updates_the_target_without_another_read(self) -> None:
+        subject, store = search(profile=None)
+        subject.target()
+
+        subject.remember(display=TV, transition_succeeded=True, label="Living room TV")
+
+        self.assertEqual(subject.target().profile.display_stable_id, TV.stable_id)
+        self.assertEqual(store.loads, 1)
+
+
 if __name__ == "__main__":
     unittest.main()

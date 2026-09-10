@@ -12,6 +12,10 @@ bin/** text eol=lf
 *.js text eol=lf
 *.map text eol=lf
 *.md text eol=lf
+# A handed-over patch is literal text: its context lines carry a leading space
+# that the whitespace gate would otherwise read as trailing whitespace, and a
+# CRLF checkout would refuse to apply to the *.py files that are pinned to LF.
+*.patch text eol=lf whitespace=-trailing-space,-blank-at-eof
 *.ts text eol=lf
 *.tsx text eol=lf
 *.svg text eol=lf
