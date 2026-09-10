@@ -1,9 +1,9 @@
-"""Compare two previously validated, read-only HDM wake-diagnostic captures.
+"""Compare two previously validated, read-only Re-Gear wake-diagnostic captures.
 
 This utility never opens SSH, changes the Ally, or names a PCI function. It
 reports only whether the documented aggregate wake evidence changed between two
 captured observations. A difference is not a causal wake-source conclusion and
-does not change HDM's disconnect-before-sleep policy.
+does not change Re-Gear's disconnect-before-sleep policy.
 """
 
 from __future__ import annotations

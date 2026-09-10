@@ -1,4 +1,4 @@
-"""Capture a bounded read-only HDM report from an Ally over SSH."""
+"""Capture a bounded read-only Re-Gear report from an Ally over SSH."""
 
 from __future__ import annotations
 

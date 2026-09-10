@@ -1,6 +1,6 @@
 """Read-only SteamOS collector sent to the Ally over SSH stdin.
 
-This file is not installed as an HDM production command.  The local capture
+This file is not installed as a Re-Gear production command.  The local capture
 wrapper streams it to ``python3 -`` and it writes no remote files.
 """
 

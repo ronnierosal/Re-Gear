@@ -1,4 +1,4 @@
-"""Create a local-only, manually publishable HDM release-candidate record."""
+"""Create a local-only, manually publishable Re-Gear release-candidate record."""
 
 from __future__ import annotations
 

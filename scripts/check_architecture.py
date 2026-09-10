@@ -1,4 +1,4 @@
-"""Deterministic checks for HDM's pure domain boundary."""
+"""Deterministic checks for Re-Gear's pure domain boundary."""
 
 from __future__ import annotations
 

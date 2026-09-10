@@ -1,4 +1,4 @@
-"""Stage one verified HDM ZIP and its signed direct-deploy companion."""
+"""Stage one verified Re-Gear ZIP and its signed direct-deploy companion."""
 from __future__ import annotations
 
 import argparse

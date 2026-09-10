@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Root-owned, signature-gated developer installer for one HDM package.
+"""Root-owned, signature-gated developer installer for one Re-Gear package.
 
 This program is intentionally installed outside the plugin tree. It replaces
 the fixed plugin directory after archive and signature verification and
@@ -30,7 +30,7 @@ LEGACY_NAME = "HandheldDockMode"
 TARGET = PLUGIN_PARENT / PLUGIN_NAME
 BACKUPS = PLUGIN_PARENT / ".hdm-deploy-backups"
 # SteamOS keeps /usr immutable.  /var/lib/handheld-dock-mode is the existing
-# root-owned, mode-0700 HDM runtime authority and survives system updates.
+# root-owned, mode-0700 Re-Gear runtime authority and survives system updates.
 PUBLIC_KEY = Path("/var/lib/handheld-dock-mode/deploy-public-key.pem")
 SYSTEMCTL = "/usr/bin/systemctl"
 PACKAGE_RE = re.compile(r"Re-Gear-update-([0-9]+(?:\.[0-9]+){2}(?:[-+][A-Za-z0-9.-]+)?)-([0-9a-f]{12})\.zip")
