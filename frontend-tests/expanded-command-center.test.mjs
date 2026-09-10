@@ -22,7 +22,7 @@ test("focus restoration retains unavailable FPS and falls back after removal", (
   assert.equal(m.restoreTarget([], "fps"), undefined);
 });
 test("responsive grid prefers four columns with three before narrow fallback", () => {
-  assert.deepEqual([390, 389, 300, 299, 220, 219].map(m.columnsForWidth), [4, 3, 3, 2, 2, 1]);
+  assert.deepEqual([640, 639, 430, 429, 280, 279].map(m.columnsForWidth), [4, 3, 3, 2, 2, 1]);
 });
 test("four-column navigation respects the spanning disconnect tile", () => {
   const cells = m.gridCells(m.sampleTiles.quick, 4);
@@ -89,4 +89,48 @@ test("native modal uses Decky controls without a second raw navigation listener"
   native.effects[0](); // Old animated unmount arrives after reopening.
   runtime.open(); assert.equal(native.opens, 2, "old unmount must not clear new modal");
   runtime.stop(); runtime.open(); assert.equal(native.opens, 2, "unload must prevent opening");
+});
+
+test("native shortcut dropdown preserves selection and active chord when saving fails", async () => {
+  const nativeSource = readFileSync(new URL("../src/quick-access/expanded-command-center/native.tsx", import.meta.url), "utf8");
+  const nativeJs = ts.transpileModule(nativeSource, { compilerOptions: { module: ts.ModuleKind.ESNext, jsx: ts.JsxEmit.React } }).outputText.replace(/^import .*;$/gm, "");
+  const fixture = `
+    export const views=[], states=[], saved=[];
+    export let resets=0, stops=0;
+    let cursor=0, fail=false, deps;
+    const React={createElement:(type,props,...children)=>({type,props:{...props,children}})};
+    const ModalRoot='modal',ExpandedCommandCenter='shell',Button='button',Focusable='focus',Dropdown='native-dropdown',ShortcutSettings='settings';
+    const useEffect=()=>{},useState=v=>{const i=cursor++;if(!(i in states))states[i]=v;return [states[i],n=>states[i]=n]};
+    const loadMenuBinding=()=> 'view-y',saveMenuBinding=value=>{saved.push(value);return !fail};
+    const menuBindingOptions=[{label:'View / Back + Y',data:'view-y'},{label:'L3 + R3',data:'sticks'},{label:'Disabled',data:'disabled'}];
+    const startMenuShortcut=d=>{deps=d;return {available:true,reset(){resets++},stop(){stops++}}};
+    const showModal=view=>{views.push(view);return {Close(){}}};
+    export const currentBinding=()=>deps.readBinding(),failSave=value=>{fail=value},render=component=>{cursor=0;return component()};
+  `;
+  const native = await import(`data:text/javascript;base64,${Buffer.from(fixture + nativeJs).toString("base64")}`);
+  const runtime = native.createExpandedMenu(undefined, {localStorage:{}});
+  runtime.open();
+  const view = native.views[0].props.children[1];
+  const settings = view.type(view.props).props.settings.type;
+  let rendered = native.render(settings);
+  assert.equal(rendered.props.control.type, "native-dropdown");
+  assert.equal(rendered.props.control.props.selectedOption, "view-y");
+  rendered.props.control.props.onChange({data:"unrecognized"});
+  assert.equal(native.saved.length, 0);
+  native.failSave(true);
+  rendered.props.control.props.onChange({data:"sticks"});
+  rendered = native.render(settings);
+  assert.equal(rendered.props.control.props.selectedOption, "view-y");
+  assert.equal(native.currentBinding(), "view-y");
+  assert.match(rendered.props.error, /previous choice remains active/);
+  assert.equal(native.resets, 0);
+  native.failSave(false);
+  rendered.props.control.props.onChange({data:"disabled"});
+  rendered = native.render(settings);
+  assert.equal(rendered.props.control.props.selectedOption, "disabled");
+  assert.equal(native.currentBinding(), "disabled");
+  assert.equal(rendered.props.error, "");
+  assert.equal(native.resets, 1);
+  runtime.stop();
+  assert.equal(native.stops, 1);
 });

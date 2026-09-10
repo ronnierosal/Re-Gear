@@ -14,7 +14,7 @@ const { build } = require('esbuild');
 await mkdir(output, { recursive: true });
 await build({ entryPoints: [join(root, 'frontend-tests/expanded-render-preview.tsx')], bundle: true,
   outfile: join(output, 'preview.js'), platform: 'browser', format: 'iife', jsx: 'automatic',
-  nodePaths: [runtime], define: { 'process.env.NODE_ENV': '"development"' },
+  loader: {'.svg': 'dataurl'}, nodePaths: [runtime], define: { 'process.env.NODE_ENV': '"development"' },
   plugins: [{name: 'forbid-device-api', setup(b) {
     b.onResolve({filter: /^@decky\//}, a => ({errors: [{text: `Synthetic preview cannot import ${a.path}`}]}));
   }}], logLevel: 'warning' });
@@ -32,102 +32,60 @@ await new Promise(r => server.listen(Number(option('--port', '4184')), '127.0.0.
 const url = `http://127.0.0.1:${server.address().port}`;
 console.log(`Synthetic expanded preview: ${url}`);
 if (args.includes('--playwright')) {
-  const { chromium } = require(resolve(option('--playwright')));
-  const browser = await chromium.launch({headless:true, ...(args.includes('--channel') ? {channel:option('--channel')} : {})});
-  const report = { limitation: 'Synthetic React and keyboard only. Native Steam overlay, physical LB/RB and hardware actions UNVERIFIED.', captures: [], failures: [] };
-  for (const [width,height] of [[1920,1080],[1280,720],[960,600],[854,480],[828,466],[320,720]]) {
-    for (const tab of ['quick','performance','egpu','controllers','settings']) {
-      const page = await browser.newPage({viewport:{width,height},deviceScaleFactor:1});
-      const errors=[]; page.on('pageerror', e=>errors.push(e.message));
-      await page.goto(`${url}/?tab=${tab}&long=1`);
-      await page.locator('[data-ec-panel]').waitFor();
-      const layout = await page.evaluate(() => {
-        const rect = e => {const r=e.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height,bottom:r.bottom,right:r.right};};
-        const panel=document.querySelector('[data-ec-panel]');
-        const footer=panel.querySelector('footer');
-        return {panel:rect(panel),footer:footer?rect(footer):null,overflow:document.documentElement.scrollWidth>innerWidth,
-          controls:panel.querySelectorAll('[data-ec-control]').length,
-          clipped:[...panel.querySelectorAll('button,p,h1,h2,h3')].filter(e=>e.clientWidth>0&&e.scrollWidth>e.clientWidth+1).map(e=>e.textContent)};
-      });
-      const failures=[];
-      if(errors.length) failures.push(...errors);
-      if(layout.overflow) failures.push('Document horizontal overflow');
-      if(layout.panel.x < -1 || layout.panel.right > width+1 || layout.panel.bottom>height+1) failures.push('Panel outside viewport');
-      if(!layout.footer || layout.footer.bottom>height+1) failures.push('Footer absent or outside viewport');
-      if(layout.clipped.length) failures.push('Clipped text: '+layout.clipped.join(' | '));
-      await page.screenshot({path:join(output,`${tab}-${width}-long.png`)});
-      report.captures.push({width,height,tab,...layout,errors});
-      report.failures.push(...failures.map(f=>`${width}/${tab}: ${f}`));
-      await page.goto(`${url}/?tab=${tab}`); await page.locator('[data-ec-panel]').waitFor();
-      const polish = await page.evaluate(() => {
-        const panel=document.querySelector('[data-ec-panel]'), footer=panel.querySelector('footer');
-        const grid=panel.querySelector('.rg-expanded-grid'), safe=panel.querySelector('.rg-expanded-pinned');
-        const overlap=[...panel.querySelectorAll('.rg-expanded-tile-body')].some(body => {
-          const rows=[...body.children].map(e=>e.getBoundingClientRect());
-          return rows.some((r,i)=>i>0 && r.top<rows[i-1].bottom-1);
-        });
-        const rgb=getComputedStyle(document.activeElement).backgroundColor.match(/\d+/g)?.slice(0,3).map(Number)??[];
-        return {overlap, brightFocus:rgb.length===3&&rgb.every(v=>v>200), footerButtons:footer.querySelectorAll('button').length,
-          footerHeight:footer.getBoundingClientRect().height,
-          columns:grid?getComputedStyle(grid).gridTemplateColumns.split(' ').length:0,
-          safeVisible:!safe||(safe.getBoundingClientRect().top>=panel.getBoundingClientRect().top&&safe.getBoundingClientRect().bottom<=footer.getBoundingClientRect().top+1)};
-      });
-      if(polish.overlap||polish.brightFocus||polish.footerButtons||polish.footerHeight>52||!polish.safeVisible)
-        report.failures.push(`${width}/${tab}: polish regression ${JSON.stringify(polish)}`);
-      if(tab==='quick' && [1280,960,854,828].includes(width) && polish.columns!==4)
-        report.failures.push(`${width}: responsive grid density mismatch`);
-      await page.screenshot({path:join(output,`${tab}-${width}.png`)});
-      await page.close();
-    }
+ const { chromium } = require(resolve(option('--playwright')));
+ const browser=await chromium.launch({headless:true,...(args.includes('--channel')?{channel:option('--channel')}:{})});
+ const failures=[],cases=[];
+ for(const [width,height,columns] of [[1920,1080,4],[1280,720,4],[854,480,3],[828,466,3],[640,720,3],[390,700,2]]){
+  const page=await browser.newPage({viewport:{width,height}});
+  page.on('pageerror',e=>failures.push(e.message));
+  for(const tab of ['quick','performance','egpu','controllers','settings'])for(const long of [false,true]){
+   await page.goto(`${url}/?tab=${tab}${long?'&long=1':''}`);
+   await page.locator('.rg-expanded-grid').waitFor();
+   const r=await page.evaluate(()=>{
+    const panel=document.querySelector('.rg-expanded'),content=document.querySelector('.rg-expanded-content'),grid=document.querySelector('.rg-expanded-grid'),footer=document.querySelector('footer');
+    const clipped=[...panel.querySelectorAll('button,span,p,h2,select')].filter(e=>e.clientWidth&&e.scrollWidth>e.clientWidth+2).map(e=>e.textContent.slice(0,70));
+    const iconSizes=[...panel.querySelectorAll('.rg-expanded-tile-icon svg')].map(e=>e.getBoundingClientRect().width);
+    return {columns:getComputedStyle(grid).gridTemplateColumns.split(' ').length,clipped,iconSizes,footerVisible:footer.getBoundingClientRect().bottom<=innerHeight,overflow:document.documentElement.scrollWidth>innerWidth,contentOverflow:content.scrollWidth>content.clientWidth+1,logo:document.querySelector('.rg-expanded-wordmark img').naturalWidth>0};
+   });
+   cases.push({width,height,tab,long,...r});
+   if(r.columns!==columns||r.clipped.length||r.overflow||r.contentOverflow||!r.footerVisible||!r.logo||r.iconSizes.some(s=>s<30))failures.push({width,tab,long,...r});
+   if(!long)await page.screenshot({path:join(output,`${tab}-${width}.png`)});
   }
-  report.comparisons=[];
-  for(const columns of [4,3]) {
-    const comparison=await browser.newPage({viewport:{width:1280,height:720},deviceScaleFactor:1});
-    await comparison.goto(`${url}/?columns=${columns}`);
-    await comparison.locator('[data-ec-panel]').waitFor();
-    const geometry=await comparison.evaluate(()=>{
-      const box=e=>{const r=e.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height,bottom:r.bottom};};
-      const panel=document.querySelector('[data-ec-panel]'),content=panel.querySelector('.rg-expanded-content');
-      return {panel:box(panel),content:box(content),tiles:[...panel.querySelectorAll('[data-ec-control]')].map(e=>({id:e.dataset.ecControl,...box(e)})),
-        clipped:[...panel.querySelectorAll('button,span')].filter(e=>e.clientWidth>0&&e.scrollWidth>e.clientWidth+1).map(e=>e.textContent)};
-    });
-    if(geometry.clipped.length)report.failures.push(`Comparison ${columns}: clipped ${geometry.clipped.join(' | ')}`);
-    if(geometry.tiles.some(t=>t.bottom>geometry.content.bottom+1))report.failures.push(`Comparison ${columns}: Quick Access requires scroll`);
-    report.comparisons.push({columns,...geometry});
-    await comparison.screenshot({path:join(output,`comparison-${columns}-columns.png`)});
-    await comparison.close();
-  }
-  const page=await browser.newPage({viewport:{width:1280,height:720}});
-  await page.goto(url); await page.locator('[data-ec-panel]').waitFor();
-  const first=page.locator('[data-ec-control="auto"]'); await first.focus();
-  const original=await first.getAttribute('data-ec-control');
-  const originalControls=await page.locator('[data-ec-control]').evaluateAll(es=>es.map(e=>e.getAttribute('data-ec-control')));
-  if(!originalControls.includes('fps')) report.failures.push('Unavailable FPS tile missing');
-  await first.click();
-  await page.locator('[data-ec-control="nested-back"]').waitFor();
-  await page.keyboard.press('Escape');
-  const nestedReturn=await page.evaluate(()=>document.activeElement?.getAttribute('data-ec-control'));
-  if(nestedReturn!==original) report.failures.push(`Nested focus restore expected ${original}, got ${nestedReturn}`);
-  await page.keyboard.press('e'); await page.keyboard.press('q');
-  const restored=await page.evaluate(()=>document.activeElement?.getAttribute('data-ec-control'));
-  if(restored!==original) report.failures.push(`Tab focus restore expected ${original}, got ${restored}`);
-  const returnedControls=await page.locator('[data-ec-control]').evaluateAll(es=>es.map(e=>e.getAttribute('data-ec-control')));
-  if(JSON.stringify(originalControls)!==JSON.stringify(returnedControls)) report.failures.push('Quick Access slots changed after switching tabs');
-  await page.locator('[data-ec-control="display"]').focus();
-  await page.keyboard.press('ArrowDown');
-  const quickDown=await page.evaluate(()=>document.activeElement?.getAttribute('data-ec-control'));
-  if(quickDown!=='disconnect') report.failures.push(`Quick four-column ArrowDown expected disconnect, got ${quickDown}`);
-  await page.keyboard.press('e');
-  await page.locator('[data-ec-control="manual"]').focus();
-  await page.keyboard.press('ArrowDown');
-  const performanceDown=await page.evaluate(()=>document.activeElement?.getAttribute('data-ec-control'));
-  if(performanceDown!=='fps') report.failures.push(`Performance two-column ArrowDown expected fps, got ${performanceDown}`);
-  await page.keyboard.press('Escape');
-  if(await page.locator('[data-ec-panel]').count()) report.failures.push('Escape did not close top-level panel');
-  await page.locator('#reopen').click(); await page.locator('[data-ec-panel]').waitFor();
-  await page.close(); await browser.close();
-  await writeFile(join(output,'report.json'),JSON.stringify(report,null,2));
-  console.log(JSON.stringify({captures:report.captures.length,failures:report.failures,report:join(output,'report.json')},null,2));
-  if(report.failures.length) process.exitCode=1;
+  await page.close();
+ }
+ const page=await browser.newPage({viewport:{width:1280,height:720}});
+ await page.goto(url);
+ const visual = await page.evaluate(()=>{
+  const active=document.querySelector('[data-ec-control="manual"] .rg-expanded-tile-icon');
+  const muted=document.querySelector('[data-ec-control="fps"] .rg-expanded-tile-icon');
+  const warning=document.querySelector('[data-ec-control="disconnect"] .rg-expanded-value');
+  return {active:getComputedStyle(active).color,muted:getComputedStyle(muted).color,warning:getComputedStyle(warning).color};
+ });
+ if(new Set(Object.values(visual)).size!==3)failures.push('Icon state colors are not distinct');
+ await page.locator('[data-ec-tab="performance"]').focus();
+ if(await page.locator('[data-ec-tab="quick"]').getAttribute('aria-selected')!=='true')failures.push('Focus incorrectly selected another tab');
+ await page.locator('[data-ec-control="manual"]').click();
+ await page.keyboard.press('Escape');
+ if(await page.locator('[data-ec-control="manual"]').evaluate(e=>e!==document.activeElement))failures.push('Nested back did not restore launcher');
+ await page.keyboard.press('e'); await page.keyboard.press('q');
+ if(await page.locator('[data-ec-control="manual"]').evaluate(e=>e!==document.activeElement))failures.push('Tab switch lost focus memory');
+ await page.locator('[data-ec-tab="settings"]').click();
+ await page.locator('select').selectOption('disabled');
+ if(await page.locator('select').inputValue()!=='disabled')failures.push('Dropdown failed');
+ await page.locator('[data-ec-control="about"]').focus();
+ for(let i=0;i<3;i++)await page.keyboard.press('PageUp');
+ if(await page.locator('.rg-expanded-content').evaluate(e=>e.scrollTop)!==0)failures.push('Settings return to top failed');
+ await page.keyboard.press('Escape');
+ if(await page.locator('[data-ec-panel]').count())failures.push('Close failed');
+ await page.locator('#reopen').click();
+ await page.locator('[data-ec-panel]').waitFor();
+ await page.goto(`${url}/?columns=3`);
+ await page.locator('.rg-expanded-grid').waitFor();
+ if(await page.locator('.rg-expanded-grid').evaluate(e=>getComputedStyle(e).gridTemplateColumns.split(' ').length)!==3)failures.push('Explicit three-column comparison failed');
+ await page.screenshot({path:join(output,'quick-three-column.png')});
+ await browser.close();
+ await writeFile(join(output,'report.json'),JSON.stringify({limitation:'Synthetic DOM/keyboard and native adapter fixtures; actual Decky controller/layout performance unverified.',failures,cases},null,2));
+ console.log(JSON.stringify({failures,cases:cases.length,report:join(output,'report.json')}));
+ if(failures.length)process.exitCode=1;
 }
-if(!args.includes('--serve')) server.close();
+if(!args.includes('--serve'))server.close();

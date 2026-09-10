@@ -1,3 +1,52 @@
+# Approved Command Center polish
+
+The approved September 9 polish is now implemented in the shared expanded
+presentation and its browser fixture. The panel remains a **sample-data demo**;
+hardware tiles have no action authority. The native menu shortcut preference
+retains its existing Steam-client-local persistence.
+
+## Current presentation
+
+- Supplied Re-Gear emblem and wordmark, with a compact demo status block.
+- The CommandCenterIcon component from the icon pack merged in PR #237 supplies
+  larger currentColor icons; selected tabs and focused controls remain distinct.
+- Layered navy cards emphasize values, labels and readable reasons. Cyan focus
+  outlines/glow add no layout shift. Unavailable cards remain focusable for details.
+- Safe Disconnect is a wide amber-accented card. It retains readiness checks and
+  explicit **no unplug clearance**; the summary strip cannot authorize hardware.
+- Four columns at 640 or more content pixels; three at 430–639. Very narrow
+  browser viewports use two at 280–429, then one, rather than shrinking card text.
+  This approval supersedes the earlier 390-pixel four-column threshold below.
+- Settings uses invisible section anchors and focus-driven scrolling. Page Up/Down
+  jump sections in the browser; Home/End restore first/last controls outside the
+  dropdown. Native dropdown navigation remains owned by Decky.
+- Open Re-Gear uses Decky's Dropdown in the native adapter and a temporary HTML
+  select in the browser. Only a successful preference save updates the selected
+  binding and resets the shortcut; failure keeps the previous selection and error.
+- Performance has one short introduction. Footer hints retain Switch Tab on the
+  left and Select beside Close on the right; the user requested Navigate omitted.
+
+## Validation and limits
+
+`frontend-tests/expanded-command-center.test.mjs` covers grid reachability, spanning
+cards, tab restoration, runtime isolation, native modal lifecycle and failed/successful
+shortcut saves. `scripts/expanded_visual_preview.mjs --playwright <module>` exercises
+all five tabs with normal and long reasons at 1920x1080, 1280x720, 854x480,
+828x466, 640x720 and 390x700; it also checks nested Back, tab focus memory,
+selected-vs-focused state, icon state colors, dropdown selection, section return,
+close/reopen and the three-column comparison. Screenshots and report.json go to
+its output directory. The browser harness refuses native/API imports.
+
+These checks are **synthetic**, including the native adapter fixtures. The new
+layout, dropdown, controller focus/scrolling and performance still require native
+Steam/Decky validation. This PR does not build a player release or deploy to a device.
+Existing shortcut callback and lifecycle behavior outside Settings is unchanged.
+
+## Previous implementation and device evidence
+
+The following dated notes are retained as history; current styling and grid
+thresholds are defined above. Prior hardware observations do not validate this polish.
+
 # Expanded Command Center prototype
 
 This is a sample-data design with a native Decky test launcher. The compact
