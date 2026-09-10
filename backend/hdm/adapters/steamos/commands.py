@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import math
 import re
 import subprocess
 from dataclasses import dataclass
@@ -11,6 +12,7 @@ from typing import Sequence
 
 from ...ports.presentation_activation import UserServiceOperation
 from ...ports.system_power import PowerOffResult
+from ...ports.tdp import TdpDispatchGuard, TdpDispatchRejected
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,7 +51,7 @@ class AudioCommandResult:
 
 
 class PipeWireCommandRunner:
-    """Run only a bounded dump or numeric default-sink mutation as Gamescope user."""
+    """Bounded dump and numeric audio operations as the authenticated session user."""
 
     RUNUSER = "/usr/bin/runuser"
     ENV = "/usr/bin/env"
@@ -72,10 +74,22 @@ class PipeWireCommandRunner:
             user, (self.WPCTL, "set-default", str(object_id)), capture=False
         )
 
+    def set_profile(self, user, object_id: int, profile_index: int, *, timeout_seconds=None) -> AudioCommandResult:
+        # Authority belongs to the separate journaled audio trial, not to this
+        # numeric command adapter. No profile names or arbitrary argv enter it.
+        if (type(object_id) is not int or not 0 < object_id < 2**32
+                or type(profile_index) is not int or not 0 <= profile_index < 2**32):
+            return AudioCommandResult(False, code="audio.profile_identity_invalid")
+        return self._run(user, (self.WPCTL, "set-profile", str(object_id), str(profile_index)),
+                         capture=False, timeout_seconds=timeout_seconds)
+
     def _run(
         self, user, command: tuple[str, ...], *, capture: bool,
         timeout_seconds: float | None = None,
     ) -> AudioCommandResult:
+        if (timeout_seconds is not None and (type(timeout_seconds) not in (int, float)
+                or not math.isfinite(timeout_seconds) or timeout_seconds <= 0)):
+            return AudioCommandResult(False, code="audio.deadline_expired")
         timeout = self._timeout_seconds if timeout_seconds is None else min(self._timeout_seconds, timeout_seconds)
         if not 0 < timeout <= self._timeout_seconds:
             return AudioCommandResult(False, code="audio.deadline_expired")
@@ -121,9 +135,16 @@ class SleepInhibitorProcess:
     STARTUP_GRACE_SECONDS = 0.25
     STOP_TIMEOUT_SECONDS = 2.0
     PYTHON = "/usr/bin/python"
-    EXCLUDED_ENVIRONMENT = frozenset(
-        {"LD_LIBRARY_PATH", "LD_PRELOAD", "PYTHONHOME", "PYTHONPATH"}
-    )
+    #: The guard reads no environment of its own and execs systemd-inhibit by
+    #: absolute path; systemd-inhibit reaches the system bus over its fixed
+    #: socket. Nothing inherited is required, so this matches the allowlist the
+    #: three other runners in this file use rather than chasing each new
+    #: influential variable as it appears.
+    CLEAN_ENVIRONMENT = {
+        "LANG": "C",
+        "LC_ALL": "C",
+        "PATH": "/usr/bin:/bin",
+    }
 
     def __init__(self) -> None:
         self._process: subprocess.Popen[str] | None = None
@@ -135,11 +156,7 @@ class SleepInhibitorProcess:
 
     @classmethod
     def environment(cls) -> dict[str, str]:
-        return {
-            key: value
-            for key, value in os.environ.items()
-            if key not in cls.EXCLUDED_ENVIRONMENT
-        }
+        return dict(cls.CLEAN_ENVIRONMENT)
 
     def start(self) -> ManagedProcessStatus:
         status = self.status()
@@ -165,7 +182,7 @@ class SleepInhibitorProcess:
             self._process = None
             return ManagedProcessStatus(
                 False,
-                detail or f"systemd-inhibit exited with status {process.returncode}",
+                detail or f"sleep inhibitor guard exited with status {process.returncode}",
             )
         except (OSError, subprocess.SubprocessError) as error:
             self._process = None
@@ -197,7 +214,7 @@ class SleepInhibitorProcess:
         self._process = None
         return ManagedProcessStatus(
             False,
-            detail or f"systemd-inhibit exited with status {returncode}",
+            detail or f"sleep inhibitor guard exited with status {returncode}",
         )
 
 
@@ -213,6 +230,15 @@ class ReadOnlyCommandRunner:
         "--no-legend",
         "--no-pager",
     )
+    SYSTEMCTL = "/usr/bin/systemctl"
+    #: Matched as an exact absolute path. A basename comparison accepted any
+    #: systemctl reachable through an inherited PATH, e.g. /tmp/evil/systemctl.
+    APPROVED_BINARIES = frozenset({SYSTEMCTL})
+    CLEAN_ENVIRONMENT = {
+        "LANG": "C",
+        "LC_ALL": "C",
+        "PATH": "/usr/bin:/bin",
+    }
     SAFE_USERNAME = re.compile(r"[A-Za-z_][A-Za-z0-9_-]*[$]?")
     FORBIDDEN_ARGUMENTS = frozenset(
         {
@@ -254,7 +280,7 @@ class ReadOnlyCommandRunner:
                 + ", ".join(sorted(forbidden))
             )
         if (
-            Path(normalized[0]).name.lower() == "systemctl"
+            normalized[0] in cls.APPROVED_BINARIES
             and normalized[1:] == cls.SYSTEMCTL_SCOPE_QUERY
         ):
             return normalized
@@ -297,6 +323,7 @@ class ReadOnlyCommandRunner:
                 check=False,
                 shell=False,
                 text=True,
+                env=dict(self.CLEAN_ENVIRONMENT),
                 timeout=self._timeout_seconds,
             )
         except (OSError, subprocess.SubprocessError) as error:
@@ -318,6 +345,14 @@ class UserServiceCommandRunner:
     MAX_OUTPUT_BYTES = 4096
     SAFE_USERNAME = ReadOnlyCommandRunner.SAFE_USERNAME
     SUFFIXES = {
+        UserServiceOperation.OBSERVE_FILTER_GAMESCOPE: (
+            'show', 'gamescope-session.service', '--property=MainPID',
+            '--property=InvocationID', '--property=ActiveState', '--property=ControlGroup', '--no-pager',
+        ),
+        UserServiceOperation.OBSERVE_FILTER_STEAM: (
+            'show', 'steam-launcher.service', '--property=MainPID',
+            '--property=InvocationID', '--property=ActiveState', '--property=ControlGroup', '--no-pager',
+        ),
         UserServiceOperation.INSPECT_STEAM_UNIT: (
             'show', 'steam-launcher.service', '--property=LoadState',
             '--property=FragmentPath', '--property=DropInPaths',
@@ -335,6 +370,16 @@ class UserServiceCommandRunner:
             "--no-block",
             "restart",
             "gamescope-session.target",
+        ),
+        UserServiceOperation.RESTART_WIREPLUMBER: (
+            "--no-block",
+            "restart",
+            "wireplumber.service",
+        ),
+        UserServiceOperation.RESTART_PIPEWIRE: (
+            "--no-block",
+            "restart",
+            "pipewire.service",
         ),
     }
     CLEAN_ENVIRONMENT = {
@@ -386,9 +431,16 @@ class UserServiceCommandRunner:
         *,
         uid: int,
         username: str,
+        timeout_seconds: float | None = None,
     ) -> UserServiceCommandResult:
         if self._effective_uid() != 0:
             return UserServiceCommandResult(operation, False, error_code="root_required")
+        timeout = self._timeout_seconds
+        if timeout_seconds is not None:
+            if (type(timeout_seconds) not in (int, float) or not math.isfinite(timeout_seconds)
+                    or timeout_seconds <= 0):
+                return UserServiceCommandResult(operation, False, error_code="deadline_expired")
+            timeout = min(timeout, timeout_seconds)
         argv = self.argv(operation, uid=uid, username=username)
         try:
             completed = subprocess.run(
@@ -397,7 +449,7 @@ class UserServiceCommandRunner:
                 check=False,
                 shell=False,
                 text=False,
-                timeout=self._timeout_seconds,
+                timeout=timeout,
                 env=dict(self.CLEAN_ENVIRONMENT),
             )
         except subprocess.TimeoutExpired:
@@ -479,3 +531,127 @@ class SystemPowerCommandRunner:
         return PowerOffResult(
             True, "safe_disconnect.poweroff_request_accepted_unverified"
         )
+
+
+class SteamOsTdpCommandRunner:
+    """Fixed SteamOSManager session-bus operations; callers own device-range gates.
+
+    A successful set only means the property command succeeded. Callers must
+    independently read back the setting before claiming it was applied.
+    """
+
+    BUSCTL = "/usr/bin/busctl"
+    RUNUSER = "/usr/bin/runuser"
+    ENV = "/usr/bin/env"
+    SERVICE = "com.steampowered.SteamOSManager1"
+    OBJECT_PATH = "/com/steampowered/SteamOSManager1"
+    INTERFACE = "com.steampowered.SteamOSManager1.TdpLimit1"
+    MAX_OUTPUT_BYTES = 4096
+    TIMEOUT_SECONDS = 8.0
+    UINT32_MAX = (1 << 32) - 1
+    SAFE_USERNAME = re.compile(r"[A-Za-z_][A-Za-z0-9_-]{0,31}[$]?")
+    UNIQUE_OWNER = re.compile(r":[0-9]{1,10}\.[0-9]{1,10}")
+
+    def __init__(self, effective_uid=None) -> None:
+        self._effective_uid = effective_uid or getattr(os, "geteuid", lambda: -1)
+
+    def read(self, user) -> CommandResult:
+        return self._run(
+            user,
+            (
+                "get-property", self.SERVICE, self.OBJECT_PATH, self.INTERFACE,
+                "TdpLimit", "TdpLimitMin", "TdpLimitMax",
+            ),
+            capture=True,
+        )
+
+    def owner(self, user) -> CommandResult:
+        return self._run(
+            user,
+            (
+                "call", "org.freedesktop.DBus", "/org/freedesktop/DBus",
+                "org.freedesktop.DBus", "GetNameOwner", "s", self.SERVICE,
+            ),
+            capture=True,
+        )
+
+    def set_limit(self, user, watts: int, *, owner: str = "", dispatch_guard: TdpDispatchGuard | None = None) -> CommandResult:
+        # An omitted owner fails categorically instead of falling back to SERVICE.
+        if type(owner) is not str or not self.UNIQUE_OWNER.fullmatch(owner):
+            return CommandResult((), None, "", "", "tdp.owner_invalid")
+        if type(watts) is not int or not 0 < watts <= self.UINT32_MAX:
+            return CommandResult((), None, "", "", "tdp.limit_invalid")
+        return self._run(
+            user,
+            (
+                "set-property", owner, self.OBJECT_PATH, self.INTERFACE,
+                "TdpLimit", "u", str(watts),
+            ),
+            capture=False,
+            dispatch_guard=dispatch_guard,
+        )
+
+    def _run(self, user, suffix: tuple[str, ...], *, capture: bool, dispatch_guard: TdpDispatchGuard | None = None) -> CommandResult:
+        from ...ports.presentation_activation import GamescopeUserContext
+
+        if (
+            not isinstance(user, GamescopeUserContext)
+            or type(user.uid) is not int
+            or not 0 < user.uid < self.UINT32_MAX
+            or type(user.username) is not str
+            or not self.SAFE_USERNAME.fullmatch(user.username)
+            or user.runtime_directory != Path(f"/run/user/{user.uid}")
+            or user.bus_path != Path(f"/run/user/{user.uid}/bus")
+        ):
+            return CommandResult((), None, "", "", "tdp.user_invalid")
+        effective_uid = self._effective_uid()
+        if type(effective_uid) is not int or effective_uid not in (0, user.uid):
+            return CommandResult((), None, "", "", "tdp.uid_mismatch")
+        prefix = (
+            (self.RUNUSER, "-u", user.username, "--") if effective_uid == 0 else ()
+        )
+        argv = (
+            *prefix,
+            self.ENV,
+            f"XDG_RUNTIME_DIR=/run/user/{user.uid}",
+            f"DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/{user.uid}/bus",
+            self.BUSCTL,
+            "--user",
+            "--auto-start=no",
+            "--allow-interactive-authorization=no",
+            "--timeout=2s",
+            *suffix,
+        )
+        if dispatch_guard is not None:
+            try:
+                allowed = dispatch_guard() is True
+            except Exception:
+                allowed = False
+            if not allowed:
+                raise TdpDispatchRejected("tdp.dispatch_rejected")
+        try:
+            completed = subprocess.run(
+                argv,
+                stdin=subprocess.DEVNULL,
+                capture_output=True,
+                check=False,
+                shell=False,
+                text=False,
+                timeout=self.TIMEOUT_SECONDS,
+                env={"LANG": "C", "LC_ALL": "C", "PATH": "/usr/bin:/bin"},
+            )
+        except subprocess.TimeoutExpired:
+            return CommandResult(argv, None, "", "", "tdp.command_timeout")
+        except (OSError, subprocess.SubprocessError):
+            return CommandResult(argv, None, "", "", "tdp.command_unavailable")
+        output = bytes(completed.stdout or b"")
+        error = bytes(completed.stderr or b"")
+        if len(output) + len(error) > self.MAX_OUTPUT_BYTES:
+            return CommandResult(argv, completed.returncode, "", "", "tdp.output_too_large")
+        if completed.returncode != 0:
+            return CommandResult(argv, completed.returncode, "", "", "tdp.command_failed")
+        try:
+            decoded = output.decode("ascii") if capture else ""
+        except UnicodeDecodeError:
+            return CommandResult(argv, completed.returncode, "", "", "tdp.output_invalid")
+        return CommandResult(argv, completed.returncode, decoded, "")

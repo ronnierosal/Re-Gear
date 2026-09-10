@@ -2,7 +2,7 @@
 
 These invariants are release gates, not preferences.
 
-1. A running game stays on its current GPU. HDM does not attempt live GPU
+1. A running game stays on its current GPU. Re-Gear does not attempt live GPU
    workload migration.
 2. A transition that requires restarting Gamescope is blocked while a game is
    running.
@@ -11,7 +11,14 @@ These invariants are release gates, not preferences.
    changed, incomplete, or missing identity fails closed.
 5. DRM card numbers, connector suffixes, and PCI bus addresses are observations,
    never persistent identity.
-6. A connected connector is not proof that it is the active display.
+6. A connected connector is not proof that it is the active display. Nor is the
+   compositor no longer preferring a connector proof that it is inactive: a
+   connector can stop being preferred while a mode is still committed and it is
+   still scanning out, still holding its GPU's resources. An inactive display
+   may be reported as verified only when the connector's own mode state says it
+   is not driving one. Recorded 2026-09-08 with issue #141; this tightens the
+   grade of `external_display_active`, which removal safety requires verified
+   false, and it may make that gate decline where it previously passed.
 7. A requested transition is not complete until live render GPU, output target,
    Gamescope state, and user-visible readiness are verified.
 8. An already-satisfied request is a no-op and must not restart Gamescope.
@@ -33,7 +40,7 @@ These invariants are release gates, not preferences.
 16. Graceful process closure and force closure are separate approvals. PID start
     time, eGPU identity, and opened nodes are revalidated immediately before a
     signal is sent.
-17. HDM never force-closes Gamescope, Steam, Decky, display/session managers,
+17. Re-Gear never force-closes Gamescope, Steam, Decky, display/session managers,
     mounted-storage clients, or unknown/system processes to make disconnect look
     safe.
 18. A sleep inhibitor is released when its verified hardware condition ends or

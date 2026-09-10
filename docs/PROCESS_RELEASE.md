@@ -1,6 +1,6 @@
 # Guarded eGPU process-release contract
 
-HDM may eventually help close ordinary same-session user processes that retain
+Re-Gear may eventually help close ordinary same-session user processes that retain
 exact G1 resources. This is a software-blocker workflow, not proof that physical
 eGPU removal is safe.
 
@@ -26,14 +26,14 @@ An approval is:
 - bound to the complete client/resource fingerprint
 - bound to exact PID-plus-start-time-derived process instances internally
 
-Consuming a token is not authority to signal immediately. HDM must collect a
+Consuming a token is not authority to signal immediately. Re-Gear must collect a
 new complete observation and prove the exact facts are unchanged. Before every
 subsequent signal it must prove the remaining clients are only a subset of the
 approved facts. After every signal it must re-scan immediately. PID reuse, a new
 client, changed resources, storage use, incomplete scans, stale generation, or
 changed eGPU identity stops the operation.
 
-HDM keeps semantic generation and scan freshness separate. Approval and target
+Re-Gear keeps semantic generation and scan freshness separate. Approval and target
 facts remain bound to the semantic client fingerprint, while the process runner
 requires a different per-scan sample ID before the first signal and after every
 signal. An unchanged semantic snapshot can therefore be freshly observed

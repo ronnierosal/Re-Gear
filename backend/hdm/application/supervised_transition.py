@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextlib import nullcontext
 import re
 import secrets
 import threading
@@ -12,10 +13,14 @@ from ..domain.control_plane import (
     ExperimentalTransitionPermit,
     PlacementState,
     TransitionOutcome,
+    TransitionOutcomeKind,
+    TransitionFailure,
+    WorkflowState,
 )
 from ..domain.inference import infer_placement
 from ..domain.manual_transition import evidence_from_snapshot, plan_manual_transition
 from ..domain.transition_journal import JournalEventKind
+from ..ports.audio_recovery import AudioRecoveryBlocked, AudioRecoveryPort
 from ..ports.transition import TransitionObservationPort
 from ..ports.transition_journal import TransitionJournalPort
 from ..profiles.registry import resolve_runtime_profiles
@@ -86,7 +91,9 @@ class SupervisedPresentationTransitionService:
         approvals: ExperimentalTransitionApprovalStore | None = None,
         identifier_factory: Callable[[], str] | None = None,
         portable_trial_runner: Callable | None = None,
+        audio_recovery: AudioRecoveryPort | None = None,
     ) -> None:
+        self._audio_recovery = audio_recovery
         self._observations = observations
         self._orchestrator = orchestrator
         self._journal_store = journal_store
@@ -189,7 +196,10 @@ class SupervisedPresentationTransitionService:
         if not self._lock.acquire(blocking=False):
             return SupervisedTransitionExecution(False, "transition.concurrent_request")
         try:
-            return self._execute_locked(approval_token)
+            with self._audio_guard():
+                return self._execute_locked(approval_token)
+        except AudioRecoveryBlocked as exc:
+            return SupervisedTransitionExecution(False, str(exc))
         finally:
             self._lock.release()
 
@@ -211,60 +221,63 @@ class SupervisedPresentationTransitionService:
         if not self._lock.acquire(blocking=False):
             return SupervisedTransitionExecution(False, "transition.concurrent_request")
         try:
-            observed = self._observe()
-            if observed is None:
-                return SupervisedTransitionExecution(
-                    False, "transition.observation_unavailable"
+            with self._audio_guard():
+                observed = self._observe()
+                if observed is None:
+                    return SupervisedTransitionExecution(
+                        False, "transition.observation_unavailable"
+                    )
+                if not expected_generation or observed.generation != expected_generation:
+                    return SupervisedTransitionExecution(False, "transition.evidence_changed")
+                if not self._ready():
+                    return SupervisedTransitionExecution(
+                        False, "transition.integration_not_ready"
+                    )
+                journal_blocker = self._journal_blocker()
+                if journal_blocker:
+                    return SupervisedTransitionExecution(False, journal_blocker)
+                resolved = resolve_runtime_profiles(observed.snapshot)
+                evidence = evidence_from_snapshot(
+                    observed.snapshot,
+                    observed_generation=observed.generation,
+                    capabilities=resolved.capabilities,
                 )
-            if not expected_generation or observed.generation != expected_generation:
-                return SupervisedTransitionExecution(False, "transition.evidence_changed")
-            if not self._ready():
-                return SupervisedTransitionExecution(
-                    False, "transition.integration_not_ready"
+                plan_id = self._identifier()
+                permit = self._preview_permit(
+                    plan_id=plan_id,
+                    target=target,
+                    generation=observed.generation,
+                    evidence=evidence,
+                    capabilities=resolved.capabilities,
                 )
-            journal_blocker = self._journal_blocker()
-            if journal_blocker:
-                return SupervisedTransitionExecution(False, journal_blocker)
-            resolved = resolve_runtime_profiles(observed.snapshot)
-            evidence = evidence_from_snapshot(
-                observed.snapshot,
-                observed_generation=observed.generation,
-                capabilities=resolved.capabilities,
-            )
-            plan_id = self._identifier()
-            permit = self._preview_permit(
-                plan_id=plan_id,
-                target=target,
-                generation=observed.generation,
-                evidence=evidence,
-                capabilities=resolved.capabilities,
-            )
-            decision = plan_manual_transition(
-                plan_id=plan_id,
-                request_id=self._identifier(),
-                current=infer_placement(observed.snapshot),
-                target=target,
-                capabilities=resolved.capabilities,
-                evidence=evidence,
-                experimental_permit=permit,
-            )
-            if decision.plan is None:
-                return SupervisedTransitionExecution(
-                    False, "transition.preconditions_changed"
+                decision = plan_manual_transition(
+                    plan_id=plan_id,
+                    request_id=self._identifier(),
+                    current=infer_placement(observed.snapshot),
+                    target=target,
+                    capabilities=resolved.capabilities,
+                    evidence=evidence,
+                    experimental_permit=permit,
                 )
-            result = self._orchestrator.run(decision.plan)
-            code = (
-                result.outcome.failure.code
-                if result.outcome.failure is not None
-                else f"transition.{result.outcome.kind.value}"
-            )
-            return SupervisedTransitionExecution(
-                True,
-                code,
-                decision.plan.plan_id,
-                result.outcome,
-                result.durable,
-            )
+                if decision.plan is None:
+                    return SupervisedTransitionExecution(
+                        False, "transition.preconditions_changed"
+                    )
+                result = self._orchestrator.run(decision.plan)
+                code = (
+                    result.outcome.failure.code
+                    if result.outcome.failure is not None
+                    else f"transition.{result.outcome.kind.value}"
+                )
+                return SupervisedTransitionExecution(
+                    True,
+                    code,
+                    decision.plan.plan_id,
+                    result.outcome,
+                    result.durable,
+                )
+        except AudioRecoveryBlocked as exc:
+            return SupervisedTransitionExecution(False, str(exc))
         finally:
             self._lock.release()
 
@@ -329,22 +342,23 @@ class SupervisedPresentationTransitionService:
         if not self._lock.acquire(blocking=False):
             return False
         try:
-            current = self._journal_store.load_current()
-            if (
-                current is None
-                or not current.terminal
-                or current.operation_id != operation_id
-                or not self._is_presentation_journal(current)
-            ):
-                return False
-            if current.entries[-1].kind is JournalEventKind.COMMITTED:
-                if committed_target(current) is PlacementState.UNKNOWN:
+            with self._audio_guard():
+                current = self._journal_store.load_current()
+                if (
+                    current is None
+                    or not current.terminal
+                    or current.operation_id != operation_id
+                    or not self._is_presentation_journal(current)
+                ):
                     return False
-                self._journal_store.retire_committed(operation_id)
-            else:
-                self._journal_store.clear_terminal(operation_id)
-            return True
-        except (OSError, ValueError):
+                if current.entries[-1].kind is JournalEventKind.COMMITTED:
+                    if committed_target(current) is PlacementState.UNKNOWN:
+                        return False
+                    self._journal_store.retire_committed(operation_id)
+                else:
+                    self._journal_store.clear_terminal(operation_id)
+                return True
+        except (OSError, ValueError, AudioRecoveryBlocked):
             return False
         finally:
             self._lock.release()
@@ -354,7 +368,10 @@ class SupervisedPresentationTransitionService:
         if not self._lock.acquire(blocking=False):
             return PresentationCompletion("completion.transition_busy")
         try:
-            return reconcile_presentation_completion(self._journal_store, current)
+            with self._audio_guard():
+                return reconcile_presentation_completion(self._journal_store, current)
+        except AudioRecoveryBlocked as exc:
+            return PresentationCompletion(str(exc))
         finally:
             self._lock.release()
 
@@ -365,6 +382,10 @@ class SupervisedPresentationTransitionService:
         A delivery owner may offer its separately gated recovery entry point,
         but must not issue another transition from this inspection method.
         """
+        if self._audio_recovery is not None:
+            code = self._audio_recovery.recovery_status()
+            if code:
+                return SupervisedTransitionStatus(code, action_required=True, durable=False)
         try:
             current = self._journal_store.load_current()
         except Exception:
@@ -401,7 +422,30 @@ class SupervisedPresentationTransitionService:
         )
 
     def recover_interrupted(self) -> RuntimeTransitionResult:
-        return self._orchestrator.recover_interrupted()
+        # Recovery must also exclude approval execution and journal retirement.
+        # The orchestrator owns a different inner lock; never reuse it here.
+        if not self._lock.acquire(blocking=False):
+            return RuntimeTransitionResult(None, TransitionOutcome(
+                TransitionOutcomeKind.BLOCKED, PlacementState.UNKNOWN,
+                WorkflowState.ACTION_REQUIRED,
+                failure=TransitionFailure("transition.concurrent_request",
+                    "transition.concurrent_request", True, True)), False)
+        try:
+            with self._audio_guard(recover=True):
+                return self._orchestrator.recover_interrupted()
+        except AudioRecoveryBlocked as exc:
+            return RuntimeTransitionResult(None, TransitionOutcome(
+                TransitionOutcomeKind.BLOCKED, PlacementState.UNKNOWN,
+                WorkflowState.ACTION_REQUIRED,
+                failure=TransitionFailure(str(exc), str(exc), True, True)), False)
+        finally:
+            self._lock.release()
+
+    def _audio_guard(self, *, recover=False):
+        # Omission is only for the existing non-audio-trial runtime. A runtime
+        # enabling audio off must supply this port to every transition owner.
+        return (nullcontext() if self._audio_recovery is None else
+                self._audio_recovery.transition_guard(recover=recover))
 
     @staticmethod
     def _preview_permit(

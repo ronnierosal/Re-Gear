@@ -1,5 +1,69 @@
 # Current state
 
+## Release-line reconciliation â€” 2026-09-07
+
+`main` and the 0.3.5x release line had diverged rather than ordered: 117
+commits existed only on `main` and 23 only on `codex/release-0.3.55`, from a
+common ancestor at `cc1bab47`. No branch contained both the filter/removal
+work and the release candidates, so no installable build could be produced
+without regressing an installed device.
+
+This integration merges the release line into `main`, keeping `main` as the
+single lineage. The ancestry of installed revision
+`e765fad4b9283964f43fbcc4185fb6b332cd7333` is preserved.
+
+Both sets of dated entries below are retained. They are a chronological
+evidence record, and neither lineage's history is superseded by the other:
+the release entries record supervised device work, the main entries record
+integration and workstream checkpoints. Nothing here asserts a current
+installed state, and no version has been selected or reserved.
+
+The later 0.3.56 candidate is **not** included; its additional work is
+inventoried separately in issue #116.
+
+## PR #3 integration checkpoint â€” 2026-09-07
+
+Historical 0.3.51 source `cc1bab4` is reconciled with main `a9125a9` in an
+isolated integration worktree. This is repository integration preparation,
+not an installation or promotion of 0.3.51 over newer candidates. Entries below
+are dated evidence, not current installed-state assertions.
+See [the review record](PR3_INTEGRATION_REVIEW.md) for scope and checks.
+Final CI and merge status are recorded in PR #3 and issue #34.
+
+## Independent Auto TDP checkpoint â€” 2026-09-05
+
+The isolated TDP branch now persists explicit per-mode FPS/watt preferences through
+strict private storage, two RPCs and an expandable editor. Saving never activates
+power control; unsupported modes remain unavailable. The Auto policy holds after
+two ineffective verified increases, requires sustained changed FPS before reassessing,
+and preserves response evidence across only verified frame rewarming. Pause/recovery
+replays and UI explanations cover unavailable game/render/ownership/power evidence.
+1,150 backend tests pass (15 platform skips), 99 frontend tests pass, and architecture,
+compileall, typecheck, build and package checks pass. Rendered preference-editor
+validation could not run because no browser provider is available. No device action
+or release. See [independent work plan](AUTO_TDP_INDEPENDENT_PLAN.md) for all five
+requested items, integration preparation and remaining device/UI gates.
+
+## TDP workstream development checkpoint â€” 2026-09-04
+
+The isolated `codex/tdp-control` workstream starts from `75f441f`. It contains
+the thermal non-finite validation fix, read-only ASUS power-limit inventory,
+and an original pure Auto TDP proposal policy. A SteamOS Manager ASUS provider,
+fixed D-Bus read/write runner, serialized apply/verify/restore service and atomic
+recovery journal are implemented and simulated. Manual controls are now wired
+into Decky through four explicit RPCs and an on-demand, initially disabled panel.
+Runtime preflight requires detached Portable mode, known game state, no active
+transition, and a complete scan without known competing controllers. A process
+lease coordinates Re-Gear writers; it does not lock out Steam or unknown tools.
+923 backend tests ran successfully (13 platform-specific skips), and 84 frontend
+tests passed. Architecture, compilation, typecheck, build and package checks pass.
+Browser fixture apply/restore and keyboard interaction passed with substitute HTML
+controls; native Decky/controller behavior remains unverified. Nothing is installed.
+Linux filesystem and real-device behavior, measured telemetry and the live Auto
+TDP loop remain pending.
+Current-source research and remaining device/API checks are recorded in
+[TDP control](TDP_CONTROL.md). The online Ally address is awaited for remote
+inspection. This workstream does not own G1 lifecycle or Offline Play changes.
 ## Re-Gear 0.3.54 separate Steam launch candidate (local)
 
 Adds a supervised Steam-only launch shim with invocation-bound single-use
@@ -81,7 +145,7 @@ detached boot. Preserve 0.3.51 as rollback. No hardware mutation performed.
 
 ## Re-Gear 0.3.43 compact popup candidate
 
-Staged `/home/deck/Re-Gear-0.3.43.zip` to user-supplied host 192.168.1.149;
+Staged `/home/deck/Re-Gear-0.3.43.zip` to the maintainer-supplied host;
 SSH identity verified against the existing Ally host key. Revision
 `d687972b88d46cde696e4eed1e408039394140c8`; local/final SHA-256 matched:
 `f592e509d850685bff27004f204b031493d3a51f87838fe4b78b3536fb6de77a`.
@@ -279,7 +343,7 @@ bounds and hardware gates. Not installed or hardware validated.
 Local validation: 954 backend tests (six skipped), 124 frontend tests,
 TypeScript, architecture, compile, production build and package checks passed.
 
-## Re-Gear 0.3.25 audio activation candidate — 2026-09-04
+## Re-Gear 0.3.25 audio activation candidate â€” 2026-09-04
 
 The [audio sequencing candidate](G1_AUDIO_ACTIVATION.md) separates pre-display
 rollback readiness from post-display HDMI audio proof. It preserves rollback
@@ -290,7 +354,7 @@ Validation: 954 backend tests (six skipped), 110 frontend tests, architecture,
 compilation, TypeScript, production build and package checks passed. Candidate
 only: no installation or hardware validation by this workstream.
 
-## Re-Gear 0.3.24 Home and Library tab refresh candidate — 2026-09-04
+## Re-Gear 0.3.24 Home and Library tab refresh candidate â€” 2026-09-04
 
 The player reports missing Home artwork badges and unreliable badges after
 Library tab changes on installed 0.3.23 (`57ebfb9b8cca`). Read-only inspection
@@ -314,7 +378,7 @@ mutations. Native Home/tab-switch visual acceptance and actual overhead remain
 unverified. This is a candidate fix, not a confirmed resolution of the report.
 No plugin installation, restart, or hardware transition was performed.
 
-## Re-Gear 0.3.23 Offline Readiness review — 2026-09-04
+## Re-Gear 0.3.23 Offline Readiness review â€” 2026-09-04
 
 Local UI candidate based on integrated `37daf74`; G1 runtime is unchanged.
 Artwork `src` changes now invalidate recycled Library tiles, and automatic
@@ -345,7 +409,7 @@ Home startup attachment, bottom-left layout, scrolling cost, and absence during
 gameplay still need device evidence. Metadata remains insufficient for Ready
 Offline or Requires Internet conclusions.
 
-## Re-Gear 0.3.22 late-enumeration candidate — 2026-09-04
+## Re-Gear 0.3.22 late-enumeration candidate â€” 2026-09-04
 
 The supervised 0.3.21 attach began with `observation.wake.kernel_event`, then
 reported timeout at 120.593 seconds from a `poll_timer` scan. Kernel Link Up
@@ -368,7 +432,7 @@ TypeScript, architecture, compilation, build, and package validation.
 Not installed or hardware validated; keep the connected Ally untouched until
 normal shutdown, confirmed power-off, disconnect, and detached boot.
 
-## Re-Gear 0.3.21 G1 readiness candidate — 2026-09-04
+## Re-Gear 0.3.21 G1 readiness candidate â€” 2026-09-04
 
 Unreleased local changes invalidate readiness and reset settling counters when
 transport observation becomes unknown. The 120-second initial deadline stops

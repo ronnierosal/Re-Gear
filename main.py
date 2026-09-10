@@ -21,6 +21,20 @@ if str(BACKEND_ROOT) not in sys.path:
 
 from hdm.adapters.steamos.discovery import SteamOsDiscovery  # noqa: E402
 from hdm.adapters.steamos.topology_wakeup import LinuxTopologyWakeup  # noqa: E402
+from hdm.adapters.steamos.tdp_provider import SteamOsManagerTdpProvider  # noqa: E402
+from hdm.adapters.steamos.tdp_conflicts import KnownTdpControllerScan  # noqa: E402
+from hdm.delivery.tdp_journal import FileTdpJournal  # noqa: E402
+from hdm.delivery.tdp_runtime import TdpRuntime, unavailable_status  # noqa: E402
+from hdm.delivery.tdp_writer_lease import FileTdpWriterLease  # noqa: E402
+from hdm.delivery.auto_tdp_configuration import FileAutoTdpConfiguration  # noqa: E402
+from hdm.delivery.auto_tdp_factory import AutoTdpSessionFactory  # noqa: E402
+from hdm.delivery.auto_tdp_evidence import AutoTdpEligibility  # noqa: E402
+from hdm.delivery.auto_tdp_status import auto_tdp_status  # noqa: E402
+from hdm.delivery.auto_tdp_benchmark import benchmark_auto_tdp  # noqa: E402
+from hdm.adapters.steamos.auto_tdp_host import AutoTdpHostDiscovery  # noqa: E402
+from hdm.adapters.steamos.gamescope_performance_target import GamescopePerformanceTargetResolver, PerformanceTargetResolution  # noqa: E402
+from hdm.domain.auto_tdp import AutoTdpPolicy  # noqa: E402
+from hdm.domain.telemetry import TelemetryAdmissionKind, admit_telemetry_collection  # noqa: E402
 from hdm.adapters.steamos.drm import DrmDiscovery  # noqa: E402
 from hdm.adapters.steamos.pci import PciUsb4Discovery  # noqa: E402
 from hdm.adapters.steamos.wake_diagnostics import WakeDiagnosticsDiscovery  # noqa: E402
@@ -36,6 +50,31 @@ from hdm.adapters.steamos.gamescope_session import (  # noqa: E402
     GamescopeSessionObservationAdapter,
 )
 from hdm.adapters.steamos.gamescope_user import resolve_gamescope_user  # noqa: E402
+from hdm.adapters.steamos.owner_identity import read_boot_hash  # noqa: E402
+from hdm.delivery.game_close_preferences import (  # noqa: E402
+    GameClosePreferenceStore,
+)
+from hdm.delivery.relaunch_intent_store import RelaunchIntentStore  # noqa: E402
+from hdm.domain.relaunch_intent import (  # noqa: E402
+    RelaunchClock,
+    RelaunchIntent,
+    decide_relaunch,
+)
+from hdm.delivery.live_disconnect_runtime import (  # noqa: E402
+    CATALOG_ROOT,
+    close_prompt_to_payload,
+    DisconnectAvailability,
+    LiveDisconnectRuntime,
+    build_live_disconnect_runtime,
+    disconnect_result_to_payload,
+    disconnect_status_to_payload,
+)
+from hdm.domain.game_close_consent import (  # noqa: E402
+    GameClosePreference,
+    InterruptIntent,
+    decide_game_close,
+)
+from hdm.domain.game_compatibility import STEAM_APP_ID_RE  # noqa: E402
 from hdm.adapters.steamos.sleep_inhibitor import (  # noqa: E402
     G1SleepGuardHardwareDiscovery,
     SleepGuardController,
@@ -97,7 +136,9 @@ from hdm.application.connection_readiness import (  # noqa: E402
 from hdm.application.automatic_dock import (  # noqa: E402
     AutomaticDockCoordinator,
     AutomaticDockStage,
+    verified_egpu_absent,
 )
+from hdm.application.saved_tv_search import SavedTvSearch  # noqa: E402
 from hdm.application.native_portable_recovery import (  # noqa: E402
     NativePortableRecoverySupervisor,
     NativeRecoveryStage,
@@ -175,6 +216,7 @@ from hdm.delivery.runtime_state import RootOwnedRuntimeState  # noqa: E402
 from hdm.delivery.automatic_dock_preferences import (  # noqa: E402
     AutomaticDockPreferenceStore,
 )
+from hdm.delivery.saved_tv_store import SavedTvStore  # noqa: E402
 from hdm.delivery.audio_state import PortableAudioStateStore  # noqa: E402
 from hdm.delivery.transition_journal_store import FileTransitionJournalStore  # noqa: E402
 from hdm.domain.process_release import ReleasePhase  # noqa: E402
@@ -182,14 +224,60 @@ from hdm.domain.control_plane import (  # noqa: E402
     PlacementState,
     TransitionOutcomeKind,
 )
-from hdm.domain.models import Confidence, EgpuLinkState, GameState, GpuRole  # noqa: E402
+from hdm.domain.models import Confidence, EgpuLinkState, GameState, GpuRole, EgpuPresence, OperatingMode  # noqa: E402
+from hdm.domain.inference import infer_operating_mode  # noqa: E402
+from hdm.domain.tdp_placement import tdp_placement_readiness  # noqa: E402
+from hdm.domain.auto_tdp_preferences import AutoTdpModePreference  # noqa: E402
+from hdm.delivery.auto_tdp_preferences import FileAutoTdpPreferences  # noqa: E402
 from hdm.domain.inference import infer_placement  # noqa: E402
+from hdm.domain.saved_tv import DEFAULT_MAX_ATTEMPTS  # noqa: E402
 from hdm.profiles.gpd_g1 import match_gpd_g1  # noqa: E402
 
 
 MAX_JOURNEY_ELAPSED_MS = 24 * 60 * 60 * 1000
 UNLOAD_OBSERVER_TIMEOUT_SECONDS = 1.0
 UNLOAD_GUARD_TIMEOUT_SECONDS = 3.0
+
+
+def _relaunch_now(clock: RelaunchClock) -> float:
+    """Read the clock a relaunch intent is aged against.
+
+    Never the wall clock: an NTP step during a session restart must not make a
+    stale intent look fresh. Which of the two matters, and the record says
+    which it was written for -- `BOOTTIME` keeps counting through a suspend,
+    `MONOTONIC` does not, and that difference is the whole reason a sleep can
+    be reopened hours later while a disconnect cannot.
+    """
+    if clock is RelaunchClock.BOOTTIME:
+        boottime = getattr(time, "CLOCK_BOOTTIME", None)
+        if boottime is not None:
+            try:
+                return time.clock_gettime(boottime)
+            except OSError:
+                pass
+    return time.monotonic()
+
+
+def _relaunch_clock_for(intent: InterruptIntent) -> RelaunchClock:
+    """Which clock ages a reopen asked for by this action."""
+    return (
+        RelaunchClock.MONOTONIC
+        if intent is InterruptIntent.SLEEP
+        else RelaunchClock.BOOTTIME
+    )
+
+
+def _parse_intent(value: object) -> InterruptIntent | None:
+    """The action a caller names, or None when it names nothing known.
+
+    Not defaulted. An answer filed against the wrong action is an answer the
+    player did not give, and guessing which one they meant is exactly the
+    mistake the per-intent key exists to prevent.
+    """
+    try:
+        return InterruptIntent(value)
+    except ValueError:
+        return None
 
 
 def _can_remember_portable_audio(snapshot) -> bool:
@@ -214,6 +302,41 @@ def _exact_g1_link_is_up(snapshot) -> bool:
         in {Confidence.OBSERVED, Confidence.VERIFIED}
     )
 
+
+def _display_scan_complete(snapshot) -> bool:
+    """Whether the connector inventory was actually read on this observation.
+
+    An unavailable DRM inventory is not evidence that a TV is absent, and must
+    not spend the bounded saved-TV search: a reader that keeps failing would
+    otherwise exhaust the budget and abandon a TV that was there all along.
+    """
+    return bool(snapshot.displays) and not any(
+        blocker.code == "drm_inventory_unavailable" for blocker in snapshot.blockers
+    )
+
+
+def _docked_tv_display(snapshot):
+    """The one external display a completed dock is actually presenting on.
+
+    Read from the observation rather than taken from the request, so what earns
+    a saved profile is the TV the player ended up on -- external, connected and
+    verifiably driving the session -- and not the target a transition set out
+    to reach.
+    """
+    if infer_placement(snapshot) is not PlacementState.DOCKED_EGPU:
+        return None
+    active = [display for display in snapshot.displays if display.active is True]
+    return active[0] if len(active) == 1 else None
+
+
+
+#: The eGPU's GPU function on the tested profile, matching the default the
+#: operator tools use, so the backend and the CLI act on the same device.
+#:
+#: Fixed rather than discovered because the supported set is one device on one
+#: host, and a wrong address here would compose a plan for something else. A
+#: second supported eGPU needs this resolved from the observation instead.
+EGPU_GPU_FUNCTION = "0000:08:00.0"
 
 class Plugin:
     def __init__(self) -> None:
@@ -240,6 +363,13 @@ class Plugin:
         self._native_recovery = NativePortableRecoverySupervisor()
         self._last_native_recovery_code = ""
         self._automatic_dock_preference_store: AutomaticDockPreferenceStore | None = None
+        self._saved_tv: SavedTvSearch | None = None
+        self._saved_tv_decision = None
+        self._saved_tv_attempts = 0
+        # An explicitly successful TV transition, not yet observed presenting.
+        self._saved_tv_pending_dock = False
+        self._saved_tv_armed = False
+        self._last_saved_tv_code = ""
         self._docked_igpu_scheduler: DockedIgpuLifecycleScheduler | None = None
         self._docked_igpu_task: asyncio.Task[None] | None = None
         self._docked_igpu_retry_seconds = 30.0
@@ -277,6 +407,267 @@ class Plugin:
         self._process_release: GuardedProcessReleaseService | None = None
         self._version_info = SteamOsVersionDiscovery().scan()
         self._build_info = load_public_build_info(PLUGIN_ROOT)
+        self._tdp_runtime: TdpRuntime | None = None
+        self._live_disconnect: LiveDisconnectRuntime | None = None
+        self._live_disconnect_key: tuple[str, int] | None = None
+        self._live_disconnect_lock = threading.Lock()
+        self._tdp_init_lock = threading.Lock()
+        self._tdp_closing = threading.Event()
+        self._auto_request_lock = threading.Lock()
+        self._auto_request_generation = 0
+        self._benchmark_request_generation = 0
+        self._auto_cancel_requested = threading.Event()
+        self._auto_cancel_requested.set()
+
+    async def get_tdp_status(self, _request: object = None) -> dict[str, object]:
+        return await self._tdp_call("status")
+
+    async def set_tdp_enabled(self, enabled: bool) -> dict[str, object]:
+        if enabled is False:
+            self._cancel_auto_request()
+        return await self._tdp_call("set_enabled", enabled)
+
+    async def apply_tdp_limit(self, watts: int) -> dict[str, object]:
+        self._cancel_auto_request()
+        return await self._tdp_call("apply", watts)
+
+    async def restore_tdp_limit(self) -> dict[str, object]:
+        self._cancel_auto_request()
+        return await self._tdp_call("restore")
+
+    async def get_auto_tdp_status(self, _request: object = None) -> dict[str, object]:
+        return await asyncio.to_thread(self._auto_tdp_status_sync)
+
+    async def start_auto_tdp(self, target_fps: float, minimum_watts: int, maximum_watts: int) -> dict[str, object]:
+        try:
+            policy = AutoTdpPolicy(minimum_watts, maximum_watts, target_fps)
+        except (TypeError, ValueError):
+            return auto_tdp_status("auto_tdp.request_invalid", self._tdp_runtime)
+        with self._auto_request_lock:
+            generation = self._auto_request_generation
+            self._auto_cancel_requested.clear()
+        def start():
+            before = self._auto_tdp_status_sync()
+            if not before["can_start"]:
+                return before
+            with self._auto_request_lock:
+                if generation != self._auto_request_generation:
+                    return auto_tdp_status("auto_tdp.stopped", self._tdp_runtime)
+            runtime = self._tdp_service()
+            if runtime.start_auto(policy, admission_guard=lambda: self._auto_request_generation == generation
+                                  and not self._tdp_closing.is_set()) is None:
+                return auto_tdp_status("auto_tdp.start_unavailable", runtime)
+            return self._auto_tdp_status_sync()
+        try:
+            return await asyncio.to_thread(start)
+        except Exception:
+            return auto_tdp_status("auto_tdp.runtime_unavailable", self._tdp_runtime)
+
+    def _cancel_auto_request(self):
+        with self._auto_request_lock:
+            self._auto_request_generation += 1
+            self._benchmark_request_generation += 1
+            self._auto_cancel_requested.set()
+        if self._tdp_runtime is not None:
+            self._tdp_runtime.cancel_benchmark()
+
+    async def stop_auto_tdp(self) -> dict[str, object]:
+        # Revoke admission immediately, including while another RPC reads state.
+        self._cancel_auto_request()
+        runtime = self._tdp_runtime
+        if runtime is not None:
+            runtime.stop_auto()
+        return auto_tdp_status("auto_tdp.stopped", runtime)
+
+    def _auto_configuration(self):
+        return FileAutoTdpConfiguration(RootOwnedRuntimeState().ensure()).load()
+
+    def _auto_preferences_store(self):
+        with self._tdp_init_lock:
+            if not hasattr(self, "_auto_preferences_file"):
+                self._auto_preferences_file = FileAutoTdpPreferences(RootOwnedRuntimeState().ensure())
+            return self._auto_preferences_file
+
+    @staticmethod
+    def _auto_preferences_payload(result):
+        return {"schema_version": 1, "code": result.code, "preferences": [] if result.preferences is None else [
+            {"placement": item.placement.value, "target_fps": item.target_fps,
+             "minimum_watts": item.minimum_watts, "maximum_watts": item.maximum_watts}
+            for item in result.preferences.preferences]}
+
+    async def get_auto_tdp_preferences(self):
+        try:
+            result = await asyncio.to_thread(lambda: self._auto_preferences_store().load())
+            return self._auto_preferences_payload(result)
+        except Exception:
+            return {"schema_version": 1, "code": "auto_tdp_preferences.invalid", "preferences": []}
+
+    async def save_auto_tdp_preference(self, placement, target_fps, minimum_watts, maximum_watts):
+        try:
+            preference = AutoTdpModePreference(PlacementState(placement), AutoTdpPolicy(minimum_watts, maximum_watts, target_fps))
+            result = await asyncio.to_thread(lambda: self._auto_preferences_store().save_preference(preference))
+            return self._auto_preferences_payload(result)
+        except Exception:
+            return {"schema_version": 1, "code": "auto_tdp_preferences.save_failed", "preferences": []}
+
+    def _benchmark_status(self, code=None):
+        runtime = self._tdp_runtime
+        if runtime is not None:
+            return runtime.benchmark_status(code)
+        return {"schema_version": 1, "running": False, "cancelling": False,
+                "code": code or "auto_tdp.benchmark_idle", "result": None}
+
+    async def get_auto_tdp_benchmark_status(self) -> dict[str, object]:
+        return self._benchmark_status()
+
+    async def cancel_auto_tdp_benchmark(self) -> dict[str, object]:
+        with self._auto_request_lock:
+            self._benchmark_request_generation += 1
+        if self._tdp_runtime is not None:
+            self._tdp_runtime.cancel_benchmark()
+        return self._benchmark_status()
+
+    async def run_auto_tdp_benchmark(self) -> dict[str, object]:
+        with self._auto_request_lock:
+            generation = self._benchmark_request_generation
+        def run():
+            if self._tdp_closing.is_set():
+                return self._benchmark_status("tdp.closing")
+            loaded = self._auto_configuration()
+            if loaded.configuration is None:
+                return self._benchmark_status(loaded.code)
+            config = loaded.configuration
+            if not self._auto_eligibility().ready:
+                return self._benchmark_status("auto_tdp.game_or_render_unverified")
+            runtime = self._tdp_service()
+            def measure(provider, cancel):
+                factory = self._configured_auto_factory(config, self._auto_eligibility)
+                return benchmark_auto_tdp(factory.create_evidence(provider), cancel=cancel,
+                                         interval_ms=config.collection_contract.interval_ms)
+            return runtime.run_benchmark(measure, admission_guard=lambda:
+                generation == self._benchmark_request_generation and not self._tdp_closing.is_set())
+        try:
+            return await asyncio.to_thread(run)
+        except Exception:
+            return self._benchmark_status("auto_tdp.benchmark_unavailable")
+
+    def _auto_eligibility(self):
+        if self._tdp_closing.is_set():
+            return AutoTdpEligibility(GameState.UNKNOWN, False)
+        snapshot = self._api.get_snapshot_report().snapshot
+        return AutoTdpEligibility(snapshot.game_state,
+            infer_operating_mode(snapshot).mode is OperatingMode.PORTABLE
+            and self._tdp_preflight() == "tdp.ready")
+
+    @staticmethod
+    def _auto_target():
+        gamescope = GamescopeDiscovery().scan()
+        user = resolve_gamescope_user(gamescope).context
+        if user is None:
+            return PerformanceTargetResolution("performance.game_unverified")
+        game = SystemdGameScopeDiscovery().scan(user_uid=user.uid)
+        return GamescopePerformanceTargetResolver().resolve(game, gamescope)
+
+    def _auto_session(self, actuator, provider):
+        config = self._auto_configuration().configuration
+        if config is None:
+            raise ValueError("Auto TDP configuration unavailable")
+        factory = self._configured_auto_factory(config, lambda:
+            AutoTdpEligibility(GameState.UNKNOWN, False)
+            if self._auto_cancel_requested.is_set() else self._auto_eligibility())
+        return factory(actuator, provider)
+
+    def _configured_auto_factory(self, config, eligibility):
+        return AutoTdpSessionFactory(resolve=self._auto_target, eligibility=eligibility,
+            sensor_config=config.sensor_config,
+            host_context_key=config.host_context_key,
+            thermal_evidence_reference=config.thermal_evidence_reference,
+            contract=config.collection_contract)
+
+    def _auto_tdp_status_sync(self):
+        runtime = self._tdp_runtime
+        try:
+            if self._tdp_closing.is_set():
+                return auto_tdp_status("auto_tdp.closing", runtime)
+            loaded = self._auto_configuration()
+            config = loaded.configuration
+            if config is None:
+                return auto_tdp_status(loaded.code, runtime)
+            runtime = self._tdp_service()
+            manual = runtime.status()
+            if not manual["ready"]:
+                return auto_tdp_status(manual["code"], runtime)
+            eligibility = self._auto_eligibility()
+            if not eligibility.ready:
+                return auto_tdp_status("auto_tdp.game_or_render_unverified", runtime)
+            admission = admit_telemetry_collection(config.collection_contract,
+                eligibility.game_state, auto_tdp_enabled=True)
+            if admission.kind is not TelemetryAdmissionKind.ADMIT:
+                return auto_tdp_status(admission.reason, runtime)
+            reading = runtime.auto_context()
+            observed = AutoTdpHostDiscovery().observe(reading)
+            if observed.context_key != config.host_context_key:
+                return auto_tdp_status("auto_tdp.configuration_context_changed", runtime)
+            return auto_tdp_status("auto_tdp.ready", runtime)
+        except Exception:
+            return auto_tdp_status("auto_tdp.runtime_unavailable", runtime)
+
+    async def _tdp_call(self, operation: str, *args) -> dict[str, object]:
+        if self._tdp_closing.is_set():
+            return unavailable_status("tdp.closing")
+        def call():
+            runtime = self._tdp_service()
+            return getattr(runtime, operation)(*args)
+        try:
+            return await asyncio.to_thread(call)
+        except Exception:
+            return unavailable_status()
+
+    @staticmethod
+    def _tdp_user():
+        return resolve_gamescope_user(GamescopeDiscovery().scan()).context
+
+    def _tdp_preflight(self) -> str:
+        if self._tdp_closing.is_set():
+            return "tdp.closing"
+        journal = self._transition_journal_service().status()
+        if not journal.durable or journal.owner.value != "none":
+            return "tdp.transition_active"
+        snapshot = self._api.get_snapshot_report().snapshot
+        if snapshot.game_state is GameState.UNKNOWN:
+            return "tdp.game_unknown"
+        placement = tdp_placement_readiness(snapshot, self._sleep_hardware.observe_presence())
+        if placement != "tdp.ready":
+            return placement
+        user = self._tdp_user()
+        if user is None:
+            return "tdp.user_unverified"
+        conflicts = KnownTdpControllerScan(plugins_root=user.home / "homebrew/plugins").scan()
+        if conflicts.conflicts:
+            return "tdp.conflict"
+        if not conflicts.complete:
+            return "tdp.conflict_scan_unavailable"
+        return "tdp.ready"
+
+    def _tdp_service(self) -> TdpRuntime:
+        with self._tdp_init_lock:
+            if self._tdp_closing.is_set():
+                raise RuntimeError("TDP runtime is closing")
+            if self._tdp_runtime is None:
+                state_root = RootOwnedRuntimeState().ensure()
+                self._tdp_runtime = TdpRuntime(
+                    provider_factory=lambda ready: SteamOsManagerTdpProvider(
+                        user_resolver=self._tdp_user, ownership_ready=ready,
+                    ),
+                    journal=FileTdpJournal(state_root),
+                    lease=FileTdpWriterLease(state_root),
+                    preflight=self._tdp_preflight,
+                    auto_session_factory=self._auto_session,
+                )
+            if self._tdp_closing.is_set():
+                self._tdp_runtime.close()
+                raise RuntimeError("TDP runtime is closing")
+            return self._tdp_runtime
 
     async def classify_offline_details(self, details: object = None) -> dict[str, object]:
         """Classify one minimized report without starting a hardware lifecycle."""
@@ -310,8 +701,29 @@ class Plugin:
             "checks": getattr(self, "_connection_checks", None),
             "checks_age_ms": max(0, int((time.monotonic() - getattr(self, "_connection_checks_at", 0.0)) * 1000)),
         }
+        payload["saved_tv"] = self._saved_tv_status()
         await asyncio.to_thread(self._record_verbose_snapshot, payload)
         return payload
+
+    def _saved_tv_status(self) -> dict[str, object]:
+        """Categorical state for the waiting half of a dock.
+
+        The saved display identity, and the label EDID gave it, stay on the
+        root-owned record and never cross this boundary. A state and a code are
+        all a caller needs to tell "the eGPU is ready and your saved TV has not
+        appeared" from "it was not found" from a flat failure -- and `searching`
+        says whether a search is running at all, so no state has to be invented
+        for the times one is not.
+        """
+        decision = self._saved_tv_decision
+        return {
+            "schema_version": 1,
+            "searching": decision is not None,
+            "state": decision.state.value if decision is not None else "",
+            "code": decision.code if decision is not None else "",
+            "attempts": self._saved_tv_attempts,
+            "max_attempts": DEFAULT_MAX_ATTEMPTS,
+        }
 
     async def _start_docked_igpu_lifecycle_for(self, report) -> None:
         """Start the exit watcher only for its exact running Docked-iGPU case."""
@@ -677,6 +1089,364 @@ class Plugin:
             scheduler.wake()
         return {"schema_version": 1, "acknowledged": acknowledged}
 
+
+    # -- live eGPU disconnect -------------------------------------------
+
+    def _live_disconnect_runtime(self) -> LiveDisconnectRuntime | None:
+        """Build the runtime for the eGPU and session user in front of us.
+
+        Rebuilt when either changes, because a runtime is bound to one device
+        and one session: a grant taken over a different user manager, or a
+        plan composed for a different eGPU, must not be reused.
+        """
+        user = resolve_gamescope_user(GamescopeDiscovery().scan()).context
+        if user is None:
+            return None
+        key = (EGPU_GPU_FUNCTION, user.uid)
+        with self._live_disconnect_lock:
+            if self._live_disconnect is None or self._live_disconnect_key != key:
+                self._live_disconnect = build_live_disconnect_runtime(
+                    gpu_bdf=EGPU_GPU_FUNCTION,
+                    uid=user.uid,
+                    username=user.username,
+                )
+                self._live_disconnect_key = key
+            return self._live_disconnect
+
+    async def get_egpu_disconnect_status(
+        self, _request: object = None
+    ) -> dict[str, object]:
+        """Report what a live disconnect would do now. Changes nothing.
+
+        Safe to poll. No filter is armed, no DRM master taken, and no display
+        touched by asking.
+        """
+        try:
+            runtime = await asyncio.to_thread(self._live_disconnect_runtime)
+        except Exception:
+            runtime = None
+        if runtime is None:
+            return {
+                "schema_version": 1,
+                "availability": DisconnectAvailability.UNAVAILABLE.value,
+                "code": "live_disconnect.session_unavailable",
+                "ready": False,
+                "busy": False,
+            }
+        try:
+            status = await asyncio.to_thread(runtime.status)
+        except Exception:
+            return {
+                "schema_version": 1,
+                "availability": DisconnectAvailability.UNAVAILABLE.value,
+                "code": "live_disconnect.status_unavailable",
+                "ready": False,
+                "busy": False,
+            }
+        return disconnect_status_to_payload(status)
+
+    async def execute_egpu_disconnect(
+        self,
+        release_display: bool = False,
+        relaunch_app_id: str = "",
+        relaunch_intent: str = "disconnect",
+    ) -> dict[str, object]:
+        """Remove the eGPU in software. NOT clearance to unplug anything.
+
+        `release_display` is a separate approval from the disconnect itself:
+        it turns the external output off for the duration, which is visible to
+        whoever is watching it, so a caller has to ask for it explicitly.
+
+        `relaunch_app_id` records a wish to reopen one game afterwards, and is
+        written down here rather than remembered by the caller because the
+        caller is about to be destroyed: freeing the device restarts the Steam
+        session, which is exactly what happens when a game was running. The
+        record is picked up by `take_pending_relaunch`, from whichever panel is
+        alive to ask, and it is cleared if the removal leaves the device
+        somewhere it has never been.
+
+        `relaunch_intent` says what the player was doing, which decides how the
+        wish ages: a disconnect that lived through a suspend has gone wrong and
+        expires, while a sleep is meant to be reopened when they come back. An
+        unrecognised value records nothing rather than guessing.
+        """
+        relaunch = RelaunchIntentStore(CATALOG_ROOT)
+        parsed_intent = _parse_intent(relaunch_intent)
+        if (
+            relaunch_app_id
+            and parsed_intent is not None
+            and STEAM_APP_ID_RE.fullmatch(str(relaunch_app_id))
+        ):
+            clock = _relaunch_clock_for(parsed_intent)
+            try:
+                await asyncio.to_thread(
+                    relaunch.record,
+                    RelaunchIntent(
+                        str(relaunch_app_id),
+                        read_boot_hash(),
+                        _relaunch_now(clock),
+                        clock,
+                    ),
+                )
+            except Exception:
+                # A wish that could not be written costs a manual relaunch. It
+                # is not a reason to refuse the disconnect the player asked for.
+                pass
+        try:
+            runtime = await asyncio.to_thread(self._live_disconnect_runtime)
+        except Exception:
+            runtime = None
+        if runtime is None:
+            return {
+                "schema_version": 1,
+                "stage": "invalid",
+                "code": "live_disconnect.session_unavailable",
+                "ok": False,
+            }
+        try:
+            result = await asyncio.to_thread(
+                lambda: runtime.execute(release_display=bool(release_display))
+            )
+        except Exception:
+            return {
+                "schema_version": 1,
+                "stage": "invalid",
+                "code": "live_disconnect.attempt_failed",
+                "ok": False,
+            }
+        if result.device_disturbed:
+            # A half-detached eGPU needs a person, not a game launching into it.
+            try:
+                await asyncio.to_thread(relaunch.clear)
+            except Exception:
+                pass
+        return disconnect_result_to_payload(result)
+
+    async def take_pending_relaunch(
+        self, _request: object = None
+    ) -> dict[str, object]:
+        """Claim the game a disconnect closed, if it may still be reopened.
+
+        Consuming, and consuming on refusal too: an intent that could not be
+        honoured now is not one to keep offering. Every guard lives in
+        `decide_relaunch`, so a panel calling this cannot widen them.
+        """
+        store = RelaunchIntentStore(CATALOG_ROOT)
+        try:
+            intent = await asyncio.to_thread(store.take)
+        except Exception:
+            return {"steam_app_id": "", "code": "relaunch.record_unreadable"}
+        try:
+            boot_hash = await asyncio.to_thread(read_boot_hash)
+        except Exception:
+            boot_hash = ""
+        decision = decide_relaunch(
+            intent,
+            boot_hash=boot_hash,
+            # Read the same clock the record was written against; comparing a
+            # suspend-excluding reading to a suspend-including one would give
+            # an age that means nothing.
+            now_boot_seconds=_relaunch_now(
+                RelaunchClock.BOOTTIME if intent is None else intent.clock
+            ),
+        )
+        return {
+            "steam_app_id": decision.steam_app_id if decision.should_relaunch else "",
+            "code": decision.code,
+        }
+
+    async def get_sleep_readiness(
+        self, _request: object = None
+    ) -> dict[str, object]:
+        """Report what sleeping would take right now. Changes nothing.
+
+        Sleep is blocked outright while the eGPU is attached, because the dock
+        is known to wake this handheld immediately. So on this hardware
+        "sleep with a game running on the eGPU" is not a thing that can happen:
+        the honest offer is *disconnect, then sleep*, and this says whether
+        that is what pressing sleep would mean and what it would cost.
+
+        The close prompt is re-derived for the sleep intent rather than reusing
+        the disconnect one, so a player who agreed that a game may be closed
+        for a disconnect is still asked before it is closed for a sleep.
+        """
+        try:
+            presence = await asyncio.to_thread(
+                self._sleep_hardware.observe_presence
+            )
+        except Exception:
+            presence = EgpuPresence.UNKNOWN
+        if presence is EgpuPresence.ABSENT:
+            # Nothing of ours is in the way. Steam sleeps as it always does.
+            return {
+                "schema_version": 1,
+                "code": "sleep.available",
+                "requires_disconnect": False,
+                "game": None,
+                "close_prompt": close_prompt_to_payload(
+                    decide_game_close(InterruptIntent.SLEEP, None)
+                ),
+            }
+        if presence is not EgpuPresence.PRESENT:
+            # Presence could not be established, so neither can what sleeping
+            # would take. Saying "just sleep" here would be a guess about the
+            # one thing the guard exists to prevent.
+            return {
+                "schema_version": 1,
+                "code": "sleep.readiness_unknown",
+                "requires_disconnect": True,
+                "game": None,
+                "close_prompt": close_prompt_to_payload(
+                    decide_game_close(
+                        InterruptIntent.SLEEP, None, scan_complete=False
+                    )
+                ),
+            }
+        try:
+            runtime = await asyncio.to_thread(self._live_disconnect_runtime)
+            status = (
+                None if runtime is None else await asyncio.to_thread(runtime.status)
+            )
+        except Exception:
+            status = None
+        if status is None:
+            return {
+                "schema_version": 1,
+                "code": "sleep.readiness_unknown",
+                "requires_disconnect": True,
+                "game": None,
+                "close_prompt": close_prompt_to_payload(
+                    decide_game_close(
+                        InterruptIntent.SLEEP, None, scan_complete=False
+                    )
+                ),
+            }
+        game = status.game
+        preference = None
+        if game is not None and game.identity_exact:
+            try:
+                preference = await asyncio.to_thread(
+                    GameClosePreferenceStore(CATALOG_ROOT).load,
+                    game.app_id,
+                    InterruptIntent.SLEEP,
+                )
+            except Exception:
+                preference = None
+        prompt = decide_game_close(
+            InterruptIntent.SLEEP,
+            None if game is None else game.as_running_game(),
+            preference,
+            # A status that could answer at all looked; a status that could not
+            # was handled above.
+            scan_complete=True,
+        )
+        payload = disconnect_status_to_payload(status)
+        return {
+            "schema_version": 1,
+            "code": "sleep.requires_disconnect",
+            # The eGPU is attached, so sleeping means disconnecting first.
+            "requires_disconnect": True,
+            "game": payload["game"],
+            "close_prompt": close_prompt_to_payload(prompt),
+            # Passed through so a caller renders one set of facts rather than
+            # asking twice and reconciling two readings taken moments apart.
+            "disconnect": payload,
+        }
+
+    async def remember_game_close_choice(
+        self,
+        steam_app_id: str,
+        intent: str = "disconnect",
+        skip_confirmation: bool = False,
+        relaunch_after: bool = False,
+    ) -> dict[str, object]:
+        """Store the player's answer for one game and one action.
+
+        `intent` is part of the key, not a detail: agreeing that a game may be
+        closed for sleep is not agreeing that it may be closed for a
+        disconnect. An unrecognised value is refused rather than defaulted,
+        because filing an answer against the wrong action files an answer the
+        player did not give.
+
+        Two things are checked here rather than trusted from the caller, both
+        because a frontend can be stale and neither failure is visible to the
+        player until it costs them a save:
+
+        - the game must be the one actually running and named exactly, so an
+          answer cannot be filed against a game the player was not looking at;
+        - "do not ask again" is refused for a game the catalog has reviewed
+          evidence loses progress on close, which is the same rule the consent
+          decision applies when reading a stored answer back.
+
+        Forgetting is not guarded the same way, because forgetting only ever
+        results in the player being asked more often.
+        """
+        if not isinstance(steam_app_id, str) or not STEAM_APP_ID_RE.fullmatch(
+            steam_app_id
+        ):
+            return {"ok": False, "code": "game_close.app_id_invalid"}
+        parsed_intent = _parse_intent(intent)
+        if parsed_intent is None:
+            return {"ok": False, "code": "game_close.intent_invalid"}
+        try:
+            runtime = await asyncio.to_thread(self._live_disconnect_runtime)
+        except Exception:
+            runtime = None
+        if runtime is None:
+            return {"ok": False, "code": "live_disconnect.session_unavailable"}
+        try:
+            status = await asyncio.to_thread(runtime.status)
+        except Exception:
+            return {"ok": False, "code": "live_disconnect.status_unavailable"}
+        prompt = status.close_prompt
+        if prompt is None or prompt.game is None or not prompt.game.identity_exact:
+            return {"ok": False, "code": "game_close.identity_unverified"}
+        if prompt.game.steam_app_id != steam_app_id:
+            return {"ok": False, "code": "game_close.preference_game_mismatch"}
+        if skip_confirmation and not prompt.remember_offered:
+            return {"ok": False, "code": "game_close.progress_at_risk"}
+        preference = GameClosePreference(
+            steam_app_id,
+            parsed_intent,
+            skip_confirmation=bool(skip_confirmation),
+            relaunch_after=bool(relaunch_after),
+        )
+        try:
+            await asyncio.to_thread(
+                GameClosePreferenceStore(CATALOG_ROOT).remember, preference
+            )
+        except Exception:
+            return {"ok": False, "code": "game_close.preference_write_failed"}
+        return {
+            "ok": True,
+            "code": "game_close.preference_stored",
+            "steam_app_id": steam_app_id,
+            "intent": parsed_intent.value,
+            "skip_confirmation": preference.skip_confirmation,
+            "relaunch_after": preference.relaunch_after,
+        }
+
+    async def forget_game_close_choice(
+        self, steam_app_id: str, intent: str = "disconnect"
+    ) -> dict[str, object]:
+        """Return one game to being asked about before one action."""
+        if not isinstance(steam_app_id, str) or not STEAM_APP_ID_RE.fullmatch(
+            steam_app_id
+        ):
+            return {"ok": False, "code": "game_close.app_id_invalid"}
+        parsed_intent = _parse_intent(intent)
+        if parsed_intent is None:
+            return {"ok": False, "code": "game_close.intent_invalid"}
+        try:
+            await asyncio.to_thread(
+                GameClosePreferenceStore(CATALOG_ROOT).forget,
+                steam_app_id,
+                parsed_intent,
+            )
+        except Exception:
+            return {"ok": False, "code": "game_close.preference_write_failed"}
+        return {"ok": True, "code": "game_close.preference_cleared"}
+
     async def preview_support_bundle(self, _request: object = None) -> dict[str, object]:
         """Return a redacted preview and one-time approval token."""
         report = await self.get_snapshot()
@@ -993,6 +1763,10 @@ class Plugin:
         succeeded = bool(
             outcome and outcome.kind is TransitionOutcomeKind.SUCCEEDED
         )
+        if succeeded and requested_target is PlacementState.DOCKED_EGPU:
+            # A player's own TV switch is intent too, and earns a record on the
+            # same evidence: the display the dock is observed presenting on.
+            self._saved_tv_pending_dock = True
         self._append_journey_event(
             severity="info" if succeeded else "warning",
             code=code,
@@ -1575,6 +2349,10 @@ class Plugin:
                         await asyncio.to_thread(
                             lambda: self._audio_handoff_service().remember_portable(resolution.context),
                         )
+                # Before the opt-in gate: a TV the player switched to by hand
+                # is intent too, and the record has to be re-armed when a dock
+                # ends whether or not automatic docking is enabled.
+                await self._update_saved_tv(current, connection)
                 if not enabled:
                     delay_seconds = 5.0
                     await self._wait_for_topology(delay_seconds)
@@ -1665,6 +2443,10 @@ class Plugin:
                     self._automatic_dock.record_result(
                         result.code, succeeded=succeeded
                     )
+                    if succeeded:
+                        # Recorded on a later observation, once the dock is seen
+                        # presenting on the display it actually reached.
+                        self._saved_tv_pending_dock = True
                     self._events.append(
                         severity="info" if succeeded else "warning",
                         code=result.code,
@@ -1915,8 +2697,16 @@ class Plugin:
 
     async def _unload(self) -> None:
         self._unloading = True
+        self._tdp_closing.set()
         started_ns = self._journey_now_ns()
         self._record_shutdown_checkpoint("unload_started", started_ns)
+        tdp_close_failed = False
+        if self._tdp_runtime is not None:
+            try:
+                self._tdp_runtime.close()
+            except Exception:
+                tdp_close_failed = True
+                self._record_shutdown_checkpoint("tdp_stop_failed", started_ns)
         try:
             self._events.append(
                 severity="info", code="plugin.unloading",
@@ -1927,7 +2717,7 @@ class Plugin:
         # Wake the listener and request cancellation of every producer before
         # waiting for any one of them. A cancelled read can still hold a lock
         # in a worker thread needed by that observer's finally/close path.
-        incomplete = False
+        incomplete = tdp_close_failed
         if self._topology_wakeup is not None:
             try:
                 self._topology_wakeup.close()
@@ -2029,7 +2819,7 @@ class Plugin:
 
     def _support_versions(self) -> dict[str, str]:
         return {
-            "hdm": "0.2.0",
+            "hdm": "0.3.72",
             "decky": str(getattr(decky, "DECKY_VERSION", "unknown")),
             "steamos": self._version_info.steamos,
             "kernel": self._version_info.kernel,
@@ -2189,6 +2979,99 @@ class Plugin:
             DrmDiscovery().scan(), pci.scan_pci(), pci.scan_usb4()
         )
         return matched.audio_bdf if matched.verified else ""
+
+    def _saved_tv_search(self) -> SavedTvSearch:
+        """One bounded search per plugin lifetime, over the root-owned record.
+
+        Constructed lazily against the same state root the other stores use, so
+        a host that cannot own that directory fails here rather than writing a
+        display identity somewhere the player cannot see or clear it.
+        """
+        if self._saved_tv is None:
+            self._saved_tv = SavedTvSearch(
+                SavedTvStore(RootOwnedRuntimeState().ensure())
+            )
+        return self._saved_tv
+
+    async def _update_saved_tv(self, current, connection) -> None:
+        """Carry the saved TV through one dock: re-arm it, record it, wait for it.
+
+        Reporting only. Nothing here authorizes a display change: when the saved
+        TV does appear, HDMI readiness reaches the existing automatic dock the
+        way it always has, and the one transition engine does the rest.
+        """
+        try:
+            search = self._saved_tv_search()
+        except Exception:
+            # No root-owned state root means no search is running, and claiming
+            # one is waiting would be inventing it.
+            self._saved_tv_decision = None
+            return
+        if verified_egpu_absent(current.snapshot):
+            # The dock ended. The budget bounds one search for the TV, not the
+            # lifetime of the plugin, so the next dock asks again from zero --
+            # including a fresh read of the record.
+            if self._saved_tv_armed:
+                search.rearm()
+                self._saved_tv_armed = False
+                self._saved_tv_pending_dock = False
+                self._saved_tv_decision = None
+                self._saved_tv_attempts = 0
+            return
+        self._saved_tv_armed = True
+        if self._saved_tv_pending_dock:
+            display = _docked_tv_display(current.snapshot)
+            if display is not None:
+                # An explicitly successful transition, now observed presenting
+                # on that exact display. Only both facts together earn a record.
+                try:
+                    await asyncio.to_thread(
+                        lambda: search.remember(
+                            display=display, transition_succeeded=True
+                        )
+                    )
+                except (ValueError, OSError):
+                    # An identity the record refuses, or a write that failed.
+                    # Remembering nothing is the safe outcome; retrying it on
+                    # every observation would turn one refusal into a loop.
+                    self._append_journey_event(
+                        severity="warning",
+                        code="saved_tv.record_unwritable",
+                        component="connection",
+                        stage="saved_tv",
+                        create_timeline=False,
+                    )
+                self._saved_tv_pending_dock = False
+                self._saved_tv_decision = None
+                self._saved_tv_attempts = 0
+                return
+        if connection.stage is not ConnectionReadinessStage.WAITING_FOR_HDMI:
+            # Only the stage that means "the eGPU is up and the TV is not there"
+            # is a real look for a saved TV. Counting any other stage would
+            # spend the budget on readings taken before it could have appeared.
+            self._saved_tv_decision = None
+            return
+        decision = await asyncio.to_thread(
+            lambda: search.observe(
+                displays=current.snapshot.displays,
+                scan_complete=_display_scan_complete(current.snapshot),
+            )
+        )
+        self._saved_tv_decision = decision
+        self._saved_tv_attempts = search.attempts
+        if decision.code != self._last_saved_tv_code:
+            self._last_saved_tv_code = decision.code
+            self._append_journey_event(
+                severity="info",
+                code=decision.code,
+                component="connection",
+                stage="saved_tv",
+                details={
+                    "state": decision.state.value,
+                    "attempts": search.attempts,
+                },
+                create_timeline=False,
+            )
 
     def _automatic_dock_preferences(self) -> AutomaticDockPreferenceStore:
         if self._automatic_dock_preference_store is None:

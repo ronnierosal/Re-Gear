@@ -1,6 +1,6 @@
 # Game developer compatibility notes
 
-Games do not need an HDM-specific SDK. The most compatible behavior comes from
+Games do not need an Re-Gear-specific SDK. The most compatible behavior comes from
 standard Linux graphics, process, and save practices that tolerate a different
 GPU being selected on the next process launch.
 
@@ -19,7 +19,7 @@ GPU being selected on the next process launch.
   Background launchers should not retain render-node ownership after the game
   closes.
 
-HDM does not migrate a live rendering context between GPUs. A game that was
+Re-Gear does not migrate a live rendering context between GPUs. A game that was
 started on the iGPU may remain there for its lifetime; a later launch can select
 the eGPU after the system has verified the docked state.
 
@@ -47,14 +47,14 @@ the eGPU after the system has verified the docked state.
 - Flush and close save files before releasing the final process. Steam Cloud
   synchronization is not proof that the current session was saved.
 - If progress cannot be safely preserved during external shutdown, expose that
-  limitation clearly so HDM can require a manual-save warning.
+  limitation clearly so Re-Gear can require a manual-save warning.
 
 ## Compatibility reporting
 
-HDM tracks eGPU handoff and save/sleep behavior independently. A game is not
+Re-Gear tracks eGPU handoff and save/sleep behavior independently. A game is not
 marked Verified from launch success, passive telemetry, or simulation. An
 intentional reviewed hardware test must record the exact handheld/eGPU profile,
-HDM and SteamOS versions, Proton/runtime version where applicable, observed
+Re-Gear and SteamOS versions, Proton/runtime version where applicable, observed
 rendering GPU, and the exact save/exit outcome.
 
 See [Game compatibility catalog](GAME_COMPATIBILITY.md) for the current status

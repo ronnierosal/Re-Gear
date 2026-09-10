@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" role="img" aria-labelledby="title desc">
+  <title id="title">Auto TDP module</title><desc id="desc">Performance gauge for automatic TDP control.</desc>
+  <path d="M13 43a21 21 0 1 1 38 0" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+  <path d="M18 38l4-2M23 27l3 3M32 22v4M41 27l-3 3M46 38l-4-2" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+  <path d="M32 40 43 29" stroke="currentColor" stroke-width="4" stroke-linecap="round"/>
+  <circle cx="32" cy="40" r="4" fill="currentColor"/>
+  <path d="M20 49h24" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+</svg>

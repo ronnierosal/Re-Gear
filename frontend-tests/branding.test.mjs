@@ -29,16 +29,17 @@ test("UI uses the approved compact Re-Gear assets while README keeps its artwork
   assert.ok(source.includes('import brandIcon from "./assets/regear-icon.svg"'));
   assert.match(source, /icon: <BrandIcon \/>/);
   assert.match(source, /<BrandHeader \/>/);
-  assert.match(read("../README.md"), /src="docs\/images\/re-gear-icon\.png"/);
-  const image = readFileSync(new URL("../docs/images/re-gear-icon.png", import.meta.url));
+  assert.match(read("../README.md"), /src="docs\/images\/re-gear-readme-logo\.png"/);
+  const image = readFileSync(new URL("../docs/images/re-gear-readme-logo.png", import.meta.url));
   assert.deepEqual([...image.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
 });
 
 test("committed bundle embeds compact transparent SVG artwork without unpackaged asset URLs", () => {
   const bundle = read("../dist/index.js");
-  for (const name of ["regear-icon", "mode-handheld", "mode-tv"]) {
+  for (const name of ["regear-icon"]) {
     const image = readFileSync(new URL(`../src/assets/${name}.svg`, import.meta.url));
     assert.ok(bundle.includes("data:image/svg+xml;base64," + image.toString("base64")), `${name} must be embedded`);
   }
+  assert.match(bundle, /M13 43a21 21 0 1 1 38 0/); // Approved inline Auto TDP gauge.
   assert.doesNotMatch(bundle, /\/assets\/(?:regear|mode)-/);
 });

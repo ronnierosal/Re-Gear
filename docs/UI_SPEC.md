@@ -44,29 +44,31 @@ transaction internals.
 
 ### Re-Gear compact visual implementation
 
-Quick Access uses a single-column navy layout, cyan observed-mode cards, and an
-amber primary TV action. The cards are read-only status, not mode selectors;
-unknown, degraded, or loading evidence must not highlight a known placement.
-Health and game status remain visible above the cards. No unsupported Boosted,
-GPU tuning, or game-profile controls are offered.
+The Command Center uses a compact placement/display/game header and two-column
+five-tile grid: FPS target, TDP limit, Auto TDP, Display target, Safe Disconnect.
+Modules opens a labelled list of eGPU, Auto TDP and Controller destinations.
+Exactly one destination is mounted; configuration does not trail the grid.
+The two hardware status rows open read-only details. Troubleshoot is reachable
+from Command Center and Modules and owns optional diagnostics.
 
-The Dock / eGPU disclosure uses only the existing snapshot to show independent
-active-display, render-GPU, and link observations. It starts no diagnostic RPCs.
-Automatic TV docking uses Decky's native sliding `ToggleField`, retaining its
-opt-in confirmation and unavailable/busy states. Native buttons retain their
-existing action guards, acknowledgement flows, and focus behavior. Troubleshoot
-remains the entry point for technical tools and secondary diagnostics.
+TDP opens a compact picker using observed device limits. Auto TDP shows the
+separate loop observation: Running, Stopping, Off or Unknown; it offers Stop
+while running and Configure otherwise. Manual writer enablement is not loop
+activity. Tiles and modules share one on-demand observation/request owner,
+reject superseded responses and preserve Stop preemption. FPS limiting stays
+unavailable without a provider; Auto TDP's target FPS is not a frame-rate cap.
+Display uses the same guarded action in the picker and eGPU module.
 
-On-device photos exposed detached icons and narrow, mid-word label wrapping
-from `ButtonItem` label/action columns. Main dashboard actions now place icon,
-title, description, and chevron inside one native `DialogButton` with a
-32px icon tile / flexible text / 16px chevron grid. Do not put these icons in an external Item
-slot or add separate Details/Show buttons. Preserve native focus and disabled
-behavior; copy wraps at word boundaries. Automatic docking remains a native
-`ToggleField`, with inset padding rather than custom switch behavior.
+Safe Disconnect retains the backend offer and confirmation. Software-removal
+results never grant cable clearance: v1 unavailable status cannot prove bus
+absence, and dock USB/Thunderbolt teardown remains unverified. Invariant 10 is
+unchanged. No additional backend or hardware authority is implied by a tile.
 
-This layout requires on-device controller, text-fit, and scrolling validation;
-local component and contract tests are not evidence of hardware UX validation.
+Approved inline assets and stable tile positions preserve the design baseline.
+Unavailable tiles remain focusable with explanations. Back restores the invoking
+tile/row and delegates to Steam at the root; a fresh panel opening returns to
+Command Center. [Validation](COMMAND_CENTER_VALIDATION.md) distinguishes browser
+fixtures from pending native Decky/controller and transport verification.
 
 - Prefer `eGPU`, `handheld`, `internal display`, and `external display` in normal
   UI. Exact Ally/G1 names belong in supported-hardware or diagnostic context.
@@ -106,7 +108,7 @@ lines, hostnames, addresses, account/game identifiers, or raw logs.
 
 - HDM separates placement, health, workflow, and evidence confidence.
 - HDM does not expose eGPUBridge's broad tuning, TV/network control, launcher,
-  driver, or live-removal surfaces.
+  driver, or unguarded hardware-removal surfaces.
 - Actions use HDM's preview/approval/journal/revalidation contracts.
 - Exact first-profile identity is a certification detail, not the product's
   general player vocabulary.

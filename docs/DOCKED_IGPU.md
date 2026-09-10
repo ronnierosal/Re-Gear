@@ -71,5 +71,5 @@ short-lived approval token.
 - after transition, use exact DRM engine activity to prove the next game uses
   the G1
 
-None of these pieces certifies live GPU migration. HDM still never attempts to
+None of these pieces certifies live GPU migration. Re-Gear still never attempts to
 move a running workload between GPUs.

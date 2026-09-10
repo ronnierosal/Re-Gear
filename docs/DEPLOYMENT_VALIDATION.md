@@ -101,7 +101,7 @@ the exact bytes the maintainer received.
 Each stage must pass before proceeding. A failure returns to diagnosis; it does
 not authorize retrying later stages with speculative fixes.
 
-### D0 — Local deterministic checks
+### D0 â€” Local deterministic checks
 
 Run the complete build/check matrix. For transition work, also run snapshot
 replay, fake-clock, timeout, rollback, failure-injection, and unexpected-loss
@@ -112,7 +112,7 @@ unknown evidence.
 Permitted: local files and simulators.  
 Prohibited: device mutation.
 
-### D1 — Package inspection
+### D1 â€” Package inspection
 
 Verify manifest, root flag, bundled backend/frontend versions, public RPC
 allowlist, archive paths, and package hash. Compare the complete artifact with
@@ -149,7 +149,7 @@ success state is `verified_d2_evidence_record`; it cannot establish player
 presence, G1 disconnection, Decky/UI/lease health, installation success, or D2
 acceptance. Those remain the supervised checklist's observed requirements.
 
-### D2 — Device baseline, G1 disconnected
+### D2 â€” Device baseline, G1 disconnected
 
 With the player available for the initial install:
 
@@ -163,7 +163,7 @@ With the player available for the initial install:
 
 This stage may be observed remotely after the physical precondition is confirmed.
 
-### D2a — Read-only gameplay observation overhead
+### D2a â€” Read-only gameplay observation overhead
 
 Run this only after D2 passes, with the G1 still disconnected and the player
 watching the internal display. It validates the installed panel's game-aware
@@ -173,7 +173,7 @@ observation behavior; it is not an eGPU, sleep, or performance certification.
    Access **HDM build** row shows the expected short revision before starting
    one ordinary Steam game on the internal display. `uncommitted` or
    `unavailable` is not sufficient provenance for this stage.
-2. Open Quick Access → Re-Gear. Confirm the panel is controller
+2. Open Quick Access â†’ Re-Gear. Confirm the panel is controller
    usable and reports a running game without changing the display, audio,
    controller assignment, or game session.
 3. Open Troubleshooting. Confirm it says that additional checks wait until HDM
@@ -191,7 +191,7 @@ change. On any regression, close/unload HDM or reinstall the recorded rollback
 package through Decky's native lifecycle; do not troubleshoot by restarting
 Gamescope, suspending, rebooting, or changing GPU/display settings remotely.
 
-### D3 — Read-only G1 attachment
+### D3 â€” Read-only G1 attachment
 
 Only after the player naturally connects the G1 and confirms visible control:
 
@@ -207,7 +207,7 @@ Only after the player naturally connects the G1 and confirms visible control:
 Automated SSH work remains read-only. Any unknown identity or game state stops
 the stage.
 
-### D4 — Supervised UI and non-destructive lifecycle
+### D4 â€” Supervised UI and non-destructive lifecycle
 
 Use one exact written action at a time with the player watching the Ally and a
 known recovery path ready. Examples include the pending blocked-Sleep warning
@@ -229,7 +229,7 @@ For a blocked-Sleep warning test, success requires all of:
 Enforcement without a visible warning is a failed UX acceptance result, not a
 pass.
 
-### D5 — Supervised bounded mutation
+### D5 â€” Supervised bounded mutation
 
 Allowed only after the relevant ADR, pure policy, simulator, rollback, approval,
 and adapter tests pass. Start with disposable user-process fixtures; then move
@@ -281,7 +281,7 @@ and a known-good rollback package available. Remote automation may build,
 stage, inspect, and collect evidence, but must not invoke its confirmation or
 restart Gamescope unattended.
 
-#### D5.1 — Player-watched idle TV-switch proof (separately scheduled)
+#### D5.1 â€” Player-watched idle TV-switch proof (separately scheduled)
 
 **Status: Hardware Validation Required.** This is a distinct supervised stage,
 not a continuation of D3 attachment observation. Before scheduling it, retain a
@@ -299,7 +299,7 @@ session/process change, unknown placement, or provenance mismatch. A verified
 TV result or verified Portable rollback is required; connected HDMI alone never
 passes this stage.
 
-#### D5.2 — Player-watched shutdown-before-disconnect proof
+#### D5.2 â€” Player-watched shutdown-before-disconnect proof
 
 Run only after TV Docked is visibly verified, no game is running, controls and
 SSH are available, and the current presentation journal is idle. The player may
@@ -353,7 +353,7 @@ corrected candidate must repeat the complete watched test and show a verified
 TV result or a verified Portable rollback before any automatic-docking proposal
 is considered.
 
-### D6 — Physical and access-risk experiments
+### D6 â€” Physical and access-risk experiments
 
 Create a separate experiment plan with explicit player presence, acceptance
 criteria, stop conditions, and recovery. This stage covers physical power-button
@@ -412,7 +412,7 @@ only a complete archive carrying a committed revision and derives its remote
 filename exclusively from that verified metadata:
 
 ```text
-python scripts/stage_decky_update.py out/HandheldDockMode-0.2.0.zip \
+python scripts/stage_decky_update.py out/Re-Gear-<version>.zip \
   --host <handheld-ip> --identity-file <ssh-key>
 ```
 
@@ -428,18 +428,43 @@ Decky's native installer until such an API is published and reviewed.
 For this maintainer-controlled Ally only, a separate developer helper may be
 installed after a one-time **interactive** `sudo` action. It is not a Decky API
 and is never part of an HDM release. The helper is root-owned, accepts only a
-signed `HDM-update-<version>-<revision>.zip` and matching signature from the
+signed `Re-Gear-update-<version>-<revision>.zip` and matching signature from the
 fixed `/home/deck/` directory, validates the embedded HDM provenance,
-then atomically replaces only `HandheldDockMode`. It moves the prior plugin to
-a root-owned rollback directory. It does not reload Decky, restart Gamescope,
-or alter displays, sleep, hardware, or the active session.
+then atomically replaces only `Re-Gear`. A legacy `HandheldDockMode` root
+(including a dangling symlink) refuses normal deployment; follow the separately
+supervised [cutover procedure](IDENTITY_CUTOVER.md) first. It moves the prior plugin to
+a root-owned rollback directory. It restarts and checks only
+`plugin_loader.service`; failed health verification restores the saved prior
+tree (or removes the failed fresh installation) and retries that same service.
+It does not restart Gamescope or alter displays, sleep, hardware, or the active
+session.
+
+The helper requires Linux root with procfs and an existing Decky plugin parent.
+It rejects symlinks throughout the plugin-parent path. Existing backup storage
+must already be root-owned mode 0700; unsafe ownership, permissions, or symlinks
+are rejected without repairing or taking ownership of user directories.
+Before verification it copies bounded regular-file package and signature inputs
+into private storage. Verification and extraction consume only those snapshots,
+so changes to downloaded names or open source inodes cannot replace verified
+bytes. Private staging, cleanup, publication, and rollback use retained directory
+descriptors even if an outer directory name changes. Staging stays on the target
+filesystem. These guarantees cover the helper's snapshots and publication into
+the pinned directory; they do not establish what the independently restarted
+loader opens through its canonical plugin path.
 
 The public verification key is installed once at
 `/var/lib/handheld-dock-mode/deploy-public-key.pem`; the corresponding private key
 must remain off the Ally and outside the repository. A package that is merely
 copied to `/home/deck/` is rejected unless its signature validates against that
-key. The helper therefore avoids turning a passwordless `sudo` rule into an
-arbitrary root-plugin installer.
+key. This binds extracted bytes to a verified snapshot, but the broader loader
+execution trust boundary remains unresolved. A user able to rename an ancestor
+of the plugin directory can substitute a different canonical path before the
+service restart, while the helper publishes verified content into its retained
+original directory. A successful service health check does not detect that
+substitution. Snapshot and directory-operation hardening can be integrated
+independently, but it is not a complete fix for arbitrary root-plugin execution.
+The loader-path authority decision remains a separate unresolved security item. A pathname identity check alone would leave another race before the
+loader opens its files.
 
 One-time setup (after the development machine has created an Ed25519 key pair
 and copied the **public** key and helper scripts to Downloads) is:
@@ -453,13 +478,13 @@ with `scripts/sign_hdm_deploy_package.py`, then staged with
 `scripts/stage_signed_hdm_deploy.py`. The automated, narrow install command is:
 
 ```text
-sudo /var/lib/handheld-dock-mode/hdm-deploy-plugin HDM-update-<version>-<revision>.zip \
-  HDM-update-<version>-<revision>.zip.sig
+sudo /var/lib/handheld-dock-mode/hdm-deploy-plugin Re-Gear-update-<version>-<revision>.zip \
+  Re-Gear-update-<version>-<revision>.zip.sig
 ```
 
-Successful replacement alone is not a runtime validation and the helper does
-not invent a plugin reload. Inspect the installed build after Decky naturally
-reloads it or use a watched, explicitly approved plugin reload workflow later.
+Successful replacement and service health alone are not plugin runtime or
+hardware validation. Inspect the installed build and use the supervised
+validation workflow separately.
 
 ### Direct developer deploy (maintainer-owned SSH)
 

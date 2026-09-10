@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import sys
 import unittest
+import threading
+from unittest.mock import Mock
 from pathlib import Path
 
 
@@ -542,6 +544,63 @@ class SupervisedTransitionTests(unittest.TestCase):
         result = value.recover_interrupted()
         self.assertEqual(result.outcome.kind, TransitionOutcomeKind.NO_OP)
         self.assertEqual(orchestrator.recoveries, 1)
+
+
+
+
+
+class RecoverySerializationTests(unittest.TestCase):
+    def test_recovery_excludes_execution_and_completion_until_return(self):
+        value, orchestrator, store = service(Observations())
+        entered, release = threading.Event(), threading.Event()
+        original = orchestrator.recover_interrupted
+        def recover():
+            entered.set()
+            if not release.wait(2):
+                raise TimeoutError('test recovery release missing')
+            return original()
+        orchestrator.recover_interrupted = recover
+        results = []
+        thread = threading.Thread(target=lambda: results.append(value.recover_interrupted()))
+        thread.start()
+        try:
+            self.assertTrue(entered.wait(2))
+            self.assertEqual(value.execute('unused-token').code, 'transition.concurrent_request')
+            self.assertEqual(value.execute_automatic(PlacementState.DOCKED_EGPU,
+                expected_generation='generation', standing_consent=True).code,
+                'transition.concurrent_request')
+            self.assertFalse(value.acknowledge('operation-0001'))
+            self.assertEqual(value.reconcile_completion(None).code, 'completion.transition_busy')
+            concurrent = value.recover_interrupted()
+            self.assertEqual(concurrent.outcome.failure.code, 'transition.concurrent_request')
+            self.assertFalse(concurrent.durable)
+        finally:
+            release.set()
+            thread.join(3)
+        self.assertFalse(thread.is_alive())
+        self.assertEqual(len(results), 1)
+        self.assertEqual(orchestrator.recoveries, 1)
+
+    def test_recovery_cannot_enter_during_execute(self):
+        value, orchestrator, _ = service(Observations())
+        calls = []
+        def execute(token):
+            result = value.recover_interrupted()
+            calls.append(result.outcome.failure.code)
+            return 'executed'
+        value._execute_locked = execute
+        self.assertEqual(value.execute('token'), 'executed')
+        self.assertEqual(calls, ['transition.concurrent_request'])
+        self.assertEqual(orchestrator.recoveries, 0)
+
+    def test_recovery_exception_releases_outer_lock(self):
+        value, orchestrator, _ = service(Observations())
+        original = orchestrator.recover_interrupted
+        orchestrator.recover_interrupted = Mock(side_effect=OSError('fixture'))
+        with self.assertRaises(OSError):
+            value.recover_interrupted()
+        orchestrator.recover_interrupted = original
+        self.assertEqual(value.recover_interrupted().outcome.kind, TransitionOutcomeKind.NO_OP)
 
 
 if __name__ == "__main__":

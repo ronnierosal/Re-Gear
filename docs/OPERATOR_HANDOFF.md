@@ -1,5 +1,42 @@
 # Maintainer and agent handoff
 
+## Read before using a historical checkpoint
+
+The sections below retain their original dates and device observations. Their
+installed versions, network coordinates, cleanup instructions and next actions
+are historical context, not current execution authority. Preserve immutable
+archives under [release coordination](CHAT_COORDINATION.md); old cleanup text
+does not authorize deleting them.
+
+Start with [the documentation/evidence reconciliation](DOCUMENTATION_CLEANUP.md)
+for the September 8 merged-source review, [the index](INDEX.md) for owning
+contracts, and the live shared hub/PR claims for active tasks. TDP work described
+below as isolated has since integrated through PR #49; installation and hardware
+acceptance have not been established by that merge. CURRENT_STATE's historical
+entries remain intact pending its PR #82 owner integration.
+
+Before hardware work, obtain a fresh deployment handoff identifying source,
+artifact checksum, installed revision, topology, game state, approval and rollback.
+This documentation pass did not contact a device or resume any old procedure.
+
+## Historical checkpoints
+
+## Independent Auto TDP checkpoint — 2026-09-05
+
+The isolated TDP workstream implements and locally tests manual TDP controls,
+Auto TDP evidence and policy, a read-only benchmark, explicit lifecycle RPCs,
+and per-mode FPS/watt preferences. Saving preferences never activates power
+control. Its latest branch checkpoint reports 1,150 backend tests passing
+(15 platform skips), 99 frontend tests passing, and successful architecture,
+compileall, typecheck, build, and package checks. Mock browser rendering was
+unavailable for the preference editor. Nothing was installed or hardware tested.
+
+Remaining gates are coordinated integration, actual device benchmark and provider
+evidence, justified thermal configuration, Linux filesystem behavior, and native
+Decky/controller validation. The workstream does not own G1 lifecycle or Offline
+Play changes. See [TDP control](TDP_CONTROL.md) and the
+[independent work plan](AUTO_TDP_INDEPENDENT_PLAN.md).
+
 ## Ally ZIP placement policy — 2026-09-04
 
 Place every Re-Gear/HDM ZIP staged on the Ally directly in `/home/deck/`.
@@ -697,11 +734,12 @@ again; do not scan the network or guess another account/key. The private key rem
 development computer. Never copy it to the Ally, commit it, print it, or ask
 for the maintainer's password.
 
-Read-only deployment provenance check:
+Read-only deployment provenance check for the new identity (legacy test installs
+use `HandheldDockMode`; establish the actual installed root before capture):
 
 ```powershell
 ssh -i $key -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes deck@<current-ally-host> `
-  'cat /home/deck/homebrew/plugins/HandheldDockMode/build_info.json; systemctl is-active plugin_loader.service'
+  'cat /home/deck/homebrew/plugins/Re-Gear/build_info.json; systemctl is-active plugin_loader.service'
 ```
 
 Use `python scripts/remote_capture.py --host <current-ally-host> --identity-file $key`
@@ -709,6 +747,9 @@ for a redacted read-only capture. Read [Remote read-only validation](REMOTE_VALI
 before using it.
 
 ## Direct deployment
+
+New deployment refuses a legacy plugin root. Complete the separately supervised
+[identity cutover](IDENTITY_CUTOVER.md) before using the new tools.
 
 The normal maintainer-operated path is:
 
@@ -723,7 +764,7 @@ The normal maintainer-operated path is:
 
 It runs the complete local verification matrix, uploads a temporary archive,
 creates a timestamped backup, atomically replaces only
-`/home/deck/homebrew/plugins/HandheldDockMode`, restores the packaged shim mode,
+`/home/deck/homebrew/plugins/Re-Gear`, restores the packaged shim mode,
 and restarts only `plugin_loader.service`. It does not restart Gamescope or
 invoke display, GPU, sleep, controller, audio, or eGPU actions. It prompts for
 the maintainer's SteamOS sudo password at the final replacement step; Codex

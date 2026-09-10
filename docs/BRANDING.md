@@ -43,9 +43,10 @@ The 0.3.4 icon candidate uses the user-supplied, unmodified
 `docs/images/re-gear-decky-monochrome.jpg` for the Decky list and panel header.
 The earlier PNG artwork is retained. The JPEG is embedded locally in the bundle.
 As of 0.3.33, the Decky manifest and exported frontend display name are
-`Re-Gear`, so Quick Access uses the current product name. The installed folder,
-archive root, RPC/state keys, helper paths, and package names remain unchanged.
-This is a scoped display-label migration, not a stored-state migration.
+`Re-Gear`, so Quick Access uses the current product name. That display-label
+change retained the old directory. New repository builds now use `Re-Gear/`
+as the archive/install root; see [cutover evidence](IDENTITY_CUTOVER.md).
+Device installation and migration remain separately supervised.
 
 `src/branding.ts` owns the UI display name. `docs/images/re-gear-icon.png` is the
 original detailed README artwork; `docs/images/re-gear-decky-icon.png` is the
@@ -53,32 +54,41 @@ original simpler Decky artwork. Both are maintainer-approved and retained.
 Do not redraw or silently replace the supplied image. Generated `dist` assets
 must be built with the runtime and UI from the same clean source revision.
 
-## Keep these identifiers stable
+## Current identity contracts
 
-This rebrand does not migrate installed data or change runtime behavior:
+The directory cutover preserves existing data and recovery authority:
 
-| Surface | Compatibility value retained |
+| Surface | Repository contract |
 | --- | --- |
 | Decky visible manifest label | `Re-Gear` |
-| Installed plugin/archive directory | `HandheldDockMode` |
+| New plugin/archive directory | `Re-Gear` |
 | npm and Python distribution name | `handheld-dock-mode-steamos` |
 | Python package and diagnostic command | `hdm`, `hdm-diagnose` |
 | Helper/state paths | existing `handheld-dock-mode` paths |
 | Settings, managed markers and diagnostic codes | existing keys and HDM identifiers |
 
-Decky's plugin list and panel display Re-Gear. Installer internals and technical
-logs may still show compatibility identifiers. Changing the installed folder,
-package names, RPC/state keys, or helper paths remains outside this label change.
+Decky's plugin list and panel display Re-Gear. `publish.image` references the
+512px transparent `docs/images/re-gear-listing-icon.png`, rasterized directly
+from the canonical cyan R SVG `src/assets/regear-icon.svg`. Original assets
+are retained. Regenerate with `scripts/render_listing_icon.cjs` using the
+pinned renderer documented in its header; provenance hashes are checked by
+the Decky contract test. Historical installs may
+still use `HandheldDockMode`; normal new deployment refuses that root until the
+controlled supervised cutover. Package names, RPC/state keys and helper paths
+remain stable for the reasons in the cutover inventory.
 
-## GitHub and checkout rename — pending maintainer action
+## Repository name and supervised installation
 
-The maintainer will rename the GitHub repository when ready. Do not change the
-remote URL, badges, repository links, Wiki publication target, checkout folder
-or worktree paths in advance. No new repository slug has been assumed here.
-After the maintainer supplies the final name, update links and remote mappings
-in a focused follow-up and verify redirects, CI and Wiki access. Keep existing
-Wiki page filenames/slugs stable unless links are migrated together.
+The GitHub repository and public Wiki are already Re-Gear. Preserve existing
+Wiki slugs and redirects; do not rename local worktrees or internal identifiers
+as a prose cleanup. Public descriptions use Re-Gear; exact legacy identifiers
+remain only where compatibility, commands or historical evidence require them.
 
-Local source edits do not publish the GitHub README/Wiki, rename the repository,
-or install a new build on the Ally. The product name change adds no hardware
-support or live-removal claim, and does not change licensing terms.
+The [internal identity migration plan](IDENTITY_MIGRATION_PLAN.md) covers the
+implemented repository cutover and remaining supervised acceptance. The
+[implementation inventory and test-install procedure](IDENTITY_CUTOVER.md)
+include controlled rollback for the maintainer's legacy test installation.
+Merged repository code does not establish an installed migration.
+
+Documentation publication does not install a build, migrate settings or
+identifiers, certify hardware, or change licensing terms.

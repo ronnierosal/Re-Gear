@@ -21,9 +21,19 @@ class ReleaseCandidateTests(unittest.TestCase):
     def make_archive(self, root: Path, *, version: str = "1.2.3", revision: str = "a" * 40) -> Path:
         archive = root / f"Re-Gear-{version}.zip"
         with zipfile.ZipFile(archive, "w") as value:
-            value.writestr("HandheldDockMode/package.json", json.dumps({"version": version}))
-            value.writestr("HandheldDockMode/build_info.json", json.dumps({"schema_version": 1, "version": version, "revision": revision}))
+            value.writestr("Re-Gear/package.json", json.dumps({"version": version}))
+            value.writestr("Re-Gear/build_info.json", json.dumps({"schema_version": 1, "version": version, "revision": revision}))
         return archive
+
+    def test_mixed_root_is_not_a_release_candidate(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self.make_project(root)
+            archive = self.make_archive(root)
+            with zipfile.ZipFile(archive, "a") as value:
+                value.writestr("HandheldDockMode/plugin.json", "{}")
+            with self.assertRaisesRegex(ValueError, "archive_metadata_invalid"):
+                release_candidate.prepare_release_candidate(archive, project_root=root)
 
     def test_candidate_captures_exact_archive_and_build(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

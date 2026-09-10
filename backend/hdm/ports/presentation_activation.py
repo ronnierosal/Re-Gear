@@ -12,7 +12,17 @@ class UserServiceOperation(StrEnum):
     DAEMON_RELOAD = "daemon_reload"
     VERIFY_GAMESCOPE_UNIT = "verify_gamescope_unit"
     INSPECT_STEAM_UNIT = "inspect_steam_unit"
+    OBSERVE_FILTER_GAMESCOPE = "observe_filter_gamescope"
+    OBSERVE_FILTER_STEAM = "observe_filter_steam"
     RESTART_GAMESCOPE_SESSION = "restart_gamescope_session"
+    #: The audio holders of an eGPU. `gamescope-session.target` does not reach
+    #: them -- only the PipeWire sockets are wanted by it, so a session restart
+    #: leaves WirePlumber running and still holding its descriptor -- and the
+    #: domain already lists both in `APPROVED_EXPLICIT_RESTARTS`. Until these
+    #: existed only an operator at a terminal could run them, which is why the
+    #: disconnect could not be driven from the backend.
+    RESTART_WIREPLUMBER = "restart_wireplumber"
+    RESTART_PIPEWIRE = "restart_pipewire"
 
 
 @dataclass(frozen=True, slots=True)

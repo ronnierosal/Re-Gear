@@ -1,6 +1,9 @@
 # HDM worker queue
 
-This is the current coordination source of truth for bounded local work. It
+This is the ordered work and durable checkpoint index. Live cross-agent ownership
+comes from the shared hub tasks and linked cross-machine issue/PR claims under
+[the coordination playbook](AGENT_COORDINATION.md);
+dated owners here are not exclusive current claims. This index
 does not replace executable behavior, [the roadmap](ROADMAP.md), or the
 [safety invariants](SAFETY_INVARIANTS.md). The North Star is console-simple,
 games-first SteamOS: HDM stays light, mostly dormant, event-driven where
@@ -53,6 +56,16 @@ Steam overview projection, guarded one-request service, and allowlisted UI reaso
 guidance are implemented; production collection and selected-game wiring remain gated.
 See the [continuation checkpoint](OFFLINE_READINESS_HANDOFF.md) before overlapping work.
 
+**Active separate workstream: TDP / Auto TDP.** The maintainer assigned research,
+development, and remote checks to `codex/tdp-control` on 2026-09-04. Manual TDP,
+Auto TDP evidence and policy, guarded runtime delivery, exact host/provider binding,
+known-controller detection, a read-only benchmark, expandable controls, and per-mode
+FPS/watt preferences are implemented and locally tested. These results remain
+implemented/simulated only: nothing is installed or hardware validated. Actual
+device measurement, Linux filesystem behavior, justified thermal/configuration
+evidence, and native Decky/controller validation remain pending. See
+[TDP control](TDP_CONTROL.md). This workstream does not own G1 lifecycle transitions.
+
 | Priority | Work item and owner | Status | Acceptance evidence |
 | --- | --- | --- | --- |
 | 2 | Mode/link health: improve fail-closed usability signals and bounded link-instability diagnostics. Owner: next safe worker. | **Implemented (pure evidence + read-only UI):** fresh same-binding observed Up/Down samples can report stable/changed state or fail closed; `Ready to dock` also requires a current exact G1 profile, verified present external GPU/display facts, verified Gamescope, and a current observed-Up link—never only a stale display or sleep guard. Quick Access stays categorical; no collector, transition, or removal conclusion exists. Hardware link quality is **Hardware Validation Required**. | Pure/replay tests; privacy-safe snapshot/UI checks; supported-profile read-only capture when useful. |
@@ -69,8 +82,10 @@ See the [continuation checkpoint](OFFLINE_READINESS_HANDOFF.md) before overlappi
 
 ## Required checkpoint check-in
 
-Record each meaningful checkpoint in [Operator handoff](OPERATOR_HANDOFF.md)
-and, when status/dependencies change, [Roadmap](ROADMAP.md):
+Workers record each meaningful checkpoint in the owning issue/PR. The designated
+integrator coordinates summaries in [Operator handoff](OPERATOR_HANDOFF.md)
+and, when status/dependencies change, [Roadmap](ROADMAP.md). Do not have multiple
+agents independently edit these shared records. Include:
 
 ```text
 Change: <bounded files/behavior; state implemented vs proposal>

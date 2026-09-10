@@ -1,0 +1,8 @@
+{
+  "op": "update_task",
+  "id": "replace-with-owned-task-id",
+  "rev": 2,
+  "state": "done",
+  "note": "Result: ...\nBehavior change: ...\nKnown limitations: ...\nDocumentation impact: Wiki",
+  "evidence": "Commit: ... PR: ... Merge state: ... Tests and results: ... Technical evidence: ..."
+}

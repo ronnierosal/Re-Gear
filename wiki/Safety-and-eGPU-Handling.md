@@ -1,19 +1,21 @@
 # Safety and eGPU handling
 
 **Audience:** players and supervised hardware testers<br>
-**Evidence reviewed:** 2026-09-02<br>
+**Reviewed:** 2026-09-06<br>
 **Maturity:** safety policy is authoritative; individual mechanisms remain evidence-gated
 
 Read the complete repository
 [safety invariants](https://github.com/ronnierosal/Re-Gear/blob/main/docs/SAFETY_INVARIANTS.md)
 before any hardware-facing work.
 
-## Current GPD G1 rule
+## Follow the policy for your hardware
 
-Physical live removal is unsupported. Re-Gear must never describe the G1 as safe to
-unplug merely because no software clients are visible. Return to or retain a
-known-good Portable state, shut the handheld down, and only then disconnect the
-G1.
+Disconnect requirements belong to the exact hardware profile. Re-Gear does not
+currently establish physical live-removal support. It must never describe an
+eGPU as safe to unplug merely because no software clients are visible. Under
+the current shutdown-before-disconnect policy, return to or retain a known-good
+state, shut the handheld down fully, and only then disconnect the eGPU.
+Unknown hardware inherits no removal permission; see [Supported Hardware](Supported-Hardware).
 
 ## What Re-Gear will not bypass
 
@@ -30,8 +32,10 @@ G1.
 Hardware tests begin from a verified baseline and add one device or transition
 at a time. Sleep protection is a separate capability from display switching or
 disconnect readiness. If Re-Gear reports incomplete, stale, unavailable, or unknown
-sleep evidence for the first profile, it keeps the operation blocked rather
+sleep evidence for the active profile, it keeps the operation blocked rather
 than guessing.
 
 No Wiki instruction grants mutation authority. Follow the current supervised
 validation plan and active hardware driver's directions for a specific session.
+
+An accepted shutdown request or loss of networking is not physical power-off. Keep the eGPU attached if the handheld has not fully powered down. A working Portable screen does not prove that every external GPU reference has been released.

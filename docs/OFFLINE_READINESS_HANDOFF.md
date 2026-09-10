@@ -16,7 +16,7 @@ retains broad Quick Access design.
 
 - Branch: `codex/offline-readiness-delivery`
 - Base: `75f441f` (current main when this work began, 2026-09-03).
-- Worktree: `C:/Users/SLDD/.codex/worktrees/offline-readiness-delivery/Handheld-Docked-Mode-SteamOS`
+- Worktree: `<isolated offline-readiness worktree>`
 - Older `codex/offline-readiness` at `73dc3da` is historical foundation;
   do not resume it or merge its old tree over current main.
 - Main had unrelated research/index and UI-preview edits. They remain untouched.

@@ -21,11 +21,11 @@ class DirectDeployScriptTests(unittest.TestCase):
 
     def test_backups_replacement_exec_bit_restart_and_provenance_are_ordered(self):
         source = self.source()
-        self.assertIn("HandheldDockMode.backup-", source)
+        self.assertIn("Re-Gear.backup-", source)
         self.assertIn('mv "`$PLUGIN_DIR" "`$BACKUP"', source)
         self.assertIn('chmod 0755 "`$PLUGIN_DIR/bin/gamescope"', source)
         self.assertIn("systemctl restart plugin_loader.service", source)
-        self.assertLess(source.index('mv "`$STAGING/HandheldDockMode" "`$PLUGIN_DIR"'), source.index("systemctl restart plugin_loader.service"))
+        self.assertLess(source.index('mv "`$STAGING/Re-Gear" "`$PLUGIN_DIR"'), source.index("systemctl restart plugin_loader.service"))
         self.assertIn("build_info.json", source)
 
     def test_never_targets_session_or_hardware_actions(self):
@@ -39,3 +39,11 @@ class DirectDeployScriptTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class IdentityCutoverGuardTests(unittest.TestCase):
+    def test_legacy_refusal_precedes_staging_and_replacement(self):
+        source = (Path(__file__).resolve().parents[1] / "scripts/deploy_hdm_to_ally.ps1").read_text(encoding="utf-8")
+        self.assertIn('LEGACY_DIR="`$PLUGIN_PARENT/HandheldDockMode"', source)
+        self.assertIn('test -e "`$LEGACY_DIR" || test -L "`$LEGACY_DIR"', source)
+        self.assertLess(source.index("Legacy installation requires supervised cutover"), source.index('mkdir -p "`$PLUGIN_PARENT"'))

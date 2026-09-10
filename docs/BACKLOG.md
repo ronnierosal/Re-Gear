@@ -11,16 +11,16 @@ cross-feature status and dependency plan is maintained in the
 **Target:** Controller-first UX hardening; does not block current safety or
 hardware-discovery work
 
-On the ASUS ROG Ally X in Gaming Mode, the HDM troubleshooting panel can be
+On the ASUS ROG Ally X in Gaming Mode, the Re-Gear troubleshooting panel can be
 read with a mouse wheel, but upward travel using the D-pad or left stick does
 not behave like ordinary scrolling. Focus can move too abruptly or fall through
-to Steam's QAM Back control instead of progressing naturally through HDM's
+to Steam's QAM Back control instead of progressing naturally through Re-Gear's
 content. The explicit **Back to top** action works and remains an accessible
 fallback.
 
 The current Decky-native scroll-panel experiment did not correct this behavior.
 Do not add a custom gamepad listener or synthesize mouse-wheel events as a
-workaround: HDM must remain Decky-native and must not interfere with Steam's
+workaround: Re-Gear must remain Decky-native and must not interfere with Steam's
 controller routing.
 
 Acceptance requires supervised controller validation on the Ally X:
@@ -30,7 +30,7 @@ Acceptance requires supervised controller validation on the Ally X:
 - Mouse-wheel behavior remains usable.
 - **Back to top** remains a reliable optional shortcut, not the only way to
   return upward.
-- The fix neither changes HDM safety state nor adds display, GPU, sleep, audio,
+- The fix neither changes Re-Gear safety state nor adds display, GPU, sleep, audio,
   controller, or process-control authority.
 
 ## Add guarded eGPU process closure
@@ -119,7 +119,7 @@ unattended work.
 **Target:** Milestone 0.2 transition-engine work
 
 Reduce software-added latency when a verified GPD G1 and its connected TV
-appear, without weakening HDM's fail-closed identity, game-state, Gamescope, or
+appear, without weakening Re-Gear's fail-closed identity, game-state, Gamescope, or
 display verification.
 
 Planned investigation and implementation:
@@ -166,7 +166,7 @@ Acceptance evidence:
 - Failure preserves or restores the known-good Portable state.
 - Supervised redacted Portable → TV Docked → Portable hardware validation.
 
-The documented 4–6 second transition is reference behavior; native HDM timing
+The documented 4–6 second transition is reference behavior; native Re-Gear timing
 must be measured before assigning a performance target. Physical USB4, GPU, and
 HDMI/EDID initialization time is not bypassed with fixed sleeps.
 
@@ -180,22 +180,22 @@ and SteamOS issues can be diagnosed without requesting unrestricted system logs.
 
 Planned investigation and implementation:
 
-- Add a bounded, rotating structured HDM event log with timestamps, severity,
+- Add a bounded, rotating structured Re-Gear event log with timestamps, severity,
   stable event codes, component, operation stage, and an ephemeral correlation
   identifier.
-- Include the current versioned diagnostic snapshot, recent HDM events, blocker
+- Include the current versioned diagnostic snapshot, recent Re-Gear events, blocker
   codes, hardware support/profile result, sleep-guard state, disconnect
-  readiness, and HDM/Decky/SteamOS/kernel versions.
+  readiness, and Re-Gear/Decky/SteamOS/kernel versions.
 - Record which exact profile rules passed or failed without exporting raw USB4
   identities, hardware serials, PCI bus addresses, DRM enumeration numbers, or
   private filesystem paths.
 - Let the user preview the manifest and redacted contents before saving or
   sharing the bundle.
-- Keep collection narrowly scoped to HDM. Do not include the full system
+- Keep collection narrowly scoped to Re-Gear. Do not include the full system
   journal, Steam account data, arbitrary process command lines, IP addresses,
   usernames, or home-directory contents.
 - Provide a native copy/save workflow and a clear bundle schema/version so
-  reports can be parsed across HDM releases.
+  reports can be parsed across Re-Gear releases.
 - Add deterministic redaction and size-limit tests, including adversarial
   fixtures containing serials, usernames, paths, addresses, and raw hardware
   identifiers.
@@ -215,7 +215,7 @@ Implemented software evidence:
 
 - 128-event rotating structured in-memory log and 256 KiB encoded bundle cap.
 - Allowlisted reduced snapshot, categorical profile checks, observation timings,
-  and HDM/Decky/SteamOS/kernel versions.
+  and Re-Gear/Decky/SteamOS/kernel versions.
 - Exact JSON preview plus copy action; saving requires a five-minute single-use
   token and accepts no path or filename from the frontend.
 - Exclusive, no-follow fixed Downloads writer for the Decky user home.

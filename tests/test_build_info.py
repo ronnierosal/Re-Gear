@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import io
 import json
 import sys
 import tempfile
 import unittest
+from contextlib import redirect_stderr, redirect_stdout
 from subprocess import CompletedProcess
 from pathlib import Path
 from unittest.mock import patch
@@ -59,6 +61,13 @@ class BuildInfoTests(unittest.TestCase):
         )
 
     def test_clean_porcelain_status_requires_a_valid_head(self):
+        """This is also the state `pnpm build` leaves behind.
+
+        `dist/` is ignored rather than tracked, and porcelain status does not
+        report ignored paths without `--ignored`, so the build that runs
+        immediately before packaging dirties nothing. The exemption that used
+        to be needed for the two tracked UI outputs is gone with it.
+        """
         with patch.object(
             build_plugin,
             "_git_status",
@@ -69,24 +78,13 @@ class BuildInfoTests(unittest.TestCase):
         ):
             self.assertEqual(build_plugin.source_revision(), "a" * 40)
 
-    def test_only_expected_generated_ui_outputs_are_accepted_after_build(self):
-        with patch.object(
-            build_plugin,
-            "_git_status",
-            side_effect=(
-                CompletedProcess(
-                    ("git", "status"),
-                    0,
-                    stdout=" M dist/index.js\n M dist/index.js.map\n",
-                ),
-                CompletedProcess(("git", "rev-parse", "HEAD"), 0, stdout="a" * 40),
-            ),
-        ):
-            self.assertEqual(build_plugin.source_revision(), "a" * 40)
-
-    def test_any_other_dirty_path_still_refuses_a_clean_revision(self):
+    def test_any_dirty_path_refuses_a_clean_revision(self):
         for status in (
             " M src/index.tsx\n",
+            # dist/ is ignored now, so these can only mean someone put the
+            # generated bundle back under version control. That must fail
+            # closed exactly like any other pending change.
+            " M dist/index.js\n M dist/index.js.map\n",
             "M  dist/index.js\n",
             "?? dist/untracked.js\n",
             "R  dist/index.js -> dist/renamed.js\n",
@@ -97,6 +95,42 @@ class BuildInfoTests(unittest.TestCase):
                 return_value=CompletedProcess(("git", "status"), 0, stdout=status),
             ):
                 self.assertEqual(build_plugin.source_revision(), "uncommitted")
+
+
+class PackageEntryPointTests(unittest.TestCase):
+    """`main` writes an archive and reserves a release version, so an argument it
+    does not understand must stop it before any of that, not after."""
+
+    def _run(self, *args):
+        # included_files() runs before reserve(), so never reaching it proves no
+        # archive was written and no version reservation was consumed.
+        reached = patch.object(
+            build_plugin, "included_files", side_effect=RuntimeError("build started")
+        )
+        quiet = io.StringIO()
+        with reached as marker, redirect_stdout(quiet), redirect_stderr(quiet):
+            try:
+                build_plugin.main(*args)
+            except SystemExit as exit_request:
+                return exit_request.code, marker.called
+            except RuntimeError:
+                return "built", marker.called
+        return 0, marker.called
+
+    def test_help_reports_usage_without_building_or_reserving(self):
+        for argv in (["--help"], ["-h"], ["--help", "extra"]):
+            with self.subTest(argv=argv):
+                self.assertEqual(self._run(argv), (0, False))
+
+    def test_unrecognised_arguments_are_refused_without_building(self):
+        for argv in (["--dry-run"], ["-n"], ["0.3.61"], ["--version", "0.3.61"]):
+            with self.subTest(argv=argv):
+                self.assertEqual(self._run(argv), (2, False))
+
+    def test_no_arguments_still_builds_and_ignores_the_process_arguments(self):
+        with patch.object(sys, "argv", ["build_plugin.py", "--verbose", "discover"]):
+            self.assertEqual(self._run(), ("built", True))
+            self.assertEqual(self._run([]), ("built", True))
 
 
 if __name__ == "__main__":

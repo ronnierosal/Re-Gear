@@ -1,6 +1,6 @@
 # Controller and audio handoff foundation
 
-HDM treats controller and audio handoff as child work of the authoritative
+Re-Gear treats controller and audio handoff as child work of the authoritative
 transition transaction. They are not a second mutation engine.
 
 ## Current implementation boundary
@@ -67,7 +67,7 @@ facade; this relay cannot create a parallel Safe Undock path.
 The separate presentation contract exposes only categorical readiness for that
 future chord: delivery-not-connected, awaiting verified input, input mismatch,
 or later request revalidation. It intentionally omits opaque event identity and
-does not imply that HDM owns, listens to, disables, or remaps a controller. See
+does not imply that Re-Gear owns, listens to, disables, or remaps a controller. See
 [Controller Safe Undock presentation](CONTROLLER_SHORTCUT_PRESENTATION.md).
 
 The optional troubleshooting overlay can request a separate identity-free

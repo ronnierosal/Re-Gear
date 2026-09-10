@@ -20,6 +20,22 @@ from scripts.build_plugin import (  # noqa: E402
 
 
 class DeckyContractTests(unittest.TestCase):
+    def test_publish_image_uses_canonical_svg_listing_derivative(self):
+        manifest = json.loads((ROOT / "plugin.json").read_text(encoding="utf-8"))
+        self.assertEqual(manifest["publish"]["image"], "https://raw.githubusercontent.com/ronnierosal/Re-Gear/main/docs/images/re-gear-listing-icon.png")
+        logo = (ROOT / "docs/images/re-gear-listing-icon.png").read_bytes()
+        self.assertEqual(logo[:8], b"\x89PNG\r\n\x1a\n")
+        width, height = int.from_bytes(logo[16:20], "big"), int.from_bytes(logo[20:24], "big")
+        self.assertEqual((width, height), (512, 512))
+        self.assertEqual(logo[25], 6)  # RGBA, preserving transparent background.
+        import hashlib
+        provenance = json.loads((ROOT / "docs/images/re-gear-listing-icon.json").read_text(encoding="utf-8"))
+        self.assertEqual(provenance["source"], "src/assets/regear-icon.svg")
+        source = (ROOT / provenance["source"]).read_text(encoding="utf-8").replace("\r\n", "\n").encode()
+        self.assertEqual(hashlib.sha256(source).hexdigest(), provenance["source_sha256_lf"])
+        self.assertEqual(hashlib.sha256(logo).hexdigest(), provenance["output_sha256"])
+        self.assertEqual(provenance["renderer"], "@resvg/resvg-js@2.6.2")
+
     def test_manifest_requests_root_for_observation_and_sleep_guard(self):
         manifest = json.loads((ROOT / "plugin.json").read_text(encoding="utf-8"))
         self.assertEqual(manifest["name"], "Re-Gear")
@@ -27,7 +43,7 @@ class DeckyContractTests(unittest.TestCase):
         self.assertEqual(manifest["api_version"], 1)
         self.assertIn("sleep safety", manifest["publish"]["description"].lower())
 
-    def test_backend_exposes_only_diagnostics_support_and_preparation_rpcs(self):
+    def test_backend_exposes_only_documented_rpcs(self):
         path = ROOT / "main.py"
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         plugin = next(
@@ -44,6 +60,18 @@ class DeckyContractTests(unittest.TestCase):
             {
                 "get_snapshot",
                 "classify_offline_details",
+                "get_tdp_status",
+                "set_tdp_enabled",
+                "apply_tdp_limit",
+                "restore_tdp_limit",
+                "get_auto_tdp_status",
+                "start_auto_tdp",
+                "stop_auto_tdp",
+                "get_auto_tdp_benchmark_status",
+                "run_auto_tdp_benchmark",
+                "cancel_auto_tdp_benchmark",
+                "get_auto_tdp_preferences",
+                "save_auto_tdp_preference",
                 "get_peripheral_status",
                 "get_action_history",
                 "get_automatic_dock_status",
@@ -78,6 +106,12 @@ class DeckyContractTests(unittest.TestCase):
                 "approve_process_release",
                 "execute_process_release",
                 "acknowledge_process_release",
+                "get_egpu_disconnect_status",
+                "execute_egpu_disconnect",
+                "remember_game_close_choice",
+                "forget_game_close_choice",
+                "take_pending_relaunch",
+                "get_sleep_readiness",
             },
         )
         source = path.read_text(encoding="utf-8")
@@ -235,7 +269,7 @@ class DeckyContractTests(unittest.TestCase):
         self.assertNotIn("    undefined,\n    { strTitle", warning)
 
     def test_decky_archive_has_one_top_level_plugin_directory(self):
-        self.assertEqual(PLUGIN_DIRECTORY, "HandheldDockMode")
+        self.assertEqual(PLUGIN_DIRECTORY, "Re-Gear")
         self.assertEqual(
             archive_name(ROOT / "plugin.json"),
             f"{PLUGIN_DIRECTORY}/plugin.json",

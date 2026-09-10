@@ -70,6 +70,21 @@ class DrmConnectorRecord:
         return None
 
     @property
+    def mode_committed(self) -> bool | None:
+        """Whether DRM still has a mode committed on this connector.
+
+        sysfs `enabled` reports whether the connector is driving a display,
+        which is a different question from whether the compositor prefers
+        it. Anything other than the two known values is unknown rather than
+        false, so an unreadable attribute cannot read as 'not driving'.
+        """
+        if self.enabled == "enabled":
+            return True
+        if self.enabled == "disabled":
+            return False
+        return None
+
+    @property
     def internal(self) -> bool:
         return self.name.startswith("eDP-")
 
