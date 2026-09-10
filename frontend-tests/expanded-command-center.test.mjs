@@ -71,6 +71,7 @@ test("native modal uses Decky controls without a second raw navigation listener"
     const React={createElement:(type,props,...children)=>({type,props:{...props,children}})};
     const ModalRoot='modal', ExpandedCommandCenter='shell',Button='native-button',Focusable='native-focus';
     const useEffect=fn=>effects.push(fn()), useState=v=>[v,()=>{}];
+    const useSyncExternalStore=(_subscribe,read)=>read();
     const loadMenuBinding=()=> 'start-select',saveMenuBinding=()=>true,menuBindingOptions=[];
     const startMenuShortcut=()=>({available:true,reset(){},stop(){}});
     const showModal=view=>{opens++;views.push(view);return {Close(){}}};
@@ -95,23 +96,30 @@ test("native shortcut dropdown preserves selection and active chord when saving 
   const nativeSource = readFileSync(new URL("../src/quick-access/expanded-command-center/native.tsx", import.meta.url), "utf8");
   const nativeJs = ts.transpileModule(nativeSource, { compilerOptions: { module: ts.ModuleKind.ESNext, jsx: ts.JsxEmit.React } }).outputText.replace(/^import .*;$/gm, "");
   const fixture = `
-    export const views=[], states=[], saved=[];
+    export const views=[], saved=[];
     export let resets=0, stops=0;
-    let cursor=0, fail=false, deps;
+    const componentStates=new WeakMap();
+    let states=[],cursor=0, fail=false, deps;
     const React={createElement:(type,props,...children)=>({type,props:{...props,children}})};
     const ModalRoot='modal',ExpandedCommandCenter='shell',Button='button',Focusable='focus',Dropdown='native-dropdown',ShortcutSettings='settings';
-    const useEffect=()=>{},useState=v=>{const i=cursor++;if(!(i in states))states[i]=v;return [states[i],n=>states[i]=n]};
+    const useEffect=()=>{},useState=v=>{const ownStates=states,i=cursor++;if(!(i in ownStates))ownStates[i]=v;return [ownStates[i],n=>ownStates[i]=n]};
+    // Snapshot-only stub for this preference test. Subscription/liveness is
+    // exercised by the producer/consumer tests, not by sharing hook arrays.
+    const useSyncExternalStore=(_subscribe,read)=>read();
     const loadMenuBinding=()=> 'view-y',saveMenuBinding=value=>{saved.push(value);return !fail};
     const menuBindingOptions=[{label:'View / Back + Y',data:'view-y'},{label:'L3 + R3',data:'sticks'},{label:'Disabled',data:'disabled'}];
     const startMenuShortcut=d=>{deps=d;return {available:true,reset(){resets++},stop(){stops++}}};
     const showModal=view=>{views.push(view);return {Close(){}}};
-    export const currentBinding=()=>deps.readBinding(),failSave=value=>{fail=value},render=component=>{cursor=0;return component()};
+    export const currentBinding=()=>deps.readBinding(),failSave=value=>{fail=value},render=component=>{
+      cursor=0;states=componentStates.get(component)??[];
+      componentStates.set(component,states);return component();
+    };
   `;
   const native = await import(`data:text/javascript;base64,${Buffer.from(fixture + nativeJs).toString("base64")}`);
   const runtime = native.createExpandedMenu(undefined, {localStorage:{}});
   runtime.open();
   const view = native.views[0].props.children[1];
-  const settings = view.type(view.props).props.settings.type;
+  const settings = native.render(() => view.type(view.props)).props.settings.type;
   let rendered = native.render(settings);
   assert.equal(rendered.props.control.type, "native-dropdown");
   assert.equal(rendered.props.control.props.selectedOption, "view-y");
