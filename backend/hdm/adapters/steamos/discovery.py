@@ -1,4 +1,4 @@
-"""Aggregate independent SteamOS observations into one HDM snapshot."""
+"""Aggregate independent SteamOS observations into one Re-Gear snapshot."""
 
 from __future__ import annotations
 

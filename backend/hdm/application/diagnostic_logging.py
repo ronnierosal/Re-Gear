@@ -1,4 +1,4 @@
-"""Ephemeral opt-in policy for bounded verbose HDM diagnostic events."""
+"""Ephemeral opt-in policy for bounded verbose Re-Gear diagnostic events."""
 
 from __future__ import annotations
 

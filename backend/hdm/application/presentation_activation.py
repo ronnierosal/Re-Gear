@@ -1,4 +1,4 @@
-"""Approval-gated preparation of HDM's reversible Gamescope integration."""
+"""Approval-gated preparation of Re-Gear's reversible Gamescope integration."""
 
 from __future__ import annotations
 

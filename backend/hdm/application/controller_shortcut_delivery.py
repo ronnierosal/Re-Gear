@@ -21,7 +21,7 @@ from ..domain.logical_actions import LogicalActionRequest
 
 
 class LogicalActionSinkPort(Protocol):
-    """The sole future bridge to HDM's canonical request facade."""
+    """The sole future bridge to Re-Gear's canonical request facade."""
 
     def submit(self, request: LogicalActionRequest) -> bool: ...
 
@@ -48,7 +48,7 @@ class ControllerShortcutDeliveryAdapter:
         """Evaluate once, consume a matched event, then submit only the request.
 
         A sink exception or rejection never causes a retry. The caller must
-        obtain a new verified physical event and fresh HDM generation instead of
+        obtain a new verified physical event and fresh Re-Gear generation instead of
         replaying a possibly already-delivered held chord.
         """
         decision = evaluate_controller_shortcut(evidence)

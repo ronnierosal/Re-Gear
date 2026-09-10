@@ -1,1 +1,1 @@
-"""HDM application services."""
+"""Re-Gear application services."""

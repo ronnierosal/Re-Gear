@@ -1,6 +1,6 @@
-"""Pure, bounded assessment of one HDM overhead measurement.
+"""Pure, bounded assessment of one Re-Gear overhead measurement.
 
-This is not a collector, a scheduler, a performance tuner, or proof that HDM
+This is not a collector, a scheduler, a performance tuner, or proof that Re-Gear
 has no game impact.  A future owner supplies one already-observed measurement.
 """
 
@@ -39,7 +39,7 @@ class GameImpactAssessment(StrEnum):
 
 
 @dataclass(frozen=True, slots=True)
-class HdmOverheadObservation:
+class RegearOverheadObservation:
     """One identity-free timing sample from existing read-only work."""
 
     observed_at_monotonic_ms: int
@@ -81,8 +81,8 @@ class PerformanceMeasurementAssessment:
         return False
 
 
-def assess_hdm_overhead(
-    observation: HdmOverheadObservation,
+def assess_regear_overhead(
+    observation: RegearOverheadObservation,
     contract: TelemetryCollectionContract,
     *,
     game_state: GameState,
@@ -118,7 +118,7 @@ def assess_hdm_overhead(
 def performance_measurement_to_public_dict(
     assessment: PerformanceMeasurementAssessment,
 ) -> dict[str, object]:
-    """Expose categorical result and HDM cost only; never game or device identity."""
+    """Expose categorical result and Re-Gear cost only; never game or device identity."""
 
     payload: dict[str, object] = {
         "schema_version": 1,

@@ -158,7 +158,7 @@ class GamescopeIntegrationStoreTests(unittest.TestCase):
             self.assertTrue(after.ready)
             self.assertEqual(after.error_code, "")
 
-            # Migration must leave the drop-in reversible through HDM.
+            # Migration must leave the drop-in reversible through Re-Gear.
             self.assertTrue(store.deactivate().changed)
             self.assertFalse(store.target.exists())
 
