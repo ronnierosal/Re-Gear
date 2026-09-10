@@ -3,6 +3,7 @@ import { createExpandedMenu } from "./quick-access/expanded-command-center/nativ
 import { createTilePublisher } from "./quick-access/expanded-command-center/tile-source";
 import type { Readings } from "./quick-access/expanded-command-center/tile-source";
 import { observationAge } from "./quick-access/expanded-command-center/tile-source";
+import { createSingleFlight } from "./quick-access/single-flight";
 import { EgpuModule } from "./quick-access/modules/egpu";
 import { egpuPresentation } from "./quick-access/modules/egpu-presentation";
 import { ControllerModule } from "./quick-access/modules/controller";
@@ -1521,10 +1522,20 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
    * is watching the TV. The message comes from gameCloseWiringMessage, which
    * keeps the cable sentence: a software removal is not clearance to unplug.
    */
+  /** One disconnect at a time, refused synchronously.
+   *
+   * Not the busy state: React state is not a lock, so two activations in the
+   * same tick both read the old value and both dispatch. The backend
+   * serialises, but a second press is refused here too -- a player answered one
+   * confirmation and must get one operation. See quick-access/single-flight.ts,
+   * where the behaviour is tested. */
+  const disconnectFlight = useRef(createSingleFlight()).current;
+
   const runDisconnect = useCallback(async (
     releaseDisplay: boolean,
     answers: GameCloseAnswers,
   ) => {
+    await disconnectFlight.run(async () => {
     setDisconnectBusy(true);
     setDisconnectMessage("");
     try {
@@ -1540,13 +1551,16 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
     } catch {
       setDisconnectMessage("Re-Gear could not complete the disconnect request.");
     } finally {
+      // Released on every outcome, including failure and cancellation, so a
+      // refused or failed attempt never wedges the control permanently.
       setDisconnectBusy(false);
       // A new attempt is a new answer, so an earlier dismissal must not hide it.
       setResultDismissed(false);
       // Re-read rather than assuming what the attempt left behind.
       void refreshDisconnect();
     }
-  }, [egpuDisconnect, refreshDisconnect]);
+    });
+  }, [disconnectFlight, egpuDisconnect, refreshDisconnect]);
 
   /** Perform a reopen a previous disconnect left pending.
    *
