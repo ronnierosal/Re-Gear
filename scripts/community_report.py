@@ -116,7 +116,7 @@ def collect(root, timeout=TIMEOUT):
     env.update(PATH='/usr/bin:/bin', LANG='C.UTF-8')
     command = [sys.executable, '-I', '-B', '-c',
                'import sys; sys.path.insert(0,sys.argv[1]); '
-               'sys.argv=["hdm-diagnose","--compact"]; '
+               'sys.argv=["regear-diagnose","--compact"]; '
                'from hdm.cli import main; raise SystemExit(main())', str(root / 'backend')]
     process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                                stderr=subprocess.DEVNULL, env=env, cwd=root)
