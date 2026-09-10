@@ -95,8 +95,10 @@ def main() -> int:
         gpu_functions_present=gpu_present,
         gpu_scan_complete=gpu_complete,
         # Never approved from a probe. Reporting the substantive blocker is the
-        # whole job; producing a permitted decision is not.
-        approved=False,
+        # whole job; producing a permitted decision is not. Passing no approval
+        # is what expresses that: an otherwise-clear dock stops at
+        # `approval_required` rather than reaching `permitted`.
+        approval=None,
     )
 
     report = {
