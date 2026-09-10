@@ -192,6 +192,16 @@ class DiscoveryFailClosedTests(unittest.TestCase):
             "A known whole-disk number does not complete partition identity",
         )
 
+    def test_malformed_device_number_cannot_clear_an_alias_mount(self):
+        (self.block / "sda" / "sda1" / "dev").write_text(
+            "not-a-device-number\n", encoding="utf-8"
+        )
+        self.mount("/dev/disk/by-uuid/backup-volume", "8:1")
+        self.assertFalse(
+            self.storage().complete,
+            "Nonempty but malformed device evidence is still unknown",
+        )
+
     def test_duplicate_router_names_cannot_select_first_attachment(self):
         self.router("0-1", "Tapex Creek", "0")
         self.router("0-2", "TAPEX CREEK", "1")
