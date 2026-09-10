@@ -141,6 +141,20 @@ class DiscoveryFailClosedTests(unittest.TestCase):
         self.assertTrue((self.block / "sda").is_dir())
         self.assertFalse(self.storage().complete)
 
+    def test_stacked_consumer_of_partition_is_reported(self):
+        (self.block / "sda" / "sda1" / "holders" / "dm-0").mkdir()
+        reading = self.storage()
+        self.assertTrue(reading.complete)
+        self.assertTrue(
+            any(use.kind == "stacked" and "dm-0" in use.detail
+                for use in reading.other_uses),
+            "An assembled mapping on a partition still holds the branch disk",
+        )
+
+    def test_missing_partition_holders_is_incomplete(self):
+        (self.block / "sda" / "sda1" / "holders").rmdir()
+        self.assertFalse(self.storage().complete)
+
     def test_mount_alias_is_matched_by_partition_device_number(self):
         self.mount("/dev/disk/by-uuid/backup-volume", "8:1")
         reading = self.storage()
