@@ -136,9 +136,23 @@ class BlindSwitchTests(unittest.TestCase):
 
         decision = decide(profile=weak)
 
-        self.assertIs(decision.state, SavedTvState.WAITING)
+        # Settled, not waiting: this is a property of the saved profile, so no
+        # number of further looks can change it and pretending otherwise is the
+        # endless "connecting..." this module exists to avoid.
+        self.assertIs(decision.state, SavedTvState.SETTLED)
         self.assertEqual(decision.code, "saved_tv.identity_not_verifiable")
         self.assertFalse(decision.may_continue)
+
+    def test_an_unverifiable_identity_settles_on_the_very_first_look(self) -> None:
+        weak = replace(PROFILE, edid_identified=False)
+
+        for attempts in (0, 1, DEFAULT_MAX_ATTEMPTS, DEFAULT_MAX_ATTEMPTS * 100):
+            with self.subTest(attempts=attempts):
+                decision = decide(profile=weak, attempts=attempts)
+
+                self.assertIs(decision.state, SavedTvState.SETTLED)
+                self.assertIsNot(decision.state, SavedTvState.WAITING)
+                self.assertEqual(decision.code, "saved_tv.identity_not_verifiable")
 
 
 class BoundedWaitingTests(unittest.TestCase):
