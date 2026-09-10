@@ -328,7 +328,7 @@ must reset settling without requesting a transition.
 
 Before the physical connection, enable temporary verbose diagnostics and begin
 a bounded `plugin_loader.service` journal capture. Correlate the operator's
-physical-connect timestamp with `HDM G1 journey` entries for presence,
+physical-connect timestamp with `Re-Gear G1 journey` entries for presence,
 readiness, automatic-transition start/result, and their elapsed/duration fields.
 The support bundle should retain those normal journey events plus the verbose
 collector stage/duration rows. Treat a missing early entry as an observation
