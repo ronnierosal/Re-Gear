@@ -28,6 +28,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
+from regear.adapters.steamos.dock_branch import TunnelReading  # noqa: E402
 from regear.domain.dock_teardown import decide_dock_teardown  # noqa: E402
 
 
@@ -85,6 +86,32 @@ class ProbeCallSiteTests(unittest.TestCase):
         self.assertEqual(len(approval), 1, "the probe states its approval explicitly")
         self.assertIsInstance(approval[0], ast.Constant)
         self.assertIsNone(approval[0].value)
+
+
+class ProbeReportTests(unittest.TestCase):
+    """What the adapter observes, the probe has to say out loud.
+
+    The probe exists to report the substantive blocker. A reading the
+    adapter produces and the probe drops is a blocker an operator never
+    sees -- and when the dropped field is the reason for a refusal, they
+    are told the scan failed instead of what actually happened.
+    """
+
+    def test_every_tunnel_reading_field_is_reported(self):
+        source = PROBE.read_text(encoding="utf-8")
+        reported = {
+            node.attr
+            for node in ast.walk(ast.parse(source))
+            if isinstance(node, ast.Attribute)
+            and isinstance(node.value, ast.Name)
+            and node.value.id == "tunnel"
+        }
+        missing = set(TunnelReading.__dataclass_fields__) - reported
+        self.assertEqual(
+            missing,
+            set(),
+            f"observed by the adapter but never reported: {sorted(missing)}",
+        )
 
 
 if __name__ == "__main__":  # pragma: no cover
