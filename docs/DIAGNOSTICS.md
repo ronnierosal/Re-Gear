@@ -22,7 +22,7 @@ PYTHONPATH=backend python -m hdm.cli
 PYTHONPATH=backend python -m hdm.cli --compact
 ```
 
-Installing the Python project exposes the `hdm-diagnose` console entry point.
+Installing the Python project exposes the `regear-diagnose` console entry point.
 A normal Decky ZIP does not install `pyproject.toml` or a global console script;
 from an installed plugin tree the current equivalent is:
 
@@ -30,7 +30,7 @@ from an installed plugin tree the current equivalent is:
 PYTHONPATH=<plugin-root>/backend python3 -m hdm.cli --compact
 ```
 
-Do not claim that `hdm-diagnose` is globally installed by Decky until packaging
+Do not claim that `regear-diagnose` is globally installed by Decky until packaging
 adds and verifies that launcher.
 
 The package includes one explicitly allowlisted read-only script,

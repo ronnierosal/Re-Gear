@@ -3,7 +3,7 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "handheld-dock-mode-steamos"
+name = "re-gear-steamos"
 version = "0.3.72"
 description = "Re-Gear: safety-first SteamOS handheld docking"
 readme = "README.md"
@@ -13,7 +13,7 @@ authors = [{ name = "Ronnie Rosal" }]
 dependencies = []
 
 [project.scripts]
-hdm-diagnose = "hdm.cli:main"
+regear-diagnose = "hdm.cli:main"
 
 [tool.setuptools]
 package-dir = { "" = "backend" }
