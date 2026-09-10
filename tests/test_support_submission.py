@@ -93,6 +93,33 @@ class SupportSubmissionTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     parse_support_submission_response(payload)
 
+    def test_a_renamed_report_id_is_accepted_without_widening_the_format(self):
+        """The endpoint issues these ids, so both prefixes must parse.
+
+        The test above already pins the legacy ``HDM-`` prefix, which is the
+        half that matters for a server that may still be handing out ids
+        issued before the rename. This one pins the other half: the new
+        prefix works, and accepting it did not turn the pattern into a
+        wildcard that lets an arbitrary prefix through.
+        """
+        result = parse_support_submission_response(
+            {"ok": True, "report_id": "RG-8F3A21"}
+        )
+        self.assertEqual(result.report_id, "RG-8F3A21")
+        rejected = (
+            "XX-8F3A21",
+            "-8F3A21",
+            "8F3A21",
+            "RGHDM-8F3A21",
+            "RG-8f3a21",
+        )
+        for report_id in rejected:
+            with self.subTest(report_id=report_id):
+                with self.assertRaises(ValueError):
+                    parse_support_submission_response(
+                        {"ok": True, "report_id": report_id}
+                    )
+
     def test_approval_contract_contains_no_endpoint_or_credentials(self):
         approval = SupportSubmissionApprovalStore(
             token_factory=lambda: "submission_token_0001"

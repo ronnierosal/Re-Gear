@@ -24,16 +24,6 @@ Pinned elsewhere, listed here so the inventory is findable in one place. Each
 already has an assertion in the test named beside it; what those lack is the
 reason, which is how a sweep talks itself past them:
 
-- ``X-HDM-Content-SHA256`` -- an HTTP header a server reads.
-  ``tests/test_support_submission_adapter.py``
-- ``REPORT_ID_RE = ^HDM-[A-Z0-9]{6,16}$`` -- validates ids the *server* returns,
-  so the format is not ours to change unilaterally.
-  ``tests/test_support_submission.py``
-- the ``"hdm"`` version key in the support-bundle payload -- a wire format a
-  reader already parses. ``tests/test_support_bundle.py``
-- ``HDM-support-<timestamp>.json`` -- the filename written into a player's
-  Downloads, which they may already have sent somewhere.
-  ``tests/test_support_bundle.py``
 - ``HDM_STATE_ROOT`` -- an environment variable rendered into the installed
   drop-in, so it is bytes on disk as well as a name. Covered below.
 - ``HDM shutdown checkpoint: stage=`` -- emitted to journald and parsed by a
@@ -42,6 +32,27 @@ reason, which is how a sweep talks itself past them:
 - ``hdm.hideAttachedEgpuSleepWarning`` and its legacy partner -- localStorage
   keys holding a player's dismissal.
   ``frontend-tests/retained-legacy-identity.test.mjs``
+
+Four entries that used to be listed here have been renamed, because the reason
+given for each turned out not to survive checking. ``support_submission.py``
+says in its own docstring that the adapter is dormant, that production delivery
+does not construct it, and that no endpoint ships with Re-Gear. So "a server
+reads it" described a server that does not exist:
+
+- ``X-Re-Gear-Content-SHA256`` -- renamed. Producer-side only: set by the
+  adapter, asserted by ``tests/test_support_submission_adapter.py``, and built
+  by no non-test caller. There is no deployed peer to break.
+- ``REPORT_ID_RE = ^(?:RG|HDM)-[A-Z0-9]{6,16}$`` -- accepts both. This one is
+  genuinely not ours to dictate, because it parses ids a *server returns*, so
+  the legacy prefix stays accepted rather than being dropped. Removal
+  criterion: a shipped endpoint that has never issued an ``HDM-`` id.
+- the ``"regear"`` version key in the support-bundle payload -- renamed, and
+  ``scripts/check_plugin_package.py`` still reads ``"hdm"`` too, because a
+  bundle a player saved before the rename carries the old key. Removal
+  criterion: no supported build or retained bundle still writes ``"hdm"``.
+- ``Re-Gear-support-<timestamp>.json`` -- renamed. Only the *new* filename
+  changes; a file already sitting in a player's Downloads keeps the name it was
+  written with, and nothing in this repository parses the filename to find it.
 
 Deliberately not frozen: ``backend/hdm/`` is packaged into the Decky archive and
 validated by the signed installer, so renaming it changes the installed tree.

@@ -159,7 +159,7 @@ class FixedHttpsSupportSubmissionAdapter:
             "Accept": "application/json",
             "Content-Type": upload.content_type,
             "Content-Length": str(upload.size_bytes),
-            "X-HDM-Content-SHA256": upload.sha256,
+            "X-Re-Gear-Content-SHA256": upload.sha256,
         }
         try:
             response = self._transport.post(

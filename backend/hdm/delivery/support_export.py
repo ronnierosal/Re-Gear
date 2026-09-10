@@ -41,7 +41,7 @@ class SupportBundleFileWriter:
         timestamp = self._clock().astimezone(timezone.utc).strftime(
             "%Y%m%dT%H%M%S%fZ"
         )
-        filename = f"HDM-support-{timestamp}.json"
+        filename = f"Re-Gear-support-{timestamp}.json"
         with UserDirectory(home) as user_home:
             with UserDirectory(home / "Downloads", user_home.uid, user_home.gid,
                                create_from=home, create=True) as downloads:

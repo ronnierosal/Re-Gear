@@ -166,7 +166,7 @@ class SupportBundleTests(unittest.TestCase):
             adversarial_report(),
             events.snapshot(),
             {
-                "hdm": "0.2.0",
+                "regear": "0.2.0",
                 "decky": "fixture-secret",
                 "steamos": "FixtureUser@192.0.2.185",
                 "kernel": "6.11.11-valve",
@@ -407,7 +407,7 @@ class SupportBundleFileWriterTests(unittest.TestCase):
 
             self.assertEqual(
                 result.relative_path,
-                "Downloads/HDM-support-20260831T010203456789Z.json",
+                "Downloads/Re-Gear-support-20260831T010203456789Z.json",
             )
             self.assertEqual(target.read_text(encoding="utf-8"), bundle.json_text)
             self.assertNotIn(str(user_home), result.relative_path)
