@@ -133,6 +133,18 @@ This is the part that should be read before any of the above is quoted.
   tool exits, which suits a supervised run and explicitly does not survive a
   crash. There is no ownership journal, so nothing records that a filter was
   ever in place. A production caller needs one.
+
+  Updated 2026-09-09: the plugin path now has one.
+  `hdm.domain.filter_ownership` plus `hdm.application.owned_filter` record a
+  parent-scope claim before the attach and clear it only after a verified
+  detach, and `build_live_disconnect_runtime` composes the filter behind it, so
+  a crash in that window reconciles on the next attempt instead of vanishing.
+  Two things that does **not** change. The link is still unpinned, so the filter
+  itself still disappears with its owner: the journal makes that visible, it does
+  not make the filter survive. And this is software verification only — unit
+  tests over fixtures, no hardware run — so the arm-sequence evidence above is
+  still the only hardware record, and the operator tool described here is
+  deliberately unchanged.
 - **Nothing here is a player feature.** No RPC and no UI is wired to it; the
   capability is operator CLI only.
 - **The USB branch remains unresolved.** Uncorrectable ACS violations on the
