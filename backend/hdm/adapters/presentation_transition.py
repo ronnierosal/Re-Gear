@@ -70,14 +70,17 @@ class PresentationTransitionMechanism:
         self._trial_store = trial_store
         self._active_operation = active_operation
         self._trial_plan = None
+        self._trial_schema_version = 1
         self._trial_layer_ready = trial_layer_ready
         self._trial_steam_waiter = trial_steam_waiter
 
-    def run_portable_trial(self, plan, orchestrator):
+    def run_portable_trial(self, plan, orchestrator, *, schema_version=1):
         """Called only for a consumed trial-bound permit; reuse the same engine."""
-        if self._trial_store is None or self._trial_plan is not None:
+        if (type(schema_version) is not int or schema_version not in (1, 2)
+                or self._trial_store is None or self._trial_plan is not None):
             raise ValueError("portable trial unavailable")
         self._trial_plan = plan
+        self._trial_schema_version = schema_version
         try:
             result = orchestrator.run(plan, portable_vulkan_trial=True)
             from ..application.transition_orchestrator import RuntimeTransitionResult
@@ -96,6 +99,7 @@ class PresentationTransitionMechanism:
                     self._trial_store.cancel(plan.plan_id)
             finally:
                 self._trial_plan = None
+                self._trial_schema_version = 1
 
     def _current_trial(self):
         operation = self._active_operation()
@@ -227,6 +231,7 @@ class PresentationTransitionMechanism:
                                 f"{boot_id}:{binding.egpu_stable_id}".encode()).hexdigest(),
                             original_config=original, expected_config=expected,
                             expires_at=time.monotonic() + 120,
+                            schema_version=self._trial_schema_version,
                     )
                 self._config.write_target(
                     target=target, binding=binding, snapshot=observation, boot_id=boot_id,

@@ -171,3 +171,22 @@ disconnected, confirm Portable health, then separately supervise attach and
 idle TV-Docked readiness. Keep the cable attached throughout launch/recovery
 and resource verification. Software removal and physical unplug are separate,
 unimplemented milestones. Current policy remains shutdown before disconnect.
+
+## Explicit OpenGL + Vulkan experiment (local, not installed)
+
+The new developer-supervised `approve_supervised_portable_graphics_trial` RPC
+issues an approval bound to schema 2; execute it through the existing Portable
+switch endpoint. Existing Vulkan-only approvals and schema-1 records retain their
+original meaning. Normal display buttons and automatic switching do not opt in.
+
+Schema 2 adds `DRI_PRIME=vendor:device` for the uniquely verified internal GPU to
+the fresh Gamescope and Steam child environments. Inherited DRI_PRIME is rejected,
+including a matching value; ordinary launches preserve user-owned DRI_PRIME.
+The existing one-shot receipts, configuration restoration and recovery engine
+remain in use. This selection may still permit G1 allocations; it is an empirical
+release hypothesis, not a device-access restriction or unplug authorization.
+
+The supervised run must capture privileged allocations before, during and after
+launch, plus actual child environment and the player's display, controls and audio
+result. Retained Steam/Gamescope allocations or audio handles identify the next
+fix. Keep the cable attached throughout; installation starts on a detached boot.

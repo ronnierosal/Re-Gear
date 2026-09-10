@@ -19,7 +19,7 @@ class TrialLaunchTests(unittest.TestCase):
         self.config = GamescopeLaunchConfig(self.boot_hash, 'portable', 'eDP-1')
         self.card = SimpleNamespace(boot_vga=True, vendor_device='1002:150e',
             connectors=(SimpleNamespace(name='eDP-1', internal=True, connected=True),))
-        self.record = dict(expected_config=config_to_dict(self.config),
+        self.record = dict(schema_version=1, expected_config=config_to_dict(self.config),
             boot_id_sha256=self.boot_hash, egpu_binding_sha256='b' * 64,
             internal_gpu='1002:150e', internal_connector='eDP-1',
             generation='generation-1', expires_at=100)
@@ -42,6 +42,13 @@ class TrialLaunchTests(unittest.TestCase):
                         {'environment': {'DRI_PRIME': '1'}}):
             with self.subTest(changes=changes), self.assertRaises(ValueError):
                 candidate_from_record(self.record, **dict(self.arguments, **changes))
+
+    def test_record_schema_controls_prime_without_upgrading_old_authority(self):
+        self.assertNotIn('DRI_PRIME', candidate_from_record(self.record, **self.arguments)[1])
+        record = dict(self.record, schema_version=2)
+        self.assertEqual(candidate_from_record(record, **self.arguments)[1]['DRI_PRIME'], '1002:150e')
+        with self.assertRaises(ValueError):
+            candidate_from_record(record, **dict(self.arguments,environment={'DRI_PRIME':'1002:150e'}))
 
     def test_connector_must_belong_to_verified_internal_gpu(self):
         self.card.connectors = ()

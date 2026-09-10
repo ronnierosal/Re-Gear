@@ -30,7 +30,8 @@ class SteamActivationTests(unittest.TestCase):
             + ':/usr/local/sbin:/usr/local/bin:/usr/bin:/usr/sbin:/bin:/sbin\n')
         self.shim.write_bytes(b'#!/usr/bin/python3\n# Re-Gear supervised Steam trial shim\n')
         self.shim.chmod(0o755)
-        for name in ('steam_trial_wrapper.py', 'portable_trial_store.py', 'portable_trial_launch.py'):
+        for name in ('steam_trial_wrapper.py', 'portable_trial_store.py',
+                     'portable_trial_launch.py', 'portable_vulkan_trial.py'):
             p = self.plugin / 'backend/hdm/delivery' / name
             p.parent.mkdir(parents=True, exist_ok=True)
             p.write_text('# fixture\n')

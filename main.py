@@ -1848,6 +1848,24 @@ class Plugin:
             return {"schema_version": 1, "approval_token": "",
                     "blockers": ["portable_trial.approval_failed"], "safe_to_unplug": False}
 
+    async def approve_supervised_portable_graphics_trial(self) -> dict[str, object]:
+        """Explicit OpenGL + Vulkan one-shot trial; never safe-unplug approval."""
+        try:
+            if not await asyncio.to_thread(self._steam_trial_integration().verify_effective):
+                return {"schema_version": 1, "approval_token": "",
+                        "blockers": ["portable_trial.steam_integration_required"], "safe_to_unplug": False}
+            preview = await asyncio.to_thread(
+                lambda: self._presentation_transition_service().preview(
+                    PlacementState.PORTABLE, user_confirmed=True, portable_vulkan_trial=True,
+                    portable_trial_schema_version=2,
+                )
+            )
+            return {"schema_version": 1, "approval_token": preview.approval_token,
+                    "blockers": list(preview.blockers), "safe_to_unplug": False}
+        except Exception:
+            return {"schema_version": 1, "approval_token": "",
+                    "blockers": ["portable_trial.approval_failed"], "safe_to_unplug": False}
+
     async def approve_supervised_steam_trial_preparation(self) -> dict[str, object]:
         """Detached idle preparation only; no service restart or trial grant."""
         try:

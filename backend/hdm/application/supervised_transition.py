@@ -46,6 +46,7 @@ class SupervisedTransitionPreview:
     current: PlacementState
     approval_token: str = ""
     blockers: tuple[str, ...] = ()
+    portable_trial_schema_version: int = 1
 
     @property
     def ready(self) -> bool:
@@ -111,7 +112,12 @@ class SupervisedPresentationTransitionService:
         user_confirmed: bool,
         expected_generation: str = "",
         portable_vulkan_trial: bool = False,
+        portable_trial_schema_version: int = 1,
     ) -> SupervisedTransitionPreview:
+        if (type(portable_trial_schema_version) is not int or portable_trial_schema_version not in (1, 2)
+                or (portable_trial_schema_version == 2 and portable_vulkan_trial is not True)):
+            return SupervisedTransitionPreview(target, PlacementState.UNKNOWN,
+                blockers=("portable_trial.invalid_schema",))
         if target not in {PlacementState.PORTABLE, PlacementState.DOCKED_EGPU}:
             return SupervisedTransitionPreview(
                 target, PlacementState.UNKNOWN, blockers=("placement.target_unsupported",)
@@ -181,8 +187,10 @@ class SupervisedPresentationTransitionService:
                 egpu_stable_id=evidence.egpu_stable_id,
                 user_confirmed=True,
                 portable_vulkan_trial=portable_vulkan_trial,
+                portable_trial_schema_version=portable_trial_schema_version,
             )
-        return SupervisedTransitionPreview(target, current, token)
+        return SupervisedTransitionPreview(target, current, token,
+            portable_trial_schema_version=portable_trial_schema_version)
 
     def execute(self, approval_token: str) -> SupervisedTransitionExecution:
         if not self._lock.acquire(blocking=False):
@@ -306,7 +314,11 @@ class SupervisedPresentationTransitionService:
         if permit.portable_vulkan_trial:
             if self._portable_trial_runner is None or current is not PlacementState.DOCKED_EGPU:
                 return SupervisedTransitionExecution(False, "portable_trial.unavailable")
-            result = self._portable_trial_runner(decision.plan, self._orchestrator)
+            if permit.portable_trial_schema_version == 1:
+                result = self._portable_trial_runner(decision.plan, self._orchestrator)
+            else:
+                result = self._portable_trial_runner(decision.plan, self._orchestrator,
+                    schema_version=permit.portable_trial_schema_version)
         else:
             result = self._orchestrator.run(decision.plan)
         code = (

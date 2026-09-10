@@ -13,7 +13,9 @@ from ..ports.presentation_activation import UserServiceOperation
 ROUTING_KEYS = frozenset(('DRI_PRIME', 'VK_ICD_FILENAMES', 'VK_DRIVER_FILES',
     'VK_LOADER_DRIVERS_SELECT', 'VK_LOADER_DRIVERS_DISABLE', 'VK_LOADER_LAYERS_DISABLE',
     'VK_LAYER_PATH', 'VK_INSTANCE_LAYERS', 'NODEVICE_SELECT',
-    'MESA_VK_DEVICE_SELECT', 'MESA_VK_DEVICE_SELECT_FORCE_DEFAULT_DEVICE'))
+    'MESA_VK_DEVICE_SELECT', 'MESA_VK_DEVICE_SELECT_FORCE_DEFAULT_DEVICE',
+    'MESA_LOADER_DRIVER_OVERRIDE', 'GALLIUM_DRIVER', 'LIBGL_ALWAYS_SOFTWARE',
+    '__GLX_VENDOR_LIBRARY_NAME'))
 
 
 class SteamTrialIntegrationStore(GamescopeIntegrationStore):
@@ -108,7 +110,8 @@ class SteamTrialIntegrationStore(GamescopeIntegrationStore):
         if self._conflicts():
             raise ValueError('Steam integration conflict')
         digest = hashlib.sha256(super().activation_fingerprint().encode())
-        for name in ('steam_trial_wrapper.py', 'portable_trial_store.py', 'portable_trial_launch.py'):
+        for name in ('steam_trial_wrapper.py', 'portable_trial_store.py',
+                     'portable_trial_launch.py', 'portable_vulkan_trial.py'):
             value = self._read_required(self._plugin_root / 'backend/hdm/delivery' / name)
             digest.update(value.encode())
         digest.update(UNIT_SHA256.encode())
