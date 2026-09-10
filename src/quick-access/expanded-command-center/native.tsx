@@ -1,10 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { Button, Dropdown, Focusable, ModalRoot, showModal } from "@decky/ui";
 import type { ControllerInputSource } from "../../controller-safe-disconnect";
 import { loadMenuBinding, saveMenuBinding, menuBindingOptions, startMenuShortcut } from "../../menu-shortcut";
 import type { MenuBinding } from "../../menu-shortcut";
 import { ExpandedCommandCenter } from "./shell";
-import type { TileSource } from "./tile-source";
+import type { TileSource, TileView } from "./tile-source";
 import { ShortcutSettings } from "./shortcut-settings";
 
 /** Native adapter. Opens the menu, saves its launcher preference, and passes
@@ -20,6 +20,27 @@ import { ShortcutSettings } from "./shortcut-settings";
  * a view someone else owns; adding a read here would be a second source of
  * truth for state a player acts on.
  */
+/** Stable per-source callbacks. useSyncExternalStore resubscribes whenever the
+ * subscribe function's identity changes, so these are cached rather than built
+ * per render; without that the menu would tear down and re-register its
+ * subscription on every publish it received. */
+const noSubscribe = () => () => {};
+const noTiles = () => undefined;
+const subscribers = new WeakMap<TileSource, (listener: () => void) => () => void>();
+const readers = new WeakMap<TileSource, () => TileView | undefined>();
+function subscribeTo(source?: TileSource) {
+  if (!source) return noSubscribe;
+  let cached = subscribers.get(source);
+  if (!cached) { cached = (listener) => source.subscribe(listener); subscribers.set(source, cached); }
+  return cached;
+}
+function readFrom(source?: TileSource) {
+  if (!source) return noTiles;
+  let cached = readers.get(source);
+  if (!cached) { cached = () => source.read(); readers.set(source, cached); }
+  return cached;
+}
+
 export function createExpandedMenu(input: ControllerInputSource | undefined, host: Window, canOpen: () => boolean = () => true, source?: TileSource) {
   const storage = (() => { try { return host.localStorage; } catch { return undefined; } })();
   let binding = loadMenuBinding(storage);
@@ -34,21 +55,18 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
   };
   function View({ token }: { token: number }) {
     useEffect(() => () => { if (generation === token) { modal = null; generation++; } }, [token]);
-    // Read at render, with no hook of its own.
+    // Live subscription, not a read at open.
     //
-    // This deliberately does not subscribe yet. The native fixture shares one
-    // hook-state array across components starting at index 0, so any hook added
-    // here collides with Settings and makes it read this component's value as
-    // its saved shortcut binding; its useState setter also never re-renders, so
-    // a subscription could not be exercised there in any case. Adding live
-    // updates means changing a fixture the UI session owns, which is agreed
-    // with them rather than done unilaterally.
+    // Reading once when the menu opened left whatever was true at that moment
+    // on screen for as long as it stayed open, which is the aged-data-as-current
+    // failure this bridge exists to prevent: a player can open the menu, watch
+    // the eGPU drop, and still be looking at "Running".
     //
-    // What this gives today is honest: readings current as of the moment the
-    // menu opened, from the panel that owns polling, with every tab supplied so
-    // the confident sample tiles stay unreachable. What it does not give is
-    // updates while the menu stays open; that is the next slice.
-    const tiles = source?.read();
+    // useSyncExternalStore compares by reference, so the source returns a stable
+    // object between publishes; a fresh object per call would re-render without
+    // end. The server snapshot is the same read: there is no server, and
+    // returning a different value there would tear.
+    const tiles = useSyncExternalStore(subscribeTo(source), readFrom(source), readFrom(source));
     return <ExpandedCommandCenter onClose={close} native primitives={{ Button: Button, Focusable }} settings={<Settings/>} tiles={tiles}/>;
   }
   function Settings() {

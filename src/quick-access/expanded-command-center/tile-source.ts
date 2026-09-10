@@ -45,10 +45,14 @@ export type Readings = {
   performance?: PerformanceState | null;
   /** The configured power limit, not power draw. */
   manualWatts?: number | null;
-  /** False while no observation has been received, or after a failed read.
-   * The panel keeps its previous payload on error, so freshness has to be
-   * passed in rather than inferred from the payload being non-null. */
+  /** True ONLY for a reading observed recently enough to act on. Absent is
+   * treated as not fresh: the panel keeps its previous payload on a failed
+   * read, and an age check lives with the owner, so anything short of an
+   * explicit yes has to fail closed here. */
   fresh?: boolean;
+  /** Actual display target -- which panel is being driven -- kept separate
+   * from whether an external display is merely attached. */
+  displayTarget?: { text: string; known: boolean };
 };
 
 const UNKNOWN_VALUE: TileValue = { text: "Unknown", known: false };
@@ -68,8 +72,22 @@ function unknownTiles(entries: ReadonlyArray<[string, string]>): Tile[] {
 const UNKNOWN_EGPU: ReadonlyArray<[string, string]> = [
   ["egpu", "Connection"], ["render", "Render GPU"],
   ["display", "External display"], ["game", "Game state"],
-  ["disconnect", "Safe Disconnect"],
 ];
+
+/** The Safe Disconnect card when nothing has been observed.
+ *
+ * It keeps the wide slot and the warning tone it has when readings exist, so
+ * the grid does not reflow around the one card a player looks for under
+ * pressure, and it keeps saying that no clearance is granted. Unknown readiness
+ * is a reason not to act, never an absence of the warning.
+ */
+function unknownDisconnectTile(): Tile {
+  return {
+    id: "disconnect", title: "Safe Disconnect", value: "Unknown",
+    tone: "warning", wide: true,
+    detail: "Readiness has not been observed. Re-Gear cannot confirm a safe disconnect, and this never makes unplugging safe.",
+  };
+}
 const UNKNOWN_PERFORMANCE: ReadonlyArray<[string, string]> = [
   ["manual", "Manual TDP"], ["auto", "Auto TDP"],
   ["fps", "FPS Target"], ["display", "Display context"],
@@ -97,28 +115,57 @@ function settingsTiles(): Tile[] {
 }
 
 /** The first screen: the readings a player checks mid-game, drawn from the same
- * mapped tiles as their own tabs so the two can never disagree. */
-function quickTiles(performance: Tile[], egpu: Tile[], controller: Tile[]): Tile[] {
+ * mapped tiles as their own tabs so the two can never disagree.
+ *
+ * Two things here are not a copy of another tab, and both matter.
+ *
+ * Safe Disconnect keeps its approved wide card on Quick Access. Dropping it
+ * when readings are missing would remove the one control a player reaches for
+ * when something has gone wrong, at the exact moment it went wrong.
+ *
+ * Display target is an independent observation, not the eGPU tab's "External
+ * display" card. That card reports attachment; the target reports which panel
+ * is actually being driven. Collapsing them would let a connected-but-inactive
+ * television read as the current target, which is the independence rule this
+ * codebase keeps for connection, rendering and display.
+ */
+function quickTiles(
+  performance: Tile[], egpu: Tile[], controller: Tile[],
+  displayTarget: { text: string; known: boolean } | undefined,
+): Tile[] {
   const pick = (tiles: Tile[], id: string, title?: string): Tile | null => {
     const found = tiles.find((tile) => tile.id === id);
     return found ? (title ? { ...found, title } : found) : null;
   };
+  const target: Tile = {
+    id: "display", title: "Display target",
+    value: displayTarget?.known ? displayTarget.text : "Unknown",
+    tone: displayTarget?.known ? "active" : "unavailable",
+    detail: displayTarget?.known
+      ? "The panel currently being driven."
+      : "No display target observation available.",
+  };
+  const disconnect = pick(egpu, "disconnect") ?? unknownDisconnectTile();
   return [
     pick(performance, "fps"),
     pick(performance, "manual"),
     pick(performance, "auto"),
-    pick(egpu, "display", "Display target"),
+    target,
     pick(egpu, "egpu", "eGPU"),
     pick(controller, "controller", "Controller"),
+    // Last, and wide, matching the approved layout.
+    { ...disconnect, wide: true },
   ].filter((tile): tile is Tile => tile !== null);
 }
 
 /** Build the full view. Every tab is supplied, always. */
 export function buildTiles(readings: Readings): TileView {
-  const fresh = readings.fresh !== false;
+  // Fail closed: only an explicit true is fresh.
+  const fresh = readings.fresh === true;
 
   const egpu = fresh && readings.egpu
-    ? egpuTiles(readings.egpu) : unknownTiles(UNKNOWN_EGPU);
+    ? egpuTiles(readings.egpu)
+    : [...unknownTiles(UNKNOWN_EGPU), unknownDisconnectTile()];
   const controller = fresh && readings.controller
     ? controllerTiles(readings.controller) : unknownTiles(UNKNOWN_CONTROLLERS);
 
@@ -134,7 +181,7 @@ export function buildTiles(readings: Readings): TileView {
     : unknownTiles(UNKNOWN_PERFORMANCE);
 
   return {
-    quick: quickTiles(performance, egpu, controller),
+    quick: quickTiles(performance, egpu, controller, fresh ? readings.displayTarget : undefined),
     performance, egpu, controllers: controller, settings: settingsTiles(),
   };
 }

@@ -1643,15 +1643,20 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
 
   // Publish to the expanded menu from the readings this panel already holds.
   //
-  // Freshness is passed explicitly rather than inferred from the payload being
-  // non-null, because a failed refresh keeps the previous payload and only sets
-  // `error`. Without this the menu would present the last good reading as
-  // current, which is worst exactly when a device has just stopped responding.
+  // Freshness is an AGE, not just an absence of errors. A failed refresh keeps
+  // the previous payload and only sets `error`, and the panel drops to a
+  // background cadence while Quick Access is hidden, so a reading can be both
+  // error-free and far too old to act on. The menu can be opened by its
+  // shortcut in exactly that state.
   //
-  // The menu can also be opened by its shortcut while Quick Access is hidden,
-  // and this panel slows to a background cadence then; Unknown on a stale read
-  // is the honest answer for that case rather than an aged value shown as live.
-  const menuFresh = !loading && error === "" && payload !== null;
+  // So the same SNAPSHOT_STALE_AFTER_MS the sleep preflight already reconciles
+  // against decides this too, and a timer re-evaluates it while the panel is
+  // idle: without that, readings would stay "fresh" forever simply because
+  // nothing re-rendered to notice they had aged.
+  const [menuAgeTick, setMenuAgeTick] = useState(0);
+  const menuFresh = !loading && error === "" && payload !== null
+    && lastSnapshotAt.current !== null
+    && Date.now() - lastSnapshotAt.current <= SNAPSHOT_STALE_AFTER_MS;
   const menuPerformance = performanceState({
     status: performance.manual, autoStatus: performance.auto,
     busy: performance.busy, stopping: performance.stopping,
@@ -1666,11 +1671,27 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
       performance: menuPerformance,
       // The configured limit, never a power-draw reading.
       manualWatts: performance.manual?.current_watts ?? null,
+      // Which panel is actually driven, from `active`, not from attachment.
+      displayTarget: menuFresh && snapshot
+        ? snapshot.displays.some((d) => d.active === true && d.kind === "external")
+          ? { text: "External", known: true }
+          : snapshot.displays.some((d) => d.active === true && d.kind === "internal")
+            ? { text: "Handheld", known: true }
+            : { text: "Unknown", known: false }
+        : { text: "Unknown", known: false },
     });
   }, [publishTiles, menuFresh, payload, peripheralStatus, menuShortcutAvailable,
       menuPerformance.active, menuPerformance.autoKnown, menuPerformance.stopping,
       menuPerformance.supported, menuPerformance.action, menuPerformance.busy,
-      performance.manual?.current_watts]);
+      performance.manual?.current_watts, menuAgeTick, snapshot?.displays]);
+
+  // Re-evaluate age while nothing else re-renders, so a reading cannot remain
+  // "fresh" merely because the panel went quiet.
+  useEffect(() => {
+    if (!menuFresh) return;
+    const timer = window.setTimeout(() => setMenuAgeTick((tick) => tick + 1), SNAPSHOT_STALE_AFTER_MS);
+    return () => window.clearTimeout(timer);
+  }, [menuFresh, menuAgeTick]);
 
   // Read-only status destinations, kept distinct from the configuration
   // modules: these open detail, never controls.

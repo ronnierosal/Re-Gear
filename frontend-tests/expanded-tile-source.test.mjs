@@ -80,7 +80,11 @@ test("no readings yet renders explicit Unknown, not a plausible default", () => 
   for (const tab of ["quick", "performance", "egpu", "controllers"]) {
     for (const tile of view[tab]) {
       assert.equal(tile.value, "Unknown", `${tab}/${tile.id}`);
-      assert.equal(tile.tone, "unavailable", `${tab}/${tile.id}`);
+      // Safe Disconnect is the deliberate exception: it keeps its warning tone
+      // when unobserved, because unknown readiness is a reason not to act
+      // rather than an absence of the warning. Covered in its own test below.
+      assert.equal(tile.tone, tile.id === "disconnect" ? "warning" : "unavailable",
+        `${tab}/${tile.id}`);
     }
   }
 });
@@ -177,4 +181,59 @@ test("the source holds no timer and fetches nothing", () => {
   const text = readFileSync(new URL("../src/quick-access/expanded-command-center/tile-source.ts", import.meta.url), "utf8");
   assert.doesNotMatch(text, /setInterval|setTimeout|requestAnimationFrame/);
   assert.doesNotMatch(text, /from "\.\.\/\.\.\/backend"|@decky\/api/);
+});
+
+// -------------------------------------- findings raised in reciprocal review
+
+test("Safe Disconnect keeps its wide card on Quick Access, readings or not", () => {
+  // Dropping it when readings are missing removes the control a player reaches
+  // for when something has gone wrong, at the moment it went wrong.
+  for (const readings of [full(), { fresh: false }]) {
+    const disconnect = buildTiles(readings).quick.find((tile) => tile.id === "disconnect");
+    assert.ok(disconnect, "Quick Access lost its Safe Disconnect card");
+    assert.equal(disconnect.wide, true, "the approved wide slot must survive");
+  }
+});
+
+test("an unobserved Safe Disconnect keeps its warning tone and refuses clearance", () => {
+  // Unknown readiness is a reason not to act, never an absence of the warning.
+  for (const tab of ["quick", "egpu"]) {
+    const tile = buildTiles({ fresh: false })[tab].find((item) => item.id === "disconnect");
+    assert.equal(tile.tone, "warning", `${tab} lost the warning tone`);
+    assert.equal(tile.wide, true, `${tab} lost the wide slot`);
+    assert.match(tile.detail, /cannot confirm a safe disconnect/i);
+    assert.match(tile.detail, /never makes unplugging safe/i);
+  }
+});
+
+test("display target is an observation of output, not of attachment", () => {
+  // A connected but inactive television must not read as the current target.
+  const attachedNotDriven = buildTiles({
+    ...full(), displayTarget: { text: "Handheld", known: true },
+  }).quick.find((tile) => tile.id === "display");
+  assert.equal(attachedNotDriven.value, "Handheld");
+  const external = buildTiles({
+    ...full(), displayTarget: { text: "External", known: true },
+  }).quick.find((tile) => tile.id === "display");
+  assert.equal(external.value, "External");
+  // And it is not the eGPU tab's attachment card wearing a different title.
+  const attachment = buildTiles(full()).egpu.find((tile) => tile.id === "display");
+  assert.equal(attachment.value, "Connected", "the eGPU card still reports attachment");
+});
+
+test("an unobserved display target is Unknown, never inferred from attachment", () => {
+  const tile = buildTiles({ ...full(), displayTarget: undefined })
+    .quick.find((item) => item.id === "display");
+  assert.equal(tile.value, "Unknown");
+  assert.equal(tile.tone, "unavailable");
+});
+
+test("omitted freshness fails closed rather than accepting the payload", () => {
+  // Absent is not a yes. The owner performs the age check; anything short of an
+  // explicit true has to read as unobserved here.
+  const omitted = buildTiles({ egpu: full().egpu, controller: full().controller,
+    performance: full().performance, manualWatts: 15 });
+  assert.equal(omitted.egpu.every((tile) => tile.value === "Unknown" || tile.id === "disconnect"), true);
+  const explicit = buildTiles(full());
+  assert.notEqual(explicit.egpu[0].value, "Unknown");
 });
