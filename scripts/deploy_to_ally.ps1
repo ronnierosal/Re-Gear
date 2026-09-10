@@ -6,7 +6,22 @@ param(
     [string]$IdentityFile = "",
     [ValidatePattern("^/home/[A-Za-z_][A-Za-z0-9_-]*/homebrew/plugins/Re-Gear$")] [string]$RemotePluginDir = "",
     [switch]$ConfirmDeploy,
-    [switch]$InteractiveSudo
+    [switch]$InteractiveSudo,
+    # Deploy the archive that is already in out/ instead of producing a new one.
+    #
+    # Needed because a version is reserved exactly once: build_plugin.py refuses
+    # to overwrite an existing ZIP, and release_coordination.reserve refuses a
+    # version already in refs/regear/versions. So once a release has been built
+    # -- which is precisely when you want to install it -- the unconditional
+    # build below can never succeed again for that version, and this script could
+    # only ever deploy a version nobody had packaged yet.
+    #
+    # This does not weaken the one-archive-per-version rule; it honours it. The
+    # archive is verified against the checkout rather than rebuilt, which is a
+    # stronger provenance check than trusting a second build to agree.
+    [switch]$UseExistingPackage,
+    # Optional exact bytes to require, e.g. the sha256 published with a release.
+    [ValidatePattern("^[0-9a-fA-F]{64}$")] [string]$ExpectedSha256 = ""
 )
 
 # Developer-only: build one complete archive, atomically replace Re-Gear, retain a
@@ -45,6 +60,34 @@ function Invoke-Pnpm([string[]]$Arguments, [string]$Failure) {
     }
     Invoke-Checked "pnpm" $Arguments $Failure
 }
+function Assert-ExistingPackage([string]$Path, [string]$Version) {
+    # Verify the archive describes this exact checkout rather than rebuilding it.
+    # Reading provenance out of the archive is the point: it catches a stale ZIP
+    # left by an earlier commit, which is exactly what an overwriting rebuild
+    # would have hidden.
+    if (-not (Test-Path -LiteralPath $Path)) {
+        throw "No archive at out/Re-Gear-$Version.zip. Drop -UseExistingPackage to build one."
+    }
+    $head = (& git -C $RepositoryRoot rev-parse HEAD)
+    if ($LASTEXITCODE -ne 0) { throw "Could not resolve HEAD to check the archive against." }
+    $head = $head.Trim()
+    # A committed script, not an inline program: PowerShell's native argument
+    # quoting silently mangles a multi-line -c payload.
+    $describe = Join-Path $PSScriptRoot "describe_plugin_package.py"
+    $probed = & python $describe $Path
+    if ($LASTEXITCODE -ne 0) { throw "Could not read the archive's provenance." }
+    $info = $probed | ConvertFrom-Json
+    if ($info.revision -ne $head) {
+        throw "Archive was built from $($info.revision) but HEAD is $head. Check out that commit, or rebuild."
+    }
+    if ($info.version -ne $Version) {
+        throw "Archive declares version $($info.version) but the checkout declares $Version."
+    }
+    if ($ExpectedSha256 -and $info.sha256 -ne $ExpectedSha256.ToLower()) {
+        throw "Archive sha256 is $($info.sha256), not the expected $($ExpectedSha256.ToLower())."
+    }
+    Write-Host "Existing archive verified: $($info.bytes) bytes, revision $($info.revision), sha256 $($info.sha256)."
+}
 function Invoke-RootScript([string]$Script) {
     $normalized = $Script.Replace("`r`n", "`n").Replace("`r", "`n")
     $encoded = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($normalized))
@@ -58,6 +101,13 @@ if (-not $InteractiveSudo) {
     if ($LASTEXITCODE -ne 0) { throw "Root access is required. Re-run in a visible terminal with -InteractiveSudo." }
 }
 
+$packageVersion = (Get-Content -LiteralPath (Join-Path $RepositoryRoot "package.json") -Raw | ConvertFrom-Json).version
+$packagePath = Join-Path $RepositoryRoot "out/Re-Gear-$packageVersion.zip"
+
+# Checked before the local matrix on purpose: a stale or absent archive should
+# fail in a second, not after several minutes of tests that cannot change it.
+if ($UseExistingPackage) { Assert-ExistingPackage $packagePath $packageVersion }
+
 Write-Host "Running mandatory local verification..."
 Invoke-Checked "python" @("scripts/check_architecture.py") "Architecture check failed."
 Invoke-Checked "python" @("-m", "unittest", "discover", "-s", "tests", "-v") "Python tests failed."
@@ -66,10 +116,12 @@ Invoke-Pnpm @("typecheck") "Frontend typecheck failed."
 Invoke-Pnpm @("test:frontend") "Frontend tests failed."
 Invoke-Pnpm @("build") "Frontend build failed."
 Invoke-Checked "python" @("scripts/check_plugin_package.py", ".") "Plugin package check failed."
-Invoke-Checked "python" @("scripts/build_plugin.py") "Plugin package build failed."
 
-$packageVersion = (Get-Content -LiteralPath (Join-Path $RepositoryRoot "package.json") -Raw | ConvertFrom-Json).version
-$package = Get-Item -LiteralPath (Join-Path $RepositoryRoot "out/Re-Gear-$packageVersion.zip")
+if (-not $UseExistingPackage) {
+    Invoke-Checked "python" @("scripts/build_plugin.py") "Plugin package build failed."
+}
+
+$package = Get-Item -LiteralPath $packagePath
 if ($null -eq $package) { throw "No Re-Gear package was created." }
 $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
 $remoteArchive = "/tmp/hdm-deploy-$stamp.zip"
