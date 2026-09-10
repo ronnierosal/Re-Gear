@@ -4,6 +4,7 @@ import os
 import sys
 import tempfile
 import unittest
+import unittest.mock
 from pathlib import Path
 
 
@@ -561,6 +562,28 @@ class OtherStorageUseTests(Harness):
 
         self.assertEqual(found[0].device, "sda1")
 
+    def test_an_unreadable_partition_inventory_is_incomplete(self) -> None:
+        """Listing the disk alone is not the same as there being no partitions.
+
+        The disk's own holders read fine here. What failed is the walk that
+        would have found its partitions, so any mapping assembled on one is
+        unseen -- and reporting that as a finished scan is the whole bug.
+        """
+        self.fake.block_metadata("sda")
+        disk = self.fake.block / "sda"
+        real = Path.iterdir
+
+        def refuse(self):
+            if self == disk:
+                raise PermissionError(disk)
+            return real(self)
+
+        with unittest.mock.patch.object(Path, "iterdir", refuse):
+            found, complete = self.uses({"sda"})
+
+        self.assertEqual(found, ())
+        self.assertFalse(complete)
+
     def test_no_holders_directory_is_not_no_holders(self) -> None:
         """The kernel gives every block device one, empty when unused.
 
@@ -645,6 +668,25 @@ class AliasMountTests(Harness):
         disk.mkdir(parents=True, exist_ok=True)
         (disk / "dev").write_text("8:0\n", encoding="utf-8")
         (disk / "sda1").mkdir(parents=True, exist_ok=True)
+
+        found, complete = self.mounts({"sda"}, [self.ALIAS])
+
+        self.assertEqual(found, ())
+        self.assertFalse(complete)
+
+    def test_a_malformed_device_number_cannot_clear_an_alias(self) -> None:
+        """Unreadable evidence in the shape of an answer is still unreadable.
+
+        A truncated or garbled `dev` file is not a device number. Counting it
+        as one makes the map look exhaustive while holding nothing that can
+        match, so the alias mount silently disappears.
+        """
+        disk = self.fake.block / "sda"
+        disk.mkdir(parents=True, exist_ok=True)
+        (disk / "dev").write_text("8:0\n", encoding="utf-8")
+        partition = disk / "sda1"
+        partition.mkdir(parents=True, exist_ok=True)
+        (partition / "dev").write_text("not-a-device-number\n", encoding="utf-8")
 
         found, complete = self.mounts({"sda"}, [self.ALIAS])
 
