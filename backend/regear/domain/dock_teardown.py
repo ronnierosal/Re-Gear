@@ -96,6 +96,35 @@ class UsbBranchEvidence:
     other_devices: tuple[str, ...] = ()
 
 
+class TunnelCapability(StrEnum):
+    """Whether the Thunderbolt domain supports de-authorizing a router at all.
+
+    The kernel answers this on the domain, not on the router. It is a
+    different question from whether this process may write the router's
+    `authorized` file, and a different question again from whether the router
+    is currently authorized -- and answering all three with one flag is how an
+    unsupported dock and an under-privileged look became the same refusal.
+    """
+
+    SUPPORTED = "supported"
+    NOT_SUPPORTED = "not_supported"
+    UNKNOWN = "unknown"
+
+
+class WritePermission(StrEnum):
+    """Whether this process could write the router's `authorized` file.
+
+    `UNKNOWN` covers the file being absent or unreadable. Absence is
+    deliberately not read as `NOT_SUPPORTED`: support is the domain's answer,
+    and inferring it from a missing file is the guess this type exists to
+    stop.
+    """
+
+    WRITABLE = "writable"
+    DENIED = "denied"
+    UNKNOWN = "unknown"
+
+
 @dataclass(frozen=True, slots=True)
 class TunnelEvidence:
     """One reading of the Thunderbolt link the whole dock hangs from."""
@@ -105,9 +134,13 @@ class TunnelEvidence:
     #: Whether the link is authorized. None means it could not be read, which
     #: is not the same as "not authorized" and must not be treated as done.
     authorized: bool | None
-    #: Whether this process could deauthorize it. Checked before anything is
-    #: torn down, so a failure costs nothing rather than half a dock.
-    deauthorizable: bool
+    #: Whether the domain supports de-authorization. Asked before permission:
+    #: whether the dock can do this at all outranks whether we may ask it to.
+    capability: TunnelCapability
+    #: Whether this process could write the router's `authorized` file.
+    #: Checked before anything is torn down, so a failure costs nothing rather
+    #: than half a dock.
+    write_permission: WritePermission
     #: Whether the thunderbolt reading finished.
     scan_complete: bool
 
@@ -252,15 +285,39 @@ def decide_dock_teardown(
             "dock_teardown.tunnel_state_unknown",
             disconnecting=consequences,
         )
-    if tunnel.authorized and not tunnel.deauthorizable:
-        # Checked before anything comes down. Discovering this afterwards
-        # leaves a player with no dock USB, no clearance, and a recovery to
-        # perform; discovering it now costs them nothing.
-        return DockTeardownDecision(
-            DockTeardownState.REFUSED,
-            "dock_teardown.tunnel_not_deauthorizable",
-            disconnecting=consequences,
-        )
+    if tunnel.authorized:
+        # All four are checked before anything comes down. Discovering any of
+        # them afterwards leaves a player with no dock USB, no clearance, and
+        # a recovery to perform; discovering it now costs them nothing.
+        #
+        # They used to be one refusal, which told an operator that the tunnel
+        # could not be brought down without saying whether the dock cannot do
+        # it, or we were not allowed to look. Those have different remedies
+        # and one of them is not the operator's fault.
+        if tunnel.capability is TunnelCapability.UNKNOWN:
+            return DockTeardownDecision(
+                DockTeardownState.REFUSED,
+                "dock_teardown.tunnel_capability_unknown",
+                disconnecting=consequences,
+            )
+        if tunnel.capability is TunnelCapability.NOT_SUPPORTED:
+            return DockTeardownDecision(
+                DockTeardownState.REFUSED,
+                "dock_teardown.tunnel_capability_unsupported",
+                disconnecting=consequences,
+            )
+        if tunnel.write_permission is WritePermission.UNKNOWN:
+            return DockTeardownDecision(
+                DockTeardownState.REFUSED,
+                "dock_teardown.tunnel_write_permission_unknown",
+                disconnecting=consequences,
+            )
+        if tunnel.write_permission is WritePermission.DENIED:
+            return DockTeardownDecision(
+                DockTeardownState.REFUSED,
+                "dock_teardown.tunnel_write_permission_denied",
+                disconnecting=consequences,
+            )
 
     # Storage last among the refusals, because it is the one a player can
     # clear themselves and the one worth naming precisely.
