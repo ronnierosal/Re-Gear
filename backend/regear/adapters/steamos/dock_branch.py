@@ -82,6 +82,17 @@ def _is_partition_of(leaf: str, disk: str) -> bool:
     return suffix.isdigit()
 
 
+def _is_device_number(value: str) -> bool:
+    """Whether `value` is a `major:minor` pair sysfs would have written.
+
+    Anything else is unreadable evidence wearing the shape of an answer. A
+    truncated or garbled `dev` file is not a device number, and counting it as
+    one makes the map look exhaustive while holding nothing usable.
+    """
+    major, separator, minor = value.partition(":")
+    return bool(separator) and major.isdigit() and minor.isdigit()
+
+
 def _is_opaque_source(source: str) -> bool:
     """Whether a mountinfo source cannot be judged by its basename.
 
@@ -339,23 +350,32 @@ class DockBranchDiscovery:
             # own holders directory was ever read. sysfs publishes each
             # partition as a directory under the disk, each with its own
             # holders, so both levels are walked.
-            for holders in self._holder_directories(device):
+            directories, enumerated = self._holder_directories(device)
+            if not enumerated:
+                complete = False
+            for holders in directories:
                 if not self._collect_holders(holders, uses):
                     complete = False
         return tuple(uses), complete
 
-    def _holder_directories(self, device: str) -> tuple[Path, ...]:
-        """The disk's holders directory and each partition's."""
+    def _holder_directories(self, device: str) -> tuple[tuple[Path, ...], bool]:
+        """The disk's holders directory and each partition's.
+
+        The second value says whether the partition inventory was actually
+        taken. An enumeration that failed lists the disk alone, and returning
+        that as though it were exhaustive hides every partition that could be
+        holding a mapping.
+        """
         root = self._block_root / device
         directories = [root / "holders"]
         try:
             children = sorted(root.iterdir(), key=lambda item: item.name)
         except OSError:
-            return tuple(directories)
+            return tuple(directories), False
         for child in children:
             if child.name.startswith(device) and child.name != device:
                 directories.append(child / "holders")
-        return tuple(directories)
+        return tuple(directories), True
 
     def _collect_holders(
         self, holders: Path, uses: list[DockStorageUse]
@@ -506,7 +526,7 @@ class DockBranchDiscovery:
         for device in sorted(devices):
             root = self._block_root / device
             disk = _read_text(root / "dev")
-            if disk:
+            if _is_device_number(disk):
                 devnums.add(disk)
             else:
                 complete = False
@@ -519,7 +539,7 @@ class DockBranchDiscovery:
                 if not child.name.startswith(device) or child.name == device:
                     continue
                 partition = _read_text(child / "dev")
-                if partition:
+                if _is_device_number(partition):
                     devnums.add(partition)
                 else:
                     complete = False
