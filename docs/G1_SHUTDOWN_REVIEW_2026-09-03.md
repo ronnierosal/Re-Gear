@@ -1,5 +1,7 @@
 # G1 shutdown review — 2026-09-03
 
+> Historical record: HDM was Re-Gear's former name; original wording is retained.
+
 ## Evidence and scope
 
 The maintainer requested shutdown after the TV/Portable test and reported continued

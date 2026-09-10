@@ -45,7 +45,7 @@ any check fails, or package contents do not match the source commit.
 
 For each candidate, retain a small local manifest containing only:
 
-- HDM version and source commit
+- Re-Gear version and source commit
 - package SHA-256
 - build timestamp
 - test/check results
@@ -63,7 +63,7 @@ GitHub and Decky channel gates.
 A successful CI run may provide the same controlled candidate as a short-lived
 workflow artifact. Before using one, compare its workflow commit with
 `source-revision.txt`, verify its ZIP against `SHA256SUMS.txt`, and confirm the
-installed QAM **HDM build** row after Decky's native install. CI artifacts are
+installed QAM **Re-Gear build** row after Decky's native install. CI artifacts are
 not releases and must not be installed automatically.
 
 After downloading and unzipping that artifact, the local-only verifier can
@@ -73,7 +73,7 @@ perform those archive checks together before installation:
 python scripts/verify_validation_artifact.py <unpacked-artifact-directory>
 ```
 
-It reports `verified` only when there is exactly one HDM package, its checksum
+It reports `verified` only when there is exactly one Re-Gear package, its checksum
 matches, its full source revision matches the embedded build metadata, and the
 embedded version agrees with the packaged manifest. It never opens SSH,
 installs a plugin, or modifies the Ally.
@@ -170,13 +170,13 @@ watching the internal display. It validates the installed panel's game-aware
 observation behavior; it is not an eGPU, sleep, or performance certification.
 
 1. Record the installed package commit and SHA-256, then confirm the Quick
-   Access **HDM build** row shows the expected short revision before starting
+   Access **Re-Gear build** row shows the expected short revision before starting
    one ordinary Steam game on the internal display. `uncommitted` or
    `unavailable` is not sufficient provenance for this stage.
 2. Open Quick Access â†’ Re-Gear. Confirm the panel is controller
    usable and reports a running game without changing the display, audio,
    controller assignment, or game session.
-3. Open Troubleshooting. Confirm it says that additional checks wait until HDM
+3. Open Troubleshooting. Confirm it says that additional checks wait until Re-Gear
    confirms no game is running. Do not invoke any destructive or export action.
 4. Leave the panel open for at least fifteen seconds while playing normally,
    then close it and continue playing. The implementation's expected cadence is
@@ -187,7 +187,7 @@ observation behavior; it is not an eGPU, sleep, or performance certification.
    any display, input, audio, game-session, or obvious performance regression.
 
 Pass only if the game and handheld remain usable with no unintended system
-change. On any regression, close/unload HDM or reinstall the recorded rollback
+change. On any regression, close/unload Re-Gear or reinstall the recorded rollback
 package through Decky's native lifecycle; do not troubleshoot by restarting
 Gamescope, suspending, rebooting, or changing GPU/display settings remotely.
 
@@ -264,10 +264,10 @@ disconnected, the system is verified Portable/idle, and the player is watching:
 
 1. Preview the exact Gamescope user, integration fingerprint, conflicts, and
    rollback status.
-2. Resolve any competing `PATH` owner explicitly. HDM must not overwrite an
+2. Resolve any competing `PATH` owner explicitly. Re-Gear must not overwrite an
    eGPUBridge drop-in.
 3. Approve one short-lived preparation token.
-4. Install the exact HDM drop-in, daemon-reload the exact user manager, and
+4. Install the exact Re-Gear drop-in, daemon-reload the exact user manager, and
    verify `gamescope-session.service` remains loaded.
 5. Confirm no Gamescope restart occurred and display, controls, SSH, Steam, and
    Decky remain healthy.
@@ -303,7 +303,7 @@ passes this stage.
 
 Run only after TV Docked is visibly verified, no game is running, controls and
 SSH are available, and the current presentation journal is idle. The player may
-select **Prepare G1 disconnect** and confirm the return to Ally. HDM must use the
+select **Prepare G1 disconnect** and confirm the return to Ally. Re-Gear must use the
 same durable transition engine, visibly recover the internal display, verify
 the internal render GPU and Portable audio, and expose the exact terminal
 acknowledgement after Game Mode returns.
@@ -311,7 +311,7 @@ acknowledgement after Game Mode returns.
 After acknowledgement, the control must read **Request shutdown for G1
 disconnect** and automatic docking must remain suppressed for the current exact
 attachment.
-The player may confirm it only while HDM still reports idle Portable. The Ally
+The player may confirm it only while Re-Gear still reports idle Portable. The Ally
 must complete a normal shutdown. Do not disconnect on an accepted RPC or a dark
 screen alone: wait until fans stop and every top power LED is off. Only then may
 the player remove the G1 cable. Boot again with the G1 absent and capture the
@@ -321,7 +321,7 @@ incomplete shutdown stops the stage.
 
 For the next automatic-attach run, capture five timestamps separately: physical
 connection, exact G1 PCI/driver availability, DRM connector plus EDID readiness,
-the fourth distinct fully-ready HDM sample, and active TV after Gamescope restart.
+the fourth distinct fully-ready Re-Gear sample, and active TV after Gamescope restart.
 Do not report the 250 ms sampling cadence as end-to-end connection speed. Any
 identity, EDID, link, session, or game regression during the four-sample quorum
 must reset settling without requesting a transition.
@@ -401,12 +401,12 @@ It must not expose arbitrary commands, paths, PIDs, signals, or shell fragments.
 Payload transport should be structured or base64-safe to avoid host-shell
 quoting changes. Every operation needs a deadline and machine-readable result.
 
-Production HDM must not listen for remote development commands. SSH remains the
+Production Re-Gear must not listen for remote development commands. SSH remains the
 maintainer's external development boundary.
 
 ## Package staging automation
 
-`scripts/stage_decky_update.py` may upload one already-built HDM ZIP to the
+`scripts/stage_decky_update.py` may upload one already-built Re-Gear ZIP to the
 fixed Decky user's `/home/deck/` directory and read back its SHA-256. It accepts
 only a complete archive carrying a committed revision and derives its remote
 filename exclusively from that verified metadata:
@@ -427,9 +427,9 @@ Decky's native installer until such an API is published and reviewed.
 
 For this maintainer-controlled Ally only, a separate developer helper may be
 installed after a one-time **interactive** `sudo` action. It is not a Decky API
-and is never part of an HDM release. The helper is root-owned, accepts only a
+and is never part of a Re-Gear release. The helper is root-owned, accepts only a
 signed `Re-Gear-update-<version>-<revision>.zip` and matching signature from the
-fixed `/home/deck/` directory, validates the embedded HDM provenance,
+fixed `/home/deck/` directory, validates the embedded Re-Gear provenance,
 then atomically replaces only `Re-Gear`. A legacy `HandheldDockMode` root
 (including a dangling symlink) refuses normal deployment; follow the separately
 supervised [cutover procedure](IDENTITY_CUTOVER.md) first. It moves the prior plugin to
@@ -491,10 +491,10 @@ validation workflow separately.
 For the maintainer's own Ally, `scripts/deploy_hdm_to_ally.ps1` implements the
 explicit direct-deploy workflow after `-ConfirmDeploy` is supplied. It runs the
 complete local check/build matrix, uploads one temporary complete ZIP, validates
-the archive and provenance on the Ally, atomically replaces only the fixed HDM
+the archive and provenance on the Ally, atomically replaces only the fixed Re-Gear
 plugin directory, retains a timestamped rollback directory, restores the
 packaged shim executable bit, then restarts `plugin_loader.service` and prints
-the installed `build_info` revision. HDM state and presentation configuration
+the installed `build_info` revision. Re-Gear state and presentation configuration
 are outside the replaced plugin tree and remain untouched.
 
 It requires either existing narrow passwordless root access or a visible
@@ -535,7 +535,7 @@ cause in source, rebuild one complete artifact, and repeat from D0.
    while idle and while one game is running; idle must skip deep scans and the
    running result must never expose AppID, scope, PID, PCI, DRM-node, or
    generation data.
-4. Inspect for the known eGPUBridge/HDM `PATH` conflict before any presentation
+4. Inspect for the known eGPUBridge/Re-Gear `PATH` conflict before any presentation
    preparation.
 5. Review the Decky-native preparation preview/confirm flow on the built
    candidate; keep transition controls and attach automation disabled.

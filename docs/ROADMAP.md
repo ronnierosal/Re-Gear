@@ -12,7 +12,7 @@ Implemented or Simulated item to Hardware Validated.
 
 ## Evidence vocabulary
 
-HDM uses these labels consistently:
+Re-Gear uses these labels consistently:
 
 - **Designed:** documented, but no executable proof.
 - **Implemented:** code and deterministic tests exist.
@@ -45,7 +45,7 @@ are engineering gates, not a claim that every earlier next-step is still pending
 | Decky-native plugin lifecycle and typed RPC | Implemented and hardware tested | Release packaging/publishing is separate. |
 | Read-only host, DRM, Gamescope, game-scope, PCI, USB4, and G1 discovery | Implemented and hardware tested on Ally X/G1; exact DMI tuple, bound-driver topology, backend identity binding, typed capability diagnostics, and fail-closed partial PCI/USB4 candidate presence are locally regression tested | Revalidate the stricter matcher and diagnostic presentation on hardware after material firmware/SteamOS/kernel changes. |
 | Exact G1 DRM/audio clients and storage blockers | Implemented and hardware tested read-only | Guarded signaling remains simulated and requires supervised proof. |
-| Portable inference | Implemented and hardware tested | Other presentation modes remain unverified in native HDM. |
+| Portable inference | Implemented and hardware tested | Other presentation modes remain unverified in native Re-Gear. |
 | Backend login1 sleep inhibitor | Implemented and hardware tested | It prevents suspend but cannot alone preserve Steam presentation. |
 | Steam-native preflight blocker | Implemented; lifecycle and blocking behavior hardware tested | Corrected persistent warning dialog still needs one supervised visible proof. |
 | Adaptive polling and discovery timings | Exact attach and correlated unexpected-loss sampling run at 250 ms. Automatic attach now requires four distinct consecutive fully-ready samples; repeated samples or any gate regression resets the quorum. | Measure cable-to-PCI, PCI-to-DRM/EDID, ready-quorum, restart, and active-TV timelines separately. Kernel enumeration and Gamescope restart remain independent latency budgets. |
@@ -100,7 +100,7 @@ The expanded product model is accepted with these boundaries:
    additional typed observations and may each be unknown.
 5. **Compatibility records never self-certify.** Game and hardware test results
    require intentional review before promotion to Verified or Certified.
-6. **Performance is a runtime budget.** HDM prefers event-driven observation;
+6. **Performance is a runtime budget.** Re-Gear prefers event-driven observation;
    any required polling has a bounded cadence, does not overlap expensive
    scans, and defers nonessential work during an active game. Telemetry is a
    shared, lightweight evidence source rather than a collection of optimization
@@ -209,7 +209,7 @@ back a new drop-in on failure.
   restart.
 
 The Decky preparation endpoint is hardware-exercised: an old eGPUBridge `PATH`
-override was removed separately and recoverably, HDM installed its own
+override was removed separately and recoverably, Re-Gear installed its own
 reversible drop-in, and the user service was reloaded/verified without a
 Gamescope restart. The first watched ready-TV attempt did not switch to TV; the
 shim safely used the internal panel because the transaction wrote its
@@ -484,7 +484,7 @@ they are not authorization for a separate optimizer or launcher.
 - Research community-settings licensing/attribution and Steam integration
   boundaries before collecting, redistributing, or presenting recommendations.
 - **Implemented (projection only):** transparent action history derives a
-  short controller-friendly timeline from the existing bounded HDM event log.
+  short controller-friendly timeline from the existing bounded Re-Gear event log.
   It stores nothing new and exports only action kind, outcome, code, and time;
   detail fields and correlation IDs stay private. The optional Decky
   troubleshooting view renders at most three entries through a read-only RPC.
@@ -524,7 +524,7 @@ fresh evidence under [deployment validation](DEPLOYMENT_VALIDATION.md).
   sleep with the G1 removed while asleep. No remote suspend, removal, recovery,
   or deployment is authorized by this contract.
 - **Product policy; future implementation:** after complete verified handheld
-  recovery and verified original game/session absence, HDM may default to a
+  recovery and verified original game/session absence, Re-Gear may default to a
   safe relaunch only when update, cloud-sync, and repeat-failure concerns are
   absent. First successful use must present one non-intrusive player choice to
   keep automatic restart enabled or turn it off. This needs owner-checked wake

@@ -1,7 +1,7 @@
 # Quick Access UI specification
 
 This is the authoritative player-facing UI contract. eGPUBridge supplied useful
-interaction evidence; agents implement this HDM specification rather than an
+interaction evidence; agents implement this Re-Gear specification rather than an
 instruction to "make it look like eGPUBridge."
 
 ## Goals
@@ -72,7 +72,7 @@ fixtures from pending native Decky/controller and transport verification.
 
 - Prefer `eGPU`, `handheld`, `internal display`, and `external display` in normal
   UI. Exact Ally/G1 names belong in supported-hardware or diagnostic context.
-- State what HDM knows, what it cannot prove, and the safest next step.
+- State what Re-Gear knows, what it cannot prove, and the safest next step.
 - A failure shows the earliest useful stage and a stable categorical reason,
   never raw command output or private identity.
 - Recovery state stays distinct from observed placement.
@@ -106,10 +106,10 @@ lines, hostnames, addresses, account/game identifiers, or raw logs.
 
 ## Intentional differences
 
-- HDM separates placement, health, workflow, and evidence confidence.
-- HDM does not expose eGPUBridge's broad tuning, TV/network control, launcher,
+- Re-Gear separates placement, health, workflow, and evidence confidence.
+- Re-Gear does not expose eGPUBridge's broad tuning, TV/network control, launcher,
   driver, or unguarded hardware-removal surfaces.
-- Actions use HDM's preview/approval/journal/revalidation contracts.
+- Actions use Re-Gear's preview/approval/journal/revalidation contracts.
 - Exact first-profile identity is a certification detail, not the product's
   general player vocabulary.
 

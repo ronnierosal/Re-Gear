@@ -3,7 +3,7 @@
 The product is now **Re-Gear**, formerly Handheld Dock Mode (HDM). See
 [branding and compatibility](BRANDING.md) before changing names or paths.
 
-The repository is HDM's engineering memory. Chats, Codex notes, issues, pull
+The repository is Re-Gear's engineering memory. Chats, Codex notes, issues, pull
 requests, and the GitHub Wiki may explain or propose work, but they do not own
 critical engineering contracts.
 
@@ -29,8 +29,8 @@ state and evidence flow outward; public summaries never override them.
 
 | Question | Authority | Supporting evidence |
 |---|---|---|
-| What should HDM do? | `PRODUCT.md`, `SAFETY_INVARIANTS.md`, accepted ADRs | Architecture and UI specifications |
-| How is HDM designed? | `ARCHITECTURE.md`, accepted ADRs | Focused design documents |
+| What should Re-Gear do? | `PRODUCT.md`, `SAFETY_INVARIANTS.md`, accepted ADRs | Architecture and UI specifications |
+| How is Re-Gear designed? | `ARCHITECTURE.md`, accepted ADRs | Focused design documents |
 | What does current code do? | Source code and tests | CI results and deterministic fixtures |
 | What is implemented, simulated, or proven? | `CURRENT_STATE.md`, `ROADMAP.md` | Dated validation records |
 | What version is built or installed? | Immutable build metadata plus `CURRENT_STATE.md` | Artifact checksum and deployment evidence |
