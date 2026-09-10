@@ -46,3 +46,33 @@ are absent from the source worktree and remain future work.
 
 On the isolated stacked base, 1,171 backend tests passed (17 platform skips),
 with architecture and compilation checks passing. No hardware run occurred.
+
+## A reboot ends the trial rather than wedging it
+
+Every observation the controller accepts is bound to the record's `boot_hash`,
+which is what makes restoration safe: a profile is only ever restored onto the
+same attachment it was taken from. It also means a record cannot outlive its
+boot. If the machine goes down between off and restore, no live observation can
+match the record again, so no restoration attempt can succeed however often it
+is retried -- while the record stayed pending, refusing every supervised
+presentation transition and every new trial, with deleting the journal by hand
+as the only remedy.
+
+`AudioTrialPhase.ABANDONED` is the way out, and `decide_trial_boot` is the
+decision behind it. It follows `relaunch_intent`, which answers the same fact
+the same way: a reboot ends every claim its record had. When the recovery entry
+point finds a pending record from another boot it retires the record to that
+terminal phase and still refuses that attempt, with `audio.recovery_abandoned`.
+Nothing is restored and no command is issued to the audio device: the profile is
+left exactly as the reboot found it, and the distinct code is what tells the
+operator to check whether that boot left it off. Subsequent transitions are no
+longer answerable by a claim belonging to a boot that is gone.
+
+Two refusals are deliberately unchanged. Retirement happens only where recovery
+was explicitly requested, so an ordinary transition never quietly discards
+durable audio state; and a record whose *observed* identity is unknown or
+changed -- topology, portable sink, game state, or a boot the running system
+cannot confirm -- still blocks everything. Retiring is the permissive direction
+here, the inverse of a relaunch intent where refusing and discarding are the
+same answer, so a record is retired only when the running boot is positively
+identified and positively different. An unreadable boot id retires nothing.

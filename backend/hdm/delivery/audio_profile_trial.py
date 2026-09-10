@@ -10,8 +10,11 @@ import time
 
 from ..adapters.steamos.audio_profile_observation import AudioProfileObservation
 from ..adapters.steamos.commands import PipeWireCommandRunner
+from ..adapters.steamos.owner_identity import read_boot_hash
 from ..ports.audio_recovery import AudioRecoveryBlocked
-from .audio_profile_trial_state import AudioTrialRecord, AudioTrialPhase as Phase
+from .audio_profile_trial_state import (AudioTrialBootVerdict, AudioTrialRecord,
+                                        AudioTrialPhase as Phase, TERMINAL_PHASES,
+                                        decide_trial_boot)
 
 
 @dataclass(frozen=True)
@@ -71,7 +74,7 @@ class AudioProfileTrial:
         # A failed fsync may already have published the requested revision.
         # Re-read actual durable state instead of guessing a CAS revision.
         latest = tx.read(operation)
-        if latest.phase not in (Phase.RESTORED, Phase.RECOVERY_REQUIRED):
+        if latest.phase not in TERMINAL_PHASES and latest.phase is not Phase.RECOVERY_REQUIRED:
             self._advance(tx, latest, Phase.RECOVERY_REQUIRED)
 
     @staticmethod
@@ -162,8 +165,31 @@ class AudioProfileRecovery:
     revalidate, and the absolute deadline for this attempt. It must construct
     a fresh AudioProfileTrial backed by this same journal.
     """
-    def __init__(self, store, trial_factory, *, clock=time.monotonic):
+    def __init__(self, store, trial_factory, *, clock=time.monotonic,
+                 read_boot_hash=read_boot_hash):
         self.store, self.trial_factory, self.clock = store, trial_factory, clock
+        # The live boot identity, read fresh per recovery. It decides only
+        # whether a pending record still belongs to this boot; it is never
+        # substituted for the record's own bound identity, which every
+        # observation is still checked against in `_fresh`.
+        self.read_boot_hash = read_boot_hash
+
+    @staticmethod
+    def _retire(tx, pending):
+        """End a record whose boot is gone, without restoring anything.
+
+        The record is not repaired and nothing is issued to the audio device:
+        the profile is left exactly as the reboot found it. Only the durable
+        claim is closed, so it stops refusing transitions it can no longer be
+        revalidated for. A reboot has already released every audio descriptor
+        the previous boot held, which is the ownership question this record
+        existed to answer; what it cannot answer is whether that boot left the
+        profile off, and `audio.recovery_abandoned` is how the operator is told
+        to look rather than being told nothing.
+        """
+        AudioProfileTrial._advance(tx, pending, Phase.ABANDONED)
+        if tx.pending() is not None:
+            raise AudioRecoveryBlocked("audio.recovery_unverified")
 
     def recovery_status(self):
         try:
@@ -186,6 +212,15 @@ class AudioProfileRecovery:
                 if pending is not None:
                     if recover is not True:
                         raise AudioRecoveryBlocked("audio.recovery_required")
+                    # A record from another boot can never be revalidated: every
+                    # observation is bound to `record.boot_hash`, so restoration
+                    # would refuse forever and the record would refuse every
+                    # transition and every new trial with it. Retire it and still
+                    # refuse this attempt -- the way out is the next one, not this
+                    # one. See `decide_trial_boot`.
+                    if decide_trial_boot(pending, self.read_boot_hash()) is AudioTrialBootVerdict.DIFFERENT_BOOT:
+                        self._retire(tx, pending)
+                        raise AudioRecoveryBlocked("audio.recovery_abandoned")
                     # The controller still requires fresh Portable/internal-default
                     # evidence throughout restoration; the saved record is not authority.
                     now = self.clock()

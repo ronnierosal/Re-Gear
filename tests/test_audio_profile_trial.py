@@ -11,7 +11,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'backend'))
 from hdm.adapters.steamos.audio_profile_observation import AudioProfile, AudioProfileObservation
 from hdm.adapters.steamos.commands import PipeWireCommandRunner
 from hdm.delivery.audio_profile_trial import AudioProfileTrial, AudioTrialObservation
-from hdm.delivery.audio_profile_trial_state import AudioTrialRecord, AudioTrialPhase as Phase
+from hdm.delivery.audio_profile_trial_state import (AudioTrialBootVerdict, AudioTrialRecord,
+                                                   AudioTrialPhase as Phase, decide_trial_boot)
 
 
 BOOT, TOPOLOGY = 'a' * 64, 'b' * 64
@@ -282,6 +283,40 @@ class AudioProfileCommandTests(unittest.TestCase):
                                      (42, -1), (42, '0'), (2**32, 0), (42, 2**32)):
                 self.assertFalse(runner.set_profile(SimpleNamespace(username='deck', uid=1000), object_id, index).ok)
             run.assert_not_called()
+
+
+class AudioTrialBootDecisionTests(unittest.TestCase):
+    """`decide_trial_boot` only; it reads nothing and stores nothing."""
+
+    def record(self, boot=BOOT):
+        return AudioTrialRecord('trial', boot, TOPOLOGY, BDF, ORIGINAL, SINK, 1000,
+                                phase=Phase.OFF_OBSERVED)
+
+    def test_a_reboot_ends_every_claim_the_record_had(self):
+        # Every observation is bound to the record's boot, so once that boot is
+        # gone the record can never be revalidated -- however long it is kept.
+        self.assertIs(decide_trial_boot(self.record(), 'c' * 64),
+                      AudioTrialBootVerdict.DIFFERENT_BOOT)
+
+    def test_the_same_boot_still_owns_its_record(self):
+        self.assertIs(decide_trial_boot(self.record(), BOOT),
+                      AudioTrialBootVerdict.SAME_BOOT)
+
+    def test_an_unidentifiable_boot_is_not_a_different_one(self):
+        # Retiring is the permissive direction here, unlike a relaunch intent
+        # where refusing and discarding are the same answer. A boot that cannot
+        # be read proves nothing, so it must not retire anything.
+        for value in ('', 'C' * 64, 'a' * 63, 'a' * 65, 'g' * 64, None, b'a' * 64,
+                      True, 0, ('a' * 64,)):
+            with self.subTest(value=value):
+                self.assertIs(decide_trial_boot(self.record(), value),
+                              AudioTrialBootVerdict.UNIDENTIFIED_BOOT)
+
+    def test_only_a_typed_record_is_decided(self):
+        for value in (None, 'trial', SimpleNamespace(boot_hash=BOOT)):
+            with self.subTest(value=value):
+                with self.assertRaises(ValueError):
+                    decide_trial_boot(value, BOOT)
 
 
 if __name__ == '__main__':

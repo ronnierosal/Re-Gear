@@ -45,12 +45,17 @@ class AudioStoreCodecTests(unittest.TestCase):
 
     def test_transition_matrix_is_enforced_before_write(self):
         from unittest.mock import Mock
+        # A reboot can interrupt a trial at any step, so every non-terminal
+        # phase reaches "abandoned". Neither terminal phase leads anywhere.
         allowed = {
-            "prepared": {"off_requested", "restore_requested", "restored", "recovery_required"},
-            "off_requested": {"off_observed", "restore_requested", "restored", "recovery_required"},
-            "off_observed": {"restore_requested", "restored", "recovery_required"},
-            "restore_requested": {"restore_requested", "restored", "recovery_required"},
-            "recovery_required": {"restore_requested", "restored"}, "restored": set()}
+            "prepared": {"off_requested", "restore_requested", "restored", "recovery_required",
+                         "abandoned"},
+            "off_requested": {"off_observed", "restore_requested", "restored", "recovery_required",
+                              "abandoned"},
+            "off_observed": {"restore_requested", "restored", "recovery_required", "abandoned"},
+            "restore_requested": {"restore_requested", "restored", "recovery_required", "abandoned"},
+            "recovery_required": {"restore_requested", "restored", "abandoned"},
+            "restored": set(), "abandoned": set()}
         for before in AudioTrialPhase:
             for after in AudioTrialPhase:
                 store = Mock()
@@ -65,6 +70,24 @@ class AudioStoreCodecTests(unittest.TestCase):
                     with self.assertRaises(ValueError):
                         tx.save(old, new)
                     store._audio_write.assert_not_called()
+
+    def test_an_abandoned_record_is_terminal_but_stays_a_replay_tombstone(self):
+        from unittest.mock import Mock
+        # A record retired with its boot is finished. It must not be pending --
+        # nothing can revalidate it -- and it must not refuse the next trial,
+        # which was the whole reason a cross-boot record wedged the install.
+        # It stays on disk so its own operation can never replay.
+        abandoned = replace(record(), phase=AudioTrialPhase.ABANDONED)
+        store = Mock()
+        tx = AudioTrialTransaction(store, 9)
+        with patch.object(tx, "_records", return_value=(abandoned,)):
+            self.assertIsNone(tx.pending())
+            fresh = replace(record(), operation="next")
+            self.assertEqual(tx.create(fresh), fresh)
+            store._audio_write.assert_called_once_with(9, fresh, initial=True)
+            with self.assertRaises(ValueError):
+                tx.create(replace(record(), operation="op"))
+        self.assertEqual(store._audio_write.call_count, 1)
 
 
 @unittest.skipUnless(sys.platform == "linux", "Linux journal fixture")

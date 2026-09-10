@@ -6,7 +6,7 @@ from contextlib import contextmanager
 
 from tests import test_audio_profile_trial as audio_fixture
 from hdm.delivery.audio_profile_trial import AudioProfileRecovery
-from hdm.delivery.audio_profile_trial_state import AudioTrialPhase as Phase
+from hdm.delivery.audio_profile_trial_state import AudioTrialPhase as Phase, TERMINAL_PHASES
 from tests.test_supervised_transition import service, Observations, PlacementState
 from hdm.ports.audio_recovery import AudioRecoveryBlocked
 
@@ -27,15 +27,21 @@ class AudioRecoveryTransitionTests(unittest.TestCase):
             finally:
                 lock.release()
         def pending():
-            records = [r for r in store.records.values() if r.phase is not Phase.RESTORED]
+            records = [r for r in store.records.values() if r.phase not in TERMINAL_PHASES]
             if len(records) > 1:
                 raise ValueError('multiple active')
             return records[0] if records else None
         store.transaction = transaction
         store.pending = pending
         self.value, self.orchestrator, self.journal = service(Observations())
+        # The live boot, injected so the fixture is not deciding a record's fate
+        # from whatever boot id the machine running the tests happens to have.
+        # It matches the record here: these tests are about one boot unless they
+        # say otherwise.
+        self.boot_hash = audio_fixture.BOOT
         self.recovery = AudioProfileRecovery(store, lambda record, deadline: self.audio.trial,
-                                             clock=lambda: self.audio.now)
+                                             clock=lambda: self.audio.now,
+                                             read_boot_hash=lambda: self.boot_hash)
         self.value._audio_recovery = self.recovery
 
     def test_restore_observed_and_persisted_before_presentation(self):
@@ -155,6 +161,91 @@ class AudioRecoveryTransitionTests(unittest.TestCase):
         result = self.value.recover_interrupted()
         self.assertEqual(result.outcome.failure.code, 'audio.recovery_unavailable')
         self.assertEqual(self.orchestrator.recoveries, 0)
+        self.assertEqual(self.audio.calls, [])
+
+    def test_a_reboot_mid_trial_does_not_wedge_presentation_forever(self):
+        # The machine went down between off and restore. Every observation is
+        # bound to the record's boot, so nothing can ever revalidate it: left
+        # pending it would refuse this transition, the next one, and every one
+        # after that, with deleting the journal by hand as the only remedy.
+        self.boot_hash = 'c' * 64
+        self.audio.observation_changes = {'boot_hash': 'c' * 64}
+
+        # The attempt that discovers it still refuses -- nothing is restored and
+        # nothing is issued to the audio device -- but it says why, and it ends
+        # the claim on the way out.
+        result = self.value.recover_interrupted()
+        self.assertEqual(result.outcome.failure.code, 'audio.recovery_abandoned')
+        self.assertEqual(self.orchestrator.recoveries, 0)
+        self.assertEqual(self.audio.calls, [])
+        self.assertEqual(self.audio.store.read('trial').phase, Phase.ABANDONED)
+        self.assertIsNone(self.audio.store.pending())
+
+        # The way out. A fresh boot's transitions are no longer answerable by a
+        # record belonging to a boot that is gone: the guard yields, recovery
+        # reaches the orchestrator, and the ordinary paths are ungated again.
+        self.assertEqual(self.value.status().code, 'transition.idle')
+        self.value.recover_interrupted()
+        self.assertEqual(self.orchestrator.recoveries, 1)
+        self.assertEqual(self.value.execute('invalid').code, 'transition.approval_invalid')
+        self.assertEqual(self.audio.calls, [])
+
+    def test_a_retired_record_is_never_resurrected_or_replayed(self):
+        self.boot_hash = 'c' * 64
+        self.value.recover_interrupted()
+        self.assertEqual(self.audio.store.read('trial').phase, Phase.ABANDONED)
+        # A later boot reporting the record's own boot hash again -- a boot id
+        # collision, or a restored image -- does not reopen a closed claim.
+        self.boot_hash = audio_fixture.BOOT
+        self.value.recover_interrupted()
+        self.assertIsNone(self.audio.store.pending())
+        self.assertEqual(self.audio.store.read('trial').phase, Phase.ABANDONED)
+        self.assertEqual(self.value.status().code, 'transition.idle')
+        self.assertEqual(self.audio.calls, [])
+
+    def test_an_unreadable_boot_id_retires_nothing(self):
+        # Retiring is the permissive direction: it is what lets transitions run
+        # again. A boot that cannot be identified proves nothing, so the record
+        # stays pending and everything stays blocked.
+        for value in ('', 'not-a-boot-hash', None):
+            with self.subTest(value=value):
+                self.audio.store.records['trial'] = replace(
+                    self.audio.store.records['trial'], phase=Phase.OFF_OBSERVED)
+                self.boot_hash = value
+                self.audio.observation_changes = {'boot_hash': 'c' * 64}
+                result = self.value.recover_interrupted()
+                self.assertEqual(result.outcome.failure.code, 'audio.recovery_unavailable')
+                self.assertEqual(self.orchestrator.recoveries, 0)
+                self.assertEqual(self.audio.store.read('trial').phase, Phase.RECOVERY_REQUIRED)
+                self.assertTrue(self.audio.store.pending())
+                self.assertEqual(self.value.status().code, 'audio.recovery_required')
+        self.assertEqual(self.audio.calls, [])
+
+    def test_a_cross_boot_record_still_blocks_every_unrecovered_path(self):
+        # Retirement happens only where recovery was actually asked for. A
+        # normal transition never quietly discards durable audio state.
+        self.boot_hash = 'c' * 64
+        self.assertEqual(self.value.execute('unused').code, 'audio.recovery_required')
+        self.assertEqual(self.value.execute_automatic(PlacementState.DOCKED_EGPU,
+            expected_generation='generation', standing_consent=True).code, 'audio.recovery_required')
+        self.assertEqual(self.value.status().code, 'audio.recovery_required')
+        self.assertEqual(self.audio.store.read('trial').phase, Phase.OFF_OBSERVED)
+        self.assertTrue(self.audio.store.pending())
+        self.assertEqual(self.orchestrator.plans, [])
+
+    def test_a_failed_retirement_leaves_the_record_pending_and_retryable(self):
+        # The durable write is what ends the claim. If it does not land, nothing
+        # is assumed: the record is still pending and still blocking.
+        self.boot_hash = 'c' * 64
+        self.audio.store.fail_phase = Phase.ABANDONED
+        result = self.value.recover_interrupted()
+        self.assertEqual(result.outcome.failure.code, 'audio.recovery_unavailable')
+        self.assertEqual(self.audio.store.read('trial').phase, Phase.OFF_OBSERVED)
+        self.assertTrue(self.audio.store.pending())
+        self.audio.store.fail_phase = None
+        self.assertEqual(self.value.recover_interrupted().outcome.failure.code,
+                         'audio.recovery_abandoned')
+        self.assertIsNone(self.audio.store.pending())
         self.assertEqual(self.audio.calls, [])
 
 

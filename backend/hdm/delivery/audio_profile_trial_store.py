@@ -2,7 +2,8 @@
 
 Transactions serialize all operations. A failed publication may have committed;
 callers must reread in a fresh transaction before deciding recovery, never retry
-blindly. Restored records remain as operation replay tombstones.
+blindly. Terminal records -- restored, or abandoned with their boot -- remain as
+operation replay tombstones.
 """
 from contextlib import contextmanager
 from dataclasses import asdict, fields
@@ -13,21 +14,31 @@ import re
 import threading
 import uuid
 
-from .audio_profile_trial_state import AudioTrialRecord, AudioTrialPhase
+from .audio_profile_trial_state import AudioTrialRecord, AudioTrialPhase, TERMINAL_PHASES
 from .audio_journal_filesystem import AudioJournalFilesystem, _publish_exclusive
 
 ROOT = "/var/lib/regear/audio-profile-trial"
 MAX_BYTES = 4096
 MAX_RECORDS = 256
+# Every non-terminal phase may reach ABANDONED: a reboot can interrupt a trial
+# at any step, and the record it leaves behind is finished wherever it stopped.
+# Neither terminal phase leads anywhere -- a retired record is not resumable,
+# and abandoning a restored one would lose the fact that it was restored.
 _TRANSITIONS = {
     AudioTrialPhase.PREPARED: {AudioTrialPhase.OFF_REQUESTED, AudioTrialPhase.RESTORE_REQUESTED,
-                             AudioTrialPhase.RESTORED, AudioTrialPhase.RECOVERY_REQUIRED},
+                             AudioTrialPhase.RESTORED, AudioTrialPhase.RECOVERY_REQUIRED,
+                             AudioTrialPhase.ABANDONED},
     AudioTrialPhase.OFF_REQUESTED: {AudioTrialPhase.OFF_OBSERVED, AudioTrialPhase.RESTORE_REQUESTED,
-                                  AudioTrialPhase.RESTORED, AudioTrialPhase.RECOVERY_REQUIRED},
-    AudioTrialPhase.OFF_OBSERVED: {AudioTrialPhase.RESTORE_REQUESTED, AudioTrialPhase.RESTORED, AudioTrialPhase.RECOVERY_REQUIRED},
-    AudioTrialPhase.RESTORE_REQUESTED: {AudioTrialPhase.RESTORE_REQUESTED, AudioTrialPhase.RESTORED, AudioTrialPhase.RECOVERY_REQUIRED},
-    AudioTrialPhase.RECOVERY_REQUIRED: {AudioTrialPhase.RESTORE_REQUESTED, AudioTrialPhase.RESTORED},
+                                  AudioTrialPhase.RESTORED, AudioTrialPhase.RECOVERY_REQUIRED,
+                                  AudioTrialPhase.ABANDONED},
+    AudioTrialPhase.OFF_OBSERVED: {AudioTrialPhase.RESTORE_REQUESTED, AudioTrialPhase.RESTORED,
+                                 AudioTrialPhase.RECOVERY_REQUIRED, AudioTrialPhase.ABANDONED},
+    AudioTrialPhase.RESTORE_REQUESTED: {AudioTrialPhase.RESTORE_REQUESTED, AudioTrialPhase.RESTORED,
+                                      AudioTrialPhase.RECOVERY_REQUIRED, AudioTrialPhase.ABANDONED},
+    AudioTrialPhase.RECOVERY_REQUIRED: {AudioTrialPhase.RESTORE_REQUESTED, AudioTrialPhase.RESTORED,
+                                      AudioTrialPhase.ABANDONED},
     AudioTrialPhase.RESTORED: set(),
+    AudioTrialPhase.ABANDONED: set(),
 }
 
 
@@ -182,7 +193,7 @@ class AudioTrialTransaction:
 
     def pending(self):
         """Read-only recovery evidence; multiple active records fail closed."""
-        active = tuple(record for record in self._records() if record.phase is not AudioTrialPhase.RESTORED)
+        active = tuple(record for record in self._records() if record.phase not in TERMINAL_PHASES)
         if len(active) > 1:
             raise ValueError("multiple active audio trials")
         return active[0] if active else None
@@ -193,7 +204,7 @@ class AudioTrialTransaction:
         if record.revision != 1 or record.phase is not AudioTrialPhase.PREPARED:
             raise ValueError("initial prepared audio record required")
         records = self._records()
-        if any(existing.phase is not AudioTrialPhase.RESTORED or existing.operation == record.operation
+        if any(existing.phase not in TERMINAL_PHASES or existing.operation == record.operation
                for existing in records):
             raise ValueError("audio trial active or operation already consumed")
         if len(records) >= MAX_RECORDS:
