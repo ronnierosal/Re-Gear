@@ -41,3 +41,16 @@ test("live renderer wires the approved overlay to the existing store and native 
  assert.match(overlay,/<DialogButton[^>]*onClick=\{props.onHide\}/);
  assert.doesNotMatch(overlay,/setInterval|setTimeout|fetch\(|getSnapshot|<button/);
 });
+
+test("connection observation preserves the actual reason without inventing a transition",()=>{
+ const s=sample(); s.title="Ready to switch to TV";
+ const v=view(s,100);
+ assert.equal(v.phase,"connecting");
+ assert.equal(v.detail,"Ready to switch to TV");
+ assert.equal(v.rows[1].state,"checking");
+ s.phase="switching";
+ assert.ok(!view(s,100).rows.some(row=>row.label==="Final verification"));
+ const stale=view({...s,phase:"complete"},200);
+ assert.equal(stale.detail,"Waiting for a fresh status update");
+ assert.ok(stale.rows.every(row=>row.state!=="ready"));
+});

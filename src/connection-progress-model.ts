@@ -13,7 +13,6 @@ export function connectionProgressViewModel(status: LiveStatus, now = Date.now()
   if (phase === "switching") rows = [
     {key:"display",label:"Display activation",state:"switching"},
     {key:"audio",label:"TV audio",state:"pending",stateLabel:"Not verified"},
-    {key:"final",label:"Final verification",state:"pending",stateLabel:"Next"},
   ];
   if (phase === "ready") rows = [
     {key:"display",label:"TV display",state:"ready"},
