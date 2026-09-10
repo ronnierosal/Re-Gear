@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 64" fill="none" role="img" aria-labelledby="title desc">
+  <title id="title">Boosted Handheld mode</title><desc id="desc">Handheld gaming device accelerated by an external GPU.</desc>
+  <rect x="8" y="12" width="66" height="40" rx="14" stroke="currentColor" stroke-width="3"/>
+  <rect x="27" y="18" width="28" height="28" rx="4" stroke="currentColor" stroke-width="3"/>
+  <circle cx="18" cy="24" r="5" stroke="currentColor" stroke-width="3"/>
+  <path d="M16 35v7M12.5 38.5h7" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+  <path d="M78 22h10v20H78c-3 0-5-2-5-5V27c0-3 2-5 5-5Z" stroke="currentColor" stroke-width="3"/>
+  <circle cx="83" cy="32" r="4" stroke="currentColor" stroke-width="2.5"/>
+  <path d="M74 32H62" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+  <path d="m42 23-7 10h6l-4 9 12-13h-7l4-6Z" fill="currentColor"/>
+</svg>

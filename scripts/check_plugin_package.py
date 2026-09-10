@@ -273,10 +273,26 @@ def main() -> int:
             "approve_process_release",
             "execute_process_release",
             "acknowledge_process_release",
+            # Live eGPU disconnect: a read-only status a caller may poll,
+            # and one serialized removal that needs an explicit display
+            # approval of its own. Neither is clearance to unplug.
+            "get_egpu_disconnect_status",
+            "execute_egpu_disconnect",
+            # The player's standing answer about closing one game before a
+            # disconnect. Writes a per-game preference and nothing else; the
+            # backend still re-derives whether that answer may be stored.
+            "remember_game_close_choice",
+            "forget_game_close_choice",
+            # The game a disconnect closed, claimed once by whichever panel is
+            # alive after the session restart that freed the device.
+            "take_pending_relaunch",
+            # Read-only: what sleeping would take while the eGPU is attached.
+            # Sleeps nothing itself; Steam still performs the suspend.
+            "get_sleep_readiness",
         }
         if public_methods != allowed_methods:
             failures.append(
-                "Decky RPCs must remain limited to diagnostics/logging, read-only offline report classification and peripheral/watcher/action-history status, automatic-dock preference/status, explicit manual/automatic TDP controls and read-only benchmarks/preferences, approved support export, supervised presentation, confirmed shutdown-before-disconnect, and guarded process release"
+                "Decky RPCs must remain limited to diagnostics/logging, read-only offline report classification and peripheral/watcher/action-history status, automatic-dock preference/status, explicit manual/automatic TDP controls and read-only benchmarks/preferences, approved support export, supervised presentation, confirmed shutdown-before-disconnect, and guarded process release, and live eGPU software disconnect with its per-game close preference"
             )
 
     sources = {}

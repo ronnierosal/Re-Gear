@@ -16,8 +16,21 @@ from hdm.domain.filter_arm_sequence import (  # noqa: E402
     ArmRestartPlan,
     ArmSequenceState,
     classify_holder_units,
-    compose_restart_plan,
 )
+from hdm.domain.filter_arm_sequence import (  # noqa: E402
+    compose_restart_plan as _compose_restart_plan,
+)
+
+
+def compose_restart_plan(holder_units, *, scan_complete=True):
+    """Compose over a scan that finished, which is what these tests are about.
+
+    Completeness is a required argument on the real function, deliberately: an
+    empty result from a scan that could not look needs the opposite answer from
+    an empty result from one that did. The tests for that distinction call the
+    real function directly, in `EmptyScanTests`.
+    """
+    return _compose_restart_plan(holder_units, scan_complete=scan_complete)
 
 
 #: Units of the holders measured on the tested profile, portable placement.
@@ -92,9 +105,8 @@ class MeasuredHardwareTests(unittest.TestCase):
         """Order is the one measured, not alphabetical: nothing here
         establishes a dependency ordering."""
         plan = compose_restart_plan(("pipewire.service", "wireplumber.service"))
-        self.assertEqual(
-            plan.units, ("wireplumber.service", "pipewire.service", SESSION_TARGET)
-        )
+        # No session unit is holding, so the session target is not in the plan.
+        self.assertEqual(plan.units, ("wireplumber.service", "pipewire.service"))
 
     def test_audio_units_are_the_ones_the_target_misses(self) -> None:
         self.assertEqual(
@@ -127,11 +139,82 @@ class CoverageTests(unittest.TestCase):
         self.assertIn("wireplumber.service", coverage.requires_explicit_restart)
 
 
-class PlanValidationTests(unittest.TestCase):
-    def test_no_holders_is_incomplete_not_an_empty_success(self) -> None:
-        plan = compose_restart_plan(())
+class EmptyScanTests(unittest.TestCase):
+    """An empty result means opposite things depending on the scan."""
+
+    def test_a_scan_that_could_not_finish_is_not_a_clear_device(self) -> None:
+        plan = _compose_restart_plan((), scan_complete=False)
+
         self.assertIs(plan.state, ArmSequenceState.EVIDENCE_INCOMPLETE)
         self.assertEqual(plan.code, "arm_sequence.no_holders_observed")
+        self.assertFalse(plan.usable)
+
+    def test_a_finished_scan_that_found_nothing_has_nothing_to_restart(self) -> None:
+        """The ordinary state of an idle eGPU before a disconnect.
+
+        This used to be indistinguishable from the case above, because the
+        completeness the caller already had was dropped at this boundary, and
+        a device nothing holds could not be armed at all.
+        """
+        plan = _compose_restart_plan((), scan_complete=True)
+
+        self.assertIs(plan.state, ArmSequenceState.NOTHING_TO_RESTART)
+        self.assertEqual(plan.code, "arm_sequence.device_already_clear")
+        self.assertTrue(plan.usable)
+        self.assertEqual(plan.units, ())
+
+    def test_nothing_to_restart_cannot_name_units(self) -> None:
+        with self.assertRaises(ValueError):
+            ArmRestartPlan(
+                ArmSequenceState.NOTHING_TO_RESTART, "code", ("wireplumber.service",)
+            )
+
+    def test_a_completeness_that_is_not_a_boolean_is_invalid(self) -> None:
+        self.assertIs(
+            _compose_restart_plan(MEASURED_HOLDERS, scan_complete="yes").state,
+            ArmSequenceState.INVALID,
+        )
+
+
+class SessionTargetTests(unittest.TestCase):
+    """The session target restarts the player's whole session.
+
+    It is by far the most disruptive step a plan can take, so it has to earn
+    its place. Restarting a session that is holding nothing cannot release
+    anything.
+    """
+
+    def test_a_session_unit_holding_earns_the_session_target(self) -> None:
+        plan = compose_restart_plan(MEASURED_HOLDERS)
+
+        self.assertIn(SESSION_TARGET, plan.units)
+        self.assertEqual(plan.units[-1], SESSION_TARGET)
+
+    def test_audio_alone_does_not_restart_the_player_session(self) -> None:
+        """The state measured on the tested Ally X.
+
+        The player had already returned to the handheld, so gamescope and
+        Steam were holding nothing and only the audio daemon remained. The
+        session was restarted anyway, for nothing.
+        """
+        plan = compose_restart_plan(("wireplumber.service",))
+
+        self.assertEqual(plan.units, ("wireplumber.service",))
+        self.assertNotIn(SESSION_TARGET, plan.units)
+        self.assertTrue(plan.usable)
+
+    def test_a_session_unit_alone_restarts_only_the_target(self) -> None:
+        plan = compose_restart_plan(("gamescope-session.service",))
+
+        self.assertEqual(plan.units, (SESSION_TARGET,))
+
+    def test_every_reached_unit_counts_not_just_the_compositor(self) -> None:
+        plan = compose_restart_plan(("steam-launcher.service",))
+
+        self.assertEqual(plan.units, (SESSION_TARGET,))
+
+
+class PlanValidationTests(unittest.TestCase):
 
     def test_non_tuple_input_is_invalid(self) -> None:
         self.assertIs(

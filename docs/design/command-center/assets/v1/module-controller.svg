@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" role="img" aria-labelledby="title desc">
+  <title id="title">Controller module</title><desc id="desc">Game controller silhouette.</desc>
+  <path d="M19 25h26c5 0 8 3 9 8l3 12c1 5-5 8-8 4l-7-8H22l-7 8c-3 4-9 1-8-4l3-12c1-5 4-8 9-8Z" stroke="currentColor" stroke-width="3" stroke-linejoin="round"/>
+  <path d="M20 31v8M16 35h8" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+  <circle cx="43" cy="33" r="2.5" fill="currentColor"/><circle cx="49" cy="38" r="2.5" fill="currentColor"/>
+</svg>

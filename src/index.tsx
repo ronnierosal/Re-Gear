@@ -1,3 +1,10 @@
+import { PageLayout, CommandCenterHeader } from "./quick-access/page-layout";
+import { createExpandedMenu } from "./quick-access/expanded-command-center/native";
+import { EgpuModule } from "./quick-access/modules/egpu";
+import { egpuPresentation } from "./quick-access/modules/egpu-presentation";
+import { ControllerModule } from "./quick-access/modules/controller";
+import { controllerPresentation } from "./quick-access/modules/controller-presentation";
+import { displayAction } from "./display-action";
 import { createDisplayShortcutRuntime } from "./display-shortcut-runtime";
 import { showDisconnectProgress } from "./disconnect-progress-panel";
 import { ConnectionQuickStatus } from "./connection-quick-status";
@@ -13,6 +20,7 @@ import {
   ButtonItem,
   ConfirmModal,
   DropdownItem,
+  Focusable,
   ToggleField,
   PanelSection,
   PanelSectionRow,
@@ -64,13 +72,17 @@ import {
   type ProcessReleasePreviewPayload,
   type SupportBundlePreviewPayload,
   type TransitionJournalStatusPayload,
+  getEgpuDisconnectStatus,
+  executeEgpuDisconnect,
 } from "./backend";
 import { createDeckySteamSuspendAdapter } from "./decky-steam-suspend";
 import { deliverBlockedAttempt } from "./blocked-attempt-delivery";
 import { diagnosticOverlayRows } from "./diagnostics-overlay";
-import { DashboardSurface, QuickAccessOverview } from "./quick-access-overview";
+import { DashboardSurface } from "./quick-access-overview";
 import { DashboardAction } from "./dashboard-action";
-import { TdpControls } from "./tdp-controls";
+import { AutoTdpModule } from "./quick-access/modules/auto-tdp";
+import { usePerformance } from "./quick-access/use-performance";
+import { TdpPicker, DisplayPicker } from "./quick-access/compact-picker";
 import { hardwareDetailRows } from "./quick-access-dashboard";
 import { healthAttentionMessages, healthStatusLabel } from "./health-ui";
 import { decideLinkHealthNotification } from "./link-health-notification";
@@ -87,11 +99,27 @@ import {
   collectOptionalDiagnostics,
   shouldCollectOptionalDiagnostics,
 } from "./optional-diagnostics-refresh";
-import { quickAccessNavView } from "./quick-access-nav";
-import { QuickAccessNav } from "./quick-access-nav-row";
+import {
+  INITIAL_STACK,
+  backRoute,
+  currentRoute,
+  diagnosticsVisible,
+  hasInternalLevel,
+  routeKey,
+  pushRoute,
+  quickAccessModules,
+  stackOnPanelOpen,
+} from "./quick-access/module-registry";
+import type { ModuleId, NavStack, Route, StatusId } from "./quick-access/module-registry";
+import { ModulesButton, ShellBody } from "./quick-access/shell";
+import type { DisconnectStatusPayload } from "./backend";
+import { commandCenterTiles } from "./quick-access/command-center";
+import { disconnectResult } from "./quick-access/disconnect-result";
+import { DisconnectResultNotice } from "./quick-access/disconnect-result-notice";
+import type { TileId } from "./quick-access/command-center";
+import { CommandCenterGrid, TileReason } from "./quick-access/command-center-grid";
+import { performanceState } from "./quick-access/performance-state";
 import { quickAccessSections } from "./quick-access-sections";
-import type { QuickAccessSectionId } from "./quick-access-sections";
-import { applySectionSelection, requestedSectionId } from "./quick-access-section-state";
 import { connectionProgress, refreshDelayForVisibility } from "./refresh-policy";
 import { canOfferForce, processReleaseOutcomeMessage } from "./process-release-ui";
 import {
@@ -512,7 +540,7 @@ function preflightObservation(payload: SnapshotPayload): PreflightObservation {
   }, Date.now(), SNAPSHOT_STALE_AFTER_MS);
 }
 
-function Content({ preflight, connection, shortcut }: { preflight: SleepPreflightCoordinator; connection: ReturnType<typeof startConnectionMonitor>; shortcut: ReturnType<typeof createDisplayShortcutRuntime> }) {
+function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAvailable }: { preflight: SleepPreflightCoordinator; connection: ReturnType<typeof startConnectionMonitor>; shortcut: ReturnType<typeof createDisplayShortcutRuntime>; openExpanded(): void; menuShortcutAvailable: boolean }) {
   const quickAccessVisible = useQuickAccessVisible();
   const statusAnchor = useRef<HTMLDivElement | null>(null);
   const statusFocusAnchor = useRef<HTMLDivElement | null>(null);
@@ -546,10 +574,33 @@ function Content({ preflight, connection, shortcut }: { preflight: SleepPrefligh
   const [supportBusy, setSupportBusy] = useState(false);
   const [supportMessage, setSupportMessage] = useState("");
   const [showDiagnostics, setShowDiagnostics] = useState(false);
-  // The row target to return to when the System section closes. `showDiagnostics`
-  // stays the single source of truth for whether System is open; see
-  // quick-access-section-state.ts for why this is not a second copy of it.
-  const [chosenSection, setChosenSection] = useState<QuickAccessSectionId>("egpu");
+  // The approved layout replaces the icon row with a navigation stack. Command
+  // Center sits at the bottom and is never popped; Back delegates to Steam's own
+  // QAM Back once no internal level is left. See quick-access/module-registry.
+  const returnFocus = useRef(new Map<string, string>());
+  const [pendingFocus, setPendingFocus] = useState<string | null>(null);
+  const [navStack, setNavStack] = useState<NavStack>(INITIAL_STACK);
+  // The owning backend's disconnect status. Null means not read yet, which is
+  // not the same as "no": the tile renders that distinction itself.
+  const [egpuDisconnect, setEgpuDisconnect] = useState<DisconnectStatusPayload | null>(null);
+  const [disconnectBusy, setDisconnectBusy] = useState(false);
+  const [disconnectMessage, setDisconnectMessage] = useState("");
+  /** The tile whose reason is shown under the grid. */
+  const [selectedTile, setSelectedTile] = useState<TileId | null>(null);
+  /** Dismissal of the last-attempt notice, for this panel session only. It is
+   * not persisted: the outcome is the answer to "what just happened to my
+   * hardware", and a stored dismissal would hide it after a later restart. */
+  const [resultDismissed, setResultDismissed] = useState(false);
+  const route = currentRoute(navStack);
+  const performance = usePerformance(quickAccessVisible);
+  const onCommandCenter = route.kind === "command-center";
+  // Read by the refresh callback, which must not be rebuilt on every navigation:
+  // adding navStack to its dependencies would restart the refresh cycle on a
+  // route change.
+  const diagnosticsOnScreen = useRef(false);
+  useEffect(() => {
+    diagnosticsOnScreen.current = diagnosticsVisible(navStack, showDiagnostics);
+  }, [navStack, showDiagnostics]);
   const [showJourneyDetails, setShowJourneyDetails] = useState(false);
   const [presentationBusy, setPresentationBusy] = useState(false);
   const [presentationMessage, setPresentationMessage] = useState("");
@@ -735,7 +786,11 @@ function Content({ preflight, connection, shortcut }: { preflight: SleepPrefligh
       }
       const optionalDiagnostics = await collectOptionalDiagnostics(
         shouldCollectOptionalDiagnostics(
-          quickAccessVisible && showDiagnostics,
+          // `showDiagnostics` says the player opened these surfaces, not that
+          // they are on screen: on a pushed route the Command Center body is
+          // not rendered, and collecting for surfaces nobody can see is work
+          // the player did not ask for.
+          quickAccessVisible && diagnosticsOnScreen.current,
           nextPayload.snapshot.game_state,
         ),
         {
@@ -778,6 +833,12 @@ function Content({ preflight, connection, shortcut }: { preflight: SleepPrefligh
     setShowDiagnostics(compact.showDiagnostics);
     setShowJourneyDetails(compact.showJourneyDetails);
     setShowHardwareDetails(false);
+    setPendingFocus(null);
+    returnFocus.current.clear();
+    // Steam may keep the plugin mounted between openings, so the route resets
+    // with the rest of the compact state; otherwise the panel reopens wherever
+    // it was left instead of at Command Center.
+    setNavStack(stackOnPanelOpen());
     setDockedIgpuStatus(null);
     setDiagnosticLoggingStatus(null);
     setPeripheralStatus(null);
@@ -1401,6 +1462,7 @@ function Content({ preflight, connection, shortcut }: { preflight: SleepPrefligh
     setShowDiagnostics(compact.showDiagnostics);
     setShowJourneyDetails(compact.showJourneyDetails);
     setShowHardwareDetails(false);
+    setNavStack(INITIAL_STACK);
     // Wait for the diagnostics section to collapse, then reset Steam's owning
     // scroll panel and move focus to a native in-panel control. A non-focusable
     // status div leaves controller navigation at Steam's QAM Back control.
@@ -1416,19 +1478,96 @@ function Content({ preflight, connection, shortcut }: { preflight: SleepPrefligh
     }, 0);
   }, []);
 
-  const selectSection = useCallback((id: QuickAccessSectionId) => {
-    const result = applySectionSelection({ showDiagnostics, chosen: chosenSection }, id);
-    if (result.refresh) void refresh(true);
-    setShowDiagnostics(result.next.showDiagnostics);
-    setChosenSection(result.next.chosen);
-  }, [chosenSection, refresh, showDiagnostics]);
-
-  const toggleTroubleshooting = useCallback(() => {
-    if (!showDiagnostics) {
-      void refresh(true);
+  /** Read the disconnect status. The backend documents this call as observing
+   * and mutating nothing -- no filter armed, no DRM master taken, no display
+   * touched -- so it is safe to call whenever the screen showing it is open. */
+  const refreshDisconnect = useCallback(async () => {
+    try {
+      setEgpuDisconnect(await getEgpuDisconnectStatus());
+    } catch {
+      // A failed read is not evidence about the device. Leaving the previous
+      // status would show a stale offer, so it falls back to not-read.
+      setEgpuDisconnect(null);
     }
-    setShowDiagnostics((visible) => !visible);
-  }, [refresh, showDiagnostics]);
+  }, []);
+
+  /** Run the disconnect the player just confirmed.
+   *
+   * The confirmation text and the display approval both come from the owning
+   * backend's presentation; neither is composed here. `release_display` is
+   * passed exactly as that presentation reported it and is never defaulted on,
+   * because turning the output off is visible to whoever is watching the TV.
+   */
+  const runDisconnect = useCallback(async (releaseDisplay: boolean) => {
+    setDisconnectBusy(true);
+    setDisconnectMessage("");
+    try {
+      const outcome = await executeEgpuDisconnect(releaseDisplay);
+      // A software removal is not clearance to unplug, so the result says what
+      // happened and nothing about the cable.
+      setDisconnectMessage(
+        outcome.ok
+          ? "The eGPU has been detached in software. Keep the cable connected."
+          : `Disconnect did not complete: ${label(outcome.code)}.`,
+      );
+    } catch {
+      setDisconnectMessage("Re-Gear could not complete the disconnect request.");
+    } finally {
+      setDisconnectBusy(false);
+      // A new attempt is a new answer, so an earlier dismissal must not hide it.
+      setResultDismissed(false);
+      // Re-read rather than assuming what the attempt left behind.
+      void refreshDisconnect();
+    }
+  }, [refreshDisconnect]);
+
+  const openRoute = useCallback((destination: Route, opener?: string) => {
+    const active = statusAnchor.current?.ownerDocument.activeElement;
+    const key = opener ?? (active instanceof HTMLElement ? active.closest<HTMLElement>("[data-regear-focus]")?.dataset.regearFocus : undefined);
+    if (key) returnFocus.current.set(routeKey(destination), key);
+    setNavStack((stack) => pushRoute(stack, destination));
+  }, []);
+
+  // Pops one internal level. Whether Back is ours to handle at all is decided
+  // by `hasInternalLevel` in the render below, not here: a handler that is
+  // attached and then declines has already swallowed the press, and a decision
+  // computed inside a state updater is not reliable because React may defer or
+  // replay it.
+  const popRoute = useCallback(() => {
+    setPendingFocus(returnFocus.current.get(routeKey(route)) ?? null);
+    setNavStack((stack) => backRoute(stack).stack);
+  }, [route]);
+
+  useEffect(() => {
+    if (!pendingFocus || !quickAccessVisible) return;
+    const timer = window.setTimeout(() => {
+      const target = Array.from(statusAnchor.current?.querySelectorAll<HTMLElement>("[data-regear-focus]") ?? [])
+        .find(element => element.dataset.regearFocus === pendingFocus);
+      if (target) {
+        target.scrollIntoView({ block: "nearest", inline: "nearest" });
+        restoreQuickAccessFocus(() => target);
+      }
+      setPendingFocus(null);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [route, pendingFocus, quickAccessVisible]);
+
+  // Request optional evidence once per panel opening. The dedicated route
+  // controls ongoing visibility; revisiting does not create a second poller.
+  const toggleTroubleshooting = useCallback(() => {
+    diagnosticsOnScreen.current = true;
+    if (!showDiagnostics) void refresh(true);
+    setShowDiagnostics(true);
+    openRoute({ kind: "troubleshoot" });
+  }, [refresh, showDiagnostics, openRoute]);
+
+  // Only while the panel is open and the Command Center is the visible route:
+  // reading for a screen nobody is looking at is work the player did not ask
+  // for, and the tile is the only consumer.
+  useEffect(() => {
+    if (!quickAccessVisible || !onCommandCenter) return;
+    void refreshDisconnect();
+  }, [quickAccessVisible, onCommandCenter, refreshDisconnect]);
 
   const toggleJourneyDetails = useCallback(() => {
     setShowJourneyDetails((visible) => {
@@ -1440,50 +1579,157 @@ function Content({ preflight, connection, shortcut }: { preflight: SleepPrefligh
     });
   }, []);
 
-  // Only System is wired to the row in this slice; the other four targets change
-  // the selection and nothing else yet. TDP evidence lives inside TdpControls, so
-  // its readiness is not observable here and the section reads unavailable --
-  // unknown state is not a capability claim.
+  // One shared observation powers both quick controls and module configuration.
   const sections = quickAccessSections({
     mode: payload?.inference.mode,
     fresh: !loading && payload != null,
-    shortcutAvailable: controllerShortcutAvailable,
+    shortcutAvailable: menuShortcutAvailable,
     healthKnown: payload?.health != null,
+    autoTdpAvailable: performance.manual?.auto_tdp_available,
+    tdpCanEnable: performance.manual?.can_enable,
   });
-  const navView = quickAccessNavView(
-    sections, requestedSectionId({ showDiagnostics, chosen: chosenSection }),
-  );
+  const modules = quickAccessModules(sections);
+  // Manual power enablement and Auto TDP activity are separate observations.
+  const tiles = commandCenterTiles({
+    performance: performanceState({ status: performance.manual, autoStatus: performance.auto, busy: performance.busy, stopping: performance.stopping }),
+    displayTarget: !loading && snapshot?.displays.some(d => d.active === true && d.kind === "external")
+      ? "External" : !loading && snapshot?.displays.some(d => d.active === true && d.kind === "internal") ? "Handheld" : undefined,
+    disconnectStatus: egpuDisconnect,
+  });
+  const shownTile = tiles.find((tile) => tile.id === selectedTile);
+
+  // Read-only status destinations, kept distinct from the configuration
+  // modules: these open detail, never controls.
+  const statusEntries: Array<{ id: StatusId; title: string; detail: string }> = [
+    { id: "egpu", title: "eGPU status",
+      detail: label(payload?.inference.mode ?? "unknown") },
+    { id: "controller", title: "Controller status",
+      detail: menuShortcutAvailable ? "Menu shortcut input available" : "Menu shortcut unavailable" },
+  ];
   const sectionVisibility = quickAccessSectionVisibility(showDiagnostics);
+  const primaryDisplayAction = displayAction({
+    mode: payload?.inference.mode,
+    busy: tvSwitchBusy || safeDisconnectBusy,
+    acknowledgementRequired: Boolean(tvSwitchAcknowledgementId),
+    journalBlocked: Boolean(journalStatus && journalStatus.code !== "journal.idle"),
+    shortcutAvailable: controllerShortcutAvailable,
+  });
+
+  const activateDisplay = () => {
+    if (primaryDisplayAction.disabled) return;
+    if (primaryDisplayAction.target === "ally") requestControllerDisplaySwitch("ally");
+    else if (primaryDisplayAction.target === "tv") void executeTvSwitch();
+  };
+
 
   return (
     <>
       <style>{regearControlCss}</style>
+      <Focusable
+        // B is handled only while an internal level exists. At Command Center
+        // no handler is attached at all, so the press reaches Steam's own QAM
+        // Back instead of being swallowed by a handler that chose to do
+        // nothing. Native confirmation of that propagation stays pending.
+        {...(hasInternalLevel(navStack) ? { onCancelButton: popRoute } : {})}
+        style={{ minWidth: 0 }}
+      >
       <div ref={statusAnchor} tabIndex={-1}>
-      <PanelSection title="At a glance">
-        <QuickAccessOverview
+      {!onCommandCenter && <PanelSection><PanelSectionRow>
+        <ButtonItem layout="below" onClick={popRoute}>Back</ButtonItem>
+      </PanelSectionRow></PanelSection>}
+      <PageLayout route={route}
+        modules={<PanelSection><ShellBody route={route} modules={modules}
+          statusEntries={statusEntries}
+          onOpenModule={(id: ModuleId) => openRoute({ kind: "module", id }, `module:${id}`)}
+          onOpenStatus={(id: StatusId) => openRoute({ kind: "status", id }, `status:${id}`)}
+          onOpenTroubleshoot={toggleTroubleshooting}>{null}</ShellBody></PanelSection>}
+        controller={<PanelSection title="Controller"><ControllerModule presentation={controllerPresentation({ peripheral: peripheralStatus, shortcutAvailable: menuShortcutAvailable })} /></PanelSection>}
+        egpuStatus={<PanelSection title="eGPU status"><EgpuModule presentation={egpuPresentation(payload)} /></PanelSection>}
+        controllerStatus={<PanelSection title="Controller status"><ControllerModule presentation={controllerPresentation({ peripheral: peripheralStatus, shortcutAvailable: menuShortcutAvailable })} /></PanelSection>}
+        autoTdp={<AutoTdpModule controller={performance} />}
+        picker={route.kind === "picker" && route.id === "tdp"
+          ? <TdpPicker status={performance.manual} busy={performance.busy} onApply={watts => void performance.apply(watts)}
+              onConfigure={() => openRoute({ kind: "module", id: "auto-tdp" }, "picker:configure")} />
+          : <DisplayPicker current={tiles.find(tile => tile.id === "display")?.value.text ?? "Unknown"}
+              action={primaryDisplayAction} onSwitch={activateDisplay} onConfigure={() => openRoute({ kind: "module", id: "egpu" }, "picker:configure")} />}
+
+        commandCenter={<>
+      <PanelSection><PanelSectionRow><ButtonItem layout="below" onClick={openExpanded}>Open expanded demo</ButtonItem></PanelSectionRow></PanelSection>
+
+      <PanelSection>
+        <CommandCenterHeader
           summaryRef={statusFocusAnchor}
           onSummaryFocus={() => {
             if (statusAnchor.current) scrollToTopOfOwningPanel(statusAnchor.current);
           }}
-          mode={payload?.inference.mode ?? "unknown"}
-          modeLabel={loading ? "Reading…" : label(payload?.inference.mode ?? "unknown")}
+          mode={loading ? "Reading…" : label(payload?.inference.mode ?? "unknown")}
+          display={snapshot?.displays.some((d) => d.active === true && d.kind === "external")
+            ? "External display"
+            : snapshot?.displays.some((d) => d.active === true && d.kind === "internal")
+              ? "Handheld display" : "Display unknown"}
+          game={loading ? "Reading…" : label(snapshot?.game_state ?? "unknown")}
           health={healthStatusLabel(payload?.health, loading)}
-          game={label(snapshot?.game_state ?? "unknown")}
-          loading={loading}
+          navigation={<ModulesButton onOpen={() => openRoute({ kind: "modules" }, "modules")} />}
         />
-
+        {/* Answers "what just happened to my hardware" the moment the panel
+            comes back after the session restart, above everything else,
+            because an answer a player has to scroll to find is one they will
+            act without. `status.last` survives the restart; this reads it. */}
+        <DisconnectResultNotice
+          result={disconnectResult(
+            resultDismissed ? null : egpuDisconnect?.last,
+            egpuDisconnect,
+          )}
+          onDismiss={() => setResultDismissed(true)}
+        />
+        <CommandCenterGrid
+          tiles={tiles}
+          onActivate={(id: TileId) => {
+            setSelectedTile(id);
+            const tile = tiles.find((candidate) => candidate.id === id);
+            if (!tile) return;
+            if (id === "safe-disconnect") {
+              // Only an offer the owning backend actually made is actionable.
+              // Anything else selects the tile so its reason is read.
+              if (tile.activation !== "act" || !tile.confirmation || disconnectBusy) return;
+              const releaseDisplay = tile.displayApprovalRequired === true;
+              showDisconnectConfirmation(tile.confirmation, () => {
+                void runDisconnect(releaseDisplay);
+              });
+              return;
+            }
+            if (id === "auto-tdp" && tile.actionLabel === "Stop") {
+              void performance.stop();
+              return;
+            }
+            if (tile.activation !== "open") return;
+            openRoute(id === "display" || id === "tdp"
+              ? { kind: "picker", id }
+              : { kind: "module", id: "auto-tdp" }, `tile:${id}`);
+          }}
+        />
+        <TileReason tile={shownTile} />
+        <ButtonItem layout="below" onClick={toggleTroubleshooting}>Troubleshoot</ButtonItem>
+        {disconnectMessage && (
+          <PanelSectionRow>{disconnectMessage}</PanelSectionRow>
+        )}
+        <ShellBody
+          route={route}
+          modules={modules}
+          statusEntries={statusEntries}
+          onOpenModule={(id: ModuleId) => openRoute({ kind: "module", id }, `module:${id}`)}
+          onOpenStatus={(id: StatusId) => openRoute({ kind: "status", id }, `status:${id}`)}
+        >{null}</ShellBody>
       </PanelSection>
 
-      <PanelSection>
-        <QuickAccessNav view={navView} onSelect={selectSection} />
-      </PanelSection>
-
+      </>}
+      egpu={<>
+      <PanelSection title="eGPU"><EgpuModule presentation={egpuPresentation(payload)} onOpenRecovery={toggleTroubleshooting} /></PanelSection>
       {payload?.connection_readiness && payload.connection_readiness.stage !== "disconnected" &&
         <PanelSection title="eGPU readiness">
           <ConnectionQuickStatus store={connection.store} visible={quickAccessVisible}
             onOpen={openConnectionProgress} />
         </PanelSection>}
-      <TdpControls visible={quickAccessVisible} />
       <PanelSection title="Docking & actions">
         <div ref={primaryControlAnchor}>
           <DashboardSurface>
@@ -1512,25 +1758,10 @@ function Content({ preflight, connection, shortcut }: { preflight: SleepPrefligh
             <DashboardAction
               icon="bolt"
               tone="primary"
-              title={tvSwitchBusy || safeDisconnectBusy
-                ? "Switching…"
-                : payload?.inference.mode === "docked_egpu"
-                  ? "Switch to handheld"
-                  : "Switch to TV"}
-              description={controllerShortcutAvailable
-                ? "Hold Back/View + Y for 3 seconds to switch."
-                : "Checks readiness before switching. Controller shortcut unavailable."}
-              onClick={() => {
-                if (payload?.inference.mode === "docked_egpu") requestControllerDisplaySwitch("ally");
-                else if (payload?.inference.mode === "portable") void executeTvSwitch();
-              }}
-              disabled={
-                tvSwitchBusy
-                || safeDisconnectBusy
-                || (payload?.inference.mode !== "portable" && payload?.inference.mode !== "docked_egpu")
-                || Boolean(tvSwitchAcknowledgementId)
-                || Boolean(journalStatus && journalStatus.code !== "journal.idle")
-              }
+              title={primaryDisplayAction.title}
+              description={primaryDisplayAction.description}
+              onClick={activateDisplay}
+              disabled={primaryDisplayAction.disabled}
             />
           </DashboardSurface>
           {tvSwitchMessage && <PanelSectionRow>{tvSwitchMessage}</PanelSectionRow>}
@@ -1615,6 +1846,8 @@ function Content({ preflight, connection, shortcut }: { preflight: SleepPrefligh
         )}
       </PanelSection>
 
+      </>}
+      troubleshoot={<>
       {sectionVisibility.journey && (
         <>
           <PanelSection title="Journey status">
@@ -1891,9 +2124,48 @@ function Content({ preflight, connection, shortcut }: { preflight: SleepPrefligh
           </ButtonItem>
         </PanelSectionRow>
       </PanelSection>}
+      </>}
+      />
       </div>
+      </Focusable>
     </>
   );
+}
+
+/** Confirm a software disconnect.
+ *
+ * The body is the owning backend's confirmation string, rendered verbatim. It
+ * already states that the Steam session will restart, that the external
+ * display turns off when that applies, and that the cable stays connected.
+ * Rewriting or supplementing it here would create a second source of truth for
+ * the one piece of copy that must not drift.
+ */
+function showDisconnectConfirmation(
+  confirmation: string,
+  onConfirm: () => void,
+): ReturnType<typeof showModal> {
+  let modal: ReturnType<typeof showModal>;
+  const close = () => modal.Close();
+  modal = showModal(
+    <ConfirmModal
+      strTitle="Disconnect the eGPU?"
+      strOKButtonText="Disconnect"
+      strCancelButtonText="Cancel"
+      bDestructiveWarning={true}
+      bDisableBackgroundDismiss={true}
+      bHideCloseIcon={true}
+      onOK={() => {
+        close();
+        onConfirm();
+      }}
+      onCancel={close}
+    >
+      <div style={{ fontSize: "12px", lineHeight: "17px" }}>{confirmation}</div>
+    </ConfirmModal>,
+    window,
+    { strTitle: PRODUCT_NAME, bNeverPopOut: true },
+  );
+  return modal;
 }
 
 function showBlockedAttempt(
@@ -1925,8 +2197,12 @@ function showBlockedAttempt(
 }
 
 export default definePlugin(() => {
+  const expandedMenu = createExpandedMenu(steamControllerInput(window), window, () =>
+    !shortcut.modal.current && !shortcut.portableBusy.current && !shortcut.tvBusy.current && !warningModal);
   const shortcut = createDisplayShortcutRuntime({
-    input: steamControllerInput(window),
+    // View+Y now belongs exclusively to the menu. Explicit display requests
+    // below retain their existing approval/confirmation path.
+    input: undefined,
     readContext: async () => {
       const [snapshot, journal] = await Promise.all([getSnapshot(), getTransitionJournalStatus()]);
       return { snapshot, journal };
@@ -2000,10 +2276,11 @@ export default definePlugin(() => {
   return {
     name: PRODUCT_NAME,
     titleView: <div className={staticClasses.Title} style={{ display: "flex", alignItems: "center" }}><BrandHeader /></div>,
-    content: <Content preflight={preflight} connection={connection} shortcut={shortcut} />,
+    content: <Content preflight={preflight} connection={connection} shortcut={shortcut} openExpanded={expandedMenu.open} menuShortcutAvailable={expandedMenu.available} />,
     icon: <BrandIcon />,
     alwaysRender: true,
     onDismount() {
+      expandedMenu.stop();
       shortcut.stop();
       if (warningTimer !== null) {
         window.clearTimeout(warningTimer);

@@ -93,7 +93,10 @@ def parse_game_scopes(output: str) -> GameScopeScan:
 
 
 class SystemdGameScopeDiscovery:
-    COMMAND = ("systemctl", *ReadOnlyCommandRunner.SYSTEMCTL_SCOPE_QUERY)
+    COMMAND = (
+        ReadOnlyCommandRunner.SYSTEMCTL,
+        *ReadOnlyCommandRunner.SYSTEMCTL_SCOPE_QUERY,
+    )
 
     def __init__(
         self,

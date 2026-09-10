@@ -48,7 +48,11 @@ class _LiveEvidence:
     def context_key(self) -> str:
         # A power-source transition invalidates the old policy streak and any
         # pending proposal, even when the game and configured watts are unchanged.
-        return hashlib.sha256((self.target.context_key + "\0" + self.power_source).encode()).hexdigest()
+        # The target's own key covers the compositor and its process generations
+        # but not the active AppID, so a game switch under one stable compositor
+        # would otherwise present an unchanged dispatch identity.
+        parts = (self.target.context_key, str(self.target.app_id), self.power_source)
+        return hashlib.sha256(chr(0).join(parts).encode()).hexdigest()
 
 
 class AutoTdpEvidenceCollector:

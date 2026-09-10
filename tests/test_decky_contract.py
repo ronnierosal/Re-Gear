@@ -105,6 +105,12 @@ class DeckyContractTests(unittest.TestCase):
                 "approve_process_release",
                 "execute_process_release",
                 "acknowledge_process_release",
+                "get_egpu_disconnect_status",
+                "execute_egpu_disconnect",
+                "remember_game_close_choice",
+                "forget_game_close_choice",
+                "take_pending_relaunch",
+                "get_sleep_readiness",
             },
         )
         source = path.read_text(encoding="utf-8")

@@ -122,9 +122,16 @@ class SleepInhibitorProcess:
     STARTUP_GRACE_SECONDS = 0.25
     STOP_TIMEOUT_SECONDS = 2.0
     PYTHON = "/usr/bin/python"
-    EXCLUDED_ENVIRONMENT = frozenset(
-        {"LD_LIBRARY_PATH", "LD_PRELOAD", "PYTHONHOME", "PYTHONPATH"}
-    )
+    #: The guard reads no environment of its own and execs systemd-inhibit by
+    #: absolute path; systemd-inhibit reaches the system bus over its fixed
+    #: socket. Nothing inherited is required, so this matches the allowlist the
+    #: three other runners in this file use rather than chasing each new
+    #: influential variable as it appears.
+    CLEAN_ENVIRONMENT = {
+        "LANG": "C",
+        "LC_ALL": "C",
+        "PATH": "/usr/bin:/bin",
+    }
 
     def __init__(self) -> None:
         self._process: subprocess.Popen[str] | None = None
@@ -136,11 +143,7 @@ class SleepInhibitorProcess:
 
     @classmethod
     def environment(cls) -> dict[str, str]:
-        return {
-            key: value
-            for key, value in os.environ.items()
-            if key not in cls.EXCLUDED_ENVIRONMENT
-        }
+        return dict(cls.CLEAN_ENVIRONMENT)
 
     def start(self) -> ManagedProcessStatus:
         status = self.status()
@@ -166,7 +169,7 @@ class SleepInhibitorProcess:
             self._process = None
             return ManagedProcessStatus(
                 False,
-                detail or f"systemd-inhibit exited with status {process.returncode}",
+                detail or f"sleep inhibitor guard exited with status {process.returncode}",
             )
         except (OSError, subprocess.SubprocessError) as error:
             self._process = None
@@ -198,7 +201,7 @@ class SleepInhibitorProcess:
         self._process = None
         return ManagedProcessStatus(
             False,
-            detail or f"systemd-inhibit exited with status {returncode}",
+            detail or f"sleep inhibitor guard exited with status {returncode}",
         )
 
 
@@ -214,6 +217,15 @@ class ReadOnlyCommandRunner:
         "--no-legend",
         "--no-pager",
     )
+    SYSTEMCTL = "/usr/bin/systemctl"
+    #: Matched as an exact absolute path. A basename comparison accepted any
+    #: systemctl reachable through an inherited PATH, e.g. /tmp/evil/systemctl.
+    APPROVED_BINARIES = frozenset({SYSTEMCTL})
+    CLEAN_ENVIRONMENT = {
+        "LANG": "C",
+        "LC_ALL": "C",
+        "PATH": "/usr/bin:/bin",
+    }
     SAFE_USERNAME = re.compile(r"[A-Za-z_][A-Za-z0-9_-]*[$]?")
     FORBIDDEN_ARGUMENTS = frozenset(
         {
@@ -255,7 +267,7 @@ class ReadOnlyCommandRunner:
                 + ", ".join(sorted(forbidden))
             )
         if (
-            Path(normalized[0]).name.lower() == "systemctl"
+            normalized[0] in cls.APPROVED_BINARIES
             and normalized[1:] == cls.SYSTEMCTL_SCOPE_QUERY
         ):
             return normalized
@@ -298,6 +310,7 @@ class ReadOnlyCommandRunner:
                 check=False,
                 shell=False,
                 text=True,
+                env=dict(self.CLEAN_ENVIRONMENT),
                 timeout=self._timeout_seconds,
             )
         except (OSError, subprocess.SubprocessError) as error:
@@ -336,6 +349,16 @@ class UserServiceCommandRunner:
             "--no-block",
             "restart",
             "gamescope-session.target",
+        ),
+        UserServiceOperation.RESTART_WIREPLUMBER: (
+            "--no-block",
+            "restart",
+            "wireplumber.service",
+        ),
+        UserServiceOperation.RESTART_PIPEWIRE: (
+            "--no-block",
+            "restart",
+            "pipewire.service",
         ),
     }
     CLEAN_ENVIRONMENT = {

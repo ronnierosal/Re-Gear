@@ -1,46 +1,58 @@
 # Command Center
 
 **Audience:** players and UI contributors<br>
-**Reviewed:** 2026-09-08<br>
-**Maturity:** approved design; rebuild in development, not a completed new interface
+**Reviewed:** 2026-09-09<br>
+**Maturity:** implemented in source; native Decky/controller validation pending
 
-The Command Center brings common controls and status into one controller-friendly
-page. Modules hold deeper configuration. The repository
-[UI contract](https://github.com/ronnierosal/Re-Gear/blob/main/docs/UI_SPEC.md)
-owns implemented interaction rules; [PR #144](https://github.com/ronnierosal/Re-Gear/pull/144)
-contains the separate design asset proposal. Design approval does not establish
-implementation or hardware readiness.
+Quick Access puts current state and immediate controls first. **Modules** opens
+deep configuration without leaving a long settings panel beneath the quick tiles.
 
-## How the interface is organized
+## Quick controls
 
-- **Quick controls:** the approved layout includes FPS, TDP, Auto TDP, display target, and a prepared Safe Disconnect tile.
-- **Status links:** eGPU and controller rows open read-only details. Opening status does not request a hardware change.
-- **Modules:** deeper eGPU, performance, and controller settings share the same underlying state and guarded actions as the quick controls.
-- **Troubleshooting:** explanations and technical evidence stay available without filling the main page.
+| Tile | Behavior |
+|---|---|
+| FPS target | Unavailable until a verified frame-rate provider exists. This is separate from Auto TDP's target FPS. |
+| TDP limit | Shows an observed configured limit, not measured power use. Opens device-reported choices and guarded Apply. |
+| Auto TDP | Shows observed loop state independently of power-control enablement. Stop while running; Configure otherwise. |
+| Display target | Opens the same guarded display action as the eGPU module, including return from either docked mode. |
+| Safe Disconnect | Uses the backend's current offer and confirmation. A software-removal result does not authorize pulling the cable. |
 
-FPS and display settings depend on real provider capabilities; a design tile is
-not an implemented setting. Safe Disconnect remains informative and unavailable
-until a reviewed backend path and its validation gates exist. It cannot infer
-unplug permission from a selected display or an empty client list.
+Unavailable tiles keep their positions and explain why they cannot act. Unknown
+values remain unknown. Power controls use one shared state/request owner; opening
+a module does not add a second collector. Stop keeps the current power limit;
+Restore returns to saved settings. Saving a mode preference never starts Auto TDP.
 
-## What is implemented
+## Modules and status
 
-The existing section chooser and unavailable-section navigation were integrated
-in [PR #129](https://github.com/ronnierosal/Re-Gear/pull/129). The new module registry
-and routing foundation are under review in [PR #153](https://github.com/ronnierosal/Re-Gear/pull/153).
-The complete Command Center shell and module pages are still being built.
+**Modules** contains eGPU docking controls, Auto TDP tuning and saved preferences,
+and Controller observations. Benchmark collection remains behind disclosure.
+The **eGPU status** and **Controller status** rows are read-only destinations.
+**Troubleshoot** is available from both Command Center and Modules.
 
-The intended controller flow uses directional navigation, activation, Back, and
-focus restoration. Native Decky/controller testing must verify those behaviors;
-keyboard interaction with a prototype is a different level of evidence.
+Back returns to the invoking control; Back at Command Center delegates to Steam.
+Reopening Quick Access starts at Command Center. Native validation of those
+controller interactions is still required.
 
-## Screenshots and validation
+## Disconnect evidence
 
-Real Command Center screenshots will be added to this guide and the README once
-the implemented interface has been reviewed in Decky. Captures should identify
-the build and view and avoid private game/account or diagnostic details. Design
-mockups, when shown in design work, remain explicitly labelled concepts.
+The current backend's unavailable eGPU status can also mean a failed observation
+or missing attachment identity. It does not prove that the device disappeared
+from the bus. The result view preserves reported software-removal outcomes but
+withholds physical cable clearance. Dock USB and Thunderbolt teardown is a
+separate outstanding check. Follow the shutdown-before-disconnect guidance in
+[Safety invariants](https://github.com/ronnierosal/Re-Gear/blob/main/docs/SAFETY_INVARIANTS.md).
+[Issue #147](https://github.com/ronnierosal/Re-Gear/issues/147) tracks the separate
+contract decision; the UI does not decide it.
 
-**Priority:** active usability work alongside eGPU reliability. Remaining gates
-include shell integration, capability-driven controls, focus/navigation checks,
-and screenshots of the actual interface. See [Current State](Current-State).
+## Validation and remaining work
+
+The [UI specification](https://github.com/ronnierosal/Re-Gear/blob/main/docs/UI_SPEC.md)
+and [validation record](https://github.com/ronnierosal/Re-Gear/blob/main/docs/COMMAND_CENTER_VALIDATION.md)
+identify implementation and evidence limits. Browser captures render actual TSX
+with synthetic readings and mocked Decky controls; they are not handheld photos
+or native focus proof. No installation or hardware-tested claim follows from
+source integration.
+
+**Priority:** complete native D-pad, Back, focus and scrolling checks, then capture
+real Decky screenshots. Game-close and sleep integration remains dependent on
+the owning eGPU flow work. See [Current State](Current-State).
