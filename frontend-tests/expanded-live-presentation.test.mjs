@@ -23,6 +23,7 @@ async function fixture() {
     ${compile("../src/quick-access/expanded-command-center/shell.tsx")}
     export function render(props) {cursor=0;effects=[];return ExpandedCommandCenter({onClose(){}, ...props});}
     export function restoreFocus() {effects.at(-1)();}
+    export function recoverWithdrawnFocus() {effects[0]();}
   `;
   return import(`data:text/javascript;base64,${Buffer.from(code).toString("base64")}#${++fixtureId}`);
 }
@@ -152,5 +153,48 @@ test("embedded editing keys are left to the input instead of switching tabs", as
   const panel=nodes(tree).find(node=>node.props && "data-ec-panel" in node.props);
   for (const key of ["ArrowLeft","ArrowDown","q","e","Home"]) {
     panel.props.onKeyDown({key,target:{closest:()=>({}),matches:()=>true},preventDefault(){assert.fail("editor key intercepted");},stopPropagation(){assert.fail("editor key intercepted");}});
+  }
+});
+
+test("a tabindex-bearing detail wrapper focuses its editor rather than itself", async () => {
+  const app=await fixture();
+  const props={tiles:{quick:[auto("Ready", "Configure")]},renderDetail:()=>"Editor"};
+  let tree=app.render(props);
+  nodes(tree).find(node=>node.props?.["data-ec-control"] === "auto").props.onClick();
+  tree=app.render(props);
+  let focused;
+  const editor={focus(){focused="editor";},scrollIntoView(){}};
+  const wrapper={dataset:{ecControl:"nested-content"},matches:()=>true,querySelector:()=>editor,focus(){focused="wrapper";}};
+  nodes(tree).find(node=>node.props && "data-ec-panel" in node.props).props.ref.current={querySelectorAll:()=>[wrapper]};
+  app.restoreFocus();
+  assert.equal(focused,"editor");
+});
+
+test("withdrawn focused controls recover Back without stealing retained dialog focus", async () => {
+  for (const removed of [false,true]) {
+    const app=await fixture();
+    const props={tiles:{quick:[auto("Ready","Configure")]},renderDetail:()=>"Editor"};
+    let tree=app.render(props);
+    nodes(tree).find(node=>node.props?.["data-ec-control"] === "auto").props.onClick();
+    tree=app.render(props);
+    let panel=nodes(tree).find(node=>node.props && "data-ec-panel" in node.props);
+    panel.props.onFocus({target:{closest:()=>({dataset:{ecControl:"nested-content"}})}});
+    const body={isConnected:true};
+    const doc={body,activeElement:body};
+    let calls=0;
+    const back={dataset:{ecControl:"nested-back"},matches:()=>true,querySelector:()=>null,focus(){calls++;},scrollIntoView(){}};
+    panel.props.ref.current={ownerDocument:doc,querySelectorAll:()=>[back]};
+    // A normal update must not reset an editor's focus/caret.
+    tree=app.render(props);
+    app.recoverWithdrawnFocus();
+    assert.equal(calls,0);
+    tree=app.render(removed?{...props,tiles:{quick:[]}}:{...props,renderDetail:()=>null});
+    // If native focus has already moved to a surviving control, keep it there.
+    doc.activeElement={isConnected:true};
+    app.recoverWithdrawnFocus();
+    assert.equal(calls,0);
+    doc.activeElement=body;
+    app.recoverWithdrawnFocus();
+    assert.equal(calls,1);
   }
 });
