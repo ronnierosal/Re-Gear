@@ -4,6 +4,7 @@ import os
 import sys
 import tempfile
 import unittest
+import unittest.mock
 from pathlib import Path
 
 
@@ -77,11 +78,36 @@ class Fake:
         else:
             target = target / "internal" / name
         target.mkdir(parents=True, exist_ok=True)
+        # A block device the kernel knows about always has a holders
+        # directory, empty when nothing stacks on it. Leaving it out describes
+        # a device that is not there, which the reading now reports as
+        # unexamined rather than idle.
+        (target / "holders").mkdir(parents=True, exist_ok=True)
         link = self.block / name
         try:
             link.symlink_to(target, target_is_directory=True)
         except (OSError, NotImplementedError):
             raise unittest.SkipTest("symlinks are unavailable on this platform")
+
+    def block_metadata(
+        self, disk: str, *, devnum: str = "", partitions: tuple = ()
+    ) -> None:
+        """What the kernel publishes for a block device that exists.
+
+        Every block device gets a `holders` directory, empty when nothing
+        stacks on it, and a `dev` file naming its major:minor. A fixture that
+        omits them is describing a device that is not there, which the reading
+        now reports as unexamined rather than as idle.
+        """
+        root = self.block / disk
+        (root / "holders").mkdir(parents=True, exist_ok=True)
+        if devnum:
+            (root / "dev").write_text(devnum, encoding="utf-8")
+        for name, number in partitions:
+            partition = root / name
+            (partition / "holders").mkdir(parents=True, exist_ok=True)
+            if number:
+                (partition / "dev").write_text(number, encoding="utf-8")
 
     def mount(self, source: str, mount_point: str) -> None:
         existing = self.mountinfo.read_text(encoding="utf-8")
@@ -362,7 +388,14 @@ class MountinfoParsingTests(Harness):
 
         self.assertEqual(found, ("/run/media/deck/A",))
 
-    def test_a_truncated_line_is_skipped_rather_than_crashing(self) -> None:
+    def test_a_truncated_line_is_read_past_but_leaves_the_scan_incomplete(self) -> None:
+        """Skipping it must not also claim the table was fully read.
+
+        The mounts that did parse are still reported: a line this parser
+        cannot read is no reason to discard the ones it could. But a truncated
+        table is a table with an unread mount in it, and calling that a
+        finished scan is how a branch in use reads as idle.
+        """
         found, complete = self.mounts(
             {"sda"},
             [
@@ -372,7 +405,7 @@ class MountinfoParsingTests(Harness):
         )
 
         self.assertEqual(found, ("/run/media/deck/A",))
-        self.assertTrue(complete)
+        self.assertFalse(complete)
 
     def test_a_line_with_no_separator_is_skipped(self) -> None:
         found, _ = self.mounts(
@@ -436,6 +469,8 @@ class OtherStorageUseTests(Harness):
         return self.discovery._other_uses(set(devices))
 
     def test_a_quiet_system_reports_no_other_use(self) -> None:
+        self.fake.block_metadata("sda")
+
         found, complete = self.uses({"sda"})
 
         self.assertEqual(found, ())
@@ -448,6 +483,7 @@ class OtherStorageUseTests(Harness):
         self.assertTrue(complete)
 
     def test_swap_on_a_branch_partition_is_a_use(self) -> None:
+        self.fake.block_metadata("sda", partitions=(("sda2", ""),))
         self.fake.swap_on("/dev/sda2")
 
         found, complete = self.uses({"sda"})
@@ -464,14 +500,19 @@ class OtherStorageUseTests(Harness):
 
         self.assertEqual(found, ())
 
-    def test_a_missing_swaps_file_is_a_real_answer(self) -> None:
-        # A system with no swap configured at all.
+    def test_a_missing_swaps_file_is_not_a_system_without_swap(self) -> None:
+        """`/proc/swaps` exists whether or not any swap is configured.
+
+        A system with none has a header row and nothing under it. An absent
+        file therefore means the table was not read at all, which says nothing
+        about what is swapping to the branch.
+        """
         self.fake.swaps.unlink()
 
         found, complete = self.uses({"sda"})
 
         self.assertEqual(found, ())
-        self.assertTrue(complete)
+        self.assertFalse(complete)
 
     def test_a_stacked_device_holds_its_member(self) -> None:
         # A member of an assembled array is thoroughly in use while being
@@ -495,12 +536,171 @@ class OtherStorageUseTests(Harness):
 
         self.assertEqual({use.detail for use in found}, {"in use by dm-0", "in use by md0"})
 
-    def test_no_holders_directory_is_no_holders(self) -> None:
+    def test_a_mapping_assembled_on_a_partition_is_a_use(self) -> None:
+        """Only the disk's own holders were ever read.
+
+        A dm or md device assembled on a partition holds the branch just as
+        firmly as one assembled on the whole disk, and reported nothing at
+        all -- an idle branch, over a live mapping.
+        """
+        self.fake.block_metadata("sda", partitions=(("sda1", ""),))
+        (self.fake.block / "sda" / "sda1" / "holders" / "dm-0").mkdir(parents=True)
+
+        found, complete = self.uses({"sda"})
+
+        self.assertEqual(len(found), 1)
+        self.assertEqual(found[0].kind, "stacked")
+        self.assertEqual(found[0].detail, "in use by dm-0")
+        self.assertTrue(complete)
+
+    def test_a_partition_use_names_the_partition_not_the_disk(self) -> None:
+        """What a player has to act on is the thing that is held."""
+        self.fake.block_metadata("sda", partitions=(("sda1", ""),))
+        (self.fake.block / "sda" / "sda1" / "holders" / "dm-0").mkdir(parents=True)
+
+        found, _ = self.uses({"sda"})
+
+        self.assertEqual(found[0].device, "sda1")
+
+    def test_an_unreadable_partition_inventory_is_incomplete(self) -> None:
+        """Listing the disk alone is not the same as there being no partitions.
+
+        The disk's own holders read fine here. What failed is the walk that
+        would have found its partitions, so any mapping assembled on one is
+        unseen -- and reporting that as a finished scan is the whole bug.
+        """
+        self.fake.block_metadata("sda")
+        disk = self.fake.block / "sda"
+        real = Path.iterdir
+
+        def refuse(self):
+            if self == disk:
+                raise PermissionError(disk)
+            return real(self)
+
+        with unittest.mock.patch.object(Path, "iterdir", refuse):
+            found, complete = self.uses({"sda"})
+
+        self.assertEqual(found, ())
+        self.assertFalse(complete)
+
+    def test_no_holders_directory_is_not_no_holders(self) -> None:
+        """The kernel gives every block device one, empty when unused.
+
+        Absent means this is not the device we think it is, or it went away
+        mid-walk. Either way it was never examined, and an unexamined device
+        is not an unused one.
+        """
         (self.fake.block / "sda").mkdir(parents=True, exist_ok=True)
 
         found, complete = self.uses({"sda"})
 
         self.assertEqual(found, ())
+        self.assertFalse(complete)
+
+
+class AliasMountTests(Harness):
+    """A drive mounted through an alias is mounted.
+
+    Nothing requires a mount to name the kernel device. `/dev/disk/by-uuid/`,
+    `/dev/disk/by-label/` and `/dev/mapper/` are ordinary, and their basenames
+    are a UUID, a label or a mapping name that match no sysfs device. Matching
+    on the basename alone therefore reads a mounted branch as an idle one,
+    which is the reading that lets a teardown proceed over a live filesystem.
+    """
+
+    def mounts(self, devices, lines):
+        self.fake.mountinfo.write_text("".join(lines), encoding="utf-8")
+        return self.discovery._mounts_for(set(devices))
+
+    ALIAS = (
+        "36 25 8:1 / /run/media/deck/BACKUP rw,relatime "
+        "- ext4 /dev/disk/by-uuid/1234-ABCD rw\n"
+    )
+
+    def publish_device_numbers(self) -> None:
+        disk = self.fake.block / "sda"
+        disk.mkdir(parents=True, exist_ok=True)
+        (disk / "dev").write_text("8:0\n", encoding="utf-8")
+        partition = disk / "sda1"
+        partition.mkdir(parents=True, exist_ok=True)
+        (partition / "dev").write_text("8:1\n", encoding="utf-8")
+
+    def test_an_alias_mount_is_matched_by_device_number(self) -> None:
+        self.publish_device_numbers()
+
+        found, complete = self.mounts({"sda"}, [self.ALIAS])
+
+        self.assertEqual(found, ("/run/media/deck/BACKUP",))
+        self.assertTrue(complete)
+
+    def test_an_alias_mount_with_no_device_numbers_is_not_an_idle_branch(self) -> None:
+        """Unattributable is not absent."""
+        found, complete = self.mounts({"sda"}, [self.ALIAS])
+
+        self.assertEqual(found, ())
+        self.assertFalse(complete)
+
+    def test_a_device_number_elsewhere_is_still_not_this_branch(self) -> None:
+        """Reading numbers must not turn every alias into a match."""
+        self.publish_device_numbers()
+
+        found, complete = self.mounts(
+            {"sda"},
+            [
+                "36 25 259:3 / / rw,relatime "
+                "- ext4 /dev/disk/by-uuid/OTHER-DISK rw\n"
+            ],
+        )
+
+        self.assertEqual(found, ())
+        self.assertTrue(complete)
+
+    def test_a_partial_device_number_scan_cannot_clear_an_alias(self) -> None:
+        """Knowing some numbers is not knowing the answer.
+
+        The disk publishes 8:0 and its partition publishes nothing. An alias
+        mounting 8:1 then matches no number held, which is not the same as
+        belonging to someone else. Treating a merely non-empty map as
+        sufficient is what makes that mount disappear.
+        """
+        disk = self.fake.block / "sda"
+        disk.mkdir(parents=True, exist_ok=True)
+        (disk / "dev").write_text("8:0\n", encoding="utf-8")
+        (disk / "sda1").mkdir(parents=True, exist_ok=True)
+
+        found, complete = self.mounts({"sda"}, [self.ALIAS])
+
+        self.assertEqual(found, ())
+        self.assertFalse(complete)
+
+    def test_a_malformed_device_number_cannot_clear_an_alias(self) -> None:
+        """Unreadable evidence in the shape of an answer is still unreadable.
+
+        A truncated or garbled `dev` file is not a device number. Counting it
+        as one makes the map look exhaustive while holding nothing that can
+        match, so the alias mount silently disappears.
+        """
+        disk = self.fake.block / "sda"
+        disk.mkdir(parents=True, exist_ok=True)
+        (disk / "dev").write_text("8:0\n", encoding="utf-8")
+        partition = disk / "sda1"
+        partition.mkdir(parents=True, exist_ok=True)
+        (partition / "dev").write_text("not-a-device-number\n", encoding="utf-8")
+
+        found, complete = self.mounts({"sda"}, [self.ALIAS])
+
+        self.assertEqual(found, ())
+        self.assertFalse(complete)
+
+    def test_a_plain_device_source_still_needs_no_numbers(self) -> None:
+        """The existing name comparison is kept, not replaced."""
+        found, complete = self.mounts(
+            {"sda"},
+            ["36 25 8:1 / /mnt/stick rw - ext4 /dev/sda1 rw\n"],
+        )
+
+        self.assertEqual(found, ("/mnt/stick",))
         self.assertTrue(complete)
 
 
@@ -576,6 +776,39 @@ class TunnelTests(Harness):
 
         self.assertEqual(reading.sysfs_id, "0-1")
         self.assertIs(reading.authorized, True)
+        self.assertTrue(reading.complete)
+
+    def test_two_routers_publishing_one_name_refuse_to_resolve(self) -> None:
+        """A device_name is a product string, not an identity.
+
+        Two identical docks publish the same one. Returning whichever sorted
+        first would name a router the caller did not mean, and the only thing
+        downstream does with a router is deauthorize it.
+        """
+        self.fake.tunnel("Tapex Creek")
+        second = self.fake.thunderbolt / "0-3"
+        second.mkdir(parents=True, exist_ok=True)
+        (second / "device_name").write_text("Tapex Creek", encoding="utf-8")
+        (second / "authorized").write_text("1", encoding="utf-8")
+
+        reading = self.discovery.observe_tunnel("Tapex Creek")
+
+        self.assertTrue(reading.ambiguous)
+        self.assertFalse(reading.complete)
+        self.assertEqual(reading.sysfs_id, "")
+        self.assertIsNone(reading.authorized)
+
+    def test_one_router_among_others_still_resolves(self) -> None:
+        """Ambiguity is two matches, not two routers."""
+        self.fake.tunnel("Tapex Creek")
+        other = self.fake.thunderbolt / "0-3"
+        other.mkdir(parents=True, exist_ok=True)
+        (other / "device_name").write_text("Some Other Dock", encoding="utf-8")
+
+        reading = self.discovery.observe_tunnel("Tapex Creek")
+
+        self.assertEqual(reading.sysfs_id, "0-1")
+        self.assertFalse(reading.ambiguous)
         self.assertTrue(reading.complete)
 
     def test_a_deauthorized_router_reads_as_down(self) -> None:

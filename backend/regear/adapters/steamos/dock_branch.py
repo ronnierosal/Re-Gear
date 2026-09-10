@@ -82,6 +82,31 @@ def _is_partition_of(leaf: str, disk: str) -> bool:
     return suffix.isdigit()
 
 
+def _is_device_number(value: str) -> bool:
+    """Whether `value` is a `major:minor` pair sysfs would have written.
+
+    Anything else is unreadable evidence wearing the shape of an answer. A
+    truncated or garbled `dev` file is not a device number, and counting it as
+    one makes the map look exhaustive while holding nothing usable.
+    """
+    major, separator, minor = value.partition(":")
+    return bool(separator) and major.isdigit() and minor.isdigit()
+
+
+def _is_opaque_source(source: str) -> bool:
+    """Whether a mountinfo source cannot be judged by its basename.
+
+    `/dev/sda1` names the kernel device directly. `/dev/disk/by-uuid/...`,
+    `/dev/disk/by-label/...` and `/dev/mapper/...` all name something that
+    resolves to one, and the basename is a UUID, a label or a mapping name
+    that matches no sysfs device. A mount through any of those is still a
+    mount on the branch.
+    """
+    if not source.startswith("/dev/"):
+        return False
+    return "/" in source[len("/dev/"):]
+
+
 def _read_text(path: Path) -> str:
     try:
         return path.read_text(encoding="utf-8", errors="replace").strip()
@@ -148,6 +173,10 @@ class TunnelReading:
     authorized: bool | None
     deauthorizable: bool
     complete: bool
+    #: Two or more routers published the requested name, so no single one is
+    #: the answer. `complete` is False alongside it: an ambiguous scan did not
+    #: settle, and a caller that only checks completeness still fails closed.
+    ambiguous: bool = False
 
 
 class DockBranchDiscovery:
@@ -299,10 +328,11 @@ class DockBranchDiscovery:
 
         try:
             raw = self._swaps.read_text(encoding="utf-8", errors="replace")
-        except FileNotFoundError:
-            # No swap file at all is a real answer on a system without one.
-            raw = ""
         except OSError:
+            # `/proc/swaps` exists on any kernel this runs on whether or not
+            # swap is configured: the no-swap case is a header row and nothing
+            # under it. An absent file therefore means the table was not read,
+            # which is not the same fact as nothing swapping to the branch.
             complete = False
             raw = ""
         for line in raw.splitlines()[1:]:
@@ -315,20 +345,60 @@ class DockBranchDiscovery:
                 uses.append(DockStorageUse(leaf, "swap", "in use as swap"))
 
         for device in sorted(devices):
-            holders = self._block_root / device / "holders"
-            try:
-                entries = sorted(entry.name for entry in holders.iterdir())
-            except FileNotFoundError:
-                # No holders directory means no stacked consumers.
-                continue
-            except OSError:
+            # A dm or md device assembled on a PARTITION holds the disk just as
+            # firmly as one assembled on the whole device, and only the disk's
+            # own holders directory was ever read. sysfs publishes each
+            # partition as a directory under the disk, each with its own
+            # holders, so both levels are walked.
+            directories, enumerated = self._holder_directories(device)
+            if not enumerated:
                 complete = False
-                continue
-            for name in entries:
-                uses.append(
-                    DockStorageUse(device, "stacked", f"in use by {name}")
-                )
+            for holders in directories:
+                if not self._collect_holders(holders, uses):
+                    complete = False
         return tuple(uses), complete
+
+    def _holder_directories(self, device: str) -> tuple[tuple[Path, ...], bool]:
+        """The disk's holders directory and each partition's.
+
+        The second value says whether the partition inventory was actually
+        taken. An enumeration that failed lists the disk alone, and returning
+        that as though it were exhaustive hides every partition that could be
+        holding a mapping.
+        """
+        root = self._block_root / device
+        directories = [root / "holders"]
+        try:
+            children = sorted(root.iterdir(), key=lambda item: item.name)
+        except OSError:
+            return tuple(directories), False
+        for child in children:
+            if child.name.startswith(device) and child.name != device:
+                directories.append(child / "holders")
+        return tuple(directories), True
+
+    def _collect_holders(
+        self, holders: Path, uses: list[DockStorageUse]
+    ) -> bool:
+        """Stacked consumers named by one holders directory.
+
+        Returns whether the directory could be read. The reported device is
+        the one the holders belong to -- the partition when the mapping was
+        assembled on a partition -- because that is what a player has to act
+        on, not the disk it happens to sit inside.
+        """
+        owner = holders.parent.name
+        try:
+            entries = sorted(entry.name for entry in holders.iterdir())
+        except OSError:
+            # The kernel gives every block device a `holders` directory, empty
+            # when nothing stacks on it. Absent means this is not the device we
+            # think it is, or it went away mid-walk. Either way it was not
+            # examined, which is not the same as finding it unused.
+            return False
+        for name in entries:
+            uses.append(DockStorageUse(owner, "stacked", f"in use by {name}"))
+        return True
 
     def _branch_block_devices(self, controller_bdf: str) -> tuple[set[str], bool]:
         """Block device names whose sysfs path runs through this controller."""
@@ -403,25 +473,77 @@ class DockBranchDiscovery:
         if not tables:
             return (), False
         raw = "\n".join(tables)
+        devnums, devnums_complete = self._branch_devnums(devices)
         mounts: list[str] = []
         for line in raw.splitlines():
+            if not line.strip():
+                continue
             fields = line.split(" ")
-            if len(fields) < 5:
+            separator = fields.index("-") if "-" in fields else -1
+            if len(fields) < 5 or separator < 0 or len(fields) <= separator + 2:
+                # A line this parser cannot read is a mount it cannot rule
+                # out. Skipping it quietly is how a truncated table reads as
+                # an idle branch, and the mounts that WERE parsed are still
+                # reported: incomplete, not empty.
+                complete = False
                 continue
             mount_point = fields[4]
-            separator = fields.index("-") if "-" in fields else -1
-            source = fields[separator + 2] if separator >= 0 and len(fields) > separator + 2 else ""
+            source = fields[separator + 2]
             leaf = source.rsplit("/", 1)[-1]
-            if not leaf:
-                continue
             # sysfs names the disk; mountinfo names the partition mounted from
             # it. Matching on a bare prefix would also match "sdaa1" against
             # "sda", so the remainder has to look like a partition suffix.
-            if leaf in devices or any(
-                _is_partition_of(leaf, name) for name in devices
-            ):
+            by_name = bool(leaf) and (
+                leaf in devices
+                or any(_is_partition_of(leaf, name) for name in devices)
+            )
+            # mountinfo carries the device number the mount actually came
+            # from, which no amount of aliasing changes.
+            by_devnum = fields[2] in devnums
+            if by_name or by_devnum:
                 mounts.append(mount_point)
+                continue
+            if devnums_complete or not _is_opaque_source(source):
+                continue
+            # An alias such as /dev/disk/by-uuid/... or /dev/mapper/... has a
+            # basename that names nothing on this branch even when the mount
+            # is on it, and without device numbers there is nothing left to
+            # compare. Unattributable is not absent.
+            complete = False
         return tuple(sorted(set(mounts))), complete
+
+    def _branch_devnums(self, devices: set[str]) -> tuple[set[str], bool]:
+        """`major:minor` for each branch device and any partition of it.
+
+        The second value says whether EVERY one of them was resolved. A map
+        that is merely non-empty is not enough to rule a mount out: if the
+        disk published `8:0` and its partition published nothing, an alias
+        mounting `8:1` matches no number we hold and is not thereby somebody
+        else's. Partial knowledge answers no question.
+        """
+        devnums: set[str] = set()
+        complete = True
+        for device in sorted(devices):
+            root = self._block_root / device
+            disk = _read_text(root / "dev")
+            if _is_device_number(disk):
+                devnums.add(disk)
+            else:
+                complete = False
+            try:
+                children = sorted(root.iterdir(), key=lambda item: item.name)
+            except OSError:
+                complete = False
+                continue
+            for child in children:
+                if not child.name.startswith(device) or child.name == device:
+                    continue
+                partition = _read_text(child / "dev")
+                if _is_device_number(partition):
+                    devnums.add(partition)
+                else:
+                    complete = False
+        return devnums, complete
 
     # -- the tunnel -------------------------------------------------------
 
@@ -439,6 +561,7 @@ class DockBranchDiscovery:
         except OSError:
             return TunnelReading("", None, False, False)
         wanted = device_name.casefold()
+        matches: list[Path] = []
         for entry in entries:
             try:
                 if not entry.is_dir():
@@ -447,6 +570,16 @@ class DockBranchDiscovery:
                 return TunnelReading("", None, False, False)
             if _read_text(entry / "device_name").casefold() != wanted:
                 continue
+            matches.append(entry)
+        if len(matches) > 1:
+            # Two routers publishing the same name is the one case where
+            # picking the first is worse than answering nothing. A device_name
+            # is a product string, not an identity, so two identical docks
+            # report the same one. Returning either would name a router the
+            # caller did not mean and, downstream, deauthorize it.
+            return TunnelReading("", None, False, False, ambiguous=True)
+        if matches:
+            entry = matches[0]
             authorized_file = entry / "authorized"
             raw = _read_text(authorized_file)
             authorized = None if raw not in ("0", "1") else raw == "1"

@@ -132,6 +132,12 @@ def main() -> int:
             "authorized": tunnel.authorized,
             "deauthorizable": tunnel.deauthorizable,
             "scan_complete": tunnel.complete,
+            # An ambiguous reading is incomplete, so the decision refuses
+            # either way. Reporting only the incompleteness would tell an
+            # operator the scan failed, when what actually happened is that
+            # two routers answer to this name and no single one is the dock.
+            # That is something they can act on; "scan incomplete" is not.
+            "ambiguous_name": tunnel.ambiguous,
         },
         "decision": {
             "state": decision.state.value,

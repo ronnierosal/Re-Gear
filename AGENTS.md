@@ -74,7 +74,9 @@ and correct the owning repository document.
   before substantive work. A request to work the next appropriate task authorizes
   selecting a bounded routine item. Stream leadership is inbox routing, not a
   monopoly on its tasks. Existing ownership changes only by accepted transfer;
-  inactivity does not release it.
+  inactivity does not release it. Agents may transfer ownership directly when
+  both agree, communicate the handoff, and record an accepted hub transfer;
+  no additional human approval is required for that consensual transfer.
 - Own the problem, not a fixed list of files. Record scope, acceptance criteria,
   branch, dependencies, blockers, next action, and verification in the task.
   Expand paths within that scope after checking other claims; coordinate and
@@ -107,7 +109,8 @@ and correct the owning repository document.
   force pushes/shared history rewrites; credential/security-policy or access changes;
   release/publication/deployment unless explicitly delegated; disruptive or
   irreversible hardware actions (including changes likely to leave the handheld or
-  eGPU environment unusable); overriding another owner's active task; and major
+  eGPU environment unusable); overriding another owner's active task without an
+  agreed, accepted transfer; and major
   architecture changes outside the assigned scope. Supervised hardware gates remain.
 - Use bounded parallel agents only when useful, with disjoint task ownership and
   evidence returned to the driver. Never independently redesign shared contracts.
