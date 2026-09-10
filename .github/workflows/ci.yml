@@ -28,6 +28,14 @@ jobs:
           cache: pnpm
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
+      - name: Build Decky UI
+        # First, because dist/ is generated rather than committed and three
+        # later gates read it from the checkout: tests/test_capture_provenance.py
+        # hashes dist/index.js as one of the critical files, and the branding
+        # and bundle-clearance frontend tests audit the shipped bundle rather
+        # than the sources. A fresh clone has nothing for them to read until
+        # this runs, so every one of them must come after it.
+        run: pnpm build
       - name: Check architecture boundaries
         run: python scripts/check_architecture.py
       - name: Run unit and fixture tests
@@ -53,13 +61,6 @@ jobs:
         run: python -m hdm.cli --compact
       - name: Type-check Decky UI
         run: pnpm typecheck
-      - name: Build Decky UI
-        # Ordered before the frontend tests deliberately. Two of them
-        # (branding, qa-bundle-clearance-audit) audit dist/index.js rather than
-        # the sources, because the bundle is what reaches a device. dist/ is no
-        # longer committed, so a fresh clone has nothing for them to read until
-        # this step runs.
-        run: pnpm build
       - name: Test Steam sleep preflight
         run: pnpm test:frontend
       - name: Check live preflight probe

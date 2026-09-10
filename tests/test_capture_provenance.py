@@ -16,6 +16,15 @@ from compare_capture_provenance import (  # noqa: E402
 from remote_capture_payload import CRITICAL_FILES  # noqa: E402
 
 
+#: `CRITICAL_FILES` includes `dist/index.js`, which `pnpm build` generates and
+#: which is deliberately not in version control. Every test here hashes the
+#: checkout's copy, so an unbuilt tree cannot exercise them. CI builds before it
+#: runs this suite, so the comparison is still proven there; skipping only keeps
+#: a Python-only checkout from failing on a missing Node build.
+BUILT = all((ROOT / path).is_file() for path in CRITICAL_FILES)
+
+
+@unittest.skipUnless(BUILT, "requires `pnpm build`: dist/ is generated, not committed")
 class CaptureProvenanceTests(unittest.TestCase):
     @staticmethod
     def _capture() -> dict[str, object]:
