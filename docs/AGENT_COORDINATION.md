@@ -119,6 +119,48 @@ only a maintainer-authorized recovery may override ownership, preserving the aud
 record. Stream transfers do not transfer tasks. Do not impersonate old session IDs.
 Transfers do not extend release, installation or supervised hardware authority.
 
+## Waiting for collaboration replies
+
+In an active paired run, a delayed reply is not a reason to end after one or two
+empty inbox checks. Apply this protocol to a request for an interface decision,
+review, correction or transfer that is needed to continue:
+
+1. Send one concrete request to the partner's registered session. Record its
+   message ID, send time, expected response and a deadline 10 minutes after send.
+   Preserve these in your own task note or an inbox checkpoint so resume/compaction
+   does not restart the clock. While a transfer is pending, log waits/timeouts in
+   the inbox instead of revising the offered task and invalidating its transfer.
+2. Read your inbox immediately, then retry after 30 seconds; after two unchanged
+   checks use 60-second intervals. Cap the final wait at the remaining deadline.
+   Use actual interruptible sleep/wait tools, never simulated elapsed time or a
+   single 10-minute blocking sleep. Retry reads, not duplicate request messages.
+3. Continue independent claimed work when useful and check the inbox between
+   steps; that work counts toward the same elapsed deadline. Otherwise stay in
+   the active turn and wait. Give the user a concise status update at least every
+   60 seconds without sending repeated unchanged prompts to the partner.
+4. Receipt and answer relevant replies promptly. A "working on it" acknowledgement
+   means the response is still pending; keep waiting within the original window.
+   Read the actual result before acting. Silence, receipts and elapsed time are
+   never approval, completion or accepted ownership. An unchanged status or an
+   acknowledgement does not reset the deadline. A substantive next request starts
+   its own recorded window; do not manufacture requests to wait indefinitely.
+5. After five minutes without acknowledgement, at most one concise follow-up may
+   reference the original request. Inbox delivery cannot wake a paused chat; use
+   a supported, authorized resume/message control when available and report its
+   actual result. Do not assume a process, receipt or delivery means active work.
+6. At the deadline, perform one final inbox read. If the needed result is absent,
+   record the request ID, last response, elapsed wait, blocker and exact next action
+   in your task note or the transfer's inbox checkpoint. Keep ownership and branches intact; do other authorized work
+   or hand off explicitly as awaiting reply. Do not mark the task complete or
+   silently take over. On resume, read late replies before retrying the request.
+
+Stop waiting early for a relevant result, user interruption/cancellation, confirmed
+partner unavailability, or a tool/runtime limit. Record an interrupted wait and its
+remaining deadline honestly rather than claiming ten minutes elapsed. A new user
+message steers the work; it is not automatically cancellation. This is an active
+turn workflow, not a background scheduler, and it changes no hardware or release
+authority. Both Claude and Codex follow the same protocol.
+
 ## Ronnie / ChatGPT / voice hand-in
 
 Say: “Add a coordination task: <problem>. Scope: <in/out>. Done when: <acceptance>.
