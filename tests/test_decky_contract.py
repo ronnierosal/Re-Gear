@@ -259,7 +259,13 @@ class DeckyContractTests(unittest.TestCase):
         start = source.index("function showBlockedAttempt(")
         end = source.index("export default definePlugin", start)
         warning = source[start:end]
-        self.assertIn("<ConfirmModal", warning)
+        # The dialog now renders through the shared Re-Gear wrapper, which
+        # forwards every prop to the native ConfirmModal. Pin both halves, or a
+        # rename alone would satisfy a test that only looked at the call site.
+        self.assertIn("<EgpuConfirmModal", warning)
+        self.assertIn("strDescription={warning.body}", warning)
+        adapter = (ROOT / "src" / "egpu-confirm-modal.tsx").read_text(encoding="utf-8")
+        self.assertIn("<ConfirmModal", adapter)
         self.assertIn('strOKButtonText="OK"', warning)
         self.assertIn("bAlertDialog={true}", warning)
         self.assertIn("bDisableBackgroundDismiss={true}", warning)

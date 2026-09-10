@@ -11,6 +11,7 @@ import { controllerPresentation } from "./quick-access/modules/controller-presen
 import { displayAction } from "./display-action";
 import { createDisplayShortcutRuntime } from "./display-shortcut-runtime";
 import { showDisconnectProgress } from "./disconnect-progress-panel";
+import { EgpuConfirmModal } from "./egpu-confirm-modal";
 import { ConnectionQuickStatus } from "./connection-quick-status";
 import { regearControlCss } from "./regear-theme";
 import { startConnectionMonitor } from "./connection-monitor";
@@ -359,7 +360,7 @@ function showSafeDisconnectConfirmation(
     onClose();
   };
   modal = showModal(
-    <ConfirmModal
+    <EgpuConfirmModal
       strTitle={portable ? "Shut down for eGPU disconnect?" : "Return to Ally for eGPU disconnect?"}
       strOKButtonText={portable ? "Shut down" : "Return to Ally"}
       strCancelButtonText="Cancel"
@@ -386,7 +387,7 @@ function showSafeDisconnectConfirmation(
           </>
         )}
       </div>
-    </ConfirmModal>,
+    </EgpuConfirmModal>,
     window,
     { strTitle: PRODUCT_NAME, bNeverPopOut: true },
   );
@@ -2281,7 +2282,7 @@ function showDisconnectConfirmation(
   let modal: ReturnType<typeof showModal>;
   const close = () => modal.Close();
   modal = showModal(
-    <ConfirmModal
+    <EgpuConfirmModal
       strTitle="Disconnect the eGPU?"
       strOKButtonText="Disconnect"
       strCancelButtonText="Cancel"
@@ -2295,7 +2296,7 @@ function showDisconnectConfirmation(
       onCancel={close}
     >
       <div style={{ fontSize: "12px", lineHeight: "17px" }}>{confirmation}</div>
-    </ConfirmModal>,
+    </EgpuConfirmModal>,
     window,
     { strTitle: PRODUCT_NAME, bNeverPopOut: true },
   );
@@ -2323,7 +2324,7 @@ function showGameCloseDialog(
   let relaunch = dialog.relaunchChecked;
   const close = () => modal.Close();
   modal = showModal(
-    <ConfirmModal
+    <EgpuConfirmModal
       strTitle={dialog.title}
       strOKButtonText={dialog.confirmLabel}
       strCancelButtonText={dialog.cancelLabel}
@@ -2354,7 +2355,7 @@ function showGameCloseDialog(
           onChange={(value: boolean) => { relaunch = value; }}
         />
       )}
-    </ConfirmModal>,
+    </EgpuConfirmModal>,
     window,
     { strTitle: PRODUCT_NAME, bNeverPopOut: true },
   );
@@ -2373,7 +2374,7 @@ function showBlockedAttempt(
   // Let Decky resolve Steam's visible SP window after the Power menu closes.
   // SharedJSContext's global window is not a player-visible modal parent.
   modal = showModal(
-    <ConfirmModal
+    <EgpuConfirmModal
       strTitle={warning.title}
       strDescription={warning.body}
       strOKButtonText="OK"
