@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import math
 import re
 import subprocess
 from dataclasses import dataclass
@@ -50,7 +51,7 @@ class AudioCommandResult:
 
 
 class PipeWireCommandRunner:
-    """Run only a bounded dump or numeric default-sink mutation as Gamescope user."""
+    """Bounded dump and numeric audio operations as the authenticated session user."""
 
     RUNUSER = "/usr/bin/runuser"
     ENV = "/usr/bin/env"
@@ -73,10 +74,22 @@ class PipeWireCommandRunner:
             user, (self.WPCTL, "set-default", str(object_id)), capture=False
         )
 
+    def set_profile(self, user, object_id: int, profile_index: int, *, timeout_seconds=None) -> AudioCommandResult:
+        # Authority belongs to the separate journaled audio trial, not to this
+        # numeric command adapter. No profile names or arbitrary argv enter it.
+        if (type(object_id) is not int or not 0 < object_id < 2**32
+                or type(profile_index) is not int or not 0 <= profile_index < 2**32):
+            return AudioCommandResult(False, code="audio.profile_identity_invalid")
+        return self._run(user, (self.WPCTL, "set-profile", str(object_id), str(profile_index)),
+                         capture=False, timeout_seconds=timeout_seconds)
+
     def _run(
         self, user, command: tuple[str, ...], *, capture: bool,
         timeout_seconds: float | None = None,
     ) -> AudioCommandResult:
+        if (timeout_seconds is not None and (type(timeout_seconds) not in (int, float)
+                or not math.isfinite(timeout_seconds) or timeout_seconds <= 0)):
+            return AudioCommandResult(False, code="audio.deadline_expired")
         timeout = self._timeout_seconds if timeout_seconds is None else min(self._timeout_seconds, timeout_seconds)
         if not 0 < timeout <= self._timeout_seconds:
             return AudioCommandResult(False, code="audio.deadline_expired")
@@ -332,6 +345,14 @@ class UserServiceCommandRunner:
     MAX_OUTPUT_BYTES = 4096
     SAFE_USERNAME = ReadOnlyCommandRunner.SAFE_USERNAME
     SUFFIXES = {
+        UserServiceOperation.OBSERVE_FILTER_GAMESCOPE: (
+            'show', 'gamescope-session.service', '--property=MainPID',
+            '--property=InvocationID', '--property=ActiveState', '--property=ControlGroup', '--no-pager',
+        ),
+        UserServiceOperation.OBSERVE_FILTER_STEAM: (
+            'show', 'steam-launcher.service', '--property=MainPID',
+            '--property=InvocationID', '--property=ActiveState', '--property=ControlGroup', '--no-pager',
+        ),
         UserServiceOperation.INSPECT_STEAM_UNIT: (
             'show', 'steam-launcher.service', '--property=LoadState',
             '--property=FragmentPath', '--property=DropInPaths',
@@ -410,9 +431,16 @@ class UserServiceCommandRunner:
         *,
         uid: int,
         username: str,
+        timeout_seconds: float | None = None,
     ) -> UserServiceCommandResult:
         if self._effective_uid() != 0:
             return UserServiceCommandResult(operation, False, error_code="root_required")
+        timeout = self._timeout_seconds
+        if timeout_seconds is not None:
+            if (type(timeout_seconds) not in (int, float) or not math.isfinite(timeout_seconds)
+                    or timeout_seconds <= 0):
+                return UserServiceCommandResult(operation, False, error_code="deadline_expired")
+            timeout = min(timeout, timeout_seconds)
         argv = self.argv(operation, uid=uid, username=username)
         try:
             completed = subprocess.run(
@@ -421,7 +449,7 @@ class UserServiceCommandRunner:
                 check=False,
                 shell=False,
                 text=False,
-                timeout=self._timeout_seconds,
+                timeout=timeout,
                 env=dict(self.CLEAN_ENVIRONMENT),
             )
         except subprocess.TimeoutExpired:

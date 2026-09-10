@@ -98,7 +98,7 @@ class RememberTests(unittest.TestCase):
         decision = decide_saved_tv(
             profile=profile, displays=(TV,), scan_complete=True
         )
-        self.assertIs(decision.state, SavedTvState.WAITING)
+        self.assertIs(decision.state, SavedTvState.SETTLED)
         self.assertFalse(decision.may_continue)
 
 

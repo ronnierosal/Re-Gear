@@ -84,7 +84,8 @@ class SavedTvState(StrEnum):
     #: The display reading did not finish. Not evidence of an absent TV, and
     #: does not spend the budget.
     UNOBSERVABLE = "unobservable"
-    #: Looked the agreed number of times and settled. Neutral, not an error.
+    #: The search is over: either it looked the agreed number of times, or it
+    #: could never have succeeded. Neutral, not an error.
     SETTLED = "settled"
 
 
@@ -159,8 +160,15 @@ def decide_saved_tv(
     if not profile.edid_identified:
         # A connector-derived identity names the socket. Resuming to it would
         # switch to whatever is plugged in there now, which is not the promise.
+        #
+        # Settled rather than waiting, and settled on the first reading rather
+        # than after the budget: this is a property of the saved profile, not
+        # of what is currently plugged in, so no number of further looks can
+        # change it. Reporting it as waiting would be the endless
+        # "connecting..." this module exists to avoid, and would spend the
+        # budget on a question already answered.
         return SavedTvDecision(
-            SavedTvState.WAITING,
+            SavedTvState.SETTLED,
             "saved_tv.identity_not_verifiable",
             display_stable_id=profile.display_stable_id,
             label=profile.label,
