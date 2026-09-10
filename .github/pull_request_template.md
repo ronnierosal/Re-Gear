@@ -16,6 +16,14 @@ Stacked base / prerequisite PRs:
 
 Describe the focused change and important tradeoffs.
 
+## Source credit
+
+Material external inspiration or reused code/tests/text/assets: project/author,
+source link (pinned revision where available), affected feature and reuse type,
+plus the credit/notice location. If none was used, say so. Follow
+[source attribution](https://github.com/ronnierosal/Re-Gear/blob/main/docs/SOURCE_ATTRIBUTION.md); do not claim independent
+implementation solely because an AI wrote or rewrote it.
+
 ## Verification
 
 List exact targeted and integration checks run, including failures diagnosed.
