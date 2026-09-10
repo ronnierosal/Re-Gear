@@ -40,6 +40,10 @@ jobs:
         run: python scripts/check_architecture.py
       - name: Run unit and fixture tests
         run: python -m unittest discover -s tests -v
+      - name: Test privileged installer with isolated fixtures
+        # Root ownership, procfs and dirfd semantics are security boundaries.
+        # Tests patch all installation roots and service operations.
+        run: sudo "$(command -v python)" -m unittest discover -s tests -p test_ally_deploy_helper.py -v
       - name: Compile Python sources
         run: python -m compileall -q backend tests scripts
       - name: Check for undefined and redefined names
