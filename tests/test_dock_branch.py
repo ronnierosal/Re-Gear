@@ -495,6 +495,32 @@ class OtherStorageUseTests(Harness):
 
         self.assertEqual({use.detail for use in found}, {"in use by dm-0", "in use by md0"})
 
+    def test_a_mapping_assembled_on_a_partition_is_a_use(self) -> None:
+        """Only the disk's own holders were ever read.
+
+        A dm or md device assembled on a partition holds the branch just as
+        firmly as one assembled on the whole disk, and reported nothing at
+        all -- an idle branch, over a live mapping.
+        """
+        holders = self.fake.block / "sda" / "sda1" / "holders" / "dm-0"
+        holders.mkdir(parents=True, exist_ok=True)
+
+        found, complete = self.uses({"sda"})
+
+        self.assertEqual(len(found), 1)
+        self.assertEqual(found[0].kind, "stacked")
+        self.assertEqual(found[0].detail, "in use by dm-0")
+        self.assertTrue(complete)
+
+    def test_a_partition_use_names_the_partition_not_the_disk(self) -> None:
+        """What a player has to act on is the thing that is held."""
+        holders = self.fake.block / "sda" / "sda1" / "holders" / "dm-0"
+        holders.mkdir(parents=True, exist_ok=True)
+
+        found, _ = self.uses({"sda"})
+
+        self.assertEqual(found[0].device, "sda1")
+
     def test_no_holders_directory_is_no_holders(self) -> None:
         (self.fake.block / "sda").mkdir(parents=True, exist_ok=True)
 

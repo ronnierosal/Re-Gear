@@ -339,28 +339,58 @@ class DockBranchDiscovery:
                 uses.append(DockStorageUse(leaf, "swap", "in use as swap"))
 
         for device in sorted(devices):
-            holders = self._block_root / device / "holders"
-            try:
-                entries = sorted(entry.name for entry in holders.iterdir())
-            except FileNotFoundError:
-                # No holders directory means no stacked consumers.
-                #
-                # Left as-is deliberately. The kernel does give every block
-                # device a `holders` directory, so on real sysfs an absent one
-                # means this is not the device we think it is -- which argues
-                # for reporting the scan incomplete. But that reading is
-                # asserted by name in `test_no_holders_directory_is_no_holders`
-                # and is someone's decision, not an oversight, so it is raised
-                # with its owner rather than reversed here.
-                continue
-            except OSError:
-                complete = False
-                continue
-            for name in entries:
-                uses.append(
-                    DockStorageUse(device, "stacked", f"in use by {name}")
-                )
+            # A dm or md device assembled on a PARTITION holds the disk just as
+            # firmly as one assembled on the whole device, and only the disk's
+            # own holders directory was ever read. sysfs publishes each
+            # partition as a directory under the disk, each with its own
+            # holders, so both levels are walked.
+            for holders in self._holder_directories(device):
+                if not self._collect_holders(holders, uses):
+                    complete = False
         return tuple(uses), complete
+
+    def _holder_directories(self, device: str) -> tuple[Path, ...]:
+        """The disk's holders directory and each partition's."""
+        root = self._block_root / device
+        directories = [root / "holders"]
+        try:
+            children = sorted(root.iterdir(), key=lambda item: item.name)
+        except OSError:
+            return tuple(directories)
+        for child in children:
+            if child.name.startswith(device) and child.name != device:
+                directories.append(child / "holders")
+        return tuple(directories)
+
+    def _collect_holders(
+        self, holders: Path, uses: list[DockStorageUse]
+    ) -> bool:
+        """Stacked consumers named by one holders directory.
+
+        Returns whether the directory could be read. The reported device is
+        the one the holders belong to -- the partition when the mapping was
+        assembled on a partition -- because that is what a player has to act
+        on, not the disk it happens to sit inside.
+        """
+        owner = holders.parent.name
+        try:
+            entries = sorted(entry.name for entry in holders.iterdir())
+        except FileNotFoundError:
+            # No holders directory means no stacked consumers.
+            #
+            # Left as-is deliberately. The kernel does give every block device
+            # a `holders` directory, so on real sysfs an absent one means this
+            # is not the device we think it is -- which argues for reporting
+            # the scan incomplete. But that reading is asserted by name in
+            # `test_no_holders_directory_is_no_holders` and is someone's
+            # decision, not an oversight, so it is raised with its owner
+            # rather than reversed here.
+            return True
+        except OSError:
+            return False
+        for name in entries:
+            uses.append(DockStorageUse(owner, "stacked", f"in use by {name}"))
+        return True
 
     def _branch_block_devices(self, controller_bdf: str) -> tuple[set[str], bool]:
         """Block device names whose sysfs path runs through this controller."""
