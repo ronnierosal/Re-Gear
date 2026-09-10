@@ -33,7 +33,7 @@ independent patches that can safely be merged by title or CI color.
 
 Issue #179: ship an explicit allowlist containing the reviewed read-only
 `probe_safe_undock_readiness.py`, with package/import smoke checks and exclusion
-of deployment/mutating helpers. A dedicated worker owns an isolated worktree.
+of deployment/mutating helpers. Implemented in f0e5a29 with an extracted-archive regression: the archive contains only the allowlisted script, imports use only bundled backend files, and import/help cannot invoke discovery, subprocesses or hardware paths. Parent integration runs the complete suite and current-head CI.
 No version bump, device action, or release is included in this issue fix.
 
 ## Boundaries
