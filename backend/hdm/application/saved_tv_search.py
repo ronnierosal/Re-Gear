@@ -31,6 +31,8 @@ authorizes nothing on its own.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from ..domain.models import DisplayObservation
 from ..domain.saved_tv import (
     DEFAULT_MAX_ATTEMPTS,
@@ -40,6 +42,22 @@ from ..domain.saved_tv import (
     decide_saved_tv,
     remember_docked_tv,
 )
+
+
+@dataclass(frozen=True, slots=True)
+class SavedTvTarget:
+    """The remembered TV, with "none" told apart from "cannot tell".
+
+    `observe` folds an unreadable record into an `UNOBSERVABLE` decision, which
+    is right for a polling loop and useless to a caller that needs to *bind* an
+    explicit request to a panel: it would have to read "no profile" as "nothing
+    remembered" and aim the request at whatever appears next. So the same read
+    is also offered with the failure kept separate.
+    """
+
+    profile: SavedTvProfile | None = None
+    #: False only when the record exists and could not be read.
+    readable: bool = True
 
 
 class SavedTvSearch:
@@ -66,6 +84,17 @@ class SavedTvSearch:
         self._attempts = 0
         self._cached = None
         self._loaded = False
+
+    def target(self) -> SavedTvTarget:
+        """The remembered TV a caller may bind an explicit request to.
+
+        Shares `observe`'s cached read, so asking both questions on one reading
+        does not read the record twice, and a `rearm` re-reads it for both.
+        """
+        try:
+            return SavedTvTarget(self._profile(), True)
+        except (ValueError, OSError):
+            return SavedTvTarget(None, False)
 
     def observe(
         self,

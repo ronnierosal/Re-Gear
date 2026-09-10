@@ -1,0 +1,269 @@
+diff --git a/main.py b/main.py
+index 214a005..a502c38 100644
+--- a/main.py
++++ b/main.py
+@@ -4,6 +4,7 @@ from __future__ import annotations
+ 
+ import asyncio
+ import os
++import secrets
+ import socket
+ import sys
+ import threading
+@@ -139,6 +140,9 @@ from hdm.application.automatic_dock import (  # noqa: E402
+     verified_egpu_absent,
+ )
+ from hdm.application.saved_tv_search import SavedTvSearch  # noqa: E402
++from hdm.application.pending_tv_request import (  # noqa: E402
++    PendingTvRequestCoordinator,
++)
+ from hdm.application.native_portable_recovery import (  # noqa: E402
+     NativePortableRecoverySupervisor,
+     NativeRecoveryStage,
+@@ -222,6 +226,7 @@ from hdm.delivery.transition_journal_store import FileTransitionJournalStore  #
+ from hdm.domain.process_release import ReleasePhase  # noqa: E402
+ from hdm.domain.control_plane import (  # noqa: E402
+     PlacementState,
++    RequestSource,
+     TransitionOutcomeKind,
+ )
+ from hdm.domain.models import Confidence, EgpuLinkState, GameState, GpuRole, EgpuPresence, OperatingMode  # noqa: E402
+@@ -232,6 +237,7 @@ from hdm.delivery.auto_tdp_preferences import FileAutoTdpPreferences  # noqa: E4
+ from hdm.domain.inference import infer_placement  # noqa: E402
+ from hdm.domain.saved_tv import DEFAULT_MAX_ATTEMPTS  # noqa: E402
+ from hdm.profiles.gpd_g1 import match_gpd_g1  # noqa: E402
++from hdm.profiles.registry import resolve_runtime_profiles  # noqa: E402
+ 
+ 
+ MAX_JOURNEY_ELAPSED_MS = 24 * 60 * 60 * 1000
+@@ -370,6 +376,13 @@ class Plugin:
+         self._saved_tv_pending_dock = False
+         self._saved_tv_armed = False
+         self._last_saved_tv_code = ""
++        # One explicit TV request, in memory only. It is a live intent,
++        # not a standing preference: the standing preference is the saved
++        # TV record, which is already persisted. A request that outlived a
++        # reboot would move a display for a session that is over.
++        self._pending_tv: PendingTvRequestCoordinator | None = None
++        self._pending_tv_state = None
++        self._last_pending_tv_code = ""
+         self._docked_igpu_scheduler: DockedIgpuLifecycleScheduler | None = None
+         self._docked_igpu_task: asyncio.Task[None] | None = None
+         self._docked_igpu_retry_seconds = 30.0
+@@ -702,6 +715,7 @@ class Plugin:
+             "checks_age_ms": max(0, int((time.monotonic() - getattr(self, "_connection_checks_at", 0.0)) * 1000)),
+         }
+         payload["saved_tv"] = self._saved_tv_status()
++        payload["pending_tv"] = self._pending_tv_status()
+         await asyncio.to_thread(self._record_verbose_snapshot, payload)
+         return payload
+ 
+@@ -725,6 +739,37 @@ class Plugin:
+             "max_attempts": DEFAULT_MAX_ATTEMPTS,
+         }
+ 
++    def _pending_tv_status(self) -> dict[str, object]:
++        """Categorical state for one explicit "take me to the TV" request.
++
++        The requested display identity stays behind this boundary, the way
++        the saved-TV status already keeps it off the payload. `requested`
++        says whether a request exists at all, so no state has to be
++        invented for the times one does not. `approval_offered` means the
++        existing preview/approve/execute path may be shown -- it is not an
++        approval, and the handheld keeps the session until the player
++        takes it.
++        """
++        status = self._pending_tv_state
++        pending = self._pending_tv
++        return {
++            "schema_version": 1,
++            "requested": bool(pending is not None and pending.outstanding),
++            "state": status.state.value if status is not None else "",
++            "code": status.code if status is not None else "",
++            "attempts": status.attempts if status is not None else 0,
++            "max_attempts": (
++                status.max_attempts if status is not None else DEFAULT_MAX_ATTEMPTS
++            ),
++            "approval_offered": bool(
++                status is not None and status.approval_offered
++            ),
++            "automatic_continuation": bool(
++                status is not None and status.automatic_continuation
++            ),
++            "blockers": list(status.blockers) if status is not None else [],
++        }
++
+     async def _start_docked_igpu_lifecycle_for(self, report) -> None:
+         """Start the exit watcher only for its exact running Docked-iGPU case."""
+ 
+@@ -1767,6 +1812,10 @@ class Plugin:
+             # A player's own TV switch is intent too, and earns a record on the
+             # same evidence: the display the dock is observed presenting on.
+             self._saved_tv_pending_dock = True
++            if self._pending_tv is not None:
++                # They are on the TV now. Leaving the request outstanding
++                # would offer it again from where it was trying to reach.
++                self._pending_tv_state = self._pending_tv.satisfied()
+         self._append_journey_event(
+             severity="info" if succeeded else "warning",
+             code=code,
+@@ -1951,6 +2000,78 @@ class Plugin:
+         )
+         return {"schema_version": 1, "accepted": accepted, "code": code}
+ 
++    async def request_tv_when_available(
++        self, _request: object = None
++    ) -> dict[str, object]:
++        """Record an explicit TV request while no ready output exists.
++
++        This records intent and nothing else. The handheld keeps the
++        session, no connector is forced, and no TV is asked to wake: when
++        the exact requested TV is detected the player approves the switch
++        through the path they already use. Refused outright without one
++        exact eGPU identity to bind to.
++        """
++        try:
++            current = await asyncio.to_thread(
++                SnapshotTransitionObservationAdapter(self._discovery).observe
++            )
++            profiles = resolve_runtime_profiles(current.snapshot)
++            pending = self._pending_tv_request()
++            status = await asyncio.to_thread(
++                lambda: pending.request(
++                    request_id=secrets.token_hex(8),
++                    source=RequestSource.MANUAL,
++                    attachment_binding=profiles.egpu_stable_id,
++                )
++            )
++        except Exception:
++            return {
++                "schema_version": 1,
++                "requested": False,
++                "state": "rejected",
++                "code": "pending_tv.service_unavailable",
++                "attempts": 0,
++                "max_attempts": DEFAULT_MAX_ATTEMPTS,
++                "approval_offered": False,
++                "automatic_continuation": False,
++                "blockers": [],
++            }
++        self._pending_tv_state = status
++        self._append_journey_event(
++            severity="info",
++            code=status.code,
++            component="connection",
++            stage="pending_tv",
++            details={"state": status.state.value},
++            create_timeline=False,
++        )
++        return self._pending_tv_status()
++
++    async def cancel_tv_request(
++        self, _request: object = None
++    ) -> dict[str, object]:
++        """Withdraw the request. Explicit, immediate, and never implied."""
++        pending = self._pending_tv
++        if pending is None:
++            return self._pending_tv_status()
++        self._pending_tv_state = await asyncio.to_thread(pending.cancel)
++        return self._pending_tv_status()
++
++    async def rearm_tv_request(
++        self, _request: object = None
++    ) -> dict[str, object]:
++        """Keep looking for the same TV, from zero.
++
++        The budget bounds one attempt to find the TV, not the player's
++        patience. This changes no authority: the same request, looked for
++        again.
++        """
++        pending = self._pending_tv
++        if pending is None:
++            return self._pending_tv_status()
++        self._pending_tv_state = await asyncio.to_thread(pending.rearm)
++        return self._pending_tv_status()
++
+     async def acknowledge_supervised_tv_switch(
+         self, acknowledgement_id: str
+     ) -> dict[str, object]:
+@@ -2353,6 +2474,9 @@ class Plugin:
+                 # is intent too, and the record has to be re-armed when a dock
+                 # ends whether or not automatic docking is enabled.
+                 await self._update_saved_tv(current, connection)
++                await self._update_pending_tv(
++                    current, connection, automatic_enabled=enabled
++                )
+                 if not enabled:
+                     delay_seconds = 5.0
+                     await self._wait_for_topology(delay_seconds)
+@@ -2993,6 +3117,70 @@ class Plugin:
+             )
+         return self._saved_tv
+ 
++    def _pending_tv_request(self) -> PendingTvRequestCoordinator:
++        """One request coordinator over the same record the search reads.
++
++        Sharing the search means one read of the record answers both
++        questions, and re-arming it re-reads the record for both.
++        """
++        if self._pending_tv is None:
++            self._pending_tv = PendingTvRequestCoordinator(
++                self._saved_tv_search()
++            )
++        return self._pending_tv
++
++    async def _update_pending_tv(
++        self, current, connection, *, automatic_enabled: bool
++    ) -> None:
++        """Resolve one explicit TV request against this reading.
++
++        Reporting only. Nothing here switches a display, wakes a TV or
++        forces a connector. A ready arrival is offered through the
++        preview/approve/execute path the player already uses, and when
++        they have opted into the profile-gated automatic path the existing
++        automatic coordinator owns that decision under the latches it
++        already honours. The one transition engine still executes.
++        """
++        pending = self._pending_tv
++        if pending is None or not pending.outstanding:
++            return
++        profiles = resolve_runtime_profiles(current.snapshot)
++        status = await asyncio.to_thread(
++            lambda: pending.observe(
++                attachment_binding=profiles.egpu_stable_id,
++                displays=current.snapshot.displays,
++                scan_complete=_display_scan_complete(current.snapshot),
++                observed_generation=current.generation,
++                game_state=current.snapshot.game_state,
++                automatic_preference_enabled=automatic_enabled,
++                portable_return_suppressed=(
++                    self._automatic_dock.status().code
++                    == "automatic_dock.suppressed_for_safe_disconnect"
++                ),
++            )
++        )
++        self._pending_tv_state = status
++        # Consumed so one arrival cannot be offered twice. The exact
++        # display identity it names is not logged: the approval path
++        # re-observes for itself, and an identity in the journal would
++        # outlive the reading that produced it.
++        pending.take_handoff()
++        if status.code != self._last_pending_tv_code:
++            self._last_pending_tv_code = status.code
++            self._append_journey_event(
++                severity="info",
++                code=status.code,
++                component="connection",
++                stage="pending_tv",
++                details={
++                    "state": status.state.value,
++                    "attempts": status.attempts,
++                    "approval_offered": status.approval_offered,
++                    "automatic_continuation": status.automatic_continuation,
++                },
++                create_timeline=False,
++            )
++
+     async def _update_saved_tv(self, current, connection) -> None:
+         """Carry the saved TV through one dock: re-arm it, record it, wait for it.
+ 
