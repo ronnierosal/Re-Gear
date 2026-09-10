@@ -32,6 +32,9 @@ from regear.adapters.steamos.dock_branch import TunnelReading  # noqa: E402
 from regear.domain.dock_teardown import decide_dock_teardown  # noqa: E402
 
 
+sys.path.insert(0, str(ROOT / "scripts"))
+import probe_dock_teardown as probe  # noqa: E402
+
 PROBE = ROOT / "scripts" / "probe_dock_teardown.py"
 
 
@@ -112,6 +115,104 @@ class ProbeReportTests(unittest.TestCase):
             set(),
             f"observed by the adapter but never reported: {sorted(missing)}",
         )
+
+
+class ProbeIdentityTests(unittest.TestCase):
+    """The probe has to be able to describe a dock it was not written for.
+
+    Its own docstring says #147 is undecided and this produces the evidence
+    that decision needs. Evidence from one hardware pairing cannot answer a
+    question about docks in general, and a captured report that does not name
+    its own hardware cannot be compared with one from another dock.
+    """
+
+    def test_the_defaults_still_describe_the_tested_pairing(self):
+        """Existing operator instructions must keep working unchanged."""
+        options = probe.parser().parse_args([])
+
+        self.assertEqual(options.usb_controller, "0000:09:00.0")
+        self.assertEqual(options.tunnel_name, "Tapex Creek")
+        self.assertEqual(
+            tuple(options.gpu_function or probe.DEFAULT_GPU_FUNCTIONS),
+            ("0000:08:00.0", "0000:08:00.1"),
+        )
+
+    def test_another_dock_can_be_described(self):
+        options = probe.parser().parse_args(
+            [
+                "--usb-controller", "0000:aa:00.0",
+                "--tunnel-name", "Some Other Dock",
+                "--gpu-function", "0000:bb:00.0",
+                "--gpu-function", "0000:bb:00.1",
+            ]
+        )
+
+        self.assertEqual(options.usb_controller, "0000:aa:00.0")
+        self.assertEqual(options.tunnel_name, "Some Other Dock")
+        self.assertEqual(
+            tuple(options.gpu_function), ("0000:bb:00.0", "0000:bb:00.1")
+        )
+
+    def test_the_parsed_identity_is_the_one_actually_observed(self):
+        """Parsing an argument and then ignoring it looks identical from outside.
+
+        Checking `parser()` alone proves only that the flags exist. A `main`
+        that accepted `--usb-controller` and then observed the hardcoded
+        default would satisfy every other test here while quietly reporting
+        the wrong dock -- and the report would name the requested one.
+        """
+        observed = {}
+        for node in ast.walk(ast.parse(PROBE.read_text(encoding="utf-8"))):
+            if not isinstance(node, ast.Call):
+                continue
+            name = getattr(node.func, "attr", getattr(node.func, "id", ""))
+            if name not in {
+                "observe_usb",
+                "observe_storage",
+                "observe_tunnel",
+                "attached_gpu_functions",
+            }:
+                continue
+            self.assertEqual(len(node.args), 1, f"{name} takes one identity")
+            observed[name] = node.args[0]
+
+        for name in (
+            "observe_usb",
+            "observe_storage",
+            "observe_tunnel",
+            "attached_gpu_functions",
+        ):
+            self.assertIn(name, observed, f"{name} is never called")
+
+        for name in ("observe_usb", "observe_storage", "observe_tunnel"):
+            argument = observed[name]
+            self.assertIsInstance(
+                argument, ast.Attribute, f"{name} must observe a parsed option"
+            )
+            self.assertEqual(
+                getattr(argument.value, "id", None),
+                "options",
+                f"{name} must observe a parsed option, not a module constant",
+            )
+
+        # The GPU functions are derived once, so this one binds to that local.
+        self.assertIsInstance(observed["attached_gpu_functions"], ast.Name)
+        self.assertEqual(observed["attached_gpu_functions"].id, "gpu_functions")
+
+    def test_the_report_records_which_dock_it_describes(self):
+        """A reading whose subject is a command-line choice must say so."""
+        keys = {
+            node.value
+            for node in ast.walk(ast.parse(PROBE.read_text(encoding="utf-8")))
+            if isinstance(node, ast.Constant) and isinstance(node.value, str)
+        }
+        for required in (
+            "identity",
+            "gpu_functions",
+            "usb_controller",
+            "tunnel_name",
+        ):
+            self.assertIn(required, keys)
 
 
 if __name__ == "__main__":  # pragma: no cover

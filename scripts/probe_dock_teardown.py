@@ -22,6 +22,14 @@ the state a player would be in when they reach for the cable.
 
     python scripts/probe_dock_teardown.py
 
+The defaults describe the tested Ally X / GPD G1 pairing. Another dock needs
+its own addresses, and the report records whichever were used so a captured
+result says which hardware it describes:
+
+    python scripts/probe_dock_teardown.py \
+        --usb-controller 0000:aa:00.0 --tunnel-name "Some Other Dock" \
+        --gpu-function 0000:bb:00.0 --gpu-function 0000:bb:00.1
+
 Nothing here is clearance to unplug anything. Safety invariant 10 stands and
 #147 is undecided; this produces the evidence that decision needs, and makes
 no claim of its own.
@@ -29,8 +37,10 @@ no claim of its own.
 
 from __future__ import annotations
 
+import argparse
 import json
 import sys
+from collections.abc import Sequence
 from pathlib import Path
 
 
@@ -44,30 +54,69 @@ from regear.domain.dock_teardown import (  # noqa: E402
 )
 
 
-#: The tested Ally X / GPD G1 pairing. Both are observations recorded from that
-#: hardware rather than constants the code may assume elsewhere.
-GPU_FUNCTIONS = ("0000:08:00.0", "0000:08:00.1")
-USB_CONTROLLER = "0000:09:00.0"
-TUNNEL_NAME = "Tapex Creek"
+#: The tested Ally X / GPD G1 pairing. These are observations recorded from that
+#: hardware rather than constants the code may assume elsewhere, which is why
+#: they are defaults a caller can replace rather than fixed values. A probe that
+#: only runs on one dock can only produce evidence about one dock, and the
+#: decision in #147 is not about one dock.
+DEFAULT_GPU_FUNCTIONS = ("0000:08:00.0", "0000:08:00.1")
+DEFAULT_USB_CONTROLLER = "0000:09:00.0"
+DEFAULT_TUNNEL_NAME = "Tapex Creek"
 PCI_DEVICES = Path("/sys/bus/pci/devices")
 
 
-def attached_gpu_functions() -> tuple[tuple[str, ...], bool]:
+def attached_gpu_functions(
+    gpu_functions: tuple[str, ...],
+) -> tuple[tuple[str, ...], bool]:
     """Which eGPU functions are still enumerated, and whether the look worked."""
     try:
         present = {entry.name for entry in PCI_DEVICES.iterdir()}
     except OSError:
         return (), False
-    return tuple(bdf for bdf in GPU_FUNCTIONS if bdf in present), True
+    return tuple(bdf for bdf in gpu_functions if bdf in present), True
 
 
-def main() -> int:
+def parser() -> argparse.ArgumentParser:
+    value = argparse.ArgumentParser(
+        prog="probe_dock_teardown",
+        description=(
+            "Report what a full dock teardown would find. Changes nothing. "
+            "Defaults describe the tested Ally X / GPD G1 pairing."
+        ),
+    )
+    value.add_argument(
+        "--gpu-function",
+        action="append",
+        metavar="BDF",
+        help=(
+            "PCI address of an eGPU function, repeatable. "
+            f"Defaults to {' and '.join(DEFAULT_GPU_FUNCTIONS)}."
+        ),
+    )
+    value.add_argument(
+        "--usb-controller",
+        default=DEFAULT_USB_CONTROLLER,
+        metavar="BDF",
+        help="PCI address of the dock's USB controller.",
+    )
+    value.add_argument(
+        "--tunnel-name",
+        default=DEFAULT_TUNNEL_NAME,
+        metavar="NAME",
+        help="device_name the dock's Thunderbolt router publishes.",
+    )
+    return value
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    options = parser().parse_args(argv)
+    gpu_functions = tuple(options.gpu_function or DEFAULT_GPU_FUNCTIONS)
     discovery = DockBranchDiscovery()
 
-    gpu_present, gpu_complete = attached_gpu_functions()
-    usb = discovery.observe_usb(USB_CONTROLLER)
-    storage = discovery.observe_storage(USB_CONTROLLER)
-    tunnel = discovery.observe_tunnel(TUNNEL_NAME)
+    gpu_present, gpu_complete = attached_gpu_functions(gpu_functions)
+    usb = discovery.observe_usb(options.usb_controller)
+    storage = discovery.observe_storage(options.usb_controller)
+    tunnel = discovery.observe_tunnel(options.tunnel_name)
 
     decision = decide_dock_teardown(
         usb=UsbBranchEvidence(
@@ -102,6 +151,20 @@ def main() -> int:
     )
 
     report = {
+        # A captured report has to say which dock it describes. Evidence for
+        # #147 that does not name its own hardware cannot be compared against
+        # evidence from another dock, and these values are now a caller's
+        # choice rather than a constant a reader could look up.
+        "identity": {
+            "gpu_functions": list(gpu_functions),
+            "usb_controller": options.usb_controller,
+            "tunnel_name": options.tunnel_name,
+            "defaults_used": (
+                gpu_functions == DEFAULT_GPU_FUNCTIONS
+                and options.usb_controller == DEFAULT_USB_CONTROLLER
+                and options.tunnel_name == DEFAULT_TUNNEL_NAME
+            ),
+        },
         "gpu": {
             "still_attached": list(gpu_present),
             "scan_complete": gpu_complete,
