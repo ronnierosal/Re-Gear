@@ -9,12 +9,12 @@ param(
     [switch]$InteractiveSudo
 )
 
-# Developer-only: build one complete archive, atomically replace HDM, retain a
+# Developer-only: build one complete archive, atomically replace Re-Gear, retain a
 # timestamped rollback tree, and restart plugin_loader only after replacement.
 # It contains no Gamescope, sleep, power-cycle, display, eGPU, or hardware action.
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
-if (-not $ConfirmDeploy) { throw "Deployment changes HDM on the Ally. Re-run with -ConfirmDeploy." }
+if (-not $ConfirmDeploy) { throw "Deployment changes Re-Gear on the Ally. Re-run with -ConfirmDeploy." }
 foreach ($tool in @("ssh", "scp", "python")) {
     if (-not (Get-Command $tool -ErrorAction SilentlyContinue)) { throw "$tool was not found." }
 }
@@ -70,7 +70,7 @@ Invoke-Checked "python" @("scripts/build_plugin.py") "Plugin package build faile
 
 $packageVersion = (Get-Content -LiteralPath (Join-Path $RepositoryRoot "package.json") -Raw | ConvertFrom-Json).version
 $package = Get-Item -LiteralPath (Join-Path $RepositoryRoot "out/Re-Gear-$packageVersion.zip")
-if ($null -eq $package) { throw "No HDM package was created." }
+if ($null -eq $package) { throw "No Re-Gear package was created." }
 $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
 $remoteArchive = "/tmp/hdm-deploy-$stamp.zip"
 & scp @ScpArgs $package.FullName "${Target}:$remoteArchive"
@@ -106,7 +106,7 @@ PY
 test -f "`$STAGING/Re-Gear/plugin.json"; test -f "`$STAGING/Re-Gear/main.py"; test -f "`$STAGING/Re-Gear/dist/index.js"
 if test -d "`$PLUGIN_DIR"; then mv "`$PLUGIN_DIR" "`$BACKUP"; fi
 mv "`$STAGING/Re-Gear" "`$PLUGIN_DIR"
-# Persistent HDM state/config is outside the plugin tree and is intentionally preserved.
+# Persistent Re-Gear state/config is outside the plugin tree and is intentionally preserved.
 chmod 0755 "`$PLUGIN_DIR/bin/gamescope"
 rm -f -- "`$ARCHIVE"; trap - ERR
 systemctl restart plugin_loader.service

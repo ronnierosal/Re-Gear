@@ -1,4 +1,4 @@
-"""Verify one downloaded HDM CI validation artifact without installing it.
+"""Verify one downloaded Re-Gear CI validation artifact without installing it.
 
 The verifier reads only a directory produced by unzipping the bounded GitHub
 Actions artifact. It accepts no URLs, checkout paths, device paths, or archive

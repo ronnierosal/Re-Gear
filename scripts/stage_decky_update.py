@@ -1,6 +1,6 @@
-"""Stage one provenance-checked HDM ZIP for Decky's native installer.
+"""Stage one provenance-checked Re-Gear ZIP for Decky's native installer.
 
-This developer tool uploads a verified HDM package to the fixed Decky user's
+This developer tool uploads a verified Re-Gear package to the fixed Decky user's
 home directory (``/home/deck/``), then reads back its digest. It deliberately does *not*
 call an undocumented Decky endpoint, replace a live plugin directory, reload
 Decky, or alter Gamescope, sleep, hardware, or the current session.
@@ -39,7 +39,7 @@ def sha256(path: Path) -> str:
 
 
 def inspect_package(package: Path) -> dict[str, str]:
-    """Fail closed unless this is one complete, provenance-bearing HDM ZIP."""
+    """Fail closed unless this is one complete, provenance-bearing Re-Gear ZIP."""
     path = package.resolve()
     if not path.is_file() or path.is_symlink() or path.suffix.casefold() != ".zip":
         raise ValueError("package path is invalid")

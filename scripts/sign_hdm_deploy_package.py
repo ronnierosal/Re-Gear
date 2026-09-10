@@ -1,4 +1,4 @@
-"""Sign a verified staged HDM ZIP for the Ally developer deployment helper."""
+"""Sign a verified staged Re-Gear ZIP for the Ally developer deployment helper."""
 from __future__ import annotations
 
 import argparse
