@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class DirectDeployScriptTests(unittest.TestCase):
     def source(self) -> str:
-        return (ROOT / "scripts" / "deploy_hdm_to_ally.ps1").read_text(encoding="utf-8")
+        return (ROOT / "scripts" / "deploy_to_ally.ps1").read_text(encoding="utf-8")
 
     def test_requires_explicit_confirmation_and_interactive_sudo_option(self):
         source = self.source()
@@ -43,7 +43,7 @@ if __name__ == "__main__":
 
 class IdentityCutoverGuardTests(unittest.TestCase):
     def test_legacy_refusal_precedes_staging_and_replacement(self):
-        source = (Path(__file__).resolve().parents[1] / "scripts/deploy_hdm_to_ally.ps1").read_text(encoding="utf-8")
+        source = (Path(__file__).resolve().parents[1] / "scripts/deploy_to_ally.ps1").read_text(encoding="utf-8")
         self.assertIn('LEGACY_DIR="`$PLUGIN_PARENT/HandheldDockMode"', source)
         self.assertIn('test -e "`$LEGACY_DIR" || test -L "`$LEGACY_DIR"', source)
         self.assertLess(source.index("Legacy installation requires supervised cutover"), source.index('mkdir -p "`$PLUGIN_PARENT"'))

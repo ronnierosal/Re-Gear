@@ -68,7 +68,7 @@ from hdm.delivery import gamescope_integration, runtime_state  # noqa: E402
 from hdm.delivery.gamescope_integration import GamescopeIntegrationStore  # noqa: E402
 
 SPEC = importlib.util.spec_from_file_location(
-    "ally_deploy_helper_identity", ROOT / "scripts" / "ally_hdm_deploy_helper.py"
+    "ally_deploy_helper_identity", ROOT / "scripts" / "ally_deploy_helper.py"
 )
 assert SPEC and SPEC.loader
 _helper = importlib.util.module_from_spec(SPEC)

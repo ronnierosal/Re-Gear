@@ -6,7 +6,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from sign_hdm_deploy_package import openssl_binary
+from sign_deploy_package import openssl_binary
 
 
 def generate(directory: Path) -> tuple[Path, Path]:

@@ -32,7 +32,7 @@ instruction to replace every matching string.
 |---|---|---|
 | Manifest, visible identity, loader lifecycle | `plugin.json`, `src/branding.ts`, `main.py`, `tests/test_decky_contract.py` | Prove loader discovery and unique runtime identity; distinguish visible label from folder |
 | Package layout and candidate metadata | `scripts/build_plugin.py`, `scripts/prepare_release_candidate.py`, `scripts/verify_validation_artifact.py` | New root, manifests/checksums and consistent validation; reject mixed roots |
-| Native Decky staging and deployment | `scripts/stage_decky_update.py`, `scripts/deploy_hdm_to_ally.ps1`, `scripts/ally_hdm_deploy_helper.py`, `scripts/install_ally_deploy_helper.sh` | Exact target, legacy detection and safe stopped-plugin sequence; no second live instance |
+| Native Decky staging and deployment | `scripts/stage_decky_update.py`, `scripts/deploy_to_ally.ps1`, `scripts/ally_deploy_helper.py`, `scripts/install_ally_deploy_helper.sh` | Exact target, legacy detection and safe stopped-plugin sequence; no second live instance |
 | Read-only capture and support | `scripts/remote_capture_payload.py`, `scripts/community_report.py` | Correct new root; explicit legacy-test diagnosis where needed; no ambiguous first-match fallback |
 | Recovery/state ownership | `backend/hdm/delivery/runtime_state.py`, `gamescope_integration.py`, `main.py` | Inventory actual settings/journals/helpers/managed-file ownership before changing paths |
 | Distribution and import identifiers | `package.json`, `pyproject.toml`, Python `hdm`, helper names and stored keys | Change only contracts required for the installed-identity cutover; explicitly list retained compatibility identifiers and reasons |
