@@ -9,18 +9,18 @@ export type Tone = "active" | "unavailable" | "warning" | "quiet";
 export type Tile = { id: string; title: string; value: string; detail: string; tone?: Tone; wide?: boolean };
 export const sampleTiles: Record<Tab, readonly Tile[]> = {
   quick: [
-    { id: "fps", title: "FPS Target", value: "Unavailable", detail: "No provider", tone: "unavailable" },
+    { id: "fps", title: "FPS Target", value: "Unavailable", detail: "No provider detected", tone: "unavailable" },
     { id: "manual", title: "Manual TDP", value: "18 W", detail: "Current limit", tone: "active" },
-    { id: "auto", title: "Auto TDP", value: "Off", detail: "Configure" },
-    { id: "display", title: "Display", value: "1080p · 60Hz", detail: "Internal", tone: "active" },
-    { id: "egpu", title: "eGPU", value: "Connected", detail: "RX 7600M XT" },
-    { id: "controller", title: "Controller", value: "External (P1)", detail: "Built-in off" },
+    { id: "auto", title: "Auto TDP", value: "Off", detail: "Configure to start" },
+    { id: "display", title: "Display Target", value: "1080p · 60Hz", detail: "Internal Display", tone: "active" },
+    { id: "egpu", title: "eGPU Status", value: "Connected", detail: "RX 7600M XT" },
+    { id: "controller", title: "Controller Status", value: "External (P1)", detail: "Built-in off" },
     { id: "disconnect", title: "Safe Disconnect", value: "Readiness check required", detail: "Review apps using the eGPU. No unplug clearance.", tone: "warning", wide: true },
   ],
   performance: [
     { id: "manual", title: "Manual TDP", value: "18 W", detail: "View limit configuration", tone: "active" },
     { id: "auto", title: "Auto TDP", value: "Off", detail: "Not configured · Configure to start" },
-    { id: "fps", title: "FPS Target", value: "Unavailable", detail: "No provider", tone: "unavailable" },
+    { id: "fps", title: "FPS Target", value: "Unavailable", detail: "No provider detected", tone: "unavailable" },
     { id: "display", title: "Display context", value: "1080p · 60 Hz", detail: "Display target is separate from FPS control" },
   ],
   egpu: [
@@ -46,7 +46,7 @@ export function nextTab(tab: Tab, direction: -1 | 1): Tab {
   return tabs[(tabs.indexOf(tab) + direction + tabs.length) % tabs.length];
 }
 export function columnsForWidth(width: number): number {
-  return width >= 390 ? 4 : width >= 300 ? 3 : width >= 220 ? 2 : 1;
+  return width >= 640 ? 4 : width >= 430 ? 3 : width >= 280 ? 2 : 1;
 }
 export function restoreTarget(ids: readonly string[], remembered?: string): string | undefined {
   return ids.includes(remembered ?? "") ? remembered : ids[0];

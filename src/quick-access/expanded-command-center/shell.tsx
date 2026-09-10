@@ -1,24 +1,18 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import type { CSSProperties, KeyboardEvent, ReactNode, ElementType } from "react";
-import { ApprovedIcon } from "../approved-icons";
+import { CommandCenterIcon, type CommandCenterIconId } from "../command-center-icons";
 import { columnsForWidth, gridCells, moveInGrid, nextTab, restoreTarget, sampleTiles, tabLabels, tabs } from "./model";
 import type { Tab, Tile } from "./model";
 import { expandedStyles } from "./styles";
+import { brandIcon } from "../../brand-assets";
 
-function Icon({ id }: { id: string }) {
-  if (id === "controllers" || id === "controller" || id === "builtin") return <ApprovedIcon id="module-controller" size={30} />;
-  if (id === "egpu") return <ApprovedIcon id="module-egpu" size={30} />;
-  if (id === "display") return <ApprovedIcon id="mode-tv-docked" size={30} />;
-  if (["performance", "auto"].includes(id)) return <ApprovedIcon id="module-auto-tdp" size={30} />;
-  // Minimal line icons follow the approved currentColor icon geometry/style.
-  return <svg width="30" height="30" viewBox="0 0 32 32" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-    {id === "quick" ? <path d="m4 15 12-11 12 11M8 12v16h6v-9h4v9h6V12" />
-      : id === "manual" ? <><rect x="8" y="8" width="16" height="16" rx="2"/><rect x="12" y="12" width="8" height="8"/><path d="M12 3v5m8-5v5M12 24v5m8-5v5M3 12h5m-5 8h5m16-8h5m-5 8h5"/></>
-      : id === "fps" ? <><path d="M3 22V4h22M7 26V8h22"/><rect x="11" y="12" width="18" height="16" rx="1"/><path d="M14 23v-6h4m-4 3h3m4 3v-6h5"/></>
-      : id === "disconnect" ? <path d="M11 3v8m10-8v8M8 11h16v5a8 8 0 0 1-16 0Zm8 13v6" />
-        : <><circle cx="16" cy="16" r="8"/><circle cx="16" cy="16" r="3"/><path d="M16 2v6m0 16v6M2 16h6m16 0h6M6 6l5 5m10 10 5 5M26 6l-5 5M11 21l-5 5"/></>}
-  </svg>;
-}
+const iconIds: Record<string, CommandCenterIconId> = {
+  quick: "quick-access", performance: "performance", egpu: "egpu", controllers: "controllers", settings: "settings",
+  fps: "fps", manual: "manual-tdp", auto: "auto-tdp", display: "display", disconnect: "safe-disconnect",
+  controller: "controllers", builtin: "controllers", render: "manual-tdp", game: "status-unknown",
+  priority: "controllers", appearance: "settings", diagnostics: "status-unknown", about: "status-unknown",
+};
+function Icon({ id }: { id: string }) { return <CommandCenterIcon id={iconIds[id] ?? "status-unknown"} size={34}/>; }
 
 /** Shared synthetic presentation for browser preview and native Decky shell. */
 export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReasons = false, settings, native = false, primitives, previewColumns }: {
@@ -39,11 +33,12 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
   const pendingFocus = useRef<string | undefined>(undefined);
   const opener = useRef<HTMLElement | null>(null);
   const items = sampleTiles[tab];
-  const gridColumns = tab === "performance" ? Math.min(columns, 2) : columns;
+  const gridColumns = columns;
   const focus = (id?: string) => {
     const target = Array.from(panel.current?.querySelectorAll<HTMLElement>("[data-ec-control]") ?? []).find(el => el.dataset.ecControl === id);
-    target?.focus();
-    target?.scrollIntoView({ block: "nearest" });
+    const interactive = target?.matches("button,select,[tabindex]") ? target : target?.querySelector<HTMLElement>('button,select,[tabindex="0"]');
+    interactive?.focus({ preventScroll: true });
+    if (interactive) { if (tab === "settings" && !nested) reveal(interactive); else interactive.scrollIntoView({ block: "nearest" }); }
   };
   const controlIds = () => Array.from(panel.current?.querySelectorAll<HTMLElement>("[data-ec-control]") ?? []).map(el => el.dataset.ecControl!);
   useLayoutEffect(() => {
@@ -55,7 +50,7 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
     const observer = new ResizeObserver(entries => setColumns(previewColumns ?? columnsForWidth(entries[0].contentRect.width)));
     observer.observe(content.current);
     return () => observer.disconnect();
-  }, []);
+  }, [previewColumns]);
   useLayoutEffect(() => {
     focus(nested ? "nested-back" : restoreTarget(controlIds(), pendingFocus.current ?? memory.current[tab]));
     pendingFocus.current = undefined;
@@ -77,8 +72,24 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
       if (!event.detail.is_repeat) switchTab(event.detail.button === 5 ? -1 : 1);
     },
   } : {};
+  function reveal(target: HTMLElement) {
+    const section = target.closest<HTMLElement>("[data-settings-section]");
+    if (!section || !content.current) return;
+    const controls = section.querySelectorAll("[data-ec-control]");
+    const box = content.current.getBoundingClientRect();
+    const r = target.getBoundingClientRect();
+    if (controls[0]?.contains(target) || r.top < box.top + 10 || r.bottom > box.bottom - 10) {
+      const anchor = section.querySelector<HTMLElement>(".rg-expanded-anchor");
+      if (!anchor) return;
+      const offset = section.dataset.settingsSection === "shortcut" ? 0 : content.current.scrollTop + anchor.getBoundingClientRect().top - box.top - 10;
+      content.current.scrollTop = Math.max(0, offset);
+      if (target.getBoundingClientRect().bottom > box.bottom - 10) target.scrollIntoView({block: "nearest"});
+    }
+  }
   function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
     if (event.altKey || event.ctrlKey || event.metaKey) return;
+    if (native && (event.target as HTMLElement).closest('[data-ec-control="binding-menu"]')) return;
+    if ((event.target as HTMLElement).tagName === "SELECT" && ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Home", "End", " ", "Enter"].includes(event.key)) return;
     if (["q", "Q", "e", "E", "Escape"].includes(event.key)) {
       event.preventDefault(); event.stopPropagation();
       if (event.repeat) return;
@@ -86,11 +97,28 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
       return;
     }
     if (event.key === "Tab") {
-      const buttons = Array.from(panel.current?.querySelectorAll<HTMLButtonElement>("button") ?? []);
+      const buttons = Array.from(panel.current?.querySelectorAll<HTMLElement>("button, select") ?? []);
       const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
       if ((event.shiftKey && index <= 0) || (!event.shiftKey && index === buttons.length - 1)) {
         event.preventDefault(); buttons[event.shiftKey ? buttons.length - 1 : 0]?.focus();
       }
+      return;
+    }
+    if (tab === "settings" && !nested && ["Home", "End", "PageDown", "PageUp"].includes(event.key)) {
+      event.preventDefault(); event.stopPropagation();
+      const controls = Array.from(content.current?.querySelectorAll<HTMLElement>("[data-ec-control]") ?? []);
+      const target = event.target as HTMLElement;
+      let index = controls.indexOf(target.closest<HTMLElement>("[data-ec-control]")!);
+      if (event.key === "Home") index = 0;
+      else if (event.key === "End") index = controls.length - 1;
+      else if (event.key.startsWith("Page")) {
+        const sections = Array.from(content.current?.querySelectorAll<HTMLElement>("[data-settings-section]") ?? []);
+        const current = sections.indexOf(target.closest<HTMLElement>("[data-settings-section]")!);
+        const section = sections[Math.max(0, Math.min(sections.length - 1, current + (event.key === "PageDown" ? 1 : -1)))];
+        index = controls.indexOf(section.querySelector<HTMLElement>("[data-ec-control]")!);
+      }
+      if (index < 0) { content.current!.scrollTop = 0; panel.current?.querySelector<HTMLButtonElement>('[data-ec-tab="settings"]')?.focus(); }
+      else focus(controls[Math.min(index, controls.length - 1)]?.dataset.ecControl);
       return;
     }
     if (!event.key.startsWith("Arrow")) return;
@@ -111,7 +139,7 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
       if (direction === "up" && cell?.row === 0) {
         const settingsControls = controlIds().filter(id => id.startsWith("binding-"));
         if (settingsControls.length) focus(settingsControls.at(-1));
-        else panel.current?.querySelector<HTMLButtonElement>(`[data-ec-tab="${tab}"]`)?.focus();
+        else { content.current!.scrollTop = 0; panel.current?.querySelector<HTMLButtonElement>(`[data-ec-tab="${tab}"]`)?.focus(); }
       }
       else {
         const next = moveInGrid(cells, target.dataset.ecControl, direction);
@@ -119,7 +147,7 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
       }
     } else {
       event.preventDefault(); event.stopPropagation();
-      const buttons = Array.from(panel.current?.querySelectorAll<HTMLButtonElement>("button") ?? []);
+      const buttons = Array.from(panel.current?.querySelectorAll<HTMLElement>("button, select") ?? []);
       const index = buttons.indexOf(target as HTMLButtonElement);
       const next = Math.max(0, Math.min(buttons.length - 1, index + (direction === "up" || direction === "left" ? -1 : 1)));
       buttons[next]?.focus(); buttons[next]?.scrollIntoView({ block: "nearest" });
@@ -127,27 +155,36 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
   }
 
   const renderTile = (item: Tile) => <Button type="button" key={item.id} data-ec-control={item.id} data-tone={item.tone ?? "quiet"} className="rg-expanded-tile"
-              {...(native ? { preferredFocus: item.id === restoreTarget(items.map(tile => tile.id), memory.current[tab]), onGamepadFocus: () => { memory.current[tab] = item.id; } } : {})}
+              {...(native ? { preferredFocus: item.id === restoreTarget(items.map(tile => tile.id), memory.current[tab]), onGamepadFocus: () => { memory.current[tab] = item.id; const target = panel.current?.querySelector<HTMLElement>(`[data-ec-control="${item.id}"]`); if(target) { if(tab === "settings") reveal(target); else target.scrollIntoView({block:"nearest"}); } } } : {})}
               style={{ gridColumn: item.wide ? (gridColumns === 4 ? "span 2" : "1 / -1") : undefined }}
               aria-label={`${item.title}: ${item.value}. ${item.detail}. Sample data. View details.`}
-              onFocus={() => { memory.current[tab] = item.id; }} onClick={() => { launcher.current = item.id; setNested(item); }}>
-              <span className="rg-expanded-tile-body"><span className="rg-expanded-tile-heading"><Icon id={item.id}/><span className="rg-expanded-label">{item.title}</span></span>
-              <span className="rg-expanded-value">{item.tone === "warning" ? "⚠ " : ""}{item.value}</span>
-              <span className="rg-expanded-detail">{item.detail}{longReasons && item.tone === "unavailable" ? " — Provider observations are unavailable in this synthetic preview. No capability or successful operation can be inferred from the displayed sample." : ""}</span></span>
+              onFocus={(event: { target: EventTarget }) => { memory.current[tab] = item.id; (event.target as HTMLElement).scrollIntoView({ block: "nearest" }); }} onClick={() => { launcher.current = item.id; setNested(item); }}>
+              <span className="rg-expanded-tile-body">
+                <span className="rg-expanded-tile-icon"><Icon id={item.id}/></span>
+                {item.id === "disconnect" ? <>
+                  <span className="rg-expanded-label">Safe Disconnect</span>
+                  <span className="rg-expanded-value"><CommandCenterIcon id="status-warning" size={20}/>{item.value}</span>
+                </> : <>
+                  <span className="rg-expanded-value">{item.value}</span>
+                  <span className="rg-expanded-label">{item.title}</span>
+                </>}
+                <span className="rg-expanded-detail">{item.detail}{longReasons && item.tone === "unavailable" ? " — Provider observations are unavailable in this synthetic preview. No capability or successful operation can be inferred from the displayed sample." : ""}</span>
+                <span className="rg-expanded-chevron" aria-hidden="true">›</span>
+              </span>
             </Button>;
 
   return <div className="rg-expanded-backdrop">
     <style>{expandedStyles}</style>
     <Container ref={panel} data-ec-panel className="rg-expanded" role="dialog" aria-modal="true" aria-label="Re-Gear expanded Command Center prototype" onKeyDown={onKeyDown} {...nativeHandlers}
-      onFocus={(event: { target: EventTarget }) => { const id = (event.target as HTMLElement).dataset.ecControl; if (id && !nested) memory.current[tab] = id; }}>
-      <header className="rg-expanded-brand"><span>Re-Gear</span><span className="rg-expanded-demo">Demo · Sample data<br/>Hardware controls not connected</span></header>
+      onFocus={(event: { target: EventTarget }) => { const id = (event.target as HTMLElement).closest<HTMLElement>("[data-ec-control]")?.dataset.ecControl; if (id && !nested) memory.current[tab] = id; }}>
+      <header className="rg-expanded-brand"><span className="rg-expanded-wordmark"><img src={brandIcon} alt=""/>Re-Gear</span><span className="rg-expanded-demo"><span className="rg-expanded-demo-label"><i/>Demo · Sample data</span><span>Hardware controls not connected</span></span></header>
       <Container className="rg-expanded-tabs" role="tablist" aria-label="Command Center sections" {...(native ? { "flow-children": "horizontal", noFocusRing: true } : {})}>
         {tabs.map(id => <Button key={id} id={`ec-tab-${id}`} type="button" role="tab" aria-selected={tab === id} aria-controls="ec-tabpanel" data-ec-tab={id} className="rg-expanded-tab"
           onClick={() => { setNested(null); setTab(id); if (id === tab) focus(restoreTarget(controlIds(), memory.current[tab])); }}>
           <span className="rg-expanded-tab-body"><Icon id={id}/><span>{tabLabels[id]}</span></span>
         </Button>)}
       </Container>
-      <div ref={content} className="rg-expanded-content" id="ec-tabpanel" role="tabpanel" aria-labelledby={`ec-tab-${tab}`}>
+      <div ref={content} className="rg-expanded-content" id="ec-tabpanel" role="tabpanel" onFocusCapture={event => { if(tab === "settings") reveal(event.target as HTMLElement); }} aria-labelledby={`ec-tab-${tab}`}>
         <h2>{nested ? nested.title : tabLabels[tab]}</h2>
         <p className="rg-expanded-context">{nested ? "Configuration preview · no changes are applied" : tab === "quick" ? "Essential controls while you play" : tab === "performance" ? "Configure performance for your play style" : "Status and configuration preview"}</p>
         {nested ? <section className="rg-expanded-detail-page">
@@ -159,18 +196,24 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
           <Button type="button" className="rg-expanded-back" data-ec-control="nested-back" {...(native ? { preferredFocus: true } : {})} onClick={back}>Back to {tabLabels[tab]}</Button>
         </section> : <>
           {tab === "settings" && settings}
-          {tab === "performance" && <p className="rg-expanded-context">Manual limit: 18 W · Auto TDP: Off / not configured · FPS provider: unavailable. All values are samples.</p>}
-          <Container className="rg-expanded-grid" style={{ "--ec-columns": gridColumns } as CSSProperties} {...(native ? { "flow-children": "grid", preferredFocus: true, noFocusRing: true } : {})}>
-            {items.map(renderTile)}
+          <Container className={tab === "settings" ? "rg-expanded-grid rg-expanded-settings-list" : "rg-expanded-grid"} style={{ "--ec-columns": gridColumns } as CSSProperties} {...(native ? { "flow-children": "grid", preferredFocus: true, noFocusRing: true } : {})}>
+            {items.map(item => tab === "settings" ? <section key={item.id} data-settings-section={item.id} className="rg-expanded-settings-section">
+              <span className="rg-expanded-anchor" tabIndex={-1} aria-label={`${item.title} section`} />
+              {renderTile(item)}</section> : renderTile(item))}
           </Container>
-          {tab !== "quick" && <div className="rg-expanded-summary">Sample data only. Connection status does not establish rendering or disconnect readiness.</div>}
+          <aside className="rg-expanded-info" aria-label="Sample status summary">
+            <CommandCenterIcon id="status-unknown" size={22}/>
+            <span><strong>{tab === "quick" || tab === "egpu" ? "eGPU connected · External controller active" : tab === "performance" ? "Performance preferences" : tab === "controllers" ? "External controller · Player 1" : "Make Re-Gear yours"}</strong>
+              <small>{tab === "quick" || tab === "egpu" ? "Sample connection only · No unplug clearance" : tab === "settings" ? "Preview preferences · No settings saved" : "Sample data · Controls are not connected"}</small></span>
+            <span className="rg-expanded-badges">{tab === "quick" || tab === "egpu" ? <><span><CommandCenterIcon id="egpu" size={18}/>RX 7600M XT</span><span><CommandCenterIcon id="controllers" size={18}/>P1</span></> : <span>Preview</span>}</span>
+          </aside>
         </>}
       </div>
       <footer className="rg-expanded-footer" data-ec-footer>
-        <span><kbd>LB</kbd><kbd>RB</kbd> Tabs</span>
-        <span><b aria-hidden="true">✚</b> Navigate</span>
-        <span><kbd>A</kbd> Select</span>
-        <span><kbd>B</kbd> {nested ? "Back" : "Close"}</span>
+        <span><kbd>LB</kbd><kbd>RB</kbd> Switch Tab</span>
+        <span className="rg-expanded-footer-spacer" aria-hidden="true"/>
+        <span><kbd className="rg-expanded-round">A</kbd> Select</span>
+        <span><kbd className="rg-expanded-round">B</kbd> {nested ? "Back" : "Close"}</span>
       </footer>
     </Container>
   </div>;
