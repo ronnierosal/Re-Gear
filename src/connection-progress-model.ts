@@ -8,7 +8,9 @@ export function connectionProgressViewModel(status: LiveStatus, now = Date.now()
     : status.phase === "complete" ? "ready" : status.phase === "switching" ? "switching" : "connecting";
   let rows: ConnectionProgressRow[] = status.rows.map((row, index) => ({
     key: String(index), label: row.label,
-    state: !fresh ? "pending" : row.state === "waiting" ? "checking" : row.state,
+    state: !fresh || row.state === "waiting" ? "pending" : row.state,
+    stateLabel: !fresh ? "Status unavailable" : row.state === "waiting" ? "Waiting for confirmation"
+      : row.state === "ready" ? "Confirmed" : "Needs attention",
   }));
   if (phase === "switching") rows = [
     {key:"display",label:"Display activation",state:"switching"},
@@ -19,7 +21,12 @@ export function connectionProgressViewModel(status: LiveStatus, now = Date.now()
     // Audio recovery readiness is not proof of active TV audio output.
     {key:"audio",label:"TV audio",state:"pending",stateLabel:"Check sound"},
   ];
-  return {phase, rows, elapsedSeconds:status.seconds,
+  const delayNotice = fresh && status.phase !== "complete" && Number.isFinite(status.seconds) && status.seconds >= 60
+    ? status.seconds < 180
+      ? "Taking longer than expected. Still waiting for connection or display confirmation. Allow up to three minutes, then check the status below; completion is not guaranteed."
+      : "Still waiting after three minutes. Check the connection and display status below. Keep the eGPU connected."
+    : undefined;
+  return {phase, rows, delayNotice, elapsedSeconds:status.seconds,
     deviceLabel:`${fresh && status.gpuName ? status.gpuName : "eGPU"} ${fresh && status.connected ? "connected" : "connection"}`,
     detail:!fresh ? "Waiting for a fresh status update" : phase === "ready"
       ? "TV transition reported complete. Check picture and sound. Closing automatically…" : status.title,

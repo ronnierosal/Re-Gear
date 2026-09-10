@@ -19,6 +19,7 @@ export type ConnectionProgressOverlayProps = {
   elapsedSeconds?: number;
   rows: ConnectionProgressRow[];
   detail?: string;
+  delayNotice?: string;
   keepConnectedMessage?: string;
   onHide: () => void;
   onSwitch?: () => void;
@@ -63,6 +64,10 @@ function StatusGlyph({ state }: { state: ConnectionProgressState }) {
       boxSizing: "border-box",
     }}>!</span>;
   }
+  if (state === "pending") return <span aria-hidden="true" style={{
+    width: 14, height: 14, borderRadius: 999, border: `2px solid ${C.muted}`,
+    boxSizing: "border-box", flexShrink: 0,
+  }} />;
   return <span aria-hidden="true"
     className={state === "checking" || state === "switching" ? "regear-progress-spinner" : undefined}
     style={{
@@ -126,6 +131,7 @@ export function ConnectionProgressOverlay(props: ConnectionProgressOverlayProps)
       </div>
 
       {props.detail && <div style={{ marginTop: 4, color: C.muted, fontSize: 13 }}>{props.detail}</div>}
+      {props.delayNotice && <div role="status" style={{marginTop: 6, padding: "6px 8px", border: `1px solid ${C.amber}`, borderRadius: 8, color: C.amber, fontSize: 13}}>{props.delayNotice}</div>}
       {props.keepConnectedMessage && <div style={{ marginTop: 6, color: C.muted, fontSize: 13 }}>{props.keepConnectedMessage}</div>}
 
       <div style={{display:"flex", gap:8, marginTop:6}}>

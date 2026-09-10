@@ -17,7 +17,7 @@ test("popup uses detected GPU name and generic fallback, never a dock-brand defa
 test("approved overlay preserves monitor evidence and blockers without new readiness inference",()=>{
  const s=sample(); const v=view(s,100);
  assert.equal(v.phase,"connecting"); assert.equal(v.detail,s.title); assert.equal(v.elapsedSeconds,90);
- assert.deepEqual(v.rows.map(r=>r.state),["ready","checking","blocked"]);
+ assert.deepEqual(v.rows.map(r=>r.state),["ready","pending","blocked"]);
  assert.equal(s.rows[1].state,"waiting");
 });
 test("expired completion cannot leave the approved overlay green",()=>{
@@ -47,10 +47,29 @@ test("connection observation preserves the actual reason without inventing a tra
  const v=view(s,100);
  assert.equal(v.phase,"connecting");
  assert.equal(v.detail,"Ready to switch to TV");
- assert.equal(v.rows[1].state,"checking");
+ assert.equal(v.rows[1].state,"pending");
  s.phase="switching";
  assert.ok(!view(s,100).rows.some(row=>row.label==="Final verification"));
  const stale=view({...s,phase:"complete"},200);
  assert.equal(stale.detail,"Waiting for a fresh status update");
  assert.ok(stale.rows.every(row=>row.state!=="ready"));
+});
+
+
+test("waiting rows are unconfirmed, not active work, and stale rows lose confirmation",()=>{
+ const s=sample(); const v=view(s,100);
+ assert.equal(v.rows[0].stateLabel,"Confirmed");
+ assert.equal(v.rows[1].state,"pending");
+ assert.equal(v.rows[1].stateLabel,"Waiting for confirmation");
+ assert.equal(v.rows[2].stateLabel,"Needs attention");
+ assert.ok(view(s,200).rows.every(r=>r.stateLabel==="Status unavailable"));
+});
+test("delay guidance starts at one minute and changes at three without promising completion",()=>{
+ const s=sample();
+ for(const seconds of [0,59,NaN]) assert.equal(view({...s,seconds},100).delayNotice,undefined);
+ assert.match(view({...s,seconds:60},100).delayNotice,/Taking longer than expected/);
+ assert.match(view({...s,seconds:179},100).delayNotice,/completion is not guaranteed/);
+ assert.match(view({...s,seconds:180},100).delayNotice,/after three minutes/);
+ assert.equal(view({...s,phase:"complete",seconds:180},100).delayNotice,undefined);
+ assert.equal(view({...s,seconds:180},200).delayNotice,undefined);
 });
