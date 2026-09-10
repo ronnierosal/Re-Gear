@@ -4,10 +4,23 @@ import type { ControllerInputSource } from "../../controller-safe-disconnect";
 import { loadMenuBinding, saveMenuBinding, menuBindingOptions, startMenuShortcut } from "../../menu-shortcut";
 import type { MenuBinding } from "../../menu-shortcut";
 import { ExpandedCommandCenter } from "./shell";
+import type { TileSource } from "./tile-source";
 import { ShortcutSettings } from "./shortcut-settings";
 
-/** Native test adapter; only opens a demo and saves its launcher preference. */
-export function createExpandedMenu(input: ControllerInputSource | undefined, host: Window, canOpen: () => boolean = () => true) {
+/** Native adapter. Opens the menu, saves its launcher preference, and passes
+ * through readings published by the panel that owns snapshot polling.
+ *
+ * `source` is optional so the browser fixture and the tests keep working
+ * unchanged. When it is absent the shell falls back to its synthetic sample
+ * tiles, which is correct for a preview and must never happen in production --
+ * the publisher supplies every tab, Unknown included, precisely so that
+ * fallback is unreachable once wired.
+ *
+ * This adapter starts no timer and calls no backend function. It subscribes to
+ * a view someone else owns; adding a read here would be a second source of
+ * truth for state a player acts on.
+ */
+export function createExpandedMenu(input: ControllerInputSource | undefined, host: Window, canOpen: () => boolean = () => true, source?: TileSource) {
   const storage = (() => { try { return host.localStorage; } catch { return undefined; } })();
   let binding = loadMenuBinding(storage);
   let modal: ReturnType<typeof showModal> | null = null;
@@ -21,7 +34,22 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
   };
   function View({ token }: { token: number }) {
     useEffect(() => () => { if (generation === token) { modal = null; generation++; } }, [token]);
-    return <ExpandedCommandCenter onClose={close} native primitives={{ Button: Button, Focusable }} settings={<Settings/>}/>;
+    // Read at render, with no hook of its own.
+    //
+    // This deliberately does not subscribe yet. The native fixture shares one
+    // hook-state array across components starting at index 0, so any hook added
+    // here collides with Settings and makes it read this component's value as
+    // its saved shortcut binding; its useState setter also never re-renders, so
+    // a subscription could not be exercised there in any case. Adding live
+    // updates means changing a fixture the UI session owns, which is agreed
+    // with them rather than done unilaterally.
+    //
+    // What this gives today is honest: readings current as of the moment the
+    // menu opened, from the panel that owns polling, with every tab supplied so
+    // the confident sample tiles stay unreachable. What it does not give is
+    // updates while the menu stays open; that is the next slice.
+    const tiles = source?.read();
+    return <ExpandedCommandCenter onClose={close} native primitives={{ Button: Button, Focusable }} settings={<Settings/>} tiles={tiles}/>;
   }
   function Settings() {
     const [selected, setSelected] = useState(binding);

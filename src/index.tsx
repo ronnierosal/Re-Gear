@@ -1,5 +1,7 @@
 import { PageLayout, CommandCenterHeader } from "./quick-access/page-layout";
 import { createExpandedMenu } from "./quick-access/expanded-command-center/native";
+import { createTilePublisher } from "./quick-access/expanded-command-center/tile-source";
+import type { Readings } from "./quick-access/expanded-command-center/tile-source";
 import { EgpuModule } from "./quick-access/modules/egpu";
 import { egpuPresentation } from "./quick-access/modules/egpu-presentation";
 import { ControllerModule } from "./quick-access/modules/controller";
@@ -553,7 +555,7 @@ function preflightObservation(payload: SnapshotPayload): PreflightObservation {
   }, Date.now(), SNAPSHOT_STALE_AFTER_MS);
 }
 
-function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAvailable }: { preflight: SleepPreflightCoordinator; connection: ReturnType<typeof startConnectionMonitor>; shortcut: ReturnType<typeof createDisplayShortcutRuntime>; openExpanded(): void; menuShortcutAvailable: boolean }) {
+function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAvailable, publishTiles }: { preflight: SleepPreflightCoordinator; connection: ReturnType<typeof startConnectionMonitor>; shortcut: ReturnType<typeof createDisplayShortcutRuntime>; openExpanded(): void; menuShortcutAvailable: boolean; publishTiles(readings: Readings): void }) {
   const quickAccessVisible = useQuickAccessVisible();
   const statusAnchor = useRef<HTMLDivElement | null>(null);
   const statusFocusAnchor = useRef<HTMLDivElement | null>(null);
@@ -1639,6 +1641,37 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
   });
   const shownTile = tiles.find((tile) => tile.id === selectedTile);
 
+  // Publish to the expanded menu from the readings this panel already holds.
+  //
+  // Freshness is passed explicitly rather than inferred from the payload being
+  // non-null, because a failed refresh keeps the previous payload and only sets
+  // `error`. Without this the menu would present the last good reading as
+  // current, which is worst exactly when a device has just stopped responding.
+  //
+  // The menu can also be opened by its shortcut while Quick Access is hidden,
+  // and this panel slows to a background cadence then; Unknown on a stale read
+  // is the honest answer for that case rather than an aged value shown as live.
+  const menuFresh = !loading && error === "" && payload !== null;
+  const menuPerformance = performanceState({
+    status: performance.manual, autoStatus: performance.auto,
+    busy: performance.busy, stopping: performance.stopping,
+  });
+  useEffect(() => {
+    publishTiles({
+      fresh: menuFresh,
+      egpu: menuFresh ? egpuPresentation(payload) : null,
+      controller: menuFresh
+        ? controllerPresentation({ peripheral: peripheralStatus, shortcutAvailable: menuShortcutAvailable })
+        : null,
+      performance: menuPerformance,
+      // The configured limit, never a power-draw reading.
+      manualWatts: performance.manual?.current_watts ?? null,
+    });
+  }, [publishTiles, menuFresh, payload, peripheralStatus, menuShortcutAvailable,
+      menuPerformance.active, menuPerformance.autoKnown, menuPerformance.stopping,
+      menuPerformance.supported, menuPerformance.action, menuPerformance.busy,
+      performance.manual?.current_watts]);
+
   // Read-only status destinations, kept distinct from the configuration
   // modules: these open detail, never controls.
   const statusEntries: Array<{ id: StatusId; title: string; detail: string }> = [
@@ -2310,8 +2343,13 @@ function showBlockedAttempt(
 }
 
 export default definePlugin(() => {
+  // One view, owned here, written by the panel and read by the menu. The menu
+  // starts no timer and fetches nothing; it subscribes to what Content already
+  // polls, so the expanded surface cannot become another source of truth.
+  const tilePublisher = createTilePublisher();
   const expandedMenu = createExpandedMenu(steamControllerInput(window), window, () =>
-    !shortcut.modal.current && !shortcut.portableBusy.current && !shortcut.tvBusy.current && !warningModal);
+    !shortcut.modal.current && !shortcut.portableBusy.current && !shortcut.tvBusy.current && !warningModal,
+    tilePublisher.source);
   const shortcut = createDisplayShortcutRuntime({
     // View+Y now belongs exclusively to the menu. Explicit display requests
     // below retain their existing approval/confirmation path.
@@ -2389,7 +2427,7 @@ export default definePlugin(() => {
   return {
     name: PRODUCT_NAME,
     titleView: <div className={staticClasses.Title} style={{ display: "flex", alignItems: "center" }}><BrandHeader /></div>,
-    content: <Content preflight={preflight} connection={connection} shortcut={shortcut} openExpanded={expandedMenu.open} menuShortcutAvailable={expandedMenu.available} />,
+    content: <Content preflight={preflight} connection={connection} shortcut={shortcut} openExpanded={expandedMenu.open} menuShortcutAvailable={expandedMenu.available} publishTiles={tilePublisher.publish} />,
     icon: <BrandIcon />,
     alwaysRender: true,
     onDismount() {
