@@ -6,12 +6,12 @@ from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 
-from hdm.adapters.steamos.offline_steam_overview import project_local_steam_overview
-from hdm.application.offline_readiness import (
+from regear.adapters.steamos.offline_steam_overview import project_local_steam_overview
+from regear.application.offline_readiness import (
     OfflineCheckContext, OfflineCheckSample, OfflineReadinessService,
 )
-from hdm.domain.models import GameState
-from hdm.domain.offline_readiness import (
+from regear.domain.models import GameState
+from regear.domain.offline_readiness import (
     OfflineEvidenceCollectionContract, OfflineEvidenceSourceDeclaration,
     OfflineEvidenceSourceKind, OfflineEvidenceField, OfflineReadinessObservation,
     OfflineReadinessEvidence, InstallState, DownloadState, CloudSaveState,

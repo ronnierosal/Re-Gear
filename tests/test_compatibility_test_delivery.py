@@ -9,10 +9,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.delivery.compatibility_test import (  # noqa: E402
+from regear.delivery.compatibility_test import (  # noqa: E402
     compatibility_test_status_to_payload,
 )
-from hdm.domain.compatibility_test import (  # noqa: E402
+from regear.domain.compatibility_test import (  # noqa: E402
     CompatibilityBaseline,
     CompatibilityTestOptions,
     CompatibilityTestStage,
@@ -22,14 +22,14 @@ from hdm.domain.compatibility_test import (  # noqa: E402
     record_save_result,
     start_compatibility_test,
 )
-from hdm.domain.control_plane import PlacementState  # noqa: E402
-from hdm.domain.game_compatibility import (  # noqa: E402
+from regear.domain.control_plane import PlacementState  # noqa: E402
+from regear.domain.game_compatibility import (  # noqa: E402
     CompatibilityEvidenceKind,
     EgpuHandoffStatus,
     ObservedRenderGpu,
     SaveTestOutcome,
 )
-from hdm.domain.models import GameState  # noqa: E402
+from regear.domain.models import GameState  # noqa: E402
 
 
 def awaiting_review():

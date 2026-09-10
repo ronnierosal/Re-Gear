@@ -8,7 +8,7 @@ import sys
 plugin_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(plugin_root / "backend"))
 
-from hdm.delivery.gamescope_wrapper import main  # noqa: E402
+from regear.delivery.gamescope_wrapper import main  # noqa: E402
 
 
 raise SystemExit(main())

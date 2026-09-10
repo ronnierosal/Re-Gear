@@ -4,14 +4,16 @@ import os
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.adapters.steamos.gamescope_user import GamescopeUserContext  # noqa: E402
-from hdm.delivery.gamescope_integration import GamescopeIntegrationStore  # noqa: E402
+from regear.adapters.steamos.gamescope_user import GamescopeUserContext  # noqa: E402
+from regear.delivery.gamescope_integration import GamescopeIntegrationStore  # noqa: E402
+from regear.delivery.user_directory import UserDirectory  # noqa: E402
 
 
 class GamescopeIntegrationStoreTests(unittest.TestCase):
@@ -176,6 +178,57 @@ class GamescopeIntegrationStoreTests(unittest.TestCase):
             self.assertEqual(store.status().error_code, "managed_dropin_modified")
             self.assertFalse(store.activate().ok)
             self.assertEqual(store.target.read_text(encoding="utf-8"), foreign)
+
+    def test_failed_upgrade_publication_restores_prior_dropin(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            store, _ = self.make_store(root)
+            store.target.parent.mkdir(parents=True)
+            prior = self.legacy_dropin_text(store, root).encode()
+            store.target.write_bytes(prior)
+            publish = UserDirectory.publish
+            def fail_new(target, name, data, mode):
+                if data == store.expected_text().encode():
+                    raise OSError("injected publication failure")
+                return publish(target, name, data, mode)
+            with patch.object(UserDirectory, "publish", fail_new):
+                self.assertFalse(store.activate().ok)
+            self.assertEqual(store.target.read_bytes(), prior)
+            self.assertTrue(store.activate().ok)
+
+    def test_failed_rollback_publication_retains_prepared_file_and_retry_authority(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            store, _ = self.make_store(root)
+            store.target.parent.mkdir(parents=True)
+            prior = self.legacy_dropin_text(store, root).encode()
+            store.target.write_bytes(prior)
+            self.assertTrue(store.activate().ok)
+            publish = UserDirectory.publish
+            def fail_prior(target, name, data, mode):
+                if data == prior:
+                    raise OSError("injected rollback publication failure")
+                return publish(target, name, data, mode)
+            with patch.object(UserDirectory, "publish", fail_prior):
+                self.assertFalse(store.rollback_activation().changed)
+            self.assertEqual(store.target.read_bytes(), store.expected_text().encode())
+            self.assertTrue(store.rollback_activation().changed)
+            self.assertEqual(store.target.read_bytes(), prior)
+
+    def test_persistent_rollback_publication_failure_can_recover_absent_target(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            store, _ = self.make_store(root)
+            store.target.parent.mkdir(parents=True)
+            prior = self.legacy_dropin_text(store, root).encode()
+            store.target.write_bytes(prior)
+            self.assertTrue(store.activate().ok)
+            with patch.object(UserDirectory, "publish", side_effect=OSError("persistent failure")):
+                self.assertFalse(store.rollback_activation().changed)
+            self.assertFalse(store.target.exists())
+            self.assertEqual(store._activation_rollback[0], prior)
+            self.assertTrue(store.rollback_activation().changed)
+            self.assertEqual(store.target.read_bytes(), prior)
 
     def test_non_root_activation_and_missing_shim_are_rejected(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -8,7 +8,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.domain.game_adapter import (  # noqa: E402
+from regear.domain.game_adapter import (  # noqa: E402
     GameAdapterDescriptor,
     GameAdapterSupport,
     GameConfigChange,

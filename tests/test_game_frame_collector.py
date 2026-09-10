@@ -5,9 +5,9 @@ from pathlib import Path
 from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
-from hdm.adapters.steamos.gamescope_performance import PerformanceReading, PerformanceTarget
-from hdm.adapters.steamos.gamescope_performance_target import PerformanceTargetResolution
-from hdm.delivery.game_frame_collector import GameFrameCollector
+from regear.adapters.steamos.gamescope_performance import PerformanceReading, PerformanceTarget
+from regear.adapters.steamos.gamescope_performance_target import PerformanceTargetResolution
+from regear.delivery.game_frame_collector import GameFrameCollector
 
 
 class FrameCollectorTests(unittest.TestCase):

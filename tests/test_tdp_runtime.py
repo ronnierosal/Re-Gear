@@ -1,9 +1,9 @@
 import unittest
 
 from test_tdp_control import MemoryJournal, Provider, reading
-from hdm.application.tdp_control import TdpControlService
-from hdm.delivery.tdp_runtime import TdpRuntime
-from hdm.ports.tdp import TdpObservation
+from regear.application.tdp_control import TdpControlService
+from regear.delivery.tdp_runtime import TdpRuntime
+from regear.ports.tdp import TdpObservation
 
 
 class Lease:
@@ -23,7 +23,7 @@ class GuardedProvider(Provider):
         return TdpObservation("tdp.ready" if self.guard() else "tdp.ownership_unverified", observation.reading)
     def set_limit(self, expected, watts):
         if not self.guard():
-            from hdm.ports.tdp import TdpWriteOutcome
+            from regear.ports.tdp import TdpWriteOutcome
             return TdpWriteOutcome(False, False, "tdp.ownership_unverified")
         return super().set_limit(expected, watts)
 

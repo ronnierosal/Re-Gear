@@ -8,11 +8,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.domain.controller_shortcut_presentation import (  # noqa: E402
+from regear.domain.controller_shortcut_presentation import (  # noqa: E402
     ControllerShortcutPresentationState,
     present_controller_safe_undock,
 )
-from hdm.domain.controller_shortcuts import (  # noqa: E402
+from regear.domain.controller_shortcuts import (  # noqa: E402
     ControllerButton,
     ControllerInputEvidence,
     evaluate_controller_shortcut,

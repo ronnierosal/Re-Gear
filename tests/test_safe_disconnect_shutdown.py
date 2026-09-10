@@ -11,14 +11,14 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.adapters.steamos.commands import SystemPowerCommandRunner  # noqa: E402
-from hdm.application.safe_disconnect_shutdown import (  # noqa: E402
+from regear.adapters.steamos.commands import SystemPowerCommandRunner  # noqa: E402
+from regear.application.safe_disconnect_shutdown import (  # noqa: E402
     SafeDisconnectShutdownApprovalStore,
     SafeDisconnectShutdownService,
 )
-from hdm.domain.serialization import snapshot_from_dict  # noqa: E402
-from hdm.ports.system_power import PowerOffResult  # noqa: E402
-from hdm.ports.transition import VersionedObservation  # noqa: E402
+from regear.domain.serialization import snapshot_from_dict  # noqa: E402
+from regear.ports.system_power import PowerOffResult  # noqa: E402
+from regear.ports.transition import VersionedObservation  # noqa: E402
 
 
 FIXTURES = ROOT / "tests" / "fixtures"

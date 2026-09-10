@@ -5,7 +5,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 import test_tdp_control as fixtures
-from hdm.adapters.steamos.auto_tdp_host import AutoTdpHostContext
+from regear.adapters.steamos.auto_tdp_host import AutoTdpHostContext
 
 spec = importlib.util.spec_from_file_location("auto_tdp_context_probe", Path(__file__).resolve().parents[1] / "scripts/probe_auto_tdp_context.py")
 probe_module = importlib.util.module_from_spec(spec)

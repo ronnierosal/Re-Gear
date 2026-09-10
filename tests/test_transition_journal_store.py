@@ -12,14 +12,14 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.delivery.transition_journal_store import (  # noqa: E402
+from regear.delivery.transition_journal_store import (  # noqa: E402
     JOURNAL_FILENAME,
     COMPLETED_FILENAME,
     MAX_JOURNAL_BYTES,
     FileTransitionJournalStore,
 )
-from hdm.domain.control_plane import PlacementState, WorkflowState  # noqa: E402
-from hdm.domain.transition_journal import (  # noqa: E402
+from regear.domain.control_plane import PlacementState, WorkflowState  # noqa: E402
+from regear.domain.transition_journal import (  # noqa: E402
     JournalEventKind,
     TransitionJournal,
     append_journal_entry,
@@ -140,7 +140,7 @@ class TransitionJournalStoreTests(unittest.TestCase):
             journal = presentation()
             store = self.store(directory)
             store.save(journal)
-            with patch("hdm.delivery.transition_journal_store.os.fsync", side_effect=OSError("fsync failed")):
+            with patch("regear.delivery.transition_journal_store.os.fsync", side_effect=OSError("fsync failed")):
                 with self.assertRaisesRegex(OSError, "fsync failed"):
                     store.retire_committed(journal.operation_id)
             self.assertEqual(store.load_current(), journal)

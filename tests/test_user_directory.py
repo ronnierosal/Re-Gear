@@ -9,8 +9,8 @@ from unittest.mock import patch
 from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
-from hdm.delivery.user_directory import UserDirectory
-from hdm.delivery.support_export import SupportBundleFileWriter
+from regear.delivery.user_directory import UserDirectory
+from regear.delivery.support_export import SupportBundleFileWriter
 
 
 @unittest.skipUnless(sys.platform == "linux", "requires real Linux directory descriptors")

@@ -32,7 +32,7 @@ from check_pr_collisions import (  # noqa: E402
 
 
 CLAIMS = {
-    122: ("backend/hdm/egpu_remove.py",),
+    122: ("backend/regear/egpu_remove.py",),
     75: ("main.py", "a.py"),
     70: ("main.py",),
 }
@@ -51,7 +51,7 @@ class PathClaimsTests(unittest.TestCase):
         self.assertEqual(found[0].kind, "claimed")
 
     def test_a_claimed_path_absent_from_the_base_is_duplicated_work(self) -> None:
-        found = self._claims(["backend/hdm/egpu_remove.py"], present=[])
+        found = self._claims(["backend/regear/egpu_remove.py"], present=[])
         self.assertEqual(found[0].kind, "duplicate-work")
         self.assertIn("already building this", found[0].reason)
 
@@ -65,7 +65,7 @@ class PathClaimsTests(unittest.TestCase):
 
     def test_duplicated_work_sorts_above_contention(self) -> None:
         found = self._claims(
-            ["main.py", "backend/hdm/egpu_remove.py"], present=["main.py"]
+            ["main.py", "backend/regear/egpu_remove.py"], present=["main.py"]
         )
         self.assertEqual([item.kind for item in found], ["duplicate-work", "contended"])
 

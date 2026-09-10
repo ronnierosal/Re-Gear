@@ -4,8 +4,8 @@ from dataclasses import replace
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from backend.hdm.delivery.device_filter_lifecycle import LaunchBinding
-from backend.hdm.delivery import device_filter_pin_directory as pins
+from backend.regear.delivery.device_filter_lifecycle import LaunchBinding
+from backend.regear.delivery import device_filter_pin_directory as pins
 
 
 class FilterPinDirectoryTests(unittest.TestCase):

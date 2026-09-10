@@ -10,16 +10,16 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 
-from hdm.delivery.auto_tdp_preferences import (
+from regear.delivery.auto_tdp_preferences import (
     FILENAME,
     MAX_BYTES,
     FileAutoTdpPreferences,
     decode_auto_tdp_preferences,
     encode_auto_tdp_preferences,
 )
-from hdm.domain.auto_tdp import AutoTdpPolicy
-from hdm.domain.auto_tdp_preferences import AutoTdpModePreference, AutoTdpPreferenceSet
-from hdm.domain.control_plane import PlacementState
+from regear.domain.auto_tdp import AutoTdpPolicy
+from regear.domain.auto_tdp_preferences import AutoTdpModePreference, AutoTdpPreferenceSet
+from regear.domain.control_plane import PlacementState
 
 
 class AutoTdpPreferenceStorageTests(unittest.TestCase):
@@ -159,7 +159,7 @@ class AutoTdpPreferenceStorageTests(unittest.TestCase):
     def test_replace_failure_preserves_prior_file_and_removes_temporary(self):
         self.storage.save_preference(AutoTdpModePreference(PlacementState.PORTABLE, self.portable))
         before = self.target.read_bytes()
-        with patch("hdm.delivery.auto_tdp_preferences.os.replace", side_effect=OSError("private failure")):
+        with patch("regear.delivery.auto_tdp_preferences.os.replace", side_effect=OSError("private failure")):
             result = self.storage.save_preference(AutoTdpModePreference(PlacementState.DOCKED_IGPU, self.docked))
         self.assertEqual(result.code, "auto_tdp_preferences.save_failed")
         self.assertEqual(self.target.read_bytes(), before)

@@ -9,13 +9,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.domain.link_instability import (  # noqa: E402
+from regear.domain.link_instability import (  # noqa: E402
     LinkHealthSample,
     LinkInstabilityStatus,
     assess_link_instability,
     link_instability_to_public_dict,
 )
-from hdm.domain.models import Confidence, EgpuLinkState  # noqa: E402
+from regear.domain.models import Confidence, EgpuLinkState  # noqa: E402
 
 
 def sample(state, generation="generation-1", sample_id="sample-1", **changes):

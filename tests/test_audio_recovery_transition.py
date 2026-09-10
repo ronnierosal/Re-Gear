@@ -5,10 +5,10 @@ from dataclasses import replace
 from contextlib import contextmanager
 
 from tests import test_audio_profile_trial as audio_fixture
-from hdm.delivery.audio_profile_trial import AudioProfileRecovery
-from hdm.delivery.audio_profile_trial_state import AudioTrialPhase as Phase, TERMINAL_PHASES
+from regear.delivery.audio_profile_trial import AudioProfileRecovery
+from regear.delivery.audio_profile_trial_state import AudioTrialPhase as Phase, TERMINAL_PHASES
 from tests.test_supervised_transition import service, Observations, PlacementState
-from hdm.ports.audio_recovery import AudioRecoveryBlocked
+from regear.ports.audio_recovery import AudioRecoveryBlocked
 
 
 class AudioRecoveryTransitionTests(unittest.TestCase):

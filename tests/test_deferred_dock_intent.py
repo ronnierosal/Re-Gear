@@ -8,14 +8,14 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.domain.control_plane import RequestSource  # noqa: E402
-from hdm.domain.deferred_dock import (  # noqa: E402
+from regear.domain.control_plane import RequestSource  # noqa: E402
+from regear.domain.deferred_dock import (  # noqa: E402
     DeferredDockState,
     cancel_deferred_dock_intent,
     create_deferred_dock_intent,
     evaluate_deferred_dock_intent,
 )
-from hdm.domain.models import GameState  # noqa: E402
+from regear.domain.models import GameState  # noqa: E402
 
 
 class DeferredDockIntentTests(unittest.TestCase):

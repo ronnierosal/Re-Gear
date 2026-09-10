@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 
 from test_main_process_delivery import load_main_module
-from hdm.delivery.auto_tdp_preferences import FileAutoTdpPreferences
+from regear.delivery.auto_tdp_preferences import FileAutoTdpPreferences
 
 
 class MainAutoPreferencesTests(unittest.TestCase):

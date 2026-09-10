@@ -8,12 +8,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.application.shared_transition_journal import (  # noqa: E402
+from regear.application.shared_transition_journal import (  # noqa: E402
     SharedTransitionJournalService,
     TransitionJournalOwner,
 )
-from hdm.domain.control_plane import PlacementState, WorkflowState  # noqa: E402
-from hdm.domain.transition_journal import (  # noqa: E402
+from regear.domain.control_plane import PlacementState, WorkflowState  # noqa: E402
+from regear.domain.transition_journal import (  # noqa: E402
     JournalEventKind,
     TransitionJournal,
     append_journal_entry,

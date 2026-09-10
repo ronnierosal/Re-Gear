@@ -42,6 +42,9 @@ class PackagedProbeTests(unittest.TestCase):
                 self.assertEqual(build_plugin.main(), 0)
                 reserve.assert_called_once_with(build_plugin.PACKAGE_VERSION)
             with zipfile.ZipFile(output) as archive:
+                names = archive.namelist()
+                self.assertIn("Re-Gear/backend/regear/cli.py", names)
+                self.assertFalse(any(name.startswith("Re-Gear/backend/hdm/") for name in names))
                 script_names = {name for name in archive.namelist()
                                 if name.startswith("Re-Gear/scripts/")}
                 self.assertEqual(script_names, {
@@ -66,7 +69,7 @@ def reject_hardware(event, args):
 sys.addaudithook(reject_hardware)
 module = runpy.run_path(str(probe), run_name="packaged_probe")
 for name, loaded in list(sys.modules.items()):
-    if name == "hdm" or name.startswith("hdm."):
+    if name == "regear" or name.startswith("regear."):
         assert pathlib.Path(loaded.__file__).resolve().is_relative_to(plugin)
 with patch.object(module["SteamOsDiscovery"], "__init__", side_effect=AssertionError("discovery")), \
      patch.object(module["SteamOsPeripheralObservationAdapter"], "__init__", side_effect=AssertionError("peripherals")), \

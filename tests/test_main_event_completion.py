@@ -7,15 +7,15 @@ from unittest.mock import patch
 
 from tests.test_main_process_delivery import load_main_module
 from tests.test_automatic_dock import current, readiness
-from hdm.application.attach_readiness import AttachReadinessStage
-from hdm.application.attach_readiness import AttachReadinessStatus
-from hdm.application.connection_readiness import (
+from regear.application.attach_readiness import AttachReadinessStage
+from regear.application.attach_readiness import AttachReadinessStatus
+from regear.application.connection_readiness import (
     ConnectionReadinessStage,
     ConnectionReadinessStatus,
 )
-from hdm.application.presentation_completion import PresentationCompletion
-from hdm.domain.control_plane import TransitionOutcomeKind
-from hdm.domain.models import Confidence, EgpuLinkState
+from regear.application.presentation_completion import PresentationCompletion
+from regear.domain.control_plane import TransitionOutcomeKind
+from regear.domain.models import Confidence, EgpuLinkState
 
 
 class Monitor:

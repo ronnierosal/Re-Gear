@@ -9,11 +9,11 @@ from unittest.mock import Mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 
-from hdm.adapters.steamos.commands import CommandResult
-from hdm.adapters.steamos.host import HostRecord
-from hdm.adapters.steamos.tdp_inventory import AsusTdpInventory
-from hdm.adapters.steamos.tdp_provider import SteamOsManagerTdpProvider
-from hdm.ports.presentation_activation import GamescopeUserContext
+from regear.adapters.steamos.commands import CommandResult
+from regear.adapters.steamos.host import HostRecord
+from regear.adapters.steamos.tdp_inventory import AsusTdpInventory
+from regear.adapters.steamos.tdp_provider import SteamOsManagerTdpProvider
+from regear.ports.presentation_activation import GamescopeUserContext
 
 
 def result(output="", *, ok=True):

@@ -8,8 +8,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.domain.control_plane import RequestIntent, RequestSource  # noqa: E402
-from hdm.domain.logical_actions import (  # noqa: E402
+from regear.domain.control_plane import RequestIntent, RequestSource  # noqa: E402
+from regear.domain.logical_actions import (  # noqa: E402
     ActionSurface,
     LogicalAction,
     LogicalActionRequest,

@@ -10,30 +10,30 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.application.process_release import (  # noqa: E402
+from regear.application.process_release import (  # noqa: E402
     GracefulReleaseEvidence,
     ProcessReleaseApprovalStore,
 )
-from hdm.application.process_release_replay import (  # noqa: E402
+from regear.application.process_release_replay import (  # noqa: E402
     ProcessReleaseJournalRecovery,
     ProcessReleaseReplaySimulator,
     ProcessReleaseStatus,
     process_audit_to_dict,
 )
-from hdm.domain.models import (  # noqa: E402
+from regear.domain.models import (  # noqa: E402
     EgpuClientKind,
     EgpuClientObservation,
     EgpuResourceKind,
 )
-from hdm.domain.control_plane import PlacementState, WorkflowState  # noqa: E402
-from hdm.domain.serialization import snapshot_from_dict  # noqa: E402
-from hdm.domain.process_release import ReleasePhase  # noqa: E402
-from hdm.ports.process_signal import (  # noqa: E402
+from regear.domain.control_plane import PlacementState, WorkflowState  # noqa: E402
+from regear.domain.serialization import snapshot_from_dict  # noqa: E402
+from regear.domain.process_release import ReleasePhase  # noqa: E402
+from regear.ports.process_signal import (  # noqa: E402
     ProcessSignalAction,
     ProcessSignalResult,
 )
-from hdm.ports.transition import VersionedObservation  # noqa: E402
-from hdm.domain.transition_journal import (  # noqa: E402
+from regear.ports.transition import VersionedObservation  # noqa: E402
+from regear.domain.transition_journal import (  # noqa: E402
     JournalEventKind,
     TransitionJournal,
     append_journal_entry,

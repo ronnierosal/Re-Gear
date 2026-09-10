@@ -8,12 +8,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.application.action_history import (  # noqa: E402
+from regear.application.action_history import (  # noqa: E402
     ActionHistoryEntry,
     ActionHistoryKind,
     ActionHistoryOutcome,
 )
-from hdm.delivery.action_history import action_history_to_payload  # noqa: E402
+from regear.delivery.action_history import action_history_to_payload  # noqa: E402
 
 
 class ActionHistoryDeliveryTests(unittest.TestCase):

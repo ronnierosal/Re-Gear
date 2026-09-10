@@ -9,30 +9,30 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.adapters.steamos.discovery import SteamOsDiscovery  # noqa: E402
-from hdm.adapters.steamos.drm import DrmCardRecord, DrmConnectorRecord  # noqa: E402
-from hdm.adapters.steamos.egpu_clients import EgpuClientScan  # noqa: E402
-from hdm.adapters.steamos.game_scopes import GameScopeScan  # noqa: E402
-from hdm.adapters.steamos.gamescope import GamescopeProcessRecord, GamescopeScan  # noqa: E402
-from hdm.adapters.steamos.host import HostRecord  # noqa: E402
-from hdm.adapters.steamos.pci import PciDeviceRecord, Usb4DeviceRecord  # noqa: E402
-from hdm.adapters.steamos.sleep_inhibitor import InhibitorLeaseStatus  # noqa: E402
-from hdm.application.snapshot import (  # noqa: E402
+from regear.adapters.steamos.discovery import SteamOsDiscovery  # noqa: E402
+from regear.adapters.steamos.drm import DrmCardRecord, DrmConnectorRecord  # noqa: E402
+from regear.adapters.steamos.egpu_clients import EgpuClientScan  # noqa: E402
+from regear.adapters.steamos.game_scopes import GameScopeScan  # noqa: E402
+from regear.adapters.steamos.gamescope import GamescopeProcessRecord, GamescopeScan  # noqa: E402
+from regear.adapters.steamos.host import HostRecord  # noqa: E402
+from regear.adapters.steamos.pci import PciDeviceRecord, Usb4DeviceRecord  # noqa: E402
+from regear.adapters.steamos.sleep_inhibitor import InhibitorLeaseStatus  # noqa: E402
+from regear.application.snapshot import (  # noqa: E402
     SnapshotService,
     report_to_dict,
     report_to_public_dict,
 )
-from hdm.api import DiagnosticsApi  # noqa: E402
-from hdm.domain.control_plane import WorkflowState  # noqa: E402
-from hdm.domain.health import HealthState  # noqa: E402
-from hdm.domain.models import GameState, OperatingMode, SupportTier  # noqa: E402
-from hdm.domain.peripheral_handoff import (  # noqa: E402
+from regear.api import DiagnosticsApi  # noqa: E402
+from regear.domain.control_plane import WorkflowState  # noqa: E402
+from regear.domain.health import HealthState  # noqa: E402
+from regear.domain.models import GameState, OperatingMode, SupportTier  # noqa: E402
+from regear.domain.peripheral_handoff import (  # noqa: E402
     AudioOutput,
     AudioPeripheralState,
     ControllerPeripheralState,
     PeripheralObservation,
 )
-from hdm.domain.serialization import snapshot_from_dict  # noqa: E402
+from regear.domain.serialization import snapshot_from_dict  # noqa: E402
 
 
 class Fixed:

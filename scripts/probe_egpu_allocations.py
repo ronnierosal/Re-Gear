@@ -12,10 +12,10 @@ import time
 if Path(__file__).name != '__main__.py':
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'backend'))
 
-from hdm.adapters.steamos.drm import DrmDiscovery
-from hdm.adapters.steamos.pci import PciUsb4Discovery
-from hdm.adapters.steamos.egpu_clients import EgpuClientDiscovery
-from hdm.profiles.gpd_g1 import match_gpd_g1
+from regear.adapters.steamos.drm import DrmDiscovery
+from regear.adapters.steamos.pci import PciUsb4Discovery
+from regear.adapters.steamos.egpu_clients import EgpuClientDiscovery
+from regear.profiles.gpd_g1 import match_gpd_g1
 
 NAMES = frozenset(('steam', 'gamescope-wl', 'wireplumber'))
 
@@ -173,7 +173,7 @@ def main():
 
 
 def summarize(before, after, *, device_stable):
-    from hdm.delivery.drm_fdinfo import parse_drm_fdinfo, compare_engine_samples
+    from regear.delivery.drm_fdinfo import parse_drm_fdinfo, compare_engine_samples
     rows = []
     for key, row in after.items():
         prior = before.get(key)

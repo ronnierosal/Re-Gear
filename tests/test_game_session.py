@@ -8,13 +8,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.adapters.game_session import (  # noqa: E402
+from regear.adapters.game_session import (  # noqa: E402
     GameScopeSessionObservationAdapter,
     UserBoundGameScopeScanAdapter,
 )
-from hdm.adapters.steamos.game_scopes import GameScopeScan  # noqa: E402
-from hdm.domain.game_session import ActiveGameIdentity  # noqa: E402
-from hdm.domain.models import GameState  # noqa: E402
+from regear.adapters.steamos.game_scopes import GameScopeScan  # noqa: E402
+from regear.domain.game_session import ActiveGameIdentity  # noqa: E402
+from regear.domain.models import GameState  # noqa: E402
 
 
 class Discovery:

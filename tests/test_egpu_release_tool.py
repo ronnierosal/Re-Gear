@@ -11,7 +11,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.egpu_release import (  # noqa: E402
+from regear.egpu_release import (  # noqa: E402
     scan_holders,
     egpu_functions,
     HolderScan,
@@ -20,7 +20,7 @@ from hdm.egpu_release import (  # noqa: E402
 )
 
 
-TOOL = ROOT / "backend/hdm/egpu_release.py"
+TOOL = ROOT / "backend/regear/egpu_release.py"
 
 
 class FunctionDerivationTests(unittest.TestCase):
@@ -69,7 +69,7 @@ class HolderScanTests(unittest.TestCase):
         Descriptors are resolved by patching `os.readlink` rather than by
         creating symlinks, which need privileges on some platforms.
         """
-        import hdm.egpu_release as module
+        import regear.egpu_release as module
         from unittest.mock import patch
 
         links = links or {}
@@ -250,9 +250,9 @@ class ArmPathTests(unittest.TestCase):
         from pathlib import Path as _Path
         from unittest.mock import patch
 
-        import hdm.egpu_release as module
-        from hdm.domain.egpu_device_policy import EgpuDeviceNode
-        from hdm.domain.models import EgpuResourceKind as Kind
+        import regear.egpu_release as module
+        from regear.domain.egpu_device_policy import EgpuDeviceNode
+        from regear.domain.models import EgpuResourceKind as Kind
 
         nodes = (
             EgpuDeviceNode(Kind.DRM_CARD, 226, 1),
@@ -367,7 +367,7 @@ class HoldOpenTests(unittest.TestCase):
     """
 
     def _hold(self, observations, seconds=9, interval=3.0):
-        import hdm.egpu_release as module
+        import regear.egpu_release as module
         from unittest.mock import patch
 
         seen = list(observations)
@@ -414,7 +414,7 @@ class HoldOpenTests(unittest.TestCase):
         An operator inside this window is about to remove the device. A
         scan that can no longer see everywhere is not a clear device.
         """
-        import hdm.egpu_release as module
+        import regear.egpu_release as module
         from unittest.mock import patch
 
         clock = {"now": 0.0}
@@ -438,7 +438,7 @@ class HoldOpenArmPathTests(ArmPathTests):
     """`--hold-open` as the arm path actually reaches it."""
 
     def _arm_holding(self, *, window_result=None, seconds=180):
-        import hdm.egpu_release as module
+        import regear.egpu_release as module
         from unittest.mock import patch
 
         recorded = {}
@@ -461,7 +461,7 @@ class HoldOpenArmPathTests(ArmPathTests):
     def test_holding_open_names_the_removal_command(self) -> None:
         code, output, recorded = self._arm_holding()
         self.assertIn("hold the filter open", output)
-        self.assertIn("hdm.egpu_remove", output)
+        self.assertIn("regear.egpu_remove", output)
         self.assertEqual(recorded["seconds"], 180)
         self.assertEqual(code, 0)
 

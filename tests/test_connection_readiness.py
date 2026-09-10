@@ -8,13 +8,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.application.connection_readiness import (  # noqa: E402
+from regear.application.connection_readiness import (  # noqa: E402
     ConnectionReadinessLifecycle,
     ConnectionReadinessObservation,
     ConnectionReadinessStage,
     poll_after_ms,
 )
-from hdm.domain.models import GameState  # noqa: E402
+from regear.domain.models import GameState  # noqa: E402
 
 
 class Clock:
@@ -257,7 +257,7 @@ class ConnectionReadinessTests(unittest.TestCase):
 
     def test_late_readiness_preserves_one_shot_and_portable_suppression(self):
         from tests.test_automatic_dock import current
-        from hdm.application.automatic_dock import AutomaticDockCoordinator
+        from regear.application.automatic_dock import AutomaticDockCoordinator
         self.begin_late_enumeration()
         for index in range(3, 7):
             ready = self.lifecycle.update(sample(index))

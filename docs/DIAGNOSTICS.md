@@ -18,8 +18,8 @@ the narrowly scoped login1 sleep-inhibitor lease.
 From a source checkout on SteamOS:
 
 ```text
-PYTHONPATH=backend python -m hdm.cli
-PYTHONPATH=backend python -m hdm.cli --compact
+PYTHONPATH=backend python -m regear.cli
+PYTHONPATH=backend python -m regear.cli --compact
 ```
 
 Installing the Python project exposes the `regear-diagnose` console entry point.
@@ -27,8 +27,12 @@ A normal Decky ZIP does not install `pyproject.toml` or a global console script;
 from an installed plugin tree the current equivalent is:
 
 ```text
-PYTHONPATH=<plugin-root>/backend python3 -m hdm.cli --compact
+PYTHONPATH=<plugin-root>/backend python3 -m regear.cli --compact
 ```
+
+The published `v0.3.73` archive predates the namespace change and uses `hdm.cli`
+in that command. Confirm the installed package's namespace with a maintainer;
+merging the source rename does not update an installed copy.
 
 Do not claim that `regear-diagnose` is globally installed by Decky until packaging
 adds and verifies that launcher.
@@ -54,7 +58,7 @@ another probe requires explicit allowlist review and archive regression coverage
 ## Standard diagnostic interface roadmap
 
 The current CLI emits the privacy-safe snapshot only. Phase 2 will provide one
-architecture-appropriate packaged command (target UX: `hdm diagnostics`) backed
+architecture-appropriate packaged command (target UX: `regear diagnostics`) backed
 by a shared read-only composition rather than scraping Decky UI output. It must
 remain bounded and include:
 

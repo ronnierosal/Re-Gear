@@ -9,13 +9,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.domain.combined_handoff import (  # noqa: E402
+from regear.domain.combined_handoff import (  # noqa: E402
     CombinedHandoffEvidence,
     CombinedHandoffState,
     HandoffFact,
     assess_combined_handoff,
 )
-from hdm.domain.models import GameState  # noqa: E402
+from regear.domain.models import GameState  # noqa: E402
 
 
 def fact(value=True, verified=True, generation="generation-1", sample_id="sample-1"):

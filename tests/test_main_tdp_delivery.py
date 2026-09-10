@@ -8,9 +8,9 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from test_main_process_delivery import load_main_module
-from hdm.domain.models import EgpuPresence, GameState
-from hdm.domain.serialization import snapshot_from_dict
-from hdm.delivery.tdp_runtime import unavailable_status
+from regear.domain.models import EgpuPresence, GameState
+from regear.domain.serialization import snapshot_from_dict
+from regear.delivery.tdp_runtime import unavailable_status
 
 
 class MainTdpTests(unittest.TestCase):

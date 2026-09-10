@@ -9,10 +9,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.domain.event_policy import TopologyEvent  # noqa: E402
-from hdm.domain.models import GameState  # noqa: E402
-from hdm.domain.sleep_workflow import SleepFlowEvent, SleepFlowStage  # noqa: E402
-from hdm.domain.transition_journal import (  # noqa: E402
+from regear.domain.event_policy import TopologyEvent  # noqa: E402
+from regear.domain.models import GameState  # noqa: E402
+from regear.domain.sleep_workflow import SleepFlowEvent, SleepFlowStage  # noqa: E402
+from regear.domain.transition_journal import (  # noqa: E402
     JournalEventKind,
     journal_to_dict,
 )

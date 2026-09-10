@@ -131,7 +131,7 @@ class DeckyContractTests(unittest.TestCase):
         self.assertIn("config=PresentationConfigStore(presentation_state_root)", source)
         self.assertNotIn("config=PresentationConfigStore(journal_root)", source)
         promotion_source = (
-            ROOT / "backend" / "hdm" / "application" / "docked_igpu_promotion.py"
+            ROOT / "backend" / "regear" / "application" / "docked_igpu_promotion.py"
         ).read_text(encoding="utf-8")
         promotion_tree = ast.parse(promotion_source)
         self.assertFalse(

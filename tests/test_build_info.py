@@ -14,7 +14,7 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.delivery.build_info import load_public_build_info  # noqa: E402
+from regear.delivery.build_info import load_public_build_info  # noqa: E402
 from scripts import build_plugin  # noqa: E402
 from scripts.build_plugin import build_info_bytes  # noqa: E402
 
@@ -52,7 +52,7 @@ class BuildInfoTests(unittest.TestCase):
             build_plugin,
             "_git_status",
             return_value=CompletedProcess(
-                ("git", "status"), 0, stdout="?? backend/hdm/untracked.py\n"
+                ("git", "status"), 0, stdout="?? backend/regear/untracked.py\n"
             ),
         ) as status:
             self.assertEqual(build_plugin.source_revision(), "uncommitted")

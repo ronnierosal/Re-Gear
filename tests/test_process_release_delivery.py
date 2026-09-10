@@ -9,30 +9,30 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.application.guarded_process_release import (  # noqa: E402
+from regear.application.guarded_process_release import (  # noqa: E402
     GuardedProcessReleaseExecution,
     GuardedProcessReleasePreview,
     GuardedProcessReleaseStatus,
 )
-from hdm.application.process_release_replay import (  # noqa: E402
+from regear.application.process_release_replay import (  # noqa: E402
     ProcessReleaseAuditEvent,
     ProcessReleaseReplayResult,
     ProcessReleaseStatus,
     ProcessTargetResult,
 )
-from hdm.domain.control_plane import PlacementState, WorkflowState  # noqa: E402
-from hdm.domain.models import EgpuResourceKind  # noqa: E402
-from hdm.domain.process_release import (  # noqa: E402
+from regear.domain.control_plane import PlacementState, WorkflowState  # noqa: E402
+from regear.domain.models import EgpuResourceKind  # noqa: E402
+from regear.domain.process_release import (  # noqa: E402
     ProcessReleasePreview,
     ProcessReleasePreviewRow,
     ReleasePhase,
 )
-from hdm.domain.transition_journal import (  # noqa: E402
+from regear.domain.transition_journal import (  # noqa: E402
     JournalEventKind,
     TransitionJournal,
     append_journal_entry,
 )
-from hdm.delivery.process_release import (  # noqa: E402
+from regear.delivery.process_release import (  # noqa: E402
     execution_to_payload,
     preview_to_payload,
     status_to_payload,

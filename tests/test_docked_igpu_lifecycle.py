@@ -10,28 +10,28 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.application.docked_igpu_exit import (  # noqa: E402
+from regear.application.docked_igpu_exit import (  # noqa: E402
     DockedIgpuExitArmResult,
     DockedIgpuExitStage,
     DockedIgpuExitWatch,
 )
-from hdm.application.docked_igpu_lifecycle import (  # noqa: E402
+from regear.application.docked_igpu_lifecycle import (  # noqa: E402
     DockedIgpuLifecycleStage,
     DockedIgpuWatchLifecycle,
 )
-from hdm.application.docked_igpu_promotion import (  # noqa: E402
+from regear.application.docked_igpu_promotion import (  # noqa: E402
     DockedIgpuPromotionPollResult,
     DockedIgpuPromotionPrepareResult,
 )
-from hdm.application.supervised_transition import (  # noqa: E402
+from regear.application.supervised_transition import (  # noqa: E402
     SupervisedTransitionPreview,
 )
-from hdm.delivery.docked_igpu_lifecycle import (  # noqa: E402
+from regear.delivery.docked_igpu_lifecycle import (  # noqa: E402
     lifecycle_inspection_to_payload,
     lifecycle_status_to_payload,
 )
-from hdm.domain.control_plane import PlacementState  # noqa: E402
-from hdm.domain.game_session import ActiveGameIdentity  # noqa: E402
+from regear.domain.control_plane import PlacementState  # noqa: E402
+from regear.domain.game_session import ActiveGameIdentity  # noqa: E402
 
 
 GAME = ActiveGameIdentity("1234", ("app-steam-app1234-test.scope",))

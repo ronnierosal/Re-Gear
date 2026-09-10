@@ -6,24 +6,24 @@ import dataclasses
 import json
 from pathlib import Path
 
-from hdm.application.canonical_sleep import CanonicalSleepWorkflowService
-from hdm.application.canonical_sleep_process_release import (
+from regear.application.canonical_sleep import CanonicalSleepWorkflowService
+from regear.application.canonical_sleep_process_release import (
     CanonicalSleepProcessReleaseCoordinator,
 )
-from hdm.application.guarded_game_close import (
+from regear.application.guarded_game_close import (
     GameCloseApprovalStore,
     GuardedGameCloseService,
 )
-from hdm.application.guarded_process_release import GuardedProcessReleaseService
-from hdm.application.process_release import (
+from regear.application.guarded_process_release import GuardedProcessReleaseService
+from regear.application.process_release import (
     GracefulReleaseReceiptStore,
     ProcessReleaseApprovalStore,
 )
-from hdm.application.process_release_replay import (
+from regear.application.process_release_replay import (
     ProcessReleaseJournalRecovery,
     ProcessReleaseRunner,
 )
-from hdm.domain.control_plane import (
+from regear.domain.control_plane import (
     CapabilitySupport,
     EgpuCapabilities,
     HostCapabilities,
@@ -36,24 +36,24 @@ from hdm.domain.control_plane import (
     WorkflowState,
     compose_capabilities,
 )
-from hdm.domain.event_policy import TopologyEvent, decide_topology_event
-from hdm.domain.game_compatibility import GameSaveCapability
-from hdm.domain.game_session import ActiveGameIdentity, GameSessionObservation
-from hdm.domain.models import (
+from regear.domain.event_policy import TopologyEvent, decide_topology_event
+from regear.domain.game_compatibility import GameSaveCapability
+from regear.domain.game_session import ActiveGameIdentity, GameSessionObservation
+from regear.domain.models import (
     EgpuClientKind,
     EgpuClientObservation,
     EgpuPresence,
     EgpuResourceKind,
     GameState,
 )
-from hdm.domain.process_release import ReleasePhase
-from hdm.domain.serialization import snapshot_from_dict
-from hdm.domain.sleep_workflow import SleepFlowEvent, SleepWorkflowContext
-from hdm.domain.transition_journal import JournalEventKind, TransitionJournal
-from hdm.ports.game_close import GameCloseMechanismResult
-from hdm.ports.process_signal import ProcessSignalResult
-from hdm.ports.sleep_workflow import SleepWorkflowObservation
-from hdm.ports.transition import VersionedObservation
+from regear.domain.process_release import ReleasePhase
+from regear.domain.serialization import snapshot_from_dict
+from regear.domain.sleep_workflow import SleepFlowEvent, SleepWorkflowContext
+from regear.domain.transition_journal import JournalEventKind, TransitionJournal
+from regear.ports.game_close import GameCloseMechanismResult
+from regear.ports.process_signal import ProcessSignalResult
+from regear.ports.sleep_workflow import SleepWorkflowObservation
+from regear.ports.transition import VersionedObservation
 
 
 ROOT = Path(__file__).resolve().parents[1]

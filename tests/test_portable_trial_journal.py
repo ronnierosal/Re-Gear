@@ -8,9 +8,9 @@ from test_transition_orchestrator import (
     plan_manual_transition, ExperimentalTransitionPermit, PlacementState,
     TransitionOutcomeKind,
 )
-from hdm.application.supervised_transition import SupervisedPresentationTransitionService
-from hdm.application.presentation_completion import reconcile_presentation_completion
-from hdm.delivery.transition_journal_store import FileTransitionJournalStore
+from regear.application.supervised_transition import SupervisedPresentationTransitionService
+from regear.application.presentation_completion import reconcile_presentation_completion
+from regear.delivery.transition_journal_store import FileTransitionJournalStore
 
 
 class PortableTrialJournalTests(unittest.TestCase):

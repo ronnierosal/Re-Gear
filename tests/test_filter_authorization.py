@@ -8,7 +8,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.domain.filter_authorization import (  # noqa: E402
+from regear.domain.filter_authorization import (  # noqa: E402
     AuthorizationState,
     CgroupIdentity,
     OwnerIdentity,
@@ -215,12 +215,12 @@ class InvariantTests(unittest.TestCase):
 
     def test_this_contract_shares_no_type_with_the_launch_model(self) -> None:
         """The integration document forbids reusing LaunchBinding here."""
-        from hdm.delivery import device_filter_lifecycle
+        from regear.delivery import device_filter_lifecycle
 
         self.assertIsNot(ParentScopeAuthorization, device_filter_lifecycle.LaunchBinding)
         self.assertNotIn(
             "LaunchBinding",
-            (ROOT / "backend/hdm/domain/filter_authorization.py").read_text(
+            (ROOT / "backend/regear/domain/filter_authorization.py").read_text(
                 encoding="utf-8"
             ).split("MUST NOT", 1)[1],
         )

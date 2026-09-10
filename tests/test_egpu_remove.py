@@ -9,14 +9,14 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm import egpu_remove  # noqa: E402
-from hdm.domain.device_removal import (  # noqa: E402
+from regear import egpu_remove  # noqa: E402
+from regear.domain.device_removal import (  # noqa: E402
     RemovalFunctionKind,
     compose_removal_plan,
 )
-from hdm.domain.removal_safety import RemovalSafety, RemovalSafetyState  # noqa: E402
-from hdm.domain.safe_undock_readiness import SafeUndockRevalidation  # noqa: E402
-from hdm.ports.device_removal import (  # noqa: E402
+from regear.domain.removal_safety import RemovalSafety, RemovalSafetyState  # noqa: E402
+from regear.domain.safe_undock_readiness import SafeUndockRevalidation  # noqa: E402
+from regear.ports.device_removal import (  # noqa: E402
     RemovalOutcome,
     RemovalResult,
     RescanOutcome,
@@ -194,10 +194,10 @@ class BoundaryTests(unittest.TestCase):
     `check_architecture.py` constrains the adapter; nothing stops a later edit
     to this module from opening a sysfs path directly, which is exactly the
     thing the single-writer boundary exists to prevent. The equivalent
-    assertions guard `hdm.egpu_release`, which does strictly less than this.
+    assertions guard `regear.egpu_release`, which does strictly less than this.
     """
 
-    TOOL = ROOT / "backend/hdm/egpu_remove.py"
+    TOOL = ROOT / "backend/regear/egpu_remove.py"
 
     def test_the_tool_never_spawns_a_process(self) -> None:
         source = self.TOOL.read_text(encoding="utf-8")

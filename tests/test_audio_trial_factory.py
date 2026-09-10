@@ -6,9 +6,9 @@ import unittest
 from unittest.mock import Mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'backend'))
-from hdm.delivery.audio_trial_factory import LiveAudioTrialFactory
-from hdm.delivery.audio_profile_trial import AudioProfileTrial
-from hdm.delivery.audio_profile_trial_state import AudioTrialRecord
+from regear.delivery.audio_trial_factory import LiveAudioTrialFactory
+from regear.delivery.audio_profile_trial import AudioProfileTrial
+from regear.delivery.audio_profile_trial_state import AudioTrialRecord
 
 
 class LiveAudioTrialFactoryTests(unittest.TestCase):

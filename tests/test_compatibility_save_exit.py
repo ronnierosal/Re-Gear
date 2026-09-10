@@ -8,23 +8,23 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.application.compatibility_save_exit import (  # noqa: E402
+from regear.application.compatibility_save_exit import (  # noqa: E402
     CompatibilitySaveExitCollector,
 )
-from hdm.domain.compatibility_test import (  # noqa: E402
+from regear.domain.compatibility_test import (  # noqa: E402
     CompatibilityBaseline,
     CompatibilityTestOptions,
     record_compatibility_baseline,
     start_compatibility_test,
 )
-from hdm.domain.control_plane import PlacementState  # noqa: E402
-from hdm.domain.game_compatibility import (  # noqa: E402
+from regear.domain.control_plane import PlacementState  # noqa: E402
+from regear.domain.game_compatibility import (  # noqa: E402
     CompatibilityEvidenceKind,
     ObservedRenderGpu,
     SaveTestOutcome,
 )
-from hdm.domain.game_session import ActiveGameIdentity, GameSessionObservation  # noqa: E402
-from hdm.domain.models import GameState  # noqa: E402
+from regear.domain.game_session import ActiveGameIdentity, GameSessionObservation  # noqa: E402
+from regear.domain.models import GameState  # noqa: E402
 
 
 IDENTITY = ActiveGameIdentity("1234", ("app-steam-app1234-test.scope",))

@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
-from hdm.delivery.device_filter_program import compile_device_filter
+from regear.delivery.device_filter_program import compile_device_filter
 
 
 def evaluate(program, device_type, major, minor, access):

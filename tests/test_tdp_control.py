@@ -4,8 +4,8 @@ from dataclasses import replace
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
-from hdm.application.tdp_control import TdpControlService
-from hdm.ports.tdp import TdpObservation, TdpReading, TdpRegister, TdpSessionRecord, TdpWriteOutcome
+from regear.application.tdp_control import TdpControlService
+from regear.ports.tdp import TdpObservation, TdpReading, TdpRegister, TdpSessionRecord, TdpWriteOutcome
 
 
 def reading(spl=15, slow=15, fast=15, binding="opaque-binding"):

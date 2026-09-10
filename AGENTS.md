@@ -134,7 +134,7 @@ and correct the owning repository document.
 - Unknown GPU identity, game state, or transition readiness fails closed.
 - Never migrate a running workload between GPUs or claim live eGPU removal is safe.
 - Manual and automatic requests must eventually use one transition engine.
-- Keep `backend/hdm/domain` pure: no filesystem, subprocess, network, or OS calls.
+- Keep `backend/regear/domain` pure: no filesystem, subprocess, network, or OS calls.
 - Display/GPU mutation remains limited to explicitly documented, approved,
   supervised mechanisms. Do not widen authority without a milestone decision,
   rollback coverage, and corresponding safety tests.

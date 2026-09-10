@@ -3,10 +3,10 @@ import unittest
 from types import SimpleNamespace
 
 import test_tdp_runtime as fixtures
-from hdm.application.tdp_control import TdpControlService
-from hdm.delivery.auto_tdp_benchmark import AutoTdpBenchmarkResult
-from hdm.delivery.tdp_runtime import TdpRuntime
-from hdm.domain.auto_tdp import AutoTdpPolicy
+from regear.application.tdp_control import TdpControlService
+from regear.delivery.auto_tdp_benchmark import AutoTdpBenchmarkResult
+from regear.delivery.tdp_runtime import TdpRuntime
+from regear.domain.auto_tdp import AutoTdpPolicy
 
 
 class BenchmarkLifecycleTests(unittest.TestCase):

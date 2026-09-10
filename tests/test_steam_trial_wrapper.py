@@ -7,9 +7,9 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'backend'))
-from hdm.delivery.gamescope_wrapper import GamescopeLaunchConfig
-from hdm.delivery.portable_trial_store import PortableTrialStore
-from hdm.delivery.steam_trial_wrapper import consume_steam_environment, current_gamescope_invocation, main
+from regear.delivery.gamescope_wrapper import GamescopeLaunchConfig
+from regear.delivery.portable_trial_store import PortableTrialStore
+from regear.delivery.steam_trial_wrapper import consume_steam_environment, current_gamescope_invocation, main
 
 
 class SteamTrialTests(unittest.TestCase):
@@ -41,7 +41,7 @@ class SteamTrialTests(unittest.TestCase):
 
     def test_fresh_receipt_grants_exactly_one_launch_without_parent_mutation(self):
         self.publish()
-        with patch('hdm.delivery.steam_trial_wrapper.live_candidate_from_record',
+        with patch('regear.delivery.steam_trial_wrapper.live_candidate_from_record',
                    return_value=((), self.candidate)) as validate:
             self.assertEqual(self.launch(), self.candidate)
             self.assertEqual(self.launch(), self.clean)
@@ -50,7 +50,7 @@ class SteamTrialTests(unittest.TestCase):
         self.assertEqual(self.original['MESA_VK_DEVICE_SELECT'], 'stale')
 
     def test_v2_prime_is_child_only_and_inherited_prime_remains_a_conflict(self):
-        from hdm.delivery.portable_trial_launch import candidate_from_record
+        from regear.delivery.portable_trial_launch import candidate_from_record
         def live(record, **kwargs):
             return candidate_from_record(record, config=kwargs['config'], argv=(),
                 environment=kwargs['environment'], boot_hash='a'*64, egpu_binding_hash='b'*64,
@@ -69,7 +69,7 @@ class SteamTrialTests(unittest.TestCase):
             def launch():
                 return consume_steam_environment(root,config=self.config,environment=original,
                     raw_boot_id='boot',invocation_reader=lambda:self.invocation)
-            with patch('hdm.delivery.steam_trial_wrapper.live_candidate_from_record',side_effect=live):
+            with patch('regear.delivery.steam_trial_wrapper.live_candidate_from_record',side_effect=live):
                 result=launch()
                 self.assertEqual(launch(),original)
             if prime is None:
@@ -115,7 +115,7 @@ class SteamTrialTests(unittest.TestCase):
 
     def test_changed_invocation_before_or_during_collection_burns(self):
         self.publish()
-        with patch('hdm.delivery.steam_trial_wrapper.live_candidate_from_record',
+        with patch('regear.delivery.steam_trial_wrapper.live_candidate_from_record',
                    return_value=((), self.candidate)):
             answers = iter((self.invocation, 'd'*32))
             self.assertEqual(self.launch(lambda: next(answers)), self.clean)
@@ -128,10 +128,10 @@ class SteamTrialTests(unittest.TestCase):
 
     def test_validation_failure_burns_without_replay(self):
         self.publish()
-        with patch('hdm.delivery.steam_trial_wrapper.live_candidate_from_record',
+        with patch('regear.delivery.steam_trial_wrapper.live_candidate_from_record',
                    side_effect=ValueError('stale hardware')):
             self.assertEqual(self.launch(), self.clean)
-        with patch('hdm.delivery.steam_trial_wrapper.live_candidate_from_record',
+        with patch('regear.delivery.steam_trial_wrapper.live_candidate_from_record',
                    return_value=((), self.candidate)):
             self.assertEqual(self.launch(), self.clean)
 
@@ -150,7 +150,7 @@ class SteamTrialTests(unittest.TestCase):
         self.assertEqual(self.launch(), self.clean)
 
     def test_active_service_observation_required(self):
-        with patch('hdm.delivery.steam_trial_wrapper.subprocess.run') as run:
+        with patch('regear.delivery.steam_trial_wrapper.subprocess.run') as run:
             run.return_value.stdout = 'ActiveState=active\nInvocationID=' + self.invocation + '\n'
             self.assertEqual(current_gamescope_invocation(), self.invocation)
             run.return_value.stdout = 'ActiveState=inactive\nInvocationID=' + self.invocation + '\n'
@@ -162,14 +162,14 @@ class SteamTrialTests(unittest.TestCase):
         def validate(*args, **kwargs):
             self.store.cancel('operation-1')
             return (), self.candidate
-        with patch('hdm.delivery.steam_trial_wrapper.live_candidate_from_record', side_effect=validate):
+        with patch('regear.delivery.steam_trial_wrapper.live_candidate_from_record', side_effect=validate):
             self.assertEqual(self.launch(), self.candidate)
         self.assertEqual(self.launch(), self.clean)
 
     def test_entry_point_uses_only_fixed_launcher_and_cleans_stale_environment(self):
-        with (patch('hdm.delivery.steam_trial_wrapper.os.environ', self.original),
-              patch('hdm.delivery.steam_trial_wrapper._boot_identity', side_effect=OSError),
-              patch('hdm.delivery.steam_trial_wrapper.os.execve') as execute):
+        with (patch('regear.delivery.steam_trial_wrapper.os.environ', self.original),
+              patch('regear.delivery.steam_trial_wrapper._boot_identity', side_effect=OSError),
+              patch('regear.delivery.steam_trial_wrapper.os.execve') as execute):
             self.assertEqual(main(), 127)
         execute.assert_called_once_with('/usr/lib/steamos/steam-launcher',
             ('/usr/lib/steamos/steam-launcher',), self.clean)

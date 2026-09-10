@@ -10,8 +10,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.adapters.steamos.version_info import SteamOsVersionDiscovery  # noqa: E402
-from hdm.application.support_bundle import (  # noqa: E402
+from regear.adapters.steamos.version_info import SteamOsVersionDiscovery  # noqa: E402
+from regear.application.support_bundle import (  # noqa: E402
     BoundedEventLog,
     SupportBundlePreviewStore,
     SupportBundleService,
@@ -19,15 +19,15 @@ from hdm.application.support_bundle import (  # noqa: E402
     WakeDiagnosticsSupportStatus,
     PeripheralSupportStatus,
 )
-from hdm.domain.control_plane import PlacementState, WorkflowState  # noqa: E402
-from hdm.domain.game_compatibility import GameCompatibilityRecord  # noqa: E402
-from hdm.domain.hardware_compatibility import HardwareCompatibilityRecord  # noqa: E402
-from hdm.domain.transition_journal import (  # noqa: E402
+from regear.domain.control_plane import PlacementState, WorkflowState  # noqa: E402
+from regear.domain.game_compatibility import GameCompatibilityRecord  # noqa: E402
+from regear.domain.hardware_compatibility import HardwareCompatibilityRecord  # noqa: E402
+from regear.domain.transition_journal import (  # noqa: E402
     JournalEventKind,
     TransitionJournal,
     append_journal_entry,
 )
-from hdm.delivery.support_export import SupportBundleFileWriter  # noqa: E402
+from regear.delivery.support_export import SupportBundleFileWriter  # noqa: E402
 
 
 class IncrementingClock:
@@ -144,6 +144,25 @@ class BoundedEventLogTests(unittest.TestCase):
 
 
 class SupportBundleTests(unittest.TestCase):
+    def test_current_version_is_preserved_and_wins_over_legacy_input(self):
+        bundle = SupportBundleService().build(
+            {}, (), {"regear": "0.3.73", "hdm": "0.2.0", "kernel": "6.11"},
+        )
+        self.assertEqual(bundle.payload["versions"], {
+            "regear": "0.3.73", "decky": "unknown", "steamos": "unknown", "kernel": "6.11",
+        })
+        # The existing serialized schema discriminator is a compatibility value.
+        self.assertEqual(bundle.payload["manifest"]["kind"], "hdm_support_bundle")
+
+    def test_legacy_version_input_is_normalized_without_losing_version(self):
+        bundle = SupportBundleService().build({}, (), {"hdm": "0.2.0"})
+        self.assertEqual(bundle.payload["versions"]["regear"], "0.2.0")
+        self.assertNotIn("hdm", bundle.payload["versions"])
+
+    def test_absent_plugin_version_remains_unknown(self):
+        bundle = SupportBundleService().build({}, (), {})
+        self.assertEqual(bundle.payload["versions"]["regear"], "unknown")
+
     def test_adversarial_private_values_and_raw_hardware_ids_are_absent(self):
         clock = IncrementingClock()
         events = BoundedEventLog(

@@ -3,7 +3,7 @@ import unittest
 from dataclasses import replace
 
 import test_auto_tdp_session as fixtures
-from hdm.domain.models import GameState
+from regear.domain.models import GameState
 
 
 class AutoTdpReplayTests(unittest.TestCase):

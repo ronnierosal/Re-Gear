@@ -9,11 +9,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.adapters.steamos.drm import DrmCardRecord  # noqa: E402
-from hdm.adapters.steamos.host import HostRecord  # noqa: E402
-from hdm.adapters.steamos.pci import PciDeviceRecord, Usb4DeviceRecord  # noqa: E402
-from hdm.profiles.ally_x import match_ally_x, matches_ally_x  # noqa: E402
-from hdm.profiles.gpd_g1 import match_gpd_g1  # noqa: E402
+from regear.adapters.steamos.drm import DrmCardRecord  # noqa: E402
+from regear.adapters.steamos.host import HostRecord  # noqa: E402
+from regear.adapters.steamos.pci import PciDeviceRecord, Usb4DeviceRecord  # noqa: E402
+from regear.profiles.ally_x import match_ally_x, matches_ally_x  # noqa: E402
+from regear.profiles.gpd_g1 import match_gpd_g1  # noqa: E402
 
 
 GPU_BDF = "0000:08:00.0"

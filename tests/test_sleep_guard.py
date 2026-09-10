@@ -9,24 +9,24 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.adapters.steamos.sleep_inhibitor import (  # noqa: E402
+from regear.adapters.steamos.sleep_inhibitor import (  # noqa: E402
     G1SleepGuardHardwareDiscovery,
     Login1SleepInhibitor,
     SleepGuardController,
 )
-from hdm.adapters.steamos.commands import (  # noqa: E402
+from regear.adapters.steamos.commands import (  # noqa: E402
     ManagedProcessStatus,
     SleepInhibitorProcess,
 )
-from hdm.adapters.steamos.drm import DrmCardRecord  # noqa: E402
-from hdm.adapters.steamos.pci import (  # noqa: E402
+from regear.adapters.steamos.drm import DrmCardRecord  # noqa: E402
+from regear.adapters.steamos.pci import (  # noqa: E402
     PciDeviceRecord,
     Usb4DeviceRecord,
 )
-from hdm.adapters.steamos.host import HostRecord  # noqa: E402
-from hdm.domain.models import EgpuPresence, SleepGuardAction  # noqa: E402
-from hdm.domain.sleep_policy import decide_sleep_guard  # noqa: E402
-from hdm.profiles.gpd_g1 import GpdG1Match  # noqa: E402
+from regear.adapters.steamos.host import HostRecord  # noqa: E402
+from regear.domain.models import EgpuPresence, SleepGuardAction  # noqa: E402
+from regear.domain.sleep_policy import decide_sleep_guard  # noqa: E402
+from regear.profiles.gpd_g1 import GpdG1Match  # noqa: E402
 
 
 class Fixed:
@@ -140,7 +140,7 @@ class G1SleepGuardHardwareDiscoveryTests(unittest.TestCase):
             host=Fixed(self.ALLY),
         )
         with patch(
-            "hdm.adapters.steamos.sleep_inhibitor.match_gpd_g1",
+            "regear.adapters.steamos.sleep_inhibitor.match_gpd_g1",
             return_value=GpdG1Match(True, False, reason="incomplete fixture"),
         ):
             self.assertEqual(discovery.observe_presence(), EgpuPresence.PRESENT)
@@ -166,7 +166,7 @@ class G1SleepGuardHardwareDiscoveryTests(unittest.TestCase):
             host=Fixed(HostRecord("Unknown", "Unknown", "Unknown")),
         )
         with patch(
-            "hdm.adapters.steamos.sleep_inhibitor.match_gpd_g1",
+            "regear.adapters.steamos.sleep_inhibitor.match_gpd_g1",
             return_value=GpdG1Match(False, False),
         ):
             self.assertEqual(supported.observe_presence(), EgpuPresence.ABSENT)

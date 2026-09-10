@@ -7,13 +7,13 @@ from unittest.mock import patch
 
 from test_main_process_delivery import load_main_module
 import test_tdp_control as control_fixtures
-from hdm.application.auto_tdp_session import AutoTdpSessionResult
-from hdm.delivery.auto_tdp_configuration import AutoTdpConfiguration, AutoTdpConfigurationResult
-from hdm.delivery.auto_tdp_evidence import AutoTdpEligibility
-from hdm.delivery.auto_tdp_worker import AutoTdpWorkerStatus
-from hdm.delivery.tdp_sensor_readiness import TdpSensorReadinessConfig
-from hdm.domain.models import GameState
-from hdm.domain.telemetry import TelemetryCollectionContract, TelemetryConsumer, TelemetryMetric
+from regear.application.auto_tdp_session import AutoTdpSessionResult
+from regear.delivery.auto_tdp_configuration import AutoTdpConfiguration, AutoTdpConfigurationResult
+from regear.delivery.auto_tdp_evidence import AutoTdpEligibility
+from regear.delivery.auto_tdp_worker import AutoTdpWorkerStatus
+from regear.delivery.tdp_sensor_readiness import TdpSensorReadinessConfig
+from regear.domain.models import GameState
+from regear.domain.telemetry import TelemetryCollectionContract, TelemetryConsumer, TelemetryMetric
 
 
 class Runtime:

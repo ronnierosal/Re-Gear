@@ -2,7 +2,7 @@
 
 Status: **Implemented (pure policy); Hardware Validation Required**
 
-`hdm.domain.sleep_relaunch_eligibility` classifies explicit, fresh,
+`regear.domain.sleep_relaunch_eligibility` classifies explicit, fresh,
 opaque-bound post-sleep evidence for a possible future relaunch flow. It does
 not save or close a game, launch anything, persist a preference, or control
 sleep, wake, displays, GPUs, or devices.

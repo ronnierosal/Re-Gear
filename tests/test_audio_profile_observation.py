@@ -5,7 +5,7 @@ import sys
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'backend'))
-from hdm.adapters.steamos.audio_profile_observation import parse_audio_profile_observation
+from regear.adapters.steamos.audio_profile_observation import parse_audio_profile_observation
 
 
 BDF = '0000:08:00.1'

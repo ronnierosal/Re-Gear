@@ -10,7 +10,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.adapters.steamos.dock_branch import DockBranchDiscovery  # noqa: E402
+from regear.adapters.steamos.dock_branch import DockBranchDiscovery  # noqa: E402
 
 
 CONTROLLER = "0000:09:00.0"

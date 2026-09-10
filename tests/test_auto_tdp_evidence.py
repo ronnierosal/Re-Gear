@@ -5,12 +5,12 @@ from types import SimpleNamespace
 
 import test_tdp_control as control_fixtures
 import test_tdp_sensor_readiness as sensor_fixtures
-from hdm.adapters.steamos.gamescope_performance import PerformanceReading, PerformanceTarget
-from hdm.adapters.steamos.gamescope_performance_target import PerformanceTargetResolution
-from hdm.adapters.steamos.tdp_sensors import SensorField
-from hdm.delivery.auto_tdp_evidence import AutoTdpEligibility, AutoTdpEvidenceCollector
-from hdm.delivery.game_frame_collector import FrameCollection, GameFrameCollector
-from hdm.domain.models import GameState
+from regear.adapters.steamos.gamescope_performance import PerformanceReading, PerformanceTarget
+from regear.adapters.steamos.gamescope_performance_target import PerformanceTargetResolution
+from regear.adapters.steamos.tdp_sensors import SensorField
+from regear.delivery.auto_tdp_evidence import AutoTdpEligibility, AutoTdpEvidenceCollector
+from regear.delivery.game_frame_collector import FrameCollection, GameFrameCollector
+from regear.domain.models import GameState
 
 
 class Frames:

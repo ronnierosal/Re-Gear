@@ -9,33 +9,33 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.application.compatibility_render import (  # noqa: E402
+from regear.application.compatibility_render import (  # noqa: E402
     CompatibilityExternalHandoffCollector,
     CompatibilityRenderEvidenceCollector,
 )
-from hdm.domain.compatibility_test import (  # noqa: E402
+from regear.domain.compatibility_test import (  # noqa: E402
     CompatibilityBaseline,
     CompatibilityTestOptions,
     CompatibilityTestStage,
     record_compatibility_baseline,
     start_compatibility_test,
 )
-from hdm.domain.control_plane import PlacementState  # noqa: E402
-from hdm.domain.game_compatibility import (  # noqa: E402
+from regear.domain.control_plane import PlacementState  # noqa: E402
+from regear.domain.game_compatibility import (  # noqa: E402
     CompatibilityEvidenceKind,
     EgpuHandoffStatus,
     ObservedRenderGpu,
 )
-from hdm.domain.game_render_activity import (  # noqa: E402
+from regear.domain.game_render_activity import (  # noqa: E402
     GameRenderActivityEvidence,
     GameRenderActivityStatus,
 )
-from hdm.domain.game_runtime import GameRuntimeKind  # noqa: E402
-from hdm.domain.game_session import (  # noqa: E402
+from regear.domain.game_runtime import GameRuntimeKind  # noqa: E402
+from regear.domain.game_session import (  # noqa: E402
     ActiveGameIdentity,
     GameSessionObservation,
 )
-from hdm.domain.models import GameState  # noqa: E402
+from regear.domain.models import GameState  # noqa: E402
 
 
 IDENTITY = ActiveGameIdentity("1234", ("app-steam-app1234-test.scope",))

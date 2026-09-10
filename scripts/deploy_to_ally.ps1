@@ -124,7 +124,7 @@ if (-not $UseExistingPackage) {
 $package = Get-Item -LiteralPath $packagePath
 if ($null -eq $package) { throw "No Re-Gear package was created." }
 $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
-$remoteArchive = "/tmp/hdm-deploy-$stamp.zip"
+$remoteArchive = "/tmp/regear-deploy-$stamp.zip"
 & scp @ScpArgs $package.FullName "${Target}:$remoteArchive"
 if ($LASTEXITCODE -ne 0) { throw "Could not upload the deployment archive." }
 
@@ -137,7 +137,7 @@ PLUGIN_PARENT=`$(dirname "`$PLUGIN_DIR")
 LEGACY_DIR="`$PLUGIN_PARENT/HandheldDockMode"
 if test -e "`$LEGACY_DIR" || test -L "`$LEGACY_DIR"; then echo "Legacy installation requires supervised cutover; see docs/IDENTITY_CUTOVER.md" >&2; exit 1; fi
 BACKUP_ROOT="`$PLUGIN_PARENT/.hdm-deploy-backups"
-STAGING="`$PLUGIN_PARENT/.hdm-staging-`$STAMP"
+STAGING="`$PLUGIN_PARENT/.regear-staging-`$STAMP"
 BACKUP="`$BACKUP_ROOT/Re-Gear.backup-`$STAMP"
 rollback() { if test ! -d "`$PLUGIN_DIR" && test -d "`$BACKUP"; then mv "`$BACKUP" "`$PLUGIN_DIR"; fi; }
 cleanup() { rm -rf -- "`$STAGING"; rm -f -- "`$ARCHIVE"; }

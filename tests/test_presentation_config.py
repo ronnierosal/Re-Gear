@@ -14,17 +14,17 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.delivery.presentation_config import (  # noqa: E402
+from regear.delivery.presentation_config import (  # noqa: E402
     CONFIG_FILE_MODE,
     PresentationConfigStore,
 )
-from hdm.delivery.gamescope_wrapper import (  # noqa: E402
+from regear.delivery.gamescope_wrapper import (  # noqa: E402
     _verified_egpu_binding_sha256,
     select_launch_configuration,
 )
-from hdm.domain.control_plane import PlacementState, TransitionBinding  # noqa: E402
-from hdm.domain.serialization import snapshot_from_dict  # noqa: E402
-from hdm.profiles.gpd_g1 import GpdG1Match  # noqa: E402
+from regear.domain.control_plane import PlacementState, TransitionBinding  # noqa: E402
+from regear.domain.serialization import snapshot_from_dict  # noqa: E402
+from regear.profiles.gpd_g1 import GpdG1Match  # noqa: E402
 
 
 FIXTURES = ROOT / "tests" / "fixtures"
@@ -83,7 +83,7 @@ class PresentationConfigStoreTests(unittest.TestCase):
                 )
             self.assertEqual(store.load(), docked)
             with patch(
-                "hdm.profiles.gpd_g1.match_gpd_g1",
+                "regear.profiles.gpd_g1.match_gpd_g1",
                 return_value=GpdG1Match(
                     True,
                     True,

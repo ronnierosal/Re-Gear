@@ -70,7 +70,7 @@ class VersionFailureTests(unittest.TestCase):
         self.assertEqual(len(failures), 2)
         self.assertTrue(any("main.py" in failure for failure in failures))
         self.assertTrue(
-            any("backend/hdm/delivery/build_info.py" in failure for failure in failures)
+            any("backend/regear/delivery/build_info.py" in failure for failure in failures)
         )
         for failure in failures:
             self.assertIn("0.3.55", failure)

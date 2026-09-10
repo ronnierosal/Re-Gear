@@ -9,29 +9,29 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.application.canonical_sleep import CanonicalSleepResult  # noqa: E402
-from hdm.application.guarded_game_close import (  # noqa: E402
+from regear.application.canonical_sleep import CanonicalSleepResult  # noqa: E402
+from regear.application.guarded_game_close import (  # noqa: E402
     GameCloseApprovalStore,
     GuardedGameCloseService,
 )
-from hdm.application.sleep_workflow_journal import start_sleep_journal  # noqa: E402
-from hdm.domain.control_plane import PlacementState  # noqa: E402
-from hdm.domain.game_compatibility import GameSaveCapability  # noqa: E402
-from hdm.domain.game_session import (  # noqa: E402
+from regear.application.sleep_workflow_journal import start_sleep_journal  # noqa: E402
+from regear.domain.control_plane import PlacementState  # noqa: E402
+from regear.domain.game_compatibility import GameSaveCapability  # noqa: E402
+from regear.domain.game_session import (  # noqa: E402
     ActiveGameIdentity,
     GameSessionObservation,
 )
-from hdm.domain.models import GameState  # noqa: E402
-from hdm.domain.sleep_workflow import (  # noqa: E402
+from regear.domain.models import GameState  # noqa: E402
+from regear.domain.sleep_workflow import (  # noqa: E402
     SleepFlow,
     SleepFlowEvent,
     SleepFlowStage,
 )
-from hdm.domain.transition_journal import (  # noqa: E402
+from regear.domain.transition_journal import (  # noqa: E402
     JournalEventKind,
     journal_to_dict,
 )
-from hdm.ports.game_close import GameCloseMechanismResult  # noqa: E402
+from regear.ports.game_close import GameCloseMechanismResult  # noqa: E402
 
 
 IDENTITY = ActiveGameIdentity(

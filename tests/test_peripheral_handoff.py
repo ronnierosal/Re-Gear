@@ -9,13 +9,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.domain.control_plane import (  # noqa: E402
+from regear.domain.control_plane import (  # noqa: E402
     CapabilitySupport,
     EgpuCapabilities,
     HostCapabilities,
     compose_capabilities,
 )
-from hdm.domain.peripheral_handoff import (  # noqa: E402
+from regear.domain.peripheral_handoff import (  # noqa: E402
     AudioDirective,
     AudioHandoffObservation,
     AudioOutput,
@@ -26,8 +26,8 @@ from hdm.domain.peripheral_handoff import (  # noqa: E402
     plan_audio_handoff,
     plan_controller_handoff,
 )
-from hdm.profiles.ally_x import CAPABILITIES as ALLY_X  # noqa: E402
-from hdm.profiles.gpd_g1 import CAPABILITIES as GPD_G1  # noqa: E402
+from regear.profiles.ally_x import CAPABILITIES as ALLY_X  # noqa: E402
+from regear.profiles.gpd_g1 import CAPABILITIES as GPD_G1  # noqa: E402
 
 
 def capabilities(**host_changes):

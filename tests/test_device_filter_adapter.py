@@ -8,10 +8,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.adapters.steamos.device_filter import CgroupDeviceFilter  # noqa: E402
-from hdm.delivery.device_filter_kernel import LinkIdentity  # noqa: E402
-from hdm.domain.filter_authorization import CgroupIdentity  # noqa: E402
-from hdm.ports.device_filter import ArmOutcome, DisarmOutcome  # noqa: E402
+from regear.adapters.steamos.device_filter import CgroupDeviceFilter  # noqa: E402
+from regear.delivery.device_filter_kernel import LinkIdentity  # noqa: E402
+from regear.domain.filter_authorization import CgroupIdentity  # noqa: E402
+from regear.ports.device_filter import ArmOutcome, DisarmOutcome  # noqa: E402
 
 
 PATH = "/sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service"

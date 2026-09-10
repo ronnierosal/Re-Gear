@@ -4,7 +4,7 @@ import json
 import unittest
 from unittest.mock import Mock, patch
 
-from backend.hdm.adapters.steamos.audio_trial_observer import AudioTrialContext, AudioTrialLiveObserver
+from backend.regear.adapters.steamos.audio_trial_observer import AudioTrialContext, AudioTrialLiveObserver
 
 
 class AudioTrialObserverTests(unittest.TestCase):
@@ -21,7 +21,7 @@ class AudioTrialObserverTests(unittest.TestCase):
         self.portable = SimpleNamespace(ready=True, sink_name="portable.sink")
 
     def observe(self):
-        prefix = "backend.hdm.adapters.steamos.audio_trial_observer."
+        prefix = "backend.regear.adapters.steamos.audio_trial_observer."
         with patch(prefix + "parse_audio_profile_observation", return_value=self.profile) as profile, \
              patch(prefix + "parse_portable_default", return_value=self.portable) as portable:
             value = self.observer()
@@ -84,7 +84,7 @@ class AudioTrialObserverTests(unittest.TestCase):
         from tests.test_portable_audio_observation import PortableAudioObservationTests, SINK
         from tests.test_audio_profile_observation import AudioProfileObservationTests
         from tests.test_audio_profile_trial import FakeStore
-        from backend.hdm.delivery.audio_profile_trial import AudioProfileTrial
+        from backend.regear.delivery.audio_profile_trial import AudioProfileTrial
         portable = PortableAudioObservationTests()
         portable.setUp()
         external = AudioProfileObservationTests()

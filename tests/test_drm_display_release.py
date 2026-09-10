@@ -8,14 +8,14 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.adapters.steamos.drm_crtc import GET_CRTC  # noqa: E402
-from hdm.adapters.steamos.drm_display_release import (  # noqa: E402
+from regear.adapters.steamos.drm_crtc import GET_CRTC  # noqa: E402
+from regear.adapters.steamos.drm_display_release import (  # noqa: E402
     DROP_MASTER,
     SET_CRTC,
     SET_MASTER,
     DrmDisplayRelease,
 )
-from hdm.ports.display_release import DisplayReleaseOutcome  # noqa: E402
+from regear.ports.display_release import DisplayReleaseOutcome  # noqa: E402
 
 
 EGPU = "/dev/dri/card1"

@@ -11,38 +11,38 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.adapters.drm_engine_activity import (  # noqa: E402
+from regear.adapters.drm_engine_activity import (  # noqa: E402
     ProcfsDrmEngineCounterAdapter,
 )
-from hdm.adapters.steamos.drm import DrmCardRecord  # noqa: E402
-from hdm.adapters.steamos.game_render_binding import (  # noqa: E402
+from regear.adapters.steamos.drm import DrmCardRecord  # noqa: E402
+from regear.adapters.steamos.game_render_binding import (  # noqa: E402
     AllyInternalDrmRenderBindingResolver,
     GpdG1DrmRenderBindingResolver,
 )
-from hdm.adapters.steamos.host import HostRecord  # noqa: E402
-from hdm.adapters.steamos.pci import (  # noqa: E402
+from regear.adapters.steamos.host import HostRecord  # noqa: E402
+from regear.adapters.steamos.pci import (  # noqa: E402
     PciDeviceRecord,
     Usb4DeviceRecord,
 )
-from hdm.application.game_render_activity import (  # noqa: E402
+from regear.application.game_render_activity import (  # noqa: E402
     GameRenderActivityComparisonService,
     GameRenderActivityEvidenceService,
 )
-from hdm.domain.game_render_activity import (  # noqa: E402
+from regear.domain.game_render_activity import (  # noqa: E402
     DrmEngineClientCounters,
     DrmEngineCounterSample,
     DrmRenderBinding,
     GameRenderActivityStatus,
 )
-from hdm.domain.game_runtime import (  # noqa: E402
+from regear.domain.game_runtime import (  # noqa: E402
     ActiveGameRuntimeObservation,
     GameProcessInstance,
     GameRuntimeKind,
 )
-from hdm.domain.game_session import ActiveGameIdentity  # noqa: E402
-from hdm.domain.models import GameState, GpuRole  # noqa: E402
-from hdm.domain.serialization import snapshot_from_dict  # noqa: E402
-from hdm.ports.transition import VersionedObservation  # noqa: E402
+from regear.domain.game_session import ActiveGameIdentity  # noqa: E402
+from regear.domain.models import GameState, GpuRole  # noqa: E402
+from regear.domain.serialization import snapshot_from_dict  # noqa: E402
+from regear.ports.transition import VersionedObservation  # noqa: E402
 
 
 FIXTURES = ROOT / "tests" / "fixtures"

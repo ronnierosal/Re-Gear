@@ -1,7 +1,7 @@
 import unittest
 from dataclasses import replace
 
-from backend.hdm.delivery.device_filter_lifecycle import (
+from backend.regear.delivery.device_filter_lifecycle import (
     FilterLifecycle, LaunchBinding, OwnedFilter, Phase,
 )
 

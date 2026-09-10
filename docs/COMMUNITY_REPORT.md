@@ -2,9 +2,11 @@
 
 `scripts/community_report.py` is a standalone Python 3 helper for SteamOS/Linux
 players responding to [discussion #91](https://github.com/ronnierosal/Re-Gear/discussions/91).
-It uses the installed, trusted plugin's existing read-only `hdm.cli` described in
+It uses the installed, trusted plugin's existing read-only `regear.cli` described in
 [Diagnostics](DIAGNOSTICS.md). It does not import the privileged Decky plugin
 entry point, install anything, change services, run a hardware test, or upload.
+For previously published installations it recognizes the legacy `hdm.cli`
+namespace too. A tree containing both namespaces is refused as ambiguous.
 
 ## Run and share
 

@@ -5,9 +5,9 @@ from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
-from hdm.application.auto_tdp_session import AutoTdpSessionResult
-from hdm.delivery.auto_tdp_worker import AutoTdpWorker
-from hdm.domain.auto_tdp import AutoTdpPolicy
+from regear.application.auto_tdp_session import AutoTdpSessionResult
+from regear.delivery.auto_tdp_worker import AutoTdpWorker
+from regear.domain.auto_tdp import AutoTdpPolicy
 
 
 class Session:

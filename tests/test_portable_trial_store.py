@@ -8,8 +8,8 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
-from hdm.delivery.gamescope_wrapper import GamescopeLaunchConfig
-from hdm.delivery.portable_trial_store import PortableTrialStore
+from regear.delivery.gamescope_wrapper import GamescopeLaunchConfig
+from regear.delivery.portable_trial_store import PortableTrialStore
 
 
 class Config:

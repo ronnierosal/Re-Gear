@@ -25,15 +25,15 @@ sys.path.insert(0, str(ROOT / "backend"))
 
 from tests.test_automatic_dock import current  # noqa: E402
 from tests.test_main_process_delivery import load_main_module  # noqa: E402
-from hdm.application.connection_readiness import (  # noqa: E402
+from regear.application.connection_readiness import (  # noqa: E402
     ConnectionReadinessStage,
     ConnectionReadinessStatus,
 )
-from hdm.application.presentation_completion import PresentationCompletion  # noqa: E402
-from hdm.application.saved_tv_search import SavedTvSearch  # noqa: E402
-from hdm.domain.control_plane import PlacementState, TransitionOutcomeKind  # noqa: E402
-from hdm.domain.models import Blocker  # noqa: E402
-from hdm.domain.saved_tv import (  # noqa: E402
+from regear.application.presentation_completion import PresentationCompletion  # noqa: E402
+from regear.application.saved_tv_search import SavedTvSearch  # noqa: E402
+from regear.domain.control_plane import PlacementState, TransitionOutcomeKind  # noqa: E402
+from regear.domain.models import Blocker  # noqa: E402
+from regear.domain.saved_tv import (  # noqa: E402
     DEFAULT_MAX_ATTEMPTS,
     SavedTvProfile,
     SavedTvState,

@@ -9,12 +9,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.application.support_bundle import SupportBundle  # noqa: E402
-from hdm.application.support_submission import (  # noqa: E402
+from regear.application.support_bundle import SupportBundle  # noqa: E402
+from regear.application.support_submission import (  # noqa: E402
     SupportSubmissionApprovalStore,
     parse_support_submission_response,
 )
-from hdm.domain.support_submission import ApprovedSupportUpload  # noqa: E402
+from regear.domain.support_submission import ApprovedSupportUpload  # noqa: E402
 
 
 def bundle(text: str = '{"schema_version":2}') -> SupportBundle:

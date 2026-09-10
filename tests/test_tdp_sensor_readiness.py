@@ -5,11 +5,11 @@ from dataclasses import replace
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
-from hdm.adapters.steamos.tdp_sensors import (
+from regear.adapters.steamos.tdp_sensors import (
     HwmonTemperatureSource, PowerSupplySource, SensorField,
     TdpSensorInventory, TemperatureChannel,
 )
-from hdm.delivery.tdp_sensor_readiness import TdpSensorReadinessConfig, assess_tdp_sensor_readiness
+from regear.delivery.tdp_sensor_readiness import TdpSensorReadinessConfig, assess_tdp_sensor_readiness
 
 
 class TdpSensorReadinessTests(unittest.TestCase):

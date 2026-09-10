@@ -6,7 +6,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
-from hdm.adapters.steamos.tdp_sensors import TdpSensorDiscovery
+from regear.adapters.steamos.tdp_sensors import TdpSensorDiscovery
 
 
 class TdpSensorTests(unittest.TestCase):

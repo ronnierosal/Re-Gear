@@ -7,16 +7,16 @@ from types import SimpleNamespace
 import test_auto_tdp_session as session_fixtures
 import test_tdp_control as control_fixtures
 import test_tdp_sensor_readiness as sensor_fixtures
-from hdm.adapters.steamos.gamescope_performance import PerformanceReading, PerformanceTarget
-from hdm.adapters.steamos.auto_tdp_host import AutoTdpHostContext
-from hdm.adapters.steamos.gamescope_performance_target import PerformanceTargetResolution
-from hdm.application.tdp_control import TdpControlService
-from hdm.delivery.auto_tdp_evidence import AutoTdpEligibility
-from hdm.delivery.auto_tdp_factory import AutoTdpSessionFactory
-from hdm.delivery.auto_tdp_benchmark import benchmark_auto_tdp
-from hdm.domain.auto_tdp import AutoTdpPolicy
-from hdm.domain.models import GameState
-from hdm.domain.telemetry import TelemetryCollectionContract, TelemetryConsumer, TelemetryMetric
+from regear.adapters.steamos.gamescope_performance import PerformanceReading, PerformanceTarget
+from regear.adapters.steamos.auto_tdp_host import AutoTdpHostContext
+from regear.adapters.steamos.gamescope_performance_target import PerformanceTargetResolution
+from regear.application.tdp_control import TdpControlService
+from regear.delivery.auto_tdp_evidence import AutoTdpEligibility
+from regear.delivery.auto_tdp_factory import AutoTdpSessionFactory
+from regear.delivery.auto_tdp_benchmark import benchmark_auto_tdp
+from regear.domain.auto_tdp import AutoTdpPolicy
+from regear.domain.models import GameState
+from regear.domain.telemetry import TelemetryCollectionContract, TelemetryConsumer, TelemetryMetric
 
 
 class AutoFactoryTests(unittest.TestCase):

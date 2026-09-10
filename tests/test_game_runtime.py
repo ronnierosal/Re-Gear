@@ -9,15 +9,15 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.adapters.game_runtime import (  # noqa: E402
+from regear.adapters.game_runtime import (  # noqa: E402
     CgroupProcGameRuntimeAdapter,
 )
-from hdm.domain.game_runtime import (  # noqa: E402
+from regear.domain.game_runtime import (  # noqa: E402
     ActiveGameRuntimeObservation,
     GameProcessInstance,
     GameRuntimeKind,
 )
-from hdm.domain.game_session import ActiveGameIdentity  # noqa: E402
+from regear.domain.game_session import ActiveGameIdentity  # noqa: E402
 
 
 UID = 1000

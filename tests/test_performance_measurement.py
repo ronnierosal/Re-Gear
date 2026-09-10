@@ -8,8 +8,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.domain.models import GameState  # noqa: E402
-from hdm.domain.performance_measurement import (  # noqa: E402
+from regear.domain.models import GameState  # noqa: E402
+from regear.domain.performance_measurement import (  # noqa: E402
     GameImpactAssessment,
     RegearOverheadObservation,
     OptionalObserverState,
@@ -17,7 +17,7 @@ from hdm.domain.performance_measurement import (  # noqa: E402
     assess_regear_overhead,
     performance_measurement_to_public_dict,
 )
-from hdm.domain.telemetry import (  # noqa: E402
+from regear.domain.telemetry import (  # noqa: E402
     TelemetryCollectionContract,
     TelemetryConsumer,
     TelemetryMetric,

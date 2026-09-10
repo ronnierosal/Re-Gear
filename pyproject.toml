@@ -13,7 +13,7 @@ authors = [{ name = "Ronnie Rosal" }]
 dependencies = []
 
 [project.scripts]
-regear-diagnose = "hdm.cli:main"
+regear-diagnose = "regear.cli:main"
 
 [tool.setuptools]
 package-dir = { "" = "backend" }

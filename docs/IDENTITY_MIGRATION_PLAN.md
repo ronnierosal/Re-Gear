@@ -1,8 +1,10 @@
 # Re-Gear installed identity cutover
 
-Status: repository cutover implemented in a **separate task, worktree and PR**
-on 2026-09-08. See [implementation inventory and procedure](IDENTITY_CUTOVER.md).
-No installed system was changed. Hardware migration and rollback validation
+Status: the September 8 repository directory cutover is followed by the
+September 10 Python namespace completion in the current source change. See
+[implementation inventory and procedure](IDENTITY_CUTOVER.md) and
+[completion scope](REBRAND_COMPLETION_2026-09-10.md). No new release or installed
+system is established by this change. Hardware migration and rollback validation
 remain separate supervised steps.
 
 ## Decision and scope
@@ -34,8 +36,8 @@ instruction to replace every matching string.
 | Package layout and candidate metadata | `scripts/build_plugin.py`, `scripts/prepare_release_candidate.py`, `scripts/verify_validation_artifact.py` | New root, manifests/checksums and consistent validation; reject mixed roots |
 | Native Decky staging and deployment | `scripts/stage_decky_update.py`, `scripts/deploy_to_ally.ps1`, `scripts/ally_deploy_helper.py`, `scripts/install_ally_deploy_helper.sh` | Exact target, legacy detection and safe stopped-plugin sequence; no second live instance |
 | Read-only capture and support | `scripts/remote_capture_payload.py`, `scripts/community_report.py` | Correct new root; explicit legacy-test diagnosis where needed; no ambiguous first-match fallback |
-| Recovery/state ownership | `backend/hdm/delivery/runtime_state.py`, `gamescope_integration.py`, `main.py` | Inventory actual settings/journals/helpers/managed-file ownership before changing paths |
-| Distribution and import identifiers | `package.json`, `pyproject.toml`, Python `hdm`, helper names and stored keys | Change only contracts required for the installed-identity cutover; explicitly list retained compatibility identifiers and reasons |
+| Recovery/state ownership | `backend/regear/delivery/runtime_state.py`, `gamescope_integration.py`, `main.py` | Inventory actual settings/journals/helpers/managed-file ownership before changing paths |
+| Distribution and import identifiers | `package.json`, `pyproject.toml`, Python `regear`, retained helper names and stored keys | Change only contracts required for the installed-identity cutover; explicitly list retained compatibility identifiers and reasons |
 | Tests and CI | Decky/package, artifact, release-candidate, staging, deployment, support/capture and runtime-state tests; `.github/workflows/ci.yml` | Assertions cover new identity, no mixed package, clean install, controlled upgrade and rollback |
 | Documentation and old artifacts | BRANDING, RELEASE_PIPELINE, deployment/support instructions and dated records | Update current procedures after implementation; keep historical paths, ZIP bytes, hashes and evidence intact |
 

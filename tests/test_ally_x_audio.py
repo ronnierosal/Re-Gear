@@ -1,10 +1,10 @@
 import unittest
 from dataclasses import replace
 
-from backend.hdm.adapters.steamos.host import HostRecord
-from backend.hdm.adapters.steamos.drm import DrmCardRecord, DrmConnectorRecord
-from backend.hdm.adapters.steamos.pci import PciDeviceRecord
-from backend.hdm.profiles.ally_x_audio import match_ally_x_analog_audio
+from backend.regear.adapters.steamos.host import HostRecord
+from backend.regear.adapters.steamos.drm import DrmCardRecord, DrmConnectorRecord
+from backend.regear.adapters.steamos.pci import PciDeviceRecord
+from backend.regear.profiles.ally_x_audio import match_ally_x_analog_audio
 
 
 class AllyXAudioTests(unittest.TestCase):

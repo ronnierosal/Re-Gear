@@ -18,7 +18,7 @@ read-only snapshot   transition engine (0.2+)
 
 ## Domain
 
-`backend/hdm/domain` owns immutable observations, user-facing mode inference,
+`backend/regear/domain` owns immutable observations, user-facing mode inference,
 support tiers, blockers, and future transition vocabulary. It performs no I/O and
 does not know Decky, sysfs, systemd, subprocesses, or hardware commands.
 

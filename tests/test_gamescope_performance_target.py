@@ -7,10 +7,10 @@ from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
-from hdm.adapters.steamos.game_scopes import GameScopeScan, parse_game_scopes
-from hdm.adapters.steamos.gamescope import GamescopeProcessRecord, GamescopeScan
-from hdm.adapters.steamos.gamescope_performance_target import GamescopePerformanceTargetResolver
-from hdm.domain.models import GameState
+from regear.adapters.steamos.game_scopes import GameScopeScan, parse_game_scopes
+from regear.adapters.steamos.gamescope import GamescopeProcessRecord, GamescopeScan
+from regear.adapters.steamos.gamescope_performance_target import GamescopePerformanceTargetResolver
+from regear.domain.models import GameState
 
 
 class PerformanceTargetTests(unittest.TestCase):

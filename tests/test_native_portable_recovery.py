@@ -10,13 +10,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.application.native_portable_recovery import (  # noqa: E402
+from regear.application.native_portable_recovery import (  # noqa: E402
     NativePortableRecoverySupervisor,
     NativeRecoveryStage,
 )
-from hdm.domain.models import Confidence, GameState, GpuRole  # noqa: E402
-from hdm.domain.serialization import snapshot_from_dict  # noqa: E402
-from hdm.ports.transition import VersionedObservation  # noqa: E402
+from regear.domain.models import Confidence, GameState, GpuRole  # noqa: E402
+from regear.domain.serialization import snapshot_from_dict  # noqa: E402
+from regear.ports.transition import VersionedObservation  # noqa: E402
 
 
 FIXTURES = ROOT / "tests" / "fixtures"

@@ -8,7 +8,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.domain.device_removal import (  # noqa: E402
+from regear.domain.device_removal import (  # noqa: E402
     RemovalFunction,
     RemovalFunctionKind,
     RemovalPlan,
@@ -16,8 +16,8 @@ from hdm.domain.device_removal import (  # noqa: E402
     compose_removal_plan,
     plan_is_current,
 )
-from hdm.domain.removal_safety import RemovalSafety, RemovalSafetyState  # noqa: E402
-from hdm.domain.safe_undock_readiness import SafeUndockRevalidation  # noqa: E402
+from regear.domain.removal_safety import RemovalSafety, RemovalSafetyState  # noqa: E402
+from regear.domain.safe_undock_readiness import SafeUndockRevalidation  # noqa: E402
 
 
 BINDING = "egpu-stable-id"

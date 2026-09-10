@@ -12,20 +12,20 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.delivery.removal_transaction_store import (  # noqa: E402
+from regear.delivery.removal_transaction_store import (  # noqa: E402
     MAX_BYTES,
     RECORD_FILENAME,
     FileRemovalTransactionStore,
     decode,
     encode,
 )
-from hdm.domain.removal_transaction import (  # noqa: E402
+from regear.domain.removal_transaction import (  # noqa: E402
     FunctionProgress,
     RemovalTransaction,
     RemovalTransactionState,
     record_progress,
 )
-from hdm.domain.removal_transaction import plan as plan_transaction  # noqa: E402
+from regear.domain.removal_transaction import plan as plan_transaction  # noqa: E402
 
 
 GPU = "0000:08:00.0"

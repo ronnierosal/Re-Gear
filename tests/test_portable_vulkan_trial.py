@@ -4,7 +4,7 @@ from dataclasses import replace
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
-from hdm.delivery.portable_vulkan_trial import TrialEvidence, build_candidate, restore_environment
+from regear.delivery.portable_vulkan_trial import TrialEvidence, build_candidate, restore_environment
 
 
 class PortableVulkanTrialTests(unittest.TestCase):

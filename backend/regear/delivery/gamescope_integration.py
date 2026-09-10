@@ -1,0 +1,505 @@
+"""Reversible fixed Gamescope shim integration with conservative conflict checks."""
+
+from __future__ import annotations
+
+import hashlib
+import os
+import re
+import stat
+import threading
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Callable
+
+from ..ports.presentation_activation import GamescopeUserContext
+from .user_directory import UserDirectory
+
+
+DROPIN_NAME = "90-handheld-dock-mode.conf"
+# Plugin directory names this project shipped under before the current one.
+# A drop-in rendered for one of these is ours, not a player edit.
+SUPERSEDED_PLUGIN_NAMES = ("HandheldDockMode",)
+MAX_DROPIN_BYTES = 16 * 1024
+SHIM_MARKER = "Handheld Dock Mode Gamescope argument shim"
+SAFE_POSIX_PATH = re.compile(r"^/[A-Za-z0-9_.@+/-]+$")
+
+
+@dataclass(frozen=True, slots=True)
+class GamescopeIntegrationStatus:
+    installed: bool
+    matches: bool
+    shim_ready: bool
+    state_root_ready: bool
+    conflicts: tuple[str, ...] = ()
+    error_code: str = ""
+
+    @property
+    def ready(self) -> bool:
+        return (
+            self.installed
+            and self.matches
+            and self.shim_ready
+            and self.state_root_ready
+            and not self.conflicts
+            and not self.error_code
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class GamescopeIntegrationResult:
+    changed: bool
+    status: GamescopeIntegrationStatus
+
+    @property
+    def ok(self) -> bool:
+        return self.status.ready and not self.status.error_code
+
+
+class GamescopeIntegrationStore:
+    SERVICE = 'gamescope-session.service'
+    SHIM_NAME = 'gamescope'
+    SHIM_MARKER = SHIM_MARKER
+    DROPIN_NAME = DROPIN_NAME
+    def __init__(
+        self,
+        *,
+        plugin_root: Path,
+        user: GamescopeUserContext,
+        effective_uid: Callable[[], int] | None = None,
+        set_owner: Callable[[Path | int, int, int], None] | None = None,
+    ) -> None:
+        if not plugin_root.is_absolute() or not user.home.is_absolute():
+            raise ValueError("Gamescope integration paths must be absolute")
+        self._plugin_root = plugin_root
+        self._user = user
+        self._shim = plugin_root / "bin" / self.SHIM_NAME
+        self._state_root = user.home / ".local" / "share" / "handheld-dock-mode"
+        self._dropin_root = (
+            user.home
+            / ".config"
+            / "systemd"
+            / "user"
+            / (self.SERVICE + '.d')
+        )
+        self._target = self._dropin_root / self.DROPIN_NAME
+        self._effective_uid = effective_uid or getattr(os, "geteuid", lambda: -1)
+        self._set_owner = set_owner
+        self._lock = threading.Lock()
+        # Exact in-process rollback authority for the most recent changed
+        # activation. This is not a crash journal or a licence to remove edits.
+        self._activation_rollback: tuple[bytes | None, bytes] | None = None
+        self._activation_mutated = False
+        self._validate_rendered_paths()
+
+    @property
+    def state_root(self) -> Path:
+        return self._state_root
+
+    @property
+    def user(self) -> GamescopeUserContext:
+        return self._user
+
+    @property
+    def target(self) -> Path:
+        return self._target
+
+    def expected_text(self) -> str:
+        return self._render(self._shim.parent)
+
+    def _render(self, shim_directory: Path) -> str:
+        shim_directory = self._path_text(shim_directory)
+        state_root = self._path_text(self._state_root)
+        path_value = (
+            f"{shim_directory}:/usr/local/sbin:/usr/local/bin:"
+            "/usr/bin:/usr/sbin:/bin:/sbin"
+        )
+        return (
+            "# Managed by Handheld Dock Mode. Remove only through HDM.\n"
+            "[Service]\n"
+            f'Environment="PATH={path_value}"\n'
+            f'Environment="HDM_STATE_ROOT={state_root}"\n'
+        )
+
+    def _superseded_renderings(self) -> tuple[str, ...]:
+        """Renderings this project wrote under an earlier plugin directory name.
+
+        Renaming the plugin moves the shim directory, so every existing install
+        keeps a drop-in that no longer matches. Recognising our own prior output
+        lets activate() migrate it, while anything matching no known rendering is
+        still refused as a player edit.
+        """
+        current = self._plugin_root.name
+        renderings: list[str] = []
+        for name in SUPERSEDED_PLUGIN_NAMES:
+            if name == current:
+                continue
+            try:
+                renderings.append(self._render(self._plugin_root.parent / name / "bin"))
+            except ValueError:
+                continue
+        return tuple(renderings)
+
+    def _observed_superseded_bytes(self) -> bytes | None:
+        """The on-disk drop-in, but only when it is one of our own renderings."""
+        actual = self._read_optional(self._target)
+        if actual is None or actual not in self._superseded_renderings():
+            return None
+        return actual.encode("utf-8")
+
+    def activation_fingerprint(self) -> str:
+        if not self._shim_ready():
+            raise ValueError("Gamescope shim is unavailable")
+        data = self._shim.read_bytes()
+        if len(data) > MAX_DROPIN_BYTES:
+            raise ValueError("Gamescope shim exceeds its bound")
+        digest = hashlib.sha256()
+        digest.update(data)
+        digest.update(b"\0")
+        digest.update(self.expected_text().encode("utf-8"))
+        return digest.hexdigest()
+
+    def preparation_fingerprint(self) -> str:
+        """Bind consent to the prior drop-in, separately from desired output."""
+        actual = self._read_optional(self._target)
+        return hashlib.sha256(
+            b"absent" if actual is None else b"present\0" + actual.encode("utf-8")
+        ).hexdigest()
+
+    def status(self) -> GamescopeIntegrationStatus:
+        try:
+            conflicts = self._conflicts()
+            actual = self._read_optional(self._target)
+            installed = actual is not None
+            matches = actual == self.expected_text() if installed else False
+            managed_safe = self._managed_file_safe(self._target) if installed else True
+            shim_ready = self._shim_ready()
+            state_ready = self._owned_real_directory(self._state_root)
+            error = ""
+            if conflicts:
+                error = "path_override_conflict"
+            elif (not installed and self._activation_rollback is not None
+                  and self._activation_rollback[0] is not None):
+                error = "activation_recovery_required"
+            elif installed and not matches:
+                # Our own earlier rendering can be migrated; anything else is a
+                # player edit and stays refused.
+                superseded = managed_safe and actual in self._superseded_renderings()
+                error = (
+                    "managed_dropin_superseded"
+                    if superseded
+                    else "managed_dropin_modified"
+                )
+            elif installed and not managed_safe:
+                error = "managed_dropin_unsafe"
+            return GamescopeIntegrationStatus(
+                installed,
+                matches,
+                shim_ready,
+                state_ready,
+                conflicts,
+                error,
+            )
+        except (OSError, UnicodeDecodeError, ValueError):
+            return GamescopeIntegrationStatus(
+                False, False, False, False, error_code="inspection_failed"
+            )
+
+    def activate(self) -> GamescopeIntegrationResult:
+        if self._effective_uid() != 0:
+            return GamescopeIntegrationResult(
+                False,
+                GamescopeIntegrationStatus(
+                    False, False, False, False, error_code="root_required"
+                ),
+            )
+        with self._lock:
+            before = self.status()
+            if before.ready:
+                return GamescopeIntegrationResult(False, before)
+            if (self._activation_rollback is not None
+                    and self._activation_rollback[0] is not None
+                    and not before.installed):
+                # A previous failed migration removed an old rendering. Do not
+                # turn recovery into a fresh install and lose that authority.
+                return GamescopeIntegrationResult(False, GamescopeIntegrationStatus(
+                    False, False, before.shim_ready, before.state_root_ready,
+                    error_code="activation_recovery_required"))
+            if before.error_code and before.error_code != "managed_dropin_superseded":
+                return GamescopeIntegrationResult(False, before)
+            if not before.shim_ready:
+                return GamescopeIntegrationResult(
+                    False,
+                    GamescopeIntegrationStatus(
+                        before.installed,
+                        before.matches,
+                        False,
+                        before.state_root_ready,
+                        before.conflicts,
+                        "shim_unavailable",
+                    ),
+                )
+            self._activation_mutated = False
+            try:
+                prior = self._read_optional(self._target)
+                expected = self.expected_text()
+                if prior is not None and prior != expected and (
+                    not self._managed_file_safe(self._target)
+                    or prior not in self._superseded_renderings()
+                ):
+                    raise ValueError("managed drop-in changed")
+                # Save before the first mutation, including before a replacement
+                # whose publication and compensating publication can both fail.
+                self._activation_rollback = (
+                    None if prior is None else prior.encode("utf-8"), expected.encode("utf-8")
+                )
+                self._activation_mutated = False
+                self._ensure_relative_directory(
+                    Path(".local") / "share" / "handheld-dock-mode", 0o700
+                )
+                self._ensure_relative_directory(
+                    Path(".config")
+                    / "systemd"
+                    / "user"
+                    / (self.SERVICE + '.d'),
+                    0o700,
+                )
+                if not before.installed:
+                    self._atomic_write(self._target, expected)
+                elif before.error_code == "managed_dropin_superseded":
+                    self._atomic_write(
+                        self._target,
+                        expected,
+                        supersedes=prior.encode("utf-8") if prior is not None else None,
+                    )
+            except (OSError, ValueError):
+                return GamescopeIntegrationResult(
+                    self._activation_mutated,
+                    GamescopeIntegrationStatus(
+                        False, False, True, False, error_code="activation_failed"
+                    ),
+                )
+            self._activation_rollback = (
+                None if prior is None else prior.encode("utf-8"),
+                expected.encode("utf-8"),
+            )
+            after = self.status()
+            return GamescopeIntegrationResult(True, after)
+
+    def rollback_activation(self) -> GamescopeIntegrationResult:
+        """Restore the exact prior managed bytes after failed preparation.
+
+        Only the output of this instance's last activation may be replaced.
+        The in-memory prior is retained on failure, so a caller may retry after
+        resolving an I/O problem. A changed file remains untouched. As with
+        activation, replacement uses the existing guarded remove/publish pair;
+        it does not claim atomic replacement or recovery across process death.
+        """
+        with self._lock:
+            if self._effective_uid() != 0 or self._activation_rollback is None:
+                return GamescopeIntegrationResult(False, self.status())
+            prior, installed = self._activation_rollback
+            try:
+                actual = self._read_optional(self._target)
+                actual_bytes = None if actual is None else actual.encode("utf-8")
+                if actual is not None and not self._managed_file_safe(self._target):
+                    raise ValueError("managed drop-in is unsafe")
+                with UserDirectory(self._dropin_root, self._user.uid, self._user.gid,
+                                   create_from=self._user.home) as directory:
+                    if actual_bytes == prior:
+                        # A compensating publication already restored the old
+                        # state. Treat verified recovery as an idempotent success.
+                        pass
+                    elif actual is None:
+                        if prior is not None:
+                            directory.publish(self.DROPIN_NAME, prior, 0o644)
+                    elif actual_bytes != installed:
+                        raise ValueError("managed drop-in changed")
+                    elif prior != installed:
+                        directory.remove_matching(self.DROPIN_NAME, installed, MAX_DROPIN_BYTES)
+                        if prior is not None:
+                            try:
+                                directory.publish(self.DROPIN_NAME, prior, 0o644)
+                            except (OSError, ValueError):
+                                # Restore the prepared file if publishing the
+                                # prior failed; never clobber a concurrent file.
+                                try:
+                                    directory.publish(self.DROPIN_NAME, installed, 0o644)
+                                except (OSError, ValueError):
+                                    pass
+                                raise
+            except (OSError, ValueError):
+                return GamescopeIntegrationResult(False, self.status())
+            self._activation_rollback = None
+            return GamescopeIntegrationResult(True, self.status())
+
+    def deactivate(self) -> GamescopeIntegrationResult:
+        if self._effective_uid() != 0:
+            return GamescopeIntegrationResult(
+                False,
+                GamescopeIntegrationStatus(
+                    False, False, False, False, error_code="root_required"
+                ),
+            )
+        with self._lock:
+            before = self.status()
+            if not before.installed:
+                return GamescopeIntegrationResult(False, before)
+            if not before.matches:
+                return GamescopeIntegrationResult(False, before)
+            try:
+                with UserDirectory(self._dropin_root, self._user.uid, self._user.gid,
+                                   create_from=self._user.home) as directory:
+                    directory.remove_matching(self.DROPIN_NAME,
+                                              self.expected_text().encode("utf-8"),
+                                              MAX_DROPIN_BYTES)
+            except (OSError, ValueError):
+                return GamescopeIntegrationResult(
+                    False,
+                    GamescopeIntegrationStatus(
+                        True,
+                        True,
+                        before.shim_ready,
+                        before.state_root_ready,
+                        before.conflicts,
+                        "deactivation_failed",
+                    ),
+                )
+            return GamescopeIntegrationResult(True, self.status())
+
+    def _validate_rendered_paths(self) -> None:
+        self._path_text(self._shim.parent)
+        self._path_text(self._state_root)
+        if self._user.home == Path(self._user.home.anchor):
+            raise ValueError("Gamescope user home is too broad")
+
+    @staticmethod
+    def _path_text(path: Path) -> str:
+        value = path.as_posix()
+        if os.name == "nt" and re.fullmatch(r"[A-Za-z]:/[A-Za-z0-9_.@+ /-]+", value):
+            return value
+        if not SAFE_POSIX_PATH.fullmatch(value):
+            raise ValueError("Gamescope integration path is unsafe")
+        return value
+
+    def _shim_ready(self) -> bool:
+        try:
+            if self._shim.is_symlink() or not self._shim.is_file():
+                return False
+            mode = self._shim.stat().st_mode
+            if os.name != "nt" and not mode & stat.S_IXUSR:
+                return False
+            data = self._shim.read_bytes()
+            return len(data) <= MAX_DROPIN_BYTES and self.SHIM_MARKER.encode() in data
+        except OSError:
+            return False
+
+    def _conflicts(self) -> tuple[str, ...]:
+        if not self._dropin_root.exists():
+            return ()
+        if not self._owned_real_directory(self._dropin_root):
+            raise ValueError("Gamescope drop-in root is unsafe")
+        conflicts: list[str] = []
+        for candidate in sorted(self._dropin_root.glob("*.conf")):
+            if candidate == self._target:
+                continue
+            raw = self._read_required(candidate)
+            for line in raw.splitlines():
+                normalized = line.strip()
+                if re.match(r"^EnvironmentFile\s*=", normalized):
+                    conflicts.append(candidate.name)
+                    break
+                directive = re.match(
+                    r"^(Environment|PassEnvironment|UnsetEnvironment)\s*=\s*(.*)$",
+                    normalized,
+                )
+                if directive and re.search(
+                    r"(?:^|[\s\"'])PATH(?:=|[\s\"']|$)", directive.group(2)
+                ):
+                    conflicts.append(candidate.name)
+                    break
+        return tuple(conflicts)
+
+    def _read_optional(self, path: Path) -> str | None:
+        try:
+            return self._read_required(path)
+        except FileNotFoundError:
+            return None
+
+    @staticmethod
+    def _read_required(path: Path) -> str:
+        if path.is_symlink():
+            raise ValueError("Gamescope integration file cannot be a symlink")
+        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+        descriptor = os.open(path, flags)
+        with os.fdopen(descriptor, "rb") as source:
+            data = source.read(MAX_DROPIN_BYTES + 1)
+        if len(data) > MAX_DROPIN_BYTES:
+            raise ValueError("Gamescope integration file exceeds its bound")
+        return data.decode("utf-8")
+
+    def _ensure_relative_directory(self, relative: Path, final_mode: int) -> None:
+        with UserDirectory(self._user.home / relative, self._user.uid, self._user.gid,
+                           create_from=self._user.home, create=True,
+                           final_mode=final_mode, set_owner=self._set_owner):
+            pass
+
+    def _atomic_write(
+        self, path: Path, value: str, *, supersedes: bytes | None = None
+    ) -> None:
+        """Publish the drop-in, optionally retiring a superseded rendering first.
+
+        ``supersedes`` carries the exact bytes the caller expects to find. The
+        delivery directory removes the file only if it still matches them, so a
+        migration cannot clobber a drop-in that changed after status() read it.
+        """
+        data = value.encode("utf-8")
+        if len(data) > MAX_DROPIN_BYTES:
+            raise ValueError("managed drop-in exceeds its bound")
+        with UserDirectory(path.parent, self._user.uid, self._user.gid,
+                           create_from=self._user.home) as directory:
+            if supersedes is not None:
+                # Unlink may succeed before the directory fsync raises, so
+                # retain rollback admission even when removal reports failure.
+                self._activation_mutated = True
+                directory.remove_matching(path.name, supersedes, MAX_DROPIN_BYTES)
+            try:
+                # A publication can become visible before its durability check
+                # fails. Report the attempted mutation conservatively either way.
+                self._activation_mutated = True
+                directory.publish(path.name, data, 0o644)
+            except (OSError, ValueError):
+                if supersedes is not None:
+                    # Publication is no-clobber: an intervening player edit is
+                    # never replaced even when restoring the prior rendering.
+                    try:
+                        directory.publish(path.name, supersedes, 0o644)
+                    except (OSError, ValueError):
+                        pass
+                raise
+
+    @staticmethod
+    def _real_directory(path: Path) -> bool:
+        return path.is_dir() and not path.is_symlink()
+
+    def _owned_real_directory(self, path: Path) -> bool:
+        if not self._real_directory(path):
+            return False
+        try:
+            return os.name == "nt" or path.stat().st_uid == self._user.uid
+        except (AttributeError, OSError):
+            return False
+
+    def _managed_file_safe(self, path: Path) -> bool:
+        try:
+            value = path.stat(follow_symlinks=False)
+            return (
+                not path.is_symlink()
+                and stat.S_ISREG(value.st_mode)
+                and (os.name == "nt" or value.st_uid == self._user.uid)
+                and (
+                    os.name == "nt"
+                    or not value.st_mode & (stat.S_IWGRP | stat.S_IWOTH)
+                )
+            )
+        except (AttributeError, OSError):
+            return False

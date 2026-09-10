@@ -5,9 +5,9 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
-from hdm.domain.egpu_device_policy import EgpuDeviceNode, compose_egpu_device_policy
-from hdm.domain.models import EgpuResourceKind
-from hdm.delivery.device_filter_program import compile_device_filter
+from regear.domain.egpu_device_policy import EgpuDeviceNode, compose_egpu_device_policy
+from regear.domain.models import EgpuResourceKind
+from regear.delivery.device_filter_program import compile_device_filter
 from test_device_filter_program import evaluate
 
 

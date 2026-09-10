@@ -12,7 +12,7 @@ and `AGENTS.md` before changing the repository.
 
 - Keep changes small, reversible, and tied to one concrete problem.
 - Preserve pure domain policy: no filesystem, subprocess, network, or OS calls
-  under `backend/hdm/domain`.
+  under `backend/regear/domain`.
 - Put product-specific identity and quirks in profiles or adapters.
 - Never persist DRM card numbers, connector suffixes, or PCI bus addresses as
   identity.

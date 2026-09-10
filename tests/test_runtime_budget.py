@@ -8,8 +8,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.domain.models import GameState  # noqa: E402
-from hdm.domain.runtime_budget import (  # noqa: E402
+from regear.domain.models import GameState  # noqa: E402
+from regear.domain.runtime_budget import (  # noqa: E402
     RuntimeBudgetDecision,
     RuntimeBudgetDecisionKind,
     RuntimeWorkKind,

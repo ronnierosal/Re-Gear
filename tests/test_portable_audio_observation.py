@@ -5,7 +5,7 @@ import sys
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'backend'))
-from hdm.adapters.steamos.portable_audio_observation import parse_portable_default
+from regear.adapters.steamos.portable_audio_observation import parse_portable_default
 
 
 BDF, SINK = '0000:64:00.6', 'alsa_loopback_device.alsa_output.pci-0000_64_00.6.analog-stereo'

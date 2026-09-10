@@ -10,21 +10,21 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.application.unexpected_undock import (  # noqa: E402
+from regear.application.unexpected_undock import (  # noqa: E402
     LossOrigin,
     RecoveryStage,
     UnexpectedUndockRecoveryCoordinator,
     UnexpectedUndockRequest,
 )
-from hdm.domain.control_plane import (  # noqa: E402
+from regear.domain.control_plane import (  # noqa: E402
     PlacementState,
     TransitionOutcomeKind,
     WorkflowState,
 )
-from hdm.domain.event_policy import TopologyEvent  # noqa: E402
-from hdm.domain.models import Blocker, GameState, GpuRole  # noqa: E402
-from hdm.domain.serialization import snapshot_from_dict  # noqa: E402
-from hdm.ports.transition import MechanismResult, VersionedObservation  # noqa: E402
+from regear.domain.event_policy import TopologyEvent  # noqa: E402
+from regear.domain.models import Blocker, GameState, GpuRole  # noqa: E402
+from regear.domain.serialization import snapshot_from_dict  # noqa: E402
+from regear.ports.transition import MechanismResult, VersionedObservation  # noqa: E402
 
 
 FIXTURES = ROOT / "tests" / "fixtures"

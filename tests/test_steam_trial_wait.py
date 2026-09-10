@@ -4,10 +4,10 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 import test_portable_trial_store as store_fixtures
-from hdm.delivery.steam_trial_wait import wait_for_steam_trial
-from hdm.adapters.presentation_transition import PresentationTransitionMechanism
-from hdm.application.transition_orchestrator import RuntimeTransitionResult
-from hdm.domain.control_plane import TransitionOutcomeKind
+from regear.delivery.steam_trial_wait import wait_for_steam_trial
+from regear.adapters.presentation_transition import PresentationTransitionMechanism
+from regear.application.transition_orchestrator import RuntimeTransitionResult
+from regear.domain.control_plane import TransitionOutcomeKind
 
 
 class SteamWaitTests(unittest.TestCase):

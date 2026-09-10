@@ -2,12 +2,12 @@ import unittest
 from dataclasses import replace
 
 from test_tdp_control import MemoryJournal, Provider
-from hdm.application.auto_tdp_session import AutoTdpEvidence, AutoTdpLiveContext, AutoTdpSession
-from hdm.application.tdp_control import TdpControlService
-from hdm.domain.auto_tdp import AutoTdpObservation, AutoTdpPolicy
-from hdm.domain.models import GameState
-from hdm.domain.telemetry import TelemetryCollectionContract, TelemetryConsumer, TelemetryMetric
-from hdm.ports.tdp import TdpReading, TdpRegister, TdpWriteOutcome
+from regear.application.auto_tdp_session import AutoTdpEvidence, AutoTdpLiveContext, AutoTdpSession
+from regear.application.tdp_control import TdpControlService
+from regear.domain.auto_tdp import AutoTdpObservation, AutoTdpPolicy
+from regear.domain.models import GameState
+from regear.domain.telemetry import TelemetryCollectionContract, TelemetryConsumer, TelemetryMetric
+from regear.ports.tdp import TdpReading, TdpRegister, TdpWriteOutcome
 
 
 class GuardedProvider(Provider):

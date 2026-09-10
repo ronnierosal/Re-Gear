@@ -10,13 +10,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.application.safe_undock_evidence import (  # noqa: E402
+from regear.application.safe_undock_evidence import (  # noqa: E402
     assess_report,
     build_safe_undock_evidence,
 )
-from hdm.application.snapshot import SnapshotReport  # noqa: E402
-from hdm.domain.inference import infer_operating_mode  # noqa: E402
-from hdm.domain.models import (  # noqa: E402
+from regear.application.snapshot import SnapshotReport  # noqa: E402
+from regear.domain.inference import infer_operating_mode  # noqa: E402
+from regear.domain.models import (  # noqa: E402
     Confidence,
     EgpuClientKind,
     EgpuClientObservation,
@@ -25,14 +25,14 @@ from hdm.domain.models import (  # noqa: E402
     EgpuResourceKind,
     GameState,
 )
-from hdm.domain.peripheral_handoff import (  # noqa: E402
+from regear.domain.peripheral_handoff import (  # noqa: E402
     AudioOutput,
     AudioPeripheralState,
     ControllerPeripheralState,
     PeripheralObservation,
 )
-from hdm.domain.safe_undock_readiness import SafeUndockReadinessState  # noqa: E402
-from hdm.domain.serialization import snapshot_from_dict  # noqa: E402
+from regear.domain.safe_undock_readiness import SafeUndockReadinessState  # noqa: E402
+from regear.domain.serialization import snapshot_from_dict  # noqa: E402
 
 
 FIXTURES = ROOT / "tests" / "fixtures"

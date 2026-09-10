@@ -11,15 +11,15 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.adapters.steamos.commands import (  # noqa: E402
+from regear.adapters.steamos.commands import (  # noqa: E402
     UserServiceCommandRunner,
     UserServiceOperation,
 )
-from hdm.adapters.steamos.gamescope import (  # noqa: E402
+from regear.adapters.steamos.gamescope import (  # noqa: E402
     GamescopeProcessRecord,
     GamescopeScan,
 )
-from hdm.adapters.steamos.gamescope_user import resolve_gamescope_user  # noqa: E402
+from regear.adapters.steamos.gamescope_user import resolve_gamescope_user  # noqa: E402
 
 
 def scan(uid: int | None = 1000) -> GamescopeScan:
@@ -100,7 +100,7 @@ class UserServiceCommandRunnerTests(unittest.TestCase):
         completed = SimpleNamespace(returncode=0, stdout=b"loaded\n", stderr=b"")
         runner = UserServiceCommandRunner(effective_uid=lambda: 0)
         with patch(
-            "hdm.adapters.steamos.commands.subprocess.run", return_value=completed
+            "regear.adapters.steamos.commands.subprocess.run", return_value=completed
         ) as invoke:
             result = runner.run(
                 UserServiceOperation.VERIFY_GAMESCOPE_UNIT,
@@ -138,7 +138,7 @@ class UserServiceCommandRunnerTests(unittest.TestCase):
         )
         for completed, expected in cases:
             with self.subTest(expected=expected), patch(
-                "hdm.adapters.steamos.commands.subprocess.run",
+                "regear.adapters.steamos.commands.subprocess.run",
                 return_value=completed,
             ):
                 result = runner.run(
@@ -150,7 +150,7 @@ class UserServiceCommandRunnerTests(unittest.TestCase):
                 self.assertEqual(result.output, "")
 
         with patch(
-            "hdm.adapters.steamos.commands.subprocess.run",
+            "regear.adapters.steamos.commands.subprocess.run",
             side_effect=subprocess.TimeoutExpired(("systemctl",), 8),
         ):
             result = runner.run(

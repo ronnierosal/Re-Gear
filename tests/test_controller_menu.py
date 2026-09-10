@@ -4,7 +4,7 @@ from dataclasses import replace
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
-from hdm.domain.controller_menu import (
+from regear.domain.controller_menu import (
     ControllerMenuProfile, ControllerTransport, MenuAction, MenuBinding,
     MenuInput, MenuState, route_menu_input,
 )

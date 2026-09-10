@@ -8,14 +8,14 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.application.controller_shortcut_delivery import (  # noqa: E402
+from regear.application.controller_shortcut_delivery import (  # noqa: E402
     ControllerShortcutDeliveryAdapter,
 )
-from hdm.domain.controller_shortcuts import (  # noqa: E402
+from regear.domain.controller_shortcuts import (  # noqa: E402
     ControllerButton,
     ControllerInputEvidence,
 )
-from hdm.domain.logical_actions import LogicalAction  # noqa: E402
+from regear.domain.logical_actions import LogicalAction  # noqa: E402
 
 
 class Sink:

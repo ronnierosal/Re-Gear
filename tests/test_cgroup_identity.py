@@ -9,11 +9,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.adapters.steamos.cgroup_identity import (  # noqa: E402
+from regear.adapters.steamos.cgroup_identity import (  # noqa: E402
     observe_user_manager_cgroup,
     user_manager_path,
 )
-from hdm.domain.filter_authorization import (  # noqa: E402
+from regear.domain.filter_authorization import (  # noqa: E402
     AuthorizationState,
     OwnerIdentity,
     authorize_parent_scope,

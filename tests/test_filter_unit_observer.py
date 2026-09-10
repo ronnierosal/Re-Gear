@@ -2,9 +2,9 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
 
-from backend.hdm.adapters.steamos.filter_unit_observer import FilterUnitObserver
-from backend.hdm.adapters.steamos.commands import UserServiceCommandRunner
-from backend.hdm.ports.presentation_activation import UserServiceOperation
+from backend.regear.adapters.steamos.filter_unit_observer import FilterUnitObserver
+from backend.regear.adapters.steamos.commands import UserServiceCommandRunner
+from backend.regear.ports.presentation_activation import UserServiceOperation
 
 
 class FilterUnitObserverTests(unittest.TestCase):
@@ -44,7 +44,7 @@ class FilterUnitObserverTests(unittest.TestCase):
 
     def test_real_command_shape_is_read_only_and_bounded(self):
         runner = UserServiceCommandRunner(effective_uid=lambda: 0)
-        with patch("backend.hdm.adapters.steamos.commands.subprocess.run",
+        with patch("backend.regear.adapters.steamos.commands.subprocess.run",
                    return_value=SimpleNamespace(returncode=0, stdout=self.output.encode(), stderr=b"")) as run:
             observer = FilterUnitObserver(self.user, deadline=15, commands=runner, clock=lambda: 10)
             observer("steam-launcher.service")
@@ -56,7 +56,7 @@ class FilterUnitObserverTests(unittest.TestCase):
 
     def test_runner_invalid_deadline_prevents_subprocess(self):
         runner = UserServiceCommandRunner(effective_uid=lambda: 0)
-        with patch("backend.hdm.adapters.steamos.commands.subprocess.run") as run:
+        with patch("backend.regear.adapters.steamos.commands.subprocess.run") as run:
             for timeout in (True, 0, -1, float("nan"), float("inf")):
                 result = runner.run(UserServiceOperation.OBSERVE_FILTER_GAMESCOPE,
                     uid=1000, username="deck", timeout_seconds=timeout)

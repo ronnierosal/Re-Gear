@@ -92,7 +92,7 @@ and must not be inserted into the synchronous local-memory service. Native sourc
 review and a separate asynchronous request boundary remain required. No storage
 cleanup or backup/sync code was imported or run.
 
-`backend/hdm/adapters/steamos/offline_steam_overview.py` consumes one supplied
+`backend/regear/adapters/steamos/offline_steam_overview.py` consumes one supplied
 plain decoded overview with a private expected AppID. It accepts only a bound
 base game and the local client branch, with affirmative platform availability.
 It does not select a game, open a file, subscribe, call Steam, or send an RPC.
@@ -182,7 +182,7 @@ approval or evidence freshness. No selected-game route was observed; the player
 was asked to select a game before per-game inspection. No listener, subscription,
 observer, or plugin was installed, and the probe sockets were closed.
 
-The application service in `backend/hdm/application/offline_readiness.py` now
+The application service in `backend/regear/application/offline_readiness.py` now
 implements one request's admission/revalidation/freshness boundary over an
 injected bounded local-memory reader. It does not manufacture source approval
 or benchmark evidence. It reads no source when unreviewed, unbenchmarked,

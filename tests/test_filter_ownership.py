@@ -9,14 +9,14 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.domain.filter_authorization import (  # noqa: E402
+from regear.domain.filter_authorization import (  # noqa: E402
     AuthorizationState,
     CgroupIdentity,
     OwnerIdentity,
     ParentScopeAuthorization,
     authorize_parent_scope,
 )
-from hdm.domain.filter_ownership import (  # noqa: E402
+from regear.domain.filter_ownership import (  # noqa: E402
     FILTER_OWNERSHIP_SCHEMA_VERSION,
     AttachedFilter,
     FilterOwnership,

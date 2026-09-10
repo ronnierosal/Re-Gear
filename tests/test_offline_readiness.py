@@ -9,7 +9,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.domain.offline_readiness import (  # noqa: E402
+from regear.domain.offline_readiness import (  # noqa: E402
     CloudSaveState,
     DownloadState,
     InstallState,
@@ -33,7 +33,7 @@ from hdm.domain.offline_readiness import (  # noqa: E402
     offline_readiness_to_public_dict,
     review_offline_evidence_source,
 )
-from hdm.domain.models import GameState  # noqa: E402
+from regear.domain.models import GameState  # noqa: E402
 
 
 def ready_evidence(**changes) -> OfflineReadinessEvidence:

@@ -8,10 +8,10 @@ import unittest
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'backend'))
-from hdm.adapters.steamos.audio_profile_observation import AudioProfile, AudioProfileObservation
-from hdm.adapters.steamos.commands import PipeWireCommandRunner
-from hdm.delivery.audio_profile_trial import AudioProfileTrial, AudioTrialObservation
-from hdm.delivery.audio_profile_trial_state import (AudioTrialBootVerdict, AudioTrialRecord,
+from regear.adapters.steamos.audio_profile_observation import AudioProfile, AudioProfileObservation
+from regear.adapters.steamos.commands import PipeWireCommandRunner
+from regear.delivery.audio_profile_trial import AudioProfileTrial, AudioTrialObservation
+from regear.delivery.audio_profile_trial_state import (AudioTrialBootVerdict, AudioTrialRecord,
                                                    AudioTrialPhase as Phase, decide_trial_boot)
 
 
@@ -181,7 +181,7 @@ class AudioProfileTrialTests(unittest.TestCase):
 
     @unittest.skipUnless(sys.platform == 'linux', 'actual audio journal dirfd integration')
     def test_real_store_off_restore_and_prepared_recovery(self):
-        from hdm.delivery.audio_profile_trial_store import AudioTrialStore
+        from regear.delivery.audio_profile_trial_store import AudioTrialStore
         for prepared in (False, True):
             self.setUp()
             with tempfile.TemporaryDirectory() as root:
@@ -258,7 +258,7 @@ class AudioProfileTrialTests(unittest.TestCase):
 class AudioProfileCommandTests(unittest.TestCase):
     def test_numeric_command_no_shell(self):
         runner = PipeWireCommandRunner(effective_uid=lambda: 0)
-        with patch('hdm.adapters.steamos.commands.subprocess.run',
+        with patch('regear.adapters.steamos.commands.subprocess.run',
                    return_value=SimpleNamespace(stdout=b'', stderr=b'', returncode=0)) as run:
             self.assertTrue(runner.set_profile(SimpleNamespace(username='deck', uid=1000), 42, 0).ok)
         self.assertEqual(run.call_args.args[0][-4:], ('/usr/bin/wpctl', 'set-profile', '42', '0'))
@@ -267,7 +267,7 @@ class AudioProfileCommandTests(unittest.TestCase):
     def test_explicit_profile_deadline_is_bounded_and_invalid_values_do_not_run(self):
         runner = PipeWireCommandRunner(effective_uid=lambda: 0)
         user = SimpleNamespace(username='deck', uid=1000)
-        with patch('hdm.adapters.steamos.commands.subprocess.run',
+        with patch('regear.adapters.steamos.commands.subprocess.run',
                    return_value=SimpleNamespace(stdout=b'', stderr=b'', returncode=0)) as run:
             self.assertTrue(runner.set_profile(user, 42, 0, timeout_seconds=0.5).ok)
             self.assertEqual(run.call_args.kwargs['timeout'], 0.5)
@@ -278,7 +278,7 @@ class AudioProfileCommandTests(unittest.TestCase):
 
     def test_invalid_numeric_arguments_never_execute(self):
         runner = PipeWireCommandRunner(effective_uid=lambda: 0)
-        with patch('hdm.adapters.steamos.commands.subprocess.run') as run:
+        with patch('regear.adapters.steamos.commands.subprocess.run') as run:
             for object_id, index in ((True, 0), (0, 0), ('42', 0), (42, True),
                                      (42, -1), (42, '0'), (2**32, 0), (42, 2**32)):
                 self.assertFalse(runner.set_profile(SimpleNamespace(username='deck', uid=1000), object_id, index).ok)

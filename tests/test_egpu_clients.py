@@ -9,9 +9,9 @@ from pathlib import Path, PurePosixPath
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.adapters.steamos.egpu_clients import EgpuClientDiscovery  # noqa: E402
-from hdm.domain.client_policy import classify_egpu_client  # noqa: E402
-from hdm.domain.models import EgpuClientKind, EgpuResourceKind  # noqa: E402
+from regear.adapters.steamos.egpu_clients import EgpuClientDiscovery  # noqa: E402
+from regear.domain.client_policy import classify_egpu_client  # noqa: E402
+from regear.domain.models import EgpuClientKind, EgpuResourceKind  # noqa: E402
 
 
 def write(path: Path, value: str) -> None:

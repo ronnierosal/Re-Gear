@@ -11,17 +11,17 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.adapters.steamos.audio_handoff import (  # noqa: E402
+from regear.adapters.steamos.audio_handoff import (  # noqa: E402
     G1AudioHandoff,
     G1AudioReadiness,
 )
-from hdm.adapters.steamos.commands import (  # noqa: E402
+from regear.adapters.steamos.commands import (  # noqa: E402
     AudioCommandResult,
     PipeWireCommandRunner,
 )
-from hdm.adapters.steamos.gamescope_user import GamescopeUserContext  # noqa: E402
-from hdm.delivery.audio_state import PortableAudioStateStore  # noqa: E402
-from hdm.domain.control_plane import PlacementState  # noqa: E402
+from regear.adapters.steamos.gamescope_user import GamescopeUserContext  # noqa: E402
+from regear.delivery.audio_state import PortableAudioStateStore  # noqa: E402
+from regear.domain.control_plane import PlacementState  # noqa: E402
 
 
 USER = GamescopeUserContext(
@@ -525,7 +525,7 @@ class PipeWireCommandRunnerTests(unittest.TestCase):
                 {"returncode": 0, "stdout": b"", "stderr": b""},
             )()
 
-        import hdm.adapters.steamos.commands as module
+        import regear.adapters.steamos.commands as module
 
         original = module.subprocess.run
         module.subprocess.run = run

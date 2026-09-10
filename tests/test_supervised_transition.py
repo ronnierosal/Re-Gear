@@ -11,27 +11,27 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.application.experimental_transition import (  # noqa: E402
+from regear.application.experimental_transition import (  # noqa: E402
     ExperimentalTransitionApprovalStore,
 )
-from hdm.application.supervised_transition import (  # noqa: E402
+from regear.application.supervised_transition import (  # noqa: E402
     SupervisedPresentationTransitionService,
 )
-from hdm.delivery.presentation_transition import status_to_payload  # noqa: E402
-from hdm.application.transition_orchestrator import RuntimeTransitionResult  # noqa: E402
-from hdm.domain.control_plane import (  # noqa: E402
+from regear.delivery.presentation_transition import status_to_payload  # noqa: E402
+from regear.application.transition_orchestrator import RuntimeTransitionResult  # noqa: E402
+from regear.domain.control_plane import (  # noqa: E402
     PlacementState,
     TransitionOutcome,
     TransitionOutcomeKind,
     WorkflowState,
 )
-from hdm.domain.serialization import snapshot_from_dict  # noqa: E402
-from hdm.domain.transition_journal import (  # noqa: E402
+from regear.domain.serialization import snapshot_from_dict  # noqa: E402
+from regear.domain.transition_journal import (  # noqa: E402
     JournalEventKind,
     TransitionJournal,
     append_journal_entry,
 )
-from hdm.ports.transition import VersionedObservation  # noqa: E402
+from regear.ports.transition import VersionedObservation  # noqa: E402
 
 
 FIXTURES = ROOT / "tests" / "fixtures"

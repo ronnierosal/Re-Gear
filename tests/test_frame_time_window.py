@@ -4,7 +4,7 @@ from dataclasses import replace
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
-from hdm.domain.frame_time_window import FrameTimeSample, FrameWindowPolicy, FrameWindowState, update_frame_window
+from regear.domain.frame_time_window import FrameTimeSample, FrameWindowPolicy, FrameWindowState, update_frame_window
 
 
 class FrameWindowTests(unittest.TestCase):

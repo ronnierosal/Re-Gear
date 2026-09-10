@@ -9,7 +9,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.domain.control_plane import (  # noqa: E402
+from regear.domain.control_plane import (  # noqa: E402
     CapabilitySupport,
     PlacementState,
     PlannedStep,
@@ -22,10 +22,10 @@ from hdm.domain.control_plane import (  # noqa: E402
     WorkflowState,
     compose_capabilities,
 )
-from hdm.domain.inference import infer_placement  # noqa: E402
-from hdm.domain.serialization import snapshot_from_dict  # noqa: E402
-from hdm.profiles.ally_x import CAPABILITIES as ALLY_X_CAPABILITIES  # noqa: E402
-from hdm.profiles.gpd_g1 import CAPABILITIES as GPD_G1_CAPABILITIES  # noqa: E402
+from regear.domain.inference import infer_placement  # noqa: E402
+from regear.domain.serialization import snapshot_from_dict  # noqa: E402
+from regear.profiles.ally_x import CAPABILITIES as ALLY_X_CAPABILITIES  # noqa: E402
+from regear.profiles.gpd_g1 import CAPABILITIES as GPD_G1_CAPABILITIES  # noqa: E402
 
 
 FIXTURES = ROOT / "tests" / "fixtures"

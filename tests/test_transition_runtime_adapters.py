@@ -9,12 +9,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.adapters.transition_runtime import (  # noqa: E402
+from regear.adapters.transition_runtime import (  # noqa: E402
     BoundedDeadlineWaiter,
     SnapshotTransitionObservationAdapter,
 )
-from hdm.domain.serialization import snapshot_from_dict  # noqa: E402
-from hdm.ports.transition import MechanismResult  # noqa: E402
+from regear.domain.serialization import snapshot_from_dict  # noqa: E402
+from regear.ports.transition import MechanismResult  # noqa: E402
 
 
 class Discovery:

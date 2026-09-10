@@ -10,24 +10,24 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from hdm.application.filter_arm import FilterArmCoordinator, HolderObservation  # noqa: E402
-from hdm.application.owned_filter import OwnedDeviceFilter  # noqa: E402
-from hdm.delivery.filter_ownership_store import (  # noqa: E402
+from regear.application.filter_arm import FilterArmCoordinator, HolderObservation  # noqa: E402
+from regear.application.owned_filter import OwnedDeviceFilter  # noqa: E402
+from regear.delivery.filter_ownership_store import (  # noqa: E402
     RECORD_FILENAME,
     FileFilterOwnershipStore,
 )
-from hdm.domain.filter_authorization import (  # noqa: E402
+from regear.domain.filter_authorization import (  # noqa: E402
     AuthorizationState,
     CgroupIdentity,
     OwnerIdentity,
     ParentScopeAuthorization,
     authorize_parent_scope,
 )
-from hdm.domain.filter_ownership import (  # noqa: E402
+from regear.domain.filter_ownership import (  # noqa: E402
     OwnershipPhase,
     OwnershipRecoveryState,
 )
-from hdm.ports.device_filter import (  # noqa: E402
+from regear.ports.device_filter import (  # noqa: E402
     ArmedFilter,
     ArmOutcome,
     ArmResult,
@@ -593,7 +593,7 @@ class ProductionWiringTests(unittest.TestCase):
 
     def builder(self) -> ast.FunctionDef:
         source = (
-            ROOT / "backend" / "hdm" / "delivery" / "live_disconnect_runtime.py"
+            ROOT / "backend" / "regear" / "delivery" / "live_disconnect_runtime.py"
         ).read_text(encoding="utf-8")
         tree = ast.parse(source)
         for node in ast.walk(tree):

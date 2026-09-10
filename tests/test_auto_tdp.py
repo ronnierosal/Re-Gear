@@ -7,8 +7,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 
-from hdm.domain.auto_tdp import AutoTdpObservation, AutoTdpPolicy, AutoTdpState, propose_auto_tdp
-from hdm.domain.models import GameState
+from regear.domain.auto_tdp import AutoTdpObservation, AutoTdpPolicy, AutoTdpState, propose_auto_tdp
+from regear.domain.models import GameState
 
 
 class AutoTdpTests(unittest.TestCase):
