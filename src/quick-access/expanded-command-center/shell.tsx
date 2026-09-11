@@ -15,7 +15,7 @@ const iconIds: Record<string, CommandCenterIconId> = {
 function Icon({ id }: { id: string }) { return <CommandCenterIcon id={iconIds[id] ?? "status-unknown"} size={34}/>; }
 
 /** Shared synthetic presentation for browser preview and native Decky shell. */
-export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReasons = false, settings, native = false, primitives, previewColumns, tiles }: {
+export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReasons = false, settings, native = false, primitives, previewColumns, tiles, renderDetail }: {
   onClose(): void; initialTab?: Tab; longReasons?: boolean; settings?: ReactNode; native?: boolean;
   primitives?: { Button: ElementType; Focusable: ElementType };
   /** Synthetic comparison only; native callers never pass this. */
@@ -24,6 +24,9 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
    *  synthetic tiles, so this can be filled in one tab at a time without the
    *  rest of the prototype claiming to be live. */
   tiles?: Partial<Record<Tab, readonly Tile[]>>;
+  /** The application owns existing controls, availability and dispatch guards.
+   * Null means status-only. Never invoked for sample or removed readings. */
+  renderDetail?: (tab: Tab, tile: Tile) => ReactNode;
 }) {
   const Button = primitives?.Button ?? "button";
   const Container = primitives?.Focusable ?? "div";
@@ -36,6 +39,7 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
   const launcher = useRef<string | undefined>(undefined);
   const pendingFocus = useRef<string | undefined>(undefined);
   const opener = useRef<HTMLElement | null>(null);
+  const detailHadFocus = useRef(false);
   const supplied = tiles?.[tab];
   // A tab with real readings must stop describing itself as sample data.
   const synthetic = supplied === undefined;
@@ -45,18 +49,33 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
     id: nestedId, title: "Status unavailable", value: "Unknown",
     detail: "This reading is no longer available. Return to the menu for current status.",
   };
+  const detailTile = !synthetic && nestedId !== null ? supplied.find(item => item.id === nestedId) : undefined;
+  const detailContent = detailTile ? renderDetail?.(tab, detailTile) : null;
+  const hasDetail = detailContent != null && detailContent !== false;
   const gridColumns = columns;
   const focus = (id?: string) => {
     const target = Array.from(panel.current?.querySelectorAll<HTMLElement>("[data-ec-control]") ?? []).find(el => el.dataset.ecControl === id);
-    const interactive = target?.matches("button,select,[tabindex]") ? target : target?.querySelector<HTMLElement>('button,select,[tabindex="0"]');
+    const child = target?.querySelector<HTMLElement>('button:not(:disabled),select:not(:disabled),input:not(:disabled),textarea:not(:disabled),[tabindex="0"]');
+    // Native Focusable may itself have tabindex; an embedded editor should
+    // receive focus before its wrapper.
+    const interactive = id === "nested-content" ? child : target?.matches("button,select,input,textarea,[tabindex]") ? target : child;
     if (!interactive) {
-      panel.current?.querySelector<HTMLElement>(`[data-ec-tab="${tab}"]`)?.focus();
+      const fallback = id === "nested-content" ? panel.current?.querySelector<HTMLElement>('[data-ec-control="nested-back"]') : null;
+      (fallback ?? panel.current?.querySelector<HTMLElement>(`[data-ec-tab="${tab}"]`))?.focus();
       return;
     }
     interactive?.focus({ preventScroll: true });
     if (interactive) { if (tab === "settings" && !nested) reveal(interactive); else interactive.scrollIntoView({ block: "nearest" }); }
   };
   const controlIds = () => Array.from(panel.current?.querySelectorAll<HTMLElement>("[data-ec-control]") ?? []).map(el => el.dataset.ecControl!);
+  useLayoutEffect(() => {
+    const doc = panel.current?.ownerDocument;
+    if (!hasDetail && nestedId !== null && detailHadFocus.current && doc &&
+        (doc.activeElement === doc.body || !doc.activeElement?.isConnected)) {
+      detailHadFocus.current = false;
+      focus("nested-back");
+    }
+  }, [hasDetail, nestedId, tab]);
   useLayoutEffect(() => {
     opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     return () => { if (opener.current?.isConnected) opener.current.focus(); };
@@ -68,7 +87,7 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
     return () => observer.disconnect();
   }, [previewColumns]);
   useLayoutEffect(() => {
-    focus(nested ? "nested-back" : restoreTarget(controlIds(), pendingFocus.current ?? memory.current[tab]));
+    focus(nested ? (hasDetail ? "nested-content" : "nested-back") : restoreTarget(controlIds(), pendingFocus.current ?? memory.current[tab]));
     pendingFocus.current = undefined;
   }, [tab, nestedId]);
 
@@ -104,6 +123,11 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
   }
   function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
     if (event.altKey || event.ctrlKey || event.metaKey) return;
+    // Embedded pickers own editing/navigation keys. Escape and tab trapping
+    // still belong to this shell; native controller events remain Decky's.
+    const detailTarget = (event.target as HTMLElement).closest("[data-ec-detail-content]");
+    if (detailTarget && (event.target as HTMLElement).matches("input,textarea,select") && !["Escape", "Tab"].includes(event.key)) return;
+    if (native && detailTarget && event.key.startsWith("Arrow")) return;
     if (native && (event.target as HTMLElement).closest('[data-ec-control="binding-menu"]')) return;
     if ((event.target as HTMLElement).tagName === "SELECT" && ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Home", "End", " ", "Enter"].includes(event.key)) return;
     if (["q", "Q", "e", "E", "Escape"].includes(event.key)) {
@@ -113,7 +137,7 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
       return;
     }
     if (event.key === "Tab") {
-      const buttons = Array.from(panel.current?.querySelectorAll<HTMLElement>("button, select") ?? []);
+      const buttons = Array.from(panel.current?.querySelectorAll<HTMLElement>("button:not(:disabled), select:not(:disabled), input:not(:disabled), textarea:not(:disabled)") ?? []);
       const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
       if ((event.shiftKey && index <= 0) || (!event.shiftKey && index === buttons.length - 1)) {
         event.preventDefault(); buttons[event.shiftKey ? buttons.length - 1 : 0]?.focus();
@@ -163,7 +187,7 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
       }
     } else {
       event.preventDefault(); event.stopPropagation();
-      const buttons = Array.from(panel.current?.querySelectorAll<HTMLElement>("button, select") ?? []);
+      const buttons = Array.from(panel.current?.querySelectorAll<HTMLElement>("button:not(:disabled), select:not(:disabled), input:not(:disabled), textarea:not(:disabled)") ?? []);
       const index = buttons.indexOf(target as HTMLButtonElement);
       const next = Math.max(0, Math.min(buttons.length - 1, index + (direction === "up" || direction === "left" ? -1 : 1)));
       buttons[next]?.focus(); buttons[next]?.scrollIntoView({ block: "nearest" });
@@ -176,14 +200,11 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
               aria-label={`${item.title}: ${item.value}. ${item.detail}.${synthetic ? " Sample data." : ""} View details.`}
               onFocus={(event: { target: EventTarget }) => { memory.current[tab] = item.id; (event.target as HTMLElement).scrollIntoView({ block: "nearest" }); }} onClick={() => { launcher.current = item.id; setNested(item.id); }}>
               <span className="rg-expanded-tile-body">
-                <span className="rg-expanded-tile-icon"><Icon id={item.id}/></span>
-                {item.id === "disconnect" ? <>
-                  <span className="rg-expanded-label">Safe Disconnect</span>
-                  <span className="rg-expanded-value"><CommandCenterIcon id="status-warning" size={20}/>{item.value}</span>
-                </> : <>
-                  <span className="rg-expanded-value">{item.value}</span>
+                <span className="rg-expanded-tile-heading">
+                  <span className="rg-expanded-tile-icon"><Icon id={item.id}/></span>
                   <span className="rg-expanded-label">{item.title}</span>
-                </>}
+                </span>
+                <span className="rg-expanded-value">{item.id === "disconnect" && <CommandCenterIcon id="status-warning" size={16}/>} {item.value}</span>
                 <span className="rg-expanded-detail">{item.detail}{longReasons && item.tone === "unavailable" ? " — Provider observations are unavailable in this synthetic preview. No capability or successful operation can be inferred from the displayed sample." : ""}</span>
                 <span className="rg-expanded-chevron" aria-hidden="true">›</span>
               </span>
@@ -192,8 +213,8 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
   return <div className="rg-expanded-backdrop">
     <style>{expandedStyles}</style>
     <Container ref={panel} data-ec-panel className="rg-expanded" role="dialog" aria-modal="true" aria-label={synthetic ? "Re-Gear expanded Command Center prototype" : "Re-Gear Command Center"} onKeyDown={onKeyDown} {...nativeHandlers}
-      onFocus={(event: { target: EventTarget }) => { const id = (event.target as HTMLElement).closest<HTMLElement>("[data-ec-control]")?.dataset.ecControl; if (id && !nested) memory.current[tab] = id; }}>
-      <header className="rg-expanded-brand"><span className="rg-expanded-wordmark"><img src={brandIcon} alt=""/>Re-Gear</span><span className="rg-expanded-demo"><span className="rg-expanded-demo-label"><i/>{synthetic ? "Demo · Sample data" : "Application status"}</span><span>{synthetic ? "Hardware controls not connected" : "Readings only · View details"}</span></span></header>
+      onFocus={(event: { target: EventTarget }) => { detailHadFocus.current = Boolean((event.target as HTMLElement).closest("[data-ec-detail-content]")); const id = (event.target as HTMLElement).closest<HTMLElement>("[data-ec-control]")?.dataset.ecControl; if (id && !nested) memory.current[tab] = id; }}>
+      <header className="rg-expanded-brand"><span className="rg-expanded-wordmark"><img src={brandIcon} alt=""/>Re-Gear</span><span className="rg-expanded-demo"><span className="rg-expanded-demo-label"><i/>{synthetic ? "Demo · Sample data" : "Application status"}</span><span>{synthetic ? "Hardware controls not connected" : renderDetail ? "Status and controls" : "Readings only · View details"}</span></span></header>
       <Container className="rg-expanded-tabs" role="tablist" aria-label="Command Center sections" {...(native ? { "flow-children": "horizontal", noFocusRing: true } : {})}>
         {tabs.map(id => <Button key={id} id={`ec-tab-${id}`} type="button" role="tab" aria-selected={tab === id} aria-controls="ec-tabpanel" data-ec-tab={id} className="rg-expanded-tab"
           onClick={() => { setNested(null); setTab(id); if (id === tab) focus(restoreTarget(controlIds(), memory.current[tab])); }}>
@@ -202,14 +223,16 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
       </Container>
       <div ref={content} className="rg-expanded-content" id="ec-tabpanel" role="tabpanel" onFocusCapture={event => { if(tab === "settings") reveal(event.target as HTMLElement); }} aria-labelledby={`ec-tab-${tab}`}>
         <h2>{nested ? nested.title : tabLabels[tab]}</h2>
-        <p className="rg-expanded-context">{nested ? (synthetic ? "Configuration preview · no changes are applied" : "Current status · no changes are applied") : tab === "quick" ? "Essential controls while you play" : tab === "performance" ? "Configure performance for your play style" : synthetic ? "Status and configuration preview" : "Status and configuration"}</p>
+        <p className="rg-expanded-context">{nested ? (hasDetail ? "Settings and actions" : synthetic ? "Configuration preview · no changes are applied" : "Current status · no changes are applied") : tab === "quick" ? "Essential controls while you play" : tab === "performance" ? "Configure performance for your play style" : synthetic ? "Status and configuration preview" : "Status and configuration"}</p>
         {nested ? <section className="rg-expanded-detail-page">
+          {hasDetail ? <Container key={nested.id} data-ec-control="nested-content" data-ec-detail-content {...(native ? { "flow-children": "vertical", noFocusRing: true, preferredFocus: true } : {})}>{detailContent}</Container> : <>
           <h3>{nested.value}</h3>
           <p>{synthetic && nested.id === "auto" ? "Auto TDP is off and not configured. Target and limit selection must precede Start. This prototype cannot start, stop or tune the controller." : nested.detail}</p>
           {synthetic && nested.id === "auto" && <p><strong>State vocabulary:</strong> Off · Running · Stopping… · Unknown · Needs configuration</p>}
-          {nested.id === "disconnect" && <p><strong>No unplug clearance.</strong> {synthetic ? "Backend readiness and confirmation are not connected. " : "Readiness, confirmation and unplug clearance are separate. "}A display change, missing observation or successful command does not establish safety.</p>}
           <p>{synthetic ? "Sample data only. No hardware operation is available." : "Status details only. No operation is available from this view."}</p>
-          <Button type="button" className="rg-expanded-back" data-ec-control="nested-back" {...(native ? { preferredFocus: true } : {})} onClick={back}>Back to {tabLabels[tab]}</Button>
+          </>}
+          {nested.id === "disconnect" && <p><strong>No unplug clearance.</strong> {synthetic ? "Backend readiness and confirmation are not connected. " : "Readiness, confirmation and unplug clearance are separate. "}A display change, missing observation or successful command does not establish safety.</p>}
+          <Button type="button" className="rg-expanded-back" data-ec-control="nested-back" {...(native ? { preferredFocus: !hasDetail } : {})} onClick={back}>Back to {tabLabels[tab]}</Button>
         </section> : <>
           {tab === "settings" && settings}
           <Container className={tab === "settings" ? "rg-expanded-grid rg-expanded-settings-list" : "rg-expanded-grid"} style={{ "--ec-columns": gridColumns } as CSSProperties} {...(native ? { "flow-children": "grid", preferredFocus: true, noFocusRing: true } : {})}>

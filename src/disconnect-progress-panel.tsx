@@ -1,5 +1,6 @@
+import { EgpuConfirmModal } from "./egpu-confirm-modal";
 import { useEffect, useState } from "react";
-import { ConfirmModal, showModal } from "@decky/ui";
+import { showModal } from "@decky/ui";
 import { getSnapshot, type SnapshotPayload } from "./backend";
 import { disconnectProgress } from "./disconnect-progress";
 import { connectionPanelCss } from "./connection-panel-style";
@@ -21,7 +22,7 @@ function DisconnectPanel({close}: {close(): void}) {
     return () => { stopped = true; clearInterval(tick); if (timer !== undefined) clearTimeout(timer); };
   }, []);
   const status = disconnectProgress(payload, failed, now);
-  return <ConfirmModal className="rg-connection-modal" strTitle="Disconnect status"
+  return <EgpuConfirmModal className="rg-connection-modal" strTitle="Disconnect status"
     strOKButtonText="Hide" bAlertDialog={true} bDisableBackgroundDismiss={true} bHideCloseIcon={true} onOK={close} onCancel={close}>
     <style>{connectionPanelCss}</style>
     <div className="rg-connection">
@@ -31,7 +32,7 @@ function DisconnectPanel({close}: {close(): void}) {
       <p role="status" className="rg-connection-detail">{status.detail}</p>
       <p className="rg-connection-foot">Status only. This does not release devices. Shut down fully before unplugging.</p>
     </div>
-  </ConfirmModal>;
+  </EgpuConfirmModal>;
 }
 export function showDisconnectProgress(onClose: () => void) {
   let modal: ReturnType<typeof showModal>;

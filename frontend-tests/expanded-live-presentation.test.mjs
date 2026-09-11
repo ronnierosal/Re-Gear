@@ -23,6 +23,7 @@ async function fixture() {
     ${compile("../src/quick-access/expanded-command-center/shell.tsx")}
     export function render(props) {cursor=0;effects=[];return ExpandedCommandCenter({onClose(){}, ...props});}
     export function restoreFocus() {effects.at(-1)();}
+    export function recoverWithdrawnFocus() {effects[0]();}
   `;
   return import(`data:text/javascript;base64,${Buffer.from(code).toString("base64")}#${++fixtureId}`);
 }
@@ -98,4 +99,112 @@ test("supplied disconnect readiness retains no clearance without claiming its so
   assert.match(text(tree), /Game is running/);
   assert.match(text(tree), /No unplug clearance/);
   assert.doesNotMatch(text(tree), /readiness and confirmation are not connected/);
+});
+
+test("application detail controls receive updated tiles and preserve pending and error results", async () => {
+  const app=await fixture();
+  let calls=0;
+  const props={tiles:{quick:[auto("Ready", "Configure")]},renderDetail:(tab,tile)=>{
+    assert.equal(tab,"quick");
+    return {type:"button",props:{disabled:tile.value === "Pending",onClick(){calls++;},children:[`Action: ${tile.value}`]}};
+  }};
+  let tree=app.render(props);
+  assert.equal(calls,0);
+  nodes(tree).find(node=>node.props?.["data-ec-control"] === "auto").props.onClick();
+  tree=app.render(props);
+  assert.match(text(tree),/Status and controls.*Settings and actions.*Action: Ready/);
+  assert.doesNotMatch(text(tree),/No operation is available from this view/);
+  nodes(tree).find(node=>node.props?.children?.[0] === "Action: Ready").props.onClick();
+  assert.equal(calls,1);
+  tree=app.render({...props,tiles:{quick:[auto("Pending", "Waiting")]}});
+  assert.equal(nodes(tree).find(node=>node.props?.children?.[0] === "Action: Pending").props.disabled,true);
+  tree=app.render({...props,tiles:{quick:[auto("Failed", "Try again")]}});
+  assert.match(text(tree),/Action: Failed/);
+  nodes(tree).find(node=>node.props?.["data-ec-control"] === "nested-back").props.onClick();
+  app.render(props);
+  assert.equal(calls,1,"rendering, updates and Back never dispatch an action");
+});
+
+test("sample and removed tiles never invoke application control content", async () => {
+  const app=await fixture();
+  let calls=0;
+  const renderDetail=()=>{calls++;return "Control";};
+  let tree=app.render({renderDetail});
+  nodes(tree).find(node=>node.props?.["data-ec-control"] === "auto").props.onClick();
+  app.render({renderDetail});
+  assert.equal(calls,0);
+  tree=app.render({renderDetail,tiles:{quick:[]}});
+  assert.equal(calls,0);
+  assert.doesNotMatch(text(tree),/Settings and actions/);
+});
+
+test("null detail content keeps unavailable reason readable", async () => {
+  const app=await fixture();
+  const props={tiles:{quick:[auto("Unknown", "Provider unavailable")]},renderDetail:()=>null};
+  let tree=app.render(props);
+  nodes(tree).find(node=>node.props?.["data-ec-control"] === "auto").props.onClick();
+  tree=app.render(props);
+  assert.match(text(tree),/Provider unavailable.*No operation is available/);
+});
+
+test("embedded editing keys are left to the input instead of switching tabs", async () => {
+  const app=await fixture();
+  const tree=app.render({});
+  const panel=nodes(tree).find(node=>node.props && "data-ec-panel" in node.props);
+  for (const key of ["ArrowLeft","ArrowDown","q","e","Home"]) {
+    panel.props.onKeyDown({key,target:{closest:()=>({}),matches:()=>true},preventDefault(){assert.fail("editor key intercepted");},stopPropagation(){assert.fail("editor key intercepted");}});
+  }
+});
+
+test("a tabindex-bearing detail wrapper focuses its editor rather than itself", async () => {
+  const app=await fixture();
+  const props={tiles:{quick:[auto("Ready", "Configure")]},renderDetail:()=>"Editor"};
+  let tree=app.render(props);
+  nodes(tree).find(node=>node.props?.["data-ec-control"] === "auto").props.onClick();
+  tree=app.render(props);
+  let focused;
+  const editor={focus(){focused="editor";},scrollIntoView(){}};
+  const wrapper={dataset:{ecControl:"nested-content"},matches:()=>true,querySelector:()=>editor,focus(){focused="wrapper";}};
+  nodes(tree).find(node=>node.props && "data-ec-panel" in node.props).props.ref.current={querySelectorAll:()=>[wrapper]};
+  app.restoreFocus();
+  assert.equal(focused,"editor");
+});
+
+test("withdrawn focused controls recover Back without stealing retained dialog focus", async () => {
+  for (const removed of [false,true]) {
+    const app=await fixture();
+    const props={tiles:{quick:[auto("Ready","Configure")]},renderDetail:()=>"Editor"};
+    let tree=app.render(props);
+    nodes(tree).find(node=>node.props?.["data-ec-control"] === "auto").props.onClick();
+    tree=app.render(props);
+    let panel=nodes(tree).find(node=>node.props && "data-ec-panel" in node.props);
+    panel.props.onFocus({target:{closest:()=>({dataset:{ecControl:"nested-content"}})}});
+    const body={isConnected:true};
+    const doc={body,activeElement:body};
+    let calls=0;
+    const back={dataset:{ecControl:"nested-back"},matches:()=>true,querySelector:()=>null,focus(){calls++;},scrollIntoView(){}};
+    panel.props.ref.current={ownerDocument:doc,querySelectorAll:()=>[back]};
+    // A normal update must not reset an editor's focus/caret.
+    tree=app.render(props);
+    app.recoverWithdrawnFocus();
+    assert.equal(calls,0);
+    tree=app.render(removed?{...props,tiles:{quick:[]}}:{...props,renderDetail:()=>null});
+    // If native focus has already moved to a surviving control, keep it there.
+    doc.activeElement={isConnected:true};
+    app.recoverWithdrawnFocus();
+    assert.equal(calls,0);
+    doc.activeElement=body;
+    app.recoverWithdrawnFocus();
+    assert.equal(calls,1);
+  }
+});
+
+test("compact cards present icon and label before the value and secondary detail",async()=>{
+ const app=await fixture();const tree=app.render({tiles:{quick:[{id:'manual',title:'Manual TDP',value:'18 W',detail:'Current limit'}]}});
+ const tile=nodes(tree).find(node=>node.props?.['data-ec-control']==='manual');
+ const body=text(tile);assert.ok(body.indexOf('Manual TDP')<body.indexOf('18 W'));
+ assert.ok(body.indexOf('18 W')<body.indexOf('Current limit'));
+ const heading=nodes(tile).find(node=>node.props?.className==='rg-expanded-tile-heading');
+ assert.match(text(heading),/Manual TDP/);
+ assert.ok(nodes(heading).some(node=>node.props?.className==='rg-expanded-tile-icon'));
 });
