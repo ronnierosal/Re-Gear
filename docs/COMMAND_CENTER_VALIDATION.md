@@ -1,6 +1,6 @@
 # Command Center validation
 
-## Current expanded UI checkpoint — 2026-09-10
+## Earlier expanded UI checkpoint — 2026-09-10
 
 Verified main: `4be87ddec4560a96945da68d478383105f91caa0` (merged PR #268).
 This is repository evidence, not an installed-device readback.
@@ -13,14 +13,26 @@ This is repository evidence, not an installed-device readback.
 | Stable editor focus | The #274 owner reports 605 frontend tests plus browser checks for retained caret, pending/failure/cancel, and null/removed detail recovery before pressing Back. The reviewer inspected the corrections but did not independently rerun that browser capture. |
 | Live bridge | `command-center-data-source` is owned by Claude `claude-a224c5ea-bc89-4cb3-9bd2-93893d3c48f8`, covering index.tsx/native.tsx. Combined bridge plus detail controls require a fresh exact-commit check. |
 
+## Photo-based layout correction — 2026-09-10
+
+PR #274 correction `93902f498bab6d155d3d95642e4eb73a38186f9f`
+restores 53vw/82vh geometry, compact tabs and cards, icon-plus-label above
+value and secondary text, and intact value words. The user-reported 0.3.74
+photo showed clipped headings, tall cards and mid-word wrapping; four columns
+were already visible. Its staged package revision was `bf03c324`.
+
+Column selection in this correction uses measured content width: four columns
+at 400px or more, three at 300–399px, two at 280–299px, one below 280px.
+Viewport and outer panel width are not content width. The source-rendered
+828×466 preview uses the actual breakpoints and shows both rows, including
+Safe Disconnect spanning two columns. The reviewer inspected this preview;
+it is not native Decky or installed-device proof. The owner reports 610 frontend
+passes, one bridge-absent skip, typecheck/build passes and four green CI checks
+at this exact UI head. Combined bridge checks remain separate.
+
 The previous device session measured 828×466 CSS pixels at DPR approximately
-2.32. Current column selection uses measured content width: four columns at 640px or
-more, three at 430–639px, two at 280–429px, and one below 280px. Viewport and
-outer panel width are not content width. The earlier approximately 438.85px
-panel therefore does not establish four-column behavior under current thresholds.
-The historical temporary four-column native stylesheet trial, with Safe Disconnect
-spanning two columns, showed no clipped text; it is not current-layout proof. A temporary corrected View/Back + Y listener opened the
-menu twice; that evidence does not establish installation of later UI/bridge work.
+2.32. Its temporary corrected View/Back + Y listener opened the menu twice;
+that does not establish installation or behavior of this correction.
 
 ## Next combined and native checks
 
