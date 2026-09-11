@@ -699,3 +699,44 @@ class SteamOsTdpCommandRunner:
         except UnicodeDecodeError:
             return CommandResult(argv, completed.returncode, "", "", "tdp.output_invalid")
         return CommandResult(argv, completed.returncode, decoded, "")
+
+
+class HeldSessionCommandRunner:
+    """Fixed user-only commands for the internal held-stop recovery executor."""
+    UNITS = frozenset(('gamescope-session.target', 'gamescope-session.service',
+                      'pipewire.socket', 'pipewire.service', 'wireplumber.service'))
+
+    def __init__(self, uid):
+        if type(uid) is not int or uid <= 0 or getattr(os, 'geteuid', lambda: -1)() != uid:
+            raise ValueError('held session commands require the observed user')
+        self.uid = uid
+
+    def run(self, operation, unit=None):
+        if getattr(os, 'geteuid', lambda: -1)() != self.uid:
+            return None
+        if operation == 'reload' and unit is None:
+            suffix = ('daemon-reload',)
+        elif type(unit) is str and unit in self.UNITS:
+            if operation in ('start', 'stop'):
+                suffix = (operation, unit)
+            elif operation == 'state':
+                suffix = ('show', unit, '--property=ActiveState', '--value')
+            else:
+                return None
+        else:
+            return None
+        try:
+            result = subprocess.run(('/usr/bin/systemctl', '--user', *suffix),
+                stdin=subprocess.DEVNULL, capture_output=True, timeout=5,
+                shell=False, check=False, env={
+                    'PATH': '/usr/bin:/bin', 'LANG': 'C', 'LC_ALL': 'C',
+                    'XDG_RUNTIME_DIR': '/run/user/' + str(self.uid),
+                    'DBUS_SESSION_BUS_ADDRESS': 'unix:path=/run/user/' + str(self.uid) + '/bus'})
+            if result.returncode != 0:
+                return None
+            if operation != 'state':
+                return True
+            value = result.stdout.strip()
+            return value.decode('ascii') if value in (b'active', b'inactive') else None
+        except (OSError, subprocess.SubprocessError):
+            return None

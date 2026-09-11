@@ -95,3 +95,27 @@ class RestoreTimerTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class HeldSessionCommandTests(unittest.TestCase):
+    def test_root_cannot_run_user_only_executor(self):
+        with patch.object(commands.os, 'geteuid', return_value=0, create=True), self.assertRaises(ValueError):
+            commands.HeldSessionCommandRunner(1000)
+
+    def test_fixed_units_and_environment(self):
+        with patch.object(commands.os, 'geteuid', return_value=1000, create=True), patch.object(commands.subprocess, 'run', return_value=NS(returncode=0, stdout=b'active\n')) as run:
+            runner = commands.HeldSessionCommandRunner(1000)
+            self.assertEqual(runner.run('state', 'gamescope-session.target'), 'active')
+            self.assertEqual(run.call_args.args[0], ('/usr/bin/systemctl', '--user', 'show', 'gamescope-session.target', '--property=ActiveState', '--value'))
+            self.assertFalse(run.call_args.kwargs['shell'])
+            self.assertEqual(run.call_args.kwargs['env']['XDG_RUNTIME_DIR'], '/run/user/1000')
+            run.reset_mock()
+            for action, unit in (('unmask', 'gamescope-session.target'), ('start', 'other.service'), ('start', '../bad'), ('reload', 'pipewire.service')):
+                self.assertIsNone(runner.run(action, unit))
+            run.assert_not_called()
+
+    def test_unknown_state_and_timeout_are_unverified(self):
+        with patch.object(commands.os, 'geteuid', return_value=1000, create=True):
+            runner = commands.HeldSessionCommandRunner(1000)
+            for outcome in (NS(returncode=0, stdout=b'activating\n'), NS(returncode=1), subprocess.TimeoutExpired('systemctl', 5)):
+                with patch.object(commands.subprocess, 'run', side_effect=[outcome]):
+                    self.assertIsNone(runner.run('state', 'pipewire.service'))

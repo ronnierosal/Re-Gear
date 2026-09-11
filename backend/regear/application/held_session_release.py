@@ -148,3 +148,45 @@ before the first mask. All success callbacks must return literal True.
     def _true(value):
         if value is not True:
             raise ValueError("required verification unavailable")
+
+
+class HeldSessionRecovery:
+    """Independent recovery policy, with durable revocation before any cleanup.
+
+    Ports must operate on the exact journal identity. Revocation serializes with
+    each mutation, never the lifetime of the original worker. The restore port
+    removes only recorded masks; it must not perform a generic systemd unmask.
+    """
+    def __init__(self, *, revoke, load, restore_masks, reload_manager, start,
+                 verify, finish):
+        self.revoke, self.load = revoke, load
+        self.restore_masks, self.reload_manager = restore_masks, reload_manager
+        self.start, self.verify, self.finish = start, verify, finish
+
+    def run(self):
+        restored = False
+        try:
+            if self.revoke() is not True:
+                return HeldSessionResult('held_recovery.revoke_unverified')
+            snapshot = self.load()
+            if type(snapshot) is not HeldSessionPreflight or not snapshot.valid:
+                return HeldSessionResult('held_recovery.record_invalid')
+            if self.restore_masks() is not True:
+                return HeldSessionResult('held_recovery.masks_unverified')
+            if self.reload_manager() is not True:
+                return HeldSessionResult('held_recovery.reload_unverified')
+            # Audio socket, daemon and policy first; Gaming target last.
+            order = ('pipewire.socket', 'pipewire.service', 'wireplumber.service',
+                     'gamescope-session.service', 'gamescope-session.target')
+            for unit in order:
+                if unit in snapshot.prior_active and self.start(unit) is not True:
+                    return HeldSessionResult('held_recovery.start_unverified')
+            restored = self.verify(snapshot.prior_active, HELD_UNITS) is True
+            if not restored:
+                return HeldSessionResult('held_recovery.state_unverified')
+            if self.finish() is not True:
+                return HeldSessionResult('held_recovery.journal_retained', restored=True)
+            return HeldSessionResult('held_recovery.restored', restored=True,
+                                     journal_retained=False)
+        except Exception:
+            return HeldSessionResult('held_recovery.unresolved', restored=restored)

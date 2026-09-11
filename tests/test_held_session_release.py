@@ -186,3 +186,57 @@ class HeldSessionTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+class HeldRecoveryTests(unittest.TestCase):
+    def fixture(self, **overrides):
+        from regear.application.held_session_release import HeldSessionRecovery
+        events = []
+        def call(name, result=True):
+            def invoke(*args):
+                events.append(name)
+                return result
+            return Mock(side_effect=invoke)
+        snapshot = HeldSessionPreflight('exact', HELD_UNITS, True, True, True, True)
+        ports = {name: call(name) for name in ('revoke', 'restore_masks',
+                 'reload_manager', 'start', 'verify', 'finish')}
+        ports['load'] = call('load', snapshot)
+        ports.update(overrides)
+        return HeldSessionRecovery(**ports), ports, events
+
+    def test_revoke_before_cleanup_restore_before_restart(self):
+        recovery, ports, events = self.fixture()
+        result = recovery.run()
+        self.assertTrue(result.restored)
+        self.assertFalse(result.safe_to_unplug)
+        self.assertFalse(result.journal_retained)
+        self.assertEqual(events[:4], ['revoke', 'load', 'restore_masks', 'reload_manager'])
+        self.assertEqual(events[-2:], ['verify', 'finish'])
+        self.assertEqual(ports['start'].call_args_list[-1].args, ('gamescope-session.target',))
+
+    def test_failed_stage_never_retires_journal(self):
+        for stage in ('revoke', 'restore_masks', 'reload_manager', 'start', 'verify'):
+            with self.subTest(stage=stage):
+                recovery, ports, _ = self.fixture(**{stage: Mock(return_value=False)})
+                result = recovery.run()
+                self.assertFalse(result.restored)
+                self.assertTrue(result.journal_retained)
+                ports['finish'].assert_not_called()
+
+    def test_inactive_units_not_started_and_exact_state_verified(self):
+        snapshot = HeldSessionPreflight('exact', ('pipewire.service',), True, True, True, True)
+        recovery, ports, _ = self.fixture(load=Mock(return_value=snapshot))
+        self.assertTrue(recovery.run().restored)
+        ports['start'].assert_called_once_with('pipewire.service')
+        ports['verify'].assert_called_once_with(snapshot.prior_active, HELD_UNITS)
+
+    def test_bad_record_never_cleans_or_starts(self):
+        recovery, ports, _ = self.fixture(load=Mock(return_value=None))
+        self.assertFalse(recovery.run().restored)
+        ports['restore_masks'].assert_not_called()
+        ports['start'].assert_not_called()
+
+    def test_finish_failure_retains_verified_restore(self):
+        recovery, _, _ = self.fixture(finish=Mock(side_effect=OSError()))
+        result = recovery.run()
+        self.assertTrue(result.restored)
+        self.assertTrue(result.journal_retained)

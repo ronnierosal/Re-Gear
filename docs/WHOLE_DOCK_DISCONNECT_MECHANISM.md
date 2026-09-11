@@ -306,3 +306,27 @@ then integrate the held-stop capture. Unknown profiles must refuse. The first
 hardware trial remains release/observe/restore only, without PCI or USB removal.
 No new install package or version is published from these offline components.
 Documentation impact: Wiki (after runtime integration and verified trial).
+
+### Recovery executor checkpoint
+
+Added the user-only recovery executor, immutable intent/mask journal, permanent
+recovery revocation and separate recovery-worker lock. Recovery removes recorded
+mask inodes before daemon reload and restarts only the recorded prior-active
+units. It verifies all approved unit states again before recording completion.
+A completed operation is checked without replaying reload/start commands. Unknown
+state, foreign entries and corrupt evidence remain unresolved. All commands are
+fixed, bounded and execute as the observed user, never as root.
+
+The journal lock covers mask publication and producer dispatch against revocation;
+the independent recovery lock serializes recovery workers without depending on the
+original dock mutation lock. The launcher still needs to bind the current boot,
+unit directory and private journal directory identities. Installing/scheduling
+that independent launcher and integrating the held-stop producer are NOT done.
+The existing 0.3.87 timer remains unchanged; these components are not enabled in
+the player button and no new installable version is claimed.
+
+Local full suite during implementation: 3171 tests, 200 expected platform skips.
+Additional final focused fixtures cover repeat recovery, concurrent recovery,
+corrupt journals and state changes at completion; Linux CI supplies filesystem
+execution evidence. Architecture and Python compilation pass locally.
+Documentation impact: Wiki after runtime integration and supervised validation.

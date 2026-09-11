@@ -145,5 +145,201 @@ class RuntimeMaskLeaseTests(unittest.TestCase):
         self.assertTrue((self.units / self.unit).is_symlink())
 
 
+@unittest.skipUnless(sys.platform == 'linux', 'Linux directory descriptor semantics')
+class MaskLeaseJournalTests(unittest.TestCase):
+    def setUp(self):
+        temp = TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.root = Path(temp.name)
+        self.root.chmod(0o700)
+        fd = os.open(self.root, os.O_RDONLY | os.O_DIRECTORY)
+        self.addCleanup(os.close, fd)
+        self.fd = fd
+        self.journal = m.MaskLeaseJournal(fd, owner_uid=os.geteuid())
+        self.addCleanup(self.journal.close)
+        self.intent = m.MaskLeaseIntent('a' * 32, 'b' * 64, ('gamescope-session.target',))
+        self.identity = m.MaskIdentity('gamescope-session.target', 'a' * 32, 1, 2)
+
+    def start(self):
+        self.journal.create_intent(self.intent)
+
+    def test_intent_and_mask_immutable_recovery_blocks_future_records(self):
+        with self.journal.locked():
+            self.start()
+            self.assertEqual(self.journal.load_intent(), self.intent)
+            self.assertTrue(self.journal.record_mask(self.intent, self.identity))
+            with self.assertRaises(FileExistsError):
+                self.journal.record_mask(self.intent, self.identity)
+            self.assertEqual(self.journal.begin_recovery(self.intent), (self.identity,))
+            with self.assertRaises(ValueError):
+                self.journal.record_mask(self.intent, self.identity)
+            with self.assertRaises(ValueError):
+                self.journal.finish(self.intent, lambda: False)
+            self.assertFalse((self.root / 'finished.json').exists())
+            self.assertTrue(self.journal.finish(self.intent, lambda: True))
+
+    def test_same_directory_separate_watchdog_lock_is_nonblocking(self):
+        other = m.MaskLeaseJournal(self.fd, owner_uid=os.geteuid())
+        self.addCleanup(other.close)
+        with self.journal.locked():
+            with self.assertRaises(BlockingIOError):
+                with other.locked():
+                    self.fail('overlapping owner')
+        with other.locked():
+            other.create_intent(self.intent)
+
+    def test_lock_required_for_reads_and_writes(self):
+        with self.assertRaises(ValueError):
+            self.start()
+        with self.assertRaises(ValueError):
+            self.journal.load_intent()
+
+    def test_foreign_token_or_boot_refuses(self):
+        with self.journal.locked():
+            self.start()
+            for intent in (m.MaskLeaseIntent('c' * 32, 'b' * 64, self.intent.prior_active),
+                           m.MaskLeaseIntent('a' * 32, 'c' * 64, self.intent.prior_active)):
+                with self.assertRaises(ValueError):
+                    self.journal.begin_recovery(intent)
+
+    def test_corrupt_or_symlink_intent_fails_closed(self):
+        with self.journal.locked():
+            target = self.root / 'intent.json'
+            for content in ('{"token":1,"token":2}', 'x' * 4097, '[]'):
+                target.write_text(content)
+                target.chmod(0o600)
+                with self.assertRaises((ValueError, UnicodeError)):
+                    self.journal.load_intent()
+                target.unlink()
+            target.symlink_to('/dev/null')
+            with self.assertRaises(OSError):
+                self.journal.load_intent()
+
+    def test_finish_requires_recovery_and_exact_true(self):
+        with self.journal.locked():
+            self.start()
+            with self.assertRaises(ValueError):
+                self.journal.finish(self.intent, lambda: True)
+            self.journal.begin_recovery(self.intent)
+            with self.assertRaises(ValueError):
+                self.journal.finish(self.intent, lambda: 1)
+
+    def test_record_fsync_failure_leaves_fail_closed_record(self):
+        with self.journal.locked():
+            self.start()
+            with patch.object(m.os, 'fsync', side_effect=OSError('durability')):
+                with self.assertRaises(OSError):
+                    self.journal.record_mask(self.intent, self.identity)
+            with self.assertRaises(FileExistsError):
+                self.journal.record_mask(self.intent, self.identity)
+
+    def test_unsafe_directory_refused(self):
+        self.root.chmod(0o755)
+        with self.assertRaises(ValueError):
+            m.MaskLeaseJournal(self.fd, owner_uid=os.geteuid())
+
+    def test_corrupt_recovery_marker_blocks_both_publication_and_finish(self):
+        with self.journal.locked():
+            self.start()
+            marker = self.root / 'recovering.json'
+            marker.write_text('{"schema_version":true,"token":"' + self.intent.token
+                              + '","boot_identity":"' + self.intent.boot_identity + '"}')
+            marker.chmod(0o600)
+            with self.assertRaises(ValueError):
+                self.journal.begin_recovery(self.intent)
+            with self.assertRaises(ValueError):
+                self.journal.record_mask(self.intent, self.identity)
+            with self.assertRaises(ValueError):
+                self.journal.finish(self.intent, lambda: True)
+
+    def test_finish_rechecks_evidence_after_verification(self):
+        with self.journal.locked():
+            self.start()
+            self.journal.begin_recovery(self.intent)
+            def changed():
+                (self.root / 'recovering.json').unlink()
+                return True
+            with self.assertRaises(ValueError):
+                self.journal.finish(self.intent, changed)
+            self.assertFalse((self.root / 'finished.json').exists())
+
+    def test_completion_is_idempotent_but_requires_fresh_verification(self):
+        with self.journal.locked():
+            self.start()
+            self.assertTrue(self.journal.ownership_active(self.intent))
+            self.assertFalse(self.journal.is_finished(self.intent))
+            self.journal.begin_recovery(self.intent)
+            self.assertFalse(self.journal.ownership_active(self.intent))
+            self.journal.finish(self.intent, lambda: True)
+            previous = (self.root / 'finished.json').stat().st_ino
+            self.assertTrue(self.journal.is_finished(self.intent))
+            self.assertFalse(self.journal.ownership_active(self.intent))
+            with self.assertRaises(ValueError):
+                self.journal.finish(self.intent, lambda: False)
+            self.assertTrue(self.journal.finish(self.intent, lambda: True))
+            self.assertEqual((self.root / 'finished.json').stat().st_ino, previous)
+
+    def test_corrupt_completion_refuses_read_guard_and_finish(self):
+        with self.journal.locked():
+            self.start()
+            self.journal.begin_recovery(self.intent)
+            marker = self.root / 'finished.json'
+            marker.write_text('{}')
+            marker.chmod(0o600)
+            for read in (lambda: self.journal.is_finished(self.intent),
+                         lambda: self.journal.ownership_active(self.intent),
+                         lambda: self.journal.finish(self.intent, lambda: True)):
+                with self.assertRaises(ValueError):
+                    read()
+
+    def test_completed_marker_without_recovery_is_corrupt(self):
+        with self.journal.locked():
+            self.start()
+            self.journal._write('finished.json', self.journal._marker(self.intent))
+            with self.assertRaises(ValueError):
+                self.journal.is_finished(self.intent)
+
+    def test_ownership_guard_validates_mask_records(self):
+        with self.journal.locked():
+            self.start()
+            record = self.root / (self.identity.unit + '.mask.json')
+            record.write_text('{}')
+            record.chmod(0o600)
+            with self.assertRaises(ValueError):
+                self.journal.ownership_active(self.intent)
+
+    def test_constructor_fstat_failure_closes_duplicate(self):
+        duplicate = os.dup(self.fd)
+        with patch.object(m.os, 'dup', return_value=duplicate), \
+                patch.object(m.os, 'fstat', side_effect=OSError('failed')):
+            with self.assertRaises(OSError):
+                m.MaskLeaseJournal(self.fd, owner_uid=os.geteuid())
+        with self.assertRaises(OSError):
+            os.fstat(duplicate)
+
+    def test_recovery_lock_serializes_only_recovery_and_releases_on_error(self):
+        other = m.MaskLeaseJournal(self.fd, owner_uid=os.geteuid())
+        self.addCleanup(other.close)
+        with self.assertRaisesRegex(ValueError, 'runner failure'):
+            with self.journal.recovery_locked():
+                with self.assertRaises(BlockingIOError):
+                    with other.recovery_locked():
+                        self.fail('overlapping recovery')
+                with other.locked():
+                    other.create_intent(self.intent)
+                with self.assertRaises(ValueError):
+                    self.journal.load_intent()
+                raise ValueError('runner failure')
+        with other.recovery_locked():
+            with other.locked():
+                self.assertEqual(other.load_intent(), self.intent)
+
+    def test_recovery_lock_rejects_symlink(self):
+        (self.root / 'recovery-executor.lock').symlink_to('/dev/null')
+        with self.assertRaises(OSError):
+            with self.journal.recovery_locked():
+                self.fail('unsafe lock')
+
+
 if __name__ == '__main__':
     unittest.main()
