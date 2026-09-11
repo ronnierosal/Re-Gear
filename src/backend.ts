@@ -355,6 +355,11 @@ export interface AutomaticDockStatusPayload {
 export const getAutomaticDockStatus = callable<[], AutomaticDockStatusPayload>(
   "get_automatic_dock_status",
 );
+/** Optional until the recovery backend is installed; validate at the UI boundary. */
+export const getLinkRecoveryStatus = callable<[], unknown>("get_link_recovery_status");
+export const executeLinkRecovery = callable<[boolean, "session_restart"], unknown>(
+  "execute_link_recovery",
+);
 export const setAutomaticDockEnabled = callable<
   [boolean, boolean],
   AutomaticDockStatusPayload
