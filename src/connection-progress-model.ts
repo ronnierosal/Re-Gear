@@ -2,14 +2,14 @@ import type { LiveStatus } from "./connection-live-status";
 import type { ConnectionProgressPhase, ConnectionProgressRow } from "./connection-progress-overlay";
 
 /** Presentation adapter for the existing monitor: no snapshot inference or I/O. */
-export function connectionProgressViewModel(status: LiveStatus, now = Date.now()) {
+export function connectionProgressViewModel(status: LiveStatus & {displayPending?: boolean}, now = Date.now()) {
   const fresh = now < status.expiresAt;
   const phase: ConnectionProgressPhase = !fresh ? "connecting"
     : status.phase === "complete" ? "ready" : status.phase === "switching" ? "switching" : "connecting";
   let rows: ConnectionProgressRow[] = status.rows.map((row, index) => ({
     key: String(index), label: row.label,
     state: !fresh || row.state === "waiting" ? "pending" : row.state,
-    stateLabel: !fresh ? "Status unavailable" : row.state === "waiting" ? "Waiting for confirmation"
+    stateLabel: !fresh ? "Status unavailable" : row.state === "waiting" ? "Not yet verified"
       : row.state === "ready" ? "Confirmed" : "Needs attention",
   }));
   if (phase === "switching") rows = [
@@ -21,9 +21,9 @@ export function connectionProgressViewModel(status: LiveStatus, now = Date.now()
     // Audio recovery readiness is not proof of active TV audio output.
     {key:"audio",label:"TV audio",state:"pending",stateLabel:"Check sound"},
   ];
-  const delayNotice = fresh && status.phase !== "complete" && Number.isFinite(status.seconds) && status.seconds >= 60
+  const delayNotice = fresh && !status.displayPending && status.phase !== "complete" && Number.isFinite(status.seconds) && status.seconds >= 60
     ? status.seconds < 180
-      ? "Taking longer than expected. Still waiting for connection or display confirmation. Allow up to three minutes, then check the status below; completion is not guaranteed."
+      ? "Taking longer than expected. Connection may take up to three minutes; completion is not guaranteed."
       : "Still waiting after three minutes. Check the connection and display status below. Keep the eGPU connected."
     : undefined;
   return {phase, rows, delayNotice,

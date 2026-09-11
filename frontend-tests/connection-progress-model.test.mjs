@@ -36,7 +36,7 @@ test("live renderer wires the approved overlay to the existing store and native 
  const panel=readFileSync(new URL("../src/connection-live-panel.tsx",import.meta.url),"utf8");
  const overlay=readFileSync(new URL("../src/connection-progress-overlay.tsx",import.meta.url),"utf8");
  assert.match(panel,/useSyncExternalStore\(store.subscribe, store.get\)/);
- assert.match(panel,/<ConnectionProgressOverlay \{\.\.\.connectionProgressViewModel\(source\)\}/);
+ assert.match(panel,/<ConnectionProgressOverlay \{\.\.\.connectionProgressViewModel\(status\)\}/);
  assert.match(panel,/latest.canSwitch && Date.now\(\) < latest.expiresAt/);
  assert.match(overlay,/<DialogButton[^>]*onClick=\{props.onHide\}/);
  assert.doesNotMatch(overlay,/setInterval|setTimeout|fetch\(|getSnapshot|<button/);
@@ -60,7 +60,7 @@ test("waiting rows are unconfirmed, not active work, and stale rows lose confirm
  const s=sample(); const v=view(s,100);
  assert.equal(v.rows[0].stateLabel,"Confirmed");
  assert.equal(v.rows[1].state,"pending");
- assert.equal(v.rows[1].stateLabel,"Waiting for confirmation");
+ assert.equal(v.rows[1].stateLabel,"Not yet verified");
  assert.equal(v.rows[2].stateLabel,"Needs attention");
  assert.ok(view(s,200).rows.every(r=>r.stateLabel==="Status unavailable"));
 });
@@ -81,4 +81,12 @@ test("activation warning remains until fresh completion, never attachment alone"
  assert.match(view({...s,phase:"switching"},100).activationNotice,/not yet confirmed/);
  assert.equal(view({...s,phase:"complete"},100).activationNotice,undefined);
  assert.match(view({...s,phase:"complete"},200).activationNotice,/unavailable/);
+});
+
+test('settled eGPU waiting for a TV does not become a connection delay warning',()=>{
+ for(const seconds of [60,180,600]){
+  const v=view({...sample(),displayPending:true,seconds,title:'eGPU ready — waiting for TV'},100);
+  assert.equal(v.delayNotice,undefined);assert.equal(v.phase,'connecting');assert.equal(v.detail,'eGPU ready — waiting for TV');
+ }
+ const stale=view({...sample(),displayPending:true},200);assert.match(stale.detail,/fresh status/);assert.ok(stale.rows.every(row=>row.state==='pending'));
 });

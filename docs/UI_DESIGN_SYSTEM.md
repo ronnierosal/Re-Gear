@@ -140,3 +140,49 @@ separately; tiny UI-facing fixes need explicit scope and tests.
 Native acceptance requires an actual Ally capture/readback of the new build.
 Until available, say “source preview passed; native validation pending.” Do not
 reuse the user's before photo as evidence that the revised popup fits.
+
+## Implementation checkpoint: shared-popup-system
+
+This checkpoint is a partial implementation, not all-popup acceptance. Baseline
+`2946d66`, with the documentation contract cherry-picked as `e4b9b7a`.
+
+`StatusIcon` in `src/readiness-row.tsx` now delegates to the existing
+`CommandCenterIcon` status assets. Waiting uses the existing unknown icon with
+cyan pulse only in the primary status; diagnostic rows stay static. Entry and
+color transitions honor reduced motion. Exit animation is not implemented:
+`showModal.Close()` immediately unmounts and does not invoke close callbacks;
+no replacement lifecycle is introduced just to animate closing.
+
+| Surface in this baseline | Migration state and next owner action |
+| --- | --- |
+| Connection live panel | Shared PopupFrame, bounded header/footer, scrolling details, elapsed time, current check, compact delay and persistent cable guidance implemented. Source preview passed; native navigation pending. |
+| EgpuConfirmModal wrapper | Shared brand/palette and bounded body implemented; retains native ConfirmModal and forwards callbacks, disabled/destructive/alert/middle props. Native chrome geometry and focus remain unverified. |
+| showSafeDisconnectConfirmation (shutdown/return), showDisconnectConfirmation, showGameCloseDialog, showBlockedAttempt | Baseline still native ConfirmModal. Claude's separate PR276 a5963e9 adopts wrapper at these four sites; not integrated in this checkpoint. |
+| showSupportBundlePreview, showPresentationPreparationConfirmation, showAutomaticDockConfirmation, showControllerDisplayConfirmation, showProcessReleaseConfirmation (force/nonforce), showDiagnosticLoggingConfirmation | Unmigrated; src/index.tsx owner Claude must agree and implement call-site adoption while preserving each action and consent. |
+| showPresentationPreparationBlocked | Existing toast, not a modal; unchanged. Do not claim modal migration. |
+| Sleep warning | Existing inline/toast visibility flow and game-close guard; no independent sleep modal is fabricated. Runtime integration remains with Claude. |
+
+Tests execute the real LivePanel effect with a deterministic clock: success dwell,
+expiry and phase changes, expanded details, pointer/keyboard/focus/native handler
+interaction, and unmount. These establish handler behavior, not physical gamepad
+routing. Focusable's supported onGamepadFocus/onGamepadDirection/onButtonDown
+signals renew the dwell without intercepting events. Controller propagation,
+D-pad/A/B, details scrolling and opener restoration still need native validation.
+
+`scripts/popup_system_preview.mjs` captures seven cases at four viewports, each
+with default, expanded and scrolled variants under `out/popup-preview/`.
+ConfirmModal chrome is explicitly a fixture because Decky discovers its actual
+implementation at runtime. Browser bounds on that fixture are not native bounds
+proof. Connection captures use the actual PopupFrame. Motion and reduced-motion,
+footer focus, expanded-details persistence and one-minute copy are asserted.
+
+The additive optional `displayPending` contract was agreed with the connection
+status owner: true only for fresh ready_display_pending; suppress delay warnings
+for settled eGPU/TV-off waits. Freshness still overrides presentation and this
+flag never means completed display activation. Model tests cover this half;
+the source owner's separate commit must be combined before claiming end-to-end.
+
+Remaining acceptance: combined call-site migration and per-operation status
+contract; actual native chrome/controller validation; exit animation decision;
+reciprocal review, integration preflight and final-head CI. No installation or
+hardware action was performed.
