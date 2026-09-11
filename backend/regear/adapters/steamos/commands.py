@@ -381,6 +381,18 @@ class UserServiceCommandRunner:
             "restart",
             "pipewire.service",
         ),
+        #: Deliberately blocking, unlike every restart above it. The caller
+        #: needs the session actually down before it starts watching for the
+        #: link, because the whole point is the gap.
+        UserServiceOperation.STOP_GAMESCOPE_SESSION: (
+            "stop",
+            "gamescope-session.target",
+        ),
+        UserServiceOperation.START_GAMESCOPE_SESSION: (
+            "--no-block",
+            "start",
+            "gamescope-session.target",
+        ),
     }
     CLEAN_ENVIRONMENT = {
         "LANG": "C",

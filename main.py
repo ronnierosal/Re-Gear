@@ -133,6 +133,10 @@ from regear.application.connection_readiness import (  # noqa: E402
     ConnectionReadinessObservation,
     ConnectionReadinessStage,
 )
+from regear.application.link_recovery import LinkRecoveryService  # noqa: E402
+from regear.domain.link_training_recovery import (  # noqa: E402
+    LinkRecoveryAvailability,
+)
 from regear.application.automatic_dock import (  # noqa: E402
     AutomaticDockCoordinator,
     AutomaticDockStage,
@@ -359,6 +363,11 @@ class Plugin:
         self._last_completion_code = ""
         self._last_audio_readiness_code = ""
         self._automatic_dock = AutomaticDockCoordinator()
+        # One instance for the life of the plugin, deliberately. Its latch is
+        # the whole point, and a service rebuilt per call would arrive with a
+        # fresh latch every time and offer the same failed recovery forever.
+        self._link_recovery: LinkRecoveryService | None = None
+        self._last_readiness_observation: ConnectionReadinessObservation | None = None
         self._native_recovery_task: asyncio.Task[None] | None = None
         self._native_recovery = NativePortableRecoverySupervisor()
         self._last_native_recovery_code = ""
@@ -941,6 +950,113 @@ class Plugin:
                 else AutomaticDockStage.DISABLED.value
             ),
             "code": code,
+        }
+
+    async def get_link_recovery_status(
+        self, _request: object = None
+    ) -> dict[str, object]:
+        """Say whether releasing the session would be worth offering. Changes nothing.
+
+        Safe to poll. Answers from the reading the readiness loop already took,
+        so asking never probes hardware and never disagrees with the panel.
+        """
+        observation = self._last_readiness_observation
+        if observation is None:
+            return {
+                "schema_version": 1,
+                "availability": LinkRecoveryAvailability.UNAVAILABLE.value,
+                "offered": False,
+                "code": "link_recovery.no_observation",
+            }
+        assessment = self._link_recovery_service().assess(
+            readiness_exhausted=(
+                self._connection_readiness.status().stage
+                is ConnectionReadinessStage.TIMED_OUT
+            ),
+            transport_present=observation.transport_present,
+            pci_complete=observation.pci_complete,
+            game_state=observation.game_state,
+        )
+        return {
+            "schema_version": 1,
+            "availability": assessment.availability.value,
+            "offered": assessment.offered,
+            "code": assessment.code,
+        }
+
+    async def execute_link_recovery(self, confirm: bool = False) -> dict[str, object]:
+        """Stop the session, wait for the eGPU's link, start the session again.
+
+        This closes whatever is on screen. It is never automatic and never
+        implied: `confirm` has to be exactly True, the same shape the automatic
+        dock opt-in uses, so no caller reaches it by passing a truthy default.
+
+        The offer is re-checked here against a fresh reading rather than the
+        one the panel rendered. A player can start a game between seeing the
+        button and pressing it, and that has to refuse.
+        """
+        if confirm is not True:
+            return self._link_recovery_failure("link_recovery.confirmation_required")
+        try:
+            observations = SnapshotTransitionObservationAdapter(self._discovery)
+            current = await asyncio.to_thread(observations.observe)
+            connection = await self._observe_connection_readiness(current)
+        except Exception:
+            return self._link_recovery_failure("link_recovery.observation_unavailable")
+        observation = self._last_readiness_observation
+        if observation is None:
+            return self._link_recovery_failure("link_recovery.no_observation")
+        service = self._link_recovery_service()
+        assessment = service.assess(
+            readiness_exhausted=(
+                connection.stage is ConnectionReadinessStage.TIMED_OUT
+            ),
+            transport_present=observation.transport_present,
+            pci_complete=observation.pci_complete,
+            game_state=observation.game_state,
+        )
+        if not assessment.offered:
+            return self._link_recovery_failure(assessment.code)
+        resolution = await asyncio.to_thread(
+            lambda: resolve_gamescope_user(GamescopeDiscovery().scan())
+        )
+        if not resolution.ok or resolution.context is None:
+            return self._link_recovery_failure("link_recovery.session_unavailable")
+        self._append_journey_event(
+            severity="info",
+            code="link_recovery.started",
+            component="connection",
+            stage="link_recovery",
+        )
+        outcome = await asyncio.to_thread(
+            lambda: service.recover(resolution.context)
+        )
+        self._append_journey_event(
+            severity="info" if outcome.ok else "warning",
+            code=outcome.code,
+            component="connection",
+            stage="link_recovery",
+            details={
+                "seconds": outcome.seconds,
+                "session_restored": outcome.session_restored,
+            },
+        )
+        return {
+            "schema_version": 1,
+            "ok": outcome.ok,
+            "code": outcome.code,
+            "seconds": outcome.seconds,
+            "session_restored": outcome.session_restored,
+        }
+
+    @staticmethod
+    def _link_recovery_failure(code: str) -> dict[str, object]:
+        return {
+            "schema_version": 1,
+            "ok": False,
+            "code": code,
+            "seconds": None,
+            "session_restored": True,
         }
 
     async def get_diagnostic_logging_status(self, _request: object = None) -> dict[str, object]:
@@ -2522,6 +2638,11 @@ class Plugin:
             "idle": observation.game_state is GameState.IDLE,
         }
         self._connection_checks_at = time.monotonic()
+        # Kept so the link-recovery RPCs can answer from the reading the loop
+        # already took. Re-observing inside an RPC would probe hardware on a
+        # pollable call and could disagree with what the panel is showing.
+        self._last_readiness_observation = observation
+        self._link_recovery_service().observe_transport(observation.transport_present)
         return self._connection_readiness.update(observation)
 
     def _record_connection_wake(self, stage: str) -> None:
@@ -2965,6 +3086,22 @@ class Plugin:
             stage="restore_portable" if target is PlacementState.PORTABLE else "select_tv",
             details={"target": target.value, "succeeded": result.succeeded},
         )
+
+    def _link_recovery_service(self) -> LinkRecoveryService:
+        """The one instance, built once. See the note in `__init__`.
+
+        The PCI reading is taken live rather than from the loop's cache: this
+        is the callable watched *during* the gap, when the whole question is
+        whether the slot has just seen the card.
+        """
+        if self._link_recovery is None:
+            self._link_recovery = LinkRecoveryService(
+                UserServiceCommandRunner(),
+                lambda: bool(self._connection_topology.observe().pci_complete),
+                now=time.monotonic,
+                sleep=time.sleep,
+            )
+        return self._link_recovery
 
     def _safe_disconnect_shutdown_service(self) -> SafeDisconnectShutdownService:
         return SafeDisconnectShutdownService(

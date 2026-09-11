@@ -23,6 +23,15 @@ class UserServiceOperation(StrEnum):
     #: disconnect could not be driven from the backend.
     RESTART_WIREPLUMBER = "restart_wireplumber"
     RESTART_PIPEWIRE = "restart_pipewire"
+    #: A held release, for an eGPU whose PCIe link never trained. Distinct from
+    #: RESTART_GAMESCOPE_SESSION because a restart does not leave a gap: the
+    #: measured recoveries needed 2.2s and 6.7s with nothing holding the GPU
+    #: before the hotplug controller reported the card present at all, and
+    #: `restart` brings the session straight back. So the stop blocks, the
+    #: caller watches for the link, and the start is a separate decision it
+    #: makes afterwards -- including when the link never came.
+    STOP_GAMESCOPE_SESSION = "stop_gamescope_session"
+    START_GAMESCOPE_SESSION = "start_gamescope_session"
 
 
 @dataclass(frozen=True, slots=True)
