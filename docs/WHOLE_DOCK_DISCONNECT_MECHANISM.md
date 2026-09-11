@@ -171,3 +171,35 @@ only a validated durable stage, none, or unknown; never attachment identifiers.
 After install, inspect this record before any repeat operation. A retained
 claim must not be deleted to enable a retry. No successful disconnect or
 physical unplug clearance is established by this diagnostic change.
+
+## September 11 release integration audit after0.3.86
+
+Two independent read-only reviews confirm that the whole-dock button composes
+Claude's existing user-manager filter, SessionUnitRestart, explicit audio
+restarts, held-filter removal window, and ownership journal. No missing core
+release integration was found.
+
+Root-backed get_snapshot.disconnect_readiness currently reports systemd and
+systemd-logind as system clients holding drm_card, alongside expected session
+and audio clients. SSH systemctl reports15 logind stored descriptors; this count
+alone does not identify which is the eGPU. The durable whole-dock stage remains
+release_intent, and no repeat hardware operation was performed.
+
+The modern complete holder scanner includes scope/system holders omitted by the
+older September8 engineering account. FilterArmCoordinator rejects unapproved
+holders before unit restarts. That is a source-backed candidate explanation for
+the intact session, not recovered proof of the earlier exception. The inner
+LiveDisconnectService._refused also drops the arm stage/code, so current outer
+status cannot reconstruct whether the original refusal was plan, authorization,
+enforcement or restart related.
+
+Next: preserve inner arm diagnostics and investigate release of session-broker
+DRM descriptors through their owning session/controller. Do not add systemd or
+logind to the user-service restart allowlist, ignore their handles, clear the
+whole-dock claim, or repeat removal based on the old clients_clear account.
+
+Mechanism research (reference only; no adapted code): systemd v257
+src/login/logind-session-device.c shows that pausing a DRM session drops master
+but retains the descriptor. A Desktop switch alone is therefore not proof that
+all descriptors were closed. Installed-version behavior still needs validation.
+https://github.com/systemd/systemd/blob/v257/src/login/logind-session-device.c
