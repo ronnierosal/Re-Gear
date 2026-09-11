@@ -1,5 +1,25 @@
 # Current state
 
+## 0.3.78 staged for manual installation — 2026-09-11
+
+User-requested candidate `/home/deck/Re-Gear-0.3.78.zip` was copied to the Ally
+and verified there, without installation or service restart. Source is
+`dfdc9ba5de956c73cc958526a2aebd1e9d493ee5` (PR #296), including the missing-session
+status and quick-card fixes (#294) and mixed HDMI/session blocker priority fix
+(#295). All registered ready work is ancestral to this revision.
+
+SHA-256: `5997b1d7026603744a36878e7a6687368c8843e8bbc55c2c7d6295ae3ab1c03f`.
+Archive size: 879166 bytes. Remote ZIP integrity, embedded version/revision and
+checksum matched; final placement used an atomic no-clobber hard link.
+
+Validation: 2909 backend tests passed (101 platform skips), 628 frontend tests
+passed (1 skip), typecheck, build, architecture, compileall, package checks,
+integration preflight and final-head CI passed. Fresh pre-stage installed-file
+readback was 0.3.77 at `52337321`; staging does not change that installation.
+Claude's automatic-dock disable/re-enable repair remains unfinished and excluded.
+Missing session preparation and actual TV behavior retain supervised device gates.
+
+
 > Historical record: HDM was Re-Gear's former name; original wording is retained.
 
 ## 0.3.74 installed on the Ally and validated read-only — 2026-09-10
