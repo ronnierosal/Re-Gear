@@ -6,6 +6,10 @@ defines the user-requested popup family, not a separate redesign. It is a target
 contract; migration and native evidence must be reported per surface. A merged
 guide alone does not establish that every popup complies.
 
+## Current connection popup target
+
+The [approved compact popup](design/compact-popup-approved.md) supersedes the PR291 connection composition below. That checkpoint remains historical evidence. Native confirmation styling and unmigrated families retain their separate limits.
+
 ## Shared visual tokens
 
 Use existing Re-Gear palette and repository icons through shared components.
@@ -141,7 +145,7 @@ Native acceptance requires an actual Ally capture/readback of the new build.
 Until available, say “source preview passed; native validation pending.” Do not
 reuse the user's before photo as evidence that the revised popup fits.
 
-## Implementation checkpoint: shared-popup-system
+## Historical implementation checkpoint: PR291 shared-popup-system
 
 This checkpoint is a partial implementation, not all-popup acceptance. Baseline
 `2946d66`, with the documentation contract cherry-picked as `e4b9b7a`.
