@@ -468,3 +468,42 @@ class DeadlineIsAboutTheEgpuTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MixedSessionReadinessTests(unittest.TestCase):
+    def test_unprepared_session_is_actionable_with_missing_peripherals(self):
+        for hdmi, audio in ((False, False), (False, True), (True, False)):
+            with self.subTest(hdmi=hdmi, audio=audio):
+                clock = Clock()
+                lifecycle = ConnectionReadinessLifecycle(clock)
+                changes = dict(session_ready=False, hdmi_ready=hdmi, audio_ready=audio)
+                for index in range(4):
+                    lifecycle.update(sample(index, **changes))
+                clock.now = WINDOW_TIMEOUT_SECONDS
+                status = lifecycle.update(sample(4, **changes))
+                self.assertEqual(status.stage, ConnectionReadinessStage.ACTION_REQUIRED)
+                self.assertEqual(status.code, "connection.session_integration_unprepared")
+                # Repairing setup alone never authorizes missing peripherals.
+                status = lifecycle.update(sample(5, hdmi_ready=hdmi, audio_ready=audio))
+                self.assertNotEqual(status.stage, ConnectionReadinessStage.READY_IDLE)
+                for index in range(6, 10):
+                    status = lifecycle.update(sample(index))
+                self.assertEqual(status.stage, ConnectionReadinessStage.READY_IDLE)
+
+    def test_fresh_gpu_failures_take_priority_over_session_guidance(self):
+        for changes, expected in (
+            ({"driver_ready": False}, ConnectionReadinessStage.WAITING_FOR_DRIVER),
+            ({"link_up": False}, ConnectionReadinessStage.WAITING_FOR_LINK),
+            ({"g1_identity": "", "pci_complete": False}, ConnectionReadinessStage.WAITING_FOR_PCI),
+            ({"transport_present": False}, ConnectionReadinessStage.ACTION_REQUIRED),
+        ):
+            with self.subTest(changes=changes):
+                clock = Clock()
+                lifecycle = ConnectionReadinessLifecycle(clock)
+                for index in range(4):
+                    lifecycle.update(sample(index, session_ready=False))
+                clock.now = WINDOW_TIMEOUT_SECONDS
+                status = lifecycle.update(sample(4, session_ready=False,
+                    hdmi_ready=False, audio_ready=False, **changes))
+                self.assertEqual(status.stage, expected)
+                self.assertNotEqual(status.code, "connection.session_integration_unprepared")
