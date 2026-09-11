@@ -79,6 +79,16 @@ class WholeDockClaimTests(unittest.TestCase):
         self.assertEqual(sum(queue.get(timeout=2) for _ in children), 1)
         queue.close()
 
+    def test_release_progress_cannot_regress_before_teardown(self):
+        self.assertTrue(self.store.claim("one", "dock", "generation"))
+        self.store.record("one", "release_intent")
+        self.store.record("one", "gpu_removed")
+        with self.assertRaises(ValueError):
+            self.store.record("one", "release_intent")
+        self.store.record("one", "prepared")
+        self.assertEqual(self.store.load().stage, "prepared")
+        self.assertTrue(self.store.inhibited())
+
     def test_claim_directory_fsync_failure_retains_inhibit(self):
         fsync = os.fsync
         def fail_directory(fd):

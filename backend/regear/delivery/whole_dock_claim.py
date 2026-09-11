@@ -11,7 +11,7 @@ from .audio_journal_filesystem import AudioJournalFilesystem, _acquire_lock
 
 FILENAME = "whole-dock-claim.json"
 MAX_BYTES = 4096
-STAGES = ("claimed", "prepared", "usb_remove_intent", "usb_removed",
+STAGES = ("claimed", "release_intent", "gpu_removed", "prepared", "usb_remove_intent", "usb_removed",
           "tunnel_remove_intent", "software_down")
 TOKEN = re.compile(r"[A-Za-z0-9_.:-]{1,256}\Z")
 

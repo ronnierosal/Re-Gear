@@ -229,6 +229,7 @@ from regear.delivery.automatic_dock_preferences import (  # noqa: E402
 from regear.delivery.saved_tv_store import SavedTvStore  # noqa: E402
 from regear.delivery.audio_state import PortableAudioStateStore  # noqa: E402
 from regear.delivery.transition_journal_store import FileTransitionJournalStore  # noqa: E402
+from regear.delivery.dock_mutation_gate import DockMutationGate, DockMutationDenied  # noqa: E402
 from regear.domain.process_release import ReleasePhase  # noqa: E402
 from regear.domain.control_plane import (  # noqa: E402
     PlacementState,
@@ -1020,20 +1021,25 @@ class Plugin:
         journal = await asyncio.to_thread(self._transition_journal_service().status)
         if not journal.durable or journal.owner.value != "none" or not eligible(current.snapshot):
             return False
-        policy.begin()
-        self._append_journey_event(severity="info", code="automatic_recovery.started",
-            component="connection", stage="automatic_recovery", details={"attempt": policy.attempts})
+        def recover():
+            policy.begin()
+            self._append_journey_event(severity="info", code="automatic_recovery.started",
+                component="connection", stage="automatic_recovery", details={"attempt": policy.attempts})
+            return self._link_recovery_service().recover(resolution.context,
+                strategy=LinkRecoveryStrategy.SESSION_RESTART, automatic=True)
         try:
             outcome = await self._run_background_operation(
-                lambda: self._link_recovery_service().recover(resolution.context,
-                    strategy=LinkRecoveryStrategy.SESSION_RESTART, automatic=True))
+                lambda: self._run_dock_mutation(recover))
             if outcome.ok:
                 policy.completed = True
             self._append_journey_event(severity="info" if outcome.ok else "warning", code=outcome.code,
                 component="connection", stage="automatic_recovery",
                 details={"attempt": policy.attempts, "seconds": outcome.seconds})
+        except DockMutationDenied:
+            return False
         finally:
-            policy.finish(time.monotonic())
+            if policy.in_flight:
+                policy.finish(time.monotonic())
         return True
 
     async def get_link_recovery_status(
@@ -1147,16 +1153,15 @@ class Plugin:
             return self._link_recovery_failure(
                 "link_recovery.session_unavailable", strategy=chosen.value
             )
-        self._append_journey_event(
-            severity="info",
-            code="link_recovery.started",
-            component="connection",
-            stage="link_recovery",
-            details={"strategy": chosen.value},
-        )
-        outcome = await asyncio.to_thread(
-            lambda: service.recover(resolution.context, strategy=chosen)
-        )
+        def recover():
+            self._append_journey_event(
+                severity="info", code="link_recovery.started", component="connection",
+                stage="link_recovery", details={"strategy": chosen.value})
+            return service.recover(resolution.context, strategy=chosen)
+        try:
+            outcome = await asyncio.to_thread(lambda: self._run_dock_mutation(recover))
+        except DockMutationDenied:
+            return self._link_recovery_failure("link_recovery.dock_mutation_inhibited")
         self._append_journey_event(
             severity="info" if outcome.ok else "warning",
             code=outcome.code,
@@ -1454,7 +1459,8 @@ class Plugin:
             }
         try:
             result = await asyncio.to_thread(
-                lambda: runtime.execute(release_display=bool(release_display))
+                lambda: self._run_dock_mutation(
+                    lambda: runtime.execute(release_display=bool(release_display)))
             )
         except Exception:
             return {
@@ -1990,7 +1996,8 @@ class Plugin:
         )
         try:
             result = await asyncio.to_thread(
-                lambda: self._presentation_transition_service().execute(approval_token)
+                lambda: self._run_dock_mutation(
+                    lambda: self._presentation_transition_service().execute(approval_token))
             )
         except Exception:
             finished_ns = self._journey_now_ns()
@@ -2176,8 +2183,8 @@ class Plugin:
         )
         try:
             result = await asyncio.to_thread(
-                self._safe_disconnect_shutdown_service().execute,
-                approval_token,
+                lambda: self._run_dock_mutation(
+                    lambda: self._safe_disconnect_shutdown_service().execute(approval_token)),
             )
         except Exception:
             result = None
@@ -2343,8 +2350,8 @@ class Plugin:
         """Execute only a consumed approval through the guarded release runner."""
         try:
             outcome = await asyncio.to_thread(
-                self._process_service().execute,
-                approval_token,
+                lambda: self._run_dock_mutation(
+                    lambda: self._process_service().execute(approval_token)),
             )
             payload = execution_to_payload(outcome)
             self._events.append(
@@ -2649,11 +2656,11 @@ class Plugin:
                     )
                     try:
                         result = await self._run_background_operation(
-                            lambda: self._presentation_transition_service().execute_automatic(
+                            lambda: self._run_dock_mutation(lambda: self._presentation_transition_service().execute_automatic(
                                 PlacementState.DOCKED_EGPU,
                                 expected_generation=decision.expected_generation,
                                 standing_consent=enabled,
-                            ),
+                            )),
                         )
                     except Exception:
                         transition_finished_ns = self._journey_now_ns()
@@ -3411,6 +3418,18 @@ class Plugin:
             recovery=recovery,
         )
         return self._process_release
+
+    @staticmethod
+    def _dock_mutation_gate() -> DockMutationGate:
+        return DockMutationGate(RootOwnedRuntimeState().ensure())
+
+    def _run_dock_mutation(self, operation):
+        try:
+            gate = self._dock_mutation_gate()
+        except Exception as error:
+            raise DockMutationDenied("dock_mutation.unavailable") from error
+        with gate.admit():
+            return operation()
 
     @staticmethod
     def _transition_journal_service() -> SharedTransitionJournalService:

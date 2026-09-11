@@ -58,3 +58,23 @@ Production runtime admission must be shared with automatic docking, recovery and
 Read-only inspection found a supplier/consumer device link connecting the dock's upstream PCI root port to the USB4 NHI. Linux v6.16 `drivers/thunderbolt/acpi.c`, `tb_acpi_add_links`, creates such links from the firmware `usb4-host-interface` reference. This provides a host association to investigate in the resolver, rather than treating unrelated sysfs path trees as an obstacle or guessing by product name. It still requires unambiguous external-router/branch association and stable attachment evidence before any write.
 
 Source inspection only, no copied kernel code: https://github.com/torvalds/linux/blob/v6.16/drivers/thunderbolt/acpi.c . This source is a mechanism reference; the exact Valve kernel implementation remains a separate verification item.
+
+### Live resolver verification and transaction integration
+
+The new read-only resolver successfully bound the attached Ally/G1 topology and
+revalidated its retained anchors on September 11. An initial failure came from
+enumerating unrelated global device links; scoping observation to the NHI's
+consumer links fixed it. Relevant missing endpoints and ambiguous consumers
+still refuse binding. No device write was performed.
+
+The production post-GPU port now joins fresh topology, storage observations,
+durable ownership and guarded writes. Initial trials require an empty USB
+peripheral branch. Local transaction/runtime tests pass; Linux-only filesystem
+and topology fixtures still require verification for this combined revision.
+
+Resource release must acquire the durable claim before starting and retain one
+mutation admission scope through final verification. A transaction-local,
+single-use continuation will join that release to the post-GPU executor.
+Software reconnect remains unfinished; it must verify the same retained router
+and freshly enumerated devices before releasing inhibition. There is no new
+installable candidate or completed disconnect trial yet.

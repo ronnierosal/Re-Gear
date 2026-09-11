@@ -7,6 +7,7 @@ import tempfile
 import types
 import unittest
 from dataclasses import replace
+from contextlib import nullcontext
 from pathlib import Path
 from unittest.mock import patch
 
@@ -66,6 +67,11 @@ def load_main_module():
         module = importlib.util.module_from_spec(spec)
         assert spec.loader is not None
         spec.loader.exec_module(module)
+        # These fixtures isolate game-close/relaunch policy from Linux admission.
+        # Dedicated mutation-gate tests exercise the real fail-closed boundary.
+        module.Plugin._dock_mutation_gate = staticmethod(
+            lambda: types.SimpleNamespace(admit=nullcontext)
+        )
         return module
     finally:
         if previous is None:
