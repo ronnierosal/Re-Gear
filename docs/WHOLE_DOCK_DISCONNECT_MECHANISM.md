@@ -157,3 +157,17 @@ A read-only run of the new classifier on the connected Ally/G1 returned true
 with two devices and a complete inventory. This is readiness evidence only.
 Selected fixed failure categories now show a specific explanation in Quick
 Access. Unknown errors remain unresolved; no retry or cable clearance is added.
+
+## 0.3.86 trial diagnostics
+
+The installed0.3.85 trial again returned generic trial_unresolved. A separate
+read-only legacy readiness check found active/protected clients, including
+system services. That is not proof of the trial's earliest failure.
+
+This revision preserves the execution guards and records the fixed trial phase
+and GPU-release stage, exposing mutation inhibition and unverified release as
+specific categories. The read-only whole_dock_record status request returns
+only a validated durable stage, none, or unknown; never attachment identifiers.
+After install, inspect this record before any repeat operation. A retained
+claim must not be deleted to enable a retry. No successful disconnect or
+physical unplug clearance is established by this diagnostic change.

@@ -181,5 +181,26 @@ class MainDockAdmissionTests(unittest.TestCase):
         plugin._append_journey_event.assert_not_called()
 
 
+    def test_fixed_failure_reason_and_phase_survive_rpc(self):
+        self.plugin._background_operations = set()
+        self.plugin._unloading = False
+        def fail(*args):
+            self.plugin._whole_dock_trial_phase = 'admission'
+            raise DockMutationDenied('dock_mutation.inhibited')
+        self.plugin._run_whole_dock_trial = fail
+        result = asyncio.run(self.plugin.execute_egpu_disconnect(
+            trial_action='whole_dock_disconnect', release_display=True, trial_confirmed=True))
+        self.assertEqual(result['code'], 'dock_mutation.inhibited')
+        self.assertEqual(result['phase'], 'admission')
+        self.assertEqual(result['release_stage'], 'not_run')
+        self.assertFalse(result['safe_to_unplug'])
+
+    def test_record_read_exposes_stage_without_identifiers_or_mutation(self):
+        with patch.object(self.module, 'WholeDockClaimStore') as store:
+            store.return_value.load.return_value = NS(stage='release_intent', binding='private')
+            result = asyncio.run(self.plugin.get_egpu_disconnect_status('whole_dock_record'))
+            self.assertEqual(result, {'schema_version':1, 'claim_stage':'release_intent', 'safe_to_unplug':False})
+            store.return_value.claim.assert_not_called()
+            store.return_value.record.assert_not_called()
 if __name__ == '__main__':
     unittest.main()

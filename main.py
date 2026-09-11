@@ -42,6 +42,8 @@ from regear.adapters.steamos.drm import DrmDiscovery  # noqa: E402
 from regear.adapters.steamos.sleep_inhibitor import Login1SleepInhibitor  # noqa: E402
 from regear.adapters.steamos.whole_dock_topology import resolve_whole_dock  # noqa: E402
 from regear.delivery.whole_dock_runtime import WholeDockRuntime  # noqa: E402
+from regear.delivery.whole_dock_claim import WholeDockClaimStore  # noqa: E402
+from regear.application.live_disconnect import LiveDisconnectResult  # noqa: E402
 from regear.ports.whole_dock_teardown import WholeDockApproval  # noqa: E402
 from regear.domain.dock_teardown import TeardownApproval  # noqa: E402
 from regear.adapters.steamos.pci import PciUsb4Discovery  # noqa: E402
@@ -1358,13 +1360,16 @@ class Plugin:
         Not a player RPC. Reconnect remains an explicit separate operation and
         the durable claim remains inhibited even after successful enumeration.
         """
+        self._whole_dock_trial_phase = "admission"
         with self._dock_mutation_gate().admit():
+            self._whole_dock_trial_phase = "topology"
             cards = [card for card in DrmDiscovery().scan() if card.boot_vga is False]
             if len(cards) != 1:
                 raise ValueError("dock_teardown.gpu_ambiguous")
             binding = resolve_whole_dock(cards[0].pci_bdf)
             if expected_attachment and expected_attachment != binding.binding + ":" + binding.generation:
                 raise ValueError("dock_teardown.approval_superseded")
+            self._whole_dock_trial_phase = "session"
             user = resolve_gamescope_user(GamescopeDiscovery().scan()).context
             if user is None:
                 raise ValueError("dock_teardown.session_unknown")
@@ -1374,17 +1379,24 @@ class Plugin:
                 admission_held=lambda: admission["held"])
             approval = WholeDockApproval(binding.binding, binding.generation,
                 TeardownApproval(binding.usb_bdf, binding.router_id))
+            self._whole_dock_trial_phase = "release_setup"
             release = build_live_disconnect_runtime(gpu_bdf=binding.gpu_bdf,
                 uid=user.uid, username=user.username)
+            self._whole_dock_trial_phase = "sleep_inhibitor"
             lease = Login1SleepInhibitor()
             if lease.acquire().active is not True:
                 raise ValueError("dock_teardown.sleep_inhibition_required")
             self._whole_dock_trial_lease = lease
             try:
+                self._whole_dock_trial_phase = "preflight"
                 runtime.begin_before_release(operation, approval)
                 self._whole_dock_trial_runtime = (runtime, admission)
+                self._whole_dock_trial_phase = "gpu_release"
                 result = release.execute(release_display=True)
+                if type(result) is LiveDisconnectResult:
+                    self._whole_dock_release_stage = result.stage.value
                 runtime.verify_gpu_release(result)
+                self._whole_dock_trial_phase = "dock_teardown"
                 return runtime.execute_claimed(operation, approval)
             finally:
                 admission["held"] = False
@@ -1437,11 +1449,28 @@ class Plugin:
         Safe to poll. No filter is armed, no DRM master taken, and no display
         touched by asking.
         """
+        if _request == "whole_dock_record":
+            def read_record():
+                try:
+                    record = WholeDockClaimStore(Path("/var/lib/handheld-dock-mode")).load()
+                    return record.stage if record else "none"
+                except Exception:
+                    return "unknown"
+            return {"schema_version": 1, "claim_stage": await asyncio.to_thread(read_record),
+                    "safe_to_unplug": False}
         if _request == "whole_dock_trial":
             result = dict(getattr(self, "_whole_dock_trial_status", {
                 "schema_version": 1, "code": "dock_teardown.no_trial",
                 "busy": False, "safe_to_unplug": False,
             }))
+            if not result.get("busy") and result.get("ok") is False:
+                def claim_stage():
+                    try:
+                        record = WholeDockClaimStore(Path("/var/lib/handheld-dock-mode")).load()
+                        return record.stage if record else "none"
+                    except Exception:
+                        return "unknown"
+                result["claim_stage"] = await asyncio.to_thread(claim_stage)
             if not result.get("busy") and result["code"] in ("dock_teardown.no_trial", "dock_reconnect.software_reconnected"):
                 def preview_attachment():
                     cards = [c for c in DrmDiscovery().scan() if c.boot_vga is False]
@@ -1526,6 +1555,8 @@ class Plugin:
                 "code": "dock_teardown.trial_running", "busy": True,
                 "safe_to_unplug": False, "request_id": trial_request_id}
             def trial():
+                self._whole_dock_trial_phase = "starting"
+                self._whole_dock_release_stage = "not_run"
                 try:
                     if trial_action == "whole_dock_disconnect":
                         result = self._run_whole_dock_trial(uuid.uuid4().hex, trial_attachment_token)
@@ -1546,11 +1577,16 @@ class Plugin:
                         "dock_teardown.sleep_inhibition_required",
                         "dock_teardown.approval_superseded",
                         "dock_teardown.session_unknown",
+                        "dock_mutation.inhibited",
+                        "dock_mutation.unavailable_or_busy",
+                        "dock_teardown.gpu_release_unverified",
                     }:
                         reason = "dock_teardown.trial_unresolved"
                     payload = {"schema_version": 1, "code": reason,
                                "busy": False, "ok": False, "safe_to_unplug": False}
                 payload["request_id"] = trial_request_id
+                payload["phase"] = self._whole_dock_trial_phase
+                payload["release_stage"] = self._whole_dock_release_stage
                 self._whole_dock_trial_status = payload
                 return payload
             return await self._run_background_operation(trial)
@@ -3215,7 +3251,7 @@ class Plugin:
 
     def _support_versions(self) -> dict[str, str]:
         return {
-            "regear": "0.3.85",
+            "regear": "0.3.86",
             "decky": str(getattr(decky, "DECKY_VERSION", "unknown")),
             "steamos": self._version_info.steamos,
             "kernel": self._version_info.kernel,

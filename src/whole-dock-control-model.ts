@@ -18,6 +18,9 @@ export function dockControl(status: any, snapshot: any, now = Date.now()): { act
       "dock_teardown.sleep_inhibition_required": "Re-Gear could not prevent sleep during disconnect.",
       "dock_teardown.approval_superseded": "The dock connection changed after confirmation.",
       "dock_teardown.session_unknown": "Re-Gear could not identify the Gaming Mode session.",
+      "dock_mutation.inhibited": "A previous disconnect attempt still needs recovery.",
+      "dock_mutation.unavailable_or_busy": "Re-Gear could not acquire the dock operation lock.",
+      "dock_teardown.gpu_release_unverified": "The GPU release could not be verified.",
     };
     return { action: null, label: "Needs attention", message: (reasons[status.code] ?? "The last attempt is unresolved.") + " Keep the cable connected; do not repeat the operation." };
   }
