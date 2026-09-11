@@ -6,7 +6,7 @@ const js = ts.transpileModule(readFileSync(new URL("../src/whole-dock-control-mo
   compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 },
 }).outputText;
 const { dockControl } = await import("data:text/javascript;base64," + Buffer.from(js).toString("base64"));
-const idle = { game_state: "idle", egpu_link: { state: "up" } };
+const idle = { game_state: "idle", egpu_link: { state: "up" }, observed_at: new Date().toISOString() };
 const fresh = { schema_version: 1, busy: false, safe_to_unplug: false, code: "dock_teardown.no_trial", attachment_token: "a".repeat(64)+":"+"b".repeat(64) };
 test("initial disconnect requires supported status and idle detected GPU", () => {
   assert.equal(dockControl(fresh, idle).action, "whole_dock_disconnect");
@@ -15,13 +15,16 @@ test("initial disconnect requires supported status and idle detected GPU", () =>
 });
 test("only verified software down offers reconnect, without GPU-present requirement", () => {
   const down = { ...fresh, code: "dock_teardown.software_down", software_down: true };
-  assert.equal(dockControl(down, { game_state: "idle" }).action, "whole_dock_reconnect");
+  assert.equal(dockControl(down, { ...idle, egpu_link: null }).action, "whole_dock_reconnect");
   assert.equal(dockControl({ ...down, software_down: "true" }, idle).action, null);
   assert.equal(dockControl(down, { game_state: "running" }).action, null);
   assert.match(dockControl(down, idle).message, /Keep the cable connected/);
 });
 test("partial and interrupted results cannot enable another write", () => {
   for (const code of ["dock_teardown.trial_unresolved", "dock_reconnect.timeout", "dock_reconnect.unresolved", "dock_teardown.trial_running"]) assert.equal(dockControl({ ...fresh, code }, idle).action, null);
+});
+test("stale, future and missing observations fail closed", () => {
+  for (const observed_at of [undefined, "bad", new Date(Date.now()-20000).toISOString(), new Date(Date.now()+20000).toISOString()]) assert.equal(dockControl(fresh, {...idle, observed_at}).action, null);
 });
 test("reconnected result requires exact verified fields", () => {
   const restored = { ...fresh, code: "dock_reconnect.software_reconnected", software_reconnected: true, ok: true };

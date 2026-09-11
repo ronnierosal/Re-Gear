@@ -1,8 +1,10 @@
 export type DockAction = "whole_dock_disconnect" | "whole_dock_reconnect";
-export function dockControl(status: any, snapshot: any): { action: DockAction | null; label: string; message: string } {
+export function dockControl(status: any, snapshot: any, now = Date.now()): { action: DockAction | null; label: string; message: string } {
   const unavailable = { action: null, label: "Safely disconnect", message: "Disconnect status unavailable. Refresh before continuing." };
   if (status?.schema_version !== 1 || status.safe_to_unplug !== false || typeof status.busy !== "boolean") return unavailable;
   if (status.busy) return { action: null, label: "Working…", message: "Keep the cable connected. Re-Gear is checking the dock." };
+  const observed = typeof snapshot?.observed_at === "string" ? Date.parse(snapshot.observed_at) : NaN;
+  if (!Number.isFinite(observed) || observed > now || now - observed > 10000) return unavailable;
   if (status.code === "dock_teardown.software_down" && status.software_down === true) {
     return { action: snapshot?.game_state === "idle" ? "whole_dock_reconnect" : null,
       label: "Reconnect eGPU", message: "Software disconnect verified. Keep the cable connected for this trial." };

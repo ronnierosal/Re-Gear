@@ -5,27 +5,33 @@ import { EgpuConfirmModal } from "./egpu-confirm-modal";
 import { dockControl, type DockAction } from "./whole-dock-control-model";
 
 const readTrial = callable<[string], any>("get_egpu_disconnect_status");
-const readSnapshot = callable<[], any>("get_snapshot");
 const execute = callable<[boolean, string, string, DockAction, boolean, string, string], any>("execute_egpu_disconnect");
 const pendingKey = "regear.whole-dock.pending-request";
 const pendingRequest = () => { try { return window.localStorage.getItem(pendingKey); } catch { return "storage-unavailable"; } };
-const read = async () => { const [status, payload] = await Promise.all([readTrial("whole_dock_trial"), readSnapshot()]); return { status, snapshot: payload?.snapshot }; };
 
 /** Only confirmed clicks mutate. Reopening the menu recovers backend progress. */
-export function WholeDockControl() {
+export function WholeDockControl({ readCurrentSnapshot }: { readCurrentSnapshot: () => any }) {
+  const source = useRef(readCurrentSnapshot);
+  source.current = readCurrentSnapshot;
+  const read = async () => ({ status: await readTrial("whole_dock_trial"), snapshot: source.current() });
   const [reading, setReading] = useState<any>(null);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
   const mounted = useRef(true);
   const pending = useRef(false);
   const uncertain = useRef(!!pendingRequest());
+  const epoch = useRef(0);
+  const modal = useRef<ReturnType<typeof showModal> | null>(null);
   useEffect(() => {
     mounted.current = true;
+    let disposed = false;
     let timer: ReturnType<typeof setTimeout>;
     const refresh = async () => {
+      const started = epoch.current;
       try {
         const next = await read();
-        if (!mounted.current) return;
+        if (disposed) return;
+        if (started !== epoch.current) { timer = setTimeout(refresh, 2000); return; }
         const request = pendingRequest();
         if (request && next.status?.schema_version === 1 && next.status.request_id === request
             && next.status.busy === false && next.status.safe_to_unplug === false) {
@@ -33,11 +39,11 @@ export function WholeDockControl() {
           uncertain.current = false;
         }
         setReading(next);
-      } catch { if (mounted.current) setReading(null); }
-      if (mounted.current) timer = setTimeout(refresh, 2000);
+      } catch { if (!disposed && started === epoch.current) setReading(null); }
+      if (!disposed) timer = setTimeout(refresh, 2000);
     };
     void refresh();
-    return () => { mounted.current = false; clearTimeout(timer); };
+    return () => { disposed = true; mounted.current = false; epoch.current++; clearTimeout(timer); modal.current?.Close(); modal.current = null; };
   }, []);
   const view = dockControl(reading?.status, reading?.snapshot);
   const confirm = () => {
@@ -46,10 +52,12 @@ export function WholeDockControl() {
     if (!action || pending.current || uncertain.current) return;
     pending.current = true; setBusy(true);
     let decided = false;
-    const cancel = () => { if (decided) return; decided = true; pending.current = false; if (mounted.current) setBusy(false); };
+    const cancel = () => { if (decided) return; decided = true; pending.current = false; modal.current?.Close(); modal.current = null; if (mounted.current) setBusy(false); };
     const run = async () => {
       if (decided) return;
       decided = true;
+      epoch.current++;
+      modal.current?.Close(); modal.current = null;
       try {
         const fresh = await read();
         if (!mounted.current) return;
@@ -62,6 +70,7 @@ export function WholeDockControl() {
         uncertain.current = true;
         setNotice("Request sent. Keep the cable connected; Gaming Mode may restart.");
         const result = await execute(true, "", "disconnect", action, true, attachment, request);
+        epoch.current++;
         if (mounted.current) { setReading({ ...fresh, status: result }); setNotice(""); }
         if (result?.request_id === request && result?.busy === false && result?.schema_version === 1) {
           window.localStorage.removeItem(pendingKey); uncertain.current = false;
@@ -70,7 +79,7 @@ export function WholeDockControl() {
         if (mounted.current) setNotice("The reply was interrupted. Waiting for backend progress; no retry was sent.");
       } finally { pending.current = false; if (mounted.current) setBusy(false); }
     };
-    showModal(<EgpuConfirmModal strTitle={action === "whole_dock_disconnect" ? "Disconnect the dock in software?" : "Reconnect the eGPU?"}
+    modal.current = showModal(<EgpuConfirmModal strTitle={action === "whole_dock_disconnect" ? "Disconnect the dock in software?" : "Reconnect the eGPU?"}
       strDescription={action === "whole_dock_disconnect" ? "The TV will turn off and Gaming Mode may restart. Keep the dock cable connected for this trial. This is not permission to unplug." : "Re-Gear will try to restore the connected dock and verify its devices. Keep the cable connected."}
       strOKButtonText={action === "whole_dock_disconnect" ? "Disconnect" : "Reconnect"} strCancelButtonText="Cancel"
       className="rg-whole-dock-confirm" bDestructiveWarning onOK={() => { void run(); }} onCancel={cancel} onEscKeypress={cancel}>
