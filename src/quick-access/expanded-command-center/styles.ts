@@ -83,4 +83,7 @@ export const expandedStyles = `
 
 .rg-expanded-frame>.rg-utility-rail[data-utility-side=right]{position:fixed;right:2vw;top:9vh}
 @media(max-width:600px){.rg-expanded-frame>.rg-utility-rail[data-utility-side=right]{right:3vw}}
+
+/* Very narrow hosts cannot fit side controls without crushing native tabs. */
+@media(max-width:480px){.rg-expanded-frame>.rg-utility-rail{display:none}.rg-expanded-frame>.rg-expanded{width:94vw}}
 `;

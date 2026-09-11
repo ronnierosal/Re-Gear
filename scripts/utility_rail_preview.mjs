@@ -33,8 +33,8 @@ try{for(const before of [true,false]){
  if(await page.locator('.rg-utility-rail input:disabled').count()!==2||await page.locator('.rg-utility-rail button:disabled').count()!==4)throw Error('Unknown control enabled or missing');
  const railOverflow=await page.locator('.rg-utility-rail').evaluateAll(rails=>rails.some(r=>r.scrollHeight>r.clientHeight+1));if(viewport.width>600&&railOverflow)throw Error('Utility controls not visible immediately');
  const right=await page.locator('[data-utility-side="right"]').boundingBox();
- if(Math.abs(viewport.width-right.x-right.width-viewport.width*(viewport.width<=600?.03:.02))>2)throw Error('Right controls not at screen edge');
- if(right.x<geometry.panel.x+geometry.panel.width)throw Error('Right rail overlaps menu');
+ if(viewport.width>480&&Math.abs(viewport.width-right.x-right.width-viewport.width*(viewport.width<=600?.03:.02))>2)throw Error('Right controls not at screen edge');
+ if(viewport.width>480&&right.x<geometry.panel.x+geometry.panel.width)throw Error('Right rail overlaps menu');
  const prior=reports.find(r=>r.name==='before'&&r.width===viewport.width);
  if(viewport.width>600&&(prior.geometry.panel.width!==geometry.panel.width||prior.geometry.panel.height!==geometry.panel.height))throw Error('Central dimensions changed');
  }

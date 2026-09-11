@@ -246,7 +246,9 @@ has no effect on hardware behavior.
 The central compact contract above is unchanged at the tested handheld and wider
 sizes (828x466 and 1280x720 CSS pixels). At viewports at or below 600px wide, a
 contained fallback reserves space for both rails; the center narrows and its
-existing content scrolls. Narrow fallback checks at 600x466 and 360x640 verify
+existing content scrolls. Below 481px the unsupported side rails are hidden, preserving the original
+full-width central menu rather than crushing its tabs. Narrow fallback checks
+at 600x466 and 360x640 verify
 non-overlap, not native fit or guaranteed simultaneous visibility of every tile.
 Source browser checks cover pointer navigation, keyboard containment and nested
 Back focus. Native controller behavior and device readability remain unverified.
