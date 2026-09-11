@@ -11,6 +11,7 @@ const labels: Record<string, string> = {
   "Connection link": "Connection link",
   "TV HDMI detected": "TV HDMI",
   "Audio recovery ready": "Audio recovery",
+  "Display switching ready": "Display switching ready",
   "No game running": "No game running",
 };
 
