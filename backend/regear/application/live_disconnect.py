@@ -173,6 +173,9 @@ class LiveDisconnectResult:
     #: refusal here is not fatal: a committed mode that is still standing is
     #: reported by the readiness code, not by this.
     display_release_code: str = ""
+    # Preserve the arm refusal before the outer decision summarizes it.
+    arm_stage: str = ""
+    arm_code: str = ""
 
     def __post_init__(self) -> None:
         if self.stage is LiveDisconnectStage.REMOVED and not self.removed:
@@ -376,6 +379,8 @@ class LiveDisconnectService:
             released=decision.released,
             session_disturbed=arm.session_disturbed,
             filter_disarmed=arm.disarmed,
+            arm_stage=arm.stage.value,
+            arm_code=arm.code,
         )
 
     def _after_release(

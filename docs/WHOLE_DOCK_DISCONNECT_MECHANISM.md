@@ -203,3 +203,43 @@ src/login/logind-session-device.c shows that pausing a DRM session drops master
 but retains the descriptor. A Desktop switch alone is therefore not proof that
 all descriptors were closed. Installed-version behavior still needs validation.
 https://github.com/systemd/systemd/blob/v257/src/login/logind-session-device.c
+
+## 0.3.87 controller-release capture trial
+
+The actual login1 controller resolves to gamescope-wl in gamescope-session.service.
+The target propagates stop to graphical-session.target, which owns that service.
+User Linger=no means a user-manager timer is not an adequate independent recovery
+if the session and SSH disappear. BrokerCaptureRestoreTimer therefore schedules a
+fixed system-level25-second timer that first starts the observed user manager,
+then attempts to start that user's Gaming target. Timer activation is not proof
+that later presentation restoration succeeds; run the first trial supervised
+with the operator available for recovery.
+No arbitrary command, unit, or shell is accepted. Timer activation is verified
+before timed observation is made available.
+
+The existing execute_egpu_disconnect RPC with trial_action=whole_dock_capture,
+trial_confirmed=true and release_display=true holds the dock
+mutation lock, requires the retained release_intent claim to match a fresh
+attached topology, requires initial idle and complete holder evidence, arms the
+restoration timer, and samples holders for35 seconds. It does not stop services,
+remove hardware, or alter the retained claim. Poll existing disconnect status
+with request release_capture. The returned restore_timer is an ephemeral unit
+name for verification, not an attachment identifier.
+
+Trial driver sequence, after installation and explicit operator readiness:
+1. Recheck game idle, controller identity and current claim. Start capture.
+2. Require a NEW observing result, complete first sample, and no more than5 seconds
+   since starting capture. Verify its exact root restore timer is still active.
+   If delayed or ambiguous, do not stop anything; let capture finish.
+3. Stop only gamescope-session.target through the observed user's systemd manager.
+   Keep an independent finally start path as well as the already-active timer.
+4. Observe controller disappearance and system broker holders during the stopped
+   interval. No PCI/USB/tunnel write and no filter arm are part of this test.
+5. Restore/start target; verify session, GPU, picture/audio/controls and capture.
+   Preserve claim unchanged. Audio holders may remain because audio is not stopped.
+
+A stop attempted after the timer fires has no watchdog and is forbidden. This is
+an operator-captured mechanism trial, not a new Safe Disconnect button action.
+It can establish whether controller exit releases broker handles, not clearance
+to unplug or approval to ignore those handles. Inner arm refusal stage/code are
+also preserved for future release attempts without changing removal decisions.

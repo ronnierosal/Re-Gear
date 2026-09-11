@@ -202,5 +202,103 @@ class MainDockAdmissionTests(unittest.TestCase):
             self.assertEqual(result, {'schema_version':1, 'claim_stage':'release_intent', 'safe_to_unplug':False})
             store.return_value.claim.assert_not_called()
             store.return_value.record.assert_not_called()
+    def _capture_fixture(self, *, stage='release_intent', matched=True, idle=True,
+                         complete=True, changed_claim=False, timer_ready=True):
+        held = []
+        @contextmanager
+        def admit(*, allow_inhibited=False):
+            self.assertTrue(allow_inhibited)
+            held.append(True)
+            try:
+                yield
+            finally:
+                held.clear()
+        self.plugin._dock_mutation_gate = lambda: NS(admit=admit)
+        self.plugin._api = NS(get_snapshot_report=lambda: NS(snapshot=NS(
+            game_state=self.module.GameState.IDLE if idle else self.module.GameState.UNKNOWN)))
+        async def background(fn):
+            return fn()
+        self.plugin._run_background_operation = background
+        claim = NS(stage=stage, binding='bound', generation='generation')
+        runtime = Mock()
+        def status():
+            self.assertTrue(held, 'capture status must run under admission')
+            return NS(scan_complete=complete, holders=('systemd-logind.service',))
+        runtime.status.side_effect = status
+        async def run():
+            start = await self.plugin.execute_egpu_disconnect(release_display=True,
+                trial_action="whole_dock_capture", trial_confirmed=True)
+            self.assertEqual(start['code'], 'release_capture.starting')
+            return await self.plugin._release_capture_task
+        with patch.object(self.module, 'WholeDockClaimStore') as store, \
+                patch.object(self.module, 'DrmDiscovery') as drm, \
+                patch.object(self.module, 'resolve_whole_dock', return_value=NS(
+                    gpu_bdf='gpu', binding='bound' if matched else 'changed', generation='generation')), \
+                patch.object(self.module, 'GamescopeDiscovery'), \
+                patch.object(self.module, 'resolve_gamescope_user', return_value=NS(
+                    context=NS(uid=1000, username='deck'))), \
+                patch.object(self.module, 'build_live_disconnect_runtime', return_value=runtime) as build, \
+                patch.object(self.module, 'BrokerCaptureRestoreTimer') as timer, \
+                patch.object(self.module.time, 'sleep') as sleep, \
+                patch.object(self.module.time, 'monotonic', return_value=0):
+            store.return_value.load.side_effect = [claim, None if changed_claim else claim]
+            timer.return_value.arm.return_value = timer_ready
+            drm.return_value.scan.return_value = [NS(boot_vga=False, pci_bdf='gpu')]
+            result = asyncio.run(run())
+            store.return_value.claim.assert_not_called()
+            store.return_value.record.assert_not_called()
+            store.return_value.retire_reconnected.assert_not_called()
+            runtime.execute.assert_not_called()
+            self.assertFalse(held)
+            self.assertEqual(result, self.plugin._release_capture_status)
+            return result, build.call_count, runtime.status.call_count, sleep.call_count
+
+    def test_capture_preserves_claim_and_publishes_samples_under_lock(self):
+        result, built, observed, sleeps = self._capture_fixture()
+        self.assertEqual(result['code'], 'release_capture.complete')
+        self.assertEqual(len(result['samples']), 36)
+        self.assertEqual(result['samples'][0]['holders'], ['systemd-logind.service'])
+        self.assertTrue(all(sample['scan_complete'] for sample in result['samples']))
+        self.assertEqual((built, observed, sleeps), (1, 37, 36))
+
+    def test_capture_refuses_mismatched_claim_attachment_or_unknown_idle(self):
+        for options in ({'stage': 'software_down'}, {'matched': False}, {'idle': False}):
+            with self.subTest(options=options):
+                result, built, observed, _ = self._capture_fixture(**options)
+                self.assertEqual(result['code'], 'release_capture.unresolved')
+                self.assertEqual(result['samples'], [])
+                self.assertEqual((built, observed), (0, 0))
+
+    def test_capture_incomplete_preflight_refuses_without_samples(self):
+        result, _, observed, _ = self._capture_fixture(complete=False)
+        self.assertEqual(result['code'], 'release_capture.unresolved')
+        self.assertEqual(result['samples'], [])
+        self.assertEqual(observed, 1)
+
+    def test_capture_changed_claim_is_unresolved_and_never_rewritten(self):
+        result, _, _, _ = self._capture_fixture(changed_claim=True)
+        self.assertEqual(result['code'], 'release_capture.unresolved')
+        self.assertEqual(len(result['samples']), 36)
+
+    def test_capture_timer_failure_prevents_timed_observation(self):
+        result, _, observed, sleeps = self._capture_fixture(timer_ready=False)
+        self.assertEqual(result['code'], 'release_capture.unresolved')
+        self.assertEqual(result['samples'], [])
+        self.assertEqual((observed, sleeps), (1, 0))
+
+    def test_capture_requires_exact_confirmation_and_refuses_busy(self):
+        self.plugin._run_background_operation = Mock()
+        for confirmation in (False, 1, 'yes'):
+            result = asyncio.run(self.plugin._capture_egpu_release_diagnostics(confirmation))
+            self.assertEqual(result['code'], 'release_capture.not_started')
+        self.plugin._unloading = True
+        self.assertEqual(asyncio.run(self.plugin._capture_egpu_release_diagnostics(True))['code'],
+                         'release_capture.not_started')
+        self.plugin._unloading = False
+        self.plugin._release_capture_task = NS(done=lambda: False)
+        self.assertEqual(asyncio.run(self.plugin._capture_egpu_release_diagnostics(True))['code'],
+                         'release_capture.busy')
+        self.plugin._run_background_operation.assert_not_called()
+
 if __name__ == '__main__':
     unittest.main()

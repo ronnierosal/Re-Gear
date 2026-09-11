@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 import socket
 import sys
 import threading
@@ -19,6 +20,8 @@ PLUGIN_ROOT = Path(__file__).resolve().parent
 BACKEND_ROOT = PLUGIN_ROOT / "backend"
 if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
+
+from regear.adapters.steamos.commands import BrokerCaptureRestoreTimer  # noqa: E402
 
 from regear.adapters.steamos.discovery import SteamOsDiscovery  # noqa: E402
 from regear.application.automatic_link_recovery import AutomaticLinkRecovery  # noqa: E402
@@ -1354,6 +1357,68 @@ class Plugin:
 
     # -- live eGPU disconnect -------------------------------------------
 
+    async def _capture_egpu_release_diagnostics(self, confirmed: bool = False):
+        """Operator-only timed observation with independent session restoration.
+
+        The capture establishes independent session restoration before a separate
+        approved stop. Admission prevents automatic switching during observation;
+        the unresolved claim is preserved, never adopted for teardown.
+        """
+        if confirmed is not True or getattr(self, "_unloading", False):
+            return {"code": "release_capture.not_started"}
+        previous = getattr(self, "_release_capture_task", None)
+        if previous is not None and not previous.done():
+            return {"code": "release_capture.busy"}
+        self._release_capture_restore_unit = ""
+        self._release_capture_status = {"code": "release_capture.starting", "samples": []}
+        def capture():
+            samples = []
+            try:
+                with self._dock_mutation_gate().admit(allow_inhibited=True):
+                    store = WholeDockClaimStore(Path("/var/lib/handheld-dock-mode"))
+                    claim = store.load()
+                    if claim is None or claim.stage != "release_intent":
+                        raise ValueError("capture claim mismatch")
+                    cards = [c for c in DrmDiscovery().scan() if c.boot_vga is False]
+                    if len(cards) != 1:
+                        raise ValueError("capture GPU ambiguous")
+                    binding = resolve_whole_dock(cards[0].pci_bdf)
+                    if (binding.binding != claim.binding or binding.generation != claim.generation
+                            or self._api.get_snapshot_report().snapshot.game_state is not GameState.IDLE):
+                        raise ValueError("capture attachment or idle changed")
+                    user = resolve_gamescope_user(GamescopeDiscovery().scan()).context
+                    if user is None:
+                        raise ValueError("capture session unavailable")
+                    runtime = build_live_disconnect_runtime(gpu_bdf=binding.gpu_bdf,
+                        uid=user.uid, username=user.username)
+                    if runtime.status().scan_complete is not True:
+                        raise ValueError("capture holder scan incomplete")
+                    token = uuid.uuid4().hex
+                    if not BrokerCaptureRestoreTimer().arm(uid=user.uid, username=user.username,
+                                                           token=token):
+                        raise ValueError("capture independent restore unavailable")
+                    self._release_capture_restore_unit = "regear-broker-restore-" + token + ".timer"
+                    self._release_capture_status = {"code": "release_capture.observing", "samples": []}
+                    started = time.monotonic()
+                    for _ in range(36):
+                        status = runtime.status()
+                        sample = {"elapsed_seconds": round(time.monotonic() - started, 1),
+                                  "holders": list(status.holders), "scan_complete": status.scan_complete}
+                        samples.append(sample)
+                        self._release_capture_status = {"code": "release_capture.observing", "samples": list(samples)}
+                        if time.monotonic() - started >= 35:
+                            break
+                        time.sleep(1)
+                    if store.load() != claim:
+                        raise ValueError("capture claim changed")
+                    result = {"code": "release_capture.complete", "samples": samples}
+            except Exception:
+                result = {"code": "release_capture.unresolved", "samples": samples}
+            self._release_capture_status = result
+            return result
+        self._release_capture_task = asyncio.create_task(self._run_background_operation(capture))
+        return {"code": "release_capture.starting"}
+
     def _run_whole_dock_trial(self, operation: str, expected_attachment: str = ""):
         """Internal cable-connected trial; admission covers release and teardown.
 
@@ -1395,6 +1460,9 @@ class Plugin:
                 result = release.execute(release_display=True)
                 if type(result) is LiveDisconnectResult:
                     self._whole_dock_release_stage = result.stage.value
+                    self._whole_dock_arm_stage = result.arm_stage
+                    self._whole_dock_arm_code = result.arm_code if re.fullmatch(
+                        r"(?:filter_arm|arm_sequence)\.[a-z_]+", result.arm_code) else ""
                 runtime.verify_gpu_release(result)
                 self._whole_dock_trial_phase = "dock_teardown"
                 return runtime.execute_claimed(operation, approval)
@@ -1449,6 +1517,10 @@ class Plugin:
         Safe to poll. No filter is armed, no DRM master taken, and no display
         touched by asking.
         """
+        if _request == "release_capture":
+            result = dict(getattr(self, "_release_capture_status", {"code": "release_capture.not_started"}))
+            result["restore_timer"] = getattr(self, "_release_capture_restore_unit", "")
+            return result
         if _request == "whole_dock_record":
             def read_record():
                 try:
@@ -1538,7 +1610,7 @@ class Plugin:
         """
         if trial_action:
             if (trial_confirmed is not True or release_display is not True
-                    or trial_action not in ("whole_dock_disconnect", "whole_dock_reconnect")
+                    or trial_action not in ("whole_dock_disconnect", "whole_dock_reconnect", "whole_dock_capture")
                     or relaunch_app_id
                     or type(trial_request_id) is not str
                     or (trial_request_id and (len(trial_request_id) != 32 or any(c not in "0123456789abcdef" for c in trial_request_id)))
@@ -1551,12 +1623,16 @@ class Plugin:
                     or getattr(self, "_whole_dock_trial_status", {}).get("busy")):
                 return {"schema_version": 1, "ok": False,
                         "code": "dock_teardown.busy", "safe_to_unplug": False}
+            if trial_action == "whole_dock_capture":
+                return await self._capture_egpu_release_diagnostics(confirmed=True)
             self._whole_dock_trial_status = {"schema_version": 1,
                 "code": "dock_teardown.trial_running", "busy": True,
                 "safe_to_unplug": False, "request_id": trial_request_id}
             def trial():
                 self._whole_dock_trial_phase = "starting"
                 self._whole_dock_release_stage = "not_run"
+                self._whole_dock_arm_stage = ""
+                self._whole_dock_arm_code = ""
                 try:
                     if trial_action == "whole_dock_disconnect":
                         result = self._run_whole_dock_trial(uuid.uuid4().hex, trial_attachment_token)
@@ -1587,6 +1663,8 @@ class Plugin:
                 payload["request_id"] = trial_request_id
                 payload["phase"] = self._whole_dock_trial_phase
                 payload["release_stage"] = self._whole_dock_release_stage
+                payload["arm_stage"] = self._whole_dock_arm_stage
+                payload["arm_code"] = self._whole_dock_arm_code
                 self._whole_dock_trial_status = payload
                 return payload
             return await self._run_background_operation(trial)
@@ -3251,7 +3329,7 @@ class Plugin:
 
     def _support_versions(self) -> dict[str, str]:
         return {
-            "regear": "0.3.86",
+            "regear": "0.3.87",
             "decky": str(getattr(decky, "DECKY_VERSION", "unknown")),
             "steamos": self._version_info.steamos,
             "kernel": self._version_info.kernel,

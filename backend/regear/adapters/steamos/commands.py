@@ -336,6 +336,36 @@ class ReadOnlyCommandRunner:
         )
 
 
+class BrokerCaptureRestoreTimer:
+    """Fixed system timer: restore Gaming Mode even if Steam/SSH/Decky exits."""
+
+    def arm(self, *, uid: int, username: str, token: str) -> bool:
+        if (type(uid) is not int or uid <= 0
+                or type(username) is not str or type(token) is not str
+                or not ReadOnlyCommandRunner.SAFE_USERNAME.fullmatch(username)
+                or not re.fullmatch(r"[0-9a-f]{32}", token)
+                or getattr(os, "geteuid", lambda: -1)() != 0):
+            return False
+        unit = "regear-broker-restore-" + token
+        argv = ("/usr/bin/systemd-run", "--quiet", "--collect", "--unit=" + unit,
+                "--on-active=25s", "--timer-property=AccuracySec=1s",
+                "--property=TimeoutStartSec=20s",
+                "--property=ExecStartPre=/usr/bin/systemctl start user@" + str(uid) + ".service",
+                "/usr/bin/runuser", "-u", username, "--", "/usr/bin/env",
+                "XDG_RUNTIME_DIR=/run/user/" + str(uid),
+                "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/" + str(uid) + "/bus",
+                "/usr/bin/systemctl", "--user", "start", "gamescope-session.target")
+        try:
+            result = subprocess.run(argv, capture_output=True, timeout=8, check=False)
+            if result.returncode != 0:
+                return False
+            check = subprocess.run(("/usr/bin/systemctl", "is-active", unit + ".timer"),
+                                   capture_output=True, timeout=8, check=False)
+            return check.returncode == 0 and check.stdout.strip() == b"active"
+        except (OSError, subprocess.TimeoutExpired):
+            return False
+
+
 class UserServiceCommandRunner:
     """Execute only Re-Gear's fixed Gamescope user-service operations."""
 
