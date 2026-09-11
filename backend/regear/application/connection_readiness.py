@@ -31,6 +31,7 @@ class ConnectionReadinessStage(StrEnum):
     GAME_RUNNING = "game_running"
     STABILIZING = "stabilizing"
     READY_IDLE = "ready_idle"
+    READY_DISPLAY_PENDING = "ready_display_pending"
     LINK_TRAINING_FAILED = "link_training_failed"
     TIMED_OUT = "timed_out"
     ACTION_REQUIRED = "action_required"
@@ -200,10 +201,15 @@ class ConnectionReadinessLifecycle:
         # The initial readiness deadline excludes waiting for the player to
         # finish a game or acknowledge a result. Every later sample still gates
         # action on fresh topology, peripherals, session, and idle game state.
+        #
+        # It also excludes waiting for a display target. This window answers
+        # whether the eGPU arrived, and it did once topology is stable and the
+        # session is ready. Requiring HDMI here meant a television that was
+        # merely switched off expired the window, turned the stage into
+        # ``TIMED_OUT``, and stopped the automatic transition from ever being
+        # offered -- a display fact silently ending an eGPU lifecycle.
         if (
             self._topology_samples >= TOPOLOGY_STABILITY_SAMPLES
-            and self._hdmi_samples >= PERIPHERAL_STABILITY_SAMPLES
-            and self._audio_samples >= PERIPHERAL_STABILITY_SAMPLES
             and observation.session_ready
         ):
             self._readiness_established = True
@@ -215,6 +221,26 @@ class ConnectionReadinessLifecycle:
         elif not observation.link_up:
             self._status = self._make_status(
                 ConnectionReadinessStage.WAITING_FOR_LINK, "connection.waiting_for_link", now
+            )
+        elif (
+            not observation.hdmi_ready
+            and self._topology_samples >= TOPOLOGY_STABILITY_SAMPLES
+            and observation.session_ready
+            and observation.game_state is GameState.IDLE
+        ):
+            # The eGPU is up, stable and idle; only the display target is
+            # absent, which is what a switched-off television looks like. This
+            # is a distinct answer from "still coming up", and it deliberately
+            # is NOT ``READY_IDLE``: an absent display must never authorize a
+            # switch. The coordinator treats an unrecognised stage as waiting
+            # and leaves its one-shot latch unset, so when the television is
+            # turned on and its connector and EDID are observed, readiness
+            # reaches ``READY_IDLE`` and the transition proceeds with no
+            # further player action.
+            self._status = self._make_status(
+                ConnectionReadinessStage.READY_DISPLAY_PENDING,
+                "connection.ready_display_pending",
+                now,
             )
         elif not observation.hdmi_ready:
             self._status = self._make_status(
