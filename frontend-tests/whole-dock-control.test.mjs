@@ -104,3 +104,10 @@ test('component older poll cannot overwrite newer completed command',async()=>{
   h.click();h.modals.at(-1).view.props.onOK();await settle();assert.equal(h.calls.length,1);
   old.resolve(fresh);await settle();assert.equal(h.button().props.children[0],'Reconnect eGPU');h.unmount();
 });
+test("known refusal explains cause without enabling another operation", () => {
+  const result = dockControl({ ...fresh, code: "dock_teardown.usb_peripherals_or_unknown" }, idle);
+  assert.equal(result.action, null);
+  assert.match(result.message, /USB accessories or incomplete hub information/);
+  assert.match(result.message, /Keep the cable connected/);
+  assert.doesNotMatch(dockControl({...fresh, code: "private-path"}, idle).message, /private-path/);
+});
