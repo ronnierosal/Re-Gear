@@ -66,6 +66,17 @@ class MainDockAdmissionTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.plugin._run_whole_dock_reconnect_trial()
 
+    def test_changed_attachment_refuses_before_any_release(self):
+        from contextlib import nullcontext
+        self.plugin._dock_mutation_gate = lambda: NS(admit=nullcontext)
+        with patch.object(self.module, "DrmDiscovery") as drm, \
+                patch.object(self.module, "resolve_whole_dock", return_value=NS(binding="new", generation="new")), \
+                patch.object(self.module, "build_live_disconnect_runtime") as release:
+            drm.return_value.scan.return_value = [NS(boot_vga=False, pci_bdf="gpu")]
+            with self.assertRaisesRegex(ValueError, "approval_superseded"):
+                self.plugin._run_whole_dock_trial("trial", "old:old")
+            release.assert_not_called()
+
     def test_trial_requires_explicit_confirmation(self):
         self.plugin._run_whole_dock_trial = Mock()
         result = asyncio.run(self.plugin.execute_egpu_disconnect(

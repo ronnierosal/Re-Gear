@@ -105,3 +105,19 @@ the result and use supervised recovery. The preserved0.3.82 remains the rollback
 
 Current live evidence is read-only topology and driver binding validation on the
 Ally/G1. New disconnect/reconnect hardware behavior remains untested.
+
+### Quick Access control follow-up
+
+An isolated whole-dock control component adds an idle-only Disconnect button,
+centered native confirmation and verified-down Reconnect action. It polls the
+existing trial status and never mutates on mount. Confirmation carries the
+opaque attachment token from preview; the backend rejects a changed binding.
+A persisted request ID keeps interrupted replies from enabling repeat actions
+on a component remount. No physical unplug clearance is displayed.
+
+The expanded shell accepts a native-only disconnectControl slot. The native
+adapter mount is pending its current owner's narrow file release; the component
+is not yet delivered by a new installable package.0.3.83 is immutable and has no
+new Quick Access button. Browser comparison at828x466 and1280x720 used actual
+component source with mocked Decky/RPC; confirmation centered in both viewports.
+Native controller and device validation remain pending.

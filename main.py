@@ -1352,7 +1352,7 @@ class Plugin:
 
     # -- live eGPU disconnect -------------------------------------------
 
-    def _run_whole_dock_trial(self, operation: str):
+    def _run_whole_dock_trial(self, operation: str, expected_attachment: str = ""):
         """Internal cable-connected trial; admission covers release and teardown.
 
         Not a player RPC. Reconnect remains an explicit separate operation and
@@ -1363,6 +1363,8 @@ class Plugin:
             if len(cards) != 1:
                 raise ValueError("dock_teardown.gpu_ambiguous")
             binding = resolve_whole_dock(cards[0].pci_bdf)
+            if expected_attachment and expected_attachment != binding.binding + ":" + binding.generation:
+                raise ValueError("dock_teardown.approval_superseded")
             user = resolve_gamescope_user(GamescopeDiscovery().scan()).context
             if user is None:
                 raise ValueError("dock_teardown.session_unknown")
@@ -1436,10 +1438,22 @@ class Plugin:
         touched by asking.
         """
         if _request == "whole_dock_trial":
-            return dict(getattr(self, "_whole_dock_trial_status", {
+            result = dict(getattr(self, "_whole_dock_trial_status", {
                 "schema_version": 1, "code": "dock_teardown.no_trial",
                 "busy": False, "safe_to_unplug": False,
             }))
+            if not result.get("busy") and result["code"] in ("dock_teardown.no_trial", "dock_reconnect.software_reconnected"):
+                def preview_attachment():
+                    cards = [c for c in DrmDiscovery().scan() if c.boot_vga is False]
+                    if len(cards) != 1:
+                        return ""
+                    binding = resolve_whole_dock(cards[0].pci_bdf)
+                    return binding.binding + ":" + binding.generation
+                try:
+                    result["attachment_token"] = await asyncio.to_thread(preview_attachment)
+                except Exception:
+                    result["attachment_token"] = ""
+            return result
         try:
             runtime = await asyncio.to_thread(self._live_disconnect_runtime)
         except Exception:
@@ -1471,6 +1485,8 @@ class Plugin:
         relaunch_intent: str = "disconnect",
         trial_action: str = "",
         trial_confirmed: bool = False,
+        trial_attachment_token: str = "",
+        trial_request_id: str = "",
     ) -> dict[str, object]:
         """Remove the eGPU in software. NOT clearance to unplug anything.
 
@@ -1494,7 +1510,11 @@ class Plugin:
         if trial_action:
             if (trial_confirmed is not True or release_display is not True
                     or trial_action not in ("whole_dock_disconnect", "whole_dock_reconnect")
-                    or relaunch_app_id):
+                    or relaunch_app_id
+                    or type(trial_request_id) is not str
+                    or (trial_request_id and (len(trial_request_id) != 32 or any(c not in "0123456789abcdef" for c in trial_request_id)))
+                    or type(trial_attachment_token) is not str
+                    or (trial_attachment_token and (len(trial_attachment_token) != 129 or any(c not in "0123456789abcdef:" for c in trial_attachment_token)))):
                 return {"schema_version": 1, "ok": False,
                         "code": "dock_teardown.trial_confirmation_required",
                         "safe_to_unplug": False}
@@ -1504,11 +1524,11 @@ class Plugin:
                         "code": "dock_teardown.busy", "safe_to_unplug": False}
             self._whole_dock_trial_status = {"schema_version": 1,
                 "code": "dock_teardown.trial_running", "busy": True,
-                "safe_to_unplug": False}
+                "safe_to_unplug": False, "request_id": trial_request_id}
             def trial():
                 try:
                     if trial_action == "whole_dock_disconnect":
-                        result = self._run_whole_dock_trial(uuid.uuid4().hex)
+                        result = self._run_whole_dock_trial(uuid.uuid4().hex, trial_attachment_token)
                     else:
                         result = self._run_whole_dock_reconnect_trial()
                     payload = {"schema_version": 1, "code": result.code,
@@ -1519,6 +1539,7 @@ class Plugin:
                 except Exception:
                     payload = {"schema_version": 1, "code": "dock_teardown.trial_unresolved",
                                "busy": False, "ok": False, "safe_to_unplug": False}
+                payload["request_id"] = trial_request_id
                 self._whole_dock_trial_status = payload
                 return payload
             return await self._run_background_operation(trial)
