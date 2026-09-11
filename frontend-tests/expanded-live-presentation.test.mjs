@@ -18,7 +18,7 @@ async function fixture() {
     const useRef = initial => useState({current: initial})[0];
     let effects=[];
     const useLayoutEffect = effect => effects.push(effect);
-    const CommandCenterIcon='icon', expandedStyles='', brandIcon='';
+    const UtilityRail='utility-rail', CommandCenterIcon='icon', expandedStyles='', brandIcon='';
     ${compile("../src/quick-access/expanded-command-center/model.ts")}
     ${compile("../src/quick-access/expanded-command-center/shell.tsx")}
     export function render(props) {cursor=0;effects=[];return ExpandedCommandCenter({onClose(){}, ...props});}
@@ -207,4 +207,12 @@ test("compact cards present icon and label before the value and secondary detail
  const heading=nodes(tile).find(node=>node.props?.className==='rg-expanded-tile-heading');
  assert.match(text(heading),/Manual TDP/);
  assert.ok(nodes(heading).some(node=>node.props?.className==='rg-expanded-tile-icon'));
+});
+
+test("Quick Access mounts both unavailable utility rails and details hide them",async()=>{
+ const app=await fixture(); const props={tiles:{quick:[auto('Unknown','No observation')]}};
+ let tree=app.render(props);
+ assert.deepEqual(nodes(tree).filter(node=>node.type==='utility-rail').map(node=>node.props.side),['left','right']);
+ nodes(tree).find(node=>node.props?.['data-ec-control']==='auto').props.onClick();tree=app.render(props);
+ assert.equal(nodes(tree).filter(node=>node.type==='utility-rail').length,0);
 });

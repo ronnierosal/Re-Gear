@@ -75,4 +75,9 @@ export const expandedStyles = `
 .rg-expanded .rg-expanded-tile[data-ec-control=disconnect] .rg-expanded-label{font-size:10px}
 .rg-expanded .rg-expanded-tile[data-ec-control=disconnect] .rg-expanded-detail{font-size:10px}
 }
+
+.rg-expanded-frame{display:flex;align-items:flex-start;gap:8px;max-width:96vw;max-height:100%;min-width:0;color:#f4f7fb}
+.rg-expanded-frame>.rg-expanded{flex:0 0 auto}
+.rg-expanded-frame>.rg-utility-rail{max-height:82vh;overflow-y:auto;scrollbar-width:thin;width:92px;flex:0 0 92px}
+@media(max-width:600px){.rg-expanded-frame{max-width:94vw;overflow-x:auto}.rg-expanded-frame>.rg-expanded{width:calc(94vw - 152px)}.rg-expanded-frame>.rg-utility-rail{width:68px;flex-basis:68px}}
 `;

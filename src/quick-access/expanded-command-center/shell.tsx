@@ -1,3 +1,4 @@
+import { UtilityRail } from "./utility-rail";
 import { useLayoutEffect, useRef, useState } from "react";
 import type { CSSProperties, KeyboardEvent, ReactNode, ElementType } from "react";
 import { CommandCenterIcon, type CommandCenterIconId } from "../command-center-icons";
@@ -97,7 +98,7 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
     else onClose();
   }
   const nativeHandlers = native ? {
-    "flow-children": "vertical",
+    "flow-children": "horizontal",
     noFocusRing: true,
     onCancelButton: (event: CustomEvent) => { event.preventDefault(); event.stopPropagation(); back(); },
     onButtonDown: (event: CustomEvent<{ button: number; is_repeat?: boolean }>) => {
@@ -212,8 +213,10 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
 
   return <div className="rg-expanded-backdrop">
     <style>{expandedStyles}</style>
-    <Container ref={panel} data-ec-panel className="rg-expanded" role="dialog" aria-modal="true" aria-label={synthetic ? "Re-Gear expanded Command Center prototype" : "Re-Gear Command Center"} onKeyDown={onKeyDown} {...nativeHandlers}
+    <Container ref={panel} data-ec-panel className="rg-expanded-frame" role="dialog" aria-modal="true" aria-label={synthetic ? "Re-Gear expanded Command Center prototype" : "Re-Gear Command Center"} onKeyDown={onKeyDown} {...nativeHandlers}
       onFocus={(event: { target: EventTarget }) => { detailHadFocus.current = Boolean((event.target as HTMLElement).closest("[data-ec-detail-content]")); const id = (event.target as HTMLElement).closest<HTMLElement>("[data-ec-control]")?.dataset.ecControl; if (id && !nested) memory.current[tab] = id; }}>
+      {tab === "quick" && !nested && <UtilityRail side="left" Button={Button} Focusable={Container}/>}
+      <Container className="rg-expanded" {...(native ? {"flow-children":"vertical",noFocusRing:true} : {})}>
       <header className="rg-expanded-brand"><span className="rg-expanded-wordmark"><img src={brandIcon} alt=""/>Re-Gear</span><span className="rg-expanded-demo"><span className="rg-expanded-demo-label"><i/>{synthetic ? "Demo · Sample data" : "Application status"}</span><span>{synthetic ? "Hardware controls not connected" : renderDetail ? "Status and controls" : "Readings only · View details"}</span></span></header>
       <Container className="rg-expanded-tabs" role="tablist" aria-label="Command Center sections" {...(native ? { "flow-children": "horizontal", noFocusRing: true } : {})}>
         {tabs.map(id => <Button key={id} id={`ec-tab-${id}`} type="button" role="tab" aria-selected={tab === id} aria-controls="ec-tabpanel" data-ec-tab={id} className="rg-expanded-tab"
@@ -257,6 +260,8 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
         <span><kbd className="rg-expanded-round">A</kbd> Select</span>
         <span><kbd className="rg-expanded-round">B</kbd> {nested ? "Back" : "Close"}</span>
       </footer>
+      </Container>
+      {tab === "quick" && !nested && <UtilityRail side="right" Button={Button} Focusable={Container}/>}
     </Container>
   </div>;
 }

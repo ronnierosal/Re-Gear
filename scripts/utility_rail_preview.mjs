@@ -11,12 +11,12 @@ import React from 'react';import {createRoot} from 'react-dom/client';
 import {ExpandedCommandCenter} from '../../src/quick-access/expanded-command-center/shell';
 import {UtilityRail} from '../../src/quick-access/expanded-command-center/utility-rail';
 const readings={brightness:{available:true,value:'65%',percent:65},volume:{available:true,value:'40%',percent:40},mic:{available:true,value:'Muted'},recording:{available:false,value:'Unavailable'},overlay:{available:true,value:'Off'},audio:{available:true,value:'Speakers'}};
-function Preview(){return <><p style={{color:'#a8cbe5',font:'12px Arial'}}>Preview fixtures Â· no device actions Â· existing menu source unchanged</p><div className="preview-layout"><UtilityRail side="left" readings={readings}/><ExpandedCommandCenter onClose={()=>{}}/><UtilityRail side="right" readings={readings}/></div></>}
+function Preview(){return <><p style={{color:'#a8cbe5',font:'12px Arial'}}>Actual shell · unavailable production controls · no device actions</p><ExpandedCommandCenter onClose={()=>{}}/></>}
 createRoot(document.getElementById('root')!).render(<Preview/>);
 `);
 await build({entryPoints:['out/utility-preview/entry.tsx'],outfile:'out/utility-preview/bundle.js',bundle:true,jsx:'automatic',loader:{'.svg':'dataurl'},nodePaths:[runtime]});
 const browser=await chromium.launch({channel:'msedge',headless:true});
-try{const page=await browser.newPage({viewport:{width:1000,height:660}});
+try{const page=await browser.newPage({viewport:{width:828,height:466}});
 await page.setContent('<body style="margin:8px;background:#020b13"><div id="root"></div><style>.preview-layout{display:flex;align-items:flex-start;gap:10px}.preview-layout .rg-expanded-backdrop{position:static;display:contents}.preview-layout .rg-expanded{height:90vh}</style></body>');
 await page.addScriptTag({path:'out/utility-preview/bundle.js'});
 await page.getByLabel('Brightness',{exact:true}).waitFor();

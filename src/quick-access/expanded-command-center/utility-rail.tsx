@@ -18,25 +18,26 @@ const labels: Record<UtilityId,string> = {
 };
 const railStyles = `
 .rg-utility-rail{display:flex;flex-direction:column;gap:8px;color:#f4f7fb;font-family:Arial,sans-serif;width:108px;min-width:0}
-.rg-utility-control{border:1px solid #326987;border-radius:13px;background:linear-gradient(145deg,#143850,#0a2237 48%,#071a2b);padding:9px 6px;min-width:0;text-align:center;font:inherit;color:inherit}
+.rg-utility-control{border:1px solid #326987;border-radius:13px;background:linear-gradient(145deg,#143850,#0a2237 48%,#071a2b);padding:6px;min-width:0;text-align:center;font:inherit;color:inherit}
 .rg-utility-control button{font:inherit;color:inherit}
-.rg-utility-control:focus-visible,.rg-utility-control input:focus-visible{outline:3px solid #39d8ff;outline-offset:2px}
+.rg-utility-control.gpfocus,.rg-utility-control:focus-visible,.rg-utility-control input:focus-visible{outline:3px solid #39d8ff;outline-offset:2px}
 .rg-utility-control:disabled{cursor:default;color:#91b3cd}
-.rg-utility-label{display:block;font-size:12px;line-height:1.3;overflow-wrap:anywhere}
-.rg-utility-value{display:block;font-size:11px;line-height:1.3;color:#a8cbe5;margin-top:5px;overflow-wrap:anywhere}
+.rg-utility-label{display:block;font-size:12px;line-height:1.3;overflow-wrap:normal;word-break:normal}
+.rg-utility-value{display:block;font-size:11px;line-height:1.3;color:#a8cbe5;margin-top:5px;overflow-wrap:normal;word-break:normal}
 .rg-utility-slider{display:flex;flex-direction:column;align-items:center;gap:8px}
-.rg-utility-slider input{writing-mode:vertical-lr;direction:rtl;width:30px;height:92px;accent-color:#39d8ff}
+.rg-utility-slider input{writing-mode:vertical-lr;direction:rtl;width:30px;height:70px;accent-color:#39d8ff}
 `;
 
 /** Reusable presentation, deliberately not mounted by the production shell yet.
  * The application owns reads, confirmations, persistence and hardware dispatch.
  * Recording's adapter must dismiss Command Center before requesting capture. */
-export function UtilityRail({side, layout = defaultUtilityLayout, readings = {}, onRequest, Button = "button"}: {
+export function UtilityRail({side, layout = defaultUtilityLayout, readings = {}, onRequest, Button = "button", Focusable = "aside"}: {
   side: "left" | "right";
   layout?: readonly UtilityPlacement[];
   readings?: Partial<Record<UtilityId,UtilityReading>>;
   onRequest?: (id: UtilityId, percent?: number) => Promise<void>;
   Button?: ElementType;
+  Focusable?: ElementType;
 }) {
   const busy = useRef(new Set<UtilityId>());
   const [pending,setPending] = useState<UtilityId[]>([]);
@@ -58,8 +59,9 @@ export function UtilityRail({side, layout = defaultUtilityLayout, readings = {},
     const next = controls[index + (event.key === "ArrowDown" ? 1 : -1)];
     if (next) { event.preventDefault(); event.stopPropagation(); next.focus(); }
   }
-  return <aside className="rg-utility-rail" aria-label={`${side} quick controls`} onKeyDown={navigate}>
+  return <Focusable flow-children="vertical" noFocusRing className="rg-utility-rail" aria-label={`${side} quick controls`} onKeyDown={navigate}>
     <style>{railStyles}</style>
+    {!onRequest && <span className="rg-utility-value">Support unverified</span>}
     {layout.filter(item => item.side === side).map(({id}) => {
       const reading = readings[id];
       const waiting = pending.includes(id) || reading?.pending;
@@ -74,12 +76,26 @@ export function UtilityRail({side, layout = defaultUtilityLayout, readings = {},
           aria-valuetext={validPercent ? status : "Unknown"} value={validPercent ? reading!.percent : 0} disabled={disabled}
           onChange={event => void request(id,Number(event.currentTarget.value))}/>
         <span className="rg-utility-value" role="status">{status}</span>
+
       </label> : <Button key={id} type="button" className="rg-utility-control" disabled={disabled} title={reason}
         aria-label={`${labels[id]}: ${status}`} onClick={() => void request(id)}>
-        <CommandCenterIcon id={id === "overlay" ? "performance" : "settings"} size={24}/>
+        <UtilityIcon id={id}/>
         <span className="rg-utility-label">{labels[id]}</span>
         <span className="rg-utility-value" role="status">{status}</span>
+
       </Button>;
     })}
-  </aside>;
+  </Focusable>;
+}
+
+
+function UtilityIcon({id}: {id: UtilityId}) {
+  if(id === "overlay") return <CommandCenterIcon id="performance" size={24}/>;
+  const paths: Partial<Record<UtilityId,string>> = {
+    mic:"M25 11a7 7 0 0 1 14 0v20a7 7 0 0 1-14 0ZM18 28v3a14 14 0 0 0 28 0v-3M32 45v10M23 55h18",
+    recording:"M12 12h40v40H12ZM25 25h14v14H25Z",
+    audio:"M10 26h10l14-12v36L20 38H10ZM43 23a14 14 0 0 1 0 18M49 15a25 25 0 0 1 0 34",
+    wifi:"M8 23a36 36 0 0 1 48 0M17 33a23 23 0 0 1 30 0M25 43a11 11 0 0 1 14 0M32 52h.01",
+  };
+  return <svg width={24} height={24} viewBox="0 0 64 64" fill="none" aria-hidden="true"><path d={paths[id]} stroke="currentColor" strokeWidth={3.5} strokeLinecap="round" strokeLinejoin="round"/></svg>;
 }
