@@ -34,3 +34,11 @@ Sources: https://www.kernel.org/doc/html/latest/admin-guide/thunderbolt.html and
 5. First verify software teardown with the cable connected, then separately validate physical unplug/reconnect on the supported profile. Unknown, partial, or unverified branches never grant clearance.
 
 No supported universal whole-USB-C eject operation has been established. The current concrete candidate is ordered release followed by exact supported PCIe-tunnel teardown, with explicit verification of any remaining dock functions. Next work belongs to the canonical executor task after topology and current ownership review.
+
+## Initial implementation
+
+`application/whole_dock_teardown.py` now executes the post-GPU sequence through an explicit port: preflight, exclusive durable claim, fresh recheck, USB removal intent/action/readback, fresh tunnel recheck, deauthorization, final readback. It reuses the existing domain decision. Exceptions and partial results retain ownership; no automatic retry or restore is issued. Its result always leaves physical unplug clearance false.
+
+Eight targeted regression tests cover ordering, storage/GPU/idle refusal, attachment changes, late GPU return, unreadable final state, write timeout, journal failure and concurrent/reentrant calls. Architecture and diff checks pass.
+
+This is an executor core with a test port, not a production Linux writer or installed feature. A real port must implement atomic persistent claim/inhibition, full fresh topology and privileged storage observation, immediately revalidated exact sysfs operations and interrupted-operation recovery. Those requirements cannot be replaced by the in-memory test port. Production wiring and supervised hardware validation remain open under the existing whole-dock executor workstream.
