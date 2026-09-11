@@ -281,3 +281,28 @@ Related evidence: out/0387-timer-smoke.json and out/0387-trial-prestop.json.
 Next implementation/test question: keep the controller stopped long enough to
 release audio and re-observe, while preventing automatic session reacquisition
 and preserving independently verified restoration. No physical unplug clearance.
+
+## Offline held-stop implementation — September 11, 2026
+
+The Ally was turned off by the operator; this work performs no device operations.
+The new internal HeldSessionRelease coordinator records intent, requires an
+independent restoration mechanism before masks, verifies masks before stopping
+approved session/audio units and the audio activation socket, and bounds complete
+holder observations. It rechecks ownership and stopped state after a clear scan.
+Every attempted intent triggers restoration, including partial failures; uncertain
+operations retain their journal. A clear scan never authorizes physical unplug.
+
+RuntimeMaskLease is an internal user-owned directory-descriptor primitive. It
+records an exact mask inode before publishing without replacement, preserves
+pre-existing entries, and reconciles interrupted quarantine before claiming a
+mask absent. The caller must serialize normal/watchdog cleanup and provide the
+private directory, durable journal, and exact prior-state restoration.
+
+These components are not connected to the RPC or Safe Disconnect button. The
+existing 0.3.87 start-only timer cannot recover a masked session. Remaining work:
+implement and test independent owned-unmask recovery and its durable journal,
+verify effective unit configuration/activation sources for the detected profile,
+then integrate the held-stop capture. Unknown profiles must refuse. The first
+hardware trial remains release/observe/restore only, without PCI or USB removal.
+No new install package or version is published from these offline components.
+Documentation impact: Wiki (after runtime integration and verified trial).
