@@ -223,6 +223,17 @@ class ConnectionReadinessLifecycle:
                 ConnectionReadinessStage.WAITING_FOR_LINK, "connection.waiting_for_link", now
             )
         elif (
+            not observation.session_ready
+            and self._topology_samples >= TOPOLOGY_STABILITY_SAMPLES
+            and age >= WINDOW_TIMEOUT_SECONDS
+        ):
+            # A missing TV or audio endpoint must not hide setup that requires
+            # player action. Fresh transport/driver/link checks retain priority.
+            self._status = self._make_status(
+                ConnectionReadinessStage.ACTION_REQUIRED,
+                "connection.session_integration_unprepared", now,
+            )
+        elif (
             not observation.hdmi_ready
             and self._topology_samples >= TOPOLOGY_STABILITY_SAMPLES
             and observation.session_ready
