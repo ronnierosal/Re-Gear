@@ -233,3 +233,20 @@ with two matches and no handler errors. This validates the temporary listener an
 existing menu together; installation of the packaged correction is still separate.
 The first temporary trial was invalid because it looked up a launcher button after
 the Decky page had closed. No permanent device changes were made by either trial.
+
+## Visible utility rails (presentation only)
+
+Quick Access includes left brightness/volume controls and right-edge mic mute,
+recording, performance-overlay and audio-output controls. All are disabled and
+marked **Unavailable / Support unverified** until supported application adapters
+are connected. Live APIs, the customization editor and persisted layouts are not
+implemented by this presentation slice. Hiding the rails outside Quick Access
+has no effect on hardware behavior.
+
+The central compact contract above is unchanged at the tested handheld and wider
+sizes (828x466 and 1280x720 CSS pixels). At viewports at or below 600px wide, a
+contained fallback reserves space for both rails; the center narrows and its
+existing content scrolls. Narrow fallback checks at 600x466 and 360x640 verify
+non-overlap, not native fit or guaranteed simultaneous visibility of every tile.
+Source browser checks cover pointer navigation, keyboard containment and nested
+Back focus. Native controller behavior and device readability remain unverified.
