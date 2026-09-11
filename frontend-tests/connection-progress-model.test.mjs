@@ -65,7 +65,7 @@ test("waiting rows are unconfirmed, not active work, and stale rows lose confirm
  assert.ok(view(s,200).rows.every(r=>r.stateLabel==="Status unavailable"));
 });
 test("delay guidance starts at one minute and changes at three without promising completion",()=>{
- const s=sample();
+ const s={...sample(),rows:[{label:"GPU and driver",state:"waiting"}]};
  for(const seconds of [0,59,NaN]) assert.equal(view({...s,seconds},100).delayNotice,undefined);
  assert.match(view({...s,seconds:60},100).delayNotice,/Taking longer than expected/);
  assert.match(view({...s,seconds:179},100).delayNotice,/completion is not guaranteed/);
@@ -89,4 +89,12 @@ test('settled eGPU waiting for a TV does not become a connection delay warning',
   assert.equal(v.delayNotice,undefined);assert.equal(v.phase,'connecting');assert.equal(v.detail,'eGPU ready — waiting for TV');
  }
  const stale=view({...sample(),displayPending:true},200);assert.match(stale.detail,/fresh status/);assert.ok(stale.rows.every(row=>row.state==='pending'));
+});
+
+
+test('switching preserves original prerequisites and setup blockers suppress delay copy',()=>{
+ const s=sample();
+ const switching=view({...s,phase:'switching'},100);
+ for(const original of s.rows)assert.ok(switching.rows.some(row=>row.label===original.label));
+ assert.equal(view({...s,seconds:600},100).delayNotice,undefined);
 });
