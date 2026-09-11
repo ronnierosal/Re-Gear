@@ -366,3 +366,24 @@ class TopologyTests(unittest.TestCase):
         self.assertFalse(m.usb_branch_is_hub_only(binding, replace(reading, complete=False)))
         (child / 'bDeviceClass').write_text('08')
         self.assertFalse(m.usb_branch_is_hub_only(binding, reading))
+
+    def test_hub_composite_and_replaced_controller_refuse(self):
+        from regear.adapters.steamos.dock_branch import DockUsbReading, DockUsbDevice
+        binding = self.resolve()
+        root = self.hub(self.usb, 'usb1')
+        hub = self.hub(root, '1-1')
+        reading = DockUsbReading(self.usb.name, True, True, (DockUsbDevice('1-1', '', '', ()),))
+        (hub / 'bNumInterfaces').write_text('2')
+        extra = hub / '1-1:1.1'
+        extra.mkdir()
+        (extra / 'bInterfaceClass').write_text('03')
+        self.assertFalse(m.usb_branch_is_hub_only(binding, reading))
+        shutil.rmtree(extra)
+        (hub / 'bNumInterfaces').write_text('1')
+        changed = replace(binding.usb_target, identities=())
+        self.assertFalse(m.usb_branch_is_hub_only(replace(binding, usb_target=changed), reading))
+        (hub / 'bNumInterfaces').unlink()
+        self.assertFalse(m.usb_branch_is_hub_only(binding, reading))
+
+if __name__ == "__main__":
+    unittest.main()

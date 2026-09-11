@@ -45,6 +45,8 @@ def usb_branch_is_hub_only(binding, reading) -> bool:
         if len(expected) != len(reading.devices) or len(expected) > 128:
             return False
         initial_controller = _pin(controller)
+        if initial_controller != binding.usb_target:
+            return False
         seen = set()
         evidence = []
         def walk(node, depth):

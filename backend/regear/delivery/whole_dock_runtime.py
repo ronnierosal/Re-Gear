@@ -236,6 +236,7 @@ class WholeDockRuntime:
         if usb.present is not usb_present:
             raise ValueError('dock_teardown.usb_inventory_changed')
         hub_only = usb_branch_is_hub_only(binding, usb)
+        revalidate_retained(binding, **arguments)
         if not hub_only:
             raise ValueError('dock_teardown.usb_peripherals_or_unknown')
         return DockObservation(binding.binding, binding.generation,
