@@ -4,6 +4,7 @@ import sys
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
+from dataclasses import replace
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
@@ -45,7 +46,15 @@ class TopologyTests(unittest.TestCase):
         node = parent / name
         node.mkdir(parents=True)
         (node / "class").write_text(category)
+        for field, value in (("vendor", "0x1002"), ("device", "0x1234"),
+                             ("subsystem_vendor", "0x1002"), ("subsystem_device", "0x5678")):
+            (node / field).write_text(value)
         (self.pci / name).symlink_to(node)
+        driver = {"0x030000": "amdgpu", "0x030200": "amdgpu",
+                  "0x040300": "snd_hda_intel", "0x0c0330": "xhci_hcd"}.get(category, "pcieport")
+        driver_root = self.root / "bus/pci/drivers" / driver
+        driver_root.mkdir(parents=True, exist_ok=True)
+        (node / "driver").symlink_to(driver_root)
         return node
 
     def link(self, supplier, consumer):
@@ -154,7 +163,7 @@ class TopologyTests(unittest.TestCase):
         binding = self.resolve()
         old = self.usb.with_name("old-usb")
         self.usb.rename(old)
-        shutil.copytree(old, self.usb)
+        shutil.copytree(old, self.usb, symlinks=True)
         with self.assertRaises(m.TopologyRefused):
             m.revalidate_retained(binding)
 
@@ -195,6 +204,115 @@ class TopologyTests(unittest.TestCase):
         (self.external / "unique_id").write_text("ffffffff-bbbb-cccc-dddd-eeeeeeeeeeee")
         with self.assertRaises(m.TopologyRefused):
             m.revalidate_retained(binding)
+
+    def test_reconnect_new_addresses_and_inodes(self):
+        binding = self.resolve()
+        gpu_parent, usb_parent = self.gpu.parent, self.usb.parent
+        for node in (self.gpu, self.audio, self.usb):
+            self.remove_fixture_pci(node)
+        self.device(gpu_parent, "0000:18:00.0", "0x030000")
+        self.device(gpu_parent, "0000:18:00.1", "0x040300")
+        self.device(usb_parent, "0000:19:00.0", "0x0c0330")
+        fresh = m.observe_reconnected(binding)
+        self.assertEqual(fresh.gpu_bdf, "0000:18:00.0")
+        self.assertEqual(fresh.usb_bdf, "0000:19:00.0")
+        self.assertEqual(fresh.function_identities, binding.function_identities)
+        self.assertEqual(fresh.router_target, binding.router_target)
+
+    def test_reconnect_same_address_new_inode(self):
+        binding = self.resolve()
+        old = self.gpu.with_name("old-gpu")
+        self.gpu.rename(old)
+        shutil.copytree(old, self.gpu, symlinks=True)
+        fresh = m.observe_reconnected(binding)
+        self.assertEqual(fresh.gpu_bdf, binding.gpu_bdf)
+        self.assertNotEqual(fresh.pci_targets, binding.pci_targets)
+
+    def test_reconnect_changed_hardware_refused(self):
+        binding = self.resolve()
+        (self.gpu / "device").write_text("0x9876")
+        with self.assertRaisesRegex(m.TopologyRefused, "hardware_changed"):
+            m.observe_reconnected(binding)
+
+    def test_reconnect_missing_old_identity_refused(self):
+        binding = replace(self.resolve(), function_identities=())
+        with self.assertRaisesRegex(m.TopologyRefused, "identity_missing"):
+            m.observe_reconnected(binding)
+
+    def test_reconnect_missing_new_identity_refused(self):
+        binding = self.resolve()
+        (self.usb / "vendor").unlink()
+        with self.assertRaises(m.TopologyRefused) as failure:
+            m.observe_reconnected(binding)
+        self.assertNotIsInstance(failure.exception, m.ReconnectPending)
+
+    def test_reconnect_enumeration_pending(self):
+        binding = self.resolve()
+        self.remove_fixture_pci(self.usb)
+        with self.assertRaises(m.ReconnectPending):
+            m.observe_reconnected(binding)
+
+    def test_reconnect_authorization_pending(self):
+        binding = self.resolve()
+        (self.external / "authorized").write_text("0")
+        with self.assertRaises(m.ReconnectPending):
+            m.observe_reconnected(binding)
+
+    def test_reconnect_changed_uuid_never_pending(self):
+        binding = self.resolve()
+        (self.external / "authorized").write_text("0")
+        (self.external / "unique_id").write_text("ffffffff-bbbb-cccc-dddd-eeeeeeeeeeee")
+        with self.assertRaises(m.TopologyRefused) as failure:
+            m.observe_reconnected(binding)
+        self.assertNotIsInstance(failure.exception, m.ReconnectPending)
+
+    def test_reconnect_duplicate_gpu_refused(self):
+        binding = self.resolve()
+        self.device(self.gpu.parent, "0000:18:00.0", "0x030000")
+        with self.assertRaises(m.TopologyRefused) as failure:
+            m.observe_reconnected(binding)
+        self.assertNotIsInstance(failure.exception, m.ReconnectPending)
+
+    def test_reconnect_driver_pending_then_bound(self):
+        binding = self.resolve()
+        driver = (self.gpu / "driver").resolve()
+        (self.gpu / "driver").unlink()
+        with self.assertRaises(m.ReconnectPending):
+            m.observe_reconnected(binding)
+        (self.gpu / "driver").symlink_to(driver)
+        self.assertEqual(m.observe_reconnected(binding).function_identities,
+                         binding.function_identities)
+
+    def test_reconnect_wrong_driver_refused(self):
+        binding = self.resolve()
+        other = self.root / "bus/pci/drivers/vfio-pci"
+        other.mkdir()
+        (self.gpu / "driver").unlink()
+        (self.gpu / "driver").symlink_to(other)
+        with self.assertRaises(m.TopologyRefused) as failure:
+            m.observe_reconnected(binding)
+        self.assertNotIsInstance(failure.exception, m.ReconnectPending)
+
+    def test_missing_initial_driver_refused(self):
+        (self.usb / "driver").unlink()
+        with self.assertRaises(m.TopologyRefused) as failure:
+            self.resolve()
+        self.assertNotIsInstance(failure.exception, m.ReconnectPending)
+
+    def test_missing_previous_driver_evidence_refused(self):
+        binding = self.resolve()
+        identity = replace(binding.function_identities[0], driver="")
+        binding = replace(binding, function_identities=(identity,) + binding.function_identities[1:])
+        with self.assertRaisesRegex(m.TopologyRefused, "identity_missing"):
+            m.observe_reconnected(binding)
+
+    def test_driver_link_outside_driver_tree_refused(self):
+        binding = self.resolve()
+        (self.audio / "driver").unlink()
+        (self.audio / "driver").symlink_to(self.usb)
+        with self.assertRaises(m.TopologyRefused) as failure:
+            m.observe_reconnected(binding)
+        self.assertNotIsInstance(failure.exception, m.ReconnectPending)
 
 
 if __name__ == "__main__":

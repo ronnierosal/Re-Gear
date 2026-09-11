@@ -7,12 +7,13 @@ import re
 import secrets
 import stat
 
-from .audio_journal_filesystem import AudioJournalFilesystem, _acquire_lock
+from .audio_journal_filesystem import AudioJournalFilesystem, _acquire_lock, _publish_exclusive
 
 FILENAME = "whole-dock-claim.json"
 MAX_BYTES = 4096
 STAGES = ("claimed", "release_intent", "gpu_removed", "prepared", "usb_remove_intent", "usb_removed",
-          "tunnel_remove_intent", "software_down")
+          "tunnel_remove_intent", "software_down", "reauthorize_intent",
+          "software_reconnected")
 TOKEN = re.compile(r"[A-Za-z0-9_.:-]{1,256}\Z")
 
 
@@ -154,3 +155,35 @@ class WholeDockClaimStore(AudioJournalFilesystem):
                     os.unlink(temporary, dir_fd=directory)
                 except FileNotFoundError:
                     pass
+
+    def retire_reconnected(self, operation, binding, generation, guard):
+        """Archive only an exactly verified software-reconnected transaction.
+
+        Caller holds mutation admission and supplies fresh topology/idle checks.
+        If directory fsync fails, restore inhibition before propagating failure.
+        If restoration also fails, the completed audit may remain without an
+        active claim: caller must retain admission/fail closed pending recovery.
+        A successful return is the audit filename, never unplug clearance.
+        """
+        expected = WholeDockClaim(operation, binding, generation, "software_reconnected")
+        with self._locked() as directory:
+            if self._load(directory) != expected:
+                raise ValueError("whole-dock reconnect claim mismatch")
+            if guard() is not True:
+                raise ValueError("whole-dock reconnect guard refused")
+            if self._load(directory) != expected:
+                raise ValueError("whole-dock reconnect claim changed")
+            audit = "completed-whole-dock-" + secrets.token_hex(16) + ".json"
+            # Atomic no-replace publication preserves any previous audit, even
+            # if a token collision or unexpected pre-existing path occurs.
+            _publish_exclusive(directory, FILENAME, audit)
+            try:
+                os.fsync(directory)
+            except OSError as failure:
+                try:
+                    _publish_exclusive(directory, audit, FILENAME)
+                    os.fsync(directory)
+                except OSError as restore_failure:
+                    raise OSError("whole-dock retirement durability and restoration unresolved") from restore_failure
+                raise failure
+            return audit

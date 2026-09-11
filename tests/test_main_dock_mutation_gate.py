@@ -22,6 +22,72 @@ class MainDockAdmissionTests(unittest.TestCase):
         self.module = load_main_module(real_dock_gate=True)
         self.plugin = self.module.Plugin.__new__(self.module.Plugin)
 
+    def test_whole_dock_trial_holds_admission_across_release(self):
+        held = []
+        events = []
+        @contextmanager
+        def admit():
+            held.append(True)
+            try:
+                yield
+            finally:
+                held.clear()
+        self.plugin._dock_mutation_gate = lambda: NS(admit=admit)
+        binding = NS(gpu_bdf="gpu", audio_bdf="audio", usb_bdf="usb",
+                     router_id="router", binding="binding", generation="generation")
+        runtime = Mock()
+        release = Mock()
+        def step(name):
+            def run(*args, **kwargs):
+                self.assertTrue(held)
+                events.append(name)
+                return name
+            return run
+        runtime.begin_before_release.side_effect = step("claim")
+        release.execute.side_effect = step("release")
+        runtime.verify_gpu_release.side_effect = step("verify")
+        runtime.execute_claimed.side_effect = step("teardown")
+        with patch.object(self.module, "DrmDiscovery") as drm, \
+                patch.object(self.module, "resolve_whole_dock", return_value=binding), \
+                patch.object(self.module, "GamescopeDiscovery"), \
+                patch.object(self.module, "resolve_gamescope_user", return_value=NS(context=NS(uid=1000, username="deck"))), \
+                patch.object(self.module, "RootOwnedRuntimeState"), \
+                patch.object(self.module, "Login1SleepInhibitor") as inhibitor, \
+                patch.object(self.module, "WholeDockRuntime", return_value=runtime), \
+                patch.object(self.module, "build_live_disconnect_runtime", return_value=release):
+            drm.return_value.scan.return_value = [NS(boot_vga=False, pci_bdf="gpu")]
+            inhibitor.return_value.acquire.return_value.active = True
+            self.assertEqual(self.plugin._run_whole_dock_trial("trial"), "teardown")
+        self.assertEqual(events, ["claim", "release", "verify", "teardown"])
+        self.assertFalse(held)
+        self.assertFalse(self.plugin._whole_dock_trial_runtime[1]["held"])
+
+    def test_reconnect_requires_original_trial(self):
+        with self.assertRaises(ValueError):
+            self.plugin._run_whole_dock_reconnect_trial()
+
+    def test_trial_requires_explicit_confirmation(self):
+        self.plugin._run_whole_dock_trial = Mock()
+        result = asyncio.run(self.plugin.execute_egpu_disconnect(
+            trial_action="whole_dock_disconnect", release_display=True))
+        self.assertFalse(result["ok"])
+        self.plugin._run_whole_dock_trial.assert_not_called()
+
+    def test_trial_status_survives_rpc_result_and_never_clears_unplug(self):
+        self.plugin._background_operations = set()
+        self.plugin._unloading = False
+        self.plugin._run_whole_dock_trial = Mock(return_value=NS(
+            code="dock_teardown.software_down", software_down=True))
+        async def run():
+            result = await self.plugin.execute_egpu_disconnect(
+                trial_action="whole_dock_disconnect", release_display=True,
+                trial_confirmed=True)
+            self.assertTrue(result["ok"])
+            status = await self.plugin.get_egpu_disconnect_status("whole_dock_trial")
+            self.assertEqual(status, result)
+            self.assertFalse(status["safe_to_unplug"])
+        asyncio.run(run())
+
     def test_unavailable_factory_never_invokes_mutation(self):
         self.plugin._dock_mutation_gate = Mock(side_effect=OSError("unavailable"))
         command = Mock()

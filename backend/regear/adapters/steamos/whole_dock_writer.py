@@ -46,6 +46,14 @@ class WholeDockSysfsWriter:
     def deauthorize(self, target: SysfsTarget, guard: Callable[[], bool]) -> None:
         self._write(target, guard, usb=False)
 
+    def reauthorize(self, target: SysfsTarget, guard: Callable[[], bool]) -> None:
+        """Restore this pinned router only in a user-security domain.
+
+        The caller must independently approve recovery of the retained claim.
+        Secure-domain challenge handling is intentionally unsupported.
+        """
+        self._write(target, guard, usb=False, reauthorize=True)
+
     @staticmethod
     def _identity(fd: int, expected: NodeIdentity) -> None:
         current = os.fstat(fd)
@@ -64,8 +72,9 @@ class WholeDockSysfsWriter:
         finally:
             os.close(fd)
 
-    def _write(self, target: SysfsTarget, guard: Callable[[], bool], *, usb: bool) -> None:
-        operation = "usb" if usb else "tunnel"
+    def _write(self, target: SysfsTarget, guard: Callable[[], bool], *, usb: bool,
+               reauthorize: bool = False) -> None:
+        operation = "reauthorize" if reauthorize else ("usb" if usb else "tunnel")
         if not self._lock.acquire(blocking=False):
             raise WriterRefused("dock_teardown.writer_busy")
         try:
@@ -104,12 +113,18 @@ class WholeDockSysfsWriter:
                 directory = descriptors[-1]
                 if usb and self._read(directory, "class") != "0x0c0330":
                     raise WriterRefused("dock_teardown.not_usb_controller")
-                if not usb and self._read(directory, "authorized") != "1":
+                if reauthorize and self._read(directory, "authorized") != "0":
+                    raise WriterRefused("dock_teardown.router_not_deauthorized")
+                if not usb and not reauthorize and self._read(directory, "authorized") != "1":
                     raise WriterRefused("dock_teardown.router_not_authorized")
                 if not usb:
                     domains = [index for index, part in enumerate(target.parts)
                                if re.fullmatch(r"domain\d+", part)]
-                    if len(domains) != 1 or self._read(
+                    if reauthorize:
+                        if len(domains) != 1 or self._read(
+                                descriptors[domains[0] + 1], "security") != "user":
+                            raise WriterRefused("dock_teardown.reauthorization_unsupported")
+                    elif len(domains) != 1 or self._read(
                             descriptors[domains[0] + 1], "deauthorization") != "1":
                         raise WriterRefused("dock_teardown.deauthorization_unsupported")
                 attribute = os.open("remove" if usb else "authorized",
@@ -120,7 +135,12 @@ class WholeDockSysfsWriter:
                     raise WriterRefused("dock_teardown.guard_refused")
                 for fd, expected in zip(descriptors, target.identities):
                     self._identity(fd, expected)
-                if os.write(attribute, b"1" if usb else b"0") != 1:
+                if reauthorize:
+                    if self._read(directory, "authorized") != "0":
+                        raise WriterRefused("dock_teardown.router_not_deauthorized")
+                    if self._read(descriptors[domains[0] + 1], "security") != "user":
+                        raise WriterRefused("dock_teardown.reauthorization_unsupported")
+                if os.write(attribute, b"1" if usb or reauthorize else b"0") != 1:
                     raise OSError("dock_teardown.short_write")
             finally:
                 cleanup_error = None

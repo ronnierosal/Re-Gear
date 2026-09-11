@@ -78,3 +78,30 @@ single-use continuation will join that release to the post-GPU executor.
 Software reconnect remains unfinished; it must verify the same retained router
 and freshly enumerated devices before releasing inhibition. There is no new
 installable candidate or completed disconnect trial yet.
+
+## 0.3.83 cable-connected trial controls
+
+This candidate adds an explicitly confirmed operator path to the existing
+`execute_egpu_disconnect` RPC. Ordinary UI calls retain their existing behavior.
+Use `trial_action="whole_dock_disconnect"`, `trial_confirmed=true`, and
+`release_display=true` with no relaunch app. Keep the physical cable connected.
+Poll `get_egpu_disconnect_status` with `_request="whole_dock_trial"` across the
+Steam session restart. Only a verified `software_down` permits the separate
+`trial_action="whole_dock_reconnect"` call with the same confirmation flags.
+
+The original plugin process retains the attachment binding; a plugin restart
+refuses continuation. Both actions are tracked workers, so losing a browser/RPC
+observer does not cancel a kernel operation. A dedicated sleep inhibitor covers
+the transaction. Automatic presentation, recovery and native audio recovery
+share mutation admission.
+
+Reconnect performs one authorization write and bounded read-only enumeration.
+It verifies retained host/router identity, hardware IDs and driver bindings,
+then archives the completed claim after a further fresh verification. Only then
+are ordinary gated actions available again. This does not verify picture/audio/
+controls or authorize physical unplug. Partial outcomes retain the claim and
+sleep inhibitor; do not retry writes or reinstall to bypass that state. Capture
+the result and use supervised recovery. The preserved0.3.82 remains the rollback.
+
+Current live evidence is read-only topology and driver binding validation on the
+Ally/G1. New disconnect/reconnect hardware behavior remains untested.

@@ -24,6 +24,21 @@ class TopologyRefused(ValueError):
     pass
 
 
+class ReconnectPending(TopologyRefused):
+    """Same retained attachment, but authorization/enumeration is not ready."""
+
+
+@dataclass(frozen=True)
+class FunctionIdentity:
+    role: str
+    vendor: str
+    device: str
+    subsystem_vendor: str
+    subsystem_device: str
+    pci_class: str
+    driver: str = ""
+
+
 @dataclass(frozen=True)
 class WholeDockBinding:
     gpu_bdf: str
@@ -38,6 +53,7 @@ class WholeDockBinding:
     pci_targets: tuple[SysfsTarget, ...]
     binding: str
     generation: str
+    function_identities: tuple[FunctionIdentity, ...] = ()
 
 
 def _children(path: Path) -> tuple[Path, ...]:
@@ -179,6 +195,33 @@ def _fingerprint(paths: tuple[SysfsTarget, ...], router: Path) -> tuple[str, str
     return binding, generation
 
 
+def _function_identity(path: Path, role: str) -> FunctionIdentity:
+    values = tuple(_read(path / name) for name in
+                   ("vendor", "device", "subsystem_vendor", "subsystem_device", "class"))
+    if (any(not re.fullmatch(r"0x[0-9a-f]{4}", value) for value in values[:4])
+            or not re.fullmatch(r"0x[0-9a-f]{6}", values[4])):
+        raise TopologyRefused("dock_topology.function_identity_invalid")
+    return FunctionIdentity(role, *values, _driver(path))
+
+
+def _driver(path: Path, *, pending: bool = False) -> str:
+    link = path / "driver"
+    try:
+        observed = link.lstat()
+    except FileNotFoundError:
+        if pending:
+            raise ReconnectPending("dock_topology.driver_binding_pending") from None
+        raise TopologyRefused("dock_topology.driver_binding_missing") from None
+    if not stat.S_ISLNK(observed.st_mode):
+        raise TopologyRefused("dock_topology.driver_link_invalid")
+    target = link.resolve(strict=True)
+    if (target.parent != SYSFS_ROOT / "bus/pci/drivers"
+            or not re.fullmatch(r"[A-Za-z0-9_-]+", target.name)
+            or not stat.S_ISDIR(target.lstat().st_mode)):
+        raise TopologyRefused("dock_topology.driver_target_invalid")
+    return target.name
+
+
 def resolve_whole_dock(gpu_bdf: str) -> WholeDockBinding:
     """Capture a complete attachment while GPU/audio/USB are still present."""
     try:
@@ -235,7 +278,9 @@ def _resolve(gpu_bdf: str) -> WholeDockBinding:
     binding, generation = _fingerprint(anchors, router)
     result = WholeDockBinding(gpu_bdf, audio_nodes[0].name, usb_nodes[0].name,
         router.name, _pin(usb_nodes[0]), anchors[3], anchors[0], anchors[2],
-        anchors[1], targets, binding, generation)
+        anchors[1], targets, binding, generation,
+        (_function_identity(gpu, "gpu"), _function_identity(audio_nodes[0], "audio"),
+         _function_identity(usb_nodes[0], "usb")))
     revalidate_retained(result)
     return result
 
@@ -270,6 +315,76 @@ def revalidate_retained(binding: WholeDockBinding, *, gpu_removed: bool = False,
             for target in binding.pci_targets:
                 if target.parts[-1] not in absent and _pin(_path(target)) != target:
                     raise TopologyRefused("dock_topology.pci_identity_changed")
+            if binding.function_identities:
+                roles = {"gpu": binding.gpu_bdf, "audio": binding.audio_bdf,
+                         "usb": binding.usb_bdf}
+                for identity in binding.function_identities:
+                    bdf = roles.get(identity.role)
+                    if bdf is None:
+                        raise TopologyRefused("dock_topology.function_role_invalid")
+                    if bdf not in absent and _function_identity(pci[bdf], identity.role) != identity:
+                        raise TopologyRefused("dock_topology.function_identity_changed")
         return True
+    except (OSError, UnicodeError, RuntimeError) as error:
+        raise TopologyRefused("dock_topology.observation_incomplete") from error
+
+
+def observe_reconnected(previous: WholeDockBinding) -> WholeDockBinding:
+    """Resolve newly enumerated functions under the same retained attachment.
+
+    New PCI BDFs and child inodes are accepted; the host/router anchors and
+    function hardware identity must match. Absence or incomplete enumeration
+    raises instead of claiming restoration. This operation performs no retry,
+    authorization write or display switch. Matching driver bindings are required;
+    that does not establish rendering, audio or controller usability.
+    """
+    try:
+        if (len(previous.function_identities) != 3
+                or tuple(i.role for i in previous.function_identities) != ("gpu", "audio", "usb")
+                or any(not i.driver for i in previous.function_identities)):
+            raise TopologyRefused("dock_topology.reconnect_identity_missing")
+        anchors = (previous.branch_target, previous.nhi_target,
+                   previous.domain_target, previous.router_target)
+        if any(_pin(_path(target)) != target for target in anchors):
+            raise TopologyRefused("dock_topology.anchor_changed")
+        branch, nhi, _, router = tuple(_path(t) for t in anchors)
+        _host_link(branch, nhi)
+        if _read(router / "authorized") == "0":
+            # Validate the identity and ambiguity even while awaiting the
+            # authorization readback; changed attachments are never pending.
+            domain_now, router_now = _router_for(nhi, down=True)
+            if (domain_now != _path(previous.domain_target) or router_now != router
+                    or _fingerprint(anchors, router) != (previous.binding, previous.generation)):
+                raise TopologyRefused("dock_topology.attachment_changed")
+            raise ReconnectPending("dock_topology.authorization_pending")
+        domain_now, router_now = _router_for(nhi)
+        if (domain_now != _path(previous.domain_target) or router_now != router
+                or _fingerprint(anchors, router) != (previous.binding, previous.generation)):
+            raise TopologyRefused("dock_topology.attachment_changed")
+        pci = _pci_inventory()
+        categories = [(path, _read(path / "class")) for path in pci.values()
+                      if branch in path.parents]
+        candidates = [path for path, category in categories if category in ("0x030000", "0x030200")]
+        counts = (len(candidates), sum(category == "0x040300" for _, category in categories),
+                  sum(category == "0x0c0330" for _, category in categories))
+        if any(count > 1 for count in counts):
+            raise TopologyRefused("dock_topology.reconnect_gpu_unresolved")
+        if any(category not in ("0x030000", "0x030200", "0x040300", "0x0c0330", "0x060400")
+               for _, category in categories):
+            raise TopologyRefused("dock_topology.additional_endpoint")
+        if any(count == 0 for count in counts):
+            raise ReconnectPending("dock_topology.enumeration_pending")
+        for path, category in categories:
+            if category != "0x060400":
+                _driver(path, pending=True)
+        fresh = resolve_whole_dock(candidates[0].name)
+        fresh_anchors = (fresh.branch_target, fresh.nhi_target,
+                         fresh.domain_target, fresh.router_target)
+        if (fresh_anchors != anchors or (fresh.binding, fresh.generation)
+                != (previous.binding, previous.generation)):
+            raise TopologyRefused("dock_topology.attachment_changed")
+        if fresh.function_identities != previous.function_identities:
+            raise TopologyRefused("dock_topology.reconnected_hardware_changed")
+        return fresh
     except (OSError, UnicodeError, RuntimeError) as error:
         raise TopologyRefused("dock_topology.observation_incomplete") from error

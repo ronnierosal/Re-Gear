@@ -8,6 +8,7 @@ from regear.adapters.steamos.dock_branch import DockUsbReading, DockStorageReadi
 from regear.domain.dock_teardown import TeardownApproval
 from regear.ports.whole_dock_teardown import WholeDockApproval
 from regear.application.live_disconnect import LiveDisconnectResult, LiveDisconnectStage
+from regear.adapters.steamos import whole_dock_topology
 
 
 class RuntimeTests(unittest.TestCase):
@@ -181,6 +182,91 @@ class RuntimeTests(unittest.TestCase):
         self.admitted = False
         with self.assertRaises(ValueError):
             self.runtime.execute_claimed('operation', self.approval)
+
+    def down_for_reconnect(self):
+        self.assertTrue(self.runtime.execute('operation', self.approval).software_down)
+        def reconnect(target, guard):
+            if guard() is not True:
+                raise ValueError('refused')
+            self.authorized = True
+        self.writer.reauthorize.side_effect = reconnect
+        self.runtime._wait = lambda seconds: None
+
+    def test_reconnect_once_success_keeps_claim(self):
+        self.down_for_reconnect()
+        restored = object.__new__(whole_dock_topology.WholeDockBinding)
+        with patch.object(whole_dock_topology, 'observe_reconnected', return_value=restored):
+            result = self.runtime.reconnect_owned()
+        self.assertTrue(result.software_reconnected)
+        self.assertFalse(result.safe_to_unplug)
+        self.assertEqual(self.claim.stage, 'software_reconnected')
+        self.assertFalse(self.runtime.reconnect_owned().software_reconnected)
+        self.assertEqual(self.writer.reauthorize.call_count, 1)
+
+    def test_reconnect_refuses_fresh_runtime_and_partial_claim(self):
+        self.begin()
+        self.assertFalse(self.runtime.reconnect_owned().software_reconnected)
+        self.writer.reauthorize.assert_not_called()
+        self.claim.stage = 'software_down'
+        fresh = module.WholeDockRuntime(self.binding, '/unused', idle=lambda: True,
+                                       admission_held=lambda: True)
+        self.assertFalse(fresh.reconnect_owned().software_reconnected)
+        self.writer.reauthorize.assert_not_called()
+
+    def test_reconnect_timeout_retains_intent_and_never_retries(self):
+        self.down_for_reconnect()
+        self.runtime._monotonic = lambda: 0.0
+        with patch.object(whole_dock_topology, 'observe_reconnected',
+                          side_effect=whole_dock_topology.ReconnectPending('pending')):
+            self.assertEqual(self.runtime.reconnect_owned().code, 'dock_reconnect.timeout')
+        self.assertEqual(self.claim.stage, 'reauthorize_intent')
+        self.runtime.reconnect_owned()
+        self.assertEqual(self.writer.reauthorize.call_count, 1)
+
+    def test_reconnect_write_error_retains_intent(self):
+        self.down_for_reconnect()
+        self.writer.reauthorize.side_effect = TimeoutError()
+        self.assertEqual(self.runtime.reconnect_owned().code, 'dock_reconnect.unresolved')
+        self.assertEqual(self.claim.stage, 'reauthorize_intent')
+        self.runtime.reconnect_owned()
+        self.assertEqual(self.writer.reauthorize.call_count, 1)
+
+    def test_reconnect_admission_loss_prevents_write(self):
+        self.down_for_reconnect()
+        self.admitted = False
+        self.assertFalse(self.runtime.reconnect_owned().software_reconnected)
+        self.writer.reauthorize.assert_not_called()
+
+    def test_finish_reconnect_rechecks_then_retires_exact_owner(self):
+        self.down_for_reconnect()
+        restored = object.__new__(whole_dock_topology.WholeDockBinding)
+        def retire(operation, binding, generation, guard):
+            self.assertEqual((operation, binding, generation), ('operation', 'bound', 'generation'))
+            self.assertTrue(guard())
+            self.claim = None
+            return 'completed-whole-dock-' + 'a' * 32 + '.json'
+        self.store.retire_reconnected.side_effect = retire
+        with patch.object(whole_dock_topology, 'observe_reconnected', return_value=restored) as observe:
+            self.assertTrue(self.runtime.reconnect_owned().software_reconnected)
+            self.assertTrue(self.runtime.finish_reconnect())
+            self.assertEqual(observe.call_count, 3)
+        self.assertIsNone(self.claim)
+        self.assertFalse(self.runtime.finish_reconnect())
+
+    def test_finish_reconnect_refuses_partial_or_changed_topology(self):
+        self.down_for_reconnect()
+        self.assertFalse(self.runtime.finish_reconnect())
+        self.claim.stage = 'software_reconnected'
+        with patch.object(whole_dock_topology, 'observe_reconnected', side_effect=ValueError('changed')):
+            self.assertFalse(self.runtime.finish_reconnect())
+        self.store.retire_reconnected.assert_not_called()
+
+    def test_finish_reconnect_refuses_idle_admission_loss(self):
+        self.down_for_reconnect()
+        self.claim.stage = 'software_reconnected'
+        self.admitted = False
+        self.assertFalse(self.runtime.finish_reconnect())
+        self.store.retire_reconnected.assert_not_called()
 
 
 if __name__ == '__main__':

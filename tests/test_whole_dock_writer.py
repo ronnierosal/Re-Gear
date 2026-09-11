@@ -142,5 +142,85 @@ class WriterTests(unittest.TestCase):
         self.assertEqual((self.up / 'remove').read_bytes(), b'1')
         self.assertEqual((self.rp / 'authorized').read_bytes(), b'1')
 
+    def prepare_reauthorization(self):
+        (self.rp / 'authorized').write_bytes(b'0')
+        (self.root / 'domain0' / 'security').write_text('user')
+
+    def test_reauthorize_fixed_bytes_and_duplicate(self):
+        self.prepare_reauthorization()
+        writer = m.WholeDockSysfsWriter()
+        writer.reauthorize(self.router, lambda: True)
+        self.assertEqual((self.rp / 'authorized').read_bytes(), b'1')
+        self.assertEqual((self.up / 'remove').read_bytes(), b'')
+        with self.assertRaises(m.WriterRefused):
+            writer.reauthorize(self.router, lambda: True)
+
+    def test_reauthorize_requires_current_zero(self):
+        self.prepare_reauthorization()
+        for value in (b'1', b'2', b'', b'unknown'):
+            (self.rp / 'authorized').write_bytes(value)
+            with self.assertRaises(m.WriterRefused):
+                m.WholeDockSysfsWriter().reauthorize(self.router, lambda: True)
+            self.assertEqual((self.rp / 'authorized').read_bytes(), value)
+
+    def test_reauthorize_requires_user_security(self):
+        self.prepare_reauthorization()
+        security = self.root / 'domain0' / 'security'
+        for value in ('secure', 'none', 'unknown', '', 'dponly'):
+            security.write_text(value)
+            with self.assertRaises(m.WriterRefused):
+                m.WholeDockSysfsWriter().reauthorize(self.router, lambda: True)
+            self.assertEqual((self.rp / 'authorized').read_bytes(), b'0')
+        security.unlink()
+        with self.assertRaises(OSError):
+            m.WholeDockSysfsWriter().reauthorize(self.router, lambda: True)
+
+    def test_reauthorize_guard_exact_true_and_latch(self):
+        self.prepare_reauthorization()
+        for value in (False, 1, None):
+            writer = m.WholeDockSysfsWriter()
+            with self.assertRaises(m.WriterRefused):
+                writer.reauthorize(self.router, lambda: value)
+            with self.assertRaises(m.WriterRefused):
+                writer.remove_usb(self.usb, lambda: True)
+        self.assertEqual((self.rp / 'authorized').read_bytes(), b'0')
+
+    def test_reauthorize_rechecks_security_after_guard(self):
+        self.prepare_reauthorization()
+        def guard():
+            (self.root / 'domain0' / 'security').write_text('secure')
+            return True
+        with self.assertRaises(m.WriterRefused):
+            m.WholeDockSysfsWriter().reauthorize(self.router, guard)
+        self.assertEqual((self.rp / 'authorized').read_bytes(), b'0')
+
+    def test_reauthorize_rechecks_authorized_after_guard(self):
+        self.prepare_reauthorization()
+        def guard():
+            (self.rp / 'authorized').write_bytes(b'2')
+            return True
+        with self.assertRaises(m.WriterRefused):
+            m.WholeDockSysfsWriter().reauthorize(self.router, guard)
+        self.assertEqual((self.rp / 'authorized').read_bytes(), b'2')
+
+    def test_reauthorize_failure_latches_all_operations(self):
+        self.prepare_reauthorization()
+        writer = m.WholeDockSysfsWriter()
+        with patch.object(m.os, 'write', side_effect=TimeoutError('unresolved')):
+            with self.assertRaises(TimeoutError):
+                writer.reauthorize(self.router, lambda: True)
+        with self.assertRaises(m.WriterRefused):
+            writer.remove_usb(self.usb, lambda: True)
+        with self.assertRaises(m.WriterRefused):
+            writer.deauthorize(self.router, lambda: True)
+
+    def test_reauthorize_checks_pinned_domain(self):
+        self.prepare_reauthorization()
+        bad = replace(self.router, identities=(self.router.identities[0],
+                      m.NodeIdentity(0, 0), *self.router.identities[2:]))
+        with self.assertRaises(m.WriterRefused):
+            m.WholeDockSysfsWriter().reauthorize(bad, lambda: True)
+        self.assertEqual((self.rp / 'authorized').read_bytes(), b'0')
+
 if __name__ == '__main__':
     unittest.main()

@@ -8,6 +8,8 @@ import os
 from pathlib import Path
 import re
 import stat
+import time
+from dataclasses import dataclass
 from threading import Lock, get_ident
 
 from ..adapters.steamos.dock_branch import DockBranchDiscovery
@@ -24,6 +26,13 @@ from .whole_dock_claim import WholeDockClaimStore
 
 PCI_ROOT = Path('/sys/bus/pci/devices')
 DEVICES_ROOT = Path('/sys/devices')
+
+
+@dataclass(frozen=True)
+class WholeDockReconnectResult:
+    code: str
+    software_reconnected: bool = False
+    safe_to_unplug: bool = False
 
 
 def _pci_names():
@@ -48,7 +57,8 @@ def _authorization(binding):
 
 
 class WholeDockRuntime:
-    def __init__(self, binding, store_root, *, idle, admission_held):
+    def __init__(self, binding, store_root, *, idle, admission_held,
+                 monotonic=time.monotonic, wait=time.sleep):
         self.binding = binding
         self._idle = idle
         self._admission = admission_held
@@ -61,6 +71,85 @@ class WholeDockRuntime:
         self._continued = False
         self._continuation_lock = Lock()
         self._continuation_thread = None
+        self._reconnect_attempted = False
+        self._monotonic, self._wait = monotonic, wait
+
+    def _reconnect_guard(self, stage):
+        if self._admission() is not True or self._idle() is not True or not self._owned(stage):
+            return False
+        revalidate_retained(self.binding, gpu_removed=True, usb_removed=True, tunnel_down=True)
+        return self._admission() is True and self._idle() is True and self._owned(stage)
+
+    def reconnect_owned(self):
+        """One explicit same-instance software reconnect, retaining inhibition."""
+        if not self._continuation_lock.acquire(blocking=False):
+            return WholeDockReconnectResult('dock_reconnect.busy')
+        try:
+            if self._reconnect_attempted or not self._reconnect_guard('software_down'):
+                return WholeDockReconnectResult('dock_reconnect.refused')
+            self._reconnect_attempted = True
+            self.record(self._operation, 'reauthorize_intent')
+            if not self._reconnect_guard('reauthorize_intent'):
+                return WholeDockReconnectResult('dock_reconnect.preflight_changed')
+            self._writer.reauthorize(self.binding.router_target,
+                lambda: self._reconnect_guard('reauthorize_intent'))
+            # Polling is read-only; neither timeouts nor failed observations retry
+            # the write. Durable inhibition remains even after software success.
+            from ..adapters.steamos.whole_dock_topology import (
+                observe_reconnected, ReconnectPending, WholeDockBinding,
+            )
+            deadline = self._monotonic() + 30.0
+            for _ in range(61):
+                if self._admission() is not True or self._idle() is not True or not self._owned('reauthorize_intent'):
+                    return WholeDockReconnectResult('dock_reconnect.admission_changed')
+                try:
+                    restored = observe_reconnected(self.binding)
+                except ReconnectPending:
+                    restored = None
+                else:
+                    if not isinstance(restored, WholeDockBinding):
+                        raise ValueError('dock_reconnect.observation_invalid')
+                if isinstance(restored, WholeDockBinding):
+                    self.record(self._operation, 'software_reconnected')
+                    return WholeDockReconnectResult('dock_reconnect.software_reconnected', True)
+                if restored is not None:
+                    raise ValueError('dock_reconnect.observation_invalid')
+                remaining = deadline - self._monotonic()
+                if remaining <= 0:
+                    break
+                self._wait(min(0.5, remaining))
+            return WholeDockReconnectResult('dock_reconnect.timeout')
+        except Exception:
+            return WholeDockReconnectResult('dock_reconnect.unresolved')
+        finally:
+            self._continuation_lock.release()
+
+    def finish_reconnect(self):
+        """Retire only verified software reconnect; no device writes or clearance."""
+        if not self._continuation_lock.acquire(blocking=False):
+            return False
+        try:
+            if not self._owned('software_reconnected'):
+                return False
+            from ..adapters.steamos.whole_dock_topology import observe_reconnected, WholeDockBinding
+            def guard():
+                # Store retirement holds its own claim lock. Do not call _owned
+                # from this callback: the store validates owner while locked.
+                if self._admission() is not True or self._idle() is not True:
+                    return False
+                restored = observe_reconnected(self.binding)
+                return (isinstance(restored, WholeDockBinding)
+                    and self._admission() is True and self._idle() is True)
+            if not guard():
+                return False
+            receipt = self._store.retire_reconnected(self._operation,
+                self.binding.binding, self.binding.generation, guard)
+            return type(receipt) is str and bool(re.fullmatch(
+                r'completed-whole-dock-[0-9a-f]{32}\.json', receipt))
+        except Exception:
+            return False
+        finally:
+            self._continuation_lock.release()
 
     def begin_before_release(self, operation, approval):
         """Claim once before release. Failure retains any persisted intent."""

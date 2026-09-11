@@ -8,6 +8,7 @@ import socket
 import sys
 import threading
 import time
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -38,6 +39,11 @@ from regear.adapters.steamos.gamescope_performance_target import GamescopePerfor
 from regear.domain.auto_tdp import AutoTdpPolicy  # noqa: E402
 from regear.domain.telemetry import TelemetryAdmissionKind, admit_telemetry_collection  # noqa: E402
 from regear.adapters.steamos.drm import DrmDiscovery  # noqa: E402
+from regear.adapters.steamos.sleep_inhibitor import Login1SleepInhibitor  # noqa: E402
+from regear.adapters.steamos.whole_dock_topology import resolve_whole_dock  # noqa: E402
+from regear.delivery.whole_dock_runtime import WholeDockRuntime  # noqa: E402
+from regear.ports.whole_dock_teardown import WholeDockApproval  # noqa: E402
+from regear.domain.dock_teardown import TeardownApproval  # noqa: E402
 from regear.adapters.steamos.pci import PciUsb4Discovery  # noqa: E402
 from regear.adapters.steamos.wake_diagnostics import WakeDiagnosticsDiscovery  # noqa: E402
 from regear.adapters.steamos.commands import (  # noqa: E402
@@ -1346,6 +1352,60 @@ class Plugin:
 
     # -- live eGPU disconnect -------------------------------------------
 
+    def _run_whole_dock_trial(self, operation: str):
+        """Internal cable-connected trial; admission covers release and teardown.
+
+        Not a player RPC. Reconnect remains an explicit separate operation and
+        the durable claim remains inhibited even after successful enumeration.
+        """
+        with self._dock_mutation_gate().admit():
+            cards = [card for card in DrmDiscovery().scan() if card.boot_vga is False]
+            if len(cards) != 1:
+                raise ValueError("dock_teardown.gpu_ambiguous")
+            binding = resolve_whole_dock(cards[0].pci_bdf)
+            user = resolve_gamescope_user(GamescopeDiscovery().scan()).context
+            if user is None:
+                raise ValueError("dock_teardown.session_unknown")
+            admission = {"held": True}
+            runtime = WholeDockRuntime(binding, RootOwnedRuntimeState().ensure(),
+                idle=lambda: self._api.get_snapshot_report().snapshot.game_state is GameState.IDLE,
+                admission_held=lambda: admission["held"])
+            approval = WholeDockApproval(binding.binding, binding.generation,
+                TeardownApproval(binding.usb_bdf, binding.router_id))
+            release = build_live_disconnect_runtime(gpu_bdf=binding.gpu_bdf,
+                uid=user.uid, username=user.username)
+            lease = Login1SleepInhibitor()
+            if lease.acquire().active is not True:
+                raise ValueError("dock_teardown.sleep_inhibition_required")
+            self._whole_dock_trial_lease = lease
+            try:
+                runtime.begin_before_release(operation, approval)
+                self._whole_dock_trial_runtime = (runtime, admission)
+                result = release.execute(release_display=True)
+                runtime.verify_gpu_release(result)
+                return runtime.execute_claimed(operation, approval)
+            finally:
+                admission["held"] = False
+                if runtime._operation is None:
+                    lease.release()
+
+    def _run_whole_dock_reconnect_trial(self):
+        trial = getattr(self, "_whole_dock_trial_runtime", None)
+        if trial is None:
+            raise ValueError("dock_teardown.original_trial_required")
+        runtime, admission = trial
+        with self._dock_mutation_gate().admit(allow_inhibited=True):
+            admission["held"] = True
+            try:
+                result = runtime.reconnect_owned()
+                if result.software_reconnected:
+                    if runtime.finish_reconnect() is not True:
+                        raise ValueError("dock_teardown.reconnect_completion_unverified")
+                    self._whole_dock_trial_lease.release()
+                return result
+            finally:
+                admission["held"] = False
+
     def _live_disconnect_runtime(self) -> LiveDisconnectRuntime | None:
         """Build the runtime for the eGPU and session user in front of us.
 
@@ -1375,6 +1435,11 @@ class Plugin:
         Safe to poll. No filter is armed, no DRM master taken, and no display
         touched by asking.
         """
+        if _request == "whole_dock_trial":
+            return dict(getattr(self, "_whole_dock_trial_status", {
+                "schema_version": 1, "code": "dock_teardown.no_trial",
+                "busy": False, "safe_to_unplug": False,
+            }))
         try:
             runtime = await asyncio.to_thread(self._live_disconnect_runtime)
         except Exception:
@@ -1404,6 +1469,8 @@ class Plugin:
         release_display: bool = False,
         relaunch_app_id: str = "",
         relaunch_intent: str = "disconnect",
+        trial_action: str = "",
+        trial_confirmed: bool = False,
     ) -> dict[str, object]:
         """Remove the eGPU in software. NOT clearance to unplug anything.
 
@@ -1424,6 +1491,37 @@ class Plugin:
         expires, while a sleep is meant to be reopened when they come back. An
         unrecognised value records nothing rather than guessing.
         """
+        if trial_action:
+            if (trial_confirmed is not True or release_display is not True
+                    or trial_action not in ("whole_dock_disconnect", "whole_dock_reconnect")
+                    or relaunch_app_id):
+                return {"schema_version": 1, "ok": False,
+                        "code": "dock_teardown.trial_confirmation_required",
+                        "safe_to_unplug": False}
+            if (getattr(self, "_unloading", False)
+                    or getattr(self, "_whole_dock_trial_status", {}).get("busy")):
+                return {"schema_version": 1, "ok": False,
+                        "code": "dock_teardown.busy", "safe_to_unplug": False}
+            self._whole_dock_trial_status = {"schema_version": 1,
+                "code": "dock_teardown.trial_running", "busy": True,
+                "safe_to_unplug": False}
+            def trial():
+                try:
+                    if trial_action == "whole_dock_disconnect":
+                        result = self._run_whole_dock_trial(uuid.uuid4().hex)
+                    else:
+                        result = self._run_whole_dock_reconnect_trial()
+                    payload = {"schema_version": 1, "code": result.code,
+                        "busy": False, "safe_to_unplug": False,
+                        "software_down": getattr(result, "software_down", False),
+                        "software_reconnected": getattr(result, "software_reconnected", False)}
+                    payload["ok"] = payload["software_down"] or payload["software_reconnected"]
+                except Exception:
+                    payload = {"schema_version": 1, "code": "dock_teardown.trial_unresolved",
+                               "busy": False, "ok": False, "safe_to_unplug": False}
+                self._whole_dock_trial_status = payload
+                return payload
+            return await self._run_background_operation(trial)
         relaunch = RelaunchIntentStore(CATALOG_ROOT)
         parsed_intent = _parse_intent(relaunch_intent)
         if (
@@ -2521,9 +2619,9 @@ class Plugin:
                     )
                     if resolution.ok and resolution.context is not None:
                         audio = await self._run_background_operation(
-                            lambda: self._audio_handoff_service().switch(
+                            lambda: self._run_dock_mutation(lambda: self._audio_handoff_service().switch(
                                 PlacementState.PORTABLE, resolution.context
-                            ),
+                            )),
                         )
                         self._events.append(
                             severity="info" if audio.succeeded else "warning",
@@ -3085,7 +3183,7 @@ class Plugin:
 
     def _support_versions(self) -> dict[str, str]:
         return {
-            "regear": "0.3.82",
+            "regear": "0.3.83",
             "decky": str(getattr(decky, "DECKY_VERSION", "unknown")),
             "steamos": self._version_info.steamos,
             "kernel": self._version_info.kernel,

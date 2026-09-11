@@ -61,7 +61,7 @@ FORBIDDEN_WRITE_CALLS = {
 
 
 def whole_dock_writer_failures() -> list[str]:
-    """Keep the new descriptor writer limited to its two fixed operations."""
+    """Keep removal and reauthorization limited to fixed device attributes."""
     path = REPOSITORY_ROOT / WHOLE_DOCK_WRITER
     if not path.exists():
         return []
@@ -74,7 +74,7 @@ def whole_dock_writer_failures() -> list[str]:
                 writes.append(node)
                 if (ast.unparse(node.func) != "os.write" or len(node.args) != 2
                         or ast.unparse(node.args[0]) != "attribute"
-                        or ast.unparse(node.args[1]) != "b'1' if usb else b'0'"):
+                        or ast.unparse(node.args[1]) != "b'1' if usb or reauthorize else b'0'"):
                     failures.append("whole-dock writer has an unapproved write")
             if ast.unparse(node.func) == "os.open" and len(node.args) >= 2:
                 if "O_WRONLY" in ast.unparse(node.args[1]):

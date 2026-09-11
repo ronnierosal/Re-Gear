@@ -170,6 +170,57 @@ class WholeDockClaimTests(unittest.TestCase):
         finally:
             os.close(fd)
 
+    def test_retirement_requires_exact_identity_stage_and_guard(self):
+        self.store.claim("one", "dock", "generation")
+        with self.assertRaises(ValueError):
+            self.store.retire_reconnected("one", "dock", "generation", lambda: True)
+        self.store.record("one", "software_reconnected")
+        for identity in (("two", "dock", "generation"), ("one", "other", "generation"),
+                         ("one", "dock", "other")):
+            with self.assertRaises(ValueError):
+                self.store.retire_reconnected(*identity, lambda: True)
+        for value in (False, None, 1):
+            with self.assertRaises(ValueError):
+                self.store.retire_reconnected("one", "dock", "generation", lambda: value)
+        self.assertTrue(self.store.inhibited())
+
+    def test_retirement_keeps_audit_and_releases_inhibition(self):
+        self.store.claim("one", "dock", "generation")
+        self.store.record("one", "software_reconnected")
+        original = (self.root / FILENAME).read_bytes()
+        audit = self.store.retire_reconnected("one", "dock", "generation", lambda: True)
+        self.assertEqual((self.root / audit).read_bytes(), original)
+        self.assertFalse(self.store.inhibited())
+        self.assertTrue(self.store.claim("next", "dock", "next-generation"))
+        self.assertEqual((self.root / audit).read_bytes(), original)
+
+    def test_retirement_fsync_failure_restores_claim(self):
+        self.store.claim("one", "dock", "generation")
+        self.store.record("one", "software_reconnected")
+        fsync = os.fsync
+        calls = [0]
+        def fail_once(descriptor):
+            calls[0] += 1
+            if calls[0] == 1:
+                raise OSError("directory durability failed")
+            return fsync(descriptor)
+        with patch("os.fsync", side_effect=fail_once):
+            with self.assertRaises(OSError):
+                self.store.retire_reconnected("one", "dock", "generation", lambda: True)
+        self.assertTrue(self.store.inhibited())
+        self.assertEqual(self.store.load().stage, "software_reconnected")
+
+    def test_retirement_audit_collision_preserves_both(self):
+        self.store.claim("one", "dock", "generation")
+        self.store.record("one", "software_reconnected")
+        existing = self.root / "completed-whole-dock-collision.json"
+        existing.write_text("previous audit")
+        with patch("regear.delivery.whole_dock_claim.secrets.token_hex", return_value="collision"):
+            with self.assertRaises(OSError):
+                self.store.retire_reconnected("one", "dock", "generation", lambda: True)
+        self.assertTrue(self.store.inhibited())
+        self.assertEqual(existing.read_text(), "previous audit")
+
 
 if __name__ == "__main__":
     unittest.main()

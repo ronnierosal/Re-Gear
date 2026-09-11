@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "re-gear-steamos"
-version = "0.3.82"
+version = "0.3.83"
 description = "Re-Gear: safety-first SteamOS handheld docking"
 readme = "README.md"
 requires-python = ">=3.11"
