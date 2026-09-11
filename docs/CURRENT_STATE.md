@@ -2,6 +2,64 @@
 
 > Historical record: HDM was Re-Gear's former name; original wording is retained.
 
+## 0.3.74 installed on the Ally and validated read-only — 2026-09-10
+
+Supersedes the staging entry below on one point only: that entry says nothing was
+installed, which was true when written. Ronnie installed the archive himself
+through Decky shortly afterwards. Its other contents stand.
+
+The install succeeded and the rename holds on hardware. Evidence is the plugin's
+own log rather than the filesystem alone:
+
+```
+Re-Gear plugin started: version=0.3.74 revision=bf03c324853d
+Re-Gear diagnostics ready: mode=portable game=idle support=certified blockers=[]
+```
+
+`backend/hdm` to `backend/regear` works end to end, including a subprocess spawned
+by path: the sleep inhibitor runs `backend/regear/adapters/steamos/inhibitor_guard.py`,
+and `python -m regear.cli` answers as `regear-diagnose`, so #259's CLI rename also
+works installed. Log lines moved from the `HDM` prefix to `Re-Gear`.
+
+eGPU observed attached: GPD G1, `08:00.0` Navi 33 with `amdgpu` bound, DRM `card1`,
+Thunderbolt router `0-2` authorized, `egpu_link state=up`, and both host and eGPU
+resolving to exact profiles at `verified` confidence. The link trained at
+`speed_gtps=2.5 width_lanes=4`, PCIe Gen1 x4, which is low for this GPU; recorded
+as an observation with no established cause.
+
+**The TV did not switch, and the cause is #167, confirmed live on this install.**
+`/home/deck/.config/systemd/user/gamescope-session.service.d/90-handheld-dock-mode.conf`
+still renders the old plugin path, mtime 31 Aug, while the plugin runs from
+`/home/deck/homebrew/plugins/Re-Gear`; both plugin directories still exist. So
+`actual != expected`, `status()` sets `managed_dropin_modified`, `activate()`
+refuses, `session_ready` stays False and the switch can never become ready.
+
+On 0.3.74 this presents differently from the 0.3.59 report in #167, which parked at
+`waiting_for_session`. Here the connection reaches `attach.ready_idle` and then the
+last stage recorded is `connection.readiness_timed_out` 116 seconds later, with the
+eGPU still attached. `connection_readiness` latches `_readiness_established` only
+when `observation.session_ready` is also true, which #167 keeps False, so the
+window reset by the late-enumeration branch simply expired again. Full detail is on
+#167; detection timing is quantified on #17 as ~148 s to PCI enumeration against a
+120 s budget.
+
+The Safe Undock probe correctly refuses: `safe_to_unplug=False`,
+`safe_undock.client_scan_incomplete`, because unprivileged `deck` cannot read
+`/sys/kernel/debug` or other processes' file descriptors and therefore cannot prove
+which processes hold the GPU. It does verify `exact_attachment` and `topology_exact`.
+The two #93 facts are unsatisfied but carry `removal_safety=False` and do not gate
+that verdict.
+
+Read-only limits of this validation, stated so it is not read as more than it is.
+No device, display, power, Gamescope or teardown action was performed and no file on
+the device was modified. `/var/lib/handheld-dock-mode` is root-only and was not
+readable, so the preference files were not inspected; the finding that no automatic
+switch was attempted rests on the absence of `connection.tv_transition_started` from
+the complete log instead. `regear-diagnose` reports `sleep_guard_inactive` while the
+plugin log reports the guard active and an inhibit process is running; most likely
+because the CLI is a separate unprivileged process, but this was not resolved. No
+hardware acceptance, release or deployment claim is made by this entry.
+
 ## 0.3.74 staged for supervised testing — 2026-09-10
 
 Staged only. Nothing was installed, no plugin was replaced, `plugin_loader` was
