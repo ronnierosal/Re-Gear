@@ -44,7 +44,14 @@ class RenameReadinessRegressionTests(unittest.TestCase):
             self.assertEqual(observe(index, True).stage,
                              ConnectionReadinessStage.WAITING_FOR_SESSION)
         now[0] = 268.0
-        self.assertEqual(observe(8, True).stage, ConnectionReadinessStage.TIMED_OUT)
+        # Past the deadline an unprepared session escalates and names the
+        # integration, instead of reporting TIMED_OUT as though the eGPU had
+        # never arrived. The property this test exists for is unchanged and is
+        # now asserted directly below rather than implied by the stage name.
+        final = observe(8, True)
+        self.assertEqual(final.stage, ConnectionReadinessStage.ACTION_REQUIRED)
+        self.assertEqual(final.code, "connection.session_integration_unprepared")
+        self.assertNotEqual(final.stage, ConnectionReadinessStage.READY_IDLE)
 
     def test_attach_ready_event_is_not_full_connection_ready_event(self):
         module = load_main_module()
