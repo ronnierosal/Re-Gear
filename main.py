@@ -768,7 +768,9 @@ class Plugin:
                 else "info"
             ),
             code=status.code,
-            component="connection",
+            # Attachment checks do not include managed session integration.
+            # Keep their ready event distinct from full connection readiness.
+            component="attach_readiness",
             stage=status.stage.value,
             details={"poll_after_ms": status.poll_after_ms},
         )
@@ -2819,7 +2821,7 @@ class Plugin:
 
     def _support_versions(self) -> dict[str, str]:
         return {
-            "regear": "0.3.74",
+            "regear": "0.3.76",
             "decky": str(getattr(decky, "DECKY_VERSION", "unknown")),
             "steamos": self._version_info.steamos,
             "kernel": self._version_info.kernel,

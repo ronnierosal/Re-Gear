@@ -18,6 +18,10 @@ from regear.application.automatic_dock import (  # noqa: E402
     AutomaticDockCoordinator,
     AutomaticDockStage,
 )
+from regear.application.connection_readiness import (  # noqa: E402
+    ConnectionReadinessStage,
+    ConnectionReadinessStatus,
+)
 from regear.domain.models import Confidence, EgpuLinkObservation, EgpuLinkState, GpuRole  # noqa: E402
 from regear.profiles.registry import ProfileResolutionStatus, resolve_runtime_profiles  # noqa: E402
 from regear.domain.serialization import snapshot_from_dict  # noqa: E402
@@ -208,3 +212,55 @@ class AutomaticDockCoordinatorTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DisplayPendingCoordinationTests(unittest.TestCase):
+    """With the television off the coordinator waits, then switches by itself.
+
+    The point of issue #28: the player should not have to turn the television on
+    before attaching, nor press anything afterwards.
+    """
+
+    @staticmethod
+    def pending() -> ConnectionReadinessStatus:
+        return ConnectionReadinessStatus(
+            ConnectionReadinessStage.READY_DISPLAY_PENDING,
+            "connection.ready_display_pending",
+            1000,
+        )
+
+    @staticmethod
+    def ready() -> ConnectionReadinessStatus:
+        return ConnectionReadinessStatus(
+            ConnectionReadinessStage.READY_IDLE, "connection.ready_idle", 1000
+        )
+
+    def test_a_pending_display_does_not_request_a_switch(self):
+        coordinator = AutomaticDockCoordinator()
+        decision = coordinator.update(
+            enabled=True, readiness=self.pending(), current=current("connected-internal.json")
+        )
+        self.assertFalse(decision.should_switch)
+        self.assertEqual(decision.status.stage, AutomaticDockStage.WAITING)
+        self.assertTrue(decision.status.enabled)
+
+    def test_waiting_on_a_display_does_not_consume_the_one_shot_attempt(self):
+        """The latch must survive the wait, or the later switch never happens."""
+        coordinator = AutomaticDockCoordinator()
+        for _ in range(25):
+            self.assertFalse(coordinator.update(
+                enabled=True, readiness=self.pending(), current=current("connected-internal.json")
+            ).should_switch)
+        decision = coordinator.update(
+            enabled=True, readiness=self.ready(), current=current("connected-internal.json")
+        )
+        self.assertTrue(decision.should_switch)
+        self.assertEqual(decision.status.stage, AutomaticDockStage.SWITCHING)
+
+    def test_a_pending_display_while_disabled_stays_disabled(self):
+        coordinator = AutomaticDockCoordinator()
+        decision = coordinator.update(
+            enabled=False, readiness=self.pending(), current=current("connected-internal.json")
+        )
+        self.assertFalse(decision.should_switch)
+        self.assertEqual(decision.status.stage, AutomaticDockStage.DISABLED)

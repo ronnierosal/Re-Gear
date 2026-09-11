@@ -9,6 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
 from regear.application.connection_readiness import (  # noqa: E402
+    WINDOW_TIMEOUT_SECONDS,
     ConnectionReadinessLifecycle,
     ConnectionReadinessObservation,
     ConnectionReadinessStage,
@@ -226,7 +227,9 @@ class ConnectionReadinessTests(unittest.TestCase):
         cases = (
             ({"driver_ready": False}, ConnectionReadinessStage.WAITING_FOR_DRIVER),
             ({"link_up": False}, ConnectionReadinessStage.WAITING_FOR_LINK),
-            ({"hdmi_ready": False}, ConnectionReadinessStage.WAITING_FOR_HDMI),
+            # An absent display no longer reads as "still coming up" once the
+            # eGPU side is stable, but it still must not reach READY_IDLE.
+            ({"hdmi_ready": False}, ConnectionReadinessStage.READY_DISPLAY_PENDING),
             ({"audio_ready": False}, ConnectionReadinessStage.WAITING_FOR_AUDIO),
             ({"session_ready": False}, ConnectionReadinessStage.WAITING_FOR_SESSION),
             ({"game_state": GameState.RUNNING}, ConnectionReadinessStage.GAME_RUNNING),
@@ -239,6 +242,9 @@ class ConnectionReadinessTests(unittest.TestCase):
                 for index in range(3, 8):
                     result = self.lifecycle.update(sample(index, **changes))
                 self.assertEqual(result.stage, expected)
+                # The guard this table exists to protect: no missing fact may
+                # ever produce the one stage that authorizes a transition.
+                self.assertNotEqual(result.stage, ConnectionReadinessStage.READY_IDLE)
 
     def test_late_recheck_cannot_restart_repeatedly_on_same_attachment(self):
         self.begin_late_enumeration()
@@ -280,3 +286,102 @@ class ConnectionReadinessTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DisplayPendingTests(unittest.TestCase):
+    """A television that is merely switched off must not end the eGPU lifecycle.
+
+    Absent HDMI used to park the stage on ``WAITING_FOR_HDMI`` and, because the
+    deadline latch also required HDMI, expire the window into ``TIMED_OUT``.
+    ``AutomaticDockCoordinator`` only offers a transition at ``READY_IDLE`` and
+    treats ``TIMED_OUT`` as action required, so the automatic switch was never
+    offered at all. See issue #28.
+    """
+
+    def setUp(self) -> None:
+        self.clock = Clock()
+        self.lifecycle = ConnectionReadinessLifecycle(self.clock)
+
+    def reach_display_pending(self) -> ConnectionReadinessStage:
+        for index in range(6):
+            status = self.lifecycle.update(sample(index, hdmi_ready=False, audio_ready=False))
+        return status
+
+    def test_an_egpu_that_is_up_with_the_television_off_is_ready_and_pending(self):
+        status = self.reach_display_pending()
+        self.assertEqual(status.stage, ConnectionReadinessStage.READY_DISPLAY_PENDING)
+        self.assertEqual(status.code, "connection.ready_display_pending")
+
+    def test_an_absent_display_never_authorizes_a_transition(self):
+        """The safety property. READY_IDLE is the only stage that permits one."""
+        for index in range(40):
+            status = self.lifecycle.update(sample(index, hdmi_ready=False, audio_ready=False))
+            self.assertNotEqual(status.stage, ConnectionReadinessStage.READY_IDLE)
+
+    def test_the_window_no_longer_expires_because_a_television_is_off(self):
+        """The bug. Before, the deadline latch required HDMI, so this timed out."""
+        self.reach_display_pending()
+        self.clock.now = WINDOW_TIMEOUT_SECONDS * 3
+        status = self.lifecycle.update(sample(99, hdmi_ready=False, audio_ready=False))
+        self.assertNotEqual(status.stage, ConnectionReadinessStage.TIMED_OUT)
+        self.assertEqual(status.stage, ConnectionReadinessStage.READY_DISPLAY_PENDING)
+
+    def test_turning_the_television_on_reaches_ready_with_no_further_action(self):
+        """What makes the switch automatic: the same loop simply proceeds."""
+        self.reach_display_pending()
+        for index in range(100, 104):
+            status = self.lifecycle.update(sample(index))
+        self.assertEqual(status.stage, ConnectionReadinessStage.READY_IDLE)
+
+    def test_it_still_reaches_ready_after_the_deadline_has_passed(self):
+        """A player may leave the television off for longer than the window."""
+        self.reach_display_pending()
+        self.clock.now = WINDOW_TIMEOUT_SECONDS * 5
+        for index in range(200, 204):
+            status = self.lifecycle.update(sample(index))
+        self.assertEqual(status.stage, ConnectionReadinessStage.READY_IDLE)
+
+    def test_every_condition_of_the_new_stage_is_load_bearing(self):
+        """Mutation coverage: drop one requirement at a time and it must not fire.
+
+        Written because three guards of mine passed against broken code today.
+        Each case keeps HDMI absent and removes exactly one other requirement,
+        so a guard that stopped checking that requirement fails here.
+        """
+        cases = (
+            # Topology quorum not yet met: this is genuinely "still coming up".
+            ("topology_not_stable", 1, {}, ConnectionReadinessStage.WAITING_FOR_HDMI),
+            # The next three keep the ORIGINAL precedence, which checked HDMI
+            # before session and game state. The new branch declines to fire
+            # because its extra requirement is missing, so the chain falls
+            # through to the pre-existing HDMI wait. What matters for safety is
+            # the assertion below: none of them reach the pending-display
+            # stage, so none of them can be mistaken for "ready when the TV
+            # arrives" while something else is also wrong.
+            ("session_absent", 6, {"session_ready": False},
+             ConnectionReadinessStage.WAITING_FOR_HDMI),
+            ("game_running", 6, {"game_state": GameState.RUNNING},
+             ConnectionReadinessStage.WAITING_FOR_HDMI),
+            ("game_unknown", 6, {"game_state": GameState.UNKNOWN},
+             ConnectionReadinessStage.WAITING_FOR_HDMI),
+            # The eGPU itself absent is not a display question at all.
+            ("driver_absent", 6, {"driver_ready": False},
+             ConnectionReadinessStage.WAITING_FOR_DRIVER),
+            ("link_down", 6, {"link_up": False},
+             ConnectionReadinessStage.WAITING_FOR_LINK),
+        )
+        for name, samples, changes, expected in cases:
+            with self.subTest(case=name):
+                self.setUp()
+                for index in range(samples):
+                    status = self.lifecycle.update(
+                        sample(index, hdmi_ready=False, audio_ready=False, **changes)
+                    )
+                self.assertEqual(status.stage, expected)
+                self.assertNotEqual(status.stage, ConnectionReadinessStage.READY_DISPLAY_PENDING)
+
+    def test_audio_alone_pending_is_still_the_audio_wait_not_display_pending(self):
+        """HDMI observed but audio not yet settled is a different answer."""
+        for index in range(6):
+            status = self.lifecycle.update(sample(index, audio_ready=False))
+        self.assertEqual(status.stage, ConnectionReadinessStage.WAITING_FOR_AUDIO)
