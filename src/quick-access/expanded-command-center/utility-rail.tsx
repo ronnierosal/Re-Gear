@@ -59,7 +59,7 @@ export function UtilityRail({side, layout = defaultUtilityLayout, readings = {},
     const next = controls[index + (event.key === "ArrowDown" ? 1 : -1)];
     if (next) { event.preventDefault(); event.stopPropagation(); next.focus(); }
   }
-  return <Focusable flow-children="vertical" noFocusRing className="rg-utility-rail" aria-label={`${side} quick controls`} onKeyDown={navigate}>
+  return <Focusable flow-children="vertical" noFocusRing className="rg-utility-rail" data-utility-side={side} aria-label={`${side} quick controls`} onKeyDown={navigate}>
     <style>{railStyles}</style>
     {!onRequest && <span className="rg-utility-value">Support unverified</span>}
     {layout.filter(item => item.side === side).map(({id}) => {
