@@ -376,7 +376,7 @@ class MainProcessDeliveryTests(unittest.TestCase):
 
         events = [
             event for event in plugin._events.snapshot()
-            if event.component == "connection"
+            if event.component == "attach_readiness"
         ]
         self.assertEqual(
             [event.code for event in events],
