@@ -210,9 +210,6 @@ class AutomaticDockCoordinatorTests(unittest.TestCase):
         )
 
 
-if __name__ == "__main__":
-    unittest.main()
-
 
 class DisplayPendingCoordinationTests(unittest.TestCase):
     """With the television off the coordinator waits, then switches by itself.
@@ -264,3 +261,7 @@ class DisplayPendingCoordinationTests(unittest.TestCase):
         )
         self.assertFalse(decision.should_switch)
         self.assertEqual(decision.status.stage, AutomaticDockStage.DISABLED)
+
+
+if __name__ == "__main__":
+    unittest.main()
