@@ -178,7 +178,7 @@ class LinkRecoveryOutcome:
 
 
 class LinkRecoveryService:
-    """Perform one recovery attempt per attachment, and report honestly."""
+    """Serialize manual or separately consented bounded automatic recovery."""
 
     def __init__(
         self,
@@ -199,6 +199,8 @@ class LinkRecoveryService:
         self._attempted = False
         self._state_lock = Lock()
         self._in_flight = False
+        self._attempt_count = 0
+        self._automatic_only = True
 
     # -- the latch -----------------------------------------------------------
 
@@ -207,6 +209,8 @@ class LinkRecoveryService:
         if not present:
             with self._state_lock:
                 self._attempted = False
+                self._attempt_count = 0
+                self._automatic_only = True
 
     @property
     def attempted(self) -> bool:
@@ -240,13 +244,16 @@ class LinkRecoveryService:
         user: GamescopeUserContext,
         *,
         strategy: LinkRecoveryStrategy | str | None = None,
+        automatic: bool = False,
     ) -> LinkRecoveryOutcome:
         """Disturb the session by the chosen strategy and watch for the link.
 
-        Spends the attachment's one attempt whenever a disturbance was actually
+        Spends an attempt whenever a disturbance was actually
         issued, including one that failed: something is wrong enough that
         offering the same button again would not help. A strategy that is
         refused before anything runs costs nothing, because nothing happened.
+        Manual callers get one attempt. The automatic scheduler may request two,
+        but cannot extend a manual attempt or overlap any in-flight operation.
         """
         selected = self._default_strategy if strategy is None else strategy
         try:
@@ -269,11 +276,15 @@ class LinkRecoveryService:
         # Reserve atomically at the command boundary, including direct callers.
         # Keep the in-flight guard through restore even if transport disappears.
         with self._state_lock:
-            if self._attempted or self._in_flight:
+            limit = 2 if automatic else 1
+            if (self._attempt_count >= limit or self._in_flight
+                    or automatic and not self._automatic_only):
                 return LinkRecoveryOutcome(
                     False, "link_recovery.already_attempted", strategy=chosen.value
                 )
             self._attempted = True
+            self._attempt_count += 1
+            self._automatic_only = self._automatic_only and automatic
             self._in_flight = True
         try:
             return self._recover_reserved(user, chosen, mechanism)

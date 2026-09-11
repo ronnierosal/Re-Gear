@@ -337,6 +337,22 @@ class TheWatchIsBounded(unittest.TestCase):
 
 
 class TheLatch(unittest.TestCase):
+    def test_automatic_budget_is_two_but_does_not_extend_manual_consent(self):
+        commands = FakeCommands()
+        svc, _ = service(commands, [], watch=0)
+        svc.recover(USER, automatic=True)
+        self.assertEqual(svc.recover(USER).code, "link_recovery.already_attempted")
+        svc.recover(USER, automatic=True)
+        self.assertEqual(svc.recover(USER, automatic=True).code, "link_recovery.already_attempted")
+        self.assertEqual(commands.calls, [RESTART, RESTART])
+
+    def test_automatic_policy_cannot_repeat_a_manual_attempt(self):
+        commands = FakeCommands()
+        svc, _ = service(commands, [], watch=0)
+        svc.recover(USER)
+        self.assertEqual(svc.recover(USER, automatic=True).code, "link_recovery.already_attempted")
+        self.assertEqual(commands.calls, [RESTART])
+
     def test_two_preassessed_callers_issue_one_restart(self):
         commands = FakeCommands()
         svc, _ = service(commands, [True])

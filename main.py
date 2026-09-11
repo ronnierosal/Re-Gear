@@ -20,6 +20,8 @@ if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
 from regear.adapters.steamos.discovery import SteamOsDiscovery  # noqa: E402
+from regear.application.automatic_link_recovery import AutomaticLinkRecovery  # noqa: E402
+from regear.profiles.registry import resolve_runtime_profiles  # noqa: E402
 from regear.adapters.steamos.topology_wakeup import LinuxTopologyWakeup  # noqa: E402
 from regear.adapters.steamos.tdp_provider import SteamOsManagerTdpProvider  # noqa: E402
 from regear.adapters.steamos.tdp_conflicts import KnownTdpControllerScan  # noqa: E402
@@ -910,6 +912,7 @@ class Plugin:
                 "enabled": enabled,
                 "stage": status.stage.value,
                 "code": status.code if enabled else "automatic_dock.disabled",
+                "recovery": await self._automatic_link_recovery_status(),
             }
         except Exception:
             return {
@@ -920,17 +923,21 @@ class Plugin:
             }
 
     async def set_automatic_dock_enabled(
-        self, enabled: bool, user_confirmed: bool
+        self, enabled: bool, user_confirmed: bool, recovery_enabled: bool | None = None
     ) -> dict[str, object]:
         """Persist deliberate player consent; disabling is always permitted."""
         if type(enabled) is not bool or type(user_confirmed) is not bool:
             return self._automatic_dock_failure("automatic_dock.request_invalid")
-        if enabled and not user_confirmed:
+        if recovery_enabled is not None and type(recovery_enabled) is not bool:
+            return self._automatic_dock_failure("automatic_dock.request_invalid")
+        if (enabled or recovery_enabled is True) and not user_confirmed:
             return self._automatic_dock_failure(
                 "automatic_dock.confirmation_required",
                 stage=AutomaticDockStage.DISABLED,
             )
         try:
+            if recovery_enabled is not None:
+                await asyncio.to_thread(self._automatic_recovery_preferences().save, recovery_enabled)
             await asyncio.to_thread(self._automatic_dock_preferences().save, enabled)
         except Exception:
             return self._automatic_dock_failure(
@@ -955,6 +962,79 @@ class Plugin:
             ),
             "code": code,
         }
+
+    def _automatic_recovery_preferences(self):
+        store = getattr(self, "_automatic_recovery_store", None)
+        if store is None:
+            store = AutomaticDockPreferenceStore(RootOwnedRuntimeState().ensure(), recovery=True)
+            self._automatic_recovery_store = store
+        return store
+
+    async def _automatic_link_recovery_status(self):
+        try:
+            enabled = await asyncio.to_thread(self._automatic_recovery_preferences().load)
+        except Exception:
+            return {"schema_version": 1, "enabled": False, "code": "automatic_recovery.preference_unavailable"}
+        policy = getattr(self, "_automatic_link_recovery", None)
+        return {"schema_version": 1, "enabled": enabled, "attempts": policy.attempts if policy else 0,
+                "max_attempts": 2, "delay_seconds": 10, "code": "automatic_recovery.enabled" if enabled else "automatic_recovery.disabled"}
+
+    async def _maybe_automatic_link_recovery(self, current, enabled):
+        policy = getattr(self, "_automatic_link_recovery", None)
+        if policy is None:
+            policy = self._automatic_link_recovery = AutomaticLinkRecovery()
+        try:
+            consent = enabled and await asyncio.to_thread(self._automatic_recovery_preferences().load)
+        except Exception:
+            consent = False
+        self._automatic_recovery_consent = consent
+
+        def eligible(snapshot):
+            observation = getattr(self, "_last_readiness_observation", None)
+            if observation is None:
+                return False
+            idle = (consent and snapshot.game_state is GameState.IDLE
+                    and snapshot.gamescope.running is True
+                    and len(snapshot.gpus) == 1
+                    and snapshot.gpus[0].role is GpuRole.INTERNAL
+                    and snapshot.gpus[0].present is True
+                    and snapshot.gpus[0].confidence is Confidence.VERIFIED
+                    and resolve_runtime_profiles(snapshot).exact_host)
+            return policy.observe(now=time.monotonic(),
+                absent=observation.transport_absent_verified,
+                present=observation.transport_present, identity=observation.transport_identity,
+                pci_complete=observation.pci_complete or any(
+                    gpu.present and gpu.role is not GpuRole.INTERNAL for gpu in snapshot.gpus),
+                enabled=consent and not self._unloading, idle=idle)
+
+        if not eligible(current.snapshot):
+            return False
+        resolution = await asyncio.to_thread(lambda: resolve_gamescope_user(GamescopeDiscovery().scan()))
+        if not resolution.ok or resolution.context is None:
+            return False
+        # Refresh after async session resolution: no cached idle or attach permission.
+        current = await asyncio.to_thread(SnapshotTransitionObservationAdapter(self._discovery).observe)
+        await self._observe_connection_readiness(current)
+        consent = (await asyncio.to_thread(self._automatic_dock_preferences().load)
+                   and await asyncio.to_thread(self._automatic_recovery_preferences().load))
+        journal = await asyncio.to_thread(self._transition_journal_service().status)
+        if not journal.durable or journal.owner.value != "none" or not eligible(current.snapshot):
+            return False
+        policy.begin()
+        self._append_journey_event(severity="info", code="automatic_recovery.started",
+            component="connection", stage="automatic_recovery", details={"attempt": policy.attempts})
+        try:
+            outcome = await self._run_background_operation(
+                lambda: self._link_recovery_service().recover(resolution.context,
+                    strategy=LinkRecoveryStrategy.SESSION_RESTART, automatic=True))
+            if outcome.ok:
+                policy.completed = True
+            self._append_journey_event(severity="info" if outcome.ok else "warning", code=outcome.code,
+                component="connection", stage="automatic_recovery",
+                details={"attempt": policy.attempts, "seconds": outcome.seconds})
+        finally:
+            policy.finish(time.monotonic())
+        return True
 
     async def get_link_recovery_status(
         self, _request: object = None
@@ -2473,6 +2553,8 @@ class Plugin:
                 )
                 current = await asyncio.to_thread(observations.observe)
                 connection = await self._observe_connection_readiness(current)
+                if await self._maybe_automatic_link_recovery(current, enabled):
+                    continue  # recovery changes the session; obtain new observations
                 if connection.code != self._last_connection_readiness_code:
                     self._last_connection_readiness_code = connection.code
                     self._record_connection_wake("readiness_observation")
@@ -2632,6 +2714,8 @@ class Plugin:
                     component="presentation",
                     stage="automatic_dock",
                 )
+            if getattr(self, "_automatic_recovery_consent", False):
+                delay_seconds = min(delay_seconds, 1.0)
             await self._wait_for_topology(delay_seconds)
 
     async def _observe_connection_readiness(self, current):
@@ -2693,7 +2777,8 @@ class Plugin:
         # already took. Re-observing inside an RPC would probe hardware on a
         # pollable call and could disagree with what the panel is showing.
         self._last_readiness_observation = observation
-        self._link_recovery_service().observe_transport(observation.transport_present)
+        if observation.transport_present or observation.transport_absent_verified:
+            self._link_recovery_service().observe_transport(observation.transport_present)
         return self._connection_readiness.update(observation)
 
     def _record_connection_wake(self, stage: str) -> None:
@@ -2993,7 +3078,7 @@ class Plugin:
 
     def _support_versions(self) -> dict[str, str]:
         return {
-            "regear": "0.3.81",
+            "regear": "0.3.82",
             "decky": str(getattr(decky, "DECKY_VERSION", "unknown")),
             "steamos": self._version_info.steamos,
             "kernel": self._version_info.kernel,

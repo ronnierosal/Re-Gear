@@ -340,5 +340,55 @@ class LinkRecoveryStrategySelectionTests(unittest.TestCase):
         self.assertEqual(result["code"], "link_recovery.confirmation_required")
 
 
+class AutomaticRecoveryIntegrationTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.module = load_main_module()
+
+    def test_fresh_guarded_recovery_and_separate_consent(self):
+        from types import SimpleNamespace as NS
+        from regear.application.automatic_link_recovery import AutomaticLinkRecovery
+        from tests.test_link_recovery_service import FakeCommands, USER, RESTART, service
+
+        for fresh_idle, consent, journal_idle in [(True, True, True), (False, True, True), (True, False, True), (True, True, False)]:
+            with self.subTest(fresh_idle=fresh_idle, consent=consent, journal_idle=journal_idle):
+                plugin = self.module.Plugin.__new__(self.module.Plugin)
+                plugin._unloading = False
+                plugin._discovery = object()
+                plugin._last_readiness_observation = observation(transport_identity="transport:known")
+                policy = plugin._automatic_link_recovery = AutomaticLinkRecovery()
+                facts = dict(absent=False, present=True, identity="transport:known", pci_complete=False, enabled=True, idle=True)
+                policy.observe(now=0, **{**facts,"absent":True,"present":False})
+                policy.observe(now=1, **facts)
+                plugin._automatic_recovery_preferences = lambda: NS(load=lambda: consent)
+                plugin._automatic_dock_preferences = lambda: NS(load=lambda: True)
+                plugin._transition_journal_service = lambda: NS(status=lambda: NS(durable=True,owner=NS(value="none" if journal_idle else "presentation")))
+                gpus=(NS(role=self.module.GpuRole.INTERNAL,present=True,confidence=self.module.Confidence.VERIFIED),)
+                current = NS(snapshot=NS(game_state=GameState.IDLE,gamescope=NS(running=True),gpus=gpus))
+                fresh = NS(snapshot=NS(game_state=GameState.IDLE if fresh_idle else GameState.RUNNING,gamescope=NS(running=True),gpus=gpus))
+                async def observe(_): return status()
+                async def background(fn): return fn()
+                plugin._observe_connection_readiness = observe
+                plugin._run_background_operation = background
+                plugin._append_journey_event = lambda **kwargs: None
+                commands = FakeCommands()
+                plugin._link_recovery, _ = service(commands, [True])
+                with patch.object(self.module.time, "monotonic", return_value=11), \
+                     patch.object(self.module,"resolve_runtime_profiles",return_value=NS(exact_host=True)), \
+                     patch.object(self.module,"GamescopeDiscovery"), \
+                     patch.object(self.module,"resolve_gamescope_user",return_value=NS(ok=True,context=USER)), \
+                     patch.object(self.module,"SnapshotTransitionObservationAdapter") as adapter:
+                    adapter.return_value.observe.return_value=fresh
+                    result=asyncio.run(plugin._maybe_automatic_link_recovery(current,True))
+                self.assertEqual(result, fresh_idle and consent and journal_idle)
+                self.assertEqual(commands.calls,[RESTART] if result else [])
+
+    def test_enabling_requires_explicit_boolean_confirmation(self):
+        plugin = self.module.Plugin.__new__(self.module.Plugin)
+        for confirm in [False, None, 1, "true"]:
+            result=asyncio.run(plugin.set_automatic_dock_enabled(True,confirm,True))
+            self.assertIn(result['code'],['automatic_dock.confirmation_required','automatic_dock.request_invalid'])
+
+
 if __name__ == "__main__":
     unittest.main()
