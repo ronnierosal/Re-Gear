@@ -54,7 +54,7 @@ function harness(storage = new Map()) {
   };
   const showModal=(view,_unused,options)=>{
     const record={view,closed:false};h.modals.push(record);
-    return {Close(){if(record.closed)return;record.closed=true;options.fnOnClose();}};
+    return {Close(){if(record.closed)return;record.closed=true;}};
   };
   const window={localStorage:{getItem:key=>storage.get(key)??null,setItem(key,value){if(h.failStorage)throw Error('storage denied');storage.set(key,value);},removeItem:key=>storage.delete(key)}};
   const Component = new Function('React','useState','useRef','useEffect','callable','DialogButton','showModal','EgpuConfirmModal','dockControl','window','crypto','setTimeout','clearTimeout', componentJs+'\nreturn WholeDockControl;')(

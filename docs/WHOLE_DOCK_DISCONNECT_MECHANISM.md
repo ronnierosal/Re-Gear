@@ -132,3 +132,9 @@ and unrelated controls are unchanged. Behavioral fixtures cover cancel,
 duplicate confirmation, attachment changes, interrupted replies/remount,
 storage failure, unmount and stale response ordering. Native controller and
 disconnect/reconnect hardware validation remain pending.
+
+Integration note: this candidate's createExpandedMenu fourth argument is a
+readCurrentSnapshot callback from the existing connection monitor. Claude's
+unmerged PR276 uses a TileSource fourth argument. Those contracts require
+explicit reconciliation before combining branches; do not silently substitute
+one for the other. The button change does not integrate the broader PR276 menu.
