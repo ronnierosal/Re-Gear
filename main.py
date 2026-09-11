@@ -768,7 +768,9 @@ class Plugin:
                 else "info"
             ),
             code=status.code,
-            component="connection",
+            # Attachment checks do not include managed session integration.
+            # Keep their ready event distinct from full connection readiness.
+            component="attach_readiness",
             stage=status.stage.value,
             details={"poll_after_ms": status.poll_after_ms},
         )
