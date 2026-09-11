@@ -1,11 +1,23 @@
-# Approved Command Center polish
+# Expanded Command Center presentation
+
+## Current design preservation contract
+
+Follow [UI design preservation](UI_DESIGN_CONTRACT.md). The compact correction
+merged through PR #274 supersedes the September 9 sizing and density described
+below: the central panel is 53vw/82vh, with compact tabs/footer and icon plus label
+above value and secondary text. Four columns begin at 400 measured content pixels,
+three at 300, two at 280 and one below 280. Safe Disconnect spans two columns in
+four-column mode. Do not treat generated utility mockups as replacement styling.
+See [validation evidence and native limits](COMMAND_CENTER_VALIDATION.md).
+
+## Historical September 9 polish
 
 The approved September 9 polish is now implemented in the shared expanded
 presentation and its browser fixture. The panel remains a **sample-data demo**;
 hardware tiles have no action authority. The native menu shortcut preference
 retains its existing Steam-client-local persistence.
 
-## Current presentation
+### Superseded presentation checkpoint
 
 - Supplied Re-Gear emblem and wordmark, with a compact demo status block.
 - The CommandCenterIcon component from the icon pack merged in PR #237 supplies
