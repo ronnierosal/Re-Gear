@@ -19,6 +19,8 @@ export type ConnectionProgressOverlayProps = {
   elapsedSeconds?: number;
   rows: ConnectionProgressRow[];
   detail?: string;
+  delayNotice?: string;
+  activationNotice?: string;
   keepConnectedMessage?: string;
   onHide: () => void;
   onSwitch?: () => void;
@@ -63,6 +65,10 @@ function StatusGlyph({ state }: { state: ConnectionProgressState }) {
       boxSizing: "border-box",
     }}>!</span>;
   }
+  if (state === "pending") return <span aria-hidden="true" style={{
+    width: 14, height: 14, borderRadius: 999, border: `2px solid ${C.muted}`,
+    boxSizing: "border-box", flexShrink: 0,
+  }} />;
   return <span aria-hidden="true"
     className={state === "checking" || state === "switching" ? "regear-progress-spinner" : undefined}
     style={{
@@ -71,16 +77,11 @@ function StatusGlyph({ state }: { state: ConnectionProgressState }) {
     }} />;
 }
 
-function phaseIndex(phase: ConnectionProgressPhase): number {
-  return phase === "connecting" ? 0 : phase === "switching" ? 1 : 2;
-}
-
 function headline(phase: ConnectionProgressPhase): string {
-  return phase === "connecting" ? "Getting your TV ready" : phase === "switching" ? "Switching to TV" : "Ready to play";
+  return phase === "connecting" ? "Connection status" : phase === "switching" ? "TV switch in progress" : "TV switch reported complete";
 }
 
 export function ConnectionProgressOverlay(props: ConnectionProgressOverlayProps) {
-  const activeIndex = phaseIndex(props.phase);
   const elapsed = props.elapsedSeconds != null ? ` · ${props.elapsedSeconds} seconds` : "";
 
   return <div style={{
@@ -99,27 +100,10 @@ export function ConnectionProgressOverlay(props: ConnectionProgressOverlayProps)
     `}</style>
 
     <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 3, minWidth: 0 }}>
-      <img src={brandIcon} alt="" aria-hidden="true" width={20} height={20} style={{ objectFit: "contain", flexShrink: 0 }} />
+      <img src={brandIcon} alt="Re-Gear logo" width={40} height={40} style={{ objectFit: "contain", flexShrink: 0 }} />
       <div style={{ fontSize: 16, fontWeight: 820, letterSpacing: "-.02em" }}>Re-Gear</div>
       <div style={{ color: C.muted, fontSize: 13, margin: "0 2px" }}>/</div>
-      <div style={{ fontSize: 13, fontWeight: 620 }}>Connection progress</div>
-    </div>
-
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 6, marginTop: 4, marginBottom: 4 }}>
-      {["Connecting", "Switching", "Ready"].map((name, i) => {
-        const active = i === activeIndex;
-        const complete = i < activeIndex;
-        return <div key={name}>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 4, color: active ? C.text : C.muted, marginBottom: 4 }}>
-            <span style={{ color: complete || active ? C.cyan : C.muted, fontWeight: 820, fontSize: 13 }}>0{i + 1}</span>
-            <span style={{ fontWeight: active ? 780 : 600, fontSize: 13 }}>{name}</span>
-          </div>
-          <div style={{ height: 4, borderRadius: 999, background: "rgba(105,130,155,.28)", overflow: "hidden" }}>
-            {(complete || active) && <div className={active && props.phase === "switching" ? "regear-progress-sweep" : undefined}
-              style={{ width: "100%", height: "100%", borderRadius: 999, background: C.cyan, boxShadow: `0 0 12px ${C.cyan}66` }} />}
-          </div>
-        </div>;
-      })}
+      <div style={{ fontSize: 13, fontWeight: 620 }}>eGPU &amp; display</div>
     </div>
 
     <div style={{
@@ -142,12 +126,14 @@ export function ConnectionProgressOverlay(props: ConnectionProgressOverlayProps)
           <div style={{ fontSize: 13, minWidth: 0, overflowWrap: "anywhere" }}>{row.label}</div>
           <div style={{ display: "flex", alignItems: "center", gap: 6, color: stateColor[row.state], fontWeight: 700, fontSize: 13, whiteSpace: "nowrap" }}>
             <StatusGlyph state={row.state} />
-            <span>{row.stateLabel ?? (row.state === "ready" ? "Ready" : row.state === "checking" ? "Checking" : row.state === "switching" ? "Switching" : row.state === "pending" ? "Next" : row.state === "blocked" ? "Blocked" : "Error")}</span>
+            <span>{row.stateLabel ?? (row.state === "ready" ? "Ready" : row.state === "checking" ? "Checking" : row.state === "switching" ? "Switching" : row.state === "pending" ? "Not verified" : row.state === "blocked" ? "Blocked" : "Error")}</span>
           </div>
         </div>)}
       </div>
 
       {props.detail && <div style={{ marginTop: 4, color: C.muted, fontSize: 13 }}>{props.detail}</div>}
+      {props.activationNotice && <div role="status" style={{marginTop: 6, color: C.amber, fontSize: 13}}>{props.activationNotice}</div>}
+      {props.delayNotice && <div role="status" style={{marginTop: 6, padding: "6px 8px", border: `1px solid ${C.amber}`, borderRadius: 8, color: C.amber, fontSize: 13}}>{props.delayNotice}</div>}
       {props.keepConnectedMessage && <div style={{ marginTop: 6, color: C.muted, fontSize: 13 }}>{props.keepConnectedMessage}</div>}
 
       <div style={{display:"flex", gap:8, marginTop:6}}>
