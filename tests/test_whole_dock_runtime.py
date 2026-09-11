@@ -60,6 +60,7 @@ class RuntimeTests(unittest.TestCase):
             '_pci_names': Mock(side_effect=lambda: set(self.names)),
             '_authorization': Mock(side_effect=lambda b: (self.authorized, True)),
             'revalidate_retained': Mock(return_value=True),
+            'usb_branch_is_hub_only': Mock(side_effect=lambda b, u: not u.devices),
         }
         patcher = patch.multiple(module, **patches)
         patcher.start()

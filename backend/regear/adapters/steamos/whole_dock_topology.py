@@ -28,6 +28,69 @@ class ReconnectPending(TopologyRefused):
     """Same retained attachment, but authorization/enumeration is not ready."""
 
 
+def usb_branch_is_hub_only(binding, reading) -> bool:
+    """Accept only a complete inventory of pure hubs, never product-name guesses.
+
+    Re-walk the controller so a missing child or interface cannot be treated as
+    an empty hub. This does not distinguish built-in from external empty hubs.
+    Storage and retained-topology checks remain the caller's responsibility.
+    """
+    if reading.complete is not True:
+        return False
+    if reading.present is False:
+        return not reading.devices
+    try:
+        controller = SYSFS_ROOT.joinpath('devices', *binding.usb_target.parts)
+        expected = {device.sysfs_id for device in reading.devices}
+        if len(expected) != len(reading.devices) or len(expected) > 128:
+            return False
+        initial_controller = _pin(controller)
+        seen = set()
+        evidence = []
+        def walk(node, depth):
+            if depth > 8 or node.is_symlink() or not node.is_dir():
+                return False
+            if _read(node / 'bDeviceClass').lower() != '09':
+                return False
+            identity = _pin(node)
+            if int(_read(node / 'bConfigurationValue'), 10) <= 0:
+                return False
+            children = _children(node)
+            evidence.append((identity, tuple(p.name for p in children)))
+            prefix = node.name[3:] + '-0' if node.name.startswith('usb') else node.name
+            interfaces = [p for p in children if ':' in p.name]
+            if any(not re.fullmatch(re.escape(prefix) + r':\d+\.\d+', p.name) for p in interfaces):
+                return False
+            if not interfaces or len(interfaces) != int(_read(node / 'bNumInterfaces'), 10):
+                return False
+            for interface in interfaces:
+                evidence.append(_pin(interface))
+                if (interface.is_symlink() or not interface.is_dir()
+                        or _read(interface / 'bInterfaceClass').lower() != '09'
+                        or (interface / 'driver').resolve(strict=True) != SYSFS_ROOT / 'bus/usb/drivers/hub'):
+                    return False
+            for child in children:
+                if re.fullmatch(r'\d+-\d+(?:\.\d+)*', child.name):
+                    if child.name in seen or len(seen) >= 128:
+                        return False
+                    seen.add(child.name)
+                    if not walk(child, depth + 1):
+                        return False
+            return True
+        roots = [p for p in _children(controller) if re.fullmatch(r'usb\d+', p.name)]
+        if not roots or not all(walk(root, 0) for root in roots) or seen != expected:
+            return False
+        first = tuple(evidence)
+        seen.clear()
+        evidence.clear()
+        roots_after = [p for p in _children(controller) if re.fullmatch(r'usb\d+', p.name)]
+        return (roots_after == roots and all(walk(root, 0) for root in roots_after)
+                and seen == expected and tuple(evidence) == first
+                and _pin(controller) == initial_controller)
+    except (OSError, ValueError, AttributeError):
+        return False
+
+
 @dataclass(frozen=True)
 class FunctionIdentity:
     role: str

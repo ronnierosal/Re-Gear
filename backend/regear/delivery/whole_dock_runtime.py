@@ -2,7 +2,7 @@
 
 The trusted orchestrator must retain mutation admission throughout execution.
 A binding must have been captured before GPU release. This first runtime only
-supports an empty USB peripheral branch, and never grants cable clearance.
+supports a verified hub-only USB branch, and never grants cable clearance.
 """
 import os
 from pathlib import Path
@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from threading import Lock, get_ident
 
 from ..adapters.steamos.dock_branch import DockBranchDiscovery
-from ..adapters.steamos.whole_dock_topology import revalidate_retained
+from ..adapters.steamos.whole_dock_topology import revalidate_retained, usb_branch_is_hub_only
 from ..adapters.steamos.whole_dock_writer import WholeDockSysfsWriter
 from ..application.whole_dock_teardown import WholeDockTeardown
 from ..application.live_disconnect import LiveDisconnectResult, LiveDisconnectStage
@@ -235,14 +235,16 @@ class WholeDockRuntime:
         revalidate_retained(binding, **arguments)
         if usb.present is not usb_present:
             raise ValueError('dock_teardown.usb_inventory_changed')
-        empty = usb.complete is True and not usb.devices
+        hub_only = usb_branch_is_hub_only(binding, usb)
+        if not hub_only:
+            raise ValueError('dock_teardown.usb_peripherals_or_unknown')
         return DockObservation(binding.binding, binding.generation,
             UsbBranchEvidence(binding.usb_bdf, usb_present, usb.complete,
                 tuple(storage.mounts), tuple(use.kind for use in storage.other_uses),
                 storage.complete),
             TunnelEvidence(binding.router_id, authorized, TunnelCapability.SUPPORTED,
                 WritePermission.WRITABLE if writable else WritePermission.DENIED, True),
-            present, True, empty and storage.complete is True,
+            present, True, hub_only and storage.complete is True,
             self._idle() is True and self._admission() is True)
 
     def claim(self, operation, observation):

@@ -1536,8 +1536,19 @@ class Plugin:
                         "software_down": getattr(result, "software_down", False),
                         "software_reconnected": getattr(result, "software_reconnected", False)}
                     payload["ok"] = payload["software_down"] or payload["software_reconnected"]
-                except Exception:
-                    payload = {"schema_version": 1, "code": "dock_teardown.trial_unresolved",
+                except Exception as error:
+                    # Only fixed categories cross the RPC boundary; never expose
+                    # arbitrary exception text, paths or attachment identifiers.
+                    reason = str(error)
+                    if reason not in {
+                        "dock_teardown.usb_peripherals_or_unknown",
+                        "dock_teardown.begin_preflight_refused",
+                        "dock_teardown.sleep_inhibition_required",
+                        "dock_teardown.approval_superseded",
+                        "dock_teardown.session_unknown",
+                    }:
+                        reason = "dock_teardown.trial_unresolved"
+                    payload = {"schema_version": 1, "code": reason,
                                "busy": False, "ok": False, "safe_to_unplug": False}
                 payload["request_id"] = trial_request_id
                 self._whole_dock_trial_status = payload
@@ -3204,7 +3215,7 @@ class Plugin:
 
     def _support_versions(self) -> dict[str, str]:
         return {
-            "regear": "0.3.84",
+            "regear": "0.3.85",
             "decky": str(getattr(decky, "DECKY_VERSION", "unknown")),
             "steamos": self._version_info.steamos,
             "kernel": self._version_info.kernel,

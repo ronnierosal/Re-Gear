@@ -11,7 +11,16 @@ export function dockControl(status: any, snapshot: any, now = Date.now()): { act
   }
   const fresh = status.code === "dock_teardown.no_trial";
   const restored = status.code === "dock_reconnect.software_reconnected" && status.software_reconnected === true && status.ok === true;
-  if (!fresh && !restored) return { action: null, label: "Needs attention", message: "The last attempt is unresolved. Keep the cable connected; do not repeat the operation." };
+  if (!fresh && !restored) {
+    const reasons: Record<string, string> = {
+      "dock_teardown.usb_peripherals_or_unknown": "USB accessories or incomplete hub information prevented disconnect.",
+      "dock_teardown.begin_preflight_refused": "The dock did not pass the readiness checks.",
+      "dock_teardown.sleep_inhibition_required": "Re-Gear could not prevent sleep during disconnect.",
+      "dock_teardown.approval_superseded": "The dock connection changed after confirmation.",
+      "dock_teardown.session_unknown": "Re-Gear could not identify the Gaming Mode session.",
+    };
+    return { action: null, label: "Needs attention", message: (reasons[status.code] ?? "The last attempt is unresolved.") + " Keep the cable connected; do not repeat the operation." };
+  }
   if (snapshot?.game_state !== "idle") return { action: null, label: "Safely disconnect", message: "Close your game and wait for an idle reading before disconnecting." };
   if (snapshot?.egpu_link?.state !== "up") return { action: null, label: "Safely disconnect", message: "Waiting for the eGPU to be detected." };
   if (typeof status.attachment_token !== "string" || !/^[a-f0-9]{64}:[a-f0-9]{64}$/.test(status.attachment_token)) return unavailable;

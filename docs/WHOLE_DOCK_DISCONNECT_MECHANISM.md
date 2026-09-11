@@ -138,3 +138,22 @@ readCurrentSnapshot callback from the existing connection monitor. Claude's
 unmerged PR276 uses a TileSource fourth argument. Those contracts require
 explicit reconciliation before combining branches; do not silently substitute
 one for the other. The button change does not integrate the broader PR276 menu.
+
+## 0.3.85 hub-only readiness correction
+
+The installed0.3.84 native attempt returned trial_unresolved. Subsequent read-only
+inspection found two pure USB hubs on the G1 branch. The prior empty-device rule
+rejects that topology; the generic error does not establish whether this was the
+first exception in the recorded attempt. No successful disconnect was observed.
+
+The new classifier accepts only complete, stable hub-only inventories, using
+device class, configured interface count, interface classes and hub driver
+bindings. It traverses descendants and repeats the observation; peripherals,
+composites and missing evidence refuse. Product names do not grant acceptance,
+and this does not distinguish internal hubs from external empty hubs. Existing
+storage, game, retained topology and mutation guards remain required.
+
+A read-only run of the new classifier on the connected Ally/G1 returned true
+with two devices and a complete inventory. This is readiness evidence only.
+Selected fixed failure categories now show a specific explanation in Quick
+Access. Unknown errors remain unresolved; no retry or cable clearance is added.

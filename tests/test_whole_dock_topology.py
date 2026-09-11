@@ -315,5 +315,54 @@ class TopologyTests(unittest.TestCase):
         self.assertNotIsInstance(failure.exception, m.ReconnectPending)
 
 
-if __name__ == "__main__":
-    unittest.main()
+
+
+    def hub(self, parent, name):
+        node = parent / name
+        node.mkdir()
+        for key, value in [('bDeviceClass','09'),('bConfigurationValue','1'),('bNumInterfaces','1')]:
+            (node / key).write_text(value)
+        prefix = name[3:] + '-0' if name.startswith('usb') else name
+        interface = node / (prefix + ':1.0')
+        interface.mkdir()
+        (interface / 'bInterfaceClass').write_text('09')
+        driver = self.root / 'bus/usb/drivers/hub'
+        driver.mkdir(parents=True, exist_ok=True)
+        (interface / 'driver').symlink_to(driver)
+        return node
+
+    def test_hub_only_branch_strict_descriptors(self):
+        from regear.adapters.steamos.dock_branch import DockUsbReading, DockUsbDevice
+        binding = m.resolve_whole_dock(self.gpu.name)
+        root = self.hub(self.usb, 'usb1')
+        hub = self.hub(root, '1-1')
+        reading = DockUsbReading(self.usb.name, True, True,
+            (DockUsbDevice('1-1', 'Untrusted name', '', ()),))
+        self.assertTrue(m.usb_branch_is_hub_only(binding, reading))
+        for field, value in [('bDeviceClass','00'),('bConfigurationValue','0'),('bNumInterfaces','2'),('bNumInterfaces','bad')]:
+            path = hub / field
+            original = path.read_text()
+            path.write_text(value)
+            self.assertFalse(m.usb_branch_is_hub_only(binding, reading), field)
+            path.write_text(original)
+        interface = hub / '1-1:1.0'
+        for value in ('08','03','ff',''):
+            (interface / 'bInterfaceClass').write_text(value)
+            self.assertFalse(m.usb_branch_is_hub_only(binding, reading))
+        (interface / 'bInterfaceClass').write_text('09')
+        (interface / 'driver').unlink()
+        self.assertFalse(m.usb_branch_is_hub_only(binding, reading))
+
+    def test_hub_children_and_incomplete_inventory_refuse(self):
+        from regear.adapters.steamos.dock_branch import DockUsbReading, DockUsbDevice
+        binding = m.resolve_whole_dock(self.gpu.name)
+        root = self.hub(self.usb, 'usb1')
+        hub = self.hub(root, '1-1')
+        child = self.hub(hub, '1-1.1')
+        devices = tuple(DockUsbDevice(n, '', '', ()) for n in ('1-1','1-1.1'))
+        reading = DockUsbReading(self.usb.name, True, True, devices)
+        self.assertTrue(m.usb_branch_is_hub_only(binding, reading))
+        self.assertFalse(m.usb_branch_is_hub_only(binding, replace(reading, devices=devices[:1])))
+        self.assertFalse(m.usb_branch_is_hub_only(binding, replace(reading, complete=False)))
+        (child / 'bDeviceClass').write_text('08')
+        self.assertFalse(m.usb_branch_is_hub_only(binding, reading))
