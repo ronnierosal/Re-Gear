@@ -126,6 +126,8 @@ and correct the owning repository document.
 
 - Preserve approved UI when adding features or wiring data. Read
   [UI design contract](docs/UI_DESIGN_CONTRACT.md) before presentation changes;
+  use the [approved reference and acceptance checklist](docs/design/command-center-approved.md)
+  for Command Center composition, controls and explicit supersessions.
   record the source baseline and bounded visual delta, compare actual source
   before/after at the same handheld dimensions, and retain navigation checks.
   Mockup approval is limited to the requested feature/placement; it does not

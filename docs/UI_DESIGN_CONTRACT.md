@@ -7,6 +7,12 @@ and accepted transfers still apply. Backend wiring is not permission to redesign
 
 ## Baseline and allowed change
 
+The user-supplied [approved Command Center reference](design/command-center-approved.md)
+is the current visual target. Its explicit composition supersedes earlier concepts
+where they conflict. The source baseline below is historical implementation
+evidence, not permission to ignore that target. Compare reference, baseline and
+proposed source; document technical deviations rather than silently redesigning.
+
 Before editing, record in the existing task or PR:
 
 - The exact source baseline and owning design document.
@@ -20,14 +26,17 @@ button does not approve changing typography, colors, icons, header, tabs, panel
 dimensions, grid density, footer or unrelated screens. Keep existing components
 and tokens where possible. Do not replace the stylesheet as incidental polish.
 
-The compact Command Center correction in PR #274, source `93902f4` and merge
+The earlier compact Command Center correction in PR #274, source `93902f4` and merge
 `f95b94d`, anchors the preserved central layout: 53vw by 82vh, compact tabs and
 footer, dark surfaces with cyan focus, icon plus label above value and secondary
 text. Content-width thresholds are 400/300/280px for four/three/two columns,
 with one below 280px. Safe Disconnect spans two columns in four-column mode.
 These values identify the correction, not proof of native readability or a ban
 on explicitly requested future changes. New side controls must preserve the
-central layout unless the user requests otherwise.
+central layout unless the user requests otherwise. The current approved reference
+specifically places brightness/volume inside the main panel and a detached action
+panel near the right screen edge. Do not pin historical pixel/CSS values when
+they conflict with this explicitly approved composition and readable scaling.
 
 For intentional changes to these properties, record the user instruction and
 update the owning contract and affected checks together. Existing authorization
