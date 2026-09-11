@@ -42,3 +42,19 @@ No supported universal whole-USB-C eject operation has been established. The cur
 Eight targeted regression tests cover ordering, storage/GPU/idle refusal, attachment changes, late GPU return, unreadable final state, write timeout, journal failure and concurrent/reentrant calls. Architecture and diff checks pass.
 
 This is an executor core with a test port, not a production Linux writer or installed feature. A real port must implement atomic persistent claim/inhibition, full fresh topology and privileged storage observation, immediately revalidated exact sysfs operations and interrupted-operation recovery. Those requirements cannot be replaced by the in-memory test port. Production wiring and supervised hardware validation remain open under the existing whole-dock executor workstream.
+
+## Parallel implementation follow-up
+
+The post-intent USB preflight now repeats after durable I/O. Consent includes attachment binding and generation so a replacement at reused addresses cannot inherit the old approval. Ten transaction tests pass locally.
+
+The Linux writer is confined to fixed controller `remove=1` and router `authorized=0` operations, using pinned directory identities and no-follow descriptor traversal. It is a primitive; the caller must still establish truthful topology and exclusive admission. The durable claim store uses exclusive creation, private root-owned descriptor traversal and fsync, retains claims on failure, and exposes no automatic clearing operation.
+
+A fresh read-only topology inventory shows the PCI dock branch and Thunderbolt router beneath different host PCI paths on the Ally. A common-path guess cannot bind them. The current product-name tunnel lookup must remain diagnostic-only until a verified association is supplied. Existing storage observations do not include all raw block-device users; initial activation must either reject all attached storage or add complete raw-use checks.
+
+Production runtime admission must be shared with automatic docking, recovery and presentation. A separate claim file alone does not stop those existing paths. These integration gates remain unresolved; no new installable version or physical disconnect claim is made.
+
+### Kernel association found
+
+Read-only inspection found a supplier/consumer device link connecting the dock's upstream PCI root port to the USB4 NHI. Linux v6.16 `drivers/thunderbolt/acpi.c`, `tb_acpi_add_links`, creates such links from the firmware `usb4-host-interface` reference. This provides a host association to investigate in the resolver, rather than treating unrelated sysfs path trees as an obstacle or guessing by product name. It still requires unambiguous external-router/branch association and stable attachment evidence before any write.
+
+Source inspection only, no copied kernel code: https://github.com/torvalds/linux/blob/v6.16/drivers/thunderbolt/acpi.c . This source is a mechanism reference; the exact Valve kernel implementation remains a separate verification item.

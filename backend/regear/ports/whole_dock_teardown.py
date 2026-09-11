@@ -6,7 +6,14 @@ the exclusive journal/automatic-docking inhibit after any unresolved operation.
 from dataclasses import dataclass
 from typing import Protocol
 
-from ..domain.dock_teardown import TunnelEvidence, UsbBranchEvidence
+from ..domain.dock_teardown import TeardownApproval, TunnelEvidence, UsbBranchEvidence
+
+
+@dataclass(frozen=True)
+class WholeDockApproval:
+    binding: str
+    generation: str
+    teardown: TeardownApproval
 
 
 @dataclass(frozen=True)
@@ -43,4 +50,3 @@ class WholeDockPort(Protocol):
 
     def deauthorize(self, observation: DockObservation) -> None:
         """Deauthorize only the bound router after immediate target revalidation."""
-

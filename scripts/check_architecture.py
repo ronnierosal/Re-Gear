@@ -29,6 +29,7 @@ FORBIDDEN_IMPORT_ROOTS = {
 #: device_removal.py in any other adapter directory must not inherit the
 #: exemption.
 DEVICE_WRITER = Path("backend/regear/adapters/steamos/device_removal.py")
+WHOLE_DOCK_WRITER = Path("backend/regear/adapters/steamos/whole_dock_writer.py")
 
 #: The exact receiver expressions the device writer may call write_text on, and
 #: how many such calls may exist. Pinning the expressions rather than string
@@ -45,6 +46,7 @@ MAX_DEVICE_WRITES = 2
 DEVICE_WRITER_ALLOWED_CALLS = {"write_text"}
 
 FORBIDDEN_WRITE_CALLS = {
+    "write",
     "chmod",
     "mkdir",
     "rename",
@@ -56,6 +58,33 @@ FORBIDDEN_WRITE_CALLS = {
     "write_bytes",
     "write_text",
 }
+
+
+def whole_dock_writer_failures() -> list[str]:
+    """Keep the new descriptor writer limited to its two fixed operations."""
+    path = REPOSITORY_ROOT / WHOLE_DOCK_WRITER
+    if not path.exists():
+        return []
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    failures = []
+    writes = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+            if node.func.attr == "write":
+                writes.append(node)
+                if (ast.unparse(node.func) != "os.write" or len(node.args) != 2
+                        or ast.unparse(node.args[0]) != "attribute"
+                        or ast.unparse(node.args[1]) != "b'1' if usb else b'0'"):
+                    failures.append("whole-dock writer has an unapproved write")
+            if ast.unparse(node.func) == "os.open" and len(node.args) >= 2:
+                if "O_WRONLY" in ast.unparse(node.args[1]):
+                    if (ast.unparse(node.args[0]) != "'remove' if usb else 'authorized'"
+                            or not any(k.arg == "dir_fd" and ast.unparse(k.value) == "directory"
+                                       for k in node.keywords)):
+                        failures.append("whole-dock writer has an unapproved writable target")
+    if len(writes) != 1:
+        failures.append("whole-dock writer must have exactly one bounded write site")
+    return failures
 
 
 def imported_roots(node: ast.AST) -> tuple[str, ...]:
@@ -123,6 +152,10 @@ def main() -> int:
                     path.relative_to(REPOSITORY_ROOT) == DEVICE_WRITER
                     and node.func.attr in DEVICE_WRITER_ALLOWED_CALLS
                 )
+                permitted = permitted or (
+                    path.relative_to(REPOSITORY_ROOT) == WHOLE_DOCK_WRITER
+                    and ast.unparse(node.func) == "os.write"
+                )
                 if node.func.attr in FORBIDDEN_WRITE_CALLS and not permitted:
                     failures.append(
                         f"{path.relative_to(REPOSITORY_ROOT)}:{node.lineno}: "
@@ -140,6 +173,7 @@ def main() -> int:
     if "shell=True" in command_source.replace(" ", ""):
         failures.append("backend/regear/adapters/steamos/commands.py: shell execution is forbidden")
     failures.extend(device_writer_failures())
+    failures.extend(whole_dock_writer_failures())
     if failures:
         print("Architecture check failed:")
         for failure in failures:

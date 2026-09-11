@@ -5,7 +5,7 @@ from threading import Lock
 from ..domain.dock_teardown import (
     DockTeardownState, TeardownApproval, decide_dock_teardown,
 )
-from ..ports.whole_dock_teardown import DockObservation, WholeDockPort
+from ..ports.whole_dock_teardown import DockObservation, WholeDockApproval, WholeDockPort
 
 
 @dataclass(frozen=True)
@@ -39,7 +39,7 @@ class WholeDockTeardown:
             gpu_scan_complete=now.gpu_scan_complete, approval=approval,
         )
 
-    def execute(self, operation: str, approval: TeardownApproval) -> WholeDockResult:
+    def execute(self, operation: str, approval: WholeDockApproval) -> WholeDockResult:
         if not isinstance(operation, str) or not operation.strip():
             return WholeDockResult("dock_teardown.operation_required")
         if not self._lock.acquire(blocking=False):
@@ -53,10 +53,15 @@ class WholeDockTeardown:
         finally:
             self._lock.release()
 
-    def _execute(self, operation: str, approval: TeardownApproval) -> WholeDockResult:
+    def _execute(self, operation: str, consent: WholeDockApproval) -> WholeDockResult:
         first = self._port.observe()
         if not self._same(first, first):
             return WholeDockResult("dock_teardown.identity_or_idle_unknown")
+        if (not isinstance(consent, WholeDockApproval)
+                or consent.binding != first.binding
+                or consent.generation != first.generation):
+            return WholeDockResult("dock_teardown.approval_superseded")
+        approval = consent.teardown
         decision = self._decision(first, approval)
         if not decision.permitted:
             # Already-down observations alone carry no proof of this transaction.
@@ -70,6 +75,10 @@ class WholeDockTeardown:
             return WholeDockResult("dock_teardown.preflight_changed")
         if now.usb.present:
             self._port.record(operation, "usb_remove_intent")
+            now = self._port.observe()
+            if (not self._same(first, now) or not now.usb.present
+                    or not self._decision(now, approval).permitted):
+                return WholeDockResult("dock_teardown.usb_preflight_changed")
             self._port.remove_usb(now)
 
         now = self._port.observe()

@@ -6,7 +6,7 @@ from regear.domain.dock_teardown import (
     TeardownApproval, TunnelCapability, TunnelEvidence, UsbBranchEvidence,
     WritePermission,
 )
-from regear.ports.whole_dock_teardown import DockObservation
+from regear.ports.whole_dock_teardown import DockObservation, WholeDockApproval
 
 
 def observation():
@@ -60,7 +60,8 @@ class WholeDockTests(unittest.TestCase):
     def setUp(self):
         self.port = Port()
         self.service = WholeDockTeardown(self.port)
-        self.approval = TeardownApproval("usb-controller", "router")
+        self.approval = WholeDockApproval("attachment", "generation",
+            TeardownApproval("usb-controller", "router"))
 
     def run_service(self):
         return self.service.execute("operation", self.approval)
@@ -91,14 +92,19 @@ class WholeDockTests(unittest.TestCase):
         self.assertEqual(self.run_service().code, "dock_teardown.preflight_changed")
         self.assertNotIn("remove_usb", self.port.events)
 
+    def test_replacement_at_same_addresses_rejects_old_approval(self):
+        self.port.current = replace(self.port.current, generation="new-attachment")
+        self.assertEqual(self.run_service().code, "dock_teardown.approval_superseded")
+        self.assertEqual(self.port.events, [])
+
     def test_new_gpu_before_tunnel_blocks_deauthorization(self):
-        self.port.change = lambda v, n: replace(v, gpu_functions_present=("gpu",)) if n >= 4 else v
+        self.port.change = lambda v, n: replace(v, gpu_functions_present=("gpu",)) if n >= 5 else v
         self.assertFalse(self.run_service().software_down)
         self.assertIn("remove_usb", self.port.events)
         self.assertNotIn("deauthorize", self.port.events)
 
     def test_unknown_final_tunnel_is_not_down(self):
-        self.port.change = lambda v, n: replace(v, tunnel=replace(v.tunnel, authorized=None)) if n >= 5 else v
+        self.port.change = lambda v, n: replace(v, tunnel=replace(v.tunnel, authorized=None)) if n >= 6 else v
         self.assertEqual(self.run_service().code, "dock_teardown.final_state_unverified")
 
     def test_timeout_never_deauthorizes_or_retries(self):
@@ -109,6 +115,17 @@ class WholeDockTests(unittest.TestCase):
                          "dock_teardown.transaction_owned")
         self.assertEqual(self.port.events.count("remove_usb"), 1)
         self.assertNotIn("deauthorize", self.port.events)
+
+    def test_storage_appearing_during_usb_intent_blocks_write(self):
+        original = self.port.record
+        def record(operation, stage):
+            original(operation, stage)
+            if stage == "usb_remove_intent":
+                self.port.current = replace(self.port.current, usb=replace(
+                    self.port.current.usb, mounted_storage=("new-mount",)))
+        self.port.record = record
+        self.assertEqual(self.run_service().code, "dock_teardown.usb_preflight_changed")
+        self.assertNotIn("remove_usb", self.port.events)
 
     def test_journal_failure_stops_before_corresponding_mutation(self):
         for stage, forbidden in [("usb_remove_intent", "remove_usb"),
