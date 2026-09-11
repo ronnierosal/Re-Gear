@@ -115,9 +115,20 @@ opaque attachment token from preview; the backend rejects a changed binding.
 A persisted request ID keeps interrupted replies from enabling repeat actions
 on a component remount. No physical unplug clearance is displayed.
 
-The expanded shell accepts a native-only disconnectControl slot. The native
-adapter mount is pending its current owner's narrow file release; the component
-is not yet delivered by a new installable package.0.3.83 is immutable and has no
-new Quick Access button. Browser comparison at828x466 and1280x720 used actual
-component source with mocked Decky/RPC; confirmation centered in both viewports.
-Native controller and device validation remain pending.
+The expanded shell accepts a native-only disconnectControl slot, mounted by
+the native adapter. Its snapshot reader reuses the existing plugin-lifetime
+connection monitor and introduces no extra snapshot polling. Missing, future
+or older-than-ten-second readings disable actions. Trial-status polling is
+read-only; only confirmed clicks dispatch an operation.
+
+In0.3.84, open Command Center > Quick Access > Safe Disconnect > Safely disconnect.
+Read the centered confirmation and keep the physical cable attached. After a
+verified software-down result, the same detail offers Reconnect eGPU.
+The0.3.83 archive is unchanged and does not contain this button.
+
+Browser comparison at828x466 and1280x720 used actual component source with
+mocked Decky/RPC. Confirmation centered in both viewports; the shell geometry
+and unrelated controls are unchanged. Behavioral fixtures cover cancel,
+duplicate confirmation, attachment changes, interrupted replies/remount,
+storage failure, unmount and stale response ordering. Native controller and
+disconnect/reconnect hardware validation remain pending.

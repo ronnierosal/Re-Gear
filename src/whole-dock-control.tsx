@@ -86,9 +86,9 @@ export function WholeDockControl({ readCurrentSnapshot }: { readCurrentSnapshot:
       <style>{`.rg-whole-dock-confirm{z-index:2147483647!important;position:fixed!important;left:50%!important;top:50%!important;right:auto!important;bottom:auto!important;margin:0!important;transform:translate(-50%,-50%)!important}`}</style>
     </EgpuConfirmModal>, undefined, { fnOnClose: cancel, bNeverPopOut: true });
   };
-  return <div>
-    <p role="status">{notice || (uncertain.current ? "Waiting to verify the previous request. Keep the cable connected." : view.message)}</p>
-    <DialogButton style={{width:"100%",minWidth:0,padding:"10px",border:"1px solid #39d8ff",borderRadius:8,background:"#112434",color:"#f4f7fb"}} disabled={!view.action || busy || uncertain.current} onClick={confirm}>{busy ? "Working…" : view.label}</DialogButton>
-    <p>Trial: keep the cable connected. No physical unplug clearance.</p>
+  return <div style={{fontSize:13,lineHeight:"18px"}}>
+    <p style={{margin:"0 0 8px"}} role="status">{notice || (uncertain.current ? "Waiting to verify the previous request. Keep the cable connected." : view.message)}</p>
+    <DialogButton style={{width:"100%",minWidth:0,padding:"8px",border:"1px solid #39d8ff",borderRadius:8,background:"#112434",color:"#f4f7fb"}} disabled={!view.action || busy || uncertain.current} onClick={confirm}>{busy ? "Working…" : view.label}</DialogButton>
+    <p style={{margin:"8px 0 0"}}>Keep the cable connected. Physical unplug is not yet verified.</p>
   </div>;
 }

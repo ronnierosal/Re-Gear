@@ -4,10 +4,11 @@ import type { ControllerInputSource } from "../../controller-safe-disconnect";
 import { loadMenuBinding, saveMenuBinding, menuBindingOptions, startMenuShortcut } from "../../menu-shortcut";
 import type { MenuBinding } from "../../menu-shortcut";
 import { ExpandedCommandCenter } from "./shell";
+import { WholeDockControl } from "../../whole-dock-control";
 import { ShortcutSettings } from "./shortcut-settings";
 
-/** Native test adapter; only opens a demo and saves its launcher preference. */
-export function createExpandedMenu(input: ControllerInputSource | undefined, host: Window, canOpen: () => boolean = () => true) {
+/** Native menu adapter: preview tiles plus the explicitly guarded dock control. */
+export function createExpandedMenu(input: ControllerInputSource | undefined, host: Window, canOpen: () => boolean = () => true, readCurrentSnapshot: () => unknown = () => null) {
   const storage = (() => { try { return host.localStorage; } catch { return undefined; } })();
   let binding = loadMenuBinding(storage);
   let modal: ReturnType<typeof showModal> | null = null;
@@ -21,7 +22,7 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
   };
   function View({ token }: { token: number }) {
     useEffect(() => () => { if (generation === token) { modal = null; generation++; } }, [token]);
-    return <ExpandedCommandCenter onClose={close} native primitives={{ Button: Button, Focusable }} settings={<Settings/>}/>;
+    return <ExpandedCommandCenter onClose={close} native disconnectControl={<WholeDockControl readCurrentSnapshot={readCurrentSnapshot}/>} primitives={{ Button: Button, Focusable }} settings={<Settings/>}/>;
   }
   function Settings() {
     const [selected, setSelected] = useState(binding);
