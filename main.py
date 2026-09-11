@@ -2821,7 +2821,7 @@ class Plugin:
 
     def _support_versions(self) -> dict[str, str]:
         return {
-            "regear": "0.3.76",
+            "regear": "0.3.78",
             "decky": str(getattr(decky, "DECKY_VERSION", "unknown")),
             "steamos": self._version_info.steamos,
             "kernel": self._version_info.kernel,
@@ -3047,10 +3047,16 @@ class Plugin:
                 self._saved_tv_decision = None
                 self._saved_tv_attempts = 0
                 return
-        if connection.stage is not ConnectionReadinessStage.WAITING_FOR_HDMI:
-            # Only the stage that means "the eGPU is up and the TV is not there"
+        if connection.stage not in {
+            ConnectionReadinessStage.WAITING_FOR_HDMI,
+            ConnectionReadinessStage.READY_DISPLAY_PENDING,
+        }:
+            # Only a stage that means "the eGPU is up and the TV is not there"
             # is a real look for a saved TV. Counting any other stage would
             # spend the budget on readings taken before it could have appeared.
+            # READY_DISPLAY_PENDING is the same fact with the eGPU side already
+            # settled, and it is the stage that case now reports, so omitting it
+            # silently stopped the search running in its primary case.
             self._saved_tv_decision = None
             return
         decision = await asyncio.to_thread(

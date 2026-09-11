@@ -259,7 +259,7 @@ class MainSavedTvCallSiteTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(status["attempts"], DEFAULT_MAX_ATTEMPTS)
         self.assertEqual(status["max_attempts"], DEFAULT_MAX_ATTEMPTS)
 
-    async def test_only_the_stage_that_is_waiting_for_hdmi_spends_the_budget(self):
+    async def test_only_a_tv_absent_stage_spends_the_budget(self):
         plugin, _store = self.plugin(SAVED)
         observation = tv_unplugged(current("connected-internal.json"))
         for stage in (
@@ -273,6 +273,23 @@ class MainSavedTvCallSiteTests(unittest.IsolatedAsyncioTestCase):
             # No search is running in these stages, so nothing claims one is.
             self.assertFalse(plugin._saved_tv_status()["searching"])
         self.assertEqual(plugin._saved_tv_status()["attempts"], 0)
+
+    async def test_the_settled_tv_absent_stage_also_spends_the_budget(self):
+        """READY_DISPLAY_PENDING is the same fact as WAITING_FOR_HDMI.
+
+        It reports an eGPU that is up with no display target, which is exactly
+        when a saved television could appear. Gating the search on the older
+        stage alone stopped it running in its primary case once that case
+        started reporting the newer stage.
+        """
+        plugin, _store = self.plugin(SAVED)
+        observation = tv_unplugged(current("connected-internal.json"))
+        await plugin._update_saved_tv(
+            observation, readiness(ConnectionReadinessStage.READY_DISPLAY_PENDING)
+        )
+        status = plugin._saved_tv_status()
+        self.assertTrue(status["searching"])
+        self.assertEqual(status["attempts"], 1)
 
     async def test_an_unreadable_record_is_cannot_tell_never_no_saved_tv(self):
         plugin, store = self.plugin(SAVED)

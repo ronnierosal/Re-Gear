@@ -284,9 +284,6 @@ class ConnectionReadinessTests(unittest.TestCase):
         self.assertEqual(result.code, "connection.game_state_unknown")
 
 
-if __name__ == "__main__":
-    unittest.main()
-
 
 class DisplayPendingTests(unittest.TestCase):
     """A television that is merely switched off must not end the eGPU lifecycle.
@@ -385,3 +382,128 @@ class DisplayPendingTests(unittest.TestCase):
         for index in range(6):
             status = self.lifecycle.update(sample(index, audio_ready=False))
         self.assertEqual(status.stage, ConnectionReadinessStage.WAITING_FOR_AUDIO)
+
+
+class DeadlineIsAboutTheEgpuTests(unittest.TestCase):
+    """The readiness window answers one question: did the eGPU arrive?
+
+    Expiring it is terminal. The deadline branch returns before the latch is
+    evaluated, and its late-enumeration escape requires an unbound identity, so
+    once the window expires unlatched every later sample reports ``TIMED_OUT``
+    however the world changes afterwards. Any fact allowed into the latch can
+    therefore end an eGPU lifecycle permanently. AGENTS.md requires physical
+    connection, display target and Gamescope state to stay independent.
+
+    The gap these cover is real: nothing caught removing ``session_ready`` from
+    the latch when it was introduced, which is how it shipped.
+    """
+
+    def setUp(self) -> None:
+        self.clock = Clock()
+        self.lifecycle = ConnectionReadinessLifecycle(self.clock)
+
+    def settle(self, **changes) -> None:
+        for index in range(6):
+            self.lifecycle.update(sample(index, **changes))
+
+    def test_an_unprepared_session_does_not_expire_the_egpu_window(self):
+        self.settle(session_ready=False)
+        self.clock.now = WINDOW_TIMEOUT_SECONDS * 3
+        status = self.lifecycle.update(sample(50, session_ready=False))
+        self.assertNotEqual(status.stage, ConnectionReadinessStage.TIMED_OUT)
+
+    def test_past_the_deadline_it_names_the_integration_rather_than_the_egpu(self):
+        self.settle(session_ready=False)
+        self.clock.now = WINDOW_TIMEOUT_SECONDS + 1
+        status = self.lifecycle.update(sample(51, session_ready=False))
+        self.assertEqual(status.stage, ConnectionReadinessStage.ACTION_REQUIRED)
+        self.assertEqual(status.code, "connection.session_integration_unprepared")
+
+    def test_before_the_deadline_it_still_simply_waits(self):
+        self.settle(session_ready=False)
+        status = self.lifecycle.update(sample(52, session_ready=False))
+        self.assertEqual(status.stage, ConnectionReadinessStage.WAITING_FOR_SESSION)
+        self.assertEqual(status.code, "connection.waiting_for_session")
+
+    def test_preparing_the_session_late_restores_readiness(self):
+        """The property a player actually cares about, and the one that failed.
+
+        Before this change, running the approved preparation after the deadline
+        left readiness reporting TIMED_OUT forever, so automatic docking could
+        only be recovered by physically re-plugging the eGPU.
+        """
+        self.settle(session_ready=False)
+        self.clock.now = WINDOW_TIMEOUT_SECONDS * 2
+        self.lifecycle.update(sample(60, session_ready=False))
+        for index in range(61, 66):
+            status = self.lifecycle.update(sample(index))
+        self.assertEqual(status.stage, ConnectionReadinessStage.READY_IDLE)
+
+    def test_a_television_switched_on_late_also_recovers(self):
+        self.settle(hdmi_ready=False, audio_ready=False)
+        self.clock.now = WINDOW_TIMEOUT_SECONDS * 2
+        self.lifecycle.update(sample(70, hdmi_ready=False, audio_ready=False))
+        for index in range(71, 76):
+            status = self.lifecycle.update(sample(index))
+        self.assertEqual(status.stage, ConnectionReadinessStage.READY_IDLE)
+
+    def test_a_genuinely_absent_egpu_still_times_out(self):
+        """Relaxing the latch must not stop the window doing its actual job."""
+        self.lifecycle.update(sample(0, g1_identity="", pci_complete=False,
+                                     driver_ready=False, link_up=False))
+        self.clock.now = WINDOW_TIMEOUT_SECONDS + 1
+        status = self.lifecycle.update(
+            sample(1, g1_identity="", pci_complete=False,
+                   driver_ready=False, link_up=False)
+        )
+        self.assertEqual(status.stage, ConnectionReadinessStage.TIMED_OUT)
+
+    def test_no_sample_in_an_unprepared_window_ever_authorizes_a_transition(self):
+        """Non-widening. READY_IDLE is the only stage that permits a switch."""
+        for index in range(60):
+            self.clock.now = index * 5.0
+            status = self.lifecycle.update(sample(index, session_ready=False))
+            self.assertNotEqual(status.stage, ConnectionReadinessStage.READY_IDLE)
+
+
+if __name__ == "__main__":
+    unittest.main()
+
+
+class MixedSessionReadinessTests(unittest.TestCase):
+    def test_unprepared_session_is_actionable_with_missing_peripherals(self):
+        for hdmi, audio in ((False, False), (False, True), (True, False)):
+            with self.subTest(hdmi=hdmi, audio=audio):
+                clock = Clock()
+                lifecycle = ConnectionReadinessLifecycle(clock)
+                changes = dict(session_ready=False, hdmi_ready=hdmi, audio_ready=audio)
+                for index in range(4):
+                    lifecycle.update(sample(index, **changes))
+                clock.now = WINDOW_TIMEOUT_SECONDS
+                status = lifecycle.update(sample(4, **changes))
+                self.assertEqual(status.stage, ConnectionReadinessStage.ACTION_REQUIRED)
+                self.assertEqual(status.code, "connection.session_integration_unprepared")
+                # Repairing setup alone never authorizes missing peripherals.
+                status = lifecycle.update(sample(5, hdmi_ready=hdmi, audio_ready=audio))
+                self.assertNotEqual(status.stage, ConnectionReadinessStage.READY_IDLE)
+                for index in range(6, 10):
+                    status = lifecycle.update(sample(index))
+                self.assertEqual(status.stage, ConnectionReadinessStage.READY_IDLE)
+
+    def test_fresh_gpu_failures_take_priority_over_session_guidance(self):
+        for changes, expected in (
+            ({"driver_ready": False}, ConnectionReadinessStage.WAITING_FOR_DRIVER),
+            ({"link_up": False}, ConnectionReadinessStage.WAITING_FOR_LINK),
+            ({"g1_identity": "", "pci_complete": False}, ConnectionReadinessStage.WAITING_FOR_PCI),
+            ({"transport_present": False}, ConnectionReadinessStage.ACTION_REQUIRED),
+        ):
+            with self.subTest(changes=changes):
+                clock = Clock()
+                lifecycle = ConnectionReadinessLifecycle(clock)
+                for index in range(4):
+                    lifecycle.update(sample(index, session_ready=False))
+                clock.now = WINDOW_TIMEOUT_SECONDS
+                status = lifecycle.update(sample(4, session_ready=False,
+                    hdmi_ready=False, audio_ready=False, **changes))
+                self.assertEqual(status.stage, expected)
+                self.assertNotEqual(status.code, "connection.session_integration_unprepared")

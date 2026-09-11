@@ -34,7 +34,10 @@ export function connectionLiveStatus(payload: SnapshotPayload | null, automatic:
     ? age >= 300000 ? "Connection hasn’t completed—troubleshooting needed"
       : age >= 120000 ? "Taking longer than expected—still checking" : undefined
     : undefined;
-  const detail = blocked ? waiting[c?.stage ?? ""]
+  const setupRequired = fresh && c?.stage === "action_required"
+    && c.code === "connection.session_integration_unprepared";
+  const detail = setupRequired ? "Display setup required — open Re-Gear Diagnostics"
+    : blocked ? waiting[c?.stage ?? ""]
     : payload?.snapshot.game_state === "running" ? "Close the game to continue"
     : journal && journal !== "journal.idle" ? "Previous result needs acknowledgement"
     : delayMessage ?? (c?.stage === "timed_out" ? "Taking longer than expected—still checking" : waiting[c?.stage ?? ""]);

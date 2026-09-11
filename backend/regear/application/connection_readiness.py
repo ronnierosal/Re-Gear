@@ -202,16 +202,16 @@ class ConnectionReadinessLifecycle:
         # finish a game or acknowledge a result. Every later sample still gates
         # action on fresh topology, peripherals, session, and idle game state.
         #
-        # It also excludes waiting for a display target. This window answers
-        # whether the eGPU arrived, and it did once topology is stable and the
-        # session is ready. Requiring HDMI here meant a television that was
-        # merely switched off expired the window, turned the stage into
-        # ``TIMED_OUT``, and stopped the automatic transition from ever being
-        # offered -- a display fact silently ending an eGPU lifecycle.
-        if (
-            self._topology_samples >= TOPOLOGY_STABILITY_SAMPLES
-            and observation.session_ready
-        ):
+        # It also excludes every fact that is not about the eGPU: the display
+        # target, its audio, and the Gamescope integration. Requiring any of
+        # them here let an unrelated fact expire an eGPU window *terminally*.
+        # The deadline branch above returns before this latch is ever reached,
+        # and its late-enumeration escape requires an unbound identity, so once
+        # the window expires unlatched every later sample reports ``TIMED_OUT``
+        # no matter what is subsequently repaired. That is how a switched-off
+        # television, and then an unprepared drop-in, each ended an eGPU
+        # lifecycle that a physical re-plug was the only way out of.
+        if self._topology_samples >= TOPOLOGY_STABILITY_SAMPLES:
             self._readiness_established = True
 
         if not observation.driver_ready:
@@ -221,6 +221,17 @@ class ConnectionReadinessLifecycle:
         elif not observation.link_up:
             self._status = self._make_status(
                 ConnectionReadinessStage.WAITING_FOR_LINK, "connection.waiting_for_link", now
+            )
+        elif (
+            not observation.session_ready
+            and self._topology_samples >= TOPOLOGY_STABILITY_SAMPLES
+            and age >= WINDOW_TIMEOUT_SECONDS
+        ):
+            # A missing TV or audio endpoint must not hide setup that requires
+            # player action. Fresh transport/driver/link checks retain priority.
+            self._status = self._make_status(
+                ConnectionReadinessStage.ACTION_REQUIRED,
+                "connection.session_integration_unprepared", now,
             )
         elif (
             not observation.hdmi_ready
@@ -251,8 +262,21 @@ class ConnectionReadinessLifecycle:
                 ConnectionReadinessStage.WAITING_FOR_AUDIO, "connection.waiting_for_audio", now
             )
         elif not observation.session_ready:
+            # Relaxing the latch must not trade a false alarm for silence. An
+            # unprepared Gamescope integration never becomes ready by waiting,
+            # unlike a television someone can switch on, so past the same
+            # deadline this escalates and names the integration instead of
+            # claiming the eGPU never arrived. It authorizes nothing: only
+            # ``READY_IDLE`` does, and that still needs both quorums.
+            expired = age >= WINDOW_TIMEOUT_SECONDS
             self._status = self._make_status(
-                ConnectionReadinessStage.WAITING_FOR_SESSION, "connection.waiting_for_session", now
+                ConnectionReadinessStage.ACTION_REQUIRED
+                if expired
+                else ConnectionReadinessStage.WAITING_FOR_SESSION,
+                "connection.session_integration_unprepared"
+                if expired
+                else "connection.waiting_for_session",
+                now,
             )
         elif observation.game_state is GameState.UNKNOWN:
             self._status = self._make_status(
