@@ -133,7 +133,11 @@ from regear.application.connection_readiness import (  # noqa: E402
     ConnectionReadinessObservation,
     ConnectionReadinessStage,
 )
-from regear.application.link_recovery import LinkRecoveryService  # noqa: E402
+from regear.application.link_recovery import (  # noqa: E402
+    LinkRecoveryService,
+    LinkRecoveryStrategy,
+    strategy_is_implemented,
+)
 from regear.domain.link_training_recovery import (  # noqa: E402
     LinkRecoveryAvailability,
 )
@@ -955,11 +959,23 @@ class Plugin:
     async def get_link_recovery_status(
         self, _request: object = None
     ) -> dict[str, object]:
-        """Say whether releasing the session would be worth offering. Changes nothing.
+        """Say whether bouncing the session would be worth offering. Changes nothing.
 
         Safe to poll. Answers from the reading the readiness loop already took,
         so asking never probes hardware and never disagrees with the panel.
+
+        Also reports which mechanisms exist and which are built, because the
+        mechanism is an open question: the link is observed about a second
+        after a new session starts, and nothing has isolated why.
         """
+        service = self._link_recovery_service()
+        strategies = [
+            {
+                "strategy": candidate.value,
+                "implemented": strategy_is_implemented(candidate),
+            }
+            for candidate in LinkRecoveryStrategy
+        ]
         observation = self._last_readiness_observation
         if observation is None:
             return {
@@ -967,8 +983,10 @@ class Plugin:
                 "availability": LinkRecoveryAvailability.UNAVAILABLE.value,
                 "offered": False,
                 "code": "link_recovery.no_observation",
+                "default_strategy": service.default_strategy.value,
+                "strategies": strategies,
             }
-        assessment = self._link_recovery_service().assess(
+        assessment = service.assess(
             readiness_exhausted=(
                 self._connection_readiness.status().stage
                 is ConnectionReadinessStage.TIMED_OUT
@@ -982,14 +1000,25 @@ class Plugin:
             "availability": assessment.availability.value,
             "offered": assessment.offered,
             "code": assessment.code,
+            "default_strategy": service.default_strategy.value,
+            "strategies": strategies,
         }
 
-    async def execute_link_recovery(self, confirm: bool = False) -> dict[str, object]:
-        """Stop the session, wait for the eGPU's link, start the session again.
+    async def execute_link_recovery(
+        self, confirm: bool = False, strategy: str = ""
+    ) -> dict[str, object]:
+        """Bounce the session by the chosen mechanism and watch for the link.
 
         This closes whatever is on screen. It is never automatic and never
         implied: `confirm` has to be exactly True, the same shape the automatic
         dock opt-in uses, so no caller reaches it by passing a truthy default.
+
+        `strategy` picks which mechanism to try and defaults to the plain
+        session bounce. It exists because the mechanism is not settled -- the
+        link is observed about a second after a new session starts and nobody
+        has isolated why -- so the rungs must be comparable on hardware without
+        the code being rewritten between them. A name that is not a known
+        strategy is refused, and so is a known one that is not built.
 
         The offer is re-checked here against a fresh reading rather than the
         one the panel rendered. A player can start a game between seeing the
@@ -997,6 +1026,18 @@ class Plugin:
         """
         if confirm is not True:
             return self._link_recovery_failure("link_recovery.confirmation_required")
+        try:
+            chosen = (
+                self._link_recovery_service().default_strategy
+                if strategy == ""
+                else LinkRecoveryStrategy(strategy)
+            )
+        except ValueError:
+            return self._link_recovery_failure("link_recovery.strategy_unknown")
+        if not strategy_is_implemented(chosen):
+            return self._link_recovery_failure(
+                "link_recovery.strategy_not_implemented", strategy=chosen.value
+            )
         try:
             observations = SnapshotTransitionObservationAdapter(self._discovery)
             current = await asyncio.to_thread(observations.observe)
@@ -1016,20 +1057,25 @@ class Plugin:
             game_state=observation.game_state,
         )
         if not assessment.offered:
-            return self._link_recovery_failure(assessment.code)
+            return self._link_recovery_failure(
+                assessment.code, strategy=chosen.value
+            )
         resolution = await asyncio.to_thread(
             lambda: resolve_gamescope_user(GamescopeDiscovery().scan())
         )
         if not resolution.ok or resolution.context is None:
-            return self._link_recovery_failure("link_recovery.session_unavailable")
+            return self._link_recovery_failure(
+                "link_recovery.session_unavailable", strategy=chosen.value
+            )
         self._append_journey_event(
             severity="info",
             code="link_recovery.started",
             component="connection",
             stage="link_recovery",
+            details={"strategy": chosen.value},
         )
         outcome = await asyncio.to_thread(
-            lambda: service.recover(resolution.context)
+            lambda: service.recover(resolution.context, strategy=chosen)
         )
         self._append_journey_event(
             severity="info" if outcome.ok else "warning",
@@ -1039,6 +1085,9 @@ class Plugin:
             details={
                 "seconds": outcome.seconds,
                 "session_restored": outcome.session_restored,
+                # Recorded with every number: a timing from one rung means
+                # nothing next to a timing from another.
+                "strategy": outcome.strategy,
             },
         )
         return {
@@ -1047,16 +1096,18 @@ class Plugin:
             "code": outcome.code,
             "seconds": outcome.seconds,
             "session_restored": outcome.session_restored,
+            "strategy": outcome.strategy,
         }
 
     @staticmethod
-    def _link_recovery_failure(code: str) -> dict[str, object]:
+    def _link_recovery_failure(code: str, *, strategy: str = "") -> dict[str, object]:
         return {
             "schema_version": 1,
             "ok": False,
             "code": code,
             "seconds": None,
             "session_restored": True,
+            "strategy": strategy,
         }
 
     async def get_diagnostic_logging_status(self, _request: object = None) -> dict[str, object]:
@@ -3091,8 +3142,8 @@ class Plugin:
         """The one instance, built once. See the note in `__init__`.
 
         The PCI reading is taken live rather than from the loop's cache: this
-        is the callable watched *during* the gap, when the whole question is
-        whether the slot has just seen the card.
+        is the callable polled *while the recovery is running*, when the whole
+        question is whether the slot has seen the card since the bounce.
         """
         if self._link_recovery is None:
             self._link_recovery = LinkRecoveryService(

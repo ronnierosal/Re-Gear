@@ -1,9 +1,11 @@
-"""The RPC surface for releasing the session when the link never trains.
+"""The RPC surface for bouncing the session when the link never trains.
 
-Two things are tested here that the service tests cannot reach: that the
-plugin keeps ONE service so its latch survives, and that the destructive call
+Three things are tested here that the service tests cannot reach: that the
+plugin keeps ONE service so its latch survives, that the destructive call
 re-checks the offer against a fresh reading instead of trusting whatever the
-panel was showing when somebody pressed the button.
+panel was showing when somebody pressed the button, and that the strategy the
+caller names is the one that runs -- including the rung that is not built,
+which must be refused before anything is observed or touched.
 """
 
 from __future__ import annotations
@@ -23,6 +25,14 @@ from regear.application.connection_readiness import (  # noqa: E402
     ConnectionReadinessObservation,
     ConnectionReadinessStage,
     ConnectionReadinessStatus,
+)
+from regear.application.link_recovery import (  # noqa: E402
+    LinkRecoveryOutcome,
+    LinkRecoveryStrategy,
+)
+from regear.domain.link_training_recovery import (  # noqa: E402
+    LinkRecoveryAssessment,
+    LinkRecoveryAvailability,
 )
 from regear.domain.models import GameState  # noqa: E402
 
@@ -166,6 +176,139 @@ class LinkRecoveryRpcTests(unittest.TestCase):
             self.assertTrue(service.attempted)
             service.observe_transport(False)
             self.assertFalse(service.attempted)
+
+
+class RecordingService:
+    """Stands in for the real service to record which rung it was asked for."""
+
+    def __init__(self) -> None:
+        self.default_strategy = LinkRecoveryStrategy.SESSION_RESTART
+        self.asked_for: list[object] = []
+
+    def assess(self, **_facts) -> LinkRecoveryAssessment:
+        return LinkRecoveryAssessment(
+            LinkRecoveryAvailability.OFFERED, "link_recovery.available"
+        )
+
+    def observe_transport(self, present: bool) -> None:
+        pass
+
+    def recover(self, _user, *, strategy=None) -> LinkRecoveryOutcome:
+        self.asked_for.append(strategy)
+        return LinkRecoveryOutcome(
+            True,
+            "link_recovery.trained",
+            seconds=1.0,
+            strategy=getattr(strategy, "value", ""),
+        )
+
+
+class LinkRecoveryStrategySelectionTests(unittest.TestCase):
+    """Which mechanism runs is the caller's choice, and it is not guessed."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.module = load_main_module()
+
+    def plugin(self):
+        plugin = self.module.Plugin.__new__(self.module.Plugin)
+        plugin._link_recovery = None
+        plugin._last_readiness_observation = observation()
+        plugin._connection_readiness = type(
+            "Readiness", (), {"status": staticmethod(status)}
+        )()
+        return plugin
+
+    def executable(self):
+        """A plugin wired far enough to reach `recover`, with a fake service."""
+        plugin = self.plugin()
+        service = RecordingService()
+        plugin._link_recovery = service
+        plugin._discovery = object()
+        plugin._append_journey_event = lambda **_kwargs: None
+
+        async def observe_readiness(_current):
+            return status()
+
+        plugin._observe_connection_readiness = observe_readiness
+        return plugin, service
+
+    def run_execute(self, plugin, **kwargs):
+        resolution = type("Resolution", (), {"ok": True, "context": object()})()
+        with patch.object(self.module, "SnapshotTransitionObservationAdapter"), \
+             patch.object(self.module, "GamescopeDiscovery"), \
+             patch.object(
+                 self.module, "resolve_gamescope_user", return_value=resolution
+             ):
+            return asyncio.run(plugin.execute_link_recovery(**kwargs))
+
+    def test_the_status_reports_the_default_and_every_known_rung(self):
+        plugin = self.plugin()
+        with patch.object(self.module, "UserServiceCommandRunner"):
+            result = asyncio.run(plugin.get_link_recovery_status())
+        self.assertEqual(result["default_strategy"], "session_restart")
+        named = {row["strategy"]: row["implemented"] for row in result["strategies"]}
+        self.assertEqual(
+            named,
+            {
+                "session_restart": True,
+                "session_stop_start": True,
+                "desktop_round_trip": False,
+            },
+        )
+
+    def test_omitting_the_strategy_runs_the_plain_bounce(self):
+        plugin, service = self.executable()
+        result = self.run_execute(plugin, confirm=True)
+        self.assertEqual(service.asked_for, [LinkRecoveryStrategy.SESSION_RESTART])
+        self.assertEqual(result["strategy"], "session_restart")
+
+    def test_a_named_rung_is_the_one_that_runs(self):
+        plugin, service = self.executable()
+        result = self.run_execute(
+            plugin, confirm=True, strategy="session_stop_start"
+        )
+        self.assertEqual(service.asked_for, [LinkRecoveryStrategy.SESSION_STOP_START])
+        self.assertEqual(result["strategy"], "session_stop_start")
+
+    def test_the_desktop_round_trip_refuses_before_anything_is_observed(self):
+        """Rung 3 is named, not built. It must not reach hardware to say so."""
+        plugin = self.plugin()
+        with patch.object(self.module, "UserServiceCommandRunner") as runner, \
+             patch.object(
+                 self.module, "SnapshotTransitionObservationAdapter"
+             ) as observations:
+            result = asyncio.run(
+                plugin.execute_link_recovery(
+                    confirm=True, strategy="desktop_round_trip"
+                )
+            )
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["code"], "link_recovery.strategy_not_implemented")
+        self.assertEqual(result["strategy"], "desktop_round_trip")
+        self.assertTrue(result["session_restored"])
+        observations.assert_not_called()
+        runner.return_value.run.assert_not_called()
+
+    def test_an_unknown_rung_refuses_rather_than_falling_back(self):
+        plugin = self.plugin()
+        with patch.object(self.module, "UserServiceCommandRunner") as runner, \
+             patch.object(
+                 self.module, "SnapshotTransitionObservationAdapter"
+             ) as observations:
+            result = asyncio.run(
+                plugin.execute_link_recovery(confirm=True, strategy="reboot_it")
+            )
+        self.assertEqual(result["code"], "link_recovery.strategy_unknown")
+        observations.assert_not_called()
+        runner.return_value.run.assert_not_called()
+
+    def test_the_confirmation_still_outranks_the_strategy(self):
+        plugin = self.plugin()
+        result = asyncio.run(
+            plugin.execute_link_recovery(strategy="session_stop_start")
+        )
+        self.assertEqual(result["code"], "link_recovery.confirmation_required")
 
 
 if __name__ == "__main__":
