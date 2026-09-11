@@ -97,6 +97,7 @@ try {
     await page.waitForTimeout(100);
     assert.equal(await page.evaluate(() => window.fixture.executeCalls.length), 1);
     await load(false);
+    await page.evaluate(() => { window.fixture.status = {schema_version:1, offered:false}; });
     await page.evaluate(() => window.openAttachment());
     const attachment = page.getByRole('dialog');
     await attachment.waitFor();
@@ -128,6 +129,22 @@ try {
     await page.getByRole('button', { name: 'B Hide' }).click();
     await attachment.waitFor({state:'detached'});
     assert.equal(await page.evaluate(() => window.fixture.executeCalls.length), 0);
+    // The attachment popup alone must expose recovery, independent of sidebar visibility.
+    await load(false);
+    await page.evaluate(() => window.openAttachment());
+    const popupRetry = page.getByRole('dialog').getByRole('button', {name:'Retry eGPU detection'});
+    await popupRetry.waitFor();
+    const retryBounds=await popupRetry.boundingBox();
+    assert.ok(retryBounds.y>=0 && retryBounds.y+retryBounds.height<=viewport.height,'popup recovery visible without scrolling');
+    await page.screenshot({path:`out/link-recovery-preview/attachment-retry-${viewport.width}.png`});
+    await popupRetry.click();
+    await page.getByRole('button', {name:'Keep waiting',exact:true}).click();
+    assert.equal(await page.evaluate(() => window.fixture.executeCalls.length),0);
+    assert.equal(await page.getByRole('dialog').count(),1,'cancel preserves connection popup');
+    await popupRetry.click();
+    await page.getByRole('button', {name:'Restart Gaming Mode',exact:true}).click();
+    await page.getByRole('dialog').getByText('The GPU is available. Checking the remaining connection steps…').waitFor();
+    assert.deepEqual(await page.evaluate(() => window.fixture.executeCalls), [[true,'session_restart']]);
     assert.deepEqual(errors, []);
     results.push({ viewport, preservedProgressButtonBounds: before, interactionChecks: 'passed', nativeHost: 'simulated' });
     await page.close();

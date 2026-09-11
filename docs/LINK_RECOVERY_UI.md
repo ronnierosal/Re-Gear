@@ -69,3 +69,8 @@ Recovery confirmation uses scoped viewport centering and stays in the main scree
 
 Combined validation: 2,972 backend tests passed (109 skipped); architecture and compileall passed. Frontend: 636 passed, 1 skipped; typecheck, bundle build and package checks passed. Source previews verify both popup centers, preserved compact dimensions, expanded body clipping/scroll and Hide behavior. No new installer was produced or installed; no additional hardware mutation was performed.
 
+
+0.3.80 native validation: installed files matched fd77f20 and its ZIP. One explicitly user-authorized installed Decky execute_link_recovery(true, session_restart) request logged link_recovery.trained at 08:51:45.894 on 2026-09-11, followed by automatic TV transition at 08:51:48.836. The GPU arrived without Plasma/KWin; Ronnie confirmed TV picture, audio and controls. The reply closed during Steam restart and was not retried. Evidence snapshot SHA256 d88af5ea066b7d29d040ad5ec3a5c070fa0be231cc8843a2221542ba316fcf77 is retained locally. Native sidebar access was not established: Ronnie could not see the readiness card.
+
+0.3.81 adds the same guarded action to the attachment popup footer, so recovery does not depend on finding the sidebar card. It preserves Hide/Details and centers both dialogs. No offer means no extra footer row; when offered, retry stays visible without scrolling. Simulated actual-component tests cover popup cancellation returning to progress and one confirmed dispatch. Native button navigation and centering remain the next supervised check.
+
