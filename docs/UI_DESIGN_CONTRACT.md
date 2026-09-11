@@ -5,6 +5,8 @@ popup, styling, icon or navigation code. Codex owns UI implementation and design
 Claude owns backend wiring unless the user assigns otherwise. Shared-file claims
 and accepted transfers still apply. Backend wiring is not permission to redesign.
 
+Popup changes also follow the [shared UI design system and modal checklist](UI_DESIGN_SYSTEM.md).
+
 ## Baseline and allowed change
 
 The user-supplied [approved Command Center reference](design/command-center-approved.md)
