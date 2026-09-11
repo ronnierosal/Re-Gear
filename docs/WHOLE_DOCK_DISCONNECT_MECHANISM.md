@@ -243,3 +243,41 @@ an operator-captured mechanism trial, not a new Safe Disconnect button action.
 It can establish whether controller exit releases broker handles, not clearance
 to unplug or approval to ignore those handles. Inner arm refusal stage/code are
 also preserved for future release attempts without changing removal decisions.
+
+## 0.3.87 installed trial result — September 11, 2026
+
+Installed version0.3.87 was read back. A35-second capture-only smoke completed,
+and its root restoration service journal reported Deactivated successfully.
+No session stop was issued during that smoke.
+
+A second capture was started and verified observing inside the fresh5-second
+window; its exact restoration timer was active before the approved user target
+stop. The stop completed successfully.34 complete holder samples were captured:
+
+| Elapsed seconds | Observed holders |
+| --- | --- |
+|0.1| Gamescope/mangoapp, Steam, init.scope, systemd-logind, WirePlumber |
+|3.3| Gamescope, Steam, init.scope, systemd-logind, WirePlumber |
+|4.3| WirePlumber only |
+|5.3| Gamescope/mangoapp, init.scope, systemd-logind, WirePlumber |
+|6.4| Steam also present again |
+
+This establishes an observed interval where the session and both system broker
+holders released the eGPU; it does not establish that every holder cleared.
+WirePlumber remained. The session returned before the25-second restoration timer
+fired. The source of that automatic return is not yet attributed. Do not claim
+the watchdog caused the early return or that the existing filter prevented it:
+no filter was armed in this experiment.
+
+The independent restoration service later completed successfully. An explicit
+idempotent target start was also issued after capture. The retained claim is
+still release_intent; no claim deletion or PCI/USB/tunnel write was performed.
+Post-trial backend checks were ready_idle with GPU/link/HDMI/audio/session/idle
+all true. Ronnie confirmed TV picture, audio and controls all working.
+
+Local captured evidence: out/0387-stop-trial.json, SHA256
+966020525a1b5972be8640a7f906a85d8d979ef74fc2e6ca998aff6b489409e8.
+Related evidence: out/0387-timer-smoke.json and out/0387-trial-prestop.json.
+Next implementation/test question: keep the controller stopped long enough to
+release audio and re-observe, while preventing automatic session reacquisition
+and preserving independently verified restoration. No physical unplug clearance.
