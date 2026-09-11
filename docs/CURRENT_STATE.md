@@ -2,6 +2,127 @@
 
 > Historical record: HDM was Re-Gear's former name; original wording is retained.
 
+## 0.3.74 installed on the Ally and validated read-only — 2026-09-10
+
+Supersedes the staging entry below on one point only: that entry says nothing was
+installed, which was true when written. Ronnie installed the archive himself
+through Decky shortly afterwards. Its other contents stand.
+
+The install succeeded and the rename holds on hardware. Evidence is the plugin's
+own log rather than the filesystem alone:
+
+```
+Re-Gear plugin started: version=0.3.74 revision=bf03c324853d
+Re-Gear diagnostics ready: mode=portable game=idle support=certified blockers=[]
+```
+
+`backend/hdm` to `backend/regear` works end to end, including a subprocess spawned
+by path: the sleep inhibitor runs `backend/regear/adapters/steamos/inhibitor_guard.py`,
+and `python -m regear.cli` answers as `regear-diagnose`, so #259's CLI rename also
+works installed. Log lines moved from the `HDM` prefix to `Re-Gear`.
+
+eGPU observed attached: GPD G1, `08:00.0` Navi 33 with `amdgpu` bound, DRM `card1`,
+Thunderbolt router `0-2` authorized, `egpu_link state=up`, and both host and eGPU
+resolving to exact profiles at `verified` confidence. The link trained at
+`speed_gtps=2.5 width_lanes=4`, PCIe Gen1 x4, which is low for this GPU; recorded
+as an observation with no established cause.
+
+**The TV did not switch, and the cause is #167, confirmed live on this install.**
+`/home/deck/.config/systemd/user/gamescope-session.service.d/90-handheld-dock-mode.conf`
+still renders the old plugin path, mtime 31 Aug, while the plugin runs from
+`/home/deck/homebrew/plugins/Re-Gear`; both plugin directories still exist. So
+`actual != expected`, `status()` sets `managed_dropin_modified`, `activate()`
+refuses, `session_ready` stays False and the switch can never become ready.
+
+On 0.3.74 this presents differently from the 0.3.59 report in #167, which parked at
+`waiting_for_session`. Here the connection reaches `attach.ready_idle` and then the
+last stage recorded is `connection.readiness_timed_out` 116 seconds later, with the
+eGPU still attached. `connection_readiness` latches `_readiness_established` only
+when `observation.session_ready` is also true, which #167 keeps False, so the
+window reset by the late-enumeration branch simply expired again. Full detail is on
+#167; detection timing is quantified on #17 as ~148 s to PCI enumeration against a
+120 s budget.
+
+The Safe Undock probe correctly refuses: `safe_to_unplug=False`,
+`safe_undock.client_scan_incomplete`, because unprivileged `deck` cannot read
+`/sys/kernel/debug` or other processes' file descriptors and therefore cannot prove
+which processes hold the GPU. It does verify `exact_attachment` and `topology_exact`.
+The two #93 facts are unsatisfied but carry `removal_safety=False` and do not gate
+that verdict.
+
+Read-only limits of this validation, stated so it is not read as more than it is.
+No device, display, power, Gamescope or teardown action was performed and no file on
+the device was modified. `/var/lib/handheld-dock-mode` is root-only and was not
+readable, so the preference files were not inspected; the finding that no automatic
+switch was attempted rests on the absence of `connection.tv_transition_started` from
+the complete log instead. `regear-diagnose` reports `sleep_guard_inactive` while the
+plugin log reports the guard active and an inhibit process is running; most likely
+because the CLI is a separate unprivileged process, but this was not resolved. No
+hardware acceptance, release or deployment claim is made by this entry.
+
+## 0.3.74 staged for supervised testing — 2026-09-10
+
+Staged only. Nothing was installed, no plugin was replaced, `plugin_loader` was
+not restarted, and no Gamescope, sleep, power, display or eGPU action ran.
+Installing this archive remains a separate decision under its own gate.
+
+- Version `0.3.74`, revision `bf03c324853dcadfbe8e24c2ad0f4523e7543ff9`
+- Archive `Re-Gear-0.3.74.zip`, 869,204 bytes
+- SHA-256 `e921fa21d34a535aff895a44675f0e9124a617db586f1ccd391787120bcf2176`,
+  verified equal on the device after an atomic no-clobber hard-link, not only
+  after upload
+- Reserved at `refs/regear/versions/0.3.74`
+- Declared by PR #280, CI green at its final head `93a67f4`
+
+Observed on the device by read-only inspection before staging: the installed
+plugin reports `0.3.72`, and `/home/deck/Re-Gear-0.3.72.zip` remains in place as
+that build's archive. Version `0.3.72` is declared at `bdcaa76`, confirmed an
+ancestor of this candidate, so the ancestry requirement holds. The dated `0.3.53`
+readback in the older entries below is a record of that day and is not superseded
+as history; it simply was the newest entry until now.
+
+Integrated workstreams relative to the previously built `0.3.73` archive, which
+was declared at `54dd03e` while `main` had moved 57 commits ahead. Established by
+diffing the two archives' contents rather than by reading commit lists:
+
+- The `backend/hdm` to `backend/regear` package rename (#264) reaches a device
+  for the first time. Every packaged import moves with it, including `main.py`,
+  `bin/gamescope`, `bin/steam-launcher` and the packaged readiness probe. This is
+  the largest behavioural risk in the archive and the reason it is worth testing.
+- Eleven backend modules changed in substance beyond the rename:
+  `adapters/steamos/dock_branch.py`, `adapters/support_submission.py`,
+  `application/presentation_activation.py`, `application/support_bundle.py`,
+  `application/support_submission.py`, `delivery/build_info.py`,
+  `delivery/gamescope_integration.py`, `delivery/runtime_state.py`,
+  `delivery/support_export.py`, `domain/dock_teardown.py` and
+  `ports/presentation_activation.py`.
+- The safety-relevant pair: `domain/dock_teardown.py` gains the `TunnelCapability`
+  tri-state so absent evidence stops reading as permission (#273), and
+  `dock_branch.py` gains device-number and opaque-source validation so unreadable
+  evidence stops counting as an answer (#266).
+
+One correction worth recording, because the opposite was briefly asserted while
+preparing this build. #265 fixed a `TypeError` that the dock teardown probe raised
+on every run, and that fix is **not** in this archive: it changed
+`scripts/probe_dock_teardown.py`, and `build_plugin.py` packages exactly one
+read-only probe, `scripts/probe_safe_undock_readiness.py`. The teardown probe is
+a repository diagnostic, not a shipped file. Its fix is on `main` and reaches the
+device only if that script is run from a checkout.
+
+Verification at the build tree, a clean detached worktree at the merged base
+rather than the shared `main` checkout, which lags:
+
+- `python scripts/check_architecture.py` passed
+- `python -m unittest discover -s tests` — 2,887 tests OK, 101 platform skips
+- `python -m compileall -q backend tests scripts` clean
+- `tsc --noEmit` clean; `pnpm test:frontend` 599 pass, 0 fail
+- `scripts/check_plugin_package.py` passed against both the source checkout and
+  the extracted archive root
+- Archive contains no `__pycache__` or `.pyc` entries across its 283 files
+
+Local runs skip 101 tests on this platform, so they do not substitute for Linux
+CI; the CI result above is the one that counts.
+
 ## Release-line reconciliation — 2026-09-07
 
 `main` and the 0.3.5x release line had diverged rather than ordered: 117
