@@ -263,6 +263,35 @@ class LinkRecoveryStrategySelectionTests(unittest.TestCase):
         self.assertEqual(service.asked_for, [LinkRecoveryStrategy.SESSION_RESTART])
         self.assertEqual(result["strategy"], "session_restart")
 
+    def test_concurrent_confirmed_rpcs_issue_only_one_restart(self):
+        from threading import Barrier
+        from tests.test_link_recovery_service import FakeCommands, USER, RESTART, service
+
+        plugin, _ = self.executable()
+        commands = FakeCommands()
+        plugin._link_recovery, _ = service(commands, [True])
+        barrier = Barrier(2)
+
+        def resolve(_scan):
+            # Both RPCs have passed assessment before either reaches recover.
+            barrier.wait(timeout=5)
+            return type("Resolution", (), {"ok": True, "context": USER})()
+
+        async def concurrent():
+            return await asyncio.gather(
+                plugin.execute_link_recovery(confirm=True),
+                plugin.execute_link_recovery(confirm=True),
+            )
+
+        with patch.object(self.module, "SnapshotTransitionObservationAdapter"), \
+             patch.object(self.module, "GamescopeDiscovery"), \
+             patch.object(self.module, "resolve_gamescope_user", side_effect=resolve):
+            results = asyncio.run(concurrent())
+        self.assertCountEqual([row["code"] for row in results], [
+            "link_recovery.trained", "link_recovery.already_attempted",
+        ])
+        self.assertEqual(commands.calls, [RESTART])
+
     def test_a_named_rung_is_the_one_that_runs(self):
         plugin, service = self.executable()
         result = self.run_execute(

@@ -28,23 +28,44 @@ card geometry against baseline `0ef9325`. Outputs are in
 `out/link-recovery-preview/`. These are simulated host checks, not native
 controller or installed-device validation.
 
-## Backend prerequisite
+## Backend guard
 
-PR #301 at `0f1244c` still needs an atomic recovery guard. Its RPC assesses the
+PR #301 at `0f1244c` lacked an atomic recovery guard. Its RPC assesses the
 attempt latch, then awaits user resolution before calling `recover`; `recover`
 sets the latch but does not reject an already reserved attempt. A local fake-port
 reproduction synchronized two callers after assessment and recorded two
 `restart_gamescope_session` commands, both reporting `link_recovery.trained`.
 No hardware commands were executed by this reproduction.
 
-The UI prevents duplicate clicks in one mounted component, but backend protection
-must cover multiple callers. Reserve one attempt atomically before the first
-await leading to execution, release in-flight state reliably on all exits, and
-keep the attachment attempt latch consumed after a disturbance. Add concurrent
-RPC regression coverage and verify interaction with existing transition guards.
-Backend ownership remains with the PR #301 owner; this UI branch does not change
-those files. Do not install the combined candidate before this prerequisite and
-integration checks pass.
+The service now reserves one attempt atomically at the command boundary, before
+any disturbance. Concurrent RPCs that already passed assessment cannot both run.
+The in-flight guard remains held through observation and restoration, including
+transport loss; a finally block releases it. The attachment latch still prevents
+another attempt until transport loss is observed. Tests synchronize two actual
+RPC callers after assessment and verify exactly one restart. Direct duplicate
+calls and transport loss during execution also have regressions.
+
+Ronnie explicitly authorized taking over PR #301 on 2026-09-11. Work continues in
+`egpu-recovery-fix` on `codex/integration-egpu-recovery`, preserving Claude's
+original checkout and history. The hub records the maintainer override.
+
+## Display detection and positioning
+
+Both recovery confirmation and attachment progress are centered on the viewport.
+The attachment host changes position only; expanded content scrolls within the
+body so it cannot paint over footer actions. Checks cover compact and expanded
+states at both viewport sizes. Steam's native host remains a device validation.
+
+Desktop mirroring is a saved presentation preference, not proof of present HDMI
+readiness. `_g1_hdmi_ready` currently requires a verified G1 and exactly one
+connected external connector with an EDID hash. A working picture with an
+unready Re-Gear status could indicate a stricter-check false negative; this has
+not been established by the captures. No display guard is bypassed here.
+Existing readiness regressions cover a TV remaining off beyond the timeout and
+becoming ready when it is later detected. This does not promise a picture on an
+undetected or powered-off TV.
 
 Recovery confirmation uses scoped viewport centering and stays in the main screen. Browser checks assert both center coordinates within one pixel at both sizes. Typecheck and build pass; frontend suite: 636 passed, 1 skipped, 0 failed. Native Steam host positioning remains a device check.
+
+Combined validation: 2,972 backend tests passed (109 skipped); architecture and compileall passed. Frontend: 636 passed, 1 skipped; typecheck, bundle build and package checks passed. Source previews verify both popup centers, preserved compact dimensions, expanded body clipping/scroll and Hide behavior. No new installer was produced or installed; no additional hardware mutation was performed.
 

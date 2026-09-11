@@ -4,28 +4,33 @@ import { execFileSync } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import assert from 'node:assert/strict';
-const runtime = resolve('out/preview-runtime');
+const runtime = resolve(process.env.REGEAR_PREVIEW_RUNTIME || 'out/preview-runtime');
 const require = createRequire(runtime + '/package.json');
 const { build } = require('esbuild');
 if (!process.env.REGEAR_PLAYWRIGHT) throw Error('REGEAR_PLAYWRIGHT path required');
 const { chromium } = require(process.env.REGEAR_PLAYWRIGHT);
 await mkdir('out/link-recovery-preview', { recursive: true });
 const baseline = execFileSync('git', ['show', '0ef9325:src/connection-quick-status.tsx'], { encoding: 'utf8' });
+const baselinePanelCss = execFileSync('git', ['show', '0ef9325:src/connection-panel-style.ts'], { encoding: 'utf8' }).split('`')[1];
 await writeFile('out/link-recovery-preview/baseline.tsx', baseline.replaceAll('from "./', 'from "../../src/'));
 await writeFile('out/link-recovery-preview/entry.tsx', `
 import React from 'react'; import {createRoot} from 'react-dom/client';
 import {ConnectionQuickStatus} from '../../src/connection-quick-status';
 import {ConnectionQuickStatus as Baseline} from './baseline';
 import {createLiveStatusStore} from '../../src/connection-live-status';
+import {showConnectionLivePanel} from '../../src/connection-live-panel';
 const store=createLiveStatusStore();
 const offered={schema_version:1,availability:'offered',offered:true,code:'link_recovery.available',strategies:[{strategy:'session_restart',implemented:true}]};
 (window as any).fixture={status:offered,executeCalls:[],reads:0,failExecute:false};
 const initial={phase:'checking',connected:true,expiresAt:Date.now()+60000,seconds:180,title:'Taking longer than expected—still checking',canSwitch:false,rows:[{label:'GPU and driver',state:'waiting'},{label:'Connection link',state:'waiting'},{label:'TV HDMI detected',state:'waiting'},{label:'Audio recovery ready',state:'waiting'},{label:'Display switching ready',state:'waiting'},{label:'No game running',state:'ready'}]};
 store.set(initial as any);(window as any).update=(patch:any)=>store.set({...store.get(),...patch});
+(window as any).openAttachment=()=>showConnectionLivePanel(store,undefined,()=>{});
 const Component=location.hash==='#baseline'?Baseline:ConnectionQuickStatus;
 createRoot(document.getElementById('root')!).render(<Component store={store} visible={true} onOpen={()=>{}}/>);
 `);
-const ui = `import React,{useEffect,useRef} from 'react';import {createRoot} from 'react-dom/client';
+const ui = `import React,{useEffect,useRef,forwardRef} from 'react';import {createRoot} from 'react-dom/client';
+export const Focusable=forwardRef(({children,...p},ref)=><div ref={ref} onPointerDownCapture={p.onPointerDownCapture} onKeyDownCapture={p.onKeyDownCapture} onFocusCapture={p.onFocusCapture}>{children}</div>);
+export function ModalRoot(p){return <section role='dialog' className={p.className} onKeyDown={e=>{if(e.key==='Escape')p.onCancel?.()}}>{p.children}</section>}
 export const DialogButton='button';export function Field({children}){return <div>{children}</div>}
 export function showModal(element,parent,options){const node=document.createElement('div');node.className='fixture-overlay';document.body.appendChild(node);const root=createRoot(node);let closed=false;const Close=()=>{if(closed)return;closed=true;root.unmount();node.remove();options?.fnOnClose?.()};root.render(React.cloneElement(element,{closeModal:Close}));return {Close,Update:()=>{}}}
 export function ConfirmModal(p){const cancel=useRef(null);useEffect(()=>{cancel.current?.focus()},[]);return <section role='dialog' className={p.className} style={{width:420,padding:12}} onKeyDown={e=>{if(e.key==='Escape'){p.onEscKeypress?.();p.closeModal?.()}}}><header>{p.strTitle}</header>{p.children}<footer><button ref={cancel} onClick={()=>{p.onCancel?.();p.closeModal?.()}}>{p.strCancelButtonText}</button><button onClick={()=>{p.onOK?.();p.closeModal?.()}}>{p.strOKButtonText}</button></footer></section>}
@@ -91,6 +96,38 @@ try {
     await page.getByText('Gaming Mode may have restarted. Check the connection status.').waitFor();
     await page.waitForTimeout(100);
     assert.equal(await page.evaluate(() => window.fixture.executeCalls.length), 1);
+    await load(false);
+    await page.evaluate(() => window.openAttachment());
+    const attachment = page.getByRole('dialog');
+    await attachment.waitFor();
+    await page.waitForTimeout(200);
+    const currentPanelCss = await page.evaluate(oldCss => {
+      const style = [...document.querySelectorAll('style')].find(s => s.textContent.includes('.rg-connection-modal'));
+      const current = style.textContent; style.textContent = oldCss; return current;
+    }, baselinePanelCss);
+    const originalAttachment = await attachment.boundingBox();
+    await page.screenshot({path:`out/link-recovery-preview/attachment-before-${viewport.width}.png`});
+    await page.evaluate(css => {
+      [...document.querySelectorAll('style')].find(s => s.textContent.includes('.rg-connection-modal')).textContent = css;
+    }, currentPanelCss);
+    const centeredAttachment = await attachment.boundingBox();
+    assert.equal(centeredAttachment.width, originalAttachment.width, 'preserve attachment width');
+    assert.equal(centeredAttachment.height, originalAttachment.height, 'preserve compact attachment height');
+    for (const expanded of [false, true]) {
+      if (expanded) await page.getByRole('button', { name: 'Y Details' }).click();
+      const bounds = await attachment.boundingBox();
+      assert.ok(Math.abs(bounds.x + bounds.width / 2 - viewport.width / 2) <= 1, 'attachment horizontally centered');
+      assert.ok(Math.abs(bounds.y + bounds.height / 2 - viewport.height / 2) <= 1, 'attachment vertically centered');
+      assert.ok(bounds.y >= 0 && bounds.y + bounds.height <= viewport.height, 'attachment fits vertically');
+      const body = await page.locator('.rg-popup-body').boundingBox();
+      const footer = await page.locator('.rg-popup-footer').boundingBox();
+      assert.ok(body.y + body.height <= footer.y + 1, 'body stays above footer');
+      assert.equal(await page.locator('.rg-popup-body').evaluate(e => getComputedStyle(e).overflowY), 'auto', 'expanded content cannot paint over footer');
+      await page.screenshot({path:`out/link-recovery-preview/attachment-${expanded?'expanded':'compact'}-${viewport.width}.png`});
+    }
+    await page.getByRole('button', { name: 'B Hide' }).click();
+    await attachment.waitFor({state:'detached'});
+    assert.equal(await page.evaluate(() => window.fixture.executeCalls.length), 0);
     assert.deepEqual(errors, []);
     results.push({ viewport, preservedProgressButtonBounds: before, interactionChecks: 'passed', nativeHost: 'simulated' });
     await page.close();

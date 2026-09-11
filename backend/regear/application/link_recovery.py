@@ -66,6 +66,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
+from threading import Lock
 from typing import Callable
 
 from ..domain.link_training_recovery import (
@@ -196,17 +197,21 @@ class LinkRecoveryService:
         self._watch_seconds = watch_seconds
         self._default_strategy = default_strategy
         self._attempted = False
+        self._state_lock = Lock()
+        self._in_flight = False
 
     # -- the latch -----------------------------------------------------------
 
     def observe_transport(self, present: bool) -> None:
         """Re-arm when the eGPU goes away, so a replug earns a fresh offer."""
         if not present:
-            self._attempted = False
+            with self._state_lock:
+                self._attempted = False
 
     @property
     def attempted(self) -> bool:
-        return self._attempted
+        with self._state_lock:
+            return self._attempted or self._in_flight
 
     @property
     def default_strategy(self) -> LinkRecoveryStrategy:
@@ -225,7 +230,7 @@ class LinkRecoveryService:
             transport_present=transport_present,
             pci_complete=pci_complete,
             game_state=game_state,
-            attempted=self._attempted,
+            attempted=self.attempted,
         )
 
     # -- the act -------------------------------------------------------------
@@ -260,7 +265,26 @@ class LinkRecoveryService:
                 strategy=chosen.value,
             )
 
-        self._attempted = True
+        # Assessment is advisory: concurrent RPCs may both have seen an offer.
+        # Reserve atomically at the command boundary, including direct callers.
+        # Keep the in-flight guard through restore even if transport disappears.
+        with self._state_lock:
+            if self._attempted or self._in_flight:
+                return LinkRecoveryOutcome(
+                    False, "link_recovery.already_attempted", strategy=chosen.value
+                )
+            self._attempted = True
+            self._in_flight = True
+        try:
+            return self._recover_reserved(user, chosen, mechanism)
+        finally:
+            with self._state_lock:
+                self._in_flight = False
+
+    def _recover_reserved(
+        self, user: GamescopeUserContext, chosen: LinkRecoveryStrategy,
+        mechanism: _Mechanism,
+    ) -> LinkRecoveryOutcome:
         disturbed = True
         for operation in mechanism.disturb:
             if not self._run(operation, user):

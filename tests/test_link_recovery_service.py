@@ -18,6 +18,8 @@ from __future__ import annotations
 
 import sys
 import unittest
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier, Event
 from pathlib import Path
 
 
@@ -335,6 +337,57 @@ class TheWatchIsBounded(unittest.TestCase):
 
 
 class TheLatch(unittest.TestCase):
+    def test_two_preassessed_callers_issue_one_restart(self):
+        commands = FakeCommands()
+        svc, _ = service(commands, [True])
+        barrier = Barrier(2)
+
+        def caller():
+            self.assertTrue(svc.assess(
+                readiness_exhausted=True, transport_present=True,
+                pci_complete=False, game_state=GameState.IDLE,
+            ).offered)
+            barrier.wait(timeout=5)
+            return svc.recover(USER).code
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            results = list(pool.map(lambda _: caller(), range(2)))
+        self.assertCountEqual(results, [
+            "link_recovery.trained", "link_recovery.already_attempted",
+        ])
+        self.assertEqual(commands.calls, [RESTART])
+
+    def test_transport_loss_does_not_release_an_in_flight_restart(self):
+        entered, release = Event(), Event()
+        commands = FakeCommands()
+        clock = Clock()
+
+        def observe():
+            entered.set()
+            self.assertTrue(release.wait(timeout=5))
+            return True
+
+        svc = LinkRecoveryService(commands, observe, now=clock.now, sleep=clock.sleep)
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            first = pool.submit(svc.recover, USER)
+            try:
+                self.assertTrue(entered.wait(timeout=5))
+                svc.observe_transport(False)
+                self.assertTrue(svc.attempted)
+                self.assertEqual(svc.recover(USER).code, "link_recovery.already_attempted")
+                self.assertEqual(commands.calls, [RESTART])
+            finally:
+                release.set()
+            self.assertTrue(first.result(timeout=5).ok)
+        self.assertFalse(svc.attempted)
+
+    def test_direct_repeated_call_cannot_bypass_assessment(self):
+        commands = FakeCommands()
+        svc, _ = service(commands, [True])
+        svc.recover(USER)
+        self.assertEqual(svc.recover(USER).code, "link_recovery.already_attempted")
+        self.assertEqual(commands.calls, [RESTART])
+
     def test_recovering_spends_the_attachment_s_one_attempt(self):
         svc, _ = service(FakeCommands(), [True])
         self.assertFalse(svc.attempted)
