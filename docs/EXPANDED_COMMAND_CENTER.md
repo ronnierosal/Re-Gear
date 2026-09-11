@@ -2,6 +2,12 @@
 
 ## Current design preservation contract
 
+The [approved reference and checklist](design/command-center-approved.md) is the
+current design target, including the utility strip inside the main panel and
+detached right Quick actions panel. The implementation checkpoint below describes
+existing source, not completion of that target. Its dimensions are not a mandate
+to override the newer approved proportions.
+
 Follow [UI design preservation](UI_DESIGN_CONTRACT.md). The compact correction
 merged through PR #274 supersedes the September 9 sizing and density described
 below: the central panel is 53vw/82vh, with compact tabs/footer and icon plus label
