@@ -1707,9 +1707,15 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
     publishTiles({
       fresh: menuFresh,
       egpu: menuFresh ? egpuPresentation(payload) : null,
-      controller: menuFresh
-        ? controllerPresentation({ peripheral: peripheralStatus, shortcutAvailable: menuShortcutAvailable })
-        : null,
+      controller: controllerPresentation({
+        peripheral: peripheralStatus, shortcutAvailable: menuShortcutAvailable,
+      }),
+      // From the peripheral reading itself, never the snapshot. That payload
+      // carries no observation timestamp, so this means "a reading was
+      // received" rather than "a reading is recent" -- an honest limitation
+      // rather than a borrowed one. Today every such reading is
+      // controller.identity_unmapped, so the tab is Unknown either way.
+      controllerFresh: peripheralStatus !== null,
       // From the performance owner, never from the snapshot above. Those
       // readings have no device observation timestamp to age, so the owner
       // bounds their lifetime from the request that fetched them and nulls

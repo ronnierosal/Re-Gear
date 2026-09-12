@@ -104,7 +104,14 @@ export function egpuTiles(presentation: EgpuPresentation): Tile[] {
       // The approved composition has no card for the running-game or session
       // observations, and both bear directly on whether a disconnect is safe,
       // so they are carried here rather than dropped off the screen.
-      detail: `${presentation.disconnect.reason} · ${game.text} · Session: ${session.text}`,
+      detail: [
+        presentation.disconnect.reason,
+        // Carried through `detail` rather than as raw text: these are
+        // observations, and an unverified one must not read as confirmed
+        // just because the card it now lives on is already a warning.
+        detail(game, `Game: ${game.text}`),
+        detail(session, `Session: ${session.text}`),
+      ].join(" · "),
       // Always warning. Not derived from the readings above, because no
       // combination of them grants a clearance this product cannot confirm.
       tone: "warning",
