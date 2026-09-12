@@ -11,3 +11,6 @@ claims and accepted transfers; read its README on first use. Never implement in
 shared main or modify another session's checkout. Existing sessions must reload
 these instructions on resume. Old `AGENT_NOTES.md` entries are historical context;
 verify current hub and issue/PR state before treating them as live claims.
+
+Check the relevant hub `primary-<scope>` owner and recorded assignment before starting work.
+Only Ronnie designates a scoped primary; cross-scope changes need agreed integration ownership.
