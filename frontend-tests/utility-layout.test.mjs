@@ -3,7 +3,11 @@ import test from "node:test";
 import {readFileSync} from "node:fs";
 import ts from "typescript";
 const js=ts.transpileModule(readFileSync(new URL('../src/quick-access/expanded-command-center/utility-layout.ts',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.ES2022}}).outputText;
-const {normalizeUtilityLayout:normalize,defaultUtilityLayout:defaults}=await import('data:text/javascript;base64,'+Buffer.from(js).toString('base64'));
+const {normalizeUtilityLayout:normalize,defaultUtilityLayout:defaults,commandCenterUtilityIds,quickActionIds}=await import('data:text/javascript;base64,'+Buffer.from(js).toString('base64'));
+test('approved command center button groups stay stable',()=>{
+ assert.deepEqual([...commandCenterUtilityIds],['brightness','volume']);
+ assert.deepEqual([...quickActionIds],['mic','wifi','overlay','recording']);
+});
 test('approved default keeps brightness and volume left and thumb actions right',()=>{
  assert.deepEqual(defaults,[
   {id:'brightness',side:'left'},{id:'volume',side:'left'},
