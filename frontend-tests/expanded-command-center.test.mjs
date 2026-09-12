@@ -65,7 +65,8 @@ test("demo rendering import graph cannot reach backend or native runtime", () =>
 test("native modal uses Decky controls without a second raw navigation listener", async () => {
   const nativeSource = readFileSync(new URL("../src/quick-access/expanded-command-center/native.tsx", import.meta.url), "utf8");
   const nativeJs = ts.transpileModule(nativeSource, { compilerOptions: { module: ts.ModuleKind.ESNext, jsx: ts.JsxEmit.React } }).outputText.replace(/^import .*;$/gm, "");
-  const fixtures = `
+  const visibilityJs = ts.transpileModule(readFileSync(new URL("../src/quick-access/expanded-command-center/menu-visibility.ts", import.meta.url), "utf8"), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText.replace("export function", "function");
+  const fixtures = visibilityJs + `
     export const views=[], effects=[], listeners=[];
     export let opens=0, clicks=0;
     const React={createElement:(type,props,...children)=>({type,props:{...props,children}})};
@@ -80,7 +81,7 @@ test("native modal uses Decky controls without a second raw navigation listener"
   `;
   const native = await import(`data:text/javascript;base64,${Buffer.from(fixtures + nativeJs).toString("base64")}`);
   const readCurrentSnapshot = () => ({game_state:"idle"});
-  const runtime = native.createExpandedMenu(native.input, native.host, () => true, readCurrentSnapshot);
+  const runtime = native.createExpandedMenu(native.input, native.host, () => true, undefined, readCurrentSnapshot);
   runtime.open(); runtime.open(); assert.equal(native.opens, 1);
   const view = native.views[0].props.children[1];
   const shell = view.type(view.props); // Mount its cleanup and obtain close callback.
@@ -98,7 +99,8 @@ test("native modal uses Decky controls without a second raw navigation listener"
 test("native shortcut dropdown preserves selection and active chord when saving fails", async () => {
   const nativeSource = readFileSync(new URL("../src/quick-access/expanded-command-center/native.tsx", import.meta.url), "utf8");
   const nativeJs = ts.transpileModule(nativeSource, { compilerOptions: { module: ts.ModuleKind.ESNext, jsx: ts.JsxEmit.React } }).outputText.replace(/^import .*;$/gm, "");
-  const fixture = `
+  const visibilityJs = ts.transpileModule(readFileSync(new URL("../src/quick-access/expanded-command-center/menu-visibility.ts", import.meta.url), "utf8"), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText.replace("export function", "function");
+  const fixture = visibilityJs + `
     export const views=[], saved=[];
     export let resets=0, stops=0;
     const componentStates=new WeakMap();
@@ -156,7 +158,8 @@ test("native live source publishes into an open menu and unsubscribes on close",
 }, async () => {
   const body=readFileSync(new URL("../src/quick-access/expanded-command-center/native.tsx", import.meta.url),"utf8");
   const compiled=ts.transpileModule(body,{compilerOptions:{module:ts.ModuleKind.ESNext,jsx:ts.JsxEmit.React}}).outputText.replace(/^import .*;$/gm, "");
-  const fixture=`
+  const visibilityJs = ts.transpileModule(readFileSync(new URL("../src/quick-access/expanded-command-center/menu-visibility.ts", import.meta.url), "utf8"), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText.replace("export function", "function");
+  const fixture=visibilityJs+`
     export const views=[],listeners=new Set();
     export let current;
     let unsubscribe,renderView;

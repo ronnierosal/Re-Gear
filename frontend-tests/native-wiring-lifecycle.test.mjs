@@ -24,6 +24,7 @@ function harness() {
     startMenuShortcut: options => { h.shortcutOpen = options.open; return { available: true, reset() {}, stop() { h.stopped = true; } }; },
     showModal: node => {
       if (h.throwOpen) throw Error("host unavailable");
+      h.onHostOpen?.();
       const modal = { node, closed: false, Close() { this.closed = true; } };
       h.modals.push(modal); return modal;
     },
@@ -74,4 +75,12 @@ test("refused or throwing host open never leaves visibility active", () => {
   h.allowed = true; h.throwOpen = true; h.menu.open(); assert.equal(h.menu.visibility.read(), false);
   h.throwOpen = false; h.menu.open(); assert.equal(h.menu.visibility.read(), true);
   h.modals.at(-1).node.props.closeModal(); assert.equal(h.menu.visibility.read(), false);
+});
+
+test("reentrant host open and stop cannot leak a second modal or active visibility", () => {
+  const h=harness(); h.onHostOpen=()=>h.menu.open(); h.menu.open();
+  assert.equal(h.modals.length,1); h.menu.stop(); assert.equal(h.menu.visibility.read(),false);
+  const stopped=harness(); stopped.onHostOpen=()=>stopped.menu.stop(); stopped.menu.open();
+  assert.equal(stopped.modals.length,1); assert.equal(stopped.modals[0].closed,true);
+  assert.equal(stopped.menu.visibility.read(),false);
 });

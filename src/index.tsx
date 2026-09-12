@@ -570,7 +570,7 @@ function preflightObservation(payload: SnapshotPayload): PreflightObservation {
   }, Date.now(), SNAPSHOT_STALE_AFTER_MS);
 }
 
-function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAvailable, publishTiles, publishDetails, menuVisibility }: { preflight: SleepPreflightCoordinator; connection: ReturnType<typeof startConnectionMonitor>; shortcut: ReturnType<typeof createDisplayShortcutRuntime>; openExpanded(): void; menuShortcutAvailable: boolean; publishTiles(readings: Readings): void; publishDetails(state: NonEgpuDetailState | null): void; menuVisibility: MenuVisibility }) {
+function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAvailable, publishTiles, publishDetails, menuVisibility, publishMenuSnapshot }: { preflight: SleepPreflightCoordinator; connection: ReturnType<typeof startConnectionMonitor>; shortcut: ReturnType<typeof createDisplayShortcutRuntime>; openExpanded(): void; menuShortcutAvailable: boolean; publishTiles(readings: Readings): void; publishDetails(state: NonEgpuDetailState | null): void; menuVisibility: MenuVisibility; publishMenuSnapshot(snapshot: SnapshotPayload["snapshot"] | null): void }) {
   const quickAccessVisible = useQuickAccessVisible();
   const expandedVisible = useSyncExternalStore(menuVisibility.subscribe, menuVisibility.read, menuVisibility.read);
   const statusAnchor = useRef<HTMLDivElement | null>(null);
@@ -877,9 +877,9 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
     setNavStack(stackOnPanelOpen());
     setDockedIgpuStatus(null);
     setDiagnosticLoggingStatus(null);
-    setPeripheralStatus(null);
+    if (!expandedVisible) setPeripheralStatus(null);
     setActionHistory(null);
-  }, [quickAccessVisible]);
+  }, [quickAccessVisible, expandedVisible]);
 
   useEffect(() => {
     let disposed = false;
@@ -895,7 +895,7 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
       if (!disposed) {
         timer = window.setTimeout(
           () => void poll(true),
-          refreshDelayForVisibility(nextPayload, quickAccessVisible),
+          refreshDelayForVisibility(nextPayload, quickAccessVisible || expandedVisible),
         );
       }
     };
@@ -906,7 +906,7 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
         window.clearTimeout(timer);
       }
     };
-  }, [preflight, quickAccessVisible, refresh]);
+  }, [preflight, quickAccessVisible, expandedVisible, refresh]);
 
   const snapshot = payload?.snapshot;
   const disconnect = snapshot?.disconnect_readiness;
@@ -1713,6 +1713,7 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
     busy: performance.busy, stopping: performance.stopping,
   });
   useEffect(() => {
+    publishMenuSnapshot(menuFresh ? snapshot ?? null : null);
     publishTiles({
       fresh: menuFresh,
       egpu: menuFresh ? egpuPresentation(payload) : null,
@@ -1735,7 +1736,7 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
         ? displayTargetEvidence(snapshot.displays)
         : UNKNOWN_EVIDENCE,
     });
-  }, [publishTiles, menuFresh, payload, peripheralStatus, menuShortcutAvailable,
+  }, [publishTiles, publishMenuSnapshot, menuFresh, payload, peripheralStatus, menuShortcutAvailable,
       menuPerformance.active, menuPerformance.autoKnown, menuPerformance.stopping,
       menuPerformance.supported, menuPerformance.action, menuPerformance.busy,
       performance.manual?.current_watts, menuAgeTick, snapshot?.displays]);
@@ -1745,7 +1746,7 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
       peripheral: menuFresh ? peripheralStatus : null, shortcutAvailable: menuShortcutAvailable,
     }) });
   }, [publishDetails, performance, menuFresh, peripheralStatus, menuShortcutAvailable]);
-  useEffect(() => () => publishDetails(null), [publishDetails]);
+  useEffect(() => () => { publishDetails(null); publishMenuSnapshot(null); }, [publishDetails, publishMenuSnapshot]);
 
   // Re-evaluate when this observation actually expires, so a reading cannot
   // remain "fresh" merely because the panel went quiet. Scheduling a full
@@ -2447,6 +2448,7 @@ export default definePlugin(() => {
   const detailPublisher = createNonEgpuDetailPublisher();
   const renderDetail = createNonEgpuDetailRenderer(detailPublisher.source);
   let menuSnapshot: SnapshotPayload["snapshot"] | null = null;
+  const publishMenuSnapshot = (snapshot: SnapshotPayload["snapshot"] | null) => { menuSnapshot = snapshot; };
   const expandedMenu = createExpandedMenu(steamControllerInput(window), window, () =>
     !shortcut.modal.current && !shortcut.portableBusy.current && !shortcut.tvBusy.current && !warningModal,
     tilePublisher.source, () => menuSnapshot, renderDetail);
@@ -2520,10 +2522,8 @@ export default definePlugin(() => {
         const [payload, automatic, journal] = await Promise.all([
           getSnapshot(), getAutomaticDockStatus(), getTransitionJournalStatus(),
         ]);
-        menuSnapshot = payload.snapshot;
         return {payload, automatic, journal: journal.code};
       } catch (error) {
-        menuSnapshot = null;
         throw error;
       }
     },
@@ -2533,7 +2533,7 @@ export default definePlugin(() => {
   return {
     name: PRODUCT_NAME,
     titleView: <div className={staticClasses.Title} style={{ display: "flex", alignItems: "center" }}><BrandHeader /></div>,
-    content: <Content preflight={preflight} connection={connection} shortcut={shortcut} openExpanded={expandedMenu.open} menuShortcutAvailable={expandedMenu.available} publishTiles={tilePublisher.publish} publishDetails={detailPublisher.publish} menuVisibility={expandedMenu.visibility} />,
+    content: <Content preflight={preflight} connection={connection} shortcut={shortcut} openExpanded={expandedMenu.open} menuShortcutAvailable={expandedMenu.available} publishTiles={tilePublisher.publish} publishDetails={detailPublisher.publish} menuVisibility={expandedMenu.visibility} publishMenuSnapshot={publishMenuSnapshot} />,
     icon: <BrandIcon />,
     alwaysRender: true,
     onDismount() {
