@@ -148,6 +148,41 @@ class MainDockAdmissionTests(unittest.TestCase):
         self.assertEqual(result['code'], 'link_recovery.dock_mutation_inhibited')
         self.assertEqual(service.asked_for, [])
 
+    def test_manual_recovery_preflight_runs_inside_admission_and_can_refuse(self):
+        from tests.test_link_recovery_service import FakeCommands, USER, service
+
+        fixture = recovery_fixtures.LinkRecoveryStrategySelectionTests()
+        fixture.module = self.module
+        plugin, _ = fixture.executable()
+        commands = FakeCommands()
+        plugin._link_recovery, _ = service(commands, [True])
+        events = []
+
+        @contextmanager
+        def admit():
+            events.append('admitted')
+            try:
+                yield
+            finally:
+                events.append('released')
+
+        def preflight(*_args):
+            self.assertEqual(events, ['admitted'])
+            events.append('preflight')
+            return 'link_recovery.game_running'
+
+        plugin._dock_mutation_gate = lambda: NS(admit=admit)
+        plugin._manual_link_recovery_preflight = preflight
+        with patch.object(self.module, 'SnapshotTransitionObservationAdapter'), \
+             patch.object(self.module, 'GamescopeDiscovery'), \
+             patch.object(self.module, 'resolve_gamescope_user',
+                          return_value=NS(ok=True, context=USER)):
+            result = asyncio.run(plugin.execute_link_recovery(confirm=True))
+        self.assertEqual(result['code'], 'link_recovery.game_running')
+        self.assertEqual(events, ['admitted', 'preflight', 'released'])
+        self.assertEqual(commands.calls, [])
+        self.assertFalse(plugin._link_recovery.attempted)
+
     def test_legacy_disconnect_refuses_before_runtime_execution(self):
         runtime = NS(execute=Mock())
         self.plugin._live_disconnect_runtime = lambda: runtime

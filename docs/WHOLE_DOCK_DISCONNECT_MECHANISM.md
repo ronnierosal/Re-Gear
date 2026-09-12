@@ -613,3 +613,17 @@ telemetry were not captured; software causation and hardware damage are unknown.
 Potential hardware damage risk blocks further powered software reconnect trials
 pending investigation and reviewed stop/recovery criteria. Software removal does
 not power off a dock, and these observations do not validate live physical unplug.
+
+## September 12 PR integration check
+
+The draft whole-dock branch was refreshed against main `ce5c14d`, including
+storage evidence gaps (#278/#279), guarded recovery (#301), and the verified
+Gaming-session readiness producer (#299). Manual recovery retains both the
+shared dock-mutation admission gate and the service's fresh preflight after
+reservation. Storage fixtures use explicit evidence gaps; incomplete evidence
+still fails closed. The immutable auto-TV checkpoint was not changed.
+
+This integration is source/test validation only. It does not lift the powered
+software-reconnect hold, enable sleep continuation, certify physical unplug,
+or represent a new device installation. Shutdown UI and supervised next-boot
+validation remain outstanding as described in [DOCK_POWER.md](DOCK_POWER.md).
