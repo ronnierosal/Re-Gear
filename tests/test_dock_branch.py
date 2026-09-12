@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import ast
+import inspect
 import os
 import sys
 import tempfile
@@ -13,6 +15,7 @@ sys.path.insert(0, str(ROOT / "backend"))
 
 from regear.adapters.steamos.dock_branch import DockBranchDiscovery  # noqa: E402
 from regear.domain.dock_teardown import (  # noqa: E402
+    StorageEvidenceGap,
     TunnelCapability,
     WritePermission,
 )
@@ -326,7 +329,12 @@ class MountinfoParsingTests(Harness):
 
     def mounts(self, devices, lines):
         self.fake.mountinfo.write_text("".join(lines), encoding="utf-8")
-        return self.discovery._mounts_for(set(devices))
+        found, gaps = self.discovery._mounts_for(set(devices))
+        return found, not gaps
+
+    def mount_gaps(self, devices, lines):
+        self.fake.mountinfo.write_text("".join(lines), encoding="utf-8")
+        return self.discovery._mounts_for(set(devices))[1]
 
     def test_no_devices_needs_no_read_at_all(self) -> None:
         found, complete = self.mounts((), [])
@@ -435,7 +443,8 @@ class MountinfoParsingTests(Harness):
     def test_an_unreadable_mountinfo_is_incomplete_not_empty(self) -> None:
         self.fake.mountinfo.unlink()
 
-        found, complete = self.discovery._mounts_for({"sda"})
+        found, _gaps = self.discovery._mounts_for({"sda"})
+        complete = not _gaps
 
         self.assertEqual(found, ())
         self.assertFalse(complete)
@@ -483,7 +492,16 @@ class OtherStorageUseTests(Harness):
     """
 
     def uses(self, devices):
-        return self.discovery._other_uses(set(devices))
+        """`(uses, complete)`, so cases about completeness stay readable.
+
+        The reading now carries WHICH evidence was missing; `gaps` below
+        exposes that for the cases that care.
+        """
+        found, gaps = self.discovery._other_uses(set(devices))
+        return found, not gaps
+
+    def gaps(self, devices):
+        return self.discovery._other_uses(set(devices))[1]
 
     def test_a_quiet_system_reports_no_other_use(self) -> None:
         self.fake.block_metadata("sda")
@@ -616,6 +634,122 @@ class OtherStorageUseTests(Harness):
         self.assertFalse(complete)
 
 
+class StorageGapTests(Harness):
+    """Which evidence was missing, not merely that some was.
+
+    Every one of these used to arrive as one code. An unreadable mount
+    namespace, an absent `/proc/swaps` and a partition list that could not be
+    taken have different remedies, and one of them is transient.
+    """
+
+    def storage(self, devices):
+        return self.discovery._other_uses(set(devices))[1]
+
+    def test_the_same_kind_of_failure_twice_is_reported_once(self):
+        """A reading says which evidence is missing, not how often."""
+        self.fake.block_metadata("sda")
+        self.fake.block_metadata("sdb")
+        for device in ("sda", "sdb"):
+            (self.fake.block / device / "holders").rmdir()
+
+        gaps = self.storage({"sda", "sdb"})
+
+        self.assertEqual(gaps, (StorageEvidenceGap.HOLDERS_UNREADABLE,))
+
+    def test_simultaneous_failures_all_survive(self):
+        """An implementation that returns on the first gap passes without this."""
+        self.fake.block_metadata("sda")
+        (self.fake.block / "sda" / "holders").rmdir()
+        self.fake.swaps.unlink()
+
+        gaps = self.storage({"sda"})
+
+        self.assertIn(StorageEvidenceGap.SWAPS_UNREADABLE, gaps)
+        self.assertIn(StorageEvidenceGap.HOLDERS_UNREADABLE, gaps)
+
+    def test_gaps_are_reported_in_declaration_order_not_discovery_order(self):
+        """The later-declared cause is made to happen FIRST, on purpose.
+
+        Most failure combinations happen to be discovered in declaration
+        order anyway, so a fixture built from them proves nothing: appending
+        as the walk goes passes it. This one inverts them. The mount table is
+        read top to bottom, so an alias line placed above a truncated line
+        makes MOUNT_SOURCE_UNATTRIBUTABLE (declared fifth) happen before
+        MOUNT_LINE_UNPARSABLE (declared fourth).
+        """
+        self.fake.block_metadata("sda")
+
+        _, gaps = self.discovery._mounts_for({"sda"})
+        self.assertEqual(gaps, ())  # the fixture itself is clean
+
+        self.fake.mountinfo.write_text(
+            "36 25 8:1 / /mnt/a rw - ext4 /dev/disk/by-uuid/1234-ABCD rw\n"
+            "37 25 8:2\n",
+            encoding="utf-8",
+        )
+
+        _, gaps = self.discovery._mounts_for({"sda"})
+
+        self.assertEqual(
+            gaps,
+            (
+                StorageEvidenceGap.MOUNT_LINE_UNPARSABLE,
+                StorageEvidenceGap.MOUNT_SOURCE_UNATTRIBUTABLE,
+                StorageEvidenceGap.DEVICE_NUMBERS_INCOMPLETE,
+            ),
+        )
+
+    def test_no_gap_can_carry_a_path_or_a_device_name(self):
+        """Structural, so a later detail field cannot quietly leak one.
+
+        This reading crosses other processes. It must not become a way to
+        enumerate them, and the type having nowhere to put a path beats
+        remembering to redact one.
+        """
+        for gap in StorageEvidenceGap:
+            with self.subTest(gap=gap):
+                self.assertNotIn("/", gap.value)
+                self.assertEqual(gap.value, gap.value.lower())
+                self.assertTrue(gap.value.replace("_", "").isalpha())
+
+    def test_no_reading_is_constructed_with_a_bool_where_gaps_belong(self):
+        """Static, because the cases that caught this skip on Windows.
+
+        `gaps` took the position `complete` used to hold, so a leftover
+        `DockStorageReading((), (), True)` still parses, still runs, and
+        inverts the answer: a truthy non-empty value reads as gaps present,
+        `False` reads as none. Two such returns survived the change and only
+        Linux CI saw them, because they need colon-bearing PCI paths.
+        """
+        source = Path(inspect.getsourcefile(DockBranchDiscovery))
+        offenders = []
+        for node in ast.walk(ast.parse(source.read_text(encoding="utf-8"))):
+            if not isinstance(node, ast.Call):
+                continue
+            if getattr(node.func, "id", None) != "DockStorageReading":
+                continue
+            for argument in list(node.args[2:3]) + [
+                keyword.value
+                for keyword in node.keywords
+                if keyword.arg == "gaps"
+            ]:
+                if isinstance(argument, ast.Constant) and isinstance(
+                    argument.value, bool
+                ):
+                    offenders.append(node.lineno)
+        self.assertEqual(
+            offenders, [], f"bool passed as gaps at line(s) {offenders}"
+        )
+
+    def test_a_finished_reading_has_no_gaps_and_says_it_is_complete(self):
+        self.fake.block_metadata("sda")
+
+        found, gaps = self.discovery._other_uses({"sda"})
+
+        self.assertEqual(found, ())
+        self.assertEqual(gaps, ())
+
+
 class AliasMountTests(Harness):
     """A drive mounted through an alias is mounted.
 
@@ -628,7 +762,12 @@ class AliasMountTests(Harness):
 
     def mounts(self, devices, lines):
         self.fake.mountinfo.write_text("".join(lines), encoding="utf-8")
-        return self.discovery._mounts_for(set(devices))
+        found, gaps = self.discovery._mounts_for(set(devices))
+        return found, not gaps
+
+    def mount_gaps(self, devices, lines):
+        self.fake.mountinfo.write_text("".join(lines), encoding="utf-8")
+        return self.discovery._mounts_for(set(devices))[1]
 
     ALIAS = (
         "36 25 8:1 / /run/media/deck/BACKUP rw,relatime "
@@ -732,7 +871,8 @@ class MountNamespaceTests(Harness):
     def test_a_mount_in_another_namespace_is_found(self) -> None:
         self.fake.namespace_mount("4242", "/dev/sda1", "/run/host/media/BACKUP")
 
-        found, complete = self.discovery._mounts_for({"sda"})
+        found, _gaps = self.discovery._mounts_for({"sda"})
+        complete = not _gaps
 
         self.assertEqual(found, ("/run/host/media/BACKUP",))
         self.assertTrue(complete)
@@ -765,7 +905,8 @@ class MountNamespaceTests(Harness):
     def test_a_process_that_exited_mid_walk_holds_nothing(self) -> None:
         (self.fake.proc / "4242").mkdir(parents=True, exist_ok=True)
 
-        found, complete = self.discovery._mounts_for({"sda"})
+        found, _gaps = self.discovery._mounts_for({"sda"})
+        complete = not _gaps
 
         self.assertEqual(found, ())
         self.assertTrue(complete)
@@ -779,7 +920,8 @@ class MountNamespaceTests(Harness):
             child.rmdir()
         self.fake.proc.rmdir()
 
-        found, complete = self.discovery._mounts_for({"sda"})
+        found, _gaps = self.discovery._mounts_for({"sda"})
+        complete = not _gaps
 
         self.assertEqual(found, ("/run/media/deck/BACKUP",))
         self.assertFalse(complete)

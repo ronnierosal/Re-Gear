@@ -28,7 +28,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from regear.adapters.steamos.dock_branch import TunnelReading  # noqa: E402
+from regear.adapters.steamos.dock_branch import (  # noqa: E402
+    DockStorageReading,
+    TunnelReading,
+)
 from regear.domain.dock_teardown import decide_dock_teardown  # noqa: E402
 
 
@@ -99,6 +102,29 @@ class ProbeReportTests(unittest.TestCase):
     sees -- and when the dropped field is the reason for a refusal, they
     are told the scan failed instead of what actually happened.
     """
+
+    def test_every_storage_reading_field_is_reported(self):
+        """The same guard, for the reading that decides about a player's files.
+
+        `gaps` exists precisely so an operator learns which evidence was
+        missing. A probe that drops it returns them to the single unactionable
+        sentence the field was added to replace.
+        """
+        source = PROBE.read_text(encoding="utf-8")
+        reported = {
+            node.attr
+            for node in ast.walk(ast.parse(source))
+            if isinstance(node, ast.Attribute)
+            and isinstance(node.value, ast.Name)
+            and node.value.id == "storage"
+        }
+        declared = set(DockStorageReading.__dataclass_fields__) | {"complete"}
+        missing = declared - reported
+        self.assertEqual(
+            missing,
+            set(),
+            f"observed by the adapter but never reported: {sorted(missing)}",
+        )
 
     def test_every_tunnel_reading_field_is_reported(self):
         source = PROBE.read_text(encoding="utf-8")

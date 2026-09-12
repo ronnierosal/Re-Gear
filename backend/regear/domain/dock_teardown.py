@@ -63,6 +63,7 @@ operation or two.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from enum import StrEnum
 
@@ -94,6 +95,53 @@ class UsbBranchEvidence:
     input_devices: tuple[str, ...] = ()
     #: Audio, network and anything else that will disconnect with the branch.
     other_devices: tuple[str, ...] = ()
+
+
+class StorageEvidenceGap(StrEnum):
+    """A specific reason the storage reading did not finish.
+
+    The completeness flag says only that something was not read. These say
+    what, because the remedies are not the same and one of them is transient:
+    an unreadable mount namespace, a `/proc/swaps` that is absent, a partition
+    list that could not be taken and a truncated mountinfo line are four
+    different problems that reached an operator as one sentence.
+
+    Declaration order is report order, so a reading names its gaps the same
+    way whichever walk happened to fail first.
+
+    Members carry no device name, mount point, pid or path, and there is
+    nowhere in the type to put one. A reading that crosses other processes
+    must not become a way to enumerate them, and making that structural
+    beats remembering to redact.
+    """
+
+    BLOCK_DEVICE_WALK_INCOMPLETE = "block_device_walk_incomplete"
+    MOUNT_TABLE_UNREADABLE = "mount_table_unreadable"
+    MOUNT_NAMESPACE_UNREADABLE = "mount_namespace_unreadable"
+    MOUNT_LINE_UNPARSABLE = "mount_line_unparsable"
+    MOUNT_SOURCE_UNATTRIBUTABLE = "mount_source_unattributable"
+    DEVICE_NUMBERS_INCOMPLETE = "device_numbers_incomplete"
+    SWAPS_UNREADABLE = "swaps_unreadable"
+    HOLDERS_UNREADABLE = "holders_unreadable"
+    PARTITION_INVENTORY_UNREADABLE = "partition_inventory_unreadable"
+
+
+#: Declaration order, resolved once. `sorted` over the members needs a key
+#: that is not the string value, or "block_device..." sorts before "swaps..."
+#: by accident rather than by design.
+STORAGE_GAP_ORDER = {gap: index for index, gap in enumerate(StorageEvidenceGap)}
+
+
+def ordered_storage_gaps(
+    gaps: "Iterable[StorageEvidenceGap]",
+) -> tuple[StorageEvidenceGap, ...]:
+    """The gaps, deduplicated, in declaration order.
+
+    Two namespaces refusing is one `MOUNT_NAMESPACE_UNREADABLE`, not two: a
+    reading reports which kinds of evidence are missing, and repeating a kind
+    would leak how many times it happened without saying anything useful.
+    """
+    return tuple(sorted(set(gaps), key=STORAGE_GAP_ORDER.__getitem__))
 
 
 class TunnelCapability(StrEnum):
