@@ -46,7 +46,12 @@ def create_power_request(action, session, *, monotonic=time.monotonic,
     now = monotonic()
     if type(now) not in (int, float) or not math.isfinite(now):
         raise ValueError('dock_power.invalid_intent')
-    return DockPowerRequest(uuid.uuid4().hex, action, session, now, now + ttl_seconds)
+    deadline = now + ttl_seconds
+    # Floating-point addition can round a 300-second TTL above the strict
+    # limit. Shorten by one representable step rather than relax validation.
+    if deadline - now > ttl_seconds:
+        deadline = math.nextafter(deadline, -math.inf)
+    return DockPowerRequest(uuid.uuid4().hex, action, session, now, deadline)
 
 
 def continue_dock_power(request, *, runtime, store, portable_verified, power,

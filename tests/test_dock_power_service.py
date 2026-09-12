@@ -1,3 +1,4 @@
+import math
 import sys
 from dataclasses import FrozenInstanceError, replace
 from pathlib import Path
@@ -48,9 +49,30 @@ class DockPowerServiceTests(unittest.TestCase):
         self.assertEqual(self.request.deadline, 310)
         with self.assertRaises(FrozenInstanceError):
             self.request.action = 'sleep'
-        for ttl in (0, 301, True, float('nan'), float('inf')):
+        for ttl in (0, -1, 301, True, None, '300', float('nan'), float('inf')):
             with self.assertRaises(ValueError):
                 create_power_request('shutdown', 'session-a', ttl_seconds=ttl)
+
+    def test_rounded_deadline_never_exceeds_requested_ttl(self):
+        now = 212.2
+        self.assertGreater((now + 300) - now, 300)
+        for ttl in (300, 0.1):
+            with self.subTest(ttl=ttl):
+                request = create_power_request('shutdown', 'session-a',
+                    monotonic=lambda: now, ttl_seconds=ttl)
+                self.assertGreater(request.deadline, now)
+                self.assertLessEqual(request.deadline - now, ttl)
+                self.assertLessEqual(request.deadline - now, 300)
+                expected = (math.nextafter(now + ttl, -math.inf)
+                            if (now + ttl) - now > ttl else now + ttl)
+                self.assertEqual(request.deadline, expected)
+        with self.assertRaisesRegex(ValueError, 'invalid_intent'):
+            DockPowerRequest('a' * 32, 'shutdown', 'session-a', now, now + 300)
+
+    def test_unrepresentable_positive_ttl_is_refused(self):
+        with self.assertRaisesRegex(ValueError, 'invalid_intent'):
+            create_power_request('shutdown', 'session-a',
+                monotonic=lambda: 1e20, ttl_seconds=300)
 
     def test_sleep_refused_before_any_teardown(self):
         with self.assertRaisesRegex(ValueError, 'sleep_unverified'):
