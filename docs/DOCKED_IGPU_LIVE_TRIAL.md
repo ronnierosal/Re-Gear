@@ -38,6 +38,62 @@ Still required before an actionable handheld test ZIP:
 - Linux integration checks and the separately authorized supervised hardware
   gates below. Packaging and installation remain separate release-owner work.
 
+## Native interface and runtime wiring sequence
+
+The next executable read-only slice is
+`IgpuTvFeasibilityCollector.collect_stream_candidate()`: collect two dumps through
+the existing constrained PipeWire runner, bracket them with three fresh topology
+samples and exact Gamescope-session observations, and join the node to a unique
+client with matching protocol credential PID/UID. Node/client serials and the
+server cookie must remain identical. Reused IDs, duplicate objects, stale
+samples, server restart, unknown credentials or changed sessions refuse a
+candidate. Application-declared PID properties are not used as credentials.
+
+This still returns only a `credential_linked_candidate`, never permission to
+capture or display. PipeWire's native protocol supplies protected client
+credentials, but generic node `client.id` properties do not universally prove
+creation provenance. Some lingering factory paths preserve caller-supplied
+client IDs. Research-only sources, with no upstream code copied:
+
+- [Native credential acquisition](https://github.com/PipeWire/pipewire/blob/1cd56b0615bb8bd112d9a2865a41cfdf638692f6/src/modules/module-protocol-native.c#L657-L663)
+- [Protected security-property updates](https://github.com/PipeWire/pipewire/blob/1cd56b0615bb8bd112d9a2865a41cfdf638692f6/src/pipewire/impl-client.c#L183-L185)
+- [Native client-node ownership assignment](https://github.com/PipeWire/pipewire/blob/1cd56b0615bb8bd112d9a2865a41cfdf638692f6/src/modules/module-client-node/client-node.c#L1798)
+- [Lingering adapter creation limitation](https://github.com/PipeWire/pipewire/blob/1cd56b0615bb8bd112d9a2865a41cfdf638692f6/src/modules/module-adapter.c#L199-L202)
+
+Before enabling the existing presenter port, the remaining native interface must:
+
+1. Bind authenticated native stream creation (or a verified Gamescope-owned
+   export handle), process birth identity and installed protocol implementation.
+   A generic metadata join cannot substitute for this gate.
+2. Acquire only an explicitly bound eGPU display lease and original-session
+   capture resource. Verify exact connector ownership before acquisition; refuse
+   if this requires replacing the running Gamescope session or its DRM ownership.
+3. Measure actual frame sequence/content continuity and frame age, and stop on
+   stalls under a short owned-resource lease. Synthetic test frames, successful
+   process launch and active connector modes are not live output proof.
+4. Release only owned resources and restore the prior display state before the
+   existing engine handles the natural-exit promotion. Failure retains a
+   categorical action-required state and never claims cable-removal clearance.
+
+The preferred next native locator experiment is now concrete: pinned Gamescope
+`05949f8149bb5d16b006624d319a76e2433caf4c`
+[exports its own stream node at bind time](https://github.com/ValveSoftware/gamescope/blob/05949f8149bb5d16b006624d319a76e2433caf4c/src/wlserver.cpp#L1181-L1193)
+through [gamescope_pipewire version 1](https://github.com/ValveSoftware/gamescope/blob/05949f8149bb5d16b006624d319a76e2433caf4c/protocol/gamescope-pipewire.xml).
+An experimental read-only client could authenticate the Unix-socket peer against
+the exact Gamescope PID/UID/birth observation, request that export, and cross-check
+its node/serial/server continuity against the read-only candidate. This protocol
+is explicitly private upstream, so installed-version and extension availability
+must be checked before using it. The client is not implemented here. Even a
+verified export would prove neither the original game's render GPU nor ownership
+of an eGPU DRM lease; those remain blockers to a native presenter implementation.
+
+Runtime composition belongs under the existing presentation owner's serialization
+and trusted setting source. That owner must provide authenticated session-user
+and bracketed observation ports, keep this read-only collection separate from
+capture authority, and bind persisted lifecycle correlation before exposing
+completion to the separate popup owner. No `main.py`, shared collector or RPC
+wiring is delivered here. The existing reviewed diagnostics remain unchanged.
+
 ## Required full backend lifecycle (clarified 2026-09-12)
 
 This is the acceptance target for the existing `docked-igpu-live-test-build`

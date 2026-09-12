@@ -204,6 +204,48 @@ class CollectorTests(unittest.TestCase):
         self.assertNotIn("private", json.dumps(result.to_payload()))
         self.assertEqual(self.dump.calls, [])
 
+    def candidate_collector(self, *, samples=None, sessions=None):
+        return IgpuTvFeasibilityCollector(
+            observations=Scripted(*(samples or (self.first, self.second,
+                replace(self.first, observation_id="sample-3")))),
+            gamescope_sessions=Scripted(*(sessions or (self.session, self.session))),
+            session_user=SimpleNamespace(uid=1000), pipewire=self.dump)
+
+    def test_two_dump_candidate_collection_keeps_all_authority_flags_false(self):
+        from tests.test_pipewire_stream_binding import inventory
+        self.dump.result = SimpleNamespace(ok=True, output=json.dumps(inventory()).encode())
+        result = self.candidate_collector().collect_stream_candidate()
+        self.assertEqual(result.code, "credential_linked_candidate")
+        self.assertEqual(len(self.dump.calls), 2)
+        self.assertTrue(all(value is False for key, value in result.to_payload().items() if key != "code"))
+
+    def test_failed_first_dump_or_changed_midpoint_does_not_collect_again(self):
+        self.dump.result = SimpleNamespace(ok=False, output=b"private")
+        self.assertEqual(self.candidate_collector().collect_stream_candidate().code, "dump_invalid")
+        self.assertEqual(len(self.dump.calls), 1)
+        self.dump.calls.clear()
+        self.dump.result = SimpleNamespace(ok=True, output=b"[]")
+        changed = replace(self.second, snapshot=replace(self.second.snapshot,
+            gamescope=replace(self.second.snapshot.gamescope, pid=456)))
+        self.assertEqual(self.candidate_collector(samples=(self.first, changed)).collect_stream_candidate().code,
+                         "candidate_changed")
+        self.assertEqual(len(self.dump.calls), 1)
+
+    def test_stale_or_replaced_session_never_returns_candidate(self):
+        result = self.candidate_collector(samples=(self.first, self.second, self.first)).collect_stream_candidate()
+        self.assertEqual(result.code, "sample_stale")
+        replaced = GamescopeSessionObservation(True, "session.verified", "b" * 64)
+        result = self.candidate_collector(sessions=(self.session, replaced)).collect_stream_candidate()
+        self.assertEqual(result.code, "candidate_changed")
+
+    def test_server_restart_between_actual_dump_calls_rejects_candidate(self):
+        from tests.test_pipewire_stream_binding import inventory
+        one, two = inventory(), inventory()
+        two[0]["info"]["cookie"] += 1
+        replies = iter((one, two))
+        self.dump.dump = lambda user: SimpleNamespace(ok=True, output=json.dumps(next(replies)).encode())
+        self.assertEqual(self.candidate_collector().collect_stream_candidate().code, "candidate_changed")
+
 
 if __name__ == "__main__":
     unittest.main()

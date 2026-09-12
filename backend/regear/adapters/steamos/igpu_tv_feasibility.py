@@ -187,3 +187,49 @@ class IgpuTvFeasibilityCollector:
             return FeasibilityInventory(dependencies, code)
         except Exception:
             return FeasibilityInventory(missing, "observation_unavailable")
+
+    def collect_stream_candidate(self):
+        """Join two fresh dumps to stable session evidence; never authorize capture.
+
+        The returned private IDs are observation candidates only. A native
+        presenter must independently authenticate creation provenance and obtain
+        the corresponding owned resources; it cannot dispatch from this result.
+        """
+        from .pipewire_stream_binding import StreamCandidate, bind_stream_candidate
+
+        try:
+            session = self._sessions.observe()
+            before = self._observations.observe()
+            if not self._valid(before, session):
+                return StreamCandidate("binding_input_invalid")
+            first = self._pipewire.dump(self._user)
+            if first.ok is not True:
+                return StreamCandidate("dump_invalid")
+            middle = self._observations.observe()
+            if not self._valid(middle, session):
+                return StreamCandidate("binding_input_invalid")
+            if (middle.snapshot.gamescope != before.snapshot.gamescope
+                    or middle.snapshot.displays != before.snapshot.displays
+                    or middle.snapshot.gpus != before.snapshot.gpus):
+                return StreamCandidate("candidate_changed")
+            second = self._pipewire.dump(self._user)
+            after = self._observations.observe()
+            final_session = self._sessions.observe()
+            if not self._valid(after, final_session):
+                return StreamCandidate("binding_input_invalid")
+            if len({before.sample_id, middle.sample_id, after.sample_id}) != 3:
+                return StreamCandidate("sample_stale")
+            if session.generation != final_session.generation or any(
+                current.snapshot.gamescope != before.snapshot.gamescope
+                or current.snapshot.displays != before.snapshot.displays
+                or current.snapshot.gpus != before.snapshot.gpus
+                for current in (middle, after)
+            ):
+                return StreamCandidate("candidate_changed")
+            if second.ok is not True:
+                return StreamCandidate("dump_invalid")
+            return bind_stream_candidate(first.output, second.output,
+                expected_pid=before.snapshot.gamescope.pid, expected_uid=self._user.uid,
+                before_sample_id=before.sample_id, after_sample_id=after.sample_id)
+        except Exception:
+            return StreamCandidate("binding_input_invalid")
