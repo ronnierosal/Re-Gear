@@ -78,6 +78,25 @@ class RuntimeTests(unittest.TestCase):
             'usb_removed', 'tunnel_remove_intent', 'deauthorize', 'software_down'])
         self.assertIsNotNone(self.claim)
 
+    def test_power_intent_binds_after_claim_before_release_intent(self):
+        self.names = {'gpu', 'audio', 'usb'}
+        def bind():
+            self.assertEqual(self.claim.stage, 'claimed')
+            self.assertEqual(self.events, [])
+            return True
+        self.runtime.begin_before_release('operation', self.approval, before_release=bind)
+        self.assertEqual(self.events, ['release_intent'])
+
+    def test_power_intent_failure_retains_claim_without_release(self):
+        self.names = {'gpu', 'audio', 'usb'}
+        with self.assertRaisesRegex(ValueError, 'intent_not_recorded'):
+            self.runtime.begin_before_release('operation', self.approval,
+                before_release=lambda: False)
+        self.assertEqual(self.claim.stage, 'claimed')
+        self.assertEqual(self.events, [])
+        self.writer.remove_usb.assert_not_called()
+        self.writer.deauthorize.assert_not_called()
+
     def test_power_proof_requires_fresh_owned_complete_removal(self):
         self.assertTrue(self.runtime.execute('operation', self.approval).software_down)
         before = list(self.events)

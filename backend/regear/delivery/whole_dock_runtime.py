@@ -151,7 +151,7 @@ class WholeDockRuntime:
         finally:
             self._continuation_lock.release()
 
-    def begin_before_release(self, operation, approval):
+    def begin_before_release(self, operation, approval, *, before_release=None):
         """Claim once before release. Failure retains any persisted intent."""
         if self._operation is not None or self._admission() is not True:
             raise ValueError('dock_teardown.begin_refused')
@@ -172,6 +172,8 @@ class WholeDockRuntime:
         if not self._store.claim(operation, now.binding, now.generation):
             raise ValueError('dock_teardown.transaction_owned')
         self._operation, self._consent = operation, approval
+        if before_release is not None and before_release() is not True:
+            raise ValueError('dock_power.intent_not_recorded')
         self.record(operation, 'release_intent')
 
     def verify_gpu_release(self, result):
