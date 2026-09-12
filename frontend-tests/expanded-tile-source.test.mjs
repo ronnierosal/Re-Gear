@@ -47,12 +47,32 @@ const performanceState = (over = {}) => ({
 const full = () => ({
   egpu: egpuPresentation(), controller: controllerPresentation(),
   performance: performanceState(), manualWatts: 15, fresh: true, performanceFresh: true,
+  controllerFresh: true,
 });
 
 // ------------------------------------------- freshness is per source, not shared
 
 const perfTiles = (readings) => buildTiles(readings).performance;
 const perfValues = (readings) => perfTiles(readings).map((tile) => tile.value);
+
+test("controller evidence is gated by its own reading, not the snapshot", () => {
+  // Peripheral status arrives over a different transport and carries no
+  // observation timestamp at all, so the snapshot's age says nothing about it
+  // in either direction.
+  const noReading = { ...full(), controllerFresh: false };
+  assert.equal(noReading.fresh, true, "the snapshot is still fresh in this case");
+  for (const tile of buildTiles(noReading).controllers) assert.equal(tile.value, "Unknown");
+
+  const staleSnapshot = { ...full(), fresh: false, controllerFresh: true };
+  assert.ok(buildTiles(staleSnapshot).controllers.some((tile) => tile.value !== "Unknown"),
+    "a controller reading must not be blanked by an unrelated stale observation");
+});
+
+test("absent controller freshness fails closed, like the other two flags", () => {
+  const { controllerFresh, ...omitted } = full();
+  assert.equal(controllerFresh, true);
+  for (const tile of buildTiles(omitted).controllers) assert.equal(tile.value, "Unknown");
+});
 
 test("an expired performance reading is Unknown even while the snapshot is fresh", () => {
   // The defect this pins: performance arrives over a different transport with

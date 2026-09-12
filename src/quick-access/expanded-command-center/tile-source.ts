@@ -65,6 +65,20 @@ export type Readings = {
    * be recent -- two readings from two transports, one of them vouching for
    * the other. Absent fails closed, the same as `fresh`. */
   performanceFresh?: boolean;
+  /** True ONLY for a controller reading its owner still considers live.
+   *
+   * `PeripheralStatusPayload` carries no observation timestamp at all -- only
+   * `schema_version`, `controller` and `audio` -- so unlike the snapshot there
+   * is nothing here to age, and unlike performance there is not even a request
+   * clock in the payload. This flag therefore means "a reading was received",
+   * not "a reading is recent"; the limitation is stated rather than papered
+   * over with a timestamp the backend never sent.
+   *
+   * What it does buy is independence: gating this on `fresh` would blank the
+   * controller tab because an unrelated GPU sample aged out, and would equally
+   * present a controller reading as current because one happened to be
+   * recent. Absent fails closed, the same as `fresh`. */
+  controllerFresh?: boolean;
   /** Actual display target -- which panel is being driven -- kept separate
    * from whether an external display is merely attached. */
   displayTarget?: Evidence;
@@ -136,7 +150,7 @@ function settingsTiles(): Tile[] {
     // composition still carries a card here, so it says where the control is
     // rather than pretending none exists.
     entry("shortcut", "Menu shortcut",
-      "Configured from the shortcut row below, not from this card."),
+      "Configured from the shortcut row above, not from this card."),
     entry("appearance", "Appearance", "No appearance preference is stored."),
     entry("updates", "Updates", "Re-Gear does not check for updates."),
     entry("diagnostics", "Diagnostics", "Diagnostics are configured from the main panel."),
@@ -205,7 +219,10 @@ export function buildTiles(readings: Readings): TileView {
   const egpu = fresh && readings.egpu
     ? egpuTiles(readings.egpu)
     : [...unknownTiles(UNKNOWN_EGPU), unknownDisconnectTile()];
-  const controller = fresh && readings.controller
+  // Its own owner's freshness, never the snapshot's: peripheral status arrives
+  // over a different transport and neither may vouch for the other.
+  const controllerFresh = readings.controllerFresh === true;
+  const controller = controllerFresh && readings.controller
     ? controllerTiles(readings.controller) : unknownTiles(UNKNOWN_CONTROLLERS);
 
   // Its own owner's freshness, never the snapshot's: these two readings come

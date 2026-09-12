@@ -101,6 +101,30 @@ test("the model name is detail only and never becomes the reading", () => {
   assert.equal(tiles.device.tone, "unavailable");
 });
 
+test("the disconnect detail keeps each carried reading's own grade", () => {
+  // The approved eGPU composition has no game or session card, so both are
+  // carried in the Safe Disconnect detail. Carrying the raw text instead of the
+  // graded line makes an unverified observation read as a confirmed one -- on
+  // the single card a player consults before touching hardware.
+  const graded = (game, session) => byId(m.egpuTiles({ ...blank, game, session })).disconnect.detail;
+
+  const sameText = "No game running";
+  assert.notEqual(
+    graded(verified(sameText), verified("Running")),
+    graded(observed(sameText), verified("Running")),
+    "identical text with different verification must not render identically",
+  );
+  assert.match(graded(observed(sameText), verified("Running")), /observed, not verified/);
+  assert.doesNotMatch(graded(verified(sameText), verified("Running")), /observed, not verified/);
+
+  // The session reading is graded independently of the game reading.
+  assert.match(graded(verified(sameText), observed("Running")), /observed, not verified/);
+  assert.match(graded(unknown, verified("Running")), /no observation available/);
+
+  // And the refusal itself is still there, ahead of both.
+  assert.match(graded(verified(sameText), verified("Running")), /cannot confirm live removal/i);
+});
+
 test("Safe Disconnect is always warning and never claims a cable may be pulled", () => {
   const readings = [
     blank,
