@@ -124,6 +124,15 @@ and correct the owning repository document.
 
 ## Required rules
 
+- Preserve approved UI when adding features or wiring data. Read
+  [UI design contract](docs/UI_DESIGN_CONTRACT.md) before presentation changes;
+  use the [approved reference and acceptance checklist](docs/design/command-center-approved.md)
+  for Command Center composition, controls and explicit supersessions.
+  record the source baseline and bounded visual delta, compare actual source
+  before/after at the same handheld dimensions, and retain navigation checks.
+  Mockup approval is limited to the requested feature/placement; it does not
+  authorize restyling, resizing or replacing unrelated UI. Apply an explicit
+  user-requested design change without repeatedly asking for approval.
 - Credit material external inspiration as well as copied/adapted code, tests,
   text and assets. Record the project/author, source link (pinned revision where
   available), affected feature and reuse type; carry delivered credits into

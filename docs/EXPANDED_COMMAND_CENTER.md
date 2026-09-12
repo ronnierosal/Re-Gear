@@ -1,11 +1,29 @@
-# Approved Command Center polish
+# Expanded Command Center presentation
+
+## Current design preservation contract
+
+The [approved reference and checklist](design/command-center-approved.md) is the
+current design target, including the utility strip inside the main panel and
+detached right Quick actions panel. The implementation checkpoint below describes
+existing source, not completion of that target. Its dimensions are not a mandate
+to override the newer approved proportions.
+
+Follow [UI design preservation](UI_DESIGN_CONTRACT.md). The compact correction
+merged through PR #274 supersedes the September 9 sizing and density described
+below: the central panel is 53vw/82vh, with compact tabs/footer and icon plus label
+above value and secondary text. Four columns begin at 400 measured content pixels,
+three at 300, two at 280 and one below 280. Safe Disconnect spans two columns in
+four-column mode. Do not treat generated utility mockups as replacement styling.
+See [validation evidence and native limits](COMMAND_CENTER_VALIDATION.md).
+
+## Historical September 9 polish
 
 The approved September 9 polish is now implemented in the shared expanded
 presentation and its browser fixture. The panel remains a **sample-data demo**;
 hardware tiles have no action authority. The native menu shortcut preference
 retains its existing Steam-client-local persistence.
 
-## Current presentation
+### Superseded presentation checkpoint
 
 - Supplied Re-Gear emblem and wordmark, with a compact demo status block.
 - The CommandCenterIcon component from the icon pack merged in PR #237 supplies
@@ -221,3 +239,22 @@ with two matches and no handler errors. This validates the temporary listener an
 existing menu together; installation of the packaged correction is still separate.
 The first temporary trial was invalid because it looked up a launcher button after
 the Decky page had closed. No permanent device changes were made by either trial.
+
+## Visible utility rails (presentation only)
+
+Quick Access includes left brightness/volume controls and right-edge mic mute,
+recording, performance-overlay and audio-output controls. All are disabled and
+marked **Unavailable / Support unverified** until supported application adapters
+are connected. Live APIs, the customization editor and persisted layouts are not
+implemented by this presentation slice. Hiding the rails outside Quick Access
+has no effect on hardware behavior.
+
+The central compact contract above is unchanged at the tested handheld and wider
+sizes (828x466 and 1280x720 CSS pixels). At viewports at or below 600px wide, a
+contained fallback reserves space for both rails; the center narrows and its
+existing content scrolls. Below 481px the unsupported side rails are hidden, preserving the original
+full-width central menu rather than crushing its tabs. Narrow fallback checks
+at 600x466 and 360x640 verify
+non-overlap, not native fit or guaranteed simultaneous visibility of every tile.
+Source browser checks cover pointer navigation, keyboard containment and nested
+Back focus. Native controller behavior and device readability remain unverified.

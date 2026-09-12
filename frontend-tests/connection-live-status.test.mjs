@@ -6,6 +6,33 @@ const js = ts.transpileModule(readFileSync(new URL("../src/connection-live-statu
 const {connectionLiveStatus: status,createLiveStatusStore} = await import("data:text/javascript;base64,"+Buffer.from(js).toString("base64"));
 const sample = () => ({snapshot:{observed_at:new Date().toISOString(),game_state:"idle"},inference:{mode:"portable"},connection_readiness:{stage:"ready_idle",window_age_ms:90000,checks_age_ms:0,checks:{gpu:true,link:true,hdmi:true,audio:true,session:true,idle:true}}});
 
+test("unprepared session names setup without granting a TV switch",()=>{
+ const p=sample();
+ p.connection_readiness.stage="action_required";
+ p.connection_readiness.code="connection.session_integration_unprepared";
+ p.connection_readiness.checks.session=false;
+ p.connection_readiness.window_age_ms=600000;
+ const result=status(p,{enabled:false},"journal.idle");
+ assert.equal(result.title,"Display setup required — open Re-Gear Diagnostics");
+ assert.equal(result.canSwitch,false);
+ assert.equal(result.phase,"checking");
+ assert.equal(result.rows.find(row=>row.label==="Display switching ready").state,"blocked");
+ p.connection_readiness.code="connection.other_problem";
+ assert.equal(status(p,null,"journal.idle").title,"Connection needs attention");
+});
+
+test("stale setup evidence cannot give a current setup diagnosis",()=>{
+ const p=sample();
+ p.connection_readiness.stage="action_required";
+ p.connection_readiness.code="connection.session_integration_unprepared";
+ for(const stale of [true,false]) {
+  p.connection_readiness.checks_age_ms=stale ? 16000 : 0;
+  const result=status(p,null,"journal.idle",!stale);
+  assert.equal(result.title,"Waiting for a fresh status update");
+  assert.equal(result.canSwitch,false);
+ }
+});
+
 test("GPU name is fresh unambiguous presentation only, with unknown fallback", () => {
  const p=sample(); const gpu={role:"external",present:true,confidence:"verified",model_name:"Example GPU 9000"};
  p.snapshot.gpus=[gpu];
@@ -60,11 +87,11 @@ test("late recovery replaces attention and stale or failed evidence cannot retai
   if(!failed)p.connection_readiness.checks_age_ms=15000;
   const s=status(p,{stage:"docked"},"journal.idle",failed);
   assert.equal(s.phase,"checking");assert.equal(s.canSwitch,false);assert.ok(s.rows.every(r=>r.state==="waiting"));
-  assert.equal(s.title,"Waiting for a fresh status update");
+  assert.equal(s.title,"Waiting for a fresh status update");assert.equal(s.displayPending,false);
  }
 });
 test("all independent checks and clear journal permit manual switch only with automatic off",()=>{
- const p=sample(); assert.equal(status(p,{enabled:false},"journal.idle").canSwitch,true);
+ const p=sample(); assert.equal(status(p,{enabled:false},"journal.idle").canSwitch,true);assert.equal(status(p,{enabled:false},"journal.idle").displayPending,false);
  assert.equal(status(p,{enabled:true},"journal.idle").canSwitch,false);
  assert.equal(status(p,null,"journal.idle").canSwitch,false);
  for(const key of Object.keys(p.connection_readiness.checks)){const q=sample();q.connection_readiness.checks[key]=false;assert.equal(status(q,{enabled:false},"journal.idle").canSwitch,false);}
@@ -98,4 +125,39 @@ test("completion presentation requires fresh docked backend and display evidence
  assert.equal(status(p,{stage:"docked"},"journal.idle").phase,"complete");
  p.snapshot.observed_at=new Date(Date.now()-16000).toISOString();
  assert.equal(status(p,{stage:"docked"},"journal.idle").phase,"checking");
+});
+
+test("stable eGPU waits calmly for TV at any age without authorizing a switch",()=>{
+ const p=sample();p.connection_readiness.stage="ready_display_pending";
+ p.connection_readiness.checks.hdmi=false;
+ for(const age of [0,120000,300000,3600000]){
+  p.connection_readiness.window_age_ms=age;
+  for(const enabled of [true,false]){
+   const s=status(p,{enabled,stage:"waiting"},"journal.idle");
+   assert.equal(s.title,"eGPU ready — waiting for TV HDMI");assert.equal(s.displayPending,true);
+   assert.equal(s.phase,"checking");assert.equal(s.canSwitch,false);
+   assert.equal(s.rows.find(r=>r.label==="TV HDMI detected").state,"waiting");
+  }
+ }
+ // Stage itself does not grant permission, even with inconsistent HDMI checks.
+ p.connection_readiness.checks.hdmi=true;
+ assert.equal(status(p,{enabled:false},"journal.idle").canSwitch,false);
+ p.connection_readiness.stage="ready_idle";
+ assert.equal(status(p,{enabled:false},"journal.idle").canSwitch,true);assert.equal(status(p,{enabled:false},"journal.idle").displayPending,false);
+ assert.equal(status(p,{enabled:true},"journal.idle").title,"Ready — waiting for automatic switch");
+});
+
+test("display-pending copy yields to stale evidence and current player blockers",()=>{
+ const p=sample();p.connection_readiness.stage="ready_display_pending";
+ p.connection_readiness.checks.hdmi=false;
+ for(const failed of [true,false]){
+  if(!failed)p.connection_readiness.checks_age_ms=15000;
+  const s=status(p,{enabled:false},"journal.idle",failed);
+  assert.equal(s.title,"Waiting for a fresh status update");assert.equal(s.displayPending,false);
+  assert.equal(s.canSwitch,false);assert.ok(s.rows.every(r=>r.state==="waiting"));
+ }
+ p.connection_readiness.checks_age_ms=0;p.snapshot.game_state="running";
+ assert.equal(status(p,{enabled:false},"journal.idle").title,"Close the game to continue");
+ p.snapshot.game_state="idle";
+ assert.equal(status(p,{enabled:false},"journal.result_required").title,"Previous result needs acknowledgement");
 });

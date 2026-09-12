@@ -135,6 +135,10 @@ class DisplayObservation:
     #: whether the output is live; grading one fact with the other's
     #: confidence is how a never-verified claim came to read as verified.
     active_confidence: Confidence = Confidence.UNKNOWN
+    #: Private identity of the GPU owning this connector in this observation.
+    #: This is independent of the renderer and does not prove cross-GPU output.
+    owning_gpu_stable_id: str = ""
+    owning_gpu_confidence: Confidence = Confidence.UNKNOWN
 
 
 @dataclass(frozen=True, slots=True)

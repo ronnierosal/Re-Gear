@@ -33,6 +33,8 @@
 
 **Device-specific evidence**
 
+- [0.3.82 Automatic Recovery Checkpoint](Ally-X-and-GPD-G1-Automatic-Recovery-Checkpoint)
+
 - [Ally X + GPD G1 Troubleshooting](Ally-X-and-GPD-G1-Troubleshooting)
 - [Raikiri II Extra Buttons](Raikiri-II-Troubleshooting)
 - [Ally X + GPD G1 Incident](Ally-X-and-GPD-G1-Docking-Incident)
