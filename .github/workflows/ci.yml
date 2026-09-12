@@ -44,6 +44,13 @@ jobs:
         # Root ownership, procfs and dirfd semantics are security boundaries.
         # Tests patch all installation roots and service operations.
         run: sudo "$(command -v python)" -m unittest discover -s tests -p test_ally_deploy_helper.py -v
+      - name: Test whole-dock privileged filesystem boundaries
+        # The whole-dock writer uses temporary fake sysfs trees. Root is needed
+        # to exercise production ancestor ownership checks in the claim store.
+        # No real device paths or service operations are used by these fixtures.
+        run: |
+          sudo env PYTHONPATH=backend "$(command -v python)" -m unittest discover -s tests -p 'test_whole_dock*.py' -v
+          sudo env PYTHONPATH=backend "$(command -v python)" -m unittest discover -s tests -p 'test_dock_power*.py' -v
       - name: Compile Python sources
         run: python -m compileall -q backend tests scripts
       - name: Check for undefined and redefined names

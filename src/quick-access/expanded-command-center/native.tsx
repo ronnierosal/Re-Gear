@@ -3,6 +3,7 @@ import { Button, Dropdown, Focusable, ModalRoot, showModal } from "@decky/ui";
 import type { ControllerInputSource } from "../../controller-safe-disconnect";
 import { loadMenuBinding, saveMenuBinding, menuBindingOptions, startMenuShortcut } from "../../menu-shortcut";
 import type { MenuBinding } from "../../menu-shortcut";
+import { WholeDockControl } from "../../whole-dock-control";
 import { ExpandedCommandCenter } from "./shell";
 import type { TileSource, TileView } from "./tile-source";
 import { ShortcutSettings } from "./shortcut-settings";
@@ -41,7 +42,7 @@ function readFrom(source?: TileSource) {
   return cached;
 }
 
-export function createExpandedMenu(input: ControllerInputSource | undefined, host: Window, canOpen: () => boolean = () => true, source?: TileSource) {
+export function createExpandedMenu(input: ControllerInputSource | undefined, host: Window, canOpen: () => boolean = () => true, source?: TileSource, readCurrentSnapshot: () => unknown = () => null) {
   const storage = (() => { try { return host.localStorage; } catch { return undefined; } })();
   let binding = loadMenuBinding(storage);
   let modal: ReturnType<typeof showModal> | null = null;
@@ -67,7 +68,7 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
     // end. The server snapshot is the same read: there is no server, and
     // returning a different value there would tear.
     const tiles = useSyncExternalStore(subscribeTo(source), readFrom(source), readFrom(source));
-    return <ExpandedCommandCenter onClose={close} native primitives={{ Button: Button, Focusable }} settings={<Settings/>} tiles={tiles}/>;
+    return <ExpandedCommandCenter onClose={close} native disconnectControl={<WholeDockControl intent="shutdown" readCurrentSnapshot={readCurrentSnapshot}/>} primitives={{ Button: Button, Focusable }} settings={<Settings/>} tiles={tiles}/>;
   }
   function Settings() {
     const [selected, setSelected] = useState(binding);

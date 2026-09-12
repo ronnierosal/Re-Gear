@@ -2426,13 +2426,12 @@ function showBlockedAttempt(
 }
 
 export default definePlugin(() => {
-  // One view, owned here, written by the panel and read by the menu. The menu
-  // starts no timer and fetches nothing; it subscribes to what Content already
-  // polls, so the expanded surface cannot become another source of truth.
+  // Shared tile view and lifetime snapshot monitor have independent consumers.
   const tilePublisher = createTilePublisher();
+  let menuSnapshot: SnapshotPayload["snapshot"] | null = null;
   const expandedMenu = createExpandedMenu(steamControllerInput(window), window, () =>
     !shortcut.modal.current && !shortcut.portableBusy.current && !shortcut.tvBusy.current && !warningModal,
-    tilePublisher.source);
+    tilePublisher.source, () => menuSnapshot);
   const shortcut = createDisplayShortcutRuntime({
     // View+Y now belongs exclusively to the menu. Explicit display requests
     // below retain their existing approval/confirmation path.
@@ -2499,10 +2498,16 @@ export default definePlugin(() => {
   const offlineFocusChecks = startOfflineFocusChecks();
   const connection = startConnectionMonitor({
     read: async () => {
-      const [payload, automatic, journal] = await Promise.all([
-        getSnapshot(), getAutomaticDockStatus(), getTransitionJournalStatus(),
-      ]);
-      return {payload, automatic, journal: journal.code};
+      try {
+        const [payload, automatic, journal] = await Promise.all([
+          getSnapshot(), getAutomaticDockStatus(), getTransitionJournalStatus(),
+        ]);
+        menuSnapshot = payload.snapshot;
+        return {payload, automatic, journal: journal.code};
+      } catch (error) {
+        menuSnapshot = null;
+        throw error;
+      }
     },
     show: (store, switchTv, closed) => showConnectionLivePanel(store, switchTv, closed),
   });
