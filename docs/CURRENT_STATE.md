@@ -1,5 +1,34 @@
 # Current state
 
+## 0.3.95 diagnostic test package built — 2026-09-12
+
+The requested focused candidate `Re-Gear-0.3.95.zip` is built from
+`7c07aa22993809b6a1399f51682f6893b6e4b0e9` on
+`codex/integration-egpu-connect-disconnect`. It includes both the previously
+installed `58542f1` and reviewed diagnostics/lifecycle verification `ef94896`.
+The frontend and disconnect-only mount are unchanged from 0.3.94; backend
+source matches `ef94896` except version labels. Recovery refusal diagnostics
+do not bypass admission or confirm the cause of the failed hardware trial.
+
+Archive size is 969408 bytes. SHA-256:
+`1e0646c2f43b1e65d65b080c1236849af51db235f8391b78275a4fe4eb5c179f`.
+Archive integrity and embedded version/full revision matched. Final-head CI
+`34717371488` and privileged delivery `34717371508` passed: 3443 Linux tests
+with 28 platform skips, seven required root-admission tests without skips,
+43 golden checks and 674 frontend passes with one skip. Type/build/package,
+architecture, compile and integration preflight passed. Independent integration
+review passed, including 22 version/build tests and 38 focused UI passes with
+one existing skip.
+
+The ZIP, completed candidate manifest and test notes are retained in the
+candidate worktree's `out/` directory. The version reservation and
+`refs/regear/ready/egpu-connect-disconnect-0395` point to this exact revision.
+**Built locally, not staged or installed.** `steamdeck.local` remains
+unresolved; the last verified installed revision is 0.3.94. Fresh readback and
+an exclusive verified copy to `/home/deck/` await restored access. No GitHub
+Release, new installation, session restart, teardown or software reconnect
+was performed. Preserve the original 0.3.82 hardware checkpoint.
+
 ## 0.3.94 installed; automatic connection trial failed — 2026-09-12
 
 The user installed the focused candidate. Read-only installed `build_info.json`
