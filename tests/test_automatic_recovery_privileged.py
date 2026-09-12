@@ -251,6 +251,21 @@ class AutomaticRecoveryPrivilegedTests(unittest.TestCase):
                 refused(plugin, commands, "automatic_recovery.admission_unavailable_or_busy")
                 self.assertEqual(target.stat().st_mode & 0o777, 0o666)
                 self.assertEqual(target.read_bytes(), b"unsafe-lock")
+            elif scenario == "unsafe-root":
+                arm(plugin, commands)
+                state_root.chmod(0o777)
+                for now in (11, 12, 13):
+                    with self.assertRaisesRegex(ValueError, "mode 0700"):
+                        poll(plugin, now)
+                self.assertEqual(commands.calls, [])
+                self.assertEqual(plugin._automatic_link_recovery.attempts, 0)
+                reply = asyncio.run(plugin._automatic_link_recovery_status())
+                self.assertEqual(reply["decision_code"], "automatic_recovery.observation_failed")
+                self.assertIsNot(reply.get("safe_to_unplug"), True)
+                codes = [call.kwargs["code"] for call in plugin._append_journey_event.call_args_list]
+                self.assertEqual(codes.count("automatic_recovery.observation_failed"), 1)
+                self.assertNotIn("automatic_recovery.started", codes)
+                self.assertEqual(state_root.stat().st_mode & 0o777, 0o777)
             else:
                 self.fail("unknown scenario")
 
@@ -273,6 +288,9 @@ class AutomaticRecoveryPrivilegedTests(unittest.TestCase):
 
     def test_unsafe_admission_lock_is_not_repaired_or_bypassed(self):
         self.isolated("unsafe")
+
+    def test_unsafe_runtime_root_reports_observation_failure_without_repair(self):
+        self.isolated("unsafe-root")
 
 
 if __name__ == "__main__":
