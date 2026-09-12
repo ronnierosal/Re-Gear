@@ -402,3 +402,124 @@ class AbandonedTrialReconciliationTests(unittest.TestCase):
         self.assertFalse(self.plugin._reconcile_abandoned_dock_trial('')['ok'])
         self.plugin._release_capture_task = NS(done=lambda:False)
         self.assertFalse(self.plugin._reconcile_abandoned_dock_trial('dock:new')['ok'])
+
+
+class AutomaticConnectionIsolationTests(unittest.TestCase):
+    setUp = MainDockAdmissionTests.setUp
+
+    def fixture(self, *, stage='release_intent', inner=True, settled=True,
+                idle=True, consent=True, owner='none', changed_user=False,
+                changed_transport=False, changed_claim=False, partial=False):
+        from contextlib import ExitStack
+        plugin = self.plugin
+        user = NS(uid=1000, username='deck')
+        claim = NS(stage=stage, binding='dock')
+        transport = NS(binding='dock', generation='now')
+        plugin._discovery = object()
+        plugin._unloading = False
+        plugin._automatic_dock_preferences = lambda: NS(load=lambda:consent)
+        plugin._automatic_recovery_preferences = lambda: NS(load=lambda:consent)
+        plugin._transition_journal_service = lambda: NS(status=lambda:NS(
+            durable=True, owner=NS(value=owner)))
+        plugin._run_dock_mutation = Mock(side_effect=DockMutationDenied('dock_mutation.inhibited'))
+        held = []
+        @contextmanager
+        def admit(**kw):
+            self.assertTrue(kw['allow_inhibited'])
+            held.append(True)
+            try:
+                yield
+            finally:
+                held.clear()
+        plugin._dock_mutation_gate = lambda: NS(admit=admit)
+        recover = Mock(side_effect=lambda: bool(held))
+        with ExitStack() as stack:
+            def patcher(name, **kw):
+                return stack.enter_context(patch.object(self.module, name, **kw))
+            store = patcher('WholeDockClaimStore').return_value
+            store.load.side_effect = [claim, None if changed_claim else claim]
+            resolver = patcher('resolve_transport')
+            resolver.side_effect = ValueError('partial endpoints') if partial else [
+                transport, NS(binding='dock', generation='changed') if changed_transport else transport]
+            patcher('inner_removal_records_absent', return_value=inner)
+            patcher('HeldTrialLauncher').return_value.call.return_value = {
+                'code':'held_helper.settled', 'settled':settled}
+            patcher('GamescopeDiscovery')
+            patcher('resolve_gamescope_user', return_value=NS(ok=True,
+                context=NS(uid=1001, username='other') if changed_user else user))
+            patcher('resolve_runtime_profiles', return_value=NS(exact_host=True))
+            patcher('SnapshotTransitionObservationAdapter').return_value.observe.return_value = NS(snapshot=NS(
+                game_state=self.module.GameState.IDLE if idle else self.module.GameState.UNKNOWN,
+                gamescope=NS(running=True), gpus=[NS(role=self.module.GpuRole.INTERNAL,
+                    present=True, confidence=self.module.Confidence.VERIFIED)]))
+            try:
+                result = plugin._run_automatic_connection_recovery(recover, user)
+            except DockMutationDenied:
+                result = False
+            store.retire_abandoned.assert_not_called()
+        return result, recover.call_count
+
+    def test_matching_early_record_allows_one_restart_and_retains_claim(self):
+        for stage in ('claimed', 'release_intent'):
+            with self.subTest(stage=stage):
+                self.assertEqual(self.fixture(stage=stage), (True, 1))
+
+    def test_incomplete_or_changed_evidence_never_dispatches(self):
+        for options in ({'stage':'gpu_removed'}, {'stage':'software_down'},
+                        {'inner':False}, {'settled':False}, {'idle':False},
+                        {'consent':False}, {'owner':'transition'}, {'partial':True},
+                        {'changed_user':True}, {'changed_transport':True}, {'changed_claim':True}):
+            with self.subTest(options=options):
+                self.assertEqual(self.fixture(**options), (False, 0))
+
+    def test_unclaimed_baseline_does_not_inspect_experimental_state(self):
+        self.plugin._run_dock_mutation = lambda fn: fn()
+        recover = Mock(return_value='baseline')
+        with patch.object(self.module, 'WholeDockClaimStore') as store:
+            self.assertEqual(self.plugin._run_automatic_connection_recovery(recover, None), 'baseline')
+            store.assert_not_called()
+        recover.assert_called_once_with()
+
+    def test_operation_error_never_replays_restart(self):
+        self.plugin._run_dock_mutation = lambda fn: fn()
+        recover = Mock(side_effect=DockMutationDenied('dock_mutation.inhibited'))
+        with patch.object(self.module, 'WholeDockClaimStore') as store:
+            with self.assertRaises(DockMutationDenied):
+                self.plugin._run_automatic_connection_recovery(recover, None)
+            store.assert_not_called()
+        recover.assert_called_once_with()
+
+    def test_tv_archival_returns_to_ordinary_gate_without_resetting_budget(self):
+        plugin = self.plugin
+        calls = []
+        def ordinary(fn):
+            calls.append('gate')
+            if len(calls) == 1:
+                raise DockMutationDenied('dock_mutation.inhibited')
+            return fn()
+        plugin._run_dock_mutation = ordinary
+        plugin._reconcile_abandoned_dock_trial = Mock(return_value={'ok':True})
+        plugin._automatic_link_recovery = NS(attempts=2, completed=True)
+        transition = Mock(return_value='switched')
+        plugin._presentation_transition_service = lambda: NS(execute_automatic=transition)
+        with patch.object(self.module, 'WholeDockClaimStore'), patch.object(self.module, 'DrmDiscovery') as drm, patch.object(self.module, 'resolve_whole_dock', return_value=NS(binding='dock', generation='now')):
+            drm.return_value.scan.return_value = [NS(boot_vga=False, pci_bdf='gpu')]
+            self.assertEqual(plugin._run_automatic_tv_transition('expected', True), 'switched')
+        self.assertEqual(calls, ['gate', 'gate'])
+        self.assertEqual(plugin._automatic_link_recovery.attempts, 2)
+        self.assertTrue(plugin._automatic_link_recovery.completed)
+        plugin._reconcile_abandoned_dock_trial.assert_called_once_with('dock:now')
+        transition.assert_called_once_with(self.module.PlacementState.DOCKED_EGPU,
+            expected_generation='expected', standing_consent=True)
+
+    def test_failed_archival_never_attempts_tv_switch(self):
+        plugin = self.plugin
+        plugin._run_dock_mutation = Mock(side_effect=DockMutationDenied('dock_mutation.inhibited'))
+        plugin._reconcile_abandoned_dock_trial = Mock(return_value={'ok':False})
+        plugin._presentation_transition_service = Mock()
+        with patch.object(self.module, 'WholeDockClaimStore'), patch.object(self.module, 'DrmDiscovery') as drm, patch.object(self.module, 'resolve_whole_dock', return_value=NS(binding='dock', generation='now')):
+            drm.return_value.scan.return_value = [NS(boot_vga=False, pci_bdf='gpu')]
+            with self.assertRaises(DockMutationDenied):
+                plugin._run_automatic_tv_transition('expected', True)
+        plugin._presentation_transition_service.assert_not_called()
+        self.assertEqual(plugin._run_dock_mutation.call_count, 1)

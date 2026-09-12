@@ -43,7 +43,7 @@ from regear.domain.auto_tdp import AutoTdpPolicy  # noqa: E402
 from regear.domain.telemetry import TelemetryAdmissionKind, admit_telemetry_collection  # noqa: E402
 from regear.adapters.steamos.drm import DrmDiscovery  # noqa: E402
 from regear.adapters.steamos.sleep_inhibitor import Login1SleepInhibitor  # noqa: E402
-from regear.adapters.steamos.whole_dock_topology import resolve_whole_dock  # noqa: E402
+from regear.adapters.steamos.whole_dock_topology import resolve_whole_dock, resolve_transport  # noqa: E402
 from regear.delivery.whole_dock_runtime import WholeDockRuntime  # noqa: E402
 from regear.delivery.whole_dock_claim import WholeDockClaimStore, inner_removal_records_absent  # noqa: E402
 from regear.application.live_disconnect import LiveDisconnectResult  # noqa: E402
@@ -1040,7 +1040,7 @@ class Plugin:
                 strategy=LinkRecoveryStrategy.SESSION_RESTART, automatic=True)
         try:
             outcome = await self._run_background_operation(
-                lambda: self._run_dock_mutation(recover))
+                lambda: self._run_automatic_connection_recovery(recover, resolution.context))
             if outcome.ok:
                 policy.completed = True
             self._append_journey_event(severity="info" if outcome.ok else "warning", code=outcome.code,
@@ -1526,6 +1526,100 @@ class Plugin:
         except Exception:
             return {**result, 'code': result['code'] if result['code'] != 'dock_reconcile.refused'
                     else 'dock_reconcile.unresolved'}
+
+    def _run_automatic_connection_recovery(self, recover, expected_user):
+        """Connection-only admission; never retires intent or permits removal.
+
+        The callback is the existing bounded automatic session restart above.
+        An abandoned early trial may coexist with an entirely absent endpoint
+        branch. Only that exact, stable transport can use this recovery lane.
+        """
+        started = False
+        def admitted():
+            nonlocal started
+            started = True
+            return recover()
+        try:
+            return self._run_dock_mutation(admitted)
+        except DockMutationDenied as exc:
+            if started or str(exc) != 'dock_mutation.inhibited':
+                raise
+        try:
+            with self._dock_mutation_gate().admit(allow_inhibited=True):
+                store = WholeDockClaimStore(Path('/var/lib/handheld-dock-mode'))
+                claim = store.load()
+                if claim is None:
+                    raise DockMutationDenied('dock_mutation.inhibited')
+                if claim is not None:
+                    if claim.stage not in ('claimed', 'release_intent'):
+                        raise DockMutationDenied('dock_mutation.inhibited')
+                    capture = getattr(self, '_release_capture_task', None)
+                    if capture is not None and not capture.done():
+                        raise DockMutationDenied('dock_mutation.inhibited')
+                    transport = resolve_transport(claim.binding)
+                    if not inner_removal_records_absent():
+                        raise DockMutationDenied('dock_mutation.inhibited')
+                    audit = HeldTrialLauncher(uid=expected_user.uid,
+                        username=expected_user.username).call('audit', '0' * 32)
+                    if audit.get('code') != 'held_helper.settled' or audit.get('settled') is not True:
+                        raise DockMutationDenied('dock_mutation.inhibited')
+                    if (self._automatic_dock_preferences().load() is not True
+                            or self._automatic_recovery_preferences().load() is not True
+                            or self._unloading):
+                        raise DockMutationDenied('dock_mutation.inhibited')
+                    journal = self._transition_journal_service().status()
+                    if not journal.durable or journal.owner.value != 'none':
+                        raise DockMutationDenied('dock_mutation.inhibited')
+                    current = SnapshotTransitionObservationAdapter(self._discovery).observe().snapshot
+                    user = resolve_gamescope_user(GamescopeDiscovery().scan())
+                    if (current.game_state is not GameState.IDLE
+                            or current.gamescope.running is not True
+                            or len(current.gpus) != 1
+                            or current.gpus[0].role is not GpuRole.INTERNAL
+                            or current.gpus[0].present is not True
+                            or current.gpus[0].confidence is not Confidence.VERIFIED
+                            or not resolve_runtime_profiles(current).exact_host
+                            or not user.ok or user.context != expected_user
+                            or resolve_transport(claim.binding) != transport
+                            or not inner_removal_records_absent()
+                            or store.load() != claim):
+                        raise DockMutationDenied('dock_mutation.inhibited')
+                return recover()
+        except DockMutationDenied:
+            raise
+        except Exception as exc:
+            raise DockMutationDenied('dock_mutation.inhibited') from exc
+
+    def _run_automatic_tv_transition(self, expected_generation, standing_consent):
+        """Reconcile an early abort only with the fully returned dock verified.
+
+        Reconciliation and ordinary admission are separate: any intervening new
+        claim causes ordinary admission to refuse. No recovery budget is reset.
+        """
+        if standing_consent is not True:
+            raise DockMutationDenied('dock_mutation.inhibited')
+        started = False
+        def transition():
+            nonlocal started
+            started = True
+            return self._presentation_transition_service().execute_automatic(
+                PlacementState.DOCKED_EGPU, expected_generation=expected_generation,
+                standing_consent=standing_consent)
+        try:
+            return self._run_dock_mutation(transition)
+        except DockMutationDenied as exc:
+            if started or str(exc) != 'dock_mutation.inhibited':
+                raise
+        claim = WholeDockClaimStore(Path('/var/lib/handheld-dock-mode')).load()
+        if claim is not None:
+            cards = [c for c in DrmDiscovery().scan() if c.boot_vga is False]
+            if len(cards) != 1:
+                raise DockMutationDenied('dock_mutation.inhibited')
+            binding = resolve_whole_dock(cards[0].pci_bdf)
+            result = self._reconcile_abandoned_dock_trial(binding.binding + ':' + binding.generation)
+            if result.get('ok') is not True:
+                raise DockMutationDenied('dock_mutation.inhibited')
+        return self._run_dock_mutation(transition)
 
     def _run_whole_dock_trial(self, operation: str, expected_attachment: str = ""):
         """Internal cable-connected trial; admission covers release and teardown.
@@ -3016,11 +3110,8 @@ class Plugin:
                     )
                     try:
                         result = await self._run_background_operation(
-                            lambda: self._run_dock_mutation(lambda: self._presentation_transition_service().execute_automatic(
-                                PlacementState.DOCKED_EGPU,
-                                expected_generation=decision.expected_generation,
-                                standing_consent=enabled,
-                            )),
+                            lambda: self._run_automatic_tv_transition(
+                                decision.expected_generation, enabled),
                         )
                     except Exception:
                         transition_finished_ns = self._journey_now_ns()
@@ -3445,7 +3536,7 @@ class Plugin:
 
     def _support_versions(self) -> dict[str, str]:
         return {
-            "regear": "0.3.91",
+            "regear": "0.3.92",
             "decky": str(getattr(decky, "DECKY_VERSION", "unknown")),
             "steamos": self._version_info.steamos,
             "kernel": self._version_info.kernel,

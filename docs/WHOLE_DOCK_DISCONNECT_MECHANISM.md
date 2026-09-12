@@ -420,3 +420,49 @@ Reconciliation requires the exact old claim and same dock binding, but the
 operator approves the fresh current generation and it is rechecked before
 archival. It does not pretend the old generation is still live or reconstruct
 missing historical removal evidence. Outstanding inner records still refuse.
+
+## Automatic connection regression and protection
+
+The 0.3.82 automatic recovery scheduler and session restart service survived
+unchanged. The regression was introduced at their integration boundary:
+DockMutationGate rejected a persistent early disconnect claim before the
+automatic scheduler could begin. Reboot preserved that record. The 0.3.91
+explicit reconciliation required the GPU to return first, so it could not
+resolve the case where session recovery was needed for PCI enumeration.
+
+The correction keeps ordinary admission first. Only an inhibited automatic
+session restart can enter the separate connection recovery path. It requires
+claimed/release_intent, the exact authorized transport with zero endpoint
+functions and two matching observations, no inner removal/filter records,
+settled held-session work, fresh idle/internal-only supported host evidence,
+unchanged session user, consent and an unowned durable transition journal.
+It retains the claim. Partial enumeration, later removal stages, unfinished
+held work, changed identity and incomplete observations all refuse.
+
+When the complete dock returns, automatic TV switching may archive the early
+claim through the existing fully observed reconciliation. The ordinary mutation
+gate is then acquired again, so a new intervening claim still inhibits switching.
+The existing display transition checks its expected generation and consent.
+Archival does not reset either recovery budget. No automatic path removes PCI,
+USB or tunnel devices, and no automatic recovery grants unplug clearance.
+
+Release acceptance must cover interaction with retained state, not only each
+feature separately. Required fixture cases live in
+tests/test_main_dock_mutation_gate.py and tests/test_whole_dock_topology.py:
+normal unclaimed recovery; matching early claim; failed or pending inner work;
+changed transport/user/claim; partial enumeration; failed archival; and exactly
+one dispatch after admission. Existing automatic recovery tests retain absence
+arming, ten-second settling/cooldown, two attempts, consent, idle guards and
+no new attempt from a plugin reload while attached.
+
+Preserve checkpoint/0.3.82-auto-tv and its immutable archive. New features ship
+as separate candidates and must pass the connection matrix before promotion:
+cold boot without dock then attach with TV on; attach with TV off then turn it
+on; and the same connection after an aborted disconnect and reboot. Record
+picture, audio, controls, source and package hash for each. Safe live disconnect
+remains experimental until release, software removal, restoration, subsequent
+auto connection and physical unplug have their own verified results.
+
+The new connection exception is implemented and fixture-tested; hardware
+recovery from the retained record remains a candidate validation gate.
+Documentation impact: Wiki.

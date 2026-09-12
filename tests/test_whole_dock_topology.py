@@ -89,6 +89,71 @@ class TopologyTests(unittest.TestCase):
         self.assertTrue(m.revalidate_retained(binding))
         self.assertNotIn("aaaaaaaa", repr(binding))
 
+    def absent_transport(self):
+        binding = self.resolve()
+        for node in (self.gpu, self.audio, self.usb):
+            self.remove_fixture_pci(node)
+        return binding
+
+    def test_transport_all_endpoints_absent_preserves_retained_binding(self):
+        previous = self.absent_transport()
+        observed = m.resolve_transport(previous.binding)
+        self.assertEqual(observed.binding, previous.binding)
+        self.assertEqual(observed.generation, previous.generation)
+        self.assertEqual(observed.branch_target, previous.branch_target)
+        self.assertEqual(observed.router_target, previous.router_target)
+        self.assertEqual(len(observed.bridge_targets), 3)
+        self.assertNotIn('aaaaaaaa-bbbb', repr(observed))
+
+    def test_transport_fully_absent_pci_branch_supported(self):
+        previous = self.absent_transport()
+        for path in sorted([node for node in self.pci.iterdir()
+                            if self.branch in node.resolve().parents], key=lambda node: len(node.resolve().parts), reverse=True):
+            self.remove_fixture_pci(path.resolve())
+        self.assertEqual(m.resolve_transport(previous.binding).bridge_targets, ())
+
+    def test_transport_full_or_partial_endpoints_refused(self):
+        binding = self.resolve()
+        with self.assertRaises(m.TopologyRefused):
+            m.resolve_transport(binding.binding)
+        self.remove_fixture_pci(self.gpu)
+        with self.assertRaises(m.TopologyRefused):
+            m.resolve_transport(binding.binding)
+        self.remove_fixture_pci(self.audio)
+        with self.assertRaises(m.TopologyRefused):
+            m.resolve_transport(binding.binding)
+
+    def test_transport_unindexed_endpoint_refused(self):
+        binding = self.resolve()
+        for path in (self.gpu, self.audio, self.usb):
+            (self.pci / path.name).unlink()
+        with self.assertRaises(m.TopologyRefused):
+            m.resolve_transport(binding.binding)
+
+    def test_transport_wrong_binding_deauthorized_and_router_ambiguity_refused(self):
+        binding = self.absent_transport()
+        with self.assertRaises(m.TopologyRefused):
+            m.resolve_transport('f' * 64)
+        (self.external / 'authorized').write_text('0')
+        with self.assertRaises(m.TopologyRefused):
+            m.resolve_transport(binding.binding)
+        (self.external / 'authorized').write_text('1')
+        self.router(self.host, '0-3')
+        with self.assertRaises(m.TopologyRefused):
+            m.resolve_transport(binding.binding)
+
+    def test_transport_changed_second_observation_refused(self):
+        binding = self.absent_transport()
+        observed = m.resolve_transport(binding.binding)
+        with patch.object(m, '_resolve_transport', side_effect=[observed, replace(observed, generation='changed')]):
+            with self.assertRaises(m.TopologyRefused):
+                m.resolve_transport(binding.binding)
+
+    def test_transport_invalid_expected_binding_refused(self):
+        for value in (None, '', 'not-a-binding', 'A' * 64):
+            with self.assertRaises(m.TopologyRefused):
+                m.resolve_transport(value)
+
     def test_duplicate_router_refused(self):
         self.router(self.host, "0-3")
         with self.assertRaises(m.TopologyRefused):

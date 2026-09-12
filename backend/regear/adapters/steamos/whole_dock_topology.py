@@ -121,6 +121,86 @@ class WholeDockBinding:
     function_identities: tuple[FunctionIdentity, ...] = ()
 
 
+@dataclass(frozen=True)
+class TransportBinding:
+    """Authorized retained transport with no enumerated endpoint functions."""
+    binding: str
+    generation: str
+    branch_target: SysfsTarget
+    nhi_target: SysfsTarget
+    domain_target: SysfsTarget
+    router_target: SysfsTarget
+    bridge_targets: tuple[SysfsTarget, ...] = ()
+
+
+def resolve_transport(expected_binding: str) -> TransportBinding:
+    """Read-only proof of an exact, authorized, endpoint-absent attachment.
+
+    This is evidence for a separate guarded session recovery, never permission
+    to retire a claim or remove hardware. Partial function enumeration refuses.
+    Two complete observations must agree; callers re-observe at dispatch too.
+    """
+    if type(expected_binding) is not str or not re.fullmatch('[0-9a-f]{64}', expected_binding):
+        raise TopologyRefused('dock_topology.binding_invalid')
+    try:
+        first = _resolve_transport(expected_binding)
+        if _resolve_transport(expected_binding) != first:
+            raise TopologyRefused('dock_topology.transport_changed')
+        return first
+    except (OSError, UnicodeError, RuntimeError) as error:
+        raise TopologyRefused('dock_topology.observation_incomplete') from error
+
+
+def _resolve_transport(expected_binding):
+    pci = _pci_inventory()
+    matches = []
+    for branch in pci.values():
+        if not re.fullmatch(r'pci[0-9a-f]{4}:[0-9a-f]{2}', branch.parent.name):
+            continue
+        if _read(branch / 'class') != '0x060400':
+            continue
+        nhi = _supplier_for(branch)
+        if nhi is None:
+            continue
+        if (pci.get(nhi.name) != nhi or branch in nhi.parents
+                or _read(nhi / 'class') != '0x0c0340'):
+            raise TopologyRefused('dock_topology.host_link_invalid')
+        _host_link(branch, nhi)
+        domain, router = _router_for(nhi)
+        anchors = (_pin(branch), _pin(nhi), _pin(domain), _pin(router))
+        binding, generation = _fingerprint(anchors, router)
+        if binding != expected_binding:
+            continue
+        descendants = {path for path in pci.values() if branch in path.parents}
+        groups = {path.relative_to(branch).parts[0] for path in descendants}
+        if len(groups) > 1:
+            raise TopologyRefused('dock_topology.multiple_branches')
+        # Inspect the actual branch as well: a disappearing/missing bus link
+        # must not hide an endpoint still represented under /sys/devices.
+        seen = set()
+        def walk(parent, depth):
+            if depth > 32:
+                raise TopologyRefused('dock_topology.inventory_excessive')
+            for child in _children(parent):
+                if not _PCI.fullmatch(child.name):
+                    continue
+                if len(seen) >= _LIMIT or pci.get(child.name) != child:
+                    raise TopologyRefused('dock_topology.pci_inventory_changed')
+                if _read(child / 'class') != '0x060400':
+                    raise TopologyRefused('dock_topology.transport_endpoints_present')
+                _pin(child)
+                seen.add(child)
+                walk(child, depth + 1)
+        walk(branch, 0)
+        if seen != descendants:
+            raise TopologyRefused('dock_topology.pci_inventory_changed')
+        bridges = tuple(_pin(path) for path in sorted(descendants))
+        matches.append(TransportBinding(binding, generation, *anchors, bridges))
+    if len(matches) != 1:
+        raise TopologyRefused('dock_topology.transport_unidentified')
+    return matches[0]
+
+
 def _children(path: Path) -> tuple[Path, ...]:
     entries = tuple(path.iterdir())
     if len(entries) > _LIMIT:
