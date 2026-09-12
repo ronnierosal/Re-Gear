@@ -1710,6 +1710,11 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
       controller: menuFresh
         ? controllerPresentation({ peripheral: peripheralStatus, shortcutAvailable: menuShortcutAvailable })
         : null,
+      // From the performance owner, never from the snapshot above. Those
+      // readings have no device observation timestamp to age, so the owner
+      // bounds their lifetime from the request that fetched them and nulls
+      // them when it expires. Null is that expiry, not a missing field.
+      performanceFresh: performance.manual !== null || performance.auto !== null,
       performance: menuPerformance,
       // The configured limit, never a power-draw reading.
       manualWatts: performance.manual?.current_watts ?? null,

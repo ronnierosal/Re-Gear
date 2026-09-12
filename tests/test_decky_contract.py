@@ -295,6 +295,33 @@ class DeckyContractTests(unittest.TestCase):
         start = source.index("const menuFresh =")
         self.assertIn("menuSchemaReadable", source[start:start + 200])
 
+    def test_performance_readings_do_not_inherit_snapshot_freshness(self):
+        """Two transports, and neither may vouch for the other.
+
+        Performance responses carry no device observation timestamp, so their
+        owner bounds their lifetime from the request that fetched them and
+        reports null on expiry. Publishing them behind the snapshot's age
+        gate would render a power limit that expired minutes ago as current,
+        because an unrelated GPU sample happened to be recent.
+        """
+        source = (ROOT / "src" / "index.tsx").read_text(encoding="utf-8")
+        start = source.index("publishTiles({")
+        end = source.index("});", start)
+        published = source[start:end]
+        self.assertIn("performanceFresh:", published)
+        # Derived from the owner's own readings, not from the snapshot gate.
+        self.assertIn(
+            "performanceFresh: performance.manual !== null || performance.auto !== null",
+            published,
+        )
+        self.assertNotIn("performance: menuFresh", published)
+        # The consumer gates the two independently.
+        tile_source = (ROOT / "src" / "quick-access" / "expanded-command-center"
+                       / "tile-source.ts").read_text(encoding="utf-8")
+        self.assertIn("const performanceFresh = readings.performanceFresh === true;", tile_source)
+        self.assertIn("performanceFresh && readings.performance", tile_source)
+        self.assertNotIn("fresh && readings.performance", tile_source)
+
     def test_display_target_is_graded_by_the_shared_mapping(self):
         """The tile may not re-derive a reading the presentation module owns.
 

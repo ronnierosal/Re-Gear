@@ -45,11 +45,26 @@ export type Readings = {
   performance?: PerformanceState | null;
   /** The configured power limit, not power draw. */
   manualWatts?: number | null;
-  /** True ONLY for a reading observed recently enough to act on. Absent is
-   * treated as not fresh: the panel keeps its previous payload on a failed
-   * read, and an age check lives with the owner, so anything short of an
-   * explicit yes has to fail closed here. */
+  /** True ONLY for a SNAPSHOT observation recent enough to act on. Gates the
+   * eGPU tab, the controller tab and the display target, which are all
+   * derived from that one payload. Absent is treated as not fresh: the panel
+   * keeps its previous payload on a failed read, and an age check lives with
+   * the owner, so anything short of an explicit yes has to fail closed here.
+   *
+   * It does NOT gate performance. See `performanceFresh`. */
   fresh?: boolean;
+  /** True ONLY for a performance reading its own owner still considers live.
+   *
+   * Performance arrives over a different transport whose schema carries no
+   * device observation timestamp, so there is nothing here to age. Its owner
+   * bounds the lifetime from the request that fetched it and reports null
+   * once that expires.
+   *
+   * Grading it by `fresh` would mean a power limit that expired minutes ago
+   * renders as the current limit because an unrelated GPU sample happened to
+   * be recent -- two readings from two transports, one of them vouching for
+   * the other. Absent fails closed, the same as `fresh`. */
+  performanceFresh?: boolean;
   /** Actual display target -- which panel is being driven -- kept separate
    * from whether an external display is merely attached. */
   displayTarget?: Evidence;
@@ -174,7 +189,10 @@ export function buildTiles(readings: Readings): TileView {
   const controller = fresh && readings.controller
     ? controllerTiles(readings.controller) : unknownTiles(UNKNOWN_CONTROLLERS);
 
-  const performance = fresh && readings.performance
+  // Its own owner's freshness, never the snapshot's: these two readings come
+  // from different transports and neither may vouch for the other.
+  const performanceFresh = readings.performanceFresh === true;
+  const performance = performanceFresh && readings.performance
     ? performanceTiles({
         state: readings.performance,
         // The configured limit, never a power-draw reading.

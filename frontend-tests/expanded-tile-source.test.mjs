@@ -46,7 +46,59 @@ const performanceState = (over = {}) => ({
 });
 const full = () => ({
   egpu: egpuPresentation(), controller: controllerPresentation(),
-  performance: performanceState(), manualWatts: 15, fresh: true,
+  performance: performanceState(), manualWatts: 15, fresh: true, performanceFresh: true,
+});
+
+// ------------------------------------------- freshness is per source, not shared
+
+const perfTiles = (readings) => buildTiles(readings).performance;
+const perfValues = (readings) => perfTiles(readings).map((tile) => tile.value);
+
+test("an expired performance reading is Unknown even while the snapshot is fresh", () => {
+  // The defect this pins: performance arrives over a different transport with
+  // no observation timestamp, so grading it by the snapshot's age lets a power
+  // limit that expired minutes ago render as the current limit, vouched for by
+  // an unrelated GPU sample that happened to be recent.
+  const expired = { ...full(), performanceFresh: false };
+  assert.equal(expired.fresh, true, "the snapshot is still fresh in this case");
+  for (const value of perfValues(expired)) assert.equal(value, "Unknown");
+  // And the quick tab reads from the same gate.
+  const quick = buildTiles(expired).quick;
+  for (const id of ["manual", "auto", "fps"]) {
+    assert.equal(quick.find((tile) => tile.id === id).value, "Unknown", id);
+  }
+});
+
+test("a live performance reading survives a stale snapshot", () => {
+  // The same independence in the other direction: the snapshot going stale
+  // says nothing about a reading the performance owner still considers live.
+  const staleSnapshot = { ...full(), fresh: false, performanceFresh: true };
+  assert.ok(perfValues(staleSnapshot).some((value) => value !== "Unknown"),
+    "performance must not be blanked by an unrelated stale observation");
+  // while everything derived from that snapshot is Unknown.
+  const egpu = buildTiles(staleSnapshot).egpu;
+  for (const tile of egpu) {
+    if (tile.id !== "disconnect") assert.equal(tile.value, "Unknown", tile.id);
+  }
+});
+
+test("absent performance freshness fails closed, like the snapshot flag", () => {
+  const { performanceFresh, ...omitted } = full();
+  assert.equal(performanceFresh, true);
+  for (const value of perfValues(omitted)) assert.equal(value, "Unknown");
+});
+
+test("neither freshness flag can stand in for the other", () => {
+  // Four combinations, and only the matching source unlocks each tab.
+  const egpuKnown = (readings) => buildTiles(readings).egpu
+    .some((tile) => tile.id !== "disconnect" && tile.value !== "Unknown");
+  const perfKnown = (readings) => perfValues(readings).some((value) => value !== "Unknown");
+  for (const [fresh, performanceFresh] of [[true, true], [true, false], [false, true], [false, false]]) {
+    const readings = { ...full(), fresh, performanceFresh };
+    assert.equal(egpuKnown(readings), fresh, `egpu follows fresh=${fresh}`);
+    assert.equal(perfKnown(readings), performanceFresh,
+      `performance follows performanceFresh=${performanceFresh}`);
+  }
 });
 
 // ----------------------------------------------------------- every tab supplied
