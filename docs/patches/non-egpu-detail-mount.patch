@@ -69,15 +69,15 @@
  import { ExpandedCommandCenter } from "./shell";
  import type { TileSource, TileView } from "./tile-source";
  import { ShortcutSettings } from "./shortcut-settings";
-@@ -28,7 +29,7 @@
- const noTiles = () => undefined;
- const subscribers = new WeakMap<TileSource, (listener: () => void) => () => void>();
- const readers = new WeakMap<TileSource, () => TileView | undefined>();
--function subscribeTo(source?: TileSource) {
-+function subscribeTo(source?: TileSource, renderDetail?: NonEgpuDetailRenderer) {
-   if (!source) return noSubscribe;
-   let cached = subscribers.get(source);
-   if (!cached) { cached = (listener) => source.subscribe(listener); subscribers.set(source, cached); }
+@@ -44,7 +45,7 @@
+   return cached;
+ }
+ 
+-export function createExpandedMenu(input: ControllerInputSource | undefined, host: Window, canOpen: () => boolean = () => true, source?: TileSource) {
++export function createExpandedMenu(input: ControllerInputSource | undefined, host: Window, canOpen: () => boolean = () => true, source?: TileSource, renderDetail?: NonEgpuDetailRenderer) {
+   const storage = (() => { try { return host.localStorage; } catch { return undefined; } })();
+   let binding = loadMenuBinding(storage);
+   let modal: ReturnType<typeof showModal> | null = null;
 @@ -67,7 +68,7 @@
      // end. The server snapshot is the same read: there is no server, and
      // returning a different value there would tear.
