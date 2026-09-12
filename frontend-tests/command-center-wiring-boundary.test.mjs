@@ -3,7 +3,7 @@ import test from "node:test";
 import { readFileSync } from "node:fs";
 import ts from "typescript";
 
-const shell = readFileSync(new URL("../src/quick-access/expanded-command-center/shell.tsx", import.meta.url), "utf8");
+const shell = new TextDecoder("utf-8", {fatal:true}).decode(readFileSync(new URL("../src/quick-access/expanded-command-center/shell.tsx", import.meta.url)));
 const styles = readFileSync(new URL("../src/quick-access/expanded-command-center/styles.ts", import.meta.url), "utf8");
 
 const tree=ts.createSourceFile('shell.tsx',shell,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);

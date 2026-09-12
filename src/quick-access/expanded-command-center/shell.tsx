@@ -233,7 +233,7 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
         <p className="rg-expanded-context">{nested ? (hasDetail ? "Settings and actions" : synthetic ? "Configuration preview · no changes are applied" : "Current status · no changes are applied") : tab === "quick" ? "Essential controls while you play" : tab === "performance" ? "Configure performance for your play style" : synthetic ? "Status and configuration preview" : "Status and configuration"}</p>
         {nested ? <section className="rg-expanded-detail-page">
           {hasDetail ? <Container key={nested.id} data-ec-control="nested-content" data-ec-detail-content {...(native ? { "flow-children": "vertical", noFocusRing: true, preferredFocus: true } : {})}>
-            {dockControl && <CommandNotice tone="warning" title="Keep the cable connected">Disconnect trial � Follow the guarded flow before any physical action.</CommandNotice>}
+            {dockControl && <CommandNotice tone="warning" title="Keep the cable connected">Disconnect trial. Follow the guarded flow before any physical action.</CommandNotice>}
             {detailContent}</Container> : <>
           <h3>{nested.value}</h3>
           <p>{synthetic && nested.id === "auto" ? "Auto TDP is off and not configured. Target and limit selection must precede Start. This prototype cannot start, stop or tune the controller." : nested.detail}</p>
