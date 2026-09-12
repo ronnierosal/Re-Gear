@@ -14,6 +14,72 @@ from scripts import check_golden_behaviors as gate
 
 
 class GoldenGateTests(unittest.TestCase):
+    # The floor the repository manifest may never fall below. The gate executes
+    # whatever contracts/golden-behaviors.json happens to list, so without this
+    # a single-file edit that deletes a behavior, or swaps a failing test_id for
+    # a passing one, leaves both the checker and this suite green while the
+    # regression it was protecting ships. Pinning the floor here is deliberate
+    # duplication: weakening coverage becomes a visible edit to the enforcement
+    # tests as well as the contract, which is the review docs/GOLDEN_BEHAVIORS.md
+    # asks for. Each tuple is a minimum, never a maximum - adding golden
+    # coverage stays a one-file change.
+    GOLDEN_COVERAGE = {
+        "automatic-tv-readiness": (
+            "tests.test_connection_readiness.ConnectionReadinessTests.test_per_layer_stages_and_independent_hdmi_audio_quorums",
+            "tests.test_connection_readiness.ConnectionReadinessTests.test_identity_change_invalidates_accumulated_stability",
+            "tests.test_connection_readiness.ConnectionReadinessTests.test_unknown_game_fails_closed_after_other_layers_are_ready",
+            "tests.test_connection_readiness.ConnectionReadinessTests.test_unavailable_session_never_readies_even_with_inconsistent_flags",
+        ),
+        "automatic-dock-one-shot": (
+            "tests.test_automatic_dock.AutomaticDockCoordinatorTests.test_exact_ready_idle_attach_requests_once_until_absent",
+            "tests.test_automatic_dock.AutomaticDockCoordinatorTests.test_partial_identity_does_not_rearm_attempt_or_portable_suppression",
+            "tests.test_automatic_dock.AutomaticDockCoordinatorTests.test_running_game_and_unready_link_wait_without_consuming_attempt",
+            "tests.test_automatic_dock.AutomaticDockCoordinatorTests.test_portable_return_suppresses_same_attachment_until_removed",
+        ),
+        "automatic-recovery-bounded": (
+            "tests.test_automatic_link_recovery.AutomaticRecoveryTests.test_no_restart_from_startup_with_a_dock_already_present",
+            "tests.test_automatic_link_recovery.AutomaticRecoveryTests.test_ten_seconds_then_cooldown_after_completion_and_two_attempt_cap",
+            "tests.test_automatic_link_recovery.AutomaticRecoveryTests.test_gpu_arrival_stops_retry_even_if_later_observation_loses_gpu",
+            "tests.test_automatic_link_recovery.AutomaticRecoveryTests.test_unknown_absence_and_identity_change_do_not_rearm",
+        ),
+        "automatic-recovery-consent": (
+            "tests.test_automatic_link_recovery.AutomaticRecoveryTests.test_recovery_consent_is_separate_default_off_and_persisted",
+            "tests.test_automatic_link_recovery.AutomaticRecoveryTests.test_disabled_or_unresolved_transport_never_dispatches",
+        ),
+        "recovery-fresh-game-guard": (
+            "tests.test_main_link_recovery.LinkRecoveryStrategySelectionTests.test_manual_reservation_rechecks_game_user_transport_and_journal",
+            "tests.test_main_link_recovery.LinkRecoveryStrategySelectionTests.test_concurrent_confirmed_rpcs_issue_only_one_restart",
+            "tests.test_main_link_recovery.AutomaticRecoveryIntegrationTests.test_fresh_guarded_recovery_and_separate_consent",
+            "tests.test_automatic_recovery_dispatch.AutomaticRecoveryDispatchTests.test_game_start_at_dispatch_refuses_restart",
+            "tests.test_automatic_recovery_dispatch.AutomaticRecoveryDispatchTests.test_unknown_game_at_dispatch_refuses_restart",
+            "tests.test_automatic_recovery_dispatch.AutomaticRecoveryDispatchTests.test_idle_dispatch_preserves_recovery",
+            "tests.test_automatic_recovery_dispatch.AutomaticRecoveryDispatchTests.test_changed_dispatch_authority_refuses_restart",
+        ),
+        "safe-disconnect-no-premature-clearance": (
+            "tests.test_safe_undock_readiness.SafeUndockReadinessTests.test_complete_portable_evidence_is_ready_only_for_revalidation",
+            "tests.test_safe_undock_readiness.SafeUndockReadinessTests.test_protected_or_incomplete_client_scan_never_appears_ready",
+            "tests.test_safe_undock_readiness.SafeUndockReadinessTests.test_game_and_portable_fallback_gates_fail_closed",
+            "tests.test_safe_undock_readiness.SafeUndockReadinessTests.test_topology_display_staleness_and_binding_change_invalidate_or_block",
+        ),
+        "restoration-before-presentation": (
+            "tests.test_audio_recovery_transition.AudioRecoveryTransitionTests.test_restore_observed_and_persisted_before_presentation",
+            "tests.test_audio_recovery_transition.AudioRecoveryTransitionTests.test_unknown_portable_or_changed_identity_blocks_all_presentation_commands",
+            "tests.test_audio_recovery_transition.AudioRecoveryTransitionTests.test_uncertain_restore_command_never_runs_presentation",
+            "tests.test_audio_recovery_transition.AudioRecoveryTransitionTests.test_pending_blocks_normal_paths_without_implicit_restoration",
+        ),
+    }
+
+    # The promoted hardware reference. load_manifest only checks that these look
+    # like a revision and a digest, so 40 f's and 64 zeros validate cleanly.
+    # Promotion is a product decision with its own evidence, so swapping the
+    # immutable artifact has to be an explicit edit here too.
+    GOLDEN_BASELINE = {
+        "id": "checkpoint/0.3.82-auto-tv",
+        "source_revision": "09ff57128ca6e0526f4b5376af825d87557c0f2e",
+        "artifact_sha256": "c27e48366daa4374d49d02128e40c27e038cafa87488dcf449b3863b1841b06f",
+        "evidence": "docs/EGPU_0382_CHECKPOINT.md",
+    }
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
@@ -69,6 +135,32 @@ class GoldenGateTests(unittest.TestCase):
             suite = gate.load_tests(manifest)
             output = io.StringIO()
             self.assertTrue(gate.run_tests(suite, output), output.getvalue())
+
+    def repository_manifest(self):
+        return gate.load_manifest(gate.ROOT / "contracts/golden-behaviors.json")
+
+    def test_repository_manifest_preserves_every_pinned_behavior_and_test(self):
+        """Coverage may grow, never shrink, and never quietly change identity."""
+        behaviors = {
+            item["id"]: item["test_ids"]
+            for item in self.repository_manifest()["behaviors"]
+        }
+        self.assertEqual(sorted(behaviors), sorted(self.GOLDEN_COVERAGE))
+        for name, pinned in self.GOLDEN_COVERAGE.items():
+            with self.subTest(behavior=name):
+                missing = [test for test in pinned if test not in behaviors[name]]
+                self.assertEqual(
+                    missing,
+                    [],
+                    f"{name} no longer claims golden tests it used to claim. "
+                    "Renaming or replacing a golden test must preserve its "
+                    "assertions and update this floor in the same change, with "
+                    "an explanation; dropping one silently is the regression "
+                    "this guard exists to block.",
+                )
+
+    def test_repository_baseline_provenance_is_pinned(self):
+        self.assertEqual(self.repository_manifest()["baseline"], self.GOLDEN_BASELINE)
 
     def test_valid_manifest_and_passing_test(self):
         with self.fixture("pass"):
