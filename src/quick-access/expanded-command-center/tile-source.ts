@@ -28,7 +28,7 @@
  */
 
 import type { Tab, Tile } from "./model";
-import { egpuTiles, performanceTiles, controllerTiles } from "./tiles";
+import { egpuTiles, performanceTiles, controllerTiles, evidenceTone } from "./tiles";
 import type { Evidence } from "../modules/egpu-presentation";
 import type { EgpuPresentation } from "../modules/egpu-presentation";
 import type { ControllerPresentation } from "../modules/controller-presentation";
@@ -52,7 +52,7 @@ export type Readings = {
   fresh?: boolean;
   /** Actual display target -- which panel is being driven -- kept separate
    * from whether an external display is merely attached. */
-  displayTarget?: { text: string; known: boolean };
+  displayTarget?: Evidence;
 };
 
 const UNKNOWN_VALUE: TileValue = { text: "Unknown", known: false };
@@ -131,19 +131,24 @@ function settingsTiles(): Tile[] {
  */
 function quickTiles(
   performance: Tile[], egpu: Tile[], controller: Tile[],
-  displayTarget: { text: string; known: boolean } | undefined,
+  displayTarget: Evidence | undefined,
 ): Tile[] {
   const pick = (tiles: Tile[], id: string, title?: string): Tile | null => {
     const found = tiles.find((tile) => tile.id === id);
     return found ? (title ? { ...found, title } : found) : null;
   };
+  // Graded like every other reading: absent is unavailable, ungraded is
+  // quiet and says so, and only `verified` earns the tone a player reads as
+  // "this is true right now".
   const target: Tile = {
     id: "display", title: "Display target",
     value: displayTarget?.known ? displayTarget.text : "Unknown",
-    tone: displayTarget?.known ? "active" : "unavailable",
-    detail: displayTarget?.known
-      ? "The panel currently being driven."
-      : "No display target observation available.",
+    tone: displayTarget ? evidenceTone(displayTarget) : "unavailable",
+    detail: !displayTarget?.known
+      ? "No display target observation available."
+      : displayTarget.verified
+        ? "The panel currently being driven."
+        : "The panel currently being driven · observed, not verified",
   };
   const disconnect = pick(egpu, "disconnect") ?? unknownDisconnectTile();
   return [

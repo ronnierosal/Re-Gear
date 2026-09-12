@@ -6,6 +6,7 @@ import { observationAge } from "./quick-access/expanded-command-center/tile-sour
 import { createSingleFlight } from "./quick-access/single-flight";
 import { EgpuModule } from "./quick-access/modules/egpu";
 import { egpuPresentation } from "./quick-access/modules/egpu-presentation";
+import { displayTargetEvidence, UNKNOWN_EVIDENCE } from "./quick-access/modules/egpu-presentation";
 import { ControllerModule } from "./quick-access/modules/controller";
 import { controllerPresentation } from "./quick-access/modules/controller-presentation";
 import { displayAction } from "./display-action";
@@ -187,6 +188,14 @@ const LABELS: Record<string, string> = {
 const SLEEP_WARNING_KEY = "hdm.hideAttachedEgpuSleepWarning";
 const LEGACY_SLEEP_WARNING_KEY = "hdm.hideAttachedG1SleepWarning";
 const SNAPSHOT_STALE_AFTER_MS = 10_000;
+
+/** The schema this build knows how to read.
+ *
+ * `observationFromSnapshotEvidence` refuses anything else and fails closed.
+ * Publishing a payload it would reject, as current readings, would leave two
+ * gates on one observation disagreeing about whether it may be acted on. */
+const READABLE_SNAPSHOT_SCHEMA = 3;
+
 const BLOCKED_ATTEMPT_MODAL_DELAY_MS = 750;
 const DIAGNOSTIC_LOGGING_OPTIONS = [
   { data: "30_minutes", label: "30 minutes" },
@@ -1530,6 +1539,12 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
    * serialises, but a second press is refused here too -- a player answered one
    * confirmation and must get one operation. See quick-access/single-flight.ts,
    * where the behaviour is tested. */
+  // Claimed at the press, not at the dispatch. The single flight below refuses
+  // overlapping dispatches, but `disconnectBusy` is state that nothing sets
+  // until `runDisconnect` runs, so two presses in one tick both pass that
+  // check and open two confirmations. A player who answered one question
+  // twice, without meaning to, then gets two operations.
+  const disconnectPromptOpen = useRef(false);
   const disconnectFlight = useRef(createSingleFlight()).current;
 
   const runDisconnect = useCallback(async (
@@ -1678,7 +1693,12 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
   const menuObservation = observationAge(
     payload?.snapshot.observed_at, Date.now(), SNAPSHOT_STALE_AFTER_MS,
   );
-  const menuFresh = !loading && error === "" && payload !== null && menuObservation.fresh;
+  // A payload this build cannot read is not a fresh observation, whatever its
+  // timestamp says. The sleep preflight already refuses it; the menu must not
+  // publish the same payload as current readings.
+  const menuSchemaReadable = payload?.snapshot.schema_version === READABLE_SNAPSHOT_SCHEMA;
+  const menuFresh = !loading && error === "" && payload !== null
+    && menuSchemaReadable && menuObservation.fresh;
   const menuPerformance = performanceState({
     status: performance.manual, autoStatus: performance.auto,
     busy: performance.busy, stopping: performance.stopping,
@@ -1693,14 +1713,13 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
       performance: menuPerformance,
       // The configured limit, never a power-draw reading.
       manualWatts: performance.manual?.current_watts ?? null,
-      // Which panel is actually driven, from `active`, not from attachment.
+      // Which panel is actually driven, from `active`, not from attachment,
+      // and graded rather than asserted. `active` is the tone a player reads
+      // as "this is true right now", and an observation the payload graded
+      // only `observed` has not earned it.
       displayTarget: menuFresh && snapshot
-        ? snapshot.displays.some((d) => d.active === true && d.kind === "external")
-          ? { text: "External", known: true }
-          : snapshot.displays.some((d) => d.active === true && d.kind === "internal")
-            ? { text: "Handheld", known: true }
-            : { text: "Unknown", known: false }
-        : { text: "Unknown", known: false },
+        ? displayTargetEvidence(snapshot.displays)
+        : UNKNOWN_EVIDENCE,
     });
   }, [publishTiles, menuFresh, payload, peripheralStatus, menuShortcutAvailable,
       menuPerformance.active, menuPerformance.autoKnown, menuPerformance.stopping,
@@ -1813,7 +1832,12 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
             if (id === "safe-disconnect") {
               // Only an offer the owning backend actually made is actionable.
               // Anything else selects the tile so its reason is read.
-              if (tile.activation !== "act" || !tile.confirmation || disconnectBusy) return;
+              if (tile.activation !== "act" || !tile.confirmation || disconnectBusy
+                || disconnectPromptOpen.current) return;
+              // Synchronously, before any await or modal, so a second press
+              // in the same tick sees the claim.
+              disconnectPromptOpen.current = true;
+              const releasePrompt = () => { disconnectPromptOpen.current = false; };
               const releaseDisplay = tile.displayApprovalRequired === true;
               const view = disconnectPresentation(egpuDisconnect);
               // A game is going to end. Its own dialog owns that consent, and
@@ -1825,12 +1849,12 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
               if (view.dialog !== null) {
                 showGameCloseDialog(view.dialog, (answers) => {
                   void runDisconnect(releaseDisplay, answers);
-                });
+                }, releasePrompt);
                 return;
               }
               showDisconnectConfirmation(tile.confirmation, () => {
                 void runDisconnect(releaseDisplay, { confirmed: true });
-              });
+              }, releasePrompt);
               return;
             }
             if (id === "auto-tdp" && tile.actionLabel === "Stop") {
@@ -2278,6 +2302,7 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
 function showDisconnectConfirmation(
   confirmation: string,
   onConfirm: () => void,
+  onClose?: () => void,
 ): ReturnType<typeof showModal> {
   let modal: ReturnType<typeof showModal>;
   const close = () => modal.Close();
@@ -2298,7 +2323,9 @@ function showDisconnectConfirmation(
       <div style={{ fontSize: "12px", lineHeight: "17px" }}>{confirmation}</div>
     </EgpuConfirmModal>,
     window,
-    { strTitle: PRODUCT_NAME, bNeverPopOut: true },
+    // Released however the dialog ends, including cancellation and a
+    // background dismissal, so a refused prompt never wedges the control.
+    { strTitle: PRODUCT_NAME, bNeverPopOut: true, fnOnClose: onClose },
   );
   return modal;
 }
@@ -2317,6 +2344,7 @@ function showDisconnectConfirmation(
 function showGameCloseDialog(
   dialog: GameCloseDialog,
   onAnswer: (answers: GameCloseAnswers) => void,
+  onClose?: () => void,
 ): ReturnType<typeof showModal> {
   let modal: ReturnType<typeof showModal>;
   // An absent label means the choice was never offered, so these stay false.
@@ -2357,7 +2385,9 @@ function showGameCloseDialog(
       )}
     </EgpuConfirmModal>,
     window,
-    { strTitle: PRODUCT_NAME, bNeverPopOut: true },
+    // Released however the dialog ends, including cancellation and a
+    // background dismissal, so a refused prompt never wedges the control.
+    { strTitle: PRODUCT_NAME, bNeverPopOut: true, fnOnClose: onClose },
   );
   return modal;
 }

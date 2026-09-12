@@ -209,16 +209,42 @@ test("an unobserved Safe Disconnect keeps its warning tone and refuses clearance
 test("display target is an observation of output, not of attachment", () => {
   // A connected but inactive television must not read as the current target.
   const attachedNotDriven = buildTiles({
-    ...full(), displayTarget: { text: "Handheld", known: true },
+    ...full(), displayTarget: { text: "Handheld", known: true, verified: true },
   }).quick.find((tile) => tile.id === "display");
   assert.equal(attachedNotDriven.value, "Handheld");
   const external = buildTiles({
-    ...full(), displayTarget: { text: "External", known: true },
+    ...full(), displayTarget: { text: "External", known: true, verified: true },
   }).quick.find((tile) => tile.id === "display");
   assert.equal(external.value, "External");
   // And it is not the eGPU tab's attachment card wearing a different title.
   const attachment = buildTiles(full()).egpu.find((tile) => tile.id === "display");
   assert.equal(attachment.value, "Connected", "the eGPU card still reports attachment");
+});
+
+test("a verified display target reads as fact; an observed one says it is not", () => {
+  // Same reading, two grades. "active" is the tone a player reads as "this is
+  // true right now", and only a verified observation has earned it -- the eGPU
+  // tab already says "observed, not verified" for this same field.
+  const verified = buildTiles({
+    ...full(), displayTarget: { text: "External", known: true, verified: true },
+  }).quick.find((tile) => tile.id === "display");
+  assert.equal(verified.tone, "active");
+  assert.equal(verified.detail, "The panel currently being driven.");
+
+  const observed = buildTiles({
+    ...full(), displayTarget: { text: "External", known: true, verified: false },
+  }).quick.find((tile) => tile.id === "display");
+  assert.equal(observed.value, "External", "the panel is still named");
+  assert.equal(observed.tone, "quiet", "an ungraded reading must not render as active");
+  assert.match(observed.detail, /observed, not verified/);
+});
+
+test("mirrored output survives into the tile rather than being reduced to one panel", () => {
+  const tile = buildTiles({
+    ...full(), displayTarget: { text: "External + handheld", known: true, verified: true },
+  }).quick.find((item) => item.id === "display");
+  assert.equal(tile.value, "External + handheld");
+  assert.equal(tile.tone, "active");
 });
 
 test("an unobserved display target is Unknown, never inferred from attachment", () => {
