@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
+import { runtimeDependencies, executableSource } from "./presentation-dependencies.mjs";
 
 const source = readFileSync(new URL("../src/quick-access/expanded-command-center/egpu-ui.tsx", import.meta.url), "utf8");
 
@@ -17,14 +18,12 @@ test("eGPU detail preserves safe-disconnect truth boundary", () => {
 });
 
 test("eGPU UI owns presentation only and does not import runtime hardware modules", () => {
-  for (const forbidden of ["usb4", "pci", "drm", "gamescope", "getSnapshot", "rpc", "backend/"]) {
-    assert.equal(source.toLowerCase().includes(forbidden.toLowerCase()), false, `unexpected runtime dependency: ${forbidden}`);
-  }
+  assert.deepEqual(runtimeDependencies(source,/usb4|pci|drm|gamescope|rpc|backend|@decky\/api/i),[]);
 });
 
 test("lifecycle progress is step-based and never fabricates a percentage", () => {
   assert.match(source, /CommandProgressSteps/);
-  assert.doesNotMatch(source, /percent|% complete|progressPercent/i);
+  assert.doesNotMatch(executableSource(source), /percent|% complete|progressPercent/i);
 });
 
 test("runtime action slots are stable for wiring", () => {

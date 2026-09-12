@@ -1,14 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
+import { runtimeDependencies } from "./presentation-dependencies.mjs";
 
 const controls = readFileSync(new URL("../src/quick-access/expanded-command-center/control-ui.tsx", import.meta.url), "utf8");
 const details = readFileSync(new URL("../src/quick-access/expanded-command-center/action-details.tsx", import.meta.url), "utf8");
 
 test("nested control kit stays presentation-only", () => {
-  for (const forbidden of ["backend", "getSnapshot", "RPC", "fetch(", "localStorage", "sessionStorage"]) {
-    assert.equal(controls.includes(forbidden), false, `control-ui must not own ${forbidden}`);
-  }
+  assert.deepEqual(runtimeDependencies(controls),[]);
 });
 
 test("performance controls keep approved concepts separate", () => {

@@ -27,27 +27,17 @@ const tileSourceUrl = new URL("../src/quick-access/expanded-command-center/tile-
 test("live Command Center source preserves the approved UI tile contract", {
   skip: !existsSync(tileSourceUrl),
 }, async () => {
-  const source = readFileSync(tileSourceUrl, "utf8");
-
-  // Keep this source-level on purpose: tile-source.ts imports runtime modules
-  // that are outside this UI-only test's ownership. The assertions pin the
-  // public contract without mocking backend behavior.
-  const expectedIds = Object.values(approved).flat();
-  for (const id of new Set(expectedIds)) {
-    assert.match(source, new RegExp(`(?:id:\\s*["']${id}["']|\\[["']${id}["'])`),
-      `live source must preserve approved tile id: ${id}`);
+  const graph=[
+    'quick-access/performance-state', 'quick-access/expanded-command-center/model',
+    'quick-access/expanded-command-center/tiles', 'quick-access/expanded-command-center/tile-source',
+  ].map(path=>ts.transpileModule(readFileSync(new URL(`../src/${path}.ts`,import.meta.url),'utf8'),{
+    compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2020},
+  }).outputText.replace(/^import[^;]*;$/gm,'')).join('\n');
+  const {buildTiles}=await import(`data:text/javascript;base64,${Buffer.from(graph).toString('base64')}`);
+  for(const readings of [{},{fresh:false,performanceFresh:false},{fresh:true,performanceFresh:true}]){
+    const view=buildTiles(readings);
+    for(const [tab,ids] of Object.entries(approved))
+      assert.deepEqual(view[tab].map(tile=>tile.id),ids,`${tab} composition must remain stable`);
+    assert.equal(view.quick.find(tile=>tile.id==='disconnect').wide,true);
   }
-
-  // Older wiring used these eGPU-only IDs/titles as the primary menu shape.
-  // They may exist internally, but they cannot replace the approved module IDs.
-  assert.match(source, /["']device["']/, "eGPU wiring must expose the External GPU card as device");
-  assert.match(source, /["']dock["']/, "eGPU wiring must expose Dock Mode");
-  assert.match(source, /["']link["']/, "eGPU wiring must expose Connection Link");
-  assert.match(source, /["']profile["']/, "performance wiring must preserve Performance Profile");
-  assert.match(source, /["']refresh["']/, "performance wiring must preserve Refresh Rate");
-  assert.match(source, /["']battery["']/, "controller wiring must preserve Controller Battery");
-  assert.match(source, /["']tv-controller["']/, "controller wiring must preserve TV Dock Behavior");
-  assert.match(source, /["']quick-actions["']/, "settings wiring must preserve Quick Actions");
-  assert.match(source, /["']updates["']/, "settings wiring must preserve Updates");
-  assert.match(source, /["']about["']/, "settings wiring must preserve About Re-Gear");
 });

@@ -48,8 +48,11 @@ test("utility rails do not add redundant headings and retain approved labels", (
 });
 
 test("quick tiles stay compact rather than drifting back to oversized cards", () => {
-  assert.match(styles, /min-height:100px/);
-  assert.match(styles, /gap:8px/);
-  assert.doesNotMatch(styles, /min-height:116px/);
-  assert.doesNotMatch(styles, /gap:10px/);
+  const grid=styles.match(/\.rg-expanded-grid\{([^}]+)\}/)?.[1];
+  const tile=styles.match(/\.rg-expanded \.rg-expanded-tile\{([^}]+)\}/)?.[1];
+  assert.ok(grid,"grid rule missing"); assert.ok(tile,"tile rule missing");
+  assert.match(tile, /min-height:100px/);
+  assert.match(grid, /gap:8px/);
+  assert.doesNotMatch(tile, /min-height:116px/);
+  assert.doesNotMatch(grid, /gap:10px/);
 });

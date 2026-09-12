@@ -831,10 +831,11 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
           getActionHistory,
         },
       );
+      let nextPeripheral = optionalDiagnostics.peripheralStatus;
       if (expandedVisible && !(quickAccessVisible && diagnosticsOnScreen.current)
           && nextPayload.snapshot.game_state === "idle") {
-        try { optionalDiagnostics.peripheralStatus = await getPeripheralStatus(); }
-        catch { optionalDiagnostics.peripheralStatus = null; }
+        try { nextPeripheral = await getPeripheralStatus(); }
+        catch { nextPeripheral = null; }
       }
       const presentationPayload = {
         ...nextPayload,
@@ -843,7 +844,7 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
       setPayload(presentationPayload);
       setDockedIgpuStatus(optionalDiagnostics.dockedIgpuStatus);
       setDiagnosticLoggingStatus(optionalDiagnostics.diagnosticLoggingStatus);
-      setPeripheralStatus(optionalDiagnostics.peripheralStatus);
+      setPeripheralStatus(nextPeripheral);
       setActionHistory(optionalDiagnostics.actionHistory);
       setError("");
       lastSnapshotAt.current = Date.now();
