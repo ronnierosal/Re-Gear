@@ -25,6 +25,24 @@ reference; it is design inspiration, not imported ASUS code/assets. The PNG is
 a documentation reference only and must not be bundled as game art or UI assets.
 Existing source-attribution requirements still apply to delivered adaptations.
 
+## Workstream ownership
+
+The Command Center presentation is a dedicated UI workstream. ChatGPT owns the
+visual structure, spacing, responsive behavior, icon treatment, focus treatment,
+card hierarchy, modal/popup presentation and consistency across Re-Gear screens.
+Codex and Claude Code may wire adapters, state, actions and backend behavior into
+the approved component contracts, but must not independently redesign the UI while
+doing so.
+
+When wiring code, preserve the existing visual contract unless an actual platform
+constraint makes it impossible. If a wiring task exposes a design problem, record
+the problem separately and hand it back to the UI workstream instead of silently
+changing widths, card sizes, tabs, colors, labels, rails or hierarchy.
+
+UI-only changes should remain isolated from eGPU/runtime lifecycle behavior.
+Runtime wiring should consume the visual/navigation contracts rather than embed
+backend-specific layout decisions in presentation components.
+
 ## Required composition
 
 | Area | Required design |
@@ -36,7 +54,7 @@ Existing source-attribution requirements still apply to delivered adaptations.
 | Quick row 1 | FPS Target, Manual TDP, Auto TDP, Display. Icons and titles above separate values/details; adjustment affordance, TDP slider and Auto TDP toggle only dispatch through verified existing adapters. |
 | Quick row 2 | eGPU, Controller, Safe Disconnect spanning the remaining two columns. Safe Disconnect has distinct readiness emphasis and truthful warning/result wording. |
 | Right panel | Detached narrow action rail close to the right edge for direct thumb access, visible when the menu opens. Stacked Mic mute, Wi-Fi, Overlay, Record buttons. **Do not add a redundant “Quick actions” heading above the buttons.** Buttons scale with available viewport height/width instead of retaining fixed desktop-like dimensions. Game remains visible between panels. |
-| Footer | Compact controller prompts, including Y Customize where available, A Select and B Back; retain LB/RB tab navigation. |
+| Footer | Compact controller prompts, including Y Customize where available, A Select and B Back; retain LB/RB tab navigation. Do not add a fake Xbox/Menu button; SteamOS already owns the system menu surface. |
 
 The current default right list is **Mic mute, Wi-Fi, Overlay, Record**, superseding
 the earlier Audio output default. Audio output can remain an optional customization
@@ -44,6 +62,47 @@ choice. Do not mix conflicting defaults from older chat notes. The target keeps
 brightness/volume on the left; any earlier proposal to freely swap those rails
 does not override this explicit arrangement. Customization chooses supported
 quick actions without silently moving the defining utility strip.
+
+## Menu consistency rules
+
+All top-level Re-Gear sections must look and behave like one product, not separate
+plugins sharing a logo. Quick Access, Performance, eGPU, Controllers and Settings
+must reuse the same shell, tab bar, title spacing, card radii, border weight,
+focus treatment, icon sizing and typography scale.
+
+Quick Access is the densest action surface. Deeper module tabs may use fewer and
+wider cards, but they should not invent a different design language. Prefer the
+same reusable patterns:
+
+- compact status/action card
+- wide status/action card
+- toggle card
+- slider card
+- warning/readiness card
+- detail page reached from a card
+- shared popup/modal primitives
+
+Keep one semantic color system everywhere: cyan = focus/active/progress, green =
+verified success, amber = warning/action required, red = genuine failure, muted
+blue-gray = secondary/unavailable. Do not use color simply for decoration.
+
+## Navigation contract
+
+Navigation visuals and behavior are part of the UI contract even when action
+implementation is owned elsewhere.
+
+- LB/RB: switch top-level tabs.
+- D-pad: move spatially through cards and rails.
+- A: select/open/activate the focused item.
+- B: leave a nested view first, then close the Command Center.
+- Y: Customize when that destination is actually wired.
+- Brightness/Volume remain directly focusable vertical controls.
+- Right quick-action buttons remain directly focusable without entering another page.
+- Focus should restore to the previous item when returning from a nested page.
+- No navigation path should require touch or mouse.
+
+The footer should only advertise actions that are actually available in the current
+state. Do not show a nonfunctional prompt merely to match a mockup.
 
 ## Data and interaction
 
