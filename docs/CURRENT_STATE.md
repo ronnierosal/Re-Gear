@@ -24,10 +24,13 @@ preserved confirmation, freshness, attachment and pending-request guards.
 
 Fresh device readback showed installed 0.3.92 revision
 `6c638a81607bd2b16f9976cc3d6723b00dfe34c7`, ancestral to this candidate. Its ZIP
-hash and the preserved 0.3.82 rollback ZIP hash were verified. The first transfer
-attempt stopped before copying because SSH became unreachable. **0.3.94 is not
-staged, installed or hardware-validated in this record.** No services restarted,
-hardware operations or archive cleanup occurred. Software disconnect does not
+hash and the preserved 0.3.82 rollback ZIP hash were verified. The initial IP
+connection became unreachable; the user supplied `steamdeck.local`, which worked.
+The ZIP was copied to a unique temporary file, verified, exclusively hard-linked
+to `/home/deck/Re-Gear-0.3.94.zip`, and verified again before its temporary link
+was removed. **0.3.94 is staged for manual Decky installation, not installed or
+hardware-validated.** Installed readback remained 0.3.92. No services restarted,
+hardware operations or historical archive cleanup occurred. Software disconnect does not
 power off the enclosure or certify physical unplug clearance; powered software
 reconnect remains excluded after the reported heat incident. Broader Quick
 Access/popup wiring and sleep/native-presenter work remain separate.
