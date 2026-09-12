@@ -1,4 +1,59 @@
-export type DockAction = "whole_dock_disconnect" | "whole_dock_reconnect";
+export type DockAction = "whole_dock_disconnect" | "whole_dock_reconnect" | "whole_dock_shutdown";
+export type DockIntent = "disconnect" | "shutdown";
+
+const shutdownRefusals: Record<string, string> = {
+  "dock_power.preflight_changed": "Readiness changed before shutdown could be requested.",
+  "dock_power.intent_not_recorded": "The shutdown request could not be recorded.",
+  "dock_power.request_unverified": "Shutdown submission could not be verified.",
+  "dock_power.unresolved": "The shutdown result is unresolved.",
+  "dock_power.already_consumed": "The original shutdown request has already been used.",
+  "dock_power.disconnect_unverified": "Dock disconnect could not be verified; shutdown was not requested.",
+  "dock_power.invalid_intent": "The shutdown request was not accepted.",
+  "dock_power.boot_unverified": "The current system session could not be verified.",
+  "dock_power.busy": "Another power request is still in progress.",
+  "dock_power.sleep_unverified": "Sleep with the dock connected is not available.",
+};
+const shutdownTeardownRefusals = new Set([
+  "dock_teardown.usb_peripherals_or_unknown", "dock_teardown.begin_preflight_refused",
+  "dock_teardown.sleep_inhibition_required", "dock_teardown.approval_superseded",
+  "dock_teardown.session_unknown", "dock_mutation.inhibited", "dock_mutation.unavailable_or_busy",
+  "dock_teardown.gpu_release_unverified", "dock_teardown.portable_return_refused",
+  "dock_teardown.portable_return_unverified", "dock_teardown.portable_acknowledgement_unverified",
+  "dock_teardown.trial_unresolved",
+]);
+export function shutdownRequested(status: any): boolean {
+  return status?.schema_version === 1 && status.busy === false && status.safe_to_unplug === false
+    && status.code === "dock_power.request_accepted_unverified" && status.power_action === "shutdown"
+    && status.power_requested === true && status.ok === true;
+}
+/** A malformed/ambiguous response must not release the persistent retry guard. */
+export function dockRequestSettled(status: any, request: string, intent: DockIntent): boolean {
+  if (intent !== "disconnect" && intent !== "shutdown") return false;
+  if (status?.request_id !== request || status.schema_version !== 1 || status.busy !== false || status.safe_to_unplug !== false) return false;
+  if (intent === "disconnect") return true;
+  if (shutdownRequested(status)) return true;
+  return status.ok === false && (status.power_requested === undefined || status.power_requested === false)
+    && (status.power_action === undefined || status.power_action === "shutdown")
+    && (Object.hasOwn(shutdownRefusals, status.code) || shutdownTeardownRefusals.has(status.code));
+}
+/** Explicit intent selects the existing guarded route; capability metadata is
+ * not an input and cannot authorize a write. Shutdown never becomes reconnect. */
+export function dockIntentControl(status: any, snapshot: any, intent: DockIntent, now = Date.now()): ReturnType<typeof dockControl> {
+  if (intent === "disconnect") return dockControl(status, snapshot, now);
+  if (intent !== "shutdown") return { action: null, label: "Action unavailable", message: "This action is not supported." };
+  if (shutdownRequested(status)) return { action: null, label: "Shutdown requested", message: "Shutdown was requested. Completion is not confirmed. Keep the cable connected." };
+  if (snapshot?.schema_version !== 3) return { action: null, label: "Shutdown unavailable", message: "Current system status is unavailable. Refresh before continuing." };
+  const view = dockControl(status, snapshot, now);
+  return {
+    action: view.action === "whole_dock_disconnect" ? "whole_dock_shutdown" : null,
+    label: view.action === "whole_dock_disconnect" ? "Disconnect and shut down" : view.action === "whole_dock_reconnect" ? "Shutdown unavailable" : view.label,
+    message: view.action === "whole_dock_disconnect"
+      ? "Disconnect the dock in software, then request shutdown after verification."
+      : view.action === "whole_dock_reconnect"
+        ? "The dock is already disconnected in software. Shutdown continuation is unavailable; do not repeat the operation."
+        : (shutdownRefusals[status?.code] ? shutdownRefusals[status.code] + " Keep the cable connected; do not repeat the operation." : view.message),
+  };
+}
 export function dockControl(status: any, snapshot: any, now = Date.now()): { action: DockAction | null; label: string; message: string } {
   const unavailable = { action: null, label: "Safely disconnect", message: "Disconnect status unavailable. Refresh before continuing." };
   if (status?.schema_version !== 1 || status.safe_to_unplug !== false || typeof status.busy !== "boolean") return unavailable;
