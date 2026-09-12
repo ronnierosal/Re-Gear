@@ -12,5 +12,5 @@ shared main or modify another session's checkout. Existing sessions must reload
 these instructions on resume. Old `AGENT_NOTES.md` entries are historical context;
 verify current hub and issue/PR state before treating them as live claims.
 
-Check the hub `project-primary` owner and recorded assignment before starting work.
-Only Ronnie designates the project primary; module leads do not self-promote.
+Check the relevant hub `primary-<scope>` owner and recorded assignment before starting work.
+Only Ronnie designates a scoped primary; cross-scope changes need agreed integration ownership.

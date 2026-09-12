@@ -75,10 +75,11 @@ and correct the owning repository document.
   checks). Do not end the turn merely because the partner is still processing.
   Follow [reply waiting](docs/AGENT_COORDINATION.md#waiting-for-collaboration-replies)
   for deadlines, interruptions, late replies and timeout handoffs.
-- Each project has one Ronnie-designated primary Codex session, recorded as the
-  shared hub's `project-primary` stream owner. The primary assigns work to Codex
-  and Claude, resolves shared contracts, and orders integration. Stream/module
-  leads are delegates, not competing project primaries. No session self-appoints.
+- Each focused project/workstream has one Ronnie-designated primary Codex session,
+  recorded as a `primary-<scope>` hub stream owner (for example `primary-egpu`
+  or `primary-ui-wiring`). The primary assigns work to Codex
+  and Claude, resolves shared contracts, and orders integration. A primary owns its named scope, not
+  every project in the repository; cross-scope work needs joint sequencing. No session self-appoints.
 - Workers claim only a primary-assigned task (or an explicit Ronnie assignment),
   not arbitrary available work. The primary also claims its own implementation
   tasks and uses isolated worktrees. Record delegation before substantive work;

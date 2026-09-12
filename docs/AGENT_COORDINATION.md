@@ -2,7 +2,7 @@
 
 ## How this works
 
-`AGENTS.md` is the common policy. One focused primary Codex per project assigns
+`AGENTS.md` is the common policy. One focused primary Codex per project/workstream assigns
 bounded work to Codex/Claude workers, may implement its own tasks, and controls
 combined review and merge order. One shared hub records reality; each editing
 worker has an isolated worktree. Voice/text proposes work; the primary dispatches
@@ -10,14 +10,16 @@ it. No inbox message wakes a chat or schedules a run by itself.
 
 ## Project primary and delegation
 
-**Identity.** Ronnie selects the project's primary chat. Its registered Codex
-session claims the ordinary `project-primary` hub stream after recording Ronnie's
-selection in that stream's inbox. Use the existing `create_stream`, `claim_stream`
+**Identity.** Ronnie selects each focused project/workstream's primary chat. Its
+registered Codex session claims the ordinary `primary-<scope>` hub stream after
+recording Ronnie's selection and scope in that stream's inbox. Re-Gear can have
+separate eGPU and UI-wiring primaries; no repository-wide super-primary is implied.
+Use stable IDs such as `primary-egpu` and `primary-ui-wiring`. Use the existing `create_stream`, `claim_stream`
 and accepted stream-transfer operations; no new database or parallel board.
 Stream ownership is atomic, but agent identity and assignment compliance remain
-cooperative policy, not authentication or GitHub branch protection. Other module
-leads retain routing responsibilities only. A primary for another project has no
-implicit authority here. If the slot is empty, do read-only orientation or an
+cooperative policy, not authentication or GitHub branch protection. Existing non-primary stream leads retain inbox routing responsibilities. A primary
+for another scope has no implicit authority over this one. A chat title helps find
+the session but does not replace its registered ID and recorded designation. If the slot is empty, do read-only orientation or an
 explicit Ronnie assignment; do not self-appoint or dispatch new work.
 
 **Assignment.** Before a worker claims, the primary records a direct hub message
@@ -39,6 +41,15 @@ serialize the work. Read-only review children do not need competing file claims;
 record their assignment and verdict under the owning task. Track who is actually
 running: a hub receipt is not proof of execution. Claude sessions are started via
 available authorized controls or Ronnie; never claim unsupported automatic launch.
+
+**Across scopes.** When tasks touch another primary's contracts, record the shared
+interface, affected scope owners, dependency order and one final integration driver
+before editing the overlap. Each primary accepts its affected scope on the same
+head/base; the driver checks the combined golden and consistency evidence and
+serializes the merge. Two primaries must not independently merge competing versions
+of a shared file or contract. If agreement is pending, continue only disjoint work.
+A golden reviewer provides independent evidence, not a competing implementation
+owner or automatic merge authority. No title or module lead overrides an existing claim.
 
 **Choosing workers.** Prefer demonstrated fit, not model stereotypes: domain
 context, quality of previous patches, missed regressions, test discipline and
@@ -85,10 +96,11 @@ workers, exact candidates, accepted decisions and outstanding conflicts. Do not
 leave this state only in chat, and do not bulk cancel historical records.
 
 For first adoption, prepare the policy PR under the explicit assignment and retain
-it in review until Ronnie names the project primary (or explicitly delegates that
+it in review until Ronnie identifies the affected scoped primaries (or explicitly delegates that
 one rollout integration). Do not infer a primary role from policy authorship.
-The designated primary records the role, accepts the exact rollout candidate after
-independent review and normal gates, then migrates active assignments with owners.
+The designated primaries record their roles, agree one driver for this shared
+policy rollout and accept the exact candidate after independent review and normal
+gates, then migrate active assignments with owners.
 
 ## Fresh session (including “work the next appropriate Re-Gear task”)
 
@@ -103,7 +115,7 @@ independent review and normal gates, then migrates active assignments with owner
    refs. Search matching open/closed issues and inspect relevant open PR paths
    (`scripts/check_pr_collisions.py --claimants <paths>` is advisory). Record any
    failed check; lack of remote access is not proof that nobody owns a path.
-4. Find the `project-primary` owner and your recorded assignment. Claim that
+4. Find the relevant `primary-<scope>` owner and your recorded assignment. Claim that
    task at its current revision after checking dependencies and acceptance.
    If unassigned, request work from the primary; propose an item if useful but
    do not start it. Explicit Ronnie assignments remain valid and are recorded.
