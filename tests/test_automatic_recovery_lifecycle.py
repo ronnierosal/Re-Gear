@@ -6,6 +6,8 @@ neither operate hardware nor replace the privileged filesystem gate tests.
 """
 import asyncio
 from contextlib import ExitStack, contextmanager
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from types import SimpleNamespace as NS
 import unittest
 from unittest.mock import Mock, patch
@@ -14,6 +16,7 @@ from tests.test_main_process_delivery import load_main_module
 from tests.test_main_link_recovery import observation, status
 from tests.test_link_recovery_service import FakeCommands, USER, RESTART, service
 from regear.delivery.dock_mutation_gate import DockMutationDenied
+from regear.delivery.automatic_dock_preferences import AutomaticDockPreferenceStore
 from regear.domain.models import Confidence, GameState, GpuRole
 
 
@@ -200,6 +203,63 @@ class AutomaticRecoveryLifecycleTests(unittest.TestCase):
         self.audit.return_value = {"code": "held_helper.unsettled", "settled": False}
         self.attach_until_due()
         self.assert_denied("automatic_recovery.admission_inhibited")
+
+    def test_saved_preferences_survive_reload_without_replaying_attached_recovery(self):
+        with TemporaryDirectory() as directory:
+            docking = AutomaticDockPreferenceStore(Path(directory))
+            recovery = AutomaticDockPreferenceStore(Path(directory), recovery=True)
+            docking.save(True)
+            self.plugin._automatic_dock_preferences = lambda: docking
+            self.plugin._automatic_recovery_preferences = lambda: recovery
+            self.attach_until_due()
+            self.assertFalse(self.poll(11))
+            self.assertEqual(self.decision(), "automatic_recovery.disabled")
+            self.assertEqual(self.commands.calls, [])
+            self.assertFalse(recovery.load())
+            recovery.save(True)  # A deliberate preference change, never a migration default.
+            self.assertFalse(self.poll(20))
+            self.assertTrue(self.poll(30))
+            self.assertEqual(self.commands.calls, [RESTART])
+            self.make_plugin()  # Reload/update recreates runtime but preserves settings.
+            self.plugin._automatic_dock_preferences = lambda: AutomaticDockPreferenceStore(Path(directory))
+            self.plugin._automatic_recovery_preferences = lambda: AutomaticDockPreferenceStore(Path(directory), recovery=True)
+            self.assertTrue(self.plugin._automatic_dock_preferences().load())
+            self.assertTrue(self.plugin._automatic_recovery_preferences().load())
+            self.assertFalse(self.poll(40))
+            self.assertEqual(self.decision(), "automatic_recovery.waiting_for_detach")
+            self.assertEqual(self.commands.calls, [])
+
+    def test_running_or_unknown_game_waits_without_spending_or_retiring(self):
+        for game, code in ((GameState.RUNNING, "automatic_recovery.game_running"),
+                           (GameState.UNKNOWN, "automatic_recovery.game_unknown")):
+            with self.subTest(game=game):
+                self.make_plugin()
+                self.current.snapshot.game_state = GameState.IDLE
+                self.attach_until_due()
+                self.current.snapshot.game_state = game
+                self.assert_denied(code)
+        self.current.snapshot.game_state = GameState.IDLE
+        self.assertFalse(self.poll(20))
+        self.assertFalse(self.poll(29.999))
+        self.assertTrue(self.poll(30))
+        self.assertEqual(self.commands.calls, [RESTART])
+
+    def test_missing_journal_and_observation_errors_are_reported_without_dispatch(self):
+        self.attach_until_due()
+        self.journal.durable = False
+        self.assert_denied("automatic_recovery.journal_unavailable")
+        self.journal.durable = True
+        self.journal.owner.value = "presentation"
+        self.assert_denied("automatic_recovery.transition_busy")
+        def unreadable():
+            raise OSError("private/path/or/identity")
+        self.plugin._transition_journal_service = unreadable
+        with self.assertRaises(OSError):
+            self.poll(14)
+        self.assertEqual(self.decision(), "automatic_recovery.observation_failed")
+        self.assertNotIn("private/path/or/identity", str(self.plugin._append_journey_event.call_args_list))
+        self.assertEqual(self.commands.calls, [])
+        self.assertEqual(self.plugin._automatic_link_recovery.attempts, 0)
 
     def test_consumed_shutdown_new_boot_retires_then_retries_ordinary_admission(self):
         self.state.claim = NS(stage="software_down", binding="dock")
