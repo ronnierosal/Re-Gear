@@ -155,6 +155,7 @@ from regear.application.link_recovery import (  # noqa: E402
 )
 from regear.domain.link_training_recovery import (  # noqa: E402
     LinkRecoveryAvailability,
+    assess_link_recovery,
 )
 from regear.application.automatic_dock import (  # noqa: E402
     AutomaticDockCoordinator,
@@ -1170,7 +1171,12 @@ class Plugin:
             self._append_journey_event(
                 severity="info", code="link_recovery.started", component="connection",
                 stage="link_recovery", details={"strategy": chosen.value})
-            return service.recover(resolution.context, strategy=chosen)
+            return service.recover(
+                resolution.context, strategy=chosen,
+                preflight=lambda: self._manual_link_recovery_preflight(
+                    resolution.context, observation.transport_identity,
+                ),
+            )
         try:
             outcome = await asyncio.to_thread(lambda: self._run_dock_mutation(recover))
         except DockMutationDenied:
@@ -1196,6 +1202,30 @@ class Plugin:
             "session_restored": outcome.session_restored,
             "strategy": outcome.strategy,
         }
+
+    def _manual_link_recovery_preflight(self, expected_user, transport_identity):
+        """Fresh authority inside the service reservation, before any restart."""
+        resolution = resolve_gamescope_user(GamescopeDiscovery().scan())
+        if not resolution.ok or resolution.context != expected_user:
+            return "link_recovery.session_unavailable"
+        topology = self._connection_topology.observe()
+        current = SnapshotTransitionObservationAdapter(self._discovery).observe()
+        journal = self._transition_journal_service().status()
+        if not journal.durable or journal.owner.value != "none":
+            return "link_recovery.transition_busy"
+        if (not transport_identity or
+                topology.transport_identity != transport_identity):
+            return "link_recovery.transport_changed"
+        assessment = assess_link_recovery(
+            readiness_exhausted=(self._connection_readiness.status().stage
+                                is ConnectionReadinessStage.TIMED_OUT),
+            transport_present=topology.transport_present,
+            pci_complete=topology.pci_complete,
+            game_state=current.snapshot.game_state,
+            # This call owns the reservation; another recovery cannot enter.
+            attempted=False,
+        )
+        return "" if assessment.offered else assessment.code
 
     @staticmethod
     def _link_recovery_failure(code: str, *, strategy: str = "") -> dict[str, object]:

@@ -5,7 +5,7 @@ from unittest.mock import Mock, patch
 
 from regear.delivery import whole_dock_runtime as module
 from regear.adapters.steamos.dock_branch import DockUsbReading, DockStorageReading
-from regear.domain.dock_teardown import TeardownApproval
+from regear.domain.dock_teardown import StorageEvidenceGap, TeardownApproval
 from regear.ports.whole_dock_teardown import WholeDockApproval
 from regear.application.live_disconnect import LiveDisconnectResult, LiveDisconnectStage
 from regear.adapters.steamos import whole_dock_topology
@@ -22,7 +22,7 @@ class RuntimeTests(unittest.TestCase):
         self.claim = None
         self.events = []
         self.devices = ()
-        self.storage = DockStorageReading((), (), True)
+        self.storage = DockStorageReading((), (), gaps=())
         self.store = Mock()
         self.store.load.side_effect = lambda: self.claim
         def claim(operation, binding, generation):
@@ -113,10 +113,10 @@ class RuntimeTests(unittest.TestCase):
 
     def test_power_proof_rejects_changed_owner_and_incomplete_scan(self):
         self.assertTrue(self.runtime.execute('operation', self.approval).software_down)
-        self.storage = DockStorageReading((), (), False)
+        self.storage = DockStorageReading((), (), gaps=(StorageEvidenceGap.MOUNT_TABLE_UNREADABLE,))
         self.assertFalse(self.runtime.verify_power_continuation(
             'operation', portable_verified=lambda: True))
-        self.storage = DockStorageReading((), (), True)
+        self.storage = DockStorageReading((), (), gaps=())
         self.claim.stage = 'reauthorize_intent'
         self.assertFalse(self.runtime.verify_power_continuation(
             'operation', portable_verified=lambda: True))
@@ -228,8 +228,8 @@ class RuntimeTests(unittest.TestCase):
         self.store.claim.assert_not_called()
 
     def test_mounted_or_incomplete_storage_blocks(self):
-        for storage in (DockStorageReading(('/mount',), (), True),
-                        DockStorageReading((), (), False)):
+        for storage in (DockStorageReading(('/mount',), (), gaps=()),
+                        DockStorageReading((), (), gaps=(StorageEvidenceGap.MOUNT_TABLE_UNREADABLE,))):
             self.storage = storage
             self.assertFalse(self.runtime.execute('operation', self.approval).software_down)
         self.store.claim.assert_not_called()

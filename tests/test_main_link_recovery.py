@@ -193,7 +193,11 @@ class RecordingService:
     def observe_transport(self, present: bool) -> None:
         pass
 
-    def recover(self, _user, *, strategy=None) -> LinkRecoveryOutcome:
+    def recover(self, _user, *, strategy=None, preflight=None) -> LinkRecoveryOutcome:
+        if preflight is not None:
+            denial = preflight()
+            if denial:
+                return LinkRecoveryOutcome(False, denial)
         self.asked_for.append(strategy)
         return LinkRecoveryOutcome(
             True,
@@ -226,6 +230,7 @@ class LinkRecoveryStrategySelectionTests(unittest.TestCase):
         plugin._link_recovery = service
         plugin._discovery = object()
         plugin._append_journey_event = lambda **_kwargs: None
+        plugin._manual_link_recovery_preflight = lambda *_args: ""
 
         async def observe_readiness(_current):
             return status()
@@ -291,6 +296,65 @@ class LinkRecoveryStrategySelectionTests(unittest.TestCase):
             "link_recovery.trained", "link_recovery.already_attempted",
         ])
         self.assertEqual(commands.calls, [RESTART])
+
+    def test_manual_reservation_rechecks_game_user_transport_and_journal(self):
+        from types import SimpleNamespace as NS
+        from tests.test_link_recovery_service import FakeCommands, USER, service
+
+        cases = [
+            ("running", "link_recovery.game_running"),
+            ("unknown", "link_recovery.game_state_unknown"),
+            ("user", "link_recovery.session_unavailable"),
+            ("transport", "link_recovery.transport_changed"),
+            ("journal", "link_recovery.transition_busy"),
+            ("journal_unknown", "link_recovery.transition_busy"),
+            ("observation", "link_recovery.observation_unavailable"),
+            ("pci", "link_recovery.pci_complete"),
+            ("ready", "link_recovery.trained"),
+        ]
+        for change, expected in cases:
+            with self.subTest(change=change):
+                plugin, _ = self.executable()
+                # Exercise the real boundary callback, not the selection fixture.
+                del plugin._manual_link_recovery_preflight
+                commands = FakeCommands()
+                plugin._link_recovery, _ = service(commands, [True])
+                topology = NS(transport_identity="opaque-transport-1",
+                              transport_present=True, pci_complete=False)
+                plugin._connection_topology = NS(observe=lambda: topology)
+                journal = NS(durable=True, owner=NS(value="none"))
+                plugin._transition_journal_service = lambda: NS(status=lambda: journal)
+                fresh = NS(snapshot=NS(game_state=GameState.IDLE))
+                resolutions = 0
+
+                def resolve(_):
+                    nonlocal resolutions
+                    resolutions += 1
+                    # Initial offer is idle. Change evidence during the first
+                    # asynchronous user lookup, the original regression window.
+                    if change in ("running", "unknown"):
+                        fresh.snapshot.game_state = (GameState.RUNNING if change ==
+                                                     "running" else GameState.UNKNOWN)
+                    if change == "transport": topology.transport_identity = "replacement"
+                    if change == "journal": journal.owner.value = "presentation"
+                    if change == "journal_unknown": journal.durable = False
+                    if change == "pci": topology.pci_complete = True
+                    return NS(ok=not (change == "user" and resolutions > 1),
+                              context=USER)
+
+                def observe():
+                    if change == "observation" and resolutions:
+                        raise OSError("unreadable")
+                    return fresh
+
+                with patch.object(self.module, "SnapshotTransitionObservationAdapter") as adapter, \
+                     patch.object(self.module, "GamescopeDiscovery"), \
+                     patch.object(self.module, "resolve_gamescope_user", side_effect=resolve):
+                    adapter.return_value.observe.side_effect = observe
+                    result = asyncio.run(plugin.execute_link_recovery(confirm=True))
+                self.assertEqual(result["code"], expected)
+                self.assertEqual(len(commands.calls), 1 if change == "ready" else 0)
+                self.assertEqual(plugin._link_recovery.attempted, change == "ready")
 
     def test_a_named_rung_is_the_one_that_runs(self):
         plugin, service = self.executable()

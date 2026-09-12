@@ -245,6 +245,7 @@ class LinkRecoveryService:
         *,
         strategy: LinkRecoveryStrategy | str | None = None,
         automatic: bool = False,
+        preflight: Callable[[], str] | None = None,
     ) -> LinkRecoveryOutcome:
         """Disturb the session by the chosen strategy and watch for the link.
 
@@ -282,11 +283,24 @@ class LinkRecoveryService:
                 return LinkRecoveryOutcome(
                     False, "link_recovery.already_attempted", strategy=chosen.value
                 )
-            self._attempted = True
-            self._attempt_count += 1
-            self._automatic_only = self._automatic_only and automatic
             self._in_flight = True
         try:
+            # Re-read authority after reservation, without holding the state lock
+            # across discovery. Refusal has not spent a hardware attempt.
+            if preflight is not None:
+                try:
+                    denial = preflight()
+                except Exception:
+                    denial = "link_recovery.observation_unavailable"
+                if denial != "":
+                    return LinkRecoveryOutcome(
+                        False, denial if isinstance(denial, str) else
+                        "link_recovery.observation_unavailable", strategy=chosen.value,
+                    )
+            with self._state_lock:
+                self._attempted = True
+                self._attempt_count += 1
+                self._automatic_only = self._automatic_only and automatic
             return self._recover_reserved(user, chosen, mechanism)
         finally:
             with self._state_lock:
