@@ -2,10 +2,105 @@
 
 ## How this works
 
-`AGENTS.md` is the common policy. One shared workspace hub records tasks, owners,
-blockers and evidence. Each task uses an isolated worktree. Claim, implement,
-validate, recheck, integrate, and record the result. Claude and Codex use the same
-commands. ChatGPT/voice hands in task descriptions and reads a fresh snapshot.
+`AGENTS.md` is the common policy. One focused primary Codex per project/workstream assigns
+bounded work to Codex/Claude workers, may implement its own tasks, and controls
+combined review and merge order. One shared hub records reality; each editing
+worker has an isolated worktree. Voice/text proposes work; the primary dispatches
+it. No inbox message wakes a chat or schedules a run by itself.
+
+## Project primary and delegation
+
+**Identity.** Ronnie selects each focused project/workstream's primary chat. Its
+registered Codex session claims the ordinary `primary-<scope>` hub stream after
+recording Ronnie's selection and scope in that stream's inbox. Re-Gear can have
+separate eGPU and UI-wiring primaries; no repository-wide super-primary is implied.
+Use stable IDs such as `primary-egpu` and `primary-ui-wiring`. Use the existing `create_stream`, `claim_stream`
+and accepted stream-transfer operations; no new database or parallel board.
+Stream ownership is atomic, but agent identity and assignment compliance remain
+cooperative policy, not authentication or GitHub branch protection. Existing non-primary stream leads retain inbox routing responsibilities. A primary
+for another scope has no implicit authority over this one. A chat title helps find
+the session but does not replace its registered ID and recorded designation. If the slot is empty, do read-only orientation or an
+explicit Ronnie assignment; do not self-appoint or dispatch new work.
+
+**Assignment.** Before a worker claims, the primary records a direct hub message
+naming task ID, assignee session, scope/out-of-scope, starting revision/dependencies,
+acceptance and required checks, shared-contract constraints and expected handoff.
+Reuse existing task fields rather than a form. The worker receipts the message,
+claims the task atomically and retains the assignment message ID in its note.
+An explicit Ronnie assignment is recorded there too and surfaced to the primary.
+Discovery is a proposed `todo`, not permission to start. A worker returns a scoped
+commit/PR, evidence, limitations and next action; the primary chooses subsequent
+work. Scope expansion, worker-to-worker transfers and additional editing delegates
+need recorded primary sequencing; routine implementation decisions within scope do not.
+
+**Primary implementation and spawning.** The primary claims its coding work using
+the same rules and never edits a worker's active scope. Spawn multiple agents only
+for bounded useful parallel work. Each editing child gets a distinct assignment
+and worktree; if the runtime cannot isolate edits, use read-only children or
+serialize the work. Read-only review children do not need competing file claims;
+record their assignment and verdict under the owning task. Track who is actually
+running: a hub receipt is not proof of execution. Claude sessions are started via
+available authorized controls or Ronnie; never claim unsupported automatic launch.
+
+**Across scopes.** When tasks touch another primary's contracts, record the shared
+interface, affected scope owners, dependency order and one final integration driver
+before editing the overlap. Each primary accepts its affected scope on the same
+head/base; the driver checks the combined golden and consistency evidence and
+serializes the merge. Two primaries must not independently merge competing versions
+of a shared file or contract. If agreement is pending, continue only disjoint work.
+A golden reviewer provides independent evidence, not a competing implementation
+owner or automatic merge authority. No title or module lead overrides an existing claim.
+
+**Choosing workers.** Prefer demonstrated fit, not model stereotypes: domain
+context, quality of previous patches, missed regressions, test discipline and
+availability. Keep concise dated evidence of useful strengths or review needs in
+the assignment/routing record, linked to actual tasks. Reassess after outcomes;
+do not create permanent model rankings. Workers can suggest another reviewer or
+implementation approach while the primary retains scope and integration decisions.
+
+**Integration.** Workers stop at `review` when project integration remains due.
+The primary compares the combined candidate against current main and the approved
+contracts, inspects indirect dependencies and golden behavior IDs, runs
+`check_golden_behaviors.py` and applicable full gates, and obtains independent
+semantic review for material changes, including its own patches. Record exact
+head/base, verdict, reviewer evidence, remaining hardware limits and rollback.
+Only the primary, or one named delegate for that exact candidate, executes the
+merge. Serialize overlapping merges; any head/base change invalidates acceptance.
+Passing software checks is not permission to replace a working installation or
+promote a golden hardware baseline. [Golden behaviors](GOLDEN_BEHAVIORS.md) owns
+those requirements. Consistency checks cover shared schemas, ownership/lifecycle,
+startup/unload, settings, approved UI and interactions between modules.
+
+Use a direct primary message for merge delegation. The worker copies its ID into
+the task evidence; the primary retains the decision in its integration task/note.
+Because only owners update tasks, the primary sends findings to an owning worker
+rather than rewriting that record. A separate primary-owned integration task may
+reference completed bounded child deliverables; child completion must explicitly
+say whether it means delivery only or main integration. Parent acceptance remains
+open until the complete problem is satisfied. Review is an agent gate, not a new
+routine Ronnie approval requirement.
+
+**Absence and migration.** Preserve all existing owners, dirty worktrees and PRs.
+The incoming primary reconciles current hub/GitHub reality with owners and records
+which tasks continue, sequence or pause; stale records never justify stealing work.
+Existing workers may finish bounded local work and publish review evidence, but
+route new assignments, expansion and merges through the designated primary.
+A missing reply does not grant merge authority. If the primary is unavailable,
+workers can continue already assigned nonconflicting work and queue review. An
+unretracted exact-candidate merge delegation remains valid only for its named
+worker, head/base and order with unchanged claims, no unresolved findings and
+passing current gates; absence creates no new authority. Ronnie or an accepted
+primary transfer chooses a successor. A stream transfer
+alone does not move task ownership or hardware authority. Handoff includes active
+workers, exact candidates, accepted decisions and outstanding conflicts. Do not
+leave this state only in chat, and do not bulk cancel historical records.
+
+For first adoption, prepare the policy PR under the explicit assignment and retain
+it in review until Ronnie identifies the affected scoped primaries (or explicitly delegates that
+one rollout integration). Do not infer a primary role from policy authorship.
+The designated primaries record their roles, agree one driver for this shared
+policy rollout and accept the exact candidate after independent review and normal
+gates, then migrate active assignments with owners.
 
 ## Fresh session (including “work the next appropriate Re-Gear task”)
 
@@ -20,11 +115,11 @@ commands. ChatGPT/voice hands in task descriptions and reads a fresh snapshot.
    refs. Search matching open/closed issues and inspect relevant open PR paths
    (`scripts/check_pr_collisions.py --claimants <paths>` is advisory). Record any
    failed check; lack of remote access is not proof that nobody owns a path.
-4. Select the assigned task, or an available bounded routine task with completed
-   dependencies. Check scope and acceptance in its note. Claim it at its current
-   revision. Competing claims are serialized: reread and choose another task if
-   yours loses. Task ownership does not require stream ownership. Do not invent
-   product work from dated roadmap owners; propose an item if nothing is ready.
+4. Find the relevant `primary-<scope>` owner and your recorded assignment. Claim that
+   task at its current revision after checking dependencies and acceptance.
+   If unassigned, request work from the primary; propose an item if useful but
+   do not start it. Explicit Ronnie assignments remain valid and are recorded.
+   Competing claims are serialized: reread and report a lost claim to the primary.
 5. Create a dedicated task branch/worktree from current `origin/main`, or record
    the stacked base and dependency. An explicitly assigned task can progress
    locally using a recorded cached base during an outage after checking local
@@ -45,17 +140,15 @@ commands. ChatGPT/voice hands in task descriptions and reads a fresh snapshot.
    `codex/integration-<topic>`, `claude/integration-<topic>`, or
    `agent/integration-<topic>` and run `scripts/check_integration_preflight.py`.
    This checks Git state only; it does not prove ownership or behavior.
-9. The task owner may integrate routine validated work autonomously under
-   `AGENTS.md`. No separate human approval or separate integrator role is needed.
-   Preserve other owners' behavior. Never use blanket ours/theirs resolution.
-   For concurrent remote merges use the protected PR workflow/merge queue;
-   revalidate against the new base when another PR lands first. Do not move the
-   local main ref behind a dirty shared checkout.
+9. The primary accepts and orders routine validated integration under `AGENTS.md`;
+   only it or its exact-candidate delegate merges. No extra routine human approval
+   is required. Never use blanket ours/theirs resolution. Revalidate when another
+   PR lands first; do not move local main behind a dirty shared checkout.
 10. Mark `done` only when acceptance is met, with commit/PR and evidence. If merge
     is still required but unavailable, retain `review` or `blocked` with the exact
     next action. Complete the scoped backlog cleanup below and refresh a snapshot
     for handoff; do not start another task unless
-    the user's scope includes continuing the queue.
+    the primary has assigned further work or Ronnie explicitly directs it.
 
 ## PR and issue cleanup
 
@@ -105,7 +198,7 @@ state as applicable. Never equate local tests with installed/hardware proof.
 
 Agents may transfer ownership directly when the current owner and recipient agree
 and communicate the handoff. A consensual transfer needs no additional approval
-from Ronnie or a coordinator. Agree the task/scope and intended files through the
+from Ronnie; the primary records sequencing acknowledgement before acceptance. Agree the task/scope and intended files through the
 shared inbox, including the exact branch/commit, evidence, blockers and next action.
 The owner records the handoff with `offer_transfer`; the recipient records agreement
 with `accept_transfer` before taking over. Read back the accepted ownership and
@@ -164,11 +257,11 @@ authority. Both Claude and Codex follow the same protocol.
 ## Ronnie / ChatGPT / voice hand-in
 
 Say: “Add a coordination task: <problem>. Scope: <in/out>. Done when: <acceptance>.
-Dependencies: <IDs or none>. Suggested owner: <optional>.” A coding session searches
-for duplicates and creates an unowned task in the matching stream using the
+Dependencies: <IDs or none>. Suggested owner: <optional>.” The primary or a submitting session searches
+for duplicates and creates a proposed unowned task in the matching stream using the
 [hub request template](../scripts/agent_hub/task.example.json). It records the
 handoff in the task note; the next session needs no chat history. A suggested
-owner is not a claim. Creating a new assigned workstream creates its inbox too.
+owner is not a claim or dispatch; the primary records the assignment. Creating a new assigned workstream creates its inbox too.
 
 For a concise current report run `hub.ps1 snapshot`; `status` has full messages,
 receipts and transfers. The HTML dashboard is optional and explicitly dated.
