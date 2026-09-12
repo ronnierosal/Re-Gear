@@ -22,7 +22,7 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
   };
   function View({ token }: { token: number }) {
     useEffect(() => () => { if (generation === token) { modal = null; generation++; } }, [token]);
-    return <ExpandedCommandCenter onClose={close} native disconnectControl={<WholeDockControl intent="shutdown" readCurrentSnapshot={readCurrentSnapshot}/>} primitives={{ Button: Button, Focusable }} settings={<Settings/>}/>;
+    return <ExpandedCommandCenter onClose={close} native disconnectControl={<WholeDockControl intent="disconnect_only" readCurrentSnapshot={readCurrentSnapshot}/>} primitives={{ Button: Button, Focusable }} settings={<Settings/>}/>;
   }
   function Settings() {
     const [selected, setSelected] = useState(binding);
