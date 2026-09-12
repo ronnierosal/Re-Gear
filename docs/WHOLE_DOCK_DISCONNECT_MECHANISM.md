@@ -1,5 +1,10 @@
 # Whole-dock disconnect investigation — September 11, 2026
 
+**Current safety hold:** The owner reported excessive G1 heat after a timed-out
+software reconnect and disconnected the cable. Further powered reconnect trials
+are paused. See "Thermal incident: software reconnect trials paused" below;
+earlier trial instructions are historical and do not override this hold.
+
 ## Goal and preserved baseline
 
 One player action: return to the internal display, release dock resource users, verify release, execute supported dock-level teardown, then verify the entire relevant connection before offering cable clearance. Keep installed 0.3.82 and tag `checkpoint/0.3.82-auto-tv` unchanged. This investigation contains no device writes or unplug trial.
@@ -513,7 +518,43 @@ install over this trial or silently promote its record. Plan explicit recovery
 before another install, and retain the successful-removal evidence separately
 from the remaining completion/reconnect gap.
 
-## Operator completion-record recovery
+## Thermal incident: software reconnect trials paused
+
+During the 2026-09-11 local evening trial (2026-09-12 UTC), the owner reported
+that the GPD G1 became "really hot" and physically disconnected it. Treat this
+as a potential hardware-safety issue, including possible hardware damage risk,
+and a blocker for further software reconnect trials. Damage has not been
+reported or established; neither a measured temperature nor fan telemetry was
+captured, and causation by the software sequence is not established.
+
+The installed plugin was 0.3.92, source
+6c638a81607bd2b16f9976cc3d6723b00dfe34c7. After verified software removal and
+user-confirmed usable handheld display/audio/controls, the owner locally ran
+the completion helper from fce439af442871b1871557494d5f45803b433180. It returned
+record_completed with hardware_write=false; plugin readback was software_down.
+One existing-runtime software reconnect request
+724ba159bd3d4fea90f267b1ad88ee06 then timed out after 30 seconds. Fresh kernel
+readback showed router authorized=1 but no external GPU/audio/USB PCI functions.
+The retained claim was reauthorize_intent. No reconnect replay was issued.
+The overheating report followed this unresolved, still-powered state.
+
+Software removal/deauthorization does not power off the dock. A reconnect
+timeout must not be treated as a benign idle state or evidence of thermal
+safety. Preserve this incident alongside functional results; do not describe
+the overall trial as successful. The owner was advised to disconnect dock power
+and allow cooling. The location of the heat, fan behavior, and any physical
+damage remain unknown. Physical cable removal means the previous live attachment
+assumptions must no longer be used.
+
+Next: investigate failure-state behavior and available thermal/fan evidence
+without another powered reconnect trial; define and review thermal stop and
+recovery criteria before proposing resumed supervised hardware testing. This
+incident supersedes instructions below to keep the cable connected or preserve
+a live runtime when doing so conflicts with stopping an overheating device.
+
+Documentation impact: Wiki. Publication and hardware validation remain separate.
+
+## Operator completion-record recovery (historical trial procedure; paused)
 
 For the still-running 0.3.92 trial, a source-pinned operator zipapp can complete
 the retained tunnel_remove_intent record without replacing the plugin. This is
