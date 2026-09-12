@@ -1,10 +1,16 @@
 export const utilityIds = ["brightness", "volume", "mic", "recording", "overlay", "audio", "wifi"] as const;
 export type UtilityId = typeof utilityIds[number];
 export type UtilityPlacement = { id: UtilityId; side: "left" | "right" };
+
+/** Approved Command Center utility groups. Keep these IDs stable so the visual
+ * shell, controller navigation and later runtime adapters can evolve without
+ * renaming or reordering the user-facing controls. */
+export const commandCenterUtilityIds = ["brightness", "volume"] as const satisfies readonly UtilityId[];
+export const quickActionIds = ["mic", "wifi", "overlay", "recording"] as const satisfies readonly UtilityId[];
+
 export const defaultUtilityLayout: readonly UtilityPlacement[] = [
-  {id:"brightness",side:"left"}, {id:"volume",side:"left"},
-  {id:"mic",side:"right"}, {id:"wifi",side:"right"},
-  {id:"overlay",side:"right"}, {id:"recording",side:"right"},
+  ...commandCenterUtilityIds.map(id => ({id, side:"left" as const})),
+  ...quickActionIds.map(id => ({id, side:"right" as const})),
 ];
 
 /** Validate a future persisted preference; an empty selection is intentional.
