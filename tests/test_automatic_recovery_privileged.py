@@ -142,6 +142,7 @@ class AutomaticRecoveryPrivilegedTests(unittest.TestCase):
                 plugin = module.Plugin.__new__(module.Plugin)
                 plugin._unloading = False
                 plugin._background_operations = set()
+                plugin._automatic_dock_preference_store = None
                 plugin._discovery = object()
                 plugin._connection_topology = NS(observe=lambda: topology)
                 plugin._transition_journal_service = lambda: NS(status=lambda: NS(
