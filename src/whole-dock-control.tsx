@@ -8,7 +8,7 @@ const readTrial = callable<[string], any>("get_egpu_disconnect_status");
 const execute = callable<[boolean, string, string, DockAction, boolean, string, string], any>("execute_egpu_disconnect");
 const pendingKey = "regear.whole-dock.pending-request";
 const pendingRecord = () => { try { return window.localStorage.getItem(pendingKey); } catch { return "storage-unavailable"; } };
-const pendingRequest = () => pendingRecord()?.replace(/^shutdown:/, "");
+const pendingRequest = () => pendingRecord()?.replace(/^(shutdown|disconnect_only):/, "");
 
 /** Only confirmed clicks mutate. Reopening the menu recovers backend progress. */
 export function WholeDockControl({ readCurrentSnapshot, intent = "disconnect" }: { readCurrentSnapshot: () => any; intent?: DockIntent }) {
@@ -36,7 +36,8 @@ export function WholeDockControl({ readCurrentSnapshot, intent = "disconnect" }:
         if (disposed) return;
         if (started !== epoch.current) { timer = setTimeout(refresh, 2000); return; }
         const request = pendingRequest();
-        const pendingIntent = pendingRecord()?.startsWith("shutdown:") ? "shutdown" : "disconnect";
+        const pendingIntent = pendingRecord()?.startsWith("shutdown:") ? "shutdown"
+          : pendingRecord()?.startsWith("disconnect_only:") ? "disconnect_only" : "disconnect";
         if (request && dockRequestSettled(next.status, request, pendingIntent)) {
           window.localStorage.removeItem(pendingKey);
           uncertain.current = false;
@@ -71,7 +72,7 @@ export function WholeDockControl({ readCurrentSnapshot, intent = "disconnect" }:
           setReading(fresh); setNotice("Status changed. Review the current reading."); return;
         }
         const request = crypto.randomUUID().replaceAll("-", "");
-        window.localStorage.setItem(pendingKey, intent === "shutdown" ? `shutdown:${request}` : request);
+        window.localStorage.setItem(pendingKey, intent === "disconnect" ? request : `${intent}:${request}`);
         uncertain.current = true;
         setNotice(action === "whole_dock_shutdown" ? "Shutdown request sent. Keep the cable connected; Gaming Mode may restart before shutdown." : "Request sent. Keep the cable connected; Gaming Mode may restart.");
         const result = await execute(true, "", "disconnect", action, true, attachment, request);

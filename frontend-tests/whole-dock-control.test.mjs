@@ -218,3 +218,40 @@ test("malformed or unknown refusal cannot clear shutdown retry guard",()=>{
     assert.equal(dockRequestSettled({...refusal,code},"request","shutdown"),false);
   assert.equal(dockRequestSettled({...refusal,code:"dock_power.unresolved",power_requested:"false"},"request","shutdown"),false);
 });
+
+test("disconnect-only intent never offers reconnect or power actions",()=>{
+  assert.equal(dockIntentControl(fresh,idle,"disconnect_only").action,"whole_dock_disconnect");
+  const down={...fresh,code:"dock_teardown.software_down",software_down:true,ok:true};
+  assert.equal(dockIntentControl(down,idle,"disconnect_only").action,null);
+  assert.equal(dockIntentControl(down,idle,"disconnect_only").label,"Software disconnect verified");
+  assert.match(dockIntentControl(down,idle,"disconnect_only").message,/not permission to unplug/);
+  assert.equal(dockIntentControl({...down,ok:false},idle,"disconnect_only").action,null);
+  assert.equal(dockIntentControl(shutdownAccepted("request"),idle,"disconnect_only").action,null);
+  assert.equal(dockIntentControl(down,idle,"disconnect").action,"whole_dock_reconnect");
+  for(const snapshot of [{...idle,schema_version:2},{...idle,observed_at:new Date(Date.now()-10000).toISOString()},
+    {...idle,game_state:"running"}]) assert.equal(dockIntentControl(fresh,snapshot,"disconnect_only").action,null);
+});
+test("confirmed disconnect-only submits once then stays complete across reload",async()=>{
+  const h=harness(new Map(),"disconnect_only");await settle();
+  h.execute=args=>Promise.resolve({...fresh,code:"dock_teardown.software_down",software_down:true,ok:true,request_id:args.at(-1)});
+  h.click();const ok=h.modals.at(-1).view.props.onOK;ok();ok();await settle();
+  assert.equal(h.calls.length,1);assert.equal(h.calls[0][3],"whole_dock_disconnect");
+  assert.equal(h.button().props.disabled,true);assert.equal(h.button().props.children[0],"Software disconnect verified");
+  const status={...fresh,code:"dock_teardown.software_down",software_down:true,ok:true};h.unmount();
+  const reopened=harness(new Map(),"disconnect_only");reopened.status=status;await settle();reopened.poll();await settle();
+  assert.equal(reopened.button().props.disabled,true);assert.equal(reopened.calls.length,0);reopened.unmount();
+});
+test("disconnect-only malformed completion remains pending in another mode",async()=>{
+  const storage=new Map(),h=harness(storage,"disconnect_only");await settle();
+  h.execute=args=>Promise.resolve({...fresh,code:"dock_teardown.software_down",software_down:true,ok:false,request_id:args.at(-1)});
+  h.click();h.modals.at(-1).view.props.onOK();await settle();assert.equal(storage.size,1);h.unmount();
+  const request=[...storage.values()][0].replace(/^disconnect_only:/,"");const next=harness(storage);
+  next.status={...fresh,code:"dock_teardown.software_down",software_down:true,ok:false,request_id:request};await settle();next.poll();await settle();
+  assert.equal(next.button().props.disabled,true);assert.equal(storage.size,1);assert.equal(next.calls.length,0);next.unmount();
+});
+
+test("disconnect-only cancellation and changed attachment never dispatch",async()=>{
+  const h=harness(new Map(),"disconnect_only");await settle();h.click();h.modals.at(-1).view.props.onCancel();
+  assert.equal(h.calls.length,0);h.click();h.status={...fresh,attachment_token:'c'.repeat(64)+':'+ 'd'.repeat(64)};
+  h.modals.at(-1).view.props.onOK();await settle();assert.equal(h.calls.length,0);h.unmount();
+});
