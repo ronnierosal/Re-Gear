@@ -121,7 +121,6 @@ class AutomaticRecoveryPrivilegedTests(unittest.TestCase):
             replacements = {
                 "read_boot_hash": Mock(return_value="b" * 64),
                 "resolve_transport": Mock(return_value=transport),
-                "inner_removal_records_absent": Mock(return_value=True),
                 "HeldTrialLauncher": Mock(return_value=NS(call=Mock(return_value={
                     "code": "held_helper.settled", "settled": True}))),
                 "DrmDiscovery": Mock(return_value=NS(scan=lambda: [])),
@@ -145,8 +144,6 @@ class AutomaticRecoveryPrivilegedTests(unittest.TestCase):
                 plugin._automatic_dock_preference_store = None
                 plugin._discovery = object()
                 plugin._connection_topology = NS(observe=lambda: topology)
-                plugin._transition_journal_service = lambda: NS(status=lambda: NS(
-                    durable=True, owner=NS(value="none")))
                 plugin._append_journey_event = Mock()
                 commands = FakeCommands()
                 original_run = commands.run
@@ -163,6 +160,10 @@ class AutomaticRecoveryPrivilegedTests(unittest.TestCase):
                 async def readiness(_):
                     return status()
                 plugin._observe_connection_readiness = readiness
+                journal = plugin._transition_journal_service().status()
+                self.assertTrue(journal.durable)
+                self.assertEqual(journal.owner.value, "none")
+                self.assertTrue(module.inner_removal_records_absent())
                 return plugin, commands
 
             def poll(plugin, now, *, absent=False):
@@ -244,9 +245,12 @@ class AutomaticRecoveryPrivilegedTests(unittest.TestCase):
                 self.assertEqual(target.read_bytes(), b"not-json")
             elif scenario == "unsafe":
                 arm(plugin, commands)
-                state_root.chmod(0o777)
+                target = state_root / LOCK_FILENAME
+                target.write_bytes(b"unsafe-lock")
+                target.chmod(0o666)
                 refused(plugin, commands, "automatic_recovery.admission_unavailable_or_busy")
-                self.assertEqual(state_root.stat().st_mode & 0o777, 0o777)
+                self.assertEqual(target.stat().st_mode & 0o777, 0o666)
+                self.assertEqual(target.read_bytes(), b"unsafe-lock")
             else:
                 self.fail("unknown scenario")
 
@@ -267,7 +271,7 @@ class AutomaticRecoveryPrivilegedTests(unittest.TestCase):
     def test_malformed_claim_is_not_erased_or_recovered_around(self):
         self.isolated("malformed")
 
-    def test_unsafe_runtime_directory_is_not_repaired_or_bypassed(self):
+    def test_unsafe_admission_lock_is_not_repaired_or_bypassed(self):
         self.isolated("unsafe")
 
 
