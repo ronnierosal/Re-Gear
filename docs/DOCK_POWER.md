@@ -135,8 +135,15 @@ retained ordinary disconnect intent across runtime recreation, consumed
 shutdown from an earlier boot, settled/unsettled early release, unavailable or
 busy admission, running/unknown games and persisted preferences. Recreating a
 runtime models the reload/update boundary; it does not execute a package
-installer or certify migration on the device. Privileged filesystem tests
-remain necessary for real record integrity and locking.
+installer or certify migration on the device. A separate required Linux-root
+CI step joins the real automatic recovery caller chain to the unmodified gate
+factory, fixed-path root validation, persisted preferences, journal and claim
+readers, and filesystem locks. Each case enters a private child chroot before
+creating these dependencies; device observations and commands remain simulated.
+The chroot isolates paths for trusted tests and is not a root security sandbox.
+The CI step refuses absent privilege, empty coverage, skips and expected failures.
+It supplements the existing privileged record/writer tests and the portable
+43-test golden gate. Neither layer proves physical TV handoff or qualification.
 
 `get_automatic_dock_status().recovery.decision_code` reports the **last observed
 automatic recovery decision**, not a new preflight or permission to act. The

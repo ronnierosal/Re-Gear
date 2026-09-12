@@ -51,6 +51,23 @@ jobs:
         run: |
           sudo env PYTHONPATH=backend "$(command -v python)" -m unittest discover -s tests -p 'test_whole_dock*.py' -v
           sudo env PYTHONPATH=backend "$(command -v python)" -m unittest discover -s tests -p 'test_dock_power*.py' -v
+      - name: Test automatic recovery through production root admission
+        # The fixture confines fixed production paths to a child chroot. The
+        # plugin gate factory, root-state validation and locks remain real.
+        # Unlike ordinary cross-platform discovery, skipped coverage fails here.
+        run: |
+          sudo env PYTHONPATH=backend "$(command -v python)" - <<'PY'
+          import os
+          import sys
+          import unittest
+          if sys.platform != "linux" or os.geteuid() != 0:
+              raise SystemExit("automatic recovery admission requires Linux root")
+          suite = unittest.defaultTestLoader.loadTestsFromName("tests.test_automatic_recovery_privileged")
+          if suite.countTestCases() == 0:
+              raise SystemExit("automatic recovery admission suite is empty")
+          result = unittest.TextTestRunner(verbosity=2).run(suite)
+          raise SystemExit(0 if result.testsRun > 0 and result.wasSuccessful() and not result.skipped and not result.expectedFailures else 1)
+          PY
       - name: Compile Python sources
         run: python -m compileall -q backend tests scripts
       - name: Check for undefined and redefined names
