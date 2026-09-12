@@ -29,6 +29,7 @@ from tests.test_link_recovery_service import FakeCommands, USER, RESTART, servic
 from regear.delivery.dock_mutation_gate import DockMutationDenied, LOCK_FILENAME
 from regear.delivery.runtime_state import RootOwnedRuntimeState
 from regear.delivery.whole_dock_claim import WholeDockClaimStore, FILENAME
+from regear.delivery.whole_dock_reset import reconcile_record
 from regear.domain.models import Confidence, GameState, GpuRole
 
 
@@ -214,7 +215,26 @@ class AutomaticRecoveryPrivilegedTests(unittest.TestCase):
             plugin._automatic_recovery_preferences().save(True)
             for filename in ("automatic-dock.json", "automatic-link-recovery.json"):
                 self.assertEqual((state_root / filename).stat().st_uid, 0)
-            if scenario == "positive":
+            if scenario == "operator_reset":
+                with plugin._dock_mutation_gate().admit():
+                    self.assertTrue(claims.claim("operation", "dock", "generation"))
+                    claims.record("operation", "reauthorize_intent")
+                original = (state_root / FILENAME).read_bytes()
+                arm(plugin, commands)
+                refused(plugin, commands, "automatic_recovery.admission_inhibited")
+                result = reconcile_record(store=claims, gate=plugin._dock_mutation_gate(),
+                    observe=lambda _: "fixture-full-restored-proof", confirm=lambda *args: True)
+                self.assertTrue(result["ok"])
+                self.assertFalse(result["hardware_write"])
+                self.assertFalse(result["safe_to_unplug"])
+                archives = list(state_root.glob("operator-physical-reset-*.json"))
+                self.assertEqual(len(archives), 1)
+                self.assertEqual(archives[0].read_bytes(), original)
+                self.assertEqual(commands.calls, [])
+                self.assertEqual(plugin._automatic_link_recovery.attempts, 0)
+                with plugin._dock_mutation_gate().admit():
+                    self.assertIsNone(claims.load())
+            elif scenario == "positive":
                 arm(plugin, commands)
                 self.assertTrue(poll(plugin, 11))
                 self.assertEqual(commands.calls, [RESTART])
@@ -286,6 +306,9 @@ class AutomaticRecoveryPrivilegedTests(unittest.TestCase):
 
     def test_real_factory_recovers_after_ten_seconds_with_persisted_consent(self):
         self.isolated("positive")
+
+    def test_operator_reset_archives_failure_with_real_root_gate_and_no_restart(self):
+        self.isolated("operator_reset")
 
     def test_real_flock_contention_refuses_without_spending_attempt(self):
         self.isolated("busy")

@@ -10,6 +10,7 @@ import stat
 from .audio_journal_filesystem import AudioJournalFilesystem, _acquire_lock, _publish_exclusive
 
 FILENAME = "whole-dock-claim.json"
+RESET_PENDING = "whole-dock-reset.pending"
 MAX_BYTES = 4096
 STAGES = ("claimed", "release_intent", "gpu_removed", "prepared", "usb_remove_intent", "usb_removed",
           "tunnel_remove_intent", "software_down", "reauthorize_intent",
@@ -237,6 +238,42 @@ class WholeDockClaimStore(AudioJournalFilesystem):
                 except OSError as restore_failure:
                     raise OSError('whole-dock abort durability unresolved') from restore_failure
                 raise failure
+            return audit
+
+    def retire_operator_reset(self, expected, guard, publication_guard=lambda: True):
+        """Archive a failed reconnect after explicit operator reset evidence.
+
+        Not an automatic recovery lane. Caller holds dock admission and supplies
+        the exact previewed record plus fresh full-topology/session proof. The
+        archive preserves failure; it is not software reconnect success.
+        """
+        if type(expected) is not WholeDockClaim or expected.stage != 'reauthorize_intent':
+            raise ValueError('whole-dock reset stage refused')
+        with self._locked() as directory:
+            if self._load(directory) != expected or guard() is not True:
+                raise ValueError('whole-dock reset guard refused')
+            if self._load(directory) != expected:
+                raise ValueError('whole-dock reset changed')
+            # New admission readers refuse any pending marker, including malformed
+            # or unreadable ones. Persist it before removing the canonical claim.
+            # Interrupted publication remains inhibited across process recreation.
+            pending = os.open(RESET_PENDING, os.O_WRONLY | os.O_CREAT | os.O_EXCL |
+                              os.O_NOFOLLOW, 0o600, dir_fd=directory)
+            try:
+                self._write(pending, expected)
+            finally:
+                os.close(pending)
+            os.fsync(directory)
+            if publication_guard() is not True:
+                raise ValueError('whole-dock reset confirmation expired')
+            audit = 'operator-physical-reset-' + secrets.token_hex(16) + '.json'
+            _publish_exclusive(directory, FILENAME, audit)
+            os.fsync(directory)
+            # The audit is durable before removal of this final inhibition. A
+            # crash during marker removal yields either a conservative pending
+            # marker or the already-durable successful archive, never lost intent.
+            os.unlink(RESET_PENDING, dir_fd=directory)
+            os.fsync(directory)
             return audit
 
 

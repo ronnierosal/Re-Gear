@@ -18,6 +18,82 @@ class MainDockPowerTests(unittest.TestCase):
         boot.start()
         self.addCleanup(boot.stop)
 
+    def test_operator_reset_requires_fresh_single_use_preview_and_literal_attestation(self):
+        calls = []
+        async def background(fn, *args):
+            calls.append('background')
+            return fn(*args)
+        self.plugin._run_background_operation = background
+        def record(confirm=None, still_confirmed=lambda: True):
+            if confirm is None:
+                return {'ready': True, 'record_digest': 'a' * 64}
+            return {'ok': confirm('a' * 64, 120), 'hardware_write': False}
+        self.plugin._operator_reset_record = record
+        async def trial():
+            preview = await self.plugin.get_egpu_disconnect_status('physical_reset_preview')
+            token = preview['confirmation_token']
+            refused = await self.plugin._reconcile_egpu_after_physical_reset(token, 1)
+            self.assertFalse(refused['ok'])
+            refused = await self.plugin._reconcile_egpu_after_physical_reset('wrong', True)
+            self.assertFalse(refused['ok'])
+            self.assertTrue((await self.plugin._reconcile_egpu_after_physical_reset(token, True))['ok'])
+            self.assertFalse((await self.plugin._reconcile_egpu_after_physical_reset(token, True))['ok'])
+        asyncio.run(trial())
+        self.assertEqual(calls, ['background', 'background'])
+
+    def test_operator_reset_public_route_requires_separate_physical_attestation(self):
+        from unittest.mock import AsyncMock
+        self.plugin._reconcile_egpu_after_physical_reset = AsyncMock(return_value={'ok': True})
+        base = dict(trial_action='whole_dock_physical_reset', trial_confirmed=True,
+                    trial_request_id='a' * 32, release_display=False)
+        self.assertFalse(asyncio.run(self.plugin.execute_egpu_disconnect(**base))['ok'])
+        self.plugin._reconcile_egpu_after_physical_reset.assert_not_called()
+        self.assertTrue(asyncio.run(self.plugin.execute_egpu_disconnect(
+            **base, physical_reset_confirmed=True))['ok'])
+        self.plugin._reconcile_egpu_after_physical_reset.assert_awaited_once_with('a' * 32, True)
+
+    def test_operator_reset_expired_or_busy_preview_never_dispatches(self):
+        self.plugin._run_background_operation = Mock()
+        self.plugin._operator_reset_preview = ('token', 'digest', 0)
+        result = asyncio.run(self.plugin._reconcile_egpu_after_physical_reset('token', True))
+        self.assertEqual(result['code'], 'dock_reset.busy_or_expired')
+        self.plugin._run_background_operation.assert_not_called()
+        self.plugin._background_operations = {object()}
+        result = asyncio.run(self.plugin.get_egpu_disconnect_status('physical_reset_preview'))
+        self.assertFalse(result['ready'])
+        self.plugin._run_background_operation.assert_not_called()
+
+    def test_operator_reset_changed_observation_digest_refuses(self):
+        async def background(fn, *args):
+            return fn(*args)
+        self.plugin._run_background_operation = background
+        self.plugin._operator_reset_preview = ('token', 'a' * 64, float('inf'))
+        self.plugin._operator_reset_record = lambda confirm, still_confirmed: {'ok': confirm('b' * 64, 120)}
+        result = asyncio.run(self.plugin._reconcile_egpu_after_physical_reset('token', True))
+        self.assertFalse(result['ok'])
+        self.assertIsNone(self.plugin._operator_reset_preview)
+
+    def test_operator_reset_rechecks_expiry_and_unload_during_final_observation(self):
+        for change in ('expiry', 'unload'):
+            with self.subTest(change=change):
+                self.plugin._unloading = False
+                self.plugin._operator_reset_preview = ('token', 'a' * 64, 120)
+                clock = [0]
+                async def background(fn, *args):
+                    return fn(*args)
+                self.plugin._run_background_operation = background
+                def record(confirm, still_confirmed):
+                    self.assertTrue(confirm('a' * 64, 120))
+                    if change == 'expiry':
+                        clock[0] = 121
+                    else:
+                        self.plugin._unloading = True
+                    return {'ok': still_confirmed()}
+                self.plugin._operator_reset_record = record
+                with patch.object(self.module.time, 'monotonic', side_effect=lambda: clock[0]):
+                    result = asyncio.run(self.plugin._reconcile_egpu_after_physical_reset('token', True))
+                self.assertFalse(result['ok'])
+
     def test_power_status_needs_no_runtime_and_never_starts_work(self):
         self.plugin._run_background_operation = Mock()
         self.plugin._run_whole_dock_trial = Mock()
