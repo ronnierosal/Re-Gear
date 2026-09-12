@@ -49,6 +49,7 @@ from regear.delivery.dock_power_intent import DockPowerIntentStore  # noqa: E402
 from regear.delivery.dock_power_service import create_power_request, continue_dock_power, dock_power_capabilities  # noqa: E402
 from regear.application.dock_power import DockPowerResult  # noqa: E402
 from regear.delivery.whole_dock_claim import WholeDockClaimStore, inner_removal_records_absent  # noqa: E402
+from regear.delivery.whole_dock_reset import reconcile_record as reconcile_operator_reset, observe_restored as observe_reset_restored  # noqa: E402
 from regear.application.live_disconnect import LiveDisconnectResult  # noqa: E402
 from regear.ports.whole_dock_teardown import WholeDockApproval  # noqa: E402
 from regear.domain.dock_teardown import TeardownApproval  # noqa: E402
@@ -2016,6 +2017,17 @@ class Plugin:
         """
         if _request == "power_capabilities":
             return dock_power_capabilities()
+        if _request == "physical_reset_preview":
+            self._operator_reset_preview = None
+            if getattr(self, '_unloading', False) or getattr(self, '_background_operations', set()):
+                return {'code': 'dock_reset.busy', 'ready': False, 'hardware_write': False}
+            result = await self._run_background_operation(self._operator_reset_record)
+            if result.get('ready') is True:
+                token = uuid.uuid4().hex
+                self._operator_reset_preview = (token, result['record_digest'], time.monotonic() + 120)
+                return {**result, 'confirmation_token': token, 'expires_in_seconds': 120,
+                        'physical_reset_attestation_required': True}
+            return result
         if _request == "release_capture":
             result = dict(getattr(self, "_release_capture_status", {"code": "release_capture.not_started"}))
             result["restore_timer"] = getattr(self, "_release_capture_restore_unit", "")
@@ -2087,6 +2099,7 @@ class Plugin:
         trial_confirmed: bool = False,
         trial_attachment_token: str = "",
         trial_request_id: str = "",
+        physical_reset_confirmed: bool = False,
     ) -> dict[str, object]:
         """Remove the eGPU in software. NOT clearance to unplug anything.
 
@@ -2107,6 +2120,16 @@ class Plugin:
         expires, while a sleep is meant to be reopened when they come back. An
         unrecognised value records nothing rather than guessing.
         """
+        if trial_action == 'whole_dock_physical_reset':
+            # Separate operator attestation from ordinary teardown approval.
+            # This action neither releases a display nor relaunches a game.
+            if (trial_confirmed is not True or physical_reset_confirmed is not True
+                    or release_display is not False or relaunch_app_id or trial_attachment_token
+                    or type(trial_request_id) is not str
+                    or not re.fullmatch('[0-9a-f]{32}', trial_request_id)):
+                return {'code': 'dock_reset.confirmation_required', 'ok': False,
+                        'safe_to_unplug': False, 'hardware_write': False}
+            return await self._reconcile_egpu_after_physical_reset(trial_request_id, True)
         if trial_action:
             if (trial_confirmed is not True or release_display is not True
                     or trial_action not in ("whole_dock_disconnect", "whole_dock_reconnect", "whole_dock_capture", "whole_dock_held_capture", "whole_dock_reconcile", "whole_dock_shutdown", "whole_dock_sleep")
@@ -3052,6 +3075,33 @@ class Plugin:
                 "durable": False,
             }
 
+    def _operator_reset_record(self, confirm=None, still_confirmed=lambda: True):
+        store = WholeDockClaimStore(Path('/var/lib/handheld-dock-mode'))
+        return reconcile_operator_reset(store=store, gate=self._dock_mutation_gate(),
+            observe=lambda binding: observe_reset_restored(binding, store), confirm=confirm,
+            still_confirmed=still_confirmed)
+
+    async def _reconcile_egpu_after_physical_reset(self, confirmation_token: str,
+                                                  physical_reset_confirmed: bool = False):
+        """Operator repair only; physical reset is human attestation, not sysfs proof."""
+        refused = {'code': 'dock_reset.confirmation_required', 'ok': False,
+                   'hardware_write': False, 'safe_to_unplug': False}
+        preview = getattr(self, '_operator_reset_preview', None)
+        if (physical_reset_confirmed is not True or type(confirmation_token) is not str
+                or not preview or confirmation_token != preview[0]):
+            return refused
+        # Consume before await: duplicate requests and late confirmations cannot
+        # reuse this proof. No settings, recovery budget or attempted latch reset.
+        self._operator_reset_preview = None
+        if (getattr(self, '_unloading', False) or getattr(self, '_background_operations', set())
+                or time.monotonic() >= preview[2]):
+            return {**refused, 'code': 'dock_reset.busy_or_expired'}
+        def confirm(digest, _seconds):
+            return digest == preview[1] and still_confirmed()
+        def still_confirmed():
+            return time.monotonic() < preview[2] and not getattr(self, '_unloading', False)
+        return await self._run_background_operation(self._operator_reset_record, confirm, still_confirmed)
+
     async def get_transition_journal_status(
         self, _request: object = None
     ) -> dict[str, object]:
@@ -3447,7 +3497,17 @@ class Plugin:
                             lambda: self._run_automatic_tv_transition(
                                 decision.expected_generation, enabled),
                         )
-                    except Exception:
+                    except Exception as error:
+                        # A refused or failed dispatch consumes this attachment's
+                        # attempt, but must not leave the player waiting on SWITCHING.
+                        # This records failure only; it never rearms or clears intent.
+                        failure_code = "automatic_dock.transition_failed"
+                        if isinstance(error, DockMutationDenied):
+                            failure_code = {
+                                "dock_mutation.inhibited": "automatic_dock.admission_inhibited",
+                                "dock_mutation.unavailable_or_busy": "automatic_dock.admission_unavailable_or_busy",
+                            }.get(str(error), "automatic_dock.admission_refused")
+                        self._automatic_dock.record_result(failure_code, succeeded=False)
                         transition_finished_ns = self._journey_now_ns()
                         self._append_journey_event(
                             severity="error",
@@ -3876,7 +3936,7 @@ class Plugin:
 
     def _support_versions(self) -> dict[str, str]:
         return {
-            "regear": "0.3.95",
+            "regear": "0.3.96",
             "decky": str(getattr(decky, "DECKY_VERSION", "unknown")),
             "steamos": self._version_info.steamos,
             "kernel": self._version_info.kernel,

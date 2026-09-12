@@ -8,7 +8,7 @@ import os
 import stat
 
 from .audio_journal_filesystem import AudioJournalFilesystem
-from .whole_dock_claim import WholeDockClaimStore
+from .whole_dock_claim import WholeDockClaimStore, RESET_PENDING
 
 LOCK_FILENAME = "dock-mutation.lock"
 
@@ -40,6 +40,12 @@ class DockMutationGate(AudioJournalFilesystem):
                                os.O_NOFOLLOW | os.O_NONBLOCK, 0o600, dir_fd=directory)
                 self._secure(lock)
                 fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                try:
+                    os.stat(RESET_PENDING, dir_fd=directory, follow_symlinks=False)
+                except FileNotFoundError:
+                    pass
+                else:
+                    raise DockMutationDenied("dock_mutation.inhibited")
                 if not allow_inhibited:
                     # Reuse the pinned directory instead of re-resolving its path.
                     claims = WholeDockClaimStore(self.root, owner_uid=self.owner_uid,

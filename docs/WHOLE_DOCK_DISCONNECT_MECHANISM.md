@@ -627,3 +627,59 @@ This integration is source/test validation only. It does not lift the powered
 software-reconnect hold, enable sleep continuation, certify physical unplug,
 or represent a new device installation. Shutdown UI and supervised next-boot
 validation remain outstanding as described in [DOCK_POWER.md](DOCK_POWER.md).
+
+## Operator-attested legacy physical-reset reconciliation (in development)
+
+The failed `reauthorize_intent` record can suppress a later legitimate connection.
+A new operator-only repair is implemented separately from automatic recovery.
+It is not physical-reset detection, software reconnect, or safe-unplug clearance.
+Human attestation supplies the past power-cycle evidence; sysfs validates only the
+current restored hardware. For the reported heating incident, require a fresh
+supervised complete handheld shutdown, enclosure power removal and cooldown,
+then normal startup and physical reconnection. A generic permission to proceed
+is not confirmation that this sequence happened.
+
+Use only an installed and live-verified build containing the new pending-marker
+admission guard. The old 0.3.95 installation lacks it. The standalone
+`Re-Gear-reset-record-<revision>.pyz` is preview-only and refuses apply requests.
+No UI button is wired by this change. Operator delivery uses existing RPCs:
+
+1. `get_egpu_disconnect_status('physical_reset_preview')` checks the exact legacy
+   stage and current full dock, then produces a single-use 120-second token.
+2. After the operator explicitly confirms the above reset, call
+   `execute_egpu_disconnect` with `trial_action='whole_dock_physical_reset'`,
+   `trial_request_id=<token>`, `trial_confirmed=True`,
+   `physical_reset_confirmed=True`, and `release_display=False`. No relaunch or
+   attachment-token argument is permitted for this operation.
+
+The digest binds the exact claim, stable full GPU/audio/USB topology with matching
+binding and driver evidence, boot, user and Gamescope PID/start ticks. Preview and
+final execution require a verified idle Portable session, exact supported host,
+settled held-session helper, absent inner removal/filter records, and no pending
+transition or parent-power record. This initial repair conservatively refuses
+all `dock-power-*` records, including retained history. Busy background work,
+unload, expired tokens, a changed proof, or unknown state refuse. Confirmation is
+consumed before awaiting; its original deadline and unload flag are rechecked
+after slow observations and immediately before archive publication.
+
+Archive commit holds exclusive dock admission and the claim lock. It persists
+`whole-dock-reset.pending` before moving the original failed record into an
+exclusive `operator-physical-reset-*.json` audit. The audit is fsynced before the
+pending marker is removed. An interruption before that point retains inhibition;
+new admission readers refuse any pending marker, including malformed entries,
+even for teardown-continuation callers. A failure after the audit is durable
+cannot lose the old transaction; marker-removal durability may remain uncertain
+and is not silently repaired. Interrupted repair requires separate investigation.
+
+No preferences, attempt counts or attempted latches are reset; no sysfs/device
+write, service restart, game launch, power submission or USB4 reauthorization is
+performed. The result `dock_reset.legacy_hold_archived` means only that the failed
+hold was archived. An already-consumed automatic TV attempt can remain consumed;
+ordinary admission/preflight and a subsequent normal connection trial are still
+required before claiming automatic TV restoration. Never erase audit or pending
+records merely to manufacture a successful trial.
+
+Validation: focused service/adapter/confirmation tests, production-loop status
+checks, Linux filesystem failure/collision/interruption cases, and a required
+Linux-root fixture exercising the actual claim store and plugin admission factory.
+Device execution remains pending. Documentation impact: Wiki.

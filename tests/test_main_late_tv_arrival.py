@@ -29,7 +29,8 @@ class Reading:
 
 
 class MainLateTvArrivalTests(unittest.IsolatedAsyncioTestCase):
-    async def run_readings(self, readings, *, suppressed=False, execution_results=(), stable_tv=False):
+    async def run_readings(self, readings, *, suppressed=False, execution_results=(), stable_tv=False,
+                           dispatch_error=None):
         module = load_main_module()
         plugin = module.Plugin()
         index = 0
@@ -85,6 +86,11 @@ class MainLateTvArrivalTests(unittest.IsolatedAsyncioTestCase):
                 "completion.test", hold_portable=readings[index].hold_portable
             ), execute_automatic=execute,
         )
+        if dispatch_error is not None:
+            def refuse_dispatch(*args):
+                dispatches.append((index, "refused", {}))
+                raise dispatch_error
+            plugin._run_automatic_tv_transition = refuse_dispatch
 
         async def wait(_delay):
             nonlocal index
@@ -104,13 +110,31 @@ class MainLateTvArrivalTests(unittest.IsolatedAsyncioTestCase):
                  status=lambda: types.SimpleNamespace(ready=True))):
             with self.assertRaises(asyncio.CancelledError):
                 await plugin._automatic_dock_loop()
-        self.assertFalse(any(event["code"] in {
+        self.assertEqual(any(event["code"] in {
             "connection.tv_transition_exception", "automatic_dock.observation_failed",
-        } for event in events))
+        } for event in events), dispatch_error is not None)
+        self.final_dock_status = plugin._automatic_dock.status()
         # The loop catches observation exceptions. Check all producer samples so
         # a swallowed IO/mock failure cannot make a no-dispatch test pass.
         self.assertEqual(plugin._last_readiness_observation.sample_id, f"sample-{len(readings) - 1}")
         return dispatches, stages
+
+    async def test_dispatch_exceptions_end_switching_without_replaying_attempt(self):
+        from regear.delivery.dock_mutation_gate import DockMutationDenied
+        cases = (
+            (DockMutationDenied("dock_mutation.inhibited"), "automatic_dock.admission_inhibited"),
+            (DockMutationDenied("dock_mutation.unavailable_or_busy"),
+             "automatic_dock.admission_unavailable_or_busy"),
+            (DockMutationDenied("private exception detail"), "automatic_dock.admission_refused"),
+            (RuntimeError("private exception detail"), "automatic_dock.transition_failed"),
+        )
+        for error, code in cases:
+            with self.subTest(code=code):
+                dispatches, _ = await self.run_readings(
+                    [Reading(n) for n in range(8)], dispatch_error=error, stable_tv=True)
+                self.assertEqual(len(dispatches), 1)
+                self.assertEqual(self.final_dock_status.stage.value, "action_required")
+                self.assertEqual(self.final_dock_status.code, code)
 
     async def test_premutation_refusal_retries_once_through_production_dispatch(self):
         from regear.application.supervised_transition import SupervisedTransitionExecution

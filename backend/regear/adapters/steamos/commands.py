@@ -763,7 +763,7 @@ class HeldTrialLauncher:
         try:
             path = Path(archive)
             if (getattr(os, 'geteuid', lambda:-1)() != 0 or not path.is_absolute()
-                    or not re.fullmatch(r'Re-Gear-complete-trial-[0-9a-f]{12}\.pyz', path.name)
+                    or not re.fullmatch(r'Re-Gear-(?:complete-trial|reset-record)-[0-9a-f]{12}\.pyz', path.name)
                     or not path.is_file() or path.is_symlink()):
                 raise ValueError('invalid audit archive')
             argv = ('/usr/bin/runuser', '-u', self.username, '--', '/usr/bin/env',
