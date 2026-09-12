@@ -2506,6 +2506,12 @@ class Plugin:
                 ),
                 hdmi_ready=topology.hdmi_ready,
                 audio_ready=audio_ready,
+                session_available=(
+                    current.snapshot.gamescope.running
+                    if current.snapshot.gamescope.confidence is Confidence.VERIFIED
+                    and type(current.snapshot.gamescope.running) is bool
+                    else None
+                ),
                 session_ready=bool(
                     session_ready
                     and current.snapshot.gamescope.running is True
