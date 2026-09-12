@@ -32,6 +32,9 @@ const evidence = (text) => ({ text, known: true, verified: true });
 const live = () => ({
   fresh: true,
   performanceFresh: true,
+  // Controller evidence is gated by its own source, so a live case has to
+  // say so or these inputs never reach the mapper.
+  controllerFresh: true,
   manualWatts: 15,
   // Active external output is not a resolution/refresh-rate observation.
   displayTarget: evidence("External"),
@@ -63,7 +66,7 @@ for (const [tab, expected] of Object.entries(approved)) {
     const publisher = createTilePublisher();
     for (const readings of [
       {}, { fresh: true, performanceFresh: true }, live(),
-      { ...live(), fresh: false, performanceFresh: false }, live(),
+      { ...live(), fresh: false, performanceFresh: false, controllerFresh: false }, live(),
     ]) {
       publisher.publish(readings);
       const tiles = publisher.source.read()[tab];
@@ -95,7 +98,7 @@ for (const [tab, ids] of [
 }
 
 test("both live and unknown views retain the wide guarded disconnect entry", () => {
-  for (const readings of [live(), {}, { ...live(), fresh: false }]) {
+  for (const readings of [live(), {}, { ...live(), fresh: false, controllerFresh: false }]) {
     const view = buildTiles(readings);
     for (const tab of ["quick", "egpu"]) {
       const tile = view[tab].find(({ id }) => id === "disconnect");
