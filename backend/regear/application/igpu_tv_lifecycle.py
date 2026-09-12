@@ -87,7 +87,7 @@ class IgpuTvLifecycle:
             # A terminal run cannot silently restart or reuse its consent/watch.
             if self._status.phase != "waiting_for_tv":
                 return self._status
-            if not self._consent():
+            if self._consent() is not True:
                 return self._set("cancelled", "igpu_tv.not_enabled")
             before = self._sample()
             if before is None:
@@ -98,7 +98,7 @@ class IgpuTvLifecycle:
             if result.binding is None:
                 return self._set("action_required", "igpu_tv.preservation_unverified")
             self._binding = result.binding
-            if not self._consent():
+            if self._consent() is not True:
                 return self._set("cancelled", "igpu_tv.not_enabled")
             # A failing mechanism may have partially acquired resources.
             self._owns_resources = True
@@ -133,7 +133,7 @@ class IgpuTvLifecycle:
         try:
             if self._status.phase != "waiting_for_game_exit":
                 return self._status
-            if not self._consent():
+            if self._consent() is not True:
                 return self._stop("igpu_tv.not_enabled", "cancelled")
             sample = self._sample()
             if (sample is None or check_igpu_tv(sample.current.snapshot, sample.rendering,
@@ -161,9 +161,11 @@ class IgpuTvLifecycle:
             source = infer_placement(after.current.snapshot)
             if source not in {PlacementState.PORTABLE, PlacementState.DOCKED_IGPU}:
                 return self._stop("igpu_tv.source_unverified")
+            if self._consent() is not True:
+                return self._stop("igpu_tv.not_enabled", "cancelled")
             self._set("promoting_to_egpu", "igpu_tv.promoting")
             execution = self._transitions.execute_automatic(PlacementState.DOCKED_EGPU,
-                expected_generation=after.current.generation, standing_consent=self._consent())
+                expected_generation=after.current.generation, standing_consent=True)
             if (not execution.accepted or not execution.durable or execution.outcome is None
                     or execution.outcome.kind != TransitionOutcomeKind.SUCCEEDED):
                 return self._set("action_required", "igpu_tv.promotion_unverified")

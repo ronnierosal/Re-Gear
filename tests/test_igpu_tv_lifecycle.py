@@ -239,6 +239,38 @@ class IgpuTvLifecycleTests(unittest.TestCase):
         self.assertEqual(len(self.presenter.release_calls), 1)
         self.assertEqual(self.transitions.calls, [])
 
+    def test_non_boolean_consent_never_authorizes_presenter_or_transition(self):
+        for invalid in (1, "true", {"enabled": True}, [True], None, False):
+            for gate in ("start", "before_present", "tick", "after_release"):
+                with self.subTest(consent=invalid, gate=gate):
+                    self.setUp()
+                    lifecycle = self.lifecycle()
+                    if gate == "start":
+                        self.consent = invalid
+                    elif gate == "before_present":
+                        observe = self.samples.observe
+
+                        def withdraw():
+                            self.consent = invalid
+                            return observe()
+
+                        self.samples.observe = withdraw
+                    if gate in {"start", "before_present"}:
+                        result = self.start(lifecycle)
+                        self.assertEqual(self.presenter.present_calls, [])
+                        self.assertEqual(self.presenter.release_calls, [])
+                    else:
+                        self.start(lifecycle)
+                        if gate == "tick":
+                            self.consent = invalid
+                        else:
+                            self.presenter.on_release = lambda: setattr(self, "consent", invalid)
+                        result = lifecycle.tick()
+                    self.assertEqual(result.phase, "cancelled")
+                    self.assertEqual(result.result_code, "igpu_tv.not_enabled")
+                    self.assertFalse(result.success_verified)
+                    self.assertEqual(self.transitions.calls, [])
+
     def test_consent_withdrawn_during_release_is_not_success(self):
         lifecycle = self.lifecycle()
         self.start(lifecycle)
