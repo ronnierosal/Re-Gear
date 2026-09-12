@@ -1102,6 +1102,7 @@ class Plugin:
             # Never expose arbitrary exception text, paths or attachment IDs.
             code = {
                 "dock_mutation.inhibited": "automatic_recovery.admission_inhibited",
+                "dock_mutation.unavailable": "automatic_recovery.admission_unavailable_or_busy",
                 "dock_mutation.unavailable_or_busy": "automatic_recovery.admission_unavailable_or_busy",
             }.get(str(error), "automatic_recovery.admission_refused")
             self._record_automatic_recovery_decision(code, severity="warning")

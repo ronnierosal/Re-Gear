@@ -154,7 +154,8 @@ class AutomaticRecoveryLifecycleTests(unittest.TestCase):
         self.assertTrue(self.poll(11))
         self.assertEqual(self.commands.calls, [RESTART])
         self.assertEqual(self.plugin._automatic_link_recovery.attempts, 1)
-        self.assertEqual(self.event_codes(), ["automatic_recovery.started", "link_recovery.trained"])
+        self.assertEqual(self.event_codes(), ["automatic_recovery.waiting_for_transport",
+            "automatic_recovery.settling", "automatic_recovery.started", "link_recovery.trained"])
         self.assertEqual(self.decision(), "link_recovery.trained")
         self.assertFalse(self.poll(30))
         self.assertEqual(self.commands.calls, [RESTART])
