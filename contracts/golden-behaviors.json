@@ -87,7 +87,8 @@
         "tests.test_main_link_recovery.AutomaticRecoveryIntegrationTests.test_fresh_guarded_recovery_and_separate_consent",
         "tests.test_automatic_recovery_dispatch.AutomaticRecoveryDispatchTests.test_game_start_at_dispatch_refuses_restart",
         "tests.test_automatic_recovery_dispatch.AutomaticRecoveryDispatchTests.test_unknown_game_at_dispatch_refuses_restart",
-        "tests.test_automatic_recovery_dispatch.AutomaticRecoveryDispatchTests.test_idle_dispatch_preserves_recovery"
+        "tests.test_automatic_recovery_dispatch.AutomaticRecoveryDispatchTests.test_idle_dispatch_preserves_recovery",
+        "tests.test_automatic_recovery_dispatch.AutomaticRecoveryDispatchTests.test_changed_dispatch_authority_refuses_restart"
       ],
       "source_paths": [
         "main.py",

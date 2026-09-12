@@ -1,4 +1,4 @@
-"""No-hardware reproduction: expected guard fails on audited main 05a8aca."""
+"""Preserve automatic recovery while refusing stale dispatch authority."""
 
 import asyncio
 import sys
@@ -21,7 +21,7 @@ import unittest
 
 
 class AutomaticRecoveryDispatchTests(unittest.TestCase):
-    def exercise_dispatch(self, game_state):
+    def exercise_dispatch(self, game_state, change=None):
         module = load_main_module()
         plugin = module.Plugin.__new__(module.Plugin)
         plugin._unloading = False
@@ -40,11 +40,20 @@ class AutomaticRecoveryDispatchTests(unittest.TestCase):
         )
         policy.observe(now=0, **{**facts, "absent": True, "present": False})
         policy.observe(now=1, **facts)
-        plugin._automatic_recovery_preferences = lambda: NS(load=lambda: True)
-        plugin._automatic_dock_preferences = lambda: NS(load=lambda: True)
-        plugin._transition_journal_service = lambda: NS(
-            status=lambda: NS(durable=True, owner=NS(value="none"))
+        consent = {"recovery": True, "docking": True}
+        plugin._automatic_recovery_preferences = lambda: NS(
+            load=lambda: consent["recovery"]
         )
+        plugin._automatic_dock_preferences = lambda: NS(load=lambda: consent["docking"])
+        journal = NS(durable=True, owner=NS(value="none"))
+        plugin._transition_journal_service = lambda: NS(status=lambda: journal)
+        topology = NS(
+            transport_identity="transport:known",
+            transport_present=True,
+            pci_complete=False,
+        )
+        plugin._connection_topology = NS(observe=lambda: topology)
+        resolution = NS(ok=True, context=USER)
         gpus = (
             NS(
                 role=module.GpuRole.INTERNAL,
@@ -63,6 +72,34 @@ class AutomaticRecoveryDispatchTests(unittest.TestCase):
 
         async def background(fn):
             current.snapshot.game_state = game_state
+            if change == "recovery_disabled":
+                consent["recovery"] = False
+            if change == "docking_disabled":
+                consent["docking"] = False
+            if change == "non_boolean_consent":
+                consent["recovery"] = 1
+            if change == "unloading":
+                plugin._unloading = True
+            if change == "session":
+                resolution.context = None
+            if change == "transport":
+                topology.transport_identity = "transport:other"
+            if change == "transport_absent":
+                topology.transport_present = False
+            if change == "pci_arrived":
+                topology.pci_complete = True
+            if change == "journal_busy":
+                journal.owner.value = "presentation"
+            if change == "journal_unknown":
+                journal.durable = False
+            if change == "gamescope_stopped":
+                current.snapshot.gamescope.running = False
+            if change == "gpu_unknown":
+                current.snapshot.gpus = ()
+            if change == "observation_error":
+                plugin._connection_topology.observe = lambda: (_ for _ in ()).throw(
+                    OSError("fixture unreadable")
+                )
             return fn()
 
         plugin._observe_connection_readiness = observe
@@ -77,15 +114,19 @@ class AutomaticRecoveryDispatchTests(unittest.TestCase):
             ),
             patch.object(module, "GamescopeDiscovery"),
             patch.object(
-                module, "resolve_gamescope_user", return_value=NS(ok=True, context=USER)
+                module,
+                "resolve_gamescope_user",
+                side_effect=lambda _: NS(ok=resolution.ok, context=resolution.context),
             ),
             patch.object(module, "SnapshotTransitionObservationAdapter") as adapter,
         ):
             adapter.return_value.observe.return_value = current
-            result = asyncio.run(plugin._maybe_automatic_link_recovery(current, True))
+            asyncio.run(plugin._maybe_automatic_link_recovery(current, True))
         self.assertEqual(
-            commands.calls, [RESTART] if game_state is GameState.IDLE else []
+            commands.calls,
+            [RESTART] if game_state is GameState.IDLE and change is None else [],
         )
+        self.assertEqual(plugin._link_recovery.attempted, bool(commands.calls))
 
     def test_game_start_at_dispatch_refuses_restart(self):
         self.exercise_dispatch(GameState.RUNNING)
@@ -95,3 +136,22 @@ class AutomaticRecoveryDispatchTests(unittest.TestCase):
 
     def test_idle_dispatch_preserves_recovery(self):
         self.exercise_dispatch(GameState.IDLE)
+
+    def test_changed_dispatch_authority_refuses_restart(self):
+        for change in (
+            "recovery_disabled",
+            "docking_disabled",
+            "non_boolean_consent",
+            "unloading",
+            "session",
+            "transport",
+            "transport_absent",
+            "pci_arrived",
+            "journal_busy",
+            "journal_unknown",
+            "gamescope_stopped",
+            "gpu_unknown",
+            "observation_error",
+        ):
+            with self.subTest(change=change):
+                self.exercise_dispatch(GameState.IDLE, change)
