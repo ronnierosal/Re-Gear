@@ -76,8 +76,9 @@ it and let its owner finish and commit first.
   diff, never by absorbing their uncommitted files.
 - When a task overlaps files another agent is currently changing, stop editing
   the overlapping files and report the conflict instead of overwriting them.
-- The owning agent may act as integration driver for validated routine work
-  under `AGENTS.md`; no extra human merge approval is required. Use a clean
+- The project primary controls integration; a worker may execute it only for
+  an exact candidate delegated by the primary under `AGENTS.md`. No extra routine
+  human merge approval is required. Use a clean
   `codex/integration-*`, `claude/integration-*`, or `agent/integration-*` worktree.
   Shared-main dirtiness is preserved; integrate through the protected remote PR
   workflow, then leave updating that checkout to its owner.
