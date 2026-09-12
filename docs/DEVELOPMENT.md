@@ -34,6 +34,7 @@ At integration, deployment, or release gates run:
 ```text
 pnpm build
 python scripts/check_architecture.py
+python scripts/check_golden_behaviors.py
 python -m unittest discover -s tests -v
 python -m compileall -q backend tests scripts
 pnpm typecheck
@@ -58,6 +59,12 @@ Do not repeatedly run the full matrix after tiny documentation edits. Do not
 skip the full matrix when producing or deploying an artifact.
 
 ## Automatic failure diagnosis
+
+For changes to known working features, use the
+[golden behavior gate](GOLDEN_BEHAVIORS.md). The gate checks named contracts on
+the combined candidate; missing or skipped golden tests fail. Record affected
+behavior IDs and indirect dependencies, retain rollback provenance, and keep
+software acceptance separate from supervised device validation.
 
 A failure starts diagnosis:
 
