@@ -110,6 +110,48 @@ def service(commands, observations, *, watch=20.0):
     return svc, clock
 
 
+class RecoveryPreflightTests(unittest.TestCase):
+    def test_reservation_excludes_another_recovery_during_preflight(self):
+        commands = FakeCommands()
+        svc, _ = service(commands, [True])
+        entered, release = Event(), Event()
+
+        def preflight():
+            entered.set()
+            self.assertTrue(release.wait(5))
+            return ""
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            first = pool.submit(svc.recover, USER, preflight=preflight)
+            try:
+                self.assertTrue(entered.wait(5))
+                other = svc.recover(USER, automatic=True)
+                self.assertEqual(other.code, "link_recovery.already_attempted")
+                self.assertEqual(commands.calls, [])
+            finally:
+                release.set()
+            self.assertTrue(first.result(timeout=5).ok)
+        self.assertEqual(commands.calls, [RESTART])
+
+    def test_unavailable_preflight_releases_reservation_without_spending_attempt(self):
+        for result in (None, False, "link_recovery.transition_busy", OSError("private")):
+            with self.subTest(result=type(result).__name__):
+                commands = FakeCommands()
+                svc, _ = service(commands, [True])
+
+                def preflight():
+                    if isinstance(result, Exception):
+                        raise result
+                    return result
+
+                denied = svc.recover(USER, preflight=preflight)
+                self.assertFalse(denied.ok)
+                self.assertFalse(svc.attempted)
+                self.assertEqual(commands.calls, [])
+                self.assertTrue(svc.recover(USER, preflight=lambda: "").ok)
+                self.assertEqual(commands.calls, [RESTART])
+
+
 class SessionRestoredMixin:
     def assert_session_left_running(self, commands):
         """The promise, stated once: the last thing issued starts the session."""
