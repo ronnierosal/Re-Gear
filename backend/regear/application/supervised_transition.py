@@ -215,9 +215,33 @@ class SupervisedPresentationTransitionService:
         Standing consent is supplied only by the root-owned preference delivery
         boundary.  A caller still cannot bypass fresh evidence, the prepared
         integration, the journal, profile capabilities, or idle-game policy.
+
+        Consent is checked by identity, not truthiness, and before anything is
+        observed or locked.  ``if not standing_consent`` asked "is this truthy",
+        which is a different question: ``"false"``, ``{"enabled": False}`` and a
+        bare ``object()`` are all truthy and none of them are a player opting
+        in.  Identity also avoids a trap no comparison can, since ``1 == True``
+        in Python and an integer must never authorize a display change.
+
+        Today's only caller passes the value from
+        ``AutomaticDockPreferenceStore.load()``, which returns nothing but a
+        real bool, so no shipped path could reach here with a string.  That is
+        a property of that one caller rather than of this boundary, and a guard
+        that is only sound because of who happens to call it is not sound.
+
+        ``False`` and ``None`` keep reporting the feature as not enabled: those
+        are the two ways "the player has not opted in" is legitimately spelled.
+        Anything else is a malformed value from a caller, which is a different
+        fact and says so rather than being folded into the player's preference.
         """
-        if not standing_consent:
-            return SupervisedTransitionExecution(False, "automatic_dock.not_enabled")
+        if standing_consent is not True:
+            if standing_consent is False or standing_consent is None:
+                return SupervisedTransitionExecution(
+                    False, "automatic_dock.not_enabled"
+                )
+            return SupervisedTransitionExecution(
+                False, "automatic_dock.consent_invalid"
+            )
         if not self._lock.acquire(blocking=False):
             return SupervisedTransitionExecution(False, "transition.concurrent_request")
         try:
