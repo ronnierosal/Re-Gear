@@ -176,6 +176,7 @@ def report_to_public_dict(report: SnapshotReport) -> dict[str, object]:
     for display in snapshot["displays"]:
         display.pop("stable_id", None)
         display.pop("connector", None)
+        display.pop("owning_gpu_stable_id", None)
     gamescope = snapshot["gamescope"]
     for key in (
         "pid",
