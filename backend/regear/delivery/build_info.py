@@ -16,7 +16,7 @@ VERSION_RE = re.compile(r"^[0-9A-Za-z.+-]{1,32}$")
 def load_public_build_info(
     plugin_root: Path,
     *,
-    fallback_version: str = "0.3.89",
+    fallback_version: str = "0.3.90",
 ) -> dict[str, object]:
     """Return a small public provenance label without reading Git at runtime.
 

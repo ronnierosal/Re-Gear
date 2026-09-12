@@ -77,7 +77,7 @@ class HeldTrialLauncherTests(unittest.TestCase):
                      '--timer-property=After=user@1000.service',
                      '--property=Requires=user@1000.service', '--property=After=user@1000.service',
                      '--property=TimeoutStartSec=120s', '--property=Restart=on-failure',
-                     '--property=RestartSec=30s', '--property=StartLimitBurst=3'):
+                     '--property=RuntimeMaxSec=120s', '--property=RestartSec=30s', '--property=StartLimitBurst=3'):
             self.assertIn(item, argv)
         self.assertFalse(run.call_args_list[0].kwargs['shell'])
         self.assertEqual(run.call_args_list[0].kwargs['timeout'], 8)
