@@ -1,5 +1,36 @@
 # Current state
 
+## 0.3.94 installed; automatic connection trial failed — 2026-09-12
+
+The user installed the focused candidate. Read-only installed `build_info.json`
+confirmed version `0.3.94`, revision
+`58542f1982400118d3dadaca478fdbb39f49b2a9`. This supersedes the staging-only
+status below; the archive and its checksum remain unchanged.
+
+The user confirmed booting with the dock disconnected, reaching idle Gaming
+Mode, then attaching the dock with the TV on. Automatic TV switching failed.
+The bounded diagnostic snapshot at `2026-09-12T19:44:35Z` observed dock transport,
+only the verified internal GPU, and an idle game state. The running plugin
+recorded `connection.waiting_for_pci`, followed by
+`connection.readiness_timed_out` after approximately 120 seconds, without an
+`automatic_recovery.started` event. The independent unprivileged CLI cannot
+establish the root plugin's session, preference or durable-claim state.
+
+Independent comparison with checkpoint `09ff571` identified a new admission
+boundary: a `DockMutationDenied` before the recovery callback is currently
+silently returned. A retained disconnect claim, unavailable admission state or
+lock contention can therefore produce this event sequence. **This is a source
+hypothesis, not the confirmed device cause.** Consent, initial absence arming,
+session resolution and journal readiness also need live verification.
+
+Next read-only checks: `get_automatic_dock_status`,
+`get_egpu_disconnect_status("whole_dock_record")`, `get_link_recovery_status`
+and the transition-journal status. `whole_dock_trial` reporting `no_trial` after
+reload does not prove the durable claim is absent. SSH subsequently failed to
+resolve `steamdeck.local`; the last user-provided IP also timed out. No recovery,
+service restart, teardown, claim deletion or software reconnect was performed
+during this diagnosis. Preserve the checkpoint and all disconnect guards.
+
 ## 0.3.94 focused connection/disconnect candidate built — 2026-09-12
 
 User-requested local candidate `Re-Gear-0.3.94.zip` is built from clean revision
