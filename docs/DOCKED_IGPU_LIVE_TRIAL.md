@@ -1,6 +1,42 @@
 # Docked-iGPU test-build decision
 
-Status: mechanism investigation; no live-switch candidate produced.
+Status: offline lifecycle implementation; no live-switch candidate produced.
+
+## Implemented offline increment (2026-09-12)
+
+`backend/regear/application/igpu_tv_lifecycle.py` now composes the existing
+`DockedIgpuGameExitWatcher` and shared supervised presentation service. Private
+observation/presenter ports and pure evidence guards bind the original game,
+compositor, render GPUs and unique eGPU-owned TV. The application checks fresh
+pre/post observations, watches natural exit, brackets presenter release with
+verified idle samples, and requests automatic promotion through the existing
+engine using the latest generation and trusted standing consent.
+
+Failures withhold promotion and success. Explicit cancellation can retry cleanup
+of owned presenter resources without rearming a terminal watch. Promotion success
+requires independently observed final eGPU rendering and TV scanout, an exact
+committed operation receipt, and persisted archive readback. The completion ID is
+a deterministic opaque hash of that receipt's operation/request IDs. Status is
+the historical operation result, not continuing proof of present readiness.
+
+This code is not wired into `main.py` or a frontend RPC. The default presenter
+returns `igpu_tv.presenter_unavailable`; no capture process, DRM writer, device
+access or game/session mutation has been added. Fake presenter tests verify
+orchestration, not moving TV frames, performance or hardware support.
+
+Still required before an actionable handheld test ZIP:
+
+- A real bounded capture/presentation implementation with exact stream ownership,
+  frame delivery/stall evidence, resource leases and tested recovery.
+- A native collector that brackets actual game-render activity, process birth
+  identity, Gamescope generation and connector ownership into coherent samples.
+- Composition under the existing presentation owner's runtime lifecycle and
+  conflict arbitration, using persisted trusted opt-in rather than a caller flag.
+- Persisted lifecycle-to-operation correlation and a read-only notification
+  replay adapter after reload. The engine receipt is durable; the in-memory
+  lifecycle watch and its correlation are not restored by this increment.
+- Linux integration checks and the separately authorized supervised hardware
+  gates below. Packaging and installation remain separate release-owner work.
 
 ## Required full backend lifecycle (clarified 2026-09-12)
 
