@@ -2,6 +2,79 @@
 
 Status: mechanism investigation; no live-switch candidate produced.
 
+## Required full backend lifecycle (clarified 2026-09-12)
+
+This is the acceptance target for the existing `docked-igpu-live-test-build`
+task. It supersedes the earlier open question about allowing game closure.
+Closing/relaunching the original game is not an acceptable substitute.
+
+1. Observe an eGPU attachment while a game is running on the iGPU. Bind the
+   attachment, original game process/scope, Gamescope process generations,
+   renderer evidence and exact eGPU-owned HDMI display.
+2. Present the running game on that TV without replacing its game or Gamescope
+   session or changing its render GPU. Verify actual output and continuity;
+   connector detection, a launch selector or a started presenter is insufficient.
+3. Watch that original game until natural exit. Require fresh, bracketed idle
+   evidence. Another game starting, changed identity, lost topology, uncertain
+   idle state or conflicting operation must withhold promotion.
+4. Automatically request eGPU rendering through the existing serialized
+   transition engine, within the explicitly enabled and profile-gated automatic
+   policy. The requested behavior is automatic after exit; a fresh manual click
+   must not become an undocumented product substitute. Implementing that policy
+   does not grant hardware execution authority during development.
+5. End/release any experimental TV presenter in a controlled handoff before the
+   ordinary eGPU presentation mechanism acquires the output. Account for its
+   private handles and failure recovery; never stop the original game to clear
+   them. Verify the final compositor renderer, TV output, and required session
+   readiness, then commit the transition.
+6. Publish a categorical completion result for the separate popup owner only
+   after verified commit. Do not label attachment, `promotion_ready`, a successful
+   command return, or recovery fallback as successful eGPU promotion. Verify a
+   subsequent game's eGPU renderer separately; do not claim a future game was
+   already observed.
+
+### Proposed backend-to-popup contract
+
+These names are a proposed interface, not existing RPC fields. Coordinate them
+with the popup owner before wiring:
+
+- `phase`: `waiting_for_tv`, `igpu_on_tv`, `waiting_for_game_exit`,
+  `promoting_to_egpu`, `verifying_egpu`, `egpu_ready`, `action_required`,
+  `cancelled`.
+- `result_code`: an allowlisted categorical reason, with no command, PID,
+  connector, stable hardware identifier, or raw diagnostic text.
+- `completion_id`: an opaque backend-generated identifier for one committed
+  promotion; absent in all pre-commit, failure and cancellation states. Persist
+  it with the transition result so polling or a plugin reload cannot manufacture
+  another success event. The popup owner deduplicates this ID.
+- `success_verified`: true only for the committed, verified `egpu_ready` result.
+  A separate outcome may acknowledge recovery, but must not set this flag.
+
+The original Gamescope generation is preserved through step 3. An idle-only
+restart during step 4 may intentionally produce a new generation; the engine
+must bind and verify it rather than misclassifying it as original-session
+continuity. Keep game-render evidence separate from compositor-render evidence.
+
+### Remaining readiness gaps
+
+PR #305 supplies connector ownership only. Current production Docked-iGPU code
+is watch-only: `promotion_ready` does not authorize or execute a transition.
+Still required: a supported live cross-device mechanism and rollback; verified
+original-game renderer/output continuity; automatic natural-exit orchestration
+and presenter-to-engine resource handoff; post-transition verification and the
+durable completion contract above; combined failure/race/duplicate-delivery
+tests and an immutable candidate containing the complete wired backend path.
+
+The proposed local mirror is only a possible implementation of step 2. Its
+previous mirror-only scope does not satisfy this full lifecycle, and its
+mechanism remains unapproved/unproven. Popup UI belongs to another task.
+
+Hardware boundary: no live safe-disconnect/reconnect trials because the user
+reported heat. No installation, compositor replacement, or other hardware trial
+is authorized by this clarification. Preserve the other eGPU owner's runtime,
+helper, release and hardware claims. This document is a source/contract handoff,
+not test-build or hardware completion evidence.
+
 The requested experience is an iGPU-rendered game appearing on the TV connected
 to the eGPU. Whether the game must survive the connection determines the
 implementation. Game rendering and Gamescope composition must be measured
