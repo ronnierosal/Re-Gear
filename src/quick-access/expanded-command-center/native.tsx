@@ -1,3 +1,5 @@
+import { createMenuVisibility } from "./menu-visibility";
+import type { NonEgpuDetailRenderer } from "./non-egpu-detail-renderer";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { Button, Dropdown, Focusable, ModalRoot, showModal } from "@decky/ui";
 import type { ControllerInputSource } from "../../controller-safe-disconnect";
@@ -42,20 +44,23 @@ function readFrom(source?: TileSource) {
   return cached;
 }
 
-export function createExpandedMenu(input: ControllerInputSource | undefined, host: Window, canOpen: () => boolean = () => true, source?: TileSource, readCurrentSnapshot: () => unknown = () => null) {
+export function createExpandedMenu(input: ControllerInputSource | undefined, host: Window, canOpen: () => boolean = () => true, source?: TileSource, readCurrentSnapshot: () => unknown = () => null, renderDetail?: NonEgpuDetailRenderer) {
   const storage = (() => { try { return host.localStorage; } catch { return undefined; } })();
   let binding = loadMenuBinding(storage);
   let modal: ReturnType<typeof showModal> | null = null;
+  const visibility = createMenuVisibility();
+  let opening = false;
   let stopped = false;
   let generation = 0;
   const close = () => {
     const previous = modal;
     modal = null;
     generation++;
+    visibility.set(false);
     previous?.Close();
   };
   function View({ token }: { token: number }) {
-    useEffect(() => () => { if (generation === token) { modal = null; generation++; } }, [token]);
+    useEffect(() => () => { if (generation === token) { modal = null; generation++; visibility.set(false); } }, [token]);
     // Live subscription, not a read at open.
     //
     // Reading once when the menu opened left whatever was true at that moment
@@ -68,7 +73,7 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
     // end. The server snapshot is the same read: there is no server, and
     // returning a different value there would tear.
     const tiles = useSyncExternalStore(subscribeTo(source), readFrom(source), readFrom(source));
-    return <ExpandedCommandCenter onClose={close} native disconnectControl={<WholeDockControl intent="shutdown" readCurrentSnapshot={readCurrentSnapshot}/>} primitives={{ Button: Button, Focusable }} settings={<Settings/>} tiles={tiles}/>;
+    return <ExpandedCommandCenter onClose={close} native disconnectControl={<WholeDockControl intent="shutdown" readCurrentSnapshot={readCurrentSnapshot}/>} primitives={{ Button: Button, Focusable }} settings={<Settings/>} tiles={tiles} renderDetail={renderDetail}/>;
   }
   function Settings() {
     const [selected, setSelected] = useState(binding);
@@ -83,14 +88,19 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
     }/>;
   }
   const open = () => {
-    if (stopped || modal || !canOpen()) return;
+    if (stopped || opening || modal || !canOpen()) return;
     const token = ++generation;
-    modal = showModal(<ModalRoot closeModal={close} bAllowFullSize bHideCloseIcon bDisableBackgroundDismiss className="rg-expanded-modal-root" modalClassName="rg-expanded-modal-frame">
+    opening = true;
+    try {
+    const opened = showModal(<ModalRoot closeModal={close} bAllowFullSize bHideCloseIcon bDisableBackgroundDismiss className="rg-expanded-modal-root" modalClassName="rg-expanded-modal-frame">
       <style>{`.rg-expanded-modal-root,.rg-expanded-modal-frame{position:fixed!important;inset:0!important;width:100vw!important;height:100vh!important;max-width:none!important;max-height:none!important;padding:0!important;margin:0!important;background:transparent!important;box-shadow:none!important}`}</style>
       <View token={token}/>
     </ModalRoot>, host, { strTitle: "Re-Gear expanded demo", bNeverPopOut: true });
-
+    if (generation !== token || stopped) { opened.Close(); return; }
+    modal = opened;
+    visibility.set(true);
+    } catch { visibility.set(false); } finally { opening = false; }
   };
   const shortcut = startMenuShortcut({ input, readBinding: () => binding, open });
-  return { open, available: shortcut.available, stop() { stopped = true; shortcut.stop(); close(); } };
+  return { open, visibility: visibility.source, available: shortcut.available, stop() { stopped = true; shortcut.stop(); close(); } };
 }

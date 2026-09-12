@@ -1,3 +1,6 @@
+import { createNonEgpuDetailPublisher, type NonEgpuDetailState } from "./quick-access/expanded-command-center/non-egpu-detail-source";
+import { createNonEgpuDetailRenderer } from "./quick-access/expanded-command-center/non-egpu-detail-renderer";
+import type { MenuVisibility } from "./quick-access/expanded-command-center/menu-visibility";
 import { PageLayout, CommandCenterHeader } from "./quick-access/page-layout";
 import { createExpandedMenu } from "./quick-access/expanded-command-center/native";
 import { createTilePublisher } from "./quick-access/expanded-command-center/tile-source";
@@ -34,7 +37,7 @@ import {
   showModal,
   staticClasses,
 } from "@decky/ui";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 import {
   acknowledgeDockedIgpuStatus,
@@ -567,8 +570,9 @@ function preflightObservation(payload: SnapshotPayload): PreflightObservation {
   }, Date.now(), SNAPSHOT_STALE_AFTER_MS);
 }
 
-function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAvailable, publishTiles }: { preflight: SleepPreflightCoordinator; connection: ReturnType<typeof startConnectionMonitor>; shortcut: ReturnType<typeof createDisplayShortcutRuntime>; openExpanded(): void; menuShortcutAvailable: boolean; publishTiles(readings: Readings): void }) {
+function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAvailable, publishTiles, publishDetails, menuVisibility }: { preflight: SleepPreflightCoordinator; connection: ReturnType<typeof startConnectionMonitor>; shortcut: ReturnType<typeof createDisplayShortcutRuntime>; openExpanded(): void; menuShortcutAvailable: boolean; publishTiles(readings: Readings): void; publishDetails(state: NonEgpuDetailState | null): void; menuVisibility: MenuVisibility }) {
   const quickAccessVisible = useQuickAccessVisible();
+  const expandedVisible = useSyncExternalStore(menuVisibility.subscribe, menuVisibility.read, menuVisibility.read);
   const statusAnchor = useRef<HTMLDivElement | null>(null);
   const statusFocusAnchor = useRef<HTMLDivElement | null>(null);
   const primaryControlAnchor = useRef<HTMLDivElement | null>(null);
@@ -619,7 +623,7 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
    * hardware", and a stored dismissal would hide it after a later restart. */
   const [resultDismissed, setResultDismissed] = useState(false);
   const route = currentRoute(navStack);
-  const performance = usePerformance(quickAccessVisible);
+  const performance = usePerformance(quickAccessVisible || expandedVisible);
   const onCommandCenter = route.kind === "command-center";
   // Read by the refresh callback, which must not be rebuilt on every navigation:
   // adding navStack to its dependencies would restart the refresh cycle on a
@@ -827,6 +831,11 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
           getActionHistory,
         },
       );
+      if (expandedVisible && !(quickAccessVisible && diagnosticsOnScreen.current)
+          && nextPayload.snapshot.game_state === "idle") {
+        try { optionalDiagnostics.peripheralStatus = await getPeripheralStatus(); }
+        catch { optionalDiagnostics.peripheralStatus = null; }
+      }
       const presentationPayload = {
         ...nextPayload,
         journey: sanitizeJourneyStatus(nextPayload.journey),
@@ -850,7 +859,7 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
         setLoading(false);
       }
     }
-  }, [preflight, quickAccessVisible, refreshTransitionJournal, showDiagnostics]);
+  }, [preflight, quickAccessVisible, expandedVisible, refreshTransitionJournal, showDiagnostics]);
 
   useEffect(() => {
     if (quickAccessVisible) {
@@ -1731,6 +1740,13 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
       menuPerformance.supported, menuPerformance.action, menuPerformance.busy,
       performance.manual?.current_watts, menuAgeTick, snapshot?.displays]);
 
+  useEffect(() => {
+    publishDetails({ performance, controller: controllerPresentation({
+      peripheral: menuFresh ? peripheralStatus : null, shortcutAvailable: menuShortcutAvailable,
+    }) });
+  }, [publishDetails, performance, menuFresh, peripheralStatus, menuShortcutAvailable]);
+  useEffect(() => () => publishDetails(null), [publishDetails]);
+
   // Re-evaluate when this observation actually expires, so a reading cannot
   // remain "fresh" merely because the panel went quiet. Scheduling a full
   // interval instead would let an observation outlive its own lifetime by
@@ -2428,10 +2444,12 @@ function showBlockedAttempt(
 export default definePlugin(() => {
   // Shared tile view and lifetime snapshot monitor have independent consumers.
   const tilePublisher = createTilePublisher();
+  const detailPublisher = createNonEgpuDetailPublisher();
+  const renderDetail = createNonEgpuDetailRenderer(detailPublisher.source);
   let menuSnapshot: SnapshotPayload["snapshot"] | null = null;
   const expandedMenu = createExpandedMenu(steamControllerInput(window), window, () =>
     !shortcut.modal.current && !shortcut.portableBusy.current && !shortcut.tvBusy.current && !warningModal,
-    tilePublisher.source, () => menuSnapshot);
+    tilePublisher.source, () => menuSnapshot, renderDetail);
   const shortcut = createDisplayShortcutRuntime({
     // View+Y now belongs exclusively to the menu. Explicit display requests
     // below retain their existing approval/confirmation path.
@@ -2515,10 +2533,11 @@ export default definePlugin(() => {
   return {
     name: PRODUCT_NAME,
     titleView: <div className={staticClasses.Title} style={{ display: "flex", alignItems: "center" }}><BrandHeader /></div>,
-    content: <Content preflight={preflight} connection={connection} shortcut={shortcut} openExpanded={expandedMenu.open} menuShortcutAvailable={expandedMenu.available} publishTiles={tilePublisher.publish} />,
+    content: <Content preflight={preflight} connection={connection} shortcut={shortcut} openExpanded={expandedMenu.open} menuShortcutAvailable={expandedMenu.available} publishTiles={tilePublisher.publish} publishDetails={detailPublisher.publish} menuVisibility={expandedMenu.visibility} />,
     icon: <BrandIcon />,
     alwaysRender: true,
     onDismount() {
+      detailPublisher.publish(null);
       expandedMenu.stop();
       shortcut.stop();
       if (warningTimer !== null) {
