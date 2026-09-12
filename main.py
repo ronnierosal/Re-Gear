@@ -21,7 +21,7 @@ BACKEND_ROOT = PLUGIN_ROOT / "backend"
 if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
-from regear.adapters.steamos.commands import BrokerCaptureRestoreTimer  # noqa: E402
+from regear.adapters.steamos.commands import BrokerCaptureRestoreTimer, HeldTrialLauncher, HeldTrialRestoreTimer  # noqa: E402
 
 from regear.adapters.steamos.discovery import SteamOsDiscovery  # noqa: E402
 from regear.application.automatic_link_recovery import AutomaticLinkRecovery  # noqa: E402
@@ -1357,7 +1357,7 @@ class Plugin:
 
     # -- live eGPU disconnect -------------------------------------------
 
-    async def _capture_egpu_release_diagnostics(self, confirmed: bool = False):
+    async def _capture_egpu_release_diagnostics(self, confirmed: bool = False, held_session: bool = False):
         """Operator-only timed observation with independent session restoration.
 
         The capture establishes independent session restoration before a separate
@@ -1394,6 +1394,12 @@ class Plugin:
                     if runtime.status().scan_complete is not True:
                         raise ValueError("capture holder scan incomplete")
                     token = uuid.uuid4().hex
+                    if held_session:
+                        result = self._run_held_session_capture(user, token, runtime, samples)
+                        if store.load() != claim:
+                            result['code'] = 'release_capture.unresolved'
+                        self._release_capture_status = result
+                        return result
                     if not BrokerCaptureRestoreTimer().arm(uid=user.uid, username=user.username,
                                                            token=token):
                         raise ValueError("capture independent restore unavailable")
@@ -1418,6 +1424,58 @@ class Plugin:
             return result
         self._release_capture_task = asyncio.create_task(self._run_background_operation(capture))
         return {"code": "release_capture.starting"}
+
+    def _run_held_session_capture(self, user, token, runtime, samples):
+        """Operator trial: hold, observe and restore; never remove hardware."""
+        launcher = HeldTrialLauncher(uid=user.uid, username=user.username)
+        prepared = launcher.call('prepare', token)
+        if prepared.get('code') != 'held_helper.prepared':
+            return {'code': 'release_capture.prepare_refused', 'samples': samples,
+                    'safe_to_unplug': False}
+        pins = prepared.get('pins')
+        timer = HeldTrialRestoreTimer()
+        result = {'code': 'release_capture.unresolved', 'samples': samples,
+                  'safe_to_unplug': False}
+        try:
+            armed_at = time.monotonic()
+            if not timer.arm(launcher, token, pins):
+                return result
+            self._release_capture_restore_unit = 'regear-held-restore-' + token + '.timer'
+            # Never stop after a delayed/expired watchdog check.
+            if (time.monotonic() - armed_at > 15 or not timer.active(token)
+                    or self._api.get_snapshot_report().snapshot.game_state is not GameState.IDLE):
+                return result
+            self._release_capture_status = {**result, 'code': 'release_capture.holding'}
+            held = launcher.call('hold', token, pins)
+            if held.get('code') != 'held_helper.held':
+                return result
+            started = time.monotonic()
+            clear = False
+            for _ in range(11):
+                state = launcher.call('status', token, pins)
+                if state.get('code') != 'held_helper.status' or state.get('held') is not True:
+                    break
+                status = runtime.status()
+                sample = {'elapsed_seconds': round(time.monotonic() - started, 1),
+                          'holders': list(status.holders), 'scan_complete': status.scan_complete}
+                samples.append(sample)
+                self._release_capture_status = {**result, 'code': 'release_capture.observing',
+                                                'samples': list(samples)}
+                if status.scan_complete is True and not status.holders:
+                    checked = launcher.call('status', token, pins)
+                    clear = checked.get('code') == 'held_helper.status' and checked.get('held') is True
+                    break
+                if time.monotonic() - started >= 10:
+                    break
+                time.sleep(1)
+            result['clear_observed'] = clear
+        finally:
+            restored = launcher.call('restore', token, pins)
+            result['session_restored'] = restored.get('restored') is True
+            if result['session_restored']:
+                result['code'] = ('release_capture.held_clear_restored' if result.get('clear_observed')
+                                  else 'release_capture.held_unverified_restored')
+        return result
 
     def _run_whole_dock_trial(self, operation: str, expected_attachment: str = ""):
         """Internal cable-connected trial; admission covers release and teardown.
@@ -1610,7 +1668,7 @@ class Plugin:
         """
         if trial_action:
             if (trial_confirmed is not True or release_display is not True
-                    or trial_action not in ("whole_dock_disconnect", "whole_dock_reconnect", "whole_dock_capture")
+                    or trial_action not in ("whole_dock_disconnect", "whole_dock_reconnect", "whole_dock_capture", "whole_dock_held_capture")
                     or relaunch_app_id
                     or type(trial_request_id) is not str
                     or (trial_request_id and (len(trial_request_id) != 32 or any(c not in "0123456789abcdef" for c in trial_request_id)))
@@ -1625,6 +1683,8 @@ class Plugin:
                         "code": "dock_teardown.busy", "safe_to_unplug": False}
             if trial_action == "whole_dock_capture":
                 return await self._capture_egpu_release_diagnostics(confirmed=True)
+            if trial_action == "whole_dock_held_capture":
+                return await self._capture_egpu_release_diagnostics(confirmed=True, held_session=True)
             self._whole_dock_trial_status = {"schema_version": 1,
                 "code": "dock_teardown.trial_running", "busy": True,
                 "safe_to_unplug": False, "request_id": trial_request_id}
@@ -3329,7 +3389,7 @@ class Plugin:
 
     def _support_versions(self) -> dict[str, str]:
         return {
-            "regear": "0.3.87",
+            "regear": "0.3.88",
             "decky": str(getattr(decky, "DECKY_VERSION", "unknown")),
             "steamos": self._version_info.steamos,
             "kernel": self._version_info.kernel,

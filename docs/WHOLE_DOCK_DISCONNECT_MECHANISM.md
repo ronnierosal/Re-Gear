@@ -330,3 +330,38 @@ Additional final focused fixtures cover repeat recovery, concurrent recovery,
 corrupt journals and state changes at completion; Linux CI supplies filesystem
 execution evidence. Architecture and Python compilation pass locally.
 Documentation impact: Wiki after runtime integration and supervised validation.
+
+## 0.3.88 held-stop operator candidate
+
+The operator-only `whole_dock_held_capture` action is now connected through the
+existing `execute_egpu_disconnect` RPC. It requires trial_confirmed=true,
+release_display=true, initial complete holder evidence, one matching attachment,
+a retained release_intent claim and idle game evidence. The existing player Safe
+Disconnect action and automatic TV-switching behavior are unchanged.
+
+The helper prepares boot and directory-inode pins plus an exclusive journal under
+/run/user/UID/regear-held/TOKEN. It snapshots the Python recovery package there
+before arming a system timer. The timer runs the frozen helper as the observed
+user, never a root Python interpreter. Timer/service dependencies keep the user
+manager required; first restoration is scheduled after90 seconds, with bounded
+120-second execution and up to3 attempts separated by30 seconds. An explicit
+user-manager stop or reboot is outside this watchdog's survival guarantee.
+
+Only after verifying timer activation and fresh idle evidence does the producer
+mask the fixed session/audio units, verify effective masks and stop them. Every
+stop checks the durable ownership phase and exact published mask inodes. The
+root capture retains dock mutation admission and samples holders for up to10
+seconds while the held state remains verified. Its finally path restores using
+the same frozen helper; the independent timer remains available after plugin or
+SSH exit. Restoration never grants physical unplug clearance and never modifies
+the retained whole-dock claim or PCI/USB/tunnel controls.
+
+Trial: keep the cable connected and have the operator available; invoke existing
+RPC with trial_action=whole_dock_held_capture, trial_confirmed=true and
+release_display=true. Poll get_egpu_disconnect_status with release_capture. Record
+clear_observed, session_restored, samples and the exact restore_timer. The expected
+success code is release_capture.held_clear_restored; holders remaining with
+successful restoration yields release_capture.held_unverified_restored. Confirm
+picture, audio and controls afterward. Do not run another install during a trial.
+A new candidate is prepared offline; installation and hardware results are separate.
+Documentation impact: Wiki after supervised validation.

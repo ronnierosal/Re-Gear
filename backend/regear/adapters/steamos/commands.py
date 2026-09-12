@@ -721,6 +721,8 @@ class HeldSessionCommandRunner:
                 suffix = (operation, unit)
             elif operation == 'state':
                 suffix = ('show', unit, '--property=ActiveState', '--value')
+            elif operation == 'load':
+                suffix = ('show', unit, '--property=LoadState', '--value')
             else:
                 return None
         else:
@@ -734,9 +736,98 @@ class HeldSessionCommandRunner:
                     'DBUS_SESSION_BUS_ADDRESS': 'unix:path=/run/user/' + str(self.uid) + '/bus'})
             if result.returncode != 0:
                 return None
-            if operation != 'state':
+            if operation not in ('state', 'load'):
                 return True
             value = result.stdout.strip()
-            return value.decode('ascii') if value in (b'active', b'inactive') else None
+            allowed = (b'active', b'inactive') if operation == 'state' else (b'loaded', b'masked')
+            return value.decode('ascii') if value in allowed else None
         except (OSError, subprocess.SubprocessError):
             return None
+
+
+class HeldTrialLauncher:
+    """Launch the fixed trial helper after dropping privileges to its user."""
+    ACTIONS = frozenset(('prepare', 'hold', 'restore', 'status'))
+
+    def __init__(self, *, uid, username):
+        if (type(uid) is not int or uid <= 0 or type(username) is not str
+                or not ReadOnlyCommandRunner.SAFE_USERNAME.fullmatch(username)
+                or getattr(os, 'geteuid', lambda: -1)() != 0):
+            raise ValueError('held launcher identity invalid')
+        self.uid, self.username = uid, username
+
+    def argv(self, action, token, pins=None):
+        import json
+        if (type(action) is not str or action not in self.ACTIONS
+                or type(token) is not str or not re.fullmatch('[a-f0-9]{32}', token)):
+            raise ValueError('held launcher request invalid')
+        if action == 'prepare':
+            if pins is not None:
+                raise ValueError('prepare pins forbidden')
+            helper = Path(__file__).resolve().parents[2] / 'delivery' / 'held_session_helper.py'
+            suffix = ()
+        else:
+            if (type(pins) is not dict or set(pins) != {'units_device', 'units_inode',
+                    'lease_device', 'lease_inode', 'boot_identity'}
+                    or any(type(pins[k]) is not int or pins[k] < 0 for k in
+                           ('units_device', 'units_inode', 'lease_device', 'lease_inode'))
+                    or type(pins['boot_identity']) is not str
+                    or not re.fullmatch('[a-f0-9]{64}', pins['boot_identity'])):
+                raise ValueError('held launcher pins invalid')
+            helper = Path('/run/user') / str(self.uid) / 'regear-held' / token / 'code/regear/delivery/held_session_helper.py'
+            suffix = ('--pins', json.dumps(pins, sort_keys=True, separators=(',', ':')))
+        return ('/usr/bin/runuser', '-u', self.username, '--', '/usr/bin/env',
+                'XDG_RUNTIME_DIR=/run/user/' + str(self.uid),
+                'DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/' + str(self.uid) + '/bus',
+                '/usr/bin/python3', '-I', str(helper), action, token, *suffix)
+
+    def call(self, action, token, pins=None):
+        import json
+        try:
+            argv = self.argv(action, token, pins)
+            result = subprocess.run(argv, stdin=subprocess.DEVNULL, capture_output=True,
+                                    shell=False, check=False, timeout=120 if action == 'restore' else 70)
+            if result.returncode != 0:
+                return {'code': 'held_helper.failed'}
+            if len(result.stdout) > 16384:
+                return {'code': 'held_helper.output_invalid'}
+            value = json.loads(result.stdout)
+            if type(value) is not dict:
+                return {'code': 'held_helper.output_invalid'}
+            return value
+        except (ValueError, OSError, subprocess.SubprocessError):
+            return {'code': 'held_helper.unavailable'}
+
+
+class HeldTrialRestoreTimer:
+    """Independent root timer runs only the frozen user-owned recovery helper."""
+    def arm(self, launcher, token, pins):
+        try:
+            if type(launcher) is not HeldTrialLauncher or getattr(os, 'geteuid', lambda: -1)() != 0:
+                return False
+            restore = launcher.argv('restore', token, pins)
+            unit = 'regear-held-restore-' + token
+            manager = 'user@' + str(launcher.uid) + '.service'
+            argv = ('/usr/bin/systemd-run', '--quiet', '--collect', '--unit=' + unit,
+                '--on-active=90s', '--timer-property=AccuracySec=1s',
+                '--timer-property=Requires=' + manager, '--timer-property=After=' + manager,
+                '--property=Requires=' + manager, '--property=After=' + manager,
+                '--property=TimeoutStartSec=120s', '--property=Restart=on-failure',
+                '--property=RestartSec=30s', '--property=StartLimitIntervalSec=600s',
+                '--property=StartLimitBurst=3', *restore)
+            result = subprocess.run(argv, stdin=subprocess.DEVNULL, capture_output=True,
+                                    timeout=8, shell=False, check=False)
+            return result.returncode == 0 and self.active(token)
+        except (ValueError, OSError, subprocess.SubprocessError):
+            return False
+
+    def active(self, token):
+        if type(token) is not str or not re.fullmatch('[a-f0-9]{32}', token):
+            return False
+        try:
+            result = subprocess.run(('/usr/bin/systemctl', 'is-active',
+                'regear-held-restore-' + token + '.timer'), stdin=subprocess.DEVNULL,
+                capture_output=True, timeout=8, check=False, shell=False)
+            return result.returncode == 0 and result.stdout.strip() == b'active'
+        except (OSError, subprocess.SubprocessError):
+            return False

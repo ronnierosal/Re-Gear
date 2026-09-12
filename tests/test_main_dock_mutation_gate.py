@@ -302,3 +302,56 @@ class MainDockAdmissionTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+class HeldCaptureIntegrationTests(unittest.TestCase):
+    setUp = MainDockAdmissionTests.setUp
+
+    def fixture(self, *, timer_ready=True, hold_ready=True, clear=True, restore_ready=True, observe_error=False):
+        self.plugin._api = NS(get_snapshot_report=lambda: NS(snapshot=NS(game_state=self.module.GameState.IDLE)))
+        calls = []
+        def call(action, *args):
+            calls.append(action)
+            if action == 'prepare':
+                return {'code': 'held_helper.prepared', 'pins': {'test': 'pins'}}
+            if action == 'restore':
+                return {'restored': restore_ready}
+            if action == 'status':
+                return {'code': 'held_helper.status', 'held': hold_ready}
+            return {'code': 'held_helper.held' if hold_ready else 'held_helper.refused'}
+        runtime = Mock()
+        runtime.status.return_value = NS(scan_complete=True, holders=() if clear else ('wireplumber.service',))
+        if observe_error:
+            runtime.status.side_effect = ValueError('observation failed')
+        with patch.object(self.module, 'HeldTrialLauncher') as launcher, patch.object(self.module, 'HeldTrialRestoreTimer') as timer, patch.object(self.module.time, 'sleep'):
+            launcher.return_value.call.side_effect = call
+            timer.return_value.arm.return_value = timer_ready
+            timer.return_value.active.return_value = timer_ready
+            if observe_error:
+                with self.assertRaises(ValueError):
+                    self.plugin._run_held_session_capture(NS(uid=1000, username='deck'), 'a'*32, runtime, [])
+                result = None
+            else:
+                result = self.plugin._run_held_session_capture(NS(uid=1000, username='deck'), 'a'*32, runtime, [])
+        return result, calls
+
+    def test_held_capture_success_restores_without_unplug_clearance(self):
+        result, calls = self.fixture()
+        self.assertEqual(result['code'], 'release_capture.held_clear_restored')
+        self.assertFalse(result['safe_to_unplug'])
+        self.assertEqual(calls, ['prepare', 'hold', 'status', 'status', 'restore'])
+
+    def test_no_hold_without_independent_timer(self):
+        result, calls = self.fixture(timer_ready=False)
+        self.assertNotIn('hold', calls)
+        self.assertEqual(calls[-1], 'restore')
+        self.assertFalse(result.get('clear_observed', False))
+
+    def test_restore_after_hold_failure_and_observer_exception(self):
+        for options in ({'hold_ready':False}, {'observe_error':True}):
+            _, calls = self.fixture(**options)
+            self.assertEqual(calls[-1], 'restore')
+
+    def test_failed_restore_never_claims_success(self):
+        result, _ = self.fixture(restore_ready=False)
+        self.assertEqual(result['code'], 'release_capture.unresolved')
+        self.assertFalse(result['session_restored'])
