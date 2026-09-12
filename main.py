@@ -47,6 +47,7 @@ from regear.adapters.steamos.whole_dock_topology import resolve_whole_dock, reso
 from regear.delivery.whole_dock_runtime import WholeDockRuntime  # noqa: E402
 from regear.delivery.dock_power_intent import DockPowerIntentStore  # noqa: E402
 from regear.delivery.dock_power_service import create_power_request, continue_dock_power, dock_power_capabilities  # noqa: E402
+from regear.application.dock_power import DockPowerResult  # noqa: E402
 from regear.delivery.whole_dock_claim import WholeDockClaimStore, inner_removal_records_absent  # noqa: E402
 from regear.application.live_disconnect import LiveDisconnectResult  # noqa: E402
 from regear.ports.whole_dock_teardown import WholeDockApproval  # noqa: E402
@@ -1777,19 +1778,31 @@ class Plugin:
             if user is None:
                 raise ValueError("dock_teardown.session_unknown")
             admission = {"held": True}
+            lease = Login1SleepInhibitor()
+            def guarded_admission():
+                try:
+                    return (admission["held"] is True
+                        and not getattr(self, '_unloading', False)
+                        and lease.status().active is True)
+                except Exception:
+                    return False
+            def require_inhibition():
+                if guarded_admission() is not True:
+                    raise ValueError("dock_teardown.sleep_inhibition_required")
             runtime = WholeDockRuntime(binding, RootOwnedRuntimeState().ensure(),
                 idle=lambda: self._api.get_snapshot_report().snapshot.game_state is GameState.IDLE,
-                admission_held=lambda: admission["held"])
+                admission_held=guarded_admission)
             approval = WholeDockApproval(binding.binding, binding.generation,
                 TeardownApproval(binding.usb_bdf, binding.router_id))
             self._whole_dock_trial_phase = "sleep_inhibitor"
-            lease = Login1SleepInhibitor()
             if lease.acquire().active is not True:
                 raise ValueError("dock_teardown.sleep_inhibition_required")
             self._whole_dock_trial_lease = lease
             try:
+                require_inhibition()
                 self._whole_dock_trial_phase = "return_portable"
                 self._return_portable_before_disconnect(binding, user)
+                require_inhibition()
                 self._whole_dock_trial_phase = "release_setup"
                 release = build_live_disconnect_runtime(gpu_bdf=binding.gpu_bdf,
                     uid=user.uid, username=user.username)
@@ -1806,6 +1819,7 @@ class Plugin:
                     runtime.begin_before_release(operation, approval, before_release=bind_power)
                 self._whole_dock_trial_runtime = (runtime, admission)
                 self._whole_dock_trial_phase = "gpu_release"
+                require_inhibition()
                 result = release.execute(release_display=True)
                 if type(result) is LiveDisconnectResult:
                     self._whole_dock_release_stage = result.stage.value
@@ -1814,6 +1828,7 @@ class Plugin:
                         r"(?:filter_arm|arm_sequence)\.[a-z_]+", result.arm_code) else ""
                 runtime.verify_gpu_release(result)
                 self._whole_dock_trial_phase = "dock_teardown"
+                require_inhibition()
                 result = runtime.execute_claimed(operation, approval)
                 if power_request is None:
                     return result
@@ -1825,9 +1840,11 @@ class Plugin:
                     return (not getattr(self, '_unloading', False)
                         and snapshot.game_state is GameState.IDLE
                         and infer_operating_mode(snapshot).mode is OperatingMode.PORTABLE)
-                return continue_dock_power(power_request, runtime=runtime, store=power_store,
+                power_result = continue_dock_power(power_request, runtime=runtime, store=power_store,
                     portable_verified=portable, power=SystemPowerCommandRunner(),
-                    admission_held=lambda: admission['held'])
+                    admission_held=guarded_admission)
+                return DockPowerResult(power_result.code, power_result.requested,
+                    software_down=True)
             finally:
                 admission["held"] = False
                 if runtime._operation is None:

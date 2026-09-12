@@ -48,15 +48,28 @@ class MainDockPowerTests(unittest.TestCase):
 
     def test_backend_request_and_power_result_are_separate_from_unplug(self):
         self.plugin._run_whole_dock_trial = Mock(return_value=NS(
-            code='dock_power.request_accepted_unverified', requested=True))
+            code='dock_power.request_accepted_unverified', requested=True,
+            software_down=True))
         result = asyncio.run(self.plugin.execute_egpu_disconnect(
             release_display=True, trial_action='whole_dock_shutdown', trial_confirmed=True))
         self.assertTrue(result['power_requested'])
         self.assertTrue(result['ok'])
+        self.assertTrue(result['software_down'])
         self.assertFalse(result['safe_to_unplug'])
         args, kwargs = self.plugin._run_whole_dock_trial.call_args
         self.assertEqual(args[0], kwargs['power_request'].operation)
         self.assertEqual(kwargs['power_request'].action, 'shutdown')
+
+    def test_failed_power_submission_preserves_verified_software_down_status(self):
+        self.plugin._run_whole_dock_trial = Mock(return_value=NS(
+            code='dock_power.request_unverified', requested=False,
+            software_down=True))
+        result = asyncio.run(self.plugin.execute_egpu_disconnect(
+            release_display=True, trial_action='whole_dock_shutdown', trial_confirmed=True))
+        self.assertTrue(result['software_down'])
+        self.assertFalse(result['power_requested'])
+        self.assertFalse(result['ok'])
+        self.assertFalse(result['safe_to_unplug'])
 
     def test_new_boot_reconciliation_checks_live_evidence_before_archive(self):
         from contextlib import nullcontext
@@ -105,7 +118,8 @@ class MainDockPowerTests(unittest.TestCase):
             self.plugin._automatic_dock.reset_after_acknowledgement.assert_not_called()
 
     def test_shutdown_order_and_failures_retain_inhibition(self):
-        for failure in ('', 'bind', 'release', 'teardown', 'power', 'unknown_game', 'tv', 'unloading'):
+        for failure in ('', 'bind', 'release', 'teardown', 'power', 'unknown_game',
+                        'tv', 'unloading', 'lease_lost_portable', 'lease_lost_after_consume'):
             with self.subTest(failure=failure):
                 events, held = [], []
                 @contextmanager
@@ -119,11 +133,15 @@ class MainDockPowerTests(unittest.TestCase):
                 binding = NS(gpu_bdf='gpu', audio_bdf='audio', usb_bdf='usb',
                     router_id='router', binding='binding', generation='generation')
                 runtime, release, store, lease = Mock(), Mock(), Mock(), Mock()
+                inhibitor = {'active': True}
                 runtime.binding = binding
                 runtime._operation = 'owned'
                 def event(name, result=True):
                     self.assertTrue(held)
                     events.append(name)
+                    if ((failure == 'lease_lost_portable' and name == 'portable')
+                            or (failure == 'lease_lost_after_consume' and name == 'consume')):
+                        inhibitor['active'] = False
                     if failure == name:
                         raise ValueError('injected failure')
                     return result
@@ -145,6 +163,7 @@ class MainDockPowerTests(unittest.TestCase):
                 power = Mock()
                 power.request_poweroff.side_effect = lambda: event('power', NS(requested=True))
                 lease.acquire.return_value.active = True
+                lease.status.side_effect = lambda: NS(active=inhibitor['active'])
                 request = self.module.create_power_request('shutdown', 'a' * 32)
                 snapshot = NS(game_state=self.module.GameState.UNKNOWN if failure == 'unknown_game'
                     else self.module.GameState.IDLE)
@@ -165,15 +184,23 @@ class MainDockPowerTests(unittest.TestCase):
                     patch.object(self.module, 'build_live_disconnect_runtime', return_value=release):
                     drm.return_value.scan.return_value = [NS(boot_vga=False, pci_bdf='gpu')]
                     observer.return_value.observe.return_value.snapshot = snapshot
-                    if failure in ('bind', 'release', 'teardown'):
+                    if failure in ('bind', 'release', 'teardown', 'lease_lost_portable', 'unloading'):
                         with self.assertRaises(ValueError):
                             self.plugin._run_whole_dock_trial(request.operation, power_request=request)
                         power.request_poweroff.assert_not_called()
+                        if failure in ('lease_lost_portable', 'unloading'):
+                            release.execute.assert_not_called()
+                            runtime.execute_claimed.assert_not_called()
+                            store.consume.assert_not_called()
                     else:
                         result = self.plugin._run_whole_dock_trial(request.operation, power_request=request)
                         self.assertEqual(result.requested, not failure)
-                        if failure in ('unknown_game', 'tv', 'unloading'):
+                        self.assertIs(getattr(result, 'software_down', None), True)
+                        if failure in ('unknown_game', 'tv', 'lease_lost_after_consume'):
                             power.request_poweroff.assert_not_called()
+                        if failure == 'lease_lost_after_consume':
+                            store.consume.assert_called_once()
+                            self.assertIn('teardown', events)
                 lease.release.assert_not_called()
                 self.assertFalse(held)
                 if not failure:

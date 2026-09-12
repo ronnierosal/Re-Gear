@@ -42,6 +42,19 @@ ambiguous submission never causes an automatic retry or software reconnect.
 
 ## Preserving automatic connection after reboot
 
+The shutdown transaction rechecks its live sleep inhibitor before returning to
+Portable, after that transition, and before resource release and dock teardown.
+The same live check participates in runtime mutation admission and both power
+continuation preflights. A lost or unreadable inhibitor stops further work;
+successful initial acquisition alone is insufficient. This does not eliminate
+the need for platform validation of inhibitor lifetime during a real shutdown.
+
+The response preserves verified `software_down` separately from
+`power_requested`. A failed or uncertain power submission can therefore report
+software removal without reporting successful shutdown or physical unplug
+clearance. Removal is an observation from this transaction, not proof that the
+enclosure is powered off.
+
 The dock claim lives in persistent storage, so command acceptance does not clear
 it. A canceled shutdown in the same boot remains inhibited. On a later automatic
 connection attempt, the backend can archive an exact software-down claim only

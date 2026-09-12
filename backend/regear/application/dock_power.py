@@ -17,6 +17,7 @@ from collections.abc import Callable
 class DockPowerResult:
     code: str
     requested: bool = False
+    software_down: bool = False
 
 
 class DockPowerCoordinator:

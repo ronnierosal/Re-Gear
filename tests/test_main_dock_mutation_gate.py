@@ -58,6 +58,7 @@ class MainDockAdmissionTests(unittest.TestCase):
                 patch.object(self.module, "build_live_disconnect_runtime", return_value=release):
             drm.return_value.scan.return_value = [NS(boot_vga=False, pci_bdf="gpu")]
             inhibitor.return_value.acquire.return_value.active = True
+            inhibitor.return_value.status.return_value.active = True
             self.assertEqual(self.plugin._run_whole_dock_trial("trial"), "teardown")
         self.assertEqual(events, ["portable", "claim", "release", "verify", "teardown"])
         self.assertFalse(held)
