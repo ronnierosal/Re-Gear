@@ -1,5 +1,31 @@
 # Current state
 
+## 0.3.95 installed; automatic recovery blocked on device — 2026-09-12
+
+Fresh remote build-info readback confirms the user-installed version `0.3.95`
+and source `7c07aa22993809b6a1399f51682f6893b6e4b0e9`. Live Decky monitoring began
+at 22:25:58 UTC with transport absent, game idle, both automatic preferences
+true, a durable idle journal, and an existing `reauthorize_intent` whole-dock claim.
+The first dock-present sample at 22:26:55 entered `connection.waiting_for_pci`.
+At 22:27:06, recovery reported `automatic_recovery.admission_inhibited` with zero
+attempts; the readiness window subsequently timed out. A separate reviewed
+read-only snapshot confirmed only the internal GPU and active handheld display.
+
+This confirms retained disconnect/reconnect intent blocks the recovery callback
+in this trial. The ordinary gate refuses existing claims, and the connection-only
+exception admits only `claimed` or `release_intent`. It does not establish when
+this record was created or the original cause of missing PCI enumeration. No
+claim, preference or hardware state was changed by the monitoring operator.
+No software reconnect was attempted; this diagnostic build is not a hardware pass.
+
+Evidence in the workspace root: `whole-dock-disconnect/out/0395-live-1789251957927.jsonl`
+and `whole-dock-disconnect/out/0395-attached-readonly.json`. Next: independently
+review a guarded way to resolve prior transaction state after a verified physical
+reset. Preserve inhibition for unresolved teardown and prohibit powered software
+reconnect. Do not clear the record just to obtain a test pass. UI/hardware outcomes
+and baseline promotion remain separate gates.
+Documentation impact: Wiki
+
 ## 0.3.95 diagnostic test package built — 2026-09-12
 
 The requested focused candidate `Re-Gear-0.3.95.zip` is built from
@@ -1143,3 +1169,5 @@ hardware-tested behavior.
 7. Design the Phase 2 unified installed diagnostic report and deployment record.
 8. Resolve the P0/P1 hardware-coupling findings with narrow profile-driven seams
    and synthetic tests before claiming future-device extensibility.
+
+
