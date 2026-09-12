@@ -39,24 +39,31 @@ const byId = (tiles) => Object.fromEntries(tiles.map((tile) => [tile.id, tile]))
 test("an absent reading is unavailable and says Unknown, never blank", () => {
   const tiles = byId(m.egpuTiles(blank));
 
-  for (const id of ["egpu", "render", "display", "game"]) {
+  for (const id of ["link", "render", "display"]) {
     assert.equal(tiles[id].tone, "unavailable", id);
     assert.equal(tiles[id].value, "Unknown", id);
     assert.match(tiles[id].detail, /no observation available/, id);
     // A tile that renders nothing looks like one that is still loading.
     assert.notEqual(tiles[id].value, "");
   }
+  // The approved composition also carries two cards with no provider at all.
+  // They are stated, not omitted, and never blank.
+  for (const id of ["device", "dock"]) {
+    assert.equal(tiles[id].tone, "unavailable", id);
+    assert.match(tiles[id].value, /unknown|not available/i, id);
+    assert.notEqual(tiles[id].detail, "", id);
+  }
 });
 
 test("observed is not verified: an ungraded reading is never the active tone", () => {
   const tiles = byId(
-    m.egpuTiles({ ...blank, connection: observed("Link up"), game: verified("Idle") }),
+    m.egpuTiles({ ...blank, connection: observed("Link up"), renderGpu: verified("External GPU") }),
   );
 
-  assert.equal(tiles.egpu.tone, "quiet");
-  assert.match(tiles.egpu.detail, /observed, not verified/);
-  assert.equal(tiles.game.tone, "active");
-  assert.doesNotMatch(tiles.game.detail, /not verified/);
+  assert.equal(tiles.link.tone, "quiet");
+  assert.match(tiles.link.detail, /observed, not verified/);
+  assert.equal(tiles.render.tone, "active");
+  assert.doesNotMatch(tiles.render.detail, /not verified/);
 });
 
 test("evidenceTone maps the three grades and nothing else", () => {
@@ -84,8 +91,14 @@ test("the model name is detail only and never becomes the reading", () => {
     m.egpuTiles({ ...blank, connection: verified("Link up"), model: "RX 7600M XT" }),
   );
 
-  assert.equal(tiles.egpu.value, "Link up");
-  assert.match(tiles.egpu.detail, /RX 7600M XT/);
+  assert.equal(tiles.link.value, "Link up");
+  // The approved composition adds a "Detected device" card, which is exactly
+  // the place a model name would get promoted into an identity. The payload
+  // documents it as presentation only, so it stays in the detail there too and
+  // the reading itself remains Unknown.
+  assert.match(tiles.device.detail, /RX 7600M XT/);
+  assert.notEqual(tiles.device.value, "RX 7600M XT");
+  assert.equal(tiles.device.tone, "unavailable");
 });
 
 test("Safe Disconnect is always warning and never claims a cable may be pulled", () => {
@@ -121,7 +134,8 @@ test("every tile carries an id the shell already knows how to focus", () => {
   // silently loses both.
   const ids = m.egpuTiles(blank).map((tile) => tile.id);
 
-  assert.deepEqual(ids, ["egpu", "render", "display", "game", "disconnect"]);
+  // Approved identity, docs/design/command-center-runtime-handoff.md.
+  assert.deepEqual(ids, ["device", "dock", "display", "render", "link", "disconnect"]);
 });
 
 const perfState = (over = {}) => ({
@@ -131,8 +145,8 @@ const perfState = (over = {}) => ({
 });
 const fps = { available: false, value: { text: "Unavailable", known: false },
   reason: "No verified frame-rate provider on this device." };
-const perf = (over = {}, manual = { text: "18 W", known: true }, display = unknown) =>
-  byId(m.performanceTiles({ state: perfState(over), manualWatts: manual, fps, display }));
+const perf = (over = {}, manual = { text: "18 W", known: true }) =>
+  byId(m.performanceTiles({ state: perfState(over), manualWatts: manual, fps }));
 
 test("the FPS tile is always present and always unavailable", () => {
   // fpsTile's own reason: a grid whose shape depends on live evidence moves a
@@ -181,18 +195,24 @@ const controller = (over = {}) => ({
 
 test("controller tone follows the payload's precision, not just presence", () => {
   const exact = byId(m.controllerTiles(controller()));
-  assert.equal(exact.controller.tone, "active");
+  assert.equal(exact.builtin.tone, "active");
+  // Player 1 never takes a tone from controller presence, at any precision:
+  // presence is not player order, and player order has no provider.
+  assert.equal(exact.controller.tone, "unavailable");
 
   // A partial reading is known but not exact; it must not use the tone a
   // player reads as "this is true right now".
   const partial = byId(m.controllerTiles(controller({
     precision: "partial", precisionNote: "Only one source reported",
   })));
-  assert.equal(partial.controller.tone, "quiet");
+  // The approved "controller" card is Player 1, which has no provider, so the
+  // precision-driven tone now belongs to the built-in reading. The precision
+  // note still reaches the Player 1 card's detail.
+  assert.equal(partial.builtin.tone, "quiet");
   assert.match(partial.controller.detail, /Only one source reported/);
 
   const none = byId(m.controllerTiles(controller({ precision: "unknown" })));
-  assert.equal(none.controller.tone, "unavailable");
+  assert.equal(none.builtin.tone, "unavailable");
 });
 
 test("no controller reading shows the reason rather than a blank tile", () => {
@@ -203,7 +223,7 @@ test("no controller reading shows the reason rather than a blank tile", () => {
     precision: "unknown",
   })));
 
-  assert.equal(tiles.controller.value, "Unknown");
+  assert.match(tiles.controller.value, /unknown|not available/i);
   assert.match(tiles.controller.detail, /Peripheral status unavailable/);
   assert.equal(tiles.builtin.tone, "unavailable");
 });
@@ -219,9 +239,10 @@ test("controller priority is never rendered as a working control", () => {
 });
 
 test("the new tabs use ids the shell already knows how to focus", () => {
+  // Approved identity, docs/design/command-center-runtime-handoff.md.
   assert.deepEqual(m.performanceTiles({
-    state: perfState(), manualWatts: { text: "18 W", known: true }, fps, display: unknown,
-  }).map(t => t.id), ["manual", "auto", "fps", "display"]);
+    state: perfState(), manualWatts: { text: "18 W", known: true }, fps,
+  }).map(t => t.id), ["profile", "fps", "manual", "auto", "display", "refresh"]);
   assert.deepEqual(m.controllerTiles(controller()).map(t => t.id),
-    ["controller", "builtin", "priority"]);
+    ["controller", "battery", "builtin", "priority", "tv-controller", "controller-settings"]);
 });

@@ -117,11 +117,21 @@ test("every tab is supplied, so the shell can never fall back to sample data", (
 test("no supplied tile ever carries a confident sample string", () => {
   // These are the fabrications the prototype shipped; none may reappear.
   for (const readings of [full(), { fresh: false }]) {
-    const rendered = JSON.stringify(buildTiles(readings));
-    assert.doesNotMatch(rendered, /RX 7600M XT/i, "invented GPU model");
-    assert.doesNotMatch(rendered, /\bP1\b|Player 1/i, "invented player order");
-    assert.doesNotMatch(rendered, /1080p|\d+\s*Hz/i, "invented resolution or refresh rate");
-    assert.doesNotMatch(rendered, /sample/i, "sample wording");
+    const view = buildTiles(readings);
+    // Check what the tiles REPORT, not what the approved composition calls
+    // them. "Player 1" is an approved card title whose value is "Not
+    // available"; naming an absent capability is the opposite of inventing a
+    // reading for it. Matching on titles would force the mapper to rename an
+    // approved card to pass, which is the tail wagging the dog.
+    const reported = Object.values(view).flat()
+      .map((tile) => `${tile.value} ${tile.detail}`).join(" | ");
+    assert.doesNotMatch(reported, /\bP1\b/i, "invented player order");
+    assert.doesNotMatch(reported, /1080p|\d+\s*Hz/i, "invented resolution or refresh rate");
+    assert.doesNotMatch(reported, /sample/i, "sample wording");
+    // A model name may appear as detail, but never as a reading.
+    for (const tile of Object.values(view).flat()) {
+      assert.doesNotMatch(tile.value, /RX 7600M XT/i, `${tile.id} reports a model name`);
+    }
   }
 });
 
@@ -146,8 +156,10 @@ test("a stale or failed read is Unknown even though the payload survives", () =>
   // passed in rather than inferred from the payload being non-null.
   const stale = buildTiles({ ...full(), fresh: false });
   assert.equal(stale.egpu.every((tile) => tile.value === "Unknown"), true);
+  // Index 0 is now "device", which has no provider and reads Unknown even
+  // when live. Assert against the card that does carry a reading.
   const live = buildTiles(full());
-  assert.notEqual(live.egpu[0].value, "Unknown");
+  assert.notEqual(live.egpu.find((tile) => tile.id === "link").value, "Unknown");
 });
 
 test("watts are the configured limit and unknown watts never become a number", () => {
@@ -165,8 +177,11 @@ test("the quick tab reuses mapped tiles rather than deriving a second opinion", 
   const quickAuto = view.quick.find((tile) => tile.id === "auto");
   const perfAuto = view.performance.find((tile) => tile.id === "auto");
   assert.equal(quickAuto.value, perfAuto.value);
+  // Quick calls it "egpu" and the eGPU tab calls it "link" -- two approved
+  // identities for one reading. The values must still agree, or two tabs
+  // would report different things about the same observation.
   const quickConnection = view.quick.find((tile) => tile.id === "egpu");
-  const egpuConnection = view.egpu.find((tile) => tile.id === "egpu");
+  const egpuConnection = view.egpu.find((tile) => tile.id === "link");
   assert.equal(quickConnection.value, egpuConnection.value);
 });
 
@@ -174,8 +189,13 @@ test("settings states unsupported entries as unavailable rather than dropping th
   const settings = buildTiles(full()).settings;
   assert.ok(settings.length > 0);
   for (const tile of settings) assert.equal(tile.tone, "unavailable");
-  // The real shortcut control is supplied natively, not as a tile.
-  assert.equal(settings.some((tile) => /shortcut/i.test(tile.title)), false);
+  // The approved composition carries a shortcut card, but the real control
+  // is still the native adapter row. The card must say where the control is
+  // rather than look like a second, dead one.
+  const shortcut = settings.find((tile) => tile.id === "shortcut");
+  assert.ok(shortcut, "the approved shortcut card is present");
+  assert.equal(shortcut.tone, "unavailable");
+  assert.match(shortcut.detail, /below|not from this card/i);
 });
 
 // ------------------------------------------------- publisher and stable identity
@@ -313,7 +333,7 @@ test("omitted freshness fails closed rather than accepting the payload", () => {
     performance: full().performance, manualWatts: 15 });
   assert.equal(omitted.egpu.every((tile) => tile.value === "Unknown" || tile.id === "disconnect"), true);
   const explicit = buildTiles(full());
-  assert.notEqual(explicit.egpu[0].value, "Unknown");
+  assert.notEqual(explicit.egpu.find((tile) => tile.id === "link").value, "Unknown");
 });
 
 // ------------------------------------------------------------ observation age
