@@ -203,7 +203,7 @@ class SteamOsDiscovery:
         sleep_guard = self._build_sleep_guard(g1, self._sleep_guard_status())
 
         gpu_rows = self._build_gpus(cards, gamescope_scan, g1)
-        display_rows = self._build_displays(cards, gamescope_scan)
+        display_rows = self._build_displays(cards, gamescope_scan, gpu_rows)
         gamescope = self._build_gamescope(gamescope_scan, gpu_rows)
         blockers = self._blockers(
             host,
@@ -359,8 +359,33 @@ class SteamOsDiscovery:
 
     @staticmethod
     def _build_displays(
-        cards: tuple[DrmCardRecord, ...], gamescope_scan: GamescopeScan
+        cards: tuple[DrmCardRecord, ...], gamescope_scan: GamescopeScan,
+        gpus: tuple[GpuObservation, ...],
     ) -> tuple[DisplayObservation, ...]:
+        # _build_gpus preserves this scan's card order. Card names are used
+        # only to corroborate membership, never as persistent GPU identity.
+        owners: dict[int, str] = {}
+        for card, gpu in zip(cards, gpus, strict=True):
+            if (
+                gpu.confidence is Confidence.VERIFIED
+                and gpu.role is not GpuRole.UNKNOWN
+                and gpu.present
+                and gpu.stable_id
+                and (
+                    gpu.role is not GpuRole.INTERNAL
+                    or sum(item.role is GpuRole.INTERNAL for item in gpus) == 1
+                )
+                and card.pci_bdf
+                and sum(item.name == card.name for item in cards) == 1
+                and sum(item.pci_bdf == card.pci_bdf for item in cards) == 1
+                and sum(item.stable_id == gpu.stable_id for item in gpus) == 1
+            ):
+                for connector in card.connectors:
+                    if (
+                        connector.card == card.name
+                        and sum(item.name == connector.name for item in card.connectors) == 1
+                    ):
+                        owners[id(connector)] = gpu.stable_id
         connectors = tuple(connector for card in cards for connector in card.connectors)
         active_connector: DrmConnectorRecord | None = None
         if gamescope_scan.ok and gamescope_scan.process:
@@ -399,6 +424,10 @@ class SteamOsDiscovery:
                     confidence=confidence,
                     mode_committed=committed,
                     active_confidence=active_confidence,
+                    owning_gpu_stable_id=owners.get(id(connector), ""),
+                    owning_gpu_confidence=(
+                        Confidence.VERIFIED if id(connector) in owners else Confidence.UNKNOWN
+                    ),
                     evidence=(
                         Evidence("drm-sysfs", confidence, "Connector state was observed"),
                         Evidence(
