@@ -75,17 +75,28 @@ Before enabling the existing presenter port, the remaining native interface must
    existing engine handles the natural-exit promotion. Failure retains a
    categorical action-required state and never claims cable-removal clearance.
 
-The preferred next native locator experiment is now concrete: pinned Gamescope
+The native read-only locator is implemented in `gamescope_stream_export.py`.
+It composes the existing performance transport without modifying it, permits
+only `/run/user/<uid>/gamescope-N` or `wayland-N` socket paths, checks peer
+PID/UID and process birth before and after the bounded exchange, and accepts
+exactly one version-1 export advertisement after a completed roundtrip. Missing
+or changed globals, wrong peers, stale process identity, duplicate or malformed
+events, unavailable node IDs and exceeded budgets refuse. Its only outgoing
+requests are registry discovery, synchronization and binding the private export
+interface; closing the owned connection retires its resources.
+
+The protocol source is pinned Gamescope
 `05949f8149bb5d16b006624d319a76e2433caf4c`
 [exports its own stream node at bind time](https://github.com/ValveSoftware/gamescope/blob/05949f8149bb5d16b006624d319a76e2433caf4c/src/wlserver.cpp#L1181-L1193)
 through [gamescope_pipewire version 1](https://github.com/ValveSoftware/gamescope/blob/05949f8149bb5d16b006624d319a76e2433caf4c/protocol/gamescope-pipewire.xml).
-An experimental read-only client could authenticate the Unix-socket peer against
-the exact Gamescope PID/UID/birth observation, request that export, and cross-check
-its node/serial/server continuity against the read-only candidate. This protocol
-is explicitly private upstream, so installed-version and extension availability
-must be checked before using it. The client is not implemented here. Even a
-verified export would prove neither the original game's render GPU nor ownership
-of an eGPU DRM lease; those remain blockers to a native presenter implementation.
+The reader authenticates the Unix-socket peer against the exact Gamescope
+PID/UID/birth observation. Cross-checking its export with PipeWire node/serial/
+server continuity remains an integration gate. This protocol is explicitly
+private upstream; the reader refuses absent or non-v1 advertisements, while
+installed-build compatibility still requires target evidence before enabling a
+presenter. The code has offline byte-fixture validation only. Even an observed
+export proves neither the original game's render GPU nor ownership of an eGPU
+DRM lease; those remain blockers to a native presenter implementation.
 
 Runtime composition belongs under the existing presentation owner's serialization
 and trusted setting source. That owner must provide authenticated session-user

@@ -46,7 +46,38 @@ this increment. The documented credential and lingering-node semantics inform
 the parser's limits: a matching node/client join remains a candidate, not proof
 of stream ownership, rendering or TV output. Research toward Valve's private
 Gamescope stream export is separately linked in `docs/DOCKED_IGPU_LIVE_TRIAL.md`;
-no implementation of that export protocol is included in this increment.
+the export reader is credited below.
+
+## Gamescope PipeWire export protocol
+
+The original read-only Python export reader implements the private
+`gamescope_pipewire` v1 protocol using the existing Re-Gear Wayland transport.
+Protocol names, signatures and opcode ordering derive from Valve's description
+at Gamescope revision `05949f8149bb5d16b006624d319a76e2433caf4c`:
+https://github.com/ValveSoftware/gamescope/blob/05949f8149bb5d16b006624d319a76e2433caf4c/protocol/gamescope-pipewire.xml
+
+The protocol description carries this notice:
+
+Copyright © 2021 Valve Corporation
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice (including the next
+paragraph) shall be included in all copies or substantial portions of the
+Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.
 
 ## Gamescope performance protocol
 
