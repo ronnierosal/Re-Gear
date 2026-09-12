@@ -20,6 +20,8 @@ if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
 from regear.adapters.steamos.discovery import SteamOsDiscovery  # noqa: E402
+from regear.application.automatic_link_recovery import AutomaticLinkRecovery  # noqa: E402
+from regear.profiles.registry import resolve_runtime_profiles  # noqa: E402
 from regear.adapters.steamos.topology_wakeup import LinuxTopologyWakeup  # noqa: E402
 from regear.adapters.steamos.tdp_provider import SteamOsManagerTdpProvider  # noqa: E402
 from regear.adapters.steamos.tdp_conflicts import KnownTdpControllerScan  # noqa: E402
@@ -132,6 +134,15 @@ from regear.application.connection_readiness import (  # noqa: E402
     ConnectionReadinessLifecycle,
     ConnectionReadinessObservation,
     ConnectionReadinessStage,
+)
+from regear.application.link_recovery import (  # noqa: E402
+    LinkRecoveryService,
+    LinkRecoveryStrategy,
+    strategy_is_implemented,
+)
+from regear.domain.link_training_recovery import (  # noqa: E402
+    LinkRecoveryAvailability,
+    assess_link_recovery,
 )
 from regear.application.automatic_dock import (  # noqa: E402
     AutomaticDockCoordinator,
@@ -359,6 +370,11 @@ class Plugin:
         self._last_completion_code = ""
         self._last_audio_readiness_code = ""
         self._automatic_dock = AutomaticDockCoordinator()
+        # One instance for the life of the plugin, deliberately. Its latch is
+        # the whole point, and a service rebuilt per call would arrive with a
+        # fresh latch every time and offer the same failed recovery forever.
+        self._link_recovery: LinkRecoveryService | None = None
+        self._last_readiness_observation: ConnectionReadinessObservation | None = None
         self._native_recovery_task: asyncio.Task[None] | None = None
         self._native_recovery = NativePortableRecoverySupervisor()
         self._last_native_recovery_code = ""
@@ -897,6 +913,7 @@ class Plugin:
                 "enabled": enabled,
                 "stage": status.stage.value,
                 "code": status.code if enabled else "automatic_dock.disabled",
+                "recovery": await self._automatic_link_recovery_status(),
             }
         except Exception:
             return {
@@ -907,17 +924,21 @@ class Plugin:
             }
 
     async def set_automatic_dock_enabled(
-        self, enabled: bool, user_confirmed: bool
+        self, enabled: bool, user_confirmed: bool, recovery_enabled: bool | None = None
     ) -> dict[str, object]:
         """Persist deliberate player consent; disabling is always permitted."""
         if type(enabled) is not bool or type(user_confirmed) is not bool:
             return self._automatic_dock_failure("automatic_dock.request_invalid")
-        if enabled and not user_confirmed:
+        if recovery_enabled is not None and type(recovery_enabled) is not bool:
+            return self._automatic_dock_failure("automatic_dock.request_invalid")
+        if (enabled or recovery_enabled is True) and not user_confirmed:
             return self._automatic_dock_failure(
                 "automatic_dock.confirmation_required",
                 stage=AutomaticDockStage.DISABLED,
             )
         try:
+            if recovery_enabled is not None:
+                await asyncio.to_thread(self._automatic_recovery_preferences().save, recovery_enabled)
             await asyncio.to_thread(self._automatic_dock_preferences().save, enabled)
         except Exception:
             return self._automatic_dock_failure(
@@ -941,6 +962,262 @@ class Plugin:
                 else AutomaticDockStage.DISABLED.value
             ),
             "code": code,
+        }
+
+    def _automatic_recovery_preferences(self):
+        store = getattr(self, "_automatic_recovery_store", None)
+        if store is None:
+            store = AutomaticDockPreferenceStore(RootOwnedRuntimeState().ensure(), recovery=True)
+            self._automatic_recovery_store = store
+        return store
+
+    async def _automatic_link_recovery_status(self):
+        try:
+            enabled = await asyncio.to_thread(self._automatic_recovery_preferences().load)
+        except Exception:
+            return {"schema_version": 1, "enabled": False, "code": "automatic_recovery.preference_unavailable"}
+        policy = getattr(self, "_automatic_link_recovery", None)
+        return {"schema_version": 1, "enabled": enabled, "attempts": policy.attempts if policy else 0,
+                "max_attempts": 2, "delay_seconds": 10, "code": "automatic_recovery.enabled" if enabled else "automatic_recovery.disabled"}
+
+    async def _maybe_automatic_link_recovery(self, current, enabled):
+        policy = getattr(self, "_automatic_link_recovery", None)
+        if policy is None:
+            policy = self._automatic_link_recovery = AutomaticLinkRecovery()
+        try:
+            consent = enabled and await asyncio.to_thread(self._automatic_recovery_preferences().load)
+        except Exception:
+            consent = False
+        self._automatic_recovery_consent = consent
+
+        def eligible(snapshot):
+            observation = getattr(self, "_last_readiness_observation", None)
+            if observation is None:
+                return False
+            idle = (consent and snapshot.game_state is GameState.IDLE
+                    and snapshot.gamescope.running is True
+                    and len(snapshot.gpus) == 1
+                    and snapshot.gpus[0].role is GpuRole.INTERNAL
+                    and snapshot.gpus[0].present is True
+                    and snapshot.gpus[0].confidence is Confidence.VERIFIED
+                    and resolve_runtime_profiles(snapshot).exact_host)
+            return policy.observe(now=time.monotonic(),
+                absent=observation.transport_absent_verified,
+                present=observation.transport_present, identity=observation.transport_identity,
+                pci_complete=observation.pci_complete or any(
+                    gpu.present and gpu.role is not GpuRole.INTERNAL for gpu in snapshot.gpus),
+                enabled=consent and not self._unloading, idle=idle)
+
+        if not eligible(current.snapshot):
+            return False
+        resolution = await asyncio.to_thread(lambda: resolve_gamescope_user(GamescopeDiscovery().scan()))
+        if not resolution.ok or resolution.context is None:
+            return False
+        # Refresh after async session resolution: no cached idle or attach permission.
+        current = await asyncio.to_thread(SnapshotTransitionObservationAdapter(self._discovery).observe)
+        await self._observe_connection_readiness(current)
+        consent = (await asyncio.to_thread(self._automatic_dock_preferences().load)
+                   and await asyncio.to_thread(self._automatic_recovery_preferences().load))
+        journal = await asyncio.to_thread(self._transition_journal_service().status)
+        if not journal.durable or journal.owner.value != "none" or not eligible(current.snapshot):
+            return False
+        policy.begin()
+        self._append_journey_event(severity="info", code="automatic_recovery.started",
+            component="connection", stage="automatic_recovery", details={"attempt": policy.attempts})
+        try:
+            outcome = await self._run_background_operation(
+                lambda: self._link_recovery_service().recover(resolution.context,
+                    strategy=LinkRecoveryStrategy.SESSION_RESTART, automatic=True))
+            if outcome.ok:
+                policy.completed = True
+            self._append_journey_event(severity="info" if outcome.ok else "warning", code=outcome.code,
+                component="connection", stage="automatic_recovery",
+                details={"attempt": policy.attempts, "seconds": outcome.seconds})
+        finally:
+            policy.finish(time.monotonic())
+        return True
+
+    async def get_link_recovery_status(
+        self, _request: object = None
+    ) -> dict[str, object]:
+        """Say whether bouncing the session would be worth offering. Changes nothing.
+
+        Safe to poll. Answers from the reading the readiness loop already took,
+        so asking never probes hardware and never disagrees with the panel.
+
+        Also reports which mechanisms exist and which are built, because the
+        mechanism is an open question: the link is observed about a second
+        after a new session starts, and nothing has isolated why.
+        """
+        service = self._link_recovery_service()
+        strategies = [
+            {
+                "strategy": candidate.value,
+                "implemented": strategy_is_implemented(candidate),
+            }
+            for candidate in LinkRecoveryStrategy
+        ]
+        observation = self._last_readiness_observation
+        if observation is None:
+            return {
+                "schema_version": 1,
+                "availability": LinkRecoveryAvailability.UNAVAILABLE.value,
+                "offered": False,
+                "code": "link_recovery.no_observation",
+                "default_strategy": service.default_strategy.value,
+                "strategies": strategies,
+            }
+        assessment = service.assess(
+            readiness_exhausted=(
+                self._connection_readiness.status().stage
+                is ConnectionReadinessStage.TIMED_OUT
+            ),
+            transport_present=observation.transport_present,
+            pci_complete=observation.pci_complete,
+            game_state=observation.game_state,
+        )
+        return {
+            "schema_version": 1,
+            "availability": assessment.availability.value,
+            "offered": assessment.offered,
+            "code": assessment.code,
+            "default_strategy": service.default_strategy.value,
+            "strategies": strategies,
+        }
+
+    async def execute_link_recovery(
+        self, confirm: bool = False, strategy: str = ""
+    ) -> dict[str, object]:
+        """Bounce the session by the chosen mechanism and watch for the link.
+
+        This closes whatever is on screen. It is never automatic and never
+        implied: `confirm` has to be exactly True, the same shape the automatic
+        dock opt-in uses, so no caller reaches it by passing a truthy default.
+
+        `strategy` picks which mechanism to try and defaults to the plain
+        session bounce. It exists because the mechanism is not settled -- the
+        link is observed about a second after a new session starts and nobody
+        has isolated why -- so the rungs must be comparable on hardware without
+        the code being rewritten between them. A name that is not a known
+        strategy is refused, and so is a known one that is not built.
+
+        The offer is re-checked here against a fresh reading rather than the
+        one the panel rendered. A player can start a game between seeing the
+        button and pressing it, and that has to refuse.
+        """
+        if confirm is not True:
+            return self._link_recovery_failure("link_recovery.confirmation_required")
+        try:
+            chosen = (
+                self._link_recovery_service().default_strategy
+                if strategy == ""
+                else LinkRecoveryStrategy(strategy)
+            )
+        except ValueError:
+            return self._link_recovery_failure("link_recovery.strategy_unknown")
+        if not strategy_is_implemented(chosen):
+            return self._link_recovery_failure(
+                "link_recovery.strategy_not_implemented", strategy=chosen.value
+            )
+        try:
+            observations = SnapshotTransitionObservationAdapter(self._discovery)
+            current = await asyncio.to_thread(observations.observe)
+            connection = await self._observe_connection_readiness(current)
+        except Exception:
+            return self._link_recovery_failure("link_recovery.observation_unavailable")
+        observation = self._last_readiness_observation
+        if observation is None:
+            return self._link_recovery_failure("link_recovery.no_observation")
+        service = self._link_recovery_service()
+        assessment = service.assess(
+            readiness_exhausted=(
+                connection.stage is ConnectionReadinessStage.TIMED_OUT
+            ),
+            transport_present=observation.transport_present,
+            pci_complete=observation.pci_complete,
+            game_state=observation.game_state,
+        )
+        if not assessment.offered:
+            return self._link_recovery_failure(
+                assessment.code, strategy=chosen.value
+            )
+        resolution = await asyncio.to_thread(
+            lambda: resolve_gamescope_user(GamescopeDiscovery().scan())
+        )
+        if not resolution.ok or resolution.context is None:
+            return self._link_recovery_failure(
+                "link_recovery.session_unavailable", strategy=chosen.value
+            )
+        self._append_journey_event(
+            severity="info",
+            code="link_recovery.started",
+            component="connection",
+            stage="link_recovery",
+            details={"strategy": chosen.value},
+        )
+        outcome = await asyncio.to_thread(
+            lambda: service.recover(
+                resolution.context, strategy=chosen,
+                preflight=lambda: self._manual_link_recovery_preflight(
+                    resolution.context, observation.transport_identity,
+                ),
+            )
+        )
+        self._append_journey_event(
+            severity="info" if outcome.ok else "warning",
+            code=outcome.code,
+            component="connection",
+            stage="link_recovery",
+            details={
+                "seconds": outcome.seconds,
+                "session_restored": outcome.session_restored,
+                # Recorded with every number: a timing from one rung means
+                # nothing next to a timing from another.
+                "strategy": outcome.strategy,
+            },
+        )
+        return {
+            "schema_version": 1,
+            "ok": outcome.ok,
+            "code": outcome.code,
+            "seconds": outcome.seconds,
+            "session_restored": outcome.session_restored,
+            "strategy": outcome.strategy,
+        }
+
+    def _manual_link_recovery_preflight(self, expected_user, transport_identity):
+        """Fresh authority inside the service reservation, before any restart."""
+        resolution = resolve_gamescope_user(GamescopeDiscovery().scan())
+        if not resolution.ok or resolution.context != expected_user:
+            return "link_recovery.session_unavailable"
+        topology = self._connection_topology.observe()
+        current = SnapshotTransitionObservationAdapter(self._discovery).observe()
+        journal = self._transition_journal_service().status()
+        if not journal.durable or journal.owner.value != "none":
+            return "link_recovery.transition_busy"
+        if (not transport_identity or
+                topology.transport_identity != transport_identity):
+            return "link_recovery.transport_changed"
+        assessment = assess_link_recovery(
+            readiness_exhausted=(self._connection_readiness.status().stage
+                                is ConnectionReadinessStage.TIMED_OUT),
+            transport_present=topology.transport_present,
+            pci_complete=topology.pci_complete,
+            game_state=current.snapshot.game_state,
+            # This call owns the reservation; another recovery cannot enter.
+            attempted=False,
+        )
+        return "" if assessment.offered else assessment.code
+
+    @staticmethod
+    def _link_recovery_failure(code: str, *, strategy: str = "") -> dict[str, object]:
+        return {
+            "schema_version": 1,
+            "ok": False,
+            "code": code,
+            "seconds": None,
+            "session_restored": True,
+            "strategy": strategy,
         }
 
     async def get_diagnostic_logging_status(self, _request: object = None) -> dict[str, object]:
@@ -2306,6 +2583,8 @@ class Plugin:
                 )
                 current = await asyncio.to_thread(observations.observe)
                 connection = await self._observe_connection_readiness(current)
+                if await self._maybe_automatic_link_recovery(current, enabled):
+                    continue  # recovery changes the session; obtain new observations
                 if connection.code != self._last_connection_readiness_code:
                     self._last_connection_readiness_code = connection.code
                     self._record_connection_wake("readiness_observation")
@@ -2465,6 +2744,8 @@ class Plugin:
                     component="presentation",
                     stage="automatic_dock",
                 )
+            if getattr(self, "_automatic_recovery_consent", False):
+                delay_seconds = min(delay_seconds, 1.0)
             await self._wait_for_topology(delay_seconds)
 
     async def _observe_connection_readiness(self, current):
@@ -2506,6 +2787,12 @@ class Plugin:
                 ),
                 hdmi_ready=topology.hdmi_ready,
                 audio_ready=audio_ready,
+                session_available=(
+                    current.snapshot.gamescope.running
+                    if current.snapshot.gamescope.confidence is Confidence.VERIFIED
+                    and type(current.snapshot.gamescope.running) is bool
+                    else None
+                ),
                 session_ready=bool(
                     session_ready
                     and current.snapshot.gamescope.running is True
@@ -2522,6 +2809,12 @@ class Plugin:
             "idle": observation.game_state is GameState.IDLE,
         }
         self._connection_checks_at = time.monotonic()
+        # Kept so the link-recovery RPCs can answer from the reading the loop
+        # already took. Re-observing inside an RPC would probe hardware on a
+        # pollable call and could disagree with what the panel is showing.
+        self._last_readiness_observation = observation
+        if observation.transport_present or observation.transport_absent_verified:
+            self._link_recovery_service().observe_transport(observation.transport_present)
         return self._connection_readiness.update(observation)
 
     def _record_connection_wake(self, stage: str) -> None:
@@ -2821,7 +3114,7 @@ class Plugin:
 
     def _support_versions(self) -> dict[str, str]:
         return {
-            "regear": "0.3.79",
+            "regear": "0.3.82",
             "decky": str(getattr(decky, "DECKY_VERSION", "unknown")),
             "steamos": self._version_info.steamos,
             "kernel": self._version_info.kernel,
@@ -2965,6 +3258,22 @@ class Plugin:
             stage="restore_portable" if target is PlacementState.PORTABLE else "select_tv",
             details={"target": target.value, "succeeded": result.succeeded},
         )
+
+    def _link_recovery_service(self) -> LinkRecoveryService:
+        """The one instance, built once. See the note in `__init__`.
+
+        The PCI reading is taken live rather than from the loop's cache: this
+        is the callable polled *while the recovery is running*, when the whole
+        question is whether the slot has seen the card since the bounce.
+        """
+        if self._link_recovery is None:
+            self._link_recovery = LinkRecoveryService(
+                UserServiceCommandRunner(),
+                lambda: bool(self._connection_topology.observe().pci_complete),
+                now=time.monotonic,
+                sleep=time.sleep,
+            )
+        return self._link_recovery
 
     def _safe_disconnect_shutdown_service(self) -> SafeDisconnectShutdownService:
         return SafeDisconnectShutdownService(

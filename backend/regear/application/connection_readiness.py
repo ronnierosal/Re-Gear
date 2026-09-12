@@ -57,6 +57,8 @@ class ConnectionReadinessObservation:
     audio_ready: bool = False
     session_ready: bool = False
     game_state: GameState = GameState.UNKNOWN
+    # None preserves older callers that do not observe session availability.
+    session_available: bool | None = None
 
     def __post_init__(self) -> None:
         if not self.sample_id:
@@ -221,6 +223,11 @@ class ConnectionReadinessLifecycle:
         elif not observation.link_up:
             self._status = self._make_status(
                 ConnectionReadinessStage.WAITING_FOR_LINK, "connection.waiting_for_link", now
+            )
+        elif observation.session_available is False:
+            self._status = self._make_status(
+                ConnectionReadinessStage.WAITING_FOR_SESSION,
+                "connection.session_unavailable", now,
             )
         elif (
             not observation.session_ready
