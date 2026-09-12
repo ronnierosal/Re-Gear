@@ -108,3 +108,7 @@ this backend-only change.
 The read-only `get_egpu_disconnect_status("power_capabilities")` backend request exposes this contract without
 initializing a hardware runtime. It is available for later UI wiring; its
 capability response cannot replace the execution preflight.
+
+The [inhibitor handoff proposal](dock_power_inhibitor_handoff.md) records the
+remaining two-lease cancellation, crash-continuity and wake contracts, with
+fixture coverage of the existing seams. It does not enable cable-connected sleep.
