@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { CommandActionRow, CommandDetailSurface, CommandNotice, CommandSection, CommandStatusRow, CommandValue, type DetailTone } from "./detail-ui";
 import { CommandProgressSteps } from "./control-ui";
+import { PopupDetailsToggle, PopupStatusList, PopupStatusRow, ReGearPopup } from "./popup-ui";
 
 export type EgpuUiValue = {
   value: string;
@@ -15,6 +16,15 @@ export type EgpuLifecyclePhase = {
   steps?: readonly string[];
   activeStep?: number;
 };
+
+export type EgpuPopupStep = {
+  label: string;
+  value: string;
+  tone?: DetailTone;
+  active?: boolean;
+};
+
+export type EgpuPopupMode = "progress" | "delayed" | "failed" | "success";
 
 /**
  * Presentation-only eGPU module surface.
@@ -78,11 +88,7 @@ export function EgpuControlDetail({
   </CommandDetailSurface>;
 }
 
-/**
- * Compact lifecycle presentation for connect / dock / return-to-handheld popups.
- * Runtime supplies the exact state machine phase and steps; the UI never infers
- * progress or fabricates percentages.
- */
+/** Compact lifecycle presentation for connect / dock / return-to-handheld detail views. */
 export function EgpuLifecycleDetail({
   title,
   elapsed,
@@ -114,4 +120,48 @@ export function EgpuLifecycleDetail({
     {details && <CommandSection title="Connection details">{details}</CommandSection>}
     {actions && <CommandActionRow>{actions}</CommandActionRow>}
   </CommandDetailSurface>;
+}
+
+/**
+ * Fast-path popup for the normal 7–10 second eGPU connection flow.
+ *
+ * Runtime owns when state becomes delayed/failed/retryable. The UI never derives
+ * Retry from elapsed time and never restarts a connection on its own.
+ */
+export function EgpuConnectionPopup({
+  mode,
+  elapsed,
+  status,
+  steps,
+  details,
+  hideAction,
+  detailsAction,
+  retryAction,
+  keepWaitingAction,
+}: {
+  mode: EgpuPopupMode;
+  elapsed?: string;
+  status: string;
+  steps: readonly EgpuPopupStep[];
+  details?: ReactNode;
+  hideAction?: ReactNode;
+  detailsAction?: ReactNode;
+  retryAction?: ReactNode;
+  keepWaitingAction?: ReactNode;
+}) {
+  const tone: DetailTone = mode === "success" ? "success" : mode === "failed" ? "error" : mode === "delayed" ? "warning" : "active";
+  const title = mode === "success" ? "eGPU connected" : mode === "failed" ? "eGPU connection failed" : "Connecting eGPU";
+  const footer = <>{hideAction}{detailsAction}{mode === "failed" ? retryAction : null}{mode === "delayed" ? keepWaitingAction : null}</>;
+
+  return <ReGearPopup title={title} status={status} tone={tone} elapsed={elapsed} footer={footer}>
+    <PopupStatusList>
+      {steps.slice(0, 4).map((step) => <PopupStatusRow key={step.label} label={step.label} value={step.value} tone={step.tone} active={step.active}/>)}
+    </PopupStatusList>
+
+    {mode === "delayed" && <CommandNotice tone="warning" title="Taking longer than usual">Re-Gear is still waiting on the runtime state. Keep the eGPU connected. Retry is intentionally unavailable until runtime explicitly reports a retry-safe failure.</CommandNotice>}
+    {mode === "failed" && <CommandNotice tone="error" title="Connection stopped">Retry appears only when the runtime has explicitly classified the operation as safe to retry.</CommandNotice>}
+    {mode === "success" && <CommandNotice tone="success" title="TV Docked">Connection is complete. The host may dismiss this popup after the short success confirmation.</CommandNotice>}
+
+    {details && <PopupDetailsToggle>{details}</PopupDetailsToggle>}
+  </ReGearPopup>;
 }
