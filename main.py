@@ -1673,6 +1673,8 @@ class Plugin:
         Reconciliation and ordinary admission are separate: any intervening new
         claim causes ordinary admission to refuse. No recovery budget is reset.
         """
+        from regear.application.automatic_dock import ShutdownReconcileDisposition
+        from regear.application.supervised_transition import SupervisedTransitionExecution
         if standing_consent is not True:
             raise DockMutationDenied('dock_mutation.inhibited')
         started = False
@@ -1687,8 +1689,12 @@ class Plugin:
         except DockMutationDenied as exc:
             if started or str(exc) != 'dock_mutation.inhibited':
                 raise
-        if self._reconcile_dock_power_after_boot():
+        disposition = self._reconcile_dock_power_after_boot(report_disposition=True)
+        if disposition is True or disposition is ShutdownReconcileDisposition.RETIRED:
             return self._run_dock_mutation(transition)
+        if disposition is ShutdownReconcileDisposition.HELPER_UNSETTLED:
+            return SupervisedTransitionExecution(
+                False, 'automatic_dock.shutdown_helper_unsettled')
         claim = WholeDockClaimStore(Path('/var/lib/handheld-dock-mode')).load()
         if claim is not None:
             cards = [c for c in DrmDiscovery().scan() if c.boot_vga is False]
@@ -1700,21 +1706,24 @@ class Plugin:
                 raise DockMutationDenied('dock_mutation.inhibited')
         return self._run_dock_mutation(transition)
 
-    def _reconcile_dock_power_after_boot(self):
+    def _reconcile_dock_power_after_boot(self, *, report_disposition=False):
         """Retire only an old-boot, consumed shutdown after fresh dock proof.
 
         No hardware writes or recovery-budget reset. A canceled shutdown in the
         same boot, ordinary disconnect, and uncertain topology retain inhibition.
         """
+        from regear.application.automatic_dock import ShutdownReconcileDisposition as Disposition
+        def result(disposition):
+            return disposition if report_disposition else disposition is Disposition.RETIRED
         try:
             boot = read_boot_hash()
             if not re.fullmatch('[0-9a-f]{64}', boot):
-                return False
+                return result(Disposition.BLOCKED)
             with self._dock_mutation_gate().admit(allow_inhibited=True):
                 store = DockPowerIntentStore(Path('/var/lib/handheld-dock-mode'))
                 claim = store.load()
                 if claim is None or claim.stage != 'software_down':
-                    return False
+                    return result(Disposition.BLOCKED)
                 def topology():
                     cards = [c for c in DrmDiscovery().scan() if c.boot_vga is False]
                     if len(cards) == 1:
@@ -1729,9 +1738,11 @@ class Plugin:
                 baseline = topology()
                 user = resolve_gamescope_user(GamescopeDiscovery().scan())
                 if not user.ok or user.context is None:
-                    return False
+                    return result(Disposition.BLOCKED)
                 launcher = HeldTrialLauncher(uid=user.context.uid, username=user.context.username)
+                helper_unsettled = False
                 def guard():
+                    nonlocal helper_unsettled
                     current = SnapshotTransitionObservationAdapter(self._discovery).observe().snapshot
                     journal = self._transition_journal_service().status()
                     if (getattr(self, '_unloading', False)
@@ -1743,16 +1754,37 @@ class Plugin:
                         return False
                     audit = launcher.call('audit', '0' * 32)
                     final = SnapshotTransitionObservationAdapter(self._discovery).observe().snapshot
-                    return (audit.get('code') == 'held_helper.settled'
-                        and audit.get('settled') is True
-                        and resolve_gamescope_user(GamescopeDiscovery().scan()).context == user.context
+                    journal_after = self._transition_journal_service().status()
+                    stable = (resolve_gamescope_user(GamescopeDiscovery().scan()).context == user.context
                         and topology() == baseline and inner_removal_records_absent()
                         and final.game_state is GameState.IDLE and final.gamescope.running is True
                         and not getattr(self, '_unloading', False)
                         and read_boot_hash() == boot)
-                return store.retire_after_boot(claim, boot, guard) is True
+                    if not stable:
+                        return False
+                    if audit.get('code') == 'held_helper.settled' and audit.get('settled') is True:
+                        return True
+                    # retire_after_boot calls this guard only after validating an
+                    # exact consumed shutdown from a different boot. False here
+                    # performs no retirement. Unknown/failed audit never qualifies.
+                    helper_unsettled = (
+                        audit.get('code') == 'held_helper.unsettled'
+                        and audit.get('settled') is False
+                        and audit.get('safe_to_unplug') is False
+                        and current.gamescope.confidence is Confidence.VERIFIED
+                        and final.gamescope.confidence is Confidence.VERIFIED
+                        and resolve_runtime_profiles(final).exact_host
+                        and journal_after.durable is True and journal_after.owner.value == 'none'
+                        and self._automatic_dock_preferences().load() is True)
+                    return False
+                retired = store.retire_after_boot(claim, boot, guard)
+                if retired is True:
+                    return result(Disposition.RETIRED)
+                if retired is False and helper_unsettled and store.load() == claim:
+                    return result(Disposition.HELPER_UNSETTLED)
+                return result(Disposition.BLOCKED)
         except Exception:
-            return False
+            return result(Disposition.BLOCKED)
 
     def _run_whole_dock_trial(self, operation: str, expected_attachment: str = "", *, power_request=None):
         """Internal cable-connected trial; admission covers release and teardown.

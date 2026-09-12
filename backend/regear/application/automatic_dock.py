@@ -28,6 +28,12 @@ class AutomaticDockStage(StrEnum):
     ACTION_REQUIRED = "action_required"
 
 
+class ShutdownReconcileDisposition(StrEnum):
+    BLOCKED = "blocked"
+    RETIRED = "retired"
+    HELPER_UNSETTLED = "helper_unsettled"
+
+
 @dataclass(frozen=True, slots=True)
 class AutomaticDockStatus:
     stage: AutomaticDockStage
@@ -211,16 +217,21 @@ class AutomaticDockCoordinator:
     def record_execution(
         self, result: SupervisedTransitionExecution, *, expected_generation: str
     ) -> AutomaticDockStatus:
-        """Only the service's explicit pre-plan refusal can open the retry lane.
+        """Only explicit pre-plan refusals can open the shared single retry lane.
 
         A code alone, exception, accepted plan, outcome or durable record never
         proves that hardware work did not begin. Generation binds late replies
         to the request; suppression clears that request's identity binding.
+        Shutdown-helper refusal comes from the admission wrapper after verified
+        old-boot intent and read-only audit, before the transition service starts.
         """
         binding = self._request_binding
         may_retry = (
             result.accepted is False
-            and result.code == "transition.evidence_changed"
+            and result.code in {
+                "transition.evidence_changed",
+                "automatic_dock.shutdown_helper_unsettled",
+            }
             and result.operation_id == ""
             and result.outcome is None
             and result.durable is False

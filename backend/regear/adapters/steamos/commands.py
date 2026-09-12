@@ -813,6 +813,20 @@ class HeldTrialLauncher:
             result = subprocess.run(argv, stdin=subprocess.DEVNULL, capture_output=True,
                                     shell=False, check=False, timeout=120 if action == 'restore' else 70)
             if result.returncode != 0:
+                # A completed read-only audit uses exit 1 for a known unsettled
+                # lease. Preserve only that exact observation, never a failed
+                # mutation or an arbitrary nonzero command's payload.
+                if action == 'audit' and result.returncode == 1 and len(result.stdout) <= 16384:
+                    try:
+                        value = json.loads(result.stdout)
+                        if (type(value) is dict
+                                and set(value) == {'code', 'settled', 'safe_to_unplug'}
+                                and value['code'] == 'held_helper.unsettled'
+                                and value['settled'] is False
+                                and value['safe_to_unplug'] is False):
+                            return value
+                    except (ValueError, UnicodeError):
+                        pass
                 return {'code': 'held_helper.failed'}
             if len(result.stdout) > 16384:
                 return {'code': 'held_helper.output_invalid'}
