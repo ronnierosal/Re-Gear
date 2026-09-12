@@ -3383,8 +3383,8 @@ class Plugin:
                         },
                         now_ns=transition_finished_ns,
                     )
-                    self._automatic_dock.record_result(
-                        result.code, succeeded=succeeded
+                    self._automatic_dock.record_execution(
+                        result, expected_generation=decision.expected_generation
                     )
                     if succeeded:
                         # Recorded on a later observation, once the dock is seen
