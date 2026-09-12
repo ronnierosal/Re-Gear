@@ -123,7 +123,7 @@ class WholeDockBinding:
 
 @dataclass(frozen=True)
 class TransportBinding:
-    """Authorized retained transport with no enumerated endpoint functions."""
+    """Retained transport observation; resolver determines authorization state."""
     binding: str
     generation: str
     branch_target: SysfsTarget
@@ -151,7 +151,26 @@ def resolve_transport(expected_binding: str) -> TransportBinding:
         raise TopologyRefused('dock_topology.observation_incomplete') from error
 
 
-def _resolve_transport(expected_binding):
+def resolve_deauthorized_transport(expected_binding: str, expected_generation: str) -> TransportBinding:
+    """Prove completed deauthorization for one exact retained attachment.
+
+    Read-only completion evidence, not an authorization write or unplug claim.
+    Unlike resolve_transport, every downstream bridge must also be absent.
+    """
+    if (type(expected_binding) is not str or not re.fullmatch('[0-9a-f]{64}', expected_binding)
+            or type(expected_generation) is not str or not re.fullmatch('[0-9a-f]{64}', expected_generation)):
+        raise TopologyRefused('dock_topology.binding_invalid')
+    try:
+        first = _resolve_transport(expected_binding, down=True, expected_generation=expected_generation)
+        second = _resolve_transport(expected_binding, down=True, expected_generation=expected_generation)
+        if first != second:
+            raise TopologyRefused('dock_topology.transport_changed')
+        return first
+    except (OSError, UnicodeError, RuntimeError) as error:
+        raise TopologyRefused('dock_topology.observation_incomplete') from error
+
+
+def _resolve_transport(expected_binding, *, down=False, expected_generation=None):
     pci = _pci_inventory()
     matches = []
     for branch in pci.values():
@@ -166,12 +185,16 @@ def _resolve_transport(expected_binding):
                 or _read(nhi / 'class') != '0x0c0340'):
             raise TopologyRefused('dock_topology.host_link_invalid')
         _host_link(branch, nhi)
-        domain, router = _router_for(nhi)
+        domain, router = _router_for(nhi, down=down)
         anchors = (_pin(branch), _pin(nhi), _pin(domain), _pin(router))
         binding, generation = _fingerprint(anchors, router)
         if binding != expected_binding:
             continue
+        if down and (generation != expected_generation or _read(domain / 'security') != 'user'):
+            raise TopologyRefused('dock_topology.deauthorized_identity_or_security_changed')
         descendants = {path for path in pci.values() if branch in path.parents}
+        if down and descendants:
+            raise TopologyRefused('dock_topology.pci_branch_remains')
         groups = {path.relative_to(branch).parts[0] for path in descendants}
         if len(groups) > 1:
             raise TopologyRefused('dock_topology.multiple_branches')
@@ -184,6 +207,8 @@ def _resolve_transport(expected_binding):
             for child in _children(parent):
                 if not _PCI.fullmatch(child.name):
                     continue
+                if down:
+                    raise TopologyRefused('dock_topology.pci_branch_remains')
                 if len(seen) >= _LIMIT or pci.get(child.name) != child:
                     raise TopologyRefused('dock_topology.pci_inventory_changed')
                 if _read(child / 'class') != '0x060400':

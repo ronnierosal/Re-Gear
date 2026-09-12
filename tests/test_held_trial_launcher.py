@@ -104,6 +104,22 @@ class HeldTrialLauncherTests(unittest.TestCase):
             result = self.launcher.call('hold', self.token, self.pins)
         self.assertEqual(result, {'code': 'held_helper.failed'})
 
+    def test_archive_audit_uses_same_zipapp_in_session_user_mode(self):
+        from tempfile import TemporaryDirectory
+        with TemporaryDirectory() as directory:
+            path=Path(directory)/'Re-Gear-complete-trial-123456abcdef.pyz'
+            path.write_bytes(b'fixture')
+            with patch.object(m.subprocess,'run',return_value=SimpleNamespace(
+                    returncode=0,stdout=b'{"code":"held_helper.settled","settled":true}')) as run:
+                self.assertTrue(self.launcher.audit_archive(str(path))['settled'])
+                argv=run.call_args.args[0]
+                self.assertEqual(argv[-4:],('/usr/bin/python3','-I',str(path),'--audit'))
+                self.assertEqual(argv[:4],('/usr/bin/runuser','-u','deck','--'))
+                self.assertFalse(run.call_args.kwargs['shell'])
+            with patch.object(m.subprocess,'run',return_value=SimpleNamespace(
+                    returncode=1,stdout=b'{"code":"held_helper.settled","settled":true}')):
+                self.assertEqual(self.launcher.audit_archive(str(path))['code'],'held_helper.unavailable')
+
 
 if __name__ == '__main__':
     unittest.main()

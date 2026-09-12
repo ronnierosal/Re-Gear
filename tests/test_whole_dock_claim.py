@@ -298,5 +298,57 @@ class AbandonedClaimTests(unittest.TestCase):
         self.assertTrue(inner_removal_records_absent(self.store))
 
 
+@unittest.skipUnless(sys.platform == 'linux', 'Linux descriptor-relative filesystem required')
+class SoftwareDownConfirmationTests(unittest.TestCase):
+    setUp = WholeDockClaimTests.setUp
+    make_store = WholeDockClaimTests.make_store
+    tearDown = WholeDockClaimTests.tearDown
+
+    def pending(self):
+        self.store.claim('operation', 'dock', 'generation')
+        self.store.record('operation', 'tunnel_remove_intent')
+        return self.store.load()
+
+    def test_confirmation_advances_once_and_retains_inhibition(self):
+        expected = self.pending()
+        self.assertIs(self.store.confirm_software_down(expected, lambda: True), True)
+        self.assertEqual(self.store.load(), WholeDockClaim(
+            expected.operation, expected.binding, expected.generation, 'software_down'))
+        self.assertTrue(self.store.inhibited())
+        with self.assertRaises(ValueError):
+            self.store.confirm_software_down(expected, lambda: True)
+        self.assertEqual(list(self.root.glob('*whole-dock-*.json')), [self.root / FILENAME])
+
+    def test_confirmation_requires_literal_true(self):
+        expected = self.pending()
+        for answer in (False, None, 1, 'yes'):
+            with self.subTest(answer=answer), self.assertRaises(ValueError):
+                self.store.confirm_software_down(expected, lambda: answer)
+        self.assertEqual(self.store.load(), expected)
+
+    def test_confirmation_rejects_other_stages_and_wrong_identity(self):
+        expected = self.pending()
+        for stage in ('claimed', 'release_intent', 'gpu_removed', 'prepared',
+                      'usb_remove_intent', 'usb_removed', 'software_down',
+                      'reauthorize_intent', 'software_reconnected'):
+            with self.subTest(stage=stage), self.assertRaises(ValueError):
+                self.store.confirm_software_down(WholeDockClaim(
+                    'operation', 'dock', 'generation', stage), lambda: True)
+        with self.assertRaises(ValueError):
+            self.store.confirm_software_down(WholeDockClaim(
+                'different', 'dock', 'generation', 'tunnel_remove_intent'), lambda: True)
+        self.assertEqual(self.store.load(), expected)
+
+    def test_confirmation_rechecks_exact_claim_after_guard(self):
+        expected = self.pending()
+        changed = WholeDockClaim('operation', 'other', 'generation', 'tunnel_remove_intent')
+        def mutate():
+            (self.root / FILENAME).write_bytes(self.store._encode(changed))
+            return True
+        with self.assertRaises(ValueError):
+            self.store.confirm_software_down(expected, mutate)
+        self.assertEqual(self.store.load(), changed)
+
+
 if __name__ == "__main__":
     unittest.main()

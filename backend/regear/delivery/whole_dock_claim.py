@@ -140,21 +140,46 @@ class WholeDockClaimStore(AudioJournalFilesystem):
             updated = WholeDockClaim(current.operation, current.binding, current.generation, stage)
             if STAGES.index(stage) < STAGES.index(current.stage):
                 raise ValueError("whole-dock stage cannot regress")
-            temporary = ".whole-dock-" + secrets.token_hex(16) + ".tmp"
-            descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL |
-                                 os.O_NOFOLLOW, 0o600, dir_fd=directory)
+            self._replace_record(directory, updated)
+
+    def _replace_record(self, directory, updated):
+        """Publish a complete record while the caller holds the claim lock."""
+        temporary = ".whole-dock-" + secrets.token_hex(16) + ".tmp"
+        descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL |
+                             os.O_NOFOLLOW, 0o600, dir_fd=directory)
+        try:
             try:
-                try:
-                    self._write(descriptor, updated)
-                finally:
-                    os.close(descriptor)
-                os.replace(temporary, FILENAME, src_dir_fd=directory, dst_dir_fd=directory)
-                os.fsync(directory)
+                self._write(descriptor, updated)
             finally:
-                try:
-                    os.unlink(temporary, dir_fd=directory)
-                except FileNotFoundError:
-                    pass
+                os.close(descriptor)
+            os.replace(temporary, FILENAME, src_dir_fd=directory, dst_dir_fd=directory)
+            os.fsync(directory)
+        finally:
+            try:
+                os.unlink(temporary, dir_fd=directory)
+            except FileNotFoundError:
+                pass
+
+    def confirm_software_down(self, expected, guard):
+        """Record verified asynchronous completion; caller holds dock admission.
+
+        The guard must freshly verify the pinned, same-generation deauthorized
+        attachment and absence of its PCI branch. This retains inhibition and
+        does not authorize physical unplugging or execute any device operation.
+        """
+        if type(expected) is not WholeDockClaim or expected.stage != 'tunnel_remove_intent':
+            raise ValueError('whole-dock completion stage refused')
+        with self._locked() as directory:
+            if self._load(directory) != expected:
+                raise ValueError('whole-dock completion claim mismatch')
+            if guard() is not True:
+                raise ValueError('whole-dock completion guard refused')
+            if self._load(directory) != expected:
+                raise ValueError('whole-dock completion claim changed')
+            updated = WholeDockClaim(expected.operation, expected.binding,
+                                     expected.generation, 'software_down')
+            self._replace_record(directory, updated)
+            return True
 
     def retire_reconnected(self, operation, binding, generation, guard):
         """Archive only an exactly verified software-reconnected transaction.

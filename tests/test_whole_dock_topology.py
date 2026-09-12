@@ -154,6 +154,62 @@ class TopologyTests(unittest.TestCase):
             with self.assertRaises(m.TopologyRefused):
                 m.resolve_transport(value)
 
+    def deauthorized_fixture(self):
+        previous = self.absent_transport()
+        for path in sorted([node for node in self.pci.iterdir()
+                            if self.branch in node.resolve().parents], key=lambda node: len(node.resolve().parts), reverse=True):
+            self.remove_fixture_pci(path.resolve())
+        (self.external / 'authorized').write_text('0')
+        (self.domain / 'security').write_text('user')
+        return previous
+
+    def test_deauthorized_transport_requires_exact_generation_and_no_descendants(self):
+        previous = self.deauthorized_fixture()
+        result = m.resolve_deauthorized_transport(previous.binding, previous.generation)
+        self.assertEqual((result.binding, result.generation), (previous.binding, previous.generation))
+        self.assertEqual(result.bridge_targets, ())
+        with self.assertRaises(m.TopologyRefused):
+            m.resolve_deauthorized_transport(previous.binding, 'f' * 64)
+        with self.assertRaises(m.TopologyRefused):
+            m.resolve_transport(previous.binding)
+
+    def test_deauthorized_transport_retained_bridge_refuses(self):
+        previous = self.absent_transport()
+        (self.external / 'authorized').write_text('0')
+        (self.domain / 'security').write_text('user')
+        with self.assertRaisesRegex(m.TopologyRefused, 'pci_branch_remains'):
+            m.resolve_deauthorized_transport(previous.binding, previous.generation)
+
+    def test_deauthorized_transport_hidden_bridge_refuses(self):
+        previous = self.deauthorized_fixture()
+        hidden = self.device(self.branch, '0000:04:00.0', '0x060400')
+        (self.pci / hidden.name).unlink()
+        with self.assertRaisesRegex(m.TopologyRefused, 'pci_branch_remains'):
+            m.resolve_deauthorized_transport(previous.binding, previous.generation)
+
+    def test_deauthorized_transport_security_authorization_and_capability_refuse(self):
+        previous = self.deauthorized_fixture()
+        for path, bad, restored in ((self.domain / 'security', 'none', 'user'),
+                (self.domain / 'deauthorization', '0', '1'),
+                (self.external / 'authorized', '1', '0')):
+            with self.subTest(path=path.name):
+                path.write_text(bad)
+                with self.assertRaises(m.TopologyRefused):
+                    m.resolve_deauthorized_transport(previous.binding, previous.generation)
+                path.write_text(restored)
+
+    def test_deauthorized_transport_second_observation_change_refuses(self):
+        previous = self.deauthorized_fixture()
+        observed = m.resolve_deauthorized_transport(previous.binding, previous.generation)
+        with patch.object(m, '_resolve_transport', side_effect=[observed, replace(observed, generation='changed')]):
+            with self.assertRaises(m.TopologyRefused):
+                m.resolve_deauthorized_transport(previous.binding, previous.generation)
+
+    def test_deauthorized_transport_invalid_identity_refuses(self):
+        for binding, generation in ((None, 'a' * 64), ('a' * 64, None), ('a' * 64, 'short')):
+            with self.assertRaises(m.TopologyRefused):
+                m.resolve_deauthorized_transport(binding, generation)
+
     def test_duplicate_router_refused(self):
         self.router(self.host, "0-3")
         with self.assertRaises(m.TopologyRefused):

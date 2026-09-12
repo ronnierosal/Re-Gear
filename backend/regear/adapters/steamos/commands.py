@@ -756,6 +756,31 @@ class HeldTrialLauncher:
             raise ValueError('held launcher identity invalid')
         self.uid, self.username = uid, username
 
+    def audit_archive(self, archive):
+        """Run only the operator zipapp's read-only audit as its session user."""
+        import json
+        from pathlib import Path
+        try:
+            path = Path(archive)
+            if (getattr(os, 'geteuid', lambda:-1)() != 0 or not path.is_absolute()
+                    or not re.fullmatch(r'Re-Gear-complete-trial-[0-9a-f]{12}\.pyz', path.name)
+                    or not path.is_file() or path.is_symlink()):
+                raise ValueError('invalid audit archive')
+            argv = ('/usr/bin/runuser', '-u', self.username, '--', '/usr/bin/env',
+                'XDG_RUNTIME_DIR=/run/user/' + str(self.uid),
+                'DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/' + str(self.uid) + '/bus',
+                '/usr/bin/python3', '-I', str(path), '--audit')
+            result = subprocess.run(argv, stdin=subprocess.DEVNULL, capture_output=True,
+                shell=False, check=False, timeout=70)
+            if result.returncode != 0 or len(result.stdout) > 16384:
+                raise ValueError('audit failed')
+            value = json.loads(result.stdout)
+            if type(value) is not dict:
+                raise ValueError('audit invalid')
+            return value
+        except (ValueError, OSError, subprocess.SubprocessError):
+            return {'code':'held_helper.unavailable'}
+
     def argv(self, action, token, pins=None):
         import json
         if (type(action) is not str or action not in self.ACTIONS

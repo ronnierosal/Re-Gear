@@ -512,3 +512,29 @@ its installed reconnect requires software_down and the original runtime. Do not
 install over this trial or silently promote its record. Plan explicit recovery
 before another install, and retain the successful-removal evidence separately
 from the remaining completion/reconnect gap.
+
+## Operator completion-record recovery
+
+For the still-running 0.3.92 trial, a source-pinned operator zipapp can complete
+the retained tunnel_remove_intent record without replacing the plugin. This is
+not another disconnect, a software reconnect, a generic claim-clear command or
+permission to unplug. The original plugin runtime must remain alive for the
+subsequent normal reconnect and original function-identity verification.
+
+The helper requires the exact binding AND generation embedded at build time,
+the single retained deauthorized router, supported user-security domain, zero
+downstream PCI devices including bridges, a verified idle Portable session,
+unchanged session user and settled held-session journals. Under dock admission,
+the claim store locks and rechecks the exact record and fresh proof before
+atomically advancing only tunnel_remove_intent to software_down. It retains
+inhibition and the original operation. Other stages, changed generation,
+partial observations and uncertain users refuse. No kernel attribute is written.
+
+Build scripts/build_dock_completion_helper.py from clean committed source with
+the observed binding/generation. Its immutable filename includes the source
+revision and its SHA-256 is recorded. Run --observe without privilege first.
+After Linux fixture validation and matching live observation, the operator runs
+the same archive with local sudo authentication and --confirm. A successful
+record_completed result must be read back through the running plugin before
+requesting its normal whole_dock_reconnect operation. Do not reinstall, reboot,
+physically cycle the cable or adopt another trial during this sequence.
