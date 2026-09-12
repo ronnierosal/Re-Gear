@@ -1,0 +1,139 @@
+{
+  "schema_version": 1,
+  "baseline": {
+    "id": "checkpoint/0.3.82-auto-tv",
+    "source_revision": "09ff57128ca6e0526f4b5376af825d87557c0f2e",
+    "artifact_sha256": "c27e48366daa4374d49d02128e40c27e038cafa87488dcf449b3863b1841b06f",
+    "evidence": "docs/EGPU_0382_CHECKPOINT.md"
+  },
+  "behaviors": [
+    {
+      "id": "automatic-tv-readiness",
+      "contract": "Automatic TV handoff requires current display, audio and session readiness. Missing display, changed identity or unknown game evidence must not authorize transition.",
+      "test_ids": [
+        "tests.test_connection_readiness.ConnectionReadinessTests.test_per_layer_stages_and_independent_hdmi_audio_quorums",
+        "tests.test_connection_readiness.ConnectionReadinessTests.test_identity_change_invalidates_accumulated_stability",
+        "tests.test_connection_readiness.ConnectionReadinessTests.test_unknown_game_fails_closed_after_other_layers_are_ready",
+        "tests.test_connection_readiness.ConnectionReadinessTests.test_unavailable_session_never_readies_even_with_inconsistent_flags"
+      ],
+      "source_paths": [
+        "main.py",
+        "backend/regear/**",
+        "src/**"
+      ],
+      "hardware_cases": [
+        "Repeat checkpoint TV-on and TV-standby attachment trials, verifying picture, audio and controls. Genuinely absent HDMI/EDID is a separate unproven case."
+      ]
+    },
+    {
+      "id": "automatic-dock-one-shot",
+      "contract": "Ready idle attachment requests one automatic switch. Incomplete observations do not rearm it; intentional portable return suppresses automatic redocking until verified removal or explicit reset.",
+      "test_ids": [
+        "tests.test_automatic_dock.AutomaticDockCoordinatorTests.test_exact_ready_idle_attach_requests_once_until_absent",
+        "tests.test_automatic_dock.AutomaticDockCoordinatorTests.test_partial_identity_does_not_rearm_attempt_or_portable_suppression",
+        "tests.test_automatic_dock.AutomaticDockCoordinatorTests.test_running_game_and_unready_link_wait_without_consuming_attempt",
+        "tests.test_automatic_dock.AutomaticDockCoordinatorTests.test_portable_return_suppresses_same_attachment_until_removed"
+      ],
+      "source_paths": [
+        "main.py",
+        "backend/regear/**",
+        "src/**"
+      ],
+      "hardware_cases": [
+        "Verify one TV handoff per attachment and no unsolicited redocking after intentional portable return; shut down before physical disconnect."
+      ]
+    },
+    {
+      "id": "automatic-recovery-bounded",
+      "contract": "Recovery waits for idle settling and allows at most two attempts per verified attachment with cooldown after completion. GPU arrival stops recovery; unknown observations do not replenish attempts and startup with an attached dock does not replay recovery.",
+      "test_ids": [
+        "tests.test_automatic_link_recovery.AutomaticRecoveryTests.test_no_restart_from_startup_with_a_dock_already_present",
+        "tests.test_automatic_link_recovery.AutomaticRecoveryTests.test_ten_seconds_then_cooldown_after_completion_and_two_attempt_cap",
+        "tests.test_automatic_link_recovery.AutomaticRecoveryTests.test_gpu_arrival_stops_retry_even_if_later_observation_loses_gpu",
+        "tests.test_automatic_link_recovery.AutomaticRecoveryTests.test_unknown_absence_and_identity_change_do_not_rearm"
+      ],
+      "source_paths": [
+        "main.py",
+        "backend/regear/**",
+        "src/**"
+      ],
+      "hardware_cases": [
+        "Repeat checkpoint detached clean boot and attachment journey with bounded attempt-count observation.",
+        "Second-attempt timing and reload non-replay require supervised validation; checkpoint trials recorded one recovery attempt each."
+      ]
+    },
+    {
+      "id": "automatic-recovery-consent",
+      "contract": "Recovery has separate persisted default-off consent. Docking consent alone cannot enable it; disabled recovery and unresolved transport never dispatch.",
+      "test_ids": [
+        "tests.test_automatic_link_recovery.AutomaticRecoveryTests.test_recovery_consent_is_separate_default_off_and_persisted",
+        "tests.test_automatic_link_recovery.AutomaticRecoveryTests.test_disabled_or_unresolved_transport_never_dispatches"
+      ],
+      "source_paths": [
+        "main.py",
+        "backend/regear/**",
+        "src/**"
+      ],
+      "hardware_cases": [
+        "Verify default-off recovery, separate explicit consent and persisted opt-out through the supported settings interface."
+      ]
+    },
+    {
+      "id": "recovery-fresh-game-guard",
+      "contract": "Recovery refuses when fresh game evidence is not idle or another journal owner is active. Manual recovery revalidates game, session user, transport and journal after reservation. These tests do not establish protection against every dispatch race.",
+      "test_ids": [
+        "tests.test_main_link_recovery.LinkRecoveryStrategySelectionTests.test_manual_reservation_rechecks_game_user_transport_and_journal",
+        "tests.test_main_link_recovery.LinkRecoveryStrategySelectionTests.test_concurrent_confirmed_rpcs_issue_only_one_restart",
+        "tests.test_main_link_recovery.AutomaticRecoveryIntegrationTests.test_fresh_guarded_recovery_and_separate_consent",
+        "tests.test_automatic_recovery_dispatch.AutomaticRecoveryDispatchTests.test_game_start_at_dispatch_refuses_restart",
+        "tests.test_automatic_recovery_dispatch.AutomaticRecoveryDispatchTests.test_unknown_game_at_dispatch_refuses_restart",
+        "tests.test_automatic_recovery_dispatch.AutomaticRecoveryDispatchTests.test_idle_dispatch_preserves_recovery",
+        "tests.test_automatic_recovery_dispatch.AutomaticRecoveryDispatchTests.test_changed_dispatch_authority_refuses_restart"
+      ],
+      "source_paths": [
+        "main.py",
+        "backend/regear/**",
+        "src/**"
+      ],
+      "hardware_cases": [
+        "Validate refusal with running-game and unknown-game evidence using the supervised device protocol; the idle checkpoint trials do not establish these cases."
+      ]
+    },
+    {
+      "id": "safe-disconnect-no-premature-clearance",
+      "contract": "Portable presentation and incomplete holder evidence must not imply unplug clearance. Complete evidence is readiness for revalidation only; game, topology and binding changes invalidate readiness.",
+      "test_ids": [
+        "tests.test_safe_undock_readiness.SafeUndockReadinessTests.test_complete_portable_evidence_is_ready_only_for_revalidation",
+        "tests.test_safe_undock_readiness.SafeUndockReadinessTests.test_protected_or_incomplete_client_scan_never_appears_ready",
+        "tests.test_safe_undock_readiness.SafeUndockReadinessTests.test_game_and_portable_fallback_gates_fail_closed",
+        "tests.test_safe_undock_readiness.SafeUndockReadinessTests.test_topology_display_staleness_and_binding_change_invalidate_or_block"
+      ],
+      "source_paths": [
+        "main.py",
+        "backend/regear/**",
+        "src/**"
+      ],
+      "hardware_cases": [
+        "Verify conservative readiness and refusal UI under supervised supported conditions, preserving shutdown-before-disconnect fallback. This manifest does not certify live physical unplug."
+      ]
+    },
+    {
+      "id": "restoration-before-presentation",
+      "contract": "Pending audio restoration blocks presentation. Restoration must be observed and persisted before presentation; uncertain results never authorize presentation or blind command replay. This software safety contract extends beyond the checkpoint trial scope.",
+      "test_ids": [
+        "tests.test_audio_recovery_transition.AudioRecoveryTransitionTests.test_restore_observed_and_persisted_before_presentation",
+        "tests.test_audio_recovery_transition.AudioRecoveryTransitionTests.test_unknown_portable_or_changed_identity_blocks_all_presentation_commands",
+        "tests.test_audio_recovery_transition.AudioRecoveryTransitionTests.test_uncertain_restore_command_never_runs_presentation",
+        "tests.test_audio_recovery_transition.AudioRecoveryTransitionTests.test_pending_blocks_normal_paths_without_implicit_restoration"
+      ],
+      "source_paths": [
+        "main.py",
+        "backend/regear/**",
+        "src/**"
+      ],
+      "hardware_cases": [
+        "Verify original audio state and presentation ordering using the owning supervised restoration protocol. Checkpoint TV audio success does not validate interrupted restoration."
+      ]
+    }
+  ]
+}

@@ -158,6 +158,12 @@ and correct the owning repository document.
 
 ## Workflow
 
+Preserve [golden behavior contracts](docs/GOLDEN_BEHAVIORS.md), not frozen code.
+Run `python scripts/check_golden_behaviors.py` before integration; record affected
+behavior IDs, combined-revision evidence and rollback in the PR. Never weaken or
+skip golden assertions to hide a regression. Software passes do not replace the
+supervised hardware evidence required before replacing a working installation.
+
 Use proportional verification. During iteration, run the smallest relevant
 checks. Before a focused commit, run targeted regression tests and architecture
 checks when applicable. Run the full matrix at meaningful integration,

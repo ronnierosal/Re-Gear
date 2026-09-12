@@ -420,6 +420,9 @@ class AutomaticRecoveryIntegrationTests(unittest.TestCase):
                 plugin._unloading = False
                 plugin._discovery = object()
                 plugin._last_readiness_observation = observation(transport_identity="transport:known")
+                plugin._connection_topology = NS(observe=lambda: NS(
+                    transport_identity="transport:known", transport_present=True,
+                    pci_complete=False))
                 policy = plugin._automatic_link_recovery = AutomaticLinkRecovery()
                 facts = dict(absent=False, present=True, identity="transport:known", pci_complete=False, enabled=True, idle=True)
                 policy.observe(now=0, **{**facts,"absent":True,"present":False})
