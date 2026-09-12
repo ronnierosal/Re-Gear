@@ -6,6 +6,7 @@ import json
 import sys
 import types
 import threading
+from contextlib import nullcontext
 from unittest.mock import patch
 from dataclasses import replace
 import unittest
@@ -224,7 +225,7 @@ async def support_snapshot():
     }
 
 
-def load_main_module():
+def load_main_module(*, real_dock_gate=False):
     decky = types.ModuleType("decky")
     decky.DECKY_VERSION = "test"
     decky.DECKY_USER_HOME = str(ROOT)
@@ -236,6 +237,11 @@ def load_main_module():
         module = importlib.util.module_from_spec(spec)
         assert spec.loader is not None
         spec.loader.exec_module(module)
+        if not real_dock_gate:
+            # These RPC unit fixtures isolate external filesystem dependencies.
+            # Dedicated admission tests opt into the real factory explicitly.
+            module.Plugin._dock_mutation_gate = staticmethod(
+                lambda: types.SimpleNamespace(admit=lambda: nullcontext()))
         return module
     finally:
         if previous is None:

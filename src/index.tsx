@@ -2310,8 +2310,12 @@ function showBlockedAttempt(
 }
 
 export default definePlugin(() => {
+  // Reuse the plugin-lifetime connection monitor, including when QAM is closed.
+  // The expanded menu never starts another snapshot poller.
+  let menuSnapshot: SnapshotPayload["snapshot"] | null = null;
   const expandedMenu = createExpandedMenu(steamControllerInput(window), window, () =>
-    !shortcut.modal.current && !shortcut.portableBusy.current && !shortcut.tvBusy.current && !warningModal);
+    !shortcut.modal.current && !shortcut.portableBusy.current && !shortcut.tvBusy.current && !warningModal,
+    () => menuSnapshot);
   const shortcut = createDisplayShortcutRuntime({
     // View+Y now belongs exclusively to the menu. Explicit display requests
     // below retain their existing approval/confirmation path.
@@ -2378,10 +2382,16 @@ export default definePlugin(() => {
   const offlineFocusChecks = startOfflineFocusChecks();
   const connection = startConnectionMonitor({
     read: async () => {
-      const [payload, automatic, journal] = await Promise.all([
-        getSnapshot(), getAutomaticDockStatus(), getTransitionJournalStatus(),
-      ]);
-      return {payload, automatic, journal: journal.code};
+      try {
+        const [payload, automatic, journal] = await Promise.all([
+          getSnapshot(), getAutomaticDockStatus(), getTransitionJournalStatus(),
+        ]);
+        menuSnapshot = payload.snapshot;
+        return {payload, automatic, journal: journal.code};
+      } catch (error) {
+        menuSnapshot = null;
+        throw error;
+      }
     },
     show: (store, switchTv, closed) => showConnectionLivePanel(store, switchTv, closed),
   });

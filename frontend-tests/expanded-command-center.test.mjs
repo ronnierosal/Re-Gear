@@ -69,7 +69,7 @@ test("native modal uses Decky controls without a second raw navigation listener"
     export const views=[], effects=[], listeners=[];
     export let opens=0, clicks=0;
     const React={createElement:(type,props,...children)=>({type,props:{...props,children}})};
-    const ModalRoot='modal', ExpandedCommandCenter='shell',Button='native-button',Focusable='native-focus';
+    const ModalRoot='modal', ExpandedCommandCenter='shell',WholeDockControl='whole-dock-control',Button='native-button',Focusable='native-focus';
     const useEffect=fn=>effects.push(fn()), useState=v=>[v,()=>{}];
     const useSyncExternalStore=(_subscribe,read)=>read();
     const loadMenuBinding=()=> 'start-select',saveMenuBinding=()=>true,menuBindingOptions=[];
@@ -79,12 +79,15 @@ test("native modal uses Decky controls without a second raw navigation listener"
     export const host={localStorage:{},document:{querySelector(){return {contains(){return true}}},activeElement:{tagName:'BUTTON',click(){clicks++}}}};
   `;
   const native = await import(`data:text/javascript;base64,${Buffer.from(fixtures + nativeJs).toString("base64")}`);
-  const runtime = native.createExpandedMenu(native.input, native.host);
+  const readCurrentSnapshot = () => ({game_state:"idle"});
+  const runtime = native.createExpandedMenu(native.input, native.host, () => true, readCurrentSnapshot);
   runtime.open(); runtime.open(); assert.equal(native.opens, 1);
   const view = native.views[0].props.children[1];
   const shell = view.type(view.props); // Mount its cleanup and obtain close callback.
   assert.equal(shell.props.primitives.Button, 'native-button');
   assert.equal(shell.props.primitives.Focusable, 'native-focus');
+  assert.equal(shell.props.disconnectControl.type, 'whole-dock-control');
+  assert.equal(shell.props.disconnectControl.props.readCurrentSnapshot, readCurrentSnapshot);
   assert.equal(native.listeners.length, 0, 'Only the launcher may subscribe to raw input');
   shell.props.onClose(); runtime.open(); assert.equal(native.opens, 2);
   native.effects[0](); // Old animated unmount arrives after reopening.
@@ -101,7 +104,7 @@ test("native shortcut dropdown preserves selection and active chord when saving 
     const componentStates=new WeakMap();
     let states=[],cursor=0, fail=false, deps;
     const React={createElement:(type,props,...children)=>({type,props:{...props,children}})};
-    const ModalRoot='modal',ExpandedCommandCenter='shell',Button='button',Focusable='focus',Dropdown='native-dropdown',ShortcutSettings='settings';
+    const ModalRoot='modal',ExpandedCommandCenter='shell',WholeDockControl='whole-dock-control',Button='button',Focusable='focus',Dropdown='native-dropdown',ShortcutSettings='settings';
     const useEffect=()=>{},useState=v=>{const ownStates=states,i=cursor++;if(!(i in ownStates))ownStates[i]=v;return [ownStates[i],n=>ownStates[i]=n]};
     // Snapshot-only stub for this preference test. Subscription/liveness is
     // exercised by the producer/consumer tests, not by sharing hook arrays.
@@ -156,7 +159,7 @@ test("native live source publishes into an open menu and unsubscribes on close",
     let unsubscribe,renderView;
     let snapshot={quick:[{id:'auto',title:'Auto TDP',value:'Running',detail:'Fixture'}],performance:[],egpu:[],controllers:[],settings:[]};
     const React={createElement:(type,props,...children)=>({type,props:{...props,children}})};
-    const ModalRoot='modal',ExpandedCommandCenter='shell',Button='button',Focusable='focus',Dropdown='dropdown',ShortcutSettings='settings';
+    const ModalRoot='modal',ExpandedCommandCenter='shell',WholeDockControl='whole-dock-control',Button='button',Focusable='focus',Dropdown='dropdown',ShortcutSettings='settings';
     const useState=v=>[v,()=>{}],useEffect=()=>{};
     const useSyncExternalStore=(subscribe,read)=>{
       if(!unsubscribe)unsubscribe=subscribe(()=>{current=renderView();});

@@ -371,6 +371,8 @@ class ReleaseTests(unittest.TestCase):
 
         self.assertIs(result.stage, LiveDisconnectStage.RELEASE_REFUSED)
         self.assertFalse(result.released)
+        self.assertEqual(result.arm_stage, "arm_failed")
+        self.assertTrue(result.arm_code)
         self.assertFalse(result.session_disturbed)
         self.assertEqual(harness.detached, ())
 
