@@ -4,6 +4,7 @@ import { useSyncExternalStore, useEffect, useReducer, useRef } from "react";
 import { Focusable, ModalRoot, showModal } from "@decky/ui";
 import { createLiveStatusStore } from "./connection-live-status";
 import { connectionPanelCss } from "./connection-panel-style";
+import { LinkRecoveryControl } from "./link-recovery-control";
 type Store = ReturnType<typeof createLiveStatusStore>;
 
 export function LivePanel({store, close, switchTv}: {store: Store; close(): void; switchTv?: () => void}) {
@@ -59,7 +60,11 @@ export function LivePanel({store, close, switchTv}: {store: Store; close(): void
     <Focusable ref={panel} onPointerDownCapture={interacted} onKeyDownCapture={interacted}
       onFocusCapture={interacted} onGamepadFocus={interacted} onGamepadDirection={interacted} onButtonDown={interacted}
       onOptionsButton={toggleDetails} onOptionsActionDescription="Connection details">
-    <ConnectionProgressOverlay {...connectionProgressViewModel(status)} onHide={hide} onSwitch={switchAction} />
+    <ConnectionProgressOverlay {...connectionProgressViewModel(status)} onHide={hide} onSwitch={switchAction}
+      recoveryAction={<LinkRecoveryControl eligible={!stale && source.connected
+        && source.phase === "checking" && source.seconds >= 120
+        && source.rows.some(row => row.label === "GPU and driver" && row.state === "waiting")
+        && source.rows.some(row => row.label === "No game running" && row.state === "ready")} />} />
     </Focusable>
   </ModalRoot>;
 }

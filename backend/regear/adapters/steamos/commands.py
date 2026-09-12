@@ -381,6 +381,20 @@ class UserServiceCommandRunner:
             "restart",
             "pipewire.service",
         ),
+        #: Deliberately blocking, unlike every restart above it: a caller that
+        #: is about to watch for something with the session down needs it
+        #: actually down first. Present for one explicitly-selected recovery
+        #: strategy, not for a proven gap mechanism -- see the note on the
+        #: operation in `regear.ports.presentation_activation`.
+        UserServiceOperation.STOP_GAMESCOPE_SESSION: (
+            "stop",
+            "gamescope-session.target",
+        ),
+        UserServiceOperation.START_GAMESCOPE_SESSION: (
+            "--no-block",
+            "start",
+            "gamescope-session.target",
+        ),
     }
     CLEAN_ENVIRONMENT = {
         "LANG": "C",
