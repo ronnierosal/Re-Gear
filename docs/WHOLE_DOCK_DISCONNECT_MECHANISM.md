@@ -371,3 +371,10 @@ suite and its build metadata reported uncommitted. It is retained but must not
 be installed/published. Its reservation remains consumed. Use0.3.89 for the
 candidate, with tests complete before clean-source packaging. Linux CI for
 98bbcaf passed; this is a provenance correction, not a runtime behavior change.
+
+Final candidate is0.3.90. The unpublished0.3.89 package is superseded because the
+root watchdog service now also sets RuntimeMaxSec=120s, bounding an already
+running helper as well as startup. systemd-run v257 leaves the service type
+unspecified by default; TimeoutStartSec alone does not bound the full helper
+runtime. Reference: https://github.com/systemd/systemd/blob/v257/src/run/run.c
+All older local archives remain unchanged; only0.3.90 is offered for this trial.

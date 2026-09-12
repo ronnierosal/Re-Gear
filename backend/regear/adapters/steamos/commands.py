@@ -812,7 +812,8 @@ class HeldTrialRestoreTimer:
                 '--on-active=90s', '--timer-property=AccuracySec=1s',
                 '--timer-property=Requires=' + manager, '--timer-property=After=' + manager,
                 '--property=Requires=' + manager, '--property=After=' + manager,
-                '--property=TimeoutStartSec=120s', '--property=Restart=on-failure',
+                '--property=TimeoutStartSec=120s', '--property=RuntimeMaxSec=120s',
+                '--property=Restart=on-failure',
                 '--property=RestartSec=30s', '--property=StartLimitIntervalSec=600s',
                 '--property=StartLimitBurst=3', *restore)
             result = subprocess.run(argv, stdin=subprocess.DEVNULL, capture_output=True,
