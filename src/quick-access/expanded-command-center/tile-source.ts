@@ -84,9 +84,13 @@ function unknownTiles(entries: ReadonlyArray<[string, string]>): Tile[] {
 // IDs must match what tiles.ts emits exactly. The shell resolves the nested
 // detail page by id, so a placeholder using a different id would drop the
 // player out of the detail view the moment a reading became unknown.
+// These mirror the approved identity in docs/design/command-center-runtime-
+// handoff.md exactly, because the live and unknown views must offer the same
+// cards in the same order: a grid that reflows when a reading goes missing
+// moves a target under a thumb mid-press.
 const UNKNOWN_EGPU: ReadonlyArray<[string, string]> = [
-  ["egpu", "Connection"], ["render", "Render GPU"],
-  ["display", "External display"], ["game", "Game state"],
+  ["device", "Detected device"], ["dock", "Dock state"],
+  ["display", "External display"], ["render", "Render GPU"], ["link", "Connection"],
 ];
 
 /** The Safe Disconnect card when nothing has been observed.
@@ -104,12 +108,14 @@ function unknownDisconnectTile(): Tile {
   };
 }
 const UNKNOWN_PERFORMANCE: ReadonlyArray<[string, string]> = [
+  ["profile", "Performance profile"], ["fps", "FPS Target"],
   ["manual", "Manual TDP"], ["auto", "Auto TDP"],
-  ["fps", "FPS Target"], ["display", "Display context"],
+  ["display", "Resolution"], ["refresh", "Refresh rate"],
 ];
 const UNKNOWN_CONTROLLERS: ReadonlyArray<[string, string]> = [
-  ["controller", "External controller"], ["builtin", "Built-in controller"],
-  ["priority", "Controller priority"],
+  ["controller", "Player 1"], ["battery", "Battery"],
+  ["builtin", "Built-in controller"], ["priority", "Controller priority"],
+  ["tv-controller", "TV controller"], ["controller-settings", "Controller settings"],
 ];
 
 /** Settings placeholders.
@@ -121,11 +127,20 @@ const UNKNOWN_CONTROLLERS: ReadonlyArray<[string, string]> = [
  * bug and one that looks configurable but saves nothing is worse.
  */
 function settingsTiles(): Tile[] {
+  const entry = (id: string, title: string, detail: string): Tile =>
+    ({ id, title, value: "Not available", tone: "unavailable", detail });
   return [
-    { id: "appearance", title: "Appearance", value: "Not available",
-      tone: "unavailable", detail: "No appearance preference is stored." },
-    { id: "diagnostics", title: "Diagnostics", value: "Not available",
-      tone: "unavailable", detail: "Diagnostics are configured from the main panel." },
+    entry("quick-actions", "Quick actions",
+      "No customisable action set is stored; the rail has no verified ports."),
+    // The real control is the native adapter row, not a tile. The approved
+    // composition still carries a card here, so it says where the control is
+    // rather than pretending none exists.
+    entry("shortcut", "Menu shortcut",
+      "Configured from the shortcut row below, not from this card."),
+    entry("appearance", "Appearance", "No appearance preference is stored."),
+    entry("updates", "Updates", "Re-Gear does not check for updates."),
+    entry("diagnostics", "Diagnostics", "Diagnostics are configured from the main panel."),
+    entry("about", "About", "No build detail is published to this view."),
   ];
 }
 
@@ -148,9 +163,13 @@ function quickTiles(
   performance: Tile[], egpu: Tile[], controller: Tile[],
   displayTarget: Evidence | undefined,
 ): Tile[] {
-  const pick = (tiles: Tile[], id: string, title?: string): Tile | null => {
+  // `as` re-ids a summary card: Quick shows the same reading as another tab
+  // under the identity the approved Quick composition gives it, so the two can
+  // never disagree about the value while still matching their own contracts.
+  const pick = (tiles: Tile[], id: string, title?: string, as?: string): Tile | null => {
     const found = tiles.find((tile) => tile.id === id);
-    return found ? (title ? { ...found, title } : found) : null;
+    if (!found) return null;
+    return { ...found, ...(title ? { title } : {}), ...(as ? { id: as } : {}) };
   };
   // Graded like every other reading: absent is unavailable, ungraded is
   // quiet and says so, and only `verified` earns the tone a player reads as
@@ -171,7 +190,7 @@ function quickTiles(
     pick(performance, "manual"),
     pick(performance, "auto"),
     target,
-    pick(egpu, "egpu", "eGPU"),
+    pick(egpu, "link", "eGPU", "egpu"),
     pick(controller, "controller", "Controller"),
     // Last, and wide, matching the approved layout.
     { ...disconnect, wide: true },
@@ -199,7 +218,6 @@ export function buildTiles(readings: Readings): TileView {
         manualWatts: readings.manualWatts === undefined
           ? UNKNOWN_VALUE : wattsValue(readings.manualWatts),
         fps: fpsTile(),
-        display: displayEvidence(readings.egpu),
       })
     : unknownTiles(UNKNOWN_PERFORMANCE);
 
@@ -209,12 +227,6 @@ export function buildTiles(readings: Readings): TileView {
   };
 }
 
-/** The performance tab shows display context; it takes the eGPU reading rather
- * than deriving a second opinion about the same display. */
-function displayEvidence(presentation: EgpuPresentation | null | undefined): Evidence {
-  return presentation?.displayConnected
-    ?? { text: "Unknown", known: false, verified: false };
-}
 
 export type TileSource = {
   /** Current tiles. Never throws. Stable by reference between publishes. */
