@@ -58,6 +58,28 @@ own evidence-backed recovery. Consumed power records remain as audit evidence.
 
 ## Sleep and UI work remaining
 
+The read-only `dock_power_capabilities()` delivery contract describes this
+build's implementation status. It performs no discovery or hardware action and
+does not approve a request. Its versioned, JSON-compatible payload always sets
+`authorizes_action: false` and each action's `actionable: false`. Shutdown is
+`implemented` with live readiness `not_assessed`; it reports
+`dock_power.shutdown_hardware_unverified` and
+`dock_power.live_preflight_required`. Existing execution guards remain mandatory.
+
+Sleep is `unavailable`, with stable reason categories:
+
+- `dock_power.sleep_profile_unverified`: no verified cable-connected sleep profile.
+- `dock_power.sleep_inhibitor_handoff_unverified`: no coordinated original-request
+  handoff covering the background guard and retained transaction lease.
+- `dock_power.sleep_wake_thermal_unverified`: wake behavior and powered-enclosure
+  thermal safety remain unverified.
+
+The existing `DISCONNECT_BEFORE_SLEEP_VERIFIED` hardware-profile value describes
+the canonical physical-removal workflow. It does not satisfy cable-connected
+sleep requirements. This status contract cannot enable sleep, release an
+inhibitor, or authorize software reconnect; exposing it through the backend/UI
+is a separate integration step.
+
 UI wiring is deferred by user request. Neither normal Steam Sleep/Shutdown nor
 the physical button invokes this new flow yet. The canonical sleep workflow's
 physical-removal contract and existing frontend preflight remain unchanged.
@@ -82,3 +104,7 @@ records, durability failure, and archival rollback; CI explicitly runs them.
 Software checks do not certify sleep/wake, shutdown completion, or physical
 removal. No version bump, release ZIP, installation, or device test is part of
 this backend-only change.
+
+The read-only `get_egpu_power_status` backend RPC exposes this contract without
+initializing a hardware runtime. It is available for later UI wiring; its
+capability response cannot replace the execution preflight.

@@ -1,4 +1,5 @@
 import math
+import json
 import sys
 from dataclasses import FrozenInstanceError, replace
 from pathlib import Path
@@ -7,7 +8,52 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'backend'))
 from regear.delivery.dock_power_service import (
-    DockPowerRequest, create_power_request, continue_dock_power)
+    DockPowerRequest, create_power_request, continue_dock_power,
+    dock_power_capabilities)
+
+
+class DockPowerCapabilitiesTests(unittest.TestCase):
+    def test_implemented_shutdown_is_not_live_authorization(self):
+        status = dock_power_capabilities()
+        self.assertEqual(status['schema_version'], 1)
+        self.assertEqual(status['code'], 'dock_power.capabilities')
+        self.assertIs(status['authorizes_action'], False)
+        shutdown = status['actions']['shutdown']
+        self.assertEqual(shutdown['implementation'], 'implemented')
+        self.assertEqual(shutdown['live_readiness'], 'not_assessed')
+        self.assertIs(shutdown['actionable'], False)
+        self.assertEqual(shutdown['reason_codes'], [
+            'dock_power.shutdown_hardware_unverified',
+            'dock_power.live_preflight_required'])
+        self.assertEqual(json.loads(json.dumps(status)), status)
+
+    def test_physical_removal_profile_does_not_promote_sleep_support(self):
+        from regear.domain.control_plane import SleepBehavior
+        from regear.profiles.gpd_g1 import CAPABILITIES
+        self.assertIs(CAPABILITIES.sleep_behavior,
+                      SleepBehavior.DISCONNECT_BEFORE_SLEEP_VERIFIED)
+        sleep = dock_power_capabilities()['actions']['sleep']
+        self.assertEqual(sleep['implementation'], 'unavailable')
+        self.assertEqual(sleep['live_readiness'], 'unavailable')
+        self.assertIs(sleep['actionable'], False)
+        self.assertEqual(sleep['reason_codes'], [
+            'dock_power.sleep_profile_unverified',
+            'dock_power.sleep_inhibitor_handoff_unverified',
+            'dock_power.sleep_wake_thermal_unverified'])
+        with self.assertRaisesRegex(ValueError, 'sleep_unverified'):
+            create_power_request('sleep', 'session-a')
+
+    def test_payload_mutation_cannot_change_subsequent_status_or_execution(self):
+        status = dock_power_capabilities()
+        status['authorizes_action'] = True
+        status['actions']['sleep']['actionable'] = True
+        status['actions']['sleep']['reason_codes'].clear()
+        fresh = dock_power_capabilities()
+        self.assertIs(fresh['authorizes_action'], False)
+        self.assertIs(fresh['actions']['sleep']['actionable'], False)
+        self.assertEqual(len(fresh['actions']['sleep']['reason_codes']), 3)
+        with self.assertRaisesRegex(ValueError, 'sleep_unverified'):
+            create_power_request('sleep', 'session-a')
 
 
 class DockPowerServiceTests(unittest.TestCase):

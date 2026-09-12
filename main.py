@@ -46,7 +46,7 @@ from regear.adapters.steamos.sleep_inhibitor import Login1SleepInhibitor  # noqa
 from regear.adapters.steamos.whole_dock_topology import resolve_whole_dock, resolve_transport  # noqa: E402
 from regear.delivery.whole_dock_runtime import WholeDockRuntime  # noqa: E402
 from regear.delivery.dock_power_intent import DockPowerIntentStore  # noqa: E402
-from regear.delivery.dock_power_service import create_power_request, continue_dock_power  # noqa: E402
+from regear.delivery.dock_power_service import create_power_request, continue_dock_power, dock_power_capabilities  # noqa: E402
 from regear.delivery.whole_dock_claim import WholeDockClaimStore, inner_removal_records_absent  # noqa: E402
 from regear.application.live_disconnect import LiveDisconnectResult  # noqa: E402
 from regear.ports.whole_dock_teardown import WholeDockApproval  # noqa: E402
@@ -1863,6 +1863,10 @@ class Plugin:
                 )
                 self._live_disconnect_key = key
             return self._live_disconnect
+
+    async def get_egpu_power_status(self, _request: object = None) -> dict[str, object]:
+        """Read build capabilities only; execution always requires fresh checks."""
+        return dock_power_capabilities()
 
     async def get_egpu_disconnect_status(
         self, _request: object = None

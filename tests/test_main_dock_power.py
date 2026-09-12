@@ -18,6 +18,18 @@ class MainDockPowerTests(unittest.TestCase):
         boot.start()
         self.addCleanup(boot.stop)
 
+    def test_power_status_needs_no_runtime_and_never_starts_work(self):
+        self.plugin._run_background_operation = Mock()
+        self.plugin._run_whole_dock_trial = Mock()
+        with patch.object(self.module, 'DrmDiscovery') as discovery:
+            result = asyncio.run(self.plugin.get_egpu_power_status())
+        self.assertFalse(result['authorizes_action'])
+        self.assertEqual(result['actions']['shutdown']['live_readiness'], 'not_assessed')
+        self.assertFalse(result['actions']['sleep']['actionable'])
+        self.plugin._run_background_operation.assert_not_called()
+        self.plugin._run_whole_dock_trial.assert_not_called()
+        discovery.assert_not_called()
+
     def test_sleep_refuses_before_hardware_or_background_work(self):
         self.plugin._run_whole_dock_trial = Mock()
         self.plugin._run_background_operation = Mock()

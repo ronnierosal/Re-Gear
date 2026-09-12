@@ -13,6 +13,42 @@ import uuid
 from regear.application.dock_power import DockPowerCoordinator, DockPowerResult
 
 
+def dock_power_capabilities():
+    """Describe this build without observing a dock or approving an action.
+
+    Implementation availability is not live readiness. In particular, a
+    physical-disconnect-before-sleep profile is not evidence for sleeping with
+    a cable-connected, deauthorized dock. No caller-supplied profile or setting
+    can promote this descriptive contract into permission to execute.
+    """
+    return {
+        'schema_version': 1,
+        'code': 'dock_power.capabilities',
+        'authorizes_action': False,
+        'actions': {
+            'shutdown': {
+                'implementation': 'implemented',
+                'live_readiness': 'not_assessed',
+                'actionable': False,
+                'reason_codes': [
+                    'dock_power.shutdown_hardware_unverified',
+                    'dock_power.live_preflight_required',
+                ],
+            },
+            'sleep': {
+                'implementation': 'unavailable',
+                'live_readiness': 'unavailable',
+                'actionable': False,
+                'reason_codes': [
+                    'dock_power.sleep_profile_unverified',
+                    'dock_power.sleep_inhibitor_handoff_unverified',
+                    'dock_power.sleep_wake_thermal_unverified',
+                ],
+            },
+        },
+    }
+
+
 @dataclass(frozen=True)
 class DockPowerRequest:
     operation: str
