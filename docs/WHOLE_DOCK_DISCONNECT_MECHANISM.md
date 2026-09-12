@@ -579,3 +579,37 @@ the same archive with local sudo authentication and --confirm. A successful
 record_completed result must be read back through the running plugin before
 requesting its normal whole_dock_reconnect operation. Do not reinstall, reboot,
 physically cycle the cable or adopt another trial during this sequence.
+
+## Auto-connect and disconnect isolation requirements
+
+Updated September 11, 2026 local time (September 12 UTC). These are acceptance
+requirements for ongoing work, not a claim that the fixes are implemented.
+
+- Preserve the hardware-verified auto-TV checkpoint and its recovery behavior.
+  Disconnect changes must pass auto-connect regression coverage before release.
+- Serialize connection and disconnect operations through shared admission checks,
+  while keeping their operation state separate. Intentional teardown suppresses
+  automatic connection so the two operations cannot fight each other.
+- After physical reconnection, verify a fresh attachment and reconcile the old
+  operation with evidence before restoring automatic connection. Never silently
+  delete a failure record or bypass unknown-state guards; an old failure must
+  not silently block a valid new connection indefinitely.
+- Keep powered software reconnect trials paused following the thermal concern.
+  This is a testing hold, not a claim that every installed build disables the action.
+
+Required regression scenario: intentional disconnect, failed software reconnect,
+physical reconnection, then guarded automatic TV restoration. Include changed
+attachment identity, unresolved teardown, running/unknown game state, and duplicate
+request refusal. Passing these code checks does not establish thermal safety.
+
+The preserved 0.3.82 recovery used a Gaming-session restart, not an implemented
+Desktop-to-Gaming round trip. Manual Desktop switching producing a TV picture is
+separate evidence and must not be described as that automatic code path.
+
+In the supervised trial, the owner confirmed a usable handheld screen, audio and
+controls after software teardown. Subsequent software reconnect timed out. The
+owner then reported unusual dock heat and disconnected it. Temperature and fan
+telemetry were not captured; software causation and hardware damage are unknown.
+Potential hardware damage risk blocks further powered software reconnect trials
+pending investigation and reviewed stop/recovery criteria. Software removal does
+not power off a dock, and these observations do not validate live physical unplug.

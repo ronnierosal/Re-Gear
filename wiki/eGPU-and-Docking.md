@@ -55,3 +55,32 @@ For the recorded device-specific issues, see
 [Ally X and GPD G1 troubleshooting](Ally-X-and-GPD-G1-Troubleshooting).
 It separates symptoms, causes, source fixes and unresolved hardware gates while
 preserving links to the original dated incident.
+
+## Protecting automatic connection while developing disconnect
+
+**Development update: September 12, 2026.** These are required safeguards and
+remaining validation work, not a claim that the fixes have shipped.
+
+- Preserve the verified automatic TV recovery baseline and test it when adding
+  disconnect features.
+- Keep operation state separate, with shared admission checks preventing
+  automatic connection from competing with intentional disconnect.
+- On physical reconnection, verify the fresh attachment and reconcile any old
+  operation record before restoring automatic connection. Do not erase failure
+  records or bypass unknown-state checks to make switching work.
+- Cover disconnect, failed software reconnect, and physical reconnection in
+  regression tests. A stale failure must not silently prevent future automatic
+  TV switching indefinitely.
+
+**Powered software reconnect trials are paused.** A supervised test produced a
+software reconnect timeout followed by an owner report of unusual dock heat.
+Possible hardware damage risk requires investigation. Temperature and fan
+telemetry were not captured; neither software causation nor damage is confirmed.
+This is a testing hold, not a claim that installed builds disable the action.
+Software removal does not power off the dock. Do not use this development update
+as an invitation to repeat the trial.
+
+The trial's return to the handheld display and software teardown are separate
+from physical-unplug safety and reconnect reliability. Code tests alone cannot
+establish either hardware or thermal safety. The device-specific evidence belongs
+with [Ally X and GPD G1 troubleshooting](Ally-X-and-GPD-G1-Troubleshooting).
