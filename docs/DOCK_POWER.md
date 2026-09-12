@@ -125,6 +125,60 @@ This implementation provides no resume reauthorization or PCI rescan.
 
 ## Verification and delivery
 
+### Automatic connection must coexist with retained disconnect state
+
+The golden manifest now includes the real automatic recovery scheduling,
+admission and service caller chain with fake OS boundaries, alongside the
+existing automatic-TV loop tests. The fixtures cover a clean idle attach,
+retained ordinary disconnect intent across runtime recreation, consumed
+shutdown from an earlier boot, settled/unsettled early release, unavailable or
+busy admission, running/unknown games and persisted preferences. Recreating a
+runtime models the reload/update boundary; it does not execute a package
+installer or certify migration on the device. A separate required Linux-root
+CI step joins the real automatic recovery caller chain to the unmodified gate
+factory, fixed-path root validation, persisted preferences, journal and claim
+readers, and filesystem locks. Each case enters a private child chroot before
+creating these dependencies; device observations and commands remain simulated.
+The chroot isolates paths for trusted tests and is not a root security sandbox.
+The CI step refuses absent privilege, empty coverage, skips and expected failures.
+It supplements the existing privileged record/writer tests and the portable
+43-test golden gate. Neither layer proves physical TV handoff or qualification.
+
+`get_automatic_dock_status().recovery.decision_code` reports the **last observed
+automatic recovery decision**, not a new preflight or permission to act. The
+existing `enabled` and `code` preference fields remain separate. Until an
+observation is available, the decision is `automatic_recovery.not_observed`.
+Waiting states distinguish absent/unresolved transport, startup without a
+verified detach, settling, game/session/identity uncertainty, and exhausted
+attempts. Admission refusals expose only fixed categories: `admission_inhibited`,
+`admission_unavailable_or_busy`, or `admission_refused`, each prefixed with
+`automatic_recovery.`. Repeated unchanged decisions produce one journey event;
+a changed decision is recorded again. Exception details and attachment
+identifiers are not exposed. These fields do not clear claims, restart the
+session, extend the attempt budget or grant unplug clearance.
+
+Before promoting a candidate, retain a record of its exact source, ZIP hash,
+installed readback, OS/kernel, both automatic-docking and recovery preferences,
+managed session readiness, and categorical initial claim/journal state. Keep
+these settings as test evidence; do not silently enable recovery during an
+update. Preserve the previous artifact and separately verify restored settings
+when rolling back.
+
+| Scenario | Required result/evidence |
+| --- | --- |
+| Detached clean boot, idle attach, TV on | Bounded automatic recovery if needed, automatic TV handoff, and user confirmation of picture, audio and controls. |
+| Same sequence with the checkpoint TV in standby | Repeat the checkpoint case; record actual connector/EDID evidence rather than assuming genuinely missing HDMI. |
+| Runtime reload/update with saved opt-in or opt-out | Preferences preserved, no recovery replay merely because the dock was already attached. Verify the actual installer separately. |
+| Ordinary disconnect or incomplete release record retained | Automatic recovery remains blocked with its reason; no silent record deletion or attempt-budget reset. |
+| Verified consumed shutdown record on a later boot | Reconcile only under the existing full evidence guards, then allow the normal bounded connection path. |
+| Game running, unknown state or busy/unavailable admission | No restart; report the categorical reason. |
+
+Record before/during/after results, including refusals, for the exact candidate.
+The 0.3.94 failure must be diagnosed from live status before claiming its cause
+fixed. A green test suite is software evidence; only the applicable supervised
+device trials can promote the candidate over the preserved checkpoint. Do not
+run powered software reconnect or live unplug trials as part of this matrix.
+
 Unit/integration fixtures exercise request binding, ordered teardown/consume/
 power execution, changed evidence, incomplete scans, expiry, busy admission,
 ambiguous submission, unsupported sleep, and next-boot reconciliation. Linux

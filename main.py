@@ -990,25 +990,47 @@ class Plugin:
         try:
             enabled = await asyncio.to_thread(self._automatic_recovery_preferences().load)
         except Exception:
-            return {"schema_version": 1, "enabled": False, "code": "automatic_recovery.preference_unavailable"}
+            return {"schema_version": 1, "enabled": False, "code": "automatic_recovery.preference_unavailable",
+                    "decision_code": "automatic_recovery.preference_unavailable"}
         policy = getattr(self, "_automatic_link_recovery", None)
         return {"schema_version": 1, "enabled": enabled, "attempts": policy.attempts if policy else 0,
-                "max_attempts": 2, "delay_seconds": 10, "code": "automatic_recovery.enabled" if enabled else "automatic_recovery.disabled"}
+                "max_attempts": 2, "delay_seconds": 10, "code": "automatic_recovery.enabled" if enabled else "automatic_recovery.disabled",
+                "decision_code": getattr(self, "_automatic_recovery_decision", "automatic_recovery.not_observed")}
+
+    def _record_automatic_recovery_decision(self, code, *, severity="info", details=None):
+        """Record the last observer decision, never permission to retry or unplug."""
+        if getattr(self, "_automatic_recovery_decision", None) == code:
+            return
+        self._automatic_recovery_decision = code
+        self._append_journey_event(severity=severity, code=code,
+            component="connection", stage="automatic_recovery", details=details)
 
     async def _maybe_automatic_link_recovery(self, current, enabled):
+        try:
+            return await self._observe_automatic_link_recovery(current, enabled)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            self._record_automatic_recovery_decision("automatic_recovery.observation_failed", severity="warning")
+            raise  # Preserve the existing loop's exception/backoff behavior.
+
+    async def _observe_automatic_link_recovery(self, current, enabled):
         policy = getattr(self, "_automatic_link_recovery", None)
         if policy is None:
             policy = self._automatic_link_recovery = AutomaticLinkRecovery()
+        preference_unavailable = False
         try:
             consent = (enabled is True and
                        await asyncio.to_thread(self._automatic_recovery_preferences().load) is True)
         except Exception:
             consent = False
+            preference_unavailable = True
         self._automatic_recovery_consent = consent
 
         def eligible(snapshot):
             observation = getattr(self, "_last_readiness_observation", None)
             if observation is None:
+                self._record_automatic_recovery_decision("automatic_recovery.no_observation")
                 return False
             idle = (consent and snapshot.game_state is GameState.IDLE
                     and snapshot.gamescope.running is True
@@ -1017,18 +1039,37 @@ class Plugin:
                     and snapshot.gpus[0].present is True
                     and snapshot.gpus[0].confidence is Confidence.VERIFIED
                     and resolve_runtime_profiles(snapshot).exact_host)
-            return policy.observe(now=time.monotonic(),
+            ready = policy.observe(now=time.monotonic(),
                 absent=observation.transport_absent_verified,
                 present=observation.transport_present, identity=observation.transport_identity,
                 pci_complete=observation.pci_complete or any(
                     gpu.present and gpu.role is not GpuRole.INTERNAL for gpu in snapshot.gpus),
                 enabled=consent and not self._unloading, idle=idle)
+            if not ready:
+                code = policy.decision_code
+                if preference_unavailable:
+                    code = "automatic_recovery.preference_unavailable"
+                elif not consent:
+                    code = "automatic_recovery.disabled"
+                elif self._unloading:
+                    code = "automatic_recovery.unloading"
+                elif code == "automatic_recovery.waiting_for_idle":
+                    if snapshot.game_state is not GameState.IDLE:
+                        code = ("automatic_recovery.game_running" if snapshot.game_state is GameState.RUNNING
+                                else "automatic_recovery.game_unknown")
+                    elif snapshot.gamescope.running is not True:
+                        code = "automatic_recovery.session_unavailable"
+                    else:
+                        code = "automatic_recovery.identity_unavailable"
+                self._record_automatic_recovery_decision(code)
+            return ready
 
         if not eligible(current.snapshot):
             return False
         transport_identity = self._last_readiness_observation.transport_identity
         resolution = await asyncio.to_thread(lambda: resolve_gamescope_user(GamescopeDiscovery().scan()))
         if not resolution.ok or resolution.context is None:
+            self._record_automatic_recovery_decision("automatic_recovery.session_unavailable")
             return False
         # Refresh after async session resolution: no cached idle or attach permission.
         current = await asyncio.to_thread(SnapshotTransitionObservationAdapter(self._discovery).observe)
@@ -1036,12 +1077,16 @@ class Plugin:
         consent = (await asyncio.to_thread(self._automatic_dock_preferences().load) is True
                    and await asyncio.to_thread(self._automatic_recovery_preferences().load) is True)
         journal = await asyncio.to_thread(self._transition_journal_service().status)
-        if not journal.durable or journal.owner.value != "none" or not eligible(current.snapshot):
+        if not journal.durable or journal.owner.value != "none":
+            self._record_automatic_recovery_decision("automatic_recovery.journal_unavailable"
+                if not journal.durable else "automatic_recovery.transition_busy")
+            return False
+        if not eligible(current.snapshot):
             return False
         def recover():
             policy.begin()
-            self._append_journey_event(severity="info", code="automatic_recovery.started",
-                component="connection", stage="automatic_recovery", details={"attempt": policy.attempts})
+            self._record_automatic_recovery_decision("automatic_recovery.started",
+                details={"attempt": policy.attempts})
             return self._link_recovery_service().recover(resolution.context,
                 strategy=LinkRecoveryStrategy.SESSION_RESTART, automatic=True,
                 preflight=lambda: self._automatic_link_recovery_preflight(
@@ -1051,10 +1096,16 @@ class Plugin:
                 lambda: self._run_automatic_connection_recovery(recover, resolution.context))
             if outcome.ok:
                 policy.completed = True
-            self._append_journey_event(severity="info" if outcome.ok else "warning", code=outcome.code,
-                component="connection", stage="automatic_recovery",
+            self._record_automatic_recovery_decision(outcome.code, severity="info" if outcome.ok else "warning",
                 details={"attempt": policy.attempts, "seconds": outcome.seconds})
-        except DockMutationDenied:
+        except DockMutationDenied as error:
+            # Never expose arbitrary exception text, paths or attachment IDs.
+            code = {
+                "dock_mutation.inhibited": "automatic_recovery.admission_inhibited",
+                "dock_mutation.unavailable": "automatic_recovery.admission_unavailable_or_busy",
+                "dock_mutation.unavailable_or_busy": "automatic_recovery.admission_unavailable_or_busy",
+            }.get(str(error), "automatic_recovery.admission_refused")
+            self._record_automatic_recovery_decision(code, severity="warning")
             return False
         finally:
             if policy.in_flight:

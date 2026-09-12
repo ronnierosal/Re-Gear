@@ -8,6 +8,31 @@
   },
   "behaviors": [
     {
+      "id": "automatic-connection-disconnect-coexistence",
+      "contract": "Automatic connection must traverse real recovery admission. Fresh idle attach preserves bounded recovery; retained ordinary disconnect intent survives runtime recreation and refuses recovery visibly. Only verified consumed shutdown evidence can retire its claim. Settings, missing evidence and running games never bypass admission or replenish attempts.",
+      "test_ids": [
+        "tests.test_automatic_recovery_lifecycle.AutomaticRecoveryLifecycleTests.test_absence_then_idle_attach_recovers_at_ten_seconds_under_admission",
+        "tests.test_automatic_recovery_lifecycle.AutomaticRecoveryLifecycleTests.test_ordinary_software_down_survives_plugin_recreation_and_blocks_restart",
+        "tests.test_automatic_recovery_lifecycle.AutomaticRecoveryLifecycleTests.test_busy_unavailable_and_unrecognized_admission_are_reported_once",
+        "tests.test_automatic_recovery_lifecycle.AutomaticRecoveryLifecycleTests.test_settled_early_claim_allows_connection_recovery_without_retirement",
+        "tests.test_automatic_recovery_lifecycle.AutomaticRecoveryLifecycleTests.test_unsettled_early_claim_remains_inhibited",
+        "tests.test_automatic_recovery_lifecycle.AutomaticRecoveryLifecycleTests.test_consumed_shutdown_new_boot_retires_then_retries_ordinary_admission",
+        "tests.test_automatic_recovery_lifecycle.AutomaticRecoveryLifecycleTests.test_saved_preferences_survive_reload_without_replaying_attached_recovery",
+        "tests.test_automatic_recovery_lifecycle.AutomaticRecoveryLifecycleTests.test_persisted_recovery_opt_out_survives_runtime_recreation",
+        "tests.test_automatic_recovery_lifecycle.AutomaticRecoveryLifecycleTests.test_unreadable_preference_reports_fixed_reason_without_restart",
+        "tests.test_automatic_recovery_lifecycle.AutomaticRecoveryLifecycleTests.test_running_or_unknown_game_waits_without_spending_or_retiring",
+        "tests.test_automatic_recovery_lifecycle.AutomaticRecoveryLifecycleTests.test_missing_journal_and_observation_errors_are_reported_without_dispatch",
+        "tests.test_main_automatic_dock_coexistence.AutomaticDockCoexistenceTests.test_new_boot_shutdown_retirement_and_late_hdmi_preserve_single_dispatch",
+        "tests.test_main_automatic_dock_coexistence.AutomaticDockCoexistenceTests.test_running_and_unknown_wait_before_any_retirement",
+        "tests.test_main_automatic_dock_coexistence.AutomaticDockCoexistenceTests.test_retained_nonretirable_claim_and_completion_hold_survive_toggle"
+      ],
+      "source_paths": ["main.py", "backend/regear/**", "src/**"],
+      "hardware_cases": [
+        "Use the lifecycle trial checklist in docs/DOCK_POWER.md with exact installed provenance, settings and redacted initial claim/journal state. Retain the prior working artifact until the candidate passes the applicable supervised checkpoint trials.",
+        "These fixtures do not validate software reconnect, live physical unplug, cable-connected sleep, thermals, actual package-update migration or this device failure's cause. Do not bypass intentional disconnect state to manufacture an automatic-TV pass."
+      ]
+    },
+    {
       "id": "automatic-tv-readiness",
       "contract": "Automatic TV handoff requires current display, audio and session readiness. Missing display, changed identity or unknown game evidence must not authorize transition.",
       "test_ids": [

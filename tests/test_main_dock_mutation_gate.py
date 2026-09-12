@@ -234,7 +234,11 @@ class MainDockAdmissionTests(unittest.TestCase):
         self.assertEqual(commands.calls, [])
         self.assertEqual(policy.attempts, 0)
         self.assertFalse(policy.in_flight)
-        plugin._append_journey_event.assert_not_called()
+        plugin._append_journey_event.assert_called_once_with(
+            severity="warning", code="automatic_recovery.admission_refused",
+            component="connection", stage="automatic_recovery", details=None)
+        self.assertEqual(asyncio.run(plugin._automatic_link_recovery_status())["decision_code"],
+                         "automatic_recovery.admission_refused")
 
 
     def test_fixed_failure_reason_and_phase_survive_rpc(self):
