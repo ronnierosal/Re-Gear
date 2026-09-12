@@ -11,6 +11,7 @@ export type ConnectionProgressOverlayProps = {
   phase:ConnectionProgressPhase;deviceLabel:string;elapsedSeconds?:number;rows:ConnectionProgressRow[];
   detail?:string;delayNotice?:string;activationNotice?:string;keepConnectedMessage?:string;
   onHide():void;onSwitch?:()=>void;
+  recoveryAction?:ReactNode;
 };
 const rowState=(state:ConnectionProgressState):PopupState => state === "ready" ? "ready" : state === "blocked" ? "attention" : state === "error" ? "failed" : state === "switching" || state === "checking" ? "connecting" : "waiting";
 const coreLabels=["GPU and driver","Connection link","TV HDMI detected","Audio recovery ready","Display switching ready"];
@@ -32,6 +33,7 @@ export function ConnectionProgressOverlay(props:ConnectionProgressOverlayProps) 
     <span className="rg-popup-guidance">{props.keepConnectedMessage}</span>
     {props.onSwitch && <DialogButton onClick={props.onSwitch}>Switch to TV</DialogButton>}
     <DialogButton onClick={toggleDetails}><span className="rg-key">Y</span> Details</DialogButton>
+    <div className="rg-popup-recovery">{props.recoveryAction}</div>
   </>}>
     <div className="rg-connection-flow" aria-label="Connection path; device presence and display activation are separate">
       <div className="rg-flow-node"><img src={handheldIcon} alt=""/><span>Handheld</span></div>
