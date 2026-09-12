@@ -36,10 +36,13 @@ export function connectionLiveStatus(payload: SnapshotPayload | null, automatic:
     : undefined;
   const setupRequired = fresh && c?.stage === "action_required"
     && c.code === "connection.session_integration_unprepared";
+  const sessionUnavailable = fresh && c?.stage === "waiting_for_session"
+    && c.code === "connection.session_unavailable";
   const detail = setupRequired ? "Display setup required — open Re-Gear Diagnostics"
     : blocked ? waiting[c?.stage ?? ""]
     : payload?.snapshot.game_state === "running" ? "Close the game to continue"
     : journal && journal !== "journal.idle" ? "Previous result needs acknowledgement"
+    : sessionUnavailable ? "Waiting for Gaming Mode"
     : delayMessage ?? (c?.stage === "timed_out" ? "Taking longer than expected—still checking" : waiting[c?.stage ?? ""]);
   return {phase: docked ? "complete" : switching ? "switching" : "checking", connected, displayPending: fresh && c?.stage === "ready_display_pending", expiresAt: fresh ? Date.now() + Math.max(0, 15000 - Math.max(snapshotAge, c?.checks_age_ms ?? 15000)) : 0, seconds: Math.floor((c?.window_age_ms ?? 0) / 1000), rows,
     title: !fresh ? "Waiting for a fresh status update" : switching ? "Switching to TV — checking picture and audio" : docked ? "TV transition reported complete" : all ? automatic?.enabled ? "Ready — waiting for automatic switch" : "Ready to switch to TV" : detail ?? "Checking connection readiness",
