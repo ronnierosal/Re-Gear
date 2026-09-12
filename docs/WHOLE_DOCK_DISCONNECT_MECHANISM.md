@@ -365,3 +365,9 @@ successful restoration yields release_capture.held_unverified_restored. Confirm
 picture, audio and controls afterward. Do not run another install during a trial.
 A new candidate is prepared offline; installation and hardware results are separate.
 Documentation impact: Wiki after supervised validation.
+
+Packaging correction: local0.3.88 was built concurrently with the final test
+suite and its build metadata reported uncommitted. It is retained but must not
+be installed/published. Its reservation remains consumed. Use0.3.89 for the
+candidate, with tests complete before clean-source packaging. Linux CI for
+98bbcaf passed; this is a provenance correction, not a runtime behavior change.
