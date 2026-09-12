@@ -59,7 +59,7 @@ export function dockControl(status: any, snapshot: any, now = Date.now()): { act
   if (status?.schema_version !== 1 || status.safe_to_unplug !== false || typeof status.busy !== "boolean") return unavailable;
   if (status.busy) return { action: null, label: "Working…", message: "Keep the cable connected. Re-Gear is checking the dock." };
   const observed = typeof snapshot?.observed_at === "string" ? Date.parse(snapshot.observed_at) : NaN;
-  if (!Number.isFinite(observed) || observed > now || now - observed > 10000) return unavailable;
+  if (snapshot?.schema_version !== 3 || !Number.isFinite(observed) || observed > now || now - observed >= 10000) return unavailable;
   if (status.code === "dock_teardown.software_down" && status.software_down === true) {
     return { action: snapshot?.game_state === "idle" ? "whole_dock_reconnect" : null,
       label: "Reconnect eGPU", message: "Software disconnect verified. Keep the cable connected for this trial." };
