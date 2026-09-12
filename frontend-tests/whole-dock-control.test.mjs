@@ -6,7 +6,7 @@ const js = ts.transpileModule(readFileSync(new URL("../src/whole-dock-control-mo
   compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 },
 }).outputText;
 const { dockControl, dockIntentControl, dockRequestSettled, shutdownRequested } = await import("data:text/javascript;base64," + Buffer.from(js).toString("base64"));
-const idle = { game_state: "idle", egpu_link: { state: "up" }, observed_at: new Date().toISOString() };
+const idle = { schema_version: 3, game_state: "idle", egpu_link: { state: "up" }, observed_at: new Date().toISOString() };
 const fresh = { schema_version: 1, busy: false, safe_to_unplug: false, code: "dock_teardown.no_trial", attachment_token: "a".repeat(64)+":"+"b".repeat(64) };
 test("initial disconnect requires supported status and idle detected GPU", () => {
   assert.equal(dockControl(fresh, idle).action, "whole_dock_disconnect");
@@ -129,7 +129,7 @@ const shutdownAccepted = request_id => ({ schema_version:1, busy:false, safe_to_
 test("shutdown intent requires live schema3 readiness; capability metadata cannot enable it", () => {
   const snapshot={...idle,schema_version:3};
   assert.equal(dockIntentControl(fresh,snapshot,"shutdown").action,"whole_dock_shutdown");
-  for (const invalid of [idle,{...snapshot,schema_version:2},{...snapshot,game_state:"running"},
+  for (const invalid of [{...snapshot,schema_version:undefined},{...snapshot,schema_version:2},{...snapshot,game_state:"running"},
     {...snapshot,observed_at:new Date(Date.now()-20000).toISOString()},{...snapshot,egpu_link:{state:"down"}}])
     assert.equal(dockIntentControl(fresh,invalid,"shutdown").action,null);
   assert.equal(dockIntentControl({schema_version:1,code:"dock_power.capabilities",authorizes_action:false,
