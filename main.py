@@ -3447,7 +3447,17 @@ class Plugin:
                             lambda: self._run_automatic_tv_transition(
                                 decision.expected_generation, enabled),
                         )
-                    except Exception:
+                    except Exception as error:
+                        # A refused or failed dispatch consumes this attachment's
+                        # attempt, but must not leave the player waiting on SWITCHING.
+                        # This records failure only; it never rearms or clears intent.
+                        failure_code = "automatic_dock.transition_failed"
+                        if isinstance(error, DockMutationDenied):
+                            failure_code = {
+                                "dock_mutation.inhibited": "automatic_dock.admission_inhibited",
+                                "dock_mutation.unavailable_or_busy": "automatic_dock.admission_unavailable_or_busy",
+                            }.get(str(error), "automatic_dock.admission_refused")
+                        self._automatic_dock.record_result(failure_code, succeeded=False)
                         transition_finished_ns = self._journey_now_ns()
                         self._append_journey_event(
                             severity="error",

@@ -1171,3 +1171,36 @@ hardware-tested behavior.
    and synthetic tests before claiming future-device extensibility.
 
 
+
+### Follow-up diagnostics and status correction
+
+Read-only follow-up at approximately 22:35 UTC found the external GPU present.
+Live Decky samples at 22:36:24–22:36:51 reported ready_idle with GPU/link/HDMI/
+audio/session/idle checks true, but retained reauthorize_intent and automatic
+switching/switch_requested. The user has been asked whether a manual Desktop
+switch, Retry, restart or connection change occurred between captures; no
+spontaneous-arrival or successful-TV claim is made pending that answer.
+The reviewed kernel collector examined 1609 current-boot rows and found zero
+matching AER, blocked-task or xHCI symptom counts. A ten-sample passive PCIe
+probe found enumerated GPU/USB/bridge and zero available error counters. These
+bounded checks provide no temperature, fan, damage or thermal-safety evidence.
+The holder scan was complete and listed wireplumber.service; that is not evidence
+of a need to stop it for auto-connect. No services were stopped by the operator.
+
+Independent read-only audit identified missing reset provenance in the four-field
+legacy whole-dock claim. An absent router sample or changed sysfs generation does
+not independently prove a physical power reset. Existing retirement supports early
+aborts or verified software-reconnected completion, not this legacy failed stage.
+Keep the record intact until a reviewed guarded reconciliation mechanism exists.
+
+A bounded local correction in main.py now changes failed automatic dispatch from
+stale SWITCHING to ACTION_REQUIRED with an allowlisted admission/failure code.
+It uses record_result(False), preserves the consumed attempt, existing backoff,
+claim and hardware guards, and does not rearm or execute recovery. Four exception
+cases run through the production loop across later ready samples without replay.
+Nine focused tests, 47 admission/lifecycle tests, 43 golden checks, architecture
+and compile passed locally. This correction is not packaged or installed; 0.3.95
+remains on the Ally. Review and subsequent integration gates remain separate.
+Evidence: 0395-troubleshoot-readonly.json, 0395-troubleshoot-kernel.json,
+0395-live-1789252584051.jsonl and 0395-current-holders.json in whole-dock-disconnect/out.
+Documentation impact: Wiki
