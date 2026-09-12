@@ -1,20 +1,21 @@
 """Linux-root recovery composition against production fixed-path filesystem IO.
 
 Only a forked child enters a private chroot. The parent retains its normal root
-and removes only its TemporaryDirectory. No admission/store/factory is patched,
+and removes only its verified temporary directory. No admission/store/factory is patched,
 and no fixture owner_uid or trusted_directory_fd bypass is used. Device/session
 observations and commands are fake; these tests never operate an eGPU.
 """
 import asyncio
 import concurrent.futures.thread  # Preload lazy executor imports before chroot.
-from contextlib import ExitStack
+from contextlib import ExitStack, contextmanager
 import os
 from pathlib import Path
 import select
+import shutil
 import signal
 import subprocess
 import sys
-from tempfile import TemporaryDirectory
+from tempfile import mkdtemp
 import threading
 import time
 import traceback
@@ -37,12 +38,26 @@ ROOT_AVAILABLE = (sys.platform == "linux" and hasattr(os, "fork")
 
 @unittest.skipUnless(ROOT_AVAILABLE, "Linux root and chroot required")
 class AutomaticRecoveryPrivilegedTests(unittest.TestCase):
+    @contextmanager
+    def private_root(self):
+        root = Path(mkdtemp(prefix="regear-root-recovery-"))
+        expected = root.resolve(strict=True)
+        try:
+            yield root
+        finally:
+            # No TemporaryDirectory finalizer: an unexpected path is retained
+            # for inspection, rather than recursively cleaned after assertion.
+            self.assertFalse(root.is_symlink(), "changed fixture path retained")
+            self.assertEqual(root.resolve(strict=True), expected,
+                             "changed fixture path retained")
+            self.assertTrue(expected.is_absolute() and expected.name.startswith("regear-root-recovery-"))
+            shutil.rmtree(expected)
+
     def isolated(self, scenario):
         import fcntl  # Native module must be loaded outside the empty chroot.
         self.assertEqual(threading.active_count(), 1, "fork fixture requires a single-threaded parent")
         module = load_main_module(real_dock_gate=True)
-        with TemporaryDirectory(prefix="regear-root-recovery-") as temporary:
-            root = Path(temporary)
+        with self.private_root() as root:
             resolved_root = root.resolve(strict=True)
             (root / "var" / "lib").mkdir(parents=True, mode=0o755)
             root.chmod(0o700)
