@@ -29,11 +29,15 @@ class Reading:
 
 
 class MainLateTvArrivalTests(unittest.IsolatedAsyncioTestCase):
-    async def run_readings(self, readings, *, suppressed=False):
+    async def run_readings(self, readings, *, suppressed=False, execution_results=(), stable_tv=False):
         module = load_main_module()
         plugin = module.Plugin()
         index = 0
         observed = current("connected-internal.json")
+        if stable_tv:
+            observed = replace(observed, snapshot=replace(observed.snapshot,
+                displays=tuple(replace(d, stable_id="display:0123456789abcdef")
+                    if d.stable_id == "external-tv" else d for d in observed.snapshot.displays)))
         dispatches, stages, events = [], [], []
         plugin._connection_readiness = ConnectionReadinessLifecycle(
             lambda: readings[index].at
@@ -69,6 +73,8 @@ class MainLateTvArrivalTests(unittest.IsolatedAsyncioTestCase):
 
         def execute(target, **kwargs):
             dispatches.append((index, target, kwargs))
+            if len(dispatches) <= len(execution_results):
+                return execution_results[len(dispatches) - 1]
             return types.SimpleNamespace(
                 outcome=types.SimpleNamespace(kind=TransitionOutcomeKind.SUCCEEDED),
                 code="transition.succeeded", accepted=True,
@@ -105,6 +111,24 @@ class MainLateTvArrivalTests(unittest.IsolatedAsyncioTestCase):
         # a swallowed IO/mock failure cannot make a no-dispatch test pass.
         self.assertEqual(plugin._last_readiness_observation.sample_id, f"sample-{len(readings) - 1}")
         return dispatches, stages
+
+    async def test_premutation_refusal_retries_once_through_production_dispatch(self):
+        from regear.application.supervised_transition import SupervisedTransitionExecution
+        refused = SupervisedTransitionExecution(False, "transition.evidence_changed")
+        dispatches, _ = await self.run_readings([Reading(n) for n in range(8)],
+            execution_results=(refused, refused), stable_tv=True)
+        self.assertEqual([call[0] for call in dispatches], [3, 4])
+
+    async def test_uncertain_or_started_execution_never_retries_through_loop(self):
+        from regear.application.supervised_transition import SupervisedTransitionExecution
+        for refused in (
+            SupervisedTransitionExecution(False, "transition.evidence_changed", operation_id="started"),
+            SupervisedTransitionExecution(False, "transition.observation_unavailable"),
+        ):
+            with self.subTest(code=refused.code, operation=refused.operation_id):
+                dispatches, _ = await self.run_readings([Reading(n) for n in range(8)],
+                    execution_results=(refused,), stable_tv=True)
+                self.assertEqual([call[0] for call in dispatches], [3])
 
     async def test_absent_hdmi_past_deadline_then_arrival_dispatches_once(self):
         readings = [Reading(n, hdmi=False) for n in range(5)]
