@@ -378,3 +378,12 @@ running helper as well as startup. systemd-run v257 leaves the service type
 unspecified by default; TimeoutStartSec alone does not bound the full helper
 runtime. Reference: https://github.com/systemd/systemd/blob/v257/src/run/run.c
 All older local archives remain unchanged; only0.3.90 is offered for this trial.
+
+0.3.90 publication verified: https://github.com/ronnierosal/Re-Gear/releases/tag/v0.3.90
+Source cf60d79e5510a3f226033b699123974894819148. SHA-256
+fd8f88078ac2eff0fff131cfd8b092f197b0676b028ff9d8a629fa405ad74fb2
+matches the uploaded GitHub asset digest. Final-source Linux CI runs34663328047
+and34663328049 both passed. Published as a prerelease, not the latest stable
+release. The Ally remained off: no staging, installation or hardware validation.
+PR304 remains open for the larger disconnect work; this candidate tests only
+held release, complete-holder observation and restoration with the cable attached.
