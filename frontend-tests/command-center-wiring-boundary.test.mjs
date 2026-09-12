@@ -24,20 +24,26 @@ function headerCopy(native,nestedId,disconnectControl,synthetic){
   return values.join(' ');
 }
 
-test("runtime wiring retains generic headers outside the guarded native disconnect detail", () => {
+test("runtime wiring retains generic headers including the guarded native disconnect detail", () => {
   assert.ok(dock?.initializer);assert.equal(headers.length,1);
-  for(const [native,nestedId,control] of [[true,null,{}],[true,'manual',{}],[true,'disconnect',null],[false,'disconnect',{}]]){
+  for(const [native,nestedId,control] of [[true,null,{}],[true,'manual',{}],[true,'disconnect',null],[false,'disconnect',{}],[true,'disconnect',{}]]){
     const copy=headerCopy(native,nestedId,control,false);
     assert.match(copy,/Application status/);
     assert.doesNotMatch(copy,/Disconnect trial|Keep the cable connected/);
   }
 });
 
-test("existing native disconnect trial copy remains scoped to its supplied guarded detail", () => {
-  const copy=headerCopy(true,'disconnect',{},false);
-  assert.match(copy,/Disconnect trial/);assert.match(copy,/Keep the cable connected/);
+test("native disconnect warning remains inside the supplied guarded detail", () => {
+  assert.doesNotMatch(headerCopy(true,'disconnect',{},false),/Disconnect trial|Keep the cable connected/);
+  const notices=nodes(node=>ts.isJsxElement(node)&&node.openingElement.tagName.getText(tree)==='CommandNotice');
+  assert.equal(notices.length,1);
+  const notice=notices[0];
+  assert.match(notice.getText(tree),/Keep the cable connected/);
+  assert.equal(notice.parent.left.getText(tree),'dockControl');
+  let parent=notice.parent;let nested=false;let header=false;
+  while(parent){if(ts.isJsxElement(parent)){const tag=parent.openingElement.tagName.getText(tree);if(tag==='header')header=true;if(parent.openingElement.attributes.getText(tree).includes('data-ec-detail-content'))nested=true;}parent=parent.parent;}
+  assert.equal(header,false);assert.equal(nested,true);
   assert.match(shell,/const detailContent = dockControl \? disconnectControl/);
-  // Injection selects an existing control; the shared shell cannot dispatch RPCs.
   assert.doesNotMatch(shell,/from ["'][^"']*(?:backend|@decky\/api)["']/);
 });
 

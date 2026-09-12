@@ -1,4 +1,5 @@
 import { UtilityRail } from "./utility-rail";
+import { CommandNotice } from "./detail-ui";
 import { useLayoutEffect, useRef, useState } from "react";
 import type { CSSProperties, KeyboardEvent, ReactNode, ElementType } from "react";
 import { CommandCenterIcon, type CommandCenterIconId } from "../command-center-icons";
@@ -220,7 +221,7 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
       onFocus={(event: { target: EventTarget }) => { detailHadFocus.current = Boolean((event.target as HTMLElement).closest("[data-ec-detail-content]")); const id = (event.target as HTMLElement).closest<HTMLElement>("[data-ec-control]")?.dataset.ecControl; if (id && !nested) memory.current[tab] = id; }}>
       {tab === "quick" && !nested && <UtilityRail side="left" Button={Button} Focusable={Container}/>}
       <Container className="rg-expanded" {...(native ? {"flow-children":"vertical",noFocusRing:true} : {})}>
-      <header className="rg-expanded-brand"><span className="rg-expanded-wordmark"><img src={brandIcon} alt=""/>Re-Gear</span><span className="rg-expanded-demo"><span className="rg-expanded-demo-label"><i/>{dockControl ? "Disconnect trial" : synthetic ? "Demo · Sample data" : "Application status"}</span><span>{dockControl ? "Keep the cable connected" : synthetic ? "Hardware controls not connected" : renderDetail ? "Status and controls" : "Readings only · View details"}</span></span></header>
+      <header className="rg-expanded-brand"><span className="rg-expanded-wordmark"><img src={brandIcon} alt=""/>Re-Gear</span><span className="rg-expanded-demo"><span className="rg-expanded-demo-label"><i/>{synthetic ? "Demo · Sample data" : "Application status"}</span><span>{synthetic ? "Hardware controls not connected" : renderDetail ? "Status and controls" : "Readings only · View details"}</span></span></header>
       <Container className="rg-expanded-tabs" role="tablist" aria-label="Command Center sections" {...(native ? { "flow-children": "horizontal", noFocusRing: true } : {})}>
         {tabs.map(id => <Button key={id} id={`ec-tab-${id}`} type="button" role="tab" aria-selected={tab === id} aria-controls="ec-tabpanel" data-ec-tab={id} className="rg-expanded-tab"
           onClick={() => { setNested(null); setTab(id); if (id === tab) focus(restoreTarget(controlIds(), memory.current[tab])); }}>
@@ -231,7 +232,9 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
         <h2>{nested ? nested.title : tabLabels[tab]}</h2>
         <p className="rg-expanded-context">{nested ? (hasDetail ? "Settings and actions" : synthetic ? "Configuration preview · no changes are applied" : "Current status · no changes are applied") : tab === "quick" ? "Essential controls while you play" : tab === "performance" ? "Configure performance for your play style" : synthetic ? "Status and configuration preview" : "Status and configuration"}</p>
         {nested ? <section className="rg-expanded-detail-page">
-          {hasDetail ? <Container key={nested.id} data-ec-control="nested-content" data-ec-detail-content {...(native ? { "flow-children": "vertical", noFocusRing: true, preferredFocus: true } : {})}>{detailContent}</Container> : <>
+          {hasDetail ? <Container key={nested.id} data-ec-control="nested-content" data-ec-detail-content {...(native ? { "flow-children": "vertical", noFocusRing: true, preferredFocus: true } : {})}>
+            {dockControl && <CommandNotice tone="warning" title="Keep the cable connected">Disconnect trial � Follow the guarded flow before any physical action.</CommandNotice>}
+            {detailContent}</Container> : <>
           <h3>{nested.value}</h3>
           <p>{synthetic && nested.id === "auto" ? "Auto TDP is off and not configured. Target and limit selection must precede Start. This prototype cannot start, stop or tune the controller." : nested.detail}</p>
           {synthetic && nested.id === "auto" && <p><strong>State vocabulary:</strong> Off · Running · Stopping… · Unknown · Needs configuration</p>}

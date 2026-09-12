@@ -1,4 +1,5 @@
 import { createNonEgpuDetailPublisher, type NonEgpuDetailState } from "./quick-access/expanded-command-center/non-egpu-detail-source";
+import { createControllerReadingLifetime } from "./quick-access/expanded-command-center/controller-reading-lifetime";
 import { createNonEgpuDetailRenderer } from "./quick-access/expanded-command-center/non-egpu-detail-renderer";
 import type { MenuVisibility } from "./quick-access/expanded-command-center/menu-visibility";
 import { PageLayout, CommandCenterHeader } from "./quick-access/page-layout";
@@ -573,6 +574,14 @@ function preflightObservation(payload: SnapshotPayload): PreflightObservation {
 function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAvailable, publishTiles, publishDetails, menuVisibility, publishMenuSnapshot }: { preflight: SleepPreflightCoordinator; connection: ReturnType<typeof startConnectionMonitor>; shortcut: ReturnType<typeof createDisplayShortcutRuntime>; openExpanded(): void; menuShortcutAvailable: boolean; publishTiles(readings: Readings): void; publishDetails(state: NonEgpuDetailState | null): void; menuVisibility: MenuVisibility; publishMenuSnapshot(snapshot: SnapshotPayload["snapshot"] | null): void }) {
   const quickAccessVisible = useQuickAccessVisible();
   const expandedVisible = useSyncExternalStore(menuVisibility.subscribe, menuVisibility.read, menuVisibility.read);
+  const [controllerLifetime] = useState(() => createControllerReadingLifetime<PeripheralStatusPayload>());
+  const controllerReading = useSyncExternalStore(controllerLifetime.source.subscribe, controllerLifetime.source.read, controllerLifetime.source.read);
+  const controllerVisible = useRef(false);
+  controllerVisible.current = quickAccessVisible || expandedVisible;
+  useEffect(() => {
+    if (!quickAccessVisible && !expandedVisible) controllerLifetime.setEligible(false);
+  }, [quickAccessVisible, expandedVisible, controllerLifetime]);
+  useEffect(() => () => controllerLifetime.stop(), [controllerLifetime]);
   const statusAnchor = useRef<HTMLDivElement | null>(null);
   const statusFocusAnchor = useRef<HTMLDivElement | null>(null);
   const primaryControlAnchor = useRef<HTMLDivElement | null>(null);
@@ -815,6 +824,19 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
           // read-only snapshot into an apparent hardware failure.
         }
       }
+      controllerLifetime.setEligible(controllerVisible.current && nextPayload.snapshot.game_state === "idle");
+      const readPeripheral = async () => {
+        const ticket = controllerLifetime.start();
+        try {
+          const value = await getPeripheralStatus();
+          if (!controllerVisible.current) controllerLifetime.setEligible(false);
+          controllerLifetime.complete(ticket, value);
+          return value;
+        } catch (error) {
+          controllerLifetime.complete(ticket, null);
+          throw error;
+        }
+      };
       const optionalDiagnostics = await collectOptionalDiagnostics(
         shouldCollectOptionalDiagnostics(
           // `showDiagnostics` says the player opened these surfaces, not that
@@ -827,14 +849,14 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
         {
           getDockedIgpuStatus,
           getDiagnosticLoggingStatus,
-          getPeripheralStatus,
+          getPeripheralStatus: readPeripheral,
           getActionHistory,
         },
       );
       let nextPeripheral = optionalDiagnostics.peripheralStatus;
       if (expandedVisible && !(quickAccessVisible && diagnosticsOnScreen.current)
           && nextPayload.snapshot.game_state === "idle") {
-        try { nextPeripheral = await getPeripheralStatus(); }
+        try { nextPeripheral = await readPeripheral(); }
         catch { nextPeripheral = null; }
       }
       const presentationPayload = {
@@ -860,7 +882,7 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
         setLoading(false);
       }
     }
-  }, [preflight, quickAccessVisible, expandedVisible, refreshTransitionJournal, showDiagnostics]);
+  }, [preflight, quickAccessVisible, expandedVisible, refreshTransitionJournal, showDiagnostics, controllerLifetime]);
 
   useEffect(() => {
     if (quickAccessVisible) {
@@ -1719,14 +1741,11 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
       fresh: menuFresh,
       egpu: menuFresh ? egpuPresentation(payload) : null,
       controller: controllerPresentation({
-        peripheral: peripheralStatus, shortcutAvailable: menuShortcutAvailable,
+        peripheral: controllerReading, shortcutAvailable: menuShortcutAvailable,
       }),
-      // From the peripheral reading itself, never the snapshot. That payload
-      // carries no observation timestamp, so this means "a reading was
-      // received" rather than "a reading is recent" -- an honest limitation
-      // rather than a borrowed one. Today every such reading is
-      // controller.identity_unmapped, so the tab is Unknown either way.
-      controllerFresh: peripheralStatus !== null,
+      // Client request-start lifetime, not device observation age. Expiry is
+      // independent of GPU refresh and shared with the live detail publisher.
+      controllerFresh: controllerReading !== null,
       // From the performance owner, never from the snapshot above. Those
       // readings have no device observation timestamp to age, so the owner
       // bounds their lifetime from the request that fetched them and nulls
@@ -1743,16 +1762,16 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
         ? displayTargetEvidence(snapshot.displays)
         : UNKNOWN_EVIDENCE,
     });
-  }, [publishTiles, publishMenuSnapshot, menuFresh, payload, peripheralStatus, menuShortcutAvailable,
+  }, [publishTiles, publishMenuSnapshot, menuFresh, payload, controllerReading, menuShortcutAvailable,
       menuPerformance.active, menuPerformance.autoKnown, menuPerformance.stopping,
       menuPerformance.supported, menuPerformance.action, menuPerformance.busy,
       performance.manual?.current_watts, menuAgeTick, snapshot?.displays]);
 
   useEffect(() => {
     publishDetails({ performance, controller: controllerPresentation({
-      peripheral: menuFresh ? peripheralStatus : null, shortcutAvailable: menuShortcutAvailable,
+      peripheral: controllerReading, shortcutAvailable: menuShortcutAvailable,
     }) });
-  }, [publishDetails, performance, menuFresh, peripheralStatus, menuShortcutAvailable]);
+  }, [publishDetails, performance, controllerReading, menuShortcutAvailable]);
   useEffect(() => () => { publishDetails(null); publishMenuSnapshot(null); }, [publishDetails, publishMenuSnapshot]);
 
   // Re-evaluate when this observation actually expires, so a reading cannot
