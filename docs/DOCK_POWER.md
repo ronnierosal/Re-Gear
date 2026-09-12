@@ -105,6 +105,6 @@ Software checks do not certify sleep/wake, shutdown completion, or physical
 removal. No version bump, release ZIP, installation, or device test is part of
 this backend-only change.
 
-The read-only `get_egpu_power_status` backend RPC exposes this contract without
+The read-only `get_egpu_disconnect_status("power_capabilities")` backend request exposes this contract without
 initializing a hardware runtime. It is available for later UI wiring; its
 capability response cannot replace the execution preflight.

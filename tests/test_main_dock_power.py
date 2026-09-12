@@ -22,7 +22,7 @@ class MainDockPowerTests(unittest.TestCase):
         self.plugin._run_background_operation = Mock()
         self.plugin._run_whole_dock_trial = Mock()
         with patch.object(self.module, 'DrmDiscovery') as discovery:
-            result = asyncio.run(self.plugin.get_egpu_power_status())
+            result = asyncio.run(self.plugin.get_egpu_disconnect_status("power_capabilities"))
         self.assertFalse(result['authorizes_action'])
         self.assertEqual(result['actions']['shutdown']['live_readiness'], 'not_assessed')
         self.assertFalse(result['actions']['sleep']['actionable'])

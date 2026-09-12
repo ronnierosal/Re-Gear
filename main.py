@@ -1906,10 +1906,6 @@ class Plugin:
                 self._live_disconnect_key = key
             return self._live_disconnect
 
-    async def get_egpu_power_status(self, _request: object = None) -> dict[str, object]:
-        """Read build capabilities only; execution always requires fresh checks."""
-        return dock_power_capabilities()
-
     async def get_egpu_disconnect_status(
         self, _request: object = None
     ) -> dict[str, object]:
@@ -1918,6 +1914,8 @@ class Plugin:
         Safe to poll. No filter is armed, no DRM master taken, and no display
         touched by asking.
         """
+        if _request == "power_capabilities":
+            return dock_power_capabilities()
         if _request == "release_capture":
             result = dict(getattr(self, "_release_capture_status", {"code": "release_capture.not_started"}))
             result["restore_timer"] = getattr(self, "_release_capture_restore_unit", "")
