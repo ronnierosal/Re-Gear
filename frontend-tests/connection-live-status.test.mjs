@@ -161,3 +161,16 @@ test("display-pending copy yields to stale evidence and current player blockers"
  p.snapshot.game_state="idle";
  assert.equal(status(p,{enabled:false},"journal.result_required").title,"Previous result needs acknowledgement");
 });
+
+test("unavailable Gaming session is distinct from audio or setup at every age",()=>{
+ const p=sample();p.connection_readiness.stage="waiting_for_session";
+ p.connection_readiness.code="connection.session_unavailable";
+ p.connection_readiness.checks.session=false;p.connection_readiness.checks.audio=false;
+ for(const age of [0,120001,360000]){
+  p.connection_readiness.window_age_ms=age;
+  const s=status(p,{enabled:false},"journal.idle");
+  assert.equal(s.title,"Waiting for Gaming Mode");assert.equal(s.canSwitch,false);
+ }
+ p.connection_readiness.checks_age_ms=15000;
+ assert.equal(status(p,{enabled:false},"journal.idle").title,"Waiting for a fresh status update");
+});

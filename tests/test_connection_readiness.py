@@ -48,6 +48,44 @@ class ConnectionReadinessTests(unittest.TestCase):
         self.clock = Clock()
         self.lifecycle = ConnectionReadinessLifecycle(self.clock)
 
+    def test_unavailable_session_does_not_claim_audio_or_setup_failure(self):
+        for index in range(4):
+            status = self.lifecycle.update(sample(
+                index, session_available=False, session_ready=False,
+                audio_ready=False, hdmi_ready=False,
+            ))
+        self.assertEqual(status.code, "connection.session_unavailable")
+        self.clock.now = WINDOW_TIMEOUT_SECONDS + 1
+        status = self.lifecycle.update(sample(
+            4, session_available=False, session_ready=False,
+            audio_ready=False, hdmi_ready=False,
+        ))
+        self.assertEqual(status.stage, ConnectionReadinessStage.WAITING_FOR_SESSION)
+        self.assertEqual(status.code, "connection.session_unavailable")
+        status = self.lifecycle.update(sample(
+            5, session_available=True, session_ready=False,
+        ))
+        self.assertEqual(status.code, "connection.session_integration_unprepared")
+        for index in range(6, 10):
+            status = self.lifecycle.update(sample(index, session_available=True))
+        self.assertEqual(status.stage, ConnectionReadinessStage.READY_IDLE)
+
+    def test_unavailable_session_never_readies_even_with_inconsistent_flags(self):
+        for index in range(5):
+            status = self.lifecycle.update(sample(index, session_available=False))
+        self.assertEqual(status.code, "connection.session_unavailable")
+
+    def test_device_failures_keep_priority_over_unavailable_session(self):
+        for changes, expected in (
+            ({"g1_identity": "", "pci_complete": False}, "connection.waiting_for_pci"),
+            ({"driver_ready": False}, "connection.waiting_for_driver"),
+            ({"link_up": False}, "connection.waiting_for_link"),
+        ):
+            with self.subTest(expected=expected):
+                lifecycle = ConnectionReadinessLifecycle(self.clock)
+                status = lifecycle.update(sample(0, session_available=False, **changes))
+                self.assertEqual(status.code, expected)
+
     def test_adaptive_polling_covers_delayed_enumeration(self):
         self.assertEqual(poll_after_ms(0), 500)
         self.assertEqual(poll_after_ms(9.999), 500)
