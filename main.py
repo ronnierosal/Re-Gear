@@ -985,7 +985,8 @@ class Plugin:
         if policy is None:
             policy = self._automatic_link_recovery = AutomaticLinkRecovery()
         try:
-            consent = enabled and await asyncio.to_thread(self._automatic_recovery_preferences().load)
+            consent = (enabled is True and
+                       await asyncio.to_thread(self._automatic_recovery_preferences().load) is True)
         except Exception:
             consent = False
         self._automatic_recovery_consent = consent
@@ -1010,14 +1011,15 @@ class Plugin:
 
         if not eligible(current.snapshot):
             return False
+        transport_identity = self._last_readiness_observation.transport_identity
         resolution = await asyncio.to_thread(lambda: resolve_gamescope_user(GamescopeDiscovery().scan()))
         if not resolution.ok or resolution.context is None:
             return False
         # Refresh after async session resolution: no cached idle or attach permission.
         current = await asyncio.to_thread(SnapshotTransitionObservationAdapter(self._discovery).observe)
         await self._observe_connection_readiness(current)
-        consent = (await asyncio.to_thread(self._automatic_dock_preferences().load)
-                   and await asyncio.to_thread(self._automatic_recovery_preferences().load))
+        consent = (await asyncio.to_thread(self._automatic_dock_preferences().load) is True
+                   and await asyncio.to_thread(self._automatic_recovery_preferences().load) is True)
         journal = await asyncio.to_thread(self._transition_journal_service().status)
         if not journal.durable or journal.owner.value != "none" or not eligible(current.snapshot):
             return False
@@ -1027,7 +1029,9 @@ class Plugin:
         try:
             outcome = await self._run_background_operation(
                 lambda: self._link_recovery_service().recover(resolution.context,
-                    strategy=LinkRecoveryStrategy.SESSION_RESTART, automatic=True))
+                    strategy=LinkRecoveryStrategy.SESSION_RESTART, automatic=True,
+                    preflight=lambda: self._automatic_link_recovery_preflight(
+                        resolution.context, transport_identity)))
             if outcome.ok:
                 policy.completed = True
             self._append_journey_event(severity="info" if outcome.ok else "warning", code=outcome.code,
@@ -1036,6 +1040,44 @@ class Plugin:
         finally:
             policy.finish(time.monotonic())
         return True
+
+    def _automatic_link_recovery_preflight(self, expected_user, transport_identity):
+        """Revalidate automatic authority inside the recovery reservation.
+
+        The automatic policy supplies settling and attempt limits; unlike manual
+        recovery, it does not require an exhausted readiness window. Exceptions
+        propagate to the service, which refuses before spending a hardware attempt.
+        """
+        resolution = resolve_gamescope_user(GamescopeDiscovery().scan())
+        if not resolution.ok or resolution.context != expected_user:
+            return "link_recovery.session_unavailable"
+        topology = self._connection_topology.observe()
+        current = SnapshotTransitionObservationAdapter(self._discovery).observe()
+        snapshot = current.snapshot
+        journal = self._transition_journal_service().status()
+        if not journal.durable or journal.owner.value != "none":
+            return "link_recovery.transition_busy"
+        if (not transport_identity or not transport_identity.startswith("transport:")
+                or transport_identity == "transport:unresolved"
+                or topology.transport_identity != transport_identity
+                or topology.transport_present is not True):
+            return "link_recovery.transport_changed"
+        if topology.pci_complete is not False:
+            return "link_recovery.pci_complete"
+        if (snapshot.gamescope.running is not True or len(snapshot.gpus) != 1
+                or snapshot.gpus[0].role is not GpuRole.INTERNAL
+                or snapshot.gpus[0].present is not True
+                or snapshot.gpus[0].confidence is not Confidence.VERIFIED
+                or not resolve_runtime_profiles(snapshot).exact_host):
+            return "link_recovery.identity_unavailable"
+        if snapshot.game_state is not GameState.IDLE:
+            return ("link_recovery.game_running" if snapshot.game_state is GameState.RUNNING
+                    else "link_recovery.game_unknown")
+        if (getattr(self, "_unloading", True)
+                or self._automatic_dock_preferences().load() is not True
+                or self._automatic_recovery_preferences().load() is not True):
+            return "automatic_recovery.disabled"
+        return ""
 
     async def get_link_recovery_status(
         self, _request: object = None
