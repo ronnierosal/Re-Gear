@@ -244,6 +244,37 @@ class AutomaticRecoveryLifecycleTests(unittest.TestCase):
         self.assertTrue(self.poll(30))
         self.assertEqual(self.commands.calls, [RESTART])
 
+    def test_persisted_recovery_opt_out_survives_runtime_recreation(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            AutomaticDockPreferenceStore(root).save(True)
+            AutomaticDockPreferenceStore(root, recovery=True).save(False)
+            for _ in range(2):
+                self.make_plugin()
+                self.plugin._automatic_dock_preferences = lambda: AutomaticDockPreferenceStore(root)
+                self.plugin._automatic_recovery_preferences = lambda: AutomaticDockPreferenceStore(root, recovery=True)
+                self.attach_until_due()
+                self.assertFalse(self.poll(11))
+                self.assertEqual(self.decision(), "automatic_recovery.disabled")
+                self.assertFalse(self.plugin._automatic_recovery_preferences().load())
+                self.assertTrue(self.plugin._automatic_dock_preferences().load())
+                self.assertEqual(self.commands.calls, [])
+                self.assertEqual(self.plugin._automatic_link_recovery.attempts, 0)
+
+    def test_unreadable_preference_reports_fixed_reason_without_restart(self):
+        self.attach_until_due()
+        def unreadable():
+            raise OSError("private/preference/path")
+        self.plugin._automatic_recovery_preferences = unreadable
+        self.assertFalse(self.poll(11))
+        result = asyncio.run(self.plugin._automatic_link_recovery_status())
+        self.assertEqual(result["decision_code"], "automatic_recovery.preference_unavailable")
+        self.assertFalse(result["enabled"])
+        self.assertEqual(self.commands.calls, [])
+        self.assertEqual(self.plugin._automatic_link_recovery.attempts, 0)
+        self.assertNotIn("private/preference/path", str(result))
+        self.assertNotIn("private/preference/path", str(self.plugin._append_journey_event.call_args_list))
+
     def test_missing_journal_and_observation_errors_are_reported_without_dispatch(self):
         self.attach_until_due()
         self.journal.durable = False

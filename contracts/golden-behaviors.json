@@ -18,6 +18,8 @@
         "tests.test_automatic_recovery_lifecycle.AutomaticRecoveryLifecycleTests.test_unsettled_early_claim_remains_inhibited",
         "tests.test_automatic_recovery_lifecycle.AutomaticRecoveryLifecycleTests.test_consumed_shutdown_new_boot_retires_then_retries_ordinary_admission",
         "tests.test_automatic_recovery_lifecycle.AutomaticRecoveryLifecycleTests.test_saved_preferences_survive_reload_without_replaying_attached_recovery",
+        "tests.test_automatic_recovery_lifecycle.AutomaticRecoveryLifecycleTests.test_persisted_recovery_opt_out_survives_runtime_recreation",
+        "tests.test_automatic_recovery_lifecycle.AutomaticRecoveryLifecycleTests.test_unreadable_preference_reports_fixed_reason_without_restart",
         "tests.test_automatic_recovery_lifecycle.AutomaticRecoveryLifecycleTests.test_running_or_unknown_game_waits_without_spending_or_retiring",
         "tests.test_automatic_recovery_lifecycle.AutomaticRecoveryLifecycleTests.test_missing_journal_and_observation_errors_are_reported_without_dispatch",
         "tests.test_main_automatic_dock_coexistence.AutomaticDockCoexistenceTests.test_new_boot_shutdown_retirement_and_late_hdmi_preserve_single_dispatch",
