@@ -25,15 +25,18 @@ export function ReGearPopup({ title, status, tone = "neutral", elapsed, children
   title: string; status?: string; tone?: DetailTone; elapsed?: string; children: ReactNode; footer?: ReactNode;
 }) {
   const color = toneColor[tone];
-  return <section data-regear-popup style={{ width: "min(620px,calc(100vw - 48px))", maxHeight: "min(560px,calc(100vh - 48px))", display: "grid", gridTemplateRows: "auto minmax(0,1fr) auto", overflow: "hidden", border: "1px solid #315c75", borderRadius: 14, background: "linear-gradient(145deg,#102536f7,#061520fa 62%,#04101afa)", boxShadow: "0 18px 55px #0009", color: "#f4f7fb" }}>
-    <header style={{ display: "grid", gridTemplateColumns: "auto minmax(0,1fr) auto", alignItems: "center", gap: 9, padding: "10px 12px", borderBottom: "1px solid #294f68" }}>
-      <span style={{ display: "grid", placeItems: "center", width: 30, height: 30, borderRadius: 8, border: `1px solid ${color}66`, color, background: "#0a2232" }}><CommandCenterIcon id={toneIcon[tone]} size={19}/></span>
-      <span style={{ minWidth: 0 }}><strong style={{ display: "block", fontSize: 14, lineHeight: 1.2 }}>{title}</strong>{status && <small style={{ display: "block", marginTop: 2, color, fontSize: 10.5, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{status}</small>}</span>
-      {elapsed && <span style={{ color: "#8fb3cc", fontSize: 10, whiteSpace: "nowrap" }}>{elapsed}</span>}
-    </header>
-    <div data-regear-popup-body style={{ minHeight: 0, overflow: "auto", padding: 12, scrollbarWidth: "thin", scrollbarColor: "#315f78 #061724" }}>{children}</div>
-    {footer && <footer style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 8, padding: "8px 12px", borderTop: "1px solid #294f68", background: "#061521" }}>{footer}</footer>}
-  </section>;
+  return <div data-regear-popup-layer style={{ position: "fixed", inset: 0, display: "grid", placeItems: "center", padding: 24, pointerEvents: "none", zIndex: 1000 }}>
+    <style>{`@keyframes regearPopupPulse{0%,100%{transform:scale(.92);opacity:.58}50%{transform:scale(1.08);opacity:1}}@keyframes regearPopupSpin{to{transform:rotate(360deg)}}@media (prefers-reduced-motion: reduce){[data-regear-popup-active]{animation:none!important}}`}</style>
+    <section data-regear-popup style={{ width: "min(560px,calc(100vw - 48px))", maxHeight: "min(520px,calc(100vh - 48px))", display: "grid", gridTemplateRows: "auto minmax(0,1fr) auto", overflow: "hidden", border: "1px solid #315c75", borderRadius: 14, background: "linear-gradient(145deg,#102536f7,#061520fa 62%,#04101afa)", boxShadow: "0 18px 55px #0009", color: "#f4f7fb", pointerEvents: "auto" }}>
+      <header style={{ display: "grid", gridTemplateColumns: "auto minmax(0,1fr) auto", alignItems: "center", gap: 9, padding: "10px 12px", borderBottom: "1px solid #294f68" }}>
+        <span data-regear-popup-active={tone === "active" ? "true" : undefined} style={{ display: "grid", placeItems: "center", width: 30, height: 30, borderRadius: 8, border: `1px solid ${color}66`, color, background: "#0a2232", animation: tone === "active" ? "regearPopupPulse 1.1s ease-in-out infinite" : undefined }}><CommandCenterIcon id={toneIcon[tone]} size={19}/></span>
+        <span style={{ minWidth: 0 }}><strong style={{ display: "block", fontSize: 14, lineHeight: 1.2 }}>{title}</strong>{status && <small style={{ display: "block", marginTop: 2, color, fontSize: 10.5, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{status}</small>}</span>
+        {elapsed && <span style={{ color: "#8fb3cc", fontSize: 10, whiteSpace: "nowrap" }}>{elapsed}</span>}
+      </header>
+      <div data-regear-popup-body style={{ minHeight: 0, overflow: "auto", padding: 12, scrollbarWidth: "thin", scrollbarColor: "#315f78 #061724" }}>{children}</div>
+      {footer && <footer style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 8, padding: "8px 12px", borderTop: "1px solid #294f68", background: "#061521" }}>{footer}</footer>}
+    </section>
+  </div>;
 }
 
 export function PopupStatusList({ children }: { children: ReactNode }) {
@@ -46,7 +49,10 @@ export function PopupStatusRow({ label, value, tone = "neutral", active = false 
   const color = toneColor[tone];
   return <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) auto", alignItems: "center", gap: 10, minHeight: 30, padding: "5px 7px", borderRadius: 8, background: active ? "#0c3145" : "transparent" }}>
     <span style={{ fontSize: 10.5, color: active ? "#e9f7ff" : "#c8deeb", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{label}</span>
-    <span style={{ display: "inline-flex", alignItems: "center", gap: 5, color, fontSize: 10, fontWeight: 700 }}><CommandCenterIcon id={toneIcon[tone]} size={14}/>{value}</span>
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 5, color, fontSize: 10, fontWeight: 700 }}>
+      <span data-regear-popup-active={active ? "true" : undefined} style={{ display: "inline-grid", placeItems: "center", animation: active ? "regearPopupPulse 1.1s ease-in-out infinite" : undefined }}><CommandCenterIcon id={toneIcon[active ? "active" : tone]} size={14}/></span>
+      {value}
+    </span>
   </div>;
 }
 
