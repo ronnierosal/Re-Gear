@@ -355,3 +355,50 @@ class HeldCaptureIntegrationTests(unittest.TestCase):
         result, _ = self.fixture(restore_ready=False)
         self.assertEqual(result['code'], 'release_capture.unresolved')
         self.assertFalse(result['session_restored'])
+
+class AbandonedTrialReconciliationTests(unittest.TestCase):
+    setUp = MainDockAdmissionTests.setUp
+
+    def fixture(self, *, inner_clear=True, settled=True, complete=True, idle=True, stage='release_intent', binding_matches=True):
+        claim = NS(stage=stage, binding='dock')
+        binding = NS(binding='dock' if binding_matches else 'other', generation='new', gpu_bdf='gpu')
+        user = NS(uid=1000, username='deck')
+        self.plugin._api = NS(get_snapshot_report=lambda: NS(snapshot=NS(
+            game_state=self.module.GameState.IDLE if idle else self.module.GameState.UNKNOWN)))
+        @contextmanager
+        def admit(**kw):
+            self.assertTrue(kw['allow_inhibited'])
+            yield
+        self.plugin._dock_mutation_gate = lambda: NS(admit=admit)
+        with patch.object(self.module, 'WholeDockClaimStore') as store, patch.object(self.module, 'DrmDiscovery') as drm, patch.object(self.module, 'resolve_whole_dock', return_value=binding), patch.object(self.module, 'GamescopeDiscovery'), patch.object(self.module, 'resolve_gamescope_user', return_value=NS(context=user)), patch.object(self.module, 'build_live_disconnect_runtime') as runtime, patch.object(self.module, 'inner_removal_records_absent', return_value=inner_clear), patch.object(self.module, 'HeldTrialLauncher') as launcher:
+            store.return_value.load.return_value = claim
+            drm.return_value.scan.return_value = [NS(boot_vga=False, pci_bdf='gpu')]
+            runtime.return_value.status.return_value = NS(scan_complete=complete, holders=('gamescope.service',))
+            launcher.return_value.call.return_value = {'code':'held_helper.settled', 'settled':settled}
+            archived = []
+            def retire(expected, guard):
+                if not guard():
+                    raise ValueError('guard refused')
+                archived.append(expected)
+            store.return_value.retire_abandoned.side_effect = retire
+            result = self.plugin._reconcile_abandoned_dock_trial('dock:new')
+            return result, archived
+
+    def test_archives_only_verified_abandoned_claim_with_live_holders_allowed(self):
+        result, archived = self.fixture()
+        self.assertTrue(result['ok'])
+        self.assertEqual(len(archived), 1)
+        self.assertFalse(result['safe_to_unplug'])
+
+    def test_every_incomplete_guard_retains_claim(self):
+        for options in ({'inner_clear':False}, {'settled':False}, {'complete':False},
+                        {'idle':False}, {'stage':'gpu_removed'}, {'binding_matches':False}):
+            with self.subTest(options=options):
+                result, archived = self.fixture(**options)
+                self.assertFalse(result['ok'])
+                self.assertFalse(archived)
+
+    def test_no_approval_or_running_capture_refuses_before_store(self):
+        self.assertFalse(self.plugin._reconcile_abandoned_dock_trial('')['ok'])
+        self.plugin._release_capture_task = NS(done=lambda:False)
+        self.assertFalse(self.plugin._reconcile_abandoned_dock_trial('dock:new')['ok'])

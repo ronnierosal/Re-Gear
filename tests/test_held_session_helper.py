@@ -70,7 +70,7 @@ class HelperFixtures(unittest.TestCase):
                 patch.object(h.os, 'symlink', side_effect=symlink_owned), \
                 patch.object(h.os, 'open', side_effect=opened), \
                 patch.object(h, '_snapshot'):
-            return h.dispatch(action, 'a' * 32, pins, uid=self.uid,
+            return h.dispatch(action, ('0' if action == 'audit' else 'a') * 32, pins, uid=self.uid,
                               runtime_root=self.root, boot_path=self.boot, commands=self.commands)
 
     def test_prepare_pins_and_changed_pins_refuse(self):
@@ -143,6 +143,46 @@ class HelperFixtures(unittest.TestCase):
         self.assertEqual(result['code'], 'held_helper.hold_failed')
         self.assertEqual(target.read_text(), 'foreign configuration')
         self.assertTrue(all(value == 'active' for value in self.states.values()))
+
+    def test_audit_no_history_does_not_create_directories(self):
+        self.assertTrue(self.call('audit')['settled'])
+        self.assertFalse((self.root / str(self.uid) / 'regear-held').exists())
+
+    def test_audit_unfinished_then_finished(self):
+        pins = self.call('prepare')['pins']
+        self.assertFalse(self.call('audit')['settled'])
+        self.assertEqual(self.call('hold', pins)['code'], 'held_helper.held')
+        self.assertFalse(self.call('audit')['settled'])
+        self.assertTrue(self.call('restore', pins)['restored'])
+        self.assertTrue(self.call('audit')['settled'])
+
+    def test_audit_missing_lock_does_not_recreate_it(self):
+        self.call('prepare')
+        lock = self.root / str(self.uid) / 'regear-held' / ('a' * 32) / 'mask-journal.lock'
+        lock.unlink()
+        self.assertEqual(self.call('audit')['code'], 'held_helper.unavailable')
+        self.assertFalse(lock.exists())
+
+    def test_audit_rejects_quarantine_and_unknown_entries(self):
+        pins = self.call('prepare')['pins']
+        self.call('hold', pins)
+        self.call('restore', pins)
+        lease = self.root / str(self.uid) / 'regear-held' / ('a' * 32)
+        for name in ('retired-' + 'a' * 32 + '-gamescope-session.target', 'unexpected'):
+            path = lease / name
+            path.write_text('unresolved')
+            self.assertFalse(self.call('audit')['settled'])
+            path.unlink()
+
+    def test_audit_rejects_unknown_token_entry_and_old_boot(self):
+        pins = self.call('prepare')['pins']
+        self.call('restore', pins)
+        directory = self.root / str(self.uid) / 'regear-held'
+        (directory / 'unknown').mkdir()
+        self.assertFalse(self.call('audit')['settled'])
+        (directory / 'unknown').rmdir()
+        self.boot.write_text('22345678-1234-1234-1234-123456789abc\n')
+        self.assertFalse(self.call('audit')['settled'])
 
 
 if __name__ == '__main__':

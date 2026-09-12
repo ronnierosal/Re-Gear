@@ -747,7 +747,7 @@ class HeldSessionCommandRunner:
 
 class HeldTrialLauncher:
     """Launch the fixed trial helper after dropping privileges to its user."""
-    ACTIONS = frozenset(('prepare', 'hold', 'restore', 'status'))
+    ACTIONS = frozenset(('prepare', 'hold', 'restore', 'status', 'audit'))
 
     def __init__(self, *, uid, username):
         if (type(uid) is not int or uid <= 0 or type(username) is not str
@@ -761,7 +761,7 @@ class HeldTrialLauncher:
         if (type(action) is not str or action not in self.ACTIONS
                 or type(token) is not str or not re.fullmatch('[a-f0-9]{32}', token)):
             raise ValueError('held launcher request invalid')
-        if action == 'prepare':
+        if action in ('prepare', 'audit'):
             if pins is not None:
                 raise ValueError('prepare pins forbidden')
             helper = Path(__file__).resolve().parents[2] / 'delivery' / 'held_session_helper.py'

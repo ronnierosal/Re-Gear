@@ -45,7 +45,7 @@ from regear.adapters.steamos.drm import DrmDiscovery  # noqa: E402
 from regear.adapters.steamos.sleep_inhibitor import Login1SleepInhibitor  # noqa: E402
 from regear.adapters.steamos.whole_dock_topology import resolve_whole_dock  # noqa: E402
 from regear.delivery.whole_dock_runtime import WholeDockRuntime  # noqa: E402
-from regear.delivery.whole_dock_claim import WholeDockClaimStore  # noqa: E402
+from regear.delivery.whole_dock_claim import WholeDockClaimStore, inner_removal_records_absent  # noqa: E402
 from regear.application.live_disconnect import LiveDisconnectResult  # noqa: E402
 from regear.ports.whole_dock_teardown import WholeDockApproval  # noqa: E402
 from regear.domain.dock_teardown import TeardownApproval  # noqa: E402
@@ -1477,6 +1477,56 @@ class Plugin:
                                   else 'release_capture.held_unverified_restored')
         return result
 
+    def _reconcile_abandoned_dock_trial(self, expected_attachment):
+        """Explicit early-abort reconciliation, never a removal completion."""
+        result = {'schema_version': 1, 'code': 'dock_reconcile.refused',
+                  'ok': False, 'safe_to_unplug': False}
+        capture = getattr(self, '_release_capture_task', None)
+        if not expected_attachment or (capture is not None and not capture.done()):
+            return result
+        try:
+            with self._dock_mutation_gate().admit(allow_inhibited=True):
+                store = WholeDockClaimStore(Path('/var/lib/handheld-dock-mode'))
+                claim = store.load()
+                if claim is None or claim.stage not in ('claimed', 'release_intent'):
+                    return result
+                cards = [c for c in DrmDiscovery().scan() if c.boot_vga is False]
+                if len(cards) != 1:
+                    return result
+                binding = resolve_whole_dock(cards[0].pci_bdf)
+                if (binding.binding != claim.binding or expected_attachment !=
+                        binding.binding + ':' + binding.generation):
+                    return result
+                user = resolve_gamescope_user(GamescopeDiscovery().scan()).context
+                if user is None:
+                    return result
+                runtime = build_live_disconnect_runtime(gpu_bdf=binding.gpu_bdf,
+                    uid=user.uid, username=user.username)
+                launcher = HeldTrialLauncher(uid=user.uid, username=user.username)
+                def guard():
+                    if self._api.get_snapshot_report().snapshot.game_state is not GameState.IDLE:
+                        result['code'] = 'dock_reconcile.idle_unverified'
+                        return False
+                    if not inner_removal_records_absent():
+                        result['code'] = 'dock_reconcile.inner_recovery_pending'
+                        return False
+                    if runtime.status().scan_complete is not True:
+                        result['code'] = 'dock_reconcile.holder_scan_incomplete'
+                        return False
+                    audit = launcher.call('audit', '0' * 32)
+                    if audit.get('code') != 'held_helper.settled' or audit.get('settled') is not True:
+                        result['code'] = 'dock_reconcile.held_recovery_pending'
+                        return False
+                    current_user = resolve_gamescope_user(GamescopeDiscovery().scan()).context
+                    return (current_user == user and resolve_whole_dock(binding.gpu_bdf) == binding
+                        and inner_removal_records_absent()
+                        and self._api.get_snapshot_report().snapshot.game_state is GameState.IDLE)
+                store.retire_abandoned(claim, guard)
+                return {**result, 'code': 'dock_reconcile.archived', 'ok': True}
+        except Exception:
+            return {**result, 'code': result['code'] if result['code'] != 'dock_reconcile.refused'
+                    else 'dock_reconcile.unresolved'}
+
     def _run_whole_dock_trial(self, operation: str, expected_attachment: str = ""):
         """Internal cable-connected trial; admission covers release and teardown.
 
@@ -1668,7 +1718,7 @@ class Plugin:
         """
         if trial_action:
             if (trial_confirmed is not True or release_display is not True
-                    or trial_action not in ("whole_dock_disconnect", "whole_dock_reconnect", "whole_dock_capture", "whole_dock_held_capture")
+                    or trial_action not in ("whole_dock_disconnect", "whole_dock_reconnect", "whole_dock_capture", "whole_dock_held_capture", "whole_dock_reconcile")
                     or relaunch_app_id
                     or type(trial_request_id) is not str
                     or (trial_request_id and (len(trial_request_id) != 32 or any(c not in "0123456789abcdef" for c in trial_request_id)))
@@ -1685,6 +1735,12 @@ class Plugin:
                 return await self._capture_egpu_release_diagnostics(confirmed=True)
             if trial_action == "whole_dock_held_capture":
                 return await self._capture_egpu_release_diagnostics(confirmed=True, held_session=True)
+            if trial_action == 'whole_dock_reconcile':
+                result = await self._run_background_operation(
+                    lambda: self._reconcile_abandoned_dock_trial(trial_attachment_token))
+                if result.get('ok') is True:
+                    self._automatic_dock.reset_after_acknowledgement()
+                return result
             self._whole_dock_trial_status = {"schema_version": 1,
                 "code": "dock_teardown.trial_running", "busy": True,
                 "safe_to_unplug": False, "request_id": trial_request_id}
@@ -3389,7 +3445,7 @@ class Plugin:
 
     def _support_versions(self) -> dict[str, str]:
         return {
-            "regear": "0.3.90",
+            "regear": "0.3.91",
             "decky": str(getattr(decky, "DECKY_VERSION", "unknown")),
             "steamos": self._version_info.steamos,
             "kernel": self._version_info.kernel,

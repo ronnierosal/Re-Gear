@@ -387,3 +387,36 @@ and34663328049 both passed. Published as a prerelease, not the latest stable
 release. The Ally remained off: no staging, installation or hardware validation.
 PR304 remains open for the larger disconnect work; this candidate tests only
 held release, complete-holder observation and restoration with the cable attached.
+
+## 0.3.91 abandoned-trial reconciliation
+
+Live0.3.90 readback showed ready_idle with every hardware check true, but an
+old release_intent record remained and automatic transition logged an exception.
+DockMutationGate intentionally inhibits all presentation writes while this record
+exists. The green readiness checks described hardware, not mutation admission.
+
+New explicitly confirmed whole_dock_reconcile operator action archives only
+claimed/release_intent records. It holds dock mutation admission, checks the exact
+old claim, requires the same dock binding and freshly approved current generation,
+reobserves complete topology/drivers, session identity, idle state and a complete
+holder scan. Normal session holders are allowed. It refuses ANY inner removal or
+filter ownership record and requires all held-session journals settled with no
+owned live masks or unresolved quarantine. Missing, unreadable or corrupt evidence
+never authorizes archival. Early stage alone is not proof no write occurred.
+
+Archival uses an exclusive aborted-whole-dock audit filename and directory fsync;
+failure restores inhibition. No record is silently deleted and no hardware removal
+or disconnect completion is claimed. After success the ordinary automatic dock
+coordinator is rearmed, retaining its opt-in and readiness rules. The operator
+supplies the current attachment_token from whole_dock_trial status and calls the
+existing execute_egpu_disconnect RPC with release_display=true,
+trial_action=whole_dock_reconcile and trial_confirmed=true.
+
+Hardware guard execution and the resulting TV switch still require live validation.
+Documentation impact: Wiki after the reconciliation trial.
+
+Cross-generation handling is deliberate: reboot/replug can change generation.
+Reconciliation requires the exact old claim and same dock binding, but the
+operator approves the fresh current generation and it is rechecked before
+archival. It does not pretend the old generation is still live or reconstruct
+missing historical removal evidence. Outstanding inner records still refuse.

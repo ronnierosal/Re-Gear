@@ -124,6 +124,88 @@ def _boot(path):
     return hashlib.sha256(value.strip()).hexdigest()
 
 
+def _bounded_names(fd, limit):
+    names = []
+    with os.scandir(fd) as entries:
+        for entry in entries:
+            names.append(entry.name)
+            if len(names) > limit:
+                raise ValueError('inventory oversized')
+    return set(names)
+
+
+def _audit(user, uid, boot_path, commands):
+    """Observe settled leases only; even lock files must already exist."""
+    import fcntl
+    leases = systemd = units = None
+    try:
+        try:
+            leases = _open_child(user, 'regear-held', uid, private=True)
+        except FileNotFoundError:
+            return True
+        names = _bounded_names(leases, 64)
+        if any(not re.fullmatch('[a-f0-9]{32}', name) for name in names):
+            return False
+        if not names:
+            return True
+        systemd = _open_child(user, 'systemd', uid)
+        units = _open_child(systemd, 'user', uid)
+        boot = _boot(boot_path)
+        for token in sorted(names):
+            lease = _open_child(leases, token, uid, private=True)
+            journal = masks = None
+            lock = None
+            try:
+                journal = MaskLeaseJournal(lease, owner_uid=uid)
+                masks = RuntimeMaskLease(units, lease, owner_uid=uid)
+                # Existing-only open is intentional: audit must not repair or
+                # create a missing lock as journal.locked() normally can.
+                lock = os.open('mask-journal.lock', os.O_RDWR | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=lease)
+                journal._secure(lock)
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                journal._locked = True
+                intent = journal.load_intent()
+                if intent.token != token or intent.boot_identity != boot or not journal.is_finished(intent):
+                    return False
+                records = journal.load_masks(intent)
+                allowed = {'intent.json', 'mask-journal.lock', 'recovering.json',
+                           'finished.json', 'recovery-executor.lock', 'code'}
+                for record in records:
+                    anchor = token + '-' + record.unit
+                    allowed.update((record.unit + '.mask.json', anchor))
+                    if (not masks._matches(lease, anchor, record)
+                            or masks._matches(units, record.unit, record)):
+                        return False
+                entries = _bounded_names(lease, 32)
+                if not entries <= allowed:
+                    return False  # Includes every unresolved retired/quarantine entry.
+                if 'code' in entries:
+                    code = _open_child(lease, 'code', uid, private=True)
+                    os.close(code)
+                if 'recovery-executor.lock' in entries:
+                    check = os.open('recovery-executor.lock', os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=lease)
+                    try:
+                        journal._secure(check)
+                    finally:
+                        os.close(check)
+            finally:
+                if journal is not None:
+                    journal._locked = False
+                if lock is not None:
+                    os.close(lock)
+                if masks is not None:
+                    masks.close()
+                if journal is not None:
+                    journal.close()
+                os.close(lease)
+        return (all(commands.run('load', unit) == 'loaded' for unit in HELD_UNITS)
+                and _bounded_names(leases, 64) == names)
+    finally:
+        for fd in (units, systemd, leases):
+            if fd is not None:
+                os.close(fd)
+
+
 def dispatch(action, token, pins=None, *, uid=None, runtime_root=Path('/run/user'),
              boot_path=Path('/proc/sys/kernel/random/boot_id'), commands=None):
     """Return bounded codes. No input can choose a unit, command, or device."""
@@ -135,12 +217,18 @@ def dispatch(action, token, pins=None, *, uid=None, runtime_root=Path('/run/user
     try:
         if type(uid) is not int or uid <= 0 or effective != uid:
             raise ValueError('user required')
-        if action not in ('prepare', 'hold', 'restore', 'status') or type(token) is not str or not re.fullmatch('[a-f0-9]{32}', token):
+        if action not in ('prepare', 'hold', 'restore', 'status', 'audit') or type(token) is not str or not re.fullmatch('[a-f0-9]{32}', token):
             raise ValueError('invalid operation')
         root = _root(runtime_root)
         descriptors.append(root)
         user = _open_child(root, str(uid), uid, private=True)
         descriptors.append(user)
+        if action == 'audit':
+            if token != '0' * 32 or pins is not None:
+                raise ValueError('audit input invalid')
+            settled = _audit(user, uid, boot_path, commands or HeldSessionCommandRunner(uid))
+            return {**result, 'code': 'held_helper.settled' if settled else 'held_helper.unsettled',
+                    'settled': settled}
         if action == 'prepare':
             try:
                 os.mkdir('systemd', 0o700, dir_fd=user)
@@ -253,7 +341,7 @@ def dispatch(action, token, pins=None, *, uid=None, runtime_root=Path('/run/user
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=('prepare', 'hold', 'restore', 'status'))
+    parser.add_argument('action', choices=('prepare', 'hold', 'restore', 'status', 'audit'))
     parser.add_argument('token')
     parser.add_argument('--pins', default='null')
     args = parser.parse_args()
@@ -267,7 +355,7 @@ def main():
     result = dispatch(args.action, args.token, pins)
     print(json.dumps(result, separators=(',', ':')))
     return 0 if result['code'] in ('held_helper.prepared', 'held_helper.held', 'held_helper.status',
-        'held_recovery.restored', 'held_recovery.already_restored') else 1
+        'held_recovery.restored', 'held_recovery.already_restored', 'held_helper.settled') else 1
 
 
 if __name__ == '__main__':

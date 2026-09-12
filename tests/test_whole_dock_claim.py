@@ -9,7 +9,7 @@ import unittest
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
-from regear.delivery.whole_dock_claim import FILENAME, WholeDockClaim, WholeDockClaimStore
+from regear.delivery.whole_dock_claim import FILENAME, WholeDockClaim, WholeDockClaimStore, inner_removal_records_absent
 
 
 class WholeDockClaimValueTests(unittest.TestCase):
@@ -220,6 +220,82 @@ class WholeDockClaimTests(unittest.TestCase):
                 self.store.retire_reconnected("one", "dock", "generation", lambda: True)
         self.assertTrue(self.store.inhibited())
         self.assertEqual(existing.read_text(), "previous audit")
+
+
+@unittest.skipUnless(sys.platform == 'linux', 'Linux descriptor-relative filesystem required')
+class AbandonedClaimTests(unittest.TestCase):
+    setUp = WholeDockClaimTests.setUp
+    make_store = WholeDockClaimTests.make_store
+    tearDown = WholeDockClaimTests.tearDown
+
+    def test_abort_preserves_exact_audit_bytes(self):
+        self.store.claim('abort', 'dock', 'generation')
+        self.store.record('abort', 'release_intent')
+        expected = self.store.load()
+        before = (self.root / FILENAME).read_bytes()
+        audit = self.store.retire_abandoned(expected, lambda: True)
+        self.assertTrue(audit.startswith('aborted-whole-dock-'))
+        self.assertEqual((self.root / audit).read_bytes(), before)
+        self.assertIsNone(self.store.load())
+
+    def test_abort_rejects_later_stages(self):
+        self.store.claim('abort', 'dock', 'generation')
+        self.store.record('abort', 'gpu_removed')
+        with self.assertRaises(ValueError):
+            self.store.retire_abandoned(self.store.load(), lambda: True)
+        self.assertTrue(self.store.inhibited())
+
+    def test_abort_requires_exact_true_guard_and_expected_claim(self):
+        self.store.claim('abort', 'dock', 'generation')
+        expected = self.store.load()
+        for answer in (False, None, 1, 'yes'):
+            with self.subTest(answer=answer), self.assertRaises(ValueError):
+                self.store.retire_abandoned(expected, lambda: answer)
+        with self.assertRaises(ValueError):
+            self.store.retire_abandoned(WholeDockClaim('other', 'dock', 'generation'), lambda: True)
+        self.assertEqual(self.store.load(), expected)
+
+    def test_abort_changed_claim_during_guard_refused(self):
+        self.store.claim('abort', 'dock', 'generation')
+        expected = self.store.load()
+        changed = WholeDockClaim('abort', 'dock', 'generation', 'release_intent')
+        def mutate():
+            (self.root / FILENAME).write_bytes(self.store._encode(changed))
+            return True
+        with self.assertRaises(ValueError):
+            self.store.retire_abandoned(expected, mutate)
+        self.assertEqual(self.store.load(), changed)
+
+    def test_abort_fsync_failure_restores_active_claim(self):
+        self.store.claim('abort', 'dock', 'generation')
+        expected = self.store.load()
+        real = os.fsync
+        calls = []
+        def fail_once(fd):
+            calls.append(fd)
+            if len(calls) == 1:
+                raise OSError('durability failure')
+            return real(fd)
+        with patch('os.fsync', side_effect=fail_once), self.assertRaises(OSError):
+            self.store.retire_abandoned(expected, lambda: True)
+        self.assertEqual(self.store.load(), expected)
+        self.assertEqual(list(self.root.glob('aborted-whole-dock-*')), [])
+
+    def test_inner_records_absence_and_any_entry_refusal(self):
+        self.assertTrue(inner_removal_records_absent(self.store))
+        for name in ('removal-transaction.json', 'filter-ownership.json'):
+            for kind in ('file', 'symlink', 'directory'):
+                with self.subTest(name=name, kind=kind):
+                    entry = self.root / name
+                    if kind == 'file':
+                        entry.write_text('{}')
+                    elif kind == 'symlink':
+                        entry.symlink_to(self.root / 'missing-target')
+                    else:
+                        entry.mkdir()
+                    self.assertFalse(inner_removal_records_absent(self.store))
+                    entry.rmdir() if kind == 'directory' else entry.unlink()
+        self.assertTrue(inner_removal_records_absent(self.store))
 
 
 if __name__ == "__main__":

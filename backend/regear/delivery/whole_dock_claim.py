@@ -187,3 +187,49 @@ class WholeDockClaimStore(AudioJournalFilesystem):
                     raise OSError("whole-dock retirement durability and restoration unresolved") from restore_failure
                 raise failure
             return audit
+
+    def retire_abandoned(self, expected, guard):
+        """Archive a verified early abort; caller holds dock mutation admission.
+
+        Stage alone is insufficient: guard must establish attached operation and
+        absence of outstanding inner removal, filter and held-session work.
+        """
+        if type(expected) is not WholeDockClaim or expected.stage not in ('claimed', 'release_intent'):
+            raise ValueError('whole-dock abort stage refused')
+        with self._locked() as directory:
+            if self._load(directory) != expected or guard() is not True:
+                raise ValueError('whole-dock abort guard refused')
+            if self._load(directory) != expected:
+                raise ValueError('whole-dock abort changed')
+            audit = 'aborted-whole-dock-' + secrets.token_hex(16) + '.json'
+            _publish_exclusive(directory, FILENAME, audit)
+            try:
+                os.fsync(directory)
+            except OSError as failure:
+                try:
+                    _publish_exclusive(directory, audit, FILENAME)
+                    os.fsync(directory)
+                except OSError as restore_failure:
+                    raise OSError('whole-dock abort durability unresolved') from restore_failure
+                raise failure
+            return audit
+
+
+def inner_removal_records_absent(filesystem=None):
+    """Read only fixed root-owned records; absent is different from unreadable."""
+    from pathlib import Path
+    filesystem = filesystem or AudioJournalFilesystem(Path('/var/lib/regear/egpu'))
+    try:
+        directory = filesystem._directory()
+    except FileNotFoundError:
+        return True
+    try:
+        for name in ('removal-transaction.json', 'filter-ownership.json'):
+            try:
+                os.stat(name, dir_fd=directory, follow_symlinks=False)
+            except FileNotFoundError:
+                continue
+            return False
+        return True
+    finally:
+        os.close(directory)
