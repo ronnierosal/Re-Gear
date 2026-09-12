@@ -3298,15 +3298,18 @@ class Plugin:
                 # is intent too, and the record has to be re-armed when a dock
                 # ends whether or not automatic docking is enabled.
                 await self._update_saved_tv(current, connection)
-                if not enabled:
-                    delay_seconds = 5.0
-                    await self._wait_for_topology(delay_seconds)
-                    continue
+                # Disabled passes must reach the policy so toggling the opt-in
+                # resets its one-shot attempt. Existing durable holds above
+                # still suppress transitions; the disabled lane never dispatches.
                 decision = self._automatic_dock.update(
                     enabled=enabled,
                     readiness=connection,
                     current=current,
                 )
+                if not enabled:
+                    delay_seconds = 5.0
+                    await self._wait_for_topology(delay_seconds)
+                    continue
                 delay_seconds = min(
                     delay_seconds, connection.poll_after_ms / 1_000
                 )
