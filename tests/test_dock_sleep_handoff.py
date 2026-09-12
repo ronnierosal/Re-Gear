@@ -140,7 +140,8 @@ class SleepLeaseHandoffTests(unittest.TestCase):
                     getattr(self, name).fail = stage
                     handoff = self.handoff()
                     self.assertFalse(handoff.submit('sleep'))
-                    self.assertTrue(handoff.status.protection_verified)
+                    self.assertEqual(handoff.status.protection_verified,
+                                     not (name == 'background' and stage == 'prepare'))
                     self.assertTrue(self.background.held and self.transaction.held)
                     self.assertFalse(any(n == 'platform' for n, _, _ in self.events))
 
@@ -213,3 +214,21 @@ class SleepLeaseHandoffTests(unittest.TestCase):
         self.assertFalse(handoff.submit('sleep'))
         self.assertTrue(handoff.status.protection_verified)
         self.assertFalse(any(n == 'platform' for n, _, _ in self.events))
+
+    def test_partial_prepare_never_certifies_unowned_inactive_second_lease(self):
+        self.background.fail = 'prepare'
+        self.transaction.held = False
+        handoff = self.handoff()
+        self.assertFalse(handoff.submit('sleep'))
+        self.assertFalse(handoff.status.protection_verified)
+        self.assertEqual(handoff.status.code, 'dock_power.handoff_recovery_required')
+        self.assertFalse(any(action == 'finish' for _, action, _ in self.events))
+
+    def test_failed_fresh_readback_clears_previous_restored_status(self):
+        handoff = self.handoff()
+        self.assertTrue(handoff.submit('sleep'))
+        self.assertTrue(handoff.restore())
+        self.transaction.held = False
+        self.assertFalse(handoff.restore())
+        self.assertFalse(handoff.status.protection_verified)
+        self.assertEqual(handoff.status.code, 'dock_power.handoff_recovery_required')

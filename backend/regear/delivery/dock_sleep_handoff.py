@@ -104,26 +104,38 @@ class SleepLeaseHandoff:
                                         self.status.submission)
             return False
         restored = []
-        for lease in self._prepared:
+        # Incomplete prepare does not reduce the set of required protections.
+        # Never acquire a lease whose operation ownership was not established.
+        for lease in self._leases:
             try:
                 restored.append(lease.owned(self._request) is True
                                 and lease.reacquire(self._request) is True
                                 and lease.active() is True)
             except Exception:
                 restored.append(False)
-        safe = bool(restored) and all(restored)
+        safe = all(restored)
         if safe:
             # Never unpause one controller before the other protection is back.
-            for lease in self._prepared:
+            for lease in self._leases:
                 try:
                     if lease.finish(self._request) is not True:
                         safe = False
                 except Exception:
                     safe = False
+            safe = self._protection_active() and safe
         self.status = HandoffStatus(
             'dock_power.handoff_restored' if safe else 'dock_power.handoff_recovery_required',
             self.status.submission, safe)
         return safe
+
+    def _protection_active(self) -> bool:
+        readings = []
+        for lease in self._leases:
+            try:
+                readings.append(lease.active() is True)
+            except Exception:
+                readings.append(False)
+        return all(readings)
 
     def submit(self, action: str) -> bool:
         if not self._lock.acquire(blocking=False):
@@ -183,7 +195,11 @@ class SleepLeaseHandoff:
                                             self.status.submission)
                 return False
             if self.status.protection_verified:
-                return all(lease.active() is True for lease in self._prepared)
+                safe = self._protection_active()
+                self.status = HandoffStatus(
+                    'dock_power.handoff_restored' if safe else 'dock_power.handoff_recovery_required',
+                    self.status.submission, safe)
+                return safe
             return self._restore()
         except Exception:
             self.status = HandoffStatus('dock_power.handoff_recovery_required',
