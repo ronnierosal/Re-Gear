@@ -175,9 +175,10 @@ class HeldSessionRecovery:
                 return HeldSessionResult('held_recovery.masks_unverified')
             if self.reload_manager() is not True:
                 return HeldSessionResult('held_recovery.reload_unverified')
-            # Audio socket, daemon and policy first; Gaming target last.
+            # The session service can refuse manual starts. Starting its target
+            # restores it through dependencies; verify every prior unit after.
             order = ('pipewire.socket', 'pipewire.service', 'wireplumber.service',
-                     'gamescope-session.service', 'gamescope-session.target')
+                     'gamescope-session.target')
             for unit in order:
                 if unit in snapshot.prior_active and self.start(unit) is not True:
                     return HeldSessionResult('held_recovery.start_unverified')

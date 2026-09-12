@@ -1646,15 +1646,17 @@ class Plugin:
                 admission_held=lambda: admission["held"])
             approval = WholeDockApproval(binding.binding, binding.generation,
                 TeardownApproval(binding.usb_bdf, binding.router_id))
-            self._whole_dock_trial_phase = "release_setup"
-            release = build_live_disconnect_runtime(gpu_bdf=binding.gpu_bdf,
-                uid=user.uid, username=user.username)
             self._whole_dock_trial_phase = "sleep_inhibitor"
             lease = Login1SleepInhibitor()
             if lease.acquire().active is not True:
                 raise ValueError("dock_teardown.sleep_inhibition_required")
             self._whole_dock_trial_lease = lease
             try:
+                self._whole_dock_trial_phase = "return_portable"
+                self._return_portable_before_disconnect(binding, user)
+                self._whole_dock_trial_phase = "release_setup"
+                release = build_live_disconnect_runtime(gpu_bdf=binding.gpu_bdf,
+                    uid=user.uid, username=user.username)
                 self._whole_dock_trial_phase = "preflight"
                 runtime.begin_before_release(operation, approval)
                 self._whole_dock_trial_runtime = (runtime, admission)
@@ -1673,6 +1675,40 @@ class Plugin:
                 if runtime._operation is None:
                     lease.release()
 
+    def _return_portable_before_disconnect(self, binding, expected_user):
+        """Called only under dock admission and a sleep inhibitor, before intent.
+
+        Reuse the normal supervised transition. A session merely being stopped,
+        or the external display going blank, is not a verified Portable return.
+        """
+        observer = SnapshotTransitionObservationAdapter(self._discovery)
+        def portable():
+            snapshot = observer.observe().snapshot
+            return (snapshot.game_state is GameState.IDLE
+                and infer_operating_mode(snapshot).mode is OperatingMode.PORTABLE)
+        if not portable():
+            service = self._presentation_transition_service()
+            preview = service.preview(PlacementState.PORTABLE, user_confirmed=True)
+            if not preview.ready or not preview.approval_token:
+                raise ValueError('dock_teardown.portable_return_refused')
+            result = service.execute(preview.approval_token)
+            if (result.accepted is not True or result.durable is not True
+                    or not result.operation_id or not result.outcome
+                    or result.outcome.kind is not TransitionOutcomeKind.SUCCEEDED
+                    or not portable()):
+                raise ValueError('dock_teardown.portable_return_unverified')
+            status = service.status()
+            if (status.durable is not True or status.target is not PlacementState.PORTABLE
+                    or status.operation_id != result.operation_id
+                    or service.acknowledge(result.operation_id) is not True):
+                raise ValueError('dock_teardown.portable_acknowledgement_unverified')
+        # Keep the player's explicit portable choice even if later release fails.
+        self._automatic_dock.suppress_current_attachment_after_portable_return()
+        user = resolve_gamescope_user(GamescopeDiscovery().scan())
+        if (not user.ok or user.context != expected_user
+                or resolve_whole_dock(binding.gpu_bdf) != binding or not portable()):
+            raise ValueError('dock_teardown.approval_superseded')
+
     def _run_whole_dock_reconnect_trial(self):
         trial = getattr(self, "_whole_dock_trial_runtime", None)
         if trial is None:
@@ -1686,6 +1722,7 @@ class Plugin:
                     if runtime.finish_reconnect() is not True:
                         raise ValueError("dock_teardown.reconnect_completion_unverified")
                     self._whole_dock_trial_lease.release()
+                    self._automatic_dock.reset_after_acknowledgement()
                 return result
             finally:
                 admission["held"] = False
@@ -1866,6 +1903,9 @@ class Plugin:
                         "dock_mutation.inhibited",
                         "dock_mutation.unavailable_or_busy",
                         "dock_teardown.gpu_release_unverified",
+                        "dock_teardown.portable_return_refused",
+                        "dock_teardown.portable_return_unverified",
+                        "dock_teardown.portable_acknowledgement_unverified",
                     }:
                         reason = "dock_teardown.trial_unresolved"
                     payload = {"schema_version": 1, "code": reason,
@@ -3536,7 +3576,7 @@ class Plugin:
 
     def _support_versions(self) -> dict[str, str]:
         return {
-            "regear": "0.3.92",
+            "regear": "0.3.93",
             "decky": str(getattr(decky, "DECKY_VERSION", "unknown")),
             "steamos": self._version_info.steamos,
             "kernel": self._version_info.kernel,

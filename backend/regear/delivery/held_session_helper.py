@@ -273,6 +273,8 @@ def dispatch(action, token, pins=None, *, uid=None, runtime_root=Path('/run/user
                     raise ValueError('unit state unavailable')
                 if state == 'active':
                     prior.append(unit)
+            if 'gamescope-session.service' in prior and 'gamescope-session.target' not in prior:
+                raise ValueError('session target restoration unavailable')
             intent = MaskLeaseIntent(token, current['boot_identity'], tuple(prior))
             with journal.locked():
                 journal.create_intent(intent)

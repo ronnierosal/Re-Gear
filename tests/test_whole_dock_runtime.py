@@ -78,6 +78,94 @@ class RuntimeTests(unittest.TestCase):
             'usb_removed', 'tunnel_remove_intent', 'deauthorize', 'software_down'])
         self.assertIsNotNone(self.claim)
 
+    def test_delayed_bridge_disappearance_settles_without_repeating_write(self):
+        remaining = [2]
+        def validate(*args, **kwargs):
+            if kwargs.get('tunnel_down') and remaining[0]:
+                remaining[0] -= 1
+                raise whole_dock_topology.TopologyRefused('dock_topology.pci_branch_remains')
+            return True
+        self.runtime._monotonic = lambda: 0
+        self.runtime._wait = Mock()
+        with patch.object(module, 'revalidate_retained', side_effect=validate):
+            result = self.runtime.execute('operation', self.approval)
+        self.assertTrue(result.software_down)
+        self.assertEqual(self.runtime._wait.call_count, 2)
+        self.writer.deauthorize.assert_called_once()
+        self.assertEqual(self.claim.stage, 'software_down')
+
+    def test_settle_identity_change_refuses_immediately(self):
+        def validate(*args, **kwargs):
+            if kwargs.get('tunnel_down'):
+                raise whole_dock_topology.TopologyRefused('dock_topology.attachment_changed')
+            return True
+        self.runtime._wait = Mock()
+        with patch.object(module, 'revalidate_retained', side_effect=validate):
+            result = self.runtime.execute('operation', self.approval)
+        self.assertFalse(result.software_down)
+        self.runtime._wait.assert_not_called()
+        self.writer.deauthorize.assert_called_once()
+        self.assertEqual(self.claim.stage, 'tunnel_remove_intent')
+
+    def test_settle_timeout_is_bounded_and_never_replays_write(self):
+        clock = [0.0]
+        def validate(*args, **kwargs):
+            if kwargs.get('tunnel_down'):
+                raise whole_dock_topology.TopologyRefused('dock_topology.pci_branch_remains')
+            return True
+        def wait(seconds):
+            clock[0] += seconds
+        self.runtime._monotonic = lambda: clock[0]
+        self.runtime._wait = Mock(side_effect=wait)
+        with patch.object(module, 'revalidate_retained', side_effect=validate):
+            result = self.runtime.execute('operation', self.approval)
+        self.assertFalse(result.software_down)
+        self.assertEqual(clock[0], 10.0)
+        self.assertEqual(self.runtime._wait.call_count, 20)
+        self.writer.deauthorize.assert_called_once()
+        self.assertEqual(self.claim.stage, 'tunnel_remove_intent')
+        self.assertFalse(self.runtime.execute('operation', self.approval).software_down)
+        self.writer.deauthorize.assert_called_once()
+
+    def test_settle_lost_admission_stops_readonly_wait(self):
+        def validate(*args, **kwargs):
+            if kwargs.get('tunnel_down'):
+                raise whole_dock_topology.TopologyRefused('dock_topology.pci_branch_remains')
+            return True
+        self.runtime._wait = Mock(side_effect=lambda _: setattr(self, 'admitted', False))
+        with patch.object(module, 'revalidate_retained', side_effect=validate):
+            result = self.runtime.execute('operation', self.approval)
+        self.assertFalse(result.software_down)
+        self.runtime._wait.assert_called_once()
+        self.writer.deauthorize.assert_called_once()
+        self.assertEqual(self.claim.stage, 'tunnel_remove_intent')
+
+    def test_failed_deauthorization_write_never_starts_settle(self):
+        self.writer.deauthorize.side_effect = OSError('write uncertain')
+        self.runtime._wait = Mock()
+        result = self.runtime.execute('operation', self.approval)
+        self.assertFalse(result.software_down)
+        self.runtime._wait.assert_not_called()
+        self.writer.deauthorize.assert_called_once()
+
+    def assert_settle_does_not_retry_error(self, error):
+        def validate(*args, **kwargs):
+            if kwargs.get('tunnel_down'):
+                raise error
+            return True
+        self.runtime._wait = Mock()
+        with patch.object(module, 'revalidate_retained', side_effect=validate):
+            self.assertFalse(self.runtime.execute('operation', self.approval).software_down)
+        self.runtime._wait.assert_not_called()
+        self.writer.deauthorize.assert_called_once()
+
+    def test_settle_does_not_retry_plain_value_error(self):
+        self.assert_settle_does_not_retry_error(ValueError('dock_topology.pci_branch_remains'))
+
+    def test_settle_does_not_retry_topology_subclass(self):
+        self.assert_settle_does_not_retry_error(
+            whole_dock_topology.ReconnectPending('dock_topology.pci_branch_remains'))
+
     def test_denied_admission_prevents_claim(self):
         self.admitted = False
         self.assertFalse(self.runtime.execute('operation', self.approval).software_down)

@@ -44,6 +44,7 @@ class MainDockAdmissionTests(unittest.TestCase):
                 return name
             return run
         runtime.begin_before_release.side_effect = step("claim")
+        self.plugin._return_portable_before_disconnect = Mock(side_effect=step('portable'))
         release.execute.side_effect = step("release")
         runtime.verify_gpu_release.side_effect = step("verify")
         runtime.execute_claimed.side_effect = step("teardown")
@@ -58,13 +59,32 @@ class MainDockAdmissionTests(unittest.TestCase):
             drm.return_value.scan.return_value = [NS(boot_vga=False, pci_bdf="gpu")]
             inhibitor.return_value.acquire.return_value.active = True
             self.assertEqual(self.plugin._run_whole_dock_trial("trial"), "teardown")
-        self.assertEqual(events, ["claim", "release", "verify", "teardown"])
+        self.assertEqual(events, ["portable", "claim", "release", "verify", "teardown"])
         self.assertFalse(held)
         self.assertFalse(self.plugin._whole_dock_trial_runtime[1]["held"])
 
     def test_reconnect_requires_original_trial(self):
         with self.assertRaises(ValueError):
             self.plugin._run_whole_dock_reconnect_trial()
+
+    def test_only_verified_reconnect_rearms_automatic_tv(self):
+        from contextlib import nullcontext
+        self.plugin._dock_mutation_gate = lambda: NS(admit=lambda **kw:nullcontext())
+        for finished in (False, True):
+            with self.subTest(finished=finished):
+                runtime = Mock()
+                runtime.reconnect_owned.return_value = NS(software_reconnected=True)
+                runtime.finish_reconnect.return_value = finished
+                self.plugin._whole_dock_trial_runtime = (runtime, {'held':False})
+                self.plugin._whole_dock_trial_lease = Mock()
+                self.plugin._automatic_dock = Mock()
+                if finished:
+                    self.plugin._run_whole_dock_reconnect_trial()
+                    self.plugin._automatic_dock.reset_after_acknowledgement.assert_called_once()
+                else:
+                    with self.assertRaises(ValueError):
+                        self.plugin._run_whole_dock_reconnect_trial()
+                    self.plugin._automatic_dock.reset_after_acknowledgement.assert_not_called()
 
     def test_changed_attachment_refuses_before_any_release(self):
         from contextlib import nullcontext
@@ -523,3 +543,64 @@ class AutomaticConnectionIsolationTests(unittest.TestCase):
                 plugin._run_automatic_tv_transition('expected', True)
         plugin._presentation_transition_service.assert_not_called()
         self.assertEqual(plugin._run_dock_mutation.call_count, 1)
+
+
+class PortableBeforeDisconnectTests(unittest.TestCase):
+    setUp = MainDockAdmissionTests.setUp
+
+    def fixture(self, *, already=False, ready=True, success=True, final_portable=True,
+                acknowledge=True, changed_user=False, changed_binding=False, foreign=False):
+        from contextlib import ExitStack
+        plugin = self.plugin
+        plugin._discovery = object()
+        plugin._automatic_dock = Mock()
+        user = NS(uid=1000, username='deck')
+        binding = NS(gpu_bdf='gpu')
+        service = Mock()
+        plugin._presentation_transition_service = lambda:service
+        service.preview.return_value = NS(ready=ready, approval_token='permit' if ready else '')
+        service.execute.return_value = NS(accepted=True, durable=True, operation_id='ours',
+            outcome=NS(kind=self.module.TransitionOutcomeKind.SUCCEEDED if success else None))
+        service.status.return_value = NS(durable=True, target=self.module.PlacementState.PORTABLE,
+            operation_id='foreign' if foreign else 'ours')
+        service.acknowledge.return_value = acknowledge
+        modes = [self.module.OperatingMode.PORTABLE if already else self.module.OperatingMode.TV_DOCKED,
+                 self.module.OperatingMode.PORTABLE if final_portable else self.module.OperatingMode.UNKNOWN,
+                 self.module.OperatingMode.PORTABLE]
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(self.module, 'SnapshotTransitionObservationAdapter')).return_value.observe.return_value = NS(snapshot=NS(game_state=self.module.GameState.IDLE))
+            stack.enter_context(patch.object(self.module, 'infer_operating_mode',
+                side_effect=[NS(mode=m) for m in modes]))
+            stack.enter_context(patch.object(self.module, 'GamescopeDiscovery'))
+            stack.enter_context(patch.object(self.module, 'resolve_gamescope_user',
+                return_value=NS(ok=True, context=None if changed_user else user)))
+            stack.enter_context(patch.object(self.module, 'resolve_whole_dock',
+                return_value=None if changed_binding else binding))
+            try:
+                plugin._return_portable_before_disconnect(binding, user)
+                passed = True
+            except ValueError:
+                passed = False
+        return passed, service
+
+    def test_transition_and_acknowledgement_precede_disconnect(self):
+        passed, service = self.fixture()
+        self.assertTrue(passed)
+        service.execute.assert_called_once_with('permit')
+        service.acknowledge.assert_called_once_with('ours')
+        self.plugin._automatic_dock.suppress_current_attachment_after_portable_return.assert_called_once()
+
+    def test_already_portable_does_not_restart(self):
+        passed, service = self.fixture(already=True)
+        self.assertTrue(passed)
+        service.execute.assert_not_called()
+        self.plugin._automatic_dock.suppress_current_attachment_after_portable_return.assert_called_once()
+
+    def test_incomplete_return_or_changed_identity_stops(self):
+        for options in ({'ready':False}, {'success':False}, {'final_portable':False},
+                        {'acknowledge':False}, {'changed_user':True}, {'changed_binding':True}, {'foreign':True}):
+            with self.subTest(options=options):
+                passed, service = self.fixture(**options)
+                self.assertFalse(passed)
+                if options.get('foreign'):
+                    service.acknowledge.assert_not_called()

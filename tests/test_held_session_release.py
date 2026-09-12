@@ -212,6 +212,21 @@ class HeldRecoveryTests(unittest.TestCase):
         self.assertEqual(events[:4], ['revoke', 'load', 'restore_masks', 'reload_manager'])
         self.assertEqual(events[-2:], ['verify', 'finish'])
         self.assertEqual(ports['start'].call_args_list[-1].args, ('gamescope-session.target',))
+        self.assertNotIn(('gamescope-session.service',),
+                         [call.args for call in ports['start'].call_args_list])
+
+    def test_dependency_only_session_service_is_restored_through_target(self):
+        active = set()
+        def start(unit):
+            if unit == 'gamescope-session.service':
+                return False  # Real host has RefuseManualStart=yes.
+            active.add(unit)
+            if unit == 'gamescope-session.target':
+                active.add('gamescope-session.service')
+            return True
+        recovery, _, _ = self.fixture(start=start,
+            verify=lambda prior, units: active == set(prior))
+        self.assertTrue(recovery.run().restored)
 
     def test_failed_stage_never_retires_journal(self):
         for stage in ('revoke', 'restore_masks', 'reload_manager', 'start', 'verify'):

@@ -111,3 +111,15 @@ test("known refusal explains cause without enabling another operation", () => {
   assert.match(result.message, /Keep the cable connected/);
   assert.doesNotMatch(dockControl({...fresh, code: "private-path"}, idle).message, /private-path/);
 });
+
+test("release refusal and unverified dock completion remain distinct", () => {
+  const blocked = dockControl({...fresh, code:"dock_teardown.gpu_release_unverified",
+    release_stage:"release_refused", arm_code:"arm_sequence.unapproved_holder"}, idle);
+  assert.equal(blocked.action, null);
+  assert.match(blocked.message, /Device removal did not start/);
+  const incomplete = dockControl({...fresh, code:"dock_teardown.unresolved",
+    release_stage:"removed", phase:"dock_teardown"}, idle);
+  assert.equal(incomplete.action, null);
+  assert.match(incomplete.message, /GPU release completed/);
+  assert.match(incomplete.message, /could not be verified/);
+});

@@ -42,7 +42,11 @@ class HelperFixtures(unittest.TestCase):
                 if operation == 'state':
                     return fixture.states[unit]
                 if operation in ('start', 'stop'):
+                    if operation == 'start' and unit == 'gamescope-session.service':
+                        return False
                     fixture.states[unit] = 'active' if operation == 'start' else 'inactive'
+                    if unit == 'gamescope-session.target':
+                        fixture.states['gamescope-session.service'] = fixture.states[unit]
                 return True
         self.commands = Commands()
 

@@ -466,3 +466,49 @@ auto connection and physical unplug have their own verified results.
 The new connection exception is implemented and fixture-tested; hardware
 recovery from the retained record remains a candidate validation gate.
 Documentation impact: Wiki.
+
+## Portable-first disconnect trial on 0.3.92
+
+The owner confirmed automatic TV connection on 0.3.92. Its artifact and source
+6c638a81607bd2b16f9976cc3d6723b00dfe34c7 remain the auto-connect rollback point.
+
+The first Command Center disconnect refused before GPU release with
+arm_sequence.unapproved_holder. A complete scan included init.scope and
+systemd-logind.service alongside approved session/audio services. A separately
+authorized held-session capture observed a complete empty holder set. Its
+restoration report was false even though the services had returned: this host
+sets RefuseManualStart on gamescope-session.service. Direct start returned exit
+4; starting gamescope-session.target succeeded. Recovery must start the target
+and verify its service dependency, not manually start that service. The active
+session was verified and its exact held-recovery journal settled through the
+existing descriptor-bound recovery, without deleting records or removing hardware.
+
+The owner then requested Portable first, release, USB4 deauthorization. After
+the normal supervised Portable transition, fresh observation verified internal
+rendering and internal output. Protected broker holders disappeared. The normal
+whole-dock path then reported GPU/audio removed and reached tunnel_remove_intent.
+Linux reported the retained router authorized=0; a later read-only observation
+matched the original binding and generation, verified host/router relationships,
+and found zero downstream PCI functions. The owner reported the TV had no signal.
+The owner then confirmed Gaming Mode picture, handheld audio and controls all
+worked on the Ally after the software disconnect.
+The app's terminal result remained unresolved, so neither physical unplug
+clearance nor verified software reconnect is claimed.
+
+The candidate correction performs the verified Portable transition under the
+existing dock admission and sleep inhibitor before creating teardown intent.
+It rechecks user and full attachment identity, rebuilds the release runtime,
+and preserves all holder, display, filter and removal checks. Explicit Portable
+return suppresses automatic TV switching for that attachment; only verified
+reconnect rearms it. Final tunnel settling retries only the exact observed
+PCI-branch-remains condition for up to ten seconds, with no repeated writes.
+This addresses a plausible asynchronous final-observation race; the old trial
+did not retain the precise exception, so the cause still needs candidate proof.
+
+Tests cover dependency-only session startup, Portable-before-claim ordering,
+changed identity and failed transition refusal, and bounded settling without
+write replay. The current 0.3.92 trial remains inhibited at tunnel_remove_intent;
+its installed reconnect requires software_down and the original runtime. Do not
+install over this trial or silently promote its record. Plan explicit recovery
+before another install, and retain the successful-removal evidence separately
+from the remaining completion/reconnect gap.

@@ -21,8 +21,16 @@ export function dockControl(status: any, snapshot: any, now = Date.now()): { act
       "dock_mutation.inhibited": "A previous disconnect attempt still needs recovery.",
       "dock_mutation.unavailable_or_busy": "Re-Gear could not acquire the dock operation lock.",
       "dock_teardown.gpu_release_unverified": "The GPU release could not be verified.",
+      "dock_teardown.portable_return_refused": "Re-Gear could not start the return to the handheld screen.",
+      "dock_teardown.portable_return_unverified": "The return to the handheld screen could not be verified.",
+      "dock_teardown.portable_acknowledgement_unverified": "The handheld display transition still needs recovery.",
     };
-    return { action: null, label: "Needs attention", message: (reasons[status.code] ?? "The last attempt is unresolved.") + " Keep the cable connected; do not repeat the operation." };
+    const reason = status.arm_code === "arm_sequence.unapproved_holder" && status.release_stage === "release_refused"
+      ? "A system service is still using the eGPU. Device removal did not start."
+      : status.release_stage === "removed" && status.phase === "dock_teardown"
+        ? "GPU release completed, but the dock disconnect could not be verified."
+        : reasons[status.code] ?? "The last attempt is unresolved.";
+    return { action: null, label: "Needs attention", message: reason + " Keep the cable connected; do not repeat the operation." };
   }
   if (snapshot?.game_state !== "idle") return { action: null, label: "Safely disconnect", message: "Close your game and wait for an idle reading before disconnecting." };
   if (snapshot?.egpu_link?.state !== "up") return { action: null, label: "Safely disconnect", message: "Waiting for the eGPU to be detected." };

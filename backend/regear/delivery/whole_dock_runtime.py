@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from threading import Lock, get_ident
 
 from ..adapters.steamos.dock_branch import DockBranchDiscovery
-from ..adapters.steamos.whole_dock_topology import revalidate_retained, usb_branch_is_hub_only
+from ..adapters.steamos.whole_dock_topology import revalidate_retained, usb_branch_is_hub_only, TopologyRefused
 from ..adapters.steamos.whole_dock_writer import WholeDockSysfsWriter
 from ..application.whole_dock_teardown import WholeDockTeardown
 from ..application.live_disconnect import LiveDisconnectResult, LiveDisconnectStage
@@ -299,3 +299,23 @@ class WholeDockRuntime:
     def deauthorize(self, observation):
         self._writer.deauthorize(self.binding.router_target,
             lambda: self._guard(observation, 'tunnel_remove_intent'))
+        # The authorized attribute can change before the kernel finishes
+        # removing downstream bridges. Only that exact retained-topology
+        # observation is pending; never replay the write or suppress a changed
+        # identity, unreadable attribute, endpoint, or lost ownership.
+        deadline = self._monotonic() + 10.0
+        for attempt in range(21):
+            if (self._admission() is not True or self._idle() is not True
+                    or not self._owned('tunnel_remove_intent')):
+                raise ValueError('dock_teardown.settle_admission_changed')
+            try:
+                self.observe()
+                return
+            except TopologyRefused as error:
+                if (type(error) is not TopologyRefused
+                        or error.args != ('dock_topology.pci_branch_remains',)):
+                    raise
+                remaining = deadline - self._monotonic()
+                if remaining <= 0 or attempt == 20:
+                    raise ValueError('dock_teardown.tunnel_settle_timeout') from error
+                self._wait(min(0.5, remaining))
