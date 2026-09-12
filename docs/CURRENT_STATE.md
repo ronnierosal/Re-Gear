@@ -1,5 +1,37 @@
 # Current state
 
+## 0.3.94 focused connection/disconnect candidate built — 2026-09-12
+
+User-requested local candidate `Re-Gear-0.3.94.zip` is built from clean revision
+`58542f1982400118d3dadaca478fdbb39f49b2a9` on
+`codex/integration-egpu-connect-disconnect`, separately from broader UI/lifecycle
+integration. The existing Command Center control explicitly mounts
+`disconnect_only`: it requests confirmed software disconnect, then offers no
+reconnect, sleep or shutdown action. Automatic-connection backend behavior is
+unchanged from tested PR #304 source `f2fb295`, apart from version labels.
+
+SHA-256: `528b91321cf62204257ca24e701165ac770e64cd85353a710c76909c1f6cb4a9`.
+Archive size: 968767 bytes. ZIP integrity, embedded version/full revision and
+disconnect-only bundle content were verified. Local manifest and test notes are
+retained beside the ZIP in the candidate worktree's `out/` directory.
+
+Final CI `34713782957` and privileged delivery `34713783006` passed: 3425 Linux
+tests with 21 skips, 144 privileged whole-dock, 48 power and 26 installer tests;
+674 frontend passes with one skip. All 29 golden tests, 89 focused backend
+tests, version contracts, typecheck/build/package/architecture/compile/preflight
+passed. Independent review confirmed the explicit single control mount and
+preserved confirmation, freshness, attachment and pending-request guards.
+
+Fresh device readback showed installed 0.3.92 revision
+`6c638a81607bd2b16f9976cc3d6723b00dfe34c7`, ancestral to this candidate. Its ZIP
+hash and the preserved 0.3.82 rollback ZIP hash were verified. The first transfer
+attempt stopped before copying because SSH became unreachable. **0.3.94 is not
+staged, installed or hardware-validated in this record.** No services restarted,
+hardware operations or archive cleanup occurred. Software disconnect does not
+power off the enclosure or certify physical unplug clearance; powered software
+reconnect remains excluded after the reported heat incident. Broader Quick
+Access/popup wiring and sleep/native-presenter work remain separate.
+
 ## 0.3.78 staged for manual installation — 2026-09-11
 
 User-requested candidate `/home/deck/Re-Gear-0.3.78.zip` was copied to the Ally
