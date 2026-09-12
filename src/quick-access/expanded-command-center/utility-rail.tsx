@@ -17,41 +17,38 @@ const labels: Record<UtilityId,string> = {
   overlay:"Overlay",audio:"Audio output",wifi:"Wi-Fi",
 };
 const railStyles = `
-.rg-utility-rail{display:flex;flex-direction:column;gap:8px;color:#f4f7fb;font-family:Arial,sans-serif;min-width:0}
-.rg-utility-control{position:relative;min-width:0;margin:0;border:1px solid #315c75;border-radius:13px;background:linear-gradient(150deg,#102d40,#071a29);padding:8px;text-align:center;font:inherit;color:inherit;box-shadow:inset 0 1px 0 #ffffff0a,0 5px 16px #0000001f;overflow:hidden}
+.rg-utility-rail{display:flex;flex-direction:column;color:#f4f7fb;font-family:Arial,sans-serif;min-width:0}
+.rg-utility-control{position:relative;min-width:0;margin:0;border:1px solid #315c75;border-radius:11px;background:#0b2232;padding:7px;text-align:center;font:inherit;color:inherit;box-shadow:inset 0 1px 0 #ffffff08;overflow:hidden}
 .rg-utility-control button{font:inherit;color:inherit}
-.rg-utility-control.gpfocus,.rg-utility-control:focus-visible,.rg-utility-control:focus-within{outline:2px solid #39d8ff;outline-offset:-2px;border-color:#39d8ff;background:linear-gradient(150deg,#15445a,#09283a);box-shadow:0 0 0 1px #39d8ff28,0 0 15px #39d8ff24,inset 0 1px 0 #ffffff10}
+.rg-utility-control.gpfocus,.rg-utility-control:focus-visible,.rg-utility-control:focus-within{outline:2px solid #39d8ff;outline-offset:-2px;border-color:#39d8ff;background:#12364b;box-shadow:0 0 0 1px #39d8ff22}
 .rg-utility-control:disabled{cursor:default;color:#8da9bc;opacity:1}
-.rg-utility-icon{display:grid;place-items:center;margin:0 auto 5px;color:#c9ecff}.rg-utility-icon svg{display:block;width:25px;height:25px}
-.rg-utility-label{display:block;font-size:11.5px;font-weight:700;line-height:1.15;overflow-wrap:normal;word-break:normal}
-.rg-utility-value{display:block;font-size:9px;line-height:1.2;color:#7fa4bb;margin-top:4px;overflow-wrap:normal;word-break:normal}
+.rg-utility-icon{display:grid;place-items:center;margin:0 auto 4px;color:#c9ecff}.rg-utility-icon svg{display:block;width:23px;height:23px}
+.rg-utility-label{display:block;font-size:11px;font-weight:700;line-height:1.15;overflow-wrap:normal;word-break:normal}
+.rg-utility-value{display:block;font-size:8.5px;line-height:1.2;color:#87aabd;margin-top:3px;overflow-wrap:normal;word-break:normal}
 
-/* Brightness and volume are supporting controls inside the main panel, not two
-   visually competing cards. */
-.rg-utility-slider{display:flex;flex:1 1 0;min-height:0;flex-direction:column;align-items:center;justify-content:center;gap:5px;background:transparent;border:0;border-radius:0;box-shadow:none;padding:6px 3px;overflow:visible}
-.rg-utility-slider+.rg-utility-slider{border-top:1px solid #294f68;padding-top:11px}
-.rg-utility-slider .rg-utility-icon{margin-bottom:0;width:30px;height:30px;border-radius:9px;background:#0b2435;border:1px solid #315a72}
-.rg-utility-slider .rg-utility-icon svg{width:20px;height:20px}
-.rg-utility-slider input{writing-mode:vertical-lr;direction:rtl;width:26px;height:clamp(58px,14vh,96px);margin:3px 0;accent-color:#39d8ff}
-.rg-utility-rail[data-utility-side=left]{gap:0;padding:7px 6px;border:1px solid #294f68;border-radius:14px;background:linear-gradient(180deg,#0a2130f2,#061722f2);box-shadow:inset 0 1px 0 #ffffff08,0 8px 24px #00000024}
-.rg-utility-rail[data-utility-side=left] .rg-utility-label{font-size:10px}.rg-utility-rail[data-utility-side=left] .rg-utility-value{font-size:8.5px;color:#91b5ca}
+/* Brightness + volume are one integrated utility strip inside Command Center. */
+.rg-utility-slider{display:flex;flex:1 1 0;min-height:0;flex-direction:column;align-items:center;justify-content:center;gap:4px;background:transparent;border:0;border-radius:0;box-shadow:none;padding:5px 2px;overflow:visible}
+.rg-utility-slider+.rg-utility-slider{border-top:1px solid #294f68;padding-top:8px}
+.rg-utility-slider .rg-utility-icon{margin-bottom:0;color:#d2efff}
+.rg-utility-slider .rg-utility-icon svg{width:19px;height:19px}
+.rg-utility-slider input{writing-mode:vertical-lr;direction:rtl;width:24px;height:clamp(54px,13vh,88px);margin:2px 0;accent-color:#39d8ff}
+.rg-utility-rail[data-utility-side=left]{gap:0;padding:7px 5px;border:1px solid #294f68;border-radius:12px;background:#071825e8;box-shadow:inset 0 1px 0 #ffffff08}
+.rg-utility-rail[data-utility-side=left] .rg-utility-label{font-size:9.5px}.rg-utility-rail[data-utility-side=left] .rg-utility-value{font-size:8px;color:#91b5ca}
 
-/* Right side is an icon-first thumb rail. Keep unavailable truth visible but
-   subordinate so the four buttons read as actions rather than status cards. */
-.rg-utility-rail[data-utility-side=right]{gap:9px}
-.rg-utility-rail[data-utility-side=right] .rg-utility-control{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:clamp(64px,14vh,92px);padding:8px 5px;border-radius:15px;background:linear-gradient(155deg,#123246,#071a29 72%)}
-.rg-utility-rail[data-utility-side=right] .rg-utility-control:before{content:'';position:absolute;inset:0;border-radius:inherit;background:linear-gradient(140deg,#39d8ff0e,transparent 46%);pointer-events:none}
-.rg-utility-rail[data-utility-side=right] .rg-utility-icon{position:relative;width:38px;height:38px;margin-bottom:6px;border-radius:12px;border:1px solid #386985;background:#0a2334;color:#d8f2ff;box-shadow:inset 0 1px 0 #ffffff0b}
-.rg-utility-rail[data-utility-side=right] .rg-utility-icon svg{width:24px;height:24px}
-.rg-utility-rail[data-utility-side=right] .rg-utility-label{position:relative;font-size:10.5px}
-.rg-utility-rail[data-utility-side=right] .rg-utility-value{position:relative;font-size:7.5px;margin-top:3px;max-width:100%;color:#7798ad}
+/* Right side remains a compact icon-first action rail, not a second dashboard. */
+.rg-utility-rail[data-utility-side=right]{gap:7px}
+.rg-utility-rail[data-utility-side=right] .rg-utility-control{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:clamp(58px,13vh,84px);padding:7px 4px;background:linear-gradient(150deg,#102b3d,#081b29)}
+.rg-utility-rail[data-utility-side=right] .rg-utility-icon{width:30px;height:30px;margin-bottom:4px;border-radius:9px;border:1px solid #315c75;background:#0a2232;color:#d5effd}
+.rg-utility-rail[data-utility-side=right] .rg-utility-icon svg{width:20px;height:20px}
+.rg-utility-rail[data-utility-side=right] .rg-utility-label{font-size:9.5px}
+.rg-utility-rail[data-utility-side=right] .rg-utility-value{font-size:7px;margin-top:2px;max-width:100%;color:#7899ad}
 .rg-utility-rail[data-utility-side=right] .rg-utility-control:not(:disabled) .rg-utility-icon{color:#54ddff;border-color:#448ba7}
 .rg-utility-rail[data-utility-side=right] .rg-utility-control:disabled .rg-utility-icon{color:#829eb1;border-color:#2f4e61;background:#091c2a}
 
 @media(max-height:520px){
-  .rg-utility-control{border-radius:10px;padding:5px}.rg-utility-icon svg{width:20px;height:20px}.rg-utility-label{font-size:10px}.rg-utility-value{font-size:8px;margin-top:2px}
-  .rg-utility-slider{gap:2px;padding:3px 2px}.rg-utility-slider+.rg-utility-slider{padding-top:6px}.rg-utility-slider input{height:50px;width:20px}.rg-utility-slider .rg-utility-icon{width:25px;height:25px}
-  .rg-utility-rail[data-utility-side=right]{gap:5px}.rg-utility-rail[data-utility-side=right] .rg-utility-control{min-height:58px;padding:4px}.rg-utility-rail[data-utility-side=right] .rg-utility-icon{width:30px;height:30px;margin-bottom:3px}.rg-utility-rail[data-utility-side=right] .rg-utility-icon svg{width:19px;height:19px}.rg-utility-rail[data-utility-side=right] .rg-utility-label{font-size:9px}.rg-utility-rail[data-utility-side=right] .rg-utility-value{font-size:7px}
+  .rg-utility-control{border-radius:9px;padding:4px}.rg-utility-icon svg{width:19px;height:19px}.rg-utility-label{font-size:9px}.rg-utility-value{font-size:7px;margin-top:2px}
+  .rg-utility-slider{gap:2px;padding:3px 2px}.rg-utility-slider+.rg-utility-slider{padding-top:5px}.rg-utility-slider input{height:48px;width:20px}
+  .rg-utility-rail[data-utility-side=right]{gap:5px}.rg-utility-rail[data-utility-side=right] .rg-utility-control{min-height:54px;padding:4px}.rg-utility-rail[data-utility-side=right] .rg-utility-icon{width:27px;height:27px;margin-bottom:3px}.rg-utility-rail[data-utility-side=right] .rg-utility-icon svg{width:18px;height:18px}.rg-utility-rail[data-utility-side=right] .rg-utility-label{font-size:8.5px}.rg-utility-rail[data-utility-side=right] .rg-utility-value{font-size:6.5px}
 }
 `;
 
