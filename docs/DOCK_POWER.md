@@ -64,6 +64,14 @@ host/session, settled helper work, and no inner recovery or transition journal.
 The current attachment generation must be stable; it need not equal the old
 boot's generation. Ordinary mutation admission is retried after archival.
 
+If a validated prior-boot shutdown claim is otherwise eligible but the read-only
+session-helper audit explicitly reports unsettled work, the automatic TV path
+can use its existing single pre-plan retry. Fresh identity, display, consent and
+idle evidence must still match. This shares the existing retry budget; it does
+not reset it. Unknown audit failures, changed claims and a transition that has
+already started never qualify. The launcher preserves only the audit command's
+exact known unsettled response on exit 1; failed mutation commands remain failed.
+
 This path performs no device writes, does not reset recovery budgets, and cannot
 retire ordinary disconnects, sleep intents, same-boot shutdowns, unconsumed or
 missing intents, or failed reconnect records. Those continue to require their
