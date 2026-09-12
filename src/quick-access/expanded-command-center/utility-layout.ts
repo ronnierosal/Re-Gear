@@ -3,8 +3,8 @@ export type UtilityId = typeof utilityIds[number];
 export type UtilityPlacement = { id: UtilityId; side: "left" | "right" };
 export const defaultUtilityLayout: readonly UtilityPlacement[] = [
   {id:"brightness",side:"left"}, {id:"volume",side:"left"},
-  {id:"mic",side:"right"}, {id:"recording",side:"right"},
-  {id:"overlay",side:"right"}, {id:"audio",side:"right"},
+  {id:"mic",side:"right"}, {id:"wifi",side:"right"},
+  {id:"overlay",side:"right"}, {id:"recording",side:"right"},
 ];
 
 /** Validate a future persisted preference; an empty selection is intentional.
