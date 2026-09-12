@@ -93,9 +93,19 @@ sleep requirements. This status contract cannot enable sleep, release an
 inhibitor, or authorize software reconnect; exposing it through the backend/UI
 is a separate integration step.
 
-UI wiring is deferred by user request. Neither normal Steam Sleep/Shutdown nor
-the physical button invokes this new flow yet. The canonical sleep workflow's
-physical-removal contract and existing frontend preflight remain unchanged.
+The Command Center's existing guarded dock control now mounts an explicit
+shutdown intent. It requires a fresh matching attachment and idle reading,
+rechecks after confirmation, and submits the existing shutdown transaction once.
+It reports "Shutdown requested" only for a matching accepted backend result;
+uncertain results remain blocked. This mode exposes no software reconnect or
+sleep action. The existing layout is retained; native fit/navigation and a
+supervised shutdown remain unverified. Normal Steam Sleep/Shutdown and the
+physical button do not invoke this flow yet.
+
+An unwired `SleepLeaseHandoff` module now implements the proposed two-lease
+handoff contract with independent restoration readbacks and one-shot submission.
+No production adapter supplies the required pause, crash-continuity, supported
+profile, wake and thermal evidence. The current sleep refusal remains active.
 
 Sleep needs supported-profile validation, coordinated inhibitor release and
 reacquisition on failure, and an approved continuation of its exact original

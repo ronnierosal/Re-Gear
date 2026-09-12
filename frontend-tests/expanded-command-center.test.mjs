@@ -122,7 +122,10 @@ test("native shortcut dropdown preserves selection and active chord when saving 
   const runtime = native.createExpandedMenu(undefined, {localStorage:{}});
   runtime.open();
   const view = native.views[0].props.children[1];
-  const settings = native.render(() => view.type(view.props)).props.settings.type;
+  const shell = native.render(() => view.type(view.props));
+  assert.equal(shell.props.disconnectControl.props.intent, "shutdown");
+  assert.equal(typeof shell.props.disconnectControl.props.readCurrentSnapshot, "function");
+  const settings = shell.props.settings.type;
   let rendered = native.render(settings);
   assert.equal(rendered.props.control.type, "native-dropdown");
   assert.equal(rendered.props.control.props.selectedOption, "view-y");
