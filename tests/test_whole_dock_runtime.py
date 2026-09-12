@@ -78,6 +78,38 @@ class RuntimeTests(unittest.TestCase):
             'usb_removed', 'tunnel_remove_intent', 'deauthorize', 'software_down'])
         self.assertIsNotNone(self.claim)
 
+    def test_power_proof_requires_fresh_owned_complete_removal(self):
+        self.assertTrue(self.runtime.execute('operation', self.approval).software_down)
+        before = list(self.events)
+        self.assertTrue(self.runtime.verify_power_continuation(
+            'operation', portable_verified=lambda: True))
+        self.assertEqual(self.events, before)
+        self.assertFalse(self.runtime.verify_power_continuation(
+            'other', portable_verified=lambda: True))
+        self.assertFalse(self.runtime.verify_power_continuation(
+            'operation', portable_verified=lambda: False))
+        self.authorized = True
+        self.assertFalse(self.runtime.verify_power_continuation(
+            'operation', portable_verified=lambda: True))
+
+    def test_power_proof_rejects_changed_owner_and_incomplete_scan(self):
+        self.assertTrue(self.runtime.execute('operation', self.approval).software_down)
+        self.storage = DockStorageReading((), (), False)
+        self.assertFalse(self.runtime.verify_power_continuation(
+            'operation', portable_verified=lambda: True))
+        self.storage = DockStorageReading((), (), True)
+        self.claim.stage = 'reauthorize_intent'
+        self.assertFalse(self.runtime.verify_power_continuation(
+            'operation', portable_verified=lambda: True))
+
+    def test_power_proof_rechecks_portable_and_admission(self):
+        self.assertTrue(self.runtime.execute('operation', self.approval).software_down)
+        self.assertFalse(self.runtime.verify_power_continuation(
+            'operation', portable_verified=Mock(side_effect=[True, False])))
+        self.admitted = False
+        self.assertFalse(self.runtime.verify_power_continuation(
+            'operation', portable_verified=lambda: True))
+
     def test_delayed_bridge_disappearance_settles_without_repeating_write(self):
         remaining = [2]
         def validate(*args, **kwargs):

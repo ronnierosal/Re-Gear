@@ -219,6 +219,36 @@ class WholeDockRuntime:
     def execute(self, operation, approval):
         return WholeDockTeardown(self).execute(operation, approval)
 
+    def verify_power_continuation(self, operation, *, portable_verified):
+        """Read-only proof for the same owner's proposed power continuation.
+
+        This does not release inhibitors, authorize sleep, retire the claim, or
+        submit power. The caller must retain mutation admission through its
+        subsequent durable intent and power request.
+        """
+        if not self._continuation_lock.acquire(blocking=False):
+            return False
+        try:
+            if (operation != self._operation or not self._owned('software_down')
+                    or self._admission() is not True
+                    or portable_verified() is not True):
+                return False
+            now = self.observe()
+            return (now.binding == self.binding.binding
+                and now.generation == self.binding.generation
+                and now.topology_complete is True and now.idle is True
+                and now.gpu_scan_complete is True and not now.gpu_functions_present
+                and now.usb.present is False and now.usb.scan_complete is True
+                and now.usb.storage_scan_complete is True
+                and not now.usb.mounted_storage and not now.usb.storage_in_use
+                and now.tunnel.authorized is False
+                and portable_verified() is True
+                and self._admission() is True and self._owned('software_down'))
+        except Exception:
+            return False
+        finally:
+            self._continuation_lock.release()
+
     def observe(self):
         binding = self.binding
         names = _pci_names()
