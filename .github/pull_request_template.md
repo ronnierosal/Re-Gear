@@ -39,6 +39,20 @@ from checks on the combined integration commit; CI must match the current head.
 
 ## Scope and evidence
 
+### Golden behavior preservation
+
+- Comparison base and candidate revision:
+- Affected golden behavior IDs and shared dependencies (or explained none):
+- Existing behavior preserved / intentional approved change:
+- Golden gate result and added regression coverage:
+- Independent review evidence for material golden-path changes:
+- Hardware cases required before installation, evidence or pending owner:
+- Rollback artifact, hash and configuration reference (or not applicable):
+- Changes to golden tests/manifest/checker/CI, with preservation rationale:
+
+Follow [golden behavior preservation](https://github.com/ronnierosal/Re-Gear/blob/main/docs/GOLDEN_BEHAVIORS.md).
+No unexplained behavior changes or unresolved regressions qualify as golden.
+
 Identify affected workflows/hardware and classify evidence as designed,
 implemented, simulated, installed, hardware tested, or unknown. Note required
 documentation changes and any separately owned hardware validation.
