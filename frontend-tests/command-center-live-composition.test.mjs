@@ -31,7 +31,9 @@ const approved = {
 const evidence = (text) => ({ text, known: true, verified: true });
 const live = () => ({
   fresh: true,
+  performanceFresh: true,
   manualWatts: 15,
+  // Active external output is not a resolution/refresh-rate observation.
   displayTarget: evidence("External"),
   egpu: {
     connection: evidence("Link up"), renderGpu: evidence("External GPU"),
@@ -44,6 +46,7 @@ const live = () => ({
   controller: {
     available: true, reason: null,
     builtin: { text: "Available", known: true },
+    // External presence does not establish Steam's Player 1 assignment.
     external: { text: "Connected", known: true },
     precision: "exact", precisionNote: null,
     shortcut: { text: "Available", known: true }, planned: [],
@@ -56,9 +59,12 @@ const live = () => ({
 });
 
 for (const [tab, expected] of Object.entries(approved)) {
-  test(`live ${tab} preserves approved cards and focus through observation loss`, () => {
+  test(`live ${tab} preserves approved cards and remembered target identities`, () => {
     const publisher = createTilePublisher();
-    for (const readings of [{}, live(), { ...live(), fresh: false }, live()]) {
+    for (const readings of [
+      {}, { fresh: true, performanceFresh: true }, live(),
+      { ...live(), fresh: false, performanceFresh: false }, live(),
+    ]) {
       publisher.publish(readings);
       const tiles = publisher.source.read()[tab];
       assert.ok(Array.isArray(tiles), `${tab} must never fall back to samples`);
@@ -72,21 +78,21 @@ for (const [tab, expected] of Object.entries(approved)) {
   });
 }
 
-test("live mapper retains missing-provider cards without inventing their readings", () => {
-  const view = buildTiles(live());
-  for (const [tab, ids] of [
-    ["performance", ["profile", "fps", "display", "refresh"]],
-    ["controllers", ["controller", "battery", "priority"]],
-  ]) {
-    for (const id of ids) {
+for (const [tab, ids] of [
+  ["performance", ["profile", "fps", "display", "refresh"]],
+  ["controllers", ["controller", "battery", "priority"]],
+]) {
+  for (const id of ids) {
+    test(`live ${tab}/${id} retains its missing-provider card without invented readings`, () => {
+      const view = buildTiles(live());
       const tile = view[tab].find((candidate) => candidate.id === id);
       assert.ok(tile, `${tab}/${id} must remain visible without a provider`);
       assert.match(tile.value, /unknown|unavailable|not available|not supported/i,
         `${tab}/${id} has no verified producer in these readings`);
       assert.equal(tile.tone, "unavailable", `${tab}/${id} must not imply verified support`);
-    }
+    });
   }
-});
+}
 
 test("both live and unknown views retain the wide guarded disconnect entry", () => {
   for (const readings of [live(), {}, { ...live(), fresh: false }]) {
