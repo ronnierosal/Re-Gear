@@ -31,7 +31,11 @@ From the shared workspace root (replace session and worktree placeholders):
 Claude uses the same commands with `--session claude-SESSION --agent claude`.
 Use your stable actual session ID; agent names are not identities. Registration
 is idempotent with identical metadata. Never borrow an existing ID. Stream leads
-route shared inboxes; registered sessions may claim available tasks directly.
+route shared inboxes. Under the shared policy, workers claim primary-assigned
+tasks or explicit Ronnie assignments. `project-primary` records the one designated
+Codex coordinator; a technically available claim is not assignment authority.
+See [primary workflow](../../docs/AGENT_COORDINATION.md#project-primary-and-delegation)
+in the repository source (installed copies use the fetched repository policy).
 
 ## Requests
 
