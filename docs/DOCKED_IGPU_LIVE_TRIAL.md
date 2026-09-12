@@ -84,3 +84,53 @@ The active eGPU owner retains `main.py`, release versions, architecture guards
 and the disconnect trial. No edits or hardware operations crossed those claims.
 Candidate integration and installed Gamescope evidence were requested through
 the shared inbox; neither delivery nor silence grants an interface transfer.
+
+The active owner replied on 2026-09-12 UTC (hub message
+`a7269c764bdd486ab34defc4a7d3b15c`): no recorded installed Gamescope version or
+custom patch establishes this path. Existing device evidence covers idle
+session restart and TV picture/audio/controls only. Release and runtime claims
+remain with that owner. No device was contacted for the reply.
+
+## Concrete proposed first experiment: local TV mirror
+
+This is a proposal requiring the display-mechanism milestone decision in
+AGENTS.md, not an implemented or certified capability.
+
+When built with PipeWire, Gamescope
+[initializes a Video/Source stream](https://github.com/ValveSoftware/gamescope/blob/05949f8149bb5d16b006624d319a76e2433caf4c/src/pipewire.cpp#L669-L744).
+GStreamer's [kmssink](https://gstreamer.freedesktop.org/documentation/kms/index.html)
+can present frames on a selected DRM connector and accept a supplied DRM file
+descriptor. These are two component capabilities; their combination on the
+target handheld/eGPU has not been demonstrated. GStreamer contributors and
+kmssink author Victor Jaquez are research references; no code was copied.
+
+Proposed behavior for the first trial:
+
+- An explicit confirmed start acquires frames only from the exact current
+  Gamescope PipeWire stream and presents them locally on the verified TV.
+- The game and its renderer remain untouched. The handheld display remains
+  active as recovery; this trial mirrors rather than disables the panel.
+- Input stays with the original gaming session. TV audio, HDR, VRR, resolution
+  optimization and automatic connection triggers are outside the first trial.
+- A short lease bounds the helper lifetime. Stop or timeout ends only the owned
+  presenter; it never restarts Gamescope, signals the game or removes the eGPU.
+- Before starting, verify the installed capture/sink dependencies, exact stream
+  ownership, DRM ownership and connector identity, absence of conflicting
+  transitions, and the game/compositor generations. Unknown evidence refuses.
+- Do not launch a sink against an arbitrary card or the driver's default GPU.
+  Bind a verified descriptor and connector, recheck before acquisition, and
+  preserve the prior TV mode for bounded recovery.
+- Cap queues and measure frame age; stop on sustained stalled delivery. The
+  experiment must disclose measured latency before any regular-use claim.
+
+Software gates: integration tests for the real helper lifecycle and command
+boundary; substituted stream/device, stale generations, absent dependencies,
+second-start collision, sink failure, timeout and cancellation; no signal to
+the original game/session; private identifiers excluded from public output.
+Linux dependency/capture tests precede packaging. Hardware gates then require
+watched before/live/after render activity, unchanged game/session identity,
+visible moving TV frames, input continuity and verified stop/recovery.
+
+The first artifact would therefore be an explicitly supervised **local mirror
+trial**, not a native Gamescope cross-device switch. Its approach must be
+accepted before adding a new display writer or publishing an actionable ZIP.
