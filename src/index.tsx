@@ -577,11 +577,22 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
   const [controllerLifetime] = useState(() => createControllerReadingLifetime<PeripheralStatusPayload>());
   const controllerReading = useSyncExternalStore(controllerLifetime.source.subscribe, controllerLifetime.source.read, controllerLifetime.source.read);
   const controllerVisible = useRef(false);
+  const controllerOwner = useRef({ active: false, generation: 0 });
   controllerVisible.current = quickAccessVisible || expandedVisible;
   useEffect(() => {
     if (!quickAccessVisible && !expandedVisible) controllerLifetime.setEligible(false);
   }, [quickAccessVisible, expandedVisible, controllerLifetime]);
-  useEffect(() => () => controllerLifetime.stop(), [controllerLifetime]);
+  useEffect(() => {
+    const owner = controllerOwner.current;
+    owner.active = true;
+    const generation = ++owner.generation;
+    return () => {
+      if (owner.generation !== generation) return;
+      owner.active = false;
+      owner.generation++;
+      controllerLifetime.stop();
+    };
+  }, [controllerLifetime]);
   const statusAnchor = useRef<HTMLDivElement | null>(null);
   const statusFocusAnchor = useRef<HTMLDivElement | null>(null);
   const primaryControlAnchor = useRef<HTMLDivElement | null>(null);
@@ -656,7 +667,7 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
   const [processAcknowledgementId, setProcessAcknowledgementId] = useState("");
   const [forceReceiptToken, setForceReceiptToken] = useState("");
   const lastSnapshotAt = useRef<number | null>(null);
-  const refreshInFlight = useRef(false);
+  const refreshInFlight = useRef<number | null>(null);
   const warningToastShown = useRef(false);
   const inactiveToastShown = useRef(false);
   const linkHealthNotification = useRef<ReturnType<typeof decideLinkHealthNotification>["memory"]>(null);
@@ -792,25 +803,33 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
   }, []);
 
   const refresh = useCallback(async (quiet = false): Promise<SnapshotPayload | null> => {
-    if (refreshInFlight.current) {
+    const ownerGeneration = controllerOwner.current.generation;
+    const isCurrentOwner = () => controllerOwner.current.active
+      && controllerOwner.current.generation === ownerGeneration;
+    if (!isCurrentOwner() || refreshInFlight.current === ownerGeneration) {
       return null;
     }
-    refreshInFlight.current = true;
+    refreshInFlight.current = ownerGeneration;
     if (!quiet) {
       setLoading(true);
       setError("");
     }
     try {
       const nextPayload = await getSnapshot();
+      if (!isCurrentOwner()) return null;
       try {
-        setAutomaticDockStatus(await getAutomaticDockStatus());
+        const automaticStatus = await getAutomaticDockStatus();
+        if (!isCurrentOwner()) return null;
+        setAutomaticDockStatus(automaticStatus);
       } catch {
+        if (!isCurrentOwner()) return null;
         setAutomaticDockStatus(null);
         setAutomaticDockMessage(
           "Automatic docking status is unavailable; no restart will be requested.",
         );
       }
       await refreshTransitionJournal();
+      if (!isCurrentOwner()) return null;
       const linkDecision = decideLinkHealthNotification(
         linkHealthNotification.current,
         nextPayload,
@@ -826,14 +845,17 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
       }
       controllerLifetime.setEligible(controllerVisible.current && nextPayload.snapshot.game_state === "idle");
       const readPeripheral = async () => {
+        if (!isCurrentOwner() || !controllerVisible.current) throw new Error("Controller read owner is inactive");
         const ticket = controllerLifetime.start();
+        if (!ticket) throw new Error("Controller read context is ineligible");
         try {
           const value = await getPeripheralStatus();
+          if (!isCurrentOwner()) throw new Error("Controller read owner changed");
           if (!controllerVisible.current) controllerLifetime.setEligible(false);
           controllerLifetime.complete(ticket, value);
           return value;
         } catch (error) {
-          controllerLifetime.complete(ticket, null);
+          if (isCurrentOwner()) controllerLifetime.complete(ticket, null);
           throw error;
         }
       };
@@ -859,6 +881,7 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
         try { nextPeripheral = await readPeripheral(); }
         catch { nextPeripheral = null; }
       }
+      if (!isCurrentOwner()) return null;
       const presentationPayload = {
         ...nextPayload,
         journey: sanitizeJourneyStatus(nextPayload.journey),
@@ -873,12 +896,13 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
       setPreflightStatus(preflight.reconcile(preflightObservation(nextPayload)));
       return presentationPayload;
     } catch {
+      if (!isCurrentOwner()) return null;
       setError("Read-only snapshot unavailable. Check the Decky log for details.");
       setPreflightStatus(preflight.reconcile({ kind: "unavailable" }));
       return null;
     } finally {
-      refreshInFlight.current = false;
-      if (!quiet) {
+      if (refreshInFlight.current === ownerGeneration) refreshInFlight.current = null;
+      if (!quiet && isCurrentOwner()) {
         setLoading(false);
       }
     }

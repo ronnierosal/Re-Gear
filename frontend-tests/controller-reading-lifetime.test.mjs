@@ -62,3 +62,76 @@ test('controller lifetime is independent of GPU reads and drives both consumer p
   assert.match(index,/controllerLifetime\.setEligible\(controllerVisible\.current && nextPayload\.snapshot\.game_state === "idle"\)/);
   assert.match(index,/getPeripheralStatus: readPeripheral/);
 });
+
+// Execute the production Content lifecycle and refresh callback, including every
+// await before peripheral admission. Store-only tests cannot catch owner revival.
+function contentHarness() {
+  const text = readFileSync(new URL('../src/index.tsx', import.meta.url), 'utf8');
+  const tree = ts.createSourceFile('index.tsx', text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const content = tree.statements.find(n => ts.isFunctionDeclaration(n) && n.name?.text === 'Content');
+  let refreshNode, lifecycleNode;
+  function visit(n) {
+    if (ts.isVariableDeclaration(n) && n.name.getText(tree) === 'refresh') refreshNode = n.initializer.arguments[0];
+    if (ts.isCallExpression(n) && n.expression.getText(tree) === 'useEffect' && n.arguments[0]?.getText(tree).includes('controllerLifetime.stop()')) lifecycleNode = n.arguments[0];
+    ts.forEachChild(n, visit);
+  }
+  visit(content);
+  assert.ok(refreshNode && lifecycleNode);
+  const h = setup(); h.store.stop();
+  const pending = new Map(); let rpc = 0, published = 0;
+  function pause(stage) {
+    let release, enter;
+    const wait = new Promise(resolve => { release = resolve; });
+    const entered = new Promise(resolve => { enter = resolve; });
+    pending.set(stage, async () => { pending.delete(stage); enter(); await wait; });
+    return {release, entered};
+  }
+  const at = async stage => { await pending.get(stage)?.(); };
+  const noop = () => {};
+  const env = {
+    controllerOwner: {current: {active: false, generation: 0}},
+    controllerVisible: {current: true}, controllerLifetime: h.store,
+    refreshInFlight: {current: null}, quickAccessVisible: false, expandedVisible: true,
+    diagnosticsOnScreen: {current: false},
+    getSnapshot: async () => { await at('snapshot'); return {snapshot: {game_state: 'idle'}, journey: {}}; },
+    getAutomaticDockStatus: async () => { await at('automatic'); return {}; },
+    refreshTransitionJournal: async () => { await at('journal'); },
+    getPeripheralStatus: async () => { rpc++; await at('peripheral'); return reading; },
+    linkHealthNotification: {current: null}, decideLinkHealthNotification: () => ({memory: null, notification: null}),
+    toaster: {toast: noop}, shouldCollectOptionalDiagnostics: () => false,
+    collectOptionalDiagnostics: async () => Object.freeze({peripheralStatus: null}),
+    getDockedIgpuStatus: noop, getDiagnosticLoggingStatus: noop, getActionHistory: noop,
+    sanitizeJourneyStatus: x => x, lastSnapshotAt: {current: null},
+    preflight: {reconcile: noop}, preflightObservation: noop,
+    setPayload: () => { published++; },
+  };
+  for (const name of ['setLoading','setError','setAutomaticDockStatus','setAutomaticDockMessage','setDockedIgpuStatus','setDiagnosticLoggingStatus','setPeripheralStatus','setActionHistory','setPreflightStatus']) env[name] = noop;
+  function execute(node) {
+    const js = ts.transpileModule(`const extracted = ${node.getText(tree)};`, {compilerOptions: {target: ts.ScriptTarget.ES2022}}).outputText;
+    return new Function(...Object.keys(env), `${js}; return extracted;`)(...Object.values(env));
+  }
+  return {...h, pause, refresh: execute(refreshNode), mount: execute(lifecycleNode), rpc: () => rpc, published: () => published};
+}
+
+for (const stage of ['snapshot', 'automatic', 'journal', 'peripheral']) {
+  test(`Content cleanup rejects pending ${stage} continuation with retained visibility`, async () => {
+    const h = contentHarness(); const cleanup = h.mount(); const gate = h.pause(stage);
+    const result = h.refresh(); await gate.entered; cleanup(); gate.release(); await result;
+    assert.equal(h.rpc(), stage === 'peripheral' ? 1 : 0);
+    assert.equal(h.store.source.read(), null); assert.equal(h.timers.size, 0); assert.equal(h.published(), 0);
+  });
+}
+
+test('Content replacement admits new generation while old refresh is stalled and preserves serialization', async () => {
+  const h = contentHarness(); const oldCleanup = h.mount(); const oldGate = h.pause('snapshot');
+  const oldRequest = h.refresh(); await oldGate.entered; oldCleanup();
+  const cleanup = h.mount(); const currentGate = h.pause('peripheral');
+  const currentRequest = h.refresh(); await currentGate.entered;
+  oldGate.release(); await oldRequest;
+  // Old finally must not clear the new generation flight or admit duplicate RPCs.
+  assert.equal(await h.refresh(), null); assert.equal(h.rpc(), 1);
+  currentGate.release(); await currentRequest;
+  assert.equal(h.store.source.read(), reading); assert.equal(h.timers.size, 1); assert.equal(h.published(), 1);
+  oldCleanup(); assert.equal(h.store.source.read(), reading);
+  cleanup(); assert.equal(h.store.source.read(), null); assert.equal(h.timers.size, 0);
+});

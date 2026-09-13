@@ -6,7 +6,7 @@ const start=source.indexOf('let nextPeripheral = optionalDiagnostics.peripheralS
 const end=source.indexOf('const presentationPayload =',start);
 assert.ok(start>=0&&end>start,'expanded peripheral read block is missing');
 const AsyncFunction=Object.getPrototypeOf(async function(){}).constructor;
-const read=new AsyncFunction('optionalDiagnostics','expandedVisible','quickAccessVisible','diagnosticsOnScreen','nextPayload','readPeripheral',source.slice(start,end)+'return nextPeripheral;');
+const read=new AsyncFunction('optionalDiagnostics','expandedVisible','quickAccessVisible','diagnosticsOnScreen','nextPayload','readPeripheral','isCurrentOwner = () => true',source.slice(start,end)+'return nextPeripheral;');
 const payload=game_state=>({snapshot:{game_state}});
 
 test('expanded peripheral read never contaminates skipped diagnostics defaults',async()=>{
