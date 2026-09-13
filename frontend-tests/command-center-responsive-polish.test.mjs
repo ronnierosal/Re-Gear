@@ -25,15 +25,17 @@ test("brightness and volume are visually integrated into the main command center
   assert.match(styles, /data-utility-side=left/);
   assert.match(styles, /position:absolute/);
   assert.match(styles, /padding-left:calc/);
+  assert.match(rail, /height:clamp\(42px,8vh,62px\)/);
   assert.doesNotMatch(styles, /Very narrow hosts cannot fit side controls/);
   assert.doesNotMatch(styles, /data-utility-side=left[^}]*display:none/);
 });
 
-test("detached action rail scales from viewport rather than fixed card geometry", () => {
+test("detached action rail fits four compact actions without scrolling", () => {
   assert.match(styles, /data-utility-side=right/);
   assert.match(styles, /width:clamp\(68px,8\.5vw,94px\)/);
-  assert.match(styles, /height:82vh/);
-  assert.match(rail, /min-height:clamp\(/);
+  assert.match(rail, /height:clamp\(48px,10vh,68px\)/);
+  assert.match(rail, /overflow:hidden/);
+  assert.doesNotMatch(rail, /min-height:clamp\(58px,13vh,84px\)/);
 });
 
 test("utility rails do not add redundant headings and retain approved labels", () => {
