@@ -145,6 +145,13 @@ if TYPE_CHECKING:  # pragma: no cover - typing only; never imported at runtime
 
 #: The domain codes this layer names on its own. Everything else it reports is
 #: whatever the predicate said, passed through unedited.
+#: The payload contract this facade speaks. Present on every payload so a
+#: panel can refuse a shape it does not understand instead of reading
+#: fields that have moved. The power RPC already stamps its replies this
+#: way and rejects a mismatch outright; a second contract that cannot say
+#: which version it is would be the odd one out.
+SCHEMA_VERSION = 1
+
 _IDENTITY_UNRESOLVED = "device_authorization.identity_unresolved"
 _INTENTIONAL_DISCONNECT = "device_authorization.intentional_disconnect"
 #: Asked for a grant this facade is not permitted to make. Not a failure of
@@ -349,6 +356,7 @@ class DeviceAuthorizationFacade:
                 uuid=refused.uuid,
             )
             return {
+                "schema_version": SCHEMA_VERSION,
                 "requested": False,
                 "code": _REMEMBERED_GRANT_NOT_OFFERED,
                 # The service's token, never the caller's argument. Every other
@@ -394,6 +402,7 @@ class DeviceAuthorizationFacade:
         # dock's generation and spent latch.
         snapshot = outcome.state
         payload = {
+            "schema_version": SCHEMA_VERSION,
             "requested": requested,
             "code": code,
             "token": _token_text(outcome.token),
@@ -533,6 +542,7 @@ class DeviceAuthorizationFacade:
             offered = False
             code = _IDENTITY_UNRESOLVED
         return {
+            "schema_version": SCHEMA_VERSION,
             "state": "offered" if offered else "unavailable",
             "code": code,
             "token": snapshot.token,

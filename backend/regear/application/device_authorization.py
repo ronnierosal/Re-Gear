@@ -1089,8 +1089,13 @@ class DeviceAuthorizationService:
                 result.enrolled is True, _reportable(result.code)
             )
         except Exception:
+            # Named for the action that actually failed. Collapsing both to
+            # "enroll_unavailable" told an operator the remembered grant was
+            # unavailable when what had gone wrong was the one-shot one -- and
+            # on a production build the remembered grant is not even reachable,
+            # so it was the one code that could not be true.
             return DeviceEnrollmentResult(
-                False, "device_authorization.enroll_unavailable"
+                False, f"device_authorization.{action}_unavailable"
             )
 
 

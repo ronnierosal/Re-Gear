@@ -74,6 +74,7 @@ DOCK_A = "aaaaaaaa-1111-2222-3333-444444444444"
 DOCK_B = "bbbbbbbb-5555-6666-7777-888888888888"
 
 STATUS_KEYS = {
+    "schema_version",
     "state",
     "code",
     "token",
@@ -93,12 +94,12 @@ INTENTIONAL = "device_authorization.intentional_disconnect"
 IDENTITY_UNRESOLVED = "device_authorization.identity_unresolved"
 CONFIRMATION_REQUIRED = "device_authorization.confirmation_required"
 ACTION_INVALID = "device_authorization.action_invalid"
-#: What the *service* reports when the executor raises, for either action --
-#: it collapses both to this one code, so an `authorize` whose command was not
-#: on the image still says `enroll_unavailable`. The name is the service's and
-#: is left spelled as it is rather than quietly corrected here: the tests below
-#: pin what the layer actually emits, and the wording is root's to change.
-UNAVAILABLE = "device_authorization.enroll_unavailable"
+#: What the *service* reports when the executor raises. It names the action
+#: that failed: an `authorize` whose command is missing from the image says
+#: `authorize_unavailable`, not `enroll_unavailable`. It used to collapse both,
+#: which on a production build named the one grant that is not even reachable.
+UNAVAILABLE = "device_authorization.authorize_unavailable"
+REMEMBERED_UNAVAILABLE = "device_authorization.enroll_unavailable"
 #: Asked for the remembered grant from a facade that is not permitted to make
 #: one. Spelled out here rather than imported, for the reason `squashed` is:
 #: a guard that shares its constant with the code under test cannot notice the
@@ -114,6 +115,7 @@ REFUSALS = {
 #: one path is a failure here instead of a panel field that quietly went
 #: missing.
 CONFIRM_KEYS = {
+    "schema_version",
     "requested",
     "code",
     "token",
@@ -1332,6 +1334,7 @@ class RequestedIsNotSuccess(unittest.TestCase):
         self.assertEqual(
             set(payload),
             {
+                "schema_version",
                 "requested",
                 "code",
                 "token",

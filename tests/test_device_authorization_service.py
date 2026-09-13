@@ -127,6 +127,19 @@ class FakeCommands:
                 self._inside -= 1
 
 
+class RaisingCommands:
+    """An executor that is not there for either act."""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, str]] = []
+
+    def enroll(self, uuid: str):
+        raise FileNotFoundError("/usr/bin/boltctl")
+
+    def authorize(self, uuid: str):
+        raise FileNotFoundError("/usr/bin/boltctl")
+
+
 class EnrollOnlyCommands:
     """The runner that exists today: the Protocol widened, it did not."""
 
@@ -514,8 +527,28 @@ class TheActIsNamedByThePlayer(unittest.TestCase):
         token = svc.candidate_token(DOCK)
         outcome = confirm(svc, token, action="authorize")
         self.assertFalse(outcome.requested)
-        self.assertEqual(outcome.code, "device_authorization.enroll_unavailable")
+        # Named for the act the player asked for. Reporting the REMEMBERED
+        # grant unavailable here would be doubly wrong: it is not what was
+        # attempted, and on a production build it is not reachable at all.
+        self.assertEqual(
+            outcome.code, "device_authorization.authorize_unavailable"
+        )
         self.assertEqual(commands.calls, [])
+
+    def test_each_act_reports_its_own_unavailability(self):
+        """A missing executor names the grant that was missing, not the other."""
+        for action, expected in (
+            ("authorize", "device_authorization.authorize_unavailable"),
+            ("enroll", "device_authorization.enroll_unavailable"),
+        ):
+            with self.subTest(action=action):
+                commands = RaisingCommands()
+                svc = DeviceAuthorizationService(commands)
+                svc.observe_attachment(present=True, uuid=DOCK)
+                token = svc.candidate_token(DOCK)
+                outcome = confirm(svc, token, action=action)
+                self.assertFalse(outcome.requested)
+                self.assertEqual(outcome.code, expected)
 
 
 class TheStateIsRecheckedWhenActing(unittest.TestCase):
