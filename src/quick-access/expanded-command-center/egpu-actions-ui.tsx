@@ -21,17 +21,28 @@ export type EgpuActionPresentation = {
   control?: ReactNode;
 };
 
+const egpuActionStyles = `
+[data-egpu-action-grid]{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;container-type:inline-size}
+[data-egpu-action-card]{min-width:0;min-height:72px;padding:8px 9px;border-radius:10px;display:grid;grid-template-rows:minmax(0,1fr) auto;align-content:stretch;gap:6px}
+[data-egpu-action-card] strong{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;font-size:10.5px;line-height:1.18;color:#e7f4fb;white-space:normal}
+[data-egpu-action-card] [data-egpu-action-detail]{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;margin-top:2px;font-size:9px;line-height:1.22;color:#8fb3cc}
+@container (max-width:520px){[data-egpu-action-grid]{grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}[data-egpu-action-card]{min-height:66px;padding:7px 8px}}
+@container (max-width:300px){[data-egpu-action-grid]{grid-template-columns:1fr}[data-egpu-action-card]{min-height:60px}}
+@media(max-height:520px){[data-egpu-action-grid]{gap:6px}[data-egpu-action-card]{min-height:58px;padding:6px 7px}[data-egpu-action-card] strong{font-size:9.5px}[data-egpu-action-card] [data-egpu-action-detail]{font-size:8px}}
+`;
+
 /**
  * Shared eGPU action surface for the eGPU module and Quick Access tab.
  * Runtime owners supply controls; this component does not dispatch actions.
  */
 export function EgpuQuickActions({ actions }: { actions: readonly EgpuActionPresentation[] }) {
   return <CommandSection title="eGPU actions" hint="The same verified actions may be surfaced in Quick Access and the eGPU module without changing their meaning.">
-    <div data-egpu-action-grid style={{ display: "grid", gridTemplateColumns: "repeat(4,minmax(0,1fr))", gap: 8 }}>
-      {actions.map(action => <div key={action.id} data-egpu-action-id={action.id} style={{ minWidth: 0, minHeight: 64, padding: "8px 9px", borderRadius: 10, border: `1px solid ${action.tone === "warning" ? "#80672f" : "#315c75"}`, background: action.unavailable ? "#0b1821" : "#0b2230", opacity: action.unavailable ? .62 : 1, display: "grid", alignContent: "space-between", gap: 6 }}>
+    <style>{egpuActionStyles}</style>
+    <div data-egpu-action-grid>
+      {actions.map(action => <div key={action.id} data-egpu-action-card data-egpu-action-id={action.id} style={{ border: `1px solid ${action.tone === "warning" ? "#80672f" : "#315c75"}`, background: action.unavailable ? "#0b1821" : "#0b2230", opacity: action.unavailable ? .62 : 1 }}>
         <div style={{ minWidth: 0 }}>
-          <strong style={{ display: "block", fontSize: 10.5, color: "#e7f4fb", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{action.label}</strong>
-          {action.detail && <span style={{ display: "block", marginTop: 2, fontSize: 9, color: "#8fb3cc", lineHeight: 1.25 }}>{action.detail}</span>}
+          <strong>{action.label}</strong>
+          {action.detail && <span data-egpu-action-detail>{action.detail}</span>}
         </div>
         {action.control}
       </div>)}
