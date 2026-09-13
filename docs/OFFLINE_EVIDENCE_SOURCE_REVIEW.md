@@ -39,6 +39,18 @@ returning `unknown` with `offline_evidence_unavailable`
 to `offline_evidence_game_active` or `offline_evidence_game_unknown` when the
 snapshot's game state is not idle (`:33-35`).
 
+One structural cost is worth knowing before measuring anything: the RPC takes a
+**full diagnostics snapshot per check**, solely to read the game state.
+`main.py:691` calls `self._api.get_snapshot_report()` on a worker thread, which
+is `SnapshotService(SteamOsDiscovery()).observe()` (`backend/regear/api.py:11,20`)
+— a complete discovery collection plus operating-mode inference, workflow and
+peripheral observation and health assessment
+(`backend/regear/application/snapshot.py:50-75`). Only
+`report.snapshot.game_state` is used, and any exception falls back to
+`GameState.UNKNOWN` without logging (`main.py:690-695`). This is a reading of the
+call graph, not a measurement: the backend side of an offline check has never
+been timed, so do not quote it as a cost figure.
+
 Four more fields stay in frontend memory only — `nBuildID`,
 `bHasAnyLocalContent`, `bIsSubscribedTo` and the two
 `deckDerivedProperties` internet flags — together with
@@ -172,8 +184,10 @@ plain decoded overview bound to a private expected AppID, accepting only a base
 game on the local client branch with affirmative platform availability, and
 discarding raw identity and unrelated metadata. It selects no game, opens no
 file, subscribes to nothing, calls no Steam API and sends no RPC. Its rules
-mirror the live projection: explicit install booleans decide installed or not
-installed and absent stays Unknown; explicit unfinished download or update states
+mirror the live projection, with one decisive difference: its line 59 is the only
+place in the repository outside tests that can produce `InstallState.INSTALLED`,
+which is part of why the live path cannot reach a positive verdict. Explicit
+install booleans decide installed or not installed and absent stays Unknown; explicit unfinished download or update states
 become attention evidence; synchronized, pending and conflict cloud values stay
 distinct while disabled, failed, unknown, malformed and future states stay
 Unknown; and ReadyToLaunch does not prove download currency. Its numeric schema
@@ -221,9 +235,10 @@ networking, launch games, or terminate them for testing.
    validation.
 2. Establish a trustworthy observation age. Nothing in the live path supplies
    one; the 1 000 ms request lease bounds *our* handling, not the cache's age.
-3. Re-measure reader cost as a bounded repeated sample. The recorded figures are
-   single observations, not a benchmark, and the dormant admission gate's cost
-   contract has no measured input.
+3. Re-measure reader cost as a bounded repeated sample, and measure the backend
+   side at all. The recorded figures are single frontend observations, not a
+   benchmark; the full snapshot taken per RPC has never been timed; and the
+   dormant admission gate's cost contract has no measured input.
 4. Reach a positive categorical status honestly, or decide the backend
    `ready_to_try_offline` state stays unreachable from Steam reports alone and
    belongs only to attested evidence.

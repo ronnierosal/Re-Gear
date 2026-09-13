@@ -48,7 +48,13 @@ positive folder index is never converted into proof of offline readiness.
    only.
 4. **Overhead — open.** Recorded samples are 0.6 ms for the picker, 28.2 ms for
    one details request, 48.0/54.2/53.0 ms for three, and 5.9 ms for one idle
-   read. These are single observations, not a benchmark or a game-impact proof.
+   read. These are single observations, not a benchmark or a game-impact proof,
+   and they all measure the *frontend* Steam callback. The backend side has never
+   been timed at all, and it is not obviously cheap: each RPC takes a full
+   diagnostics snapshot — discovery, mode inference, workflow and peripheral
+   observation, health assessment — purely to read the game state
+   (`main.py:691`, `backend/regear/application/snapshot.py:50-75`). With a
+   60-second cadence per focused tile, that is the number worth measuring first.
    A bounded repeated sample is still owed, and the dormant admission gate's cost
    contract has no measured input.
 5. **Player delivery — delivered.** The automatic focused-tile check is mounted
