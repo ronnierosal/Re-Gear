@@ -1,12 +1,22 @@
+import { createNonEgpuDetailPublisher, type NonEgpuDetailState } from "./quick-access/expanded-command-center/non-egpu-detail-source";
+import { createControllerReadingLifetime } from "./quick-access/expanded-command-center/controller-reading-lifetime";
+import { createNonEgpuDetailRenderer } from "./quick-access/expanded-command-center/non-egpu-detail-renderer";
+import type { MenuVisibility } from "./quick-access/expanded-command-center/menu-visibility";
 import { PageLayout, CommandCenterHeader } from "./quick-access/page-layout";
 import { createExpandedMenu } from "./quick-access/expanded-command-center/native";
+import { createTilePublisher } from "./quick-access/expanded-command-center/tile-source";
+import type { Readings } from "./quick-access/expanded-command-center/tile-source";
+import { observationAge } from "./quick-access/expanded-command-center/tile-source";
+import { createSingleFlight } from "./quick-access/single-flight";
 import { EgpuModule } from "./quick-access/modules/egpu";
 import { egpuPresentation } from "./quick-access/modules/egpu-presentation";
+import { displayTargetEvidence, UNKNOWN_EVIDENCE } from "./quick-access/modules/egpu-presentation";
 import { ControllerModule } from "./quick-access/modules/controller";
 import { controllerPresentation } from "./quick-access/modules/controller-presentation";
 import { displayAction } from "./display-action";
 import { createDisplayShortcutRuntime } from "./display-shortcut-runtime";
 import { showDisconnectProgress } from "./disconnect-progress-panel";
+import { EgpuConfirmModal } from "./egpu-confirm-modal";
 import { ConnectionQuickStatus } from "./connection-quick-status";
 import { regearControlCss } from "./regear-theme";
 import { startConnectionMonitor } from "./connection-monitor";
@@ -28,7 +38,7 @@ import {
   showModal,
   staticClasses,
 } from "@decky/ui";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 import {
   acknowledgeDockedIgpuStatus,
@@ -182,6 +192,14 @@ const LABELS: Record<string, string> = {
 const SLEEP_WARNING_KEY = "hdm.hideAttachedEgpuSleepWarning";
 const LEGACY_SLEEP_WARNING_KEY = "hdm.hideAttachedG1SleepWarning";
 const SNAPSHOT_STALE_AFTER_MS = 10_000;
+
+/** The schema this build knows how to read.
+ *
+ * `observationFromSnapshotEvidence` refuses anything else and fails closed.
+ * Publishing a payload it would reject, as current readings, would leave two
+ * gates on one observation disagreeing about whether it may be acted on. */
+const READABLE_SNAPSHOT_SCHEMA = 3;
+
 const BLOCKED_ATTEMPT_MODAL_DELAY_MS = 750;
 const DIAGNOSTIC_LOGGING_OPTIONS = [
   { data: "30_minutes", label: "30 minutes" },
@@ -355,7 +373,7 @@ function showSafeDisconnectConfirmation(
     onClose();
   };
   modal = showModal(
-    <ConfirmModal
+    <EgpuConfirmModal
       strTitle={portable ? "Shut down for eGPU disconnect?" : "Return to Ally for eGPU disconnect?"}
       strOKButtonText={portable ? "Shut down" : "Return to Ally"}
       strCancelButtonText="Cancel"
@@ -382,7 +400,7 @@ function showSafeDisconnectConfirmation(
           </>
         )}
       </div>
-    </ConfirmModal>,
+    </EgpuConfirmModal>,
     window,
     { strTitle: PRODUCT_NAME, bNeverPopOut: true },
   );
@@ -553,8 +571,28 @@ function preflightObservation(payload: SnapshotPayload): PreflightObservation {
   }, Date.now(), SNAPSHOT_STALE_AFTER_MS);
 }
 
-function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAvailable }: { preflight: SleepPreflightCoordinator; connection: ReturnType<typeof startConnectionMonitor>; shortcut: ReturnType<typeof createDisplayShortcutRuntime>; openExpanded(): void; menuShortcutAvailable: boolean }) {
+function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAvailable, publishTiles, publishDetails, menuVisibility, publishMenuSnapshot }: { preflight: SleepPreflightCoordinator; connection: ReturnType<typeof startConnectionMonitor>; shortcut: ReturnType<typeof createDisplayShortcutRuntime>; openExpanded(): void; menuShortcutAvailable: boolean; publishTiles(readings: Readings): void; publishDetails(state: NonEgpuDetailState | null): void; menuVisibility: MenuVisibility; publishMenuSnapshot(snapshot: SnapshotPayload["snapshot"] | null): void }) {
   const quickAccessVisible = useQuickAccessVisible();
+  const expandedVisible = useSyncExternalStore(menuVisibility.subscribe, menuVisibility.read, menuVisibility.read);
+  const [controllerLifetime] = useState(() => createControllerReadingLifetime<PeripheralStatusPayload>());
+  const controllerReading = useSyncExternalStore(controllerLifetime.source.subscribe, controllerLifetime.source.read, controllerLifetime.source.read);
+  const controllerVisible = useRef(false);
+  const controllerOwner = useRef({ active: false, generation: 0 });
+  controllerVisible.current = quickAccessVisible || expandedVisible;
+  useEffect(() => {
+    if (!quickAccessVisible && !expandedVisible) controllerLifetime.setEligible(false);
+  }, [quickAccessVisible, expandedVisible, controllerLifetime]);
+  useEffect(() => {
+    const owner = controllerOwner.current;
+    owner.active = true;
+    const generation = ++owner.generation;
+    return () => {
+      if (owner.generation !== generation) return;
+      owner.active = false;
+      owner.generation++;
+      controllerLifetime.stop();
+    };
+  }, [controllerLifetime]);
   const statusAnchor = useRef<HTMLDivElement | null>(null);
   const statusFocusAnchor = useRef<HTMLDivElement | null>(null);
   const primaryControlAnchor = useRef<HTMLDivElement | null>(null);
@@ -605,7 +643,7 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
    * hardware", and a stored dismissal would hide it after a later restart. */
   const [resultDismissed, setResultDismissed] = useState(false);
   const route = currentRoute(navStack);
-  const performance = usePerformance(quickAccessVisible);
+  const performance = usePerformance(quickAccessVisible || expandedVisible);
   const onCommandCenter = route.kind === "command-center";
   // Read by the refresh callback, which must not be rebuilt on every navigation:
   // adding navStack to its dependencies would restart the refresh cycle on a
@@ -629,7 +667,7 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
   const [processAcknowledgementId, setProcessAcknowledgementId] = useState("");
   const [forceReceiptToken, setForceReceiptToken] = useState("");
   const lastSnapshotAt = useRef<number | null>(null);
-  const refreshInFlight = useRef(false);
+  const refreshInFlight = useRef<number | null>(null);
   const warningToastShown = useRef(false);
   const inactiveToastShown = useRef(false);
   const linkHealthNotification = useRef<ReturnType<typeof decideLinkHealthNotification>["memory"]>(null);
@@ -765,25 +803,33 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
   }, []);
 
   const refresh = useCallback(async (quiet = false): Promise<SnapshotPayload | null> => {
-    if (refreshInFlight.current) {
+    const ownerGeneration = controllerOwner.current.generation;
+    const isCurrentOwner = () => controllerOwner.current.active
+      && controllerOwner.current.generation === ownerGeneration;
+    if (!isCurrentOwner() || refreshInFlight.current === ownerGeneration) {
       return null;
     }
-    refreshInFlight.current = true;
+    refreshInFlight.current = ownerGeneration;
     if (!quiet) {
       setLoading(true);
       setError("");
     }
     try {
       const nextPayload = await getSnapshot();
+      if (!isCurrentOwner()) return null;
       try {
-        setAutomaticDockStatus(await getAutomaticDockStatus());
+        const automaticStatus = await getAutomaticDockStatus();
+        if (!isCurrentOwner()) return null;
+        setAutomaticDockStatus(automaticStatus);
       } catch {
+        if (!isCurrentOwner()) return null;
         setAutomaticDockStatus(null);
         setAutomaticDockMessage(
           "Automatic docking status is unavailable; no restart will be requested.",
         );
       }
       await refreshTransitionJournal();
+      if (!isCurrentOwner()) return null;
       const linkDecision = decideLinkHealthNotification(
         linkHealthNotification.current,
         nextPayload,
@@ -797,6 +843,22 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
           // read-only snapshot into an apparent hardware failure.
         }
       }
+      controllerLifetime.setEligible(controllerVisible.current && nextPayload.snapshot.game_state === "idle");
+      const readPeripheral = async () => {
+        if (!isCurrentOwner() || !controllerVisible.current) throw new Error("Controller read owner is inactive");
+        const ticket = controllerLifetime.start();
+        if (!ticket) throw new Error("Controller read context is ineligible");
+        try {
+          const value = await getPeripheralStatus();
+          if (!isCurrentOwner()) throw new Error("Controller read owner changed");
+          if (!controllerVisible.current) controllerLifetime.setEligible(false);
+          controllerLifetime.complete(ticket, value);
+          return value;
+        } catch (error) {
+          if (isCurrentOwner()) controllerLifetime.complete(ticket, null);
+          throw error;
+        }
+      };
       const optionalDiagnostics = await collectOptionalDiagnostics(
         shouldCollectOptionalDiagnostics(
           // `showDiagnostics` says the player opened these surfaces, not that
@@ -809,10 +871,17 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
         {
           getDockedIgpuStatus,
           getDiagnosticLoggingStatus,
-          getPeripheralStatus,
+          getPeripheralStatus: readPeripheral,
           getActionHistory,
         },
       );
+      let nextPeripheral = optionalDiagnostics.peripheralStatus;
+      if (expandedVisible && !(quickAccessVisible && diagnosticsOnScreen.current)
+          && nextPayload.snapshot.game_state === "idle") {
+        try { nextPeripheral = await readPeripheral(); }
+        catch { nextPeripheral = null; }
+      }
+      if (!isCurrentOwner()) return null;
       const presentationPayload = {
         ...nextPayload,
         journey: sanitizeJourneyStatus(nextPayload.journey),
@@ -820,23 +889,24 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
       setPayload(presentationPayload);
       setDockedIgpuStatus(optionalDiagnostics.dockedIgpuStatus);
       setDiagnosticLoggingStatus(optionalDiagnostics.diagnosticLoggingStatus);
-      setPeripheralStatus(optionalDiagnostics.peripheralStatus);
+      setPeripheralStatus(nextPeripheral);
       setActionHistory(optionalDiagnostics.actionHistory);
       setError("");
       lastSnapshotAt.current = Date.now();
       setPreflightStatus(preflight.reconcile(preflightObservation(nextPayload)));
       return presentationPayload;
     } catch {
+      if (!isCurrentOwner()) return null;
       setError("Read-only snapshot unavailable. Check the Decky log for details.");
       setPreflightStatus(preflight.reconcile({ kind: "unavailable" }));
       return null;
     } finally {
-      refreshInFlight.current = false;
-      if (!quiet) {
+      if (refreshInFlight.current === ownerGeneration) refreshInFlight.current = null;
+      if (!quiet && isCurrentOwner()) {
         setLoading(false);
       }
     }
-  }, [preflight, quickAccessVisible, refreshTransitionJournal, showDiagnostics]);
+  }, [preflight, quickAccessVisible, expandedVisible, refreshTransitionJournal, showDiagnostics, controllerLifetime]);
 
   useEffect(() => {
     if (quickAccessVisible) {
@@ -854,9 +924,9 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
     setNavStack(stackOnPanelOpen());
     setDockedIgpuStatus(null);
     setDiagnosticLoggingStatus(null);
-    setPeripheralStatus(null);
+    if (!expandedVisible) setPeripheralStatus(null);
     setActionHistory(null);
-  }, [quickAccessVisible]);
+  }, [quickAccessVisible, expandedVisible]);
 
   useEffect(() => {
     let disposed = false;
@@ -872,7 +942,7 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
       if (!disposed) {
         timer = window.setTimeout(
           () => void poll(true),
-          refreshDelayForVisibility(nextPayload, quickAccessVisible),
+          refreshDelayForVisibility(nextPayload, quickAccessVisible || expandedVisible),
         );
       }
     };
@@ -883,7 +953,7 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
         window.clearTimeout(timer);
       }
     };
-  }, [preflight, quickAccessVisible, refresh]);
+  }, [preflight, quickAccessVisible, expandedVisible, refresh]);
 
   const snapshot = payload?.snapshot;
   const disconnect = snapshot?.disconnect_readiness;
@@ -1518,10 +1588,26 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
    * is watching the TV. The message comes from gameCloseWiringMessage, which
    * keeps the cable sentence: a software removal is not clearance to unplug.
    */
+  /** One disconnect at a time, refused synchronously.
+   *
+   * Not the busy state: React state is not a lock, so two activations in the
+   * same tick both read the old value and both dispatch. The backend
+   * serialises, but a second press is refused here too -- a player answered one
+   * confirmation and must get one operation. See quick-access/single-flight.ts,
+   * where the behaviour is tested. */
+  // Claimed at the press, not at the dispatch. The single flight below refuses
+  // overlapping dispatches, but `disconnectBusy` is state that nothing sets
+  // until `runDisconnect` runs, so two presses in one tick both pass that
+  // check and open two confirmations. A player who answered one question
+  // twice, without meaning to, then gets two operations.
+  const disconnectPromptOpen = useRef(false);
+  const disconnectFlight = useRef(createSingleFlight()).current;
+
   const runDisconnect = useCallback(async (
     releaseDisplay: boolean,
     answers: GameCloseAnswers,
   ) => {
+    await disconnectFlight.run(async () => {
     setDisconnectBusy(true);
     setDisconnectMessage("");
     try {
@@ -1537,13 +1623,16 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
     } catch {
       setDisconnectMessage("Re-Gear could not complete the disconnect request.");
     } finally {
+      // Released on every outcome, including failure and cancellation, so a
+      // refused or failed attempt never wedges the control permanently.
       setDisconnectBusy(false);
       // A new attempt is a new answer, so an earlier dismissal must not hide it.
       setResultDismissed(false);
       // Re-read rather than assuming what the attempt left behind.
       void refreshDisconnect();
     }
-  }, [egpuDisconnect, refreshDisconnect]);
+    });
+  }, [disconnectFlight, egpuDisconnect, refreshDisconnect]);
 
   /** Perform a reopen a previous disconnect left pending.
    *
@@ -1639,6 +1728,89 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
   });
   const shownTile = tiles.find((tile) => tile.id === selectedTile);
 
+  // Publish to the expanded menu from the readings this panel already holds.
+  //
+  // Freshness is an AGE, not just an absence of errors. A failed refresh keeps
+  // the previous payload and only sets `error`, and the panel drops to a
+  // background cadence while Quick Access is hidden, so a reading can be both
+  // error-free and far too old to act on. The menu can be opened by its
+  // shortcut in exactly that state.
+  //
+  // So the same SNAPSHOT_STALE_AFTER_MS the sleep preflight already reconciles
+  // against decides this too, and a timer re-evaluates it while the panel is
+  // idle: without that, readings would stay "fresh" forever simply because
+  // nothing re-rendered to notice they had aged.
+  const [menuAgeTick, setMenuAgeTick] = useState(0);
+  // Age the OBSERVATION, not the response. lastSnapshotAt records when a reply
+  // arrived, which says nothing about when the device was looked at: a reply
+  // can arrive instantly carrying a reading taken minutes ago, and publishing
+  // that as current is how a player acts on eGPU or display state that has
+  // already stopped being true.
+  const menuObservation = observationAge(
+    payload?.snapshot.observed_at, Date.now(), SNAPSHOT_STALE_AFTER_MS,
+  );
+  // A payload this build cannot read is not a fresh observation, whatever its
+  // timestamp says. The sleep preflight already refuses it; the menu must not
+  // publish the same payload as current readings.
+  const menuSchemaReadable = payload?.snapshot.schema_version === READABLE_SNAPSHOT_SCHEMA;
+  const menuFresh = !loading && error === "" && payload !== null
+    && menuSchemaReadable && menuObservation.fresh;
+  const menuPerformance = performanceState({
+    status: performance.manual, autoStatus: performance.auto,
+    busy: performance.busy, stopping: performance.stopping,
+  });
+  useEffect(() => {
+    publishMenuSnapshot(menuFresh ? snapshot ?? null : null);
+    publishTiles({
+      fresh: menuFresh,
+      egpu: menuFresh ? egpuPresentation(payload) : null,
+      controller: controllerPresentation({
+        peripheral: controllerReading, shortcutAvailable: menuShortcutAvailable,
+      }),
+      // Client request-start lifetime, not device observation age. Expiry is
+      // independent of GPU refresh and shared with the live detail publisher.
+      controllerFresh: controllerReading !== null,
+      // From the performance owner, never from the snapshot above. Those
+      // readings have no device observation timestamp to age, so the owner
+      // bounds their lifetime from the request that fetched them and nulls
+      // them when it expires. Null is that expiry, not a missing field.
+      performanceFresh: performance.manual !== null || performance.auto !== null,
+      performance: menuPerformance,
+      // The configured limit, never a power-draw reading.
+      manualWatts: performance.manual?.current_watts ?? null,
+      // Which panel is actually driven, from `active`, not from attachment,
+      // and graded rather than asserted. `active` is the tone a player reads
+      // as "this is true right now", and an observation the payload graded
+      // only `observed` has not earned it.
+      displayTarget: menuFresh && snapshot
+        ? displayTargetEvidence(snapshot.displays)
+        : UNKNOWN_EVIDENCE,
+    });
+  }, [publishTiles, publishMenuSnapshot, menuFresh, payload, controllerReading, menuShortcutAvailable,
+      menuPerformance.active, menuPerformance.autoKnown, menuPerformance.stopping,
+      menuPerformance.supported, menuPerformance.action, menuPerformance.busy,
+      performance.manual?.current_watts, menuAgeTick, snapshot?.displays]);
+
+  useEffect(() => {
+    publishDetails({ performance, controller: controllerPresentation({
+      peripheral: controllerReading, shortcutAvailable: menuShortcutAvailable,
+    }) });
+  }, [publishDetails, performance, controllerReading, menuShortcutAvailable]);
+  useEffect(() => () => { publishDetails(null); publishMenuSnapshot(null); }, [publishDetails, publishMenuSnapshot]);
+
+  // Re-evaluate when this observation actually expires, so a reading cannot
+  // remain "fresh" merely because the panel went quiet. Scheduling a full
+  // interval instead would let an observation outlive its own lifetime by
+  // however long ago it was taken.
+  useEffect(() => {
+    if (!menuFresh) return;
+    const timer = window.setTimeout(
+      () => setMenuAgeTick((tick) => tick + 1),
+      Math.max(0, menuObservation.remainingMs),
+    );
+    return () => window.clearTimeout(timer);
+  }, [menuFresh, menuObservation.remainingMs, menuAgeTick]);
+
   // Read-only status destinations, kept distinct from the configuration
   // modules: these open detail, never controls.
   const statusEntries: Array<{ id: StatusId; title: string; detail: string }> = [
@@ -1732,7 +1904,12 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
             if (id === "safe-disconnect") {
               // Only an offer the owning backend actually made is actionable.
               // Anything else selects the tile so its reason is read.
-              if (tile.activation !== "act" || !tile.confirmation || disconnectBusy) return;
+              if (tile.activation !== "act" || !tile.confirmation || disconnectBusy
+                || disconnectPromptOpen.current) return;
+              // Synchronously, before any await or modal, so a second press
+              // in the same tick sees the claim.
+              disconnectPromptOpen.current = true;
+              const releasePrompt = () => { disconnectPromptOpen.current = false; };
               const releaseDisplay = tile.displayApprovalRequired === true;
               const view = disconnectPresentation(egpuDisconnect);
               // A game is going to end. Its own dialog owns that consent, and
@@ -1744,12 +1921,12 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
               if (view.dialog !== null) {
                 showGameCloseDialog(view.dialog, (answers) => {
                   void runDisconnect(releaseDisplay, answers);
-                });
+                }, releasePrompt);
                 return;
               }
               showDisconnectConfirmation(tile.confirmation, () => {
                 void runDisconnect(releaseDisplay, { confirmed: true });
-              });
+              }, releasePrompt);
               return;
             }
             if (id === "auto-tdp" && tile.actionLabel === "Stop") {
@@ -2197,11 +2374,12 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
 function showDisconnectConfirmation(
   confirmation: string,
   onConfirm: () => void,
+  onClose?: () => void,
 ): ReturnType<typeof showModal> {
   let modal: ReturnType<typeof showModal>;
   const close = () => modal.Close();
   modal = showModal(
-    <ConfirmModal
+    <EgpuConfirmModal
       strTitle="Disconnect the eGPU?"
       strOKButtonText="Disconnect"
       strCancelButtonText="Cancel"
@@ -2215,9 +2393,11 @@ function showDisconnectConfirmation(
       onCancel={close}
     >
       <div style={{ fontSize: "12px", lineHeight: "17px" }}>{confirmation}</div>
-    </ConfirmModal>,
+    </EgpuConfirmModal>,
     window,
-    { strTitle: PRODUCT_NAME, bNeverPopOut: true },
+    // Released however the dialog ends, including cancellation and a
+    // background dismissal, so a refused prompt never wedges the control.
+    { strTitle: PRODUCT_NAME, bNeverPopOut: true, fnOnClose: onClose },
   );
   return modal;
 }
@@ -2236,6 +2416,7 @@ function showDisconnectConfirmation(
 function showGameCloseDialog(
   dialog: GameCloseDialog,
   onAnswer: (answers: GameCloseAnswers) => void,
+  onClose?: () => void,
 ): ReturnType<typeof showModal> {
   let modal: ReturnType<typeof showModal>;
   // An absent label means the choice was never offered, so these stay false.
@@ -2243,7 +2424,7 @@ function showGameCloseDialog(
   let relaunch = dialog.relaunchChecked;
   const close = () => modal.Close();
   modal = showModal(
-    <ConfirmModal
+    <EgpuConfirmModal
       strTitle={dialog.title}
       strOKButtonText={dialog.confirmLabel}
       strCancelButtonText={dialog.cancelLabel}
@@ -2274,9 +2455,11 @@ function showGameCloseDialog(
           onChange={(value: boolean) => { relaunch = value; }}
         />
       )}
-    </ConfirmModal>,
+    </EgpuConfirmModal>,
     window,
-    { strTitle: PRODUCT_NAME, bNeverPopOut: true },
+    // Released however the dialog ends, including cancellation and a
+    // background dismissal, so a refused prompt never wedges the control.
+    { strTitle: PRODUCT_NAME, bNeverPopOut: true, fnOnClose: onClose },
   );
   return modal;
 }
@@ -2293,7 +2476,7 @@ function showBlockedAttempt(
   // Let Decky resolve Steam's visible SP window after the Power menu closes.
   // SharedJSContext's global window is not a player-visible modal parent.
   modal = showModal(
-    <ConfirmModal
+    <EgpuConfirmModal
       strTitle={warning.title}
       strDescription={warning.body}
       strOKButtonText="OK"
@@ -2310,12 +2493,15 @@ function showBlockedAttempt(
 }
 
 export default definePlugin(() => {
-  // Reuse the plugin-lifetime connection monitor, including when QAM is closed.
-  // The expanded menu never starts another snapshot poller.
+  // Shared tile view and lifetime snapshot monitor have independent consumers.
+  const tilePublisher = createTilePublisher();
+  const detailPublisher = createNonEgpuDetailPublisher();
+  const renderDetail = createNonEgpuDetailRenderer(detailPublisher.source);
   let menuSnapshot: SnapshotPayload["snapshot"] | null = null;
+  const publishMenuSnapshot = (snapshot: SnapshotPayload["snapshot"] | null) => { menuSnapshot = snapshot; };
   const expandedMenu = createExpandedMenu(steamControllerInput(window), window, () =>
     !shortcut.modal.current && !shortcut.portableBusy.current && !shortcut.tvBusy.current && !warningModal,
-    () => menuSnapshot);
+    tilePublisher.source, () => menuSnapshot, renderDetail);
   const shortcut = createDisplayShortcutRuntime({
     // View+Y now belongs exclusively to the menu. Explicit display requests
     // below retain their existing approval/confirmation path.
@@ -2386,10 +2572,8 @@ export default definePlugin(() => {
         const [payload, automatic, journal] = await Promise.all([
           getSnapshot(), getAutomaticDockStatus(), getTransitionJournalStatus(),
         ]);
-        menuSnapshot = payload.snapshot;
         return {payload, automatic, journal: journal.code};
       } catch (error) {
-        menuSnapshot = null;
         throw error;
       }
     },
@@ -2399,10 +2583,11 @@ export default definePlugin(() => {
   return {
     name: PRODUCT_NAME,
     titleView: <div className={staticClasses.Title} style={{ display: "flex", alignItems: "center" }}><BrandHeader /></div>,
-    content: <Content preflight={preflight} connection={connection} shortcut={shortcut} openExpanded={expandedMenu.open} menuShortcutAvailable={expandedMenu.available} />,
+    content: <Content preflight={preflight} connection={connection} shortcut={shortcut} openExpanded={expandedMenu.open} menuShortcutAvailable={expandedMenu.available} publishTiles={tilePublisher.publish} publishDetails={detailPublisher.publish} menuVisibility={expandedMenu.visibility} publishMenuSnapshot={publishMenuSnapshot} />,
     icon: <BrandIcon />,
     alwaysRender: true,
     onDismount() {
+      detailPublisher.publish(null);
       expandedMenu.stop();
       shortcut.stop();
       if (warningTimer !== null) {

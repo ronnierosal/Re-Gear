@@ -1,4 +1,6 @@
 import { UtilityRail } from "./utility-rail";
+import type { UtilityRailProps } from "./utility-rail";
+import { CommandNotice } from "./detail-ui";
 import { useLayoutEffect, useRef, useState } from "react";
 import type { CSSProperties, KeyboardEvent, ReactNode, ElementType } from "react";
 import { CommandCenterIcon, type CommandCenterIconId } from "../command-center-icons";
@@ -16,7 +18,7 @@ const iconIds: Record<string, CommandCenterIconId> = {
 function Icon({ id }: { id: string }) { return <CommandCenterIcon id={iconIds[id] ?? "status-unknown"} size={34}/>; }
 
 /** Shared synthetic presentation for browser preview and native Decky shell. */
-export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReasons = false, settings, native = false, primitives, previewColumns, tiles, renderDetail, disconnectControl }: {
+export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReasons = false, settings, native = false, primitives, previewColumns, tiles, renderDetail, disconnectControl, utilityReadings, onUtilityRequest }: {
   onClose(): void; initialTab?: Tab; longReasons?: boolean; settings?: ReactNode; native?: boolean;
   primitives?: { Button: ElementType; Focusable: ElementType };
   /** Synthetic comparison only; native callers never pass this. */
@@ -30,6 +32,8 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
   renderDetail?: (tab: Tab, tile: Tile) => ReactNode;
   /** Native-only verified control, independent of other synthetic tab readings. */
   disconnectControl?: ReactNode;
+  utilityReadings?: UtilityRailProps["readings"];
+  onUtilityRequest?: UtilityRailProps["onRequest"];
 }) {
   const Button = primitives?.Button ?? "button";
   const Container = primitives?.Focusable ?? "div";
@@ -127,6 +131,7 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
   }
   function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
     if (event.altKey || event.ctrlKey || event.metaKey) return;
+    if ((event.target as HTMLElement).matches('input[type="range"]') && (event.target as HTMLElement).closest('[data-utility-side]') && !["Escape", "Tab"].includes(event.key)) return;
     // Embedded pickers own editing/navigation keys. Escape and tab trapping
     // still belong to this shell; native controller events remain Decky's.
     const detailTarget = (event.target as HTMLElement).closest("[data-ec-detail-content]");
@@ -218,9 +223,9 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
     <style>{expandedStyles}</style>
     <Container ref={panel} data-ec-panel className="rg-expanded-frame" role="dialog" aria-modal="true" aria-label={synthetic ? "Re-Gear expanded Command Center prototype" : "Re-Gear Command Center"} onKeyDown={onKeyDown} {...nativeHandlers}
       onFocus={(event: { target: EventTarget }) => { detailHadFocus.current = Boolean((event.target as HTMLElement).closest("[data-ec-detail-content]")); const id = (event.target as HTMLElement).closest<HTMLElement>("[data-ec-control]")?.dataset.ecControl; if (id && !nested) memory.current[tab] = id; }}>
-      {tab === "quick" && !nested && <UtilityRail side="left" Button={Button} Focusable={Container}/>}
+      {tab === "quick" && !nested && <UtilityRail side="left" Button={Button} Focusable={Container} readings={utilityReadings} onRequest={onUtilityRequest}/>}
       <Container className="rg-expanded" {...(native ? {"flow-children":"vertical",noFocusRing:true} : {})}>
-      <header className="rg-expanded-brand"><span className="rg-expanded-wordmark"><img src={brandIcon} alt=""/>Re-Gear</span><span className="rg-expanded-demo"><span className="rg-expanded-demo-label"><i/>{dockControl ? "Disconnect trial" : synthetic ? "Demo · Sample data" : "Application status"}</span><span>{dockControl ? "Keep the cable connected" : synthetic ? "Hardware controls not connected" : renderDetail ? "Status and controls" : "Readings only · View details"}</span></span></header>
+      <header className="rg-expanded-brand"><span className="rg-expanded-wordmark"><img src={brandIcon} alt=""/>Re-Gear</span><span className="rg-expanded-demo"><span className="rg-expanded-demo-label"><i/>{synthetic ? "Demo · Sample data" : "Application status"}</span><span>{synthetic ? "Hardware controls not connected" : renderDetail ? "Status and controls" : "Readings only · View details"}</span></span></header>
       <Container className="rg-expanded-tabs" role="tablist" aria-label="Command Center sections" {...(native ? { "flow-children": "horizontal", noFocusRing: true } : {})}>
         {tabs.map(id => <Button key={id} id={`ec-tab-${id}`} type="button" role="tab" aria-selected={tab === id} aria-controls="ec-tabpanel" data-ec-tab={id} className="rg-expanded-tab"
           onClick={() => { setNested(null); setTab(id); if (id === tab) focus(restoreTarget(controlIds(), memory.current[tab])); }}>
@@ -231,7 +236,9 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
         <h2>{nested ? nested.title : tabLabels[tab]}</h2>
         <p className="rg-expanded-context">{nested ? (hasDetail ? "Settings and actions" : synthetic ? "Configuration preview · no changes are applied" : "Current status · no changes are applied") : tab === "quick" ? "Essential controls while you play" : tab === "performance" ? "Configure performance for your play style" : synthetic ? "Status and configuration preview" : "Status and configuration"}</p>
         {nested ? <section className="rg-expanded-detail-page">
-          {hasDetail ? <Container key={nested.id} data-ec-control="nested-content" data-ec-detail-content {...(native ? { "flow-children": "vertical", noFocusRing: true, preferredFocus: true } : {})}>{detailContent}</Container> : <>
+          {hasDetail ? <Container key={nested.id} data-ec-control="nested-content" data-ec-detail-content {...(native ? { "flow-children": "vertical", noFocusRing: true, preferredFocus: true } : {})}>
+            {dockControl && <CommandNotice tone="warning" title="Keep the cable connected">Disconnect trial. Follow the guarded flow before any physical action.</CommandNotice>}
+            {detailContent}</Container> : <>
           <h3>{nested.value}</h3>
           <p>{synthetic && nested.id === "auto" ? "Auto TDP is off and not configured. Target and limit selection must precede Start. This prototype cannot start, stop or tune the controller." : nested.detail}</p>
           {synthetic && nested.id === "auto" && <p><strong>State vocabulary:</strong> Off · Running · Stopping… · Unknown · Needs configuration</p>}
@@ -264,7 +271,7 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
         <span><kbd className="rg-expanded-round">B</kbd> {nested ? "Back" : "Close"}</span>
       </footer>
       </Container>
-      {tab === "quick" && !nested && <UtilityRail side="right" Button={Button} Focusable={Container}/>}
+      {tab === "quick" && !nested && <UtilityRail side="right" Button={Button} Focusable={Container} readings={utilityReadings} onRequest={onUtilityRequest}/>}
     </Container>
   </div>;
 }

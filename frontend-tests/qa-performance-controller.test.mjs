@@ -14,11 +14,17 @@ const off={schema_version:1,can_start:true,enabled:false,running:false,stopping:
 const running={...off,can_start:false,enabled:true,running:true,target_fps:60,minimum_watts:7,maximum_watts:30};
 const deferred=()=>{let resolve; const promise=new Promise(r=>resolve=r);return {promise,resolve};};
 const settle=()=>new Promise(resolve=>setImmediate(resolve));
-function setup(over={}) {
+function fakeClock() {
+  let now=0; const timers=new Set();
+  return { now:()=>now, schedule(callback,ms) { const timer={at:now+ms,callback};timers.add(timer);return()=>timers.delete(timer); },
+    advance(ms,fire=true) { now+=ms; if(fire) for(const timer of [...timers]) if(timer.at<=now) {timers.delete(timer);timer.callback();} },
+    count:()=>timers.size };
+}
+function setup(over={},time=fakeClock()) {
   const calls=[];
   const port=Object.fromEntries(Object.entries({getTdpStatus:manual,getAutoTdpStatus:off,applyTdpLimit:manual,restoreTdpLimit:manual,setTdpEnabled:manual,startAutoTdp:running,stopAutoTdp:off}).map(([key,value])=>[key,async(...args)=>{calls.push([key,...args]);return value;}]));
   Object.assign(port,over);
-  return {controller:new PerformanceController(port),calls,port};
+  return {controller:new PerformanceController(port,time),calls,port,time};
 }
 test("one visibility read, no hidden reads or writes, remount refreshes",async()=>{
   const {controller:c,calls}=setup();
@@ -73,4 +79,28 @@ test("unsubscribed unmounted consumer receives no late callbacks",async()=>{
   const old=deferred();const {controller:c}=setup({getTdpStatus:()=>old.promise});
   let renders=0;const unsubscribe=c.subscribe(()=>renders++);c.setVisible(true);unsubscribe();c.setVisible(false);
   const before=renders;old.resolve(manual);await settle();assert.equal(renders,before);assert.equal(c.snapshot.manual,null);
+});
+test("visible owner refreshes changed limits without a write; hiding cancels timers",async()=>{
+  const {controller:c,port,time,calls}=setup(); c.setVisible(true);await settle();
+  port.getTdpStatus=async()=>({...manual,current_watts:22});
+  time.advance(3000);await settle();assert.equal(c.snapshot.manual.current_watts,22);
+  c.setVisible(false);assert.equal(time.count(),0);const before=calls.length;
+  time.advance(30000);await settle();assert.equal(calls.length,before);
+});
+test("stalled refresh expires old readings and a late response cannot renew them",async()=>{
+  const delayed=deferred();const {controller:c,port,time}=setup();c.setVisible(true);await settle();
+  port.getTdpStatus=()=>delayed.promise;
+  time.advance(3000);await settle();assert.equal(c.snapshot.manual.current_watts,15);
+  time.advance(7000);assert.equal(c.snapshot.manual,null);assert.equal(c.snapshot.auto,null);
+  time.advance(3000);delayed.resolve({...manual,current_watts:22});await settle();
+  assert.equal(c.snapshot.manual,null);assert.equal(c.snapshot.auto,null);
+  port.getTdpStatus=async()=>({...manual,current_watts:24});
+  time.advance(3000);await settle();assert.equal(c.snapshot.manual.current_watts,24);
+});
+test("expired availability refuses writes even when timer delivery is suspended",async()=>{
+  const {controller:c,time,calls}=setup();c.setVisible(true);await settle();
+  time.advance(10000,false);
+  await c.apply(20);await c.start(60,7,30);await c.restore();await c.setEnabled(true);
+  assert.equal(c.snapshot.manual,null);assert.equal(c.snapshot.auto,null);
+  assert.deepEqual(calls.map(call=>call[0]),["getTdpStatus","getAutoTdpStatus"]);
 });
