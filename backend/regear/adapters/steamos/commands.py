@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Sequence
 
 from ...ports.presentation_activation import UserServiceOperation
-from ...ports.system_power import PowerOffResult
+from ...ports.system_power import PowerOffResult, SuspendResult
 from ...ports.tdp import TdpDispatchGuard, TdpDispatchRejected
 
 
@@ -575,6 +575,39 @@ class SystemPowerCommandRunner:
         return PowerOffResult(
             True, "safe_disconnect.poweroff_request_accepted_unverified"
         )
+
+
+class SystemSuspendCommandRunner:
+    """Fixed ordinary suspend request; lifecycle coordinator owns the handoff.
+
+    Constructing this runner does nothing. It has no production caller until
+    the original-intent and inhibitor handoff are wired. Inhibitor checks stay
+    explicit even for a privileged noninteractive caller. No wake action exists.
+    """
+
+    COMMAND = ("/usr/bin/systemctl", "--no-block", "--no-ask-password",
+               "--check-inhibitors=yes", "suspend")
+    CLEAN_ENVIRONMENT = {"LANG": "C", "LC_ALL": "C", "PATH": "/usr/bin:/bin"}
+
+    def __init__(self, timeout_seconds: float = 5.0, effective_uid=None) -> None:
+        self._timeout_seconds = timeout_seconds
+        self._effective_uid = effective_uid or getattr(os, "geteuid", lambda: -1)
+
+    def request_suspend(self) -> SuspendResult:
+        if self._effective_uid() != 0:
+            return SuspendResult(False, "dock_power.root_required")
+        try:
+            completed = subprocess.run(
+                self.COMMAND, capture_output=True, check=False, shell=False,
+                text=False, timeout=self._timeout_seconds,
+                env=dict(self.CLEAN_ENVIRONMENT))
+        except subprocess.TimeoutExpired:
+            return SuspendResult(False, "dock_power.suspend_timeout")
+        except (OSError, subprocess.SubprocessError):
+            return SuspendResult(False, "dock_power.suspend_unavailable")
+        if completed.returncode != 0:
+            return SuspendResult(False, "dock_power.suspend_failed")
+        return SuspendResult(True, "dock_power.suspend_request_accepted_unverified")
 
 
 class SteamOsTdpCommandRunner:

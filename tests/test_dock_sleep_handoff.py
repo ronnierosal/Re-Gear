@@ -189,11 +189,10 @@ class SleepLeaseHandoffTests(unittest.TestCase):
         self.assertFalse(handoff.restore())
         self.assertEqual(self.events, [])
 
-    def test_shared_lease_and_existing_delivery_sleep_enablement_are_refused(self):
+    def test_shared_lease_refused_but_sleep_intent_can_be_recorded(self):
         with self.assertRaisesRegex(ValueError, 'distinct_leases'):
             self.handoff(transaction=self.background)
-        with self.assertRaisesRegex(ValueError, 'sleep_unverified'):
-            create_power_request('sleep', 'boot:process')
+        self.assertEqual(create_power_request('sleep', 'boot:process').action, 'sleep')
 
     def test_expiry_during_consumed_intent_readback_refuses_without_releasing(self):
         def consumed(request):

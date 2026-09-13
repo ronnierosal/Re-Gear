@@ -1,9 +1,10 @@
-"""Unwired two-lease callback for the existing power coordinator.
+"""Operation-owned sleep lease callback for the existing power coordinator.
 
 This does not create/consume power intent, enable sleep, or implement teardown.
 Only operation-aware adapters with reversible reconciliation pause may implement
 LeasePort. Login1SleepInhibitor/SleepGuardController alone do not satisfy it.
-Capability assertions must come from trusted platform evidence, never UI input.
+The production route uses actual request, ownership and observation checks.
+Optional legacy capability restrictions can narrow, never grant, that authority.
 """
 from dataclasses import dataclass
 import math
@@ -56,19 +57,19 @@ class SleepLeaseHandoff:
     verify_original must bind operation/session/action/deadline AND the exact
     current attachment/generation, complete down evidence and held admission.
     intent_consumed must read durable consumption of that SAME original request.
-    No production caller is wired to this module. Default capabilities refuse.
+    A route without a transaction lease can hand off the background guard alone.
     """
     def __init__(self, request: DockPowerRequest, *, background: LeasePort,
                  transaction: LeasePort, verify_original: Callable,
                  intent_consumed: Callable, request_sleep: Callable,
                  session: Callable, cancelled: Callable, monotonic: Callable,
-                 capabilities: Callable = HandoffCapabilities):
+                 capabilities: Callable | None = None):
         if type(request) is not DockPowerRequest or request.action != 'sleep':
             raise ValueError('dock_power.invalid_sleep_handoff')
         if background is transaction:
             raise ValueError('dock_power.distinct_leases_required')
         self._request = request
-        self._leases = (background, transaction)
+        self._leases = (background,) if transaction is None else (background, transaction)
         self._verify, self._consumed = verify_original, intent_consumed
         self._submit, self._session = request_sleep, session
         self._cancelled, self._now, self._capabilities = cancelled, monotonic, capabilities
@@ -77,13 +78,18 @@ class SleepLeaseHandoff:
         self._prepared: list[LeasePort] = []
         self.status = HandoffStatus()
 
+    def bound_to(self, request: DockPowerRequest) -> bool:
+        """Do not substitute another operation when selecting the power callback."""
+        return request is self._request
+
     def _local_guard(self) -> bool:
         request = self._request
         now = self._now()
-        capability = self._capabilities()
+        capability = self._capabilities() if self._capabilities is not None else None
         return (type(now) in (int, float) and math.isfinite(now)
                 and request.requested_at <= now < request.deadline
-                and type(capability) is HandoffCapabilities and capability.verified()
+                and (self._capabilities is None or (
+                    type(capability) is HandoffCapabilities and capability.verified()))
                 and self._session() == request.session
                 and self._cancelled() is False)
 

@@ -65,7 +65,7 @@ class DockPowerInhibitorContractTests(unittest.TestCase):
             portable_verified=forbidden, power=forbidden,
             admission_held=forbidden, monotonic=lambda: 11,
         )
-        self.assertEqual(result.code, 'dock_power.sleep_unverified')
+        self.assertEqual(result.code, 'dock_power.sleep_handoff_unavailable')
         self.assertFalse(result.requested)
 
     def test_ambiguous_original_request_stays_consumed_with_both_leases_held(self):
