@@ -1,8 +1,15 @@
 **Re-Gear**
 
 - [Home](Home)
+
+**Player manual**
+
+- [Read the Player Manual](Player-Manual)
 - [Getting Started](Getting-Started)
 - [Manual Installation](Manual-Installation)
+
+**Project status**
+
 - [Current State](Current-State)
 - [Feature Roadmap](Feature-Roadmap)
 
