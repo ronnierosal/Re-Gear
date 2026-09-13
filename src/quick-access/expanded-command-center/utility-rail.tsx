@@ -64,7 +64,7 @@ export function UtilityRail({side,layout=defaultUtilityLayout,readings={},onRequ
     if(direction==='right') { event.preventDefault();event.stopPropagation();onReturnToGrid?.();return; }
     if(direction!=='up'&&direction!=='down') return;
     event.preventDefault();event.stopPropagation();
-    if(event.target===input && input && !input.disabled) {
+    if(input && (event.target===input || wrapper.ownerDocument?.activeElement===input) && !input.disabled) {
       const value=Math.max(0,Math.min(100,(requested.current.get(id)??Number(input.value))+(direction==='up'?1:-1)));
       request(id,value);
     } else {
@@ -92,7 +92,7 @@ export function UtilityRail({side,layout=defaultUtilityLayout,readings={},onRequ
       return isSlider ? <Focusable key={id} tabIndex={0} data-utility-slider data-utility-id={id} data-ec-control={`utility-${id}`} className="rg-utility-control rg-utility-slider" title={reason} aria-label={labels[id]} aria-busy={waiting||undefined}
         onGamepadDirection={directions ? (event:CustomEvent<{button:number}>)=>move(event,Object.keys(directions).find(key=>directions[key as keyof typeof directions]===event.detail.button)??'',id) : undefined}
         onOKButton={(event:CustomEvent)=>{event.preventDefault();event.stopPropagation();(event.currentTarget as HTMLElement).querySelector<HTMLInputElement>('input:not(:disabled)')?.focus();}}
-        onCancelButton={(event:CustomEvent)=>{if((event.target as HTMLElement).tagName==='INPUT'){event.preventDefault();event.stopPropagation();(event.currentTarget as HTMLElement).focus();}}}
+        onCancelButton={(event:CustomEvent)=>{const wrapper=event.currentTarget as HTMLElement;if((event.target as HTMLElement).tagName==='INPUT'||wrapper.ownerDocument?.activeElement===wrapper.querySelector('input')){event.preventDefault();event.stopPropagation();wrapper.focus();}}}
         onKeyDown={(event:KeyboardEvent<HTMLElement>)=>{if(event.key.startsWith('Arrow')) move(event,event.key.slice(5).toLowerCase(),id); else if(event.key==='Enter'){event.preventDefault();event.stopPropagation();event.currentTarget.querySelector<HTMLInputElement>('input:not(:disabled)')?.focus();} else if(event.key==='Escape'&&(event.target as HTMLElement).tagName==='INPUT'){event.preventDefault();event.stopPropagation();event.currentTarget.focus();}}}>
         <span className="rg-utility-icon"><UtilityIcon id={id}/></span>
         <span className="rg-utility-label">{labels[id]}</span>
