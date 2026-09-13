@@ -10,7 +10,9 @@ export type CommandCenterNavigationIntent =
   | { kind: "adjust-utility"; id: "brightness" | "volume"; percent: number }
   | { kind: "quick-action"; id: "mic" | "wifi" | "overlay" | "recording" }
   | { kind: "egpu-action"; id: EgpuQuickActionId }
-  | { kind: "customize" }
+  | { kind: "customize"; tab: "quick" }
+  | { kind: "move-mode"; tab: Tab; active: boolean; tileId?: string }
+  | { kind: "move-tile"; tab: Tab; tileId: string; toIndex: number }
   | { kind: "back" }
   | { kind: "close" };
 
@@ -19,8 +21,14 @@ export const commandCenterButtonContract = {
   utilities: ["brightness", "volume"] as const satisfies readonly UtilityId[],
   quickActions: ["mic", "wifi", "overlay", "recording"] as const satisfies readonly UtilityId[],
   egpuActions: ["switch-handheld", "safe-disconnect", "resolution", "disconnect-sleep", "disconnect-shutdown", "status"] as const satisfies readonly EgpuQuickActionId[],
+  customize: {
+    quickTapY: "swap-actions",
+    holdY: "move-mode",
+    otherTabsTapY: "none",
+    otherTabsHoldY: "move-mode",
+  },
 } as const;
 
-/** Future runtime wiring should dispatch through one adapter seam instead of
- * embedding hardware/platform behavior in the visual components. */
+/** Runtime wiring should dispatch through one adapter seam instead of embedding
+ * persistence or feature logic in the visual components. */
 export type CommandCenterNavigationDispatch = (intent: CommandCenterNavigationIntent) => void | Promise<void>;
