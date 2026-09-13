@@ -78,6 +78,15 @@ the identity and generation it was taken in, and an unidentifiable one is
 handed no identity at all, because a reading the feature's own predicate
 refuses as `identity_unresolved` is not evidence that anything was authorized.
 
+**And `verified` is narrow even when it is `True`.**  It means one thing: a
+readback of *this* attachment found the device authorized.  It is not evidence
+that the GPU enumerated, that a display switched, or that any part of the
+connection journey afterwards succeeded -- those are other layers' facts and
+they fail for their own reasons, most of which have nothing to do with trust.
+Whatever consumes this payload has to keep that distinction too: a prompt that
+reports "connected" on the strength of `verified` would be claiming a result
+this module never measured.
+
 **One flag, one owner.**  The deliberate-disconnect report belongs to the
 service, which keys it to the device it names; this layer keeps no copy of it
 and adds no rule of its own.  It used to mirror the flag from the caller's
