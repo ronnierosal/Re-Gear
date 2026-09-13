@@ -61,7 +61,7 @@ from regear.adapters.steamos.commands import (  # noqa: E402
     UserServiceCommandRunner,
 )
 from regear.adapters.steamos.audio_handoff import G1AudioHandoff, G1AudioReadiness  # noqa: E402
-from regear.adapters.steamos.connection_readiness import G1ConnectionTopologyDiscovery  # noqa: E402
+from regear.adapters.steamos.connection_readiness import G1ConnectionTopologyDiscovery, verified_transport_absent  # noqa: E402
 from regear.adapters.steamos.gamescope import GamescopeDiscovery  # noqa: E402
 from regear.adapters.steamos.gamescope_session import (  # noqa: E402
     GamescopeSessionObservationAdapter,
@@ -1016,6 +1016,12 @@ class Plugin:
             raise  # Preserve the existing loop's exception/backoff behavior.
 
     async def _observe_automatic_link_recovery(self, current, enabled):
+        observed = getattr(self, '_last_readiness_observation', None)
+        if (observed is not None and observed.transport_absent_verified is True
+                and observed.transport_present is False):
+            # Finish completed attachment history at observed absence. The
+            # scheduler flag only wakes the strict, independently refreshed check.
+            await asyncio.to_thread(self._reconcile_physically_disconnected_dock)
         policy = getattr(self, "_automatic_link_recovery", None)
         if policy is None:
             policy = self._automatic_link_recovery = AutomaticLinkRecovery()
@@ -1654,12 +1660,64 @@ class Plugin:
             return {**result, 'code': result['code'] if result['code'] != 'dock_reconcile.refused'
                     else 'dock_reconcile.unresolved'}
 
+    def _reconcile_physically_disconnected_dock(self):
+        """Archive completed software-down history once the attachment is absent.
+
+        No device commands, recovery budget reset or preference changes. A
+        still-attached deauthorized router is not absence and retains inhibition.
+        """
+        try:
+            with self._dock_mutation_gate().admit(allow_inhibited=True):
+                store = WholeDockClaimStore(Path('/var/lib/handheld-dock-mode'))
+                claim = store.load()
+                if claim is None or claim.stage != 'software_down':
+                    return False
+                capture = getattr(self, '_release_capture_task', None)
+                if capture is not None and not capture.done():
+                    return False
+                user = resolve_gamescope_user(GamescopeDiscovery().scan())
+                if not user.ok or user.context is None:
+                    return False
+                def guard():
+                    topology = self._connection_topology.observe()
+                    current = SnapshotTransitionObservationAdapter(self._discovery).observe().snapshot
+                    journal = self._transition_journal_service().status()
+                    return (topology.transport_absent_verified is True
+                        and topology.transport_present is False
+                        and verified_transport_absent() is True
+                        and current.game_state is GameState.IDLE
+                        and current.gamescope.running is True
+                        and len(current.gpus) == 1
+                        and current.gpus[0].role is GpuRole.INTERNAL
+                        and current.gpus[0].present is True
+                        and current.gpus[0].confidence is Confidence.VERIFIED
+                        and resolve_runtime_profiles(current).exact_host
+                        and journal.durable and journal.owner.value == 'none'
+                        and store.power_intent_absent(claim) is True
+                        and inner_removal_records_absent()
+                        and resolve_gamescope_user(GamescopeDiscovery().scan()).context == user.context
+                        and not self._unloading)
+                if not guard():
+                    return False
+                audit = HeldTrialLauncher(uid=user.context.uid,
+                    username=user.context.username).call('audit', '0' * 32)
+                if audit.get('code') != 'held_helper.settled' or audit.get('settled') is not True:
+                    return False
+                store.retire_physically_disconnected(claim, guard)
+                self._append_journey_event(severity='info',
+                    code='automatic_dock.completed_attachment_archived',
+                    component='connection', stage='admission')
+                return True
+        except Exception:
+            return False
+
     def _run_automatic_connection_recovery(self, recover, expected_user):
         """Connection-only admission; never retires intent or permits removal.
 
         The callback is the existing bounded automatic session restart above.
-        An abandoned early trial may coexist with an entirely absent endpoint
-        branch. Only that exact, stable transport can use this recovery lane.
+        An abandoned early trial or retained failed reauthorization may coexist
+        with an absent endpoint branch. Session recovery never reauthorizes USB4
+        or retires that history; ordinary destructive admission stays inhibited.
         """
         started = False
         def admitted():
@@ -1680,7 +1738,7 @@ class Plugin:
                 if claim is None:
                     raise DockMutationDenied('dock_mutation.inhibited')
                 if claim is not None:
-                    if claim.stage not in ('claimed', 'release_intent'):
+                    if claim.stage not in ('claimed', 'release_intent', 'reauthorize_intent'):
                         raise DockMutationDenied('dock_mutation.inhibited')
                     capture = getattr(self, '_release_capture_task', None)
                     if capture is not None and not capture.done():
@@ -1719,6 +1777,56 @@ class Plugin:
         except Exception as exc:
             raise DockMutationDenied('dock_mutation.inhibited') from exc
 
+    def _run_retained_reconnect_tv_transition(self, transition):
+        """Present on an already authorized dock without completing reconnect.
+
+        The historical claim continues to inhibit destructive operations. This
+        lane holds the same exclusive lock and calls the ordinary TV engine.
+        """
+        dispatched = False
+        try:
+            with self._dock_mutation_gate().admit(allow_inhibited=True):
+                store = WholeDockClaimStore(Path('/var/lib/handheld-dock-mode'))
+                claim = store.load()
+                if claim is None or claim.stage != 'reauthorize_intent':
+                    raise DockMutationDenied('dock_mutation.inhibited')
+                capture = getattr(self, '_release_capture_task', None)
+                if capture is not None and not capture.done():
+                    raise DockMutationDenied('dock_mutation.inhibited')
+                cards = [c for c in DrmDiscovery().scan() if c.boot_vga is False]
+                if len(cards) != 1:
+                    raise DockMutationDenied('dock_mutation.inhibited')
+                topology = resolve_whole_dock(cards[0].pci_bdf)
+                user = resolve_gamescope_user(GamescopeDiscovery().scan())
+                if (topology.binding != claim.binding or not user.ok or user.context is None
+                        or not inner_removal_records_absent()):
+                    raise DockMutationDenied('dock_mutation.inhibited')
+                audit = HeldTrialLauncher(uid=user.context.uid,
+                    username=user.context.username).call('audit', '0' * 32)
+                if audit.get('code') != 'held_helper.settled' or audit.get('settled') is not True:
+                    raise DockMutationDenied('dock_mutation.inhibited')
+                current = SnapshotTransitionObservationAdapter(self._discovery).observe().snapshot
+                journal = self._transition_journal_service().status()
+                fresh_user = resolve_gamescope_user(GamescopeDiscovery().scan())
+                if (current.game_state is not GameState.IDLE
+                        or current.gamescope.running is not True
+                        or not resolve_runtime_profiles(current).exact_host
+                        or not journal.durable or journal.owner.value != 'none'
+                        or not fresh_user.ok or fresh_user.context != user.context
+                        or resolve_whole_dock(cards[0].pci_bdf) != topology
+                        or not inner_removal_records_absent() or store.load() != claim
+                        or self._automatic_dock_preferences().load() is not True
+                        or self._unloading):
+                    raise DockMutationDenied('dock_mutation.inhibited')
+                dispatched = True
+                return transition()
+        except DockMutationDenied:
+            raise
+        except Exception as exc:
+            if dispatched:
+                raise
+            raise DockMutationDenied('dock_mutation.inhibited') from exc
+
     def _run_automatic_tv_transition(self, expected_generation, standing_consent):
         """Reconcile an early abort only with the fully returned dock verified.
 
@@ -1748,6 +1856,8 @@ class Plugin:
             return SupervisedTransitionExecution(
                 False, 'automatic_dock.shutdown_helper_unsettled')
         claim = WholeDockClaimStore(Path('/var/lib/handheld-dock-mode')).load()
+        if claim is not None and claim.stage == 'reauthorize_intent':
+            return self._run_retained_reconnect_tv_transition(transition)
         if claim is not None:
             cards = [c for c in DrmDiscovery().scan() if c.boot_vga is False]
             if len(cards) != 1:
@@ -3936,7 +4046,7 @@ class Plugin:
 
     def _support_versions(self) -> dict[str, str]:
         return {
-            "regear": "0.3.96",
+            "regear": "0.3.97",
             "decky": str(getattr(decky, "DECKY_VERSION", "unknown")),
             "steamos": self._version_info.steamos,
             "kernel": self._version_info.kernel,

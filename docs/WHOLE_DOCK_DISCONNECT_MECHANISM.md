@@ -683,3 +683,40 @@ Validation: focused service/adapter/confirmation tests, production-loop status
 checks, Linux filesystem failure/collision/interruption cases, and a required
 Linux-root fixture exercising the actual claim store and plugin admission factory.
 Device execution remains pending. Documentation impact: Wiki.
+
+## Connection admission correction (0.3.97 candidate)
+
+The installed 0.3.96 light trials isolated two admission failures: retained
+`reauthorize_intent` blocked both recovery and TV dispatch; after an existing
+operator repair and successful software disconnect, retained `software_down`
+blocked recovery following observed physical unplug/replug. Attachment popup
+and detection worked in both cases. The native Desktop/Gaming diagnostic cycle
+made the GPU visible after about 13 seconds, but TV dispatch still refused the
+legacy record. These findings are separate from proof of the candidate below.
+
+This candidate changes admission and completed-record retirement only. With a
+retained `reauthorize_intent`, the existing connection-only path may restart the
+idle session or invoke the existing TV engine under exclusive admission after
+same-dock/session, consent, journal and settled-helper checks. It never issues
+USB4 authorization, changes the failed claim, or grants destructive admission.
+
+A completed `software_down` claim is archived after strict, refreshed attachment
+absence with the host still observable, no external GPU, an idle session and no
+remaining helper, inner removal or same-operation parent power work. Both USB4
+bus aliases and actual host-router children are checked; an attached deauthorized
+router, unreadable inventory, partial removal or failed reconnect cannot be
+treated as absence. The original completed record remains byte-for-byte in a
+`completed-absent-dock-*.json` audit. The existing pending marker protects archive
+interruption. This establishes observed absence, not enclosure power loss.
+
+The next attachment uses ordinary admission, including after plugin recreation.
+No preference, attempt-budget, UI, software-reconnect or session-strategy change
+is included. The existing ten-second initial settling, two-attempt schedule and
+SESSION_RESTART remain; the separately requested immediate/three-attempt policy
+and Desktop round-trip are not represented as implemented by this correction.
+
+Validation targets the actual admission/recovery/TV composition, real Linux root
+claim files and lock contention, strict absence and interruption. Prior valid
+checkpoint evidence remains useful; candidate hardware success is pending the
+affected disconnect/physical-reattach trial. Do not replay powered software
+reauthorization. Documentation impact: Wiki.

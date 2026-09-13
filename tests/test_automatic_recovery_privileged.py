@@ -124,7 +124,7 @@ class AutomaticRecoveryPrivilegedTests(unittest.TestCase):
             gamescope=NS(running=True, confidence=Confidence.VERIFIED),
             gpus=(NS(role=GpuRole.INTERNAL, present=True, confidence=Confidence.VERIFIED),)))
         topology = NS(transport_identity="transport:known", transport_present=True,
-                      pci_complete=False)
+                      transport_absent_verified=False, pci_complete=False)
         clock = NS(now=0.0)
         transport = NS(binding="dock", generation="generation")
         with ExitStack() as stack:
@@ -136,6 +136,7 @@ class AutomaticRecoveryPrivilegedTests(unittest.TestCase):
             # root validation, locking, claim and power-intent readers remain.
             replacements = {
                 "read_boot_hash": Mock(return_value="b" * 64),
+                "verified_transport_absent": Mock(return_value=True),
                 "resolve_transport": Mock(return_value=transport),
                 "HeldTrialLauncher": Mock(return_value=NS(call=Mock(return_value={
                     "code": "held_helper.settled", "settled": True}))),
@@ -220,6 +221,8 @@ class AutomaticRecoveryPrivilegedTests(unittest.TestCase):
                     self.assertTrue(claims.claim("operation", "dock", "generation"))
                     claims.record("operation", "reauthorize_intent")
                 original = (state_root / FILENAME).read_bytes()
+                replacements["HeldTrialLauncher"].return_value.call.return_value = {
+                    "code": "held_helper.unsettled", "settled": False}
                 arm(plugin, commands)
                 refused(plugin, commands, "automatic_recovery.admission_inhibited")
                 result = reconcile_record(store=claims, gate=plugin._dock_mutation_gate(),
@@ -234,6 +237,141 @@ class AutomaticRecoveryPrivilegedTests(unittest.TestCase):
                 self.assertEqual(plugin._automatic_link_recovery.attempts, 0)
                 with plugin._dock_mutation_gate().admit():
                     self.assertIsNone(claims.load())
+            elif scenario in ("physical_absence_unverified", "physical_absence_parent_power"):
+                with plugin._dock_mutation_gate().admit():
+                    self.assertTrue(claims.claim("operation", "dock", "generation"))
+                    claims.record("operation", "software_down")
+                original = (state_root / FILENAME).read_bytes()
+                topology.transport_identity = ""
+                topology.transport_present = False
+                topology.transport_absent_verified = True
+                marker = None
+                if scenario == "physical_absence_unverified":
+                    replacements["verified_transport_absent"].return_value = False
+                else:
+                    marker = state_root / "dock-power-operation.json"
+                    marker.write_bytes(b"pending-parent-power")
+                    marker.chmod(0o600)
+                original_files = set(state_root.iterdir())
+                self.assertFalse(poll(plugin, 0, absent=True))
+                self.assertEqual(commands.calls, [])
+                self.assertEqual(plugin._automatic_link_recovery.attempts, 0)
+                self.assertEqual((state_root / FILENAME).read_bytes(), original)
+                self.assertEqual(claims.load().stage, "software_down")
+                self.assertFalse(any(path.suffix == ".json" for path in
+                    set(state_root.iterdir()) - original_files))
+                if marker is not None:
+                    self.assertEqual(marker.read_bytes(), b"pending-parent-power")
+                with self.assertRaises(DockMutationDenied):
+                    with plugin._dock_mutation_gate().admit():
+                        self.fail("incomplete physical-absence proof cleared inhibition")
+            elif scenario == "physical_absence_after_software_down":
+                with plugin._dock_mutation_gate().admit():
+                    self.assertTrue(claims.claim("operation", "dock", "generation"))
+                    claims.record("operation", "software_down")
+                original = (state_root / FILENAME).read_bytes()
+                existing = set(state_root.glob("*.json"))
+                topology.transport_identity = ""
+                topology.transport_present = False
+                topology.transport_absent_verified = True
+                self.assertFalse(poll(plugin, 0, absent=True))
+                self.assertEqual(commands.calls, [])
+                self.assertEqual(plugin._automatic_link_recovery.attempts, 0)
+                self.assertIsNone(claims.load())
+                archives = set(state_root.glob("*.json")) - existing
+                self.assertEqual(len(archives), 1)
+                self.assertEqual(next(iter(archives)).read_bytes(), original)
+                with plugin._dock_mutation_gate().admit():
+                    pass
+
+                # A later real attach uses the existing scheduling and restart;
+                # physical removal reconciliation itself issues no commands.
+                topology.transport_identity = "transport:known"
+                topology.transport_present = True
+                topology.transport_absent_verified = False
+                self.assertFalse(poll(plugin, 1))
+                self.assertFalse(poll(plugin, 10.999))
+                self.assertEqual(commands.calls, [])
+                self.assertTrue(poll(plugin, 11))
+                self.assertEqual(commands.calls, [RESTART])
+                self.assertEqual(plugin._automatic_link_recovery.attempts, 1)
+                topology.pci_complete = True
+                current.generation = "tv-ready-generation"
+                current.snapshot.gpus += (NS(role=GpuRole.EXTERNAL, present=True,
+                    confidence=Confidence.VERIFIED),)
+                current.snapshot.displays = (NS(connected=True, edid_ready=True,
+                    confidence=Confidence.VERIFIED),)
+                result = object()
+                def execute(target, *, expected_generation, standing_consent):
+                    self.assertEqual(target, module.PlacementState.DOCKED_EGPU)
+                    self.assertEqual(expected_generation, "tv-ready-generation")
+                    self.assertIs(standing_consent, True)
+                    with self.assertRaises(DockMutationDenied):
+                        with plugin._dock_mutation_gate().admit():
+                            self.fail("normal TV dispatch escaped real admission")
+                    return result
+                executor = Mock(side_effect=execute)
+                plugin._presentation_transition_service = lambda: NS(execute_automatic=executor)
+                self.assertIs(plugin._run_automatic_tv_transition("tv-ready-generation", True), result)
+                executor.assert_called_once()
+                self.assertEqual(commands.calls, [RESTART])
+                self.assertIsNone(claims.load())
+                self.assertEqual(next(iter(archives)).read_bytes(), original)
+            elif scenario == "retained_reauthorize":
+                with plugin._dock_mutation_gate().admit():
+                    self.assertTrue(claims.claim("operation", "dock", "generation"))
+                    claims.record("operation", "reauthorize_intent")
+                original = (state_root / FILENAME).read_bytes()
+                arm(plugin, commands)
+                self.assertTrue(poll(plugin, 11))
+                self.assertEqual(commands.calls, [RESTART])
+                self.assertEqual(plugin._automatic_link_recovery.attempts, 1)
+                self.assertEqual((state_root / FILENAME).read_bytes(), original)
+                with self.assertRaises(DockMutationDenied):
+                    with plugin._dock_mutation_gate().admit():
+                        self.fail("retained reconnect claim lost general inhibition")
+
+                # GPU/TV arrival is fake observation only. The ordinary executor
+                # is an explicit IO boundary; this asserts admission, not scanout.
+                current.generation = "tv-ready-generation"
+                current.snapshot.gpus += (NS(role=GpuRole.EXTERNAL, present=True,
+                    confidence=Confidence.VERIFIED),)
+                current.snapshot.displays = (NS(connected=True, edid_ready=True,
+                    confidence=Confidence.VERIFIED),)
+                topology.pci_complete = True
+                replacements["DrmDiscovery"].return_value.scan = lambda: [
+                    NS(boot_vga=False, pci_bdf="external-pci")]
+                stack.enter_context(patch.object(module, "resolve_whole_dock",
+                    return_value=transport))
+                result = object()
+                def execute(target, *, expected_generation, standing_consent):
+                    self.assertEqual(target, module.PlacementState.DOCKED_EGPU)
+                    self.assertEqual(expected_generation, "tv-ready-generation")
+                    self.assertIs(standing_consent, True)
+                    with self.assertRaises(DockMutationDenied):
+                        with plugin._dock_mutation_gate().admit(allow_inhibited=True):
+                            self.fail("TV dispatch escaped real admission")
+                    self.assertEqual((state_root / FILENAME).read_bytes(), original)
+                    return result
+                executor = Mock(side_effect=execute)
+                plugin._presentation_transition_service = lambda: NS(execute_automatic=executor)
+                fd = os.open(state_root / LOCK_FILENAME, os.O_RDWR)
+                try:
+                    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    with self.assertRaises(DockMutationDenied):
+                        plugin._run_automatic_tv_transition("tv-ready-generation", True)
+                    executor.assert_not_called()
+                    self.assertEqual((state_root / FILENAME).read_bytes(), original)
+                finally:
+                    os.close(fd)
+                self.assertIs(plugin._run_automatic_tv_transition("tv-ready-generation", True), result)
+                executor.assert_called_once()
+                self.assertEqual(commands.calls, [RESTART])
+                self.assertEqual((state_root / FILENAME).read_bytes(), original)
+                self.assertEqual(claims.load().stage, "reauthorize_intent")
+                with self.assertRaises(DockMutationDenied):
+                    with plugin._dock_mutation_gate().admit():
+                        self.fail("TV lane cleared general inhibition")
             elif scenario == "positive":
                 arm(plugin, commands)
                 self.assertTrue(poll(plugin, 11))
@@ -309,6 +447,18 @@ class AutomaticRecoveryPrivilegedTests(unittest.TestCase):
 
     def test_operator_reset_archives_failure_with_real_root_gate_and_no_restart(self):
         self.isolated("operator_reset")
+
+    def test_retained_reauthorize_allows_connection_then_tv_without_clearing_claim(self):
+        self.isolated("retained_reauthorize")
+
+    def test_physical_absence_archives_software_down_then_next_attach_recovers(self):
+        self.isolated("physical_absence_after_software_down")
+
+    def test_independent_transport_absence_refusal_retains_software_down(self):
+        self.isolated("physical_absence_unverified")
+
+    def test_parent_power_record_retains_software_down_despite_physical_absence(self):
+        self.isolated("physical_absence_parent_power")
 
     def test_real_flock_contention_refuses_without_spending_attempt(self):
         self.isolated("busy")

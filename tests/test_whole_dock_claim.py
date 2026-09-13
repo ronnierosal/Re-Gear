@@ -350,5 +350,61 @@ class SoftwareDownConfirmationTests(unittest.TestCase):
         self.assertEqual(self.store.load(), changed)
 
 
+@unittest.skipUnless(sys.platform == 'linux', 'Linux descriptor-relative filesystem required')
+class CompletedAbsentClaimTests(unittest.TestCase):
+    setUp = WholeDockClaimTests.setUp
+    tearDown = WholeDockClaimTests.tearDown
+    make_store = WholeDockClaimTests.make_store
+
+    def completed(self):
+        self.store.claim('operation', 'dock', 'generation')
+        self.store.record('operation', 'software_down')
+        return self.store.load()
+
+    def test_completed_absence_archives_exact_record_and_allows_next_claim(self):
+        claim = self.completed()
+        original = (self.root / FILENAME).read_bytes()
+        audit = self.store.retire_physically_disconnected(claim, lambda:True)
+        self.assertEqual((self.root / audit).read_bytes(), original)
+        self.assertIsNone(self.store.load())
+        self.assertTrue(self.store.claim('next', 'dock', 'new-generation'))
+
+    def test_partial_or_failed_reconnect_stages_cannot_be_archived_as_absent(self):
+        for stage in ('claimed', 'release_intent', 'gpu_removed', 'tunnel_remove_intent',
+                      'reauthorize_intent', 'software_reconnected'):
+            with self.subTest(stage=stage), self.assertRaises(ValueError):
+                self.store.retire_physically_disconnected(
+                    WholeDockClaim('operation', 'dock', 'generation', stage), lambda:True)
+
+    def test_changed_absence_before_publication_preserves_inhibition(self):
+        from regear.delivery.whole_dock_claim import RESET_PENDING
+        claim = self.completed()
+        original = (self.root / FILENAME).read_bytes()
+        with self.assertRaises(ValueError):
+            self.store.retire_physically_disconnected(claim, unittest.mock.Mock(side_effect=[True, False]))
+        self.assertEqual((self.root / FILENAME).read_bytes(), original)
+        self.assertTrue((self.root / RESET_PENDING).exists())
+
+    def test_archive_interruption_retains_pending_marker(self):
+        from regear.delivery.whole_dock_claim import RESET_PENDING
+        claim = self.completed()
+        original = (self.root / FILENAME).read_bytes()
+        sync = os.fsync
+        calls = 0
+        def interrupt(fd):
+            nonlocal calls
+            calls += 1
+            if calls == 3:
+                raise OSError('interrupted after archive')
+            return sync(fd)
+        with patch('regear.delivery.whole_dock_claim.os.fsync', side_effect=interrupt):
+            with self.assertRaises(OSError):
+                self.store.retire_physically_disconnected(claim, lambda:True)
+        self.assertTrue((self.root / RESET_PENDING).exists())
+        archives = list(self.root.glob('completed-absent-dock-*.json'))
+        self.assertEqual(len(archives), 1)
+        self.assertEqual(archives[0].read_bytes(), original)
+
+
 if __name__ == "__main__":
     unittest.main()

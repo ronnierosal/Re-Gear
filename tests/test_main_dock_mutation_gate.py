@@ -524,6 +524,16 @@ class AutomaticConnectionIsolationTests(unittest.TestCase):
             with self.subTest(stage=stage):
                 self.assertEqual(self.fixture(stage=stage), (True, 1))
 
+    def test_failed_reauthorize_history_allows_missing_gpu_recovery_without_retirement(self):
+        self.assertEqual(self.fixture(stage='reauthorize_intent'), (True, 1))
+
+    def test_failed_reauthorize_history_does_not_bypass_active_or_changed_state(self):
+        for options in ({'inner':False}, {'settled':False}, {'idle':False},
+                        {'consent':False}, {'owner':'transition'}, {'partial':True},
+                        {'changed_user':True}, {'changed_transport':True}, {'changed_claim':True}):
+            with self.subTest(options=options):
+                self.assertEqual(self.fixture(stage='reauthorize_intent', **options), (False, 0))
+
     def test_incomplete_or_changed_evidence_never_dispatches(self):
         for options in ({'stage':'gpu_removed'}, {'stage':'software_down'},
                         {'inner':False}, {'settled':False}, {'idle':False},
@@ -583,6 +593,147 @@ class AutomaticConnectionIsolationTests(unittest.TestCase):
                 plugin._run_automatic_tv_transition('expected', True)
         plugin._presentation_transition_service.assert_not_called()
         self.assertEqual(plugin._run_dock_mutation.call_count, 1)
+
+
+class CompletedAttachmentAbsenceTests(unittest.TestCase):
+    setUp = MainDockAdmissionTests.setUp
+
+    def fixture(self, *, stage='software_down', absent=True, strict=True,
+                parent_power=False, settled=True, idle=True, changed=False):
+        from contextlib import ExitStack
+        plugin = self.plugin
+        user = NS(uid=1000, username='deck')
+        claim = NS(stage=stage)
+        plugin._unloading = False
+        plugin._discovery = object()
+        plugin._append_journey_event = Mock()
+        plugin._connection_topology = NS(observe=lambda:NS(
+            transport_absent_verified=absent, transport_present=not absent))
+        plugin._transition_journal_service = lambda:NS(status=lambda:NS(
+            durable=True, owner=NS(value='none')))
+        held = []
+        @contextmanager
+        def admit(**kwargs):
+            self.assertIs(kwargs['allow_inhibited'], True)
+            held.append(True)
+            try:
+                yield
+            finally:
+                held.clear()
+        plugin._dock_mutation_gate = lambda:NS(admit=admit)
+        with ExitStack() as stack:
+            def patcher(name, **kwargs):
+                return stack.enter_context(patch.object(self.module, name, **kwargs))
+            store = patcher('WholeDockClaimStore').return_value
+            store.load.return_value = claim
+            store.power_intent_absent.return_value = not parent_power
+            def retire(expected, guard):
+                self.assertIs(expected, claim)
+                self.assertTrue(held)
+                if changed:
+                    plugin._connection_topology.observe = lambda:NS(
+                        transport_absent_verified=False, transport_present=True)
+                if not guard():
+                    raise ValueError('absence changed')
+            store.retire_physically_disconnected.side_effect = retire
+            patcher('verified_transport_absent', return_value=strict)
+            patcher('GamescopeDiscovery')
+            patcher('resolve_gamescope_user', return_value=NS(ok=True, context=user))
+            patcher('HeldTrialLauncher').return_value.call.return_value = {
+                'code':'held_helper.settled', 'settled':settled}
+            patcher('inner_removal_records_absent', return_value=True)
+            patcher('resolve_runtime_profiles', return_value=NS(exact_host=True))
+            patcher('SnapshotTransitionObservationAdapter').return_value.observe.return_value = NS(snapshot=NS(
+                game_state=self.module.GameState.IDLE if idle else self.module.GameState.UNKNOWN,
+                gamescope=NS(running=True), gpus=[NS(role=self.module.GpuRole.INTERNAL,
+                    present=True, confidence=self.module.Confidence.VERIFIED)]))
+            result = plugin._reconcile_physically_disconnected_dock()
+        return result, store.retire_physically_disconnected.call_count
+
+    def test_completed_detached_attachment_is_archived_under_existing_admission(self):
+        self.assertEqual(self.fixture(), (True, 1))
+
+    def test_attached_unknown_or_unfinished_work_never_retires_disconnect_history(self):
+        for options in ({'absent':False}, {'strict':False}, {'parent_power':True},
+                        {'settled':False}, {'idle':False}, {'stage':'tunnel_remove_intent'},
+                        {'stage':'reauthorize_intent'}):
+            with self.subTest(options=options):
+                self.assertEqual(self.fixture(**options), (False, 0))
+        self.assertEqual(self.fixture(changed=True), (False, 1))
+
+
+class RetainedReconnectTvTests(unittest.TestCase):
+    setUp = MainDockAdmissionTests.setUp
+
+    def fixture(self, *, stage='reauthorize_intent', consent=True, unloading=False,
+                settled=True, idle=True, changed_claim=False, changed_topology=False,
+                changed_user=False, owner='none', inner=True, capture=False):
+        from contextlib import ExitStack
+        plugin = self.plugin
+        user = NS(uid=1000, username='deck')
+        claim = NS(stage=stage, binding='dock')
+        topology = NS(binding='dock', generation='current')
+        plugin._discovery = object()
+        plugin._unloading = unloading
+        plugin._release_capture_task = NS(done=lambda:not capture)
+        plugin._automatic_dock_preferences = lambda:NS(load=lambda:consent)
+        plugin._transition_journal_service = lambda:NS(status=lambda:NS(
+            durable=True, owner=NS(value=owner)))
+        plugin._reconcile_dock_power_after_boot = Mock(return_value=False)
+        plugin._reconcile_abandoned_dock_trial = Mock(return_value={'ok':False})
+        held = []
+        @contextmanager
+        def admit(**kwargs):
+            if not kwargs.get('allow_inhibited'):
+                raise DockMutationDenied('dock_mutation.inhibited')
+            held.append(True)
+            try:
+                yield
+            finally:
+                held.clear()
+        plugin._dock_mutation_gate = lambda:NS(admit=admit)
+        execute = Mock(side_effect=lambda *a, **kw:bool(held))
+        plugin._presentation_transition_service = lambda:NS(execute_automatic=execute)
+        with ExitStack() as stack:
+            def patcher(name, **kwargs):
+                return stack.enter_context(patch.object(self.module, name, **kwargs))
+            store = patcher('WholeDockClaimStore').return_value
+            store.load.side_effect = [claim, claim, None if changed_claim else claim]
+            patcher('DrmDiscovery').return_value.scan.return_value = [NS(boot_vga=False, pci_bdf='gpu')]
+            patcher('resolve_whole_dock', side_effect=[topology,
+                NS(binding='other', generation='current') if changed_topology else topology])
+            patcher('GamescopeDiscovery')
+            patcher('resolve_gamescope_user', side_effect=[NS(ok=True, context=user),
+                NS(ok=True, context=None if changed_user else user)])
+            patcher('HeldTrialLauncher').return_value.call.return_value = {
+                'code':'held_helper.settled', 'settled':settled}
+            patcher('inner_removal_records_absent', return_value=inner)
+            patcher('resolve_runtime_profiles', return_value=NS(exact_host=True))
+            patcher('SnapshotTransitionObservationAdapter').return_value.observe.return_value = NS(snapshot=NS(
+                game_state=self.module.GameState.IDLE if idle else self.module.GameState.RUNNING,
+                gamescope=NS(running=True)))
+            try:
+                result = plugin._run_automatic_tv_transition('expected', True)
+            except DockMutationDenied:
+                result = False
+            self.assertTrue(all(call[0] == 'load' for call in store.method_calls))
+        if result:
+            execute.assert_called_once_with(self.module.PlacementState.DOCKED_EGPU,
+                expected_generation='expected', standing_consent=True)
+        with self.assertRaises(DockMutationDenied):
+            plugin._run_dock_mutation(lambda:self.fail('ordinary mutation must stay inhibited'))
+        return result, execute.call_count
+
+    def test_retained_reauthorize_dispatches_existing_tv_engine_under_admission(self):
+        self.assertEqual(self.fixture(), (True, 1))
+
+    def test_active_conflicts_or_changed_authority_never_dispatch_tv(self):
+        for options in ({'stage':'software_down'}, {'stage':'tunnel_remove_intent'},
+                        {'consent':False}, {'unloading':True}, {'settled':False},
+                        {'idle':False}, {'changed_claim':True}, {'changed_topology':True},
+                        {'changed_user':True}, {'owner':'transition'}, {'inner':False}, {'capture':True}):
+            with self.subTest(options=options):
+                self.assertEqual(self.fixture(**options), (False, 0))
 
 
 class PortableBeforeDisconnectTests(unittest.TestCase):

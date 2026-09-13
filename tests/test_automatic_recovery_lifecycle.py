@@ -301,7 +301,9 @@ class AutomaticRecoveryLifecycleTests(unittest.TestCase):
         self.assertEqual(self.commands.calls, [RESTART])
         self.assertEqual(self.state.retirement_count, 1)
         self.assertIsNone(self.state.claim)
-        self.assertEqual(self.gate.entries, [False, True, False])
+        # The absence observation first inspects completed history under admission;
+        # fresh topology is still present, so only the existing shutdown path retires.
+        self.assertEqual(self.gate.entries, [True, False, True, False])
         self.assertEqual(self.decision(), "link_recovery.trained")
 
 

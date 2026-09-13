@@ -249,6 +249,40 @@ class WholeDockClaimStore(AudioJournalFilesystem):
         """
         if type(expected) is not WholeDockClaim or expected.stage != 'reauthorize_intent':
             raise ValueError('whole-dock reset stage refused')
+        return self._retire_observed(expected, guard, publication_guard,
+                                     'operator-physical-reset-')
+
+    def retire_physically_disconnected(self, expected, guard):
+        """Archive completed software-down history after strict observed absence.
+
+        Caller holds admission. The guard observes the host still present and
+        external transport absent, with no remaining removal or power work.
+        This records attachment absence, not enclosure power loss or unplug safety.
+        """
+        if type(expected) is not WholeDockClaim or expected.stage != 'software_down':
+            raise ValueError('whole-dock absence stage refused')
+        return self._retire_observed(expected, guard, guard, 'completed-absent-dock-')
+
+    def power_intent_absent(self, expected):
+        """Check this claim's parent intent; unrelated retained history is inert.
+
+        Caller holds mutation admission. Any entry, including a malformed one,
+        keeps the power-owned claim on its existing power reconciliation path.
+        """
+        if type(expected) is not WholeDockClaim:
+            return False
+        directory = self._directory()
+        try:
+            try:
+                os.stat('dock-power-' + expected.operation + '.json',
+                        dir_fd=directory, follow_symlinks=False)
+            except FileNotFoundError:
+                return True
+            return False
+        finally:
+            os.close(directory)
+
+    def _retire_observed(self, expected, guard, publication_guard, prefix):
         with self._locked() as directory:
             if self._load(directory) != expected or guard() is not True:
                 raise ValueError('whole-dock reset guard refused')
@@ -266,7 +300,7 @@ class WholeDockClaimStore(AudioJournalFilesystem):
             os.fsync(directory)
             if publication_guard() is not True:
                 raise ValueError('whole-dock reset confirmation expired')
-            audit = 'operator-physical-reset-' + secrets.token_hex(16) + '.json'
+            audit = prefix + secrets.token_hex(16) + '.json'
             _publish_exclusive(directory, FILENAME, audit)
             os.fsync(directory)
             # The audit is durable before removal of this final inhibition. A
