@@ -1,91 +1,82 @@
-# Disconnect before power: implementation checkpoint
+# Sleep and shutdown lifecycle implementation
 
-## Accepted behavior, 2026-09-13
+## Accepted behavior
 
-Build from the [0.3.98 golden cycle](EGPU_0398_CHECKPOINT.md), preserving its
-connection and button-disconnect behavior. Power off with an active eGPU uses
-the same handheld return and resource/GPU/USB4 disconnect, then continues the
-original power request once. Sleep offers two explicit choices: disconnect eGPU
-and sleep, or keep eGPU connected and sleep. The disconnect choice uses the same
-sequence as Power off. The keep-connected choice must not remove or deauthorize
-the dock. A failed disconnect reports its actual reason and does not silently
-execute power or retry removal. Connected sleep/wake remains untested.
+Preserve the [0.3.98 golden cycle](EGPU_0398_CHECKPOINT.md). Shutdown with an
+active eGPU returns to handheld and runs the same resource/GPU/USB4 disconnect
+before continuing the original shutdown once. A verified already-disconnected
+dock does not repeat removal. Verified absent USB4 transport uses ordinary power
+without requiring an idle game or a supported eGPU profile.
 
-Ronnie confirmed the G1 cable may remain connected for charging after either
-disconnect-before-sleep or shutdown. After the disconnect choice, the dock stays
-logically disconnected on wake. Reusing the
-eGPU requires physical unplug/replug; there is no software reconnect,
-reauthorization or rescan on wake. Charging retention is a hardware trial outcome
-to record, not something USB4 deauthorization alone proves.
+Sleep offers two explicit choices:
+- Disconnect eGPU and sleep: use the same teardown, then continue Sleep.
+- Keep eGPU connected and sleep: leave the existing connection untouched.
 
-## Existing implementation to reuse
+After the disconnect choice, the cable may remain attached for charging, but
+software reauthorization/rescan/reconnect remains excluded. Physical unplug/replug
+is the intended return path for that intentionally disconnected attachment.
+Keeping an existing authorized connection through sleep is a separate choice.
+Charging and healthy wake behavior remain hardware observations, not code claims.
 
-- `Plugin._run_whole_dock_trial`: the verified portable return and teardown.
-- `create_power_request`, `DockPowerIntentStore`, `continue_dock_power`:
-  backend-owned operation/action/session/deadline, consumed once before poweroff.
-- `SystemPowerCommandRunner`: existing ordinary shutdown adapter.
-- `SleepLeaseHandoff`: unwired two-lease handoff with restoration handling.
-- Existing UI confirmation/correlation: confirmation captures original intent;
-  backend continues through frontend/session restart. Cancellation before dispatch
-  does nothing. Do not let the frontend submit another power action after return.
+## Current backend implementation
 
-## Work completed and remaining
+The isolated `egpu-power-0398` branch descends from the preserved checkpoint.
+`Plugin._run_dock_power_request` routes ordinary, already-down, and active-dock
+power. Already-down continuation currently requires the retained runtime in the
+same backend process and fresh verification of its software-down claim/topology.
+Runtime reconstruction after plugin restart is not implemented by this slice.
+Ordinary absence uses the existing complete USB4-host reader; do not generalize
+it to platforms without that evidence or to every non-GPU Thunderbolt dock.
 
-`SystemSuspendCommandRunner` now provides a fixed ordinary suspend boundary with
-explicit inhibitor checking, a timeout and categorical results. It executes no
-command during construction, retries no uncertain request, does not bypass locks
-and defines no wake behavior. It has no production caller yet. The command shape
-was checked against installed systemctl help and the upstream systemd manual:
-https://github.com/systemd/systemd/blob/main/man/systemctl.xml
-This is API documentation consultation, not copied implementation.
+`whole_dock_shutdown`, `whole_dock_sleep`, and `whole_dock_sleep_connected` use the
+existing confirmed `execute_egpu_disconnect` RPC. Original intent is generated
+before the background worker can restart the Gaming session. Teardown-bound
+intent is durably consumed before power. Ordinary/already-down power consumes
+its process-local request once and never restores it across backend restart.
+A supplied correlation ID is action-bound and cached for that backend lifetime;
+frontend restart must read status, not replay the power request.
 
-`SleepGuardController` now supports an operation-owned temporary reconciliation
-pause, distinct from terminal close. `GuardSleepLease` binds that controller to
-the exact backend request for the existing two-lease handoff. Focused tests use
-real guards and Login1 leases with only the OS process replaced: polling cannot
-reacquire during submission, refusal restores protection, ownership cannot be
-stolen, and late restoration cannot reopen a closed controller. These methods
-are not yet called by the production sleep route.
+Sleep now uses `run_observed_sleep`, the existing power coordinator and
+`SleepLeaseHandoff`. It pauses the actual background guard and, after disconnect,
+the retained transaction lease. The two are released only for the original
+request. A local handoff phase separates lease protection from held mutation
+admission after verified teardown; ordinary teardown still requires its lease.
+The keep-connected/no-dock route uses only the background guard.
 
-Remaining: bind production sleep handoff to the original request and both actual
-sleep leases; coordinate lease reconciliation and restoration with the platform
-sleep/resume observation. Wire the existing shutdown continuation and the new
-sleep continuation into explicit UI power actions through one backend route.
-No-eGPU/already-disconnected ordinary power must not run teardown again. Keep
-normal power actions and direct routing distinct from evidence of a new removal.
-The UI owner has supplied a read-only routing assessment; shared index/shell
-production edits await the agreed backend contract and joint sequencing.
+`SuspendObserver` establishes same-boot kernel success/failure counters before
+submission. No counter evidence means no Sleep teardown. After a single ordinary
+systemctl suspend request, the worker observes completion/failure and restores
+its leases. Timeout/unreadable evidence remains unresolved even after restoration;
+it is not cancellation of a queued job. Failed restoration is reported separately.
+No resume path authorizes or reconnects hardware.
 
-Do not implement a disconnect/unplug/sleep workflow instead: the user explicitly
-selected sleep with the charging cable attached. No forced power operation,
-software reconnect or device experiment is part of this code checkpoint.
+`power_requested` means submission only. Sleep `ok`/`sleep_cycle_observed` becomes
+true only for an observed successful kernel cycle, not proof of a healthy TV,
+audio, controls, charge rate, or duration asleep. The read-only `power_status`
+request exposes pending/final sleep status. No UI-supplied capability booleans can
+replace the request, observer or ownership checks. Historical static capability
+restrictions are optional narrowing checks, not invented hardware certifications.
 
-## Validation next
+## Integration and validation remaining
 
-The user explicitly replaced blanket sleep/shutdown refusal with automatic
-disconnect-before-power. The delivery service now accepts an original sleep
-intent and can continue it through the exact-request `SleepLeaseHandoff` after
-durable consumption. Intent creation alone does not start sleep. Existing
-shutdown dispatch now routes verified transport absence to ordinary poweroff,
-rechecking under admission and consuming before submission; connected docks
-still use the same teardown. It does not require an idle game or supported eGPU
-profile on the verified-absent path. This absence reader currently covers USB4
-hosts; broader platform absence discovery remains separate.
+Backend source has independent review and focused tests, including actual guard
+objects across consumption, release, submission and restoration, both Sleep
+choices, no-dock Shutdown, already-down Shutdown and correlation replay rejection.
+The 49-test golden gate passes. The full Windows offline suite ran 3,523 tests successfully with 299 platform
+skips. Independent core review ran 64 focused tests; final status review ran 27.
+Linux-only checks and actual device behavior remain separate gates. The final
+status defaults were additionally covered by focused tests after the full run.
 
-Remaining production work: the still-cabled/already-down route, actual sleep
-observer and two-lease handoff wiring, and exact Steam Sleep/Shutdown interception.
-The current Steam observer drops request arguments; the UI primary is inspecting
-the action contract. Do not remove interception before replacement routing is
-connected, or native sleep could race the requested disconnect. No installed
-blockers were removed by this source checkpoint; this build is not packaged.
+The UI primary owns separate Steam Sleep and Shutdown interceptors and the sleep
+choice. `OnSuspendRequest` is not a Sleep/Shutdown enum; its argument can suppress
+actual suspend. A read-only loaded-source probe is available at UI commit633d7ec.
+The Ally was unreachable for source readback during this implementation. Production
+UI interception/mounts are not yet integrated, no new ZIP is installed, and native
+blanket interception is not removed before the replacement path exists.
 
-Focused command tests and existing shutdown coordinator tests cover the new
-adapter without hardware calls. Preserve current golden tests and add integrated
-original-intent, duplicate/cancel, failure-before-power, ordinary-no-dock and
-resume-without-reauthorization checks at actual production seams. Run one bounded
-supervised poweroff trial first, then cable-connected sleep/wake with handheld
-operation and charging observed. Prior automatic-TV evidence remains valid unless
-new changes affect that path; do not repeat unchanged broad trials by default.
+Run a focused supervised sleep/wake trial when the combined candidate is ready.
+Preserve the successful manual shutdown evidence below; do not repeat it without
+a changed path or a concrete gap. No software reconnect trial is part of this work.
 
 ## Manual sleep trial after live disconnect, 2026-09-13 04:05 UTC
 

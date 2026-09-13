@@ -54,6 +54,44 @@ class MainDockPowerTests(unittest.TestCase):
         self.plugin._run_whole_dock_trial.assert_called_once_with(
             request.operation, '', power_request=request)
 
+    def test_already_down_shutdown_verifies_release_without_repeating_removal(self):
+        @contextmanager
+        def admit(**kwargs):
+            yield
+        self.plugin._dock_mutation_gate = lambda: NS(admit=admit)
+        self.plugin._dock_power_portable_verified = lambda: True
+        admission = {'held': False}
+        runtime = NS(_operation='original-disconnect', _owned=lambda stage: True,
+            verify_power_continuation=Mock(side_effect=lambda *a, **k: admission['held']))
+        self.plugin._whole_dock_trial_runtime = (runtime, admission)
+        self.plugin._run_whole_dock_trial = Mock()
+        request = self.module.create_power_request('shutdown', 'session')
+        with patch.object(self.module, 'verified_transport_absent', return_value=False), \
+             patch.object(self.module, 'SystemPowerCommandRunner') as runner:
+            runner.return_value.request_poweroff.return_value = NS(requested=True, code='accepted')
+            result = self.plugin._run_dock_power_request(request)
+            self.assertTrue(result.requested)
+            self.assertTrue(result.software_down)
+            self.assertFalse(admission['held'])
+            runner.return_value.request_poweroff.assert_called_once()
+        self.plugin._run_whole_dock_trial.assert_not_called()
+        runtime.verify_power_continuation.assert_called_once_with('original-disconnect',
+            portable_verified=self.plugin._dock_power_portable_verified)
+
+    def test_ordinary_shutdown_timeout_is_not_replayed(self):
+        @contextmanager
+        def admit(**kwargs):
+            yield
+        self.plugin._dock_mutation_gate = lambda: NS(admit=admit)
+        request = self.module.create_power_request('shutdown', 'session')
+        with patch.object(self.module, 'verified_transport_absent', return_value=True), \
+             patch.object(self.module, 'SystemPowerCommandRunner') as runner:
+            runner.return_value.request_poweroff.side_effect = TimeoutError()
+            with self.assertRaises(TimeoutError):
+                self.plugin._run_dock_power_request(request)
+            self.assertFalse(self.plugin._run_dock_power_request(request).requested)
+            runner.return_value.request_poweroff.assert_called_once()
+
     def test_operator_reset_requires_fresh_single_use_preview_and_literal_attestation(self):
         calls = []
         async def background(fn, *args):
@@ -142,14 +180,87 @@ class MainDockPowerTests(unittest.TestCase):
         self.plugin._run_whole_dock_trial.assert_not_called()
         discovery.assert_not_called()
 
-    def test_sleep_refuses_before_hardware_or_background_work(self):
+    def test_sleep_missing_observer_does_not_start_teardown(self):
         self.plugin._run_whole_dock_trial = Mock()
-        self.plugin._run_background_operation = Mock()
-        result = asyncio.run(self.plugin.execute_egpu_disconnect(
-            release_display=True, trial_action='whole_dock_sleep', trial_confirmed=True))
-        self.assertEqual(result['code'], 'dock_power.sleep_unverified')
+        async def background(fn):
+            return fn()
+        self.plugin._run_background_operation = background
+        with patch.object(self.module, 'SuspendObserver') as observer:
+            observer.return_value.read.return_value = None
+            result = asyncio.run(self.plugin.execute_egpu_disconnect(
+                release_display=True, trial_action='whole_dock_sleep', trial_confirmed=True))
+        self.assertEqual(result['code'], 'dock_power.sleep_observer_unavailable')
         self.plugin._run_whole_dock_trial.assert_not_called()
-        self.plugin._run_background_operation.assert_not_called()
+
+    def test_sleep_keep_connected_selects_sleep_without_teardown(self):
+        @contextmanager
+        def admit(**kwargs):
+            yield
+        self.plugin._dock_mutation_gate = lambda: NS(admit=admit)
+        self.plugin._run_sleep_request = Mock(return_value=NS(code='sleep', requested=True))
+        self.plugin._run_whole_dock_trial = Mock()
+        async def background(fn):
+            return fn()
+        self.plugin._run_background_operation = background
+        with patch.object(self.module, 'SuspendObserver') as observer, \
+             patch.object(self.module, 'verified_transport_absent', return_value=False):
+            observer.return_value.read.return_value = object()
+            result = asyncio.run(self.plugin.execute_egpu_disconnect(
+                release_display=True, trial_action='whole_dock_sleep_connected', trial_confirmed=True))
+        self.assertTrue(result['power_requested'])
+        self.assertEqual(result['power_action'], 'sleep')
+        self.assertEqual(self.plugin._run_sleep_request.call_args.args[0].action, 'sleep')
+        self.plugin._run_whole_dock_trial.assert_not_called()
+
+    def test_sleep_after_down_uses_actual_two_leases_and_consumes_before_submit(self):
+        from tests.test_dock_sleep_lease import Process
+        request = self.module.create_power_request('sleep', 'session')
+        self.plugin._dock_power_session = request.session
+        self.plugin._sleep_guard = self.module.SleepGuardController(
+            self.module.Login1SleepInhibitor(Process))
+        self.plugin._whole_dock_trial_lease = self.module.Login1SleepInhibitor(Process)
+        self.plugin._whole_dock_trial_lease.acquire()
+        self.plugin._dock_power_portable_verified = lambda: True
+        admission = {'held': True}
+        events = []
+        runtime = NS(_operation=request.operation, binding=NS(binding='dock', generation='gen'),
+            verify_power_continuation=lambda *a, **k: admission['held'] and admission['power_handoff'])
+        store = NS(consume=lambda *args: events.append('consume') or True)
+        def submit():
+            self.assertEqual(events, ['consume'])
+            self.assertFalse(self.plugin._sleep_guard.status().active)
+            self.assertFalse(self.plugin._whole_dock_trial_lease.status().active)
+            events.append('submit')
+            return NS(requested=True)
+        with patch.object(self.module, 'SuspendObserver') as observer, \
+             patch.object(self.module, 'SystemSuspendCommandRunner') as command:
+            observer.return_value.read.return_value = object()
+            observer.return_value.classify.return_value = 'success'
+            command.return_value.request_suspend.side_effect = submit
+            result = self.plugin._sleep_after_dock_down(request, runtime, admission, store)
+        self.assertEqual(result.code, 'dock_power.sleep_cycle_observed')
+        self.assertEqual(events, ['consume', 'submit'])
+        self.assertTrue(self.plugin._whole_dock_trial_lease.status().active)
+        self.assertFalse(admission['power_handoff'])
+
+    def test_completed_power_correlation_does_not_submit_again_or_change_action(self):
+        self.plugin._run_dock_power_request = Mock(return_value=NS(code='accepted', requested=True))
+        async def background(fn):
+            return fn()
+        self.plugin._run_background_operation = background
+        args = dict(release_display=True, trial_action='whole_dock_shutdown',
+                    trial_confirmed=True, trial_request_id='c' * 32)
+        first = asyncio.run(self.plugin.execute_egpu_disconnect(**args))
+        status = asyncio.run(self.plugin.get_egpu_disconnect_status('power_status'))
+        self.assertEqual(status['request_id'], args['trial_request_id'])
+        self.assertEqual(status['route_action'], 'whole_dock_shutdown')
+        self.assertEqual(status['power_action'], 'shutdown')
+        self.assertFalse(status['busy'])
+        self.assertEqual(asyncio.run(self.plugin.execute_egpu_disconnect(**args)), first)
+        args['trial_action'] = 'whole_dock_sleep'
+        self.assertEqual(asyncio.run(self.plugin.execute_egpu_disconnect(**args))['code'],
+                         'dock_power.request_action_changed')
+        self.plugin._run_dock_power_request.assert_called_once()
 
     def test_shutdown_still_requires_explicit_confirmation(self):
         self.plugin._run_whole_dock_trial = Mock()

@@ -37,13 +37,12 @@ def dock_power_capabilities():
                 ],
             },
             'sleep': {
-                'implementation': 'unavailable',
-                'live_readiness': 'unavailable',
+                'implementation': 'implemented',
+                'live_readiness': 'not_assessed',
                 'actionable': False,
                 'reason_codes': [
-                    'dock_power.sleep_profile_unverified',
-                    'dock_power.sleep_inhibitor_handoff_unverified',
-                    'dock_power.sleep_wake_thermal_unverified',
+                    'dock_power.sleep_hardware_unverified',
+                    'dock_power.live_preflight_required',
                 ],
             },
         },

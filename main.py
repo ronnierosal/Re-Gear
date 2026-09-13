@@ -58,6 +58,7 @@ from regear.adapters.steamos.wake_diagnostics import WakeDiagnosticsDiscovery  #
 from regear.adapters.steamos.commands import (  # noqa: E402
     PipeWireCommandRunner,
     SystemPowerCommandRunner,
+    SystemSuspendCommandRunner,
     UserServiceCommandRunner,
 )
 from regear.adapters.steamos.audio_handoff import G1AudioHandoff, G1AudioReadiness  # noqa: E402
@@ -252,6 +253,8 @@ from regear.domain.control_plane import (  # noqa: E402
     TransitionOutcomeKind,
 )
 from regear.domain.models import Confidence, EgpuLinkState, GameState, GpuRole, EgpuPresence, OperatingMode  # noqa: E402
+from regear.adapters.steamos.suspend_observer import SuspendObserver  # noqa: E402
+from regear.delivery.dock_sleep_service import run_observed_sleep  # noqa: E402
 from regear.domain.inference import infer_operating_mode  # noqa: E402
 from regear.domain.tdp_placement import tdp_placement_readiness  # noqa: E402
 from regear.domain.auto_tdp_preferences import AutoTdpModePreference  # noqa: E402
@@ -1948,12 +1951,37 @@ class Plugin:
         except Exception:
             return result(Disposition.BLOCKED)
 
-    def _run_dock_power_request(self, request, expected_attachment=""):
+    def _run_dock_power_request(self, request, expected_attachment="", *, keep_connected=False):
         """Route ordinary power separately from an attached dock teardown."""
-        if request.action != 'shutdown':
-            raise ValueError('dock_power.sleep_unverified')
+        if request.action == 'sleep' and SuspendObserver().read() is None:
+            return DockPowerResult('dock_power.sleep_observer_unavailable')
         # A missing GPU alone is not an absent dock: USB4 can still be training.
         if verified_transport_absent() is not True:
+            trial = getattr(self, '_whole_dock_trial_runtime', None)
+            if trial is not None:
+                runtime, admission = trial
+                with self._dock_mutation_gate().admit(allow_inhibited=True):
+                    if runtime._owned('software_down'):
+                        admission['held'] = True
+                        try:
+                            if (getattr(self, '_unloading', False)
+                                    or not runtime.verify_power_continuation(
+                                        runtime._operation,
+                                        portable_verified=self._dock_power_portable_verified)):
+                                raise ValueError('dock_power.preflight_changed')
+                            if request.action == 'sleep':
+                                result = self._sleep_after_dock_down(request, runtime, admission)
+                            else:
+                                result = self._submit_ordinary_shutdown(request)
+                            return DockPowerResult(result.code, result.requested, software_down=True)
+                        finally:
+                            admission['held'] = False
+            if request.action == 'sleep' and keep_connected:
+                with self._dock_mutation_gate().admit():
+                    # This route leaves the current connection untouched. Admission
+                    # prevents concurrent teardown; no GPU/display migration runs.
+                    return self._run_sleep_request(request,
+                        verify=lambda: not getattr(self, '_unloading', False))
             return self._run_whole_dock_trial(request.operation, expected_attachment,
                                               power_request=request)
         with self._dock_mutation_gate().admit(allow_inhibited=True):
@@ -1961,16 +1989,75 @@ class Plugin:
                     or not request.requested_at <= time.monotonic() < request.deadline
                     or verified_transport_absent() is not True):
                 raise ValueError('dock_power.preflight_changed')
-            consumed = getattr(self, '_ordinary_power_consumed', None)
-            if consumed is None:
-                consumed = self._ordinary_power_consumed = set()
-            if request.operation in consumed:
-                return DockPowerResult('dock_power.already_consumed')
-            # Original requests are backend-generated and never restored/replayed
-            # after plugin restart. Consume before an ambiguous OS submission.
-            consumed.add(request.operation)
-            result = SystemPowerCommandRunner().request_poweroff()
-            return DockPowerResult(result.code, result.requested is True)
+            if request.action == 'sleep':
+                return self._run_sleep_request(request, verify=verified_transport_absent)
+            return self._submit_ordinary_shutdown(request)
+
+    def _consume_ordinary_power(self, request):
+        if (getattr(self, '_unloading', False)
+                or not request.requested_at <= time.monotonic() < request.deadline):
+            return False
+        consumed = getattr(self, '_ordinary_power_consumed', None)
+        if consumed is None:
+            consumed = self._ordinary_power_consumed = set()
+        if request.operation in consumed:
+            return False
+        consumed.add(request.operation)
+        return True
+
+    def _run_sleep_request(self, request, *, verify, transaction=None, consume=None):
+        context = getattr(self, '_dock_power_context', None)
+        identity = {'request_id': context[1], 'route_action': context[2]} if (
+            context is not None and context[0] is request) else {'request_id': '', 'route_action': ''}
+        def publish(code):
+            self._dock_sleep_status = {'schema_version': 1, 'code': code,
+                'power_action': 'sleep', 'power_requested': True, 'busy': True,
+                'ok': False, 'sleep_cycle_observed': False, **identity}
+        result = run_observed_sleep(request, background=self._sleep_guard,
+            transaction=transaction, verify=lambda r: r is request and verify() is True,
+            consume=consume or self._consume_ordinary_power,
+            submit=lambda r: SystemSuspendCommandRunner().request_suspend().requested is True,
+            observer=SuspendObserver(), session=lambda: self._dock_power_session,
+            cancelled=lambda: bool(getattr(self, '_unloading', False)), publish=publish)
+        self._dock_sleep_status = {'schema_version': 1, 'code': result.code,
+            'power_action': 'sleep', 'power_requested': result.requested, 'busy': False,
+            'ok': result.code == 'dock_power.sleep_cycle_observed',
+            'sleep_cycle_observed': result.code == 'dock_power.sleep_cycle_observed', **identity}
+        return result
+
+    def _sleep_after_dock_down(self, request, runtime, admission, power_store=None):
+        # The actual transaction lease is retained from the golden teardown.
+        # Pause its controller and the background controller together; do not
+        # construct another hardware-removal or reconnect operation.
+        transaction = SleepGuardController(self._whole_dock_trial_lease)
+        admission['power_handoff'] = True
+        try:
+            consume = None
+            if power_store is not None:
+                consume = lambda r: power_store.consume(r.operation,
+                    runtime.binding.binding, runtime.binding.generation, r.action,
+                    r.session, r.requested_at, r.deadline)
+            return self._run_sleep_request(request, transaction=transaction,
+                verify=lambda: runtime.verify_power_continuation(runtime._operation,
+                    portable_verified=self._dock_power_portable_verified), consume=consume)
+        finally:
+            admission['power_handoff'] = False
+
+    def _dock_power_portable_verified(self):
+        snapshot = SnapshotTransitionObservationAdapter(self._discovery).observe().snapshot
+        return (not getattr(self, '_unloading', False)
+            and snapshot.game_state is GameState.IDLE
+            and infer_operating_mode(snapshot).mode is OperatingMode.PORTABLE)
+
+    def _submit_ordinary_shutdown(self, request):
+        """Admission remains held; never repeat removal or replay old intent."""
+        if (request.action != 'shutdown' or getattr(self, '_unloading', False)
+                or not request.requested_at <= time.monotonic() < request.deadline):
+            raise ValueError('dock_power.preflight_changed')
+        if not self._consume_ordinary_power(request):
+            return DockPowerResult('dock_power.already_consumed')
+        result = SystemPowerCommandRunner().request_poweroff()
+        return DockPowerResult(result.code, result.requested is True)
 
     def _run_whole_dock_trial(self, operation: str, expected_attachment: str = "", *, power_request=None):
         """Internal cable-connected trial; admission covers release and teardown.
@@ -1979,7 +2066,7 @@ class Plugin:
         the durable claim remains inhibited even after successful enumeration.
         """
         if power_request is not None:
-            if (power_request.action != 'shutdown' or power_request.operation != operation
+            if (power_request.action not in ('shutdown', 'sleep') or power_request.operation != operation
                     or not power_request.requested_at <= time.monotonic() < power_request.deadline):
                 raise ValueError('dock_power.preflight_changed')
         self._whole_dock_trial_phase = "admission"
@@ -2001,7 +2088,7 @@ class Plugin:
                 try:
                     return (admission["held"] is True
                         and not getattr(self, '_unloading', False)
-                        and lease.status().active is True)
+                        and (lease.status().active is True or admission.get('power_handoff') is True))
                 except Exception:
                     return False
             def require_inhibition():
@@ -2067,6 +2154,10 @@ class Plugin:
                 if getattr(result, 'software_down', False) is not True:
                     raise ValueError('dock_power.disconnect_unverified')
                 self._whole_dock_trial_phase = "power_verification"
+                if power_request.action == 'sleep':
+                    power_result = self._sleep_after_dock_down(
+                        power_request, runtime, admission, power_store)
+                    return DockPowerResult(power_result.code, power_result.requested, software_down=True)
                 def portable():
                     snapshot = SnapshotTransitionObservationAdapter(self._discovery).observe().snapshot
                     return (not getattr(self, '_unloading', False)
@@ -2165,6 +2256,10 @@ class Plugin:
         """
         if _request == "power_capabilities":
             return dock_power_capabilities()
+        if _request == 'power_status':
+            return dict(getattr(self, '_dock_sleep_status', {
+                'schema_version': 1, 'code': 'dock_power.idle',
+                'busy': False, 'power_requested': False}))
         if _request == "physical_reset_preview":
             self._operator_reset_preview = None
             if getattr(self, '_unloading', False) or getattr(self, '_background_operations', set()):
@@ -2280,7 +2375,7 @@ class Plugin:
             return await self._reconcile_egpu_after_physical_reset(trial_request_id, True)
         if trial_action:
             if (trial_confirmed is not True or release_display is not True
-                    or trial_action not in ("whole_dock_disconnect", "whole_dock_reconnect", "whole_dock_capture", "whole_dock_held_capture", "whole_dock_reconcile", "whole_dock_shutdown", "whole_dock_sleep")
+                    or trial_action not in ("whole_dock_disconnect", "whole_dock_reconnect", "whole_dock_capture", "whole_dock_held_capture", "whole_dock_reconcile", "whole_dock_shutdown", "whole_dock_sleep", "whole_dock_sleep_connected")
                     or relaunch_app_id
                     or type(trial_request_id) is not str
                     or (trial_request_id and (len(trial_request_id) != 32 or any(c not in "0123456789abcdef" for c in trial_request_id)))
@@ -2294,12 +2389,17 @@ class Plugin:
                 return {"schema_version": 1, "ok": False,
                         "code": "dock_teardown.busy", "safe_to_unplug": False}
             power_request = None
-            if trial_action in ('whole_dock_shutdown', 'whole_dock_sleep'):
+            if trial_action in ('whole_dock_shutdown', 'whole_dock_sleep', 'whole_dock_sleep_connected'):
+                requests = getattr(self, '_dock_power_requests', None)
+                if requests is None:
+                    requests = self._dock_power_requests = {}
+                if trial_request_id and trial_request_id in requests:
+                    original_action, original_result = requests[trial_request_id]
+                    if original_action != trial_action:
+                        return {'schema_version': 1, 'ok': False,
+                            'code': 'dock_power.request_action_changed', 'safe_to_unplug': False}
+                    return dict(original_result)
                 # Bind once in the backend before the worker can restart Steam.
-                # Sleep remains refused before any teardown until validated.
-                if trial_action == 'whole_dock_sleep':
-                    return {'schema_version': 1, 'ok': False,
-                        'code': 'dock_power.sleep_unverified', 'safe_to_unplug': False}
                 if not hasattr(self, '_dock_power_session'):
                     boot = read_boot_hash()
                     if not re.fullmatch('[0-9a-f]{64}', boot):
@@ -2314,6 +2414,15 @@ class Plugin:
                     return {'schema_version': 1, 'ok': False,
                         'code': 'dock_power.sleep_unverified' if trial_action == 'whole_dock_sleep'
                             else 'dock_power.invalid_intent', 'safe_to_unplug': False}
+                if trial_request_id:
+                    requests[trial_request_id] = (trial_action, {'schema_version': 1,
+                        'code': 'dock_power.request_pending', 'ok': False, 'busy': True,
+                        'safe_to_unplug': False, 'request_id': trial_request_id})
+                self._dock_power_context = (power_request, trial_request_id, trial_action)
+                self._dock_sleep_status = {'schema_version': 1, 'code': 'dock_power.request_pending',
+                    'power_action': power_request.action, 'route_action': trial_action,
+                    'request_id': trial_request_id, 'busy': True, 'ok': False,
+                    'power_requested': False, 'sleep_cycle_observed': False}
             if trial_action == "whole_dock_capture":
                 return await self._capture_egpu_release_diagnostics(confirmed=True)
             if trial_action == "whole_dock_held_capture":
@@ -2336,7 +2445,8 @@ class Plugin:
                 try:
                     if power_request is not None:
                         result = self._run_dock_power_request(power_request,
-                            trial_attachment_token)
+                            trial_attachment_token,
+                            keep_connected=trial_action == 'whole_dock_sleep_connected')
                     elif trial_action == "whole_dock_disconnect":
                         result = self._run_whole_dock_trial(uuid.uuid4().hex, trial_attachment_token)
                     else:
@@ -2350,6 +2460,9 @@ class Plugin:
                         payload['power_requested'] = getattr(result, 'requested', False) is True
                         payload['ok'] = payload['power_requested']
                         payload['power_action'] = power_request.action
+                        if power_request.action == 'sleep':
+                            payload['sleep_cycle_observed'] = result.code == 'dock_power.sleep_cycle_observed'
+                            payload['ok'] = payload['sleep_cycle_observed']
                 except Exception as error:
                     # Only fixed categories cross the RPC boundary; never expose
                     # arbitrary exception text, paths or attachment identifiers.
@@ -2380,6 +2493,14 @@ class Plugin:
                 payload["arm_stage"] = self._whole_dock_arm_stage
                 payload["arm_code"] = self._whole_dock_arm_code
                 self._whole_dock_trial_status = payload
+                if power_request is not None:
+                    payload['route_action'] = trial_action
+                    payload['power_action'] = power_request.action
+                    payload.setdefault('power_requested', False)
+                    payload.setdefault('sleep_cycle_observed', False)
+                    self._dock_sleep_status = dict(payload)
+                if power_request is not None and trial_request_id:
+                    self._dock_power_requests[trial_request_id] = (trial_action, dict(payload))
                 return payload
             return await self._run_background_operation(trial)
         relaunch = RelaunchIntentStore(CATALOG_ROOT)

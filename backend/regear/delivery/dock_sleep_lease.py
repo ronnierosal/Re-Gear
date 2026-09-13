@@ -16,7 +16,9 @@ class GuardSleepLease:
         self._owner = object()
 
     def prepare(self, request: DockPowerRequest) -> bool:
-        return request is self._request and self._controller.prepare_handoff(self._owner)
+        return (request is self._request
+                and self._controller.prepare_handoff(self._owner)
+                and self._controller.reacquire_handoff(self._owner))
 
     def owned(self, request: DockPowerRequest) -> bool:
         return request is self._request and self._controller.handoff_owned(self._owner)
