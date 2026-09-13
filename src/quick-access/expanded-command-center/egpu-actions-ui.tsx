@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { CommandCenterIcon, type CommandCenterIconId } from "../command-center-icons";
 import { CommandActionRow, CommandDetailSurface, CommandNotice, CommandSection, CommandStatusRow, type DetailTone } from "./detail-ui";
 import { ReGearPopup } from "./popup-ui";
 
@@ -18,17 +19,36 @@ export type EgpuActionPresentation = {
   detail?: string;
   tone?: DetailTone;
   unavailable?: boolean;
+  pending?: boolean;
   control?: ReactNode;
+};
+
+const actionIcons: Record<EgpuQuickActionId, CommandCenterIconId> = {
+  "switch-handheld": "display",
+  "safe-disconnect": "safe-disconnect",
+  resolution: "refresh-rate",
+  "disconnect-sleep": "safe-disconnect",
+  "disconnect-shutdown": "safe-disconnect",
+  status: "egpu",
 };
 
 const egpuActionStyles = `
 [data-egpu-action-grid]{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;container-type:inline-size}
-[data-egpu-action-card]{min-width:0;min-height:72px;padding:8px 9px;border-radius:10px;display:grid;grid-template-rows:minmax(0,1fr) auto;align-content:stretch;gap:6px}
+[data-egpu-action-card]{min-width:0;min-height:76px;padding:8px 9px;border-radius:10px;display:grid;grid-template-columns:auto minmax(0,1fr);grid-template-rows:minmax(0,1fr) auto;column-gap:8px;row-gap:6px;align-content:stretch;background:#0b2230;border:1px solid #315c75;box-shadow:inset 0 1px 0 #ffffff08}
+[data-egpu-action-card][data-tone=warning]{border-color:#80672f;background:linear-gradient(145deg,#2b281a,#10202b 62%)}
+[data-egpu-action-card][data-unavailable=true]{background:#0b1821;opacity:.62}
+[data-egpu-action-icon]{grid-row:1;grid-column:1;display:grid;place-items:center;width:30px;height:30px;border-radius:8px;border:1px solid #315c75;background:#0a2232;color:#c9ecff}
+[data-egpu-action-copy]{grid-row:1;grid-column:2;min-width:0}
 [data-egpu-action-card] strong{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;font-size:10.5px;line-height:1.18;color:#e7f4fb;white-space:normal}
 [data-egpu-action-card] [data-egpu-action-detail]{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;margin-top:2px;font-size:9px;line-height:1.22;color:#8fb3cc}
-@container (max-width:520px){[data-egpu-action-grid]{grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}[data-egpu-action-card]{min-height:66px;padding:7px 8px}}
-@container (max-width:300px){[data-egpu-action-grid]{grid-template-columns:1fr}[data-egpu-action-card]{min-height:60px}}
-@media(max-height:520px){[data-egpu-action-grid]{gap:6px}[data-egpu-action-card]{min-height:58px;padding:6px 7px}[data-egpu-action-card] strong{font-size:9.5px}[data-egpu-action-card] [data-egpu-action-detail]{font-size:8px}}
+[data-egpu-action-control]{grid-column:1/-1;grid-row:2;min-width:0}
+[data-egpu-action-control]>button,[data-egpu-action-control] button{width:100%;min-height:29px;margin:0;padding:5px 8px;border:1px solid #417895;border-radius:7px;background:#12364b;color:#edf8ff;font:inherit;font-size:9.5px;font-weight:650;text-align:center;white-space:normal;line-height:1.15}
+[data-egpu-action-control] button:hover{border-color:#63b7d9;background:#17455d}
+[data-egpu-action-control] button:focus,[data-egpu-action-control] button:focus-visible,[data-egpu-action-control] button.gpfocus{outline:2px solid #39d8ff;outline-offset:-2px;background:#17455d!important}
+[data-egpu-action-control] button:disabled{opacity:.55;cursor:default}
+@container (max-width:520px){[data-egpu-action-grid]{grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}[data-egpu-action-card]{min-height:70px;padding:7px 8px}}
+@container (max-width:300px){[data-egpu-action-grid]{grid-template-columns:1fr}[data-egpu-action-card]{min-height:64px}}
+@media(max-height:520px){[data-egpu-action-grid]{gap:6px}[data-egpu-action-card]{min-height:62px;padding:6px 7px;column-gap:6px}[data-egpu-action-icon]{width:26px;height:26px}[data-egpu-action-card] strong{font-size:9.5px}[data-egpu-action-card] [data-egpu-action-detail]{font-size:8px}[data-egpu-action-control]>button,[data-egpu-action-control] button{min-height:25px;padding:4px 6px;font-size:8.5px}}
 `;
 
 /**
@@ -39,12 +59,13 @@ export function EgpuQuickActions({ actions }: { actions: readonly EgpuActionPres
   return <CommandSection title="eGPU actions" hint="The same verified actions may be surfaced in Quick Access and the eGPU module without changing their meaning.">
     <style>{egpuActionStyles}</style>
     <div data-egpu-action-grid>
-      {actions.map(action => <div key={action.id} data-egpu-action-card data-egpu-action-id={action.id} style={{ border: `1px solid ${action.tone === "warning" ? "#80672f" : "#315c75"}`, background: action.unavailable ? "#0b1821" : "#0b2230", opacity: action.unavailable ? .62 : 1 }}>
-        <div style={{ minWidth: 0 }}>
+      {actions.map(action => <div key={action.id} data-egpu-action-card data-egpu-action-id={action.id} data-tone={action.tone ?? "neutral"} data-unavailable={action.unavailable ? "true" : undefined} aria-busy={action.pending || undefined}>
+        <span data-egpu-action-icon><CommandCenterIcon id={actionIcons[action.id]} size={20}/></span>
+        <div data-egpu-action-copy>
           <strong>{action.label}</strong>
           {action.detail && <span data-egpu-action-detail>{action.detail}</span>}
         </div>
-        {action.control}
+        {action.control && <div data-egpu-action-control>{action.control}</div>}
       </div>)}
     </div>
   </CommandSection>;
