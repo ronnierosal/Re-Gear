@@ -60,7 +60,7 @@ export function egpuTiles(presentation: EgpuPresentation): Tile[] {
   return [
     {
       id: "device",
-      title: "Detected device",
+      title: "External GPU",
       // The payload documents `model_name` as presentation only and never an
       // identity input, and it is null unless exactly one external GPU was
       // reported. Putting it in the VALUE of a card titled "Detected device"
@@ -72,11 +72,11 @@ export function egpuTiles(presentation: EgpuPresentation): Tile[] {
         : "No single external GPU was reported.",
       tone: "unavailable",
     },
-    missingProvider("dock", "Dock state",
+    missingProvider("dock", "Dock Mode",
       "No dock-mode reading reaches this view yet."),
     {
       id: "display",
-      title: "External display",
+      title: "Display Output",
       // Attachment and output are separate facts and are shown separately; a
       // connected display is not a display that is driving anything.
       value: displayConnected.text,
@@ -92,7 +92,7 @@ export function egpuTiles(presentation: EgpuPresentation): Tile[] {
     },
     {
       id: "link",
-      title: "Connection",
+      title: "Connection Link",
       value: connection.text,
       detail: detail(connection, "Physical link"),
       tone: evidenceTone(connection),
@@ -140,7 +140,7 @@ export function performanceTiles(input: {
     : state.active ? { text: "Running", tone: "active" as Tone }
     : { text: "Off", tone: "quiet" as Tone };
   return [
-    missingProvider("profile", "Performance profile",
+    missingProvider("profile", "Performance Profile",
       "No performance profile provider exists on this device."),
     {
       id: "fps",
@@ -175,7 +175,7 @@ export function performanceTiles(input: {
     // truthful to put here yet.
     missingProvider("display", "Resolution",
       "No display mode is observed; resolution is not reported."),
-    missingProvider("refresh", "Refresh rate",
+    missingProvider("refresh", "Refresh Rate",
       "No display mode is observed; refresh rate is not reported."),
   ];
 }
@@ -186,13 +186,49 @@ export function performanceTiles(input: {
  * own `precision`: an `exact` reading may use the confident tone, a `partial`
  * one may not, and `unknown` is unavailable like any other absence.
  */
-export function controllerTiles(presentation: ControllerPresentation): Tile[] {
-  const tone = (known: boolean): Tone => {
-    if (!known || presentation.precision === "unknown") return "unavailable";
-    return presentation.precision === "exact" ? "active" : "quiet";
+/** Tone from the payload's own precision: `exact` may use the confident tone,
+ * `partial` may not, and `unknown` is unavailable like any other absence. */
+function controllerTone(presentation: ControllerPresentation, known: boolean): Tone {
+  if (!known || presentation.precision === "unknown") return "unavailable";
+  return presentation.precision === "exact" ? "active" : "quiet";
+}
+
+function controllerCaveat(presentation: ControllerPresentation, base: string): string {
+  return presentation.precisionNote ? `${base} · ${presentation.precisionNote}` : base;
+}
+
+/** Quick Access's one-line controller summary.
+ *
+ * The Controllers tab's `controller` card is Player 1, which has no provider
+ * and stays Unknown. Quick's approved card is Controller Status, and PRESENCE
+ * is observed -- so it is projected from the same ControllerPresentation
+ * rather than inheriting the assignment card's Unknown. Dropping a truthful
+ * reading because a different question is unanswerable would be its own kind
+ * of dishonesty.
+ *
+ * It is a projection, not a second opinion: same presentation, same precision
+ * rule, so Quick and the Controllers tab cannot disagree about what was
+ * observed. The detail says plainly that player order is not established, so
+ * the summary never implies it answers the assignment question. */
+export function controllerSummaryTile(presentation: ControllerPresentation): Tile {
+  const { external, builtin } = presentation;
+  const known = external.known || builtin.known;
+  const value = external.known ? external.text : builtin.known ? builtin.text : "Unknown";
+  return {
+    id: "controller",
+    title: "Controller Status",
+    value,
+    detail: presentation.available
+      ? controllerCaveat(presentation,
+          `External: ${external.text} · Built-in: ${builtin.text} · player order not established`)
+      : presentation.reason ?? "No controller reading available",
+    tone: controllerTone(presentation, known),
   };
-  const caveat = (base: string) =>
-    presentation.precisionNote ? `${base} · ${presentation.precisionNote}` : base;
+}
+
+export function controllerTiles(presentation: ControllerPresentation): Tile[] {
+  const tone = (known: boolean): Tone => controllerTone(presentation, known);
+  const caveat = (base: string) => controllerCaveat(presentation, base);
   // The approved card is Player 1, and external presence does not establish
   // Steam's player order -- player order is unimplemented backend-side. The
   // presence reading is real, so it is carried in the detail line rather than
@@ -203,11 +239,11 @@ export function controllerTiles(presentation: ControllerPresentation): Tile[] {
   return [
     missingProvider("controller", "Player 1",
       caveat(`${presence} · presence does not establish player order`)),
-    missingProvider("battery", "Battery",
+    missingProvider("battery", "Controller Battery",
       "No controller battery reading is reported to Re-Gear."),
     {
       id: "builtin",
-      title: "Built-in controller",
+      title: "Built-in Controller",
       value: presentation.builtin.text,
       detail: presentation.available
         ? caveat("Reported by the peripheral status")
@@ -216,7 +252,7 @@ export function controllerTiles(presentation: ControllerPresentation): Tile[] {
     },
     {
       id: "priority",
-      title: "Controller priority",
+      title: "Controller Priority",
       // Named in the plan and not implemented. Stated as unavailable so its
       // absence is explicit rather than a gap a player has to notice, and
       // never rendered as a working control.
@@ -226,9 +262,9 @@ export function controllerTiles(presentation: ControllerPresentation): Tile[] {
         : "Planned, not implemented.",
       tone: "unavailable",
     },
-    missingProvider("tv-controller", "TV controller",
+    missingProvider("tv-controller", "TV Dock Behavior",
       "No TV-dock controller reading is reported to Re-Gear."),
-    missingProvider("controller-settings", "Controller settings",
+    missingProvider("controller-settings", "Controller Settings",
       "No controller preferences are stored by Re-Gear."),
   ];
 }

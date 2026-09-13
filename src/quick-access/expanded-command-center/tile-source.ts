@@ -28,7 +28,7 @@
  */
 
 import type { Tab, Tile } from "./model";
-import { egpuTiles, performanceTiles, controllerTiles, evidenceTone } from "./tiles";
+import { egpuTiles, performanceTiles, controllerTiles, controllerSummaryTile, evidenceTone } from "./tiles";
 import type { Evidence } from "../modules/egpu-presentation";
 import type { EgpuPresentation } from "../modules/egpu-presentation";
 import type { ControllerPresentation } from "../modules/controller-presentation";
@@ -103,8 +103,8 @@ function unknownTiles(entries: ReadonlyArray<[string, string]>): Tile[] {
 // cards in the same order: a grid that reflows when a reading goes missing
 // moves a target under a thumb mid-press.
 const UNKNOWN_EGPU: ReadonlyArray<[string, string]> = [
-  ["device", "Detected device"], ["dock", "Dock state"],
-  ["display", "External display"], ["render", "Render GPU"], ["link", "Connection"],
+  ["device", "External GPU"], ["dock", "Dock Mode"],
+  ["display", "Display Output"], ["render", "Render GPU"], ["link", "Connection Link"],
 ];
 
 /** The Safe Disconnect card when nothing has been observed.
@@ -122,14 +122,14 @@ function unknownDisconnectTile(): Tile {
   };
 }
 const UNKNOWN_PERFORMANCE: ReadonlyArray<[string, string]> = [
-  ["profile", "Performance profile"], ["fps", "FPS Target"],
+  ["profile", "Performance Profile"], ["fps", "FPS Target"],
   ["manual", "Manual TDP"], ["auto", "Auto TDP"],
-  ["display", "Resolution"], ["refresh", "Refresh rate"],
+  ["display", "Resolution"], ["refresh", "Refresh Rate"],
 ];
 const UNKNOWN_CONTROLLERS: ReadonlyArray<[string, string]> = [
-  ["controller", "Player 1"], ["battery", "Battery"],
-  ["builtin", "Built-in controller"], ["priority", "Controller priority"],
-  ["tv-controller", "TV controller"], ["controller-settings", "Controller settings"],
+  ["controller", "Player 1"], ["battery", "Controller Battery"],
+  ["builtin", "Built-in Controller"], ["priority", "Controller Priority"],
+  ["tv-controller", "TV Dock Behavior"], ["controller-settings", "Controller Settings"],
 ];
 
 /** Settings placeholders.
@@ -144,17 +144,17 @@ function settingsTiles(): Tile[] {
   const entry = (id: string, title: string, detail: string): Tile =>
     ({ id, title, value: "Not available", tone: "unavailable", detail });
   return [
-    entry("quick-actions", "Quick actions",
+    entry("quick-actions", "Quick Actions",
       "No customisable action set is stored; the rail has no verified ports."),
     // The real control is the native adapter row, not a tile. The approved
     // composition still carries a card here, so it says where the control is
     // rather than pretending none exists.
-    entry("shortcut", "Menu shortcut",
+    entry("shortcut", "Command Center Shortcut",
       "Configured from the shortcut row above, not from this card."),
     entry("appearance", "Appearance", "No appearance preference is stored."),
     entry("updates", "Updates", "Re-Gear does not check for updates."),
     entry("diagnostics", "Diagnostics", "Diagnostics are configured from the main panel."),
-    entry("about", "About", "No build detail is published to this view."),
+    entry("about", "About Re-Gear", "No build detail is published to this view."),
   ];
 }
 
@@ -176,6 +176,7 @@ function settingsTiles(): Tile[] {
 function quickTiles(
   performance: Tile[], egpu: Tile[], controller: Tile[],
   displayTarget: Evidence | undefined,
+  controllerSummary: Tile | null,
 ): Tile[] {
   // `as` re-ids a summary card: Quick shows the same reading as another tab
   // under the identity the approved Quick composition gives it, so the two can
@@ -189,7 +190,7 @@ function quickTiles(
   // quiet and says so, and only `verified` earns the tone a player reads as
   // "this is true right now".
   const target: Tile = {
-    id: "display", title: "Display target",
+    id: "display", title: "Display Target",
     value: displayTarget?.known ? displayTarget.text : "Unknown",
     tone: displayTarget ? evidenceTone(displayTarget) : "unavailable",
     detail: !displayTarget?.known
@@ -204,8 +205,10 @@ function quickTiles(
     pick(performance, "manual"),
     pick(performance, "auto"),
     target,
-    pick(egpu, "link", "eGPU", "egpu"),
-    pick(controller, "controller", "Controller"),
+    pick(egpu, "link", "eGPU Status", "egpu"),
+    // Presence, projected from the same presentation. NOT the Controllers
+    // tab's Player 1 card, which is an assignment question with no provider.
+    controllerSummary ?? pick(controller, "controller", "Controller Status"),
     // Last, and wide, matching the approved layout.
     { ...disconnect, wide: true },
   ].filter((tile): tile is Tile => tile !== null);
@@ -239,7 +242,8 @@ export function buildTiles(readings: Readings): TileView {
     : unknownTiles(UNKNOWN_PERFORMANCE);
 
   return {
-    quick: quickTiles(performance, egpu, controller, fresh ? readings.displayTarget : undefined),
+    quick: quickTiles(performance, egpu, controller, fresh ? readings.displayTarget : undefined,
+      controllerFresh && readings.controller ? controllerSummaryTile(readings.controller) : null),
     performance, egpu, controllers: controller, settings: settingsTiles(),
   };
 }

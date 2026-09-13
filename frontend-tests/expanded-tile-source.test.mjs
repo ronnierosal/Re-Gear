@@ -55,6 +55,46 @@ const full = () => ({
 const perfTiles = (readings) => buildTiles(readings).performance;
 const perfValues = (readings) => perfTiles(readings).map((tile) => tile.value);
 
+test("Quick reports observed presence while Controllers keeps Player 1 unknown", () => {
+  // Presence IS observed; player order is not. Quick's approved card is
+  // Controller Status, so dropping a truthful presence reading because a
+  // different question is unanswerable would be its own kind of dishonesty.
+  const view = buildTiles(full());
+  const quick = view.quick.find((tile) => tile.id === "controller");
+  const assignment = view.controllers.find((tile) => tile.id === "controller");
+
+  assert.equal(quick.title, "Controller Status");
+  assert.notEqual(quick.value, "Unknown", "presence was observed and must be reported");
+  assert.match(quick.detail, /player order not established/i,
+    "the summary must not imply it answers the assignment question");
+
+  assert.equal(assignment.title, "Player 1");
+  assert.match(assignment.value, /unknown|not available/i);
+  assert.equal(assignment.tone, "unavailable");
+});
+
+test("the Quick summary grades by precision, never by presence alone", () => {
+  const withPrecision = (precision, precisionNote = null) => buildTiles({
+    ...full(),
+    controller: { ...full().controller, precision, precisionNote },
+  }).quick.find((tile) => tile.id === "controller");
+
+  assert.equal(withPrecision("exact").tone, "active");
+  // Known, but not exact: it may not wear the tone a player reads as
+  // "this is true right now".
+  const partial = withPrecision("partial", "Only one source reported");
+  assert.equal(partial.tone, "quiet");
+  assert.match(partial.detail, /Only one source reported/);
+  assert.equal(withPrecision("unknown").tone, "unavailable");
+});
+
+test("an unread controller source leaves Quick unknown rather than guessing", () => {
+  const quick = buildTiles({ ...full(), controllerFresh: false })
+    .quick.find((tile) => tile.id === "controller");
+  assert.equal(quick.value, "Unknown");
+  assert.equal(quick.tone, "unavailable");
+});
+
 test("controller evidence is gated by its own reading, not the snapshot", () => {
   // Peripheral status arrives over a different transport and carries no
   // observation timestamp at all, so the snapshot's age says nothing about it
