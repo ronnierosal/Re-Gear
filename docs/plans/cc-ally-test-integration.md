@@ -1,0 +1,61 @@
+# Command Center Ally test integration
+
+Status: stopped at the user-defined runtime contract gate, 2026-09-13.
+Driver: Primary UI wiring. Runtime acceptance: Primary eGPU.
+
+## Pinned inputs
+
+- Main: `da60e21` after a successful origin fetch.
+- Authoritative presentation: PR 306,
+  `4380cf80c34215f2690d34a090ec5f8677bb5efd`.
+- Latest hardware-validated runtime confirmed by its owner: PR 304,
+  `f6059fad8c213a059aa77cbba15524ef2d9149ae`, version 0.3.98,
+  tag `checkpoint/0.3.98-egpu-cycle`.
+- Live tile candidate: PR 276,
+  `13649ac54365f210c6546d63f2e812514465470a`; accepted broad wiring
+  candidate `87b6b56dde6cc208bdb8fbf9a9fcc7f179a91291` is not the current
+  hardware runtime baseline.
+- Completed local utility wiring:
+  `74b560adaa1c55869d3f17c3a9d855b2a8ac8250`. Its 826 frontend test passes
+  belong to that candidate, not to an integrated Ally build.
+- PR 315 power backend `5ad4fb46d70c05b164ac23431db5b0a18ebeb04f`
+  and PR 316 coordinator `5705fc91ab2a74c1742585b46faf95416a3f65c4`
+  are source-reviewed/offline-tested, not installed or hardware-validated.
+- PR 317 authorization `b3365d797b81e284861b58d814e4712998499d7d`
+  is not accepted for production.
+
+## Stop conditions encountered
+
+The requested functional sleep choices do not map to the validated runtime.
+At f6059fa, `main.py` rejects `whole_dock_sleep` before teardown with
+`dock_power.sleep_unverified`. `dock_power_service.py` also describes sleep
+as unavailable. The runtime owner confirms that the observed sleep attempt
+was blocked by inhibitors; no completed sleep/wake trial supports promotion.
+Importing PR 315 to fulfill the UI requirement would introduce the experimental
+runtime behavior explicitly excluded by the mission.
+
+The requested one-time Authorize popup has no complete production target.
+At PR 317's pinned head, `BoltDeviceAuthorizationRunner.argv` still constructs
+`boltctl enroll --policy auto`; there is no actual one-time authorize runner.
+The runtime owner also confirms that the retained intentional-disconnect
+producer/restart handling and thin RPC integration are missing. Enrollment
+must not be substituted for the requested one-time authorization.
+
+The user explicitly requires stopping on a semantic UI/runtime action mismatch.
+No runtime or presentation changes have been made in this integration worktree.
+No combined candidate, new version, ZIP, installation, or device test is claimed.
+
+## Preserved evidence and next decision
+
+The prior golden ZIP remains the rollback artifact:
+`Re-Gear-0.3.98.zip`, 976983 bytes, SHA-256
+`aa14dcab885492368ee86e26523a8da7cd156d7483d097ba86f6814ebbf413da`.
+The owner last verified 0.3.98 installed; current reachability and mode remain
+unknown. No SSH or hardware operation was attempted in this pass.
+
+Resume with either an explicitly narrowed golden-runtime visual build where
+unsupported sleep/authorization actions remain visible and unavailable, or
+after the runtime owner delivers accepted contracts and the separately
+supervised validation needed for those actions. Preserve PR 306 presentation,
+the single live publisher, and golden `disconnect_only` behavior in either case.
+Do not treat this checkpoint as approval for an experimental power trial.
