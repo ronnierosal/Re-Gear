@@ -23,6 +23,12 @@ export const commandCenterButtonContract = {
   utilities: ["brightness", "volume"] as const satisfies readonly UtilityId[],
   quickActions: ["mic", "wifi", "overlay", "recording"] as const satisfies readonly UtilityId[],
   egpuActions: ["switch-handheld", "safe-disconnect", "resolution", "disconnect-sleep", "disconnect-shutdown", "status"] as const satisfies readonly EgpuQuickActionId[],
+  directActions: {
+    /** One A press starts the existing guarded Safe Disconnect workflow.
+     * Do not open an intermediate detail page or second confirmation screen.
+     * Runtime may still refuse/abort if safety gates are not satisfied. */
+    safeDisconnect: "single-press",
+  },
   customize: {
     quickTapY: "swap-main-actions",
     holdY: "move-mode",
