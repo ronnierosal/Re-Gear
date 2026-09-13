@@ -24,8 +24,10 @@ from regear.adapters.steamos.commands import (  # noqa: E402
 )
 
 
-#: The dock's real id, as `boltctl list` prints it.
-VALID = "b9010000-0072-741e-03c4-fed98ab0a808"
+#: Synthetic, and deliberately so. A Thunderbolt router UUID is a hardware
+#: unique id, which SAFETY_INVARIANTS #12 requires redacted -- committing a
+#: real one as a fixture would put the maintainer's own dock in the repo.
+VALID = "0a1b2c3d-4e5f-6a7b-8c9d-0e1f2a3b4c5d"
 
 
 class Completed:
@@ -69,10 +71,10 @@ class AnythingThatIsNotADeviceIdIsRefused(unittest.TestCase):
         VALID + "0",
         " " + VALID,
         VALID + " ",
-        "b9010000_0072_741e_03c4_fed98ab0a808",
+        "0a1b2c3d_4e5f_6a7b_8c9d_0e1f2a3b4c5d",
         None,
         1,
-        b"b9010000-0072-741e-03c4-fed98ab0a808",
+        b"0a1b2c3d-4e5f-6a7b-8c9d-0e1f2a3b4c5d",
         ["--policy", "manual"],
     )
 

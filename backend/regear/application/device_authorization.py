@@ -16,6 +16,17 @@ something else.  So the caller's fresh reading is assessed again immediately
 before enrolling, and a state that has moved refuses rather than enrolling
 whatever happens to be attached now.
 
+**The player never sees a hardware id, and neither does an RPC.**  A
+Thunderbolt router UUID is a hardware unique identifier, which
+`SAFETY_INVARIANTS` #12 requires redacted from diagnostics.  So the device is
+addressed outwards by an opaque token minted per attachment: random, never
+derived from the UUID, stable while that attachment lasts so a status poll does
+not make the card flicker, and invalidated the moment the dock goes away.  That
+is also what makes "bind the confirmation to the same device" enforceable
+rather than aspirational -- a replug mints a new token, so a confirmation
+drawn against the old one cannot authorize the new dock.  The token is
+consumable once, so a double-press cannot produce two enrolments.
+
 **A zero exit is not proof.**  `boltctl` accepting the request says it was
 taken, not that the device became trusted, so the outcome carries what the
 executor reported and the caller re-reads state to learn what actually
@@ -28,6 +39,7 @@ changed their mind should not have to find a settings screen.
 
 from __future__ import annotations
 
+import secrets
 from dataclasses import dataclass
 
 from ..domain.device_authorization import (
@@ -46,9 +58,9 @@ class DeviceAuthorizationOutcome:
     #: device is now trusted -- the caller re-reads for that.
     requested: bool
     code: str
-    #: The device the request named, so a result is never ambiguous about which
-    #: dock it belongs to.
-    uuid: str = ""
+    #: The attachment-scoped token the request named. Never a hardware id, so a
+    #: result can be logged and shown without leaking which dock this is.
+    token: str = ""
 
 
 class DeviceAuthorizationService:
@@ -57,13 +69,35 @@ class DeviceAuthorizationService:
     def __init__(self, commands: DeviceAuthorizationPort) -> None:
         self._commands = commands
         self._offered = False
+        self._token = ""
+        self._token_uuid = ""
 
     # -- the latch -----------------------------------------------------------
 
     def observe_device(self, present: bool) -> None:
-        """Re-arm when the dock goes away, so a replug asks again."""
+        """Re-arm when the dock goes away, so a replug asks again.
+
+        The token dies with the attachment. Anything still holding the old one
+        is holding a reference to a dock that is no longer there.
+        """
         if not present:
             self._offered = False
+            self._token = ""
+            self._token_uuid = ""
+
+    def candidate_token(self, uuid: str) -> str:
+        """The opaque handle for this attachment, minted once and then stable.
+
+        Random rather than derived: a token that could be reversed into the
+        UUID would leak the hardware id it exists to keep out of the payload.
+        """
+        if type(uuid) is not str or not uuid:
+            return ""
+        if self._token and self._token_uuid == uuid:
+            return self._token
+        self._token = secrets.token_hex(16)
+        self._token_uuid = uuid
+        return self._token
 
     @property
     def offered(self) -> bool:
@@ -97,7 +131,7 @@ class DeviceAuthorizationService:
 
     def enroll(
         self,
-        uuid: str,
+        token: str,
         *,
         confirmed: bool,
         device_present: bool,
@@ -107,17 +141,28 @@ class DeviceAuthorizationService:
     ) -> DeviceAuthorizationOutcome:
         """Trust one named device, after re-checking that it still needs it.
 
-        `confirmed` must be exactly `True`. The remaining arguments are the
-        caller's *fresh* reading, not the one the prompt was drawn from.
+        `token` is the attachment-scoped handle the prompt was drawn against,
+        never a hardware id. `confirmed` must be exactly `True`. The remaining
+        arguments are the caller's *fresh* reading, not the one the prompt was
+        drawn from.
         """
         if confirmed is not True:
             return DeviceAuthorizationOutcome(
-                False, "device_authorization.confirmation_required", uuid
+                False, "device_authorization.confirmation_required", ""
             )
-        if type(uuid) is not str or not uuid:
+        # An unknown token is a confirmation for a dock that is not the one in
+        # front of us -- a replug, a second device, or a stale dialog. Refuse
+        # rather than resolving it to whatever happens to be attached.
+        if (
+            type(token) is not str
+            or not token
+            or not self._token
+            or token != self._token
+        ):
             return DeviceAuthorizationOutcome(
-                False, "device_authorization.uuid_invalid", ""
+                False, "device_authorization.token_stale", ""
             )
+        uuid = self._token_uuid
         # Re-assessed with the latch ignored: the offer being spent is what got
         # us here, and must not be the reason the act is refused.
         fresh = assess_device_authorization(
@@ -128,10 +173,13 @@ class DeviceAuthorizationService:
             already_offered=False,
         )
         if not fresh.offered:
-            return DeviceAuthorizationOutcome(False, fresh.code, uuid)
+            return DeviceAuthorizationOutcome(False, fresh.code, token)
         self._offered = True
+        # Single-flight: spend the token before acting, so a second press
+        # cannot enrol twice while the first call is still in the executor.
+        self._token = ""
         result: DeviceEnrollmentResult = self._run(uuid)
-        return DeviceAuthorizationOutcome(result.enrolled, result.code, uuid)
+        return DeviceAuthorizationOutcome(result.enrolled, result.code, token)
 
     def _run(self, uuid: str) -> DeviceEnrollmentResult:
         try:

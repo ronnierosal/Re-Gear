@@ -1,9 +1,18 @@
 """Spending one prompt per attachment, and enrolling only on an explicit yes.
 
-The behaviour worth protecting is not the happy path. It is that the state is
-re-checked at the moment of acting rather than trusted from whenever the dialog
-was drawn, and that nothing but an exact `True` gets past the confirmation --
-because what this grants is direct access to system memory.
+Three things are protected here.
+
+**The state is re-checked when acting**, not trusted from whenever the dialog
+was drawn -- a dock can be unplugged, replaced or trusted by something else
+while a prompt sits on screen.
+
+**Nothing but an exact `True` gets past the confirmation**, because what this
+grants is direct access to system memory.
+
+**The device is addressed by an opaque attachment token, never a hardware id.**
+A router UUID is a hardware unique identifier and `SAFETY_INVARIANTS` #12 keeps
+those out of payloads and diagnostics. The token is also what makes "bind the
+confirmation to the same device" enforceable: a replug retires it.
 """
 
 from __future__ import annotations
@@ -24,7 +33,9 @@ from regear.ports.device_authorization import (  # noqa: E402
 )
 
 
-UUID = "b9010000-0072-741e-03c4-fed98ab0a808"
+#: Synthetic. Real router UUIDs are hardware unique ids, and #12 keeps those out
+#: of the repository as much as out of diagnostics.
+UUID = "0a1b2c3d-4e5f-6a7b-8c9d-0e1f2a3b4c5d"
 
 #: The state a brand-new dock arrives in.
 NEW_DOCK = {
@@ -53,6 +64,12 @@ class FakeCommands:
 def service(**kwargs):
     commands = FakeCommands(**kwargs)
     return DeviceAuthorizationService(commands), commands
+
+
+def armed(**kwargs):
+    """A service holding a live token for the attached dock, as after a prompt."""
+    svc, commands = service(**kwargs)
+    return svc, commands, svc.candidate_token(UUID)
 
 
 class TheOfferIsOncePerAttachment(unittest.TestCase):
@@ -85,8 +102,8 @@ class NothingButAnExactTrue(unittest.TestCase):
     def test_truthy_values_are_not_a_confirmation(self):
         for value in (1, "yes", "true", [1], {"ok": True}, object(), 1.0):
             with self.subTest(confirmed=repr(value)):
-                svc, commands = service()
-                outcome = svc.enroll(UUID, confirmed=value, **NEW_DOCK)
+                svc, commands, token = armed()
+                outcome = svc.enroll(token, confirmed=value, **NEW_DOCK)
                 self.assertFalse(outcome.requested)
                 self.assertEqual(
                     outcome.code, "device_authorization.confirmation_required"
@@ -96,40 +113,35 @@ class NothingButAnExactTrue(unittest.TestCase):
     def test_falsy_values_are_refused_too(self):
         for value in (False, None, 0, ""):
             with self.subTest(confirmed=repr(value)):
-                svc, commands = service()
+                svc, commands, token = armed()
                 self.assertEqual(
-                    svc.enroll(UUID, confirmed=value, **NEW_DOCK).code,
+                    svc.enroll(token, confirmed=value, **NEW_DOCK).code,
                     "device_authorization.confirmation_required",
                 )
                 self.assertEqual(commands.calls, [])
 
     def test_a_refused_confirmation_does_not_spend_the_offer(self):
         """Nothing happened, so the player can still be asked."""
-        svc, _ = service()
-        svc.enroll(UUID, confirmed=False, **NEW_DOCK)
+        svc, _, token = armed()
+        svc.enroll(token, confirmed=False, **NEW_DOCK)
         self.assertFalse(svc.offered)
 
 
 class TheStateIsRecheckedWhenActing(unittest.TestCase):
     def _refused(self, expected, **changed):
-        svc, commands = service()
+        svc, commands, token = armed()
         svc.note_offered()
-        state = {**NEW_DOCK, **changed}
-        outcome = svc.enroll(UUID, confirmed=True, **state)
+        outcome = svc.enroll(token, confirmed=True, **{**NEW_DOCK, **changed})
         self.assertFalse(outcome.requested)
         self.assertEqual(outcome.code, expected)
-        self.assertEqual(
-            commands.calls, [], f"{changed!r} still reached boltd"
-        )
+        self.assertEqual(commands.calls, [], f"{changed!r} still reached boltd")
 
     def test_a_dock_unplugged_since_the_prompt_refuses(self):
         self._refused("device_authorization.no_device", device_present=False)
 
     def test_a_dock_authorized_since_the_prompt_refuses(self):
         """Something else trusted it while the dialog sat there."""
-        self._refused(
-            "device_authorization.already_authorized", authorized=True
-        )
+        self._refused("device_authorization.already_authorized", authorized=True)
 
     def test_a_dock_enrolled_since_the_prompt_refuses(self):
         self._refused(
@@ -146,60 +158,97 @@ class TheStateIsRecheckedWhenActing(unittest.TestCase):
 
     def test_a_spent_offer_does_not_block_the_act_it_authorized(self):
         """The latch is why we are here; it must not be why we refuse."""
-        svc, commands = service()
+        svc, commands, token = armed()
         svc.note_offered()
-        outcome = svc.enroll(UUID, confirmed=True, **NEW_DOCK)
+        outcome = svc.enroll(token, confirmed=True, **NEW_DOCK)
         self.assertTrue(outcome.requested)
         self.assertEqual(commands.calls, [UUID])
 
 
-class TheOutcomeIsHonest(unittest.TestCase):
-    def test_it_reports_the_executor_result_and_names_the_device(self):
+class TheTokenBindsTheConfirmationToOneAttachment(unittest.TestCase):
+    def test_it_is_stable_while_the_dock_stays_put(self):
+        """A status poll must not make the card change identity."""
+        svc, _ = service()
+        first = svc.candidate_token(UUID)
+        svc.observe_device(True)
+        self.assertEqual(svc.candidate_token(UUID), first)
+
+    def test_it_never_contains_the_hardware_id(self):
+        svc, _ = service()
+        token = svc.candidate_token(UUID)
+        self.assertNotIn(UUID, token)
+        self.assertNotIn(UUID.replace("-", ""), token)
+
+    def test_a_replug_retires_it_and_mints_a_new_one(self):
+        """This is what makes same-device binding enforceable, not hoped for."""
         svc, commands = service()
-        outcome = svc.enroll(UUID, confirmed=True, **NEW_DOCK)
+        stale = svc.candidate_token(UUID)
+        svc.observe_device(False)
+        fresh = svc.candidate_token(UUID)
+        self.assertNotEqual(stale, fresh)
+        self.assertEqual(
+            svc.enroll(stale, confirmed=True, **NEW_DOCK).code,
+            "device_authorization.token_stale",
+        )
+        self.assertEqual(commands.calls, [])
+
+    def test_a_token_is_single_flight(self):
+        """A double press must not enrol twice."""
+        svc, commands, token = armed()
+        self.assertTrue(svc.enroll(token, confirmed=True, **NEW_DOCK).requested)
+        second = svc.enroll(token, confirmed=True, **NEW_DOCK)
+        self.assertFalse(second.requested)
+        self.assertEqual(second.code, "device_authorization.token_stale")
+        self.assertEqual(commands.calls, [UUID])
+
+    def test_a_stale_or_unknown_token_never_reaches_the_executor(self):
+        for value in ("", None, 7, "deadbeef", UUID):
+            with self.subTest(token=repr(value)):
+                svc, commands, _ = armed()
+                outcome = svc.enroll(value, confirmed=True, **NEW_DOCK)
+                self.assertEqual(
+                    outcome.code, "device_authorization.token_stale"
+                )
+                self.assertEqual(commands.calls, [])
+
+
+class TheOutcomeIsHonest(unittest.TestCase):
+    def test_it_reports_the_executor_result_and_names_the_token(self):
+        svc, commands, token = armed()
+        outcome = svc.enroll(token, confirmed=True, **NEW_DOCK)
         self.assertTrue(outcome.requested)
         self.assertEqual(
             outcome.code, "device_authorization.enroll_accepted_unverified"
         )
-        self.assertEqual(outcome.uuid, UUID)
+        self.assertEqual(outcome.token, token)
+        # The executor still needs the real id; the OUTCOME must not carry it.
         self.assertEqual(commands.calls, [UUID])
+        self.assertNotIn(UUID, outcome.token + outcome.code)
 
     def test_an_executor_failure_is_reported_as_itself(self):
-        svc, _ = service(
+        svc, _, token = armed(
             result=DeviceEnrollmentResult(
                 False, "device_authorization.enroll_failed"
             )
         )
-        outcome = svc.enroll(UUID, confirmed=True, **NEW_DOCK)
+        outcome = svc.enroll(token, confirmed=True, **NEW_DOCK)
         self.assertFalse(outcome.requested)
         self.assertEqual(outcome.code, "device_authorization.enroll_failed")
 
     def test_an_executor_that_raises_is_a_failure_not_a_crash(self):
-        svc, _ = service(raising=True)
-        outcome = svc.enroll(UUID, confirmed=True, **NEW_DOCK)
+        svc, _, token = armed(raising=True)
+        outcome = svc.enroll(token, confirmed=True, **NEW_DOCK)
         self.assertFalse(outcome.requested)
-        self.assertEqual(
-            outcome.code, "device_authorization.enroll_unavailable"
-        )
-
-    def test_an_empty_uuid_never_reaches_the_executor(self):
-        for value in ("", None, 7):
-            with self.subTest(uuid=repr(value)):
-                svc, commands = service()
-                outcome = svc.enroll(value, confirmed=True, **NEW_DOCK)
-                self.assertEqual(
-                    outcome.code, "device_authorization.uuid_invalid"
-                )
-                self.assertEqual(commands.calls, [])
+        self.assertEqual(outcome.code, "device_authorization.enroll_unavailable")
 
     def test_acting_spends_the_offer_even_when_the_executor_fails(self):
         """A failed enrol should not re-prompt in a loop on the same dock."""
-        svc, _ = service(
+        svc, _, token = armed(
             result=DeviceEnrollmentResult(
                 False, "device_authorization.enroll_failed"
             )
         )
-        svc.enroll(UUID, confirmed=True, **NEW_DOCK)
+        svc.enroll(token, confirmed=True, **NEW_DOCK)
         self.assertTrue(svc.offered)
 
 
