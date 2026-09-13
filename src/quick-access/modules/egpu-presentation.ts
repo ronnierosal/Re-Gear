@@ -41,6 +41,38 @@ function evidence(text: string | null, confidence?: string): Evidence {
   return { text, known: true, verified: confidence === "verified" };
 }
 
+/** Absent evidence, for a caller with nothing yet to grade. */
+export const UNKNOWN_EVIDENCE: Evidence = UNKNOWN;
+
+/** Which panel is being driven, graded by the observation's own confidence.
+ *
+ * Display target is one of the independent readings this module exists to
+ * keep apart, so it is derived from `active` alone and never from
+ * attachment. It belongs here rather than at the call site: a second copy of
+ * this mapping is a second copy of the safety argument, and the one that
+ * drifts is the one nobody is reading.
+ *
+ * Two panels reported active is mirrored output, which is a third answer
+ * rather than "External" -- naming one of two driven panels hides the other
+ * exactly when a player is deciding whether the TV is live.
+ *
+ * The grade is the weakest confidence among the entries the answer rests on,
+ * because an answer is only as verified as its least verified input. */
+export function displayTargetEvidence(
+  displays: SnapshotPayload["snapshot"]["displays"] | null | undefined,
+): Evidence {
+  const driven = (displays ?? []).filter((display) => display.active === true
+    && (display.kind === "external" || display.kind === "internal"));
+  if (driven.length === 0) return UNKNOWN;
+  const external = driven.some((display) => display.kind === "external");
+  const internal = driven.some((display) => display.kind === "internal");
+  return {
+    text: external && internal ? "External + handheld" : external ? "External" : "Handheld",
+    known: true,
+    verified: driven.every((display) => display.confidence === "verified"),
+  };
+}
+
 export type EgpuPresentation = {
   /** Physical link only. Says nothing about rendering or display. */
   connection: Evidence;
