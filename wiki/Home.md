@@ -1,5 +1,13 @@
 # Re-Gear Wiki
 
+## Player manual — start here
+
+New to Re-Gear? Read the **[Player Manual](Player-Manual)** for a plain-language
+tour: what Re-Gear does, where to find controls, what the messages mean, and how
+to get help. No technical background or screenshots are needed to follow it.
+The manual explains development features; read the availability notice below
+before installing a build.
+
 **Audience:** players, testers, and contributors<br>
 **Reviewed:** 2026-09-08<br>
 **Maturity:** experimental development; no supported public release
