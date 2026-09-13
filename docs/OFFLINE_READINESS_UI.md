@@ -47,7 +47,10 @@ presentation (`src/journey-status-delivery.ts:12,60`,
   no timer or document scan (`src/offline-focus-checks.tsx:107-113`).
 - Each window gets a `focusin` listener and one `MutationObserver` that inspects
   only the active element; library tiles are never enumerated
-  (`src/offline-focus-checks.tsx:92-106`).
+  (`src/offline-focus-checks.tsx:92-106`). `syncViews` also calls `refresh` on
+  each window as it is discovered, so a tile that is already focused when the
+  plugin loads is considered immediately and then settles normally
+  (`src/offline-focus-checks.tsx:104,113`).
 - Tiles are matched by `div[role="tabpanel"] div[role="gridcell"]` and
   `.ReactVirtualized__Grid__innerScrollContainer div[role="listitem"]`
   (`src/offline-tile-badge.ts:5`).
@@ -143,7 +146,12 @@ Two consequences worth stating plainly:
 - The positive asset can appear, but only ever labelled "Likely offline-ready"
   or "Tested offline". The mounted UI never says "Ready to try offline", and the
   backend's `ready_to_try_offline` status remains unreachable from this Steam
-  report source.
+  report source. In practice a green badge is reached *from* a backend `unknown`
+  report: the categorical layer admits it as incomplete evidence, and the
+  confidence layer then finds complete local preparation plus explicit
+  compatibility facts and the single-player category. That is deliberate and
+  documented, not a leak — but it means the green badge is a frontend heuristic,
+  never independently verified offline authorization.
 - "Tested offline" is currently unreachable in the mounted path.
   `offlineConfidenceForGame` is called there without a confirmation binding
   (`src/offline-focus-checks.tsx:73`), so `offlineTestMemory.confirm` is never
@@ -180,8 +188,21 @@ missing native ID or host simply yields no badge.
 
 ## Defined but not mounted
 
-These exist in source and are covered by tests. Treat them as available material,
-not as current player-visible behavior.
+Removing the manual surface was a deliberate product decision, not a regression:
+`docs/CURRENT_STATE.md:409-415` records that 0.3.35-offline.1, revision
+`c0590e5`, removed the manual Offline Readiness panel, game picker, check button
+and manual test confirmation from Quick Access, keeping the plugin-lifecycle
+automatic checks and artwork badges, and notes that the manual-panel source is
+dormant and tree-shaken from the build.
+
+The consequence is a **deferred explanation surface**: today a player sees a
+badge and its accessible label, but has no way to read the detailed preparation
+reasons or record a "Tested offline" attestation. Whether to give the automatic
+path its own explanation entry point is an open product question for the primary
+and the UI owner. It is not licence to restore the old panel layout.
+
+The pieces below exist in source and are covered by tests. Treat them as
+available material, not as current player-visible behavior.
 
 - `OfflineReadinessPanel` (`src/offline-readiness-panel.tsx`) — no importer. It
   carries the installed-game picker, an explicit "Check this game" action, "Why
@@ -205,9 +226,20 @@ propose an Offline Mode, automatic confirmation, or a new surface.
 ## Remaining validation
 
 Software behavior above is covered by the frontend suites in
-`frontend-tests/offline-*.test.mjs`. No golden behavior ID currently names
-Offline Readiness. Native rendering, controller behavior and refresh recovery in
-Home and Library remain unvalidated on a device; that is tracked solely by
+`frontend-tests/offline-*.test.mjs`, which passed at `da60e21` in an independent
+read-only baseline review — 68 tests together with `steam-app-details-request`,
+plus typecheck. That review is a local agent-coordination record rather than a
+repository artifact; its results are summarised here. Those suites transpile the real
+focus module but mock the details session, native source, classification,
+confidence and badge attachment, so they exercise each module rather than the
+combined production journey. There is no React panel-mount test. Known coverage
+gaps: native immediate account and session events, navigation-window replacement
+and cleanup, startup against a partially initialized native DOM, and real
+callback or RPC latency.
+
+No golden behavior ID currently names Offline Readiness. Native rendering,
+controller behavior and refresh recovery in Home and Library remain unvalidated
+on a device; that is tracked solely by
 [issue 21](https://github.com/ronnierosal/Re-Gear/issues/21). Passing frontend
 tests are not evidence of native rendering, and no badge state is evidence that a
 game will actually launch offline.

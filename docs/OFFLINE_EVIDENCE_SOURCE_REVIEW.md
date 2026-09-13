@@ -235,9 +235,11 @@ configuration writes, or game launches.
   handling, immediate-callback safety, late/duplicate reply suppression and
   strict private AppID validation. Attribution and license terms are in
   `THIRD_PARTY_NOTICES.md`.
-- Downloaded research artifact, ignored at `out/offline-source-research/steam-client-chunk.js`,
-  SHA-256 `26ac253942bfaa80a48cc7b3176b2fcbef56c7c0eda3d5845562c68b0ed0b94d`.
-  Source-inspection evidence only; no upstream code is bundled or copied.
+- Research artifact downloaded during the 2026-09-03 inspection to the ignored
+  path `out/offline-source-research/steam-client-chunk.js`, SHA-256
+  `26ac253942bfaa80a48cc7b3176b2fcbef56c7c0eda3d5845562c68b0ed0b94d`. It is not
+  tracked and is absent from a fresh clone. Source-inspection evidence only; no
+  upstream code is bundled or copied.
 
 ---
 

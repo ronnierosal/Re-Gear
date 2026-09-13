@@ -43,8 +43,13 @@ and have no production caller: the manual Quick Access panel
 (`src/offline-readiness-panel.tsx`), the player attestation write path that would
 produce "Tested offline", and the admission-gated synchronous evidence service
 (`backend/regear/application/offline_readiness.py`) with its overview adapter.
-Activating any of them is a separate assigned decision, not an implicit next
-step.
+The manual surface was removed deliberately in 0.3.35-offline.1, revision
+`c0590e5` (`docs/CURRENT_STATE.md:409-415`), leaving the source dormant and
+tree-shaken from the build. The open question it leaves is a **deferred
+explanation surface**: a player sees a badge and its label but cannot read the
+preparation reasons or record an attestation. Choosing an entry point for that is
+a product decision for the primary and the UI owner, not an implicit next step,
+and not a licence to restore the old panel layout.
 
 **Mounted but unwired.** The Quick Access "Offline readiness" journey row renders
 from `payload.journey`, and the backend snapshot emits no `journey` key, so it
@@ -58,16 +63,26 @@ Nothing here is evidence that a game launches offline.
 
 ## Verification evidence
 
-| Scope | Result | Revision |
-| --- | --- | --- |
-| `python -m unittest discover -s tests -p 'test_offline*.py'` | 45 passed | `da60e21`, 2026-09-13 |
+| Scope | Result | Revision | Source |
+| --- | --- | --- | --- |
+| `python -m unittest discover -s tests -p 'test_offline*.py'` | 45 passed | `da60e21`, 2026-09-13 | this workstream |
+| `node --test frontend-tests/offline*.test.mjs frontend-tests/steam-app-details-request.test.mjs` | 68 passed, 0 failed or skipped | `da60e21`, 2026-09-13 | independent baseline review |
+| `pnpm typecheck` | passed | `da60e21`, 2026-09-13 | independent baseline review |
 
-Frontend coverage lives in `frontend-tests/offline-*.test.mjs` — badge bundling,
-badge layout, badge state, confidence, confidence session, details session, focus
-checks, native source, readiness detail, test memory and tile badge. Those suites
-were not executed for this documentation pass; the frontend timings quoted in the
-UI contract were read from source and from the assertions in
-`frontend-tests/offline-focus-checks.test.mjs`.
+The frontend figures come from an independent read-only baseline review of this
+head, held as a local agent-coordination record rather than a repository
+artifact. That review also notes their limit: the focus harness transpiles the
+real module but mocks the details
+session, native source, classification, confidence and badge attachment, so the
+68 passes exercise modules rather than the combined production journey. There is
+no React panel-mount test. Coverage gaps that review identified, none of them
+validated defects: native immediate account and session events,
+navigation-window replacement and cleanup, startup against a partially
+initialized native DOM, and real callback or RPC latency.
+
+PR 25 merged as `ebde3d06faeb0182f8f364d44b45c25c685bc334` and is an ancestor of
+`da60e21`, so the refresh and retry recovery it delivered is present in the
+reviewed head.
 
 No golden behavior ID names Offline Readiness, so
 `scripts/check_golden_behaviors.py` does not currently gate this feature.

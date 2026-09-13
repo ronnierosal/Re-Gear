@@ -61,7 +61,12 @@ positive folder index is never converted into proof of offline readiness.
    admission-gated synchronous evidence service with its overview adapter — and a
    fourth, the Quick Access journey row, is mounted with no backend source.
    Deciding their fate is assigned work, not an implicit next step.
-7. **Final player acceptance — last, and open.** One short controller-driven
+7. **Explanation surface — deferred, open.** Removing the manual panel in
+   0.3.35-offline.1 (`docs/CURRENT_STATE.md:409-415`) was deliberate and left the
+   automatic badge without a place to show its reasons or accept a "Tested
+   offline" attestation. Whether the automatic path gets its own explanation
+   entry point is a product decision for the primary and the UI owner.
+8. **Final player acceptance — last, and open.** One short controller-driven
    check of selection, wording, responsiveness and the displayed result, tracked
    by [issue 21](https://github.com/ronnierosal/Re-Gear/issues/21) together with
    refresh and retry recovery in Home and Library. An actual offline launch is a
