@@ -52,7 +52,7 @@ backend-specific layout decisions in presentation components.
 | Tabs | Quick Access, Performance, eGPU, Controllers, Settings horizontally; cyan selected text/underline, compact spacing, no oversized card tabs. The selected Quick Access tab is sufficient identification: **do not repeat a Quick Access title or “Essential controls while you play” subtitle above the tile grid.** |
 | Left utility strip | **Inside the main Command Center body**, slim dedicated column: sun icon, Brightness, percentage and vertical slider; divider; speaker icon, Volume, percentage and vertical slider. It should read as part of the main Re-Gear panel rather than two detached cards. Do not convert these to horizontal cards or move them into the right panel. |
 | Quick row 1 | FPS Target, Manual TDP, Auto TDP, Display. Icons and titles above separate values/details; adjustment affordance, TDP slider and Auto TDP toggle only dispatch through verified existing adapters. |
-| Quick row 2 | eGPU, Controller, Safe Disconnect spanning the remaining two columns. Safe Disconnect has distinct readiness emphasis and truthful warning/result wording. |
+| Quick row 2 | eGPU, Controller, and Safe Disconnect each occupy one cell. Safe Disconnect has distinct readiness emphasis and truthful warning/result wording. |
 | Right panel | Detached narrow action rail close to the right edge for direct thumb access, visible when the menu opens. Stacked Mic mute, Wi-Fi, Overlay, Record buttons. **Do not add a redundant “Quick actions” heading above the buttons.** Buttons scale with available viewport height/width instead of retaining fixed desktop-like dimensions. Game remains visible between panels. |
 | Footer | Compact controller prompts, including Y Customize where available, A Select and B Back; retain LB/RB tab navigation. Do not add a fake Xbox/Menu button; SteamOS already owns the system menu surface. |
 
@@ -145,7 +145,7 @@ not justify unusable touch targets, focus traps or bypassing hardware safety.
 - [ ] Left main panel and detached right action rail are recognizable against the approved composition.
 - [ ] Brightness and volume visually belong inside the main body, use vertical sliders and retain readable unavailable/live states.
 - [ ] Quick root has no duplicate title/subtitle between tabs and cards.
-- [ ] Exact five tabs, four-card first row, eGPU/controller/wide disconnect row.
+- [ ] Exact five tabs, four-card first row, eGPU/controller/one-cell disconnect row.
 - [ ] Right default actions are Mic mute, Wi-Fi, Overlay, Record; no redundant rail heading.
 - [ ] Right action buttons scale proportionally and remain thumb/controller friendly at the tested viewport sizes.
 - [ ] Header, proportions, rail widths, card spacing, text hierarchy and cyan focus compared directly with reference; intentional deviations explained.

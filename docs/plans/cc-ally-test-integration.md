@@ -1,6 +1,8 @@
 # Command Center Ally test integration
 
-Status: stopped at the user-defined runtime contract gate, 2026-09-13.
+Status: resumed as a narrowed golden-runtime UI test build, 2026-09-13.
+Ronnie explicitly requested starting a build for visual tuning; the Ally is offline.
+Historical stop conditions below explain why experimental power/auth remain unmounted.
 Driver: Primary UI wiring. Runtime acceptance: Primary eGPU.
 
 ## Pinned inputs
@@ -59,3 +61,21 @@ after the runtime owner delivers accepted contracts and the separately
 supervised validation needed for those actions. Preserve PR 306 presentation,
 the single live publisher, and golden `disconnect_only` behavior in either case.
 Do not treat this checkpoint as approval for an experimental power trial.
+
+## Resumed test candidate
+
+Normal merges: authoritative PR306 4380cf8, live publisher and utilities74b560a,
+goldenf6059fa, and reviewed mainffd6c7a. Main maintenance changes controller bitmap
+parsing and Auto TDP suspend-aware timing. eGPU runtime logic is preserved.
+Version declarations advance together to0.3.99.
+
+Obsolete wide flags and shell spans are removed to honor approved one-cell cards.
+All855 frontend and49 golden tests pass. Browser source comparisons at828x466 and
+1280x720 retain exact panel geometry; slider arrows adjust. Backend run:3512 tests,
+291 platform skips, sole failure a stale version declaration; fixed and all13
+version-contract tests pass. Final full backend verification follows.
+
+Included: live cards, brightness/volume, existing TDP controls, shortcut settings
+and golden Safe Disconnect. Unfinished: X/Y customization/move mounting, right-rail
+action providers, and new sleep/auth flows. No experimental flow activated.
+Preserve0.3.98 rollback; verify installed provenance when Ally is online.

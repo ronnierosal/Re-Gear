@@ -97,13 +97,13 @@ for (const [tab, ids] of [
   }
 }
 
-test("both live and unknown views retain the wide guarded disconnect entry", () => {
+test("both live and unknown views retain the one-cell guarded disconnect entry", () => {
   for (const readings of [live(), {}, { ...live(), fresh: false, controllerFresh: false }]) {
     const view = buildTiles(readings);
     for (const tab of ["quick", "egpu"]) {
       const tile = view[tab].find(({ id }) => id === "disconnect");
       assert.ok(tile, `${tab} must retain Safe Disconnect`);
-      assert.equal(tile.wide, true);
+      assert.equal(tile.wide, false);
       assert.equal(tile.tone, "warning");
       assert.doesNotMatch(tile.value, /safe to (?:unplug|disconnect)|ready to unplug/i);
     }

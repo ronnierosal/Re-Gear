@@ -45,7 +45,7 @@ The live source must preserve these IDs and order even when values are unknown:
 - Controllers: `controller`, `battery`, `builtin`, `priority`, `tv-controller`, `controller-settings`
 - Settings: `quick-actions`, `shortcut`, `appearance`, `updates`, `diagnostics`, `about`
 
-Safe Disconnect remains wide on Quick and eGPU.
+All cards, including Safe Disconnect on Quick and eGPU, occupy one cell. This supersedes the earlier wide-card layout.
 
 ## Current integration blockers / decisions
 
