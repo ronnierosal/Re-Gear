@@ -15,6 +15,7 @@ one action leaking into the other is what a shared helper makes easy.
 
 from __future__ import annotations
 
+import dataclasses
 import inspect
 import os
 import subprocess
@@ -843,6 +844,34 @@ class TheRunnerSatisfiesTheAuthorizationPort(unittest.TestCase):
                 ):
                     result = grant(runner(), name)
                 self.assertIsInstance(result, DeviceEnrollmentResult)
+
+
+class TheResultCannotBeEditedAfterTheFact(unittest.TestCase):
+    """An outcome is a record of what happened, not a mutable opinion.
+
+    `DeviceEnrollmentResult` travels from the executor out through the service
+    and into a payload.  If a later layer could rewrite `enrolled`, the honest
+    distinction this whole feature rests on -- that a request was accepted is
+    not that a device is trusted -- would be one assignment away from being
+    lost, and nothing would record that it had been.
+
+    Pinned because dropping `frozen=True` left the entire suite green.
+    """
+
+    def test_the_outcome_is_frozen(self):
+        result = DeviceEnrollmentResult(True, "device_authorization.ok")
+        for field, value in (("enrolled", False), ("code", "tampered")):
+            with self.subTest(field=field):
+                with self.assertRaises(dataclasses.FrozenInstanceError):
+                    setattr(result, field, value)
+        self.assertIs(result.enrolled, True)
+        self.assertEqual(result.code, "device_authorization.ok")
+
+    def test_the_outcome_is_hashable_so_it_can_be_recorded(self):
+        first = DeviceEnrollmentResult(True, "device_authorization.ok")
+        second = DeviceEnrollmentResult(True, "device_authorization.ok")
+        self.assertEqual(hash(first), hash(second))
+        self.assertEqual({first, second}, {first})
 
 
 class AcceptedIsNeverVerified(unittest.TestCase):

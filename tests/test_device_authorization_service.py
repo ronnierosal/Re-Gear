@@ -1920,6 +1920,46 @@ class NothingIsMintedForADeviceNobodyObserved(unittest.TestCase):
         self.assertFalse(outcome.requested)
         self.assertEqual(commands.calls, [])
 
+    def test_the_tokens_own_record_is_not_what_lets_a_confirmation_through(
+        self,
+    ):
+        """The same claim, with the layer in front of it taken out of the way.
+
+        The case above cannot actually reach it.  Observing the other dock
+        *retires* the attachment, which drops the token, so the confirmation
+        is refused as `token_stale` before `_confirm_locked` ever compares an
+        identity -- and the same is true of the swapped-dock journey in
+        `tests/test_device_authorization_composition.py`.  Every route in is
+        stopped a layer early, which is why deleting `uuid != self._uuid` from
+        that comparison leaves every other test in this repository green.
+
+        What is left standing is the token's own record, and the module
+        docstring is explicit that the record is *not* the authority: "a record
+        that agrees only with itself is how a UUID nobody had ever seen reached
+        `boltd`".  Today the two cannot disagree, because `_mint_token` will
+        only bind a token to the id this layer observed -- so the disagreement
+        is set up here directly, which is the honest way to test the inner half
+        of a defence in depth: the outer guard is removed, and the inner one
+        has to refuse on its own.  Without it the executor is handed a device
+        the observation layer never saw.
+        """
+        svc, commands, token = armed()
+        # The drift `_mint_token` exists to prevent: a live token whose record
+        # names a device this layer never observed. `_uuid` is still DOCK.
+        svc._token_uuid = OTHER_DOCK
+        outcome = confirm(svc, token, uuid=OTHER_DOCK)
+        self.assertFalse(outcome.requested)
+        self.assertEqual(
+            outcome.code,
+            "device_authorization.attachment_changed",
+            "the observed identity was not what refused this",
+        )
+        self.assertEqual(
+            commands.calls,
+            [],
+            "boltd was driven against a device nobody observed",
+        )
+
 
 class AnAbsentPollIsNotAnEvent(unittest.TestCase):
     """The reproduced defect: undocked is the default state, not a change."""

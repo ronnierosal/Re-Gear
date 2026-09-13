@@ -380,6 +380,39 @@ class TheWholeOrderAtOnce(unittest.TestCase):
                 self.assertFalse(result.offered)
 
 
+class PresenceIsReadForAbsenceNotForTruthiness(unittest.TestCase):
+    """A presence that is neither True nor None declines; it never offers.
+
+    The contract says `bool | None`, and both the adapter and the service honour
+    it.  This pins what happens when something else arrives anyway, because the
+    predicate is a public pure function and the cost of the two possible answers
+    is not symmetric: declining a real dock shows no prompt, while offering on a
+    value nobody can interpret asks the player to grant direct memory access on
+    the strength of a reading that was never taken.
+
+    Written because a mutation that narrowed the absence guard to `is False`
+    left the whole suite green -- the safe behaviour was real but unguarded.
+    """
+
+    def test_a_presence_that_is_not_true_never_offers(self):
+        for value in (0, 0.0, "", [], (), {}, set()):
+            with self.subTest(device_present=repr(value)):
+                verdict = assess(device_present=value)
+                self.assertFalse(verdict.offered)
+                self.assertEqual(verdict.code, "device_authorization.no_device")
+
+    def test_the_two_readings_that_are_contractual_keep_their_own_codes(self):
+        """None and False are different facts and must not be collapsed."""
+        self.assertEqual(
+            assess(device_present=None).code,
+            "device_authorization.scan_unreadable",
+        )
+        self.assertEqual(
+            assess(device_present=False).code, "device_authorization.no_device"
+        )
+        self.assertTrue(assess(device_present=True).offered)
+
+
 class Purity(unittest.TestCase):
     def test_the_same_facts_always_give_the_same_answer(self):
         self.assertEqual(assess(), assess())
