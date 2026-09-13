@@ -673,7 +673,14 @@ class SteamOsTdpCommandRunner:
 
 
 class BoltDeviceAuthorizationRunner:
-    """Enrol exactly one named Thunderbolt device through `boltd`.
+    """Grant trust to exactly one named Thunderbolt device through `boltd`.
+
+    Two grants, because the player is told two different things. `authorize`
+    trusts the device for this attachment and stores nothing, so the next plug
+    asks again -- that is the agreed scope. `enroll` stores it with the `auto`
+    policy, which is what Desktop Mode already did to the dock that works
+    today; it is retained but is not reachable from production wiring, because
+    remembering a DMA grant is a decision nobody has approved.
 
     `boltd` is the system's authorization owner, so this asks it rather than
     writing `authorized` in sysfs: a direct write would leave `boltd`'s
@@ -713,13 +720,55 @@ class BoltDeviceAuthorizationRunner:
 
     @classmethod
     def argv(cls, uuid: str) -> tuple[str, ...]:
+        """The remembered grant. Unchanged, and deliberately still here.
+
+        Not reachable from production wiring -- the delivery facade refuses the
+        `enroll` action unless a caller opts in explicitly -- but kept because
+        it is the grant Desktop Mode performs, and deleting it would mean
+        rebuilding it from memory the day the remembered choice is approved.
+        """
         if type(uuid) is not str or cls.UUID.fullmatch(uuid) is None:
             raise ValueError("device authorization uuid is invalid")
         return (cls.BOLTCTL, "enroll", "--policy", "auto", uuid)
 
+    @classmethod
+    def authorize_argv(cls, uuid: str) -> tuple[str, ...]:
+        """The one-shot grant: trust this device now, remember nothing.
+
+        `boltctl authorize` leaves the enrolment database alone, so the next
+        plug asks again. That repetition is the agreed product scope, not a
+        defect in it -- the player is trusting a device for this attachment,
+        and nothing on disk outlives the cable.
+
+        No `--policy`: policy is a property of a STORED device, and passing one
+        here would be asking `boltd` to remember a decision the player was told
+        would not be remembered. No `--chain`, for the same reason it is absent
+        from enrolment: it would authorize parent devices the player was never
+        shown.
+
+        The UUID is validated identically and refused rather than quoted.
+        """
+        if type(uuid) is not str or cls.UUID.fullmatch(uuid) is None:
+            raise ValueError("device authorization uuid is invalid")
+        return (cls.BOLTCTL, "authorize", uuid)
+
     def enroll(self, uuid: str) -> DeviceEnrollmentResult:
+        return self._grant(self.argv, uuid, "enroll")
+
+    def authorize(self, uuid: str) -> DeviceEnrollmentResult:
+        return self._grant(self.authorize_argv, uuid, "authorize")
+
+    def _grant(self, build, uuid: str, action: str) -> DeviceEnrollmentResult:
+        """Run one fixed-argv grant, and report what happened to the COMMAND.
+
+        Shared by both grants on purpose: two copies of a subprocess boundary
+        are two places to remember `shell=False`, the clean environment and the
+        timeout, and the second copy is the one that gets missed. `action` only
+        names the outcome codes -- it never reaches the command line, which is
+        built by `build` from a fixed tuple.
+        """
         try:
-            argv = self.argv(uuid)
+            argv = build(uuid)
         except ValueError:
             return DeviceEnrollmentResult(
                 False, "device_authorization.uuid_invalid"
@@ -740,16 +789,16 @@ class BoltDeviceAuthorizationRunner:
             )
         except subprocess.TimeoutExpired:
             return DeviceEnrollmentResult(
-                False, "device_authorization.enroll_timeout"
+                False, f"device_authorization.{action}_timeout"
             )
         except (OSError, subprocess.SubprocessError):
             return DeviceEnrollmentResult(
-                False, "device_authorization.enroll_unavailable"
+                False, f"device_authorization.{action}_unavailable"
             )
         if completed.returncode != 0:
             return DeviceEnrollmentResult(
-                False, "device_authorization.enroll_failed"
+                False, f"device_authorization.{action}_failed"
             )
         return DeviceEnrollmentResult(
-            True, "device_authorization.enroll_accepted_unverified"
+            True, f"device_authorization.{action}_accepted_unverified"
         )

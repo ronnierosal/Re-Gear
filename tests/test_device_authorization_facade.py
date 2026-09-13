@@ -93,10 +93,37 @@ INTENTIONAL = "device_authorization.intentional_disconnect"
 IDENTITY_UNRESOLVED = "device_authorization.identity_unresolved"
 CONFIRMATION_REQUIRED = "device_authorization.confirmation_required"
 ACTION_INVALID = "device_authorization.action_invalid"
+#: What the *service* reports when the executor raises, for either action --
+#: it collapses both to this one code, so an `authorize` whose command was not
+#: on the image still says `enroll_unavailable`. The name is the service's and
+#: is left spelled as it is rather than quietly corrected here: the tests below
+#: pin what the layer actually emits, and the wording is root's to change.
 UNAVAILABLE = "device_authorization.enroll_unavailable"
+#: Asked for the remembered grant from a facade that is not permitted to make
+#: one. Spelled out here rather than imported, for the reason `squashed` is:
+#: a guard that shares its constant with the code under test cannot notice the
+#: constant changing.
+NOT_OFFERED = "device_authorization.remembered_grant_not_offered"
 REFUSALS = {
     "device_authorization.token_stale",
     "device_authorization.attachment_changed",
+}
+
+#: Every key a `confirm` payload carries, refusal or not. Written out rather
+#: than derived from a returned payload, so a key silently disappearing from
+#: one path is a failure here instead of a panel field that quietly went
+#: missing.
+CONFIRM_KEYS = {
+    "requested",
+    "code",
+    "token",
+    "verified",
+    "vendor",
+    "model",
+    "already_offered",
+    "intentional_disconnect",
+    "confirmation_open",
+    "generation",
 }
 
 
@@ -177,11 +204,35 @@ class SpyPort:
         return self._answer("authorize", uuid)
 
 
-def build(scan: Scan | None = None, **port_kwargs):
+#: "the constructor was not given the argument at all", which is a different
+#: fixture from "was given False": production wiring passes nothing, so the
+#: default-path tests below have to exercise the object built with nothing.
+_UNSET = object()
+
+
+def build(
+    scan: Scan | None = None,
+    *,
+    remembered_grant_enabled: object = _UNSET,
+    **port_kwargs,
+):
+    """The facade as production wires it, unless a test opts in explicitly.
+
+    Leaving `remembered_grant_enabled` alone constructs the facade with two
+    positional arguments and nothing else -- the same call `main.py` makes --
+    so every test that does not name the opt-in is testing the shipped object
+    rather than a fixture that happens to agree with it.
+    """
     observer = FakeObserver(scan)
     port = SpyPort(**port_kwargs)
     service = DeviceAuthorizationService(port)
-    return observer, port, service, DeviceAuthorizationFacade(observer, service)
+    if remembered_grant_enabled is _UNSET:
+        facade = DeviceAuthorizationFacade(observer, service)
+    else:
+        facade = DeviceAuthorizationFacade(
+            observer, service, remembered_grant_enabled=remembered_grant_enabled
+        )
+    return observer, port, service, facade
 
 
 def rendered(payload: dict) -> str:
@@ -493,7 +544,7 @@ class NoHardwareIdEverLeaves(unittest.TestCase):
         self.assertFalse(leaks_uuid(facade.acknowledge(token), DOCK_A))
         self.assertFalse(
             leaks_uuid(
-                facade.confirm(token, consent=True, action="enroll"), DOCK_A
+                facade.confirm(token, consent=True, action="authorize"), DOCK_A
             )
         )
         _, _, _, other = build()
@@ -502,7 +553,7 @@ class NoHardwareIdEverLeaves(unittest.TestCase):
     def test_a_refused_confirmation_never_contains_the_uuid(self):
         _, _, _, facade = build()
         token = offer(facade)
-        for consent, action in ((False, "enroll"), (True, "nonsense")):
+        for consent, action in ((False, "authorize"), (True, "nonsense")):
             with self.subTest(consent=consent, action=action):
                 payload = facade.confirm(token, consent=consent, action=action)
                 self.assertFalse(leaks_uuid(payload, DOCK_A))
@@ -635,7 +686,7 @@ class IntentionalDisconnectIsKeyedToTheDevice(unittest.TestCase):
         token = offer(facade)
         facade.acknowledge(token)
         facade.note_intentional_disconnect(True, uuid=DOCK_A)
-        payload = facade.confirm(token, consent=True, action="enroll")
+        payload = facade.confirm(token, consent=True, action="authorize")
         self.assertFalse(payload["requested"])
         self.assertEqual(payload["code"], INTENTIONAL)
         self.assertTrue(payload["intentional_disconnect"])
@@ -672,7 +723,7 @@ class IntentionalDisconnectIsKeyedToTheDevice(unittest.TestCase):
         self.assertEqual(status["state"], "unavailable")
         self.assertEqual(status["code"], INTENTIONAL)
         self.assertTrue(status["intentional_disconnect"])
-        payload = facade.confirm(status["token"], consent=True, action="enroll")
+        payload = facade.confirm(status["token"], consent=True, action="authorize")
         self.assertFalse(payload["requested"])
         self.assertEqual(port.calls, [])
 
@@ -762,7 +813,7 @@ class IntentionalDisconnectIsKeyedToTheDevice(unittest.TestCase):
         self.assertEqual(status["code"], INTENTIONAL)
         self.assertTrue(status["intentional_disconnect"])
         self.assertEqual(status["token"], "")
-        payload = facade.confirm(status["token"], consent=True, action="enroll")
+        payload = facade.confirm(status["token"], consent=True, action="authorize")
         self.assertFalse(payload["requested"])
         self.assertEqual(port.calls, [])
 
@@ -902,15 +953,15 @@ class ConfirmBindsWhatItObserves(unittest.TestCase):
         _, port, _, facade = build()
         token = offer(facade)
         facade.acknowledge(token)
-        facade.confirm(token, consent=True, action="enroll")
-        self.assertEqual(port.calls, [("enroll", DOCK_A)])
+        facade.confirm(token, consent=True, action="authorize")
+        self.assertEqual(port.calls, [("authorize", DOCK_A)])
 
     def test_confirm_re_observes_rather_than_trusting_the_prompt(self):
         observer, _, _, facade = build()
         token = offer(facade)
         facade.acknowledge(token)
         before = observer.calls
-        facade.confirm(token, consent=True, action="enroll")
+        facade.confirm(token, consent=True, action="authorize")
         self.assertGreater(observer.calls, before)
 
     def test_a_device_that_changed_under_the_dialog_refuses(self):
@@ -919,7 +970,7 @@ class ConfirmBindsWhatItObserves(unittest.TestCase):
         token = offer(facade)
         facade.acknowledge(token)
         observer.scan = Scan(uuid=DOCK_B)
-        payload = facade.confirm(token, consent=True, action="enroll")
+        payload = facade.confirm(token, consent=True, action="authorize")
         self.assertFalse(payload["requested"])
         self.assertIn(payload["code"], REFUSALS)
         self.assertEqual(port.calls, [])
@@ -929,7 +980,7 @@ class ConfirmBindsWhatItObserves(unittest.TestCase):
         token = offer(facade)
         facade.acknowledge(token)
         observer.scan = EMPTY
-        payload = facade.confirm(token, consent=True, action="enroll")
+        payload = facade.confirm(token, consent=True, action="authorize")
         self.assertFalse(payload["requested"])
         self.assertEqual(port.calls, [])
 
@@ -938,7 +989,7 @@ class ConfirmBindsWhatItObserves(unittest.TestCase):
         token = offer(facade)
         facade.acknowledge(token)
         observer.scan = UNREADABLE
-        payload = facade.confirm(token, consent=True, action="enroll")
+        payload = facade.confirm(token, consent=True, action="authorize")
         self.assertFalse(payload["requested"])
         self.assertEqual(port.calls, [])
 
@@ -948,7 +999,7 @@ class ConfirmBindsWhatItObserves(unittest.TestCase):
                 _, port, _, facade = build()
                 token = offer(facade)
                 facade.acknowledge(token)
-                payload = facade.confirm(token, consent=consent, action="enroll")
+                payload = facade.confirm(token, consent=consent, action="authorize")
                 self.assertFalse(payload["requested"])
                 self.assertEqual(payload["code"], CONFIRMATION_REQUIRED)
                 self.assertEqual(port.calls, [])
@@ -975,10 +1026,240 @@ class ConfirmBindsWhatItObserves(unittest.TestCase):
     def test_an_unknown_token_never_reaches_the_executor(self):
         _, port, _, facade = build()
         offer(facade)
-        payload = facade.confirm("not-a-token", consent=True, action="enroll")
+        payload = facade.confirm("not-a-token", consent=True, action="authorize")
         self.assertFalse(payload["requested"])
         self.assertIn(payload["code"], REFUSALS)
         self.assertEqual(port.calls, [])
+
+
+class TheRememberedGrantIsNotOnOfferFromHere(unittest.TestCase):
+    """`enroll` is refused by this facade, and the refusal costs nothing.
+
+    The approved scope of this feature is a **first-time authorization**: the
+    player is asked once, the dock is trusted for this attachment, and
+    `boltd`'s enrolment database is left alone.  Remembering a device is a
+    different promise -- it re-authorizes the dock on every later plug, with
+    nobody asked again -- and it is deliberately not reachable through the
+    surface Game Mode talks to.
+
+    That is a property of the object rather than a convention about callers.
+    Production wiring constructs this facade with two positional arguments and
+    passes no opt-in, so an RPC that sends `action="enroll"` -- a stale panel,
+    a mistake, or a caller that got the string from somewhere it should not
+    have -- is answered with a refusal instead of a stored grant of direct
+    access to system memory.
+
+    The refusal is taken **before** anything is observed for the act, spent or
+    executed, and that is what most of this class is about: a wrong action
+    string must not be able to cost the player the prompt they were actually
+    going to be asked.  The two obvious wrong ways to make this suite green --
+    flipping the default, or opting in everywhere -- erase exactly that.
+    """
+
+    def test_enroll_is_refused_by_the_facade_production_builds(self):
+        _, port, _, facade = build()
+        token = offer(facade)
+        facade.acknowledge(token)
+        payload = facade.confirm(token, consent=True, action="enroll")
+        self.assertFalse(payload["requested"])
+        self.assertEqual(payload["code"], NOT_OFFERED)
+        self.assertEqual(port.calls, [])
+
+    def test_the_refusal_reports_the_services_token_not_the_callers_string(self):
+        """The one payload field that could have echoed caller input.
+
+        Every other `confirm` path reports `outcome.token`, which the service
+        fills with a token it minted or with `""`.  This refusal answers before
+        the service is asked about the token at all, so the lazy version of it
+        reflected the caller's argument straight back into the payload --
+        uncapped and unsanitised, unlike `vendor` and `model` beside it, which
+        are capped printable ASCII.  Reporting the live token is also the
+        truthful answer: the prompt was not spent, so that is still the handle
+        to press with.
+        """
+        _, port, _, facade = build()
+        live = offer(facade)
+        facade.acknowledge(live)
+        for junk in (
+            "not-a-token",
+            "../../etc/passwd",
+            "x" * 5000,
+            "<script>alert(1)</script>",
+            live.upper(),
+            "",
+        ):
+            with self.subTest(token=junk[:40]):
+                payload = facade.confirm(junk, consent=True, action="enroll")
+                self.assertEqual(payload["code"], NOT_OFFERED)
+                self.assertEqual(
+                    payload["token"],
+                    live,
+                    "the refusal must report the token the service holds",
+                )
+                self.assertNotEqual(payload["token"], junk)
+                self.assertEqual(port.calls, [])
+        # And the prompt really did survive every one of those.
+        self.assertTrue(
+            facade.confirm(live, consent=True, action="authorize")["requested"]
+        )
+
+    def test_the_executor_is_never_reached_however_ready_everything_else_is(self):
+        """Present, named, acknowledged, consented -- and still no command.
+
+        Everything the domain checks would have said yes here, so the only
+        thing between this call and a stored DMA grant is the gate.  Pressed
+        twice, because "refused once, then it goes through" is a real shape of
+        this bug.
+        """
+        _, port, _, facade = build()
+        token = offer(facade)
+        facade.acknowledge(token)
+        facade.confirm(token, consent=True, action="enroll")
+        facade.confirm(token, consent=True, action="enroll")
+        self.assertEqual(port.calls, [])
+
+    def test_the_refusal_does_not_spend_the_latch(self):
+        """The prompt the player was going to be asked survives the refusal.
+
+        A refusal that consumed the offer would turn a caller's bad action
+        string into a dock that silently never gets its dialog -- the failure
+        this whole feature exists to prevent, arriving through the door meant
+        to prevent it.
+        """
+        _, port, _, facade = build()
+        token = offer(facade)
+        refused = facade.confirm(token, consent=True, action="enroll")
+        self.assertEqual(refused["code"], NOT_OFFERED)
+        status = facade.status()
+        self.assertEqual(status["state"], "offered")
+        self.assertEqual(status["code"], OFFERED)
+        self.assertEqual(status["token"], token)
+        self.assertFalse(status["already_offered"])
+        self.assertEqual(port.calls, [])
+
+    def test_the_refused_token_is_still_live_for_the_action_that_is_offered(self):
+        """The whole point of refusing early: the real journey still works."""
+        _, port, _, facade = build()
+        token = offer(facade)
+        facade.acknowledge(token)
+        self.assertEqual(
+            facade.confirm(token, consent=True, action="enroll")["code"],
+            NOT_OFFERED,
+        )
+        payload = facade.confirm(token, consent=True, action="authorize")
+        self.assertTrue(payload["requested"])
+        self.assertEqual(payload["token"], token)
+        self.assertEqual(port.calls, [("authorize", DOCK_A)])
+
+    def test_the_refusal_does_not_close_an_open_confirmation(self):
+        _, _, _, facade = build()
+        token = offer(facade)
+        self.assertTrue(facade.acknowledge(token)["confirmation_open"])
+        refused = facade.confirm(token, consent=True, action="enroll")
+        self.assertTrue(refused["confirmation_open"])
+        self.assertTrue(facade.status()["confirmation_open"])
+
+    def test_the_refusal_payload_carries_the_whole_contract(self):
+        """A refusal is a payload the panel renders, not a stub."""
+        _, _, _, facade = build()
+        token = offer(facade)
+        facade.acknowledge(token)
+        payload = facade.confirm(token, consent=True, action="enroll")
+        self.assertEqual(set(payload), CONFIRM_KEYS)
+        self.assertIs(payload["requested"], False)
+        self.assertIsNone(payload["verified"])
+        self.assertEqual(payload["token"], token)
+        self.assertIsInstance(payload["generation"], int)
+        self.assertNotIsInstance(payload["generation"], bool)
+        json.loads(rendered(payload))
+
+    def test_the_refusal_still_names_the_device_it_refused_for(self):
+        _, _, _, facade = build()
+        token = offer(facade)
+        facade.acknowledge(token)
+        payload = facade.confirm(token, consent=True, action="enroll")
+        self.assertEqual(payload["vendor"], "Synthetic Vendor")
+        self.assertEqual(payload["model"], "Synthetic Dock")
+        self.assertFalse(leaks_uuid(payload, DOCK_A))
+
+    def test_the_opt_in_is_keyword_only_and_defaults_to_off(self):
+        parameter = inspect.signature(
+            DeviceAuthorizationFacade.__init__
+        ).parameters["remembered_grant_enabled"]
+        self.assertIs(parameter.kind, inspect.Parameter.KEYWORD_ONLY)
+        self.assertIs(parameter.default, False)
+
+    def test_a_truthy_non_bool_does_not_turn_the_opt_in_on(self):
+        """Enabling a DMA grant is not something a stray `1` gets to do.
+
+        The flag is stored with `is True`, so a value that merely happens to be
+        truthy -- a JSON `1`, a `"yes"` off a config line, a non-empty list --
+        leaves the remembered grant exactly as unreachable as it was.  A
+        `bool()` there would let every one of these through.
+        """
+        for enabled in (1, "yes", [1], "false", 2.5, object()):
+            with self.subTest(remembered_grant_enabled=repr(enabled)):
+                _, port, _, facade = build(remembered_grant_enabled=enabled)
+                token = offer(facade)
+                facade.acknowledge(token)
+                payload = facade.confirm(token, consent=True, action="enroll")
+                self.assertFalse(payload["requested"])
+                self.assertEqual(payload["code"], NOT_OFFERED)
+                self.assertEqual(port.calls, [])
+
+    def test_a_falsey_value_leaves_it_off_too(self):
+        for enabled in (False, 0, "", None, []):
+            with self.subTest(remembered_grant_enabled=repr(enabled)):
+                _, port, _, facade = build(remembered_grant_enabled=enabled)
+                token = offer(facade)
+                facade.acknowledge(token)
+                payload = facade.confirm(token, consent=True, action="enroll")
+                self.assertEqual(payload["code"], NOT_OFFERED)
+                self.assertEqual(port.calls, [])
+
+    # -- the opt-in itself, which is not what production wires ---------------
+
+    def test_the_opt_in_lets_enroll_reach_the_executor_unchanged(self):
+        """**Opt-in only.** Not a description of what production does.
+
+        `remembered_grant_enabled=True` is named explicitly here and nothing
+        that ships passes it.  What this pins is that the gate is a gate and
+        not a deletion: the remembered grant is retained in the port, the
+        service and the runner, and with the opt-in on it runs exactly the
+        command it always ran and returns the same payload shape.
+        """
+        _, port, _, facade = build(remembered_grant_enabled=True)
+        token = offer(facade)
+        facade.acknowledge(token)
+        payload = facade.confirm(token, consent=True, action="enroll")
+        self.assertTrue(payload["requested"])
+        self.assertEqual(payload["code"], "device_authorization.requested")
+        self.assertEqual(port.calls, [("enroll", DOCK_A)])
+        self.assertEqual(set(payload), CONFIRM_KEYS)
+        self.assertIs(payload["verified"], False)
+        self.assertEqual(payload["model"], "Synthetic Dock")
+        self.assertFalse(leaks_uuid(payload, DOCK_A))
+
+    def test_the_opt_in_changes_nothing_about_the_one_shot_grant(self):
+        """**Opt-in only.** `authorize` is the same act either side of it."""
+        _, port, _, facade = build(remembered_grant_enabled=True)
+        token = offer(facade)
+        facade.acknowledge(token)
+        payload = facade.confirm(token, consent=True, action="authorize")
+        self.assertTrue(payload["requested"])
+        self.assertEqual(port.calls, [("authorize", DOCK_A)])
+
+    def test_the_opt_in_does_not_widen_the_set_of_actions(self):
+        """**Opt-in only.** It ungates one action; it invents none."""
+        for action in ("Enroll", "", None, "trust", "authorise", 1):
+            with self.subTest(action=action):
+                _, port, _, facade = build(remembered_grant_enabled=True)
+                token = offer(facade)
+                facade.acknowledge(token)
+                payload = facade.confirm(token, consent=True, action=action)
+                self.assertFalse(payload["requested"])
+                self.assertEqual(payload["code"], ACTION_INVALID)
+                self.assertEqual(port.calls, [])
 
 
 class RequestedIsNotSuccess(unittest.TestCase):
@@ -997,7 +1278,7 @@ class RequestedIsNotSuccess(unittest.TestCase):
             return next(readbacks, replace(original, authorized=None))
 
         observer.observe = observe
-        payload = facade.confirm(token, consent=True, action="enroll")
+        payload = facade.confirm(token, consent=True, action="authorize")
         self.assertTrue(payload["requested"])
         self.assertIsNone(payload["verified"])
 
@@ -1005,7 +1286,7 @@ class RequestedIsNotSuccess(unittest.TestCase):
         _, _, _, facade = build()
         token = offer(facade)
         facade.acknowledge(token)
-        payload = facade.confirm(token, consent=True, action="enroll")
+        payload = facade.confirm(token, consent=True, action="authorize")
         self.assertTrue(payload["requested"])
         self.assertIs(payload["verified"], False)
 
@@ -1021,14 +1302,14 @@ class RequestedIsNotSuccess(unittest.TestCase):
             return next(readbacks, replace(original, authorized=True))
 
         observer.observe = observe
-        payload = facade.confirm(token, consent=True, action="enroll")
+        payload = facade.confirm(token, consent=True, action="authorize")
         self.assertTrue(payload["requested"])
         self.assertIs(payload["verified"], True)
 
     def test_a_refused_confirmation_carries_no_verification(self):
         _, _, _, facade = build()
         token = offer(facade)
-        payload = facade.confirm(token, consent=False, action="enroll")
+        payload = facade.confirm(token, consent=False, action="authorize")
         self.assertFalse(payload["requested"])
         self.assertIsNone(payload["verified"])
 
@@ -1036,16 +1317,16 @@ class RequestedIsNotSuccess(unittest.TestCase):
         _, port, _, facade = build(enrolled=False, code="device_authorization.denied")
         token = offer(facade)
         facade.acknowledge(token)
-        payload = facade.confirm(token, consent=True, action="enroll")
+        payload = facade.confirm(token, consent=True, action="authorize")
         self.assertFalse(payload["requested"])
         self.assertEqual(payload["code"], "device_authorization.denied")
-        self.assertEqual(port.calls, [("enroll", DOCK_A)])
+        self.assertEqual(port.calls, [("authorize", DOCK_A)])
 
     def test_the_result_never_claims_success(self):
         _, _, _, facade = build()
         token = offer(facade)
         facade.acknowledge(token)
-        payload = facade.confirm(token, consent=True, action="enroll")
+        payload = facade.confirm(token, consent=True, action="authorize")
         self.assertNotIn("success", payload)
         self.assertNotIn("authorized", payload)
         self.assertEqual(
@@ -1073,7 +1354,7 @@ class NothingRetries(unittest.TestCase):
         _, port, _, facade = build(explode=True)
         token = offer(facade)
         facade.acknowledge(token)
-        payload = facade.confirm(token, consent=True, action="enroll")
+        payload = facade.confirm(token, consent=True, action="authorize")
         self.assertFalse(payload["requested"])
         self.assertEqual(payload["code"], UNAVAILABLE)
         self.assertEqual(len(port.calls), 1)
@@ -1082,7 +1363,7 @@ class NothingRetries(unittest.TestCase):
         _, port, _, facade = build(explode=True)
         token = offer(facade)
         facade.acknowledge(token)
-        facade.confirm(token, consent=True, action="enroll")
+        facade.confirm(token, consent=True, action="authorize")
         status = facade.status()
         self.assertEqual(status["state"], "unavailable")
         self.assertEqual(status["token"], "")
@@ -1093,8 +1374,8 @@ class NothingRetries(unittest.TestCase):
         _, port, _, facade = build(explode=True)
         token = offer(facade)
         facade.acknowledge(token)
-        facade.confirm(token, consent=True, action="enroll")
-        again = facade.confirm(token, consent=True, action="enroll")
+        facade.confirm(token, consent=True, action="authorize")
+        again = facade.confirm(token, consent=True, action="authorize")
         self.assertFalse(again["requested"])
         self.assertIn(again["code"], REFUSALS)
         self.assertEqual(len(port.calls), 1)
@@ -1103,8 +1384,8 @@ class NothingRetries(unittest.TestCase):
         _, port, _, facade = build()
         token = offer(facade)
         facade.acknowledge(token)
-        first = facade.confirm(token, consent=True, action="enroll")
-        second = facade.confirm(token, consent=True, action="enroll")
+        first = facade.confirm(token, consent=True, action="authorize")
+        second = facade.confirm(token, consent=True, action="authorize")
         self.assertTrue(first["requested"])
         self.assertFalse(second["requested"])
         self.assertEqual(len(port.calls), 1)
@@ -1113,7 +1394,7 @@ class NothingRetries(unittest.TestCase):
         _, port, _, facade = build()
         token = offer(facade)
         facade.acknowledge(token)
-        facade.confirm(token, consent=True, action="enroll")
+        facade.confirm(token, consent=True, action="authorize")
         for _ in range(3):
             status = facade.status()
             self.assertEqual(status["state"], "unavailable")
@@ -1125,7 +1406,7 @@ class NothingRetries(unittest.TestCase):
         observer, port, _, facade = build(explode=True)
         token = offer(facade)
         facade.acknowledge(token)
-        facade.confirm(token, consent=True, action="enroll")
+        facade.confirm(token, consent=True, action="authorize")
         observer.scan = EMPTY
         facade.status()
         observer.scan = Scan()
@@ -1206,7 +1487,7 @@ class AnUnnamedDeviceIsNeverOffered(unittest.TestCase):
         token = offer(facade)
         facade.acknowledge(token)
         observer.scan = Scan(model="", identity_resolved=True)
-        payload = facade.confirm(token, consent=True, action="enroll")
+        payload = facade.confirm(token, consent=True, action="authorize")
         self.assertFalse(payload["requested"])
         self.assertEqual(payload["code"], IDENTITY_UNRESOLVED)
         self.assertEqual(port.calls, [])
@@ -1278,9 +1559,9 @@ class RealHardwareIsStillOffered(unittest.TestCase):
                 _, port, _, facade = build(Scan(vendor=vendor, model=model))
                 token = offer(facade)
                 facade.acknowledge(token)
-                payload = facade.confirm(token, consent=True, action="enroll")
+                payload = facade.confirm(token, consent=True, action="authorize")
                 self.assertTrue(payload["requested"])
-                self.assertEqual(port.calls, [("enroll", DOCK_A)])
+                self.assertEqual(port.calls, [("authorize", DOCK_A)])
 
 
 class TheResidualIsADeviceAuthoredDisclosure(unittest.TestCase):
@@ -1396,7 +1677,7 @@ class TheRealObserverEndToEnd(unittest.TestCase):
             facade.status(),
             facade.acknowledge("not-a-token"),
             facade.decline("not-a-token"),
-            facade.confirm("not-a-token", consent=True, action="enroll"),
+            facade.confirm("not-a-token", consent=True, action="authorize"),
         ):
             self.assertFalse(leaks_uuid(payload, DOCK_A), payload)
 
@@ -1410,7 +1691,7 @@ class TheRealObserverEndToEnd(unittest.TestCase):
         payloads = [
             status,
             facade.acknowledge(token),
-            facade.confirm(token, consent=True, action="enroll"),
+            facade.confirm(token, consent=True, action="authorize"),
             facade.status(),
         ]
         for payload in payloads:
@@ -1432,7 +1713,7 @@ class TheReadbackHasToBeAboutTheDeviceThatWasActedOn(unittest.TestCase):
             return next(readbacks, second)
 
         observer.observe = observe
-        return facade.confirm(token, consent=True, action="enroll"), port
+        return facade.confirm(token, consent=True, action="authorize"), port
 
     def test_a_reading_of_a_different_device_is_not_evidence(self):
         payload, port = self._readback(
@@ -1440,7 +1721,7 @@ class TheReadbackHasToBeAboutTheDeviceThatWasActedOn(unittest.TestCase):
         )
         self.assertTrue(payload["requested"])
         self.assertIsNone(payload["verified"])
-        self.assertEqual(port.calls, [("enroll", DOCK_A)])
+        self.assertEqual(port.calls, [("authorize", DOCK_A)])
 
     def test_a_reading_that_could_not_be_identified_is_not_evidence(self):
         """The predicate refuses these outright; so must the readback."""
@@ -1581,12 +1862,29 @@ class NoPayloadEverContradictsItself(unittest.TestCase):
         reset and the store.  The service holds that token already, so this
         layer asks for it instead of remembering it, and there is nothing left
         here for two threads to interleave.
+
+        The three attributes are the two collaborators and the
+        remembered-grant opt-in, which is decided once in `__init__` and never
+        written again -- so what this pins is not "no attributes" but "nothing
+        a call can write".  The snapshot is therefore compared by *identity*
+        after a full journey rather than by counting names: an attribute
+        rebound during the journey fails here even when it is rebound to an
+        equal value, which is exactly what a reintroduced token cache would
+        look like.
         """
         _, _, _, facade = build()
+        before = dict(vars(facade))
+        self.assertEqual(
+            set(before), {"_observer", "_service", "_remembered_grant_enabled"}
+        )
         token = offer(facade)
         facade.acknowledge(token)
+        facade.confirm(token, consent=True, action="authorize")
         facade.status()
-        self.assertEqual(set(vars(facade)), {"_observer", "_service"})
+        after = vars(facade)
+        self.assertEqual(set(after), set(before))
+        for name, value in before.items():
+            self.assertIs(after[name], value, name)
 
     def test_a_report_racing_the_pollers_never_produces_an_offer_beside_it(self):
         """The prompt for a dock we deliberately deauthorized."""
@@ -1776,7 +2074,7 @@ class NoPayloadEverContradictsItself(unittest.TestCase):
                     payloads.append(facade.acknowledge(status["token"]))
                     payloads.append(
                         facade.confirm(
-                            status["token"], consent=True, action="enroll"
+                            status["token"], consent=True, action="authorize"
                         )
                     )
                 return payloads
@@ -1866,7 +2164,7 @@ class NoPayloadEverContradictsItself(unittest.TestCase):
 
             def work(index):
                 if index == 0:
-                    return [facade.confirm(token, consent=True, action="enroll")]
+                    return [facade.confirm(token, consent=True, action="authorize")]
                 if index == 1:
                     facade.note_intentional_disconnect(True, uuid=DOCK_A)
                     return []
@@ -1915,7 +2213,7 @@ class TheConfirmPayloadNamesTheDeviceThatWasActedOn(unittest.TestCase):
 
         observer.observe = observe
         acted_generation = service.generation
-        payload = facade.confirm(token, consent=True, action="enroll")
+        payload = facade.confirm(token, consent=True, action="authorize")
         return payload, port, service, token, acted_generation
 
     #: The dock that turns up for the readback. Named so that any leak of it
@@ -1930,7 +2228,7 @@ class TheConfirmPayloadNamesTheDeviceThatWasActedOn(unittest.TestCase):
     def test_the_payload_names_the_acted_device(self):
         payload, port, _, _, _ = self.swapped(self.INTERLOPER)
         self.assertTrue(payload["requested"])
-        self.assertEqual(port.calls, [("enroll", DOCK_A)])
+        self.assertEqual(port.calls, [("authorize", DOCK_A)])
         self.assertEqual(payload["vendor"], "Synthetic Vendor")
         self.assertEqual(payload["model"], "Synthetic Dock")
 
@@ -1990,10 +2288,10 @@ class TheConfirmPayloadNamesTheDeviceThatWasActedOn(unittest.TestCase):
             return next(readings, self.INTERLOPER)
 
         observer.observe = observe
-        payload = facade.confirm(token, consent=True, action="enroll")
+        payload = facade.confirm(token, consent=True, action="authorize")
         self.assertTrue(payload["requested"])
         self.assertFalse(payload["intentional_disconnect"])
-        self.assertEqual(port.calls, [("enroll", DOCK_A)])
+        self.assertEqual(port.calls, [("authorize", DOCK_A)])
         # The service is not wrong -- the disowned dock really is attached now.
         self.assertTrue(service.intentional_disconnect)
 
@@ -2016,7 +2314,7 @@ class TheConfirmPayloadNamesTheDeviceThatWasActedOn(unittest.TestCase):
         _, _, _, facade = build()
         token = offer(facade)
         facade.acknowledge(token)
-        payload = facade.confirm(token, consent=False, action="enroll")
+        payload = facade.confirm(token, consent=False, action="authorize")
         self.assertFalse(payload["requested"])
         self.assertEqual(payload["code"], CONFIRMATION_REQUIRED)
         self.assertEqual(payload["model"], "Synthetic Dock")

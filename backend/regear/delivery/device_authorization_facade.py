@@ -147,6 +147,10 @@ if TYPE_CHECKING:  # pragma: no cover - typing only; never imported at runtime
 #: whatever the predicate said, passed through unedited.
 _IDENTITY_UNRESOLVED = "device_authorization.identity_unresolved"
 _INTENTIONAL_DISCONNECT = "device_authorization.intentional_disconnect"
+#: Asked for a grant this facade is not permitted to make. Not a failure of
+#: the device or the player: the remembered grant simply is not on offer
+#: here, and saying so is better than silently performing the other one.
+_REMEMBERED_GRANT_NOT_OFFERED = "device_authorization.remembered_grant_not_offered"
 
 #: The same cap the observer sanitizes to. A panel label is not a place for a
 #: device-supplied string of unbounded length.
@@ -257,10 +261,22 @@ class DeviceAuthorizationFacade:
     """Compose the read-only observer with the latch, for the plugin's life."""
 
     def __init__(
-        self, observer: AttachmentObserver, service: DeviceAuthorizationService
+        self,
+        observer: AttachmentObserver,
+        service: DeviceAuthorizationService,
+        *,
+        remembered_grant_enabled: bool = False,
     ) -> None:
         self._observer = observer
         self._service = service
+        #: Whether the remembered grant (`enroll`) may be asked for at all.
+        #: Off by default, and production wiring does not turn it on: the
+        #: approved scope is a one-shot authorization, and a remembered grant
+        #: is a different promise to the player. Keeping it a constructor
+        #: argument rather than a comment is what makes "not exposed" a
+        #: property of the object instead of a habit -- a caller that sends the
+        #: wrong action string gets a refusal, not a stored DMA grant.
+        self._remembered_grant_enabled = remembered_grant_enabled is True
         # No state of its own, deliberately. Anything cached here is read and
         # written by concurrent RPC calls in front of a service that holds one
         # lock, and the cache this replaces could be stamped with one
@@ -317,6 +333,39 @@ class DeviceAuthorizationFacade:
         payload that took its name from the second one announced a memory-access
         grant under the wrong device's name.
         """
+        if action == "enroll" and not self._remembered_grant_enabled:
+            # Refused before the executor is reachable, and before anything is
+            # spent: the token stays live so the player can still be asked the
+            # question this facade IS allowed to ask. The remembered grant is
+            # retained in the port and the runner, and is simply not on offer
+            # from here -- so a caller that sends the wrong action string gets
+            # a refusal rather than a stored grant of direct memory access.
+            refused = self._read()
+            state = self._service.observe_and_snapshot(
+                present=refused.present,
+                identity_resolved=refused.identity_resolved,
+                authorized=refused.authorized,
+                already_enrolled=refused.enrolled,
+                uuid=refused.uuid,
+            )
+            return {
+                "requested": False,
+                "code": _REMEMBERED_GRANT_NOT_OFFERED,
+                # The service's token, never the caller's argument. Every other
+                # confirm path reports a token the service minted or "", and
+                # this refusal must not be the one place an unvalidated,
+                # uncapped caller string is reflected back into a payload.
+                # Reporting the live one is also the more useful answer: the
+                # prompt was not spent, so this is still the handle to use.
+                "token": state.token,
+                "verified": None,
+                "vendor": refused.vendor,
+                "model": refused.model,
+                "already_offered": state.already_offered,
+                "intentional_disconnect": self._disconnect(state.code, state),
+                "confirmation_open": state.confirmation_open,
+                "generation": state.generation,
+            }
         acted = self._observe()
         outcome = self._service.confirm(
             token,

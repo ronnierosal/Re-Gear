@@ -7,12 +7,16 @@ must not write `authorized` in sysfs behind its back.  Two stores that disagree
 about whether a device is trusted is a worse failure than not having the
 feature.
 
-**Two grants, because they are two different promises.**  `enroll` stores the
-device, which is what Desktop Mode already did to the dock that works today:
-asked once, remembered, re-authorized on every later plug.  That is the console
-behaviour and it stays the default.  `authorize` trusts the device for this
-attachment only and leaves `boltd`'s database untouched, so the next plug asks
-again.  Offering only enrolment made "trust it this once" unreachable, and the
+**Two grants, because they are two different promises.**  `authorize` trusts
+the device for this attachment only and leaves `boltd`'s database untouched, so
+the next plug asks again.  That repetition IS the approved scope: a first-time
+authorization, nothing remembered.  `enroll` stores the device with the `auto`
+policy, which is what Desktop Mode already did to the dock that works today --
+asked once, remembered, re-authorized on every later plug.  It is retained
+because it is a real grant `boltd` offers and the day a remembered choice is
+approved it should not have to be rebuilt from memory, but it is NOT on offer:
+the delivery facade refuses it unless a caller opts in explicitly, and
+production wiring does not.  Offering only enrolment made "trust it this once" unreachable, and the
 player who wants a borrowed dock to work for an evening without being recorded
 as trusted forever had no way to say so.  The two are kept as separate methods
 rather than a flag because the prompt copy differs -- remembering is the part
@@ -75,10 +79,12 @@ class DeviceAuthorizationPort(Protocol):
         anything that is not a device id rather than quoting it onto a command
         line.
 
-        The existing `BoltDeviceAuthorizationRunner` in
-        `regear.adapters.steamos.commands` implements `enroll` only; widening
-        this Protocol does not change it, and the root of the feature supplies
-        `authorize`.  A caller that dispatches on the player's chosen action
-        must therefore be prepared for an executor that does not have this
-        method yet, and must report that as a refusal rather than as a grant.
+        `BoltDeviceAuthorizationRunner` in `regear.adapters.steamos.commands`
+        implements this, as `boltctl authorize <device>` -- no `--policy`,
+        because policy is a property of a STORED device and passing one would
+        ask `boltd` to remember a decision the player was told would not be
+        remembered.  A caller dispatching on the player's chosen action should
+        still report a missing method as a refusal rather than as a grant: an
+        executor is somebody else's object, and assuming a grant exists is how
+        a refusal turns into a silent yes.
         """
