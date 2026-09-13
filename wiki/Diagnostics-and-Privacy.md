@@ -1,60 +1,99 @@
 # Diagnostics and privacy
 
-**Audience:** players, support reviewers, and contributors<br>
-**Reviewed:** 2026-09-08<br>
-**Maturity:** privacy-safe snapshot and reviewed support export implemented
+Re-Gear can show what it sees and prepare a small support report to help explain
+a problem. You review the report before copying or saving it.
 
-The authoritative contracts are
-[Diagnostics](https://github.com/ronnierosal/Re-Gear/blob/main/docs/DIAGNOSTICS.md)
-and [Support bundle](https://github.com/ronnierosal/Re-Gear/blob/main/docs/SUPPORT_BUNDLE.md).
+## For players — no technical background needed
 
-Re-Gear collects enough categorical state to explain hardware and workflow health
-without exposing the user's environment by default. The Decky view and support
-projection use explicit allowlists instead of dumping raw system data.
+### Availability and limits
 
-## Why Re-Gear requests root permission
+The diagnostic view and support-report controls are implemented in merged
+development code reviewed on **2026-09-13**. Your installed build may differ;
+see [Getting Started](Getting-Started) for availability and installation limits.
+This review did not test the controls on an installed handheld.
 
-Decky Loader runs Re-Gear's backend with root privileges as requested in the
-plugin manifest. This allows limited SteamOS hardware and system-state operations,
-including protected observations, sleep protection and approved device actions.
-The Quick Access interface itself is not a root process; it uses a narrow,
-validated backend request surface rather than a general command prompt.
+A **support bundle** is a text report containing selected Re-Gear status and
+recent events. **Redacted** means identifying details are removed or replaced.
+The report is designed to exclude account details, network addresses, raw device
+identifiers, private paths and unrestricted system logs. Review it before sharing.
+Creating a report does not fix a fault or establish that hardware can be unplugged.
 
-Root access does not make every operation automatic or supported on every device.
-User-facing confirmations, fresh-state checks and documented support boundaries
-still apply. See [Safety and eGPU Handling](Safety-and-eGPU-Handling) and
-[Troubleshooting](Troubleshooting). This notice changes no runtime privileges.
+### Preview, copy or save a report
 
-## Appropriate diagnostic fields
+1. Open Re-Gear in Decky's Quick Access panel and select **Troubleshoot**.
+2. In **Support bundle**, select **Preview redacted support bundle**. A
+   **Redacted support bundle preview** opens; creating it does not save a file.
+3. Review the report, then select **Close preview**. The report uses **JSON**, a
+   text format with named fields; you do not need to edit it. Select
+   **Review exact redacted JSON** to view the same report again.
+4. Choose **Copy reviewed JSON** to copy it, or **Save reviewed bundle to
+   Downloads** to approve saving that exact report. Saving approval lasts five
+   minutes from preview creation and can be used once.
 
-- Re-Gear version and verified source revision
-- placement, health, game-state category, and support tier
-- categorical host/eGPU profile resolution
-- render, display, link, sleep, and readiness status
-- bounded public blocker and evidence codes
-- bounded stage timings and recent categorical action outcomes
+A successful save reports a file under `Downloads`, named
+`Re-Gear-support-<UTC timestamp>.json`; the timestamp records the save time.
+Copying or saving does not send it to anyone. See
+[Help Improve Re-Gear](Help-Improve-Re-Gear) for reporting guidance.
 
-## Excluded or redacted fields
+### If it does not work
 
-- usernames, hostnames, home directories, and arbitrary file paths
-- IP and MAC addresses or private network coordinates
-- raw USB, Bluetooth, EDID, or hardware serial identifiers
-- Steam account IDs, game identity, cookies, tokens, and environment variables
-- arbitrary process command lines, PIDs, logs, and correlation IDs
-- private profile bindings and raw connector or device paths
+- If the preview fails, no file was written. Try creating a new preview; if it
+  fails again, report the visible error and your Re-Gear version.
+- If save approval expires or fails, create and review a new preview before
+  saving again.
+- If clipboard copying is unavailable, the preview remains unchanged; use the
+  save option after reviewing it.
+- If these controls are missing, check your build with the maintainer. Do not
+  substitute raw system logs or install a different candidate just to follow
+  this guide. Continue with [Troubleshooting](Troubleshooting).
 
-Support export requires an exact redacted preview and one-time approval before
-writing. Do not attach raw logs, captured home directories, or private support
-artifacts to public issues.
+### Why root permission is requested
 
-## Repository privacy status
+**Root** means system administrator access. Decky runs Re-Gear's backend with this
+permission for protected system observations and its separately guarded hardware
+operations. The visible interface sends specific requests to that backend.
+Preparing a support report does not itself change displays, GPUs or sleep state.
+See [Safety and eGPU Handling](Safety-and-eGPU-Handling) for action limits.
 
-The 2026-09-02 audit found no tracked credential, private key, API token, Steam
-account ID, MAC address, hardware serial, raw EDID, or raw USB4 unique ID in the
-current tree. It removed an unnecessary local checkout path and sanitized
-fixtures. Older reachable commits still contain a former private LAN address
-and local path. Those are metadata rather than credentials, but eliminating
-them from Git history would require a separately approved history rewrite.
+## Technical details — for advanced users and contributors
 
-See the full
-[privacy audit](https://github.com/ronnierosal/Re-Gear/blob/main/docs/HARDWARE_PRIVACY_AUDIT_2026-09-02.md).
+### Interfaces and privacy boundary
+
+The [Decky UI](https://github.com/ronnierosal/Re-Gear/blob/da60e2127c4bd66e368918d3d83c1829087287a5/src/index.tsx)
+calls `preview_support_bundle` and `save_support_bundle` through the
+[backend entry point](https://github.com/ronnierosal/Re-Gear/blob/da60e2127c4bd66e368918d3d83c1829087287a5/main.py).
+The preview contains exact redacted JSON and an opaque, expiring token. Saving
+accepts only that token, consumes it once and writes the reviewed bytes; the
+frontend cannot choose the destination or supply replacement content.
+
+The report rebuilds snapshot fields from an allowlist, redacts remaining strings
+and enforces size limits. Saving creates a new file exclusively and refuses
+symlink following under the resolved Decky user's Downloads directory. See the
+[support-bundle contract](https://github.com/ronnierosal/Re-Gear/blob/main/docs/SUPPORT_BUNDLE.md)
+for schema, retention, bounds and exclusions. The root request is declared in
+[plugin.json](https://github.com/ronnierosal/Re-Gear/blob/da60e2127c4bd66e368918d3d83c1829087287a5/plugin.json).
+
+For source-checkout diagnostics on SteamOS, the reviewed read-only command is:
+
+```sh
+PYTHONPATH=backend python3 -m regear.cli --compact
+```
+
+Run it from the repository root. A Decky ZIP does not install a global
+`regear-diagnose` command. Installed-tree commands depend on the package namespace;
+use the [diagnostics contract](https://github.com/ronnierosal/Re-Gear/blob/main/docs/DIAGNOSTICS.md)
+with the maintainer rather than guessing an older build's path. CLI output is a
+snapshot; it does not reproduce all in-memory Decky event history.
+
+### Evidence and implementation limits
+
+| Evidence | What it establishes | Remaining limit |
+|---|---|---|
+| Merged source reviewed at `da60e21`, 2026-09-13 | UI labels, preview/copy/save flow and root declaration above | Source review does not establish the installed version or native controller behavior |
+| [Support-bundle tests](https://github.com/ronnierosal/Re-Gear/blob/da60e2127c4bd66e368918d3d83c1829087287a5/tests/test_support_bundle.py) | Deterministic coverage for redaction, size bounds, one-use/expired approval and file-write protections | Tests do not certify all devices or prove an installed support journey |
+| Installed / hardware-tested support journey | Not verified in this documentation review | Exact build, visible preview, copy/save result and controller navigation still need installed evidence |
+
+The [2026-09-02 privacy audit](https://github.com/ronnierosal/Re-Gear/blob/main/docs/HARDWARE_PRIVACY_AUDIT_2026-09-02.md)
+is historical repository evidence, not a fresh scan. It recorded no tracked
+credentials in the then-current tree, while noting older reachable history with
+private network/path metadata. This page does not claim history was rewritten.
