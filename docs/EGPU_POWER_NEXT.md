@@ -3,13 +3,17 @@
 ## Accepted behavior, 2026-09-13
 
 Build from the [0.3.98 golden cycle](EGPU_0398_CHECKPOINT.md), preserving its
-connection and button-disconnect behavior. User requests Sleep or Power off;
-Re-Gear returns to handheld, runs the same verified resource/GPU/USB4 disconnect,
-then continues that original power request once. A failed disconnect reports its
-actual reason and does not silently execute power or retry removal.
+connection and button-disconnect behavior. Power off with an active eGPU uses
+the same handheld return and resource/GPU/USB4 disconnect, then continues the
+original power request once. Sleep offers two explicit choices: disconnect eGPU
+and sleep, or keep eGPU connected and sleep. The disconnect choice uses the same
+sequence as Power off. The keep-connected choice must not remove or deauthorize
+the dock. A failed disconnect reports its actual reason and does not silently
+execute power or retry removal. Connected sleep/wake remains untested.
 
 Ronnie confirmed the G1 cable may remain connected for charging after either
-sleep or shutdown. The dock stays logically disconnected on wake. Reusing the
+disconnect-before-sleep or shutdown. After the disconnect choice, the dock stays
+logically disconnected on wake. Reusing the
 eGPU requires physical unplug/replug; there is no software reconnect,
 reauthorization or rescan on wake. Charging retention is a hardware trial outcome
 to record, not something USB4 deauthorization alone proves.
@@ -108,3 +112,20 @@ Capture: whole-dock-disconnect/out/0398-disconnect-1789272173165.jsonl.
 Next: finish the two-lease production handoff already under implementation, then
 run a focused sleep/wake trial. Do not rerun disconnect merely to reconfirm this
 same blocker. The automatic-TV and physical reconnect golden evidence stands.
+
+## User-reported shutdown and startup outcome, 2026-09-13
+
+Following the verified live disconnect and blocked manual sleep attempt, Ronnie
+reports that manual shutdown was clean and the G1 continued charging the Ally.
+He also reports normal startup with the G1 disconnected, and a separate described
+safe-disconnect/shutdown/power-on sequence automatically returning to the TV.
+Exact cable changes between those startup observations were not captured; do not
+infer a software reconnect or attribute the outcome to uninstalled power code.
+These are successful user-observed manual workflow results on the last verified
+installed 0.3.98 baseline, not an automated shutdown continuation test. Preserve
+this evidence rather than repeating the same shutdown sequence without a change.
+
+Ronnie then requested the two-choice Sleep flow recorded above. Keeping an
+already-connected dock through sleep is distinct from software reauthorization
+after intentional disconnect. The latter remains excluded. Successful connected
+sleep/wake is the user's expectation, not yet a recorded hardware result.
