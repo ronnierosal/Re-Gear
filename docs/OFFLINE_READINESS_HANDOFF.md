@@ -80,6 +80,13 @@ validated defects: native immediate account and session events,
 navigation-window replacement and cleanup, startup against a partially
 initialized native DOM, and real callback or RPC latency.
 
+Read those green suites carefully. `frontend-tests/offline-confidence-session.test.mjs:17`
+and `frontend-tests/offline-confidence.test.mjs:66` both assert the
+`tested_offline` status and both pass, while no production code can reach that
+status — the only caller supplying a confirmation binding is the unmounted
+panel. A passing suite here proves the module works when called, not that
+anything calls it.
+
 PR 25 merged as `ebde3d06faeb0182f8f364d44b45c25c685bc334` and is an ancestor of
 `da60e21`, so the refresh and retry recovery it delivered is present in the
 reviewed head.

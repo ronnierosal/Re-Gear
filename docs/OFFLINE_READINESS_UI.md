@@ -35,9 +35,11 @@ the row always falls through to "Not connected" with the detail "This local
 classifier is not yet wired into read-only snapshot delivery", and
 `compactJourneyStatusRows` collapses it out of the compact summary
 (`src/quick-access-ui.ts:137-146`). The fail-closed wording is correct; treat the
-row as unwired rather than as a working status surface. Its state and reason-code
-presentation (`src/journey-status-delivery.ts:12,60`,
-`src/offline-readiness-detail.ts`) is ready for a future snapshot source.
+row as unwired rather than as a working status surface. This is planned, not
+accidental: `src/backend.ts:156` annotates the field "Optional future read-only
+delivery for local journey classifiers". Its state and reason-code presentation
+(`src/journey-status-delivery.ts:12,60-71`, `src/offline-readiness-detail.ts`) is
+ready for a future snapshot source.
 
 ### Discovery and binding
 
@@ -213,9 +215,13 @@ available material, not as current player-visible behavior.
   (`src/offline-tile-badge.ts:36`). Where older notes say "30-second badge
   expiry" or "an explicit panel check can badge the matching visible tile", they
   describe this path, not the mounted one.
-- `offlineGameChoices` (`src/offline-native-source.ts:23`) and
-  `offlineLibraryWindow` (`src/offline-tile-badge.ts:160`) — used only by that
-  panel.
+- `offlineGameChoices` (`src/offline-native-source.ts:23`),
+  `offlineLibraryWindow` (`src/offline-tile-badge.ts:160`),
+  `offlineConfirmationBinding` (`src/offline-confidence-session.ts:13`) and the
+  `OfflineReadinessBadge` component (`src/offline-readiness-badge.tsx:8`) — dead
+  exports in otherwise-live modules, used only by that panel. Of
+  `offline-readiness-badge.tsx`, only the sibling `offlineBadgeImages` export
+  reaches production.
 - The full-size and `-gear` asset variants, and all `offline-required` artwork,
   are resolvable through `rollup.config.js` but imported by no component; only
   the three `-compact` files reach the bundle.

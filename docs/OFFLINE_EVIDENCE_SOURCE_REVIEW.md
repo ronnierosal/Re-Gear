@@ -136,6 +136,27 @@ The mounted path calls `offlineConfidenceForGame` without a confirmation binding
 (`src/offline-focus-checks.tsx:73`), so nothing currently writes to this memory
 in production. The mechanism is implemented and tested, not reachable.
 
+### Freshness on the live path is enforced entirely client-side
+
+Worth stating because the backend looks like it enforces more than it does. On
+the live path the backend performs **no** source admission and **no**
+freshness or staleness check: `classify_minimized_steam_details` validates field
+shapes and the game state, then classifies. The whole admission and
+evidence-age discipline — `admit_offline_evidence_collection` (`:289`),
+`review_offline_evidence_source` (`:332`),
+`admit_reviewed_offline_evidence_source` (`:352`),
+`classify_fresh_offline_readiness` (`:364`), `OfflineReadinessObservation`
+(`:196`) and `MAX_EVIDENCE_AGE_MS` (`:17`) in
+`backend/regear/domain/offline_readiness.py` — has no non-test caller and is
+reached only through the dormant application service.
+
+What actually bounds staleness today is three frontend numbers: the 1 000 ms
+callback budget and the 1 000 ms post-receipt validity window in
+`src/offline-details-session.ts:47,52-54`, and the 65 000 ms badge expiry passed
+at `src/offline-focus-checks.tsx:75`. Those bound how long *our own* observation
+may be used. None of them bounds the age of the data Steam's cache handed us,
+which remains unknown.
+
 ### The admission-gated collection port is dormant
 
 `backend/regear/application/offline_readiness.py` implements the source
