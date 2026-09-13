@@ -720,3 +720,31 @@ claim files and lock contention, strict absence and interruption. Prior valid
 checkpoint evidence remains useful; candidate hardware success is pending the
 affected disconnect/physical-reattach trial. Do not replay powered software
 reauthorization. Documentation impact: Wiki.
+
+
+## 0.3.98 diagnostic candidate after the 0.3.97 button trial
+
+Installed 0.3.97 (`dfa042cf91660cb3176e65065299a25222727ca9`) passed a
+supervised detached-boot/physical-attachment trial on 2026-09-13 UTC: completed
+history was cleared, one automatic recovery ran, TV became active, and Ronnie
+confirmed picture, audio and controls. The following button disconnect returned
+the display but ended `gpu_release_unverified`, release stage
+`not_safe_after_release`, with a retained `release_intent` and no unplug clearance.
+Do not record this as a successful whole-dock disconnect.
+
+The inner post-release decision already provided a specific reason, but the
+whole-dock RPC discarded it before verification reported the generic failure.
+0.3.98 preserves `release.code`, `release.display_release_code` and categorical
+release/cleanup booleans in the trial status. It resets these details at each
+request and excludes device addresses, CRTC identifiers and exception text.
+The diagnostic fields do not authorize a retry or change removal/connection logic.
+
+The core release, runtime and whole-dock verification code is unchanged between
+the earlier successful 0.3.96 run and 0.3.97. This failed trial establishes a
+behavioral failure, not a proven changed-code cause. Hardcoded display nodes were
+identified as a separate latent assumption; a live read-only card inventory
+matched that order, so it does not explain this failure. No timing workaround or
+additional retry is introduced without evidence. The next supervised trial should
+capture the exact inner refusal if it recurs. Software USB4 reconnect remains
+excluded after the earlier thermal incident. This is a diagnostic candidate, not
+a verified disconnect fix or full lifecycle qualification.

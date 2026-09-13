@@ -2017,6 +2017,20 @@ class Plugin:
                 result = release.execute(release_display=True)
                 if type(result) is LiveDisconnectResult:
                     self._whole_dock_release_stage = result.stage.value
+                    # Keep the inner decision before verification summarizes it.
+                    # Only categories and booleans cross this boundary: no PCI
+                    # addresses, process identifiers, or raw exception text.
+                    self._whole_dock_release_details = {
+                        "code": result.code if type(result.code) is str and re.fullmatch(
+                            r"(?:removal_safety|safe_undock|disconnect|removal_plan|device_removal|live_disconnect)\.[a-z_]{1,96}",
+                            result.code) else "",
+                        "display_release_code": result.display_release_code
+                            if type(result.display_release_code) is str and re.fullmatch(
+                                r"display_release\.[a-z_]{1,96}", result.display_release_code) else "",
+                        "released": result.released is True,
+                        "display_released": bool(result.display_released),
+                        "filter_disarmed": result.filter_disarmed is True,
+                    }
                     self._whole_dock_arm_stage = result.arm_stage
                     self._whole_dock_arm_code = result.arm_code if re.fullmatch(
                         r"(?:filter_arm|arm_sequence)\.[a-z_]+", result.arm_code) else ""
@@ -2292,6 +2306,7 @@ class Plugin:
             def trial():
                 self._whole_dock_trial_phase = "starting"
                 self._whole_dock_release_stage = "not_run"
+                self._whole_dock_release_details = {}
                 self._whole_dock_arm_stage = ""
                 self._whole_dock_arm_code = ""
                 try:
@@ -2337,6 +2352,7 @@ class Plugin:
                 payload["request_id"] = trial_request_id
                 payload["phase"] = self._whole_dock_trial_phase
                 payload["release_stage"] = self._whole_dock_release_stage
+                payload["release"] = self._whole_dock_release_details
                 payload["arm_stage"] = self._whole_dock_arm_stage
                 payload["arm_code"] = self._whole_dock_arm_code
                 self._whole_dock_trial_status = payload

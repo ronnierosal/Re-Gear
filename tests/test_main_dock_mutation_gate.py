@@ -22,7 +22,7 @@ class MainDockAdmissionTests(unittest.TestCase):
         self.module = load_main_module(real_dock_gate=True)
         self.plugin = self.module.Plugin.__new__(self.module.Plugin)
 
-    def test_whole_dock_trial_holds_admission_across_release(self):
+    def _whole_dock_trial(self, release_result=None, verification_error=None):
         held = []
         events = []
         @contextmanager
@@ -45,8 +45,15 @@ class MainDockAdmissionTests(unittest.TestCase):
             return run
         runtime.begin_before_release.side_effect = step("claim")
         self.plugin._return_portable_before_disconnect = Mock(side_effect=step('portable'))
-        release.execute.side_effect = step("release")
-        runtime.verify_gpu_release.side_effect = step("verify")
+        def execute(**kwargs):
+            step("release")()
+            return release_result if release_result is not None else "release"
+        release.execute.side_effect = execute
+        def verify(result):
+            step("verify")()
+            if verification_error is not None:
+                raise verification_error
+        runtime.verify_gpu_release.side_effect = verify
         runtime.execute_claimed.side_effect = step("teardown")
         with patch.object(self.module, "DrmDiscovery") as drm, \
                 patch.object(self.module, "resolve_whole_dock", return_value=binding), \
@@ -59,10 +66,58 @@ class MainDockAdmissionTests(unittest.TestCase):
             drm.return_value.scan.return_value = [NS(boot_vga=False, pci_bdf="gpu")]
             inhibitor.return_value.acquire.return_value.active = True
             inhibitor.return_value.status.return_value.active = True
-            self.assertEqual(self.plugin._run_whole_dock_trial("trial"), "teardown")
-        self.assertEqual(events, ["portable", "claim", "release", "verify", "teardown"])
+            if verification_error is not None:
+                with self.assertRaisesRegex(ValueError, "gpu_release_unverified"):
+                    self.plugin._run_whole_dock_trial("trial")
+            else:
+                self.assertEqual(self.plugin._run_whole_dock_trial("trial"), "teardown")
+        self.assertEqual(events, ["portable", "claim", "release", "verify"] +
+                         ([] if verification_error else ["teardown"]))
+        if verification_error:
+            runtime.execute_claimed.assert_not_called()
         self.assertFalse(held)
         self.assertFalse(self.plugin._whole_dock_trial_runtime[1]["held"])
+
+    def test_whole_dock_trial_holds_admission_across_release(self):
+        self._whole_dock_trial()
+
+    def test_inner_release_reason_survives_failed_verification(self):
+        from regear.application.live_disconnect import LiveDisconnectResult, LiveDisconnectStage
+        result = LiveDisconnectResult(
+            LiveDisconnectStage.NOT_SAFE_AFTER_RELEASE,
+            "removal_safety.portable_render_unverified", released=True,
+            filter_disarmed=True, display_release_code="display_release.master_refused")
+        self._whole_dock_trial(result, ValueError("dock_teardown.gpu_release_unverified"))
+        expected = {"code": result.code, "display_release_code": result.display_release_code,
+                    "released": True, "display_released": False, "filter_disarmed": True}
+        self.assertEqual(self.plugin._whole_dock_release_details, expected)
+        self.plugin._background_operations = set()
+        self.plugin._unloading = False
+        def fail(*args):
+            self.plugin._whole_dock_release_details = expected
+            self.plugin._whole_dock_release_stage = result.stage.value
+            raise ValueError("dock_teardown.gpu_release_unverified")
+        self.plugin._run_whole_dock_trial = fail
+        response = asyncio.run(self.plugin.execute_egpu_disconnect(
+            trial_action="whole_dock_disconnect", release_display=True, trial_confirmed=True))
+        self.assertEqual(response["release"], expected)
+        self.assertFalse(response["ok"])
+        self.assertFalse(response["safe_to_unplug"])
+        self.plugin._run_whole_dock_trial = lambda *args: (_ for _ in ()).throw(
+            ValueError("dock_teardown.begin_preflight_refused"))
+        response = asyncio.run(self.plugin.execute_egpu_disconnect(
+            trial_action="whole_dock_disconnect", release_display=True, trial_confirmed=True))
+        self.assertEqual(response["release"], {})
+
+    def test_release_details_omit_identifiers_and_uncategorized_text(self):
+        from regear.application.live_disconnect import LiveDisconnectResult, LiveDisconnectStage
+        result = LiveDisconnectResult(
+            LiveDisconnectStage.REMOVED, "private/path/0000:01:00.0", removed=("private-gpu",),
+            display_released=(42,), filter_disarmed=True, display_release_code="private path")
+        self._whole_dock_trial(result)
+        self.assertEqual(self.plugin._whole_dock_release_details, {
+            "code": "", "display_release_code": "", "released": False,
+            "display_released": True, "filter_disarmed": True})
 
     def test_reconnect_requires_original_trial(self):
         with self.assertRaises(ValueError):
