@@ -77,6 +77,10 @@ class SleepLeaseHandoff:
         self._prepared: list[LeasePort] = []
         self.status = HandoffStatus()
 
+    def bound_to(self, request: DockPowerRequest) -> bool:
+        """Do not substitute another operation when selecting the power callback."""
+        return request is self._request
+
     def _local_guard(self) -> bool:
         request = self._request
         now = self._now()

@@ -1948,6 +1948,30 @@ class Plugin:
         except Exception:
             return result(Disposition.BLOCKED)
 
+    def _run_dock_power_request(self, request, expected_attachment=""):
+        """Route ordinary power separately from an attached dock teardown."""
+        if request.action != 'shutdown':
+            raise ValueError('dock_power.sleep_unverified')
+        # A missing GPU alone is not an absent dock: USB4 can still be training.
+        if verified_transport_absent() is not True:
+            return self._run_whole_dock_trial(request.operation, expected_attachment,
+                                              power_request=request)
+        with self._dock_mutation_gate().admit(allow_inhibited=True):
+            if (getattr(self, '_unloading', False)
+                    or not request.requested_at <= time.monotonic() < request.deadline
+                    or verified_transport_absent() is not True):
+                raise ValueError('dock_power.preflight_changed')
+            consumed = getattr(self, '_ordinary_power_consumed', None)
+            if consumed is None:
+                consumed = self._ordinary_power_consumed = set()
+            if request.operation in consumed:
+                return DockPowerResult('dock_power.already_consumed')
+            # Original requests are backend-generated and never restored/replayed
+            # after plugin restart. Consume before an ambiguous OS submission.
+            consumed.add(request.operation)
+            result = SystemPowerCommandRunner().request_poweroff()
+            return DockPowerResult(result.code, result.requested is True)
+
     def _run_whole_dock_trial(self, operation: str, expected_attachment: str = "", *, power_request=None):
         """Internal cable-connected trial; admission covers release and teardown.
 
@@ -2311,8 +2335,8 @@ class Plugin:
                 self._whole_dock_arm_code = ""
                 try:
                     if power_request is not None:
-                        result = self._run_whole_dock_trial(power_request.operation,
-                            trial_attachment_token, power_request=power_request)
+                        result = self._run_dock_power_request(power_request,
+                            trial_attachment_token)
                     elif trial_action == "whole_dock_disconnect":
                         result = self._run_whole_dock_trial(uuid.uuid4().hex, trial_attachment_token)
                     else:

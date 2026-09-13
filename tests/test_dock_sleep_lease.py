@@ -3,11 +3,12 @@ import sys
 import unittest
 from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace as NS
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'backend'))
 from regear.adapters.steamos.commands import ManagedProcessStatus
 from regear.adapters.steamos.sleep_inhibitor import Login1SleepInhibitor, SleepGuardController
-from regear.delivery.dock_power_service import DockPowerRequest
+from regear.delivery.dock_power_service import DockPowerRequest, continue_dock_power
 from regear.delivery.dock_sleep_handoff import HandoffCapabilities, SleepLeaseHandoff
 from regear.delivery.dock_sleep_lease import GuardSleepLease
 from regear.domain.models import EgpuPresence
@@ -67,6 +68,36 @@ class GuardSleepLeaseTests(unittest.TestCase):
         self.assertFalse(handoff.submit('sleep'))
         self.assertTrue(handoff.status.protection_verified)
         self.assertTrue(all(g.status().active for g in self.guards))
+
+    def test_power_service_consumes_original_intent_then_hands_off_once(self):
+        events = []
+        consumed = [False]
+        def consume(*fields):
+            if consumed[0]:
+                return False
+            consumed[0] = True
+            events.append('consume')
+            self.assertTrue(all(g.status().active for g in self.guards))
+            return True
+        def submit(request):
+            self.assertTrue(consumed[0])
+            self.assertIs(request, self.request)
+            self.assertFalse(any(g.status().active for g in self.guards))
+            events.append('sleep')
+            return True
+        handoff = self.handoff(submit)
+        runtime = NS(binding=NS(binding='dock', generation='generation'),
+                     verify_power_continuation=lambda operation, **kw: True)
+        def run(request):
+            return continue_dock_power(request, runtime=runtime, store=NS(consume=consume),
+                portable_verified=lambda: True, power=None, admission_held=lambda: True,
+                monotonic=lambda: 11, sleep_handoff=handoff)
+        self.assertEqual(run(replace(self.request)).code, 'dock_power.sleep_handoff_unavailable')
+        self.assertEqual(events, [])
+        self.assertTrue(run(self.request).requested)
+        self.assertFalse(run(self.request).requested)
+        self.assertEqual(events, ['consume', 'sleep'])
+        self.assertTrue(handoff.restore())
 
     def test_another_request_or_adapter_cannot_release_owned_guard(self):
         lease = self.leases[0]

@@ -18,6 +18,42 @@ class MainDockPowerTests(unittest.TestCase):
         boot.start()
         self.addCleanup(boot.stop)
 
+    def test_absent_dock_shutdown_skips_teardown_and_submits_once(self):
+        @contextmanager
+        def admit(**kwargs):
+            yield
+        self.plugin._dock_mutation_gate = lambda: NS(admit=admit)
+        self.plugin._run_whole_dock_trial = Mock()
+        request = self.module.create_power_request('shutdown', 'session')
+        with patch.object(self.module, 'verified_transport_absent', return_value=True), \
+             patch.object(self.module, 'SystemPowerCommandRunner') as runner:
+            runner.return_value.request_poweroff.return_value = NS(
+                requested=True, code='safe_disconnect.poweroff_request_accepted_unverified')
+            self.assertTrue(self.plugin._run_dock_power_request(request).requested)
+            self.assertFalse(self.plugin._run_dock_power_request(request).requested)
+            runner.return_value.request_poweroff.assert_called_once()
+        self.plugin._run_whole_dock_trial.assert_not_called()
+
+    def test_dock_arrival_during_ordinary_power_classification_does_not_submit(self):
+        @contextmanager
+        def admit(**kwargs):
+            yield
+        self.plugin._dock_mutation_gate = lambda: NS(admit=admit)
+        request = self.module.create_power_request('shutdown', 'session')
+        with patch.object(self.module, 'verified_transport_absent', side_effect=[True, False]), \
+             patch.object(self.module, 'SystemPowerCommandRunner') as runner:
+            with self.assertRaisesRegex(ValueError, 'preflight_changed'):
+                self.plugin._run_dock_power_request(request)
+            runner.assert_not_called()
+
+    def test_attached_dock_power_uses_existing_teardown_with_original_request(self):
+        request = self.module.create_power_request('shutdown', 'session')
+        self.plugin._run_whole_dock_trial = Mock(return_value='existing-result')
+        with patch.object(self.module, 'verified_transport_absent', return_value=False):
+            self.assertEqual(self.plugin._run_dock_power_request(request), 'existing-result')
+        self.plugin._run_whole_dock_trial.assert_called_once_with(
+            request.operation, '', power_request=request)
+
     def test_operator_reset_requires_fresh_single_use_preview_and_literal_attestation(self):
         calls = []
         async def background(fn, *args):

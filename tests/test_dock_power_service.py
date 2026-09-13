@@ -40,8 +40,7 @@ class DockPowerCapabilitiesTests(unittest.TestCase):
             'dock_power.sleep_profile_unverified',
             'dock_power.sleep_inhibitor_handoff_unverified',
             'dock_power.sleep_wake_thermal_unverified'])
-        with self.assertRaisesRegex(ValueError, 'sleep_unverified'):
-            create_power_request('sleep', 'session-a')
+        self.assertEqual(create_power_request('sleep', 'session-a').action, 'sleep')
 
     def test_payload_mutation_cannot_change_subsequent_status_or_execution(self):
         status = dock_power_capabilities()
@@ -52,8 +51,7 @@ class DockPowerCapabilitiesTests(unittest.TestCase):
         self.assertIs(fresh['authorizes_action'], False)
         self.assertIs(fresh['actions']['sleep']['actionable'], False)
         self.assertEqual(len(fresh['actions']['sleep']['reason_codes']), 3)
-        with self.assertRaisesRegex(ValueError, 'sleep_unverified'):
-            create_power_request('sleep', 'session-a')
+        self.assertEqual(create_power_request('sleep', 'session-a').action, 'sleep')
 
 
 class DockPowerServiceTests(unittest.TestCase):
@@ -120,11 +118,10 @@ class DockPowerServiceTests(unittest.TestCase):
             create_power_request('shutdown', 'session-a',
                 monotonic=lambda: 1e20, ttl_seconds=300)
 
-    def test_sleep_refused_before_any_teardown(self):
-        with self.assertRaisesRegex(ValueError, 'sleep_unverified'):
-            create_power_request('sleep', 'session-a')
+    def test_sleep_requires_its_actual_handoff_before_consumption(self):
+        self.assertEqual(create_power_request('sleep', 'session-a').action, 'sleep')
         self.request = replace(self.request, action='sleep')
-        self.assertEqual(self.run_request().code, 'dock_power.sleep_unverified')
+        self.assertEqual(self.run_request().code, 'dock_power.sleep_handoff_unavailable')
         self.assertEqual(self.calls, [])
 
     def test_shutdown_consumes_exact_original_bound_fields_before_power(self):

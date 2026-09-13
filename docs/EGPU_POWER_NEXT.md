@@ -58,6 +58,23 @@ software reconnect or device experiment is part of this code checkpoint.
 
 ## Validation next
 
+The user explicitly replaced blanket sleep/shutdown refusal with automatic
+disconnect-before-power. The delivery service now accepts an original sleep
+intent and can continue it through the exact-request `SleepLeaseHandoff` after
+durable consumption. Intent creation alone does not start sleep. Existing
+shutdown dispatch now routes verified transport absence to ordinary poweroff,
+rechecking under admission and consuming before submission; connected docks
+still use the same teardown. It does not require an idle game or supported eGPU
+profile on the verified-absent path. This absence reader currently covers USB4
+hosts; broader platform absence discovery remains separate.
+
+Remaining production work: the still-cabled/already-down route, actual sleep
+observer and two-lease handoff wiring, and exact Steam Sleep/Shutdown interception.
+The current Steam observer drops request arguments; the UI primary is inspecting
+the action contract. Do not remove interception before replacement routing is
+connected, or native sleep could race the requested disconnect. No installed
+blockers were removed by this source checkpoint; this build is not packaged.
+
 Focused command tests and existing shutdown coordinator tests cover the new
 adapter without hardware calls. Preserve current golden tests and add integrated
 original-intent, duplicate/cancel, failure-before-power, ordinary-no-dock and
@@ -65,3 +82,29 @@ resume-without-reauthorization checks at actual production seams. Run one bounde
 supervised poweroff trial first, then cable-connected sleep/wake with handheld
 operation and charging observed. Prior automatic-TV evidence remains valid unless
 new changes affect that path; do not repeat unchanged broad trials by default.
+
+## Manual sleep trial after live disconnect, 2026-09-13 04:05 UTC
+
+Installed build remains 0.3.98. User authorized a live software disconnect,
+manual sleep with cable attached, then wake/readback; no software reconnect.
+Fresh preflight showed idle, TV active and no retained dock claim. The first
+script did not dispatch because it required a preview token unavailable after a
+completed trial. The second used the existing backend current-attachment path;
+its response channel closed during session restart, so it was not retried.
+Fresh capture verified dock_teardown.software_down, busy=false, ok=true,
+live_disconnect.removed, display_release.released and durable software_down
+claim. User then attempted manual sleep and reported it was blocked.
+
+Read-only systemd-inhibit at 04:05:45 UTC showed TWO Handheld Dock Mode sleep
+block inhibitors (PIDs 37189 and 12372). Other listed inhibitors were ordinary
+delay inhibitors. GPU remained absent and the software_down claim remained.
+This establishes the installed build still blocks sleep after successful dock
+removal; it does not establish a wake or firmware problem. No sleep/wake occurred,
+no inhibitor was killed, and no force-suspend or software reconnect was attempted.
+Battery status reported Not charging; that alone does not establish power loss
+or failure of charging retention (capacity/external-power evidence was not read).
+Capture: whole-dock-disconnect/out/0398-disconnect-1789272173165.jsonl.
+
+Next: finish the two-lease production handoff already under implementation, then
+run a focused sleep/wake trial. Do not rerun disconnect merely to reconfirm this
+same blocker. The automatic-TV and physical reconnect golden evidence stands.
