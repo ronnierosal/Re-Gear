@@ -57,12 +57,14 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
   let binding = loadMenuBinding(storage);
   let modal: ReturnType<typeof showModal> | null = null;
   let operation: ReturnType<typeof showModal> | null = null;
+  let operationGeneration=0;
+  const hideOperation=()=>{const previous=operation;operation=null;operationGeneration++;previous?.Close();};
   const visibility = createMenuVisibility();
   let opening = false;
   let stopped = false;
   let generation = 0;
   const close = () => {
-    operation?.Close(); operation=null;
+    hideOperation();
     const previous = modal;
     modal = null;
     generation++;
@@ -75,14 +77,17 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
     // One explicit activation owns one consumable request across React remounts.
     let consumed=false;
     const startRequest=()=>{if(consumed)return false;consumed=true;return true;};
-    const hide=()=>{const old=operation;operation=null;old?.Close();};
-    operation=showModal(<EgpuConfirmModal strTitle="Safe Disconnect" strOKButtonText="Hide" bAlertDialog onOK={hide} onCancel={hide} onEscKeypress={hide} className="rg-whole-dock-progress">
+    const operationToken=++operationGeneration;
+    const hide=()=>{if(operationGeneration===operationToken)hideOperation();};
+    const opened=showModal(<EgpuConfirmModal strTitle="Safe Disconnect" strOKButtonText="Hide" bAlertDialog onOK={hide} onCancel={hide} onEscKeypress={hide} className="rg-whole-dock-progress">
       <style>{`.rg-whole-dock-progress{position:fixed!important;left:50%!important;top:50%!important;right:auto!important;bottom:auto!important;margin:0!important;transform:translate(-50%,-50%)!important}`}</style>
       <WholeDockControl intent="disconnect_only" readCurrentSnapshot={readCurrentSnapshot} startRequest={startRequest}/>
     </EgpuConfirmModal>,host,{fnOnClose:hide,bNeverPopOut:true});
+    if(operationGeneration!==operationToken){opened.Close();return;}
+    operation=opened;
   }
   function View({ token }: { token: number }) {
-    useEffect(() => () => { if (generation === token) { operation?.Close();operation=null;modal = null; generation++; utilities?.stop(); visibility.set(false); } }, [token]);
+    useEffect(() => () => { if (generation === token) { hideOperation();modal = null; generation++; utilities?.stop(); visibility.set(false); } }, [token]);
     // Live subscription, not a read at open.
     //
     // Reading once when the menu opened left whatever was true at that moment

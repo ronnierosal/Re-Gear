@@ -86,7 +86,11 @@ must remain unavailable and do not block this UI test build. PR330 `2198b735e948
 is authoritative for presentation. Integration starts from installed predecessor
 `ae66baec12ed36f0d0b5ea117e3774f02125e990`; no old PR306 branch is reintroduced.
 The validated runtime baseline remains **0.3.98 / f6059fad8c213a059aa77cbba15524ef2d9149ae**.
-Version **0.3.100 is a test build**, never promoted by installation alone.
+Version **0.3.101 is a test build**, never promoted by installation alone.
+The immutable0.3.100 package was staged but withheld from installation after independent
+review reproduced an old popup callback closing its replacement. A failing regression
+now passes with operation-generation ownership. Current main847ba13 adds only Wiki
+documentation and mockup assets and is included for final integration preflight.
 
 Current bounded changes:
 
@@ -108,7 +112,7 @@ Current bounded changes:
   option or speculative authorization popup is introduced. Right-rail actions without
   providers stay unavailable. X/Y customization remains outside this narrowed build.
 
-Validation before final packaging: 868 frontend tests; TypeScript/build/package checks;
+Validation before final packaging: 870 frontend tests; TypeScript/build/package checks;
 3512 backend tests passed with 291 platform skips; 49 golden tests/all 8 contracts;
 architecture and compilation. Browser source fixture at 828x466 and1280x720 confirms
 equal heights across five tabs, viewport fit and keyboard rail entry/return. Native

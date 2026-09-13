@@ -24,6 +24,14 @@ test('native Safe Disconnect activation opens one centered progress surface with
   assert.equal(control.props.startRequest(),true);assert.equal(control.props.startRequest(),false);
   h.menu.stop();
 });
+test('delayed close callback from an old operation cannot close the replacement',()=>{
+  const h=harness();h.menu.open();const view=h.mount();
+  view.props.onDisconnect();const old=h.modals[1];old.node.props.onOK();
+  view.props.onDisconnect();const current=h.modals[2];old.options.fnOnClose();
+  assert.equal(current.closed,false);
+  view.props.onDisconnect();assert.equal(h.modals.length,3);
+  h.menu.stop();assert.equal(current.closed,true);
+});
 
 function harness() {
   const h = { modals: [], cleanup: [], throwOpen: false, stopped: false, allowed: true };
@@ -36,10 +44,10 @@ function harness() {
     ExpandedCommandCenter: "expanded", WholeDockControl: "dock", ShortcutSettings: "settings",
     loadMenuBinding: () => "view-y", saveMenuBinding: () => true, menuBindingOptions: [],
     startMenuShortcut: options => { h.shortcutOpen = options.open; return { available: true, reset() {}, stop() { h.stopped = true; } }; },
-    showModal: node => {
+    showModal: (node,_host,options) => {
       if (h.throwOpen) throw Error("host unavailable");
       h.onHostOpen?.();
-      const modal = { node, closed: false, Close() { this.closed = true; } };
+      const modal = { node, options, closed: false, Close() { this.closed = true; } };
       h.modals.push(modal); return modal;
     },
   };
