@@ -24,6 +24,30 @@ from .game_frame_collector import GameFrameCollector
 from .tdp_sensor_readiness import TdpSensorReadinessConfig
 
 
+def _session_clock() -> float:
+    """Seconds on a clock that keeps counting while the handheld is suspended.
+
+    Every Auto TDP staleness guard is measured on this one clock: the frame
+    window, the sample age, the `sample_gap` streak break and the dispatch
+    freshness recheck. CLOCK_MONOTONIC stops during suspend, which would make an
+    arbitrarily long sleep between two samples indistinguishable from the
+    ordinary cadence -- so a pre-suspend missed-target streak would survive it
+    and complete a quorum that writes after resume, on evidence measured before
+    the device slept. CLOCK_BOOTTIME keeps counting, so the discontinuity is
+    visible and the existing guards discard the stale evidence by themselves.
+
+    Same distinction, and the same fallback, as `_relaunch_now` in main.py and
+    `RelaunchClock` in the domain.
+    """
+    boottime = getattr(time, "CLOCK_BOOTTIME", None)
+    if boottime is not None:
+        try:
+            return time.clock_gettime(boottime)
+        except OSError:
+            pass
+    return time.monotonic()
+
+
 class AutoTdpSessionFactory:
     def __init__(self, *, resolve: Callable[[], PerformanceTargetResolution],
                  eligibility: Callable[[], AutoTdpEligibility],
@@ -32,7 +56,7 @@ class AutoTdpSessionFactory:
                  thermal_evidence_reference: str,
                  contract: TelemetryCollectionContract,
                  frame_policy: FrameWindowPolicy = FrameWindowPolicy(),
-                 clock: Callable[[], float] = time.monotonic,
+                 clock: Callable[[], float] = _session_clock,
                  performance_reader: GamescopePerformanceReader | None = None,
                  sensors: Callable[[], TdpSensorInventory] | None = None,
                  host_context: Callable[[TdpReading], AutoTdpHostContext] | None = None):
