@@ -26,29 +26,29 @@ const railStyles = `
 .rg-utility-label{display:block;font-size:11px;font-weight:700;line-height:1.15;overflow-wrap:normal;word-break:normal}
 .rg-utility-value{display:block;font-size:8.5px;line-height:1.2;color:#87aabd;margin-top:3px;overflow-wrap:normal;word-break:normal}
 
-/* Brightness + volume are one integrated utility strip inside Command Center. */
-.rg-utility-slider{display:flex;flex:1 1 0;min-height:0;flex-direction:column;align-items:center;justify-content:center;gap:4px;background:transparent;border:0;border-radius:0;box-shadow:none;padding:5px 2px;overflow:visible}
-.rg-utility-slider+.rg-utility-slider{border-top:1px solid #294f68;padding-top:8px}
+/* Brightness + volume are compact integrated controls, not tall cards. */
+.rg-utility-slider{display:flex;flex:1 1 0;min-height:0;flex-direction:column;align-items:center;justify-content:center;gap:3px;background:transparent;border:0;border-radius:0;box-shadow:none;padding:4px 2px;overflow:visible}
+.rg-utility-slider+.rg-utility-slider{border-top:1px solid #294f68;padding-top:6px}
 .rg-utility-slider .rg-utility-icon{margin-bottom:0;color:#d2efff}
-.rg-utility-slider .rg-utility-icon svg{width:19px;height:19px}
-.rg-utility-slider input{writing-mode:vertical-lr;direction:rtl;width:24px;height:clamp(54px,13vh,88px);margin:2px 0;accent-color:#39d8ff}
-.rg-utility-rail[data-utility-side=left]{gap:0;padding:7px 5px;border:1px solid #294f68;border-radius:12px;background:#071825e8;box-shadow:inset 0 1px 0 #ffffff08}
-.rg-utility-rail[data-utility-side=left] .rg-utility-label{font-size:9.5px}.rg-utility-rail[data-utility-side=left] .rg-utility-value{font-size:8px;color:#91b5ca}
+.rg-utility-slider .rg-utility-icon svg{width:18px;height:18px}
+.rg-utility-slider input{writing-mode:vertical-lr;direction:rtl;width:20px;height:clamp(42px,8vh,62px);margin:1px 0;accent-color:#39d8ff}
+.rg-utility-rail[data-utility-side=left]{gap:0;padding:6px 4px;border:1px solid #294f68;border-radius:12px;background:#071825e8;box-shadow:inset 0 1px 0 #ffffff08}
+.rg-utility-rail[data-utility-side=left] .rg-utility-label{font-size:9px}.rg-utility-rail[data-utility-side=left] .rg-utility-value{font-size:7.5px;color:#91b5ca}
 
-/* Right side remains a compact icon-first action rail, not a second dashboard. */
-.rg-utility-rail[data-utility-side=right]{gap:7px}
-.rg-utility-rail[data-utility-side=right] .rg-utility-control{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:clamp(58px,13vh,84px);padding:7px 4px;background:linear-gradient(150deg,#102b3d,#081b29)}
-.rg-utility-rail[data-utility-side=right] .rg-utility-icon{width:30px;height:30px;margin-bottom:4px;border-radius:9px;border:1px solid #315c75;background:#0a2232;color:#d5effd}
-.rg-utility-rail[data-utility-side=right] .rg-utility-icon svg{width:20px;height:20px}
-.rg-utility-rail[data-utility-side=right] .rg-utility-label{font-size:9.5px}
-.rg-utility-rail[data-utility-side=right] .rg-utility-value{font-size:7px;margin-top:2px;max-width:100%;color:#7899ad}
+/* Right rail is intentionally compact: four actions must fit without scrolling. */
+.rg-utility-rail[data-utility-side=right]{gap:6px;overflow:hidden}
+.rg-utility-rail[data-utility-side=right] .rg-utility-control{display:flex;flex:0 1 auto;flex-direction:column;align-items:center;justify-content:center;height:clamp(48px,10vh,68px);min-height:0;max-height:68px;padding:5px 3px;background:linear-gradient(150deg,#102b3d,#081b29)}
+.rg-utility-rail[data-utility-side=right] .rg-utility-icon{width:27px;height:27px;margin-bottom:3px;border-radius:8px;border:1px solid #315c75;background:#0a2232;color:#d5effd}
+.rg-utility-rail[data-utility-side=right] .rg-utility-icon svg{width:18px;height:18px}
+.rg-utility-rail[data-utility-side=right] .rg-utility-label{font-size:8.5px;line-height:1.05}
+.rg-utility-rail[data-utility-side=right] .rg-utility-value{font-size:6.5px;line-height:1.05;margin-top:1px;max-width:100%;color:#7899ad}
 .rg-utility-rail[data-utility-side=right] .rg-utility-control:not(:disabled) .rg-utility-icon{color:#54ddff;border-color:#448ba7}
 .rg-utility-rail[data-utility-side=right] .rg-utility-control:disabled .rg-utility-icon{color:#829eb1;border-color:#2f4e61;background:#091c2a}
 
 @media(max-height:520px){
-  .rg-utility-control{border-radius:9px;padding:4px}.rg-utility-icon svg{width:19px;height:19px}.rg-utility-label{font-size:9px}.rg-utility-value{font-size:7px;margin-top:2px}
-  .rg-utility-slider{gap:2px;padding:3px 2px}.rg-utility-slider+.rg-utility-slider{padding-top:5px}.rg-utility-slider input{height:48px;width:20px}
-  .rg-utility-rail[data-utility-side=right]{gap:5px}.rg-utility-rail[data-utility-side=right] .rg-utility-control{min-height:54px;padding:4px}.rg-utility-rail[data-utility-side=right] .rg-utility-icon{width:27px;height:27px;margin-bottom:3px}.rg-utility-rail[data-utility-side=right] .rg-utility-icon svg{width:18px;height:18px}.rg-utility-rail[data-utility-side=right] .rg-utility-label{font-size:8.5px}.rg-utility-rail[data-utility-side=right] .rg-utility-value{font-size:6.5px}
+  .rg-utility-control{border-radius:9px;padding:4px}.rg-utility-icon svg{width:18px;height:18px}.rg-utility-label{font-size:8.5px}.rg-utility-value{font-size:6.5px;margin-top:1px}
+  .rg-utility-slider{gap:2px;padding:2px}.rg-utility-slider+.rg-utility-slider{padding-top:4px}.rg-utility-slider input{height:38px;width:18px}
+  .rg-utility-rail[data-utility-side=right]{gap:4px}.rg-utility-rail[data-utility-side=right] .rg-utility-control{height:46px;max-height:46px;padding:3px}.rg-utility-rail[data-utility-side=right] .rg-utility-icon{width:23px;height:23px;margin-bottom:2px}.rg-utility-rail[data-utility-side=right] .rg-utility-icon svg{width:16px;height:16px}.rg-utility-rail[data-utility-side=right] .rg-utility-label{font-size:7.5px}.rg-utility-rail[data-utility-side=right] .rg-utility-value{font-size:6px}
 }
 `;
 
