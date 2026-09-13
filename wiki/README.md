@@ -60,6 +60,13 @@ evidence. No automatic publication job is configured.
 
 ## Troubleshooting authoring
 
+Use [the feature and guide template](../docs/templates/WIKI_FEATURE_TEMPLATE.md)
+for substantive pages: a short plain-language summary, **For players — no
+technical background needed**, and **Technical details — for advanced users and
+contributors**. Keep sections proportional, use actual interface labels, and link
+shared explanations. Navigation pages do not need artificial technical sections.
+[Diagnostics and Privacy](Diagnostics-and-Privacy.md) is the worked example.
+
 Use [the repository troubleshooting/lessons template](../docs/templates/WIKI_TROUBLESHOOTING_TEMPLATE.md)
 when a feature has a recurring symptom or enough device-specific evidence for a
 useful guide. Link it from its parent feature and `_Sidebar.md`; preserve source,

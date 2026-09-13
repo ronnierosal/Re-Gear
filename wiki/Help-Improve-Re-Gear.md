@@ -1,57 +1,84 @@
-# Help Improve Re-Gear
+# Help improve Re-Gear
 
-**Audience:** players on any SteamOS handheld configuration<br>
-**Reviewed:** 2026-09-06<br>
-**Status:** existing diagnostics and support-preview guidance; packaged one-click diagnostic helper is future work
+You do not need to write code to help. A clear description of what happened,
+plus a report you have reviewed, helps contributors investigate a problem.
 
-You do not need to write code to help. Clear descriptions, reviewed diagnostic reports, and feedback about confusing controls help us reproduce problems and improve compatibility. Reports from new configurations are useful even when a feature is unavailable; a report does not automatically certify that hardware.
+## For players — no technical background needed
 
-## What to include
+### Send a useful report
 
-Search [open and closed issues](https://github.com/ronnierosal/Re-Gear/issues?q=is%3Aissue) for the same symptom before creating a report. Keep unrelated problems separate.
+1. Search [open and closed issues](https://github.com/ronnierosal/Re-Gear/issues?q=is%3Aissue)
+   for the same symptom. Add relevant information to a matching issue, or create
+   a new one if none fits. Keep unrelated problems separate.
+2. Describe what you expected, what happened instead, the shortest steps that
+   led to it, and how often it happens.
+3. Include the details below when available. Missing information is fine; say
+   what you could not check rather than guessing.
+4. If your build offers **Preview redacted support bundle** under
+   **Troubleshoot**, follow [Diagnostics and Privacy](Diagnostics-and-Privacy)
+   to review, copy or save a report. Attach only the reviewed report to the
+   issue. Saving a report does not send it to GitHub automatically.
 
-- What you expected and what happened instead.
-- The shortest steps that led to the problem, and how often it occurs.
-- Re-Gear version and build revision from the installed interface, plus SteamOS and Decky versions when available.
-- Handheld, dock/eGPU, display, and controller model names relevant to the problem. Model names help reproduce it; serial numbers and private identifiers do not.
-- Whether a game was running and whether the internal or external screen was active.
-- A reviewed support report and an optional cropped screenshot with private information removed.
+| Include | Why it helps |
+|---|---|
+| Re-Gear version and build revision shown by the installed interface; SteamOS and Decky versions if known | Identifies the software you actually used |
+| Relevant handheld, dock/eGPU, display and controller model names | Helps compare setups; omit serial numbers and other private identifiers |
+| Whether a game was running, which screen was active, and whether picture, audio and controls worked afterward | Describes the state before and after the problem |
+| Optional cropped screenshot with private information removed | Shows an error or confusing control without exposing account information |
 
-For offline-play reports, include the displayed badge/reason and whether a real offline launch was attempted. A readiness badge is not proof of a launch. Do not repeat a risky hardware failure just to obtain a report.
+For offline-play reports, include the displayed badge/reason and whether a real
+offline launch was attempted. A readiness badge does not prove a game launched.
+Reports from unfamiliar hardware are useful, but do not establish support for it.
 
-## Easiest option: the built-in support preview
+### If you cannot collect a report
 
-If your installed build exposes support preview/export:
+If support controls are missing, report your build and symptom anyway. The
+controls exist in development source, but availability depends on your installed
+build; see [Getting Started](Getting-Started). Do not install an unrelated
+candidate just to collect diagnostics. If preview, copy or save fails, use the
+[diagnostics troubleshooting steps](Diagnostics-and-Privacy#if-it-does-not-work).
 
-1. Open Re-Gear's troubleshooting/support controls in Decky.
-2. Generate the support preview and review the exact report before sharing.
-3. Copy the reviewed JSON or approve saving it. The current save flow creates a support JSON file in Downloads; use the relative filename shown by the interface.
-4. Attach only that reviewed report to the matching GitHub issue, together with the symptom description.
+You do not need to repeat a risky hardware failure to make a useful report.
+Review any text or screenshot you add yourself as well as the generated report.
+Do not post passwords, tokens, account details, network addresses, serial numbers,
+private folders or raw system logs.
 
-Labels and availability can vary by build. If the control is absent, report the build and symptom; do not install an unrelated candidate simply to collect diagnostics. Export is local and does not automatically send anything to GitHub.
+Maintainers may ask a focused follow-up to resolve missing evidence. A report
+helps investigate a fault; it is not permission to disconnect a powered eGPU or
+perform a hardware test. Follow [Safety and eGPU Handling](Safety-and-eGPU-Handling).
 
-## Optional terminal check
+## Technical details — for advanced users and contributors
 
-For users comfortable with a terminal, an existing read-only Python diagnostic module can print a redacted snapshot. From a Re-Gear source checkout on SteamOS:
+### Collection interfaces
 
-```sh
-PYTHONPATH=backend python3 -m regear.cli --compact
-```
+Prefer the built-in support preview when available: it can include recent
+in-memory Re-Gear events. The separate read-only CLI provides a snapshot and
+cannot recreate all of that history. Use the
+[reviewed CLI instructions](Diagnostics-and-Privacy#interfaces-and-privacy-boundary)
+and [diagnostics contract](https://github.com/ronnierosal/Re-Gear/blob/main/docs/DIAGNOSTICS.md)
+for source or installed-tree commands. Run diagnostic collection without sudo;
+permission-limited values can remain unknown. Decky ZIPs do not install a global
+`regear-diagnose` command.
 
-For a Decky-installed copy, have a maintainer confirm the plugin directory and namespace. The published `v0.3.73` archive uses `hdm.cli`; packages built after the namespace change use `regear.cli` as shown below. Replace `/path/to/plugin` with the confirmed directory and use the module belonging to that package:
+The [community-report helper procedure](https://github.com/ronnierosal/Re-Gear/blob/main/docs/COMMUNITY_REPORT.md)
+is a separate guided collection route. Follow its exact reviewed download and
+checksum instructions; it is not automatically included in existing Decky ZIPs.
+It runs the trusted installed diagnostic module, previews selected information,
+and saves only after the user's explicit response. It does not upload the report.
 
-```sh
-PYTHONPATH="/path/to/plugin/backend" python3 -m regear.cli --compact
-```
+### Evidence and validation limits
 
-These commands print JSON locally; review it before copying it into an issue. They do not upload data, restart services, switch GPUs, close games, or perform a hardware stress test. Run without sudo; permission-limited fields can remain unknown. This separate CLI snapshot does not contain all in-memory plugin events, so the built-in support preview is preferable when available.
+Guidance reviewed against merged source `6d315af` on **2026-09-13**. The
+[support-bundle contract](https://github.com/ronnierosal/Re-Gear/blob/main/docs/SUPPORT_BUNDLE.md)
+and [tests](https://github.com/ronnierosal/Re-Gear/blob/6d315afd9498d8b7cae6c539f79758e0750cb058/tests/test_support_bundle.py)
+cover bounded reporting, redaction and preview approval. A report is diagnostic
+evidence, not proof that a fix is installed, a feature works on every device or
+physical removal is safe. This documentation review performed no installed
+collection or hardware trial.
 
-The Decky ZIP does not install a global `regear-diagnose` command. For guided collection, follow the reviewed [community-report helper procedure](https://github.com/ronnierosal/Re-Gear/blob/main/docs/COMMUNITY_REPORT.md), which keeps preview and sharing separate.
-
-## Privacy and follow-up
-
-The collection contract uses bounded, redacted categorical evidence. Never attach private keys, passwords, tokens, Steam account details, IP addresses, serial numbers, home directories, raw system journals, or unrestricted process dumps. Review screenshots and any text you add yourself too.
-
-Maintainers may request a focused follow-up for an identified evidence gap. A diagnostic report helps explain a failure; it is not permission to run display/GPU transitions, disconnect a powered eGPU, or change system settings.
-
-Authoritative details: [Diagnostics](https://github.com/ronnierosal/Re-Gear/blob/main/docs/DIAGNOSTICS.md), [Support bundle](https://github.com/ronnierosal/Re-Gear/blob/main/docs/SUPPORT_BUNDLE.md), and [Confirmed Hardware Testing](Confirmed-Hardware-Testing).
+When following up, identify the specific missing observation and preserve the
+reported build, setup and timing. Distinguish unknown fields from absent devices,
+reported observations from captured evidence, and source fixes from installed
+results. Link dated hardware evidence through
+[Confirmed Hardware Testing](Confirmed-Hardware-Testing); do not turn a community
+report into a certification claim.

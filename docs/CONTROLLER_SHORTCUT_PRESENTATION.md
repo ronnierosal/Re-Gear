@@ -1,12 +1,53 @@
-# Controller Safe Undock presentation
+# Controller shortcuts and Safe Undock presentation
 
-Status: **Implemented locally; native controller delivery and hardware validation pending**
+## Current mounted menu shortcut
+
+Source checkpoint: `ab87e2e0f6b7beb462cacdc7f83e2f5d280844db` (2026-09-13).
+The production plugin mounts `createExpandedMenu` with Steam controller input.
+Its [menu listener](../src/menu-shortcut.ts) opens Re-Gear immediately on an
+exact two-button press; it has no hold timer and dispatches no display, power,
+or Safe Undock action. The player can choose **View / Back + Y** (default),
+**L3 + R3**, or **Disabled**. The native settings route persists the choice in
+`regear.menu-shortcut.v1` and resets partial chords when it changes.
+
+The source records an Ally capture of View/Back as SELECT 35, Y as 3, and stick
+clicks as 25/41; View 9 is also accepted for providers emitting that action.
+These are source-recorded device observations, not universal controller or
+transport mappings. The [native validation record](COMMAND_CENTER_VALIDATION.md)
+reports two menu openings with a temporary corrected listener; it does not
+establish acceptance of the current installed build.
+
+The listener matches within one controller, ignores repeated edges, and
+requires full release before rearming after a match. A release cannot turn a
+larger held combination into a new shortcut. It validates an entire input
+batch before processing any row. Available controller-list/active-controller
+callbacks reset state; an input-only subscription remains supported when those
+optional callbacks are absent. Partial unlatched state expires on a subsequent
+event after more than 1.5 seconds without input. This is not proof of physical
+disconnect detection. Unload unregisters subscriptions and makes callbacks inert.
+
+Input observation is non-exclusive: it cannot suppress Steam or game handling
+of the same buttons. Native focus, reconnect, missed lifecycle notifications,
+and each model/transport still need their own supervised acceptance. See
+[menu regression tests](../frontend-tests/menu-shortcut.test.mjs) and
+[native launcher](../src/quick-access/expanded-command-center/native.tsx).
+
+## Dormant display shortcut and logical Safe Undock policy
+
+The production [plugin composition](../src/index.tsx) constructs
+`createDisplayShortcutRuntime` with `input: undefined`: View+Y belongs to the
+menu. Explicit display requests retain their existing approval/confirmation
+route. The display hold listener and pure logical Safe Undock relay below are
+separate tested foundations, not active controller gestures. Do not re-enable
+the display listener alongside the menu listener for the same chord.
+
+Status: **Dormant hold contracts; native delivery and hardware validation pending.**
 
 The requested gesture is **Back/View + Y held for 3 seconds**. The pure backend
 policy retains that threshold, exact-chord matching and verified-evidence
 requirements. Its dormant logical-action relay remains separately tested.
 
-The frontend candidate uses SteamClient.Input's non-exclusive native input
+The dormant frontend candidate uses SteamClient.Input's non-exclusive native input
 messages and controller-list changes, falling back to active-controller changes
 on Steam builds such as the Ally that lack the list API. The installed Ally
 returned valid unregister handles for both button and active-controller
@@ -31,8 +72,9 @@ change during the hold cancels it. Confirming calls the existing supervised TV
 or Portable approval/execution APIs, which revalidate readiness and game state.
 The controller route never calls shutdown. The panel retains its separate
 shutdown action in Portable mode. A shared busy guard prevents overlapping
-manual display actions. The always-rendered Decky content owns and cleans up
-the subscription; unavailable APIs leave the ordinary panel controls available.
+manual display actions. The plugin runtime owns cleanup: its `onDismount`
+callback stops both the dormant runtime and the active menu listener.
+Unavailable input APIs leave the ordinary panel controls available.
 The pure backend Safe Undock relay is a separate dormant contract; this frontend
 display shortcut does not invoke it.
 
@@ -54,7 +96,12 @@ It is not implemented: see [power-button feasibility](POWER_BUTTON_SAFE_UNDOCK.m
 The first press must preserve Steam's normal Sleep behavior. No UI advertises
 power-button shortcut support or safe live unplugging.
 
-## First supervised controller check
+## Historical display-hold validation plan (not runnable on the mounted menu path)
+
+The following plan belongs to the earlier display-shortcut candidate. It would
+require a separately reviewed, nonconflicting input assignment before use;
+holding the current menu chord does not invoke this confirmation. For current
+menu acceptance, use the native checks linked above.
 
 Install only with the G1 disconnected. During a later supervised attached, idle
 session, first test confirmation delivery without confirming any transition.
