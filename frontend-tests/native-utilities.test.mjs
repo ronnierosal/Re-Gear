@@ -7,6 +7,8 @@ const base = "../src/quick-access/expanded-command-center/";
 const compile = (name) => ts.transpileModule(readFileSync(new URL(base + name, import.meta.url), "utf8"), {
   compilerOptions: { module: ts.ModuleKind.ES2022, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.React },
 }).outputText;
+const {testBuildTiles,unavailableTestActions}=await import(`data:text/javascript;base64,${Buffer.from(compile("test-build-actions.ts")).toString("base64")}`);
+const GamepadButton={DIR_UP:9,DIR_DOWN:10,DIR_LEFT:11,DIR_RIGHT:12};
 const { createNativeUtilities } = await import(`data:text/javascript;base64,${Buffer.from(compile("native-utilities.ts")).toString("base64")}`);
 const settle = () => new Promise(resolve => setImmediate(resolve));
 const deferred = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; };
@@ -188,7 +190,7 @@ test("native menu forwards adapter state and calls into the real shell and rail"
   const h = systemHarness();
   let modalTree, closed = 0;
   const Native = loadComponent("native.tsx", "createExpandedMenu", {
-    ...hooks, createNativeUtilities, ExpandedCommandCenter: Shell,
+    ...hooks, createNativeUtilities, testBuildTiles, unavailableTestActions, GamepadButton, EgpuConfirmModal:"confirm", ExpandedCommandCenter: Shell,
     createMenuVisibility: () => ({ source: {}, set() {} }),
     loadMenuBinding: () => "none", saveMenuBinding: () => true, menuBindingOptions: [],
     startMenuShortcut: () => ({ available: true, stop() {}, reset() {} }),
@@ -229,4 +231,48 @@ test("native menu forwards adapter state and calls into the real shell and rail"
   assert.equal(plain.props.onUtilityRequest, undefined);
   assert.deepEqual(plain.props.utilityReadings, {});
   noSteam.stop();
+});
+
+// Append to frontend-tests/native-utilities.test.mjs: uses its Rail, flatten, deferred, settle.
+const railDirections = { up: 9, down: 10, left: 11, right: 12 }; // @decky/ui FooterLegend.d.ts
+function railHarness({ unavailable = false, onRequest = async () => {} } = {}) {
+  const h = { returned: 0, focused: null };
+  const tree = Rail({ side: 'left', directions: railDirections,
+    readings: { brightness: { available: !unavailable, percent: 50, value: '50%' }, volume: { available: true, percent: 40, value: '40%' } },
+    onRequest, onReturnToGrid: () => h.returned++ });
+  h.nodes = flatten(tree).filter(n => n.props?.['data-utility-slider'] !== undefined);
+  h.wrappers = h.nodes.map((node, index) => {
+    const inputNode = flatten(node).find(n => n.type === 'input');
+    const input = { tagName: 'INPUT', value: String(inputNode.props.value), disabled: inputNode.props.disabled, focus() { h.focused = input; } };
+    const wrapper = { tagName: 'DIV', input, querySelector(selector) { return selector.includes(':not(:disabled)') && input.disabled ? null : input; }, focus() { h.focused = wrapper; } };
+    return wrapper;
+  });
+  for (const wrapper of h.wrappers) wrapper.parentElement = { querySelectorAll: () => h.wrappers };
+  h.event = (index, editing = false, button) => ({ target: editing ? h.wrappers[index].input : h.wrappers[index], currentTarget: h.wrappers[index], detail: { button }, prevented: 0, stopped: 0, preventDefault() { this.prevented++; }, stopPropagation() { this.stopped++; } });
+  h.direction = (index, editing, button) => { const event = h.event(index, editing, button); h.nodes[index].props.onGamepadDirection(event); return event; };
+  return h;
+}
+test('native rail selects wrappers, enters editing with A, and returns to grid with RIGHT', () => {
+  const calls = [], h = railHarness({ onRequest: async (...args) => calls.push(args) });
+  const event = h.direction(0, false, railDirections.down);
+  assert.equal(h.focused, h.wrappers[1]); assert.equal(event.prevented, 1); assert.equal(event.stopped, 1);
+  h.direction(1, false, railDirections.up); assert.equal(h.focused, h.wrappers[0]);
+  h.nodes[0].props.onOKButton(h.event(0)); assert.equal(h.focused, h.wrappers[0].input);
+  h.nodes[0].props.onCancelButton(h.event(0, true)); assert.equal(h.focused, h.wrappers[0]);
+  h.direction(0, true, railDirections.right); assert.equal(h.returned, 1);
+  h.direction(1, false, railDirections.right); assert.equal(h.returned, 2);
+  assert.deepEqual(calls, []);
+});
+test('native rail editing accumulates repeated directions and coalesces pending requests', async () => {
+  const pending = deferred(), calls = [];
+  const h = railHarness({ onRequest: async (...args) => { calls.push(args); if (calls.length === 1) await pending.promise; } });
+  h.direction(0, true, railDirections.up); h.direction(0, true, railDirections.up); h.direction(0, true, railDirections.up);
+  assert.deepEqual(calls, [['brightness', 51]]);
+  pending.resolve(); await settle();
+  assert.deepEqual(calls, [['brightness', 51], ['brightness', 53]]);
+});
+test('unavailable slider never dispatches and cannot enter editing', async () => {
+  const calls = [], h = railHarness({ unavailable: true, onRequest: async (...args) => calls.push(args) });
+  h.nodes[0].props.onOKButton(h.event(0)); assert.equal(h.focused, null);
+  h.direction(0, true, railDirections.up); await settle(); assert.deepEqual(calls, []);
 });

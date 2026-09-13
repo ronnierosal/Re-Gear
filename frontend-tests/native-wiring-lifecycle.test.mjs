@@ -10,11 +10,25 @@ const compile = source => ts.transpileModule(source, { compilerOptions: {
 const visibilityExports = {};
 new Function("exports", compile(read("menu-visibility.ts")))(visibilityExports);
 const { createMenuVisibility } = visibilityExports;
+const actionExports={}; new Function("exports",compile(read("test-build-actions.ts")))(actionExports);
+
+test('native Safe Disconnect activation opens one centered progress surface with a consumable start',()=>{
+  const h=harness();h.menu.open();const view=h.mount();
+  view.props.onDisconnect();view.props.onDisconnect();
+  assert.equal(h.modals.length,2);
+  const operation=h.modals[1].node??h.modals[1].view??h.modals[1];
+  const tree=operation.props?operation:h.modals[1].tree;
+  assert.equal(tree.props.strTitle,'Safe Disconnect');
+  const control=tree.props.children.find(child=>child?.type==='dock');
+  assert.equal(control.props.intent,'disconnect_only');
+  assert.equal(control.props.startRequest(),true);assert.equal(control.props.startRequest(),false);
+  h.menu.stop();
+});
 
 function harness() {
   const h = { modals: [], cleanup: [], throwOpen: false, stopped: false, allowed: true };
   const runtime = {
-    createMenuVisibility,
+    createMenuVisibility, ...actionExports, GamepadButton:{DIR_UP:9,DIR_DOWN:10,DIR_LEFT:11,DIR_RIGHT:12}, EgpuConfirmModal:"confirm",
     jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }),
     useEffect: callback => h.cleanup.push(callback()), useState: value => [value, () => {}],
     useSyncExternalStore: (_subscribe, read) => read(),
@@ -53,7 +67,9 @@ test("visibility publishes stable changes with unsubscribe", () => {
 test("actual native adapter mounts live tiles, details and golden disconnect together", () => {
   const h = harness(); h.menu.open(); const view = h.mount();
   assert.equal(h.menu.visibility.read(), true);
-  assert.equal(view.props.tiles, h.tiles);
+  assert.deepEqual(view.props.tiles, actionExports.testBuildTiles(h.tiles));
+  assert.deepEqual(view.props.tiles.egpu.map(tile=>tile.id), ["switch-handheld","disconnect","resolution","egpu","disconnect-sleep","disconnect-shutdown"]);
+  assert.equal(view.props.tiles.egpu.find(tile=>tile.id==="disconnect-sleep").value,"Unavailable");
   assert.equal(view.props.renderDetail, h.detail);
   assert.equal(view.props.disconnectControl.props.intent, "disconnect_only");
   assert.equal(view.props.disconnectControl.props.readCurrentSnapshot, h.snapshot);

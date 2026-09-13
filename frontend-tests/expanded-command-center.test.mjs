@@ -62,11 +62,14 @@ test("demo rendering import graph cannot reach backend or native runtime", () =>
   visit(new URL("../src/quick-access/expanded-command-center/shell.tsx", import.meta.url).pathname.replace(/^\/(\w:)/, "$1"));
 });
 
+const testActionsJs = ts.transpileModule(readFileSync(new URL("../src/quick-access/expanded-command-center/test-build-actions.ts", import.meta.url), "utf8"), {compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText;
+
 test("native modal uses Decky controls without a second raw navigation listener", async () => {
   const nativeSource = readFileSync(new URL("../src/quick-access/expanded-command-center/native.tsx", import.meta.url), "utf8");
   const nativeJs = ts.transpileModule(nativeSource, { compilerOptions: { module: ts.ModuleKind.ESNext, jsx: ts.JsxEmit.React } }).outputText.replace(/^import .*;$/gm, "");
   const visibilityJs = ts.transpileModule(readFileSync(new URL("../src/quick-access/expanded-command-center/menu-visibility.ts", import.meta.url), "utf8"), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText.replace("export function", "function");
-  const fixtures = visibilityJs + `
+  const fixtures = visibilityJs + testActionsJs + `const GamepadButton={DIR_UP:9,DIR_DOWN:10,DIR_LEFT:11,DIR_RIGHT:12},EgpuConfirmModal='confirm';
+` + `
     export const views=[], effects=[], listeners=[];
     export let opens=0, clicks=0;
     const React={createElement:(type,props,...children)=>({type,props:{...props,children}})};
@@ -100,7 +103,8 @@ test("native shortcut dropdown preserves selection and active chord when saving 
   const nativeSource = readFileSync(new URL("../src/quick-access/expanded-command-center/native.tsx", import.meta.url), "utf8");
   const nativeJs = ts.transpileModule(nativeSource, { compilerOptions: { module: ts.ModuleKind.ESNext, jsx: ts.JsxEmit.React } }).outputText.replace(/^import .*;$/gm, "");
   const visibilityJs = ts.transpileModule(readFileSync(new URL("../src/quick-access/expanded-command-center/menu-visibility.ts", import.meta.url), "utf8"), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText.replace("export function", "function");
-  const fixture = visibilityJs + `
+  const fixture = visibilityJs + testActionsJs + `const GamepadButton={DIR_UP:9,DIR_DOWN:10,DIR_LEFT:11,DIR_RIGHT:12},EgpuConfirmModal='confirm';
+` + `
     export const views=[], saved=[];
     export let resets=0, stops=0;
     const componentStates=new WeakMap();
@@ -159,7 +163,8 @@ test("native live source publishes into an open menu and unsubscribes on close",
   const body=readFileSync(new URL("../src/quick-access/expanded-command-center/native.tsx", import.meta.url),"utf8");
   const compiled=ts.transpileModule(body,{compilerOptions:{module:ts.ModuleKind.ESNext,jsx:ts.JsxEmit.React}}).outputText.replace(/^import .*;$/gm, "");
   const visibilityJs = ts.transpileModule(readFileSync(new URL("../src/quick-access/expanded-command-center/menu-visibility.ts", import.meta.url), "utf8"), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText.replace("export function", "function");
-  const fixture=visibilityJs+`
+  const fixture=visibilityJs + testActionsJs + `const GamepadButton={DIR_UP:9,DIR_DOWN:10,DIR_LEFT:11,DIR_RIGHT:12},EgpuConfirmModal='confirm';
+` + `
     export const views=[],listeners=new Set();
     export let current;
     let unsubscribe,renderView;

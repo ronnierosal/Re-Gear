@@ -79,3 +79,46 @@ Included: live cards, brightness/volume, existing TDP controls, shortcut setting
 and golden Safe Disconnect. Unfinished: X/Y customization/move mounting, right-rail
 action providers, and new sleep/auth flows. No experimental flow activated.
 Preserve0.3.98 rollback; verify installed provenance when Ally is online.
+# PR330 test build continuation — 2026-09-13
+
+Ronnie explicitly resolved the prior semantic stop: unfinished sleep and authorization
+must remain unavailable and do not block this UI test build. PR330 `2198b735e948d349d205ce59630d9c12608f4eef`
+is authoritative for presentation. Integration starts from installed predecessor
+`ae66baec12ed36f0d0b5ea117e3774f02125e990`; no old PR306 branch is reintroduced.
+The validated runtime baseline remains **0.3.98 / f6059fad8c213a059aa77cbba15524ef2d9149ae**.
+Version **0.3.100 is a test build**, never promoted by installation alone.
+
+Current bounded changes:
+
+- Exact PR330 styling, equal 88px cards (74px at short viewports), icon-only left rail,
+  four non-scrolling right slots, hidden redundant headings/help strip.
+- Fix zero-basis rail collapse observed at 828x466: sliders use intrinsic flex basis;
+  approved width, icon, input and typography dimensions retained.
+- Native Decky direction enum injected at adapter boundary. LEFT from first column
+  selects Brightness; UP/DOWN selects wrappers; A enters range; range UP/DOWN adjusts;
+  RIGHT returns to grid; B exits range editing. Latest queued value wins.
+- Normal Safe Disconnect activation opens centered progress and consumes one explicit
+  start request. Existing fresh status/action/attachment checks, persistent correlation,
+  duplicate guard, result polling and default callers' confirmation remain intact.
+  Closing hides progress, never claims to cancel backend teardown or clear pending state.
+- Six eGPU cards remain visible. Sleep, shutdown, display switching and resolution
+  lack mounted verified adapters here and stay disabled with short pending reasons.
+  eGPU Status uses the existing published readings; no second snapshot poller.
+- Current sleep, authorization and Auto-TV runtime remain unchanged. No authorize-once
+  option or speculative authorization popup is introduced. Right-rail actions without
+  providers stay unavailable. X/Y customization remains outside this narrowed build.
+
+Validation before final packaging: 868 frontend tests; TypeScript/build/package checks;
+3512 backend tests passed with 291 platform skips; 49 golden tests/all 8 contracts;
+architecture and compilation. Browser source fixture at 828x466 and1280x720 confirms
+equal heights across five tabs, viewport fit and keyboard rail entry/return. Native
+event behavior is simulated in tests; actual Decky/controller behavior remains Ronnie's
+hardware test. Final commit, CI, archive hash and installation evidence follow in hub/PR.
+
+Integration driver: codex-01a08c09-afcf-7c50-998d-760c7634fb01, own `cc-ally-330`,
+branch `codex/integration-ally-pr330`. Existing UI/eGPU primaries review the same final
+head. Control/test ownership explicitly released by previous owner in hub
+`fc20889cae7b4f2583d9e5cdbb090dfe`; backend/model unchanged. Preserve immutable0.3.98
+and0.3.99 rollback artifacts. After installation stop development for screenshots.
+
+---

@@ -18,7 +18,7 @@ const iconIds: Record<string, CommandCenterIconId> = {
 function Icon({ id }: { id: string }) { return <CommandCenterIcon id={iconIds[id] ?? "status-unknown"} size={34}/>; }
 
 /** Shared synthetic presentation for browser preview and native Decky shell. */
-export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReasons = false, settings, native = false, primitives, previewColumns, tiles, renderDetail, disconnectControl, utilityReadings, onUtilityRequest }: {
+export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReasons = false, settings, native = false, primitives, previewColumns, tiles, renderDetail, disconnectControl, utilityReadings, onUtilityRequest, directions, onDisconnect, unavailableActions = {} }: {
   onClose(): void; initialTab?: Tab; longReasons?: boolean; settings?: ReactNode; native?: boolean;
   primitives?: { Button: ElementType; Focusable: ElementType };
   /** Synthetic comparison only; native callers never pass this. */
@@ -34,6 +34,9 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
   disconnectControl?: ReactNode;
   utilityReadings?: UtilityRailProps["readings"];
   onUtilityRequest?: UtilityRailProps["onRequest"];
+  directions?: UtilityRailProps["directions"];
+  onDisconnect?:()=>void;
+  unavailableActions?:Record<string,string>;
 }) {
   const Button = primitives?.Button ?? "button";
   const Container = primitives?.Focusable ?? "div";
@@ -44,6 +47,7 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
   const content = useRef<HTMLDivElement>(null);
   const memory = useRef<Partial<Record<Tab, string>>>({});
   const launcher = useRef<string | undefined>(undefined);
+  const lastGrid = useRef<string | undefined>(undefined);
   const pendingFocus = useRef<string | undefined>(undefined);
   const opener = useRef<HTMLElement | null>(null);
   const detailHadFocus = useRef(false);
@@ -75,7 +79,7 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
     interactive?.focus({ preventScroll: true });
     if (interactive) { if (tab === "settings" && !nested) reveal(interactive); else interactive.scrollIntoView({ block: "nearest" }); }
   };
-  const controlIds = () => Array.from(panel.current?.querySelectorAll<HTMLElement>("[data-ec-control]") ?? []).map(el => el.dataset.ecControl!);
+  const controlIds = () => Array.from(panel.current?.querySelectorAll<HTMLElement>("[data-ec-control]") ?? []).map(el => el.dataset.ecControl!).filter(id=>!id.startsWith("utility-"));
   useLayoutEffect(() => {
     const doc = panel.current?.ownerDocument;
     if (!hasDetail && nestedId !== null && detailHadFocus.current && doc &&
@@ -100,6 +104,10 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
   }, [tab, nestedId]);
 
   function switchTab(direction: -1 | 1) { setNested(null); setTab(nextTab(tab, direction)); }
+  function enterRail(id:string) {
+    if(tab!=="quick"||nested||gridCells(items,gridColumns).find(cell=>cell.id===id)?.column!==0) return false;
+    lastGrid.current=id;focus("utility-brightness");return true;
+  }
   function back() {
     if (nested) { pendingFocus.current = launcher.current; setNested(null); }
     else onClose();
@@ -185,6 +193,7 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
       event.preventDefault(); event.stopPropagation();
       const cells = gridCells(items, gridColumns);
       const cell = cells.find(item => item.id === target.dataset.ecControl);
+      if(direction==="left"&&enterRail(target.dataset.ecControl)) return;
       if (direction === "up" && cell?.row === 0) {
         const settingsControls = controlIds().filter(id => id.startsWith("binding-"));
         if (settingsControls.length) focus(settingsControls.at(-1));
@@ -204,9 +213,11 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
   }
 
   const renderTile = (item: Tile) => <Button type="button" key={item.id} data-ec-control={item.id} data-tone={item.tone ?? "quiet"} className="rg-expanded-tile"
+              disabled={Boolean(unavailableActions[item.id])}
+              onGamepadDirection={native&&directions ? (event:CustomEvent<{button:number}>)=>{if(event.detail.button===directions.left&&enterRail(item.id)){event.preventDefault();event.stopPropagation();}} : undefined}
               {...(native ? { preferredFocus: item.id === restoreTarget(items.map(tile => tile.id), memory.current[tab]), onGamepadFocus: () => { memory.current[tab] = item.id; const target = panel.current?.querySelector<HTMLElement>(`[data-ec-control="${item.id}"]`); if(target) { if(tab === "settings") reveal(target); else target.scrollIntoView({block:"nearest"}); } } } : {})}
               aria-label={`${item.title}: ${item.value}. ${item.detail}.${synthetic ? " Sample data." : ""} View details.`}
-              onFocus={(event: { target: EventTarget }) => { memory.current[tab] = item.id; (event.target as HTMLElement).scrollIntoView({ block: "nearest" }); }} onClick={() => { launcher.current = item.id; setNested(item.id); }}>
+              onFocus={(event: { target: EventTarget }) => { memory.current[tab] = item.id; (event.target as HTMLElement).scrollIntoView({ block: "nearest" }); }} onClick={() => { if(unavailableActions[item.id])return; if(item.id==="disconnect"&&onDisconnect){onDisconnect();return;} launcher.current = item.id; setNested(item.id); }}>
               <span className="rg-expanded-tile-body">
                 <span className="rg-expanded-tile-heading">
                   <span className="rg-expanded-tile-icon"><Icon id={item.id}/></span>
@@ -222,7 +233,7 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
     <style>{expandedStyles}</style>
     <Container ref={panel} data-ec-panel className="rg-expanded-frame" role="dialog" aria-modal="true" aria-label={synthetic ? "Re-Gear expanded Command Center prototype" : "Re-Gear Command Center"} onKeyDown={onKeyDown} {...nativeHandlers}
       onFocus={(event: { target: EventTarget }) => { detailHadFocus.current = Boolean((event.target as HTMLElement).closest("[data-ec-detail-content]")); const id = (event.target as HTMLElement).closest<HTMLElement>("[data-ec-control]")?.dataset.ecControl; if (id && !nested) memory.current[tab] = id; }}>
-      {tab === "quick" && !nested && <UtilityRail side="left" Button={Button} Focusable={Container} readings={utilityReadings} onRequest={onUtilityRequest}/>}
+      {tab === "quick" && !nested && <UtilityRail side="left" Button={Button} Focusable={Container} readings={utilityReadings} onRequest={onUtilityRequest} directions={directions} onReturnToGrid={()=>focus(lastGrid.current??items[0]?.id)}/>}
       <Container className="rg-expanded" {...(native ? {"flow-children":"vertical",noFocusRing:true} : {})}>
       <header className="rg-expanded-brand"><span className="rg-expanded-wordmark"><img src={brandIcon} alt=""/>Re-Gear</span><span className="rg-expanded-demo"><span className="rg-expanded-demo-label"><i/>{synthetic ? "Demo · Sample data" : "Application status"}</span><span>{synthetic ? "Hardware controls not connected" : renderDetail ? "Status and controls" : "Readings only · View details"}</span></span></header>
       <Container className="rg-expanded-tabs" role="tablist" aria-label="Command Center sections" {...(native ? { "flow-children": "horizontal", noFocusRing: true } : {})}>

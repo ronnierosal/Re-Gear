@@ -1,13 +1,15 @@
 import { createMenuVisibility } from "./menu-visibility";
+import { testBuildTiles, unavailableTestActions } from "./test-build-actions";
 import { createNativeUtilities } from "./native-utilities";
 import type { UtilityReadings, UtilitySystem } from "./native-utilities";
 import type { NonEgpuDetailRenderer } from "./non-egpu-detail-renderer";
 import { useEffect, useState, useSyncExternalStore } from "react";
-import { Button, Dropdown, Focusable, ModalRoot, showModal } from "@decky/ui";
+import { Button, Dropdown, Focusable, ModalRoot, showModal, GamepadButton } from "@decky/ui";
 import type { ControllerInputSource } from "../../controller-safe-disconnect";
 import { loadMenuBinding, saveMenuBinding, menuBindingOptions, startMenuShortcut } from "../../menu-shortcut";
 import type { MenuBinding } from "../../menu-shortcut";
 import { WholeDockControl } from "../../whole-dock-control";
+import { EgpuConfirmModal } from "../../egpu-confirm-modal";
 import { ExpandedCommandCenter } from "./shell";
 import type { TileSource, TileView } from "./tile-source";
 import { ShortcutSettings } from "./shortcut-settings";
@@ -54,11 +56,13 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
   const storage = (() => { try { return host.localStorage; } catch { return undefined; } })();
   let binding = loadMenuBinding(storage);
   let modal: ReturnType<typeof showModal> | null = null;
+  let operation: ReturnType<typeof showModal> | null = null;
   const visibility = createMenuVisibility();
   let opening = false;
   let stopped = false;
   let generation = 0;
   const close = () => {
+    operation?.Close(); operation=null;
     const previous = modal;
     modal = null;
     generation++;
@@ -66,8 +70,19 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
     visibility.set(false);
     previous?.Close();
   };
+  function disconnect() {
+    if(stopped||operation||!modal) return;
+    // One explicit activation owns one consumable request across React remounts.
+    let consumed=false;
+    const startRequest=()=>{if(consumed)return false;consumed=true;return true;};
+    const hide=()=>{const old=operation;operation=null;old?.Close();};
+    operation=showModal(<EgpuConfirmModal strTitle="Safe Disconnect" strOKButtonText="Hide" bAlertDialog onOK={hide} onCancel={hide} onEscKeypress={hide} className="rg-whole-dock-progress">
+      <style>{`.rg-whole-dock-progress{position:fixed!important;left:50%!important;top:50%!important;right:auto!important;bottom:auto!important;margin:0!important;transform:translate(-50%,-50%)!important}`}</style>
+      <WholeDockControl intent="disconnect_only" readCurrentSnapshot={readCurrentSnapshot} startRequest={startRequest}/>
+    </EgpuConfirmModal>,host,{fnOnClose:hide,bNeverPopOut:true});
+  }
   function View({ token }: { token: number }) {
-    useEffect(() => () => { if (generation === token) { modal = null; generation++; utilities?.stop(); visibility.set(false); } }, [token]);
+    useEffect(() => () => { if (generation === token) { operation?.Close();operation=null;modal = null; generation++; utilities?.stop(); visibility.set(false); } }, [token]);
     // Live subscription, not a read at open.
     //
     // Reading once when the menu opened left whatever was true at that moment
@@ -79,9 +94,10 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
     // object between publishes; a fresh object per call would re-render without
     // end. The server snapshot is the same read: there is no server, and
     // returning a different value there would tear.
-    const tiles = useSyncExternalStore(subscribeTo(source), readFrom(source), readFrom(source));
+    const rawTiles = useSyncExternalStore(subscribeTo(source), readFrom(source), readFrom(source));
+    const tiles = rawTiles ? testBuildTiles(rawTiles) : undefined;
     const utilityReadings = useSyncExternalStore(utilities?.subscribe ?? noSubscribe, utilities?.read ?? noUtilities, utilities?.read ?? noUtilities);
-    return <ExpandedCommandCenter onClose={close} native disconnectControl={<WholeDockControl intent="disconnect_only" readCurrentSnapshot={readCurrentSnapshot}/>} primitives={{ Button: Button, Focusable }} settings={<Settings/>} tiles={tiles} renderDetail={renderDetail} utilityReadings={utilityReadings} onUtilityRequest={utilities ? (id, percent) => {
+    return <ExpandedCommandCenter onClose={close} native onDisconnect={disconnect} disconnectControl={<WholeDockControl intent="disconnect_only" readCurrentSnapshot={readCurrentSnapshot}/>} directions={{up:GamepadButton.DIR_UP,down:GamepadButton.DIR_DOWN,left:GamepadButton.DIR_LEFT,right:GamepadButton.DIR_RIGHT}} unavailableActions={unavailableTestActions} primitives={{ Button: Button, Focusable }} settings={<Settings/>} tiles={tiles} renderDetail={renderDetail} utilityReadings={utilityReadings} onUtilityRequest={utilities ? (id, percent) => {
       if (generation !== token || stopped) return Promise.reject(new Error("Menu closed"));
       return utilities.request(id, percent);
     } : undefined}/>;

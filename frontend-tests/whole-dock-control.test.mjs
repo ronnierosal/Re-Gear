@@ -40,7 +40,7 @@ const componentJs = ts.transpileModule(readFileSync(new URL("../src/whole-dock-c
 }).outputText.replace(/^import .*;\r?$/gm, "").replace(/export function WholeDockControl/, "function WholeDockControl");
 const deferred = () => { let resolve, reject; const promise = new Promise((yes,no) => {resolve=yes;reject=no;}); return {promise,resolve,reject}; };
 const settle = async () => { for(let n=0;n<12;n++) await Promise.resolve(); };
-function harness(storage = new Map(), intent = "disconnect") {
+function harness(storage = new Map(), intent = "disconnect", startRequest) {
   const h = {status:{...fresh}, reads:[], calls:[], modals:[], timers:new Map(), failStorage:false, intent, snapshot: {...idle, schema_version:3}};
   let slots=[], index=0, effects=[], cleanups=[], serial=0;
   const useState = value => { const slot=index++; if(!(slot in slots)) slots[slot]=value; return [slots[slot], value=>{slots[slot]=typeof value==='function'?value(slots[slot]):value;}]; };
@@ -61,7 +61,7 @@ function harness(storage = new Map(), intent = "disconnect") {
     React,useState,useRef,useEffect,callable,'button',showModal,'confirm',dockIntentControl,dockRequestSettled,window,
     {randomUUID:()=> '12345678-1234-1234-1234-123456789abc'},
     fn=>{h.timers.set(++serial,fn);return serial;},id=>h.timers.delete(id));
-  h.render=()=>{index=0;h.tree=Component({intent:h.intent,readCurrentSnapshot:()=>h.snapshot});for(const fn of effects.splice(0))cleanups.push(fn());return h.tree;};
+  h.render=()=>{index=0;h.tree=Component({intent:h.intent,readCurrentSnapshot:()=>h.snapshot,startRequest});for(const fn of effects.splice(0))cleanups.push(fn());return h.tree;};
   h.button=()=>h.render().props.children.find(child=>child?.type==='button');
   h.click=()=>{const button=h.button();assert.equal(button.props.disabled,false);button.props.onClick();};
   h.poll=()=>{const [id,fn]=h.timers.entries().next().value;h.timers.delete(id);fn();};
@@ -73,6 +73,33 @@ test('component mount and canceled confirmation never mutate', async()=>{
   const h=harness();await settle();assert.equal(h.calls.length,0);
   h.click();h.modals.at(-1).view.props.onCancel();await settle();
   assert.equal(h.calls.length,0);assert.equal(h.button().props.disabled,false);h.unmount();
+});
+
+const oneActivation=()=>{let consumed=false;return ()=>{if(consumed)return false;consumed=true;return true;};};
+test('explicit one-press activation submits once with no second confirmation or start button',async()=>{
+  const activation=oneActivation(), storage=new Map();
+  const h=harness(storage,'disconnect_only',activation);await settle();
+  assert.equal(h.calls.length,1);assert.equal(h.calls[0][3],'whole_dock_disconnect');
+  assert.equal(h.modals.length,0);assert.equal(h.button(),undefined);
+  h.poll();await settle();assert.equal(h.calls.length,1);h.unmount();
+  const remount=harness(storage,'disconnect_only',activation);await settle();
+  assert.equal(remount.calls.length,0);remount.unmount();
+});
+test('one-press refuses changed attachment and does not retry a later poll',async()=>{
+  const h=harness(new Map(),'disconnect_only',oneActivation());
+  h.status={...fresh,attachment_token:'c'.repeat(64)+':'+ 'd'.repeat(64)};
+  await settle();assert.equal(h.calls.length,0);
+  h.poll();await settle();assert.equal(h.calls.length,0);h.unmount();
+});
+test('one-press recovering a pending request never submits another operation',async()=>{
+  const h=harness(new Map([['regear.whole-dock.pending-request','disconnect_only:previous']]),'disconnect_only',oneActivation());
+  await settle();assert.equal(h.calls.length,0);assert.equal(h.modals.length,0);h.unmount();
+});
+test('one-press failure retains correlation and never retries automatically',async()=>{
+  const h=harness(new Map(),'disconnect_only',oneActivation());
+  h.execute=async()=>{throw Error('interrupted');};
+  await settle();assert.equal(h.calls.length,1);assert.equal(h.storage.size,1);
+  h.poll();await settle();assert.equal(h.calls.length,1);h.unmount();
 });
 test('component same-tick double confirmation submits exactly once',async()=>{
   const h=harness();await settle();h.click();const ok=h.modals.at(-1).view.props.onOK;

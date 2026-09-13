@@ -48,10 +48,7 @@ test("native disconnect warning remains inside the supplied guarded detail", () 
 });
 
 test("approved responsive geometry remains owned by UI", () => {
-  assert.match(styles, /width:min\(74vw,1120px\)/);
-  assert.match(styles, /@media\(max-width:900px\)\{\.rg-expanded\{width:76vw\}\}/);
-  assert.match(styles, /@media\(max-width:760px\)[\s\S]*\.rg-expanded\{width:78vw\}/);
-  assert.match(styles, /@media\(max-width:620px\)[\s\S]*\.rg-expanded\{width:80vw\}/);
+  assert.match(styles, /width:min\(78vw,1120px\)/);
   assert.doesNotMatch(styles, /width:min\(64vw/);
 });
 
