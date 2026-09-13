@@ -38,6 +38,13 @@ def _session_clock() -> float:
 
     Same distinction, and the same fallback, as `_relaunch_now` in main.py and
     `RelaunchClock` in the domain.
+
+    Known limitation: where CLOCK_BOOTTIME is unavailable this falls back to
+    monotonic and the suspend is invisible again, exactly as before. The target
+    platform is Linux, which has it; the fallback exists so the composition is
+    constructible elsewhere, not because a suspend is safe to miss there. It
+    deliberately does not refuse to run -- a blocking policy on an unobservable
+    condition would be speculation, not a guard.
     """
     boottime = getattr(time, "CLOCK_BOOTTIME", None)
     if boottime is not None:

@@ -27,6 +27,7 @@ class AutoFactoryTests(unittest.TestCase):
     def setUp(self):
         fixture = sensor_fixtures.TdpSensorReadinessTests()
         fixture.setUp()
+        self.inventory = fixture.inventory
         self.now = 0.0
         self.reads = 0
         self.game = GameState.RUNNING
@@ -205,5 +206,68 @@ class AutoFactoryTests(unittest.TestCase):
             self.now = 10.0 + 8 * 3600 + extra
             codes.append(session.tick().code)
         self.assertEqual(codes, ["auto_tdp.sample_unavailable"] * 3
+                         + ["auto_tdp.context_settling", "auto_tdp.settling"])
+        self.assertEqual(self.provider.writes, [])
+
+    def _suspendable_composition(self):
+        """A session built exactly as production builds it: no injected clock.
+
+        The frame and sensor timestamps are read from whichever clock the
+        composition actually selected, so the arms below differ only by the
+        sleep and never by a mismatched fake epoch.
+        """
+        selected = inspect.signature(AutoTdpSessionFactory.__init__).parameters["clock"].default
+        elapsed = SimpleNamespace(awake=0.0, slept=0.0)
+        module_time = SimpleNamespace(
+            CLOCK_BOOTTIME=7,
+            monotonic=lambda: elapsed.awake,
+            clock_gettime=lambda which: elapsed.awake + elapsed.slept if which == 7 else elapsed.awake,
+        )
+        patcher = mock.patch.object(auto_tdp_factory, "time", module_time)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+        def frame(target):
+            self.reads += 1
+            return PerformanceReading("performance.observed", target.context_key,
+                                      int(selected() * 1000), 22_222_222)
+
+        args = {key: value for key, value in self.args.items() if key != "clock"}
+        args["performance_reader"] = SimpleNamespace(observe=frame)
+        args["sensors"] = lambda: replace(self.inventory, started_at=selected(),
+                                          finished_at=selected())
+        session = AutoTdpSessionFactory(**args)(self.service, self.provider)
+
+        def run(*, awake=1.0, slept=0.0):
+            elapsed.awake += awake
+            elapsed.slept += slept
+            return session.tick()
+
+        return session, run
+
+    def test_the_default_clock_composition_rejects_a_pre_suspend_streak(self):
+        """End-to-end on the production default clock, with no injected fixture clock.
+
+        The awake arm must still reach its first verified write on the ordinary
+        cadence. The sleep arm differs only by eight hours of suspend, which the
+        production clock has to see; on a clock that stops during suspend the two
+        arms are the same tick and the pre-suspend streak writes.
+        """
+        session, run = self._suspendable_composition()
+        session.start(self.policy)
+        awake_codes = [run().code for _ in range(12)]
+        self.assertEqual(self.provider.writes, [16], awake_codes)
+
+        self.setUp()
+        session, run = self._suspendable_composition()
+        session.start(self.policy)
+        for _ in range(11):
+            run()
+        self.assertEqual(self.provider.writes, [])
+        self.assertEqual(run(slept=8 * 3600).code, "auto_tdp.sample_unavailable")
+        self.assertEqual(self.provider.writes, [])
+        self.assertIsNone(self.journal.record)
+        self.assertEqual([run().code for _ in range(5)],
+                         ["auto_tdp.sample_unavailable"] * 3
                          + ["auto_tdp.context_settling", "auto_tdp.settling"])
         self.assertEqual(self.provider.writes, [])
