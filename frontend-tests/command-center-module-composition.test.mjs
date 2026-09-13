@@ -11,7 +11,7 @@ const ids=tab=>sampleTiles[tab].map(tile=>tile.id);
 
 test('Quick Access keeps the approved action/status hierarchy',()=>{
   assert.deepEqual(ids('quick'),['fps','manual','auto','display','egpu','controller','disconnect']);
-  assert.equal(sampleTiles.quick.at(-1).wide,true);
+  assert.equal(sampleTiles.quick.at(-1).wide,undefined);
   assert.equal(sampleTiles.quick.at(-1).tone,'warning');
 });
 
@@ -23,7 +23,7 @@ test('Performance keeps six compact tuning entry points',()=>{
 
 test('eGPU keeps connection, output, render and safety concepts separate',()=>{
   assert.deepEqual(ids('egpu'),['device','dock','display','render','link','disconnect']);
-  assert.equal(sampleTiles.egpu.at(-1).wide,true);
+  assert.equal(sampleTiles.egpu.at(-1).wide,undefined);
   assert.equal(sampleTiles.egpu.at(-1).tone,'warning');
   assert.equal(sampleTiles.egpu.find(tile=>tile.id==='render').tone,'unavailable','unverified render GPU stays explicit');
 });
@@ -44,9 +44,9 @@ test('module samples never add extra top-level surfaces',()=>{
   assert.deepEqual(Object.keys(sampleTiles),['quick','performance','egpu','controllers','settings']);
 });
 
-test('only approved safety actions use wide cards',()=>{
+test('all approved cards occupy one cell',()=>{
   const wide=Object.entries(sampleTiles).flatMap(([tab,tiles])=>tiles.filter(tile=>tile.wide).map(tile=>`${tab}:${tile.id}`));
-  assert.deepEqual(wide,['quick:disconnect','egpu:disconnect']);
+  assert.deepEqual(wide,[]);
 });
 
 test('overview cards keep one primary value and concise supporting detail',()=>{

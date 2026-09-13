@@ -38,6 +38,6 @@ test("live Command Center source preserves the approved UI tile contract", {
     const view=buildTiles(readings);
     for(const [tab,ids] of Object.entries(approved))
       assert.deepEqual(view[tab].map(tile=>tile.id),ids,`${tab} composition must remain stable`);
-    assert.equal(view.quick.find(tile=>tile.id==='disconnect').wide,true);
+    assert.equal(view.quick.find(tile=>tile.id==='disconnect').wide,false);
   }
 });

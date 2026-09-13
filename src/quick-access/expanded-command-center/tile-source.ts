@@ -109,7 +109,7 @@ const UNKNOWN_EGPU: ReadonlyArray<[string, string]> = [
 
 /** The Safe Disconnect card when nothing has been observed.
  *
- * It keeps the wide slot and the warning tone it has when readings exist, so
+ * It keeps the one-cell slot and the warning tone it has when readings exist, so
  * the grid does not reflow around the one card a player looks for under
  * pressure, and it keeps saying that no clearance is granted. Unknown readiness
  * is a reason not to act, never an absence of the warning.
@@ -117,7 +117,7 @@ const UNKNOWN_EGPU: ReadonlyArray<[string, string]> = [
 function unknownDisconnectTile(): Tile {
   return {
     id: "disconnect", title: "Safe Disconnect", value: "Unknown",
-    tone: "warning", wide: true,
+    tone: "warning", wide: false,
     detail: "Readiness has not been observed. Re-Gear cannot confirm a safe disconnect, and this never makes unplugging safe.",
   };
 }
@@ -163,7 +163,7 @@ function settingsTiles(): Tile[] {
  *
  * Two things here are not a copy of another tab, and both matter.
  *
- * Safe Disconnect keeps its approved wide card on Quick Access. Dropping it
+ * Safe Disconnect keeps its approved one-cell card on Quick Access. Dropping it
  * when readings are missing would remove the one control a player reaches for
  * when something has gone wrong, at the exact moment it went wrong.
  *
@@ -209,8 +209,8 @@ function quickTiles(
     // Presence, projected from the same presentation. NOT the Controllers
     // tab's Player 1 card, which is an assignment question with no provider.
     controllerSummary ?? pick(controller, "controller", "Controller Status"),
-    // Last, and wide, matching the approved layout.
-    { ...disconnect, wide: true },
+    // Last, and one cell, matching the approved layout.
+    { ...disconnect, wide: false },
   ].filter((tile): tile is Tile => tile !== null);
 }
 

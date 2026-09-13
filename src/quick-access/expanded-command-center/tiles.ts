@@ -115,7 +115,7 @@ export function egpuTiles(presentation: EgpuPresentation): Tile[] {
       // Always warning. Not derived from the readings above, because no
       // combination of them grants a clearance this product cannot confirm.
       tone: "warning",
-      wide: true,
+      wide: false,
     },
   ];
 }

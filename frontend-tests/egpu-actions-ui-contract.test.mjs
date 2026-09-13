@@ -10,7 +10,7 @@ test('eGPU quick actions stay stable and use four columns', () => {
     assert.match(actions, new RegExp(`"${id}"`));
     assert.match(nav, new RegExp(`"${id}"`));
   }
-  assert.match(actions, /gridTemplateColumns: "repeat\(4,minmax\(0,1fr\)\)"/);
+  assert.match(actions, /grid-template-columns:repeat\(4,minmax\(0,1fr\)\)/);
 });
 
 test('sleep popup preserves both attached-sleep and disconnect-first choices', () => {

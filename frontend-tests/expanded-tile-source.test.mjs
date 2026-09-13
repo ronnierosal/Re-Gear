@@ -317,13 +317,13 @@ test("the source holds no timer and fetches nothing", () => {
 
 // -------------------------------------- findings raised in reciprocal review
 
-test("Safe Disconnect keeps its wide card on Quick Access, readings or not", () => {
+test("Safe Disconnect keeps its one-cell card on Quick Access, readings or not", () => {
   // Dropping it when readings are missing removes the control a player reaches
   // for when something has gone wrong, at the moment it went wrong.
   for (const readings of [full(), { fresh: false }]) {
     const disconnect = buildTiles(readings).quick.find((tile) => tile.id === "disconnect");
     assert.ok(disconnect, "Quick Access lost its Safe Disconnect card");
-    assert.equal(disconnect.wide, true, "the approved wide slot must survive");
+    assert.equal(disconnect.wide, false, "the approved one-cell slot must survive");
   }
 });
 
@@ -332,7 +332,7 @@ test("an unobserved Safe Disconnect keeps its warning tone and refuses clearance
   for (const tab of ["quick", "egpu"]) {
     const tile = buildTiles({ fresh: false })[tab].find((item) => item.id === "disconnect");
     assert.equal(tile.tone, "warning", `${tab} lost the warning tone`);
-    assert.equal(tile.wide, true, `${tab} lost the wide slot`);
+    assert.equal(tile.wide, false, `${tab} lost the one-cell slot`);
     assert.match(tile.detail, /cannot confirm a safe disconnect/i);
     assert.match(tile.detail, /never makes unplugging safe/i);
   }

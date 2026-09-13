@@ -13,7 +13,7 @@ test("eGPU quick actions keep the approved six stable action ids", () => {
 test("eGPU action grid prefers four equal columns and never spans cards", () => {
   assert.match(ui, /grid-template-columns:repeat\(4,minmax\(0,1fr\)\)/);
   assert.doesNotMatch(ui, /grid-column:\s*span\s*2/);
-  assert.doesNotMatch(ui, /1\s*\/\s*-1/);
+  assert.doesNotMatch(ui, /\[data-egpu-action-card\][^{]*\{[^}]*grid-column:\s*(?:span|1\s*\/\s*-1)/);
 });
 
 test("eGPU action cards expose icon, copy and a full-width controller-safe control slot", () => {

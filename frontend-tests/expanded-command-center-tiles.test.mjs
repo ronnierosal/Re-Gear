@@ -143,7 +143,7 @@ test("Safe Disconnect is always warning and never claims a cable may be pulled",
     const tile = byId(m.egpuTiles(presentation)).disconnect;
 
     assert.equal(tile.tone, "warning");
-    assert.equal(tile.wide, true);
+    assert.equal(tile.wide, false);
     // Text comes from the presentation's own refusal, which types safeClaim as
     // the literal false. No combination of readings can talk it into a claim.
     assert.equal(tile.value, presentation.disconnect.text);

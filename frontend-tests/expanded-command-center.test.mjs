@@ -36,7 +36,7 @@ test("three-column packing does not navigate through an empty grid cell", () => 
   assert.equal(cells.at(-1).row, 2);
   assert.equal(m.moveInGrid(cells, "controller", "down"), "disconnect");
   assert.equal(m.moveInGrid(cells, "disconnect", "up"), "display");
-  assert.equal(cells.at(-1).span, 3);
+  assert.equal(cells.at(-1).span, 1);
 });
 test("every tile is reachable by arrows in every responsive grid", () => {
   for (const tiles of Object.values(m.sampleTiles)) for (const columns of [1, 2, 3, 4]) {

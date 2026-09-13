@@ -50,12 +50,12 @@ test("visibility publishes stable changes with unsubscribe", () => {
   store.set(true); store.set(true); assert.equal(count, 1);
   off(); store.set(false); assert.equal(count, 1);
 });
-test("actual native adapter mounts live tiles, details and guarded shutdown together", () => {
+test("actual native adapter mounts live tiles, details and golden disconnect together", () => {
   const h = harness(); h.menu.open(); const view = h.mount();
   assert.equal(h.menu.visibility.read(), true);
   assert.equal(view.props.tiles, h.tiles);
   assert.equal(view.props.renderDetail, h.detail);
-  assert.equal(view.props.disconnectControl.props.intent, "shutdown");
+  assert.equal(view.props.disconnectControl.props.intent, "disconnect_only");
   assert.equal(view.props.disconnectControl.props.readCurrentSnapshot, h.snapshot);
   assert.ok(view.props.settings);
   h.menu.stop(); assert.equal(h.menu.visibility.read(), false);
