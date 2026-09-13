@@ -24,7 +24,12 @@ from ...domain.peripheral_handoff import (
 
 EVENT_PATTERN = re.compile(r"event[0-9]+$")
 CARD_PATTERN = re.compile(r"card[0-9]+$")
+BITMAP_WORD_PATTERN = re.compile(r"[0-9a-fA-F]+")
 BTN_GAMEPAD = 0x130
+# SteamOS userspace is 64-bit, so the kernel prints native 64-bit words to this
+# process. Fixed deliberately rather than read from the host: a 32-bit build
+# width would misplace every bit above the first word on the real device.
+BITMAP_WORD_BITS = 64
 
 
 def _read_text(path: Path) -> str | None:
@@ -43,10 +48,23 @@ def _opaque_binding(prefix: str, path: Path) -> str:
 
 
 def _bitmap_has(value: str, bit: int) -> bool:
-    try:
-        return bool(int("".join(value.split()), 16) & (1 << bit))
-    except ValueError:
-        return False
+    """Test one bit of a sysfs input capability bitmap.
+
+    Linux v6.12 ``drivers/input/input.c`` ``input_print_bitmap`` emits the
+    ``unsigned long`` array most significant word first, each word rendered by
+    ``input_bits_to_string`` as an unpadded ``%lx`` and separated by a single
+    space, with leading all-zero words omitted. Word position therefore lives in
+    the spacing, not in the digit count, so the words have to be shifted back
+    into place instead of concatenated. Unparseable text reports the bit absent,
+    leaving the device out of the inventory rather than inventing a capability.
+    """
+    words = value.split()
+    bitmap = 0
+    for index, word in enumerate(reversed(words)):
+        if not BITMAP_WORD_PATTERN.fullmatch(word):
+            return False
+        bitmap |= int(word, 16) << (BITMAP_WORD_BITS * index)
+    return bool(bitmap >> bit & 1)
 
 
 @dataclass(frozen=True, slots=True)
