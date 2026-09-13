@@ -21,7 +21,7 @@ export const sampleTiles: Record<Tab, readonly Tile[]> = {
     { id: "display", title: "Display Target", value: "1080p · 60Hz", detail: "Internal Display", tone: "active" },
     { id: "egpu", title: "eGPU Status", value: "Connected", detail: "RX 7600M XT" },
     { id: "controller", title: "Controller Status", value: "External (P1)", detail: "Built-in off" },
-    { id: "disconnect", title: "Safe Disconnect", value: "Readiness check required", detail: "Review apps using the eGPU. No unplug clearance.", tone: "warning", wide: true },
+    { id: "disconnect", title: "Safe Disconnect", value: "Readiness check required", detail: "Review apps using the eGPU. No unplug clearance.", tone: "warning" },
   ],
   performance: [
     { id: "profile", title: "Performance Profile", value: "Balanced", detail: "Per-mode performance preferences", tone: "active" },
@@ -37,7 +37,7 @@ export const sampleTiles: Record<Tab, readonly Tile[]> = {
     { id: "display", title: "Display Output", value: "TV", detail: "1080p · 60 Hz" },
     { id: "render", title: "Render GPU", value: "Unknown", detail: "Connection alone does not identify rendering", tone: "unavailable" },
     { id: "link", title: "Connection Link", value: "Available", detail: "Transport details when observed" },
-    { id: "disconnect", title: "Safe Disconnect", value: "Readiness check required", detail: "Connection, display and command success do not establish unplug readiness.", tone: "warning", wide: true },
+    { id: "disconnect", title: "Safe Disconnect", value: "Readiness check required", detail: "Connection, display and command success do not establish unplug readiness.", tone: "warning" },
   ],
   controllers: [
     { id: "controller", title: "Player 1", value: "External controller", detail: "Current assignment" },
@@ -67,12 +67,11 @@ export function restoreTarget(ids: readonly string[], remembered?: string): stri
   return ids.includes(remembered ?? "") ? remembered : ids[0];
 }
 export type Cell = { id: string; row: number; column: number; span: number };
-/** Same packing as the CSS grid, including the prominent two-column tile. */
+/** All Command Center cards use one cell so visual rhythm and navigation stay consistent. */
 export function gridCells(tiles: readonly Tile[], columns: number): Cell[] {
   let row = 0, column = 0;
   return tiles.map(tile => {
-    const span = tile.wide ? (columns === 4 ? 2 : columns) : 1;
-    if (column + span > columns) { row++; column = 0; }
+    const span = 1;
     const cell = { id: tile.id, row, column, span };
     column += span;
     if (column === columns) { row++; column = 0; }
