@@ -11,6 +11,8 @@ export type CommandCenterNavigationIntent =
   | { kind: "quick-action"; id: "mic" | "wifi" | "overlay" | "recording" }
   | { kind: "egpu-action"; id: EgpuQuickActionId }
   | { kind: "customize"; tab: "quick" }
+  | { kind: "edit-quick-actions"; active: boolean }
+  | { kind: "set-quick-action"; slot: number; id: UtilityId }
   | { kind: "move-mode"; tab: Tab; active: boolean; tileId?: string }
   | { kind: "move-tile"; tab: Tab; tileId: string; toIndex: number }
   | { kind: "back" }
@@ -22,10 +24,12 @@ export const commandCenterButtonContract = {
   quickActions: ["mic", "wifi", "overlay", "recording"] as const satisfies readonly UtilityId[],
   egpuActions: ["switch-handheld", "safe-disconnect", "resolution", "disconnect-sleep", "disconnect-shutdown", "status"] as const satisfies readonly EgpuQuickActionId[],
   customize: {
-    quickTapY: "swap-actions",
+    quickTapY: "swap-main-actions",
     holdY: "move-mode",
     otherTabsTapY: "none",
     otherTabsHoldY: "move-mode",
+    quickTapX: "edit-right-rail",
+    otherTabsTapX: "none",
   },
 } as const;
 
