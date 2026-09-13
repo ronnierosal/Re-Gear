@@ -35,6 +35,14 @@ was checked against installed systemctl help and the upstream systemd manual:
 https://github.com/systemd/systemd/blob/main/man/systemctl.xml
 This is API documentation consultation, not copied implementation.
 
+`SleepGuardController` now supports an operation-owned temporary reconciliation
+pause, distinct from terminal close. `GuardSleepLease` binds that controller to
+the exact backend request for the existing two-lease handoff. Focused tests use
+real guards and Login1 leases with only the OS process replaced: polling cannot
+reacquire during submission, refusal restores protection, ownership cannot be
+stolen, and late restoration cannot reopen a closed controller. These methods
+are not yet called by the production sleep route.
+
 Remaining: bind production sleep handoff to the original request and both actual
 sleep leases; coordinate lease reconciliation and restoration with the platform
 sleep/resume observation. Wire the existing shutdown continuation and the new
