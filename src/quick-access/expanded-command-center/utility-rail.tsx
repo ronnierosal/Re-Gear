@@ -12,6 +12,19 @@ export type UtilityReading = {
   pending?: boolean;
   reason?: string;
 };
+
+export type UtilityRailProps = {
+  side: "left" | "right";
+  layout?: readonly UtilityPlacement[];
+  readings?: Partial<Record<UtilityId,UtilityReading>>;
+  /** Runtime-owned adapter. Rapid slider updates are coalesced so the newest
+   * requested value wins without flooding the backend or dropping the final
+   * position while an earlier request is still in flight. */
+  onRequest?: (id: UtilityId, percent?: number) => Promise<void>;
+  Button?: ElementType;
+  Focusable?: ElementType;
+};
+
 const labels: Record<UtilityId,string> = {
   brightness:"Brightness",volume:"Volume",mic:"Mic mute",recording:"Record",
   overlay:"Overlay",audio:"Audio output",wifi:"Wi-Fi",
@@ -55,25 +68,36 @@ const railStyles = `
 /** Reusable presentation. Reads, persistence and hardware dispatch stay owned by
  * the application; unavailable controls remain visible rather than pretending a
  * capability exists. Recording's adapter must dismiss Command Center first. */
-export function UtilityRail({side, layout = defaultUtilityLayout, readings = {}, onRequest, Button = "button", Focusable = "aside"}: {
-  side: "left" | "right";
-  layout?: readonly UtilityPlacement[];
-  readings?: Partial<Record<UtilityId,UtilityReading>>;
-  onRequest?: (id: UtilityId, percent?: number) => Promise<void>;
-  Button?: ElementType;
-  Focusable?: ElementType;
-}) {
+export function UtilityRail({side, layout = defaultUtilityLayout, readings = {}, onRequest, Button = "button", Focusable = "aside"}: UtilityRailProps) {
   const busy = useRef(new Set<UtilityId>());
+  const queued = useRef(new Map<UtilityId,number>());
   const [pending,setPending] = useState<UtilityId[]>([]);
   const [errors,setErrors] = useState<Partial<Record<UtilityId,string>>>({});
-  async function request(id: UtilityId, percent?: number) {
-    if (!onRequest || !readings[id]?.available || readings[id]?.pending || busy.current.has(id)) return;
+
+  async function run(id: UtilityId, percent?: number) {
+    if (!onRequest || !readings[id]?.available || readings[id]?.pending) return;
     busy.current.add(id); setPending([...busy.current]);
     setErrors(current => ({...current,[id]:undefined}));
     try { await onRequest(id,percent); }
     catch { setErrors(current => ({...current,[id]:"Could not apply. Try again."})); }
-    finally { busy.current.delete(id); setPending([...busy.current]); }
+    finally {
+      const next = queued.current.get(id);
+      queued.current.delete(id);
+      busy.current.delete(id);
+      setPending([...busy.current]);
+      if (next !== undefined && next !== percent) void run(id,next);
+    }
   }
+
+  function request(id: UtilityId, percent?: number) {
+    if (!onRequest || !readings[id]?.available || readings[id]?.pending) return;
+    if (busy.current.has(id)) {
+      if (percent !== undefined) queued.current.set(id,percent);
+      return;
+    }
+    void run(id,percent);
+  }
+
   // Range inputs keep their native arrow behavior. Arrow keys on actions move
   // through this rail; the shell retains cross-region/controller navigation.
   function navigate(event: KeyboardEvent<HTMLElement>) {
@@ -90,18 +114,18 @@ export function UtilityRail({side, layout = defaultUtilityLayout, readings = {},
       const waiting = pending.includes(id) || reading?.pending;
       const isSlider = id === "brightness" || id === "volume";
       const validPercent = typeof reading?.percent === "number" && Number.isFinite(reading.percent) && reading.percent >= 0 && reading.percent <= 100;
-      const disabled = !onRequest || !reading?.available || waiting || (isSlider && !validPercent);
+      const disabled = !onRequest || !reading?.available || Boolean(reading?.pending) || (isSlider && !validPercent);
       const status = errors[id] ?? (waiting ? "Applying…" : reading?.value ?? "Unavailable");
       const reason = reading?.reason ?? (!reading?.available ? "No verified capability" : undefined);
-      return isSlider ? <label key={id} data-utility-id={id} className="rg-utility-control rg-utility-slider" title={reason}>
+      return isSlider ? <label key={id} data-utility-id={id} className="rg-utility-control rg-utility-slider" title={reason} aria-busy={waiting || undefined}>
         <span className="rg-utility-icon"><UtilityIcon id={id}/></span>
         <span className="rg-utility-label">{labels[id]}</span>
         <input type="range" min={0} max={100} step={1} aria-label={labels[id]} aria-orientation="vertical"
           aria-valuetext={validPercent ? status : "Unknown"} value={validPercent ? reading!.percent : 0} disabled={disabled}
-          onChange={event => void request(id,Number(event.currentTarget.value))}/>
+          onChange={event => request(id,Number(event.currentTarget.value))}/>
         <span className="rg-utility-value" role="status">{status}</span>
-      </label> : <Button key={id} type="button" data-utility-id={id} className="rg-utility-control" disabled={disabled} title={reason}
-        aria-label={`${labels[id]}: ${status}`} onClick={() => void request(id)}>
+      </label> : <Button key={id} type="button" data-utility-id={id} className="rg-utility-control" disabled={disabled || waiting} title={reason}
+        aria-label={`${labels[id]}: ${status}`} aria-busy={waiting || undefined} onClick={() => request(id)}>
         <span className="rg-utility-icon"><UtilityIcon id={id}/></span>
         <span className="rg-utility-label">{labels[id]}</span>
         <span className="rg-utility-value" role="status">{status}</span>
