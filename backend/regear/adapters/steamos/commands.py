@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Sequence
 
 from ...ports.presentation_activation import UserServiceOperation
+from ...ports.device_authorization import DeviceEnrollmentResult
 from ...ports.system_power import PowerOffResult
 from ...ports.tdp import TdpDispatchGuard, TdpDispatchRejected
 
@@ -669,3 +670,86 @@ class SteamOsTdpCommandRunner:
         except UnicodeDecodeError:
             return CommandResult(argv, completed.returncode, "", "", "tdp.output_invalid")
         return CommandResult(argv, completed.returncode, decoded, "")
+
+
+class BoltDeviceAuthorizationRunner:
+    """Enrol exactly one named Thunderbolt device through `boltd`.
+
+    `boltd` is the system's authorization owner, so this asks it rather than
+    writing `authorized` in sysfs: a direct write would leave `boltd`'s
+    enrolment database disagreeing with the kernel about which devices are
+    trusted, and the player would meet the prompt again on a later plug with no
+    way to make it stop.
+
+    The argv is fixed apart from the UUID, which is the only caller-supplied
+    value that reaches a command line in this feature. It is matched against an
+    exact pattern and refused otherwise -- not quoted, not escaped, refused.
+    With `shell=False` a stray argument could not be reinterpreted anyway, but
+    the boundary should not depend on that being remembered.
+
+    `--policy auto` matches what Desktop Mode already stores for a device
+    enrolled there, so a device trusted from Game Mode behaves identically
+    afterwards. `--chain` is deliberately NOT passed: it authorizes parent
+    devices as well, which would trust hardware the player was never shown.
+
+    A zero exit is reported as accepted, never as verified. The caller re-reads
+    the device's state to learn whether it actually became trusted.
+    """
+
+    BOLTCTL = "/usr/bin/boltctl"
+    #: `boltctl list` reports this shape, and nothing else is a device id.
+    UUID = re.compile(
+        r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+    )
+    CLEAN_ENVIRONMENT = {
+        "LANG": "C",
+        "LC_ALL": "C",
+        "PATH": "/usr/bin:/bin",
+    }
+
+    def __init__(self, timeout_seconds: float = 15.0, effective_uid=None) -> None:
+        self._timeout_seconds = timeout_seconds
+        self._effective_uid = effective_uid or getattr(os, "geteuid", lambda: -1)
+
+    @classmethod
+    def argv(cls, uuid: str) -> tuple[str, ...]:
+        if type(uuid) is not str or cls.UUID.fullmatch(uuid) is None:
+            raise ValueError("device authorization uuid is invalid")
+        return (cls.BOLTCTL, "enroll", "--policy", "auto", uuid)
+
+    def enroll(self, uuid: str) -> DeviceEnrollmentResult:
+        try:
+            argv = self.argv(uuid)
+        except ValueError:
+            return DeviceEnrollmentResult(
+                False, "device_authorization.uuid_invalid"
+            )
+        if self._effective_uid() != 0:
+            return DeviceEnrollmentResult(
+                False, "device_authorization.root_required"
+            )
+        try:
+            completed = subprocess.run(
+                argv,
+                capture_output=True,
+                check=False,
+                shell=False,
+                text=False,
+                timeout=self._timeout_seconds,
+                env=dict(self.CLEAN_ENVIRONMENT),
+            )
+        except subprocess.TimeoutExpired:
+            return DeviceEnrollmentResult(
+                False, "device_authorization.enroll_timeout"
+            )
+        except (OSError, subprocess.SubprocessError):
+            return DeviceEnrollmentResult(
+                False, "device_authorization.enroll_unavailable"
+            )
+        if completed.returncode != 0:
+            return DeviceEnrollmentResult(
+                False, "device_authorization.enroll_failed"
+            )
+        return DeviceEnrollmentResult(
+            True, "device_authorization.enroll_accepted_unverified"
+        )
