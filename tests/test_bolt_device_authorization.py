@@ -9,10 +9,12 @@ trusted.
 
 from __future__ import annotations
 
+import inspect
 import subprocess
 import sys
 import unittest
 from pathlib import Path
+from typing import get_type_hints
 from unittest.mock import patch
 
 
@@ -21,6 +23,10 @@ sys.path.insert(0, str(ROOT / "backend"))
 
 from regear.adapters.steamos.commands import (  # noqa: E402
     BoltDeviceAuthorizationRunner,
+)
+from regear.ports.device_authorization import (  # noqa: E402
+    DeviceAuthorizationPort,
+    DeviceEnrollmentResult,
 )
 
 
@@ -141,6 +147,70 @@ class TheOutcomeIsHonest(unittest.TestCase):
             result = runner().enroll(VALID)
         self.assertFalse(result.enrolled)
         self.assertEqual(result.code, "device_authorization.enroll_unavailable")
+
+
+class ThePortDeclaresBothGrants(unittest.TestCase):
+    """The boundary the runner is measured against, not the runner itself.
+
+    `authorize` is the one-shot grant that stores nothing, and it exists on the
+    port so a caller can offer "just this once" without inventing a second
+    interface. The runner below implements enrolment only; that gap is the
+    caller's to handle as a refusal, which is why nothing here asserts the
+    runner has grown the method yet.
+    """
+
+    def test_the_protocol_names_enroll_and_authorize(self):
+        """Both grants, declared here, each taking one device and answering
+        the honest result type.
+
+        This used to assert `callable(getattr(Port, name))`, which nothing
+        could fail: `getattr` raises before the assertion on a name that is
+        gone, and anything it does find on a Protocol class is callable by
+        construction, so the assertion itself measured nothing. What a caller
+        dispatching on the player's chosen action actually depends on is the
+        shape -- the name being declared on this Protocol rather than
+        inherited from the Protocol machinery, exactly one `uuid` parameter
+        after `self` with no default that would let a call omit the device,
+        and `DeviceEnrollmentResult` coming back. A grant renamed, dropped, or
+        given a second parameter fails here now.
+        """
+        for name in ("enroll", "authorize"):
+            with self.subTest(grant=name):
+                declared = vars(DeviceAuthorizationPort).get(name)
+                self.assertIsNotNone(
+                    declared, f"the port no longer declares {name}"
+                )
+                self.assertTrue(inspect.isfunction(declared))
+
+                # `eval_str` because the port module uses postponed
+                # annotations, so every annotation here is a string until it
+                # is resolved against that module's own globals.
+                signature = inspect.signature(declared, eval_str=True)
+
+                self.assertEqual(
+                    [parameter for parameter in signature.parameters],
+                    ["self", "uuid"],
+                )
+                uuid = signature.parameters["uuid"]
+                self.assertIs(uuid.annotation, str)
+                self.assertIs(uuid.kind, inspect.Parameter.POSITIONAL_OR_KEYWORD)
+                self.assertIs(uuid.default, inspect.Parameter.empty)
+                self.assertIs(
+                    signature.return_annotation, DeviceEnrollmentResult
+                )
+
+    def test_both_grants_answer_with_the_same_honest_result_type(self):
+        """Accepted-not-verified is the promise for either action."""
+        for name in ("enroll", "authorize"):
+            with self.subTest(action=name):
+                hints = get_type_hints(getattr(DeviceAuthorizationPort, name))
+                self.assertIs(hints["return"], DeviceEnrollmentResult)
+                self.assertIs(hints["uuid"], str)
+
+    def test_the_runner_returns_that_result_type(self):
+        with patch.object(subprocess, "run", return_value=Completed(0)):
+            result = runner().enroll(VALID)
+        self.assertIsInstance(result, DeviceEnrollmentResult)
 
 
 class TheSubprocessCallIsSafe(unittest.TestCase):
