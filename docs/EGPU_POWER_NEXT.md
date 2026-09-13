@@ -1,0 +1,59 @@
+# Disconnect before power: implementation checkpoint
+
+## Accepted behavior, 2026-09-13
+
+Build from the [0.3.98 golden cycle](EGPU_0398_CHECKPOINT.md), preserving its
+connection and button-disconnect behavior. User requests Sleep or Power off;
+Re-Gear returns to handheld, runs the same verified resource/GPU/USB4 disconnect,
+then continues that original power request once. A failed disconnect reports its
+actual reason and does not silently execute power or retry removal.
+
+Ronnie confirmed the G1 cable may remain connected for charging after either
+sleep or shutdown. The dock stays logically disconnected on wake. Reusing the
+eGPU requires physical unplug/replug; there is no software reconnect,
+reauthorization or rescan on wake. Charging retention is a hardware trial outcome
+to record, not something USB4 deauthorization alone proves.
+
+## Existing implementation to reuse
+
+- `Plugin._run_whole_dock_trial`: the verified portable return and teardown.
+- `create_power_request`, `DockPowerIntentStore`, `continue_dock_power`:
+  backend-owned operation/action/session/deadline, consumed once before poweroff.
+- `SystemPowerCommandRunner`: existing ordinary shutdown adapter.
+- `SleepLeaseHandoff`: unwired two-lease handoff with restoration handling.
+- Existing UI confirmation/correlation: confirmation captures original intent;
+  backend continues through frontend/session restart. Cancellation before dispatch
+  does nothing. Do not let the frontend submit another power action after return.
+
+## Work completed and remaining
+
+`SystemSuspendCommandRunner` now provides a fixed ordinary suspend boundary with
+explicit inhibitor checking, a timeout and categorical results. It executes no
+command during construction, retries no uncertain request, does not bypass locks
+and defines no wake behavior. It has no production caller yet. The command shape
+was checked against installed systemctl help and the upstream systemd manual:
+https://github.com/systemd/systemd/blob/main/man/systemctl.xml
+This is API documentation consultation, not copied implementation.
+
+Remaining: bind production sleep handoff to the original request and both actual
+sleep leases; coordinate lease reconciliation and restoration with the platform
+sleep/resume observation. Wire the existing shutdown continuation and the new
+sleep continuation into explicit UI power actions through one backend route.
+No-eGPU/already-disconnected ordinary power must not run teardown again. Keep
+normal power actions and direct routing distinct from evidence of a new removal.
+The UI owner has supplied a read-only routing assessment; shared index/shell
+production edits await the agreed backend contract and joint sequencing.
+
+Do not implement a disconnect/unplug/sleep workflow instead: the user explicitly
+selected sleep with the charging cable attached. No forced power operation,
+software reconnect or device experiment is part of this code checkpoint.
+
+## Validation next
+
+Focused command tests and existing shutdown coordinator tests cover the new
+adapter without hardware calls. Preserve current golden tests and add integrated
+original-intent, duplicate/cancel, failure-before-power, ordinary-no-dock and
+resume-without-reauthorization checks at actual production seams. Run one bounded
+supervised poweroff trial first, then cable-connected sleep/wake with handheld
+operation and charging observed. Prior automatic-TV evidence remains valid unless
+new changes affect that path; do not repeat unchanged broad trials by default.
