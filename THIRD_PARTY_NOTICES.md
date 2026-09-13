@@ -61,3 +61,16 @@ THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
 OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
 ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
 OTHER DEALINGS IN THE SOFTWARE.
+
+## Native brightness and volume API contract
+
+The Command Center utility adapter uses API contract evidence from Valve's Steam
+client source archived by SteamDB / SteamTracking contributors at
+[revision af2c67ecde70cf2c7a655326a0c7df1233732ce2](https://github.com/SteamDatabase/SteamTracking/blob/af2c67ecde70cf2c7a655326a0c7df1233732ce2/ClientExtracted/steamui/chunk~2dcc5aaf7.js),
+and the Decky UI contributors' System Display/Audio type declarations distributed
+with the existing `@decky/ui` dependency. The evidence establishes native method
+names, callback payloads, normalized values, and the legacy `AllOutput = 1`
+audio direction. Reuse type: interface research; no Steam implementation or
+assets are copied. Re-Gear implements its own subscription lifetime, observation
+store, user dispatch, and menu-generation guard. These references do not establish
+compatibility with every installed Steam client.

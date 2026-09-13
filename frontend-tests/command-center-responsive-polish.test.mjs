@@ -33,7 +33,7 @@ test("detached action rail scales from viewport rather than fixed card geometry"
   assert.match(styles, /data-utility-side=right/);
   assert.match(styles, /width:clamp\(68px,8\.5vw,94px\)/);
   assert.match(styles, /height:82vh/);
-  assert.match(rail, /min-height:clamp\(/);
+  assert.match(rail, /data-utility-side=right\] \.rg-utility-control\{[^}]*height:clamp\(48px,10vh,68px\);min-height:0;max-height:68px/);
 });
 
 test("utility rails do not add redundant headings and retain approved labels", () => {
