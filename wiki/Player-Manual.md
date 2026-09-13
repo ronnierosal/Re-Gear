@@ -4,6 +4,11 @@ Learn what Re-Gear does, find your way around its controls, and get help when
 something is unclear. Read from the beginning or jump to the part you need.
 No terminal commands or technical background are required.
 
+**About the pictures:** these are labelled mock illustrations, not screenshots.
+They show the order of actions and the labels to look for, not exact screen
+positions or current device readings. Real screenshots can replace them later;
+the written steps remain usable on their own.
+
 ## For players — no technical background needed
 
 1. [Before you begin](#1-before-you-begin)
@@ -38,12 +43,37 @@ have a build for a coordinated test, follow the instructions for that build.
 
 ### 2. Find your way around
 
+#### Walkthrough A — Open Re-Gear
+
 If Re-Gear is already installed for your test:
 
-1. Open Steam's **Quick Access** panel, open Decky, and select **Re-Gear**.
-2. Start with **Command Center**, the overview for status and quick controls.
-3. Select **Modules** for the **eGPU**, **Auto TDP**, or **Controller** pages.
-4. Select **Troubleshoot** for diagnostic details or a support report.
+1. Open Steam's **Quick Access** panel and open **Decky**.
+2. Select **Re-Gear** from your installed plugins.
+3. You should reach **Command Center**, the overview for status and quick
+   controls. Look for **Modules** and **Troubleshoot**.
+
+![Mock picture: three panels show Quick Access to Decky, selecting Re-Gear, and reaching Command Center.](https://raw.githubusercontent.com/wiki/ronnierosal/Re-Gear/assets/player-manual/mock-open-regear.png)
+
+*Mock picture — not an actual screenshot. Follow the labels, not the illustrated
+positions. If Re-Gear is missing from Decky, report your installed build rather
+than installing an unrelated candidate.*
+
+#### Walkthrough B — Find a module and return
+
+1. From **Command Center**, select **Modules**.
+2. You should see **eGPU**, **Auto TDP**, and **Controller**. For this example,
+   select **Controller** to open its page.
+3. Read the information and any availability message, then use **Back** to return
+   to the module list. Opening the page does not apply a setting.
+
+![Mock picture: select Modules, choose Controller from the module list, then read the page and use Back.](https://raw.githubusercontent.com/wiki/ronnierosal/Re-Gear/assets/player-manual/mock-find-module.png)
+
+*Mock picture — not an actual screenshot. “Read the information” is an instruction
+in this illustration, not a status message. If a page is unavailable, read its
+explanation; that does not establish that your controller is broken.*
+
+Select **Troubleshoot** from Command Center or Modules when you need diagnostic
+details or a support report.
 
 The **eGPU status** and **Controller status** entries open information about
 those devices. Opening a status view does not apply a setting. **Back** returns
@@ -54,10 +84,6 @@ Controller navigation still needs checking on each installed build. If a named
 control is absent, use [Get help](#7-get-help); you do not need to install another
 build just to match this manual. **Open expanded demo**, if present, shows a
 preview layout with sample information. Use the regular controls for actual status.
-
-<!-- Future screenshot: installed Command Center with Modules and Troubleshoot
-identified. Record build, capture date and native validation; remove private
-information. Keep all steps understandable without the image. -->
 
 ### 3. Understand the numbers and controls
 
@@ -122,6 +148,28 @@ If something does not work, note what you expected, what happened, and your
 Re-Gear version. Include whether a game was running and which screen you were
 using. Do not repeat a risky failure just to collect a report.
 
+#### Walkthrough C — Preview a support report
+
+A **support report** contains selected Re-Gear status to help explain a problem.
+**Redacted** means identifying details have been removed or replaced.
+
+1. Select **Troubleshoot**. Find **Support bundle** and select
+   **Preview redacted support bundle**.
+2. The **Redacted support bundle preview** should open. Read the report, then
+   select **Close preview**. You have not saved or sent a file by doing this.
+
+![Mock picture: open Preview redacted support bundle, review the report in the preview, then select Close preview.](https://raw.githubusercontent.com/wiki/ronnierosal/Re-Gear/assets/player-manual/mock-support-preview.png)
+
+*Mock picture — not an actual screenshot. Gray lines stand in for report text;
+they are not a real diagnostic result.*
+
+After reviewing, choose **Copy reviewed JSON** to copy the report, or **Save
+reviewed bundle to Downloads** to save it locally. JSON is the report's text
+format; you do not need to edit it. Save approval lasts five minutes from preview
+creation and can be used once. If it expires, create and review a new preview.
+See [Diagnostics and Privacy](Diagnostics-and-Privacy) for the complete save flow
+and help with preview, copy or save failures.
+
 - [Diagnostics and Privacy](Diagnostics-and-Privacy) explains **Troubleshoot**,
   **Preview redacted support bundle**, and how to review, copy or save a report.
 - [Help Improve Re-Gear](Help-Improve-Re-Gear) explains where to report a problem
@@ -141,5 +189,8 @@ and [Quick Access](https://github.com/ronnierosal/Re-Gear/tree/ab87e2e0f6b7beb46
 [UI validation](https://github.com/ronnierosal/Re-Gear/blob/main/docs/COMMAND_CENTER_VALIDATION.md)
 and the [evidence index](https://github.com/ronnierosal/Re-Gear/blob/main/docs/INDEX.md)
 own technical details and validation limits. This review performed no installation
-or hardware trial. Future screenshots should identify the installed build and
-illustrate these steps without becoming a prerequisite for reading them.
+or hardware trial. The mock illustrations were generated with the built-in image
+tool for this manual; [asset notes and replacement instructions](https://github.com/ronnierosal/Re-Gear/blob/main/wiki/assets/player-manual/README.md)
+retain the prompts and filenames. They are not a product design replacement or
+installed-validation evidence. Future screenshots should identify the installed
+build and illustrate these steps without becoming a prerequisite for reading them.
