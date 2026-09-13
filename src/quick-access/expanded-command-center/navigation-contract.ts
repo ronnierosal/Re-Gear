@@ -1,5 +1,6 @@
 import type { Tab } from "./model";
 import type { UtilityId } from "./utility-layout";
+import type { EgpuQuickActionId } from "./egpu-actions-ui";
 
 /** UI-only navigation intents. Runtime owners may bind these to verified
  * platform adapters without changing Command Center layout or labels. */
@@ -8,6 +9,7 @@ export type CommandCenterNavigationIntent =
   | { kind: "open-tile"; tab: Tab; tileId: string }
   | { kind: "adjust-utility"; id: "brightness" | "volume"; percent: number }
   | { kind: "quick-action"; id: "mic" | "wifi" | "overlay" | "recording" }
+  | { kind: "egpu-action"; id: EgpuQuickActionId }
   | { kind: "customize" }
   | { kind: "back" }
   | { kind: "close" };
@@ -16,6 +18,7 @@ export const commandCenterButtonContract = {
   topTabs: ["quick", "performance", "egpu", "controllers", "settings"] as const satisfies readonly Tab[],
   utilities: ["brightness", "volume"] as const satisfies readonly UtilityId[],
   quickActions: ["mic", "wifi", "overlay", "recording"] as const satisfies readonly UtilityId[],
+  egpuActions: ["switch-handheld", "safe-disconnect", "resolution", "disconnect-sleep", "disconnect-shutdown", "status"] as const satisfies readonly EgpuQuickActionId[],
 } as const;
 
 /** Future runtime wiring should dispatch through one adapter seam instead of
