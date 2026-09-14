@@ -18,14 +18,9 @@ test("backend-retired display success releases stale acknowledgement UI", () => 
   assert.match(refresh, /if \(status.code === "journal.idle"\) \{[^}]*setTvSwitchAcknowledgementId\(""\)/);
 });
 
-test("upward navigation reaches the native status focus stop before leaving Re-Gear", () => {
-  const source = readFileSync(new URL("../src/index.tsx", import.meta.url), "utf8");
-  const summaryStart = source.indexOf('<CommandCenterHeader');
-  const summary = source.slice(summaryStart, source.indexOf('/>', summaryStart));
-  assert.match(summary, /summaryRef=\{statusFocusAnchor\}/);
-  assert.match(summary, /onSummaryFocus=\{[\s\S]*scrollToTopOfOwningPanel\(statusAnchor.current\)/);
-  assert.doesNotMatch(summary, /onActivate|onCancel|onGamepadDirection/);
-  assert.match(source, /statusFocusAnchor.current \?\? primaryControlAnchor.current/);
+test("relocated details retain their own scroll anchor under the native expanded shell",()=>{
+ const source=readFileSync(new URL('../src/index.tsx',import.meta.url),'utf8');assert.match(source,/const wrapDetail=[\s\S]*ref=\{statusAnchor\}/);assert.doesNotMatch(source,/<CommandCenterHeader/);
+ const shell=readFileSync(new URL('../src/quick-access/expanded-command-center/shell.tsx',import.meta.url),'utf8');assert.match(shell,/nested-back/);assert.match(shell,/data-ec-detail-content/);
 });
 
 test("informational sections have separate native focus stops without activation handlers", () => {
@@ -79,7 +74,7 @@ test("secondary sections stay hidden until the player opens Troubleshoot", () =>
 
 test("dashboard uses native preference controls without bypassing confirmation", () => {
   const source = readFileSync(new URL("../src/index.tsx", import.meta.url), "utf8");
-  assert.match(source, /<CommandCenterHeader/);
+  assert.match(source, /const egpuDetail=/);
   assert.match(source, /<DashboardSurface primary>/);
   assert.match(source, /<ToggleField[\s\S]*?checked=\{automaticDockStatus\?\.enabled === true\}/);
   assert.match(source, /disabled=\{automaticDockBusy \|\| !automaticDockStatus\}/);

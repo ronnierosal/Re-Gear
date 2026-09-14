@@ -1,99 +1,147 @@
-import { useRef, useState } from "react";
+import {controlRegistry} from './control-registry';
+import { useLayoutEffect, useRef, useState } from "react";
 import type { ElementType, KeyboardEvent } from "react";
 import { CommandCenterIcon } from "../command-center-icons";
 import { defaultUtilityLayout } from "./utility-layout";
 import type { UtilityId, UtilityPlacement } from "./utility-layout";
 
-export type UtilityReading = {
-  /** Only verified capabilities with current readings may be enabled. */
-  available: boolean;
-  value: string;
-  percent?: number;
-  pending?: boolean;
-  reason?: string;
+export type UtilityReading = { available:boolean; value:string; percent?:number; pending?:boolean; reason?:string };
+export type UtilityRailProps = {
+  side:"left"|"right";
+  layout?:readonly (Omit<UtilityPlacement,"id"> & {id:UtilityId|null;slot?:number})[];
+  readings?:Partial<Record<UtilityId,UtilityReading>>;
+  onRequest?:(id:UtilityId, percent?:number)=>Promise<void>;
+  Button?:ElementType;
+  Focusable?:ElementType;
+  directions?: Record<"up"|"down"|"left"|"right",number>;
+  onReturnToGrid?:()=>void;
+  onEditingChange?:(id:UtilityId|null)=>void;
+  onFeedback?:(kind:"select"|"back")=>void;
 };
-const labels: Record<UtilityId,string> = {
-  brightness:"Brightness",volume:"Volume",mic:"Mic mute",recording:"Recording",
-  overlay:"Performance overlay",audio:"Audio output",wifi:"Wi-Fi",
-};
+
+const labels=Object.fromEntries(controlRegistry.map(def=>[def.id,def.label])) as Record<UtilityId,string>;
+const shortLabels=Object.fromEntries(controlRegistry.map(def=>[def.id,def.shortLabel])) as Record<UtilityId,string>;
+
 const railStyles = `
-.rg-utility-rail{display:flex;flex-direction:column;gap:8px;color:#f4f7fb;font-family:Arial,sans-serif;width:108px;min-width:0}
-.rg-utility-control{border:1px solid #326987;border-radius:13px;background:linear-gradient(145deg,#143850,#0a2237 48%,#071a2b);padding:6px;min-width:0;text-align:center;font:inherit;color:inherit}
-.rg-utility-control button{font:inherit;color:inherit}
-.rg-utility-control.gpfocus,.rg-utility-control:focus-visible,.rg-utility-control input:focus-visible{outline:3px solid #39d8ff;outline-offset:2px}
-.rg-utility-control:disabled{cursor:default;color:#91b3cd}
-.rg-utility-label{display:block;font-size:12px;line-height:1.3;overflow-wrap:normal;word-break:normal}
-.rg-utility-value{display:block;font-size:11px;line-height:1.3;color:#a8cbe5;margin-top:5px;overflow-wrap:normal;word-break:normal}
-.rg-utility-slider{display:flex;flex-direction:column;align-items:center;gap:8px}
-.rg-utility-slider input{writing-mode:vertical-lr;direction:rtl;width:30px;height:70px;accent-color:#39d8ff}
+.rg-utility-rail{box-sizing:border-box;display:flex;flex-direction:column;color:#f4f7fb;font-family:Arial,sans-serif;min-width:0}
+.rg-utility-control{position:relative;min-width:0;margin:0;border:1px solid #315c75;border-radius:10px;background:#0b2232;padding:6px;text-align:center;font:inherit;color:inherit;overflow:hidden}
+.rg-utility-control[data-utility-editing=true],.rg-utility-control.gpfocus,.rg-utility-control:focus-visible,.rg-utility-control:focus-within{outline:2px solid #39d8ff;outline-offset:-2px;border-color:#39d8ff;background:#12364b}
+.rg-utility-control[data-utility-editing=true]{background:#17445b}.rg-utility-control[data-utility-editing=true] .rg-utility-value{color:#39d8ff;font-weight:700}
+.rg-utility-icon{display:grid;place-items:center;margin:0 auto 3px;color:#c9ecff}.rg-utility-icon svg{display:block;width:21px;height:21px}
+.rg-utility-label{display:block;font-size:10px;font-weight:700;line-height:1.1}.rg-utility-value{display:block;font-size:8px;line-height:1.15;color:#87aabd;margin-top:2px}
+.rg-utility-slider{display:flex;box-sizing:border-box;flex:1 1 50%;min-height:0;flex-direction:column;align-items:center;justify-content:center;gap:2px;background:transparent;border:0;border-radius:0;box-shadow:none;padding:3px 0;overflow:visible}
+.rg-utility-slider+.rg-utility-slider{border-top:1px solid #294f68;padding-top:5px}.rg-utility-slider .rg-utility-icon{margin-bottom:0}.rg-utility-slider .rg-utility-icon svg{width:17px;height:17px}.rg-utility-slider input{writing-mode:vertical-lr;direction:rtl;width:17px;height:0;min-height:0;flex:1 1 0;margin:1px 0;accent-color:#39d8ff}
+.rg-utility-rail[data-utility-side=left]{gap:0;padding:4px 2px;border:1px solid #294f68;border-radius:10px;background:#071825e8}.rg-utility-rail[data-utility-side=left] .rg-utility-label{display:none}.rg-utility-rail[data-utility-side=left] .rg-utility-value{font-size:7px;margin-top:2px}
+.rg-utility-rail[data-utility-side=right]{gap:5px;overflow:hidden}.rg-utility-rail[data-utility-side=right] .rg-utility-control{display:flex;flex:0 1 auto;flex-direction:column;align-items:center;justify-content:center;height:clamp(46px,9vh,62px);min-height:0;max-height:62px;padding:4px 2px}.rg-utility-rail[data-utility-side=right] .rg-utility-icon{width:25px;height:25px;border-radius:7px;border:1px solid #315c75;background:#0a2232}.rg-utility-rail[data-utility-side=right] .rg-utility-icon svg{width:16px;height:16px}.rg-utility-rail[data-utility-side=right] .rg-utility-label{font-size:8px}.rg-utility-rail[data-utility-side=right] .rg-utility-value{font-size:6px}
+@media(max-height:520px){.rg-utility-slider input{width:15px}.rg-utility-rail[data-utility-side=right]{gap:3px}.rg-utility-rail[data-utility-side=right] .rg-utility-control{height:42px;max-height:42px}}
 `;
 
-/** Reusable presentation, deliberately not mounted by the production shell yet.
- * The application owns reads, confirmations, persistence and hardware dispatch.
- * Recording's adapter must dismiss Command Center before requesting capture. */
-export function UtilityRail({side, layout = defaultUtilityLayout, readings = {}, onRequest, Button = "button", Focusable = "aside"}: {
-  side: "left" | "right";
-  layout?: readonly UtilityPlacement[];
-  readings?: Partial<Record<UtilityId,UtilityReading>>;
-  onRequest?: (id: UtilityId, percent?: number) => Promise<void>;
-  Button?: ElementType;
-  Focusable?: ElementType;
-}) {
-  const busy = useRef(new Set<UtilityId>());
-  const [pending,setPending] = useState<UtilityId[]>([]);
-  const [errors,setErrors] = useState<Partial<Record<UtilityId,string>>>({});
-  async function request(id: UtilityId, percent?: number) {
-    if (!onRequest || !readings[id]?.available || readings[id]?.pending || busy.current.has(id)) return;
-    busy.current.add(id); setPending([...busy.current]);
-    setErrors(current => ({...current,[id]:undefined}));
-    try { await onRequest(id,percent); }
-    catch { setErrors(current => ({...current,[id]:"Could not apply. Try again."})); }
-    finally { busy.current.delete(id); setPending([...busy.current]); }
+export function UtilityRail({side,layout=defaultUtilityLayout,readings={},onRequest,Button="button",Focusable="aside",directions,onReturnToGrid,onEditingChange,onFeedback}:UtilityRailProps) {
+  const editing=useRef<UtilityId|null>(null);
+  const [editingId,setEditingId]=useState<UtilityId|null>(null);
+  const finishEditing=()=>{editing.current=null;setEditingId(null);onEditingChange?.(null);};
+  const busy=useRef(new Set<UtilityId>());
+  const queued=useRef(new Map<UtilityId,number>());
+  const [pending,setPending]=useState<UtilityId[]>([]);
+  const [errors,setErrors]=useState<Partial<Record<UtilityId,string>>>({});
+  const failedReadings=useRef(new Map<UtilityId,UtilityReading|undefined>());
+  const requested=useRef(new Map<UtilityId,number>());
+  const [drafts,setDrafts]=useState<Partial<Record<UtilityId,number>>>({});
+  const currentReadings=useRef(readings);currentReadings.current=readings;
+  const mounted=useRef(true);
+  const clearRequested=(id:UtilityId)=>{requested.current.delete(id);setDrafts(c=>({...c,[id]:undefined}));};
+  useLayoutEffect(()=>{mounted.current=true;return()=>{mounted.current=false;queued.current.clear();};},[]);
+  useLayoutEffect(()=>{
+    for(const [id,target] of requested.current){
+      const reading=readings[id];
+      if(!reading?.available||typeof reading.percent!=="number"||!Number.isFinite(reading.percent)||reading.percent<0||reading.percent>100){queued.current.delete(id);failedReadings.current.delete(id);setErrors(c=>({...c,[id]:undefined}));clearRequested(id);}
+      else if(!busy.current.has(id)&&!reading.pending&&failedReadings.current.has(id)&&reading!==failedReadings.current.get(id)){
+        failedReadings.current.delete(id);setErrors(c=>({...c,[id]:undefined}));clearRequested(id);
+      }
+      else if(!busy.current.has(id)&&!reading.pending&&!failedReadings.current.has(id)&&reading.percent===target)clearRequested(id);
+    }
+  },[readings,pending]);
+
+  async function run(id:UtilityId,percent?:number){
+    if(!mounted.current||!onRequest||!currentReadings.current[id]?.available||(percent===undefined&&currentReadings.current[id]?.pending))return;
+    failedReadings.current.delete(id);busy.current.add(id); setPending([...busy.current]); setErrors(c=>({...c,[id]:undefined}));
+    let failed=false;
+    try{ await onRequest(id,percent); }
+    catch{failed=true;if(mounted.current){failedReadings.current.set(id,currentReadings.current[id]);setErrors(c=>({...c,[id]:"Could not apply. Try again."}));queued.current.delete(id);}}
+    finally{
+      const next=queued.current.get(id); queued.current.delete(id); busy.current.delete(id); if(mounted.current)setPending([...busy.current]);
+      if(mounted.current&&!failed&&next!==undefined&&next!==percent) void run(id,next);
+    }
   }
-  // Range inputs keep their native arrow behavior. Arrow keys on actions move
-  // through this rail; the shell retains cross-region/controller navigation.
-  function navigate(event: KeyboardEvent<HTMLElement>) {
-    if (event.target instanceof HTMLInputElement || !["ArrowUp","ArrowDown"].includes(event.key)) return;
-    const controls = Array.from(event.currentTarget.querySelectorAll<HTMLElement>("button:not(:disabled),input:not(:disabled)"));
-    const index = controls.indexOf(document.activeElement as HTMLElement);
-    const next = controls[index + (event.key === "ArrowDown" ? 1 : -1)];
-    if (next) { event.preventDefault(); event.stopPropagation(); next.focus(); }
+  function request(id:UtilityId,percent?:number){
+    if(!onRequest||!readings[id]?.available||(percent===undefined&&readings[id]?.pending))return;
+    if(percent!==undefined){percent=Math.max(0,Math.min(100,percent));requested.current.set(id,percent);setDrafts(c=>({...c,[id]:percent}));}
+    if(busy.current.has(id)){ if(percent!==undefined) queued.current.set(id,percent); return; }
+    void run(id,percent);
   }
+  function move(event: {target: EventTarget|null; currentTarget: EventTarget|null; preventDefault():void;stopPropagation():void}, direction:string, id:UtilityId) {
+    const wrapper=event.currentTarget as HTMLElement;
+    const input=wrapper.querySelector<HTMLInputElement>('input');
+    if(direction==='right') { event.preventDefault();event.stopPropagation();finishEditing();onReturnToGrid?.();return true; }
+    if(direction!=='up'&&direction!=='down') return false;
+    event.preventDefault();event.stopPropagation();
+    if(input && (editing.current===id || event.target===input || wrapper.ownerDocument?.activeElement===input) && !input.disabled) {
+      const value=Math.max(0,Math.min(100,(requested.current.get(id)??Number(input.value))+(direction==='up'?3:-3)));
+      request(id,value);
+    } else {
+      const wrappers=Array.from(wrapper.parentElement?.querySelectorAll<HTMLElement>('[data-utility-slider]')??[]);
+      wrappers[wrappers.indexOf(wrapper)+(direction==='down'?1:-1)]?.focus();
+    }
+    return true;
+  }
+  function navigate(event:KeyboardEvent<HTMLElement>){
+    if(event.target instanceof HTMLInputElement || !["ArrowUp","ArrowDown"].includes(event.key)) return;
+    const controls=Array.from(event.currentTarget.querySelectorAll<HTMLElement>("button:not(:disabled),input:not(:disabled)"));
+    const index=controls.indexOf(document.activeElement as HTMLElement);
+    const next=controls[index+(event.key==="ArrowDown"?1:-1)];
+    if(next){ event.preventDefault(); event.stopPropagation(); next.focus(); }
+  }
+
   return <Focusable flow-children="vertical" noFocusRing className="rg-utility-rail" data-utility-side={side} aria-label={`${side} quick controls`} onKeyDown={navigate}>
     <style>{railStyles}</style>
-    {!onRequest && <span className="rg-utility-value">Support unverified</span>}
-    {layout.filter(item => item.side === side).map(({id}) => {
-      const reading = readings[id];
-      const waiting = pending.includes(id) || reading?.pending;
-      const isSlider = id === "brightness" || id === "volume";
-      const validPercent = typeof reading?.percent === "number" && Number.isFinite(reading.percent) && reading.percent >= 0 && reading.percent <= 100;
-      const disabled = !onRequest || !reading?.available || waiting || (isSlider && !validPercent);
-      const status = errors[id] ?? (waiting ? "Applying…" : reading?.value ?? "Unavailable");
-      const reason = reading?.reason ?? (!reading?.available ? "No verified capability" : undefined);
-      return isSlider ? <label key={id} className="rg-utility-control rg-utility-slider" title={reason}>
+    {layout.filter(i=>i.side===side).map(({id,slot})=>{
+      const control=slot===undefined?`utility-${id}`:`utility-slot-${slot}`;
+      if(id===null)return <Button key={control} type="button" data-ec-control={control} className="rg-utility-control" aria-label="Empty quick action slot. Tap Y to add" onClick={()=>{}}><span className="rg-utility-label">Empty</span></Button>;
+      const reading=readings[id], waiting=pending.includes(id)||reading?.pending||drafts[id]!==undefined;
+      const isSlider=id==="brightness"||id==="volume";
+      const valid=typeof reading?.percent==="number"&&Number.isFinite(reading.percent)&&reading.percent>=0&&reading.percent<=100;
+      const disabled=!onRequest||!reading?.available||(!isSlider&&Boolean(reading?.pending))||(isSlider&&!valid);
+      const status=errors[id]??(waiting?"Applying…":reading?.value??"Unavailable");
+      const displayPercent=drafts[id]??reading?.percent;
+      const sliderStatus=valid?`${displayPercent}%`:"Unavailable";
+      const sliderDescription=errors[id]??(drafts[id]!==undefined?`${displayPercent}% requested; observed ${reading?.percent}%`:reading?.value??"Unknown");
+      const reason=reading?.reason??(!reading?.available?"No verified capability":undefined);
+      return isSlider ? <Focusable key={id} tabIndex={0} data-utility-slider data-utility-id={id} data-ec-control={`utility-${id}`} className="rg-utility-control rg-utility-slider" title={reason} aria-label={`${labels[id]}${editingId===id ? ", adjusting" : ""}`} data-utility-editing={editingId===id || undefined} aria-busy={waiting||undefined}
+        onGamepadDirection={directions ? (event:CustomEvent<{button:number}>)=>move(event,Object.keys(directions).find(key=>directions[key as keyof typeof directions]===event.detail.button)??'',id) : undefined}
+        onOKButton={(event:CustomEvent)=>{event.preventDefault();event.stopPropagation();if(disabled)return;if(directions){onFeedback?.("select");editing.current=id;setEditingId(id);onEditingChange?.(id);}else{(event.currentTarget as HTMLElement).querySelector<HTMLInputElement>('input:not(:disabled)')?.focus();}}}
+        onGamepadBlur={()=>{if(editing.current===id)finishEditing();}}
+        onCancelButton={(event:CustomEvent)=>{const wrapper=event.currentTarget as HTMLElement;if(editing.current===id||(event.target as HTMLElement).tagName==='INPUT'||wrapper.ownerDocument?.activeElement===wrapper.querySelector('input')){event.preventDefault();event.stopPropagation();onFeedback?.("back");finishEditing();wrapper.focus();return true;}return false;}}
+        onKeyDown={(event:KeyboardEvent<HTMLElement>)=>{if(event.key.startsWith('Arrow')) move(event,event.key.slice(5).toLowerCase(),id); else if(event.key==='Enter'){event.preventDefault();event.stopPropagation();event.currentTarget.querySelector<HTMLInputElement>('input:not(:disabled)')?.focus();} else if(event.key==='Escape'&&(event.target as HTMLElement).tagName==='INPUT'){event.preventDefault();event.stopPropagation();event.currentTarget.focus();}}}>
+        <span className="rg-utility-icon"><UtilityIcon id={id}/></span>
         <span className="rg-utility-label">{labels[id]}</span>
-        <input type="range" min={0} max={100} step={1} aria-label={labels[id]} aria-orientation="vertical"
-          aria-valuetext={validPercent ? status : "Unknown"} value={validPercent ? reading!.percent : 0} disabled={disabled}
-          onChange={event => void request(id,Number(event.currentTarget.value))}/>
+        <input type="range" min={0} max={100} step={1} aria-label={labels[id]} aria-orientation="vertical" aria-valuetext={sliderDescription} value={valid?displayPercent:0} disabled={disabled} onChange={e=>request(id,Number(e.currentTarget.value))}/>
+        <span className="rg-utility-value" role="status" aria-label={sliderDescription} title={sliderDescription}>{sliderStatus}{errors[id]&&<span role="alert">{errors[id]}</span>}</span>
+      </Focusable> : <Button key={control} type="button" data-utility-id={id} data-ec-control={control} className="rg-utility-control" aria-disabled={disabled||waiting} title={reason} aria-label={`${labels[id]}: ${status}`} aria-busy={waiting||undefined} onClick={()=>{if(!disabled&&!waiting)request(id);}}>
+        <span className="rg-utility-icon"><UtilityIcon id={id}/></span>
+        <span className="rg-utility-label">{shortLabels[id]}</span>
         <span className="rg-utility-value" role="status">{status}</span>
-
-      </label> : <Button key={id} type="button" className="rg-utility-control" disabled={disabled} title={reason}
-        aria-label={`${labels[id]}: ${status}`} onClick={() => void request(id)}>
-        <UtilityIcon id={id}/>
-        <span className="rg-utility-label">{labels[id]}</span>
-        <span className="rg-utility-value" role="status">{status}</span>
-
       </Button>;
     })}
   </Focusable>;
 }
 
-
-function UtilityIcon({id}: {id: UtilityId}) {
-  if(id === "overlay") return <CommandCenterIcon id="performance" size={24}/>;
-  const paths: Partial<Record<UtilityId,string>> = {
+export function UtilityIcon({id}:{id:UtilityId}){
+  if(id==="overlay") return <CommandCenterIcon id="performance" size={24}/>;
+  const paths:Partial<Record<UtilityId,string>>={
+    brightness:"M32 12v7M32 45v7M12 32h7M45 32h7M18 18l5 5M41 41l5 5M46 18l-5 5M23 41l-5 5M32 23a9 9 0 1 1 0 18 9 9 0 0 1 0-18Z",
+    volume:"M10 26h10l14-12v36L20 38H10ZM43 23a14 14 0 0 1 0 18M49 15a25 25 0 0 1 0 34",
     mic:"M25 11a7 7 0 0 1 14 0v20a7 7 0 0 1-14 0ZM18 28v3a14 14 0 0 0 28 0v-3M32 45v10M23 55h18",
-    recording:"M12 12h40v40H12ZM25 25h14v14H25Z",
+    recording:"M32 18a14 14 0 1 1 0 28 14 14 0 0 1 0-28ZM32 24a8 8 0 1 1 0 16 8 8 0 0 1 0-16Z",
     audio:"M10 26h10l14-12v36L20 38H10ZM43 23a14 14 0 0 1 0 18M49 15a25 25 0 0 1 0 34",
     wifi:"M8 23a36 36 0 0 1 48 0M17 33a23 23 0 0 1 30 0M25 43a11 11 0 0 1 14 0M32 52h.01",
   };
