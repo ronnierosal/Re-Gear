@@ -197,11 +197,15 @@ and manual test confirmation from Quick Access, keeping the plugin-lifecycle
 automatic checks and artwork badges, and notes that the manual-panel source is
 dormant and tree-shaken from the build.
 
-The consequence is a **deferred explanation surface**: today a player sees a
+The consequence was a **deferred explanation surface**: today a player sees a
 badge and its accessible label, but has no way to read the detailed preparation
-reasons or record a "Tested offline" attestation. Whether to give the automatic
-path its own explanation entry point is an open product question for the primary
-and the UI owner. It is not licence to restore the old panel layout.
+reasons or record a "Tested offline" attestation.
+
+That is now decided. Ronnie authorized an Offline Readiness tab on 2026-09-13,
+with a player-configured sync schedule and a force-sync action; the UI owner
+builds the visual tab. Nothing below is implemented yet, and the authorization is
+not licence to restore the old panel layout — the tab is a new surface, not a
+revival of the dormant one.
 
 The pieces below exist in source and are covered by tests. Treat them as
 available material, not as current player-visible behavior.
@@ -226,8 +230,10 @@ available material, not as current player-visible behavior.
   are resolvable through `rollup.config.js` but imported by no component; only
   the three `-compact` files reach the bundle.
 
-Activating any of this is a separate assigned decision. This document does not
-propose an Offline Mode, automatic confirmation, or a new surface.
+Activating any of this remains a separate assigned decision, and the authorized
+tab does not by itself revive these modules. This document still proposes no
+Offline Mode and no automatic confirmation: an attestation stays an explicit
+player action.
 
 ## Remaining validation
 

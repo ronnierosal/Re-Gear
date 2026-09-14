@@ -21,11 +21,22 @@ adapters, tests and delivery guidance.
 - The UI driver retains broad Quick Access design; see
   [UI design contract](UI_DESIGN_CONTRACT.md).
 
-Standing prohibitions for this workstream: no whole-library scan, background
-polling, network or account queries, credential reads, save or configuration
-writes, game launches, or automatic Offline Mode. An installed game is not proof
-of entitlement, cloud sync, or offline launch. No live source can self-declare a
-benchmark from synthetic test timing.
+Standing prohibitions for this workstream: no whole-library scan, no network or
+account queries, no credential reads, no save or configuration writes, no game
+launches, no cache deletion, and no automatic Offline Mode. An installed game is
+not proof of entitlement, cloud sync, or offline launch. No live source can
+self-declare a benchmark from synthetic test timing.
+
+**Authorized 2026-09-13, pending implementation.** Ronnie has since authorized an
+Offline Readiness tab in Quick Access with a player-configured sync schedule,
+where sync both refreshes readiness and requests available preparation content
+(game updates, and shader content where Steam exposes it). That narrows two items
+that earlier read as blanket prohibitions here: scheduled work and content
+download are now in scope *for an explicitly chosen game, on a schedule the
+player turns on*. Everything else above still stands, and none of it is built
+yet — the existing passive 60-second focused-tile behaviour remains the baseline
+until a schedule is configured. A longer interval must never keep a stale
+positive badge alive until the next scheduled check.
 
 ## Where the work stands
 
@@ -45,11 +56,14 @@ produce "Tested offline", and the admission-gated synchronous evidence service
 (`backend/regear/application/offline_readiness.py`) with its overview adapter.
 The manual surface was removed deliberately in 0.3.35-offline.1, revision
 `c0590e5` (`docs/CURRENT_STATE.md:409-415`), leaving the source dormant and
-tree-shaken from the build. The open question it leaves is a **deferred
-explanation surface**: a player sees a badge and its label but cannot read the
-preparation reasons or record an attestation. Choosing an entry point for that is
-a product decision for the primary and the UI owner, not an implicit next step,
-and not a licence to restore the old panel layout.
+tree-shaken from the build. What that left was a **deferred explanation
+surface**: a player sees a badge and its label but cannot read the preparation
+reasons or record an attestation.
+
+That question is now answered. Ronnie authorized an Offline Readiness tab on
+2026-09-13, and the UI owner is building the visual tab; this workstream supplies
+its headless wiring model. The deferral above is therefore historical. It remains
+no licence to restore the old panel layout, and nothing here is implemented yet.
 
 **Mounted but unwired.** The Quick Access "Offline readiness" journey row renders
 from `payload.journey`, and the backend snapshot emits no `journey` key, so it

@@ -100,9 +100,13 @@ seven admitted keys and every value in `iInstallFolder ∈ {-1,0,1,7}`,
 flag — 304,560 reports. Results: 212,682 `needs_attention`, 34,514
 `online_check_needed`, 57,364 `unknown`, and zero `ready_to_try_offline`. Every
 `unknown` result used one of only two reason sets, both entirely inside the
-badge's incomplete-evidence allowlist
-(`src/offline-badge-state.ts:15`), so a valid idle report always reaches the
-player as "Unverified" rather than being silently suppressed.
+badge's incomplete-evidence allowlist (`src/offline-badge-state.ts:15`), so a
+valid idle report always yields a badge rather than being silently suppressed.
+
+That is a statement about the **categorical** layer only. It fixes whether a
+badge appears, not what the player finally reads: the confidence layer then
+supplies the asset and label, and it can take this same `unknown` report all the
+way to a green "Likely offline-ready" (`src/offline-focus-checks.tsx:72-73`).
 
 ### Frontend confidence is a separate, weaker judgement
 
@@ -118,13 +122,22 @@ heuristic over the private fields, not a second classifier of record:
   `11` (ReadyToLaunch), a decided cloud state, the cached single-player category,
   `bIsThirdPartyUpdater === false`, and both internet flags explicitly false.
   Missing booleans are unknown, never false.
-- "Tested offline" additionally requires a matching player attestation.
+- "Tested offline" requires a matching player attestation plus the preparation
+  gates and no blockers — but **not** the compatibility metadata that "Likely
+  offline-ready" needs. It is returned at `src/offline-confidence.ts:93-96`,
+  before the single-player, third-party-launcher and explicit-internet-flag
+  unknowns are appended at `:97-100`, so an attestation can override missing
+  compatibility metadata that would otherwise stop a game short of "Likely".
 - Everything else is "Unverified".
 
-A categorical `needs_attention` or `online_check_needed` report forces "Needs
-preparation" and forgets any attestation
-(`src/offline-confidence-session.ts:27-30`), so confidence can never present a
-game more favourably than the backend does.
+The guarantee this layering gives is narrower than it looks. A categorical
+`needs_attention` or `online_check_needed` report forces "Needs preparation" and
+forgets any attestation (`src/offline-confidence-session.ts:27-30`), so
+confidence can never talk past a backend **attention or authorization blocker**.
+It can be more favourable than the backend in the other direction: an admitted
+backend `unknown` may still become "Likely offline-ready". That is deliberate —
+the backend status gates whether a badge appears at all, while confidence
+decides what it says.
 
 What "Likely offline-ready" still does not establish: file integrity, storage
 health, DRM or publisher-launcher authorization, entitlement validity offline,

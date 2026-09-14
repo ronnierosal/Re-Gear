@@ -67,11 +67,16 @@ positive folder index is never converted into proof of offline readiness.
    admission-gated synchronous evidence service with its overview adapter — and a
    fourth, the Quick Access journey row, is mounted with no backend source.
    Deciding their fate is assigned work, not an implicit next step.
-7. **Explanation surface — deferred, open.** Removing the manual panel in
-   0.3.35-offline.1 (`docs/CURRENT_STATE.md:409-415`) was deliberate and left the
-   automatic badge without a place to show its reasons or accept a "Tested
-   offline" attestation. Whether the automatic path gets its own explanation
-   entry point is a product decision for the primary and the UI owner.
+7. **Explanation surface — authorized, pending implementation.** Removing the
+   manual panel in 0.3.35-offline.1 (`docs/CURRENT_STATE.md:409-415`) was
+   deliberate and left the automatic badge without a place to show its reasons or
+   accept a "Tested offline" attestation. Ronnie authorized an Offline Readiness
+   tab on 2026-09-13 — with a configurable sync schedule and a force-sync action,
+   where sync refreshes readiness *and* requests available preparation content.
+   The UI owner builds the visual tab; this workstream supplies its headless
+   wiring model and the native preparation adapter. None of it ships yet, and the
+   existing passive focused-tile behaviour stays the baseline until a player
+   turns a schedule on.
 8. **Final player acceptance — last, and open.** One short controller-driven
    check of selection, wording, responsiveness and the displayed result, tracked
    by [issue 21](https://github.com/ronnierosal/Re-Gear/issues/21) together with
