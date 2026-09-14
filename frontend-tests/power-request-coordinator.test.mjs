@@ -357,3 +357,69 @@ test("after transport failure a fresh unequivocal non-submission permits a new u
   assert.equal(h.coordinator.read().intent, "shutdown");
   assert.equal(h.calls.length, 1, "new capture still requires explicit confirmation");
 });
+
+test("real ordinary shutdown acceptance and refusal codes are recognized", async () => {
+  for (const [code, requested, phase] of [
+    ["safe_disconnect.poweroff_request_accepted_unverified", true, "requested"],
+    ["safe_disconnect.poweroff_failed", false, "refused"],
+    ["safe_disconnect.root_required", false, "refused"],
+  ]) {
+    const h = harness({ execute: async () => reply({ power_action: "shutdown",
+      route_action: "whole_dock_shutdown", code, power_requested: requested, ok: requested }) });
+    await h.coordinator.captureShutdown().confirm();
+    assert.equal(h.coordinator.read().phase, phase, code);
+    assert.equal(!!h.coordinator.captureSleep(), !requested, code);
+    assert.equal(h.calls.length, 1);
+  }
+});
+
+test("unverified backend submissions never unlock a new power choice", async () => {
+  for (const [intent, code] of [
+    ["sleep", "dock_power.request_unverified"], ["sleep", "dock_power.unresolved"],
+    ["sleep", "dock_power.sleep_protection_unverified"],
+    ["shutdown", "safe_disconnect.poweroff_timeout"],
+    ["shutdown", "safe_disconnect.poweroff_unavailable"],
+    ["shutdown", "dock_teardown.trial_unresolved"],
+    ["shutdown", "dock_power.already_consumed"],
+  ]) {
+    const route = intent === "sleep" ? "whole_dock_sleep" : "whole_dock_shutdown";
+    const payload = reply({ power_action: intent, route_action: route,
+      code, power_requested: false, ok: false });
+    const h = harness({ execute: async () => payload });
+    if (intent === "sleep") await h.coordinator.captureSleep().disconnectAndSleep();
+    else await h.coordinator.captureShutdown().confirm();
+    assert.equal(h.coordinator.read().phase, "uncertain", code);
+    assert.equal(h.coordinator.captureSleep(), null, code);
+    h.setReading(payload);
+    await h.coordinator.refresh();
+    assert.equal(h.coordinator.read().phase, "uncertain", code);
+    assert.equal(h.coordinator.captureShutdown(), null, code);
+    assert.equal(h.calls.length, 1);
+  }
+});
+
+test("only exact producer codes for the captured intent may settle refusal", async () => {
+  for (const code of ["dock_power.invented", "dock_teardown.invented", "dock_mutation.invented",
+    "safe_disconnect.root_required", "safe_disconnect.poweroff_failed",
+    "dock_power.request_accepted_unverified", "dock_power.sleep_cycle_observed"]) {
+    const h = harness({ execute: async () => reply({ code, power_requested: false, ok: false }) });
+    await h.coordinator.captureSleep().disconnectAndSleep();
+    assert.equal(h.coordinator.read().phase, "uncertain", code);
+    assert.equal(h.coordinator.captureShutdown(), null, code);
+  }
+});
+
+test("ordinary shutdown readback preserves accepted submission against later refusal", async () => {
+  const h = harness({ execute: async () => { throw new Error("reply interrupted"); } });
+  await h.coordinator.captureShutdown().confirm();
+  h.setReading(reply({ power_action: "shutdown", route_action: "whole_dock_shutdown",
+    code: "safe_disconnect.poweroff_request_accepted_unverified" }));
+  await h.coordinator.refresh();
+  assert.equal(h.coordinator.read().phase, "requested");
+  h.setReading(reply({ power_action: "shutdown", route_action: "whole_dock_shutdown",
+    code: "safe_disconnect.poweroff_failed", power_requested: false, ok: false }));
+  await h.coordinator.refresh();
+  assert.equal(h.coordinator.read().phase, "uncertain");
+  assert.equal(h.coordinator.captureSleep(), null);
+  assert.equal(h.calls.length, 1);
+});

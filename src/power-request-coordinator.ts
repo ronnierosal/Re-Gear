@@ -20,6 +20,42 @@ type Ticket = {
   action: PowerAction | null; requested: boolean; executeSettled: boolean;
 };
 
+// These are the exact codes emitted by the power route, not a namespace grant.
+// A false submission flag also accompanies unknown outcomes: only a known
+// pre-submission refusal can release the active ticket for another user choice.
+const refusalCodes = new Set([
+  "dock_power.invalid_intent", "dock_power.preflight_changed",
+  "dock_power.intent_not_recorded", "dock_power.disconnect_unverified",
+  "dock_teardown.usb_peripherals_or_unknown", "dock_teardown.begin_preflight_refused",
+  "dock_teardown.sleep_inhibition_required", "dock_teardown.approval_superseded",
+  "dock_teardown.session_unknown", "dock_teardown.gpu_release_unverified",
+  "dock_teardown.portable_return_refused", "dock_teardown.portable_return_unverified",
+  "dock_teardown.portable_acknowledgement_unverified",
+  "dock_mutation.inhibited", "dock_mutation.unavailable_or_busy",
+]);
+const otherCodes = new Set([
+  "dock_power.request_pending", "dock_teardown.trial_running",
+  "dock_power.request_accepted_unverified", "dock_power.request_unverified",
+  "dock_power.unresolved", "dock_power.already_consumed", "dock_power.busy",
+  "dock_teardown.trial_unresolved",
+]);
+const sleepRefusals = new Set([
+  "dock_power.sleep_unverified", "dock_power.sleep_observer_unavailable",
+  "dock_power.sleep_handoff_unavailable",
+]);
+const sleepOutcomes = new Set([
+  "dock_power.sleep_requested_unverified", "dock_power.sleep_cycle_observed",
+  "dock_power.sleep_cycle_failed", "dock_power.sleep_cycle_unresolved",
+  "dock_power.sleep_protection_unverified",
+]);
+const shutdownRefusals = new Set([
+  "safe_disconnect.root_required", "safe_disconnect.poweroff_failed",
+]);
+const shutdownOutcomes = new Set([
+  "safe_disconnect.poweroff_request_accepted_unverified",
+  "safe_disconnect.poweroff_timeout", "safe_disconnect.poweroff_unavailable",
+]);
+
 export function createPowerRequestCoordinator(port: PowerRequestPort, options: {
   requestId?: () => string; onChange?: () => void;
 } = {}) {
@@ -71,7 +107,10 @@ export function createPowerRequestCoordinator(port: PowerRequestPort, options: {
     // Once submission is observed, an older refusal or a transport error must
     // never reopen dispatch. This fact survives changes in presentation phase.
     if (p.power_requested === true) ticket.requested = true;
-    if (typeof p.code !== "string" || !/^(?:dock_power|dock_teardown|dock_mutation)\.[a-z0-9_]+$/.test(p.code)
+    const refusals = ticket.intent === "sleep" ? sleepRefusals : shutdownRefusals;
+    const outcomes = ticket.intent === "sleep" ? sleepOutcomes : shutdownOutcomes;
+    if (typeof p.code !== "string" || !(refusalCodes.has(p.code) || otherCodes.has(p.code)
+        || refusals.has(p.code) || outcomes.has(p.code))
         || typeof p.busy !== "boolean") {
       publish("uncertain", ticket, "power.reply_unverified"); return;
     }
@@ -92,6 +131,9 @@ export function createPowerRequestCoordinator(port: PowerRequestPort, options: {
     } else if (p.power_requested === false && p.ok === false) {
       if (ticket.requested) {
         publish("uncertain", ticket, "power.outcome_conflict"); return;
+      }
+      if (!refusalCodes.has(p.code) && !refusals.has(p.code)) {
+        publish("uncertain", ticket, p.code); return;
       }
       if (!direct && !ticket.executeSettled) {
         publish("pending", ticket, "power.awaiting_direct_reply"); return;
