@@ -251,6 +251,32 @@ class WholeDockRuntime:
         finally:
             self._continuation_lock.release()
 
+    def preview_power_continuation(self, *, portable_verified):
+        """Non-reserving observation; no admission, lock files or record writes."""
+        try:
+            claim = self._store.read_snapshot()
+            if (claim is None or self._operation is None
+                    or claim.operation != self._operation
+                    or claim.binding != self.binding.binding
+                    or claim.generation != self.binding.generation
+                    or claim.stage != 'software_down'
+                    or portable_verified() is not True):
+                return False
+            now = self.observe()
+            # observe's idle field includes mutation admission. This preview
+            # deliberately holds none; inspect idle independently instead.
+            return (now.binding == claim.binding and now.generation == claim.generation
+                and now.topology_complete is True and self._idle() is True
+                and now.gpu_scan_complete is True and not now.gpu_functions_present
+                and now.usb.present is False and now.usb.scan_complete is True
+                and now.usb.storage_scan_complete is True
+                and not now.usb.mounted_storage and not now.usb.storage_in_use
+                and now.tunnel.authorized is False
+                and portable_verified() is True
+                and self._store.read_snapshot() == claim)
+        except Exception:
+            return False
+
     def observe(self):
         binding = self.binding
         names = _pci_names()

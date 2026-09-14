@@ -101,6 +101,20 @@ class WholeDockClaimStore(AudioJournalFilesystem):
         with self._locked() as directory:
             return self._load(directory)
 
+    def read_snapshot(self):
+        """Read existing evidence without creating a lock or changing records.
+
+        Descriptive previews only; mutation callers must still use load/admission.
+        Claim replacement is atomic, but this snapshot reserves no authority.
+        """
+        directory = self._directory()
+        try:
+            if stat.S_IMODE(os.fstat(directory).st_mode) != 0o700:
+                raise ValueError("whole-dock directory must be private")
+            return self._load(directory)
+        finally:
+            os.close(directory)
+
     def inhibited(self):
         try:
             return self.load() is not None

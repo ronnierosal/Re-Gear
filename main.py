@@ -2246,6 +2246,36 @@ class Plugin:
                 self._live_disconnect_key = key
             return self._live_disconnect
 
+    def _observe_dock_power_context(self):
+        """Descriptive button evidence only; execution still rechecks admission."""
+        observed_at = datetime.now(timezone.utc).isoformat()
+        def result(context, token, reason):
+            return {"schema_version": 1,
+                    "observed_at": observed_at,
+                    "context": context, "attachment_token": token,
+                    "reason": reason}
+
+        try:
+            if (getattr(self, '_unloading', False)
+                    or getattr(self, '_background_operations', set())):
+                return result('unknown', None, 'dock_power.context_busy')
+            if verified_transport_absent() is True:
+                return result('absent', '', 'dock_power.transport_absent')
+            trial = getattr(self, '_whole_dock_trial_runtime', None)
+            if trial is not None:
+                runtime, _admission = trial
+                if runtime.preview_power_continuation(
+                        portable_verified=self._dock_power_portable_verified):
+                    return result('already_down', '', 'dock_power.software_down_observed')
+            cards = [c for c in DrmDiscovery().scan() if c.boot_vga is False]
+            if len(cards) != 1:
+                return result('unknown', None, 'dock_power.attachment_unavailable')
+            binding = resolve_whole_dock(cards[0].pci_bdf)
+            return result('attached', binding.binding + ':' + binding.generation,
+                          'dock_power.attachment_observed')
+        except Exception:
+            return result('unknown', None, 'dock_power.context_unavailable')
+
     async def get_egpu_disconnect_status(
         self, _request: object = None
     ) -> dict[str, object]:
@@ -2254,6 +2284,8 @@ class Plugin:
         Safe to poll. No filter is armed, no DRM master taken, and no display
         touched by asking.
         """
+        if _request == "power_context":
+            return await asyncio.to_thread(self._observe_dock_power_context)
         if _request == "power_capabilities":
             return dock_power_capabilities()
         if _request == 'power_status':
