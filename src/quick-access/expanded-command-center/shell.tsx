@@ -16,7 +16,7 @@ const iconIds: Record<string, CommandCenterIconId> = {
 function Icon({ id }: { id: string }) { return <CommandCenterIcon id={iconIds[id] ?? "status-unknown"} size={34}/>; }
 
 /** Shared synthetic presentation for browser preview and native Decky shell. */
-export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReasons = false, settings, native = false, primitives, previewColumns, tiles, renderDetail }: {
+export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReasons = false, settings, native = false, primitives, previewColumns, tiles, renderDetail, disconnectControl }: {
   onClose(): void; initialTab?: Tab; longReasons?: boolean; settings?: ReactNode; native?: boolean;
   primitives?: { Button: ElementType; Focusable: ElementType };
   /** Synthetic comparison only; native callers never pass this. */
@@ -28,6 +28,8 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
   /** The application owns existing controls, availability and dispatch guards.
    * Null means status-only. Never invoked for sample or removed readings. */
   renderDetail?: (tab: Tab, tile: Tile) => ReactNode;
+  /** Native-only verified control, independent of other synthetic tab readings. */
+  disconnectControl?: ReactNode;
 }) {
   const Button = primitives?.Button ?? "button";
   const Container = primitives?.Focusable ?? "div";
@@ -51,7 +53,8 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
     detail: "This reading is no longer available. Return to the menu for current status.",
   };
   const detailTile = !synthetic && nestedId !== null ? supplied.find(item => item.id === nestedId) : undefined;
-  const detailContent = detailTile ? renderDetail?.(tab, detailTile) : null;
+  const dockControl = native && nestedId === "disconnect" && disconnectControl != null;
+  const detailContent = dockControl ? disconnectControl : detailTile ? renderDetail?.(tab, detailTile) : null;
   const hasDetail = detailContent != null && detailContent !== false;
   const gridColumns = columns;
   const focus = (id?: string) => {
@@ -217,7 +220,7 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
       onFocus={(event: { target: EventTarget }) => { detailHadFocus.current = Boolean((event.target as HTMLElement).closest("[data-ec-detail-content]")); const id = (event.target as HTMLElement).closest<HTMLElement>("[data-ec-control]")?.dataset.ecControl; if (id && !nested) memory.current[tab] = id; }}>
       {tab === "quick" && !nested && <UtilityRail side="left" Button={Button} Focusable={Container}/>}
       <Container className="rg-expanded" {...(native ? {"flow-children":"vertical",noFocusRing:true} : {})}>
-      <header className="rg-expanded-brand"><span className="rg-expanded-wordmark"><img src={brandIcon} alt=""/>Re-Gear</span><span className="rg-expanded-demo"><span className="rg-expanded-demo-label"><i/>{synthetic ? "Demo · Sample data" : "Application status"}</span><span>{synthetic ? "Hardware controls not connected" : renderDetail ? "Status and controls" : "Readings only · View details"}</span></span></header>
+      <header className="rg-expanded-brand"><span className="rg-expanded-wordmark"><img src={brandIcon} alt=""/>Re-Gear</span><span className="rg-expanded-demo"><span className="rg-expanded-demo-label"><i/>{dockControl ? "Disconnect trial" : synthetic ? "Demo · Sample data" : "Application status"}</span><span>{dockControl ? "Keep the cable connected" : synthetic ? "Hardware controls not connected" : renderDetail ? "Status and controls" : "Readings only · View details"}</span></span></header>
       <Container className="rg-expanded-tabs" role="tablist" aria-label="Command Center sections" {...(native ? { "flow-children": "horizontal", noFocusRing: true } : {})}>
         {tabs.map(id => <Button key={id} id={`ec-tab-${id}`} type="button" role="tab" aria-selected={tab === id} aria-controls="ec-tabpanel" data-ec-tab={id} className="rg-expanded-tab"
           onClick={() => { setNested(null); setTab(id); if (id === tab) focus(restoreTarget(controlIds(), memory.current[tab])); }}>
@@ -234,7 +237,7 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
           {synthetic && nested.id === "auto" && <p><strong>State vocabulary:</strong> Off · Running · Stopping… · Unknown · Needs configuration</p>}
           <p>{synthetic ? "Sample data only. No hardware operation is available." : "Status details only. No operation is available from this view."}</p>
           </>}
-          {nested.id === "disconnect" && <p><strong>No unplug clearance.</strong> {synthetic ? "Backend readiness and confirmation are not connected. " : "Readiness, confirmation and unplug clearance are separate. "}A display change, missing observation or successful command does not establish safety.</p>}
+          {nested.id === "disconnect" && !dockControl && <p><strong>No unplug clearance.</strong> {synthetic ? "Backend readiness and confirmation are not connected. " : "Readiness, confirmation and unplug clearance are separate. "}A display change, missing observation or successful command does not establish safety.</p>}
           <Button type="button" className="rg-expanded-back" data-ec-control="nested-back" {...(native ? { preferredFocus: !hasDetail } : {})} onClick={back}>Back to {tabLabels[tab]}</Button>
         </section> : <>
           {tab === "settings" && settings}
