@@ -1,5 +1,126 @@
 # Current state
 
+## 0.3.95 installed; automatic recovery blocked on device — 2026-09-12
+
+Fresh remote build-info readback confirms the user-installed version `0.3.95`
+and source `7c07aa22993809b6a1399f51682f6893b6e4b0e9`. Live Decky monitoring began
+at 22:25:58 UTC with transport absent, game idle, both automatic preferences
+true, a durable idle journal, and an existing `reauthorize_intent` whole-dock claim.
+The first dock-present sample at 22:26:55 entered `connection.waiting_for_pci`.
+At 22:27:06, recovery reported `automatic_recovery.admission_inhibited` with zero
+attempts; the readiness window subsequently timed out. A separate reviewed
+read-only snapshot confirmed only the internal GPU and active handheld display.
+
+This confirms retained disconnect/reconnect intent blocks the recovery callback
+in this trial. The ordinary gate refuses existing claims, and the connection-only
+exception admits only `claimed` or `release_intent`. It does not establish when
+this record was created or the original cause of missing PCI enumeration. No
+claim, preference or hardware state was changed by the monitoring operator.
+No software reconnect was attempted; this diagnostic build is not a hardware pass.
+
+Evidence in the workspace root: `whole-dock-disconnect/out/0395-live-1789251957927.jsonl`
+and `whole-dock-disconnect/out/0395-attached-readonly.json`. Next: independently
+review a guarded way to resolve prior transaction state after a verified physical
+reset. Preserve inhibition for unresolved teardown and prohibit powered software
+reconnect. Do not clear the record just to obtain a test pass. UI/hardware outcomes
+and baseline promotion remain separate gates.
+Documentation impact: Wiki
+
+## 0.3.95 diagnostic test package built — 2026-09-12
+
+The requested focused candidate `Re-Gear-0.3.95.zip` is built from
+`7c07aa22993809b6a1399f51682f6893b6e4b0e9` on
+`codex/integration-egpu-connect-disconnect`. It includes both the previously
+installed `58542f1` and reviewed diagnostics/lifecycle verification `ef94896`.
+The frontend and disconnect-only mount are unchanged from 0.3.94; backend
+source matches `ef94896` except version labels. Recovery refusal diagnostics
+do not bypass admission or confirm the cause of the failed hardware trial.
+
+Archive size is 969408 bytes. SHA-256:
+`1e0646c2f43b1e65d65b080c1236849af51db235f8391b78275a4fe4eb5c179f`.
+Archive integrity and embedded version/full revision matched. Final-head CI
+`34717371488` and privileged delivery `34717371508` passed: 3443 Linux tests
+with 28 platform skips, seven required root-admission tests without skips,
+43 golden checks and 674 frontend passes with one skip. Type/build/package,
+architecture, compile and integration preflight passed. Independent integration
+review passed, including 22 version/build tests and 38 focused UI passes with
+one existing skip.
+
+The ZIP, completed candidate manifest and test notes are retained in the
+candidate worktree's `out/` directory. The version reservation and
+`refs/regear/ready/egpu-connect-disconnect-0395` point to this exact revision.
+**Built locally, not staged or installed.** `steamdeck.local` remains
+unresolved; the last verified installed revision is 0.3.94. Fresh readback and
+an exclusive verified copy to `/home/deck/` await restored access. No GitHub
+Release, new installation, session restart, teardown or software reconnect
+was performed. Preserve the original 0.3.82 hardware checkpoint.
+
+## 0.3.94 installed; automatic connection trial failed — 2026-09-12
+
+The user installed the focused candidate. Read-only installed `build_info.json`
+confirmed version `0.3.94`, revision
+`58542f1982400118d3dadaca478fdbb39f49b2a9`. This supersedes the staging-only
+status below; the archive and its checksum remain unchanged.
+
+The user confirmed booting with the dock disconnected, reaching idle Gaming
+Mode, then attaching the dock with the TV on. Automatic TV switching failed.
+The bounded diagnostic snapshot at `2026-09-12T19:44:35Z` observed dock transport,
+only the verified internal GPU, and an idle game state. The running plugin
+recorded `connection.waiting_for_pci`, followed by
+`connection.readiness_timed_out` after approximately 120 seconds, without an
+`automatic_recovery.started` event. The independent unprivileged CLI cannot
+establish the root plugin's session, preference or durable-claim state.
+
+Independent comparison with checkpoint `09ff571` identified a new admission
+boundary: a `DockMutationDenied` before the recovery callback is currently
+silently returned. A retained disconnect claim, unavailable admission state or
+lock contention can therefore produce this event sequence. **This is a source
+hypothesis, not the confirmed device cause.** Consent, initial absence arming,
+session resolution and journal readiness also need live verification.
+
+Next read-only checks: `get_automatic_dock_status`,
+`get_egpu_disconnect_status("whole_dock_record")`, `get_link_recovery_status`
+and the transition-journal status. `whole_dock_trial` reporting `no_trial` after
+reload does not prove the durable claim is absent. SSH subsequently failed to
+resolve `steamdeck.local`; the last user-provided IP also timed out. No recovery,
+service restart, teardown, claim deletion or software reconnect was performed
+during this diagnosis. Preserve the checkpoint and all disconnect guards.
+
+## 0.3.94 focused connection/disconnect candidate built — 2026-09-12
+
+User-requested local candidate `Re-Gear-0.3.94.zip` is built from clean revision
+`58542f1982400118d3dadaca478fdbb39f49b2a9` on
+`codex/integration-egpu-connect-disconnect`, separately from broader UI/lifecycle
+integration. The existing Command Center control explicitly mounts
+`disconnect_only`: it requests confirmed software disconnect, then offers no
+reconnect, sleep or shutdown action. Automatic-connection backend behavior is
+unchanged from tested PR #304 source `f2fb295`, apart from version labels.
+
+SHA-256: `528b91321cf62204257ca24e701165ac770e64cd85353a710c76909c1f6cb4a9`.
+Archive size: 968767 bytes. ZIP integrity, embedded version/full revision and
+disconnect-only bundle content were verified. Local manifest and test notes are
+retained beside the ZIP in the candidate worktree's `out/` directory.
+
+Final CI `34713782957` and privileged delivery `34713783006` passed: 3425 Linux
+tests with 21 skips, 144 privileged whole-dock, 48 power and 26 installer tests;
+674 frontend passes with one skip. All 29 golden tests, 89 focused backend
+tests, version contracts, typecheck/build/package/architecture/compile/preflight
+passed. Independent review confirmed the explicit single control mount and
+preserved confirmation, freshness, attachment and pending-request guards.
+
+Fresh device readback showed installed 0.3.92 revision
+`6c638a81607bd2b16f9976cc3d6723b00dfe34c7`, ancestral to this candidate. Its ZIP
+hash and the preserved 0.3.82 rollback ZIP hash were verified. The initial IP
+connection became unreachable; the user supplied `steamdeck.local`, which worked.
+The ZIP was copied to a unique temporary file, verified, exclusively hard-linked
+to `/home/deck/Re-Gear-0.3.94.zip`, and verified again before its temporary link
+was removed. **0.3.94 is staged for manual Decky installation, not installed or
+hardware-validated.** Installed readback remained 0.3.92. No services restarted,
+hardware operations or historical archive cleanup occurred. Software disconnect does not
+power off the enclosure or certify physical unplug clearance; powered software
+reconnect remains excluded after the reported heat incident. Broader Quick
+Access/popup wiring and sleep/native-presenter work remain separate.
+
 ## 0.3.78 staged for manual installation — 2026-09-11
 
 User-requested candidate `/home/deck/Re-Gear-0.3.78.zip` was copied to the Ally
@@ -1048,3 +1169,38 @@ hardware-tested behavior.
 7. Design the Phase 2 unified installed diagnostic report and deployment record.
 8. Resolve the P0/P1 hardware-coupling findings with narrow profile-driven seams
    and synthetic tests before claiming future-device extensibility.
+
+
+
+### Follow-up diagnostics and status correction
+
+Read-only follow-up at approximately 22:35 UTC found the external GPU present.
+Live Decky samples at 22:36:24–22:36:51 reported ready_idle with GPU/link/HDMI/
+audio/session/idle checks true, but retained reauthorize_intent and automatic
+switching/switch_requested. The user has been asked whether a manual Desktop
+switch, Retry, restart or connection change occurred between captures; no
+spontaneous-arrival or successful-TV claim is made pending that answer.
+The reviewed kernel collector examined 1609 current-boot rows and found zero
+matching AER, blocked-task or xHCI symptom counts. A ten-sample passive PCIe
+probe found enumerated GPU/USB/bridge and zero available error counters. These
+bounded checks provide no temperature, fan, damage or thermal-safety evidence.
+The holder scan was complete and listed wireplumber.service; that is not evidence
+of a need to stop it for auto-connect. No services were stopped by the operator.
+
+Independent read-only audit identified missing reset provenance in the four-field
+legacy whole-dock claim. An absent router sample or changed sysfs generation does
+not independently prove a physical power reset. Existing retirement supports early
+aborts or verified software-reconnected completion, not this legacy failed stage.
+Keep the record intact until a reviewed guarded reconciliation mechanism exists.
+
+A bounded local correction in main.py now changes failed automatic dispatch from
+stale SWITCHING to ACTION_REQUIRED with an allowlisted admission/failure code.
+It uses record_result(False), preserves the consumed attempt, existing backoff,
+claim and hardware guards, and does not rearm or execute recovery. Four exception
+cases run through the production loop across later ready samples without replay.
+Nine focused tests, 47 admission/lifecycle tests, 43 golden checks, architecture
+and compile passed locally. This correction is not packaged or installed; 0.3.95
+remains on the Ally. Review and subsequent integration gates remain separate.
+Evidence: 0395-troubleshoot-readonly.json, 0395-troubleshoot-kernel.json,
+0395-live-1789252584051.jsonl and 0395-current-holders.json in whole-dock-disconnect/out.
+Documentation impact: Wiki

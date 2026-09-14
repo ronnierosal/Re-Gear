@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 import socket
 import sys
 import threading
 import time
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -18,6 +20,8 @@ PLUGIN_ROOT = Path(__file__).resolve().parent
 BACKEND_ROOT = PLUGIN_ROOT / "backend"
 if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
+
+from regear.adapters.steamos.commands import BrokerCaptureRestoreTimer, HeldTrialLauncher, HeldTrialRestoreTimer  # noqa: E402
 
 from regear.adapters.steamos.discovery import SteamOsDiscovery  # noqa: E402
 from regear.application.automatic_link_recovery import AutomaticLinkRecovery  # noqa: E402
@@ -38,6 +42,17 @@ from regear.adapters.steamos.gamescope_performance_target import GamescopePerfor
 from regear.domain.auto_tdp import AutoTdpPolicy  # noqa: E402
 from regear.domain.telemetry import TelemetryAdmissionKind, admit_telemetry_collection  # noqa: E402
 from regear.adapters.steamos.drm import DrmDiscovery  # noqa: E402
+from regear.adapters.steamos.sleep_inhibitor import Login1SleepInhibitor  # noqa: E402
+from regear.adapters.steamos.whole_dock_topology import resolve_whole_dock, resolve_transport  # noqa: E402
+from regear.delivery.whole_dock_runtime import WholeDockRuntime  # noqa: E402
+from regear.delivery.dock_power_intent import DockPowerIntentStore  # noqa: E402
+from regear.delivery.dock_power_service import create_power_request, continue_dock_power, dock_power_capabilities  # noqa: E402
+from regear.application.dock_power import DockPowerResult  # noqa: E402
+from regear.delivery.whole_dock_claim import WholeDockClaimStore, inner_removal_records_absent  # noqa: E402
+from regear.delivery.whole_dock_reset import reconcile_record as reconcile_operator_reset, observe_restored as observe_reset_restored  # noqa: E402
+from regear.application.live_disconnect import LiveDisconnectResult  # noqa: E402
+from regear.ports.whole_dock_teardown import WholeDockApproval  # noqa: E402
+from regear.domain.dock_teardown import TeardownApproval  # noqa: E402
 from regear.adapters.steamos.pci import PciUsb4Discovery  # noqa: E402
 from regear.adapters.steamos.wake_diagnostics import WakeDiagnosticsDiscovery  # noqa: E402
 from regear.adapters.steamos.commands import (  # noqa: E402
@@ -46,7 +61,7 @@ from regear.adapters.steamos.commands import (  # noqa: E402
     UserServiceCommandRunner,
 )
 from regear.adapters.steamos.audio_handoff import G1AudioHandoff, G1AudioReadiness  # noqa: E402
-from regear.adapters.steamos.connection_readiness import G1ConnectionTopologyDiscovery  # noqa: E402
+from regear.adapters.steamos.connection_readiness import G1ConnectionTopologyDiscovery, verified_transport_absent  # noqa: E402
 from regear.adapters.steamos.gamescope import GamescopeDiscovery  # noqa: E402
 from regear.adapters.steamos.gamescope_session import (  # noqa: E402
     GamescopeSessionObservationAdapter,
@@ -230,6 +245,7 @@ from regear.delivery.automatic_dock_preferences import (  # noqa: E402
 from regear.delivery.saved_tv_store import SavedTvStore  # noqa: E402
 from regear.delivery.audio_state import PortableAudioStateStore  # noqa: E402
 from regear.delivery.transition_journal_store import FileTransitionJournalStore  # noqa: E402
+from regear.delivery.dock_mutation_gate import DockMutationGate, DockMutationDenied  # noqa: E402
 from regear.domain.process_release import ReleasePhase  # noqa: E402
 from regear.domain.control_plane import (  # noqa: E402
     PlacementState,
@@ -975,25 +991,53 @@ class Plugin:
         try:
             enabled = await asyncio.to_thread(self._automatic_recovery_preferences().load)
         except Exception:
-            return {"schema_version": 1, "enabled": False, "code": "automatic_recovery.preference_unavailable"}
+            return {"schema_version": 1, "enabled": False, "code": "automatic_recovery.preference_unavailable",
+                    "decision_code": "automatic_recovery.preference_unavailable"}
         policy = getattr(self, "_automatic_link_recovery", None)
         return {"schema_version": 1, "enabled": enabled, "attempts": policy.attempts if policy else 0,
-                "max_attempts": 2, "delay_seconds": 10, "code": "automatic_recovery.enabled" if enabled else "automatic_recovery.disabled"}
+                "max_attempts": 2, "delay_seconds": 10, "code": "automatic_recovery.enabled" if enabled else "automatic_recovery.disabled",
+                "decision_code": getattr(self, "_automatic_recovery_decision", "automatic_recovery.not_observed")}
+
+    def _record_automatic_recovery_decision(self, code, *, severity="info", details=None):
+        """Record the last observer decision, never permission to retry or unplug."""
+        if getattr(self, "_automatic_recovery_decision", None) == code:
+            return
+        self._automatic_recovery_decision = code
+        self._append_journey_event(severity=severity, code=code,
+            component="connection", stage="automatic_recovery", details=details)
 
     async def _maybe_automatic_link_recovery(self, current, enabled):
+        try:
+            return await self._observe_automatic_link_recovery(current, enabled)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            self._record_automatic_recovery_decision("automatic_recovery.observation_failed", severity="warning")
+            raise  # Preserve the existing loop's exception/backoff behavior.
+
+    async def _observe_automatic_link_recovery(self, current, enabled):
+        observed = getattr(self, '_last_readiness_observation', None)
+        if (observed is not None and observed.transport_absent_verified is True
+                and observed.transport_present is False):
+            # Finish completed attachment history at observed absence. The
+            # scheduler flag only wakes the strict, independently refreshed check.
+            await asyncio.to_thread(self._reconcile_physically_disconnected_dock)
         policy = getattr(self, "_automatic_link_recovery", None)
         if policy is None:
             policy = self._automatic_link_recovery = AutomaticLinkRecovery()
+        preference_unavailable = False
         try:
             consent = (enabled is True and
                        await asyncio.to_thread(self._automatic_recovery_preferences().load) is True)
         except Exception:
             consent = False
+            preference_unavailable = True
         self._automatic_recovery_consent = consent
 
         def eligible(snapshot):
             observation = getattr(self, "_last_readiness_observation", None)
             if observation is None:
+                self._record_automatic_recovery_decision("automatic_recovery.no_observation")
                 return False
             idle = (consent and snapshot.game_state is GameState.IDLE
                     and snapshot.gamescope.running is True
@@ -1002,18 +1046,37 @@ class Plugin:
                     and snapshot.gpus[0].present is True
                     and snapshot.gpus[0].confidence is Confidence.VERIFIED
                     and resolve_runtime_profiles(snapshot).exact_host)
-            return policy.observe(now=time.monotonic(),
+            ready = policy.observe(now=time.monotonic(),
                 absent=observation.transport_absent_verified,
                 present=observation.transport_present, identity=observation.transport_identity,
                 pci_complete=observation.pci_complete or any(
                     gpu.present and gpu.role is not GpuRole.INTERNAL for gpu in snapshot.gpus),
                 enabled=consent and not self._unloading, idle=idle)
+            if not ready:
+                code = policy.decision_code
+                if preference_unavailable:
+                    code = "automatic_recovery.preference_unavailable"
+                elif not consent:
+                    code = "automatic_recovery.disabled"
+                elif self._unloading:
+                    code = "automatic_recovery.unloading"
+                elif code == "automatic_recovery.waiting_for_idle":
+                    if snapshot.game_state is not GameState.IDLE:
+                        code = ("automatic_recovery.game_running" if snapshot.game_state is GameState.RUNNING
+                                else "automatic_recovery.game_unknown")
+                    elif snapshot.gamescope.running is not True:
+                        code = "automatic_recovery.session_unavailable"
+                    else:
+                        code = "automatic_recovery.identity_unavailable"
+                self._record_automatic_recovery_decision(code)
+            return ready
 
         if not eligible(current.snapshot):
             return False
         transport_identity = self._last_readiness_observation.transport_identity
         resolution = await asyncio.to_thread(lambda: resolve_gamescope_user(GamescopeDiscovery().scan()))
         if not resolution.ok or resolution.context is None:
+            self._record_automatic_recovery_decision("automatic_recovery.session_unavailable")
             return False
         # Refresh after async session resolution: no cached idle or attach permission.
         current = await asyncio.to_thread(SnapshotTransitionObservationAdapter(self._discovery).observe)
@@ -1021,24 +1084,39 @@ class Plugin:
         consent = (await asyncio.to_thread(self._automatic_dock_preferences().load) is True
                    and await asyncio.to_thread(self._automatic_recovery_preferences().load) is True)
         journal = await asyncio.to_thread(self._transition_journal_service().status)
-        if not journal.durable or journal.owner.value != "none" or not eligible(current.snapshot):
+        if not journal.durable or journal.owner.value != "none":
+            self._record_automatic_recovery_decision("automatic_recovery.journal_unavailable"
+                if not journal.durable else "automatic_recovery.transition_busy")
             return False
-        policy.begin()
-        self._append_journey_event(severity="info", code="automatic_recovery.started",
-            component="connection", stage="automatic_recovery", details={"attempt": policy.attempts})
+        if not eligible(current.snapshot):
+            return False
+        def recover():
+            policy.begin()
+            self._record_automatic_recovery_decision("automatic_recovery.started",
+                details={"attempt": policy.attempts})
+            return self._link_recovery_service().recover(resolution.context,
+                strategy=LinkRecoveryStrategy.SESSION_RESTART, automatic=True,
+                preflight=lambda: self._automatic_link_recovery_preflight(
+                    resolution.context, transport_identity))
         try:
             outcome = await self._run_background_operation(
-                lambda: self._link_recovery_service().recover(resolution.context,
-                    strategy=LinkRecoveryStrategy.SESSION_RESTART, automatic=True,
-                    preflight=lambda: self._automatic_link_recovery_preflight(
-                        resolution.context, transport_identity)))
+                lambda: self._run_automatic_connection_recovery(recover, resolution.context))
             if outcome.ok:
                 policy.completed = True
-            self._append_journey_event(severity="info" if outcome.ok else "warning", code=outcome.code,
-                component="connection", stage="automatic_recovery",
+            self._record_automatic_recovery_decision(outcome.code, severity="info" if outcome.ok else "warning",
                 details={"attempt": policy.attempts, "seconds": outcome.seconds})
+        except DockMutationDenied as error:
+            # Never expose arbitrary exception text, paths or attachment IDs.
+            code = {
+                "dock_mutation.inhibited": "automatic_recovery.admission_inhibited",
+                "dock_mutation.unavailable": "automatic_recovery.admission_unavailable_or_busy",
+                "dock_mutation.unavailable_or_busy": "automatic_recovery.admission_unavailable_or_busy",
+            }.get(str(error), "automatic_recovery.admission_refused")
+            self._record_automatic_recovery_decision(code, severity="warning")
+            return False
         finally:
-            policy.finish(time.monotonic())
+            if policy.in_flight:
+                policy.finish(time.monotonic())
         return True
 
     def _automatic_link_recovery_preflight(self, expected_user, transport_identity):
@@ -1190,21 +1268,20 @@ class Plugin:
             return self._link_recovery_failure(
                 "link_recovery.session_unavailable", strategy=chosen.value
             )
-        self._append_journey_event(
-            severity="info",
-            code="link_recovery.started",
-            component="connection",
-            stage="link_recovery",
-            details={"strategy": chosen.value},
-        )
-        outcome = await asyncio.to_thread(
-            lambda: service.recover(
+        def recover():
+            self._append_journey_event(
+                severity="info", code="link_recovery.started", component="connection",
+                stage="link_recovery", details={"strategy": chosen.value})
+            return service.recover(
                 resolution.context, strategy=chosen,
                 preflight=lambda: self._manual_link_recovery_preflight(
                     resolution.context, observation.transport_identity,
                 ),
             )
-        )
+        try:
+            outcome = await asyncio.to_thread(lambda: self._run_dock_mutation(recover))
+        except DockMutationDenied:
+            return self._link_recovery_failure("link_recovery.dock_mutation_inhibited")
         self._append_journey_event(
             severity="info" if outcome.ok else "warning",
             code=outcome.code,
@@ -1413,6 +1490,626 @@ class Plugin:
 
     # -- live eGPU disconnect -------------------------------------------
 
+    async def _capture_egpu_release_diagnostics(self, confirmed: bool = False, held_session: bool = False):
+        """Operator-only timed observation with independent session restoration.
+
+        The capture establishes independent session restoration before a separate
+        approved stop. Admission prevents automatic switching during observation;
+        the unresolved claim is preserved, never adopted for teardown.
+        """
+        if confirmed is not True or getattr(self, "_unloading", False):
+            return {"code": "release_capture.not_started"}
+        previous = getattr(self, "_release_capture_task", None)
+        if previous is not None and not previous.done():
+            return {"code": "release_capture.busy"}
+        self._release_capture_restore_unit = ""
+        self._release_capture_status = {"code": "release_capture.starting", "samples": []}
+        def capture():
+            samples = []
+            try:
+                with self._dock_mutation_gate().admit(allow_inhibited=True):
+                    store = WholeDockClaimStore(Path("/var/lib/handheld-dock-mode"))
+                    claim = store.load()
+                    if claim is None or claim.stage != "release_intent":
+                        raise ValueError("capture claim mismatch")
+                    cards = [c for c in DrmDiscovery().scan() if c.boot_vga is False]
+                    if len(cards) != 1:
+                        raise ValueError("capture GPU ambiguous")
+                    binding = resolve_whole_dock(cards[0].pci_bdf)
+                    if (binding.binding != claim.binding or binding.generation != claim.generation
+                            or self._api.get_snapshot_report().snapshot.game_state is not GameState.IDLE):
+                        raise ValueError("capture attachment or idle changed")
+                    user = resolve_gamescope_user(GamescopeDiscovery().scan()).context
+                    if user is None:
+                        raise ValueError("capture session unavailable")
+                    runtime = build_live_disconnect_runtime(gpu_bdf=binding.gpu_bdf,
+                        uid=user.uid, username=user.username)
+                    if runtime.status().scan_complete is not True:
+                        raise ValueError("capture holder scan incomplete")
+                    token = uuid.uuid4().hex
+                    if held_session:
+                        result = self._run_held_session_capture(user, token, runtime, samples)
+                        if store.load() != claim:
+                            result['code'] = 'release_capture.unresolved'
+                        self._release_capture_status = result
+                        return result
+                    if not BrokerCaptureRestoreTimer().arm(uid=user.uid, username=user.username,
+                                                           token=token):
+                        raise ValueError("capture independent restore unavailable")
+                    self._release_capture_restore_unit = "regear-broker-restore-" + token + ".timer"
+                    self._release_capture_status = {"code": "release_capture.observing", "samples": []}
+                    started = time.monotonic()
+                    for _ in range(36):
+                        status = runtime.status()
+                        sample = {"elapsed_seconds": round(time.monotonic() - started, 1),
+                                  "holders": list(status.holders), "scan_complete": status.scan_complete}
+                        samples.append(sample)
+                        self._release_capture_status = {"code": "release_capture.observing", "samples": list(samples)}
+                        if time.monotonic() - started >= 35:
+                            break
+                        time.sleep(1)
+                    if store.load() != claim:
+                        raise ValueError("capture claim changed")
+                    result = {"code": "release_capture.complete", "samples": samples}
+            except Exception:
+                result = {"code": "release_capture.unresolved", "samples": samples}
+            self._release_capture_status = result
+            return result
+        self._release_capture_task = asyncio.create_task(self._run_background_operation(capture))
+        return {"code": "release_capture.starting"}
+
+    def _run_held_session_capture(self, user, token, runtime, samples):
+        """Operator trial: hold, observe and restore; never remove hardware."""
+        launcher = HeldTrialLauncher(uid=user.uid, username=user.username)
+        prepared = launcher.call('prepare', token)
+        if prepared.get('code') != 'held_helper.prepared':
+            return {'code': 'release_capture.prepare_refused', 'samples': samples,
+                    'safe_to_unplug': False}
+        pins = prepared.get('pins')
+        timer = HeldTrialRestoreTimer()
+        result = {'code': 'release_capture.unresolved', 'samples': samples,
+                  'safe_to_unplug': False}
+        try:
+            armed_at = time.monotonic()
+            if not timer.arm(launcher, token, pins):
+                return result
+            self._release_capture_restore_unit = 'regear-held-restore-' + token + '.timer'
+            # Never stop after a delayed/expired watchdog check.
+            if (time.monotonic() - armed_at > 15 or not timer.active(token)
+                    or self._api.get_snapshot_report().snapshot.game_state is not GameState.IDLE):
+                return result
+            self._release_capture_status = {**result, 'code': 'release_capture.holding'}
+            held = launcher.call('hold', token, pins)
+            if held.get('code') != 'held_helper.held':
+                return result
+            started = time.monotonic()
+            clear = False
+            for _ in range(11):
+                state = launcher.call('status', token, pins)
+                if state.get('code') != 'held_helper.status' or state.get('held') is not True:
+                    break
+                status = runtime.status()
+                sample = {'elapsed_seconds': round(time.monotonic() - started, 1),
+                          'holders': list(status.holders), 'scan_complete': status.scan_complete}
+                samples.append(sample)
+                self._release_capture_status = {**result, 'code': 'release_capture.observing',
+                                                'samples': list(samples)}
+                if status.scan_complete is True and not status.holders:
+                    checked = launcher.call('status', token, pins)
+                    clear = checked.get('code') == 'held_helper.status' and checked.get('held') is True
+                    break
+                if time.monotonic() - started >= 10:
+                    break
+                time.sleep(1)
+            result['clear_observed'] = clear
+        finally:
+            restored = launcher.call('restore', token, pins)
+            result['session_restored'] = restored.get('restored') is True
+            if result['session_restored']:
+                result['code'] = ('release_capture.held_clear_restored' if result.get('clear_observed')
+                                  else 'release_capture.held_unverified_restored')
+        return result
+
+    def _reconcile_abandoned_dock_trial(self, expected_attachment):
+        """Explicit early-abort reconciliation, never a removal completion."""
+        result = {'schema_version': 1, 'code': 'dock_reconcile.refused',
+                  'ok': False, 'safe_to_unplug': False}
+        capture = getattr(self, '_release_capture_task', None)
+        if not expected_attachment or (capture is not None and not capture.done()):
+            return result
+        try:
+            with self._dock_mutation_gate().admit(allow_inhibited=True):
+                store = WholeDockClaimStore(Path('/var/lib/handheld-dock-mode'))
+                claim = store.load()
+                if claim is None or claim.stage not in ('claimed', 'release_intent'):
+                    return result
+                cards = [c for c in DrmDiscovery().scan() if c.boot_vga is False]
+                if len(cards) != 1:
+                    return result
+                binding = resolve_whole_dock(cards[0].pci_bdf)
+                if (binding.binding != claim.binding or expected_attachment !=
+                        binding.binding + ':' + binding.generation):
+                    return result
+                user = resolve_gamescope_user(GamescopeDiscovery().scan()).context
+                if user is None:
+                    return result
+                runtime = build_live_disconnect_runtime(gpu_bdf=binding.gpu_bdf,
+                    uid=user.uid, username=user.username)
+                launcher = HeldTrialLauncher(uid=user.uid, username=user.username)
+                def guard():
+                    if self._api.get_snapshot_report().snapshot.game_state is not GameState.IDLE:
+                        result['code'] = 'dock_reconcile.idle_unverified'
+                        return False
+                    if not inner_removal_records_absent():
+                        result['code'] = 'dock_reconcile.inner_recovery_pending'
+                        return False
+                    if runtime.status().scan_complete is not True:
+                        result['code'] = 'dock_reconcile.holder_scan_incomplete'
+                        return False
+                    audit = launcher.call('audit', '0' * 32)
+                    if audit.get('code') != 'held_helper.settled' or audit.get('settled') is not True:
+                        result['code'] = 'dock_reconcile.held_recovery_pending'
+                        return False
+                    current_user = resolve_gamescope_user(GamescopeDiscovery().scan()).context
+                    return (current_user == user and resolve_whole_dock(binding.gpu_bdf) == binding
+                        and inner_removal_records_absent()
+                        and self._api.get_snapshot_report().snapshot.game_state is GameState.IDLE)
+                store.retire_abandoned(claim, guard)
+                return {**result, 'code': 'dock_reconcile.archived', 'ok': True}
+        except Exception:
+            return {**result, 'code': result['code'] if result['code'] != 'dock_reconcile.refused'
+                    else 'dock_reconcile.unresolved'}
+
+    def _reconcile_physically_disconnected_dock(self):
+        """Archive completed software-down history once the attachment is absent.
+
+        No device commands, recovery budget reset or preference changes. A
+        still-attached deauthorized router is not absence and retains inhibition.
+        """
+        try:
+            with self._dock_mutation_gate().admit(allow_inhibited=True):
+                store = WholeDockClaimStore(Path('/var/lib/handheld-dock-mode'))
+                claim = store.load()
+                if claim is None or claim.stage != 'software_down':
+                    return False
+                capture = getattr(self, '_release_capture_task', None)
+                if capture is not None and not capture.done():
+                    return False
+                user = resolve_gamescope_user(GamescopeDiscovery().scan())
+                if not user.ok or user.context is None:
+                    return False
+                def guard():
+                    topology = self._connection_topology.observe()
+                    current = SnapshotTransitionObservationAdapter(self._discovery).observe().snapshot
+                    journal = self._transition_journal_service().status()
+                    return (topology.transport_absent_verified is True
+                        and topology.transport_present is False
+                        and verified_transport_absent() is True
+                        and current.game_state is GameState.IDLE
+                        and current.gamescope.running is True
+                        and len(current.gpus) == 1
+                        and current.gpus[0].role is GpuRole.INTERNAL
+                        and current.gpus[0].present is True
+                        and current.gpus[0].confidence is Confidence.VERIFIED
+                        and resolve_runtime_profiles(current).exact_host
+                        and journal.durable and journal.owner.value == 'none'
+                        and store.power_intent_absent(claim) is True
+                        and inner_removal_records_absent()
+                        and resolve_gamescope_user(GamescopeDiscovery().scan()).context == user.context
+                        and not self._unloading)
+                if not guard():
+                    return False
+                audit = HeldTrialLauncher(uid=user.context.uid,
+                    username=user.context.username).call('audit', '0' * 32)
+                if audit.get('code') != 'held_helper.settled' or audit.get('settled') is not True:
+                    return False
+                store.retire_physically_disconnected(claim, guard)
+                self._append_journey_event(severity='info',
+                    code='automatic_dock.completed_attachment_archived',
+                    component='connection', stage='admission')
+                return True
+        except Exception:
+            return False
+
+    def _run_automatic_connection_recovery(self, recover, expected_user):
+        """Connection-only admission; never retires intent or permits removal.
+
+        The callback is the existing bounded automatic session restart above.
+        An abandoned early trial or retained failed reauthorization may coexist
+        with an absent endpoint branch. Session recovery never reauthorizes USB4
+        or retires that history; ordinary destructive admission stays inhibited.
+        """
+        started = False
+        def admitted():
+            nonlocal started
+            started = True
+            return recover()
+        try:
+            return self._run_dock_mutation(admitted)
+        except DockMutationDenied as exc:
+            if started or str(exc) != 'dock_mutation.inhibited':
+                raise
+        if self._reconcile_dock_power_after_boot():
+            return self._run_dock_mutation(admitted)
+        try:
+            with self._dock_mutation_gate().admit(allow_inhibited=True):
+                store = WholeDockClaimStore(Path('/var/lib/handheld-dock-mode'))
+                claim = store.load()
+                if claim is None:
+                    raise DockMutationDenied('dock_mutation.inhibited')
+                if claim is not None:
+                    if claim.stage not in ('claimed', 'release_intent', 'reauthorize_intent'):
+                        raise DockMutationDenied('dock_mutation.inhibited')
+                    capture = getattr(self, '_release_capture_task', None)
+                    if capture is not None and not capture.done():
+                        raise DockMutationDenied('dock_mutation.inhibited')
+                    transport = resolve_transport(claim.binding)
+                    if not inner_removal_records_absent():
+                        raise DockMutationDenied('dock_mutation.inhibited')
+                    audit = HeldTrialLauncher(uid=expected_user.uid,
+                        username=expected_user.username).call('audit', '0' * 32)
+                    if audit.get('code') != 'held_helper.settled' or audit.get('settled') is not True:
+                        raise DockMutationDenied('dock_mutation.inhibited')
+                    if (self._automatic_dock_preferences().load() is not True
+                            or self._automatic_recovery_preferences().load() is not True
+                            or self._unloading):
+                        raise DockMutationDenied('dock_mutation.inhibited')
+                    journal = self._transition_journal_service().status()
+                    if not journal.durable or journal.owner.value != 'none':
+                        raise DockMutationDenied('dock_mutation.inhibited')
+                    current = SnapshotTransitionObservationAdapter(self._discovery).observe().snapshot
+                    user = resolve_gamescope_user(GamescopeDiscovery().scan())
+                    if (current.game_state is not GameState.IDLE
+                            or current.gamescope.running is not True
+                            or len(current.gpus) != 1
+                            or current.gpus[0].role is not GpuRole.INTERNAL
+                            or current.gpus[0].present is not True
+                            or current.gpus[0].confidence is not Confidence.VERIFIED
+                            or not resolve_runtime_profiles(current).exact_host
+                            or not user.ok or user.context != expected_user
+                            or resolve_transport(claim.binding) != transport
+                            or not inner_removal_records_absent()
+                            or store.load() != claim):
+                        raise DockMutationDenied('dock_mutation.inhibited')
+                return recover()
+        except DockMutationDenied:
+            raise
+        except Exception as exc:
+            raise DockMutationDenied('dock_mutation.inhibited') from exc
+
+    def _run_retained_reconnect_tv_transition(self, transition):
+        """Present on an already authorized dock without completing reconnect.
+
+        The historical claim continues to inhibit destructive operations. This
+        lane holds the same exclusive lock and calls the ordinary TV engine.
+        """
+        dispatched = False
+        try:
+            with self._dock_mutation_gate().admit(allow_inhibited=True):
+                store = WholeDockClaimStore(Path('/var/lib/handheld-dock-mode'))
+                claim = store.load()
+                if claim is None or claim.stage != 'reauthorize_intent':
+                    raise DockMutationDenied('dock_mutation.inhibited')
+                capture = getattr(self, '_release_capture_task', None)
+                if capture is not None and not capture.done():
+                    raise DockMutationDenied('dock_mutation.inhibited')
+                cards = [c for c in DrmDiscovery().scan() if c.boot_vga is False]
+                if len(cards) != 1:
+                    raise DockMutationDenied('dock_mutation.inhibited')
+                topology = resolve_whole_dock(cards[0].pci_bdf)
+                user = resolve_gamescope_user(GamescopeDiscovery().scan())
+                if (topology.binding != claim.binding or not user.ok or user.context is None
+                        or not inner_removal_records_absent()):
+                    raise DockMutationDenied('dock_mutation.inhibited')
+                audit = HeldTrialLauncher(uid=user.context.uid,
+                    username=user.context.username).call('audit', '0' * 32)
+                if audit.get('code') != 'held_helper.settled' or audit.get('settled') is not True:
+                    raise DockMutationDenied('dock_mutation.inhibited')
+                current = SnapshotTransitionObservationAdapter(self._discovery).observe().snapshot
+                journal = self._transition_journal_service().status()
+                fresh_user = resolve_gamescope_user(GamescopeDiscovery().scan())
+                if (current.game_state is not GameState.IDLE
+                        or current.gamescope.running is not True
+                        or not resolve_runtime_profiles(current).exact_host
+                        or not journal.durable or journal.owner.value != 'none'
+                        or not fresh_user.ok or fresh_user.context != user.context
+                        or resolve_whole_dock(cards[0].pci_bdf) != topology
+                        or not inner_removal_records_absent() or store.load() != claim
+                        or self._automatic_dock_preferences().load() is not True
+                        or self._unloading):
+                    raise DockMutationDenied('dock_mutation.inhibited')
+                dispatched = True
+                return transition()
+        except DockMutationDenied:
+            raise
+        except Exception as exc:
+            if dispatched:
+                raise
+            raise DockMutationDenied('dock_mutation.inhibited') from exc
+
+    def _run_automatic_tv_transition(self, expected_generation, standing_consent):
+        """Reconcile an early abort only with the fully returned dock verified.
+
+        Reconciliation and ordinary admission are separate: any intervening new
+        claim causes ordinary admission to refuse. No recovery budget is reset.
+        """
+        from regear.application.automatic_dock import ShutdownReconcileDisposition
+        from regear.application.supervised_transition import SupervisedTransitionExecution
+        if standing_consent is not True:
+            raise DockMutationDenied('dock_mutation.inhibited')
+        started = False
+        def transition():
+            nonlocal started
+            started = True
+            return self._presentation_transition_service().execute_automatic(
+                PlacementState.DOCKED_EGPU, expected_generation=expected_generation,
+                standing_consent=standing_consent)
+        try:
+            return self._run_dock_mutation(transition)
+        except DockMutationDenied as exc:
+            if started or str(exc) != 'dock_mutation.inhibited':
+                raise
+        disposition = self._reconcile_dock_power_after_boot(report_disposition=True)
+        if disposition is True or disposition is ShutdownReconcileDisposition.RETIRED:
+            return self._run_dock_mutation(transition)
+        if disposition is ShutdownReconcileDisposition.HELPER_UNSETTLED:
+            return SupervisedTransitionExecution(
+                False, 'automatic_dock.shutdown_helper_unsettled')
+        claim = WholeDockClaimStore(Path('/var/lib/handheld-dock-mode')).load()
+        if claim is not None and claim.stage == 'reauthorize_intent':
+            return self._run_retained_reconnect_tv_transition(transition)
+        if claim is not None:
+            cards = [c for c in DrmDiscovery().scan() if c.boot_vga is False]
+            if len(cards) != 1:
+                raise DockMutationDenied('dock_mutation.inhibited')
+            binding = resolve_whole_dock(cards[0].pci_bdf)
+            result = self._reconcile_abandoned_dock_trial(binding.binding + ':' + binding.generation)
+            if result.get('ok') is not True:
+                raise DockMutationDenied('dock_mutation.inhibited')
+        return self._run_dock_mutation(transition)
+
+    def _reconcile_dock_power_after_boot(self, *, report_disposition=False):
+        """Retire only an old-boot, consumed shutdown after fresh dock proof.
+
+        No hardware writes or recovery-budget reset. A canceled shutdown in the
+        same boot, ordinary disconnect, and uncertain topology retain inhibition.
+        """
+        from regear.application.automatic_dock import ShutdownReconcileDisposition as Disposition
+        def result(disposition):
+            return disposition if report_disposition else disposition is Disposition.RETIRED
+        try:
+            boot = read_boot_hash()
+            if not re.fullmatch('[0-9a-f]{64}', boot):
+                return result(Disposition.BLOCKED)
+            with self._dock_mutation_gate().admit(allow_inhibited=True):
+                store = DockPowerIntentStore(Path('/var/lib/handheld-dock-mode'))
+                claim = store.load()
+                if claim is None or claim.stage != 'software_down':
+                    return result(Disposition.BLOCKED)
+                def topology():
+                    cards = [c for c in DrmDiscovery().scan() if c.boot_vga is False]
+                    if len(cards) == 1:
+                        observed = resolve_whole_dock(cards[0].pci_bdf)
+                    elif not cards:
+                        observed = resolve_transport(claim.binding)
+                    else:
+                        raise ValueError('dock_power.topology_ambiguous')
+                    if observed.binding != claim.binding:
+                        raise ValueError('dock_power.attachment_changed')
+                    return observed
+                baseline = topology()
+                user = resolve_gamescope_user(GamescopeDiscovery().scan())
+                if not user.ok or user.context is None:
+                    return result(Disposition.BLOCKED)
+                launcher = HeldTrialLauncher(uid=user.context.uid, username=user.context.username)
+                helper_unsettled = False
+                def guard():
+                    nonlocal helper_unsettled
+                    current = SnapshotTransitionObservationAdapter(self._discovery).observe().snapshot
+                    journal = self._transition_journal_service().status()
+                    if (getattr(self, '_unloading', False)
+                            or current.game_state is not GameState.IDLE
+                            or current.gamescope.running is not True
+                            or not resolve_runtime_profiles(current).exact_host
+                            or journal.durable is not True or journal.owner.value != 'none'
+                            or not inner_removal_records_absent()):
+                        return False
+                    audit = launcher.call('audit', '0' * 32)
+                    final = SnapshotTransitionObservationAdapter(self._discovery).observe().snapshot
+                    journal_after = self._transition_journal_service().status()
+                    stable = (resolve_gamescope_user(GamescopeDiscovery().scan()).context == user.context
+                        and topology() == baseline and inner_removal_records_absent()
+                        and final.game_state is GameState.IDLE and final.gamescope.running is True
+                        and not getattr(self, '_unloading', False)
+                        and read_boot_hash() == boot)
+                    if not stable:
+                        return False
+                    if audit.get('code') == 'held_helper.settled' and audit.get('settled') is True:
+                        return True
+                    # retire_after_boot calls this guard only after validating an
+                    # exact consumed shutdown from a different boot. False here
+                    # performs no retirement. Unknown/failed audit never qualifies.
+                    helper_unsettled = (
+                        audit.get('code') == 'held_helper.unsettled'
+                        and audit.get('settled') is False
+                        and audit.get('safe_to_unplug') is False
+                        and current.gamescope.confidence is Confidence.VERIFIED
+                        and final.gamescope.confidence is Confidence.VERIFIED
+                        and resolve_runtime_profiles(final).exact_host
+                        and journal_after.durable is True and journal_after.owner.value == 'none'
+                        and self._automatic_dock_preferences().load() is True)
+                    return False
+                retired = store.retire_after_boot(claim, boot, guard)
+                if retired is True:
+                    return result(Disposition.RETIRED)
+                if retired is False and helper_unsettled and store.load() == claim:
+                    return result(Disposition.HELPER_UNSETTLED)
+                return result(Disposition.BLOCKED)
+        except Exception:
+            return result(Disposition.BLOCKED)
+
+    def _run_whole_dock_trial(self, operation: str, expected_attachment: str = "", *, power_request=None):
+        """Internal cable-connected trial; admission covers release and teardown.
+
+        Not a player RPC. Reconnect remains an explicit separate operation and
+        the durable claim remains inhibited even after successful enumeration.
+        """
+        if power_request is not None:
+            if (power_request.action != 'shutdown' or power_request.operation != operation
+                    or not power_request.requested_at <= time.monotonic() < power_request.deadline):
+                raise ValueError('dock_power.preflight_changed')
+        self._whole_dock_trial_phase = "admission"
+        with self._dock_mutation_gate().admit():
+            self._whole_dock_trial_phase = "topology"
+            cards = [card for card in DrmDiscovery().scan() if card.boot_vga is False]
+            if len(cards) != 1:
+                raise ValueError("dock_teardown.gpu_ambiguous")
+            binding = resolve_whole_dock(cards[0].pci_bdf)
+            if expected_attachment and expected_attachment != binding.binding + ":" + binding.generation:
+                raise ValueError("dock_teardown.approval_superseded")
+            self._whole_dock_trial_phase = "session"
+            user = resolve_gamescope_user(GamescopeDiscovery().scan()).context
+            if user is None:
+                raise ValueError("dock_teardown.session_unknown")
+            admission = {"held": True}
+            lease = Login1SleepInhibitor()
+            def guarded_admission():
+                try:
+                    return (admission["held"] is True
+                        and not getattr(self, '_unloading', False)
+                        and lease.status().active is True)
+                except Exception:
+                    return False
+            def require_inhibition():
+                if guarded_admission() is not True:
+                    raise ValueError("dock_teardown.sleep_inhibition_required")
+            runtime = WholeDockRuntime(binding, RootOwnedRuntimeState().ensure(),
+                idle=lambda: self._api.get_snapshot_report().snapshot.game_state is GameState.IDLE,
+                admission_held=guarded_admission)
+            approval = WholeDockApproval(binding.binding, binding.generation,
+                TeardownApproval(binding.usb_bdf, binding.router_id))
+            self._whole_dock_trial_phase = "sleep_inhibitor"
+            if lease.acquire().active is not True:
+                raise ValueError("dock_teardown.sleep_inhibition_required")
+            self._whole_dock_trial_lease = lease
+            try:
+                require_inhibition()
+                self._whole_dock_trial_phase = "return_portable"
+                self._return_portable_before_disconnect(binding, user)
+                require_inhibition()
+                self._whole_dock_trial_phase = "release_setup"
+                release = build_live_disconnect_runtime(gpu_bdf=binding.gpu_bdf,
+                    uid=user.uid, username=user.username)
+                self._whole_dock_trial_phase = "preflight"
+                if power_request is None:
+                    runtime.begin_before_release(operation, approval)
+                else:
+                    power_store = DockPowerIntentStore(RootOwnedRuntimeState().ensure())
+                    def bind_power():
+                        return (power_request.requested_at <= time.monotonic() < power_request.deadline
+                            and power_store.bind(operation, binding.binding, binding.generation,
+                                power_request.action, power_request.session,
+                                power_request.requested_at, power_request.deadline) is True)
+                    runtime.begin_before_release(operation, approval, before_release=bind_power)
+                self._whole_dock_trial_runtime = (runtime, admission)
+                self._whole_dock_trial_phase = "gpu_release"
+                require_inhibition()
+                result = release.execute(release_display=True)
+                if type(result) is LiveDisconnectResult:
+                    self._whole_dock_release_stage = result.stage.value
+                    # Keep the inner decision before verification summarizes it.
+                    # Only categories and booleans cross this boundary: no PCI
+                    # addresses, process identifiers, or raw exception text.
+                    self._whole_dock_release_details = {
+                        "code": result.code if type(result.code) is str and re.fullmatch(
+                            r"(?:removal_safety|safe_undock|disconnect|removal_plan|device_removal|live_disconnect)\.[a-z_]{1,96}",
+                            result.code) else "",
+                        "display_release_code": result.display_release_code
+                            if type(result.display_release_code) is str and re.fullmatch(
+                                r"display_release\.[a-z_]{1,96}", result.display_release_code) else "",
+                        "released": result.released is True,
+                        "display_released": bool(result.display_released),
+                        "filter_disarmed": result.filter_disarmed is True,
+                    }
+                    self._whole_dock_arm_stage = result.arm_stage
+                    self._whole_dock_arm_code = result.arm_code if re.fullmatch(
+                        r"(?:filter_arm|arm_sequence)\.[a-z_]+", result.arm_code) else ""
+                runtime.verify_gpu_release(result)
+                self._whole_dock_trial_phase = "dock_teardown"
+                require_inhibition()
+                result = runtime.execute_claimed(operation, approval)
+                if power_request is None:
+                    return result
+                if getattr(result, 'software_down', False) is not True:
+                    raise ValueError('dock_power.disconnect_unverified')
+                self._whole_dock_trial_phase = "power_verification"
+                def portable():
+                    snapshot = SnapshotTransitionObservationAdapter(self._discovery).observe().snapshot
+                    return (not getattr(self, '_unloading', False)
+                        and snapshot.game_state is GameState.IDLE
+                        and infer_operating_mode(snapshot).mode is OperatingMode.PORTABLE)
+                power_result = continue_dock_power(power_request, runtime=runtime, store=power_store,
+                    portable_verified=portable, power=SystemPowerCommandRunner(),
+                    admission_held=guarded_admission)
+                return DockPowerResult(power_result.code, power_result.requested,
+                    software_down=True)
+            finally:
+                admission["held"] = False
+                if runtime._operation is None:
+                    lease.release()
+
+    def _return_portable_before_disconnect(self, binding, expected_user):
+        """Called only under dock admission and a sleep inhibitor, before intent.
+
+        Reuse the normal supervised transition. A session merely being stopped,
+        or the external display going blank, is not a verified Portable return.
+        """
+        observer = SnapshotTransitionObservationAdapter(self._discovery)
+        def portable():
+            snapshot = observer.observe().snapshot
+            return (snapshot.game_state is GameState.IDLE
+                and infer_operating_mode(snapshot).mode is OperatingMode.PORTABLE)
+        if not portable():
+            service = self._presentation_transition_service()
+            preview = service.preview(PlacementState.PORTABLE, user_confirmed=True)
+            if not preview.ready or not preview.approval_token:
+                raise ValueError('dock_teardown.portable_return_refused')
+            result = service.execute(preview.approval_token)
+            if (result.accepted is not True or result.durable is not True
+                    or not result.operation_id or not result.outcome
+                    or result.outcome.kind is not TransitionOutcomeKind.SUCCEEDED
+                    or not portable()):
+                raise ValueError('dock_teardown.portable_return_unverified')
+            status = service.status()
+            if (status.durable is not True or status.target is not PlacementState.PORTABLE
+                    or status.operation_id != result.operation_id
+                    or service.acknowledge(result.operation_id) is not True):
+                raise ValueError('dock_teardown.portable_acknowledgement_unverified')
+        # Keep the player's explicit portable choice even if later release fails.
+        self._automatic_dock.suppress_current_attachment_after_portable_return()
+        user = resolve_gamescope_user(GamescopeDiscovery().scan())
+        if (not user.ok or user.context != expected_user
+                or resolve_whole_dock(binding.gpu_bdf) != binding or not portable()):
+            raise ValueError('dock_teardown.approval_superseded')
+
+    def _run_whole_dock_reconnect_trial(self):
+        trial = getattr(self, "_whole_dock_trial_runtime", None)
+        if trial is None:
+            raise ValueError("dock_teardown.original_trial_required")
+        runtime, admission = trial
+        with self._dock_mutation_gate().admit(allow_inhibited=True):
+            admission["held"] = True
+            try:
+                result = runtime.reconnect_owned()
+                if result.software_reconnected:
+                    if runtime.finish_reconnect() is not True:
+                        raise ValueError("dock_teardown.reconnect_completion_unverified")
+                    self._whole_dock_trial_lease.release()
+                    self._automatic_dock.reset_after_acknowledgement()
+                return result
+            finally:
+                admission["held"] = False
+
     def _live_disconnect_runtime(self) -> LiveDisconnectRuntime | None:
         """Build the runtime for the eGPU and session user in front of us.
 
@@ -1442,6 +2139,57 @@ class Plugin:
         Safe to poll. No filter is armed, no DRM master taken, and no display
         touched by asking.
         """
+        if _request == "power_capabilities":
+            return dock_power_capabilities()
+        if _request == "physical_reset_preview":
+            self._operator_reset_preview = None
+            if getattr(self, '_unloading', False) or getattr(self, '_background_operations', set()):
+                return {'code': 'dock_reset.busy', 'ready': False, 'hardware_write': False}
+            result = await self._run_background_operation(self._operator_reset_record)
+            if result.get('ready') is True:
+                token = uuid.uuid4().hex
+                self._operator_reset_preview = (token, result['record_digest'], time.monotonic() + 120)
+                return {**result, 'confirmation_token': token, 'expires_in_seconds': 120,
+                        'physical_reset_attestation_required': True}
+            return result
+        if _request == "release_capture":
+            result = dict(getattr(self, "_release_capture_status", {"code": "release_capture.not_started"}))
+            result["restore_timer"] = getattr(self, "_release_capture_restore_unit", "")
+            return result
+        if _request == "whole_dock_record":
+            def read_record():
+                try:
+                    record = WholeDockClaimStore(Path("/var/lib/handheld-dock-mode")).load()
+                    return record.stage if record else "none"
+                except Exception:
+                    return "unknown"
+            return {"schema_version": 1, "claim_stage": await asyncio.to_thread(read_record),
+                    "safe_to_unplug": False}
+        if _request == "whole_dock_trial":
+            result = dict(getattr(self, "_whole_dock_trial_status", {
+                "schema_version": 1, "code": "dock_teardown.no_trial",
+                "busy": False, "safe_to_unplug": False,
+            }))
+            if not result.get("busy") and result.get("ok") is False:
+                def claim_stage():
+                    try:
+                        record = WholeDockClaimStore(Path("/var/lib/handheld-dock-mode")).load()
+                        return record.stage if record else "none"
+                    except Exception:
+                        return "unknown"
+                result["claim_stage"] = await asyncio.to_thread(claim_stage)
+            if not result.get("busy") and result["code"] in ("dock_teardown.no_trial", "dock_reconnect.software_reconnected"):
+                def preview_attachment():
+                    cards = [c for c in DrmDiscovery().scan() if c.boot_vga is False]
+                    if len(cards) != 1:
+                        return ""
+                    binding = resolve_whole_dock(cards[0].pci_bdf)
+                    return binding.binding + ":" + binding.generation
+                try:
+                    result["attachment_token"] = await asyncio.to_thread(preview_attachment)
+                except Exception:
+                    result["attachment_token"] = ""
+            return result
         try:
             runtime = await asyncio.to_thread(self._live_disconnect_runtime)
         except Exception:
@@ -1471,6 +2219,11 @@ class Plugin:
         release_display: bool = False,
         relaunch_app_id: str = "",
         relaunch_intent: str = "disconnect",
+        trial_action: str = "",
+        trial_confirmed: bool = False,
+        trial_attachment_token: str = "",
+        trial_request_id: str = "",
+        physical_reset_confirmed: bool = False,
     ) -> dict[str, object]:
         """Remove the eGPU in software. NOT clearance to unplug anything.
 
@@ -1491,6 +2244,120 @@ class Plugin:
         expires, while a sleep is meant to be reopened when they come back. An
         unrecognised value records nothing rather than guessing.
         """
+        if trial_action == 'whole_dock_physical_reset':
+            # Separate operator attestation from ordinary teardown approval.
+            # This action neither releases a display nor relaunches a game.
+            if (trial_confirmed is not True or physical_reset_confirmed is not True
+                    or release_display is not False or relaunch_app_id or trial_attachment_token
+                    or type(trial_request_id) is not str
+                    or not re.fullmatch('[0-9a-f]{32}', trial_request_id)):
+                return {'code': 'dock_reset.confirmation_required', 'ok': False,
+                        'safe_to_unplug': False, 'hardware_write': False}
+            return await self._reconcile_egpu_after_physical_reset(trial_request_id, True)
+        if trial_action:
+            if (trial_confirmed is not True or release_display is not True
+                    or trial_action not in ("whole_dock_disconnect", "whole_dock_reconnect", "whole_dock_capture", "whole_dock_held_capture", "whole_dock_reconcile", "whole_dock_shutdown", "whole_dock_sleep")
+                    or relaunch_app_id
+                    or type(trial_request_id) is not str
+                    or (trial_request_id and (len(trial_request_id) != 32 or any(c not in "0123456789abcdef" for c in trial_request_id)))
+                    or type(trial_attachment_token) is not str
+                    or (trial_attachment_token and (len(trial_attachment_token) != 129 or any(c not in "0123456789abcdef:" for c in trial_attachment_token)))):
+                return {"schema_version": 1, "ok": False,
+                        "code": "dock_teardown.trial_confirmation_required",
+                        "safe_to_unplug": False}
+            if (getattr(self, "_unloading", False)
+                    or getattr(self, "_whole_dock_trial_status", {}).get("busy")):
+                return {"schema_version": 1, "ok": False,
+                        "code": "dock_teardown.busy", "safe_to_unplug": False}
+            power_request = None
+            if trial_action in ('whole_dock_shutdown', 'whole_dock_sleep'):
+                # Bind once in the backend before the worker can restart Steam.
+                # Sleep remains refused before any teardown until validated.
+                if trial_action == 'whole_dock_sleep':
+                    return {'schema_version': 1, 'ok': False,
+                        'code': 'dock_power.sleep_unverified', 'safe_to_unplug': False}
+                if not hasattr(self, '_dock_power_session'):
+                    boot = read_boot_hash()
+                    if not re.fullmatch('[0-9a-f]{64}', boot):
+                        return {'schema_version': 1, 'ok': False,
+                            'code': 'dock_power.boot_unverified', 'safe_to_unplug': False}
+                    self._dock_power_session = boot + ':' + uuid.uuid4().hex
+                try:
+                    power_request = create_power_request(
+                        'shutdown' if trial_action == 'whole_dock_shutdown' else 'sleep',
+                        self._dock_power_session)
+                except ValueError:
+                    return {'schema_version': 1, 'ok': False,
+                        'code': 'dock_power.sleep_unverified' if trial_action == 'whole_dock_sleep'
+                            else 'dock_power.invalid_intent', 'safe_to_unplug': False}
+            if trial_action == "whole_dock_capture":
+                return await self._capture_egpu_release_diagnostics(confirmed=True)
+            if trial_action == "whole_dock_held_capture":
+                return await self._capture_egpu_release_diagnostics(confirmed=True, held_session=True)
+            if trial_action == 'whole_dock_reconcile':
+                result = await self._run_background_operation(
+                    lambda: self._reconcile_abandoned_dock_trial(trial_attachment_token))
+                if result.get('ok') is True:
+                    self._automatic_dock.reset_after_acknowledgement()
+                return result
+            self._whole_dock_trial_status = {"schema_version": 1,
+                "code": "dock_teardown.trial_running", "busy": True,
+                "safe_to_unplug": False, "request_id": trial_request_id}
+            def trial():
+                self._whole_dock_trial_phase = "starting"
+                self._whole_dock_release_stage = "not_run"
+                self._whole_dock_release_details = {}
+                self._whole_dock_arm_stage = ""
+                self._whole_dock_arm_code = ""
+                try:
+                    if power_request is not None:
+                        result = self._run_whole_dock_trial(power_request.operation,
+                            trial_attachment_token, power_request=power_request)
+                    elif trial_action == "whole_dock_disconnect":
+                        result = self._run_whole_dock_trial(uuid.uuid4().hex, trial_attachment_token)
+                    else:
+                        result = self._run_whole_dock_reconnect_trial()
+                    payload = {"schema_version": 1, "code": result.code,
+                        "busy": False, "safe_to_unplug": False,
+                        "software_down": getattr(result, "software_down", False),
+                        "software_reconnected": getattr(result, "software_reconnected", False)}
+                    payload["ok"] = payload["software_down"] or payload["software_reconnected"]
+                    if power_request is not None:
+                        payload['power_requested'] = getattr(result, 'requested', False) is True
+                        payload['ok'] = payload['power_requested']
+                        payload['power_action'] = power_request.action
+                except Exception as error:
+                    # Only fixed categories cross the RPC boundary; never expose
+                    # arbitrary exception text, paths or attachment identifiers.
+                    reason = str(error)
+                    if reason not in {
+                        "dock_teardown.usb_peripherals_or_unknown",
+                        "dock_teardown.begin_preflight_refused",
+                        "dock_teardown.sleep_inhibition_required",
+                        "dock_teardown.approval_superseded",
+                        "dock_teardown.session_unknown",
+                        "dock_mutation.inhibited",
+                        "dock_mutation.unavailable_or_busy",
+                        "dock_teardown.gpu_release_unverified",
+                        "dock_teardown.portable_return_refused",
+                        "dock_teardown.portable_return_unverified",
+                        "dock_teardown.portable_acknowledgement_unverified",
+                        "dock_power.preflight_changed",
+                        "dock_power.intent_not_recorded",
+                        "dock_power.disconnect_unverified",
+                    }:
+                        reason = "dock_teardown.trial_unresolved"
+                    payload = {"schema_version": 1, "code": reason,
+                               "busy": False, "ok": False, "safe_to_unplug": False}
+                payload["request_id"] = trial_request_id
+                payload["phase"] = self._whole_dock_trial_phase
+                payload["release_stage"] = self._whole_dock_release_stage
+                payload["release"] = self._whole_dock_release_details
+                payload["arm_stage"] = self._whole_dock_arm_stage
+                payload["arm_code"] = self._whole_dock_arm_code
+                self._whole_dock_trial_status = payload
+                return payload
+            return await self._run_background_operation(trial)
         relaunch = RelaunchIntentStore(CATALOG_ROOT)
         parsed_intent = _parse_intent(relaunch_intent)
         if (
@@ -1526,7 +2393,8 @@ class Plugin:
             }
         try:
             result = await asyncio.to_thread(
-                lambda: runtime.execute(release_display=bool(release_display))
+                lambda: self._run_dock_mutation(
+                    lambda: runtime.execute(release_display=bool(release_display)))
             )
         except Exception:
             return {
@@ -2062,7 +2930,8 @@ class Plugin:
         )
         try:
             result = await asyncio.to_thread(
-                lambda: self._presentation_transition_service().execute(approval_token)
+                lambda: self._run_dock_mutation(
+                    lambda: self._presentation_transition_service().execute(approval_token))
             )
         except Exception:
             finished_ns = self._journey_now_ns()
@@ -2248,8 +3117,8 @@ class Plugin:
         )
         try:
             result = await asyncio.to_thread(
-                self._safe_disconnect_shutdown_service().execute,
-                approval_token,
+                lambda: self._run_dock_mutation(
+                    lambda: self._safe_disconnect_shutdown_service().execute(approval_token)),
             )
         except Exception:
             result = None
@@ -2331,6 +3200,33 @@ class Plugin:
                 "acknowledgement_id": "",
                 "durable": False,
             }
+
+    def _operator_reset_record(self, confirm=None, still_confirmed=lambda: True):
+        store = WholeDockClaimStore(Path('/var/lib/handheld-dock-mode'))
+        return reconcile_operator_reset(store=store, gate=self._dock_mutation_gate(),
+            observe=lambda binding: observe_reset_restored(binding, store), confirm=confirm,
+            still_confirmed=still_confirmed)
+
+    async def _reconcile_egpu_after_physical_reset(self, confirmation_token: str,
+                                                  physical_reset_confirmed: bool = False):
+        """Operator repair only; physical reset is human attestation, not sysfs proof."""
+        refused = {'code': 'dock_reset.confirmation_required', 'ok': False,
+                   'hardware_write': False, 'safe_to_unplug': False}
+        preview = getattr(self, '_operator_reset_preview', None)
+        if (physical_reset_confirmed is not True or type(confirmation_token) is not str
+                or not preview or confirmation_token != preview[0]):
+            return refused
+        # Consume before await: duplicate requests and late confirmations cannot
+        # reuse this proof. No settings, recovery budget or attempted latch reset.
+        self._operator_reset_preview = None
+        if (getattr(self, '_unloading', False) or getattr(self, '_background_operations', set())
+                or time.monotonic() >= preview[2]):
+            return {**refused, 'code': 'dock_reset.busy_or_expired'}
+        def confirm(digest, _seconds):
+            return digest == preview[1] and still_confirmed()
+        def still_confirmed():
+            return time.monotonic() < preview[2] and not getattr(self, '_unloading', False)
+        return await self._run_background_operation(self._operator_reset_record, confirm, still_confirmed)
 
     async def get_transition_journal_status(
         self, _request: object = None
@@ -2415,8 +3311,8 @@ class Plugin:
         """Execute only a consumed approval through the guarded release runner."""
         try:
             outcome = await asyncio.to_thread(
-                self._process_service().execute,
-                approval_token,
+                lambda: self._run_dock_mutation(
+                    lambda: self._process_service().execute(approval_token)),
             )
             payload = execution_to_payload(outcome)
             self._events.append(
@@ -2586,9 +3482,9 @@ class Plugin:
                     )
                     if resolution.ok and resolution.context is not None:
                         audio = await self._run_background_operation(
-                            lambda: self._audio_handoff_service().switch(
+                            lambda: self._run_dock_mutation(lambda: self._audio_handoff_service().switch(
                                 PlacementState.PORTABLE, resolution.context
-                            ),
+                            )),
                         )
                         self._events.append(
                             severity="info" if audio.succeeded else "warning",
@@ -2724,13 +3620,20 @@ class Plugin:
                     )
                     try:
                         result = await self._run_background_operation(
-                            lambda: self._presentation_transition_service().execute_automatic(
-                                PlacementState.DOCKED_EGPU,
-                                expected_generation=decision.expected_generation,
-                                standing_consent=enabled,
-                            ),
+                            lambda: self._run_automatic_tv_transition(
+                                decision.expected_generation, enabled),
                         )
-                    except Exception:
+                    except Exception as error:
+                        # A refused or failed dispatch consumes this attachment's
+                        # attempt, but must not leave the player waiting on SWITCHING.
+                        # This records failure only; it never rearms or clears intent.
+                        failure_code = "automatic_dock.transition_failed"
+                        if isinstance(error, DockMutationDenied):
+                            failure_code = {
+                                "dock_mutation.inhibited": "automatic_dock.admission_inhibited",
+                                "dock_mutation.unavailable_or_busy": "automatic_dock.admission_unavailable_or_busy",
+                            }.get(str(error), "automatic_dock.admission_refused")
+                        self._automatic_dock.record_result(failure_code, succeeded=False)
                         transition_finished_ns = self._journey_now_ns()
                         self._append_journey_event(
                             severity="error",
@@ -3159,7 +4062,7 @@ class Plugin:
 
     def _support_versions(self) -> dict[str, str]:
         return {
-            "regear": "0.3.82",
+            "regear": "0.3.98",
             "decky": str(getattr(decky, "DECKY_VERSION", "unknown")),
             "steamos": self._version_info.steamos,
             "kernel": self._version_info.kernel,
@@ -3492,6 +4395,18 @@ class Plugin:
             recovery=recovery,
         )
         return self._process_release
+
+    @staticmethod
+    def _dock_mutation_gate() -> DockMutationGate:
+        return DockMutationGate(RootOwnedRuntimeState().ensure())
+
+    def _run_dock_mutation(self, operation):
+        try:
+            gate = self._dock_mutation_gate()
+        except Exception as error:
+            raise DockMutationDenied("dock_mutation.unavailable") from error
+        with gate.admit():
+            return operation()
 
     @staticmethod
     def _transition_journal_service() -> SharedTransitionJournalService:
