@@ -120,7 +120,7 @@ Charging and healthy wake behavior remain hardware observations, not code claims
 ## Current backend implementation
 
 The implementation from `egpu-power-0398` is now merged through PR315; PR316
-adds the backend-owned request coordinator. Both descend from the preserved checkpoint.
+adds the request coordinator with backend-owned progress. Both descend from the preserved checkpoint.
 `Plugin._run_dock_power_request` routes ordinary, already-down, and active-dock
 power. Already-down continuation currently requires the retained runtime in the
 same backend process and fresh verification of its software-down claim/topology.
