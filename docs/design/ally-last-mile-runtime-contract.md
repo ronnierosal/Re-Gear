@@ -82,3 +82,10 @@ The live Ally range was 15x34px. The requested usability correction keeps its wi
 and thumb and increases track height to80px on short viewports,80-112px on taller
 viewports. Both tracks fit the existing narrow rail. Real controller acceptance is
 still required after the corrected build is installed.
+
+## Right quick-action group centering
+
+Ronnie's subsequent placement request centers the entire four-button group vertically
+beside the shell. The existing relative frame anchors top50% with translateY(-50%);
+the short-viewport rule does not override that center. Button dimensions, inter-button
+gaps,10px horizontal separation and103slider/navigation behavior remain unchanged.

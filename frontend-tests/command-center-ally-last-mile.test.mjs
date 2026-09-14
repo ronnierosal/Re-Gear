@@ -49,3 +49,9 @@ test("vertical utility track provides useful travel within the narrow rail", () 
   assert.match(utility, /height:clamp\(80px,18vh,112px\)/);
   assert.match(utility, /height:80px;width:15px/);
 });
+
+test("right four-button group is centered beside the shell at every height", () => {
+  const final=styles.slice(styles.indexOf('/* Ally last-mile overrides'));
+  assert.match(final,/right:auto;top:50%;transform:translateY\(-50%\)/);
+  assert.doesNotMatch(final,/top:1\.[46]vh/);
+});
