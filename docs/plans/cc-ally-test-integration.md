@@ -126,3 +126,14 @@ head. Control/test ownership explicitly released by previous owner in hub
 and0.3.99 rollback artifacts. After installation stop development for screenshots.
 
 ---
+
+## Next bounded polish candidate
+
+Assignment674ca0e, shell sequencing9ea444df: presentation-only delta from031a9f1.
+All-tab title removal, accessible card reasons, concise eGPU labels, action chevrons,
+10% shorter shell,12% narrower utility rail,10px detached action gap. Native dispatch,
+control/model/backend and version remain unchanged. Captures: out/polish-before and
+out/polish-after via the same production-projection fixture,828x466 and1280x720.
+Primary codex-ui-primary-01a09d40 owns exact-head acceptance and version/deploy
+coordination. Do not package this candidate before that acceptance.
+Documentation impact: Wiki (design/readiness evidence; publication owner follows up).

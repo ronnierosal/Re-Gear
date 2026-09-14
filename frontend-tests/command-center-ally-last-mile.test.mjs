@@ -18,7 +18,7 @@ test("Quick Access and Settings do not repeat their page title/subtitle", () => 
 });
 
 test("brightness and volume stay compact, icon-first and controller-focusable", () => {
-  assert.match(styles, /width:clamp\(52px,5\.8vw,62px\)/);
+  assert.match(styles, /width:clamp\(46px,5\.1vw,55px\)/);
   assert.match(utility, /data-ec-control={`utility-\$\{id\}`}/);
   assert.match(utility, /data-utility-side=left.*rg-utility-label\{display:none/);
   assert.match(utility, /brightness:/);
@@ -33,4 +33,14 @@ test("rapid slider changes preserve the latest requested value", () => {
   assert.match(utility, /queued=useRef\(new Map<UtilityId,number>\(\)\)/);
   assert.match(utility, /queued\.current\.set\(id,percent\)/);
   assert.match(utility, /if\(next!==undefined&&next!==percent\) void run\(id,next\)/);
+});
+
+const shell = readFileSync(new URL("../src/quick-access/expanded-command-center/shell.tsx", import.meta.url), "utf8");
+test("all top-level headings are absent and direct actions have no detail chevron", () => {
+  assert.match(shell, /nested && <><h2>/);
+  assert.match(shell, /!unavailableActions\[item.id\] && !\(item.id === "disconnect" && onDisconnect\)/);
+  assert.match(styles, /rg-expanded-detail\{display:none;font-size:9px/);
+  assert.match(styles, /height:79.2vh/);
+  assert.match(styles, /height:82.8vh/);
+  assert.match(styles, /left:calc\(100% \+ 10px\)/);
 });

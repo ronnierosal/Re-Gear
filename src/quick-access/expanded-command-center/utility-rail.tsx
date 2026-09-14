@@ -100,7 +100,7 @@ export function UtilityRail({side,layout=defaultUtilityLayout,readings={},onRequ
         <span className="rg-utility-value" role="status">{status}</span>
       </Focusable> : <Button key={id} type="button" data-utility-id={id} data-ec-control={`utility-${id}`} className="rg-utility-control" disabled={disabled||waiting} title={reason} aria-label={`${labels[id]}: ${status}`} aria-busy={waiting||undefined} onClick={()=>request(id)}>
         <span className="rg-utility-icon"><UtilityIcon id={id}/></span>
-        <span className="rg-utility-label">{labels[id]}</span>
+        <span className="rg-utility-label">{id === "mic" ? "Mic" : labels[id]}</span>
         <span className="rg-utility-value" role="status">{status}</span>
       </Button>;
     })}

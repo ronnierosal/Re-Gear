@@ -14,14 +14,14 @@ test("Quick root does not spend vertical space on a duplicate title and subtitle
 
 test("main command center keeps the approved wide responsive geometry", () => {
   assert.match(styles, /width:min\(78vw,1120px\)/);
-  assert.match(styles, /height:88vh/);
+  assert.match(styles, /height:79.2vh/);
   assert.doesNotMatch(styles, /width:min\(64vw,980px\)/);
 });
 
 test("brightness and volume are visually integrated into the main command center", () => {
   assert.match(styles, /data-utility-side=left/);
   assert.match(styles, /position:absolute/);
-  assert.match(styles, /width:clamp\(52px,5\.8vw,62px\)/);
+  assert.match(styles, /width:clamp\(46px,5\.1vw,55px\)/);
   assert.match(rail, /height:clamp\(40px,7vh,56px\)/);
   assert.doesNotMatch(styles, /Very narrow hosts cannot fit side controls/);
   assert.doesNotMatch(styles, /data-utility-side=left[^}]*display:none/);
@@ -30,7 +30,7 @@ test("brightness and volume are visually integrated into the main command center
 test("detached action rail fits four compact actions without scrolling", () => {
   assert.match(styles, /data-utility-side=right/);
   assert.match(styles, /width:clamp\(58px,6\.2vw,70px\)/);
-  assert.match(styles, /height:88vh/);
+  assert.match(styles, /height:79.2vh/);
   assert.match(rail, /data-utility-side=right\] \.rg-utility-control\{[^}]*height:clamp\(46px,9vh,62px\);min-height:0;max-height:62px/);
   assert.match(rail, /height:clamp\(46px,9vh,62px\)/);
   assert.match(rail, /overflow:hidden/);

@@ -216,7 +216,7 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
               disabled={Boolean(unavailableActions[item.id])}
               onGamepadDirection={native&&directions ? (event:CustomEvent<{button:number}>)=>{if(event.detail.button===directions.left&&enterRail(item.id)){event.preventDefault();event.stopPropagation();}} : undefined}
               {...(native ? { preferredFocus: item.id === restoreTarget(items.map(tile => tile.id), memory.current[tab]), onGamepadFocus: () => { memory.current[tab] = item.id; const target = panel.current?.querySelector<HTMLElement>(`[data-ec-control="${item.id}"]`); if(target) { if(tab === "settings") reveal(target); else target.scrollIntoView({block:"nearest"}); } } } : {})}
-              aria-label={`${item.title}: ${item.value}. ${item.detail}.${synthetic ? " Sample data." : ""} View details.`}
+              aria-label={`${item.title}: ${item.value}. ${item.detail}.${synthetic ? " Sample data." : ""} ${unavailableActions[item.id] ? unavailableActions[item.id] : item.id === "disconnect" && onDisconnect ? "Start guarded disconnect." : "View details."}`}
               onFocus={(event: { target: EventTarget }) => { memory.current[tab] = item.id; (event.target as HTMLElement).scrollIntoView({ block: "nearest" }); }} onClick={() => { if(unavailableActions[item.id])return; if(item.id==="disconnect"&&onDisconnect){onDisconnect();return;} launcher.current = item.id; setNested(item.id); }}>
               <span className="rg-expanded-tile-body">
                 <span className="rg-expanded-tile-heading">
@@ -225,7 +225,7 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
                 </span>
                 <span className="rg-expanded-value">{item.id === "disconnect" && <CommandCenterIcon id="status-warning" size={16}/>} {item.value}</span>
                 <span className="rg-expanded-detail">{item.detail}{longReasons && item.tone === "unavailable" ? " — Provider observations are unavailable in this synthetic preview. No capability or successful operation can be inferred from the displayed sample." : ""}</span>
-                <span className="rg-expanded-chevron" aria-hidden="true">›</span>
+                {!unavailableActions[item.id] && !(item.id === "disconnect" && onDisconnect) && <span className="rg-expanded-chevron" aria-hidden="true">›</span>}
               </span>
             </Button>;
 
@@ -243,8 +243,8 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
         </Button>)}
       </Container>
       <div ref={content} className="rg-expanded-content" id="ec-tabpanel" role="tabpanel" onFocusCapture={event => { if(tab === "settings") reveal(event.target as HTMLElement); }} aria-labelledby={`ec-tab-${tab}`}>
-        <h2>{nested ? nested.title : tabLabels[tab]}</h2>
-        <p className="rg-expanded-context">{nested ? (hasDetail ? "Settings and actions" : synthetic ? "Configuration preview · no changes are applied" : "Current status · no changes are applied") : tab === "quick" ? "Essential controls while you play" : tab === "performance" ? "Configure performance for your play style" : synthetic ? "Status and configuration preview" : "Status and configuration"}</p>
+        {nested && <><h2>{nested.title}</h2>
+        <p className="rg-expanded-context">{hasDetail ? "Settings and actions" : synthetic ? "Configuration preview · no changes are applied" : "Current status · no changes are applied"}</p></>}
         {nested ? <section className="rg-expanded-detail-page">
           {hasDetail ? <Container key={nested.id} data-ec-control="nested-content" data-ec-detail-content {...(native ? { "flow-children": "vertical", noFocusRing: true, preferredFocus: true } : {})}>
             {dockControl && <CommandNotice tone="warning" title="Keep the cable connected">Disconnect trial. Follow the guarded flow before any physical action.</CommandNotice>}

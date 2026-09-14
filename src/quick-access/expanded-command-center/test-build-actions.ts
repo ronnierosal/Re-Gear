@@ -16,8 +16,8 @@ export function testBuildTiles(source:TileView):TileView {
   const status=egpu.find(tile=>tile.id==='link');
   return {...source,
     quick:quick.map(tile=>tile.id==='disconnect'?compactDisconnect:tile),
-    egpu:[unavailable('switch-handheld','Switch to Handheld'),compactDisconnect,
+    egpu:[unavailable('switch-handheld','Handheld'),compactDisconnect,
       unavailable('resolution','Resolution'),{id:'egpu',title:'eGPU Status',value:status?.value??'Unknown',detail:egpu.filter(tile=>tile.id!=='disconnect').map(tile=>`${tile.title}: ${tile.value}. ${tile.detail}`).join(' · ')},
-      unavailable('disconnect-sleep','Safe Disconnect + Sleep'),unavailable('disconnect-shutdown','Safe Disconnect + Shutdown')],
+      unavailable('disconnect-sleep','Disconnect + Sleep'),unavailable('disconnect-shutdown','Disconnect + Shutdown')],
   };
 }
