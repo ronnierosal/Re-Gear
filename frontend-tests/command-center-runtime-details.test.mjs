@@ -14,3 +14,12 @@ test('detail navigation and delayed cleanup preserve the current selection',()=>
 test('plugin stop clears state and rejects late publication, selection and dispatch',()=>{
  const p=createRuntimeDetailPublisher();let calls=0;p.publish(state(true,()=>calls++));p.source.enter('egpu');p.stop();p.publish(state(true,()=>calls++));p.source.navigate('diagnostics');p.source.enter('display');p.source.requestHandheld();assert.equal(p.source.read(),null);assert.equal(p.source.readSelection(),null);assert.equal(calls,0);
 });
+
+test('shutdown uses only the current available adapter and stops on owner loss',()=>{
+ const p=createRuntimeDetailPublisher();let calls=0;
+ p.source.requestShutdown();p.publish(state(true));p.source.requestShutdown();assert.equal(calls,0);
+ const next={...state(true),shutdown:{available:true,reason:'Portable',pending:false,message:'',request:()=>calls++}};
+ p.publish(next);p.source.requestShutdown();assert.equal(calls,1);
+ p.publish({...next,shutdown:{...next.shutdown,available:false}});p.source.requestShutdown();assert.equal(calls,1);
+ p.publish(next);p.stop();p.source.requestShutdown();assert.equal(calls,1);
+});

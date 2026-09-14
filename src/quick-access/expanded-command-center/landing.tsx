@@ -1,14 +1,21 @@
-import type { ReactNode } from "react";
-import { PanelSection,PanelSectionRow } from "@decky/ui";
-import { version,license } from "../../../package.json";
-import {projectCredits,noticesUrl} from '../../project-credits';
+import {useState,type ReactNode} from "react";
+import { DialogButton,Focusable,Navigation,PanelSection,PanelSectionRow } from "@decky/ui";
+import { version } from "../../../package.json";
+import {projectDocuments,noticesUrl,licenseUrl} from '../../project-credits';
 
+function CreditSection({title,body}:{title:string;body:string}){
+  const [open,setOpen]=useState(false);
+  return <div><DialogButton aria-expanded={open} onClick={()=>setOpen(value=>!value)}>{title}</DialogButton>{open&&<pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere',font:'inherit'}}>{body}</pre>}</div>;
+}
 export function ReGearAbout(){
-  return <>
-    <p>Re-Gear {version} · Ronnie Rosal</p>
-    <ul>{projectCredits.map(credit=><li key={credit.project}><a href={credit.source}>{credit.project}</a> — {credit.attribution}</li>)}</ul>
-    <p><a href={noticesUrl}>Third-party notices and licenses</a></p>
-  </>;
+  return <Focusable flow-children="vertical" noFocusRing>
+    <p>Re-Gear {version}</p>
+    <p>{projectDocuments.copyright}</p>
+    <DialogButton onClick={()=>Navigation.NavigateToExternalWeb(licenseUrl)}>{projectDocuments.licenseId||'Project license'}</DialogButton>
+    {projectDocuments.sections.map((section,index)=><CreditSection key={index} title={section.title} body={section.body}/>)}
+    <CreditSection title="Full project license" body={projectDocuments.licenseText}/>
+    <DialogButton onClick={()=>Navigation.NavigateToExternalWeb(noticesUrl)}>Third-party notices and licenses</DialogButton>
+  </Focusable>;
 }
 export function ReGearLanding({shortcut}:{shortcut:ReactNode}){
   return <>

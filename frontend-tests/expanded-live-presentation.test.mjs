@@ -66,10 +66,10 @@ test('Wi-Fi can be placed on Quick Access without dispatching an unavailable ada
  const fresh=await fixture();tree=fresh.render(props);assert.ok(card(tree,'custom:settings:utility-wifi'));
 });
 
-test('Settings reset is a real confirmed layout write and Decky duplicates are absent',async()=>{
+test('Settings reset is a real confirmed layout write, About is shared, and shortcut/help stay on landing',async()=>{
  const app=await fixture(),storage=storageFixture();storage.setItem('regear.command-center-layout.v1',JSON.stringify({version:2,quick:['egpu:widget-link'],right:[null,null,null,null]}));
  const props={...prefsProps(storage),initialTab:'settings',tiles:{settings:['shortcut','about','help-guides','diagnostics','reset-layout'].map(id=>({id,title:id,value:'Open',detail:''}))}};
- let tree=app.render(props);assert.deepEqual(nodes(tree).filter(n=>n.props?.className==='rg-expanded-tile').map(n=>n.props['data-ec-control']),['diagnostics','reset-layout']);
+ let tree=app.render(props);assert.deepEqual(nodes(tree).filter(n=>n.props?.className==='rg-expanded-tile').map(n=>n.props['data-ec-control']),['about','diagnostics','reset-layout']);
  card(tree,'reset-layout').props.onClick();tree=app.render(props);const confirm=nodes(tree).find(n=>n.type==='button'&&text(n)==='Reset layout');assert.ok(confirm);assert.deepEqual(JSON.parse(storage.getItem('regear.command-center-layout.v1')).quick,['egpu:widget-link']);confirm.props.onClick();assert.deepEqual(JSON.parse(storage.getItem('regear.command-center-layout.v1')).quick,[]);
 });
 

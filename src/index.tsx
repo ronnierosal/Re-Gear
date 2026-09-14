@@ -1307,14 +1307,23 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
   }, [automaticDockStatus?.enabled, changeAutomaticDock]);
 
   const executeSafeDisconnect = useCallback(async (portable: boolean) => {
+    const ownerGeneration=runtimeOwner.generation;
+    const ownsRequest=()=>!runtimeOwner.stopped&&runtimeOwner.active&&runtimeOwner.generation===ownerGeneration;
+    if (portable&&!ownsRequest()) return;
     if (safeDisconnectExecuting.current || tvSwitchExecuting.current) return;
     safeDisconnectExecuting.current = true;
     setSafeDisconnectBusy(true);
-    setSafeDisconnectMessage("");
+    setSafeDisconnectMessage(portable ? "Checking shutdown readiness…" : "");
+    let shutdownSubmitted = false;
     try {
       if (portable) {
         const approval = await approveSafeDisconnectShutdown();
-        if (!approval.ready || !approval.approval_token || approval.blockers.length > 0) {
+        if (!ownsRequest()) return;
+        if (approval?.schema_version !== 1 || typeof approval.ready !== "boolean" || typeof approval.approval_token !== "string" || !Array.isArray(approval.blockers) || !approval.blockers.every(item=>typeof item==="string")) {
+          setSafeDisconnectMessage("Shutdown approval was not issued. Inspect the current status.");
+          return;
+        }
+        if (!approval.ready || !approval.approval_token.trim() || approval.blockers.length > 0) {
           setSafeDisconnectMessage(
             approval.blockers.length > 0
               ? `Shutdown blocked: ${approval.blockers.map(label).join(", ")}.`
@@ -1322,18 +1331,19 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
           );
           return;
         }
-        toaster.toast({
-          title: "Re-Gear requested an Ally shutdown",
-          body: "Completion is unverified. Keep the eGPU connected until the fan and every top power LED are off.",
-          critical: true,
-          duration: 30000,
-        });
+        shutdownSubmitted = true;
+        setSafeDisconnectMessage("Requesting shutdown…");
         const outcome = await executeSafeDisconnectShutdown(approval.approval_token);
-        setSafeDisconnectMessage(
-          outcome.accepted
-            ? "Power-off request accepted; completion is unverified. Keep the eGPU connected until the fan stops. If it remains on after 60 seconds, hold the Ally power button until the fan stops."
-            : `Shutdown was not requested: ${label(outcome.code)}.`,
-        );
+        if (!ownsRequest()) return;
+        const valid = outcome?.schema_version === 1 && typeof outcome.accepted === "boolean" && typeof outcome.code === "string" && Boolean(outcome.code);
+        const code = valid ? outcome.code : "unrecognized response";
+        const refused = valid && !outcome.accepted && ["safe_disconnect.concurrent_request","safe_disconnect.approval_invalid","safe_disconnect.observation_unavailable","safe_disconnect.evidence_changed","safe_disconnect.host_unverified","safe_disconnect.egpu_not_observed","safe_disconnect.game_state_unknown","safe_disconnect.game_running","safe_disconnect.portable_unverified"].includes(code);
+        const message = valid && outcome.accepted
+          ? `Shutdown request accepted (${code}). Completion is unverified; keep the eGPU connected.`
+          : refused ? `Shutdown blocked: ${code}. Keep the eGPU connected.`
+          : `Shutdown completion is unverified (${code}). Keep the eGPU connected and inspect the current status.`;
+        setSafeDisconnectMessage(message);
+        toaster.toast({title:"Re-Gear shutdown status",body:message,critical:true,duration:30000});
         return;
       }
 
@@ -1364,7 +1374,7 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
     } catch {
       setSafeDisconnectMessage(
         portable
-          ? "Shutdown was not requested. Keep the eGPU connected."
+          ? shutdownSubmitted ? "Shutdown completion is unverified. Keep the eGPU connected and inspect the current status." : "Shutdown readiness could not be checked. Keep the eGPU connected."
           : "Portable transition did not complete. Keep the eGPU connected.",
       );
     } finally {
@@ -2222,6 +2232,10 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
   useEffect(()=>{
     runtimeDetails.publish({
       views:{egpu:wrapDetail(<><PanelSection title="eGPU status"><EgpuModule presentation={egpuPresentation(payload)}/></PanelSection><ButtonItem layout="below" onClick={()=>runtimeDetails.source.navigate("egpu-config")}>Configure docking</ButtonItem></>),"egpu-config":wrapDetail(egpuDetail),diagnostics:wrapDetail(diagnosticDetail),display:wrapDetail(displayDetail)},
+      shutdown:{available:menuFresh&&payload?.inference.mode==="portable"&&!safeDisconnectBusy&&!tvSwitchBusy,
+        reason:!menuFresh?"Current status unavailable":payload?.inference.mode!=="portable"?"Return to Handheld first":safeDisconnectBusy||tvSwitchBusy?"Operation in progress":"Portable shutdown",
+        pending:safeDisconnectBusy,message:safeDisconnectMessage,
+        request:()=>{if(!runtimeOwner.stopped&&menuFresh&&payload?.inference.mode==="portable")void executeSafeDisconnect(true);}},
       handheld:{available:menuFresh&&primaryDisplayAction.target==="ally"&&!primaryDisplayAction.disabled,
         reason:!menuFresh?"Current display status unavailable":primaryDisplayAction.target!=="ally"?"Handheld switch is not currently offered":primaryDisplayAction.description,
         request:()=>{if(!runtimeOwner.stopped&&menuFresh&&primaryDisplayAction.target==="ally"&&!primaryDisplayAction.disabled)activateDisplay();}},

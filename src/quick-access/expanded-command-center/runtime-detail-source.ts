@@ -4,6 +4,7 @@ export type RuntimeDetailId="egpu"|"egpu-config"|"diagnostics"|"display";
 export type RuntimeDetailState={
   views:Record<RuntimeDetailId,ReactNode>;
   handheld:{available:boolean;reason:string;request():void};
+  shutdown?:{available:boolean;reason:string;pending:boolean;message:string;request():void};
 };
 type Selection={root:RuntimeDetailId;current:RuntimeDetailId;token:number};
 
@@ -23,6 +24,7 @@ export function createRuntimeDetailPublisher(){
       return()=>{if(selection?.token===ticket){selection=null;selectionListeners.forEach(fn=>fn());}};
     },
     navigate(current:RuntimeDetailId){if(selection&&!stopped){selection={...selection,current};selectionListeners.forEach(fn=>fn());}},
+    requestShutdown(){if(!stopped&&state?.shutdown?.available)state.shutdown.request();},
     requestHandheld(){if(!stopped&&state?.handheld.available)state.handheld.request();},
   };
   return {source,publish(next:RuntimeDetailState|null){if(!stopped){state=next;notify();}},stop(){stopped=true;state=null;selection=null;token++;notify();selectionListeners.forEach(fn=>fn());}};

@@ -46,5 +46,13 @@ test("committed bundle embeds compact transparent SVG artwork without unpackaged
   // actually load, so the old product name must be absent from it too. The
   // check stays case-sensitive and word-bounded on purpose: the frozen
   // "hdm.hideAttached*" settings keys and every "hdmi" label must survive.
-  assert.doesNotMatch(bundle, /Handheld Dock Mode|\bHDM\b/);
+  // Historical legal attribution is preserved verbatim, not product branding.
+  // Exempt only the exact bundled authoritative documents, never arbitrary text.
+  let productSurface=bundle;
+  for(const path of ["../LICENSE","../THIRD_PARTY_NOTICES.md"]){
+    const literal=JSON.stringify(read(path));
+    assert.ok(productSurface.includes(literal),`${path} is bundled verbatim`);
+    productSurface=productSurface.replace(literal,'"[authoritative legal text]"');
+  }
+  assert.doesNotMatch(productSurface, /Handheld Dock Mode|\bHDM\b/);
 });

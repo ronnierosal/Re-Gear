@@ -21,7 +21,7 @@ test('legacy aliases occupy one stable slot without compacting or losing unknown
  const swapped=replaceControlSlot(normalized,5,'performance:manual');assert.equal(swapped[0],'empty:user');assert.equal(swapped[5],'performance:manual');assert.equal(swapped.filter(x=>controlForKey(x)?.id==='manual-tdp').length,1);
  for(const pair of [['quick:display','performance:display'],['quick:controller','controllers:controller'],['quick:egpu','egpu:egpu']])assert.deepEqual(uniqueControlSlots(pair),pair);
 });
-test('native membership leaves diagnostics and preserves unknown producers without duplicating Decky entries',()=>{
+test('native membership includes About and diagnostics, preserves unknown producers, and excludes landing-only entries',()=>{
  const tiles=['shortcut','diagnostics','about','help-guides','future-setting'].map(id=>({id,title:id,value:'Unknown',detail:''}));
- assert.deepEqual(registryNativeTiles({settings:tiles}).settings.map(x=>x.id),['diagnostics','future-setting']);
+ assert.deepEqual(registryNativeTiles({settings:tiles}).settings.map(x=>x.id),['diagnostics','about','future-setting']);
 });
