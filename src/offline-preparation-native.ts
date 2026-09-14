@@ -62,7 +62,9 @@ export type PreparationPorts = {
   queueAppUpdate?(appId: number, clientId: string): void;
   resumeAppUpdate?(appId: number, clientId: string): void;
   registerForDownloadItems?(
-    callback: (isDownloading: boolean, items: unknown[]) => void,
+    /** Native second argument contains { remote_client_id, item_data } groups,
+     * not the flat item array in the published declarations. */
+    callback: (listChanged: boolean, clients: unknown[]) => void,
   ): DownloadSubscription;
   /** Verified numeric indices for update_type_info. */
   contentTypeIndex: ContentTypeIndex;
@@ -194,20 +196,25 @@ export function startOfflinePreparation(
   let lease: DownloadSubscription | undefined;
   let baseline: string | null | undefined;
   let dispatched = false;
-  let last: PreparationState | null = null;
+  let lastReport: string | undefined;
+  let dispatching = false;
+  const duringDispatch: unknown[][] = [];
   let timer: ReturnType<typeof setTimeout> | undefined;
 
   const emit = (state: PreparationState, projected: ReturnType<typeof projectDownloadItem>) => {
-    if (stopped || state === last) return;
-    last = state;
-    onChange({
+    if (stopped) return;
+    const report: PreparationReport = {
       appId,
       state,
       content: projected?.content ?? CONTENT_TYPES.map((type) => ({ type, hasUpdate: null, completed: null })),
       buildId: projected?.buildId ?? null,
       targetBuildId: projected?.targetBuildId ?? null,
       errorCode: projected?.errorCode ?? null,
-    });
+    };
+    const signature = JSON.stringify(report);
+    if (signature === lastReport) return;
+    lastReport = signature;
+    onChange(report);
   };
 
   const stop = () => {
@@ -222,9 +229,20 @@ export function startOfflinePreparation(
     lease = undefined;
   };
 
-  const observe = (_isDownloading: boolean, items: unknown[]) => {
+  const observe = (_listChanged: boolean, clients: unknown[]) => {
     if (stopped) return;
-    const list = Array.isArray(items) ? items : [];
+    if (dispatching) {
+      duringDispatch.push(clients);
+      return;
+    }
+    // SteamTracking af2c67e, chunk~2dcc5aaf7.js OnDownloadItems:
+    // each entry is a client envelope containing its own item_data array.
+    // Never let the same game on another client satisfy our local request.
+    const envelopes = Array.isArray(clients)
+      ? clients.map(record).filter((entry) => entry?.remote_client_id === clientId)
+      : [];
+    if (envelopes.length !== 1 || !Array.isArray(envelopes[0]?.item_data)) return;
+    const list = envelopes[0].item_data;
     let projected: ReturnType<typeof projectDownloadItem> = null;
     for (const raw of list) {
       // Correlate strictly by the exact app id we asked about. Other games'
@@ -232,11 +250,10 @@ export function startOfflinePreparation(
       const candidate = projectDownloadItem(raw, appId, ports.contentTypeIndex);
       if (candidate) { projected = candidate; break; }
     }
-    // The first snapshot we see is the baseline, whether it arrives
-    // synchronously during registration or after dispatch. Steam gives us no
-    // acceptance signal, so without a baseline we cannot tell a pre-existing
-    // download from one our request caused.
-    if (baseline === undefined) baseline = projected ? fingerprint(projected.item) : null;
+    // The latest pre-dispatch snapshot is the baseline. If none arrived,
+    // conservatively baseline the first local snapshot after dispatch.
+    if (!dispatched || baseline === undefined)
+      baseline = projected ? fingerprint(projected.item) : null;
     if (!dispatched || !projected) return;
     const state = observedState(projected.item, projected.errorCode);
     if (state === null) return;
@@ -265,10 +282,13 @@ export function startOfflinePreparation(
     );
   }
   try {
+    dispatching = true;
     dispatch(appId, clientId);
   } catch {
     stop();
     throw new PreparationUnavailableError(`SteamClient.Downloads.${method} did not accept the request`);
+  } finally {
+    dispatching = false;
   }
   dispatched = true;
   emit("requested", null);
@@ -280,6 +300,12 @@ export function startOfflinePreparation(
     emit("unconfirmed", null);
     stop();
   }, options.unconfirmedAfterMs ?? UNCONFIRMED_AFTER_MS);
+
+  // A native call may publish observations before returning. Replay them in
+  // order after requested and timer setup, so progress cancels that timer and
+  // terminal observations release the subscription exactly once.
+  for (const clients of duringDispatch) observe(true, clients);
+  duringDispatch.length = 0;
 
   return { stop };
 }

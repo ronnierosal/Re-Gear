@@ -7,14 +7,16 @@ import {
   startOfflinePreparation,
 } from "../src/offline-preparation-native.ts";
 
-const INDEX = { content: 0, shader: 1, workshop: 2 };
+// SteamTracking af2c67e library.js:1674-1681.
+const INDEX = { content: 0, workshop: 1, shader: 2 };
+const envelope = (items, clientId = CLIENT) => [{ remote_client_id: clientId, item_data: items }];
 const APP = 620;
 const CLIENT = "local-client-0";
 
 const typeInfo = (over = {}) => [
   { has_update: true, completed: false },
-  { has_update: true, completed: false },
   { has_update: false, completed: false },
+  { has_update: true, completed: false },
 ].map((entry, at) => ({ ...entry, ...(over[at] ?? {}) }));
 
 const item = (over = {}) => ({
@@ -38,7 +40,7 @@ function fakePorts(over = {}) {
     contentTypeIndex: INDEX,
     ...over,
   };
-  return { ports, calls, send: (items, downloading = true) => emit(downloading, items) };
+  return { ports, calls, send: (items, downloading = true) => emit(downloading, envelope(items)) };
 }
 
 function collect(t, over = {}, kind = "queue", options = {}) {
@@ -157,7 +159,7 @@ test("a synchronous callback during registration becomes the baseline, not a res
     queueAppUpdate: (...a) => calls.push(a),
     registerForDownloadItems: (cb) => {
       // Fires before the caller holds the lease and before dispatch.
-      cb(true, [item({ completed: true, completed_time: 5 })]);
+      cb(true, envelope([item({ completed: true, completed_time: 5 })]));
       emit = cb;
       return { unregister() {} };
     },
@@ -166,7 +168,7 @@ test("a synchronous callback during registration becomes the baseline, not a res
   startOfflinePreparation(APP, "queue", ports, (r) => reports.push(r));
   assert.equal(calls.length, 1);
   assert.deepEqual(reports.map((r) => r.state), ["requested"]);
-  emit(true, [item({ completed: true, completed_time: 5 })]);
+  emit(true, envelope([item({ completed: true, completed_time: 5 })]));
   assert.deepEqual(reports.map((r) => r.state), ["requested"]);
 });
 
@@ -225,7 +227,7 @@ test("an unregister that throws does not escape stop", (t) => {
 
 test("per content type reports shader separately and accepts either completion field", () => {
   const both = projectDownloadItem(
-    item({ update_type_info: typeInfo({ 1: { has_update: true, completed: true } }) }), APP, INDEX,
+    item({ update_type_info: typeInfo({ 2: { has_update: true, completed: true } }) }), APP, INDEX,
   );
   assert.deepEqual(both.content.find((c) => c.type === "shader"), {
     type: "shader", hasUpdate: true, completed: true,
@@ -270,4 +272,88 @@ test("exact app id guard matches the repo's existing identity rule", () => {
   for (const bad of [0, -1, 1.5, 2 ** 32, NaN, "620", null, undefined]) {
     assert.equal(isExactAppId(bad), false);
   }
+});
+
+test("native client envelopes select only the exact local client's game", (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  let callback;
+  const reports = [];
+  const handle = startOfflinePreparation(APP, "queue", fakePorts({
+    registerForDownloadItems(cb) { callback = cb; return { unregister() {} }; },
+  }).ports, r => reports.push(r));
+  t.after(() => handle.stop());
+  callback(true, envelope([item({ active: true })], "remote"));
+  callback(true, [item({ active: true })]); // obsolete flat declaration shape
+  assert.deepEqual(reports.map(r => r.state), ["requested"]);
+  callback(true, [...envelope([item({ completed: true })], "remote"),
+    ...envelope([item({ active: true })])]);
+  assert.equal(reports.at(-1).state, "active");
+});
+
+test("same-state shader evidence changes are published and identical reports deduplicated", (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const c = collect(t);
+  t.after(() => c.handle.stop());
+  c.send([item({ active: true })]);
+  const changed = item({ active: true, update_type_info: typeInfo({
+    2: { completed: true },
+  }) });
+  c.send([changed]);
+  c.send([changed]);
+  assert.deepEqual(c.states(), ["requested", "active", "active"]);
+  assert.equal(c.reports.at(-1).content.find(x => x.type === "shader").completed, true);
+});
+
+test("observations inside dispatch are retained in order without an unconfirmed timer", (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  for (const kind of ["queue", "resume"]) {
+    let callback;
+    let unregistered = 0;
+    const reports = [];
+    const dispatch = () => {
+      callback(true, envelope([item({ active: true })]));
+      callback(true, envelope([item({ completed: true, completed_time: 123 })]));
+    };
+    const handle = startOfflinePreparation(APP, kind, fakePorts({
+      queueAppUpdate: dispatch, resumeAppUpdate: dispatch,
+      registerForDownloadItems(cb) {
+        callback = cb; cb(false, envelope([]));
+        return { unregister() { unregistered++; } };
+      },
+    }).ports, r => reports.push(r));
+    assert.deepEqual(reports.map(r => r.state), ["requested", "active", "completed"]);
+    t.mock.timers.tick(30000);
+    assert.equal(reports.at(-1).state, "completed");
+    handle.stop();
+    assert.equal(unregistered, 1);
+  }
+});
+
+test("latest pre-dispatch local snapshot is the baseline", (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  let callback;
+  const reports = [];
+  const done = item({ completed: true, completed_time: 77 });
+  const handle = startOfflinePreparation(APP, "queue", fakePorts({
+    registerForDownloadItems(cb) {
+      callback = cb; cb(false, envelope([])); cb(false, envelope([done]));
+      return { unregister() {} };
+    },
+  }).ports, r => reports.push(r));
+  callback(false, envelope([done]));
+  assert.deepEqual(reports.map(r => r.state), ["requested"]);
+  handle.stop();
+});
+
+test("a malformed or duplicate local envelope cannot assert progress", (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  let callback;
+  const reports = [];
+  const handle = startOfflinePreparation(APP, "queue", fakePorts({
+    registerForDownloadItems(cb) { callback = cb; return { unregister() {} }; },
+  }).ports, r => reports.push(r));
+  t.after(() => handle.stop());
+  callback(true, [{ remote_client_id: CLIENT, item_data: null }]);
+  callback(true, [...envelope([item({ active: true })]), ...envelope([])]);
+  assert.deepEqual(reports.map(r => r.state), ["requested"]);
 });
