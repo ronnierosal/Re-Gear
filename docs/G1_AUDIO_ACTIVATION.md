@@ -1,4 +1,4 @@
-# G1 audio activation candidate — 2026-09-04
+# G1 audio activation candidate â€” 2026-09-04
 
 ## Evidence and decision
 

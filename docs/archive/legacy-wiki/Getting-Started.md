@@ -1,0 +1,61 @@
+> **Archived September 14, 2026.** Historical source at `9421c6f`; superseded by the [canonical Wiki](https://github.com/ronnierosal/Re-Gear/tree/main/docs/wiki). Do not use this as current instructions.
+
+# Getting started
+
+**Audience:** prospective users and developers<br>
+**Reviewed:** 2026-09-08<br>
+**Maturity:** development-only; no general public release or supported installer
+
+> **Release status — 2026-09-08:** No public supported Re-Gear release is available.
+> Current [GitHub releases](https://github.com/ronnierosal/Re-Gear/releases) are
+> development candidates; ordinary users must not install them. The
+> [Manual Installation](Manual-Installation.md) guide is conditional on a future
+> verified, supported release ZIP and published checksum.
+
+<!-- Keep this dated status aligned with Home.md. When a supported release is
+verified, update both with its exact release, checksum and support scope. -->
+
+Check [Current State](Current-State.md), the repository [evidence index](https://github.com/ronnierosal/Re-Gear/blob/main/docs/INDEX.md)
+and [deployment validation contract](https://github.com/ronnierosal/Re-Gear/blob/main/docs/DEPLOYMENT_VALIDATION.md)
+before using a build.
+
+## Development releases and compatibility
+
+[GitHub releases](https://github.com/ronnierosal/Re-Gear/releases) include
+development candidates. Publicly downloadable does not mean supported,
+hardware-validated or Decky Store registered. The maintainer reports legacy use only on recent test devices; see the [compatibility note](Project-Overview.md).
+The repository identity cutover is implemented for new builds. Existing test
+installations have not been migrated by that code change; installation and
+rollback remain separately supervised under the
+[cutover procedure](https://github.com/ronnierosal/Re-Gear/blob/main/docs/IDENTITY_CUTOVER.md).
+
+## Players and hardware testers
+
+For the future supported-release ZIP route through Decky, see
+[Manual Installation](Manual-Installation.md). There is no public supported Re-Gear
+release yet; ordinary users must not install development artifacts.
+
+Re-Gear is not ready for an ordinary self-service installation. Hardware-facing
+builds are provenance-bound and validated in supervised sessions. Do not select
+an archive by filename or age, copy an unverified build onto a handheld, or use
+development commands as general install instructions.
+
+If you are participating in a coordinated test:
+
+1. Confirm the exact build revision and artifact checksum.
+2. Begin from the documented Portable baseline.
+3. Follow the installation baseline for your exact profile; current eGPU test builds require a powered-off detach before installation.
+4. Use one watched transition at a time with a rollback plan.
+5. Follow the documented disconnect policy. Current eGPU testing requires complete shutdown before physical disconnection.
+
+## Developers
+
+The repository uses Python for backend policy/adapters and TypeScript/React for
+the Decky frontend. Read `AGENTS.md`, the
+[documentation index](https://github.com/ronnierosal/Re-Gear/blob/main/docs/INDEX.md),
+and [development workflow](https://github.com/ronnierosal/Re-Gear/blob/main/docs/DEVELOPMENT.md)
+before editing.
+
+Start with read-only local tests and fakes. Hardware mutation, deployment, and
+support promotion require separate approval and evidence. See
+[Development](Development.md) for the normal verification gates.

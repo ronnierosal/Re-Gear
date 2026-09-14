@@ -2,6 +2,12 @@
 
 Re-Gear's Command Center should fit the way **you** play. Quick Access is intended to be customizable so your most useful actions are easiest to reach.
 
+## For players — no technical background needed
+
+> **Interface preview:** this page describes design intent and developing UI.
+> Mockups and proposed labels are not proof of your installed controls.
+> Follow the available labels in your build; see [current evidence](../technical/current-state.md).
+
 ## Customize Quick Access
 
 > ### 🖼️ UI MOCKUP — Customize Quick Access
@@ -46,3 +52,7 @@ If your layout gets messy, restore the default Quick Access arrangement and cust
 [Step-by-step: Reset Quick Access →](how-to/reset-quick-access.md)
 
 > **Note:** Menu names and exact button prompts may change while the customization interface is being finalized. The guides will be updated alongside the shipping UI.
+
+## Technical details — for advanced users and contributors
+
+See the [owning contract/evidence](../../UI_DESIGN_CONTRACT.md) and [current state](../technical/current-state.md). UI PR329 is a separate test candidate; this page does not establish native or hardware acceptance.

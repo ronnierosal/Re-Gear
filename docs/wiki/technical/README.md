@@ -1,59 +1,29 @@
-# 🛠️ Re-Gear Technical Guide
+# Re-Gear Technical Guide
 
-This is the engineering side of the Re-Gear Wiki.
+Understand how Re-Gear works and what the evidence actually establishes.
+For everyday use, start with the [Player Guide](../player/README.md).
 
-If you only want to install and use Re-Gear, use the [Player Guide](../player/README.md). This section is for contributors, developers, testers, hardware investigators, and anyone who wants to understand how Re-Gear works under the hood.
+## Core guides
 
-## Architecture & design
+- [eGPU lifecycle acceptance matrix](egpu-lifecycle.md) — v0.3.98 baseline,
+  production entry points, evidence, failures, owners and next gaps.
+- [Architecture and hexagonal layers](architecture.md) — policy, ports, adapters
+  and production composition.
+- [Scripts and CI gates](scripts-and-ci.md) — readiness probes versus execution,
+  local validation and continuous integration.
+- [Current state](current-state.md) — evidence status, not the newest version number.
+- [Development](development.md), [roadmap](roadmap.md), and [issues](issues.md).
+- [Project overview](project-overview.md) and [how Re-Gear works](how-regear-works.md).
 
-- [Architecture](../../ARCHITECTURE.md)
-- [Agent coordination](../../AGENT_COORDINATION.md)
-- [Project backlog](../../BACKLOG.md)
-- [Branding](../../BRANDING.md)
+## Hardware evidence
 
-## eGPU lifecycle
+- [Evidence ledger](hardware-evidence.md)
+- Historical [automatic recovery](history/automatic-recovery.md),
+  [docking incident](history/docking-incident.md),
+  [docking investigation](history/docking-troubleshooting.md), and
+  [controller investigation](history/raikiri-ii.md).
 
-The eGPU work is documented as evidence-driven engineering rather than a collection of player instructions. Relevant technical topics include:
-
-- device discovery and identity
-- attach readiness
-- automatic docking
-- display/render selection
-- Gamescope interaction
-- resource release
-- safe disconnect
-- link recovery
-- repeat-cycle recovery
-
-Start with:
-
-- [Attach Readiness](../../ATTACH_READINESS.md)
-- [Automatic Link Recovery](../../AUTOMATIC_LINK_RECOVERY.md)
-- [Audio Resource Release Trial](../../AUDIO_RESOURCE_RELEASE_TRIAL.md)
-- [Ally X + GPD G1 docking incident record](../../ALLY_X_GPD_G1_DOCKING_INCIDENT_2026-09-02.md)
-
-## Power & sleep
-
-- [Sleep Guard ADR](../../ADR_SLEEP_GUARD.md)
-- [Steam Sleep Preflight ADR](../../ADR_STEAM_SLEEP_PREFLIGHT.md)
-
-## Performance / Auto TDP
-
-- [Auto TDP Independent Plan](../../AUTO_TDP_INDEPENDENT_PLAN.md)
-
-## Evidence vs product behavior
-
-Technical documentation should distinguish between:
-
-1. **Observed evidence** — what a test, log, kernel interface, or device actually showed.
-2. **Current implementation** — what Re-Gear currently does.
-3. **Intended behavior** — the product experience Re-Gear is working toward.
-4. **Validated behavior** — behavior demonstrated through an appropriate test or supervised hardware validation.
-
-A successful experiment is not automatically a supported player feature. Keeping those concepts separate makes the project safer to evolve and makes the research more useful to other SteamOS/Linux developers.
-
-## Player-facing documentation boundary
-
-Do not copy low-level troubleshooting into the Player Guide unless a player actually needs it to complete an action. Player documentation should translate internal state into useful messages such as **Connected**, **Switching**, **Ready to disconnect**, or **Needs attention**.
-
-Deep diagnostics, command output, kernel behavior, PCI/DRM details, and validation records belong here.
+Implemented, simulated, installed and hardware-tested are different states.
+A test fixture does not establish native mounting; a single supervised success
+does not establish repeatability or other-hardware support. Owning contracts live
+in the [complete engineering index](../../INDEX.md). The Wiki explains them.

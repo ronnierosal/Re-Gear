@@ -1,5 +1,30 @@
 # Current state
 
+## Current evidence summary — September 14, 2026
+
+The preserved eGPU lifecycle baseline is [v0.3.98](EGPU_0398_CHECKPOINT.md), source
+`f6059fad8c213a059aa77cbba15524ef2d9149ae`, tag `checkpoint/0.3.98-egpu-cycle`.
+One supervised disconnect, physical unplug and replug cycle succeeded on the
+recorded Ally/GPD G1 configuration. Repeatability, other hardware and sleep are
+not established. The [lifecycle matrix](wiki/technical/egpu-lifecycle.md) records
+the exact archive, hash, kernel, sequence and evidence limits.
+
+The 0.3.95 failure below is retained historical evidence, not the leading current
+outcome. The earlier 0.3.82 automatic-TV record also remains valid within its
+original scope. Later power code in merged PR315/316 does not constitute installed
+or hardware-tested sleep. See [power status](EGPU_POWER_NEXT.md). UI PR329/0.3.107
+was a built test candidate at this review, with installation and native acceptance
+separate; it does not replace the 0.3.98 hardware reference.
+
+Software reconnect is excluded after the 0.3.92 incident. Retained code and its
+backend/UI gating status are described in [the lifecycle guide](wiki/technical/egpu-lifecycle.md#software-reconnect-decision-and-retained-machinery).
+Read-only readiness probes do not execute a disconnect or validate a button path.
+
+## Historical build and trial records
+
+Each section below describes its own date, installed readback and limits. Older
+"current", "next" and "not installed" statements are local to that record.
+
 ## 0.3.95 installed; automatic recovery blocked on device — 2026-09-12
 
 Fresh remote build-info readback confirms the user-installed version `0.3.95`
