@@ -59,6 +59,28 @@ restrictions are optional narrowing checks, not invented hardware certifications
 
 ## Integration and validation remaining
 
+### On-press context for explicit power buttons
+
+`get_egpu_disconnect_status("power_context")` is a read-only observation, not
+admission or a reservation. Its schema-1 payload contains `observed_at` (UTC,
+observation start), `context`, `attachment_token`, and a categorical `reason`.
+The UI uses the existing 10-second observation lifetime and rereads on a new
+explicit press; this endpoint introduces no poller.
+
+- `attached`: the current resolver supplied a binding/generation token. This
+  does not require HDMI or game readiness; dispatch owns its preflight.
+- `absent`: the complete USB4 transport reader positively observed absence;
+  token is explicitly empty for the ordinary power route.
+- `already_down`: the retained same-process runtime matches the software-down
+  claim before and after fresh topology, storage, idle and portable observations;
+  token is explicitly empty. No admission flag, claim or lock file is written.
+- `unknown`: evidence is missing, ambiguous, busy or unreadable; token is null.
+
+An empty token in the older `whole_dock_trial` preview is not equivalent to this
+explicit classification: that older preview also uses empty for discovery
+failures. Power execution continues to recheck the existing authoritative route.
+This producer does not mount a button, submit power, or enable software reconnect.
+
 Backend source has independent review and focused tests, including actual guard
 objects across consumption, release, submission and restoration, both Sleep
 choices, no-dock Shutdown, already-down Shutdown and correlation replay rejection.
