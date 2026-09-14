@@ -1,20 +1,24 @@
-# How to Reset Quick Access
+# Reset Quick Access
 
-If you want to start over, restore the default Quick Access layout.
+This developing customization task is intended to help you restore the default arrangement.
 
-## Steps
+## For players — no technical background needed
 
-1. Open **Re-Gear** and go to **Settings / Customize**.
-2. Open **Customize Quick Access**.
-3. Choose **Reset layout**.
-4. Review the confirmation message.
-5. Confirm the reset.
+**Candidate-only guidance:** customization is being tested in the newer UI. The
+earlier proposed **Settings / Customize** steps do not match every implementation.
+Do not look for those controls or reinstall merely to match a mockup.
 
-> 🖼️ **UI MOCKUP — Reset confirmation**  
-> **TEMPORARY IMAGE PLACEHOLDER**  
-> Show the reset-layout confirmation and explain that the player's custom arrangement will be replaced.  
-> Suggested asset: `assets/wiki/mockups/how-to-reset-layout.png`
+1. Check the instructions supplied with your installed test build.
+2. Use its displayed customization hint only when that action is offered.
+3. Review the resulting arrangement. If the named option is absent, stop and
+   report the build and what you see through [troubleshooting](../troubleshooting.md).
 
-The default Quick Access arrangement should now be restored.
+The UI owner reports a Y-on-focused-control picker and native move mode in the
+0.3.107 test candidate. This is not an installed-build acceptance or a verified
+step sequence for all versions. Exact action-specific steps await that evidence.
 
-> **UI in development:** Exact labels and prompts in this guide may change before release.
+## Technical details — for advanced users and contributors
+
+Track [PR329](https://github.com/ronnierosal/Re-Gear/pull/329) and the
+[current evidence](../../technical/current-state.md). Original design briefs remain
+in the archive; they are not executable instructions or a promise of availability.

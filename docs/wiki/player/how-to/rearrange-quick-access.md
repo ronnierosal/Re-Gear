@@ -1,33 +1,24 @@
-# How to Move Quick Access Buttons
+# Move Quick Access buttons
 
-Put the controls you use most where they are easiest to reach.
+This developing customization task is intended to help you put frequently used controls within easy reach.
 
-> 🖼️ **UI MOCKUP — Before and after**  
-> **TEMPORARY IMAGE PLACEHOLDER**  
-> Show the same Quick Access layout before and after moving one button.  
-> Suggested asset: `assets/wiki/mockups/how-to-rearrange-before-after.png`
+## For players — no technical background needed
 
-## Steps
+**Candidate-only guidance:** customization is being tested in the newer UI. The
+earlier proposed **Settings / Customize** steps do not match every implementation.
+Do not look for those controls or reinstall merely to match a mockup.
 
-1. Open **Re-Gear** and go to **Settings / Customize**.
-2. Open **Customize Quick Access**.
-3. Highlight the button you want to move.
-4. Choose **Move**.
-5. Move the button to the position you want.
-6. Confirm the new position.
+1. Check the instructions supplied with your installed test build.
+2. Use its displayed customization hint only when that action is offered.
+3. Review the resulting arrangement. If the named option is absent, stop and
+   report the build and what you see through [troubleshooting](../troubleshooting.md).
 
-> 🖼️ **UI MOCKUP — Select Move**  
-> **TEMPORARY IMAGE PLACEHOLDER**  
-> Suggested asset: `assets/wiki/mockups/how-to-rearrange-select.png`
+The UI owner reports a Y-on-focused-control picker and native move mode in the
+0.3.107 test candidate. This is not an installed-build acceptance or a verified
+step sequence for all versions. Exact action-specific steps await that evidence.
 
-> 🖼️ **UI MOCKUP — Choose position**  
-> **TEMPORARY IMAGE PLACEHOLDER**  
-> Suggested asset: `assets/wiki/mockups/how-to-rearrange-position.png`
+## Technical details — for advanced users and contributors
 
-Your Quick Access panel should now use the new order.
-
-## Tip
-
-Keep the actions you use during a game near the easiest controller-navigation positions. Less frequently used configuration belongs in the deeper module pages rather than taking up prime Quick Access space.
-
-> **UI in development:** Exact labels and prompts in this guide may change before release.
+Track [PR329](https://github.com/ronnierosal/Re-Gear/pull/329) and the
+[current evidence](../../technical/current-state.md). Original design briefs remain
+in the archive; they are not executable instructions or a promise of availability.

@@ -6,6 +6,12 @@ Quick Access is for **actions now**. Deeper configuration belongs in the individ
 
 ---
 
+## For players — no technical background needed
+
+> **Interface preview:** this page describes design intent and developing UI.
+> Mockups and proposed labels are not proof of your installed controls.
+> Follow the available labels in your build; see [current evidence](../technical/current-state.md).
+
 ## Command Center overview
 
 > ### 🖼️ UI MOCKUP — Command Center overview
@@ -89,3 +95,7 @@ General preferences and customization live here.
 ---
 
 **Next:** [Customize Re-Gear →](customize.md)
+
+## Technical details — for advanced users and contributors
+
+See the [owning contract/evidence](../../COMMAND_CENTER_VALIDATION.md) and [current state](../technical/current-state.md). UI PR329 is a separate test candidate; this page does not establish native or hardware acceptance.

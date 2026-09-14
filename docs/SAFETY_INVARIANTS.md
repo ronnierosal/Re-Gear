@@ -23,8 +23,15 @@ These invariants are release gates, not preferences.
    Gamescope state, and user-visible readiness are verified.
 8. An already-satisfied request is a no-op and must not restart Gamescope.
 9. Failure preserves the current known-good state or executes a bounded rollback.
-10. The tested Ally X/GPD G1 combination does not support physical live unplug.
-    Restore internal operation and shut down before disconnecting it.
+10. Physical live removal is not generally qualified. Earlier Ally X/GPD G1
+    failures remain evidence. The [0.3.98 checkpoint](EGPU_0398_CHECKPOINT.md)
+    records one successful supervised disconnect, physical unplug and replug
+    cycle on its exact Ally/GPD G1 configuration and kernel, with source
+    `f6059fad8c213a059aa77cbba15524ef2d9149ae`. Preserve that success without
+    claiming repeatability, other-hardware qualification or sleep validation.
+    It is not normal-use clearance: outside the exact supervised acceptance,
+    restore internal operation and shut down before physical disconnection.
+    Invariant 20 still requires explicit profile and complete live evidence.
 11. No normal-use force override may bypass running-game, identity, or unknown-
     state blockers.
 12. Diagnostics redact hostnames, addresses, home paths, hardware unique IDs, and

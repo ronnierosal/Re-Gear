@@ -36,6 +36,8 @@ jobs:
         # than the sources. A fresh clone has nothing for them to read until
         # this runs, so every one of them must come after it.
         run: pnpm build
+      - name: Check documentation links and navigation
+        run: python scripts/check_docs_links.py
       - name: Check architecture boundaries
         run: python scripts/check_architecture.py
       - name: Run unit and fixture tests

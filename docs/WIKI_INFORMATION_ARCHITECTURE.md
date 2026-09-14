@@ -1,3 +1,5 @@
+> **Canonical home, September 14, 2026:** [docs/wiki](wiki/README.md) is the only maintained guide source. The older plan below is historical design context; [maintenance and mapping](wiki/MAINTENANCE.md) owns publication.
+
 # GitHub Wiki information architecture
 
 The README introduces Re-Gear as a SteamOS handheld companion. The Wiki explains

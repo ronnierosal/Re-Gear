@@ -12,14 +12,14 @@ tracker, scheduled job, polished engineering write-up or automatic post is neede
 | Layer | Owner and purpose | Update trigger |
 |---|---|---|
 | README | Codex/ChatGPT: what Re-Gear is; stable project story, platform, modules, getting started, visuals and links | Material verified change to the landing-page summary, entry links or availability; usually infrequent |
-| Wiki (`wiki/` reviewed source) | Codex/ChatGPT: how Re-Gear works; detailed module, architecture, compatibility, usage, limitations and validation explanations | Merged behavior/contract change, verified test evidence, corrected status, troubleshooting or navigation |
+| Wiki (`docs/wiki/` canonical source) | Codex/ChatGPT: how Re-Gear works; detailed module, architecture, compatibility, usage, limitations and validation explanations | Merged behavior/contract change, verified test evidence, corrected status, troubleshooting or navigation |
 | Discussions | Codex/ChatGPT: what is happening; concise milestones, factual progress, feedback and testing calls | Meaningful news worth communicating; not every commit or typo |
 | Code, tests, technical `docs/`, task evidence | Engineering task owner, primarily Claude | Keep affected implementation contracts and results accurate as part of coding |
 
 README summarizes and links. Wiki explains and cites. Discussions give a dated
 update and link to Wiki/evidence rather than copying it. Issues track bugs; hub
-tasks track local ownership. Existing Wiki source is a deliberate publication
-mirror, not a second independent engineering authority.
+tasks track local ownership. The canonical guide source is `docs/wiki/`; the separate GitHub Wiki is generated
+publication output, not an independently maintained copy.
 
 For current implementation claims, verify in this order: merged code; validated
 tests/artifacts/device evidence; completed task records; technical docs; Wiki;
@@ -97,7 +97,7 @@ supersedes older per-update Wiki approval wording, including pending drafts.
 It does not bypass tool permissions or delegate release/hardware actions.
 
 **Wiki:** follow the separate-repository synchronization procedure in
-[`wiki/README.md`](../wiki/README.md#maintaining-the-published-wiki), under the
+[canonical Wiki maintenance](wiki/MAINTENANCE.md), under the
 standing delegation above. Inspect live edits before copying only reviewed pages;
 never bulk overwrite the Wiki, publish its source README, or force-push. Preserve
 historical dates and compatibility slugs. Verify live page content/navigation and
@@ -122,3 +122,10 @@ approved modular Command Center direction without claiming implementation.
 [Cleanup inventory](DOCUMENTATION_CLEANUP.md) captures the one-time reconciliation,
 README/Wiki overlap and live-publication gaps. Those are subsequent tasks; this
 workflow does not start a README redesign, UI implementation or hardware work.
+
+## Complete navigation
+
+Use the [complete document catalogue](CATALOG.md) for every root engineering
+document and the [archive](archive/README.md) for dated checkpoints. New documents
+must be reachable from INDEX through this catalogue or a relevant owning guide.
+Run `python scripts/check_docs_links.py` before review.

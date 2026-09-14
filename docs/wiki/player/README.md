@@ -1,38 +1,28 @@
-# 🎮 Re-Gear Player Guide
+# Re-Gear Player Guide
 
-Re-Gear is designed to make a SteamOS handheld feel more like a console: quick controls when you need them, deeper settings when you want them, and less time digging through menus.
-
-This guide is for **players**. You do not need Linux knowledge to use it.
+Re-Gear brings handheld and docked gaming controls together. This manual explains
+what to look for, what to do next, and how to get help. No Linux knowledge is needed.
 
 ## Start here
 
-### New to Re-Gear
-1. [Getting Started](getting-started.md)
-2. [Meet the Command Center](command-center.md)
-3. [Customize Re-Gear](customize.md)
+1. [Getting started](getting-started.md) — availability and opening Re-Gear.
+2. [Command Center](command-center.md) — controls and navigation.
+3. [Short tutorials](tutorial-cards.md) — connect, disconnect, sleep limits and help.
 
-### Learn the menus
-- **Quick Access / Command Center** — controls you may want while playing.
-- **Performance** — frame targets, display options, and performance controls.
-- **eGPU** — external GPU, dock, display, and safe-disconnect controls.
-- **Controllers** — controller status and controller-related options.
-- **Settings** — Re-Gear preferences and customization.
+## Find a task
 
-### I want to…
-- [Move Quick Access buttons](how-to/rearrange-quick-access.md)
-- [Change a Quick Access button](how-to/change-quick-access-button.md)
-- [Reset my Quick Access layout](how-to/reset-quick-access.md)
-- [Understand eGPU status](egpu.md)
-- [Fix something that is not behaving normally](troubleshooting.md)
+- [Performance](performance.md) and [Offline Readiness](offline-readiness.md)
+- [eGPU and docking](egpu.md) and [safety and handling](safety.md)
+- [Controllers](controllers.md)
+- [Customization](customize.md) and [how-to drafts](how-to/README.md)
+- [Visual guide](visual-guide.md) — labelled design mockups, not installed screenshots
+- [Troubleshooting](troubleshooting.md), [diagnostics and privacy](diagnostics-and-privacy.md),
+  [report a problem](help-improve.md), and [FAQ](faq.md)
+- [Installation](manual-installation.md) and [supported hardware](supported-hardware.md)
 
-## About the pictures
+Read availability notes before following a procedure. Some guides describe an
+implemented test candidate or proposed interface; they are labelled accordingly.
+The words **Unknown** and **Unavailable** do not automatically mean a broken device.
 
-> 🖼️ **Temporary mockups**
->
-> Re-Gear is still being refined. Images marked **UI MOCKUP** show the intended layout and workflow, but details may differ from the current build. Final screenshots will replace them as the interface stabilizes.
-
-## Player Guide promise
-
-We keep this section practical. You should not have to understand PCI devices, DRM connectors, Gamescope internals, kernel behavior, or Re-Gear's state machine just to use the plugin.
-
-If you *do* want those details, head to the [Technical Guide](../technical/README.md).
+For exact tested revisions and implementation limits, use the
+[Technical Guide](../technical/README.md).

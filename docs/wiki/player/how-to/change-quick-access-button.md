@@ -1,28 +1,24 @@
-# How to Change a Quick Access Button
+# Change a Quick Access button
 
-Replace a shortcut you do not use with an action that better fits your setup.
+This developing customization task is intended to help you replace a shortcut with another available action.
 
-> 🖼️ **UI MOCKUP — Replace Quick Access action**  
-> **TEMPORARY IMAGE PLACEHOLDER**  
-> Suggested asset: `assets/wiki/mockups/how-to-change-button.png`
+## For players — no technical background needed
 
-## Steps
+**Candidate-only guidance:** customization is being tested in the newer UI. The
+earlier proposed **Settings / Customize** steps do not match every implementation.
+Do not look for those controls or reinstall merely to match a mockup.
 
-1. Open **Re-Gear** and go to **Settings / Customize**.
-2. Open **Customize Quick Access**.
-3. Highlight the button you want to change.
-4. Choose the option to **Change** or **Replace** the action.
-5. Select the new action from the available Re-Gear actions.
-6. Confirm your choice.
-7. Return to the Command Center and check the new shortcut.
+1. Check the instructions supplied with your installed test build.
+2. Use its displayed customization hint only when that action is offered.
+3. Review the resulting arrangement. If the named option is absent, stop and
+   report the build and what you see through [troubleshooting](../troubleshooting.md).
 
-> 🖼️ **UI MOCKUP — Action picker**  
-> **TEMPORARY IMAGE PLACEHOLDER**  
-> Show the available-action picker with one action highlighted.  
-> Suggested asset: `assets/wiki/mockups/how-to-action-picker.png`
+The UI owner reports a Y-on-focused-control picker and native move mode in the
+0.3.107 test candidate. This is not an installed-build acceptance or a verified
+step sequence for all versions. Exact action-specific steps await that evidence.
 
-## What if an action is unavailable?
+## Technical details — for advanced users and contributors
 
-Some actions only make sense when the related feature or hardware is available. Re-Gear should communicate that state rather than making an unavailable action look ready to run.
-
-> **UI in development:** Exact labels and prompts in this guide may change before release.
+Track [PR329](https://github.com/ronnierosal/Re-Gear/pull/329) and the
+[current evidence](../../technical/current-state.md). Original design briefs remain
+in the archive; they are not executable instructions or a promise of availability.

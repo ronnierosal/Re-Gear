@@ -1,38 +1,18 @@
 # Re-Gear Wiki
 
-Welcome to the Re-Gear documentation.
+Learn to use Re-Gear without needing technical background, or follow the
+engineering evidence behind a feature.
 
-This documentation is intentionally split into two paths so players do not need to read engineering material to learn how to use Re-Gear.
+**Development status:** builds and mockups are not a supported public release or
+a claim that every device works. Follow the instructions for your installed build.
 
-## 🎮 Player Guide
+- [Player Guide](player/README.md) — setup, controls, tasks and help.
+- [Technical Guide](technical/README.md) — architecture, lifecycle acceptance,
+  validation and contributor workflows.
+- [Current evidence](technical/current-state.md) — the tested baseline versus
+  later source and UI candidates.
 
-**New to Re-Gear or just want to use it? Start here.**
-
-The [Player Guide](player/README.md) explains Re-Gear in plain language with visual walkthroughs, common tasks, and troubleshooting.
-
-- [Getting Started](player/getting-started.md)
-- [Command Center & Quick Access](player/command-center.md)
-- [Performance](player/performance.md)
-- [eGPU & Docking](player/egpu.md)
-- [Controllers](player/controllers.md)
-- [Customize Re-Gear](player/customize.md)
-- [How-To Guides](player/how-to/README.md)
-- [Player Troubleshooting](player/troubleshooting.md)
-
-> **Documentation preview:** Some screenshots are temporary mockups while the Re-Gear interface is still evolving. They will be replaced with final in-game screenshots before release.
-
-## 🛠️ Technical Guide
-
-**Developing, testing, integrating, or researching Re-Gear?**
-
-The [Technical Guide](technical/README.md) organizes the project's engineering documentation, architecture, validation evidence, and research.
-
-It covers architecture, eGPU lifecycle, display/Gamescope behavior, safe disconnect, Auto TDP, controllers, contracts/state, testing, hardware validation, and contributor workflows.
-
-## Documentation principle
-
-Player pages answer **“How do I use this?”**
-
-Technical pages answer **“How does this work, why does it work this way, and how do we validate it?”**
-
-Where possible, technical detail should live in the Technical Guide rather than being duplicated into player instructions.
+This is the single maintained Wiki source. The old flat tree is preserved only
+in the [archive](../archive/README.md). GitHub Wiki pages are generated from this
+tree using the explicit publication map; do not edit a second source copy.
+See [publication and maintenance](MAINTENANCE.md).
