@@ -15,3 +15,14 @@ class PowerOffResult:
 class SystemPowerPort(Protocol):
     def request_poweroff(self) -> PowerOffResult:
         """Queue one ordinary system power-off request without waiting for exit."""
+
+
+@dataclass(frozen=True, slots=True)
+class SuspendResult:
+    requested: bool
+    code: str
+
+
+class SystemSuspendPort(Protocol):
+    def request_suspend(self) -> SuspendResult:
+        """Queue ordinary suspend; acceptance does not prove sleep or resume."""
