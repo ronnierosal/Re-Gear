@@ -89,3 +89,10 @@ The real mounted React fixture covers cold Content publication/lifecycle, Handhe
 Review checkpoint only: frontend 919 tests, 916 pass and three failures in the unchanged Offline source seam. The independently reviewed proposed Offline patch is not applied without its owner's grant. TypeScript and plugin build pass. Runtime remains a descendant of 106/ff60cdf, separate from current-main power composition. Do not reserve a version, package or deploy this checkpoint. Backend: 3512 tests pass with 291 platform skips; 49 golden tests across eight contracts pass; architecture and compileall pass. Actual mounted React checks pass. The source head is recorded with the hub handoff.
 
 Documentation impact: Wiki.
+
+
+## Authorized Offline continuation
+
+Ronnie authorized the prepared Offline source fix through primary message `efded071cf834e2b820813a79bc21e5f`. The shared mapper now returns the existing unavailable Offline tiles. Both source test graphs and the owned live composition graph include that module; the controller lifetime composition graph also includes the actual dependency under recorded primary sequencing. No controller assertion, backend adapter or action behavior changed.
+
+The resulting full frontend suite passes 920/920 tests. TypeScript and the plugin build pass. Backend 3512 tests (291 platform skips), 49 golden tests and architecture/compile evidence from the unchanged runtime baseline remain valid. The earlier three-test blocker is resolved. Prepare the next unused version only after ledger verification, then obtain exact-head review and CI before immutable packaging. This remains the intentional 106-runtime test branch, not current-main integration or hardware validation.

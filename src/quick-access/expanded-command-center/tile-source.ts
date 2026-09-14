@@ -1,3 +1,4 @@
+import {offlineTabTiles} from "./offline-tab";
 /** The bridge between the panel's state and the expanded menu: pure, no React,
  * no I/O, no requests.
  *
@@ -244,7 +245,7 @@ export function buildTiles(readings: Readings): TileView {
   return {
     quick: quickTiles(performance, egpu, controller, fresh ? readings.displayTarget : undefined,
       controllerFresh && readings.controller ? controllerSummaryTile(readings.controller) : null),
-    performance, egpu, controllers: controller, settings: settingsTiles(),
+    performance, egpu, controllers: controller, offline: offlineTabTiles, settings: settingsTiles(),
   };
 }
 

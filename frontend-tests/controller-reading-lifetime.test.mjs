@@ -41,7 +41,7 @@ test('throttled timer cannot return old data and expiry still notifies other sub
   h.advance(10000);assert.deepEqual(h.seen,[reading,null]);h.off();h.store.complete(h.store.start(),reading);assert.deepEqual(h.seen,[reading,null]);
 });
 test('controller lifetime is independent of GPU reads and drives both consumer paths',async()=>{
-  const graph=['quick-access/performance-state','quick-access/expanded-command-center/model','quick-access/expanded-command-center/tiles','quick-access/expanded-command-center/tile-source'].map(path=>ts.transpileModule(readFileSync(new URL(`../src/${path}.ts`,import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2020}}).outputText.replace(/^import[^;]*;$/gm,'')).join('\n');
+  const graph=['quick-access/performance-state','quick-access/expanded-command-center/model','quick-access/expanded-command-center/offline-tab','quick-access/expanded-command-center/tiles','quick-access/expanded-command-center/tile-source'].map(path=>ts.transpileModule(readFileSync(new URL(`../src/${path}.ts`,import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2020}}).outputText.replace(/^import[^;]*;$/gm,'')).join('\n');
   const {buildTiles}=await import(`data:text/javascript;base64,${Buffer.from(graph).toString('base64')}`);
   async function load(path){const js=ts.transpileModule(readFileSync(new URL(`../src/${path}.ts`,import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2020}}).outputText;return import(`data:text/javascript;base64,${Buffer.from(js).toString('base64')}`);}
   const {controllerPresentation}=await load('quick-access/modules/controller-presentation');

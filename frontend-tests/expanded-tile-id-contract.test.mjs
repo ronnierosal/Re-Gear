@@ -24,6 +24,7 @@ const strip = (text) => text.replace(/^import[^;]*;$/gm, "");
 const bundle = [
   "quick-access/performance-state",
   "quick-access/expanded-command-center/model",
+  "quick-access/expanded-command-center/offline-tab",
   "quick-access/expanded-command-center/tiles",
   "quick-access/expanded-command-center/tile-source",
 ].map((path, index) => (index === 0 ? load(path) : strip(load(path)))).join("\n");

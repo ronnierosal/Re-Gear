@@ -7,6 +7,7 @@ import ts from "typescript";
 const modules = [
   "quick-access/performance-state",
   "quick-access/expanded-command-center/model",
+  "quick-access/expanded-command-center/offline-tab",
   "quick-access/expanded-command-center/tiles",
   "quick-access/expanded-command-center/tile-source",
 ];
@@ -26,6 +27,7 @@ const approved = {
   performance: ["profile", "fps", "manual", "auto", "display", "refresh"],
   egpu: ["device", "dock", "display", "render", "link", "disconnect"],
   controllers: ["controller", "battery", "builtin", "priority", "tv-controller", "controller-settings"],
+  offline: ["offline-game", "offline-readiness", "offline-select", "offline-sync", "offline-schedule"],
   settings: ["quick-actions", "shortcut", "appearance", "updates", "diagnostics", "about"],
 };
 const evidence = (text) => ({ text, known: true, verified: true });
