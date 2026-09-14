@@ -1,12 +1,12 @@
 // Actual-source browser capture with synthetic missing-data and utility readings.
-// Usage: node scripts/ally_polish_preview.mjs <source-root> <output-directory>
+// Usage: node scripts/ally_polish_preview.mjs <source-root> <output-directory> <runtime-node-modules> <playwright-module>
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { resolve, join } from 'node:path';
 import { mkdir, writeFile, readFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
-const [source, output] = process.argv.slice(2).map(value=>resolve(value));
-const runtime='C:/Users/SLDD/AppData/Local/Temp/regear-qa-preview-runtime/node_modules';
+if(process.argv.length !== 6) throw new Error('Expected source, output, runtime node_modules and Playwright module paths');
+const [source, output, runtime, playwright] = process.argv.slice(2).map(value=>resolve(value));
 const require=createRequire(join(runtime,'preview.cjs'));
 await mkdir(output,{recursive:true});
 const base=source.replaceAll('\\','/');
@@ -14,7 +14,7 @@ await require('esbuild').build({stdin:{contents:`import React from 'react';impor
 await writeFile(join(output,'index.html'),'<!doctype html><html><head><style>*{box-sizing:border-box}body{margin:0;background:#172b39;color:white;font-family:Arial}button{font:inherit}.notice{position:fixed;bottom:2px;right:5px;font-size:9px}</style></head><body><div id="root"></div><div class="notice">SIMULATED DATA / NO DEVICE ACTIONS</div><script src="/preview.js"></script></body></html>');
 const server=createServer(async(req,res)=>{const js=req.url.startsWith('/preview.js');res.setHeader('Content-Type',js?'text/javascript':'text/html');res.end(await readFile(join(output,js?'preview.js':'index.html')))});
 await new Promise(r=>server.listen(0,'127.0.0.1',r));
-const {chromium}=require('C:/Users/SLDD/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright');
+const {chromium}=require(playwright);
 const browser=await chromium.launch({channel:'msedge',headless:true});const cases=[];const navigation=[];
 try {for(const [width,height] of [[828,466],[1280,720]]){const page=await browser.newPage({viewport:{width,height}});for(const tab of ['quick','performance','egpu','controllers','settings']){await page.goto(`http://127.0.0.1:${server.address().port}/?tab=${tab}`);await page.locator('.rg-expanded-grid').waitFor();await page.screenshot({path:join(output,`${tab}-${width}.png`)});cases.push({width,height,tab,...await page.evaluate(()=>{const rect=e=>{const r=e.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height,right:r.right,bottom:r.bottom}};return {shell:rect(document.querySelector('.rg-expanded')),cards:[...document.querySelectorAll('.rg-expanded-tile')].map(e=>({id:e.dataset.ecControl,rect:rect(e),label:e.querySelector('.rg-expanded-label').textContent,chevron:!!e.querySelector('.rg-expanded-chevron')})),headings:[...document.querySelectorAll('.rg-expanded-content>h2')].filter(e=>e.offsetHeight).length,rails:[...document.querySelectorAll('.rg-utility-rail')].map(e=>({side:e.dataset.utilitySide,rect:rect(e)})),columns:getComputedStyle(document.querySelector('.rg-expanded-grid')).gridTemplateColumns.split(' ').length}})});}await page.goto(`http://127.0.0.1:${server.address().port}/?tab=quick`);
 await page.locator('[data-ec-control="fps"]').focus();

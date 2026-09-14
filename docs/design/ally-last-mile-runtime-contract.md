@@ -56,11 +56,11 @@ and sit 10px from the menu. Palette, tabs, icons, popup styling and dispatch rem
 
 The eGPU labels are Handheld, Safe Disconnect, Resolution, eGPU Status,
 Disconnect + Sleep and Disconnect + Shutdown. Unsupported actions stay disabled;
-shorter labels do not enable adapters. Performance order remains Performance Profile,
+shorter labels do not enable adapters. Performance order remains Profile,
 FPS Target, Manual TDP, Auto TDP, Resolution, Refresh Rate. Footer retains active
 LB/RB Switch Tab, A Select and B Close (B Back inside details).
 
-`scripts/ally_polish_preview.mjs <source-root> <output-directory>` captures actual
+`scripts/ally_polish_preview.mjs <source-root> <output-directory> <runtime-node-modules> <playwright-module>` captures actual
 source through production `buildTiles` and `testBuildTiles` at 828x466 and1280x720.
 Its missing-data model and utility readings are simulated; it performs no device
 operations. Native controller and installed appearance still need hardware review.

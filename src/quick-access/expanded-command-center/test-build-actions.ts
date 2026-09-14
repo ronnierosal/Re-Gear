@@ -15,6 +15,7 @@ export function testBuildTiles(source:TileView):TileView {
   const unavailable=(id:string,title:string):Tile=>({id,title,value:'Unavailable',detail:unavailableTestActions[id],tone:'unavailable'});
   const status=egpu.find(tile=>tile.id==='link');
   return {...source,
+    performance:source.performance?.map(tile=>tile.id === "profile" ? {...tile,title:"Profile"} : tile),
     quick:quick.map(tile=>tile.id==='disconnect'?compactDisconnect:tile),
     egpu:[unavailable('switch-handheld','Handheld'),compactDisconnect,
       unavailable('resolution','Resolution'),{id:'egpu',title:'eGPU Status',value:status?.value??'Unknown',detail:egpu.filter(tile=>tile.id!=='disconnect').map(tile=>`${tile.title}: ${tile.value}. ${tile.detail}`).join(' · ')},
