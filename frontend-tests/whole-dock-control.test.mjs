@@ -13,9 +13,15 @@ test("initial disconnect requires supported status and idle detected GPU", () =>
   for (const status of [null, {}, { ...fresh, schema_version: 2 }, { ...fresh, busy: true }, { ...fresh, safe_to_unplug: true }, { ...fresh, code: "unavailable" }]) assert.equal(dockControl(status, idle).action, null);
   for (const snapshot of [null, {}, { ...idle, game_state: "running" }, { ...idle, game_state: "unknown" }, { ...idle, egpu_link: { state: "down" } }]) assert.equal(dockControl(fresh, snapshot).action, null);
 });
-test("only verified software down offers reconnect, without GPU-present requirement", () => {
-  const down = { ...fresh, code: "dock_teardown.software_down", software_down: true };
-  assert.equal(dockControl(down, { ...idle, egpu_link: null }).action, "whole_dock_reconnect");
+test("software down never offers reconnect for any intent or game state", () => {
+  const down = { ...fresh, code: "dock_teardown.software_down", software_down: true, ok: true };
+  for (const intent of ["disconnect", "disconnect_only", "shutdown"])
+    for (const game_state of ["idle", "running", "unknown"])
+      for (const egpu_link of [null, {state:"up"}, {state:"down"}]) {
+        const view=dockIntentControl(down,{...idle,game_state,egpu_link},intent);
+        assert.equal(view.action,null);
+        assert.doesNotMatch(view.label,/Reconnect/i);
+      }
   assert.equal(dockControl({ ...down, software_down: "true" }, idle).action, null);
   assert.equal(dockControl(down, { game_state: "running" }).action, null);
   assert.match(dockControl(down, idle).message, /Keep the cable connected/);
@@ -40,8 +46,8 @@ const componentJs = ts.transpileModule(readFileSync(new URL("../src/whole-dock-c
 }).outputText.replace(/^import .*;\r?$/gm, "").replace(/export function WholeDockControl/, "function WholeDockControl");
 const deferred = () => { let resolve, reject; const promise = new Promise((yes,no) => {resolve=yes;reject=no;}); return {promise,resolve,reject}; };
 const settle = async () => { for(let n=0;n<12;n++) await Promise.resolve(); };
-function harness(storage = new Map(), intent = "disconnect", startRequest) {
-  const h = {status:{...fresh}, reads:[], calls:[], modals:[], timers:new Map(), failStorage:false, intent, snapshot: {...idle, schema_version:3}};
+function harness(storage = new Map(), intent = "disconnect", startRequest, initialStatus = fresh) {
+  const h = {status:{...initialStatus}, reads:[], calls:[], modals:[], timers:new Map(), failStorage:false, intent, snapshot: {...idle, schema_version:3}};
   let slots=[], index=0, effects=[], cleanups=[], serial=0;
   const useState = value => { const slot=index++; if(!(slot in slots)) slots[slot]=value; return [slots[slot], value=>{slots[slot]=typeof value==='function'?value(slots[slot]):value;}]; };
   const useRef = value => {const slot=index++; if(!(slot in slots)) slots[slot]={current:value}; return slots[slot];};
@@ -50,7 +56,7 @@ function harness(storage = new Map(), intent = "disconnect", startRequest) {
   const callable = name => (...args) => {
     if(name==='get_egpu_disconnect_status') return h.reads.length ? h.reads.shift() : Promise.resolve(h.status);
     h.calls.push(args);
-    return h.execute ? h.execute(args) : Promise.resolve({...fresh,code:'dock_teardown.software_down',software_down:true,request_id:args.at(-1)});
+    return h.execute ? h.execute(args) : Promise.resolve({...fresh,code:'dock_teardown.software_down',software_down:true,ok:true,request_id:args.at(-1)});
   };
   const showModal=(view,_unused,options)=>{
     const record={view,closed:false};h.modals.push(record);
@@ -73,6 +79,26 @@ test('component mount and canceled confirmation never mutate', async()=>{
   const h=harness();await settle();assert.equal(h.calls.length,0);
   h.click();h.modals.at(-1).view.props.onCancel();await settle();
   assert.equal(h.calls.length,0);assert.equal(h.button().props.disabled,false);h.unmount();
+});
+
+test('software-down component has no reconnect confirmation or dispatch on click, poll or remount',async()=>{
+  for(const intent of ['disconnect','disconnect_only','shutdown']){
+    const down={...fresh,code:'dock_teardown.software_down',software_down:true,ok:true};
+    for(const direct of [false,true]){
+      for(let cycle=0;cycle<2;cycle++){
+        let consumed=false;
+        const start=direct?()=>{if(consumed)return false;consumed=true;return true;}:undefined;
+        const h=harness(new Map(),intent,start,down);
+        await settle();h.poll();await settle();
+        if(!direct){
+          const button=h.button();assert.equal(button.props.disabled,true);
+          assert.doesNotMatch(String(button.props.children[0]),/reconnect/i);
+          button.props.onClick();await settle();
+        }
+        assert.equal(h.modals.length,0);assert.equal(h.calls.length,0);h.unmount();
+      }
+    }
+  }
 });
 
 const oneActivation=()=>{let consumed=false;return ()=>{if(consumed)return false;consumed=true;return true;};};
@@ -129,7 +155,8 @@ test('component unmount during confirmation freshness read never dispatches',asy
 test('component older poll cannot overwrite newer completed command',async()=>{
   const h=harness();await settle();const old=deferred();h.reads.push(old.promise);h.poll();
   h.click();h.modals.at(-1).view.props.onOK();await settle();assert.equal(h.calls.length,1);
-  old.resolve(fresh);await settle();assert.equal(h.button().props.children[0],'Reconnect eGPU');h.unmount();
+  old.resolve(fresh);await settle();assert.equal(h.button().props.children[0],'Software disconnect verified');
+  assert.equal(h.button().props.disabled,true);h.unmount();
 });
 test("known refusal explains cause without enabling another operation", () => {
   const result = dockControl({ ...fresh, code: "dock_teardown.usb_peripherals_or_unknown" }, idle);
@@ -254,7 +281,7 @@ test("disconnect-only intent never offers reconnect or power actions",()=>{
   assert.match(dockIntentControl(down,idle,"disconnect_only").message,/not permission to unplug/);
   assert.equal(dockIntentControl({...down,ok:false},idle,"disconnect_only").action,null);
   assert.equal(dockIntentControl(shutdownAccepted("request"),idle,"disconnect_only").action,null);
-  assert.equal(dockIntentControl(down,idle,"disconnect").action,"whole_dock_reconnect");
+  assert.equal(dockIntentControl(down,idle,"disconnect").action,null);
   for(const snapshot of [{...idle,schema_version:2},{...idle,observed_at:new Date(Date.now()-10000).toISOString()},
     {...idle,game_state:"running"}]) assert.equal(dockIntentControl(fresh,snapshot,"disconnect_only").action,null);
 });
