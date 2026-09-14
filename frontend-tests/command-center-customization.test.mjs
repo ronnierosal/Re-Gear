@@ -36,3 +36,14 @@ test("reorder helper moves one-cell buttons without changing membership", async 
   assert.match(source, /prefers-reduced-motion/);
   assert.match(source, /D-pad moves the selected button/);
 });
+
+test('hold fires at550ms while pressed, ignores repeats and stale cancelled callbacks, and release never taps after hold',async()=>{
+ const {createCustomizeGestureRecognizer}=await loadTs('../src/quick-access/expanded-command-center/customization-input.ts');
+ let clock=0;const jobs=[],events=[];
+ const recognizer=createCustomizeGestureRecognizer({tab:()=> 'quick',now:()=>clock,onGesture:e=>events.push(e),schedule:(fn,delay)=>{const job={fn,at:clock+delay};jobs.push(job);return job;},unschedule:job=>job.cancelled=true});
+ const advance=ms=>{clock+=ms;for(const job of jobs){if(!job.cancelled&&!job.ran&&job.at<=clock){job.ran=true;job.fn();}}};
+ recognizer.down();recognizer.down();advance(549);assert.equal(events.length,0);advance(1);assert.deepEqual(events,[{kind:'move',tab:'quick'}]);assert.equal(recognizer.isPressed(),true);
+ recognizer.up();assert.equal(events.length,1);
+ recognizer.down();const stale=jobs.at(-1);recognizer.cancel();recognizer.down();stale.fn();assert.equal(events.length,1);advance(20);recognizer.up();assert.deepEqual(events.at(-1),{kind:'swap',tab:'quick'});
+ recognizer.down();const abandoned=jobs.at(-1);recognizer.cancel();abandoned.fn();advance(600);assert.equal(events.length,2);
+});

@@ -118,3 +118,16 @@ Actual-source browser checks exercise choose/save, draft cancel/place and four-s
 editor behavior at828x466/1280x720. Native wrapper regressions reproduce the observed
 A-focus failure, but corrected hardware adjustment and customization still require
 Ronnie's installed-build test.
+
+
+## Follow-up to the 0.3.105 UI test
+
+Ronnie requested five main columns at Ally widths, 3-point controller slider adjustments, a compact Y picker over the visible panel, and hold-Y activation at 550 ms while still held. This supersedes the earlier X right-editor and release-triggered hold behavior. Y targets the focused main Quick Access card or right quick-action slot; brightness and volume remain fixed. Other tabs retain reorder-only behavior. Unavailable right slots can receive controller focus for customization, but A cannot dispatch their unsupported actions.
+
+Requested slider values render immediately as a draft. The accessible value distinguishes requested and observed percentages; an intermediate readback or setter completion alone does not erase the draft. Final observed equality reconciles it. Failure restores the latest observation and shows an error. Capability withdrawal drops stale drafts and queued work. Dispatch remains one in-flight request per utility with only the newest queued target; native adapter observations remain unchanged.
+
+The compact picker leaves the original panel visible and inert, guards background callbacks, owns navigation, and restores the selected main or right control after save/cancel. Raw A/B/direction input remains available for Steam logical event synthesis. Timers cancel on route change, focus loss and unmount; release cannot invoke a tap after a hold.
+
+Native A uses Steam's named IntoGameDetail cue once and invokes the existing click once. Internal B uses the named DefaultOk cue requested from the prior A mapping. Outer modal close retains Steam's existing HideModal feedback to avoid mixing two sounds. BasicNav remains unchanged. Discovery or playback failures never block or retry an action. This is source/simulated verification, not installed sound or controller acceptance.
+
+Evidence: focused deferred-promise rail, gesture timing/cancellation, raw-to-logical picker, original-source action, background guard, focus restoration and sound-dispatch tests. Actual-source browser captures at 828x466 and 1280x720 omit global border-box styles to match the observed Steam environment. Preserve the immutable 0.3.105 archive; this source follow-up requires separate exact-head review and packaging.

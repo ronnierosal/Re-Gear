@@ -2,7 +2,6 @@ import { loadLayout, saveLayout, projectLayout, replaceSlot, type LayoutPreferen
 import { createCustomizeGestureRecognizer, type CustomizeGesture } from "./customization-input";
 import { LayoutCustomizationBanner, reorderById, moveTargetIndex } from "./layout-customization";
 import { CommandCenterFooterHints } from "./footer-hints";
-import { QuickActionRailEditor } from "./quick-actions-customization";
 import type { UtilityId } from "./utility-layout";
 import { UtilityRail } from "./utility-rail";
 import type { UtilityRailProps } from "./utility-rail";
@@ -25,11 +24,11 @@ const iconIds: Record<string, CommandCenterIconId> = {
 function Icon({ id }: { id: string }) { return <CommandCenterIcon id={iconIds[id] ?? "status-unknown"} size={34}/>; }
 
 /** Shared synthetic presentation for browser preview and native Decky shell. */
-export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReasons = false, settings, native = false, primitives, previewColumns, tiles, renderDetail, disconnectControl, utilityReadings, onUtilityRequest, directions, onDisconnect, unavailableActions = {}, layoutStorage, editButtons }: {
+export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReasons = false, settings, native = false, primitives, previewColumns, tiles, renderDetail, disconnectControl, utilityReadings, onUtilityRequest, directions, onDisconnect, unavailableActions = {}, layoutStorage, editButtons, onFeedback }: {
   onClose(): void; initialTab?: Tab; longReasons?: boolean; settings?: ReactNode; native?: boolean;
   primitives?: { Button: ElementType; Focusable: ElementType };
   /** Synthetic comparison only; native callers never pass this. */
-  previewColumns?: 3 | 4;
+  previewColumns?: 3 | 4 | 5;
   /** Real observations for the tabs that have them. A tab left out keeps its
    *  synthetic tiles, so this can be filled in one tab at a time without the
    *  rest of the prototype claiming to be live. */
@@ -45,13 +44,14 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
   onDisconnect?:()=>void;
   unavailableActions?:Record<string,string>;
   layoutStorage?:LayoutStorage;
-  editButtons?:{x:number;y:number};
+  editButtons?:{y:number};
+  onFeedback?:(kind:"select"|"back")=>void;
 }) {
   const Button = primitives?.Button ?? "button";
   const Container = primitives?.Focusable ?? "div";
   const [tab, setTab] = useState<Tab>(initialTab);
   const [nestedId, setNested] = useState<string | null>(null);
-  const [columns, setColumns] = useState<number>(previewColumns ?? 4);
+  const [columns, setColumns] = useState<number>(previewColumns ?? 5);
   const panel = useRef<HTMLDivElement>(null);
   const content = useRef<HTMLDivElement>(null);
   const memory = useRef<Partial<Record<Tab, string>>>({});
@@ -67,6 +67,8 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
   const [editMode,setEditMode]=useState<"normal"|"customize"|"move"|"quick-actions">("normal");
   const [selected,setSelected]=useState<string|undefined>(undefined);
   const [rightSlot,setRightSlot]=useState(0);
+  const picker=useRef<HTMLDivElement>(null);
+  const pickerOpen=editMode==="customize"||editMode==="quick-actions";
   const [layoutError,setLayoutError]=useState("");
   const [utilityEditing,setUtilityEditing]=useState<UtilityId|null>(null);
   const tabRef=useRef(tab);tabRef.current=tab;
@@ -124,7 +126,7 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
     return () => observer.disconnect();
   }, [previewColumns]);
   useLayoutEffect(() => {
-    focus(editMode==="customize" ? `choice:${projection?.catalog[0]?.key}` : editMode==="quick-actions" ? `right-slot:${rightSlot}` : editMode==="move" ? selected : nested ? (hasDetail ? "nested-content" : "nested-back") : restoreTarget(controlIds(), pendingFocus.current ?? memory.current[tab]));
+    focus(editMode==="customize" ? `choice:${projection?.catalog[0]?.key}` : editMode==="quick-actions" ? `right-choice:${savedLayout?.right[rightSlot]}` : editMode==="move" ? selected : nested ? (hasDetail ? "nested-content" : "nested-back") : pendingFocus.current ?? restoreTarget(controlIds(), memory.current[tab]));
     pendingFocus.current = undefined;
   }, [tab, nestedId, editMode, draft]);
 
@@ -136,7 +138,15 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
   }
   function beginEdit(value:CustomizeGesture){
     if(!savedLayout||nested||utilityEditing||editMode!=="normal")return;
-    const target=items.find(item=>item.id===memory.current[tab])??items[0];
+    const focused=memory.current[tab];
+    if(focused==="utility-brightness"||focused==="utility-volume")return;
+    const utilityId=focused?.startsWith("utility-")?focused.slice(8) as UtilityId:undefined;
+    if(utilityId){
+      if(value.kind!=="swap"||tab!=="quick")return;
+      const slot=savedLayout.right.indexOf(utilityId);if(slot<0)return;
+      setSelected(focused);setRightSlot(slot);setLayoutError("");setEditMode("quick-actions");return;
+    }
+    const target=items.find(item=>item.id===focused)??items[0];
     if(!target)return;
     setSelected(target.id);setLayoutError("");
     setDraft({...savedLayout,quick:[...savedLayout.quick],order:{...savedLayout.order},right:[...savedLayout.right]});
@@ -155,34 +165,34 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
     commitLayout({...savedLayout,quick:replaceSlot(items.map(item=>originFor(item).key),slot,origin.key)},origin.tab==="quick"?origin.tile.id:`custom:${origin.key}`);
   }
   function chooseRight(id:UtilityId){
-    if(!savedLayout||!utilityReadings?.[id]?.available)return;
+    if(!savedLayout||editMode!=="quick-actions")return;
     const next={...savedLayout,right:replaceSlot(savedLayout.right,rightSlot,id) as UtilityId[]};
-    if(!layoutStorage)return;
-    try{saveLayout(layoutStorage,next);setSavedLayout(next);setLayoutError("");}catch{setLayoutError("Could not save this layout. Your saved layout is unchanged.");}
+    commitLayout(next,`utility-${id}`);
   }
+
   function switchTab(direction: -1 | 1) { cancelEdit();setNested(null); setTab(nextTab(tab, direction)); }
   function enterRail(id:string) {
     if(tab!=="quick"||nested||gridCells(items,gridColumns).find(cell=>cell.id===id)?.column!==0) return false;
     lastGrid.current=id;focus("utility-brightness");return true;
   }
   function back() {
-    if(editMode!=="normal"){cancelEdit();return;}
+    if(editMode!=="normal"){pendingFocus.current=selected;cancelEdit();return;}
     if (nested) { pendingFocus.current = launcher.current; setNested(null); }
     else onClose();
   }
   const nativeHandlers = native ? {
     "flow-children": "horizontal",
     noFocusRing: true,
-    onCancelButton: (event: CustomEvent) => { event.preventDefault(); event.stopPropagation(); back(); },
+    onGamepadBlur:()=>gesture.current?.cancel(),
+    onCancelButton: (event: CustomEvent) => { event.preventDefault(); event.stopPropagation(); if(nested||editMode!=="normal")onFeedback?.("back"); back(); },
     onButtonDown: (event: CustomEvent<{ button: number; is_repeat?: boolean }>) => {
       if(editButtons&&savedLayout&&!nested&&!utilityEditing){
         if(event.detail.button===editButtons.y){event.preventDefault();event.stopPropagation();if(editMode==="normal")gesture.current?.down();return;}
-        if(event.detail.button===editButtons.x&&tab==="quick"){event.preventDefault();event.stopPropagation();if(!event.detail.is_repeat&&editMode==="normal"){gesture.current?.cancel();setRightSlot(0);setEditMode("quick-actions");}return;}
       }
       // Steam UI GamepadButton enum (5/6), not raw controller callback codes.
       if (event.detail.button !== 5 && event.detail.button !== 6) return;
       event.preventDefault(); event.stopPropagation();
-      if (!event.detail.is_repeat) switchTab(event.detail.button === 5 ? -1 : 1);
+      if (!event.detail.is_repeat&&!pickerOpen) switchTab(event.detail.button === 5 ? -1 : 1);
     },
     onButtonUp:(event:CustomEvent<{button:number}>)=>{if(editButtons&&event.detail.button===editButtons.y&&gesture.current?.isPressed()){event.preventDefault();event.stopPropagation();gesture.current.up();}},
   } : {};
@@ -204,7 +214,18 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
     if (event.altKey || event.ctrlKey || event.metaKey) return;
     if(savedLayout&&!nested&&!utilityEditing){
       if(event.key.toLowerCase()==="y"){event.preventDefault();event.stopPropagation();if(editMode==="normal")gesture.current?.down();return;}
-      if(event.key.toLowerCase()==="x"&&tab==="quick"&&editMode==="normal"){event.preventDefault();event.stopPropagation();setRightSlot(0);setEditMode("quick-actions");return;}
+    }
+    if(pickerOpen){
+      if(event.key==="Escape"){event.preventDefault();event.stopPropagation();back();return;}
+      if(event.key==="Tab"||event.key.startsWith("Arrow")){
+        event.preventDefault();event.stopPropagation();
+        const choices=Array.from(picker.current?.querySelectorAll<HTMLElement>("button:not(:disabled),[tabindex='0']")??[]);
+        const index=choices.indexOf(document.activeElement as HTMLElement);
+        const delta=event.key==="ArrowUp"?-2:event.key==="ArrowDown"?2:event.key==="ArrowLeft"||(event.key==="Tab"&&event.shiftKey)?-1:1;
+        choices[(Math.max(0,index)+delta+choices.length)%choices.length]?.focus();
+      }
+      if(["q","Q","e","E"].includes(event.key)){event.preventDefault();event.stopPropagation();}
+      return;
     }
     if(editMode==="move"&&event.key.startsWith("Arrow")){event.preventDefault();event.stopPropagation();moveSelected(event.key.slice(5).toLowerCase() as "up"|"down"|"left"|"right");return;}
     if ((event.target as HTMLElement).matches('input[type="range"]') && (event.target as HTMLElement).closest('[data-utility-side]') && !["Escape", "Tab"].includes(event.key)) return;
@@ -286,7 +307,7 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
               onGamepadDirection={native&&directions ? (event:CustomEvent<{button:number}>)=>{const direction=Object.keys(directions).find(key=>directions[key as keyof typeof directions]===event.detail.button) as "up"|"down"|"left"|"right"|undefined;if(direction&&moveSelected(direction)){event.preventDefault();event.stopPropagation();return true;}if(event.detail.button===directions.left&&enterRail(item.id)){event.preventDefault();event.stopPropagation();return true;}return false;} : undefined}
               {...(native ? { preferredFocus: item.id === restoreTarget(items.map(tile => tile.id), memory.current[tab]), onGamepadFocus: () => { memory.current[tab] = item.id; const target = panel.current?.querySelector<HTMLElement>(`[data-ec-control="${item.id}"]`); if(target) { if(tab === "settings") reveal(target); else target.scrollIntoView({block:"nearest"}); } } } : {})}
               aria-label={`${editMode==="move" ? "Move button. A to place. " : ""}${item.title}: ${item.value}. ${item.detail}.${synthetic ? " Sample data." : ""} ${unavailableActions[originFor(item).tile.id] ? unavailableActions[originFor(item).tile.id] : originFor(item).tile.id === "disconnect" && onDisconnect ? "Start guarded disconnect." : "View details."}`}
-              onFocus={(event: { target: EventTarget }) => { memory.current[tab] = item.id; (event.target as HTMLElement).scrollIntoView({ block: "nearest" }); }} onClick={() => { if(editMode==="move"){if(draft)commitLayout(draft);return;}const original=originFor(item);if(unavailableActions[original.tile.id])return; if(original.tile.id==="disconnect"&&onDisconnect){onDisconnect();return;} launcher.current = item.id; setNested(item.id); }}>
+              onFocus={(event: { target: EventTarget }) => { memory.current[tab] = item.id; (event.target as HTMLElement).scrollIntoView({ block: "nearest" }); }} onClick={() => { if(pickerOpen)return;if(editMode==="move"){if(draft)commitLayout(draft);return;}const original=originFor(item);if(unavailableActions[original.tile.id])return; if(original.tile.id==="disconnect"&&onDisconnect){onDisconnect();return;} launcher.current = item.id; setNested(item.id); }}>
               <span className="rg-expanded-tile-body">
                 <span className="rg-expanded-tile-heading">
                   <span className="rg-expanded-tile-icon"><Icon id={originFor(item).tile.id}/></span>
@@ -301,25 +322,24 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
   return <div className="rg-expanded-backdrop">
     <style>{expandedStyles}</style>
     <Container ref={panel} data-ec-panel className="rg-expanded-frame" role="dialog" aria-modal="true" aria-label={synthetic ? "Re-Gear expanded Command Center prototype" : "Re-Gear Command Center"} onKeyDown={onKeyDown} {...nativeHandlers}
+      onBlurCapture={()=>gesture.current?.cancel()}
+      onFocusCapture={(event:{target:EventTarget})=>{if(pickerOpen&&!(event.target as HTMLElement).closest('[data-ec-picker]')){picker.current?.querySelector<HTMLElement>('button:not(:disabled)')?.focus();}}}
       onFocus={(event: { target: EventTarget }) => { detailHadFocus.current = Boolean((event.target as HTMLElement).closest("[data-ec-detail-content]")); const id = (event.target as HTMLElement).closest<HTMLElement>("[data-ec-control]")?.dataset.ecControl; if (id && !nested) memory.current[tab] = id; }} onKeyUp={(event:KeyboardEvent<HTMLDivElement>)=>{if(event.key.toLowerCase()==="y"&&gesture.current?.isPressed()){event.preventDefault();event.stopPropagation();gesture.current.up();}}}>
-      {tab === "quick" && !nested && editMode==="normal" && <UtilityRail side="left" Button={Button} Focusable={Container} readings={utilityReadings} onRequest={onUtilityRequest} directions={directions} onReturnToGrid={()=>focus(lastGrid.current??items[0]?.id)} onEditingChange={setUtilityEditing}/>}
-      <Container className="rg-expanded" {...(native ? {"flow-children":"vertical",noFocusRing:true} : {})}>
+      {tab === "quick" && !nested && editMode!=="move" && <UtilityRail side="left" Button={Button} Focusable={Container} readings={utilityReadings} onRequest={pickerOpen?undefined:onUtilityRequest} directions={directions} onReturnToGrid={()=>focus(lastGrid.current??items[0]?.id)} onEditingChange={setUtilityEditing} onFeedback={onFeedback}/>}
+      <Container className="rg-expanded" {...(pickerOpen?{inert:"", "aria-hidden":true}:{})} {...(native ? {"flow-children":"vertical",noFocusRing:true} : {})}>
       <header className="rg-expanded-brand"><span className="rg-expanded-wordmark"><img src={brandIcon} alt=""/>Re-Gear</span><span className="rg-expanded-demo"><span className="rg-expanded-demo-label"><i/>{synthetic ? "Demo · Sample data" : "Application status"}</span><span>{synthetic ? "Hardware controls not connected" : renderDetail ? "Status and controls" : "Readings only · View details"}</span></span></header>
       <Container className="rg-expanded-tabs" role="tablist" aria-label="Command Center sections" {...(native ? { "flow-children": "horizontal", noFocusRing: true } : {})}>
         {tabs.map(id => <Button key={id} id={`ec-tab-${id}`} type="button" role="tab" aria-selected={tab === id} aria-controls="ec-tabpanel" data-ec-tab={id} className="rg-expanded-tab"
-          onClick={() => { cancelEdit();setNested(null); setTab(id); if (id === tab) focus(restoreTarget(controlIds(), memory.current[tab])); }}>
+          onClick={() => { if(pickerOpen)return;cancelEdit();setNested(null); setTab(id); if (id === tab) focus(restoreTarget(controlIds(), memory.current[tab])); }}>
           <span className="rg-expanded-tab-body"><Icon id={id}/><span>{tabLabels[id]}</span></span>
         </Button>)}
       </Container>
       <div ref={content} className="rg-expanded-content" id="ec-tabpanel" role="tabpanel" onFocusCapture={event => { if(tab === "settings") reveal(event.target as HTMLElement); }} aria-labelledby={`ec-tab-${tab}`}>
         {layoutError&&<p role="alert">{layoutError}</p>}
         {editMode==="move"&&<LayoutCustomizationBanner tab={tab} mode="move" selectedTitle={items.find(item=>item.id===selected)?.title}/>}
-        {editMode==="customize"&&<LayoutCustomizationBanner tab="quick" mode="swap"/>}
         {nested && <><h2>{nested.title}</h2>
         <p className="rg-expanded-context">{hasDetail ? "Settings and actions" : synthetic ? "Configuration preview · no changes are applied" : "Current status · no changes are applied"}</p></>}
-        {editMode==="customize" ? <Container className="rg-expanded-grid" style={{"--ec-columns":gridColumns} as CSSProperties} flow-children="grid" noFocusRing>
-          {projection?.catalog.map(origin=><Button key={origin.key} type="button" className="rg-expanded-tile" data-ec-control={`choice:${origin.key}`} disabled={Boolean(unavailableActions[origin.tile.id])} aria-label={`${origin.tile.title}, ${tabLabels[origin.tab]}. ${unavailableActions[origin.tile.id]??origin.tile.detail}`} onClick={()=>chooseTile(origin)}><span className="rg-expanded-tile-body"><span className="rg-expanded-label">{origin.tile.title}</span><span className="rg-expanded-value">{origin.tile.value}</span><small>{tabLabels[origin.tab]}</small></span></Button>)}
-        </Container> : editMode==="quick-actions" ? <QuickActionRailEditor slots={(savedLayout?.right??[]).map((id,slot)=>({slot,id,label:quickActionLabels[id]??id,control:<Button type="button" data-ec-control={`right-slot:${slot}`} onClick={()=>setRightSlot(slot)} aria-pressed={rightSlot===slot}>Select</Button>}))} choices={(["mic","wifi","overlay","recording","audio"] as UtilityId[]).map(id=>({id,label:quickActionLabels[id]??id,available:Boolean(utilityReadings?.[id]?.available),selected:savedLayout?.right.includes(id)??false,control:<Button type="button" data-ec-control={`right-choice:${id}`} disabled={!utilityReadings?.[id]?.available} onClick={()=>chooseRight(id)}>Choose</Button>}))}/> : nested ? <section className="rg-expanded-detail-page">
+        {nested ? <section className="rg-expanded-detail-page">
           {hasDetail ? <Container key={nested.id} data-ec-control="nested-content" data-ec-detail-content {...(native ? { "flow-children": "vertical", noFocusRing: true, preferredFocus: true } : {})}>
             {dockControl && <CommandNotice tone="warning" title="Keep the cable connected">Disconnect trial. Follow the guarded flow before any physical action.</CommandNotice>}
             {detailContent}</Container> : <>
@@ -356,7 +376,23 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
         <span><kbd className="rg-expanded-round">B</kbd> {nested ? "Back" : "Close"}</span></>}
       </footer>
       </Container>
-      {tab === "quick" && !nested && editMode==="normal" && <UtilityRail side="right" layout={savedLayout?.right.map(id=>({id,side:"right" as const}))} Button={Button} Focusable={Container} readings={utilityReadings} onRequest={onUtilityRequest}/>}
+      {tab === "quick" && !nested && editMode!=="move" && <UtilityRail side="right" layout={savedLayout?.right.map(id=>({id,side:"right" as const}))} Button={Button} Focusable={Container} readings={utilityReadings} onRequest={pickerOpen?undefined:onUtilityRequest}/>}
+      {pickerOpen&&<div className="rg-expanded-picker-backdrop">
+        <Container ref={picker} data-ec-picker className="rg-expanded-picker" role="dialog" aria-modal="true" aria-label="Change button" flow-children="vertical" noFocusRing
+          onGamepadDirection={directions?(event:CustomEvent<{button:number}>)=>{
+            const choices=Array.from(picker.current?.querySelectorAll<HTMLElement>('button:not(:disabled),[tabindex="0"]')??[]);
+            const index=choices.indexOf((event.target as HTMLElement).closest<HTMLElement>('[data-ec-control]')!);
+            const delta=event.detail.button===directions.up?-2:event.detail.button===directions.down?2:event.detail.button===directions.left?-1:event.detail.button===directions.right?1:0;
+            if(delta&&choices.length){event.preventDefault();event.stopPropagation();choices[(Math.max(0,index)+delta+choices.length)%choices.length]?.focus();return true;}return false;
+          }:undefined}>
+          <h3>Change {editMode==="quick-actions"?quickActionLabels[savedLayout?.right[rightSlot]??"mic"]:items.find(item=>item.id===selected)?.title}</h3>
+          {layoutError&&<p role="alert">{layoutError}</p>}
+          <Container className="rg-expanded-picker-grid" flow-children="grid" noFocusRing>
+            {editMode==="customize"?projection?.catalog.map(origin=><Button key={origin.key} type="button" data-ec-control={`choice:${origin.key}`} onClick={()=>chooseTile(origin)} disabled={Boolean(unavailableActions[origin.tile.id])} aria-label={`${origin.tile.title}, ${tabLabels[origin.tab]}`}><span>{origin.tile.title}</span><small>{tabLabels[origin.tab]}</small></Button>):(["mic","wifi","overlay","recording","audio"] as UtilityId[]).map(id=><Button key={id} type="button" data-ec-control={`right-choice:${id}`} onClick={()=>chooseRight(id)} aria-label={`${quickActionLabels[id]}${utilityReadings?.[id]?.available?"":", unavailable action"}`}><span>{quickActionLabels[id]}</span>{!utilityReadings?.[id]?.available&&<small>Unavailable</small>}</Button>)}
+          </Container>
+          <Button type="button" data-ec-control="picker-close" onClick={back}>B · Cancel</Button>
+        </Container>
+      </div>}
     </Container>
   </div>;
 }

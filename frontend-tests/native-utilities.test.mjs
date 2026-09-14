@@ -267,15 +267,15 @@ test('native rail editing accumulates repeated directions and coalesces pending 
   const pending = deferred(), calls = [];
   const h = railHarness({ onRequest: async (...args) => { calls.push(args); if (calls.length === 1) await pending.promise; } });
   h.direction(0, true, railDirections.up); h.direction(0, true, railDirections.up); h.direction(0, true, railDirections.up);
-  assert.deepEqual(calls, [['brightness', 51]]);
+  assert.deepEqual(calls, [['brightness', 53]]);
   pending.resolve(); await settle();
-  assert.deepEqual(calls, [['brightness', 51], ['brightness', 53]]);
+  assert.deepEqual(calls, [['brightness', 53], ['brightness', 59]]);
 });
 test('native direction targeted at Focusable still adjusts its focused input',async()=>{
   const calls=[],h=railHarness({onRequest:async(...args)=>calls.push(args)});
   h.wrappers[0].ownerDocument={activeElement:h.wrappers[0].input};
   h.direction(0,false,railDirections.up);await settle();
-  assert.deepEqual(calls,[['brightness',51]]);
+  assert.deepEqual(calls,[['brightness',53]]);
   h.nodes[0].props.onCancelButton(h.event(0,false));assert.equal(h.focused,h.wrappers[0]);
 });
 test('unavailable slider never dispatches and cannot enter editing', async () => {

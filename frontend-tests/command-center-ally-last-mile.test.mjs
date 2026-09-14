@@ -32,7 +32,7 @@ test("right action rail remains compact instead of scrolling", () => {
 test("rapid slider changes preserve the latest requested value", () => {
   assert.match(utility, /queued=useRef\(new Map<UtilityId,number>\(\)\)/);
   assert.match(utility, /queued\.current\.set\(id,percent\)/);
-  assert.match(utility, /if\(next!==undefined&&next!==percent\) void run\(id,next\)/);
+  assert.match(utility, /if\(mounted.current&&!failed&&next!==undefined&&next!==percent\) void run\(id,next\)/);
 });
 
 const shell = readFileSync(new URL("../src/quick-access/expanded-command-center/shell.tsx", import.meta.url), "utf8");

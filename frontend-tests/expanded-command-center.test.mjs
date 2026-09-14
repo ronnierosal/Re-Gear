@@ -21,8 +21,8 @@ test("focus restoration retains unavailable FPS and falls back after removal", (
   assert.equal(m.restoreTarget(ids, "removed"), "fps");
   assert.equal(m.restoreTarget([], "fps"), undefined);
 });
-test("responsive grid prefers four columns with three before narrow fallback", () => {
-  assert.deepEqual([400, 399, 300, 299, 280, 279].map(m.columnsForWidth), [4, 3, 3, 2, 2, 1]);
+test("responsive grid uses five columns at Ally widths with narrow fallbacks", () => {
+  assert.deepEqual([600, 500, 499, 400, 399, 300, 299, 280, 279].map(m.columnsForWidth), [5, 5, 4, 4, 3, 3, 2, 2, 1]);
 });
 test("four-column navigation respects the spanning disconnect tile", () => {
   const cells = m.gridCells(m.sampleTiles.quick, 4);
@@ -88,7 +88,8 @@ test("native modal uses Decky controls without a second raw navigation listener"
   runtime.open(); runtime.open(); assert.equal(native.opens, 1);
   const view = native.views[0].props.children[1];
   const shell = view.type(view.props); // Mount its cleanup and obtain close callback.
-  assert.equal(shell.props.primitives.Button, 'native-button');
+  assert.equal(shell.props.primitives.Button, native.NativeMenuButton);
+  assert.equal(shell.props.primitives.Button({}).type, 'native-button', 'feedback wrapper retains Decky control');
   assert.equal(shell.props.primitives.Focusable, 'native-focus');
   assert.equal(shell.props.disconnectControl.type, 'whole-dock-control');
   assert.equal(shell.props.disconnectControl.props.readCurrentSnapshot, readCurrentSnapshot);
@@ -197,3 +198,5 @@ test("native live source publishes into an open menu and unsubscribes on close",
   menu.stop();
   assert.equal(native.listeners.size,0);
 });
+
+test('five-column geometry and directions agree for the second row',()=>{const cells=m.gridCells(m.sampleTiles.quick,5);assert.equal(cells.find(c=>c.id==='controller').column,0);assert.equal(m.moveInGrid(cells,'fps','down'),'controller');assert.equal(m.moveInGrid(cells,'disconnect','up'),'manual');});

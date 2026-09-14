@@ -40,7 +40,6 @@ export function footerHintsFor(tab: Tab, nested: boolean, mode: CommandCenterEdi
 
   if (tab === "quick") {
     base.splice(2, 0,
-      { button: "X", label: "Quick Actions" },
       { button: "Y", label: "Customize" },
       { button: "Y", label: "Move", hold: true },
     );

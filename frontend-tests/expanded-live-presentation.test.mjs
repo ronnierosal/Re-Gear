@@ -307,19 +307,56 @@ test('other tabs ignore Y tap and persist reorder without replacing membership',
  yGesture(app,tree,550);tree=app.render(props);card(tree,'profile').props.onGamepadDirection(nativeEvent(12));tree=app.render(props);card(tree,'profile').props.onClick();tree=app.render(props);
  assert.deepEqual(storage.writes.at(-1).order.performance,['fps','profile','manual','auto','display','refresh']);
 });
-test('right editor persists exactly four slots without dispatching utility actions',async()=>{
+test('Y edits focused unavailable right slot without dispatch; X is unused',async()=>{
  const app=await fixture(),storage=storageFixture();let calls=0;
- const props={...prefsProps(storage),utilityReadings:{audio:{available:true,value:'Ready'}},onUtilityRequest:async()=>calls++};
+ const props={...prefsProps(storage),utilityReadings:{},onUtilityRequest:async()=>calls++};
  let tree=app.render(props);frame(tree).props.onButtonDown(nativeEvent(3));tree=app.render(props);
- const editor=nodes(tree).find(node=>node.type==='right-editor');assert.equal(editor.props.slots.length,4);
- assert.equal(editor.props.choices.find(choice=>choice.id==='overlay').control.props.disabled,true);
- editor.props.choices.find(choice=>choice.id==='audio').control.props.onClick();tree=app.render(props);
+ assert.ok(!nodes(tree).some(node=>node.props?.['data-ec-picker']!==undefined));
+ frame(tree).props.onFocus({target:{closest:selector=>selector==='[data-ec-control]'?{dataset:{ecControl:'utility-mic'}}:null}});
+ yGesture(app,tree);tree=app.render(props);
+ assert.equal(card(tree,'right-choice:audio').props.disabled,undefined,'unavailable slots can be selected as preferences');
+ card(tree,'right-choice:audio').props.onClick();tree=app.render(props);
  assert.deepEqual(storage.writes.at(-1).right,['audio','wifi','overlay','recording']);assert.equal(calls,0);
 });
+
+test('picker preserves panel but blocks background disconnect and tab changes; B cancels only picker',async()=>{
+ const app=await fixture(),storage=storageFixture();let starts=0,closes=0;
+ const props={...prefsProps(storage),onDisconnect:()=>starts++,onClose:()=>closes++};
+ let tree=app.render(props);yGesture(app,tree);tree=app.render(props);
+ assert.ok(nodes(tree).some(node=>node.props?.className==='rg-expanded'&&node.props.inert===''));
+ card(tree,'disconnect').props.onClick();
+ nodes(tree).find(node=>node.props?.['data-ec-tab']==='egpu').props.onClick();
+ tree=app.render(props);assert.equal(starts,0);
+ assert.equal(nodes(tree).find(node=>node.props?.['data-ec-tab']==='quick').props['aria-selected'],true);
+ frame(tree).props.onCancelButton(nativeEvent(2));tree=app.render(props);
+ assert.equal(closes,0);assert.equal(storage.writes.length,0);
+ assert.ok(!nodes(tree).some(node=>node.props&&'data-ec-picker' in node.props));
+});
+
 test('failed layout save remains visible and never falls through to disconnect',async()=>{
  const app=await fixture();let starts=0;
  const props={...prefsProps({getItem:()=>null,setItem(){throw Error('full')}}),tiles:{quick:[{id:'disconnect',title:'Safe Disconnect',value:'Unknown',detail:''}]},onDisconnect:()=>starts++};
  let tree=app.render(props);yGesture(app,tree,550);tree=app.render(props);card(tree,'disconnect').props.onClick();tree=app.render(props);
  assert.match(text(tree),/Could not save this layout/);assert.equal(starts,0);
  frame(tree).props.onCancelButton(nativeEvent(2));tree=app.render(props);assert.doesNotMatch(text(tree),/Could not save this layout/);
+});
+
+test('native raw picker input reaches Steam logical synthesis for A, B and directions',async()=>{
+ const app=await fixture(),storage=storageFixture(),props=prefsProps(storage);
+ let tree=app.render(props);yGesture(app,tree);tree=app.render(props);
+ const synthesized=[];
+ const dispatch=(button,logical)=>{const event={detail:{button},cancelBubble:false,preventDefault(){},stopPropagation(){this.cancelBubble=true;}};frame(tree).props.onButtonDown(event);if(!event.cancelBubble){synthesized.push(button);logical?.();}};
+ dispatch(9);dispatch(10);dispatch(11);dispatch(12);
+ dispatch(1,()=>card(tree,'choice:performance:display').props.onClick());tree=app.render(props);
+ assert.deepEqual(synthesized,[9,10,11,12,1]);assert.ok(storage.writes.at(-1).quick.includes('performance:display'));
+ yGesture(app,tree);tree=app.render(props);dispatch(2,()=>frame(tree).props.onCancelButton(nativeEvent(2)));tree=app.render(props);
+ assert.ok(!nodes(tree).some(n=>n.props&&'data-ec-picker' in n.props));
+});
+
+test('right picker cancel and save restore the focused rail control',async()=>{
+ const app=await fixture(),storage=storageFixture(),props=prefsProps(storage);let tree=app.render(props),focused;
+ const markRight=()=>frame(tree).props.onFocus({target:{closest:selector=>selector==='[data-ec-control]'?{dataset:{ecControl:'utility-mic'}}:null}});
+ const restore=()=>{frame(tree).props.ref.current={querySelectorAll:()=>['utility-mic','utility-audio'].map(id=>({dataset:{ecControl:id},querySelector(){},matches:()=>true,focus(){focused=id},scrollIntoView(){}})),querySelector:()=>({focus(){focused='fallback'}})};app.restoreFocus();};
+ markRight();yGesture(app,tree);tree=app.render(props);frame(tree).props.onCancelButton(nativeEvent(2));tree=app.render(props);restore();assert.equal(focused,'utility-mic');
+ markRight();yGesture(app,tree);tree=app.render(props);card(tree,'right-choice:audio').props.onClick();tree=app.render(props);restore();assert.equal(focused,'utility-audio');
 });

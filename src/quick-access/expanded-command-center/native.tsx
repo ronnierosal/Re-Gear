@@ -4,7 +4,8 @@ import { createNativeUtilities } from "./native-utilities";
 import type { UtilityReadings, UtilitySystem } from "./native-utilities";
 import type { NonEgpuDetailRenderer } from "./non-egpu-detail-renderer";
 import { useEffect, useState, useSyncExternalStore } from "react";
-import { Button, Dropdown, Focusable, ModalRoot, showModal, GamepadButton } from "@decky/ui";
+import type { ComponentProps } from "react";
+import { Button, Dropdown, Focusable, ModalRoot, showModal, GamepadButton, findModuleExport } from "@decky/ui";
 import type { ControllerInputSource } from "../../controller-safe-disconnect";
 import { loadMenuBinding, saveMenuBinding, menuBindingOptions, startMenuShortcut } from "../../menu-shortcut";
 import type { MenuBinding } from "../../menu-shortcut";
@@ -13,6 +14,26 @@ import { EgpuConfirmModal } from "../../egpu-confirm-modal";
 import { ExpandedCommandCenter } from "./shell";
 import type { TileSource, TileView } from "./tile-source";
 import { ShortcutSettings } from "./shortcut-settings";
+
+/** Named Steam navigation feedback; no guessed enums or separate audio player. */
+export function createMenuFeedback(find:(predicate:(candidate:any)=>boolean)=>any){
+  let dispatcher:any, sounds:any;
+  return (kind:"select"|"back")=>{
+    try{
+      dispatcher??=find(candidate=>typeof candidate?.PlayNavSound==="function");
+      sounds??=find(candidate=>typeof candidate?.IntoGameDetail==="number"&&typeof candidate?.DefaultOk==="number"&&typeof candidate?.BasicNav==="number");
+      if(dispatcher&&sounds)dispatcher.PlayNavSound(kind==="select"?sounds.IntoGameDetail:sounds.DefaultOk);
+    }catch{/* Missing or changed sound support must never block an action. */}
+  };
+}
+const playMenuFeedback=createMenuFeedback(predicate=>findModuleExport(predicate));
+export function NativeMenuButton(props:ComponentProps<typeof Button>&{"aria-disabled"?:boolean|"true"|"false"}){
+  return <Button {...props} onOKButton={props.onOKButton??(event=>{
+    event.preventDefault();event.stopPropagation();
+    if(props.disabled||props["aria-disabled"]===true||props["aria-disabled"]==="true")return true;
+    playMenuFeedback("select");(event.currentTarget as HTMLElement|null)?.click();return true;
+  })}/>;
+}
 
 /** Native adapter. Opens the menu, saves its launcher preference, and passes
  * through readings published by the panel that owns snapshot polling.
@@ -102,7 +123,7 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
     const rawTiles = useSyncExternalStore(subscribeTo(source), readFrom(source), readFrom(source));
     const tiles = rawTiles ? testBuildTiles(rawTiles) : undefined;
     const utilityReadings = useSyncExternalStore(utilities?.subscribe ?? noSubscribe, utilities?.read ?? noUtilities, utilities?.read ?? noUtilities);
-    return <ExpandedCommandCenter onClose={close} native onDisconnect={disconnect} disconnectControl={<WholeDockControl intent="disconnect_only" readCurrentSnapshot={readCurrentSnapshot}/>} directions={{up:GamepadButton.DIR_UP,down:GamepadButton.DIR_DOWN,left:GamepadButton.DIR_LEFT,right:GamepadButton.DIR_RIGHT}} unavailableActions={unavailableTestActions} layoutStorage={storage} editButtons={{x:GamepadButton.SECONDARY,y:GamepadButton.OPTIONS}} primitives={{ Button: Button, Focusable }} settings={<Settings/>} tiles={tiles} renderDetail={renderDetail} utilityReadings={utilityReadings} onUtilityRequest={utilities ? (id, percent) => {
+    return <ExpandedCommandCenter onClose={close} native onFeedback={playMenuFeedback} onDisconnect={disconnect} disconnectControl={<WholeDockControl intent="disconnect_only" readCurrentSnapshot={readCurrentSnapshot}/>} directions={{up:GamepadButton.DIR_UP,down:GamepadButton.DIR_DOWN,left:GamepadButton.DIR_LEFT,right:GamepadButton.DIR_RIGHT}} unavailableActions={unavailableTestActions} layoutStorage={storage} editButtons={{y:GamepadButton.OPTIONS}} primitives={{ Button: NativeMenuButton, Focusable }} settings={<Settings/>} tiles={tiles} renderDetail={renderDetail} utilityReadings={utilityReadings} onUtilityRequest={utilities ? (id, percent) => {
       if (generation !== token || stopped) return Promise.reject(new Error("Menu closed"));
       return utilities.request(id, percent);
     } : undefined}/>;

@@ -14,7 +14,7 @@ test("rapid brightness and volume changes preserve the newest requested value", 
   assert.match(source.replace(/\s/g, ""), /queued=useRef\(newMap<UtilityId,number>\(\)\)/);
   assert.match(source.replace(/\s/g, ""), /queued\.current\.set\(id,percent\)/);
   assert.match(source.replace(/\s/g, ""), /constnext=queued\.current\.get\(id\)/);
-  assert.match(source.replace(/\s/g, ""), /if\(next!==undefined&&next!==percent\)voidrun\(id,next\)/);
+  assert.match(source.replace(/\s/g, ""), /if\(mounted.current&&!failed&&next!==undefined&&next!==percent\)voidrun\(id,next\)/);
 });
 
 test("slider availability is truthful and pending work remains visible", () => {

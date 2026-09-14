@@ -4,8 +4,8 @@ import { readFileSync } from "node:fs";
 
 const source = readFileSync(new URL("../src/quick-access/expanded-command-center/footer-hints.tsx", import.meta.url), "utf8");
 
-test("Quick Access advertises separate X quick-action editing and Y customization/move", () => {
-  assert.match(source, /button: "X", label: "Quick Actions"/);
+test("Quick Access advertises Y customization/move without X", () => {
+  assert.doesNotMatch(source, /button: "X", label: "Quick Actions"/);
   assert.match(source, /button: "Y", label: "Customize"/);
   assert.match(source, /button: "Y", label: "Move", hold: true/);
 });
