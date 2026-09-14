@@ -1,8 +1,9 @@
-"""Backend-owned original shutdown request and verified power continuation.
+"""Backend-owned original power request and verified power continuation.
 
 Create the request before claiming/releasing a dock, then bind it durably after
 claim and before teardown. This module never tears down or reauthorizes hardware.
-Sleep is unavailable until a supported inhibitor and resume profile is verified.
+Sleep continuation requires the actual handoff for that exact original request.
+The production entry point remains separate from this delivery mechanism.
 """
 from dataclasses import dataclass
 import math
@@ -36,13 +37,12 @@ def dock_power_capabilities():
                 ],
             },
             'sleep': {
-                'implementation': 'unavailable',
-                'live_readiness': 'unavailable',
+                'implementation': 'implemented',
+                'live_readiness': 'not_assessed',
                 'actionable': False,
                 'reason_codes': [
-                    'dock_power.sleep_profile_unverified',
-                    'dock_power.sleep_inhibitor_handoff_unverified',
-                    'dock_power.sleep_wake_thermal_unverified',
+                    'dock_power.sleep_hardware_unverified',
+                    'dock_power.live_preflight_required',
                 ],
             },
         },
@@ -74,8 +74,6 @@ class DockPowerRequest:
 def create_power_request(action, session, *, monotonic=time.monotonic,
                          ttl_seconds=300):
     """Generate intent in the backend, before any teardown or session restart."""
-    if action == 'sleep':
-        raise ValueError('dock_power.sleep_unverified')
     if (type(ttl_seconds) not in (int, float)
             or not math.isfinite(ttl_seconds) or not 0 < ttl_seconds <= 300):
         raise ValueError('dock_power.invalid_intent')
@@ -91,7 +89,7 @@ def create_power_request(action, session, *, monotonic=time.monotonic,
 
 
 def continue_dock_power(request, *, runtime, store, portable_verified, power,
-                        admission_held, monotonic=time.monotonic):
+                        admission_held, monotonic=time.monotonic, sleep_handoff=None):
     """Consume the exact bound intent once while mutation admission stays held.
 
     An accepted request is not evidence that the machine has powered off.
@@ -100,7 +98,10 @@ def continue_dock_power(request, *, runtime, store, portable_verified, power,
     if type(request) is not DockPowerRequest:
         return DockPowerResult('dock_power.invalid_intent')
     if request.action == 'sleep':
-        return DockPowerResult('dock_power.sleep_unverified')
+        from regear.delivery.dock_sleep_handoff import SleepLeaseHandoff
+        if (type(sleep_handoff) is not SleepLeaseHandoff
+                or not sleep_handoff.bound_to(request)):
+            return DockPowerResult('dock_power.sleep_handoff_unavailable')
     try:
         binding, generation = runtime.binding.binding, runtime.binding.generation
         coordinator = DockPowerCoordinator(
@@ -112,7 +113,9 @@ def continue_dock_power(request, *, runtime, store, portable_verified, power,
                 operation, binding, generation, action, request.session,
                 request.requested_at, request.deadline),
             request_power=lambda action: (
-                action == 'shutdown' and power.request_poweroff().requested is True),
+                sleep_handoff.submit(action) if action == 'sleep'
+                else power.request_poweroff().requested is True),
+            sleep_supported=request.action == 'sleep',
             admission_held=admission_held, monotonic=monotonic)
         return coordinator.execute()
     except Exception:
