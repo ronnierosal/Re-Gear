@@ -1,4 +1,4 @@
-"""Root Decky delivery adapter for the read-only Re-Gear diagnostics API."""
+"""Root Decky delivery adapter for Re-Gear diagnostics and guarded control RPCs."""
 
 from __future__ import annotations
 
@@ -3167,7 +3167,12 @@ class Plugin:
         )
 
     async def approve_supervised_portable_vulkan_trial(self) -> dict[str, object]:
-        """Developer-supervised one-shot session trial; never safe-unplug approval."""
+        """Public experimental RPC with no frontend caller; issue a Vulkan trial token.
+
+        Prepared Steam integration and transition preview gates still apply.
+        Supervision is an operator requirement, not a caller-identity check.
+        See docs/PORTABLE_VULKAN_TRIAL.md; never safe-unplug approval.
+        """
         try:
             if not await asyncio.to_thread(self._steam_trial_integration().verify_effective):
                 return {"schema_version": 1, "approval_token": "",
@@ -3184,7 +3189,12 @@ class Plugin:
                     "blockers": ["portable_trial.approval_failed"], "safe_to_unplug": False}
 
     async def approve_supervised_portable_graphics_trial(self) -> dict[str, object]:
-        """Explicit OpenGL + Vulkan one-shot trial; never safe-unplug approval."""
+        """Public experimental RPC with no frontend caller; issue a schema-2 trial token.
+
+        Uses the Vulkan trial gates with explicit OpenGL + Vulkan selection.
+        Supervision is an operator requirement, not a caller-identity check.
+        See docs/PORTABLE_VULKAN_TRIAL.md; never safe-unplug approval.
+        """
         try:
             if not await asyncio.to_thread(self._steam_trial_integration().verify_effective):
                 return {"schema_version": 1, "approval_token": "",
@@ -3202,7 +3212,12 @@ class Plugin:
                     "blockers": ["portable_trial.approval_failed"], "safe_to_unplug": False}
 
     async def approve_supervised_steam_trial_preparation(self) -> dict[str, object]:
-        """Detached idle preparation only; no service restart or trial grant."""
+        """Public experimental RPC with no frontend caller; approve Steam preparation.
+
+        Requires idle Portable evidence with no present external GPU; issues
+        a single-use preparation token, not a graphics trial grant. No caller
+        identity check or service restart. See docs/PORTABLE_VULKAN_TRIAL.md.
+        """
         try:
             preview = await asyncio.to_thread(self._steam_trial_preparation_service().preview,
                                               user_confirmed=True)
@@ -3213,7 +3228,12 @@ class Plugin:
                     "blockers": ["steam_trial.preparation_unavailable"]}
 
     async def prepare_supervised_steam_trial_integration(self, approval_token: str) -> dict[str, object]:
-        """Prepare the fixed Steam shim under the existing single-use approval owner."""
+        """Public experimental RPC with no frontend caller; consume a preparation token.
+
+        Revalidates evidence before writing the fixed Steam integration and
+        reloading its unit configuration; no service restart. This is a
+        mutation surface. See docs/PORTABLE_VULKAN_TRIAL.md for exact gates.
+        """
         try:
             outcome = await asyncio.to_thread(self._steam_trial_preparation_service().execute,
                                               approval_token)
