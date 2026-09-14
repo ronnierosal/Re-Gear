@@ -15,8 +15,9 @@ controls; a built test candidate is not automatically installed or supported.
 The [current-state authority](../../CURRENT_STATE.md) retains the dated sequence
 and links later evidence. [Power implementation](../../EGPU_POWER_NEXT.md) separates
 merged backend/coordinator code from mounted integration and hardware acceptance.
-[Golden preservation](../../GOLDEN_BEHAVIORS.md) keeps the 0.3.98 cycle and earlier
-0.3.82 automatic-TV evidence, without treating either as universal qualification.
+[Golden preservation](../../GOLDEN_BEHAVIORS.md) defines the regression gate.
+Its historical 0.3.82 reference is supplemented by the separate 0.3.98 checkpoint;
+the pending baseline wording reconciliation is not new hardware qualification.
 
 At the September 14 review, UI PR329/0.3.107 was a built test candidate, not a new
 hardware baseline. PR333/334 power consumer/producer work was separate. Follow

@@ -1,5 +1,21 @@
 # Sleep and shutdown lifecycle implementation
 
+## Integration status — September 14, 2026
+
+PR315 and PR316 are merged. They supply backend power handling and the request
+coordinator; their former branch-only status below is historical. PR335, merged
+as `a16ba34c336cfe5813f9dceb15d10f7df029f928`, additionally disables software
+reconnect at the RPC boundary. These are source integrations, not installed
+power-button, sleep/wake or charging qualification. Older installed packages
+do not inherit the new gate.
+
+The UI primary separately owns combined button mounting, original-intent routing
+and reconnect removal. PR329's 0.3.107 artifact and the separate PR333/334 power
+stack must not be described as one installed journey. Use the
+[lifecycle acceptance matrix](wiki/technical/egpu-lifecycle.md) and preserve the
+[0.3.98 baseline](EGPU_0398_CHECKPOINT.md). No new hardware trial is established
+by this documentation reconciliation.
+
 ## 2026-09-14 inhibitor findings and lifecycle acceptance matrix
 
 PR315 (power backend) and PR316 (coordinator) are now merged in source at
@@ -103,7 +119,8 @@ Charging and healthy wake behavior remain hardware observations, not code claims
 
 ## Current backend implementation
 
-The isolated `egpu-power-0398` branch descends from the preserved checkpoint.
+The implementation from `egpu-power-0398` is now merged through PR315; PR316
+adds the backend-owned request coordinator. Both descend from the preserved checkpoint.
 `Plugin._run_dock_power_request` routes ordinary, already-down, and active-dock
 power. Already-down continuation currently requires the retained runtime in the
 same backend process and fresh verification of its software-down claim/topology.

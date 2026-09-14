@@ -39,7 +39,8 @@ refusal remain evidence; the success does not establish the cause of the refusal
 
 ### Lifecycle acceptance matrix
 
-Entry points below were inspected in merged source `9421c6f`; tested revisions
+Entry points below were inspected in merged source `9421c6f`, with the later
+RPC exclusion verified at merged `a16ba34`; tested revisions
 are listed separately. The eGPU primary owns backend lifecycle integration; the
 UI primary owns mounting and request routing. Ronnie owns supervised observations.
 
@@ -52,7 +53,8 @@ UI primary owns mounting and request routing. Ronnie owns supervised observation
 | Return/release/remove | Accepted disconnect | `_run_whole_dock_trial`, `_return_portable_before_disconnect`, `LiveDisconnectService.disconnect`, `WholeDockRuntime.execute_claimed` | Verified return/release, identity, clients/storage, topology and operation ownership | `dock_teardown.software_down`, GPU removed, display released, filter disarmed | Refuse incomplete release; retain unresolved transaction evidence; no blanket retry/clear | `f6059fa` / 0.3.98 | 03:29:13.090 UTC; handheld picture/audio/controls confirmed | eGPU | Earlier 0.3.97 refusal cause and repeatability |
 | Physical unplug reconciliation | User physically unplugs in supervised trial | `_reconcile_physically_disconnected_dock` | Verified absent transport, completed claim | Completed history clears, claim `none`; handheld continues | Unreadable/ambiguous state is not physical absence | `f6059fa` / 0.3.98 | 03:32:34.702 UTC | eGPU; Ronnie hardware | Broader live-removal qualification |
 | Sleep/shutdown continuation | Explicit original power request | `_run_dock_power_request`, `whole_dock_shutdown`, `whole_dock_sleep`, `whole_dock_sleep_connected`; UI request coordinator | Correlated original intent, teardown/lease evidence where required, observed suspend counters | At most one continuation; sleep success requires observed kernel cycle | Failed prerequisites stay awake; unresolved submission/restoration is reported | Merged #315/#316 component evidence; not a 0.3.98 power pass | 0.3.98 manual sleep after teardown was blocked; no sleep/wake occurred | eGPU + UI | Combined mounted path and supervised sleep/wake |
-| Software reconnect (excluded) | Historical developer request only | Retained `whole_dock_reconnect`, `_run_whole_dock_reconnect_trial`, `WholeDockRuntime.reconnect_owned` | No new trial authorized by retained code | No supported product success claimed | Keep excluded; see incident and gating below | 0.3.92 `6c638a8` failed trial | Timeout, authorized router but missing endpoints, later heat report | eGPU + UI | Gate retained backend route and UI exposure; no powered trial |
+| Charging and wake continuity | Disconnect, sleep or shutdown with cable attached | Same power/disconnect paths; observed power supply and battery evidence | Preserve dock power delivery; record supply online, battery/charge trend when available, user indication and recovery-attempt counts | Handheld usable with data path down and charging retained; healthy sleep/wake with existing connection separately verified | No intentional power-delivery disable; report unknown charging; distinguish wake with recovery from wake without recovery | 0.3.98 manual observations; no automated power qualification | User confirmed clean manual shutdown and continued charging; controlled sleep/wake pending | eGPU + UI; Ronnie hardware | Capture actual connected sleep/wake, charging and before/after recovery-attempt count |
+| Software reconnect (excluded) | Historical developer request; now rejected at RPC boundary | `execute_egpu_disconnect` returns `dock_reconnect.disabled`; lower-level reconnect machinery remains | No new trial authorized by retained code | Request refused before worker/state changes | Backend allowlist/fallback removed in #335; older installed packages do not inherit this gate | 0.3.92 `6c638a8` failed trial; #335 source/fixture gate | Timeout, authorized router but missing endpoints, later heat report; no new hardware trial | eGPU + UI | Include backend gate and UI removal in combined candidate; no powered trial |
 
 Source: [Plugin composition](../../../main.py),
 [mounted control](../../../src/whole-dock-control.tsx),
@@ -78,12 +80,15 @@ owner subsequently reported unusual heat and unplugged. No temperature/fan
 telemetry established a measurement, causation or damage. This failed incident
 closed further powered software reconnect trials; it was not a successful cycle.
 
-The implementation remains in source. The disconnect-only expanded control does
-not offer reconnect, but that alone does not prove every backend dispatch route
-is gated. The eGPU primary owns backend admission/retained machinery; the UI
-primary owns exposure and request routing. Their gating work must prove excluded
-requests cannot execute while ordinary physical-attachment recovery still works.
-This document neither removes the machinery nor claims that gating is complete.
+Lower-level implementation remains in source, but [PR335](https://github.com/ronnierosal/Re-Gear/pull/335)
+merged as `a16ba34c336cfe5813f9dceb15d10f7df029f928` disables the public reconnect
+RPC before worker creation or state changes, removes it from the allowlist and
+removes generic reconnect fallthrough. The eGPU primary supplied 22 focused and
+49 golden passes, independent review and final CI. These are software checks,
+not a new device trial. Older installed packages do not acquire this restriction
+from a source merge. The UI primary separately owns removal of the reconnect
+model/modal and inclusion of both restrictions in the combined UI candidate;
+that task remains distinct from backend acceptance. No powered trial is authorized.
 The [incident record](../../WHOLE_DOCK_DISCONNECT_MECHANISM.md#thermal-incident-software-reconnect-trials-paused)
 retains the investigation and thermal stop/recovery requirements.
 

@@ -1,6 +1,24 @@
 # Confirmed Hardware Testing
 
-**Reviewed:** 2026-09-09. This ledger records historical supervised results, not a new test session or blanket certification.
+The current lifecycle reference is the [0.3.98 supervised cycle](egpu-lifecycle.md).
+One installed **Safely disconnect** button press, software teardown, physical
+unplug/replug and restored TV picture/audio/controls were recorded September 13
+UTC on the exact configuration. Repeatability, other hardware and sleep remain
+unestablished. The older ledger below is retained as September 9 evidence.
+
+## For players — no technical background needed
+
+Individual successful trials are not universal support. Follow the
+[eGPU guide](../player/egpu.md) for current limits and the instructions for your build.
+
+## Technical details — for advanced users and contributors
+
+### Historical ledger — reviewed September 9, 2026
+
+All “not achieved”, “current”, “implemented” and policy statements in the dated
+tables below describe that earlier review. They are not a denial of the later
+installed-button and physical-cycle evidence above. In particular, September 9
+direct-runtime/RPC gaps do not supersede the September 13 installed button trial.
 
 ## Hardware testing scope
 
@@ -39,10 +57,10 @@ the scan marked the whole reading incomplete. See
 [Fixes and issue tracking](issues.md).
 
 Client release is not live-removal validation, and neither is software removal:
-physical live unplug remains unsupported and shutdown before disconnect remains
-required.
+the September 9 record did not qualify physical live unplug. The later narrow
+0.3.98 cycle is recorded above, without universal qualification.
 
-## Failed or incomplete gates
+### Historical failed or incomplete gates — September 9
 
 | Gate | Result |
 |---|---|
@@ -60,4 +78,4 @@ required.
 
 Record the date, exact Re-Gear build/revision, SteamOS version, hardware combination, expected and observed result, player-visible confirmation where relevant, and a redacted evidence link. Label pass, fail, or incomplete for each capability separately. Record recovery and remaining blockers. GitHub issues track defects; this ledger summarizes reviewed evidence.
 
-Never include private addresses, credentials, raw identifiers, or unrestricted logs. Follow [Safety and eGPU Handling](../player/safety.md): fully shut down before eGPU disconnect under the current tested policy, even when Portable appears normal.
+Never include private addresses, credentials, raw identifiers, or unrestricted logs. Follow [Safety and eGPU Handling](../player/safety.md) for the current distinction between exact supervised evidence and general qualification.
