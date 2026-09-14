@@ -12,7 +12,7 @@ function harness(initial = { available: true, game: GAME }) {
   const calls = { sync: [], schedule: [] };
   let clock = 1000;
   const ports = {
-    startSync: (appId, generation) => calls.sync.push([appId, generation]),
+    startSync: (appId, generation, attempt) => calls.sync.push([appId, generation, attempt]),
     persistSchedule: (s) => calls.schedule.push(s),
     now: () => clock,
   };
@@ -35,6 +35,7 @@ const readiness = (h, over = {}) => ({
 
 const prep = (h, over = {}) => ({
   generation: h.model.getSnapshot().generation,
+  attempt: h.model.getSnapshot().attempt,
   appId: GAME.appId,
   state: "active",
   ...over,
@@ -79,7 +80,7 @@ test("a manual sync calls the port exactly once and reports requested", () => {
   const h = harness();
   assert.equal(h.model.syncNow(), true);
   const s = h.model.getSnapshot();
-  assert.deepEqual(h.calls.sync, [[GAME.appId, s.generation]]);
+  assert.deepEqual(h.calls.sync, [[GAME.appId, s.generation, s.attempt]]);
   assert.equal(s.preparation.state, "requested");
   assert.equal(s.preparation.inFlight, true);
   assert.equal(s.capabilities.canSyncNow, false);
@@ -327,4 +328,130 @@ test("losing availability clears in-flight state and disables actions", () => {
 test("exact app id guard matches the repo's identity rule", () => {
   for (const good of [1, 620, 2 ** 32 - 1]) assert.equal(isExactAppId(good), true);
   for (const bad of [0, -1, 1.5, 2 ** 32, NaN, "620", null, undefined]) assert.equal(isExactAppId(bad), false);
+});
+
+// --- Review findings from hub message 248fab0c ---
+
+test("refresh notifies a subscriber when readiness crosses its expiry", () => {
+  const h = harness();
+  h.model.applyReadiness(readiness(h));
+  const before = h.seen.length;
+  h.tick(30000);
+  assert.equal(h.model.refresh(), false, "nothing changed yet, so no notification");
+  assert.equal(h.seen.length, before);
+  h.tick(30000);
+  assert.equal(h.model.refresh(), true, "crossing expiry must reach subscribers");
+  assert.equal(h.seen.length, before + 1);
+  assert.equal(h.seen.at(-1).readiness.expired, true);
+  // Idempotent: a second refresh with nothing new does not notify again.
+  assert.equal(h.model.refresh(), false);
+  assert.equal(h.seen.length, before + 1);
+});
+
+test("refresh after dispose does nothing", () => {
+  const h = harness();
+  h.model.applyReadiness(readiness(h));
+  h.model.dispose();
+  h.tick(120000);
+  assert.equal(h.model.refresh(), false);
+});
+
+test("an account change invalidates evidence even for the same app", () => {
+  const h = harness({ available: true, game: { ...GAME, account: "player-one" } });
+  h.model.applyReadiness(readiness(h));
+  const before = h.model.getSnapshot();
+  assert.equal(before.readiness.status, "likely_offline_ready");
+  h.model.selectGame({ ...GAME, account: "player-two" });
+  const after = h.model.getSnapshot();
+  assert.equal(after.generation > before.generation, true);
+  assert.equal(after.readiness.status, null, "another account is another subject");
+  assert.equal(after.preparation.state, "idle");
+});
+
+test("a build change invalidates evidence even for the same app and account", () => {
+  const h = harness({ available: true, game: { ...GAME, account: "p", buildId: 100 } });
+  h.model.applyReadiness(readiness(h));
+  const before = h.model.getSnapshot();
+  h.model.selectGame({ ...GAME, account: "p", buildId: 101 });
+  const after = h.model.getSnapshot();
+  assert.equal(after.generation > before.generation, true);
+  assert.equal(after.readiness.status, null, "a rebuilt game is not the one we checked");
+});
+
+test("identical app, account and build is still a no-op", () => {
+  const h = harness({ available: true, game: { ...GAME, account: "p", buildId: 100 } });
+  h.model.applyReadiness(readiness(h));
+  const before = h.model.getSnapshot();
+  h.model.selectGame({ ...GAME, account: "p", buildId: 100 });
+  assert.equal(h.model.getSnapshot(), before);
+});
+
+test("a late reply from an earlier attempt cannot land on the current one", () => {
+  const h = harness();
+  h.model.syncNow();
+  const first = h.model.getSnapshot().attempt;
+  h.model.applyPreparation(prep(h, { attempt: first, state: "error", errorCode: 21 }));
+  assert.equal(h.model.getSnapshot().preparation.inFlight, false);
+  h.model.syncNow();
+  const second = h.model.getSnapshot().attempt;
+  assert.equal(second > first, true);
+  // The first attempt finally answers. It is not this request's outcome.
+  assert.equal(h.model.applyPreparation(prep(h, { attempt: first, state: "completed" })), false);
+  assert.equal(h.model.getSnapshot().preparation.state, "requested");
+  assert.equal(h.model.applyPreparation(prep(h, { attempt: second, state: "completed" })), true);
+  assert.equal(h.model.getSnapshot().preparation.state, "completed");
+});
+
+test("attempt resets with a new selection so counters cannot leak across games", () => {
+  const h = harness();
+  h.model.syncNow();
+  assert.equal(h.model.getSnapshot().attempt, 1);
+  h.model.selectGame(OTHER);
+  assert.equal(h.model.getSnapshot().attempt, 0);
+});
+
+test("a callback delivered synchronously during startSync is kept, not overwritten", () => {
+  const calls = [];
+  let model;
+  const ports = {
+    startSync: (appId, generation, attempt) => {
+      calls.push([appId, generation, attempt]);
+      // Steam answers before the dispatch call returns.
+      model.applyPreparation({ generation, appId, attempt, state: "active" });
+    },
+    persistSchedule() {},
+    now: () => 0,
+  };
+  model = createOfflineGameModeModel(ports, { initial: { available: true, game: GAME } });
+  assert.equal(model.syncNow(), true);
+  assert.equal(calls.length, 1);
+  assert.equal(model.getSnapshot().preparation.state, "active",
+    "the synchronous observation must survive the optimistic requested state");
+  assert.equal(model.getSnapshot().preparation.inFlight, true);
+});
+
+test("a synchronous observation survives a port that then throws", () => {
+  let model;
+  const ports = {
+    startSync: (appId, generation, attempt) => {
+      model.applyPreparation({ generation, appId, attempt, state: "queued" });
+      throw new Error("native gone after accepting");
+    },
+    persistSchedule() {},
+    now: () => 0,
+  };
+  model = createOfflineGameModeModel(ports, { initial: { available: true, game: GAME } });
+  assert.equal(model.syncNow(), false);
+  assert.equal(model.getSnapshot().preparation.state, "queued",
+    "real evidence must not be clobbered by the throw handler");
+  assert.equal(model.getSnapshot().preparation.inFlight, false);
+});
+
+test("a preparation observation without a matching attempt is refused", () => {
+  const h = harness();
+  h.model.syncNow();
+  for (const bad of [undefined, null, "1", 0, 99, 1.5]) {
+    assert.equal(h.model.applyPreparation(prep(h, { attempt: bad, state: "completed" })), false);
+  }
+  assert.equal(h.model.getSnapshot().preparation.state, "requested");
 });

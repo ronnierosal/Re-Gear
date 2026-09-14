@@ -45,7 +45,8 @@ still never proves the game launches offline.
   available: boolean
   unavailableReason: string | null
   generation: number        // bumps on every selection change
-  game: { appId, name } | null
+  attempt: number           // bumps on every syncNow; resets with a new selection
+  game: { appId, name, account?, buildId? } | null
   readiness: {
     status: "needs_preparation" | "likely_offline_ready" | "tested_offline" | "unverified" | null
     label: string | null
@@ -69,8 +70,13 @@ Snapshots are **frozen and value-stable**: an unchanged model returns the very
 same object, so a UI can compare by identity. An older snapshot is never mutated
 in place.
 
-`expired` is computed at read time rather than stored, so a tab left open goes
-stale on its own without needing a timer.
+`expired` is computed from `ports.now()` at read time rather than stored, so it
+can never itself be stale. But a computed value does not announce itself: a
+subscribed view will not re-render just because the clock moved past
+`expiresAt`. **The host must call `refresh()`** from whatever it already has — a
+focus event, an existing interval, a visibility change — and the model stays free
+of any scheduler of its own. `refresh()` returns `true` when subscribers were
+notified, and does nothing when nothing changed.
 
 ## Preparation states
 
@@ -96,17 +102,25 @@ shader state is **observed**, never requested; see
 | `getSnapshot()` | frozen snapshot | none |
 | `subscribe(fn)` | unsubscribe function | none |
 | `selectGame(game \| null)` | — | none; resets readiness and preparation, bumps generation |
-| `syncNow()` | `true` if dispatched | `startSync(appId, generation)` exactly once |
+| `syncNow()` | `true` if dispatched | `startSync(appId, generation, attempt)` exactly once |
 | `setSyncSchedule(s)` | `true` if accepted | `persistSchedule(s)` once |
 | `applyInitialState(s)` | — | none |
 | `applyReadiness(o)` | `true` if accepted | none |
 | `applyPreparation(o)` | `true` if accepted | none |
 | `setAvailability(a)` | — | none |
+| `refresh()` | `true` if subscribers were notified | none |
 | `dispose()` | — | none |
 
+**Identity.** A selection is the app **plus** the account and the installed
+build. Switching account or landing a new build is a new subject even under the
+same app id, and it resets readiness and preparation — evidence gathered against
+the old one must not survive.
+
 **Staleness.** `applyReadiness` and `applyPreparation` carry a `generation` and
-an `appId`, and are dropped unless both match the current selection. Changing
-game, or disposing, invalidates everything in flight.
+an `appId`, and are dropped unless both match the current selection.
+`applyPreparation` additionally carries an `attempt`, so a late reply from an
+earlier press of the same button — same game, same generation — cannot land on
+the current one. Changing game, or disposing, invalidates everything in flight.
 
 **Duplicate suppression.** `syncNow()` while `inFlight` returns `false` without
 calling the port. The suppression lifts on any terminal state, so a retry is
@@ -127,6 +141,10 @@ const model = createOfflineGameModeModel(ports, { initial });
 
 function OfflineGameModeTab() {
   const snap = useSyncExternalStore(model.subscribe, model.getSnapshot);
+
+  // Expiry is derived from the clock, so something has to poke the model.
+  // Use whatever the shell already has rather than adding a timer here.
+  useEffect(() => model.refresh(), [snap.readiness.expiresAt]);
 
   if (snap.loading) return <Spinner />;
   if (!snap.available) return <Notice>{snap.unavailableReason}</Notice>;

@@ -43,7 +43,15 @@ export type ContentProgress = {
 
 export type SyncSchedule = { enabled: boolean; intervalMinutes: number | null };
 
-export type SelectedGame = { appId: number; name: string } | null;
+/** Identity is the app **plus** the account and installed build. A rebuilt or
+ * re-owned game is a different subject even under the same app id, so evidence
+ * gathered against the old one must not survive. */
+export type SelectedGame = {
+  appId: number;
+  name: string;
+  account?: string | null;
+  buildId?: number | null;
+} | null;
 
 export type OfflineGameModeSnapshot = {
   /** True until the injected initial state resolves. Never guessed. */
@@ -51,6 +59,8 @@ export type OfflineGameModeSnapshot = {
   available: boolean;
   unavailableReason: string | null;
   generation: number;
+  /** Increments on every syncNow; resets with a new selection. */
+  attempt: number;
   game: SelectedGame;
   readiness: {
     status: ConfidenceStatus | null;
@@ -72,8 +82,10 @@ export type OfflineGameModeSnapshot = {
 
 /** Outbound seam. Each is called at most once per player action, never from a read. */
 export type OfflineGameModePorts = {
-  /** Start one preparation sync for this exact game and generation. */
-  startSync(appId: number, generation: number): void;
+  /** Start one preparation sync for this exact game, generation and attempt.
+   * `attempt` exists so a late reply from an earlier press of the same button,
+   * on the same selection, can be told apart from the current one. */
+  startSync(appId: number, generation: number, attempt: number): void;
   /** Record a schedule the player changed. Never called to enable one by itself. */
   persistSchedule(schedule: SyncSchedule): void;
   now(): number;
@@ -93,6 +105,9 @@ export type ReadinessObservation = {
 export type PreparationObservation = {
   generation: number;
   appId: number;
+  /** Which `syncNow` press this belongs to. Required, so an older attempt's late
+   * reply cannot land on a newer one. */
+  attempt: number;
   state: PreparationState;
   content?: readonly Partial<ContentProgress>[];
   errorCode?: number | null;
@@ -161,6 +176,7 @@ export function createOfflineGameModeModel(
 ) {
   let disposed = false;
   let generation = 0;
+  let attempt = 0;
   let loading = options.initial === undefined;
   let available = options.initial?.available ?? false;
   let unavailableReason = options.initial?.unavailableReason ?? null;
@@ -179,7 +195,7 @@ export function createOfflineGameModeModel(
     const at = ports.now();
     const expired = readiness.expiresAt !== null && Number.isFinite(at) && at >= readiness.expiresAt;
     return freeze({
-      loading, available, unavailableReason, generation,
+      loading, available, unavailableReason, generation, attempt,
       game: game ? { ...game } : null,
       readiness: { ...readiness, reasons: [...readiness.reasons], expired },
       schedule: { ...schedule },
@@ -222,10 +238,17 @@ export function createOfflineGameModeModel(
 
   const resetForNewSelection = () => {
     generation += 1;
+    attempt = 0;
     readiness = { status: null, label: null, reasons: [], checkedAt: null, expiresAt: null };
     preparation = { state: "idle", content: emptyContent(), errorCode: null };
     inFlight = false;
   };
+
+  /** Same app id is not the same subject: account and installed build are part
+   * of identity, so a rebuild or an account switch is a new selection. */
+  const sameSubject = (a: SelectedGame, b: SelectedGame) =>
+    a?.appId === b?.appId && (a?.account ?? null) === (b?.account ?? null)
+    && (a?.buildId ?? null) === (b?.buildId ?? null);
 
   const current = (observation: { generation: number; appId: number }) =>
     !disposed && observation.generation === generation && !!game && observation.appId === game.appId;
@@ -256,10 +279,24 @@ export function createOfflineGameModeModel(
     selectGame(next: SelectedGame): void {
       if (disposed || !available) return;
       if (next !== null && !isExactAppId(next.appId)) return;
-      if (game?.appId === next?.appId) return;
+      if (sameSubject(game, next)) return;
       game = next ? { ...next } : null;
       resetForNewSelection();
       notify();
+    },
+
+    /** Recompute and notify if anything the clock affects has changed.
+     *
+     * Expiry is derived from `ports.now()`, so a subscribed view would never
+     * hear about it on its own. The host drives this from whatever it already
+     * has — a focus event, an existing interval — and the model stays free of
+     * any scheduler of its own. Returns true when subscribers were notified.
+     */
+    refresh(): boolean {
+      if (disposed) return false;
+      const before = cachedKey;
+      notify();
+      return cachedKey !== before;
     },
 
     /** One player action, one port call. Duplicate presses while a sync is in
@@ -267,14 +304,21 @@ export function createOfflineGameModeModel(
      * so a retry is never permanently blocked. */
     syncNow(): boolean {
       if (disposed || !available || !game || inFlight) return false;
+      attempt += 1;
+      const dispatched = attempt;
       inFlight = true;
+      // Set the optimistic state before dispatching, so a port that calls back
+      // synchronously overwrites it rather than being overwritten by it.
       preparation = { state: "requested", content: emptyContent(), errorCode: null };
-      const requested = generation;
       try {
-        ports.startSync(game.appId, requested);
+        ports.startSync(game.appId, generation, dispatched);
       } catch {
+        // An observation delivered synchronously before the throw is real
+        // evidence; only discard state that is still our own optimistic guess.
+        if (attempt === dispatched && preparation.state === "requested") {
+          preparation = { state: "error", content: emptyContent(), errorCode: null };
+        }
         inFlight = false;
-        preparation = { state: "error", content: emptyContent(), errorCode: null };
         notify();
         return false;
       }
@@ -315,6 +359,9 @@ export function createOfflineGameModeModel(
      * keep a stale positive badge alive until the next check. */
     applyPreparation(observation: PreparationObservation): boolean {
       if (!observation || !current(observation)) return false;
+      // A late reply from an earlier press of the same button, on the same
+      // selection, must not land on the current attempt.
+      if (integer(observation.attempt) !== attempt) return false;
       preparation = {
         state: observation.state,
         content: normalizeContent(observation.content),
