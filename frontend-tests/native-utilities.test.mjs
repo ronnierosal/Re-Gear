@@ -149,9 +149,12 @@ const flatten = value => Array.isArray(value) ? value.flatMap(flatten)
   : value && typeof value === "object" ? [value, ...flatten(value.props?.children)] : [];
 const hooks = { useRef: value => ({ current: value }), useState: value => [value, () => {}], useLayoutEffect: () => {}, useEffect: () => {}, useSyncExternalStore: (_, read) => read() };
 const model = await import(`data:text/javascript;base64,${Buffer.from(compile("model.ts")).toString("base64")}`);
-const layout = await import(`data:text/javascript;base64,${Buffer.from(compile("utility-layout.ts")).toString("base64")}`);
-const Rail = loadComponent("utility-rail.tsx", "UtilityRail", { ...hooks, ...layout, CommandCenterIcon: "icon" });
-const Shell = loadComponent("shell.tsx", "ExpandedCommandCenter", { ...hooks, ...model, UtilityRail: Rail, CommandCenterIcon: "icon", expandedStyles: "", brandIcon: "brand" });
+const registryUrl=`data:text/javascript;base64,${Buffer.from(compile("control-registry.ts")).toString("base64")}`;
+const registry=await import(registryUrl);
+const layout = await import(`data:text/javascript;base64,${Buffer.from(compile("utility-layout.ts").replace(/['"]\.\/control-registry['"]/g,JSON.stringify(registryUrl))).toString("base64")}`);
+const catalog=await import(`data:text/javascript;base64,${Buffer.from(compile("button-catalog.ts").replace(/['"]\.\/control-registry['"]/g,JSON.stringify(registryUrl))).toString("base64")}`);
+const Rail = loadComponent("utility-rail.tsx", "UtilityRail", { ...hooks, ...layout, ...registry, CommandCenterIcon: "icon" });
+const Shell = loadComponent("shell.tsx", "ExpandedCommandCenter", { ...hooks, ...model, ...registry, ...catalog, UtilityRail: Rail, CommandCenterIcon: "icon", expandedStyles: "", brandIcon: "brand" });
 
 test("shell forwards live readings and requests to real rail range handlers; arrows stay native", async () => {
   const calls = [], readings = { brightness: { available: true, value: "50%", percent: 50 }, volume: { available: true, value: "40%", percent: 40 } };

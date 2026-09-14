@@ -1,3 +1,4 @@
+import {controlRegistry} from './control-registry';
 import { useLayoutEffect, useRef, useState } from "react";
 import type { ElementType, KeyboardEvent } from "react";
 import { CommandCenterIcon } from "../command-center-icons";
@@ -7,7 +8,7 @@ import type { UtilityId, UtilityPlacement } from "./utility-layout";
 export type UtilityReading = { available:boolean; value:string; percent?:number; pending?:boolean; reason?:string };
 export type UtilityRailProps = {
   side:"left"|"right";
-  layout?:readonly UtilityPlacement[];
+  layout?:readonly (Omit<UtilityPlacement,"id"> & {id:UtilityId|null;slot?:number})[];
   readings?:Partial<Record<UtilityId,UtilityReading>>;
   onRequest?:(id:UtilityId, percent?:number)=>Promise<void>;
   Button?:ElementType;
@@ -18,10 +19,8 @@ export type UtilityRailProps = {
   onFeedback?:(kind:"select"|"back")=>void;
 };
 
-const labels:Record<UtilityId,string> = {
-  brightness:"Brightness", volume:"Volume", mic:"Mic mute", recording:"Record",
-  overlay:"Overlay", audio:"Audio output", wifi:"Wi-Fi",
-};
+const labels=Object.fromEntries(controlRegistry.map(def=>[def.id,def.label])) as Record<UtilityId,string>;
+const shortLabels=Object.fromEntries(controlRegistry.map(def=>[def.id,def.shortLabel])) as Record<UtilityId,string>;
 
 const railStyles = `
 .rg-utility-rail{box-sizing:border-box;display:flex;flex-direction:column;color:#f4f7fb;font-family:Arial,sans-serif;min-width:0}
@@ -45,6 +44,7 @@ export function UtilityRail({side,layout=defaultUtilityLayout,readings={},onRequ
   const queued=useRef(new Map<UtilityId,number>());
   const [pending,setPending]=useState<UtilityId[]>([]);
   const [errors,setErrors]=useState<Partial<Record<UtilityId,string>>>({});
+  const failedReadings=useRef(new Map<UtilityId,UtilityReading|undefined>());
   const requested=useRef(new Map<UtilityId,number>());
   const [drafts,setDrafts]=useState<Partial<Record<UtilityId,number>>>({});
   const currentReadings=useRef(readings);currentReadings.current=readings;
@@ -54,24 +54,27 @@ export function UtilityRail({side,layout=defaultUtilityLayout,readings={},onRequ
   useLayoutEffect(()=>{
     for(const [id,target] of requested.current){
       const reading=readings[id];
-      if(!reading?.available||typeof reading.percent!=="number"||!Number.isFinite(reading.percent)||reading.percent<0||reading.percent>100){queued.current.delete(id);clearRequested(id);}
-      else if(!busy.current.has(id)&&reading.percent===target)clearRequested(id);
+      if(!reading?.available||typeof reading.percent!=="number"||!Number.isFinite(reading.percent)||reading.percent<0||reading.percent>100){queued.current.delete(id);failedReadings.current.delete(id);setErrors(c=>({...c,[id]:undefined}));clearRequested(id);}
+      else if(!busy.current.has(id)&&!reading.pending&&failedReadings.current.has(id)&&reading!==failedReadings.current.get(id)){
+        failedReadings.current.delete(id);setErrors(c=>({...c,[id]:undefined}));clearRequested(id);
+      }
+      else if(!busy.current.has(id)&&!reading.pending&&!failedReadings.current.has(id)&&reading.percent===target)clearRequested(id);
     }
   },[readings,pending]);
 
   async function run(id:UtilityId,percent?:number){
-    if(!mounted.current||!onRequest||!currentReadings.current[id]?.available||currentReadings.current[id]?.pending)return;
-    busy.current.add(id); setPending([...busy.current]); setErrors(c=>({...c,[id]:undefined}));
+    if(!mounted.current||!onRequest||!currentReadings.current[id]?.available||(percent===undefined&&currentReadings.current[id]?.pending))return;
+    failedReadings.current.delete(id);busy.current.add(id); setPending([...busy.current]); setErrors(c=>({...c,[id]:undefined}));
     let failed=false;
     try{ await onRequest(id,percent); }
-    catch{failed=true;if(mounted.current){setErrors(c=>({...c,[id]:"Could not apply. Try again."}));queued.current.delete(id);clearRequested(id);}}
+    catch{failed=true;if(mounted.current){failedReadings.current.set(id,currentReadings.current[id]);setErrors(c=>({...c,[id]:"Could not apply. Try again."}));queued.current.delete(id);}}
     finally{
       const next=queued.current.get(id); queued.current.delete(id); busy.current.delete(id); if(mounted.current)setPending([...busy.current]);
       if(mounted.current&&!failed&&next!==undefined&&next!==percent) void run(id,next);
     }
   }
   function request(id:UtilityId,percent?:number){
-    if(!onRequest||!readings[id]?.available||readings[id]?.pending)return;
+    if(!onRequest||!readings[id]?.available||(percent===undefined&&readings[id]?.pending))return;
     if(percent!==undefined){percent=Math.max(0,Math.min(100,percent));requested.current.set(id,percent);setDrafts(c=>({...c,[id]:percent}));}
     if(busy.current.has(id)){ if(percent!==undefined) queued.current.set(id,percent); return; }
     void run(id,percent);
@@ -101,11 +104,13 @@ export function UtilityRail({side,layout=defaultUtilityLayout,readings={},onRequ
 
   return <Focusable flow-children="vertical" noFocusRing className="rg-utility-rail" data-utility-side={side} aria-label={`${side} quick controls`} onKeyDown={navigate}>
     <style>{railStyles}</style>
-    {layout.filter(i=>i.side===side).map(({id})=>{
+    {layout.filter(i=>i.side===side).map(({id,slot})=>{
+      const control=slot===undefined?`utility-${id}`:`utility-slot-${slot}`;
+      if(id===null)return <Button key={control} type="button" data-ec-control={control} className="rg-utility-control" aria-label="Empty quick action slot. Tap Y to add" onClick={()=>{}}><span className="rg-utility-label">Empty</span></Button>;
       const reading=readings[id], waiting=pending.includes(id)||reading?.pending||drafts[id]!==undefined;
       const isSlider=id==="brightness"||id==="volume";
       const valid=typeof reading?.percent==="number"&&Number.isFinite(reading.percent)&&reading.percent>=0&&reading.percent<=100;
-      const disabled=!onRequest||!reading?.available||Boolean(reading?.pending)||(isSlider&&!valid);
+      const disabled=!onRequest||!reading?.available||(!isSlider&&Boolean(reading?.pending))||(isSlider&&!valid);
       const status=errors[id]??(waiting?"Applying…":reading?.value??"Unavailable");
       const displayPercent=drafts[id]??reading?.percent;
       const sliderStatus=valid?`${displayPercent}%`:"Unavailable";
@@ -121,16 +126,16 @@ export function UtilityRail({side,layout=defaultUtilityLayout,readings={},onRequ
         <span className="rg-utility-label">{labels[id]}</span>
         <input type="range" min={0} max={100} step={1} aria-label={labels[id]} aria-orientation="vertical" aria-valuetext={sliderDescription} value={valid?displayPercent:0} disabled={disabled} onChange={e=>request(id,Number(e.currentTarget.value))}/>
         <span className="rg-utility-value" role="status" aria-label={sliderDescription} title={sliderDescription}>{sliderStatus}{errors[id]&&<span role="alert">{errors[id]}</span>}</span>
-      </Focusable> : <Button key={id} type="button" data-utility-id={id} data-ec-control={`utility-${id}`} className="rg-utility-control" aria-disabled={disabled||waiting} title={reason} aria-label={`${labels[id]}: ${status}`} aria-busy={waiting||undefined} onClick={()=>{if(!disabled&&!waiting)request(id);}}>
+      </Focusable> : <Button key={control} type="button" data-utility-id={id} data-ec-control={control} className="rg-utility-control" aria-disabled={disabled||waiting} title={reason} aria-label={`${labels[id]}: ${status}`} aria-busy={waiting||undefined} onClick={()=>{if(!disabled&&!waiting)request(id);}}>
         <span className="rg-utility-icon"><UtilityIcon id={id}/></span>
-        <span className="rg-utility-label">{id === "mic" ? "Mic" : labels[id]}</span>
+        <span className="rg-utility-label">{shortLabels[id]}</span>
         <span className="rg-utility-value" role="status">{status}</span>
       </Button>;
     })}
   </Focusable>;
 }
 
-function UtilityIcon({id}:{id:UtilityId}){
+export function UtilityIcon({id}:{id:UtilityId}){
   if(id==="overlay") return <CommandCenterIcon id="performance" size={24}/>;
   const paths:Partial<Record<UtilityId,string>>={
     brightness:"M32 12v7M32 45v7M12 32h7M45 32h7M18 18l5 5M41 41l5 5M46 18l-5 5M23 41l-5 5M32 23a9 9 0 1 1 0 18 9 9 0 0 1 0-18Z",

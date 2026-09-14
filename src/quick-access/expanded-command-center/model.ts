@@ -1,12 +1,12 @@
 /** Synthetic presentation only. No production state or hardware requests. */
-export const tabs = ["quick", "performance", "egpu", "controllers", "settings"] as const;
+export const tabs = ["quick", "performance", "egpu", "controllers", "offline", "settings"] as const;
 export type Tab = typeof tabs[number];
 export const tabLabels: Record<Tab, string> = {
   quick: "Quick Access", performance: "Performance", egpu: "eGPU",
-  controllers: "Controllers", settings: "Settings",
+  controllers: "Controllers", offline:"Offline Readiness", settings: "Settings",
 };
 export type Tone = "active" | "unavailable" | "warning" | "quiet";
-export type Tile = { id: string; title: string; value: string; detail: string; tone?: Tone; wide?: boolean };
+export type Tile = { id: string; title: string; value: string; detail: string; tone?: Tone; wide?: boolean; empty?: boolean; layoutKey?: string; widget?:{primary:string;secondary?:string;grade:Tone} };
 
 /**
  * Approved UI-only sample compositions. These are visual/navigation fixtures,
@@ -47,6 +47,7 @@ export const sampleTiles: Record<Tab, readonly Tile[]> = {
     { id: "tv-controller", title: "TV Dock Behavior", value: "Automatic", detail: "Controller behavior while docked" },
     { id: "controller-settings", title: "Controller Settings", value: "Open", detail: "More controller preferences" },
   ],
+  offline: [],
   settings: [
     { id: "quick-actions", title: "Quick Actions", value: "4 actions", detail: "Choose supported right-rail shortcuts" },
     { id: "shortcut", title: "Command Center Shortcut", value: "Configured", detail: "Choose how Re-Gear opens" },

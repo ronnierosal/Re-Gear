@@ -34,6 +34,14 @@ if(customization){
   await page.locator('[data-ec-control="fps"]').focus();await page.keyboard.press('y');
   await page.locator('[data-ec-control="choice:performance:display"]').waitFor();
   await page.screenshot({path:join(output,`customize-${width}.png`)});
+  const groups=page.locator('[data-picker-category]');assert.ok(await groups.count()>1);
+  const lastColumn=((await groups.first().locator('[data-ec-control]').count())-1)%3;
+  const nextGroupFirst=await groups.nth(1).locator('[data-ec-control]').nth(Math.min(lastColumn,(await groups.nth(1).locator('[data-ec-control]').count())-1)).getAttribute('data-ec-control');
+  await groups.first().locator('[data-ec-control]').last().focus();await page.keyboard.press('ArrowDown');
+  assert.equal(await page.locator(':focus').getAttribute('data-ec-control'),nextGroupFirst);
+  for(let i=0;i<64&&await page.locator(':focus').getAttribute('data-ec-control')!=='picker-close';i++)await page.keyboard.press('ArrowDown');
+  assert.equal(await page.locator(':focus').getAttribute('data-ec-control'),'picker-close');
+
   await page.locator('[data-ec-control="choice:performance:display"]').click();
   await page.locator('[data-ec-control="custom:performance:display"]').waitFor();
   const before=await page.evaluate(()=>localStorage.getItem('regear.command-center-layout.v1'));
@@ -49,7 +57,7 @@ if(customization){
   await page.locator('[data-move-selected="true"]').waitFor();await page.keyboard.press('ArrowLeft');await page.keyboard.press('Enter');
   assert.equal(await page.evaluate(()=>window.starts),1,'placing disconnect must not dispatch');
   assert.notEqual(await page.evaluate(()=>localStorage.getItem('regear.command-center-layout.v1')),before);
-  await page.locator('[data-ec-control=utility-mic]').focus();await page.keyboard.press('y');assert.equal(await page.locator('[data-ec-picker]').count(),1);assert.equal(await page.locator('[data-utility-side=right] [data-utility-id]').count(),4);
+  await page.locator('[data-ec-control=utility-slot-0]').focus();await page.keyboard.press('y');assert.equal(await page.locator('[data-ec-picker]').count(),1);assert.equal(await page.locator('[data-utility-side=right] [data-utility-id]').count(),4);
   await page.screenshot({path:join(output,`right-editor-${width}.png`)});
 }
 

@@ -1,13 +1,10 @@
-export const utilityIds = ["brightness", "volume", "mic", "recording", "overlay", "audio", "wifi"] as const;
-export type UtilityId = typeof utilityIds[number];
-export type UtilityPlacement = { id: UtilityId; side: "left" | "right" };
-
-/** Approved Command Center utility groups. Keep these IDs stable so the visual
- * shell, controller navigation and later runtime adapters can evolve without
- * renaming or reordering the user-facing controls. */
-export const commandCenterUtilityIds = ["brightness", "volume"] as const satisfies readonly UtilityId[];
-export const quickActionIds = ["mic", "wifi", "overlay", "recording"] as const satisfies readonly UtilityId[];
-export const optionalQuickActionIds = ["audio"] as const satisfies readonly UtilityId[];
+import {controlRegistry,controlForKey} from './control-registry';
+export type UtilityId='brightness'|'volume'|'mic'|'recording'|'overlay'|'audio'|'wifi';
+export const utilityIds=controlRegistry.filter(def=>def.sourceKeys.some(key=>key.startsWith('utility:'))).map(def=>def.id as UtilityId);
+export type UtilityPlacement={id:UtilityId;side:'left'|'right'};
+export const commandCenterUtilityIds=utilityIds.filter(id=>controlForKey(`utility:${id}`)?.type==='slider');
+export const quickActionIds=controlRegistry.filter(def=>def.rightEligible&&def.defaultRightSlot!==null).sort((a,b)=>a.defaultRightSlot!-b.defaultRightSlot!).map(def=>def.id as UtilityId);
+export const optionalQuickActionIds=controlRegistry.filter(def=>def.rightEligible&&def.defaultRightSlot===null).map(def=>def.id as UtilityId);
 
 export const defaultUtilityLayout: readonly UtilityPlacement[] = [
   ...commandCenterUtilityIds.map(id => ({id, side:"left" as const})),

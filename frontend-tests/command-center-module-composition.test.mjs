@@ -41,7 +41,7 @@ test('Settings stays focused on Re-Gear preferences and support',()=>{
 });
 
 test('module samples never add extra top-level surfaces',()=>{
-  assert.deepEqual(Object.keys(sampleTiles),['quick','performance','egpu','controllers','settings']);
+  assert.deepEqual(Object.keys(sampleTiles),['quick','performance','egpu','controllers','offline','settings']);
 });
 
 test('all approved cards occupy one cell',()=>{

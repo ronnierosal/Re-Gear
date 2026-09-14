@@ -1,9 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
+import ts from "typescript";
 
 const styles = readFileSync(new URL("../src/quick-access/expanded-command-center/styles.ts", import.meta.url), "utf8");
 const rail = readFileSync(new URL("../src/quick-access/expanded-command-center/utility-rail.tsx", import.meta.url), "utf8");
+
+const registrySource=readFileSync(new URL('../src/quick-access/expanded-command-center/control-registry.ts',import.meta.url),'utf8');
+const registryJs=ts.transpileModule(registrySource,{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText;
+const {controlForKey}=await import('data:text/javascript;base64,'+Buffer.from(registryJs).toString('base64'));
 
 test("Quick root does not spend vertical space on a duplicate title and subtitle", () => {
   assert.match(styles, /data-ec-tab=quick/);
@@ -41,11 +46,11 @@ test("utility rails do not add redundant headings and retain approved labels", (
   assert.doesNotMatch(rail, /Support unverified/);
   assert.doesNotMatch(rail, /Quick actions/);
   assert.match(rail, /data-utility-id=\{id\}/);
-  assert.match(rail, /brightness:"Brightness"/);
-  assert.match(rail, /volume:"Volume"/);
-  assert.match(rail, /mic:"Mic mute"/);
-  assert.match(rail, /recording:"Record"/);
-  assert.match(rail, /overlay:"Overlay"/);
+  assert.equal(controlForKey('utility:brightness').label,'Brightness');
+  assert.equal(controlForKey('utility:volume').label,'Volume');
+  assert.equal(controlForKey('utility:mic').shortLabel,'Mic');
+  assert.equal(controlForKey('utility:recording').shortLabel,'Record');
+  assert.equal(controlForKey('utility:overlay').shortLabel,'Overlay');
 });
 
 test("quick tiles stay compact rather than drifting back to oversized cards", () => {

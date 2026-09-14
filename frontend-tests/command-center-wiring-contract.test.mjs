@@ -13,6 +13,8 @@ const approved = Object.fromEntries(
   Object.entries(sampleTiles).map(([tab, tiles]) => [tab, tiles.map(tile => tile.id)]),
 );
 
+approved.offline=['offline-game','offline-readiness','offline-select','offline-sync','offline-schedule'];
+
 const tileSourceUrl = new URL("../src/quick-access/expanded-command-center/tile-source.ts", import.meta.url);
 
 /**
@@ -29,7 +31,7 @@ test("live Command Center source preserves the approved UI tile contract", {
 }, async () => {
   const graph=[
     'quick-access/performance-state', 'quick-access/expanded-command-center/model',
-    'quick-access/expanded-command-center/tiles', 'quick-access/expanded-command-center/tile-source',
+    'quick-access/expanded-command-center/offline-tab', 'quick-access/expanded-command-center/tiles', 'quick-access/expanded-command-center/tile-source',
   ].map(path=>ts.transpileModule(readFileSync(new URL(`../src/${path}.ts`,import.meta.url),'utf8'),{
     compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2020},
   }).outputText.replace(/^import[^;]*;$/gm,'')).join('\n');

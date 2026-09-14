@@ -1,3 +1,6 @@
+import {offlineTabTiles,offlineUnavailableActions} from "./offline-tab";
+import type { RuntimeDetailSource } from "./runtime-detail-source";
+import {version} from "../../../package.json";
 import { createMenuVisibility } from "./menu-visibility";
 import { testBuildTiles, unavailableTestActions } from "./test-build-actions";
 import { createNativeUtilities } from "./native-utilities";
@@ -56,6 +59,7 @@ const noSubscribe = () => () => {};
 const noTiles = () => undefined;
 const emptyUtilities: UtilityReadings = {};
 const noUtilities = () => emptyUtilities;
+const noRuntimeDetails=()=>null;
 const subscribers = new WeakMap<TileSource, (listener: () => void) => () => void>();
 const readers = new WeakMap<TileSource, () => TileView | undefined>();
 function subscribeTo(source?: TileSource) {
@@ -71,11 +75,14 @@ function readFrom(source?: TileSource) {
   return cached;
 }
 
-export function createExpandedMenu(input: ControllerInputSource | undefined, host: Window, canOpen: () => boolean = () => true, source?: TileSource, readCurrentSnapshot: () => unknown = () => null, renderDetail?: NonEgpuDetailRenderer) {
+export function createExpandedMenu(input: ControllerInputSource | undefined, host: Window, canOpen: () => boolean = () => true, source?: TileSource, readCurrentSnapshot: () => unknown = () => null, renderDetail?: NonEgpuDetailRenderer, runtimeDetails?:RuntimeDetailSource) {
   const system = (host as Window & { SteamClient?: { System?: UtilitySystem } }).SteamClient?.System;
   const utilities = system ? createNativeUtilities(system) : undefined;
   const storage = (() => { try { return host.localStorage; } catch { return undefined; } })();
   let binding = loadMenuBinding(storage);
+  const bindingListeners=new Set<()=>void>();
+  const readBinding=()=>binding;
+  const subscribeBinding=(listener:()=>void)=>{bindingListeners.add(listener);return()=>{bindingListeners.delete(listener);};};
   let modal: ReturnType<typeof showModal> | null = null;
   let operation: ReturnType<typeof showModal> | null = null;
   let operationGeneration=0;
@@ -121,19 +128,24 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
     // end. The server snapshot is the same read: there is no server, and
     // returning a different value there would tear.
     const rawTiles = useSyncExternalStore(subscribeTo(source), readFrom(source), readFrom(source));
-    const tiles = rawTiles ? testBuildTiles(rawTiles) : undefined;
+    const runtimeState=useSyncExternalStore(runtimeDetails?.subscribe??noSubscribe,runtimeDetails?.read??noRuntimeDetails,runtimeDetails?.read??noRuntimeDetails);
+    const mappedTiles = rawTiles ? testBuildTiles(rawTiles) : undefined;
+    const tiles=mappedTiles&&runtimeDetails?{...mappedTiles,egpu:mappedTiles.egpu?.map(tile=>tile.id==="switch-handheld"?{...tile,value:runtimeState?.handheld.available?"Ready":"Unavailable",detail:runtimeState?.handheld.reason??"Current display status unavailable"}:tile),settings:mappedTiles.settings?.map(tile=>tile.id==="diagnostics"?{...tile,value:runtimeState?"Open":"Waiting",detail:"Status, recovery and support"}:tile.id==="about"?{...tile,value:version,detail:"Version and credits"}:tile.id==="quick-actions"?{...tile,value:"Customize",detail:"Focus a Quick Access button and tap Y"}:tile)}:mappedTiles;
+    const unavailable={...unavailableTestActions,...(runtimeDetails?offlineUnavailableActions:{})};
+    if(runtimeDetails){if(runtimeState?.handheld.available)delete unavailable["switch-handheld"];else unavailable["switch-handheld"]=runtimeState?.handheld.reason??"Current display status unavailable";}
     const utilityReadings = useSyncExternalStore(utilities?.subscribe ?? noSubscribe, utilities?.read ?? noUtilities, utilities?.read ?? noUtilities);
-    return <ExpandedCommandCenter onClose={close} native onFeedback={playMenuFeedback} onDisconnect={disconnect} disconnectControl={<WholeDockControl intent="disconnect_only" readCurrentSnapshot={readCurrentSnapshot}/>} directions={{up:GamepadButton.DIR_UP,down:GamepadButton.DIR_DOWN,left:GamepadButton.DIR_LEFT,right:GamepadButton.DIR_RIGHT}} unavailableActions={unavailableTestActions} layoutStorage={storage} editButtons={{y:GamepadButton.OPTIONS}} primitives={{ Button: NativeMenuButton, Focusable }} settings={<Settings/>} tiles={tiles} renderDetail={renderDetail} utilityReadings={utilityReadings} onUtilityRequest={utilities ? (id, percent) => {
+    return <ExpandedCommandCenter onClose={close} native onFeedback={playMenuFeedback} onDisconnect={disconnect} disconnectControl={<WholeDockControl intent="disconnect_only" readCurrentSnapshot={readCurrentSnapshot}/>} directions={{up:GamepadButton.DIR_UP,down:GamepadButton.DIR_DOWN,left:GamepadButton.DIR_LEFT,right:GamepadButton.DIR_RIGHT}} unavailableActions={unavailable} onAction={(_tab,tile)=>{if(tile.id==="switch-handheld"){runtimeDetails?.requestHandheld();return true;}return false;}} layoutStorage={storage} editButtons={{y:GamepadButton.OPTIONS}} primitives={{ Button: NativeMenuButton, Focusable }} settings={<Settings/>} tiles={runtimeDetails?{...tiles,offline:offlineTabTiles,settings:[...(tiles?.settings??[]).filter(tile=>tile.id==='diagnostics'),{id:'reset-layout',title:'Reset Layout',value:'Configure',detail:'Restore default card positions'}]}:tiles} renderDetail={renderDetail} catalogReadings={rawTiles} utilityReadings={utilityReadings} onUtilityRequest={utilities ? (id, percent) => {
       if (generation !== token || stopped) return Promise.reject(new Error("Menu closed"));
       return utilities.request(id, percent);
     } : undefined}/>;
   }
   function Settings() {
-    const [selected, setSelected] = useState(binding);
+    const selected=useSyncExternalStore(subscribeBinding,readBinding,readBinding);
     const [error, setError] = useState("");
     function change(value: MenuBinding) {
+      if(stopped)return;
       if (!saveMenuBinding(value, storage)) { setError("Could not save the shortcut. Your previous choice remains active."); return; }
-      binding = value; shortcut.reset(); setSelected(value); setError("");
+      binding = value; shortcut.reset(); bindingListeners.forEach(listener=>listener()); setError("");
     }
     return <ShortcutSettings available={shortcut.available} error={error} control={
       <Dropdown menuLabel="Open Re-Gear" rgOptions={menuBindingOptions} selectedOption={selected}
@@ -156,5 +168,5 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
     } catch { utilities?.stop(); visibility.set(false); } finally { opening = false; }
   };
   const shortcut = startMenuShortcut({ input, readBinding: () => binding, open });
-  return { open, visibility: visibility.source, available: shortcut.available, stop() { stopped = true; shortcut.stop(); close(); } };
+  return { open, disconnect, Settings, visibility: visibility.source, available: shortcut.available, stop() { stopped = true; shortcut.stop(); close(); } };
 }

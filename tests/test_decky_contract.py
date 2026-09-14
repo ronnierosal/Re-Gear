@@ -254,31 +254,22 @@ class DeckyContractTests(unittest.TestCase):
         self.assertNotIn('"forever"', source)
         self.assertNotIn('"forever"', backend)
 
-    def test_disconnect_press_is_claimed_before_a_confirmation_opens(self):
-        """Two presses in one tick must not open two confirmations.
+    def test_disconnect_activation_owns_one_canonical_request(self):
+        """Native duplicate presses share one operation and its one-use request.
 
-        ``disconnectBusy`` is React state that nothing sets until the dispatch
-        runs, so guarding on it alone lets both presses through and a player
-        who answers both gets two operations. The claim has to be taken
-        synchronously at the press, and released however the dialog ends or a
-        cancelled prompt would wedge the control permanently.
+        Executed same-tick admission and reopen/pending non-replay behavior is
+        covered by the native/WholeDock frontend tests; this gate pins the
+        production composition rather than the retired legacy launcher.
         """
-        source = (ROOT / "src" / "index.tsx").read_text(encoding="utf-8")
-        start = source.index('if (id === "safe-disconnect")')
-        end = source.index('if (id === "auto-tdp"', start)
-        press = source[start:end]
-        self.assertIn("disconnectPromptOpen.current", press)
-        self.assertIn("disconnectPromptOpen.current = true", press)
-        # Claimed before either dialog is shown, not after.
-        self.assertLess(
-            press.index("disconnectPromptOpen.current = true"),
-            min(press.index("showGameCloseDialog("), press.index("showDisconnectConfirmation(")),
-        )
-        # Both dialogs release it, including the game-close branch.
-        self.assertEqual(press.count("releasePrompt"), 3)
-        for dialog in ("showDisconnectConfirmation", "showGameCloseDialog"):
-            body = source[source.index("function %s(" % dialog):]
-            self.assertIn("fnOnClose: onClose", body[:body.index("return modal;")])
+        source = (ROOT / "src" / "quick-access" / "expanded-command-center" / "native.tsx").read_text(encoding="utf-8")
+        press = source[source.index("  function disconnect() {"):source.index("  function View(")]
+        self.assertIn("if(stopped||operation||!modal) return", press)
+        self.assertLess(press.index("if(stopped||operation||!modal)"), press.index("showModal("))
+        self.assertIn("if(consumed)return false;consumed=true;return true", press)
+        self.assertIn('intent="disconnect_only"', press)
+        self.assertIn("startRequest={startRequest}", press)
+        self.assertIn("operationGeneration!==operationToken", press)
+        self.assertIn("fnOnClose:hide", press)
 
     def test_expanded_menu_refuses_a_payload_this_build_cannot_read(self):
         """A schema the sleep preflight rejects is not a fresh observation.

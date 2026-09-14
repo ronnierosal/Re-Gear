@@ -12,7 +12,7 @@ test("bumper tab cycle wraps in both directions", () => {
   assert.equal(m.nextTab("quick", -1), "settings");
   assert.equal(m.nextTab("settings", 1), "quick");
   let tab = "quick";
-  for (let i = 0; i < 5; i++) tab = m.nextTab(tab, 1);
+  for (let i = 0; i < m.tabs.length; i++) tab = m.nextTab(tab, 1);
   assert.equal(tab, "quick");
 });
 test("focus restoration retains unavailable FPS and falls back after removal", () => {
@@ -40,6 +40,7 @@ test("three-column packing does not navigate through an empty grid cell", () => 
 });
 test("every tile is reachable by arrows in every responsive grid", () => {
   for (const tiles of Object.values(m.sampleTiles)) for (const columns of [1, 2, 3, 4]) {
+    if(!tiles.length){assert.equal(tiles,m.sampleTiles.offline);continue;}
     const cells = m.gridCells(tiles, columns), visited = new Set([tiles[0].id]);
     for (const id of visited) for (const direction of ["left", "right", "up", "down"]) visited.add(m.moveInGrid(cells, id, direction));
     assert.equal(visited.size, tiles.length);

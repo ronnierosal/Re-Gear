@@ -16,7 +16,7 @@ test("display action names its target and keeps the shortcut separate from shutd
   assert.match(card, /description=\{primaryDisplayAction.description\}/);
   assert.match(card, /onClick=\{activateDisplay\}/);
   assert.match(source, /if \(primaryDisplayAction.target === "ally"\) requestControllerDisplaySwitch\("ally"\)/);
-  assert.match(source, /if \(primaryDisplayAction.disabled\) return/);
+  assert.match(source, /if \(runtimeOwner.stopped\|\|!menuFresh\|\|primaryDisplayAction.disabled\) return/);
   assert.match(source, /onSwitch=\{activateDisplay\}/);
   assert.match(card, /disabled=\{primaryDisplayAction.disabled\}/);
   // The gates reach displayAction by name, so a second caller cannot transpose
@@ -25,8 +25,8 @@ test("display action names its target and keeps the shortcut separate from shutd
   assert.match(source, /acknowledgementRequired: Boolean\(tvSwitchAcknowledgementId\),/);
   assert.match(source, /journalBlocked: Boolean\(journalStatus && journalStatus\.code !== "journal\.idle"\),/);
   assert.doesNotMatch(card, /executeSafeDisconnect\(true\)/);
-  const disconnect = source.slice(source.indexOf('icon="power"'), source.indexOf('{safeDisconnectMessage &&'));
+  const disconnect = source.slice(source.indexOf('icon="power"'), source.indexOf('{journalStatus',source.indexOf('icon="power"')));
   assert.doesNotMatch(disconnect, /Back\/View \+ Y/);
-  assert.match(disconnect, /onClick=\{requestSafeDisconnect\}/);
-  assert.match(disconnect, /Keep the eGPU connected until fully powered off/);
+  assert.match(disconnect, /onClick=\{openDisconnect\}/);
+  assert.doesNotMatch(disconnect, /requestSafeDisconnect|executeSafeDisconnectShutdown/);
 });

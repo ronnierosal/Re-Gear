@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {readFileSync} from "node:fs";
 import ts from "typescript";
-const js=ts.transpileModule(readFileSync(new URL('../src/quick-access/expanded-command-center/utility-layout.ts',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.ES2022}}).outputText;
-const {normalizeUtilityLayout:normalize,defaultUtilityLayout:defaults,commandCenterUtilityIds,quickActionIds,optionalQuickActionIds}=await import('data:text/javascript;base64,'+Buffer.from(js).toString('base64'));
+const js=ts.transpileModule(['control-registry.ts','utility-layout.ts'].map(name=>readFileSync(new URL('../src/quick-access/expanded-command-center/'+name,import.meta.url),'utf8')).join('\n'),{compilerOptions:{module:ts.ModuleKind.ES2022,target:ts.ScriptTarget.ES2022}}).outputText.replace(/^import .*;$/gm,'');
+const {controlRegistry,normalizeUtilityLayout:normalize,defaultUtilityLayout:defaults,commandCenterUtilityIds,quickActionIds,optionalQuickActionIds}=await import('data:text/javascript;base64,'+Buffer.from(js).toString('base64'));
 test('approved command center button groups stay stable',()=>{
  assert.deepEqual([...commandCenterUtilityIds],['brightness','volume']);
  assert.deepEqual([...quickActionIds],['mic','wifi','overlay','recording']);
@@ -39,7 +39,7 @@ test('invalid, duplicate and left-side quick actions cannot corrupt layout',()=>
 
 const railCode=ts.transpileModule(readFileSync(new URL('../src/quick-access/expanded-command-center/utility-rail.tsx',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.ES2022,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.React}}).outputText.replace(/^import[\s\S]*?;\s*$/gm,'').replace(/export /g,'');
 const React={createElement:(type,props,...children)=>({type,props:{...props,children}})};
-const Rail=new Function('React','useRef','useState','useLayoutEffect','defaultUtilityLayout','CommandCenterIcon',railCode+';return UtilityRail;')(React,value=>({current:value}),value=>[value,()=>{}],()=>{},defaults,'icon');
+const Rail=new Function('React','useRef','useState','useLayoutEffect','defaultUtilityLayout','CommandCenterIcon','controlRegistry',railCode+';return UtilityRail;')(React,value=>({current:value}),value=>[value,()=>{}],()=>{},defaults,'icon',controlRegistry);
 const flatten=value=>Array.isArray(value)?value.flatMap(flatten):value&&typeof value==='object'?[value,...flatten(value.props?.children)]:[];
 test('Steam rail callbacks release unhandled directions and normal B, consuming editing B only',()=>{
  let returned=0,focused=false;
@@ -86,14 +86,14 @@ function liveRailFixture(){
  const useState=initial=>{const i=cursor++;if(!(i in states))states[i]=initial;return [states[i],next=>states[i]=typeof next==='function'?next(states[i]):next];};
  const useRef=initial=>useState({current:initial})[0];
  const useLayoutEffect=(callback,deps)=>{const i=cursor++;if(!effects[i]||deps.some((v,j)=>v!==effects[i].deps[j])){pendingEffects.push(()=>{effects[i]?.cleanup?.();effects[i]={deps,cleanup:callback()}})}};
- const Component=new Function('React','useRef','useState','useLayoutEffect','defaultUtilityLayout','CommandCenterIcon',railCode+';return UtilityRail;')(React,useRef,useState,useLayoutEffect,defaults,'icon');
+ const Component=new Function('React','useRef','useState','useLayoutEffect','defaultUtilityLayout','CommandCenterIcon','controlRegistry',railCode+';return UtilityRail;')(React,useRef,useState,useLayoutEffect,defaults,'icon',controlRegistry);
  return {render(props){cursor=0;pendingEffects=[];const tree=Component(props);pendingEffects.forEach(f=>f());return tree;},unmount(){effects.forEach(effect=>effect?.cleanup?.());}};
 }
 
-test('requested slider renders immediately, coalesces 3% taps and drag, waits for observed confirmation and rolls back on failure',async()=>{
+test('requested slider renders immediately, coalesces 3% taps and drag, waits for observed confirmation and retains failed requests until new observation',async()=>{
  const app=liveRailFixture(),calls=[],jobs=[];
- let percent=50,tree;
- const props=()=>({side:'left',directions:{up:9,down:10,left:11,right:12},readings:{brightness:{available:true,value:percent+'%',percent}},onRequest:(...args)=>{calls.push(args);return new Promise((resolve,reject)=>jobs.push({resolve,reject}));}});
+ let percent=50,tree,observed={available:true,value:'50%',percent:50};
+ const props=()=>({side:'left',directions:{up:9,down:10,left:11,right:12},readings:{brightness:observed.percent===percent?observed:(observed={available:true,value:percent+'%',percent})},onRequest:(...args)=>{calls.push(args);return new Promise((resolve,reject)=>jobs.push({resolve,reject}));}});
  const render=()=>{tree=app.render(props());return tree;};
  const slider=()=>flatten(tree).find(n=>n.props?.['data-utility-id']==='brightness');
  const input=()=>flatten(slider()).find(n=>n.type==='input');
@@ -110,7 +110,7 @@ test('requested slider renders immediately, coalesces 3% taps and drag, waits fo
  percent=59;render();render();assert.equal(input().props['aria-valuetext'],'59%');
  input().props.onChange({currentTarget:{value:'80'}});render();input().props.onChange({currentTarget:{value:'95'}});render();input().props.onChange({currentTarget:{value:'100'}});render();
  assert.equal(input().props.value,100);jobs.shift().resolve();await tick();assert.deepEqual(calls.slice(-2),[['brightness',80],['brightness',100]]);
- jobs.shift().reject(Error('refused'));await tick();assert.equal(input().props.value,59);assert.match(input().props['aria-valuetext'],/Could not apply/);
+ jobs.shift().reject(Error('refused'));await tick();assert.equal(input().props.value,100);assert.match(input().props['aria-valuetext'],/Could not apply/);
  percent=99;render();slider().props.onGamepadDirection(event(9));render();assert.equal(input().props.value,100);
  jobs.shift().resolve();percent=100;await tick();percent=1;render();slider().props.onGamepadDirection(event(10));render();assert.equal(input().props.value,0);
  input().props.onChange({currentTarget:{value:'45'}});app.unmount();jobs.shift().resolve();await new Promise(r=>setImmediate(r));assert.notEqual(calls.at(-1)[1],45,'unmount drops queued requests');
