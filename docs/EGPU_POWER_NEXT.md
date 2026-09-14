@@ -1,5 +1,88 @@
 # Sleep and shutdown lifecycle implementation
 
+## 2026-09-14 inhibitor findings and lifecycle acceptance matrix
+
+PR315 (power backend) and PR316 (coordinator) are now merged in source at
+9421c6f; the historical implementation/installation notes below predate those
+merges. Source merge is not an installed sleep/wake result. PR333 is the separate
+button consumer, PR334 the read-only context producer, and PR329 the UI candidate.
+
+### The two recorded Linux inhibitors
+
+The 0.3.98 capture at 2026-09-13 04:05:45 UTC recorded PIDs 37189 and 12372,
+both named **Handheld Dock Mode**, `what=sleep`, `mode=block`. Both use the
+reason “The attached eGPU is known to wake this handheld immediately from sleep.”
+The code has two owners: `Plugin._sleep_guard` is the background controller;
+`Plugin._whole_dock_trial_lease` is the retained disconnect-transaction lease.
+The identical labels alone cannot assign each historical PID to its owner;
+live PID/parent ancestry is still required for that exact mapping.
+
+Both are releasable process-held leases, not permanent kernel/firmware blocks.
+The merged handoff releases the actual owned lease(s), pauses background
+reacquisition, submits one sleep request, and restores protection after the
+observed result or failure. A failed release remains a real block; software
+support is not proof that both installed processes release cleanly. When there
+is no retained transaction lease, ordinary keep-connected sleep only releases
+the background lease. Do not invent a second lease for that case.
+
+Steam's `BlockSuspendAction` is an additional frontend blocker, distinct from
+these two Linux processes. The old interception warns; it does not retain an
+OS request that automatically resumes when an inhibitor disappears. The intended
+prompt can hold **application intent** pending the user's choice, then release
+owned blockers and submit one selected request. It must not queue a suspend
+first and assume cancellation or inhibitor release controls it afterward.
+`OnSuspendRequest` is Sleep-only, not a Sleep/Shutdown action enum.
+
+Report these findings before building the prompt. Offer **Sleep connected** only
+when the installed handoff can release its actual blockers; if it cannot, do not
+promise that choice. Disconnect-then-sleep also needs a working release of the
+retained transaction lease, so it is not an automatic workaround for an
+unreleasable lease. No forced suspend or process killing is part of validation.
+
+### Expected results and evidence
+
+Charging continuity is an acceptance requirement, not an incidental side effect.
+Disconnect releases data/GPU resources; it must not intentionally disable dock
+power delivery while the cable remains attached.
+
+| Journey | Required result | Evidence / remaining check |
+| --- | --- | --- |
+| Safe disconnect, cable attached | Handheld usable; eGPU data path down; dock still supplies charging power | Golden 0.3.98 software-down/handheld result; user reports retained charging. |
+| Safe disconnect, then sleep, cable attached | Sleep/wake on handheld; charging retained; no software reauthorization | User reports desired charging retention; monitored 0.3.98 sleep was blocked. Controlled sleep/wake and power evidence remain pending. |
+| Safe disconnect, then shutdown, cable attached | Clean shutdown; dock charging retained | User-confirmed clean manual shutdown and continued charging; preserve this valid observation. |
+| Sleep connected, then wake | Existing eGPU/TV/audio/controls usable; record recovery-attempt count before/during/after wake | Not yet captured in the requested controlled journey. “Works after recovery” and “works without recovery” are separate outcomes. |
+| Physical unplug/replug after safe disconnect | Existing automatic-TV behavior preserved | Golden 0.3.98 physical cycle; no software reconnect substitute. |
+
+For charging checks record external supply `online`, battery capacity/status and
+charge/current trend when available, plus the user's charging indication.
+“Not charging” at a full battery alone is not loss of power delivery. Absence of
+post-shutdown telemetry is not proof of failure; use the device indicator/user
+observation and label the evidence source.
+
+### Pending connected sleep/wake capture
+
+Before sleep record installed version/revision, boot identity, game/display/GPU
+state, inhibitor owners, and automatic-link-recovery state/attempt count. Keep
+a timestamped local journey capture across SSH loss, then record suspend/resume
+events, GPU/TV/audio/controls, and recovery transitions/count after wake. The
+existing recovery policy is bounded at two attempts with a ten-second interval;
+do not reset counters to make the trial pass. Report whether any attempt was
+consumed, not just eventual success. Do not run software reconnect.
+
+On 2026-09-14 the attempted read-only preflight could not resolve steamdeck.local;
+the last known address 192.168.1.198 also timed out. No sleep/wake operation or
+current inhibitor observation was performed. Await the current reachable device
+and a user who can wake it and confirm picture/audio/controls.
+
+### Software reconnect is disabled at the RPC boundary
+
+The 0.3.92 reauthorization timeout with unusual dock heat had no thermal telemetry.
+`execute_egpu_disconnect(trial_action="whole_dock_reconnect")` now returns
+`dock_reconnect.disabled` before a worker or hardware action can start, including
+from `dock_teardown.software_down`. The action is absent from the backend allowlist
+and no generic trial fallthrough dispatches it. Frontend removal remains with
+the UI primary. Physical reattachment and ordinary auto-connect are unchanged.
+
 ## Accepted behavior
 
 Preserve the [0.3.98 golden cycle](EGPU_0398_CHECKPOINT.md). Shutdown with an

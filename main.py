@@ -2363,6 +2363,12 @@ class Plugin:
         expires, while a sleep is meant to be reopened when they come back. An
         unrecognised value records nothing rather than guessing.
         """
+        if trial_action == 'whole_dock_reconnect':
+            # Closed after the 0.3.92 reauthorization timeout/heat incident.
+            # Direct RPC callers must not bypass the product exclusion.
+            return {"schema_version": 1, "ok": False,
+                    "code": "dock_reconnect.disabled", "busy": False,
+                    "safe_to_unplug": False, "hardware_write": False}
         if trial_action == 'whole_dock_physical_reset':
             # Separate operator attestation from ordinary teardown approval.
             # This action neither releases a display nor relaunches a game.
@@ -2375,7 +2381,7 @@ class Plugin:
             return await self._reconcile_egpu_after_physical_reset(trial_request_id, True)
         if trial_action:
             if (trial_confirmed is not True or release_display is not True
-                    or trial_action not in ("whole_dock_disconnect", "whole_dock_reconnect", "whole_dock_capture", "whole_dock_held_capture", "whole_dock_reconcile", "whole_dock_shutdown", "whole_dock_sleep", "whole_dock_sleep_connected")
+                    or trial_action not in ("whole_dock_disconnect", "whole_dock_capture", "whole_dock_held_capture", "whole_dock_reconcile", "whole_dock_shutdown", "whole_dock_sleep", "whole_dock_sleep_connected")
                     or relaunch_app_id
                     or type(trial_request_id) is not str
                     or (trial_request_id and (len(trial_request_id) != 32 or any(c not in "0123456789abcdef" for c in trial_request_id)))
@@ -2450,7 +2456,7 @@ class Plugin:
                     elif trial_action == "whole_dock_disconnect":
                         result = self._run_whole_dock_trial(uuid.uuid4().hex, trial_attachment_token)
                     else:
-                        result = self._run_whole_dock_reconnect_trial()
+                        raise ValueError('dock_teardown.unsupported_action')
                     payload = {"schema_version": 1, "code": result.code,
                         "busy": False, "safe_to_unplug": False,
                         "software_down": getattr(result, "software_down", False),
