@@ -203,9 +203,9 @@ reasons or record a "Tested offline" attestation.
 
 That is now decided. Ronnie authorized an Offline Readiness tab on 2026-09-13,
 with a player-configured sync schedule and a force-sync action; the UI owner
-builds the visual tab. Nothing below is implemented yet, and the authorization is
+builds the visual tab. **That tab is not implemented yet.** The authorization is
 not licence to restore the old panel layout — the tab is a new surface, not a
-revival of the dormant one.
+revival of the dormant one described below.
 
 The pieces below exist in source and are covered by tests. Treat them as
 available material, not as current player-visible behavior.

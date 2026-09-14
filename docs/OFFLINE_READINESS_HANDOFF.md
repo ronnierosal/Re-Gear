@@ -22,21 +22,24 @@ adapters, tests and delivery guidance.
   [UI design contract](UI_DESIGN_CONTRACT.md).
 
 Standing prohibitions for this workstream: no whole-library scan, no network or
-account queries, no credential reads, no save or configuration writes, no game
-launches, no cache deletion, and no automatic Offline Mode. An installed game is
-not proof of entitlement, cloud sync, or offline launch. No live source can
-self-declare a benchmark from synthetic test timing.
+account queries, no credential reads, no game launches, no cache deletion, and no
+automatic Offline Mode. **No writes to Steam, account or game configuration** —
+that is the boundary, not writing as such. Re-Gear may persist its own sync
+preferences, because a schedule the player turned on has to survive. An installed
+game is not proof of entitlement, cloud sync, or offline launch. No live source
+can self-declare a benchmark from synthetic test timing.
 
 **Authorized 2026-09-13, pending implementation.** Ronnie has since authorized an
-Offline Readiness tab in Quick Access with a player-configured sync schedule,
-where sync both refreshes readiness and requests available preparation content
-(game updates, and shader content where Steam exposes it). That narrows two items
-that earlier read as blanket prohibitions here: scheduled work and content
-download are now in scope *for an explicitly chosen game, on a schedule the
-player turns on*. Everything else above still stands, and none of it is built
-yet — the existing passive 60-second focused-tile behaviour remains the baseline
-until a schedule is configured. A longer interval must never keep a stale
-positive badge alive until the next scheduled check.
+Offline Readiness tab in Quick Access with a force-sync action and a
+player-configured sync schedule, where sync both refreshes readiness and requests
+available preparation content (game updates, and shader content where Steam
+exposes it). Downloads are therefore authorized by **either** an explicit
+"Sync now" for a chosen game **or** a schedule the player has enabled — always
+for one explicitly chosen game, never library-wide. Everything else above still
+stands, and none of it is built yet: the existing passive 60-second focused-tile
+behaviour remains the baseline until a schedule is configured, and a longer
+interval must never keep a stale positive badge alive until the next scheduled
+check.
 
 ## Where the work stands
 
