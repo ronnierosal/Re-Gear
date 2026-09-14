@@ -64,3 +64,21 @@ LB/RB Switch Tab, A Select and B Close (B Back inside details).
 source through production `buildTiles` and `testBuildTiles` at 828x466 and1280x720.
 Its missing-data model and utility readings are simulated; it performs no device
 operations. Native controller and installed appearance still need hardware review.
+
+## Native navigation correction after installed 0.3.102
+
+Ronnie's physical test reported a stuck focus and insufficient slider travel.
+Read-only live Steam inspection confirmed that the FPS card and native modal/grid
+were registered and focused. The logical direction/Cancel callback wrapper consumes
+an event unless its handler returns `false`; raw button-down is registered directly.
+The previous tile handler returned nothing for ordinary directions, preventing parent
+grid traversal. Unhandled logical events now explicitly return false. First-column
+Quick Access LEFT still enters the rail, and rail B only consumes exit from editing.
+Modal lifecycle, initial focus, shortcut, native button-down and action dispatch are
+unchanged. Regression fixtures exercise actual TSX callbacks under this observed
+Steam wrapper contract, including non-entry LEFT and Performance's absent rail.
+
+The live Ally range was 15x34px. The requested usability correction keeps its width
+and thumb and increases track height to80px on short viewports,80-112px on taller
+viewports. Both tracks fit the existing narrow rail. Real controller acceptance is
+still required after the corrected build is installed.

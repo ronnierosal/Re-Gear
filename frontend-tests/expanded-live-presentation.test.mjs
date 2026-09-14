@@ -216,3 +216,37 @@ test("Quick Access mounts both unavailable utility rails and details hide them",
  nodes(tree).find(node=>node.props?.['data-ec-control']==='auto').props.onClick();tree=app.render(props);
  assert.equal(nodes(tree).filter(node=>node.type==='utility-rail').length,0);
 });
+
+// Steam wraps logical direction callbacks: only an explicit false
+// leaves the event available for parent navigation. Verified on installed102.
+function steamEvent(handler, button) {
+  const event={detail:{button},prevented:false,stopped:false,
+    preventDefault(){this.prevented=true;},stopPropagation(){this.stopped=true;}};
+  if (handler(event)!==false) {event.stopPropagation();event.preventDefault();}
+  return event;
+}
+test("native tile directions bubble to Steam grid unless the rail entry is handled", async () => {
+  const app=await fixture();
+  const tree=app.render({native:true,directions:{up:9,down:10,left:11,right:12}});
+  const tile=nodes(tree).find(node=>node.props?.["data-ec-control"]==="manual");
+  for(const button of [9,10,11,12]) {
+    const event=steamEvent(tile.props.onGamepadDirection,button);
+    assert.equal(event.stopped,false,`direction ${button} must reach parent grid`);
+    assert.equal(event.prevented,false);
+  }
+
+});
+
+test("native LEFT enters Quick Access rail only from its first column",async()=>{
+ const app=await fixture();let focused;
+ const tree=app.render({native:true,directions:{up:9,down:10,left:11,right:12}});
+ const slider={dataset:{ecControl:'utility-brightness'},querySelector:()=>null,matches:()=>true,focus(){focused='brightness'},scrollIntoView(){}};
+ nodes(tree).find(node=>node.props&&'data-ec-panel' in node.props).props.ref.current={querySelectorAll:()=>[slider]};
+ const fps=nodes(tree).find(node=>node.props?.['data-ec-control']==='fps');
+ assert.equal(steamEvent(fps.props.onGamepadDirection,11).stopped,true);
+ assert.equal(focused,'brightness');
+ const other=await fixture();
+ const performance=other.render({native:true,initialTab:'performance',directions:{up:9,down:10,left:11,right:12}});
+ const profile=nodes(performance).find(node=>node.props?.['data-ec-control']==='profile');
+ assert.equal(steamEvent(profile.props.onGamepadDirection,11).stopped,false);
+});

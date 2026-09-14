@@ -44,3 +44,8 @@ test("all top-level headings are absent and direct actions have no detail chevro
   assert.match(styles, /height:82.8vh/);
   assert.match(styles, /left:calc\(100% \+ 10px\)/);
 });
+
+test("vertical utility track provides useful travel within the narrow rail", () => {
+  assert.match(utility, /height:clamp\(80px,18vh,112px\)/);
+  assert.match(utility, /height:80px;width:15px/);
+});

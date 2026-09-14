@@ -214,7 +214,7 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
 
   const renderTile = (item: Tile) => <Button type="button" key={item.id} data-ec-control={item.id} data-tone={item.tone ?? "quiet"} className="rg-expanded-tile"
               disabled={Boolean(unavailableActions[item.id])}
-              onGamepadDirection={native&&directions ? (event:CustomEvent<{button:number}>)=>{if(event.detail.button===directions.left&&enterRail(item.id)){event.preventDefault();event.stopPropagation();}} : undefined}
+              onGamepadDirection={native&&directions ? (event:CustomEvent<{button:number}>)=>{if(event.detail.button===directions.left&&enterRail(item.id)){event.preventDefault();event.stopPropagation();return true;}return false;} : undefined}
               {...(native ? { preferredFocus: item.id === restoreTarget(items.map(tile => tile.id), memory.current[tab]), onGamepadFocus: () => { memory.current[tab] = item.id; const target = panel.current?.querySelector<HTMLElement>(`[data-ec-control="${item.id}"]`); if(target) { if(tab === "settings") reveal(target); else target.scrollIntoView({block:"nearest"}); } } } : {})}
               aria-label={`${item.title}: ${item.value}. ${item.detail}.${synthetic ? " Sample data." : ""} ${unavailableActions[item.id] ? unavailableActions[item.id] : item.id === "disconnect" && onDisconnect ? "Start guarded disconnect." : "View details."}`}
               onFocus={(event: { target: EventTarget }) => { memory.current[tab] = item.id; (event.target as HTMLElement).scrollIntoView({ block: "nearest" }); }} onClick={() => { if(unavailableActions[item.id])return; if(item.id==="disconnect"&&onDisconnect){onDisconnect();return;} launcher.current = item.id; setNested(item.id); }}>

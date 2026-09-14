@@ -36,3 +36,25 @@ test('invalid, duplicate and left-side quick actions cannot corrupt layout',()=>
   {id:'brightness',side:'left'},{id:'volume',side:'left'},{id:'mic',side:'right'}
  ]);
 });
+
+const railCode=ts.transpileModule(readFileSync(new URL('../src/quick-access/expanded-command-center/utility-rail.tsx',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.ES2022,jsx:ts.JsxEmit.React}}).outputText.replace(/^import[\s\S]*?;\s*$/gm,'').replace(/export /g,'');
+const React={createElement:(type,props,...children)=>({type,props:{...props,children}})};
+const Rail=new Function('React','useRef','useState','defaultUtilityLayout','CommandCenterIcon',railCode+';return UtilityRail;')(React,value=>({current:value}),value=>[value,()=>{}],defaults,'icon');
+const flatten=value=>Array.isArray(value)?value.flatMap(flatten):value&&typeof value==='object'?[value,...flatten(value.props?.children)]:[];
+test('Steam rail callbacks release unhandled directions and normal B, consuming editing B only',()=>{
+ let returned=0,focused=false;
+ const tree=Rail({side:'left',directions:{up:9,down:10,left:11,right:12},onReturnToGrid:()=>returned++});
+ const slider=flatten(tree).find(node=>node.props?.['data-utility-id']==='brightness');
+ const input={tagName:'INPUT',disabled:true};
+ const wrapper={tagName:'DIV',querySelector:()=>input,ownerDocument:{activeElement:null},focus(){focused=true}};
+ const dispatch=(handler,button,target=wrapper)=>{
+   const event={detail:{button},target,currentTarget:wrapper,stopped:false,preventDefault(){},stopPropagation(){this.stopped=true}};
+   if(handler(event)!==false)event.stopPropagation();
+   return event.stopped;
+ };
+ assert.equal(dispatch(slider.props.onGamepadDirection,11),false,'LEFT keeps native fallback');
+ assert.equal(dispatch(slider.props.onGamepadDirection,12),true);assert.equal(returned,1);
+ assert.equal(dispatch(slider.props.onCancelButton,2),false,'B outside editing reaches modal Close');
+ wrapper.ownerDocument.activeElement=input;
+ assert.equal(dispatch(slider.props.onCancelButton,2),true);assert.equal(focused,true);
+});

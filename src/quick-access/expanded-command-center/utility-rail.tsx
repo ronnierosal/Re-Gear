@@ -28,10 +28,10 @@ const railStyles = `
 .rg-utility-icon{display:grid;place-items:center;margin:0 auto 3px;color:#c9ecff}.rg-utility-icon svg{display:block;width:21px;height:21px}
 .rg-utility-label{display:block;font-size:10px;font-weight:700;line-height:1.1}.rg-utility-value{display:block;font-size:8px;line-height:1.15;color:#87aabd;margin-top:2px}
 .rg-utility-slider{display:flex;flex:0 0 auto;min-height:0;flex-direction:column;align-items:center;justify-content:center;gap:2px;background:transparent;border:0;border-radius:0;box-shadow:none;padding:3px 0;overflow:visible}
-.rg-utility-slider+.rg-utility-slider{border-top:1px solid #294f68;padding-top:5px}.rg-utility-slider .rg-utility-icon{margin-bottom:0}.rg-utility-slider .rg-utility-icon svg{width:17px;height:17px}.rg-utility-slider input{writing-mode:vertical-lr;direction:rtl;width:17px;height:clamp(40px,7vh,56px);margin:1px 0;accent-color:#39d8ff}
+.rg-utility-slider+.rg-utility-slider{border-top:1px solid #294f68;padding-top:5px}.rg-utility-slider .rg-utility-icon{margin-bottom:0}.rg-utility-slider .rg-utility-icon svg{width:17px;height:17px}.rg-utility-slider input{writing-mode:vertical-lr;direction:rtl;width:17px;height:clamp(80px,18vh,112px);margin:1px 0;accent-color:#39d8ff}
 .rg-utility-rail[data-utility-side=left]{gap:0;padding:4px 2px;border:1px solid #294f68;border-radius:10px;background:#071825e8}.rg-utility-rail[data-utility-side=left] .rg-utility-label{display:none}.rg-utility-rail[data-utility-side=left] .rg-utility-value{font-size:7px;margin-top:2px}
 .rg-utility-rail[data-utility-side=right]{gap:5px;overflow:hidden}.rg-utility-rail[data-utility-side=right] .rg-utility-control{display:flex;flex:0 1 auto;flex-direction:column;align-items:center;justify-content:center;height:clamp(46px,9vh,62px);min-height:0;max-height:62px;padding:4px 2px}.rg-utility-rail[data-utility-side=right] .rg-utility-icon{width:25px;height:25px;border-radius:7px;border:1px solid #315c75;background:#0a2232}.rg-utility-rail[data-utility-side=right] .rg-utility-icon svg{width:16px;height:16px}.rg-utility-rail[data-utility-side=right] .rg-utility-label{font-size:8px}.rg-utility-rail[data-utility-side=right] .rg-utility-value{font-size:6px}
-@media(max-height:520px){.rg-utility-slider input{height:34px;width:15px}.rg-utility-rail[data-utility-side=right]{gap:3px}.rg-utility-rail[data-utility-side=right] .rg-utility-control{height:42px;max-height:42px}}
+@media(max-height:520px){.rg-utility-slider input{height:80px;width:15px}.rg-utility-rail[data-utility-side=right]{gap:3px}.rg-utility-rail[data-utility-side=right] .rg-utility-control{height:42px;max-height:42px}}
 `;
 
 export function UtilityRail({side,layout=defaultUtilityLayout,readings={},onRequest,Button="button",Focusable="aside",directions,onReturnToGrid}:UtilityRailProps) {
@@ -61,8 +61,8 @@ export function UtilityRail({side,layout=defaultUtilityLayout,readings={},onRequ
   function move(event: {target: EventTarget|null; currentTarget: EventTarget|null; preventDefault():void;stopPropagation():void}, direction:string, id:UtilityId) {
     const wrapper=event.currentTarget as HTMLElement;
     const input=wrapper.querySelector<HTMLInputElement>('input');
-    if(direction==='right') { event.preventDefault();event.stopPropagation();onReturnToGrid?.();return; }
-    if(direction!=='up'&&direction!=='down') return;
+    if(direction==='right') { event.preventDefault();event.stopPropagation();onReturnToGrid?.();return true; }
+    if(direction!=='up'&&direction!=='down') return false;
     event.preventDefault();event.stopPropagation();
     if(input && (event.target===input || wrapper.ownerDocument?.activeElement===input) && !input.disabled) {
       const value=Math.max(0,Math.min(100,(requested.current.get(id)??Number(input.value))+(direction==='up'?1:-1)));
@@ -71,6 +71,7 @@ export function UtilityRail({side,layout=defaultUtilityLayout,readings={},onRequ
       const wrappers=Array.from(wrapper.parentElement?.querySelectorAll<HTMLElement>('[data-utility-slider]')??[]);
       wrappers[wrappers.indexOf(wrapper)+(direction==='down'?1:-1)]?.focus();
     }
+    return true;
   }
   function navigate(event:KeyboardEvent<HTMLElement>){
     if(event.target instanceof HTMLInputElement || !["ArrowUp","ArrowDown"].includes(event.key)) return;
@@ -92,7 +93,7 @@ export function UtilityRail({side,layout=defaultUtilityLayout,readings={},onRequ
       return isSlider ? <Focusable key={id} tabIndex={0} data-utility-slider data-utility-id={id} data-ec-control={`utility-${id}`} className="rg-utility-control rg-utility-slider" title={reason} aria-label={labels[id]} aria-busy={waiting||undefined}
         onGamepadDirection={directions ? (event:CustomEvent<{button:number}>)=>move(event,Object.keys(directions).find(key=>directions[key as keyof typeof directions]===event.detail.button)??'',id) : undefined}
         onOKButton={(event:CustomEvent)=>{event.preventDefault();event.stopPropagation();(event.currentTarget as HTMLElement).querySelector<HTMLInputElement>('input:not(:disabled)')?.focus();}}
-        onCancelButton={(event:CustomEvent)=>{const wrapper=event.currentTarget as HTMLElement;if((event.target as HTMLElement).tagName==='INPUT'||wrapper.ownerDocument?.activeElement===wrapper.querySelector('input')){event.preventDefault();event.stopPropagation();wrapper.focus();}}}
+        onCancelButton={(event:CustomEvent)=>{const wrapper=event.currentTarget as HTMLElement;if((event.target as HTMLElement).tagName==='INPUT'||wrapper.ownerDocument?.activeElement===wrapper.querySelector('input')){event.preventDefault();event.stopPropagation();wrapper.focus();return true;}return false;}}
         onKeyDown={(event:KeyboardEvent<HTMLElement>)=>{if(event.key.startsWith('Arrow')) move(event,event.key.slice(5).toLowerCase(),id); else if(event.key==='Enter'){event.preventDefault();event.stopPropagation();event.currentTarget.querySelector<HTMLInputElement>('input:not(:disabled)')?.focus();} else if(event.key==='Escape'&&(event.target as HTMLElement).tagName==='INPUT'){event.preventDefault();event.stopPropagation();event.currentTarget.focus();}}}>
         <span className="rg-utility-icon"><UtilityIcon id={id}/></span>
         <span className="rg-utility-label">{labels[id]}</span>
