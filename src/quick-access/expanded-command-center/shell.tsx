@@ -1,3 +1,9 @@
+import { loadLayout, saveLayout, projectLayout, replaceSlot, type LayoutPreferences, type LayoutStorage, type TileOrigin } from "./layout-preferences";
+import { createCustomizeGestureRecognizer, type CustomizeGesture } from "./customization-input";
+import { LayoutCustomizationBanner, reorderById, moveTargetIndex } from "./layout-customization";
+import { CommandCenterFooterHints } from "./footer-hints";
+import { QuickActionRailEditor } from "./quick-actions-customization";
+import type { UtilityId } from "./utility-layout";
 import { UtilityRail } from "./utility-rail";
 import type { UtilityRailProps } from "./utility-rail";
 import { CommandNotice } from "./detail-ui";
@@ -9,6 +15,7 @@ import type { Tab, Tile } from "./model";
 import { expandedStyles } from "./styles";
 import { brandIcon } from "../../brand-assets";
 
+const quickActionLabels:Partial<Record<UtilityId,string>>={mic:"Mic",wifi:"Wi-Fi",overlay:"Overlay",recording:"Record",audio:"Audio output"};
 const iconIds: Record<string, CommandCenterIconId> = {
   quick: "quick-access", performance: "performance", egpu: "egpu", controllers: "controllers", settings: "settings",
   fps: "fps", manual: "manual-tdp", auto: "auto-tdp", display: "display", disconnect: "safe-disconnect",
@@ -18,7 +25,7 @@ const iconIds: Record<string, CommandCenterIconId> = {
 function Icon({ id }: { id: string }) { return <CommandCenterIcon id={iconIds[id] ?? "status-unknown"} size={34}/>; }
 
 /** Shared synthetic presentation for browser preview and native Decky shell. */
-export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReasons = false, settings, native = false, primitives, previewColumns, tiles, renderDetail, disconnectControl, utilityReadings, onUtilityRequest, directions, onDisconnect, unavailableActions = {} }: {
+export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReasons = false, settings, native = false, primitives, previewColumns, tiles, renderDetail, disconnectControl, utilityReadings, onUtilityRequest, directions, onDisconnect, unavailableActions = {}, layoutStorage, editButtons }: {
   onClose(): void; initialTab?: Tab; longReasons?: boolean; settings?: ReactNode; native?: boolean;
   primitives?: { Button: ElementType; Focusable: ElementType };
   /** Synthetic comparison only; native callers never pass this. */
@@ -37,6 +44,8 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
   directions?: UtilityRailProps["directions"];
   onDisconnect?:()=>void;
   unavailableActions?:Record<string,string>;
+  layoutStorage?:LayoutStorage;
+  editButtons?:{x:number;y:number};
 }) {
   const Button = primitives?.Button ?? "button";
   const Container = primitives?.Focusable ?? "div";
@@ -51,18 +60,34 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
   const pendingFocus = useRef<string | undefined>(undefined);
   const opener = useRef<HTMLElement | null>(null);
   const detailHadFocus = useRef(false);
+  const initialLayout=useRef<LayoutPreferences|null>(null);
+  if(layoutStorage&&!initialLayout.current)initialLayout.current=loadLayout(layoutStorage);
+  const [savedLayout,setSavedLayout]=useState<LayoutPreferences|null>(initialLayout.current);
+  const [draft,setDraft]=useState<LayoutPreferences|null>(null);
+  const [editMode,setEditMode]=useState<"normal"|"customize"|"move"|"quick-actions">("normal");
+  const [selected,setSelected]=useState<string|undefined>(undefined);
+  const [rightSlot,setRightSlot]=useState(0);
+  const [layoutError,setLayoutError]=useState("");
+  const [utilityEditing,setUtilityEditing]=useState<UtilityId|null>(null);
+  const tabRef=useRef(tab);tabRef.current=tab;
+  const gestureAction=useRef<(gesture:CustomizeGesture)=>void>(()=>{});
+  const gesture=useRef<ReturnType<typeof createCustomizeGestureRecognizer>|null>(null);
+  if(layoutStorage&&editButtons&&!gesture.current)gesture.current=createCustomizeGestureRecognizer({tab:()=>tabRef.current,onGesture:value=>gestureAction.current(value)});
+  const projection=savedLayout?projectLayout(tiles??sampleTiles,draft??savedLayout):null;
   const supplied = tiles?.[tab];
   // A tab with real readings must stop describing itself as sample data.
   const synthetic = supplied === undefined;
-  const items = supplied ?? sampleTiles[tab];
+  const items = projection?.view[tab] ?? supplied ?? sampleTiles[tab];
+  const originFor=(tile:Tile):TileOrigin=>projection?.resolve(tab,tile.id)??{key:`${tab}:${tile.id}`,tab,tile};
   // Retain the destination, never a copy of a reading that can become stale.
   const nested = nestedId === null ? null : items.find(item => item.id === nestedId) ?? {
     id: nestedId, title: "Status unavailable", value: "Unknown",
     detail: "This reading is no longer available. Return to the menu for current status.",
   };
-  const detailTile = !synthetic && nestedId !== null ? supplied.find(item => item.id === nestedId) : undefined;
+  const detailTile = !synthetic && nestedId !== null ? items.find(item => item.id === nestedId) : undefined;
   const dockControl = native && nestedId === "disconnect" && disconnectControl != null;
-  const detailContent = dockControl ? disconnectControl : detailTile ? renderDetail?.(tab, detailTile) : null;
+  const detailOrigin=detailTile?originFor(detailTile):null;
+  const detailContent = dockControl ? disconnectControl : detailOrigin ? renderDetail?.(detailOrigin.tab, detailOrigin.tile) : null;
   const hasDetail = detailContent != null && detailContent !== false;
   const gridColumns = columns;
   const focus = (id?: string) => {
@@ -90,7 +115,7 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
   }, [hasDetail, nestedId, tab]);
   useLayoutEffect(() => {
     opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    return () => { if (opener.current?.isConnected) opener.current.focus(); };
+    return () => { gesture.current?.cancel(); if (opener.current?.isConnected) opener.current.focus(); };
   }, []);
   useLayoutEffect(() => {
     if (!content.current) return;
@@ -99,16 +124,49 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
     return () => observer.disconnect();
   }, [previewColumns]);
   useLayoutEffect(() => {
-    focus(nested ? (hasDetail ? "nested-content" : "nested-back") : restoreTarget(controlIds(), pendingFocus.current ?? memory.current[tab]));
+    focus(editMode==="customize" ? `choice:${projection?.catalog[0]?.key}` : editMode==="quick-actions" ? `right-slot:${rightSlot}` : editMode==="move" ? selected : nested ? (hasDetail ? "nested-content" : "nested-back") : restoreTarget(controlIds(), pendingFocus.current ?? memory.current[tab]));
     pendingFocus.current = undefined;
-  }, [tab, nestedId]);
+  }, [tab, nestedId, editMode, draft]);
 
-  function switchTab(direction: -1 | 1) { setNested(null); setTab(nextTab(tab, direction)); }
+  function cancelEdit(){gesture.current?.cancel();setUtilityEditing(null);setDraft(null);setEditMode("normal");setLayoutError("");}
+  function commitLayout(next:LayoutPreferences,focusId=selected){
+    if(!layoutStorage)return false;
+    try{saveLayout(layoutStorage,next);setSavedLayout(next);pendingFocus.current=focusId;cancelEdit();return true;}
+    catch{setLayoutError("Could not save this layout. Your saved layout is unchanged.");return false;}
+  }
+  function beginEdit(value:CustomizeGesture){
+    if(!savedLayout||nested||utilityEditing||editMode!=="normal")return;
+    const target=items.find(item=>item.id===memory.current[tab])??items[0];
+    if(!target)return;
+    setSelected(target.id);setLayoutError("");
+    setDraft({...savedLayout,quick:[...savedLayout.quick],order:{...savedLayout.order},right:[...savedLayout.right]});
+    setEditMode(value.kind==="move"?"move":"customize");
+  }
+  gestureAction.current=beginEdit;
+  function moveSelected(direction:"up"|"down"|"left"|"right"){
+    if(editMode!=="move"||!draft||!selected)return false;
+    const reordered=reorderById(items,selected,moveTargetIndex(items,selected,direction,gridColumns));
+    setDraft(tab==="quick"?{...draft,quick:reordered.map(item=>originFor(item).key)}:{...draft,order:{...draft.order,[tab]:reordered.map(item=>item.id)}});
+    return true;
+  }
+  function chooseTile(origin:TileOrigin){
+    if(!savedLayout||Boolean(unavailableActions[origin.tile.id]))return;
+    const slot=items.findIndex(item=>item.id===selected);
+    commitLayout({...savedLayout,quick:replaceSlot(items.map(item=>originFor(item).key),slot,origin.key)},origin.tab==="quick"?origin.tile.id:`custom:${origin.key}`);
+  }
+  function chooseRight(id:UtilityId){
+    if(!savedLayout||!utilityReadings?.[id]?.available)return;
+    const next={...savedLayout,right:replaceSlot(savedLayout.right,rightSlot,id) as UtilityId[]};
+    if(!layoutStorage)return;
+    try{saveLayout(layoutStorage,next);setSavedLayout(next);setLayoutError("");}catch{setLayoutError("Could not save this layout. Your saved layout is unchanged.");}
+  }
+  function switchTab(direction: -1 | 1) { cancelEdit();setNested(null); setTab(nextTab(tab, direction)); }
   function enterRail(id:string) {
     if(tab!=="quick"||nested||gridCells(items,gridColumns).find(cell=>cell.id===id)?.column!==0) return false;
     lastGrid.current=id;focus("utility-brightness");return true;
   }
   function back() {
+    if(editMode!=="normal"){cancelEdit();return;}
     if (nested) { pendingFocus.current = launcher.current; setNested(null); }
     else onClose();
   }
@@ -117,11 +175,16 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
     noFocusRing: true,
     onCancelButton: (event: CustomEvent) => { event.preventDefault(); event.stopPropagation(); back(); },
     onButtonDown: (event: CustomEvent<{ button: number; is_repeat?: boolean }>) => {
+      if(editButtons&&savedLayout&&!nested&&!utilityEditing){
+        if(event.detail.button===editButtons.y){event.preventDefault();event.stopPropagation();if(editMode==="normal")gesture.current?.down();return;}
+        if(event.detail.button===editButtons.x&&tab==="quick"){event.preventDefault();event.stopPropagation();if(!event.detail.is_repeat&&editMode==="normal"){gesture.current?.cancel();setRightSlot(0);setEditMode("quick-actions");}return;}
+      }
       // Steam UI GamepadButton enum (5/6), not raw controller callback codes.
       if (event.detail.button !== 5 && event.detail.button !== 6) return;
       event.preventDefault(); event.stopPropagation();
       if (!event.detail.is_repeat) switchTab(event.detail.button === 5 ? -1 : 1);
     },
+    onButtonUp:(event:CustomEvent<{button:number}>)=>{if(editButtons&&event.detail.button===editButtons.y&&gesture.current?.isPressed()){event.preventDefault();event.stopPropagation();gesture.current.up();}},
   } : {};
   function reveal(target: HTMLElement) {
     const section = target.closest<HTMLElement>("[data-settings-section]");
@@ -139,6 +202,11 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
   }
   function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
     if (event.altKey || event.ctrlKey || event.metaKey) return;
+    if(savedLayout&&!nested&&!utilityEditing){
+      if(event.key.toLowerCase()==="y"){event.preventDefault();event.stopPropagation();if(editMode==="normal")gesture.current?.down();return;}
+      if(event.key.toLowerCase()==="x"&&tab==="quick"&&editMode==="normal"){event.preventDefault();event.stopPropagation();setRightSlot(0);setEditMode("quick-actions");return;}
+    }
+    if(editMode==="move"&&event.key.startsWith("Arrow")){event.preventDefault();event.stopPropagation();moveSelected(event.key.slice(5).toLowerCase() as "up"|"down"|"left"|"right");return;}
     if ((event.target as HTMLElement).matches('input[type="range"]') && (event.target as HTMLElement).closest('[data-utility-side]') && !["Escape", "Tab"].includes(event.key)) return;
     // Embedded pickers own editing/navigation keys. Escape and tab trapping
     // still belong to this shell; native controller events remain Decky's.
@@ -213,39 +281,45 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
   }
 
   const renderTile = (item: Tile) => <Button type="button" key={item.id} data-ec-control={item.id} data-tone={item.tone ?? "quiet"} className="rg-expanded-tile"
-              disabled={Boolean(unavailableActions[item.id])}
-              onGamepadDirection={native&&directions ? (event:CustomEvent<{button:number}>)=>{if(event.detail.button===directions.left&&enterRail(item.id)){event.preventDefault();event.stopPropagation();return true;}return false;} : undefined}
+              disabled={editMode==="normal"&&Boolean(unavailableActions[originFor(item).tile.id])}
+              data-move-selected={editMode==="move"&&selected===item.id || undefined}
+              onGamepadDirection={native&&directions ? (event:CustomEvent<{button:number}>)=>{const direction=Object.keys(directions).find(key=>directions[key as keyof typeof directions]===event.detail.button) as "up"|"down"|"left"|"right"|undefined;if(direction&&moveSelected(direction)){event.preventDefault();event.stopPropagation();return true;}if(event.detail.button===directions.left&&enterRail(item.id)){event.preventDefault();event.stopPropagation();return true;}return false;} : undefined}
               {...(native ? { preferredFocus: item.id === restoreTarget(items.map(tile => tile.id), memory.current[tab]), onGamepadFocus: () => { memory.current[tab] = item.id; const target = panel.current?.querySelector<HTMLElement>(`[data-ec-control="${item.id}"]`); if(target) { if(tab === "settings") reveal(target); else target.scrollIntoView({block:"nearest"}); } } } : {})}
-              aria-label={`${item.title}: ${item.value}. ${item.detail}.${synthetic ? " Sample data." : ""} ${unavailableActions[item.id] ? unavailableActions[item.id] : item.id === "disconnect" && onDisconnect ? "Start guarded disconnect." : "View details."}`}
-              onFocus={(event: { target: EventTarget }) => { memory.current[tab] = item.id; (event.target as HTMLElement).scrollIntoView({ block: "nearest" }); }} onClick={() => { if(unavailableActions[item.id])return; if(item.id==="disconnect"&&onDisconnect){onDisconnect();return;} launcher.current = item.id; setNested(item.id); }}>
+              aria-label={`${editMode==="move" ? "Move button. A to place. " : ""}${item.title}: ${item.value}. ${item.detail}.${synthetic ? " Sample data." : ""} ${unavailableActions[originFor(item).tile.id] ? unavailableActions[originFor(item).tile.id] : originFor(item).tile.id === "disconnect" && onDisconnect ? "Start guarded disconnect." : "View details."}`}
+              onFocus={(event: { target: EventTarget }) => { memory.current[tab] = item.id; (event.target as HTMLElement).scrollIntoView({ block: "nearest" }); }} onClick={() => { if(editMode==="move"){if(draft)commitLayout(draft);return;}const original=originFor(item);if(unavailableActions[original.tile.id])return; if(original.tile.id==="disconnect"&&onDisconnect){onDisconnect();return;} launcher.current = item.id; setNested(item.id); }}>
               <span className="rg-expanded-tile-body">
                 <span className="rg-expanded-tile-heading">
-                  <span className="rg-expanded-tile-icon"><Icon id={item.id}/></span>
+                  <span className="rg-expanded-tile-icon"><Icon id={originFor(item).tile.id}/></span>
                   <span className="rg-expanded-label">{item.title}</span>
                 </span>
-                <span className="rg-expanded-value">{item.id === "disconnect" && <CommandCenterIcon id="status-warning" size={16}/>} {item.value}</span>
+                <span className="rg-expanded-value">{originFor(item).tile.id === "disconnect" && <CommandCenterIcon id="status-warning" size={16}/>} {item.value}</span>
                 <span className="rg-expanded-detail">{item.detail}{longReasons && item.tone === "unavailable" ? " — Provider observations are unavailable in this synthetic preview. No capability or successful operation can be inferred from the displayed sample." : ""}</span>
-                {!unavailableActions[item.id] && !(item.id === "disconnect" && onDisconnect) && <span className="rg-expanded-chevron" aria-hidden="true">›</span>}
+                {!unavailableActions[originFor(item).tile.id] && !(originFor(item).tile.id === "disconnect" && onDisconnect) && <span className="rg-expanded-chevron" aria-hidden="true">›</span>}
               </span>
             </Button>;
 
   return <div className="rg-expanded-backdrop">
     <style>{expandedStyles}</style>
     <Container ref={panel} data-ec-panel className="rg-expanded-frame" role="dialog" aria-modal="true" aria-label={synthetic ? "Re-Gear expanded Command Center prototype" : "Re-Gear Command Center"} onKeyDown={onKeyDown} {...nativeHandlers}
-      onFocus={(event: { target: EventTarget }) => { detailHadFocus.current = Boolean((event.target as HTMLElement).closest("[data-ec-detail-content]")); const id = (event.target as HTMLElement).closest<HTMLElement>("[data-ec-control]")?.dataset.ecControl; if (id && !nested) memory.current[tab] = id; }}>
-      {tab === "quick" && !nested && <UtilityRail side="left" Button={Button} Focusable={Container} readings={utilityReadings} onRequest={onUtilityRequest} directions={directions} onReturnToGrid={()=>focus(lastGrid.current??items[0]?.id)}/>}
+      onFocus={(event: { target: EventTarget }) => { detailHadFocus.current = Boolean((event.target as HTMLElement).closest("[data-ec-detail-content]")); const id = (event.target as HTMLElement).closest<HTMLElement>("[data-ec-control]")?.dataset.ecControl; if (id && !nested) memory.current[tab] = id; }} onKeyUp={(event:KeyboardEvent<HTMLDivElement>)=>{if(event.key.toLowerCase()==="y"&&gesture.current?.isPressed()){event.preventDefault();event.stopPropagation();gesture.current.up();}}}>
+      {tab === "quick" && !nested && editMode==="normal" && <UtilityRail side="left" Button={Button} Focusable={Container} readings={utilityReadings} onRequest={onUtilityRequest} directions={directions} onReturnToGrid={()=>focus(lastGrid.current??items[0]?.id)} onEditingChange={setUtilityEditing}/>}
       <Container className="rg-expanded" {...(native ? {"flow-children":"vertical",noFocusRing:true} : {})}>
       <header className="rg-expanded-brand"><span className="rg-expanded-wordmark"><img src={brandIcon} alt=""/>Re-Gear</span><span className="rg-expanded-demo"><span className="rg-expanded-demo-label"><i/>{synthetic ? "Demo · Sample data" : "Application status"}</span><span>{synthetic ? "Hardware controls not connected" : renderDetail ? "Status and controls" : "Readings only · View details"}</span></span></header>
       <Container className="rg-expanded-tabs" role="tablist" aria-label="Command Center sections" {...(native ? { "flow-children": "horizontal", noFocusRing: true } : {})}>
         {tabs.map(id => <Button key={id} id={`ec-tab-${id}`} type="button" role="tab" aria-selected={tab === id} aria-controls="ec-tabpanel" data-ec-tab={id} className="rg-expanded-tab"
-          onClick={() => { setNested(null); setTab(id); if (id === tab) focus(restoreTarget(controlIds(), memory.current[tab])); }}>
+          onClick={() => { cancelEdit();setNested(null); setTab(id); if (id === tab) focus(restoreTarget(controlIds(), memory.current[tab])); }}>
           <span className="rg-expanded-tab-body"><Icon id={id}/><span>{tabLabels[id]}</span></span>
         </Button>)}
       </Container>
       <div ref={content} className="rg-expanded-content" id="ec-tabpanel" role="tabpanel" onFocusCapture={event => { if(tab === "settings") reveal(event.target as HTMLElement); }} aria-labelledby={`ec-tab-${tab}`}>
+        {layoutError&&<p role="alert">{layoutError}</p>}
+        {editMode==="move"&&<LayoutCustomizationBanner tab={tab} mode="move" selectedTitle={items.find(item=>item.id===selected)?.title}/>}
+        {editMode==="customize"&&<LayoutCustomizationBanner tab="quick" mode="swap"/>}
         {nested && <><h2>{nested.title}</h2>
         <p className="rg-expanded-context">{hasDetail ? "Settings and actions" : synthetic ? "Configuration preview · no changes are applied" : "Current status · no changes are applied"}</p></>}
-        {nested ? <section className="rg-expanded-detail-page">
+        {editMode==="customize" ? <Container className="rg-expanded-grid" style={{"--ec-columns":gridColumns} as CSSProperties} flow-children="grid" noFocusRing>
+          {projection?.catalog.map(origin=><Button key={origin.key} type="button" className="rg-expanded-tile" data-ec-control={`choice:${origin.key}`} disabled={Boolean(unavailableActions[origin.tile.id])} aria-label={`${origin.tile.title}, ${tabLabels[origin.tab]}. ${unavailableActions[origin.tile.id]??origin.tile.detail}`} onClick={()=>chooseTile(origin)}><span className="rg-expanded-tile-body"><span className="rg-expanded-label">{origin.tile.title}</span><span className="rg-expanded-value">{origin.tile.value}</span><small>{tabLabels[origin.tab]}</small></span></Button>)}
+        </Container> : editMode==="quick-actions" ? <QuickActionRailEditor slots={(savedLayout?.right??[]).map((id,slot)=>({slot,id,label:quickActionLabels[id]??id,control:<Button type="button" data-ec-control={`right-slot:${slot}`} onClick={()=>setRightSlot(slot)} aria-pressed={rightSlot===slot}>Select</Button>}))} choices={(["mic","wifi","overlay","recording","audio"] as UtilityId[]).map(id=>({id,label:quickActionLabels[id]??id,available:Boolean(utilityReadings?.[id]?.available),selected:savedLayout?.right.includes(id)??false,control:<Button type="button" data-ec-control={`right-choice:${id}`} disabled={!utilityReadings?.[id]?.available} onClick={()=>chooseRight(id)}>Choose</Button>}))}/> : nested ? <section className="rg-expanded-detail-page">
           {hasDetail ? <Container key={nested.id} data-ec-control="nested-content" data-ec-detail-content {...(native ? { "flow-children": "vertical", noFocusRing: true, preferredFocus: true } : {})}>
             {dockControl && <CommandNotice tone="warning" title="Keep the cable connected">Disconnect trial. Follow the guarded flow before any physical action.</CommandNotice>}
             {detailContent}</Container> : <>
@@ -258,7 +332,7 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
           <Button type="button" className="rg-expanded-back" data-ec-control="nested-back" {...(native ? { preferredFocus: !hasDetail } : {})} onClick={back}>Back to {tabLabels[tab]}</Button>
         </section> : <>
           {tab === "settings" && settings}
-          <Container className={tab === "settings" ? "rg-expanded-grid rg-expanded-settings-list" : "rg-expanded-grid"} style={{ "--ec-columns": gridColumns } as CSSProperties} {...(native ? { "flow-children": "grid", preferredFocus: true, noFocusRing: true } : {})}>
+          <Container data-layout-customizing={editMode==="move" || undefined} className={tab === "settings" ? "rg-expanded-grid rg-expanded-settings-list" : "rg-expanded-grid"} style={{ "--ec-columns": gridColumns } as CSSProperties} {...(native ? { "flow-children": "grid", preferredFocus: true, noFocusRing: true } : {})}>
             {items.map(item => tab === "settings" ? <section key={item.id} data-settings-section={item.id} className="rg-expanded-settings-section">
               <span className="rg-expanded-anchor" tabIndex={-1} aria-label={`${item.title} section`} />
               {renderTile(item)}</section> : renderTile(item))}
@@ -275,13 +349,14 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
         </>}
       </div>
       <footer className="rg-expanded-footer" data-ec-footer>
+        {utilityEditing ? <><span>D-pad Adjust</span><span><kbd className="rg-expanded-round">B</kbd> Done</span><span>Right: Menu</span></> : savedLayout ? <CommandCenterFooterHints tab={tab} nested={Boolean(nested)} mode={editMode}/> : <>
         <span><kbd>LB</kbd><kbd>RB</kbd> Switch Tab</span>
         <span className="rg-expanded-footer-spacer" aria-hidden="true"/>
         <span><kbd className="rg-expanded-round">A</kbd> Select</span>
-        <span><kbd className="rg-expanded-round">B</kbd> {nested ? "Back" : "Close"}</span>
+        <span><kbd className="rg-expanded-round">B</kbd> {nested ? "Back" : "Close"}</span></>}
       </footer>
       </Container>
-      {tab === "quick" && !nested && <UtilityRail side="right" Button={Button} Focusable={Container} readings={utilityReadings} onRequest={onUtilityRequest}/>}
+      {tab === "quick" && !nested && editMode==="normal" && <UtilityRail side="right" layout={savedLayout?.right.map(id=>({id,side:"right" as const}))} Button={Button} Focusable={Container} readings={utilityReadings} onRequest={onUtilityRequest}/>}
     </Container>
   </div>;
 }

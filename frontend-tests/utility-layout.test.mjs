@@ -58,3 +58,25 @@ test('Steam rail callbacks release unhandled directions and normal B, consuming 
  wrapper.ownerDocument.activeElement=input;
  assert.equal(dispatch(slider.props.onCancelButton,2),true);assert.equal(focused,true);
 });
+
+test('native A keeps wrapper focus and the next direction adjusts immediately', async()=>{
+ const calls=[];let rawFocus=0,returned=0;
+ const tree=Rail({side:'left',directions:{up:9,down:10,left:11,right:12},
+   readings:{brightness:{available:true,value:'50%',percent:50}},
+   onRequest:async(...args)=>calls.push(args),onReturnToGrid:()=>returned++});
+ const slider=flatten(tree).find(node=>node.props?.['data-utility-id']==='brightness');
+ const input={tagName:'INPUT',disabled:false,value:'50',focus(){rawFocus++}};
+ const wrapper={tagName:'DIV',querySelector:()=>input,ownerDocument:{activeElement:null},focus(){}};
+ wrapper.ownerDocument.activeElement=wrapper;
+ const event=button=>({detail:{button},target:wrapper,currentTarget:wrapper,prevented:false,stopped:false,preventDefault(){this.prevented=true},stopPropagation(){this.stopped=true}});
+ const dispatch=(handler,button)=>{const e=event(button);if(handler(e)!==false){e.stopPropagation();e.preventDefault();}return e;};
+ assert.equal(dispatch(slider.props.onOKButton,1).stopped,true);
+ assert.equal(rawFocus,0,'native A must not transfer focus out of registered Steam wrapper');
+ assert.equal(dispatch(slider.props.onGamepadDirection,9).stopped,true);await new Promise(r=>setImmediate(r));
+ assert.deepEqual(calls,[['brightness',51]],'first native direction adjusts, not just restores focus');
+ assert.equal(slider.props.onCancelButton(event(2)),true);
+ assert.equal(dispatch(slider.props.onCancelButton,2).stopped,false,'next B reaches Close');
+ slider.props.onOKButton(event(1));slider.props.onGamepadBlur();assert.equal(dispatch(slider.props.onCancelButton,2).stopped,false,'blur exits native adjustment mode');
+ slider.props.onOKButton(event(1));slider.props.onGamepadDirection(event(12));
+ assert.equal(returned,1);assert.equal(slider.props.onCancelButton(event(2)),false);
+});

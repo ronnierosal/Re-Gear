@@ -38,7 +38,7 @@ test("rapid slider changes preserve the latest requested value", () => {
 const shell = readFileSync(new URL("../src/quick-access/expanded-command-center/shell.tsx", import.meta.url), "utf8");
 test("all top-level headings are absent and direct actions have no detail chevron", () => {
   assert.match(shell, /nested && <><h2>/);
-  assert.match(shell, /!unavailableActions\[item.id\] && !\(item.id === "disconnect" && onDisconnect\)/);
+  assert.match(shell, /!unavailableActions\[originFor\(item\).tile.id\] && !\(originFor\(item\).tile.id === "disconnect" && onDisconnect\)/);
   assert.match(styles, /rg-expanded-detail\{display:none;font-size:9px/);
   assert.match(styles, /height:79.2vh/);
   assert.match(styles, /height:82.8vh/);
@@ -46,8 +46,8 @@ test("all top-level headings are absent and direct actions have no detail chevro
 });
 
 test("vertical utility track provides useful travel within the narrow rail", () => {
-  assert.match(utility, /height:clamp\(80px,18vh,112px\)/);
-  assert.match(utility, /height:80px;width:15px/);
+  assert.match(utility, /height:0;min-height:0;flex:1 1 0/);
+  assert.match(styles, /height:82.8vh;max-height:82.8vh/);
 });
 
 test("right four-button group is centered beside the shell at every height", () => {

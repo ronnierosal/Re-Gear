@@ -22,7 +22,7 @@ test("brightness and volume are visually integrated into the main command center
   assert.match(styles, /data-utility-side=left/);
   assert.match(styles, /position:absolute/);
   assert.match(styles, /width:clamp\(46px,5\.1vw,55px\)/);
-  assert.match(rail, /height:clamp\(80px,18vh,112px\)/);
+  assert.match(rail, /height:0;min-height:0;flex:1 1 0/);
   assert.doesNotMatch(styles, /Very narrow hosts cannot fit side controls/);
   assert.doesNotMatch(styles, /data-utility-side=left[^}]*display:none/);
 });

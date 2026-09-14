@@ -257,7 +257,7 @@ test('native rail selects wrappers, enters editing with A, and returns to grid w
   const event = h.direction(0, false, railDirections.down);
   assert.equal(h.focused, h.wrappers[1]); assert.equal(event.prevented, 1); assert.equal(event.stopped, 1);
   h.direction(1, false, railDirections.up); assert.equal(h.focused, h.wrappers[0]);
-  h.nodes[0].props.onOKButton(h.event(0)); assert.equal(h.focused, h.wrappers[0].input);
+  h.nodes[0].props.onOKButton(h.event(0)); assert.equal(h.focused, h.wrappers[0], "native A retains its registered wrapper");
   h.nodes[0].props.onCancelButton(h.event(0, true)); assert.equal(h.focused, h.wrappers[0]);
   h.direction(0, true, railDirections.right); assert.equal(h.returned, 1);
   h.direction(1, false, railDirections.right); assert.equal(h.returned, 2);

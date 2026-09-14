@@ -89,3 +89,32 @@ Ronnie's subsequent placement request centers the entire four-button group verti
 beside the shell. The existing relative frame anchors top50% with translateY(-50%);
 the short-viewport rule does not override that center. Button dimensions, inter-button
 gaps,10px horizontal separation and103slider/navigation behavior remain unchanged.
+
+## Physical 0.3.104 feedback: sliders and customization
+
+Live Steam input established that A focusing a raw range loses the registered native
+navigation node. Native A now enters explicit adjustment mode while the wrapper keeps
+focus. The next Up/Down dispatches an adjustment immediately; B exits adjustment and
+Right returns to the grid. Touch/keyboard range interaction remains. Route changes
+clear parent adjustment hints; unhandled logical events retain the103false contract.
+The left rail now matches shell height, with equal brightness/volume halves and tracks
+filling the remaining height. Narrow width and centered right group remain unchanged.
+
+The existing approved controls are mounted: Quick Access Y tap chooses a replacement
+main card, Y held550ms enters move mode on release, and X edits the four right slots.
+Other tabs allow reorder only. The gesture is cancelled on route changes/unmount.
+A places a move; B discards the draft. Editing never dispatches the selected action.
+The footer identifies active editing/adjustment commands.
+
+Preferences store IDs/order only under regear.command-center-layout.v1. Quick choices
+carry their source tab and ID, and each render resolves the current source reading and
+original detail/action. Withdrawing an origin removes its control. Other-tab membership
+is fixed; right slots remain exactly four, brightness/volume excluded. Unsupported
+right choices stay disabled. Invalid storage recovers defaults; write failure remains
+visible and does not claim persistence. Main replacement choices show source tabs to
+distinguish similarly named controls.
+
+Actual-source browser checks exercise choose/save, draft cancel/place and four-slot
+editor behavior at828x466/1280x720. Native wrapper regressions reproduce the observed
+A-focus failure, but corrected hardware adjustment and customization still require
+Ronnie's installed-build test.

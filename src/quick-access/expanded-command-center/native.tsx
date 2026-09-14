@@ -102,7 +102,7 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
     const rawTiles = useSyncExternalStore(subscribeTo(source), readFrom(source), readFrom(source));
     const tiles = rawTiles ? testBuildTiles(rawTiles) : undefined;
     const utilityReadings = useSyncExternalStore(utilities?.subscribe ?? noSubscribe, utilities?.read ?? noUtilities, utilities?.read ?? noUtilities);
-    return <ExpandedCommandCenter onClose={close} native onDisconnect={disconnect} disconnectControl={<WholeDockControl intent="disconnect_only" readCurrentSnapshot={readCurrentSnapshot}/>} directions={{up:GamepadButton.DIR_UP,down:GamepadButton.DIR_DOWN,left:GamepadButton.DIR_LEFT,right:GamepadButton.DIR_RIGHT}} unavailableActions={unavailableTestActions} primitives={{ Button: Button, Focusable }} settings={<Settings/>} tiles={tiles} renderDetail={renderDetail} utilityReadings={utilityReadings} onUtilityRequest={utilities ? (id, percent) => {
+    return <ExpandedCommandCenter onClose={close} native onDisconnect={disconnect} disconnectControl={<WholeDockControl intent="disconnect_only" readCurrentSnapshot={readCurrentSnapshot}/>} directions={{up:GamepadButton.DIR_UP,down:GamepadButton.DIR_DOWN,left:GamepadButton.DIR_LEFT,right:GamepadButton.DIR_RIGHT}} unavailableActions={unavailableTestActions} layoutStorage={storage} editButtons={{x:GamepadButton.SECONDARY,y:GamepadButton.OPTIONS}} primitives={{ Button: Button, Focusable }} settings={<Settings/>} tiles={tiles} renderDetail={renderDetail} utilityReadings={utilityReadings} onUtilityRequest={utilities ? (id, percent) => {
       if (generation !== token || stopped) return Promise.reject(new Error("Menu closed"));
       return utilities.request(id, percent);
     } : undefined}/>;

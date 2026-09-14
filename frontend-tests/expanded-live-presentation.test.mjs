@@ -8,7 +8,7 @@ import ts from "typescript";
 let fixtureId = 0;
 async function fixture() {
   const compile = path => ts.transpileModule(readFileSync(new URL(path, import.meta.url), "utf8"), {
-    compilerOptions: { module: ts.ModuleKind.ESNext, jsx: ts.JsxEmit.React },
+    compilerOptions: { module: ts.ModuleKind.ESNext, target:ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.React },
   }).outputText.replace(/^import .*;$/gm, "");
   const code = `
     const React = {createElement(type, props, ...children) { return {type, props: {...props, children}}; }};
@@ -19,7 +19,15 @@ async function fixture() {
     let effects=[];
     const useLayoutEffect = effect => effects.push(effect);
     const UtilityRail='utility-rail', CommandCenterIcon='icon', expandedStyles='', brandIcon='';
+    let fixtureTime=1000; const Date={now:()=>fixtureTime};
+    const QuickActionRailEditor='right-editor';
     ${compile("../src/quick-access/expanded-command-center/model.ts")}
+    ${compile("../src/quick-access/expanded-command-center/utility-layout.ts")}
+    ${compile("../src/quick-access/expanded-command-center/layout-preferences.ts")}
+    ${compile("../src/quick-access/expanded-command-center/customization-input.ts")}
+    ${compile("../src/quick-access/expanded-command-center/layout-customization.tsx")}
+    ${compile("../src/quick-access/expanded-command-center/footer-hints.tsx")}
+    export function advance(ms){fixtureTime+=ms;}
     ${compile("../src/quick-access/expanded-command-center/shell.tsx")}
     export function render(props) {cursor=0;effects=[];return ExpandedCommandCenter({onClose(){}, ...props});}
     export function restoreFocus() {effects.at(-1)();}
@@ -249,4 +257,69 @@ test("native LEFT enters Quick Access rail only from its first column",async()=>
  const performance=other.render({native:true,initialTab:'performance',directions:{up:9,down:10,left:11,right:12}});
  const profile=nodes(performance).find(node=>node.props?.['data-ec-control']==='profile');
  assert.equal(steamEvent(profile.props.onGamepadDirection,11).stopped,false);
+});
+
+function storageFixture(){const writes=[];let value=null;return {writes,getItem:()=>value,setItem:(_,next)=>{value=next;writes.push(JSON.parse(next));}};}
+const nativeEvent=button=>({detail:{button},preventDefault(){},stopPropagation(){}});
+const frame=tree=>nodes(tree).find(node=>node.props&&'data-ec-panel' in node.props);
+const card=(tree,id)=>nodes(tree).find(node=>node.props?.['data-ec-control']===id);
+const prefsProps=storage=>({native:true,layoutStorage:storage,editButtons:{x:3,y:4},directions:{up:9,down:10,left:11,right:12}});
+function yGesture(app,tree,ms=0){frame(tree).props.onButtonDown(nativeEvent(4));app.advance(ms);frame(tree).props.onButtonUp(nativeEvent(4));}
+test('Y imported card resolves live original detail and withdraws unavailable origin',async()=>{
+ const app=await fixture(),storage=storageFixture(),calls=[];
+ const props={...prefsProps(storage),tiles:{quick:[auto('Off','current')],performance:[{id:'display',title:'Resolution',value:'1080',detail:'observed'}]},renderDetail:(tab,tile)=>{calls.push([tab,tile.value]);return 'live detail'}};
+ let tree=app.render(props);yGesture(app,tree);tree=app.render(props);
+ card(tree,'choice:performance:display').props.onClick();tree=app.render(props);
+ assert.equal(storage.writes.length,1);assert.deepEqual(storage.writes[0].quick,['performance:display']);
+ const reopened=await fixture();assert.ok(card(reopened.render(props),'custom:performance:display'),'saved IDs survive reopening');
+ card(tree,'custom:performance:display').props.onClick();tree=app.render(props);
+ assert.deepEqual(calls.at(-1),['performance','1080']);
+ props.tiles.performance[0]={...props.tiles.performance[0],value:'1440'};tree=app.render(props);
+ assert.deepEqual(calls.at(-1),['performance','1440']);
+ const previous=calls.length;props.tiles.performance=[];tree=app.render(props);
+ assert.equal(calls.length,previous);assert.match(text(tree),/Status unavailable/);
+});
+test('hold Y moves draft only, B cancels, A places without dispatching the action',async()=>{
+ const app=await fixture(),storage=storageFixture();let starts=0;
+ const props={...prefsProps(storage),tiles:{quick:[{id:'disconnect',title:'Safe Disconnect',value:'Unknown',detail:''},auto('Off','')]},onDisconnect:()=>starts++};
+ let tree=app.render(props);card(tree,'disconnect').props.onGamepadFocus();yGesture(app,tree,550);tree=app.render(props);
+ card(tree,'disconnect').props.onGamepadDirection(nativeEvent(12));tree=app.render(props);
+ assert.equal(storage.writes.length,0);
+ frame(tree).props.onCancelButton(nativeEvent(2));tree=app.render(props);
+ assert.equal(storage.writes.length,0);assert.equal(starts,0);
+ card(tree,'disconnect').props.onGamepadFocus();yGesture(app,tree,550);tree=app.render(props);
+ card(tree,'disconnect').props.onGamepadDirection(nativeEvent(12));tree=app.render(props);card(tree,'disconnect').props.onClick();tree=app.render(props);
+ assert.deepEqual(storage.writes.at(-1).quick,['quick:auto','quick:disconnect']);assert.equal(starts,0);
+ card(tree,'disconnect').props.onClick();assert.equal(starts,1);
+});
+test('tab routing clears slider adjustment and pending Y gesture',async()=>{
+ const app=await fixture(),props=prefsProps(storageFixture());let tree=app.render(props);
+ const rail=nodes(tree).find(node=>node.type==='utility-rail'&&node.props.side==='left');rail.props.onEditingChange('brightness');tree=app.render(props);assert.match(text(tree),/D-pad Adjust/);
+ frame(tree).props.onButtonDown(nativeEvent(6));tree=app.render(props);assert.doesNotMatch(text(tree),/D-pad Adjust/);
+ frame(tree).props.onButtonDown(nativeEvent(4));frame(tree).props.onButtonDown(nativeEvent(5));tree=app.render(props);app.advance(600);frame(tree).props.onButtonUp(nativeEvent(4));tree=app.render(props);
+ assert.ok(!nodes(tree).some(node=>node.props?.['data-layout-customizing']===true));
+});
+
+test('other tabs ignore Y tap and persist reorder without replacing membership',async()=>{
+ const app=await fixture(),storage=storageFixture(),props={...prefsProps(storage),initialTab:'performance'};
+ let tree=app.render(props);yGesture(app,tree);tree=app.render(props);
+ assert.ok(!nodes(tree).some(node=>String(node.props?.['data-ec-control']).startsWith('choice:')));
+ yGesture(app,tree,550);tree=app.render(props);card(tree,'profile').props.onGamepadDirection(nativeEvent(12));tree=app.render(props);card(tree,'profile').props.onClick();tree=app.render(props);
+ assert.deepEqual(storage.writes.at(-1).order.performance,['fps','profile','manual','auto','display','refresh']);
+});
+test('right editor persists exactly four slots without dispatching utility actions',async()=>{
+ const app=await fixture(),storage=storageFixture();let calls=0;
+ const props={...prefsProps(storage),utilityReadings:{audio:{available:true,value:'Ready'}},onUtilityRequest:async()=>calls++};
+ let tree=app.render(props);frame(tree).props.onButtonDown(nativeEvent(3));tree=app.render(props);
+ const editor=nodes(tree).find(node=>node.type==='right-editor');assert.equal(editor.props.slots.length,4);
+ assert.equal(editor.props.choices.find(choice=>choice.id==='overlay').control.props.disabled,true);
+ editor.props.choices.find(choice=>choice.id==='audio').control.props.onClick();tree=app.render(props);
+ assert.deepEqual(storage.writes.at(-1).right,['audio','wifi','overlay','recording']);assert.equal(calls,0);
+});
+test('failed layout save remains visible and never falls through to disconnect',async()=>{
+ const app=await fixture();let starts=0;
+ const props={...prefsProps({getItem:()=>null,setItem(){throw Error('full')}}),tiles:{quick:[{id:'disconnect',title:'Safe Disconnect',value:'Unknown',detail:''}]},onDisconnect:()=>starts++};
+ let tree=app.render(props);yGesture(app,tree,550);tree=app.render(props);card(tree,'disconnect').props.onClick();tree=app.render(props);
+ assert.match(text(tree),/Could not save this layout/);assert.equal(starts,0);
+ frame(tree).props.onCancelButton(nativeEvent(2));tree=app.render(props);assert.doesNotMatch(text(tree),/Could not save this layout/);
 });
