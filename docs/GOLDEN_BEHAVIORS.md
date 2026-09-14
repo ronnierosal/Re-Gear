@@ -54,6 +54,17 @@ baseline migration record. Do not manufacture a pass by updating expected
 outputs to an unexplained regression. Review contract/test/checker/workflow
 changes as changes to enforcement itself.
 
+Editing the manifest alone cannot weaken it. `GOLDEN_COVERAGE` and
+`GOLDEN_BASELINE` in `tests/test_golden_behaviors.py` pin the behavior IDs, the
+test IDs each behavior claims, and the promoted baseline provenance. Deleting a
+behavior, dropping a test ID, exchanging one for a different passing test, or
+swapping the recorded artifact therefore fails the required check instead of
+reporting a green gate over reduced coverage. The pins are floors: adding golden
+coverage, whether an added test ID or a whole new behavior, remains a one-file
+change to the manifest. Removing or renaming coverage, and promoting a baseline,
+must edit both files in the same pull request with the explanation required
+above.
+
 ## Every candidate review
 
 1. Record the exact candidate revision and comparison base; identify affected
