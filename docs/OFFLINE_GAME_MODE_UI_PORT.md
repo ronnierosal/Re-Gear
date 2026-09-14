@@ -77,6 +77,8 @@ subscribed view will not re-render just because the clock moved past
 focus event, an existing interval, a visibility change — and the model stays free
 of any scheduler of its own. `refresh()` returns `true` when subscribers were
 notified, and does nothing when nothing changed.
+Reading a snapshot does not consume a pending change: the next host `refresh()`
+still notifies subscribers when evidence has expired since their last notification.
 
 ## Preparation states
 
@@ -121,6 +123,8 @@ an `appId`, and are dropped unless both match the current selection.
 `applyPreparation` additionally carries an `attempt`, so a late reply from an
 earlier press of the same button — same game, same generation — cannot land on
 the current one. Changing game, or disposing, invalidates everything in flight.
+Within the same selection, readiness observations with an older `checkedAt` than
+the accepted evidence are rejected, so a delayed check cannot replace a newer one.
 
 **Duplicate suppression.** `syncNow()` while `inFlight` returns `false` without
 calling the port. The suppression lifts on any terminal state, so a retry is
@@ -133,6 +137,9 @@ never keep a stale positive badge alive until the next check.
 **Honesty.** `loading` stays true until `applyInitialState` resolves, and an
 injected schedule is reported exactly as given. The model never fabricates
 readiness and never enables a schedule by itself.
+Schedule changes are published only after the synchronous `persistSchedule` port
+returns successfully. If it throws, the action returns `false` and retains the
+previous schedule without announcing the rejected change.
 
 ## UI example
 

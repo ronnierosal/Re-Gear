@@ -8,6 +8,50 @@ import {
 const GAME = { appId: 620, name: "Portal 2" };
 const OTHER = { appId: 440, name: "Team Fortress 2" };
 
+test("failed schedule persistence preserves the last accepted schedule", () => {
+  let fail = false;
+  const model = createOfflineGameModeModel(
+    { startSync() {}, persistSchedule() { if (fail) throw new Error("storage unavailable"); }, now: () => 1000 },
+    { initial: { available: true, game: GAME } },
+  );
+  assert.equal(model.setSyncSchedule({ enabled: true, intervalMinutes: 60 }), true);
+  const before = model.getSnapshot();
+  const seen = [];
+  model.subscribe((snapshot) => seen.push(snapshot));
+  fail = true;
+  assert.equal(model.setSyncSchedule({ enabled: true, intervalMinutes: 30 }), false);
+  assert.deepEqual(model.getSnapshot().schedule, before.schedule);
+  assert.equal(seen.length, 0);
+});
+
+test("older readiness cannot replace a newer assessment for the same subject", () => {
+  const h = harness();
+  assert.equal(h.model.applyReadiness(readiness(h, {
+    status: "needs_preparation", label: "Needs update", checkedAt: 1000, expiresAt: 61000,
+  })), true);
+  const before = h.model.getSnapshot();
+  const notifications = h.seen.length;
+  assert.equal(h.model.applyReadiness(readiness(h, {
+    status: "likely_offline_ready", label: "Old ready assessment", checkedAt: 500, expiresAt: 60500,
+  })), false);
+  assert.equal(h.model.getSnapshot(), before);
+  assert.equal(h.seen.length, notifications);
+});
+
+test("reading an expired snapshot does not consume the host refresh notification", () => {
+  const h = harness();
+  h.model.applyReadiness(readiness(h));
+  const notifications = h.seen.length;
+  h.tick(60000);
+  assert.equal(h.model.getSnapshot().readiness.expired, true);
+  assert.equal(h.seen.length, notifications, "reads do not notify");
+  assert.equal(h.model.refresh(), true);
+  assert.equal(h.seen.length, notifications + 1);
+  assert.equal(h.seen.at(-1).readiness.expired, true);
+  assert.equal(h.model.refresh(), false);
+  assert.equal(h.seen.length, notifications + 1);
+});
+
 function harness(initial = { available: true, game: GAME }) {
   const calls = { sync: [], schedule: [] };
   let clock = 1000;

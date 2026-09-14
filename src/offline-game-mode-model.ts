@@ -190,6 +190,7 @@ export function createOfflineGameModeModel(
   const listeners = new Set<(snapshot: OfflineGameModeSnapshot) => void>();
   let cached: OfflineGameModeSnapshot | null = null;
   let cachedKey = "";
+  let notifiedKey = "";
 
   const build = (): OfflineGameModeSnapshot => {
     const at = ports.now();
@@ -227,13 +228,15 @@ export function createOfflineGameModeModel(
   // Compare the whole snapshot, not a state name. A content entry completing
   // while the overall state stays `active` is a real change subscribers need.
   const notify = () => {
-    if (disposed) return;
-    const before = cachedKey;
+    if (disposed) return false;
     const next = getSnapshot();
-    if (cachedKey === before) return;
+    // Reads may refresh the cache without delivering the change to subscribers.
+    if (cachedKey === notifiedKey) return false;
+    notifiedKey = cachedKey;
     for (const listener of [...listeners]) {
       try { listener(next); } catch { /* One bad subscriber must not stop the rest. */ }
     }
+    return true;
   };
 
   const resetForNewSelection = () => {
@@ -293,10 +296,7 @@ export function createOfflineGameModeModel(
      * any scheduler of its own. Returns true when subscribers were notified.
      */
     refresh(): boolean {
-      if (disposed) return false;
-      const before = cachedKey;
-      notify();
-      return cachedKey !== before;
+      return notify();
     },
 
     /** One player action, one port call. Duplicate presses while a sync is in
@@ -330,12 +330,13 @@ export function createOfflineGameModeModel(
       if (disposed || !available || !next || typeof next.enabled !== "boolean") return false;
       const interval = next.intervalMinutes;
       if (next.enabled && !(typeof interval === "number" && Number.isFinite(interval) && interval > 0)) return false;
-      schedule = { enabled: next.enabled, intervalMinutes: next.enabled ? (interval as number) : null };
+      const candidate = { enabled: next.enabled, intervalMinutes: next.enabled ? (interval as number) : null };
       try {
-        ports.persistSchedule({ ...schedule });
+        ports.persistSchedule({ ...candidate });
       } catch {
         return false;
       }
+      schedule = candidate;
       notify();
       return true;
     },
@@ -343,11 +344,13 @@ export function createOfflineGameModeModel(
     /** Fresh readiness evidence. Only this renews expiry. */
     applyReadiness(observation: ReadinessObservation): boolean {
       if (!observation || !current(observation)) return false;
+      const checkedAt = integer(observation.checkedAt);
+      if (checkedAt !== null && readiness.checkedAt !== null && checkedAt < readiness.checkedAt) return false;
       readiness = {
         status: observation.status,
         label: observation.label,
         reasons: [...(observation.reasons ?? [])],
-        checkedAt: integer(observation.checkedAt),
+        checkedAt,
         expiresAt: integer(observation.expiresAt),
       };
       notify();
