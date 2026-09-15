@@ -109,6 +109,20 @@ later integration. Normal Steam Sleep/Shutdown and the physical button do not
 invoke the new shutdown flow. Software-disconnect completion is not physical
 unplug clearance; the enclosure remains powered.
 
+On 2026-09-14 the maintainer decided to offer the shutdown intent through that
+same control. The native adapter now mounts a two-option selector -- disconnect
+only (the default, and the route the 0.3.98 golden cycle ran) or disconnect and
+shut down -- feeding one `WholeDockControl`, one pending record and one poll.
+Reconnect and every sleep route stay off the selector. Selection is
+presentation only: `dockIntentControl` and every backend guard still decide
+whether the chosen route is offered, and the capability contract still
+authorizes nothing. `dock_power.live_preflight_required` was removed from that
+contract because it named a gate that was never implemented. Hardware
+completion of an automated shutdown continuation remains unverified: D5.2
+recorded fan and LEDs staying on until a manual power-button hold, and the
+later clean shutdown is a user-reported manual result, not an automated
+continuation test.
+
 An unwired `SleepLeaseHandoff` module now implements the proposed two-lease
 handoff contract with independent restoration readbacks and one-shot submission.
 No production adapter supplies the required pause, crash-continuity, supported

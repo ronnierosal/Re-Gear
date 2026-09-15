@@ -21,10 +21,15 @@ class DockPowerCapabilitiesTests(unittest.TestCase):
         shutdown = status['actions']['shutdown']
         self.assertEqual(shutdown['implementation'], 'implemented')
         self.assertEqual(shutdown['live_readiness'], 'not_assessed')
-        self.assertIs(shutdown['actionable'], False)
+        # Offered through the guarded route since 2026-09-14; the contract
+        # still authorizes nothing and hardware completion stays unverified.
+        self.assertIs(shutdown['actionable'], True)
         self.assertEqual(shutdown['reason_codes'], [
-            'dock_power.shutdown_hardware_unverified',
-            'dock_power.live_preflight_required'])
+            'dock_power.shutdown_hardware_unverified'])
+        # The old second reason named a preflight gate that was never
+        # implemented anywhere; a contract must not cite a check that does not
+        # exist, so it must not come back.
+        self.assertNotIn('dock_power.live_preflight_required', shutdown['reason_codes'])
         self.assertEqual(json.loads(json.dumps(status)), status)
 
     def test_physical_removal_profile_does_not_promote_sleep_support(self):

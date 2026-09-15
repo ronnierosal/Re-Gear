@@ -5,7 +5,20 @@ import { loadMenuBinding, saveMenuBinding, menuBindingOptions, startMenuShortcut
 import type { MenuBinding } from "../../menu-shortcut";
 import { ExpandedCommandCenter } from "./shell";
 import { WholeDockControl } from "../../whole-dock-control";
+import type { DockIntent } from "../../whole-dock-control-model";
 import { ShortcutSettings } from "./shortcut-settings";
+
+/** The two player-selectable dock routes. Reconnect and sleep stay unmounted.
+ *
+ * Selection is presentation only. dockIntentControl and every backend guard
+ * still decide whether the chosen route is offered at all, so picking
+ * "shutdown" here cannot make a shutdown happen that the same guards would
+ * have refused. One control, one pending record, one poll: a second mounted
+ * control would share that record and the two would disable each other. */
+const dockIntentOptions: { label: string; data: DockIntent }[] = [
+  { label: "Disconnect only", data: "disconnect_only" },
+  { label: "Disconnect and shut down", data: "shutdown" },
+];
 
 /** Native menu adapter: preview tiles plus the explicitly guarded dock control. */
 export function createExpandedMenu(input: ControllerInputSource | undefined, host: Window, canOpen: () => boolean = () => true, readCurrentSnapshot: () => unknown = () => null) {
@@ -22,7 +35,18 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
   };
   function View({ token }: { token: number }) {
     useEffect(() => () => { if (generation === token) { modal = null; generation++; } }, [token]);
-    return <ExpandedCommandCenter onClose={close} native disconnectControl={<WholeDockControl intent="disconnect_only" readCurrentSnapshot={readCurrentSnapshot}/>} primitives={{ Button: Button, Focusable }} settings={<Settings/>}/>;
+    // Defaults to the route the 0.3.98 golden cycle actually ran. The control
+    // was built for a changing intent prop -- it re-checks the intent after
+    // every await and recovers a pending record's intent from storage -- so a
+    // flip mid-confirmation aborts cleanly rather than dispatching the wrong route.
+    const [dockIntent, setDockIntent] = useState<DockIntent>("disconnect_only");
+    return <ExpandedCommandCenter onClose={close} native disconnectControl={
+      <Focusable>
+        <Dropdown menuLabel="Dock action" rgOptions={dockIntentOptions} selectedOption={dockIntent}
+          onChange={option => { if (dockIntentOptions.some(item => item.data === option.data)) setDockIntent(option.data as DockIntent); }}/>
+        <WholeDockControl intent={dockIntent} readCurrentSnapshot={readCurrentSnapshot}/>
+      </Focusable>
+    } primitives={{ Button: Button, Focusable }} settings={<Settings/>}/>;
   }
   function Settings() {
     const [selected, setSelected] = useState(binding);

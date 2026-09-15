@@ -205,7 +205,8 @@ test("shutdown wrong request acceptance cannot display a requested result",async
 });
 test("shutdown refuses all power failure categories without another action",()=>{
   for(const code of ["preflight_changed","intent_not_recorded","request_unverified","unresolved",
-    "already_consumed","disconnect_unverified","invalid_intent","boot_unverified","busy","sleep_unverified"]) {
+    "already_consumed","disconnect_unverified","invalid_intent","boot_unverified","busy","sleep_unverified",
+    "request_action_changed"]) {
     const status={...fresh,code:"dock_power."+code,ok:false,power_requested:false,power_action:"shutdown",request_id:"request"};
     assert.equal(dockIntentControl(status,{...idle,schema_version:3},"shutdown").action,null);
     assert.equal(dockRequestSettled(status,"request","shutdown"),true);

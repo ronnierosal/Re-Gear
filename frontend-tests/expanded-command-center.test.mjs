@@ -69,7 +69,7 @@ test("native modal uses Decky controls without a second raw navigation listener"
     export const views=[], effects=[], listeners=[];
     export let opens=0, clicks=0;
     const React={createElement:(type,props,...children)=>({type,props:{...props,children}})};
-    const ModalRoot='modal', ExpandedCommandCenter='shell',WholeDockControl='whole-dock-control',Button='native-button',Focusable='native-focus';
+    const ModalRoot='modal', ExpandedCommandCenter='shell',WholeDockControl='whole-dock-control',Button='native-button',Focusable='native-focus',Dropdown='native-dropdown';
     const useEffect=fn=>effects.push(fn()), useState=v=>[v,()=>{}];
     const useSyncExternalStore=(_subscribe,read)=>read();
     const loadMenuBinding=()=> 'start-select',saveMenuBinding=()=>true,menuBindingOptions=[];
@@ -86,8 +86,11 @@ test("native modal uses Decky controls without a second raw navigation listener"
   const shell = view.type(view.props); // Mount its cleanup and obtain close callback.
   assert.equal(shell.props.primitives.Button, 'native-button');
   assert.equal(shell.props.primitives.Focusable, 'native-focus');
-  assert.equal(shell.props.disconnectControl.type, 'whole-dock-control');
-  assert.equal(shell.props.disconnectControl.props.readCurrentSnapshot, readCurrentSnapshot);
+  assert.equal(shell.props.disconnectControl.type, 'native-focus');
+  const [selector, control] = shell.props.disconnectControl.props.children;
+  assert.equal(selector.type, 'native-dropdown');
+  assert.equal(control.type, 'whole-dock-control');
+  assert.equal(control.props.readCurrentSnapshot, readCurrentSnapshot);
   assert.equal(native.listeners.length, 0, 'Only the launcher may subscribe to raw input');
   shell.props.onClose(); runtime.open(); assert.equal(native.opens, 2);
   native.effects[0](); // Old animated unmount arrives after reopening.
@@ -123,8 +126,16 @@ test("native shortcut dropdown preserves selection and active chord when saving 
   runtime.open();
   const view = native.views[0].props.children[1];
   const shell = native.render(() => view.type(view.props));
-  assert.equal(shell.props.disconnectControl.props.intent, "disconnect_only");
-  assert.equal(typeof shell.props.disconnectControl.props.readCurrentSnapshot, "function");
+  const [selector, control] = shell.props.disconnectControl.props.children;
+  assert.equal(control.props.intent, "disconnect_only", "the golden-cycle route stays the default");
+  assert.equal(typeof control.props.readCurrentSnapshot, "function");
+  // Exactly these two. Reconnect and every sleep route stay off the selector:
+  // reconnect is refused at the RPC boundary and sleep has no validation.
+  assert.deepEqual(selector.props.rgOptions.map(item => item.data), ["disconnect_only", "shutdown"]);
+  assert.equal(selector.props.selectedOption, "disconnect_only");
+  // A foreign option cannot select a route that is not on the list.
+  selector.props.onChange({ data: "whole_dock_reconnect" });
+  selector.props.onChange({ data: "sleep" });
   const settings = shell.props.settings.type;
   let rendered = native.render(settings);
   assert.equal(rendered.props.control.type, "native-dropdown");
