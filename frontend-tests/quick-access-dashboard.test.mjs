@@ -60,7 +60,9 @@ test("dashboard actions keep icons and text inside one native button, not Item c
   assert.match(action, /gridTemplateColumns: "38px minmax\(0,1fr\) 18px"/);
   assert.match(action, /wordBreak: "normal",\s+overflowWrap: "normal"/);
   assert.doesNotMatch(action, /ButtonItem|noFocusRing=|outline:|overflow: "hidden"/);
-  assert.equal((source.match(/<DashboardAction\s/g) ?? []).length, 5);
+  // Six since the disconnect-and-sleep action joined the surface on 2026-09-14.
+  assert.equal((source.match(/<DashboardAction\s/g) ?? []).length, 6);
+  assert.match(source, /title="Disconnect and sleep"/);
   assert.match(source, /title="Dock \/ eGPU"[\s\S]*expanded=\{showHardwareDetails\}/);
   assert.match(source, /title="Troubleshoot"[\s\S]*expanded=\{showDiagnostics\}/);
 });

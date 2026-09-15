@@ -777,6 +777,10 @@ export interface SleepReadinessPayload {
    * sleeping with it attached is refused: the dock wakes the handheld
    * immediately. */
   requires_disconnect: boolean;
+  /** True when a disconnect-transaction sleep lease this plugin holds from
+   * an earlier dock disconnect is still up. It blocks every sleep and nothing
+   * on the sleep path releases it. Null when it could not be read. */
+  retained_inhibitor: boolean | null;
   game: DisconnectGamePayload | null;
   /** Re-derived for the sleep intent, so a player who agreed a game may be
    * closed for a disconnect is still asked before it closes for a sleep. */

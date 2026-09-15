@@ -119,10 +119,28 @@ class SleepGuardController:
         self._lock = RLock()
         self._closed = False
         self._handoff_owner: object | None = None
+        # Set by a handoff whose restore FAILED. Ownership is kept so recovery
+        # can still finish, but the ambient reconcile may acquire again: an
+        # attached eGPU with no login1 inhibitor is the exact state this guard
+        # exists to prevent, and a paused controller left it that way for the
+        # rest of the process lifetime.
+        self._ambient_resumes = False
 
     def reconcile(self, presence: EgpuPresence) -> InhibitorLeaseStatus:
         with self._lock:
-            if self._closed or self._handoff_owner is not None:
+            if self._closed:
+                return self._lease.status()
+            # A live handoff pauses reconciliation so its own release for the
+            # suspend is not undone a second later. A handoff that failed to
+            # restore is different: nothing is being suspended any more, and
+            # the guard has to come back. Only ACQUIRE is allowed through in
+            # that state -- never RELEASE -- so the worst the resumed path can
+            # do is protect.
+            if self._handoff_owner is not None:
+                if (self._ambient_resumes
+                        and decide_sleep_guard(presence) is SleepGuardAction.ACQUIRE
+                        and self._lease.status().active is not True):
+                    return self._lease.acquire()
                 return self._lease.status()
             action = decide_sleep_guard(presence)
             if action is SleepGuardAction.ACQUIRE:
@@ -144,6 +162,7 @@ class SleepGuardController:
             if self._handoff_owner is not None and self._handoff_owner is not owner:
                 return False
             self._handoff_owner = owner
+            self._ambient_resumes = False
             return True
 
     def handoff_owned(self, owner: object) -> bool:
@@ -172,6 +191,21 @@ class SleepGuardController:
             if result.active is not True or result.error:
                 return False
             self._handoff_owner = None
+            self._ambient_resumes = False
+            return True
+
+    def resume_protection(self, owner: object) -> bool:
+        """Let the ambient guard re-acquire while a failed handoff keeps ownership.
+
+        Called only from a restore that could not verify both leases back.
+        Ownership is deliberately NOT cleared: recovery may still finish the
+        handoff properly, and clearing it would let a second handoff start on
+        top of an unresolved one. What changes is that `reconcile` may ACQUIRE
+        again, and only acquire. Returns False if the owner does not hold it."""
+        with self._lock:
+            if not self.handoff_owned(owner):
+                return False
+            self._ambient_resumes = True
             return True
 
     def status(self) -> InhibitorLeaseStatus:

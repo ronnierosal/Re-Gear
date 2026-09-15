@@ -2611,6 +2611,21 @@ class Plugin:
             "code": decision.code,
         }
 
+    def _retained_sleep_inhibitor(self) -> bool | None:
+        """Whether the retained disconnect-transaction sleep lease is still held.
+
+        False when no transaction acquired one this process lifetime. None
+        when the lease exists but its status cannot be read: not knowing is
+        not evidence that sleep is clear.
+        """
+        lease = getattr(self, '_whole_dock_trial_lease', None)
+        if lease is None:
+            return False
+        try:
+            return lease.status().active is True
+        except Exception:
+            return None
+
     async def get_sleep_readiness(
         self, _request: object = None
     ) -> dict[str, object]:
@@ -2626,6 +2641,12 @@ class Plugin:
         the disconnect one, so a player who agreed that a game may be closed
         for a disconnect is still asked before it is closed for a sleep.
         """
+        # A disconnect-transaction sleep lease this plugin still holds blocks
+        # every sleep until it is released, and nothing on the sleep path
+        # releases it. Reported as its own fact: the snapshot's sleep_guard
+        # is the background controller only, and the 2026-09-13 trial recorded
+        # both inhibitors still up after a successful software removal.
+        retained = await asyncio.to_thread(self._retained_sleep_inhibitor)
         try:
             presence = await asyncio.to_thread(
                 self._sleep_hardware.observe_presence
@@ -2638,6 +2659,7 @@ class Plugin:
                 "schema_version": 1,
                 "code": "sleep.available",
                 "requires_disconnect": False,
+                "retained_inhibitor": retained,
                 "game": None,
                 "close_prompt": close_prompt_to_payload(
                     decide_game_close(InterruptIntent.SLEEP, None)
@@ -2651,6 +2673,7 @@ class Plugin:
                 "schema_version": 1,
                 "code": "sleep.readiness_unknown",
                 "requires_disconnect": True,
+                "retained_inhibitor": retained,
                 "game": None,
                 "close_prompt": close_prompt_to_payload(
                     decide_game_close(
@@ -2670,6 +2693,7 @@ class Plugin:
                 "schema_version": 1,
                 "code": "sleep.readiness_unknown",
                 "requires_disconnect": True,
+                "retained_inhibitor": retained,
                 "game": None,
                 "close_prompt": close_prompt_to_payload(
                     decide_game_close(
@@ -2702,6 +2726,7 @@ class Plugin:
             "code": "sleep.requires_disconnect",
             # The eGPU is attached, so sleeping means disconnecting first.
             "requires_disconnect": True,
+            "retained_inhibitor": retained,
             "game": payload["game"],
             "close_prompt": close_prompt_to_payload(prompt),
             # Passed through so a caller renders one set of facts rather than

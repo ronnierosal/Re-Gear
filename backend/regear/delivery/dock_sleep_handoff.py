@@ -109,16 +109,19 @@ class SleepLeaseHandoff:
             self.status = HandoffStatus('dock_power.handoff_recovery_required',
                                         self.status.submission)
             return False
-        restored = []
+        restored, owned = [], []
         # Incomplete prepare does not reduce the set of required protections.
         # Never acquire a lease whose operation ownership was not established.
         for lease in self._leases:
+            held = False
             try:
-                restored.append(lease.owned(self._request) is True
+                held = lease.owned(self._request) is True
+                restored.append(held
                                 and lease.reacquire(self._request) is True
                                 and lease.active() is True)
             except Exception:
                 restored.append(False)
+            owned.append(held)
         safe = all(restored)
         if safe:
             # Never unpause one controller before the other protection is back.
@@ -129,6 +132,21 @@ class SleepLeaseHandoff:
                 except Exception:
                     safe = False
             safe = self._protection_active() and safe
+        if not safe:
+            # A lease this handoff OWNED and could not get back is one it
+            # released for the suspend and left down. Keep the handoff owned
+            # so recovery can still finish it, but do not leave the machine
+            # unguarded until then: let the ambient reconcile acquire that
+            # lease again on its next tick. Only that lease -- one that was
+            # never prepared was never released, and one that reacquired is
+            # held and paused exactly as intended. A refusal that touched no
+            # lease therefore emits nothing here.
+            for lease, was_owned, came_back in zip(self._leases, owned, restored):
+                if was_owned and not came_back:
+                    try:
+                        lease.resume_protection(self._request)
+                    except Exception:
+                        pass
         self.status = HandoffStatus(
             'dock_power.handoff_restored' if safe else 'dock_power.handoff_recovery_required',
             self.status.submission, safe)

@@ -128,6 +128,7 @@ const readiness = (over = {}) => ({
   schema_version: 1,
   code: "sleep.requires_disconnect",
   requires_disconnect: true,
+  retained_inhibitor: false,
   game: game(),
   // Re-derived for the sleep intent: agreeing a game may close for a
   // disconnect is not agreeing it may close for a sleep.
@@ -196,6 +197,10 @@ function rig({
       calls.push(["rememberChoice", appId, skipConfirmation, relaunchAfter]);
       if (throwOn === "rememberChoice") throw new Error("refused");
       return rememberResult;
+    },
+    async releaseSleepBlocker() {
+      calls.push(["releaseSleepBlocker"]);
+      return true;
     },
     async suspend() {
       calls.push(["suspend"]);
@@ -635,6 +640,26 @@ test("a sleep that needs no disconnect does not remove the eGPU", async () => {
   assert.deepEqual(r.names(), ["readSleepReadiness"]);
   assert.ok(!r.names().includes("disconnect"));
   assert.ok(!r.names().includes("suspend"));
+});
+
+test("a retained transaction lease refuses before the eGPU is touched", async () => {
+  // The lease from an earlier dock disconnect blocks every sleep and nothing
+  // here releases it. Disconnecting first would only add a disconnect the
+  // player did not ask for on its own.
+  const r = rig({ sleep: readiness({ retained_inhibitor: true }) });
+  const result = await runGameClosePress(press({ intent: "sleep" }), r.ports);
+  assert.equal(result.code, "wiring.sleep_inhibitor_retained");
+  assert.deepEqual(r.names(), ["readSleepReadiness"]);
+  assert.match(gameCloseWiringMessage(result), /still held/i);
+});
+
+test("an unreadable or missing retained-lease fact refuses rather than guessing", async () => {
+  for (const retained_inhibitor of [null, undefined]) {
+    const r = rig({ sleep: readiness({ retained_inhibitor }) });
+    const result = await runGameClosePress(press({ intent: "sleep" }), r.ports);
+    assert.equal(result.code, "wiring.sleep_inhibitor_unknown");
+    assert.deepEqual(r.names(), ["readSleepReadiness"]);
+  }
 });
 
 test("a failed suspend is reported without claiming the handheld slept", async () => {

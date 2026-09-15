@@ -123,6 +123,29 @@ recorded fan and LEDs staying on until a manual power-button hold, and the
 later clean shutdown is a user-reported manual result, not an automated
 continuation test.
 
+On 2026-09-14 the maintainer also asked for the disconnect-then-sleep press.
+It is mounted on the Quick Access surface as "Disconnect and sleep", on the
+existing game-close route (`runSleepWithGameClose`), not on the dock control's
+selector, which still offers no sleep route. The press reads sleep readiness
+first and refuses without touching the eGPU when readiness is unknown, when
+sleeping does not need a disconnect, or when a retained disconnect-transaction
+sleep lease is still held. That last fact is `retained_inhibitor`, now reported
+by `get_sleep_readiness` in every branch: the snapshot's `sleep_guard` describes
+the background controller only, and the 2026-09-13 capture recorded both
+inhibitors still up after a successful software removal. After the software
+disconnect the press does not suspend on the disconnect result. It re-reads the
+snapshot a bounded number of times until the background guard is neither
+required nor active, hands that same observation to the Steam-side preflight so
+its blocker drops on evidence, and only then asks Steam to suspend; if the guard
+is still up when the budget ends it says so and leaves the handheld awake.
+Separately, a sleep handoff whose restore fails no longer silences the
+background guard for the process lifetime: `resume_protection` lets the ambient
+reconcile acquire again (acquire only, never release) for the lease the handoff
+owned and could not get back, while the handoff keeps ownership for recovery.
+None of this is hardware-validated. No sleep/wake cycle has been run through
+the press, invariant 10 still disclaims sleep validation, and the enclosure
+remains powered.
+
 An unwired `SleepLeaseHandoff` module now implements the proposed two-lease
 handoff contract with independent restoration readbacks and one-shot submission.
 No production adapter supplies the required pause, crash-continuity, supported

@@ -297,6 +297,16 @@ export async function claimPendingRelaunch(
 export interface SleepFlowEffects extends CloseFlowEffects {
   /** Steam's own suspend. Re-Gear never suspends the machine itself. */
   suspend(): Promise<void>;
+  /** Wait, with fresh evidence, until neither sleep guard is still up.
+   *
+   * A disconnect succeeding does not release either guard by itself: the
+   * backend's login1 inhibitor drops on its next reconcile, and Re-Gear's own
+   * Steam-side blocker drops on the next panel poll. Suspending before both
+   * have dropped is refused by Steam, which is what the 2026-09-13 manual
+   * trial hit. False means a guard is still required or still held, and the
+   * flow must not sleep. Required, not optional: a caller that forgets to
+   * bind it fails closed rather than sleeping past the guard. */
+  releaseSleepBlocker(): Promise<boolean>;
 }
 
 /** Close the game, disconnect the eGPU, then let Steam sleep the handheld.
@@ -327,6 +337,20 @@ export async function runSleepWithGameClose(
     // the handheld straight back up.
     return result;
   }
+  // The eGPU is gone in software. Both sleep guards are still up on stale
+  // evidence, and Steam's suspend honours them, so wait for the evidence to
+  // catch up rather than racing it. Refusing here leaves the handheld awake
+  // and disconnected, which the player can see; sleeping into a guard leaves
+  // it awake and confused about why.
+  let released: boolean;
+  try {
+    released = await effects.releaseSleepBlocker();
+  } catch {
+    released = false;
+  }
+  if (!released) {
+    return { ...result, ok: false, code: "flow.sleep_guard_still_required" };
+  }
   try {
     await effects.suspend();
   } catch {
@@ -349,6 +373,8 @@ const FLOW_MESSAGE: Record<string, string> = {
     "The game closed, but the eGPU could not be disconnected.",
   "flow.suspend_failed":
     "The eGPU is detached in software, but Steam did not sleep the handheld. Try sleeping again.",
+  "flow.sleep_guard_still_required":
+    "The eGPU is detached in software, but a sleep guard is still held, so Re-Gear did not sleep the handheld. Try sleeping again in a moment.",
 };
 
 export function closeFlowMessage(result: CloseFlowResult): string {

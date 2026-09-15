@@ -278,6 +278,16 @@ export async function runGameClosePress(
       // safe. Invariant 19: a missing preflight never stands in for a pass.
       return refused("wiring.sleep_readiness_unknown");
     }
+    if (readiness.retained_inhibitor !== false) {
+      // A disconnect-transaction sleep lease this plugin still holds from an
+      // earlier dock disconnect blocks every sleep, and nothing in this flow
+      // releases it. Disconnecting first would not change that, so refuse
+      // before the eGPU is touched or a game is closed for it. Unknown is
+      // not evidence either way, and the guard exists for what it cannot see.
+      return refused(readiness.retained_inhibitor === true
+        ? "wiring.sleep_inhibitor_retained"
+        : "wiring.sleep_inhibitor_unknown");
+    }
     if (!readiness.requires_disconnect) {
       // This flow is *disconnect, then sleep*. A sleep that does not need the
       // eGPU released must not have it released as a side effect: removing a
@@ -444,6 +454,10 @@ const WIRING_MESSAGE: Record<string, string> = {
     "Re-Gear could not check what sleeping would take, so the handheld was left awake.",
   "wiring.sleep_readiness_unknown":
     "Re-Gear cannot confirm what sleeping would take, so the handheld was left awake.",
+  "wiring.sleep_inhibitor_retained":
+    "A sleep guard from an earlier dock disconnect is still held, so the handheld cannot sleep yet. Nothing was disconnected. Restarting Re-Gear or rebooting clears it.",
+  "wiring.sleep_inhibitor_unknown":
+    "Re-Gear could not confirm whether a sleep guard is still held, so the handheld was left awake and the eGPU connected.",
   "wiring.sleep_needs_no_disconnect":
     "Sleeping does not need the eGPU released, so Re-Gear left it connected. Use the handheld's own Sleep.",
   "wiring.needs_attention":

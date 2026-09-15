@@ -47,6 +47,10 @@ class Lease:
         self.owner = None
         return True
 
+    def resume_protection(self, request):
+        self.event('resume_protection', request)
+        return True
+
 
 class SleepLeaseHandoffTests(unittest.TestCase):
     def setUp(self):
@@ -154,6 +158,27 @@ class SleepLeaseHandoffTests(unittest.TestCase):
                 self.assertFalse(handoff.submit('sleep'))
                 self.assertTrue(handoff.status.protection_verified)
                 self.assertFalse(any(n == 'platform' for n, _, _ in self.events))
+
+    def test_failed_reacquisition_hands_that_lease_back_to_the_ambient_guard(self):
+        # The handoff keeps its pauses -- recovery may still finish it -- but the
+        # lease it released and could not get back must not stay down until
+        # then. Only that lease: the transaction re-held and is paused as intended.
+        self.outcome = False
+        self.background.fail = 'reacquire'
+        self.assertFalse(self.handoff().submit('sleep'))
+        actions = [(lease, action) for lease, action, _ in self.events]
+        self.assertIn(('background', 'resume_protection'), actions)
+        self.assertNotIn(('transaction', 'resume_protection'), actions)
+        self.assertFalse(any(action == 'finish' for _, action in actions))
+
+    def test_successful_restore_never_resumes_protection(self):
+        # A clean restore finishes the handoff outright; resuming the ambient
+        # guard on top of a finished one would be a second, unowned acquire path.
+        self.outcome = False
+        self.assertFalse(self.handoff().submit('sleep'))
+        actions = [action for _, action, _ in self.events]
+        self.assertNotIn('resume_protection', actions)
+        self.assertIn('finish', actions)
 
     def test_failed_reacquisition_attempts_other_lease_and_keeps_pauses(self):
         self.outcome = False

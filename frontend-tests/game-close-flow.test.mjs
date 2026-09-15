@@ -54,7 +54,7 @@ const status = (decision) => ({
 });
 
 /** A rig that records every effect, and closes the game after N polls. */
-function rig({ closesAfter = 1, disconnectOutcome = outcome(), throwOn = null } = {}) {
+function rig({ closesAfter = 1, disconnectOutcome = outcome(), throwOn = null, releaseGuard = true } = {}) {
   const calls = [];
   let polls = 0;
   let clock = 0;
@@ -79,6 +79,11 @@ function rig({ closesAfter = 1, disconnectOutcome = outcome(), throwOn = null } 
         if (throwOn === "disconnect") throw new Error("rpc down");
         recorded = relaunchAppId;
         return disconnectOutcome;
+      },
+      async releaseSleepBlocker() {
+        calls.push(["releaseSleepBlocker"]);
+        if (throwOn === "releaseSleepBlocker") throw new Error("preflight unreachable");
+        return releaseGuard;
       },
       async suspend() {
         calls.push(["suspend"]);
@@ -473,7 +478,7 @@ test("sleeping closes the game, disconnects, then suspends in that order", async
 
   assert.equal(result.ok, true);
   assert.equal(result.code, "flow.slept");
-  assert.deepEqual(names(r.calls), ["terminate", "status", "disconnect", "suspend"]);
+  assert.deepEqual(names(r.calls), ["terminate", "status", "disconnect", "releaseSleepBlocker", "suspend"]);
 });
 
 test("nothing suspends unless the disconnect succeeded", async () => {
@@ -565,4 +570,28 @@ test("a disconnect asked for as a disconnect still reopens immediately", async (
   );
 
   assert.equal(result.relaunched, true);
+});
+
+test("a guard that is still up refuses the sleep and leaves the handheld awake", async () => {
+  // The disconnect succeeded, but the evidence says a sleep guard is still
+  // required or still held. Suspending into it is what the 2026-09-13 manual
+  // trial hit -- sleep blocked with the dock already gone. Refuse instead.
+  const r = rig({ releaseGuard: false });
+  const result = await runSleepWithGameClose(request(), r.effects);
+
+  assert.equal(result.ok, false);
+  assert.equal(result.code, "flow.sleep_guard_still_required");
+  assert.match(closeFlowMessage(result), /sleep guard is still held/i);
+  assert.deepEqual(names(r.calls), ["terminate", "status", "disconnect", "releaseSleepBlocker"]);
+  assert.ok(!names(r.calls).includes("suspend"), "never suspend past a guard");
+});
+
+test("a release check that cannot run is a refusal, not a pass", async () => {
+  // Unknown is not evidence that the guard dropped.
+  const r = rig({ throwOn: "releaseSleepBlocker" });
+  const result = await runSleepWithGameClose(request(), r.effects);
+
+  assert.equal(result.ok, false);
+  assert.equal(result.code, "flow.sleep_guard_still_required");
+  assert.ok(!names(r.calls).includes("suspend"));
 });

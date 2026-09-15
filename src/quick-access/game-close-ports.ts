@@ -27,8 +27,15 @@ import {
 } from "../steam-game-control";
 import type { GameCloseWiringPorts } from "./game-close-wiring";
 
-export function liveGameClosePorts(): GameCloseWiringPorts {
+/** `releaseSleepBlocker` needs the panel's preflight coordinator, which only
+ * the mounted panel holds, so it is supplied by the caller. The default
+ * refuses: a sleep press that reached the flow without a bound release must
+ * not suspend past a guard nobody checked. */
+export function liveGameClosePorts(
+  releaseSleepBlocker: () => Promise<boolean> = async () => false,
+): GameCloseWiringPorts {
   return {
+    releaseSleepBlocker,
     terminateGame,
     relaunchGame,
     // Steam's own suspend. Re-Gear never suspends the machine itself.

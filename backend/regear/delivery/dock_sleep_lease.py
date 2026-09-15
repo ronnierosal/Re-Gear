@@ -35,3 +35,6 @@ class GuardSleepLease:
 
     def finish(self, request: DockPowerRequest) -> bool:
         return request is self._request and self._controller.finish_handoff(self._owner)
+
+    def resume_protection(self, request: DockPowerRequest) -> bool:
+        return request is self._request and self._controller.resume_protection(self._owner)
