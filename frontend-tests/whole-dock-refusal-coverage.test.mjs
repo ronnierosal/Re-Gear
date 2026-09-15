@@ -28,16 +28,43 @@ function backendCodes() {
     read("backend/regear/domain/dock_teardown.py"),
   ].join("\n");
   const found = new Set();
-  for (const [, code] of sources.matchAll(/"(dock_teardown\.[a-z_]+)"/g)) found.add(code);
+  // Both quote styles: main.py already writes several codes single-quoted, so a
+  // formatter pass over these files would otherwise empty the scan silently.
+  for (const [, code] of sources.matchAll(/['"](dock_teardown\.[a-z_]+)['"]/g)) found.add(code);
   return found;
 }
 
-test("the backend inventory is non-trivial, so a silent read failure cannot pass this suite", () => {
-  const codes = backendCodes();
-  assert.ok(codes.size >= 20, `expected the real inventory, got ${codes.size}`);
-  // Anchors: one returned by the application layer, one by the domain preflight.
-  assert.ok(codes.has("dock_teardown.final_state_unverified"));
-  assert.ok(codes.has("dock_teardown.mounted_storage"));
+/** The backend inventory as reviewed, committed so drift has to be looked at.
+ *
+ * An earlier version of this guard asserted only `size >= 20` against an
+ * inventory of 28. A review broke it: convert eight codes to f-strings so the
+ * scan misses them, delete the same eight from the model set, and the whole
+ * suite passed green -- exactly the silent drift this file exists to stop. A
+ * threshold cannot do this job; the set has to be pinned. */
+const REVIEWED_INVENTORY = [
+  "dock_teardown.already_down", "dock_teardown.approval_required",
+  "dock_teardown.approval_superseded", "dock_teardown.busy",
+  "dock_teardown.final_state_unverified", "dock_teardown.gpu_scan_incomplete",
+  "dock_teardown.gpu_still_attached", "dock_teardown.identity_or_idle_unknown",
+  "dock_teardown.mounted_storage", "dock_teardown.operation_required",
+  "dock_teardown.permitted", "dock_teardown.preflight_changed",
+  "dock_teardown.software_down", "dock_teardown.storage_in_use",
+  "dock_teardown.storage_scan_incomplete", "dock_teardown.transaction_owned",
+  "dock_teardown.tunnel_capability_unknown", "dock_teardown.tunnel_capability_unsupported",
+  "dock_teardown.tunnel_preflight_changed", "dock_teardown.tunnel_scan_incomplete",
+  "dock_teardown.tunnel_state_unknown", "dock_teardown.tunnel_unidentified",
+  "dock_teardown.tunnel_write_permission_denied", "dock_teardown.tunnel_write_permission_unknown",
+  "dock_teardown.unresolved", "dock_teardown.usb_preflight_changed",
+  "dock_teardown.usb_removal_unverified", "dock_teardown.usb_scan_incomplete",
+];
+
+test("the backend inventory matches the reviewed snapshot exactly", () => {
+  // Pinned, not thresholded. Movement in EITHER direction fails: a new backend
+  // code, a renamed one, or a code rewritten in a form the scan cannot see.
+  // If this fails, read the diff and decide -- do not widen the assertion.
+  const codes = [...backendCodes()].sort();
+  assert.deepEqual(codes, [...REVIEWED_INVENTORY].sort(),
+    "backend teardown codes moved; review each and update REVIEWED_INVENTORY and the refusal set together");
 });
 
 test("every backend teardown refusal settles the request", () => {
@@ -107,4 +134,14 @@ test("a successful software disconnect still settles, and still grants nothing",
   const view = model.dockIntentControl(status, null, "disconnect_only");
   assert.equal(view.action, null, "a completed disconnect offers no further action");
   assert.match(view.message, /not permission to unplug/i);
+});
+
+test("power-route pre-correlation refusals settle too", () => {
+  // Same shape as the trial-route ones -- no request_id, no busy -- and they
+  // orphan the record identically. Latent until a shutdown control is mounted.
+  for (const code of ["dock_power.request_action_changed", "dock_power.boot_unverified",
+                      "dock_power.invalid_intent", "dock_power.sleep_unverified"]) {
+    const status = { schema_version: 1, ok: false, code, safe_to_unplug: false };
+    assert.equal(model.dockRequestSettled(status, "g".repeat(32), "shutdown"), true, code);
+  }
 });

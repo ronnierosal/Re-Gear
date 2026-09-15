@@ -2056,8 +2056,18 @@ class Plugin:
             raise ValueError('dock_power.preflight_changed')
         if not self._consume_ordinary_power(request):
             return DockPowerResult('dock_power.already_consumed')
-        result = SystemPowerCommandRunner().request_poweroff()
-        return DockPowerResult(result.code, result.requested is True)
+        # One route, one vocabulary. This mirrors DockPowerCoordinator.execute()
+        # so both branches of _run_dock_power_request answer in dock_power.*
+        # terms. The adapter's safe_disconnect.* codes are internal to
+        # commands.py; leaking one through the RPC is the same boundary
+        # violation the exception filter below exists to prevent -- and it left
+        # the control permanently dead. The frontend settle predicate demands
+        # dock_power.request_accepted_unverified, so a real poweroff was
+        # submitted while the pending record was orphaned in localStorage,
+        # where it survives the reboot with no code path able to clear it.
+        if SystemPowerCommandRunner().request_poweroff().requested is not True:
+            return DockPowerResult('dock_power.request_unverified')
+        return DockPowerResult('dock_power.request_accepted_unverified', True)
 
     def _run_whole_dock_trial(self, operation: str, expected_attachment: str = "", *, power_request=None):
         """Internal cable-connected trial; admission covers release and teardown.
@@ -2402,8 +2412,14 @@ class Plugin:
                 if trial_request_id and trial_request_id in requests:
                     original_action, original_result = requests[trial_request_id]
                     if original_action != trial_action:
-                        return {'schema_version': 1, 'ok': False,
-                            'code': 'dock_power.request_action_changed', 'safe_to_unplug': False}
+                        # Terminal refusals on this route carry the correlation
+                        # fields every other terminal payload carries; without
+                        # them no caller can retire the pending record this
+                        # refusal terminates.
+                        return {'schema_version': 1, 'ok': False, 'busy': False,
+                            'code': 'dock_power.request_action_changed',
+                            'request_id': trial_request_id, 'power_requested': False,
+                            'safe_to_unplug': False}
                     return dict(original_result)
                 # Bind once in the backend before the worker can restart Steam.
                 if not hasattr(self, '_dock_power_session'):

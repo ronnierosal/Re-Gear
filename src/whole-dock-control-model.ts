@@ -12,6 +12,7 @@ const shutdownRefusals: Record<string, string> = {
   "dock_power.boot_unverified": "The current system session could not be verified.",
   "dock_power.busy": "Another power request is still in progress.",
   "dock_power.sleep_unverified": "Sleep with the dock connected is not available.",
+  "dock_power.request_action_changed": "A different power action was already recorded for this request.",
 };
 /** Every outcome that settles a request without a software disconnect.
  *
@@ -74,7 +75,14 @@ const shutdownTeardownRefusals = new Set([
  * foreign status and releasing the guard on one would be the unsafe
  * direction. */
 const preCorrelationRefusals = new Set([
+  // Trial route, refused before a request is minted.
   "dock_teardown.trial_confirmation_required", "dock_teardown.busy",
+  // Power route, same shape and same orphaning. Latent while nothing mounts
+  // intent="shutdown", but live the moment one does -- and two of these
+  // already carry player-facing copy in `shutdownRefusals`, which is evidence
+  // they were always meant to be handled refusals rather than dead ends.
+  "dock_power.request_action_changed", "dock_power.boot_unverified",
+  "dock_power.invalid_intent", "dock_power.sleep_unverified",
 ]);
 
 function refusedBeforeCorrelation(status: any): boolean {
