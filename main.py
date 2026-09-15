@@ -2198,6 +2198,11 @@ class Plugin:
         waits on a reply that can never come, and its control stays disabled for
         good. This finally runs for those too, and the reader turns "recorded as
         running, with nothing running it" into a terminal unresolved.
+
+        Liveness is raised by the dispatcher on the event loop, beside the busy
+        record, before the worker is scheduled; setting it again here is for
+        callers that run a worker directly. What this function owns is the
+        clearing, which must happen on the thread that did the work.
         """
         self._whole_dock_trial_worker_alive = True
         try:
@@ -2492,6 +2497,17 @@ class Plugin:
                 if result.get('ok') is True:
                     self._automatic_dock.reset_after_acknowledgement()
                 return result
+            # Raised HERE, on the event loop, in the same turn as the busy
+            # record -- not first inside the worker thread. Between
+            # create_task and the executor's first instruction a status poll
+            # would otherwise read busy with nothing alive and rewrite a
+            # trial that is about to run as unresolved, and the control would
+            # retire its record and go usable mid-teardown: the one thing the
+            # guard exists to prevent. The worker's finally still clears it on
+            # every exit; a worker that is never scheduled (unloading) leaves
+            # it set in a process that is going away, and a fresh process
+            # starts without the attribute.
+            self._whole_dock_trial_worker_alive = True
             self._whole_dock_trial_status = {"schema_version": 1,
                 "code": "dock_teardown.trial_running", "busy": True,
                 "safe_to_unplug": False, "request_id": trial_request_id}

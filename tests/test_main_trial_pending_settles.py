@@ -135,6 +135,43 @@ class TrialPendingSettlesTests(unittest.TestCase):
         self.assertIs(result["busy"], False)
         self.assertEqual(result["request_id"], "r1")
 
+    def test_a_poll_in_the_executor_start_window_keeps_waiting(self):
+        # The window between the dispatcher writing the busy record and the
+        # executor thread running its first instruction. A poll landing there
+        # must see the trial as in flight -- not rewrite it as unresolved and
+        # let the control go usable while the teardown is about to run. This
+        # stands in for the scheduler with a coroutine that polls BEFORE it
+        # runs the worker, which is exactly the ordering the race needs.
+        from types import SimpleNamespace as NS
+        from unittest.mock import Mock
+        self.plugin._background_operations = set()
+        self.plugin._unloading = False
+        self.plugin._run_whole_dock_trial = Mock(return_value=NS(
+            code="dock_teardown.software_down", software_down=True))
+        seen = {}
+
+        async def scheduler(operation, *args, **kwargs):
+            seen["during"] = await self.plugin.get_egpu_disconnect_status("whole_dock_trial")
+            return operation(*args, **kwargs)
+
+        self.plugin._run_background_operation = scheduler
+
+        async def run():
+            result = await self.plugin.execute_egpu_disconnect(
+                trial_action="whole_dock_disconnect", release_display=True,
+                trial_confirmed=True)
+            self.assertTrue(result["ok"])
+            after = await self.plugin.get_egpu_disconnect_status("whole_dock_trial")
+            return after
+
+        after = asyncio.run(run())
+        self.assertIs(seen["during"]["in_flight"], True, "alive before the worker's first instruction")
+        self.assertIs(seen["during"]["busy"], True)
+        self.assertEqual(seen["during"]["code"], "dock_teardown.trial_running")
+        # And the real result was never overwritten by a stale unresolved.
+        self.assertEqual(after["code"], "dock_teardown.software_down")
+        self.assertIs(after["in_flight"], False)
+
     def test_the_dispatch_runs_the_watched_wrapper(self):
         # Guards the wiring: a wrapper that exists but is not what the dispatch
         # runs would leave the wedge exactly where it was.
