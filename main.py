@@ -73,6 +73,11 @@ from regear.delivery.game_close_preferences import (  # noqa: E402
     GameClosePreferenceStore,
 )
 from regear.delivery.relaunch_intent_store import RelaunchIntentStore  # noqa: E402
+from regear.delivery.sleep_continuation_store import PendingSleepStore  # noqa: E402
+from regear.domain.sleep_continuation import (  # noqa: E402
+    PendingSleep,
+    decide_sleep_continuation,
+)
 from regear.domain.relaunch_intent import (  # noqa: E402
     RelaunchClock,
     RelaunchIntent,
@@ -2547,11 +2552,20 @@ class Plugin:
                 # A wish that could not be written costs a manual relaunch. It
                 # is not a reason to refuse the disconnect the player asked for.
                 pass
+        continuation = parsed_intent is InterruptIntent.SLEEP
+        if continuation:
+            # The sleep step lives in the panel, and the removal may restart
+            # the Steam session underneath it. Written down first, like the
+            # relaunch wish, so the panel that comes up afterwards can finish
+            # the press; cleared below on every path where no removal ran.
+            await self._record_sleep_continuation()
         try:
             runtime = await asyncio.to_thread(self._live_disconnect_runtime)
         except Exception:
             runtime = None
         if runtime is None:
+            if continuation:
+                await self._clear_sleep_continuation()
             return {
                 "schema_version": 1,
                 "stage": "invalid",
@@ -2564,6 +2578,8 @@ class Plugin:
                     lambda: runtime.execute(release_display=bool(release_display)))
             )
         except Exception:
+            if continuation:
+                await self._clear_sleep_continuation()
             return {
                 "schema_version": 1,
                 "stage": "invalid",
@@ -2576,7 +2592,12 @@ class Plugin:
                 await asyncio.to_thread(relaunch.clear)
             except Exception:
                 pass
-        return disconnect_result_to_payload(result)
+        payload = disconnect_result_to_payload(result)
+        if continuation and (payload.get("ok") is not True or result.device_disturbed):
+            # Nothing to continue: the eGPU is still attached, or the device
+            # needs a person. A panel must not sleep the machine on this.
+            await self._clear_sleep_continuation()
+        return payload
 
     async def take_pending_relaunch(
         self, _request: object = None
@@ -2610,6 +2631,59 @@ class Plugin:
             "steam_app_id": decision.steam_app_id if decision.should_relaunch else "",
             "code": decision.code,
         }
+
+    async def _record_sleep_continuation(self) -> bool:
+        """Write down that the disconnect now running was asked for as a sleep."""
+        try:
+            await asyncio.to_thread(
+                PendingSleepStore(CATALOG_ROOT).record,
+                PendingSleep(
+                    read_boot_hash(),
+                    time.monotonic(),
+                    _relaunch_now(RelaunchClock.BOOTTIME),
+                ),
+            )
+            return True
+        except Exception:
+            # Same footing as the relaunch wish: a continuation that could
+            # not be written costs the player a manual sleep, not the
+            # disconnect they asked for.
+            return False
+
+    async def _clear_sleep_continuation(self) -> None:
+        try:
+            await asyncio.to_thread(PendingSleepStore(CATALOG_ROOT).clear)
+        except Exception:
+            pass
+
+    async def take_pending_sleep(
+        self, _request: object = None
+    ) -> dict[str, object]:
+        """Claim the sleep a disconnect was asked for, if it may still happen.
+
+        Consuming, on refusal too. Sleeps nothing: the panel that claims it
+        still waits for the guard evidence and asks Steam, exactly as the
+        panel that pressed the button would have had the session restart
+        not destroyed it first.
+        """
+        store = PendingSleepStore(CATALOG_ROOT)
+        try:
+            record = await asyncio.to_thread(store.take)
+        except Exception:
+            return {"schema_version": 1, "pending": False,
+                    "code": "sleep_continuation.record_unreadable"}
+        try:
+            boot_hash = await asyncio.to_thread(read_boot_hash)
+        except Exception:
+            boot_hash = ""
+        decision = decide_sleep_continuation(
+            record,
+            boot_hash=boot_hash,
+            now_monotonic=time.monotonic(),
+            now_boottime=_relaunch_now(RelaunchClock.BOOTTIME),
+        )
+        return {"schema_version": 1, "pending": decision.should_sleep,
+                "code": decision.code}
 
     def _retained_sleep_inhibitor(self) -> bool | None:
         """Whether the retained disconnect-transaction sleep lease is still held.

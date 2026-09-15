@@ -814,6 +814,28 @@ export const takePendingRelaunch = callable<[], PendingRelaunchPayload>(
   "take_pending_relaunch",
 );
 
+export interface PendingSleepPayload {
+  schema_version: number;
+  /** True when a disconnect asked for as a sleep is waiting for its sleep
+   * step. Claiming consumes it; a refusal consumes it too. */
+  pending: boolean;
+  /** `sleep_continuation.pending`, `sleep_continuation.nothing_recorded`,
+   * or why a record was refused. Never rendered raw. */
+  code: string;
+}
+
+/** Claim the sleep a disconnect was asked for, if it may still happen.
+ *
+ * Freeing the eGPU restarts the Steam session, which destroys the panel that
+ * pressed "Disconnect and sleep" before its sleep step can run. The wish is
+ * written with the disconnect and claimed here by the panel that comes up
+ * afterwards. Sleeps nothing itself: the claimer still waits for the guard
+ * evidence and asks Steam.
+ */
+export const takePendingSleep = callable<[], PendingSleepPayload>(
+  "take_pending_sleep",
+);
+
 export interface GameClosePreferenceResult {
   ok: boolean;
   /** Stable reason code; `game_close.progress_at_risk` when the backend

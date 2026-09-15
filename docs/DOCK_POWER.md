@@ -138,10 +138,24 @@ snapshot a bounded number of times until the background guard is neither
 required nor active, hands that same observation to the Steam-side preflight so
 its blocker drops on evidence, and only then asks Steam to suspend; if the guard
 is still up when the budget ends it says so and leaves the handheld awake.
+Freeing the eGPU restarts the Steam session whenever a session-reached unit
+held it, which destroys that panel before its sleep step runs, so the sleep is
+also written down with the disconnect (`take_pending_sleep`: one record,
+consumed on claim, same boot only, five awake minutes, refused if the machine
+has slept since) and the panel that comes up after the restart claims it,
+waits for the same guard evidence, and asks Steam to sleep. A game closed for
+the sleep is reopened only after the suspend call returns -- after waking
+when the machine did sleep, a moment later when Steam declined -- and a guard
+refusal reopens it at once. The readiness retained-lease fact and this
+continuation are both new on 2026-09-14 and neither has run on the device.
 Separately, a sleep handoff whose restore fails no longer silences the
-background guard for the process lifetime: `resume_protection` lets the ambient
-reconcile acquire again (acquire only, never release) for the lease the handoff
-owned and could not get back, while the handoff keeps ownership for recovery.
+background guard for the process lifetime: `resume_protection` returns the
+controller to its ordinary presence policy for every lease the handoff owned
+-- acquire while the eGPU is present, release once it is gone -- while the
+handoff keeps its claim so a second one cannot start on top of it. The
+transaction controller is built per request and reconciled by nothing, so a
+transaction lease that fails to reacquire stays down exactly as before; that
+gap is recorded here, not closed.
 None of this is hardware-validated. No sleep/wake cycle has been run through
 the press, invariant 10 still disclaims sleep validation, and the enclosure
 remains powered.

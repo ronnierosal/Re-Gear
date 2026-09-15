@@ -34,6 +34,8 @@ class LeasePort(Protocol):
     WITHOUT releasing protection. owned must verify both owner and pause. release
     keeps the claim/pause. reacquire restores protection under that same claim.
     finish relinquishes the pause/claim only after BOTH protections are verified.
+    resume_protection hands an owned lease back to ambient policy after a failed
+    restore; the claim stays so a second handoff cannot start on top of it.
     False/exception can mean partial work; owned/readback must remain usable.
     """
     def prepare(self, request: DockPowerRequest) -> bool: ...
@@ -42,6 +44,7 @@ class LeasePort(Protocol):
     def release(self, request: DockPowerRequest) -> bool: ...
     def reacquire(self, request: DockPowerRequest) -> bool: ...
     def finish(self, request: DockPowerRequest) -> bool: ...
+    def resume_protection(self, request: DockPowerRequest) -> bool: ...
 
 
 @dataclass(frozen=True)
@@ -133,16 +136,15 @@ class SleepLeaseHandoff:
                     safe = False
             safe = self._protection_active() and safe
         if not safe:
-            # A lease this handoff OWNED and could not get back is one it
-            # released for the suspend and left down. Keep the handoff owned
-            # so recovery can still finish it, but do not leave the machine
-            # unguarded until then: let the ambient reconcile acquire that
-            # lease again on its next tick. Only that lease -- one that was
-            # never prepared was never released, and one that reacquired is
-            # held and paused exactly as intended. A refusal that touched no
-            # lease therefore emits nothing here.
-            for lease, was_owned, came_back in zip(self._leases, owned, restored):
-                if was_owned and not came_back:
+            # Every lease this handoff OWNED is one it released for the suspend
+            # and now cannot vouch for: the one that did not come back is down,
+            # and one that reacquired is only as safe as a readback that finish
+            # may have just failed. Hand all of them back to the ambient policy
+            # -- it is presence-driven, so a lease that is already held loses
+            # nothing. A lease that was never prepared was never released, and
+            # a refusal that touched no lease therefore emits nothing here.
+            for lease, was_owned in zip(self._leases, owned):
+                if was_owned:
                     try:
                         lease.resume_protection(self._request)
                     except Exception:

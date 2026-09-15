@@ -55,6 +55,7 @@ import type { CloseFlowResult, SleepFlowEffects } from "../game-close-flow";
 import {
   claimPendingRelaunch,
   closeFlowMessage,
+  continuePendingSleep,
   runDisconnectWithGameClose,
   runSleepWithGameClose,
 } from "../game-close-flow";
@@ -437,6 +438,24 @@ export async function claimRelaunchOnMount(
   return appId === null
     ? { appId: null, code: "wiring.mount_nothing_claimed", deferred: false }
     : { appId, code: "wiring.mount_relaunched", deferred: false };
+}
+
+/** What a panel does on load: finish a pending sleep, else claim a reopen.
+ *
+ * The two are one decision because they share the record a disconnect left
+ * behind. A sleep continuation puts the game back itself, after the suspend
+ * call returns; claiming the reopen here as well would launch the game
+ * seconds before the machine goes off, which is the one thing the sleep
+ * route exists not to do.
+ */
+export async function continueSleepOnMount(
+  ports: GameCloseWiringPorts,
+): Promise<{ continued: CloseFlowResult | null; mount: MountRelaunchResult | null }> {
+  const continued = await continuePendingSleep(ports);
+  if (continued !== null) {
+    return { continued, mount: null };
+  }
+  return { continued: null, mount: await claimRelaunchOnMount(ports) };
 }
 
 /** What to tell the player when this module refused.

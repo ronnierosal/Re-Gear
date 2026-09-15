@@ -310,6 +310,11 @@ def main() -> int:
             # Read-only: what sleeping would take while the eGPU is attached.
             # Sleeps nothing itself; Steam still performs the suspend.
             "get_sleep_readiness",
+            # The sleep a disconnect was asked for, claimed once by whichever
+            # panel is alive after the session restart that freed the device.
+            # Sleeps nothing itself; the panel still waits for the guard
+            # evidence and asks Steam.
+            "take_pending_sleep",
             # An eGPU whose PCIe link never trained. On the certified profile
             # the link is observed about a second after a new session starts;
             # why is not established, so the mechanism is a strategy the caller

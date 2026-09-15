@@ -13,6 +13,7 @@ const guard = (required, active) => ({ snapshot: { sleep_guard: { required, acti
 
 function rig(payloads, { reconcile = () => true } = {}) {
   const calls = [];
+  const seen = [];
   let i = 0;
   const ports = {
     async read() {
@@ -21,10 +22,10 @@ function rig(payloads, { reconcile = () => true } = {}) {
       if (next instanceof Error) throw next;
       return next;
     },
-    reconcile(payload) { calls.push("reconcile"); return reconcile(payload); },
+    reconcile(payload) { calls.push("reconcile"); seen.push(payload); return reconcile(payload); },
     async wait(ms) { calls.push(`wait:${ms}`); },
   };
-  return { ports, calls };
+  return { ports, calls, seen };
 }
 
 test("a guard that is neither required nor held releases on the first read", async () => {
@@ -36,9 +37,13 @@ test("a guard that is neither required nor held releases on the first read", asy
 test("a guard still held after the backend stopped wanting it is waited for, with evidence", async () => {
   // The backend decides `required` from presence; the login1 lease drops on its
   // next 1 s reconcile. That gap is the race the manual trial hit.
-  const r = rig([guard(false, true), guard(false, true), guard(false, false)]);
+  const clear = guard(false, false);
+  const r = rig([guard(false, true), guard(false, true), clear]);
   assert.deepEqual(await m.awaitSleepGuardRelease(r.ports), { released: true });
   assert.equal(r.calls.filter((c) => c === "read").length, 3);
+  // The preflight decides from the same evidence that passed, not an earlier read.
+  assert.equal(r.seen.length, 1);
+  assert.equal(r.seen[0], clear);
   assert.equal(r.calls.filter((c) => c.startsWith("wait")).length, 2, "one wait between each read");
 });
 

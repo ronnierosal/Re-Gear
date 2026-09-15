@@ -42,31 +42,34 @@ class ResumeProtectionTests(unittest.TestCase):
         self.controller = SleepGuardController(lease=self.lease)
         self.owner = object()
 
-    def test_the_hazard_without_resume(self):
-        # Reproduce the failure shape: handoff owned, lease released, restore
-        # never finishes. The ambient reconcile is now inert.
+    def test_a_live_handoff_still_pauses_the_ambient_reconcile(self):
+        # Existing behaviour, pinned so the resume path cannot loosen it: while
+        # a handoff is live its release for the suspend is not undone a
+        # second later by the loop.
         self.assertTrue(self.controller.prepare_handoff(self.owner))
         self.controller.release_handoff(self.owner)
         self.assertFalse(self.lease.active)
         self.controller.reconcile(EgpuPresence.PRESENT)
         self.assertFalse(self.lease.active, "reconcile is paused by the live handoff -- correct while suspending")
 
-    def test_resume_lets_the_ambient_guard_reacquire_but_only_acquire(self):
+    def test_resume_returns_the_guard_to_presence_policy(self):
         self.controller.prepare_handoff(self.owner)
         self.controller.release_handoff(self.owner)
         self.assertTrue(self.controller.resume_protection(self.owner))
         # Next ambient tick with the eGPU present: protection comes back.
         self.controller.reconcile(EgpuPresence.PRESENT)
         self.assertTrue(self.lease.active)
-        # Still owned: recovery can finish it properly. Resuming did not clear
-        # ownership, and it did not let a second handoff start.
+        # Still owned: resuming did not clear the claim, and a second handoff
+        # cannot start on top of the unresolved one.
         self.assertTrue(self.controller.handoff_owned(self.owner))
         self.assertFalse(self.controller.prepare_handoff(object()))
-        # And the resumed path may never RELEASE. An absent reading while a
-        # failed handoff is outstanding keeps whatever is held.
-        self.lease.calls.clear()
+        # Unplugged: the guard lets go again. An acquire-only resume would hold
+        # a block inhibitor for the rest of the process -- a dead sleep button,
+        # not protection.
         self.controller.reconcile(EgpuPresence.ABSENT)
-        self.assertNotIn("release", self.lease.calls)
+        self.assertFalse(self.lease.active)
+        # And back, when the eGPU is.
+        self.controller.reconcile(EgpuPresence.PRESENT)
         self.assertTrue(self.lease.active)
 
     def test_resume_requires_the_owner(self):

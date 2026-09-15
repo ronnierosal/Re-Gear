@@ -37,6 +37,7 @@ const bundle =
 const {
   runGameClosePress,
   claimRelaunchOnMount,
+  continueSleepOnMount,
   pressFromDialog,
   closableAppId,
   gameCloseWiringMessage,
@@ -149,6 +150,7 @@ function rig({
   disconnectOutcome = outcome(),
   disconnectThrows = false,
   pendingRelaunch = "",
+  pendingSleep = false,
   throwOn = null,
   rememberResult = { ok: true, code: "game_close.stored" },
 } = {}) {
@@ -201,6 +203,12 @@ function rig({
     async releaseSleepBlocker() {
       calls.push(["releaseSleepBlocker"]);
       return true;
+    },
+    async takePendingSleep() {
+      calls.push(["takePendingSleep"]);
+      const claimed = pendingSleep;
+      pendingSleep = false;
+      return { pending: claimed, code: claimed ? "sleep_continuation.pending" : "sleep_continuation.nothing_recorded" };
     },
     async suspend() {
       calls.push(["suspend"]);
@@ -717,6 +725,40 @@ test("a refused preference does not stop the disconnect the player pressed", asy
 // ---------------------------------------------------------------------------
 // The mount-time pending relaunch claim
 // ---------------------------------------------------------------------------
+
+test("a mount with no sleep pending is an ordinary mount", async () => {
+  const r = rig({ statuses: [cleared()], pendingRelaunch: APP });
+  const { continued, mount } = await continueSleepOnMount(r.ports);
+  assert.equal(continued, null);
+  assert.equal(mount.code, "wiring.mount_relaunched");
+  assert.deepEqual(r.names(), ["takePendingSleep", "readStatus", "takePendingRelaunch", "relaunchGame"]);
+});
+
+test("a mount with a sleep pending finishes the sleep and reopens only afterwards", async () => {
+  // The session restart destroyed the panel that pressed the button. This
+  // panel sleeps the handheld from the record, and the reopen it also finds
+  // waits until the suspend call has returned rather than firing on mount.
+  const r = rig({ statuses: [cleared()], pendingRelaunch: APP, pendingSleep: true });
+  const { continued, mount } = await continueSleepOnMount(r.ports);
+  assert.equal(mount, null, "nothing else claims the reopen");
+  assert.equal(continued.code, "flow.slept");
+  const n = r.names();
+  assert.ok(n.includes("suspend"));
+  assert.ok(n.indexOf("suspend") < n.indexOf("relaunchGame"), "reopened after the suspend, not before");
+  assert.equal(n.filter((name) => name === "relaunchGame").length, 1);
+});
+
+test("a mount with a sleep pending on a half-detached device sleeps nothing", async () => {
+  const r = rig({
+    statuses: [cleared({ availability: "recovery_required", code: "removal_transaction.partially_detached" })],
+    pendingRelaunch: APP,
+    pendingSleep: true,
+  });
+  const { continued } = await continueSleepOnMount(r.ports);
+  assert.equal(continued.code, "flow.device_needs_attention");
+  assert.ok(!r.names().includes("suspend"));
+  assert.ok(!r.names().includes("relaunchGame"));
+});
 
 test("a pending relaunch is claimed and performed on mount", async () => {
   // The regression this exists for: the session restart that frees the eGPU

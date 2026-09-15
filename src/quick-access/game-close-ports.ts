@@ -18,6 +18,7 @@ import {
   getSleepReadiness,
   rememberGameCloseChoice,
   takePendingRelaunch,
+  takePendingSleep,
 } from "../backend";
 import type { DisconnectStatusPayload, SleepReadinessPayload } from "../backend";
 import {
@@ -57,6 +58,7 @@ export function liveGameClosePorts(
     disconnect: (releaseDisplay, relaunchAppId, relaunchIntent) =>
       executeEgpuDisconnect(releaseDisplay, relaunchAppId, relaunchIntent),
     takePendingRelaunch: () => takePendingRelaunch(),
+    takePendingSleep: () => takePendingSleep(),
     rememberChoice: (appId, skipConfirmation, relaunchAfter) =>
       rememberGameCloseChoice(appId, skipConfirmation, relaunchAfter),
     wait: (ms) =>

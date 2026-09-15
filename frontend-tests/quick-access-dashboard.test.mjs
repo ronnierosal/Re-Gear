@@ -63,6 +63,16 @@ test("dashboard actions keep icons and text inside one native button, not Item c
   // Six since the disconnect-and-sleep action joined the surface on 2026-09-14.
   assert.equal((source.match(/<DashboardAction\s/g) ?? []).length, 6);
   assert.match(source, /title="Disconnect and sleep"/);
+  // A yes must release the prompt guard itself and carry the sleep-intent
+  // dialog it answered; the disconnect tile must not open over that prompt.
+  assert.match(source, /releasePrompt\(\);\s*void runDisconnect\(releaseDisplay, answers, "sleep", dialog\)/);
+  assert.match(source, /releasePrompt\(\);\s*void runDisconnect\(releaseDisplay, \{ confirmed: true \}, "sleep", null\)/);
+  assert.match(source, /disconnectBusy \|\| disconnectPromptOpen\.current\) return;/);
+  assert.match(source, /\{ title: "Disconnect and sleep\?", ok: "Sleep" \}/);
+  // The panel that comes up after the session restart finishes the sleep on
+  // mount, and the result is readable on the page the button lives on.
+  assert.match(source, /void continueSleepOnMount\(liveGameClosePorts\(releaseSleepBlocker\)\)/);
+  assert.equal((source.match(/<PanelSectionRow>\{disconnectMessage\}<\/PanelSectionRow>/g) ?? []).length, 2);
   assert.match(source, /title="Dock \/ eGPU"[\s\S]*expanded=\{showHardwareDetails\}/);
   assert.match(source, /title="Troubleshoot"[\s\S]*expanded=\{showDiagnostics\}/);
 });

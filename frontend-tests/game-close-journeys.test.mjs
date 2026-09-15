@@ -272,10 +272,10 @@ test("destination journey: sleep asks for its own consent and does not reopen th
   assert.equal(result.ok, true);
   assert.deepEqual(r.calls.find((c) => c[0] === "disconnect"), ["disconnect", false, APP, "sleep"]);
   assert.ok(names(r.calls).includes("suspend"), "the sleep destination still suspends");
-  assert.ok(
-    !names(r.calls).includes("relaunch"),
-    "reopening now would launch the game seconds before the suspend; the record waits for the wake",
-  );
+  // Reopening before the suspend would launch the game seconds before the
+  // machine goes off; the claim waits until the suspend call has returned.
+  const n = names(r.calls);
+  assert.ok(n.indexOf("suspend") < n.indexOf("relaunch"), "reopened only after the suspend");
 });
 
 test("destination journey: consent given for a disconnect does not authorise a sleep", async () => {

@@ -133,14 +133,14 @@ class SleepGuardController:
             # A live handoff pauses reconciliation so its own release for the
             # suspend is not undone a second later. A handoff that failed to
             # restore is different: nothing is being suspended any more, and
-            # the guard has to come back. Only ACQUIRE is allowed through in
-            # that state -- never RELEASE -- so the worst the resumed path can
-            # do is protect.
-            if self._handoff_owner is not None:
-                if (self._ambient_resumes
-                        and decide_sleep_guard(presence) is SleepGuardAction.ACQUIRE
-                        and self._lease.status().active is not True):
-                    return self._lease.acquire()
+            # nothing else will ever bring the guard back or let it go. So the
+            # ordinary presence policy resumes -- acquire while the eGPU is
+            # present, release once it is gone. An acquire-only resume would
+            # hold a block inhibitor after the unplug for the rest of the
+            # process, which is a dead sleep button rather than protection.
+            # Ownership stays with the failed handoff only so a second one
+            # cannot start on top of it.
+            if self._handoff_owner is not None and not self._ambient_resumes:
                 return self._lease.status()
             action = decide_sleep_guard(presence)
             if action is SleepGuardAction.ACQUIRE:
@@ -200,8 +200,9 @@ class SleepGuardController:
         Called only from a restore that could not verify both leases back.
         Ownership is deliberately NOT cleared: recovery may still finish the
         handoff properly, and clearing it would let a second handoff start on
-        top of an unresolved one. What changes is that `reconcile` may ACQUIRE
-        again, and only acquire. Returns False if the owner does not hold it."""
+        top of an unresolved one. What changes is that `reconcile` follows
+        presence again instead of standing still. Returns False if the owner
+        does not hold it."""
         with self._lock:
             if not self.handoff_owned(owner):
                 return False
