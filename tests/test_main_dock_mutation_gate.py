@@ -171,6 +171,10 @@ class MainDockAdmissionTests(unittest.TestCase):
                 trial_confirmed=True)
             self.assertTrue(result["ok"])
             status = await self.plugin.get_egpu_disconnect_status("whole_dock_trial")
+            # The read adds one live fact the dispatch's terminal payload has no
+            # reason to carry: whether a worker is running right now. Everything
+            # the trial reported still has to survive the read unchanged.
+            self.assertIs(status.pop("in_flight"), False)
             self.assertEqual(status, result)
             self.assertFalse(status["safe_to_unplug"])
         asyncio.run(run())

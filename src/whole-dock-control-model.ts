@@ -13,6 +13,7 @@ const shutdownRefusals: Record<string, string> = {
   "dock_power.busy": "Another power request is still in progress.",
   "dock_power.sleep_unverified": "Sleep with the dock connected is not available.",
   "dock_power.request_action_changed": "A different power action was already recorded for this request.",
+  "dock_teardown.trial_unresolved": "The previous request stopped without reporting a result.",
 };
 /** Every outcome that settles a request without a software disconnect.
  *
@@ -97,6 +98,61 @@ export function shutdownRequested(status: any): boolean {
     && status.power_requested === true && status.ok === true;
 }
 /** A malformed/ambiguous response must not release the persistent retry guard. */
+/** One pending request, as the panel that dispatched it wrote it down. */
+export interface PendingRecord {
+  intent: DockIntent;
+  request: string;
+  /** Which panel wrote it. "" for a record written before panels carried an
+   * identity, which by definition is not this one. */
+  panel: string;
+}
+
+/** Stored form. The panel segment is what makes an abandoned record
+ * recognisable; older two-part and bare forms still parse, with no panel. */
+export function formatPendingRecord(intent: DockIntent, panel: string, request: string): string {
+  return `v2:${intent}:${panel}:${request}`;
+}
+export function parsePendingRecord(raw: string | null | undefined): PendingRecord | null {
+  if (!raw) return null;
+  const parts = raw.split(":");
+  if (parts[0] === "v2" && parts.length === 4) {
+    const [, intent, panel, request] = parts;
+    if (!request) return null;
+    return { intent: intent as DockIntent, request, panel };
+  }
+  // Written by a build that had no panel identity, so it cannot be this
+  // panel's: exactly the record a restart leaves behind.
+  if (parts.length === 2 && (parts[0] === "shutdown" || parts[0] === "disconnect_only")) {
+    return parts[1] ? { intent: parts[0] as DockIntent, request: parts[1], panel: "" } : null;
+  }
+  return parts.length === 1 && parts[0] ? { intent: "disconnect", request: parts[0], panel: "" } : null;
+}
+
+/** True when a record no live panel is waiting on can be retired.
+ *
+ * Freeing the dock restarts Gaming Mode, which destroys the panel waiting on
+ * the reply, so the record it left behind outlives the answer. Correlation
+ * alone can never retire that: a backend restarted with it reports no_trial
+ * carrying no request id, so every later poll compares against nothing and
+ * the control stays disabled for good.
+ *
+ * Two conditions, and both matter. The record must come from a panel that is
+ * not this one -- a record this panel just wrote is one whose reply is still
+ * coming, and retiring it on an idle reading taken before the backend marked
+ * itself busy would drop the guard on a live request. And `in_flight` must be
+ * the backend asserting, about its own process, that no worker is running: a
+ * request it is not running and does not know is not outstanding.
+ *
+ * This retires the record. It never says the disconnect happened -- what the
+ * device is in comes from the fresh status beside it, and the caller says the
+ * result could not be confirmed rather than letting the control quietly go
+ * usable. A backend too old to report `in_flight` settles nothing. */
+export function dockRequestAbandoned(status: any, record: PendingRecord | null, panel: string): boolean {
+  if (record === null || record.panel === panel) return false;
+  return status?.schema_version === 1 && status.in_flight === false
+    && status.busy === false && status.safe_to_unplug === false
+    && status.request_id !== record.request;
+}
 export function dockRequestSettled(status: any, request: string, intent: DockIntent): boolean {
   if (intent !== "disconnect" && intent !== "disconnect_only" && intent !== "shutdown") return false;
   // A pre-correlation refusal settles: the backend rejected it before minting

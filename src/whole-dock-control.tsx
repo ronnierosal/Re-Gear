@@ -2,13 +2,19 @@ import { callable } from "@decky/api";
 import { DialogButton, showModal } from "@decky/ui";
 import { useEffect, useRef, useState } from "react";
 import { EgpuConfirmModal } from "./egpu-confirm-modal";
-import { dockIntentControl, dockRequestSettled, type DockAction, type DockIntent } from "./whole-dock-control-model";
+import { dockIntentControl, dockRequestAbandoned, dockRequestSettled, formatPendingRecord, parsePendingRecord,
+  type DockAction, type DockIntent } from "./whole-dock-control-model";
 
 const readTrial = callable<[string], any>("get_egpu_disconnect_status");
 const execute = callable<[boolean, string, string, DockAction, boolean, string, string], any>("execute_egpu_disconnect");
 const pendingKey = "regear.whole-dock.pending-request";
+/** Identifies this panel for the life of its script, which is exactly the
+ * lifetime that matters: freeing the dock restarts Gaming Mode and a new
+ * panel loads with a new one, which is how a record left by the panel that
+ * did not survive is told apart from one this panel is still waiting on. */
+const panelId = (() => { try { return crypto.randomUUID().replaceAll("-", ""); } catch { return "panel"; } })();
 const pendingRecord = () => { try { return window.localStorage.getItem(pendingKey); } catch { return "storage-unavailable"; } };
-const pendingRequest = () => pendingRecord()?.replace(/^(shutdown|disconnect_only):/, "");
+const pendingRequest = () => parsePendingRecord(pendingRecord())?.request;
 
 /** Only confirmed clicks mutate. Reopening the menu recovers backend progress. */
 export function WholeDockControl({ readCurrentSnapshot, intent = "disconnect", startRequest }: { readCurrentSnapshot: () => any; intent?: DockIntent; startRequest?:()=>boolean }) {
@@ -35,12 +41,17 @@ export function WholeDockControl({ readCurrentSnapshot, intent = "disconnect", s
         const next = await read();
         if (disposed) return;
         if (started !== epoch.current) { timer = setTimeout(refresh, 2000); return; }
-        const request = pendingRequest();
-        const pendingIntent = pendingRecord()?.startsWith("shutdown:") ? "shutdown"
-          : pendingRecord()?.startsWith("disconnect_only:") ? "disconnect_only" : "disconnect";
-        if (request && dockRequestSettled(next.status, request, pendingIntent)) {
+        const record = parsePendingRecord(pendingRecord());
+        // Retiring a record whose answer never arrived is not the same as the
+        // request having succeeded, so the player is told which happened
+        // rather than left to infer it from the control becoming usable.
+        const abandoned = dockRequestAbandoned(next.status, record, panelId);
+        if (record && (abandoned || dockRequestSettled(next.status, record.request, record.intent))) {
           window.localStorage.removeItem(pendingKey);
           uncertain.current = false;
+          if (abandoned && mounted.current) {
+            setNotice("Re-Gear could not confirm how the previous request ended, so it stopped waiting. Check the status below before trying again. Keep the cable connected.");
+          }
         }
         setReading(next);
         if(startRequest?.()) confirm(true,next);
@@ -73,7 +84,7 @@ export function WholeDockControl({ readCurrentSnapshot, intent = "disconnect", s
           setReading(fresh); setNotice("Status changed. Review the current reading."); return;
         }
         const request = crypto.randomUUID().replaceAll("-", "");
-        window.localStorage.setItem(pendingKey, intent === "disconnect" ? request : `${intent}:${request}`);
+        window.localStorage.setItem(pendingKey, formatPendingRecord(intent, panelId, request));
         uncertain.current = true;
         setNotice(action === "whole_dock_shutdown" ? "Shutdown request sent. Keep the cable connected; Gaming Mode may restart before shutdown." : "Request sent. Keep the cable connected; Gaming Mode may restart.");
         const result = await execute(true, "", "disconnect", action, true, attachment, request);

@@ -2188,6 +2188,23 @@ class Plugin:
                 if runtime._operation is None:
                     lease.release()
 
+    def _watched_trial(self, worker):
+        """Run a trial worker, always leaving a reader able to tell what happened.
+
+        The worker records its own terminal payload, but only for the exceptions
+        it names: a BaseException -- an interpreter going down, a thread killed
+        under it -- skips that entirely, and that left the recorded status busy
+        for the life of the process. A caller holding a pending request then
+        waits on a reply that can never come, and its control stays disabled for
+        good. This finally runs for those too, and the reader turns "recorded as
+        running, with nothing running it" into a terminal unresolved.
+        """
+        self._whole_dock_trial_worker_alive = True
+        try:
+            return worker()
+        finally:
+            self._whole_dock_trial_worker_alive = False
+
     def _return_portable_before_disconnect(self, binding, expected_user):
         """Called only under dock admission and a sleep inhibitor, before intent.
 
@@ -2304,6 +2321,21 @@ class Plugin:
                 "schema_version": 1, "code": "dock_teardown.no_trial",
                 "busy": False, "safe_to_unplug": False,
             }))
+            # Whether a worker is running RIGHT NOW, in this process. A caller
+            # holding a pending record needs this to tell an operation that may
+            # still be mid-teardown -- where continuing to wait is the only safe
+            # answer -- from one that cannot be outstanding at all, because the
+            # process that would be running it is this one.
+            in_flight = getattr(self, "_whole_dock_trial_worker_alive", False) is True
+            result["in_flight"] = in_flight
+            if result.get("busy") is True and not in_flight:
+                # Recorded as running with nothing running it: the worker died
+                # without settling. Terminal and unresolved -- never success.
+                # What the device is actually in is read from the fresh status
+                # beside this, not inferred from the request having ended.
+                result.update({"code": "dock_teardown.trial_unresolved",
+                               "busy": False, "ok": False, "safe_to_unplug": False})
+                self._whole_dock_trial_status = dict(result)
             if not result.get("busy") and result.get("ok") is False:
                 def claim_stage():
                     try:
@@ -2529,7 +2561,8 @@ class Plugin:
                 if power_request is not None and trial_request_id:
                     self._dock_power_requests[trial_request_id] = (trial_action, dict(payload))
                 return payload
-            return await self._run_background_operation(trial)
+            return await self._run_background_operation(
+                lambda: self._watched_trial(trial))
         relaunch = RelaunchIntentStore(CATALOG_ROOT)
         parsed_intent = _parse_intent(relaunch_intent)
         if (

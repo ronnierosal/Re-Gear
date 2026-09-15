@@ -160,6 +160,32 @@ None of this is hardware-validated. No sleep/wake cycle has been run through
 the press, invariant 10 still disclaims sleep validation, and the enclosure
 remains powered.
 
+Observed on device on 2026-09-14, on the 0.3.109 candidate: a Safe Disconnect
+left the mounted control disabled for good. The trial acquired its inhibitor,
+returned presentation to portable, and then Gaming Mode restarted -- which is
+what freeing the dock does whenever a session-reached unit holds it -- taking
+with it the panel waiting on the reply. The eGPU was never removed and nothing
+was left half-detached, but the pending record that panel had written could
+never be retired: the reply went nowhere, and correlation is the only way the
+record settles. Two paths made that permanent. A worker that dies without
+writing its terminal payload -- an `except Exception` does not cover a
+BaseException -- left the recorded status busy for the life of the process; and
+a restarted backend answers `dock_teardown.no_trial` carrying no request id at
+all, so every later poll compared against nothing.
+
+The read now reports `in_flight`, which is the backend asserting about its own
+process that no worker is running, and rewrites a status recorded as running
+with nothing running it into a terminal `dock_teardown.trial_unresolved` that
+keeps its request id. The pending record now carries the identity of the panel
+that wrote it, so a record from a panel that did not survive can be retired
+against an idle backend while a record this panel is still waiting on cannot --
+that distinction is what stops an idle reading taken before the backend marks
+itself busy from dropping the guard on a live request. Retiring says only that
+the request is no longer outstanding: the player is told the result could not be
+confirmed, what the device is in is read from the fresh status, and no path
+claims the disconnect happened or that unplugging is safe. A backend too old to
+report `in_flight` retires nothing.
+
 An unwired `SleepLeaseHandoff` module now implements the proposed two-lease
 handoff contract with independent restoration readbacks and one-shot submission.
 No production adapter supplies the required pause, crash-continuity, supported

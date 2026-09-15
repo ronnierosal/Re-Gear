@@ -5,7 +5,8 @@ import ts from "typescript";
 const js = ts.transpileModule(readFileSync(new URL("../src/whole-dock-control-model.ts", import.meta.url), "utf8"), {
   compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 },
 }).outputText;
-const { dockControl, dockIntentControl, dockRequestSettled, shutdownRequested } = await import("data:text/javascript;base64," + Buffer.from(js).toString("base64"));
+const { dockControl, dockIntentControl, dockRequestAbandoned, dockRequestSettled, formatPendingRecord,
+  parsePendingRecord, shutdownRequested } = await import("data:text/javascript;base64," + Buffer.from(js).toString("base64"));
 const idle = { schema_version: 3, game_state: "idle", egpu_link: { state: "up" }, observed_at: new Date().toISOString() };
 const fresh = { schema_version: 1, busy: false, safe_to_unplug: false, code: "dock_teardown.no_trial", attachment_token: "a".repeat(64)+":"+"b".repeat(64) };
 test("initial disconnect requires supported status and idle detected GPU", () => {
@@ -63,8 +64,8 @@ function harness(storage = new Map(), intent = "disconnect", startRequest, initi
     return {Close(){if(record.closed)return;record.closed=true;}};
   };
   const window={localStorage:{getItem:key=>storage.get(key)??null,setItem(key,value){if(h.failStorage)throw Error('storage denied');storage.set(key,value);},removeItem:key=>storage.delete(key)}};
-  const Component = new Function('React','useState','useRef','useEffect','callable','DialogButton','showModal','EgpuConfirmModal','dockIntentControl','dockRequestSettled','window','crypto','setTimeout','clearTimeout', componentJs+'\nreturn WholeDockControl;')(
-    React,useState,useRef,useEffect,callable,'button',showModal,'confirm',dockIntentControl,dockRequestSettled,window,
+  const Component = new Function('React','useState','useRef','useEffect','callable','DialogButton','showModal','EgpuConfirmModal','dockIntentControl','dockRequestAbandoned','dockRequestSettled','formatPendingRecord','parsePendingRecord','window','crypto','setTimeout','clearTimeout', componentJs+'\nreturn WholeDockControl;')(
+    React,useState,useRef,useEffect,callable,'button',showModal,'confirm',dockIntentControl,dockRequestAbandoned,dockRequestSettled,formatPendingRecord,parsePendingRecord,window,
     {randomUUID:()=> '12345678-1234-1234-1234-123456789abc'},
     fn=>{h.timers.set(++serial,fn);return serial;},id=>h.timers.delete(id));
   h.render=()=>{index=0;h.tree=Component({intent:h.intent,readCurrentSnapshot:()=>h.snapshot,startRequest});for(const fn of effects.splice(0))cleanups.push(fn());return h.tree;};
@@ -145,7 +146,7 @@ test('component interrupted request survives remount and stale prior terminal st
   assert.equal(h.calls.length,1);assert.equal(storage.size,1);h.unmount();
   const reopened=harness(storage);reopened.status={...fresh,code:'dock_reconnect.software_reconnected',software_reconnected:true,ok:true,request_id:'old-request'};
   await settle();reopened.poll();await settle();assert.equal(reopened.button().props.disabled,true);assert.equal(storage.size,1);assert.equal(reopened.calls.length,0);
-  reopened.status={...reopened.status,request_id:[...storage.values()][0]};reopened.poll();await settle();
+  reopened.status={...reopened.status,request_id:parsePendingRecord([...storage.values()][0]).request};reopened.poll();await settle();
   assert.equal(storage.size,0);assert.equal(reopened.button().props.disabled,false);reopened.unmount();
 });
 test('component unmount during confirmation freshness read never dispatches',async()=>{
@@ -225,7 +226,7 @@ test("shutdown malformed acceptance stays pending across remount in disconnect m
   h.execute=args=>Promise.resolve({...shutdownAccepted(args.at(-1)),power_requested:"true"});
   h.click();h.modals.at(-1).view.props.onOK();await settle();
   assert.equal(h.calls.length,1);assert.equal(storage.size,1);assert.equal(h.button().props.disabled,true);h.unmount();
-  const request=[...storage.values()][0].replace(/^shutdown:/,"");
+  const request=parsePendingRecord([...storage.values()][0]).request;
   const next=harness(storage);next.status={...fresh,request_id:request};await settle();next.poll();await settle();
   assert.equal(storage.size,1);assert.equal(next.button().props.disabled,true);assert.equal(next.calls.length,0);
   next.status=shutdownAccepted(request);next.poll();await settle();assert.equal(storage.size,0);next.unmount();
@@ -300,7 +301,7 @@ test("disconnect-only malformed completion remains pending in another mode",asyn
   const storage=new Map(),h=harness(storage,"disconnect_only");await settle();
   h.execute=args=>Promise.resolve({...fresh,code:"dock_teardown.software_down",software_down:true,ok:false,request_id:args.at(-1)});
   h.click();h.modals.at(-1).view.props.onOK();await settle();assert.equal(storage.size,1);h.unmount();
-  const request=[...storage.values()][0].replace(/^disconnect_only:/,"");const next=harness(storage);
+  const request=parsePendingRecord([...storage.values()][0]).request;const next=harness(storage);
   next.status={...fresh,code:"dock_teardown.software_down",software_down:true,ok:false,request_id:request};await settle();next.poll();await settle();
   assert.equal(next.button().props.disabled,true);assert.equal(storage.size,1);assert.equal(next.calls.length,0);next.unmount();
 });
@@ -309,4 +310,115 @@ test("disconnect-only cancellation and changed attachment never dispatch",async(
   const h=harness(new Map(),"disconnect_only");await settle();h.click();h.modals.at(-1).view.props.onCancel();
   assert.equal(h.calls.length,0);h.click();h.status={...fresh,attachment_token:'c'.repeat(64)+':'+ 'd'.repeat(64)};
   h.modals.at(-1).view.props.onOK();await settle();assert.equal(h.calls.length,0);h.unmount();
+});
+
+// ---------------------------------------------------------------------------
+// A pending record whose answer can never arrive
+//
+// Freeing the dock restarts Gaming Mode, which destroys the panel waiting on
+// the reply. Its record outlives the answer, and correlation alone can never
+// retire it: a backend that restarted too reports no_trial with no request id.
+// Before this the control stayed disabled for the life of the install.
+// ---------------------------------------------------------------------------
+
+test('a pending record is read back whatever build wrote it', () => {
+  assert.deepEqual(parsePendingRecord('v2:shutdown:panel-a:req-1'),
+    { intent: 'shutdown', request: 'req-1', panel: 'panel-a' });
+  // Older forms carry no panel, which is what makes them recognisably not this
+  // panel's -- exactly the record a restart leaves behind.
+  assert.deepEqual(parsePendingRecord('shutdown:req-1'),
+    { intent: 'shutdown', request: 'req-1', panel: '' });
+  assert.deepEqual(parsePendingRecord('disconnect_only:req-1'),
+    { intent: 'disconnect_only', request: 'req-1', panel: '' });
+  assert.deepEqual(parsePendingRecord('req-1'),
+    { intent: 'disconnect', request: 'req-1', panel: '' });
+  for (const junk of [null, undefined, '', 'v2:shutdown:panel-a', 'v2:shutdown:panel-a:'])
+    assert.equal(parsePendingRecord(junk), null);
+  const written = formatPendingRecord('disconnect_only', 'panel-b', 'req-2');
+  assert.deepEqual(parsePendingRecord(written),
+    { intent: 'disconnect_only', request: 'req-2', panel: 'panel-b' });
+});
+
+test('an idle backend retires a record left by a panel that did not survive', () => {
+  const idleBackend = { ...fresh, in_flight: false, request_id: 'someone-else' };
+  for (const raw of ['old-request', 'shutdown:old-request', 'v2:disconnect:dead-panel:old-request'])
+    assert.equal(dockRequestAbandoned(idleBackend, parsePendingRecord(raw), 'live-panel'), true);
+});
+
+test('a record this panel is still waiting on is never retired', () => {
+  // The race the panel identity closes: a poll landing between writing the
+  // record and the backend marking itself busy reads an idle backend, and
+  // retiring on that would drop the guard on a request that is still live.
+  const idleBackend = { ...fresh, in_flight: false, request_id: 'someone-else' };
+  const mine = parsePendingRecord(formatPendingRecord('disconnect', 'live-panel', 'req'));
+  assert.equal(dockRequestAbandoned(idleBackend, mine, 'live-panel'), false);
+});
+
+test('nothing is retired while the backend says a worker is running', () => {
+  // Mid-teardown the operation really is outstanding; waiting is the only safe
+  // answer and a second dispatch would race it.
+  const record = parsePendingRecord('v2:disconnect:dead-panel:old-request');
+  assert.equal(dockRequestAbandoned({ ...fresh, in_flight: true, busy: true }, record, 'live'), false);
+  assert.equal(dockRequestAbandoned({ ...fresh, in_flight: true }, record, 'live'), false);
+});
+
+test('a backend too old to report in_flight retires nothing', () => {
+  // Fail closed: absence of the assertion is not the assertion.
+  const record = parsePendingRecord('v2:disconnect:dead-panel:old-request');
+  assert.equal(dockRequestAbandoned({ ...fresh, request_id: 'other' }, record, 'live'), false);
+  assert.equal(dockRequestAbandoned({ ...fresh, in_flight: undefined }, record, 'live'), false);
+  assert.equal(dockRequestAbandoned(null, record, 'live'), false);
+  assert.equal(dockRequestAbandoned({ ...fresh, in_flight: false }, null, 'live'), false);
+});
+
+test('retiring never depends on, or implies, permission to unplug', () => {
+  const record = parsePendingRecord('v2:disconnect:dead-panel:old-request');
+  assert.equal(dockRequestAbandoned({ ...fresh, in_flight: false, safe_to_unplug: true }, record, 'live'), false);
+  assert.equal(dockRequestAbandoned({ ...fresh, in_flight: false, busy: true }, record, 'live'), false);
+  assert.equal(dockRequestAbandoned({ ...fresh, in_flight: false, schema_version: 2 }, record, 'live'), false);
+});
+
+test('a correlated reply still settles without being called abandoned', () => {
+  // The ordinary path is unchanged: the answer arrived, for this request.
+  const done = { ...fresh, in_flight: false, code: 'dock_teardown.software_down',
+    software_down: true, ok: true, request_id: 'req' };
+  assert.equal(dockRequestSettled(done, 'req', 'disconnect_only'), true);
+  const mine = parsePendingRecord(formatPendingRecord('disconnect_only', 'live', 'req'));
+  assert.equal(dockRequestAbandoned(done, mine, 'live'), false);
+});
+
+test('component stops waiting on an abandoned record and says the result is unconfirmed', async () => {
+  // End to end over the component: the record the previous panel left, an idle
+  // backend, and one poll. The control must become usable again and must not
+  // imply the disconnect happened.
+  const storage = new Map([['regear.whole-dock.pending-request', 'v2:disconnect:dead-panel:old-request']]);
+  const h = harness(storage);
+  h.status = { ...fresh, in_flight: false, request_id: 'someone-else' };
+  await settle();
+  assert.equal(h.button().props.disabled, true, 'starts disabled by the inherited record');
+  h.poll(); await settle();
+  assert.equal(storage.size, 0, 'the record is retired');
+  assert.equal(h.button().props.disabled, false, 'the control is usable again');
+  assert.equal(h.calls.length, 0, 'retiring dispatches nothing');
+  const text = JSON.stringify(h.tree);
+  assert.match(text, /could not confirm how the previous request ended/i);
+  assert.match(text, /Keep the cable connected/i);
+  assert.doesNotMatch(text, /safe to unplug|you can unplug/i);
+  h.unmount();
+});
+
+test("component keeps waiting on the record it wrote itself", async () => {
+  // Same idle backend, but the record belongs to this panel: the reply is still
+  // coming and the guard must hold.
+  const storage = new Map();
+  const h = harness(storage);
+  await settle();
+  h.execute = () => new Promise(() => {});
+  h.click(); h.modals.at(-1).view.props.onOK(); await settle();
+  assert.equal(storage.size, 1);
+  h.status = { ...fresh, in_flight: false, request_id: 'someone-else' };
+  h.poll(); await settle();
+  assert.equal(storage.size, 1, 'this panel is still waiting on its own request');
+  assert.equal(h.button().props.disabled, true);
+  h.unmount();
 });
