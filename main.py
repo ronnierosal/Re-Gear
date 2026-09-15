@@ -2333,6 +2333,15 @@ class Plugin:
             # process that would be running it is this one.
             in_flight = getattr(self, "_whole_dock_trial_worker_alive", False) is True
             result["in_flight"] = in_flight
+            if result.get("busy") is True and in_flight:
+                # The route waits up to 90 s on a session restart with no
+                # other sign of life, and a caller that only sees "busy" for
+                # that long calls it stuck. Say which step, and since when.
+                # Read-only: the phase the worker last recorded, and a clock.
+                result["phase"] = getattr(self, "_whole_dock_trial_phase", "")
+                started = getattr(self, "_whole_dock_trial_started", None)
+                result["elapsed_s"] = (
+                    max(0, int(time.monotonic() - started)) if started is not None else None)
             if result.get("busy") is True and not in_flight:
                 # Recorded as running with nothing running it: the worker died
                 # without settling. Terminal and unresolved -- never success.
@@ -2508,6 +2517,7 @@ class Plugin:
             # it set in a process that is going away, and a fresh process
             # starts without the attribute.
             self._whole_dock_trial_worker_alive = True
+            self._whole_dock_trial_started = time.monotonic()
             self._whole_dock_trial_status = {"schema_version": 1,
                 "code": "dock_teardown.trial_running", "busy": True,
                 "safe_to_unplug": False, "request_id": trial_request_id}

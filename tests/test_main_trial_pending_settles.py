@@ -94,6 +94,43 @@ class TrialPendingSettlesTests(unittest.TestCase):
         self.assertEqual(result["code"], "dock_teardown.software_down")
         self.assertIs(result["ok"], True)
 
+    def test_a_busy_read_reports_the_live_phase_and_elapsed_time(self):
+        # A worker can legitimately wait ~90 s on a session restart. A caller
+        # that only ever sees "busy" for that long calls it stuck; the phase and
+        # a clock are the difference between "stuck" and "working, step 4".
+        import time
+        self.plugin._whole_dock_trial_worker_alive = True
+        self.plugin._whole_dock_trial_phase = "gpu_release"
+        self.plugin._whole_dock_trial_started = time.monotonic() - 42
+        self.plugin._whole_dock_trial_status = {
+            "schema_version": 1, "code": "dock_teardown.trial_running",
+            "busy": True, "safe_to_unplug": False, "request_id": "r1"}
+        result = self.read()
+        self.assertEqual(result["phase"], "gpu_release")
+        self.assertGreaterEqual(result["elapsed_s"], 42)
+        self.assertLess(result["elapsed_s"], 60)
+        self.assertIs(result["busy"], True)
+
+    def test_progress_fields_never_leak_into_a_terminal_read(self):
+        # The terminal payload already carries its own phase; the live clock is
+        # for a wait, not a result. Nothing here may make a refusal look alive.
+        self.plugin._whole_dock_trial_worker_alive = False
+        self.plugin._whole_dock_trial_started = 0.0
+        self.plugin._whole_dock_trial_status = {
+            "schema_version": 1, "code": "dock_teardown.gpu_release_unverified",
+            "busy": False, "ok": False, "safe_to_unplug": False, "request_id": "r1",
+            "phase": "gpu_release"}
+        result = self.read()
+        self.assertNotIn("elapsed_s", result)
+        self.assertEqual(result["phase"], "gpu_release")
+        self.assertIs(result["in_flight"], False)
+
+    def test_the_dispatch_stamps_the_start_beside_the_busy_record(self):
+        import inspect
+        source = inspect.getsource(self.module.Plugin.execute_egpu_disconnect)
+        busy = source.index('"code": "dock_teardown.trial_running", "busy": True')
+        self.assertIn("self._whole_dock_trial_started = time.monotonic()", source[:busy])
+
     # ----------------------------------------------------------------- worker
 
     def test_the_shipped_wrapper_clears_liveness_for_a_base_exception(self):
