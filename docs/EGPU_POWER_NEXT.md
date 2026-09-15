@@ -220,3 +220,42 @@ Ronnie then requested the two-choice Sleep flow recorded above. Keeping an
 already-connected dock through sleep is distinct from software reauthorization
 after intentional disconnect. The latter remains excluded. Successful connected
 sleep/wake is the user's expectation, not yet a recorded hardware result.
+
+## 0.3.111 trial protocol, prepared 2026-09-15 while the device was offline
+
+The 0.3.109 Safe Disconnect stopped after the portable return with the eGPU
+still bound to amdgpu and both inhibitors held, and the only record of where it
+stopped -- `_whole_dock_trial_status`, served by
+`get_egpu_disconnect_status("whole_dock_trial")` -- was never read. It lives in
+the plugin process; installing anything restarts that process and discards it.
+So the order below is not optional.
+
+1. **Read first, install nothing.** From the dev machine:
+   `ssh -N -L 19224:127.0.0.1:8080 -i ~/.ssh/hdm_ally_deploy_v2 deck@steamdeck.local`
+   then `node scripts/probe_whole_dock_trial_status.mjs http://127.0.0.1:19224`.
+   The probe is read-only by construction and a test pins that. Record
+   `phase`, `release_stage`, `release.code`, `arm_stage`, `arm_code`, `busy`,
+   the pending localStorage record, and `sleep_guard`. Port 19223 is another
+   agent's CDP session; do not reuse it.
+2. **Then install 0.3.111** (`out/Re-Gear-0.3.111.zip`, revision 880d941,
+   sha256 4f90c8d4...2fffa). Not 0.3.110, which has the executor-start race.
+   The restart releases both inhibitors and the first Command Center open
+   retires the old-format pending record with the "could not confirm" notice.
+3. **Safe Disconnect, captured.** Before the press: `systemd-inhibit --list`,
+   `lspci | grep -i vga`, the newest `/home/deck/homebrew/logs/Re-Gear/*.log`
+   tail. Press. After Gaming Mode returns, run the probe again before opening
+   anything else, then open the Command Center and record what the control
+   says. The disconnect has not succeeded on any build since 0.3.98; the one
+   route-relevant backend change since is `peripherals.py` eaa7684, which makes
+   a docked controller visible where 0.3.98's parser hid it. If the probe shows
+   a refusal, `release.code` names it; if it shows `trial_running` with
+   `in_flight` true, the worker is blocked and a kernel-side wait is the only
+   place left.
+4. **Disconnect and sleep, only if step 3 completed.** Same capture. The press
+   should read readiness, refuse if `retained_inhibitor` is true, disconnect,
+   and either finish the sleep in the same panel or -- if Gaming Mode restarts
+   -- have the next panel claim `take_pending_sleep` and finish it. Record
+   whether the handheld slept, whether it woke, and whether a closed game was
+   reopened after the suspend call returned.
+
+Nothing in this section is a hardware result. It is the plan for getting one.
