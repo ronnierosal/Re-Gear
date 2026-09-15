@@ -255,12 +255,98 @@ class DeckyContractTests(unittest.TestCase):
         self.assertNotIn('"forever"', source)
         self.assertNotIn('"forever"', backend)
 
+    def test_disconnect_activation_owns_one_canonical_request(self):
+        """Native duplicate presses share one operation and its one-use request.
+
+        Executed same-tick admission and reopen/pending non-replay behavior is
+        covered by the native/WholeDock frontend tests; this gate pins the
+        production composition rather than the retired legacy launcher.
+        """
+        source = (ROOT / "src" / "quick-access" / "expanded-command-center" / "native.tsx").read_text(encoding="utf-8")
+        press = source[source.index("  function disconnect() {"):source.index("  function View(")]
+        self.assertIn("if(stopped||operation||!modal) return", press)
+        self.assertLess(press.index("if(stopped||operation||!modal)"), press.index("showModal("))
+        self.assertIn("if(consumed)return false;consumed=true;return true", press)
+        self.assertIn('intent="disconnect_only"', press)
+        self.assertIn("startRequest={startRequest}", press)
+        self.assertIn("operationGeneration!==operationToken", press)
+        self.assertIn("fnOnClose:hide", press)
+
+    def test_expanded_menu_refuses_a_payload_this_build_cannot_read(self):
+        """A schema the sleep preflight rejects is not a fresh observation.
+
+        ``observationFromSnapshotEvidence`` refuses anything but schema 3 and
+        fails closed. Without the same check here, one observation would have
+        two gates disagreeing about whether it may be acted on.
+        """
+        source = (ROOT / "src" / "index.tsx").read_text(encoding="utf-8")
+        self.assertIn("const READABLE_SNAPSHOT_SCHEMA = 3;", source)
+        self.assertIn(
+            "payload?.snapshot.schema_version === READABLE_SNAPSHOT_SCHEMA", source,
+        )
+        start = source.index("const menuFresh =")
+        self.assertIn("menuSchemaReadable", source[start:start + 200])
+
+    def test_performance_readings_do_not_inherit_snapshot_freshness(self):
+        """Two transports, and neither may vouch for the other.
+
+        Performance responses carry no device observation timestamp, so their
+        owner bounds their lifetime from the request that fetched them and
+        reports null on expiry. Publishing them behind the snapshot's age
+        gate would render a power limit that expired minutes ago as current,
+        because an unrelated GPU sample happened to be recent.
+        """
+        source = (ROOT / "src" / "index.tsx").read_text(encoding="utf-8")
+        start = source.index("publishTiles({")
+        end = source.index("});", start)
+        published = source[start:end]
+        self.assertIn("performanceFresh:", published)
+        # Derived from the owner's own readings, not from the snapshot gate.
+        self.assertIn(
+            "performanceFresh: performance.manual !== null || performance.auto !== null",
+            published,
+        )
+        self.assertNotIn("performance: menuFresh", published)
+        # The consumer gates the two independently.
+        tile_source = (ROOT / "src" / "quick-access" / "expanded-command-center"
+                       / "tile-source.ts").read_text(encoding="utf-8")
+        self.assertIn("const performanceFresh = readings.performanceFresh === true;", tile_source)
+        self.assertIn("performanceFresh && readings.performance", tile_source)
+        self.assertNotIn("fresh && readings.performance", tile_source)
+
+    def test_display_target_is_graded_by_the_shared_mapping(self):
+        """The tile may not re-derive a reading the presentation module owns.
+
+        A second copy of the mapping is a second copy of the safety argument,
+        and the copy that drifts is the one nobody is reading. The eGPU tab
+        grades this field through ``evidence(..., confidence)``; the Quick
+        Access tile must not state the same observation as fact.
+        """
+        source = (ROOT / "src" / "index.tsx").read_text(encoding="utf-8")
+        self.assertIn("displayTargetEvidence(snapshot.displays)", source)
+        # No local re-derivation of the same reading.
+        self.assertNotIn('{ text: "External", known: true }', source)
+        mapping = (ROOT / "src" / "quick-access" / "modules" / "egpu-presentation.ts").read_text(
+            encoding="utf-8")
+        self.assertIn("export function displayTargetEvidence(", mapping)
+        self.assertIn('display.confidence === "verified"', mapping)
+
     def test_attempted_sleep_warning_requires_acknowledgement(self):
         source = (ROOT / "src" / "index.tsx").read_text(encoding="utf-8")
         start = source.index("function showBlockedAttempt(")
         end = source.index("export default definePlugin", start)
         warning = source[start:end]
-        self.assertIn("<ConfirmModal", warning)
+        # The dialog renders through the shared Re-Gear wrapper. Pinning the
+        # call site alone would pass for a wrapper that accepted the props and
+        # dropped them, so pin what the wrapper actually does with them: it
+        # spreads the rest onto the native dialog, and it renders the
+        # description it deliberately intercepts rather than forwarding.
+        self.assertIn("<EgpuConfirmModal", warning)
+        self.assertIn("strDescription={warning.body}", warning)
+        adapter = (ROOT / "src" / "egpu-confirm-modal.tsx").read_text(encoding="utf-8")
+        self.assertIn("<ConfirmModal", adapter)
+        self.assertIn("{...props}", adapter)
+        self.assertIn("{strDescription", adapter)
         self.assertIn('strOKButtonText="OK"', warning)
         self.assertIn("bAlertDialog={true}", warning)
         self.assertIn("bDisableBackgroundDismiss={true}", warning)

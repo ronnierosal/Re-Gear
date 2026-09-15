@@ -47,7 +47,7 @@ test("compact dashboard keeps native controls, single guarded action and local d
   assert.match(source, /onClick=\{\(\) => setShowHardwareDetails\(\(visible\) => !visible\)\}/);
   assert.match(source, /showHardwareDetails &&[\s\S]*hardwareDetailRows\(payload\)/);
   assert.ok(source.indexOf("<DashboardSurface primary>") > source.indexOf('<ToggleField\n'));
-  assert.match(source, /Keep the eGPU connected until fully powered off/);
+  assert.match(source, /title="Safe Disconnect"[\s\S]*onClick=\{openDisconnect\}/);
   assert.match(overview, /import handheldModeIcon from "\.\/assets\/mode-handheld\.svg"/);
   assert.match(overview, /import tvModeIcon from "\.\/assets\/mode-tv\.svg"/);
   assert.match(overview, /isPortable \? handheldModeIcon : tvModeIcon/);
@@ -60,19 +60,22 @@ test("dashboard actions keep icons and text inside one native button, not Item c
   assert.match(action, /gridTemplateColumns: "38px minmax\(0,1fr\) 18px"/);
   assert.match(action, /wordBreak: "normal",\s+overflowWrap: "normal"/);
   assert.doesNotMatch(action, /ButtonItem|noFocusRing=|outline:|overflow: "hidden"/);
-  // Six since the disconnect-and-sleep action joined the surface on 2026-09-14.
-  assert.equal((source.match(/<DashboardAction\s/g) ?? []).length, 6);
+  // Five: the candidate's four, plus the disconnect-and-sleep press added
+  // on 2026-09-14. "Disconnect status" is gone with the old surface.
+  assert.equal((source.match(/<DashboardAction\s/g) ?? []).length, 5);
   assert.match(source, /title="Disconnect and sleep"/);
   // A yes must release the prompt guard itself and carry the sleep-intent
-  // dialog it answered; the disconnect tile must not open over that prompt.
+  // dialog it answered.
   assert.match(source, /releasePrompt\(\);\s*void runDisconnect\(releaseDisplay, answers, "sleep", dialog\)/);
   assert.match(source, /releasePrompt\(\);\s*void runDisconnect\(releaseDisplay, \{ confirmed: true \}, "sleep", null\)/);
   assert.match(source, /disconnectBusy \|\| disconnectPromptOpen\.current\) return;/);
   assert.match(source, /\{ title: "Disconnect and sleep\?", ok: "Sleep" \}/);
   // The panel that comes up after the session restart finishes the sleep on
-  // mount, and the result is readable on the page the button lives on.
+  // mount, and its result is readable beside the button rather than nowhere:
+  // the candidate declared disconnectMessage and rendered it in no slot.
   assert.match(source, /void continueSleepOnMount\(liveGameClosePorts\(releaseSleepBlocker\)\)/);
-  assert.equal((source.match(/<PanelSectionRow>\{disconnectMessage\}<\/PanelSectionRow>/g) ?? []).length, 2);
+  assert.equal((source.match(/<PanelSectionRow>\{disconnectMessage\}<\/PanelSectionRow>/g) ?? []).length, 1);
   assert.match(source, /title="Dock \/ eGPU"[\s\S]*expanded=\{showHardwareDetails\}/);
+  assert.doesNotMatch(source,/showDisconnectProgress|title="Disconnect status"/);
   assert.match(source, /title="Troubleshoot"[\s\S]*expanded=\{showDiagnostics\}/);
 });

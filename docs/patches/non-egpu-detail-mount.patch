@@ -1,0 +1,89 @@
+--- a/src/index.tsx
++++ b/src/index.tsx
+@@ -1,4 +1,6 @@
+ import { PageLayout, CommandCenterHeader } from "./quick-access/page-layout";
++import { createNonEgpuDetailPublisher, type NonEgpuDetailState } from "./quick-access/expanded-command-center/non-egpu-detail-source";
++import { createNonEgpuDetailRenderer } from "./quick-access/expanded-command-center/non-egpu-detail-renderer";
+ import { createExpandedMenu } from "./quick-access/expanded-command-center/native";
+ import { createTilePublisher } from "./quick-access/expanded-command-center/tile-source";
+ import type { Readings } from "./quick-access/expanded-command-center/tile-source";
+@@ -558,7 +560,7 @@
+   }, Date.now(), SNAPSHOT_STALE_AFTER_MS);
+ }
+ 
+-function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAvailable, publishTiles }: { preflight: SleepPreflightCoordinator; connection: ReturnType<typeof startConnectionMonitor>; shortcut: ReturnType<typeof createDisplayShortcutRuntime>; openExpanded(): void; menuShortcutAvailable: boolean; publishTiles(readings: Readings): void }) {
++function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAvailable, publishTiles, publishDetails }: { preflight: SleepPreflightCoordinator; connection: ReturnType<typeof startConnectionMonitor>; shortcut: ReturnType<typeof createDisplayShortcutRuntime>; openExpanded(): void; menuShortcutAvailable: boolean; publishTiles(readings: Readings): void; publishDetails(state: NonEgpuDetailState | null): void }) {
+   const quickAccessVisible = useQuickAccessVisible();
+   const statusAnchor = useRef<HTMLDivElement | null>(null);
+   const statusFocusAnchor = useRef<HTMLDivElement | null>(null);
+@@ -1707,6 +1709,16 @@
+       menuPerformance.supported, menuPerformance.action, menuPerformance.busy,
+       performance.manual?.current_watts, menuAgeTick, snapshot?.displays]);
+ 
++  // Share existing request handles; the detail view subscribes independently
++  // because busy/capability changes need not change a tile label.
++  useEffect(() => {
++    publishDetails({ performance, controller: controllerPresentation({
++      peripheral: menuFresh ? peripheralStatus : null,
++      shortcutAvailable: menuShortcutAvailable,
++    }) });
++  }, [publishDetails, performance, menuFresh, peripheralStatus, menuShortcutAvailable]);
++  useEffect(() => () => publishDetails(null), [publishDetails]);
++
+   // Re-evaluate when this observation actually expires, so a reading cannot
+   // remain "fresh" merely because the panel went quiet. Scheduling a full
+   // interval instead would let an observation outlive its own lifetime by
+@@ -2395,9 +2407,11 @@
+   // starts no timer and fetches nothing; it subscribes to what Content already
+   // polls, so the expanded surface cannot become another source of truth.
+   const tilePublisher = createTilePublisher();
++  const detailPublisher = createNonEgpuDetailPublisher();
++  const renderDetail = createNonEgpuDetailRenderer(detailPublisher.source);
+   const expandedMenu = createExpandedMenu(steamControllerInput(window), window, () =>
+     !shortcut.modal.current && !shortcut.portableBusy.current && !shortcut.tvBusy.current && !warningModal,
+-    tilePublisher.source);
++    tilePublisher.source, renderDetail);
+   const shortcut = createDisplayShortcutRuntime({
+     // View+Y now belongs exclusively to the menu. Explicit display requests
+     // below retain their existing approval/confirmation path.
+@@ -2475,10 +2489,11 @@
+   return {
+     name: PRODUCT_NAME,
+     titleView: <div className={staticClasses.Title} style={{ display: "flex", alignItems: "center" }}><BrandHeader /></div>,
+-    content: <Content preflight={preflight} connection={connection} shortcut={shortcut} openExpanded={expandedMenu.open} menuShortcutAvailable={expandedMenu.available} publishTiles={tilePublisher.publish} />,
++    content: <Content preflight={preflight} connection={connection} shortcut={shortcut} openExpanded={expandedMenu.open} menuShortcutAvailable={expandedMenu.available} publishTiles={tilePublisher.publish} publishDetails={detailPublisher.publish} />,
+     icon: <BrandIcon />,
+     alwaysRender: true,
+     onDismount() {
++      detailPublisher.publish(null);
+       expandedMenu.stop();
+       shortcut.stop();
+       if (warningTimer !== null) {
+--- a/src/quick-access/expanded-command-center/native.tsx
++++ b/src/quick-access/expanded-command-center/native.tsx
+@@ -3,6 +3,7 @@
+ import type { ControllerInputSource } from "../../controller-safe-disconnect";
+ import { loadMenuBinding, saveMenuBinding, menuBindingOptions, startMenuShortcut } from "../../menu-shortcut";
+ import type { MenuBinding } from "../../menu-shortcut";
++import type { NonEgpuDetailRenderer } from "./non-egpu-detail-renderer";
+ import { ExpandedCommandCenter } from "./shell";
+ import type { TileSource, TileView } from "./tile-source";
+ import { ShortcutSettings } from "./shortcut-settings";
+@@ -44,7 +45,7 @@
+   return cached;
+ }
+ 
+-export function createExpandedMenu(input: ControllerInputSource | undefined, host: Window, canOpen: () => boolean = () => true, source?: TileSource) {
++export function createExpandedMenu(input: ControllerInputSource | undefined, host: Window, canOpen: () => boolean = () => true, source?: TileSource, renderDetail?: NonEgpuDetailRenderer) {
+   const storage = (() => { try { return host.localStorage; } catch { return undefined; } })();
+   let binding = loadMenuBinding(storage);
+   let modal: ReturnType<typeof showModal> | null = null;
+@@ -67,7 +68,7 @@
+     // end. The server snapshot is the same read: there is no server, and
+     // returning a different value there would tear.
+     const tiles = useSyncExternalStore(subscribeTo(source), readFrom(source), readFrom(source));
+-    return <ExpandedCommandCenter onClose={close} native primitives={{ Button: Button, Focusable }} settings={<Settings/>} tiles={tiles}/>;
++    return <ExpandedCommandCenter onClose={close} native primitives={{ Button: Button, Focusable }} settings={<Settings/>} tiles={tiles} renderDetail={renderDetail}/>;
+   }
+   function Settings() {
+     const [selected, setSelected] = useState(binding);

@@ -20,6 +20,20 @@ export type PerformancePort = {
 };
 const backend: PerformancePort = { getTdpStatus, getAutoTdpStatus, applyTdpLimit, restoreTdpLimit, setTdpEnabled, startAutoTdp, stopAutoTdp };
 
+export type PerformanceClock = {
+  now(): number;
+  schedule(callback: () => void, milliseconds: number): () => void;
+};
+const clock: PerformanceClock = {
+  now: () => performance.now(),
+  schedule(callback, milliseconds) {
+    const timer = setTimeout(callback, milliseconds);
+    return () => clearTimeout(timer);
+  },
+};
+const REFRESH_MS = 3_000;
+const LIFETIME_MS = 10_000;
+
 /** One owner for reads and writes across routes. Stop can preempt a read/start;
  * other requests remain locked until every superseded transport has settled. */
 export class PerformanceController {
@@ -29,7 +43,10 @@ export class PerformanceController {
   private pending = 0;
   private refreshPending = false;
   private listeners = new Set<(value: PerformanceSnapshot) => void>();
-  constructor(private port: PerformancePort = backend) {}
+  private expiresAt = 0;
+  private cancelRefresh?: () => void;
+  private cancelExpiry?: () => void;
+  constructor(private port: PerformancePort = backend, private time: PerformanceClock = clock) {}
   subscribe(listener: (value: PerformanceSnapshot) => void) {
     this.listeners.add(listener);
     return () => { this.listeners.delete(listener); };
@@ -38,9 +55,22 @@ export class PerformanceController {
     this.snapshot = { ...this.snapshot, ...value };
     for (const listener of this.listeners) listener(this.snapshot);
   }
+  private expire() {
+    if (this.time.now() >= this.expiresAt && (this.snapshot.manual || this.snapshot.auto)) {
+      this.publish({ manual: null, auto: null });
+    }
+  }
+  private scheduleRefresh() {
+    this.cancelRefresh?.();
+    this.cancelRefresh = undefined;
+    if (this.visible) this.cancelRefresh = this.time.schedule(() => void this.refresh(), REFRESH_MS);
+  }
   setVisible(visible: boolean) {
     if (visible === this.visible) return;
     this.visible = visible;
+    this.cancelRefresh?.();
+    this.cancelExpiry?.();
+    this.expiresAt = 0;
     ++this.generation;
     this.publish({ manual: null, auto: null });
     this.refreshPending = visible;
@@ -49,11 +79,24 @@ export class PerformanceController {
   private async request(action: () => Promise<Partial<PerformanceSnapshot>>, priority = false) {
     if (!this.visible || (this.pending > 0 && !priority) || (priority && (this.snapshot.stopping || this.snapshot.auto?.stopping))) return;
     const generation = ++this.generation;
+    // These schema-1 responses have no device observation timestamp. Bound
+    // their client lifetime from request START, never an unrelated GPU sample
+    // or the receipt of a delayed response. This is not hardware verification.
+    const startedAt = this.time.now();
+    this.cancelRefresh?.();
     this.pending++;
     this.publish({ busy: true, stopping: priority || this.snapshot.stopping });
     try {
       const next = await action();
-      if (this.visible && generation === this.generation) this.publish(next);
+      if (this.visible && generation === this.generation) {
+        this.cancelExpiry?.();
+        this.expiresAt = startedAt + LIFETIME_MS;
+        if (this.time.now() >= this.expiresAt) this.publish({ manual: null, auto: null });
+        else {
+          this.publish(next);
+          this.cancelExpiry = this.time.schedule(() => this.expire(), this.expiresAt - this.time.now());
+        }
+      }
     } catch {
       if (this.visible && generation === this.generation) this.publish({ manual: null, auto: null });
     } finally {
@@ -61,6 +104,7 @@ export class PerformanceController {
       if (!this.pending) {
         this.publish({ busy: false, stopping: false });
         if (this.visible && this.refreshPending) void this.refresh();
+        else this.scheduleRefresh();
       }
     }
   }
@@ -86,18 +130,22 @@ export class PerformanceController {
     });
   }
   apply = async (watts: number) => {
+    this.expire();
     const manual = this.snapshot.manual;
     if (!tdpControls(manual).canApply || !Number.isInteger(watts) || manual?.minimum_watts == null || manual.maximum_watts == null
       || watts < manual.minimum_watts || watts > manual.maximum_watts) return;
     await this.manualRequest(() => this.port.applyTdpLimit(watts));
   };
   restore = async () => {
+    this.expire();
     if (tdpControls(this.snapshot.manual).canRestore) await this.manualRequest(this.port.restoreTdpLimit);
   };
   setEnabled = async (enabled: boolean) => {
+    this.expire();
     if (tdpControls(this.snapshot.manual).canToggle && (!enabled || this.snapshot.manual?.can_enable)) await this.manualRequest(() => this.port.setTdpEnabled(enabled));
   };
   start = async (target: number, minimum: number, maximum: number) => {
+    this.expire();
     if (!this.snapshot.auto?.can_start || !validAutoTdpRange(this.snapshot.manual, minimum, maximum, target)) return;
     await this.request(async () => {
       const auto = sanitizeAutoTdpStatus(await this.port.startAutoTdp(target, minimum, maximum));

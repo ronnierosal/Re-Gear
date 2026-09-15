@@ -2,6 +2,17 @@ import deckyPlugin from "@decky/rollup";
 import { readFileSync } from "node:fs";
 
 const config = deckyPlugin({});
+// Bundle the repository attribution sources; no runtime file or network reads.
+config.plugins.unshift({
+  name: "re-gear-project-documents",
+  resolveId(source) { return source === "regear:project-documents" ? "\0regear:project-documents" : null; },
+  load(id) {
+    if (id !== "\0regear:project-documents") return null;
+    const notices = readFileSync(new URL("./THIRD_PARTY_NOTICES.md", import.meta.url), "utf8");
+    const license = readFileSync(new URL("./LICENSE", import.meta.url), "utf8");
+    return `export const noticesText=${JSON.stringify(notices)};export const licenseText=${JSON.stringify(license)};`;
+  },
+});
 const offlineBadgeNames = new Set(["offline-ready", "offline-attention", "offline-verify", "offline-required", "offline-ready-gear", "offline-attention-gear", "offline-verify-gear", "offline-required-gear", "offline-ready-compact", "offline-attention-compact", "offline-verify-compact"]);
 config.plugins.unshift({
   name: "re-gear-offline-badges",

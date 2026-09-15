@@ -1,4 +1,4 @@
-export type DockAction = "whole_dock_disconnect" | "whole_dock_reconnect" | "whole_dock_shutdown";
+export type DockAction = "whole_dock_disconnect" | "whole_dock_shutdown";
 export type DockIntent = "disconnect" | "disconnect_only" | "shutdown";
 
 const shutdownRefusals: Record<string, string> = {
@@ -125,7 +125,7 @@ export function dockIntentControl(status: any, snapshot: any, intent: DockIntent
       message: "The dock is disconnected in software. Keep the cable connected; this is not permission to unplug." };
     const view = dockControl(status, snapshot, now);
     return view.action === "whole_dock_disconnect" ? view : { action: null, label: "Disconnect unavailable",
-      message: view.action === "whole_dock_reconnect" ? "The last disconnect needs review. Keep the cable connected; do not repeat the operation." : view.message };
+      message: view.message };
   }
   if (intent !== "shutdown") return { action: null, label: "Action unavailable", message: "This action is not supported." };
   if (shutdownRequested(status)) return { action: null, label: "Shutdown requested", message: "Shutdown was requested. Completion is not confirmed. Keep the cable connected." };
@@ -133,10 +133,10 @@ export function dockIntentControl(status: any, snapshot: any, intent: DockIntent
   const view = dockControl(status, snapshot, now);
   return {
     action: view.action === "whole_dock_disconnect" ? "whole_dock_shutdown" : null,
-    label: view.action === "whole_dock_disconnect" ? "Disconnect and shut down" : view.action === "whole_dock_reconnect" ? "Shutdown unavailable" : view.label,
+    label: view.action === "whole_dock_disconnect" ? "Disconnect and shut down" : softwareDisconnected(status) ? "Shutdown unavailable" : view.label,
     message: view.action === "whole_dock_disconnect"
       ? "Disconnect the dock in software, then request shutdown after verification."
-      : view.action === "whole_dock_reconnect"
+      : softwareDisconnected(status)
         ? "The dock is already disconnected in software. Shutdown continuation is unavailable; do not repeat the operation."
         : (shutdownRefusals[status?.code] ? shutdownRefusals[status.code] + " Keep the cable connected; do not repeat the operation." : view.message),
   };
@@ -148,8 +148,11 @@ export function dockControl(status: any, snapshot: any, now = Date.now()): { act
   const observed = typeof snapshot?.observed_at === "string" ? Date.parse(snapshot.observed_at) : NaN;
   if (snapshot?.schema_version !== 3 || !Number.isFinite(observed) || observed > now || now - observed >= 10000) return unavailable;
   if (status.code === "dock_teardown.software_down" && status.software_down === true) {
-    return { action: snapshot?.game_state === "idle" ? "whole_dock_reconnect" : null,
-      label: "Reconnect eGPU", message: "Software disconnect verified. Keep the cable connected for this trial." };
+    return softwareDisconnected(status)
+      ? { action: null, label: "Software disconnect verified",
+        message: "The dock is disconnected in software. Keep the cable connected; this is not permission to unplug." }
+      : { action: null, label: "Needs attention",
+        message: "The last disconnect could not be verified. Keep the cable connected; do not repeat the operation." };
   }
   const fresh = status.code === "dock_teardown.no_trial";
   const restored = status.code === "dock_reconnect.software_reconnected" && status.software_reconnected === true && status.ok === true;

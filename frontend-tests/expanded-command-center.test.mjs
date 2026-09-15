@@ -12,7 +12,7 @@ test("bumper tab cycle wraps in both directions", () => {
   assert.equal(m.nextTab("quick", -1), "settings");
   assert.equal(m.nextTab("settings", 1), "quick");
   let tab = "quick";
-  for (let i = 0; i < 5; i++) tab = m.nextTab(tab, 1);
+  for (let i = 0; i < m.tabs.length; i++) tab = m.nextTab(tab, 1);
   assert.equal(tab, "quick");
 });
 test("focus restoration retains unavailable FPS and falls back after removal", () => {
@@ -21,8 +21,8 @@ test("focus restoration retains unavailable FPS and falls back after removal", (
   assert.equal(m.restoreTarget(ids, "removed"), "fps");
   assert.equal(m.restoreTarget([], "fps"), undefined);
 });
-test("responsive grid prefers four columns with three before narrow fallback", () => {
-  assert.deepEqual([400, 399, 300, 299, 280, 279].map(m.columnsForWidth), [4, 3, 3, 2, 2, 1]);
+test("responsive grid uses five columns at Ally widths with narrow fallbacks", () => {
+  assert.deepEqual([600, 500, 499, 400, 399, 300, 299, 280, 279].map(m.columnsForWidth), [5, 5, 4, 4, 3, 3, 2, 2, 1]);
 });
 test("four-column navigation respects the spanning disconnect tile", () => {
   const cells = m.gridCells(m.sampleTiles.quick, 4);
@@ -36,10 +36,11 @@ test("three-column packing does not navigate through an empty grid cell", () => 
   assert.equal(cells.at(-1).row, 2);
   assert.equal(m.moveInGrid(cells, "controller", "down"), "disconnect");
   assert.equal(m.moveInGrid(cells, "disconnect", "up"), "display");
-  assert.equal(cells.at(-1).span, 3);
+  assert.equal(cells.at(-1).span, 1);
 });
 test("every tile is reachable by arrows in every responsive grid", () => {
   for (const tiles of Object.values(m.sampleTiles)) for (const columns of [1, 2, 3, 4]) {
+    if(!tiles.length){assert.equal(tiles,m.sampleTiles.offline);continue;}
     const cells = m.gridCells(tiles, columns), visited = new Set([tiles[0].id]);
     for (const id of visited) for (const direction of ["left", "right", "up", "down"]) visited.add(m.moveInGrid(cells, id, direction));
     assert.equal(visited.size, tiles.length);
@@ -62,10 +63,14 @@ test("demo rendering import graph cannot reach backend or native runtime", () =>
   visit(new URL("../src/quick-access/expanded-command-center/shell.tsx", import.meta.url).pathname.replace(/^\/(\w:)/, "$1"));
 });
 
+const testActionsJs = ts.transpileModule(readFileSync(new URL("../src/quick-access/expanded-command-center/test-build-actions.ts", import.meta.url), "utf8"), {compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText;
+
 test("native modal uses Decky controls without a second raw navigation listener", async () => {
   const nativeSource = readFileSync(new URL("../src/quick-access/expanded-command-center/native.tsx", import.meta.url), "utf8");
   const nativeJs = ts.transpileModule(nativeSource, { compilerOptions: { module: ts.ModuleKind.ESNext, jsx: ts.JsxEmit.React } }).outputText.replace(/^import .*;$/gm, "");
-  const fixtures = `
+  const visibilityJs = ts.transpileModule(readFileSync(new URL("../src/quick-access/expanded-command-center/menu-visibility.ts", import.meta.url), "utf8"), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText.replace("export function", "function");
+  const fixtures = visibilityJs + testActionsJs + `const GamepadButton={DIR_UP:9,DIR_DOWN:10,DIR_LEFT:11,DIR_RIGHT:12},EgpuConfirmModal='confirm';
+` + `
     export const views=[], effects=[], listeners=[];
     export let opens=0, clicks=0;
     const React={createElement:(type,props,...children)=>({type,props:{...props,children}})};
@@ -80,11 +85,12 @@ test("native modal uses Decky controls without a second raw navigation listener"
   `;
   const native = await import(`data:text/javascript;base64,${Buffer.from(fixtures + nativeJs).toString("base64")}`);
   const readCurrentSnapshot = () => ({game_state:"idle"});
-  const runtime = native.createExpandedMenu(native.input, native.host, () => true, readCurrentSnapshot);
+  const runtime = native.createExpandedMenu(native.input, native.host, () => true, undefined, readCurrentSnapshot);
   runtime.open(); runtime.open(); assert.equal(native.opens, 1);
   const view = native.views[0].props.children[1];
   const shell = view.type(view.props); // Mount its cleanup and obtain close callback.
-  assert.equal(shell.props.primitives.Button, 'native-button');
+  assert.equal(shell.props.primitives.Button, native.NativeMenuButton);
+  assert.equal(shell.props.primitives.Button({}).type, 'native-button', 'feedback wrapper retains Decky control');
   assert.equal(shell.props.primitives.Focusable, 'native-focus');
   assert.equal(shell.props.disconnectControl.type, 'native-focus');
   const [selector, control] = shell.props.disconnectControl.props.children;
@@ -101,7 +107,9 @@ test("native modal uses Decky controls without a second raw navigation listener"
 test("native shortcut dropdown preserves selection and active chord when saving fails", async () => {
   const nativeSource = readFileSync(new URL("../src/quick-access/expanded-command-center/native.tsx", import.meta.url), "utf8");
   const nativeJs = ts.transpileModule(nativeSource, { compilerOptions: { module: ts.ModuleKind.ESNext, jsx: ts.JsxEmit.React } }).outputText.replace(/^import .*;$/gm, "");
-  const fixture = `
+  const visibilityJs = ts.transpileModule(readFileSync(new URL("../src/quick-access/expanded-command-center/menu-visibility.ts", import.meta.url), "utf8"), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText.replace("export function", "function");
+  const fixture = visibilityJs + testActionsJs + `const GamepadButton={DIR_UP:9,DIR_DOWN:10,DIR_LEFT:11,DIR_RIGHT:12},EgpuConfirmModal='confirm';
+` + `
     export const views=[], saved=[];
     export let resets=0, stops=0;
     const componentStates=new WeakMap();
@@ -167,7 +175,9 @@ test("native live source publishes into an open menu and unsubscribes on close",
 }, async () => {
   const body=readFileSync(new URL("../src/quick-access/expanded-command-center/native.tsx", import.meta.url),"utf8");
   const compiled=ts.transpileModule(body,{compilerOptions:{module:ts.ModuleKind.ESNext,jsx:ts.JsxEmit.React}}).outputText.replace(/^import .*;$/gm, "");
-  const fixture=`
+  const visibilityJs = ts.transpileModule(readFileSync(new URL("../src/quick-access/expanded-command-center/menu-visibility.ts", import.meta.url), "utf8"), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText.replace("export function", "function");
+  const fixture=visibilityJs + testActionsJs + `const GamepadButton={DIR_UP:9,DIR_DOWN:10,DIR_LEFT:11,DIR_RIGHT:12},EgpuConfirmModal='confirm';
+` + `
     export const views=[],listeners=new Set();
     export let current;
     let unsubscribe,renderView;
@@ -200,3 +210,5 @@ test("native live source publishes into an open menu and unsubscribes on close",
   menu.stop();
   assert.equal(native.listeners.size,0);
 });
+
+test('five-column geometry and directions agree for the second row',()=>{const cells=m.gridCells(m.sampleTiles.quick,5);assert.equal(cells.find(c=>c.id==='controller').column,0);assert.equal(m.moveInGrid(cells,'fps','down'),'controller');assert.equal(m.moveInGrid(cells,'disconnect','up'),'manual');});
