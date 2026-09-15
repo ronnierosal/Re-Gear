@@ -13,14 +13,76 @@ const shutdownRefusals: Record<string, string> = {
   "dock_power.busy": "Another power request is still in progress.",
   "dock_power.sleep_unverified": "Sleep with the dock connected is not available.",
 };
+/** Every outcome that settles a request without a software disconnect.
+ *
+ * Two different backend mechanisms produce these and BOTH have to be covered.
+ * `main.py` maps RAISED exceptions onto a fixed category set, and those were
+ * the only ones listed here. But `WholeDockTeardown` and the dock-teardown
+ * domain also RETURN codes, and a returned code is not filtered -- it reaches
+ * `payload["code"]` verbatim with `ok=false`. Every one of those was missing.
+ *
+ * The cost of missing one is not cosmetic. An unsettled response leaves the
+ * persistent retry guard armed, so the control keeps showing "Waiting to
+ * verify the previous request." with the button disabled, across reopens,
+ * forever. A USB drive mounted on the dock returns `mounted_storage` on a
+ * first press and did exactly that. It also suppressed the message written
+ * for the partial case -- "GPU release completed, but the dock disconnect
+ * could not be verified" -- which is the one a player most needs when the GPU
+ * is gone and the dock is still up.
+ *
+ * `whole-dock-refusal-coverage.test.mjs` derives the returned half of this set
+ * from the backend source, so adding a code there fails the test rather than
+ * silently bricking the control. Do not hand-maintain this against the
+ * backend; let the test tell you. */
 const shutdownTeardownRefusals = new Set([
+  // Raised, then categorised by main.py.
   "dock_teardown.usb_peripherals_or_unknown", "dock_teardown.begin_preflight_refused",
   "dock_teardown.sleep_inhibition_required", "dock_teardown.approval_superseded",
   "dock_teardown.session_unknown", "dock_mutation.inhibited", "dock_mutation.unavailable_or_busy",
   "dock_teardown.gpu_release_unverified", "dock_teardown.portable_return_refused",
   "dock_teardown.portable_return_unverified", "dock_teardown.portable_acknowledgement_unverified",
   "dock_teardown.trial_unresolved",
+  // Returned by the teardown application layer, reaching the payload verbatim.
+  "dock_teardown.operation_required", "dock_teardown.busy", "dock_teardown.unresolved",
+  "dock_teardown.identity_or_idle_unknown", "dock_teardown.transaction_owned",
+  "dock_teardown.preflight_changed", "dock_teardown.usb_preflight_changed",
+  "dock_teardown.usb_removal_unverified", "dock_teardown.tunnel_preflight_changed",
+  "dock_teardown.final_state_unverified",
+  // Returned by the dock-teardown domain preflight.
+  "dock_teardown.gpu_scan_incomplete", "dock_teardown.gpu_still_attached",
+  "dock_teardown.tunnel_scan_incomplete", "dock_teardown.tunnel_unidentified",
+  "dock_teardown.tunnel_state_unknown", "dock_teardown.tunnel_capability_unsupported",
+  "dock_teardown.tunnel_capability_unknown", "dock_teardown.tunnel_write_permission_denied",
+  "dock_teardown.tunnel_write_permission_unknown", "dock_teardown.usb_scan_incomplete",
+  "dock_teardown.storage_scan_incomplete", "dock_teardown.mounted_storage",
+  "dock_teardown.storage_in_use", "dock_teardown.approval_required",
+  "dock_teardown.already_down",
 ]);
+
+/** Refusals decided BEFORE the request was ever correlated.
+ *
+ * `main.py` rejects a malformed or busy trial before it mints anything, so
+ * these payloads carry no `request_id` and no `busy` key at all -- they are
+ * `{schema_version, ok: false, code, safe_to_unplug}` and nothing else. The
+ * settle predicate below tests both of those fields, so it could never match
+ * them, and the pending record written at dispatch was orphaned forever.
+ *
+ * Nothing started, so there is nothing to keep waiting for. This is
+ * deliberately a CLOSED set of exactly the two pre-correlation refusals rather
+ * than a general "no request id means settled" rule: a missing correlation on
+ * any other code still refuses to settle, because that could be a stale or
+ * foreign status and releasing the guard on one would be the unsafe
+ * direction. */
+const preCorrelationRefusals = new Set([
+  "dock_teardown.trial_confirmation_required", "dock_teardown.busy",
+]);
+
+function refusedBeforeCorrelation(status: any): boolean {
+  return status?.schema_version === 1 && status.ok === false
+    && status.safe_to_unplug === false
+    && status.request_id === undefined && status.busy === undefined
+    && preCorrelationRefusals.has(status.code);
+}
 export function shutdownRequested(status: any): boolean {
   return status?.schema_version === 1 && status.busy === false && status.safe_to_unplug === false
     && status.code === "dock_power.request_accepted_unverified" && status.power_action === "shutdown"
@@ -29,6 +91,10 @@ export function shutdownRequested(status: any): boolean {
 /** A malformed/ambiguous response must not release the persistent retry guard. */
 export function dockRequestSettled(status: any, request: string, intent: DockIntent): boolean {
   if (intent !== "disconnect" && intent !== "disconnect_only" && intent !== "shutdown") return false;
+  // A pre-correlation refusal settles: the backend rejected it before minting
+  // a request, so no operation is outstanding and holding the guard would
+  // disable the control permanently over something that never ran.
+  if (refusedBeforeCorrelation(status)) return true;
   if (status?.request_id !== request || status.schema_version !== 1 || status.busy !== false || status.safe_to_unplug !== false) return false;
   if (intent === "disconnect") return true;
   if (intent === "disconnect_only") return softwareDisconnected(status) ||
