@@ -295,3 +295,46 @@ First recorded successful disconnect on any build since 0.3.98. The 0.3.109
 failure of 2026-09-14 did not reproduce and its cause remains unknown; its
 in-memory record was lost to the reboot. Software removal is not clearance to
 unplug; the enclosure remains powered.
+
+## Steam power surface, read-only probe on device 2026-09-15
+
+Run by `scripts/probe_steam_power_surface.mjs` against the live Ally
+(0.3.113 installed, SharedJSContext). Enumeration only: member names and
+`typeof`, nothing invoked. This decides whether "safe disconnect first" can be
+attached to Steam's own Sleep and Shutdown buttons.
+
+**Sleep: a real lease exists, as the ADR describes.** The suspend store carries
+`BlockSuspendAction:function` and `m_cSuspendBlockers:number` -- the counted
+blocker Steam checks before preparing -- alongside `OnSuspendRequest`,
+`RequestSleep`, `OnPrepareForSuspendProgress`, `OnSystemResumedFromSuspend`.
+Interception is therefore possible and is already in place.
+
+Three members the adapter does not name, recorded because they bear on whether
+the single patch point is sufficient: `OnRequestSuspend:function` (distinct from
+`OnSuspendRequest`), `InitiateSleep:function`, and Steam's own confirm-sleep
+modal state (`SetShowConfirmSleepModal`, `ShowConfirmSleepModal`,
+`m_bShowConfirmSleepModal`, `BShowSuspendResumeDialogs`). Whether any of these
+is an alternate entry that reaches a suspend without passing the blocker check
+is NOT established by an enumeration; it needs the function bodies read, and
+until then no claim either way belongs in the UI.
+
+**Shutdown: no equivalent lease found.** `SteamClient.System` exposes
+`ShutdownPC`, `RestartPC`, `SuspendPC`, `RebootToAlternateSystemPartition` --
+methods that cause power actions, not hooks that hold one. The shutdown-shaped
+members found are observers:
+
+- `AddShutdownCallback:function` with `m_rgShutdownCallbacks:object`
+- `OnShutdownStart`, `OnShutdownDone`, `OnShutdownState`, `OnShutdownFailed`,
+  `GetShutdownState`, `ClearShutdownFailure`, `m_shutdownState`
+
+`BlockServerShutdown_Bool:number` and `DeviceCanPowerOff_Bool:number` are
+numbers, not callables -- the shape of settings keys, not a live blocker.
+
+Nothing here has the shape of `BlockSuspendAction`: acquire, increment a count
+Steam consults before proceeding, return a release. `OnShutdownStart` fires
+when a shutdown has begun, which is after the point where a disconnect would
+have to run. So on this Steam build, "disconnect first, then shut down" cannot
+be attached to the system shutdown button without racing a power-off, and must
+not be attempted on the strength of a callback name. Whether
+`AddShutdownCallback` can veto or defer is unknown for the same reason as
+above; that is the only remaining question worth a follow-up probe.
