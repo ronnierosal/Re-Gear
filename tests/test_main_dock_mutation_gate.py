@@ -800,7 +800,7 @@ class PortableBeforeDisconnectTests(unittest.TestCase):
 
     def fixture(self, *, already=False, ready=True, success=True, final_portable=True,
                 acknowledge=True, changed_user=False, changed_binding=False, foreign=False,
-                prior=None, blocked=None):
+                prior=None, blocked=None, failed=None, stale_attempts=0):
         from contextlib import ExitStack
         plugin = self.plugin
         plugin._discovery = object()
@@ -825,6 +825,17 @@ class PortableBeforeDisconnectTests(unittest.TestCase):
             service.execute.return_value.outcome = NS(
                 kind=self.module.TransitionOutcomeKind.BLOCKED,
                 failure=NS(code=blocked, message='', recoverable=True))
+        if failed is not None:
+            service.execute.return_value.outcome = NS(
+                kind=self.module.TransitionOutcomeKind.FAILED,
+                failure=NS(code=failed, message='', recoverable=False))
+        if stale_attempts:
+            # N attempts lose the race, then the world holds still.
+            stale = NS(accepted=True, durable=True, operation_id='ours',
+                outcome=NS(kind=self.module.TransitionOutcomeKind.BLOCKED,
+                    failure=NS(code='observation.stale', message='', recoverable=True)))
+            service.execute.side_effect = ([stale] * stale_attempts
+                + [service.execute.return_value])
         service.acknowledge.return_value = acknowledge
         modes = [self.module.OperatingMode.PORTABLE if already else self.module.OperatingMode.TV_DOCKED,
                  self.module.OperatingMode.PORTABLE if final_portable else self.module.OperatingMode.UNKNOWN,
@@ -838,6 +849,9 @@ class PortableBeforeDisconnectTests(unittest.TestCase):
                 return_value=NS(ok=True, context=None if changed_user else user)))
             stack.enter_context(patch.object(self.module, 'resolve_whole_dock',
                 return_value=None if changed_binding else binding))
+            # The retry's settle wait is real time; the race it covers is not
+            # what these assertions are about.
+            stack.enter_context(patch.object(self.module.time, 'sleep', lambda _seconds: None))
             try:
                 plugin._return_portable_before_disconnect(binding, user)
                 passed = True
@@ -880,13 +894,41 @@ class PortableBeforeDisconnectTests(unittest.TestCase):
         service.preview.assert_not_called()
         service.execute.assert_not_called()
 
-    def test_a_blocked_return_names_its_blocker(self):
-        # The refusal used to say only "could not be verified"; the blocker code
-        # lived in a root-owned journal. It now travels with the refusal.
-        passed, service = self.fixture(blocked='observation.stale')
+    def test_a_failed_return_names_its_code_and_is_never_retried(self):
+        # The refusal used to say only "could not be verified"; the code lived
+        # in a root-owned journal. It now travels with the refusal. A failure
+        # is an answer about this device, not a race worth re-running.
+        passed, service = self.fixture(failed='journal.persist_failed')
         self.assertFalse(passed)
+        self.assertEqual(service.preview.call_count, 1)
         self.assertEqual(self.plugin._whole_dock_portable_outcome,
-                         {'kind': 'blocked', 'code': 'observation.stale'})
+                         {'kind': 'failed', 'code': 'journal.persist_failed', 'attempts': 1})
+
+    def test_a_stale_observation_is_re_planned_not_refused(self):
+        # Observed twice on device: a press while the dock was still settling
+        # lost the race between planning and executing, and reported only that
+        # the return could not be verified. The world moved; decide again.
+        passed, service = self.fixture(stale_attempts=1)
+        self.assertTrue(passed)
+        self.assertEqual(service.preview.call_count, 2, 're-previewed, not re-used')
+        self.assertEqual(service.execute.call_count, 2)
+
+    def test_re_planning_is_bounded_and_reports_the_blocker(self):
+        passed, service = self.fixture(stale_attempts=self.module.PORTABLE_RETURN_ATTEMPTS)
+        self.assertFalse(passed)
+        self.assertEqual(service.preview.call_count, self.module.PORTABLE_RETURN_ATTEMPTS)
+        self.assertEqual(self.plugin._whole_dock_portable_outcome,
+                         {'kind': 'blocked', 'code': 'observation.stale',
+                          'attempts': self.module.PORTABLE_RETURN_ATTEMPTS})
+
+    def test_only_a_stale_observation_is_retried(self):
+        # Every other blocked or failed outcome is a real answer about this
+        # device, and repeating the operation against it would be a retry the
+        # player never asked for.
+        passed, service = self.fixture(blocked='display.unsafe')
+        self.assertFalse(passed)
+        self.assertEqual(service.preview.call_count, 1)
+        self.assertEqual(self.plugin._whole_dock_portable_outcome['code'], 'display.unsafe')
 
     def test_already_portable_does_not_restart(self):
         passed, service = self.fixture(already=True)

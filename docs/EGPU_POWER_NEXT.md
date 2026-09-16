@@ -338,3 +338,34 @@ be attached to the system shutdown button without racing a power-off, and must
 not be attempted on the strength of a callback name. Whether
 `AddShutdownCallback` can veto or defer is unknown for the same reason as
 above; that is the only remaining question worth a follow-up probe.
+
+## Why the portable return kept refusing, 2026-09-15 (root cause)
+
+Two Disconnect + Sleep presses on 0.3.113 and 0.3.115 both refused with
+`dock_teardown.portable_return_unverified` -- on screen, "The return to the
+handheld screen could not be verified". 0.3.114 added the blocker code to the
+payload, and the second press named it: `portable_return {kind: blocked, code:
+observation.stale}`.
+
+`TransitionOrchestrator` plans against one observation and re-observes before
+acting; if the snapshot's content-hash generation moved in between it refuses
+as `observation.stale` (transition_orchestrator.py:148). On a dock that has
+just attached that hash moves constantly -- link recovery, audio preflight,
+attach readiness and the TV transition each change it -- so a press issued
+while the dock is still settling can lose the race between `preview()` and
+`execute()`. Both failing presses were within ~10 s of `attach.ready_idle`;
+the successful 0.3.112 Safe Disconnect was issued onto an already-settled
+dock after a plugin restart.
+
+This is not a refusal of the action: it says the world moved while we were
+deciding. `_return_portable_before_disconnect` now re-plans up to
+`PORTABLE_RETURN_ATTEMPTS` (3) times, waiting
+`PORTABLE_RETURN_SETTLE_SECONDS` (1 s) between attempts, and only for
+`blocked/observation.stale`. Every other blocked or failed outcome still stops
+on the first answer. Each attempt calls `preview()` again rather than reusing
+an approval token, so each is independently gated and a readiness that
+genuinely went away refuses at the preview. The recorded outcome carries
+`attempts`.
+
+This affects every route through the portable return, not just sleep: Safe
+Disconnect and Disconnect + Shutdown could lose the same race.

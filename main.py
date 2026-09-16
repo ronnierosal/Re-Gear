@@ -270,6 +270,13 @@ from regear.profiles.gpd_g1 import match_gpd_g1  # noqa: E402
 
 
 MAX_JOURNEY_ELAPSED_MS = 24 * 60 * 60 * 1000
+#: A portable return re-plans this many times when the orchestrator reports
+#: `observation.stale`. Three covers the settling churn observed on device
+#: without letting a genuinely unstable system retry indefinitely.
+PORTABLE_RETURN_ATTEMPTS = 3
+#: Long enough for the ~1 s observation poll that invalidated the plan to
+#: land, short enough that a player does not read the press as ignored.
+PORTABLE_RETURN_SETTLE_SECONDS = 1.0
 UNLOAD_OBSERVER_TIMEOUT_SECONDS = 1.0
 UNLOAD_GUARD_TIMEOUT_SECONDS = 3.0
 
@@ -2240,14 +2247,30 @@ class Plugin:
                     self._automatic_dock.suppress_current_attachment_after_portable_return()
                 else:
                     self._automatic_dock.reset_after_acknowledgement()
-            preview = service.preview(PlacementState.PORTABLE, user_confirmed=True)
-            if not preview.ready or not preview.approval_token:
-                raise ValueError('dock_teardown.portable_return_refused')
-            result = service.execute(preview.approval_token)
-            if (result.accepted is not True or result.durable is not True
-                    or not result.operation_id or not result.outcome
-                    or result.outcome.kind is not TransitionOutcomeKind.SUCCEEDED
-                    or not portable()):
+            # The orchestrator plans against one observation and re-observes
+            # before acting, refusing as `observation.stale` when the snapshot's
+            # content hash moved in between. On a dock that has just attached
+            # it moves constantly -- link recovery, audio, attach readiness and
+            # the TV transition all churn it -- so a single press could lose
+            # that race and report only that the return 'could not be verified'.
+            # Observed twice on device, 2026-09-15.
+            #
+            # A stale observation is not a refusal of the action; it means the
+            # world moved while we were deciding, and the answer is to decide
+            # again against what is true now. Bounded, and only for that one
+            # blocker: every other blocked or failed outcome still stops here.
+            # Each attempt re-previews, so each is independently gated -- a
+            # readiness that genuinely went away refuses at the preview.
+            for attempt in range(PORTABLE_RETURN_ATTEMPTS):
+                preview = service.preview(PlacementState.PORTABLE, user_confirmed=True)
+                if not preview.ready or not preview.approval_token:
+                    raise ValueError('dock_teardown.portable_return_refused')
+                result = service.execute(preview.approval_token)
+                if (result.accepted is True and result.durable is True
+                        and result.operation_id and result.outcome
+                        and result.outcome.kind is TransitionOutcomeKind.SUCCEEDED
+                        and portable()):
+                    break
                 # Say WHY, in categories only. A blocked or failed transition
                 # carries its code; without it the refusal reads as a mystery
                 # and the only record was a root-owned journal.
@@ -2258,7 +2281,13 @@ class Plugin:
                 self._whole_dock_portable_outcome = {
                     'kind': kind if type(kind) is str else '',
                     'code': code if type(code) is str and re.fullmatch(r'[a-z_.]{1,64}', code) else '',
+                    'attempts': attempt + 1,
                 }
+                if (attempt + 1 < PORTABLE_RETURN_ATTEMPTS and kind == 'blocked'
+                        and code == 'observation.stale'):
+                    # Let the churn that invalidated it land before looking again.
+                    time.sleep(PORTABLE_RETURN_SETTLE_SECONDS)
+                    continue
                 raise ValueError('dock_teardown.portable_return_unverified')
             status = service.status()
             if (status.durable is not True or status.target is not PlacementState.PORTABLE
