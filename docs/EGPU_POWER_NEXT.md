@@ -409,3 +409,41 @@ lease's own process had exited and `active()` reported false, but the D-Bus
 side of that release is not necessarily synchronous with process exit. If the
 next press reports `suspend_inhibited`, that is the answer and the fix is to
 wait for logind to agree before submitting, not to drop `--check-inhibitors`.
+
+## Why the sleep never happened, 2026-09-16 (root cause, and the state it stranded)
+
+0.3.117 recorded the reason on the terminal payload, and a driven press at
+16:26 named it: `suspend {requested: false, code: dock_power.suspend_inhibited}`.
+The disconnect half completed again -- eGPU off the bus, display released,
+portable return clean -- and `systemctl --check-inhibitors=yes suspend` was
+then refused because logind still held a blocking sleep lock.
+
+The lock was ours, and the handoff had already released it. `stop()`
+terminates the `systemd-inhibit` process and waits for THAT process to exit,
+but systemd-inhibit runs the guard as a child which inherits the lock and
+briefly outlives its parent. `active()` reports false as soon as the parent is
+gone, and the handoff submits immediately -- into that gap. It is a fixed-size
+race, which is why every attempt failed the same way and why no orphan
+processes are ever left behind afterwards.
+
+`--check-inhibitors=yes` stays: it is the guard that stops a suspend while the
+eGPU is attached. Instead `Plugin._submit_suspend` retries the one refusal that
+is verified to have enqueued nothing -- an inhibited request is rejected before
+any job exists, so asking again is not a second power action. A timeout or an
+unavailable command leaves the outcome unknown and is never retried; that is
+the case the no-replay rule exists for. Bounded at `SUSPEND_SUBMIT_ATTEMPTS`
+(6) with `SUSPEND_INHIBITOR_SETTLE_SECONDS` (0.5) between, and the attempt
+count is recorded.
+
+Second, the state each failure stranded. A bound power intent outlives its
+operation so nothing replays it, which is right while the outcome is unknown
+and wrong once the submission is known not to have happened: the record pins
+the `software_down` claim through `power_intent_absent`, physical-disconnect
+archival never runs, and a sleep reaches no other retirement --
+`retire_after_boot` takes shutdowns only, because a changed boot is evidence a
+shutdown occurred and says nothing about a sleep. On device this left the dock
+unable to re-attach at all, recoverable only by deleting root-owned files.
+`DockPowerIntentStore.release_unsubmitted` now discards the intent when the
+caller has verified the submission did not reach the system; it re-checks its
+guard under the lock and never touches the claim. Its tests are Linux-only and
+were run on the Ally itself, not merely in CI.

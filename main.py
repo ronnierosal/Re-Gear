@@ -270,6 +270,11 @@ from regear.profiles.gpd_g1 import match_gpd_g1  # noqa: E402
 
 
 MAX_JOURNEY_ELAPSED_MS = 24 * 60 * 60 * 1000
+#: A suspend submission refused as inhibited is retried this many times. The
+#: lag being waited out is logind dropping a lock whose holder has exited,
+#: which is milliseconds; this is generous without stalling a press.
+SUSPEND_SUBMIT_ATTEMPTS = 6
+SUSPEND_INHIBITOR_SETTLE_SECONDS = 0.5
 #: A portable return re-plans this many times when the orchestrator reports
 #: `observation.stale`. Three covers the settling churn observed on device
 #: without letting a genuinely unstable system retry indefinitely.
@@ -2047,14 +2052,34 @@ class Plugin:
         disconnect was followed by a sleep that never occurred and nothing
         recorded the cause. Categories only; no command output crosses.
         """
-        outcome = SystemSuspendCommandRunner().request_suspend()
-        code = getattr(outcome, 'code', '')
-        self._whole_dock_suspend_result = {
-            'requested': outcome.requested is True,
-            'code': code if type(code) is str and re.fullmatch(
-                r'dock_power\.[a-z_]{1,48}', code) else '',
-        }
-        return outcome.requested is True
+        # logind drops an inhibitor when the last holder of its lock closes it,
+        # and that is not the same instant as the process we waited for exiting:
+        # systemd-inhibit runs the guard as a child, which briefly outlives its
+        # parent still holding the inherited lock. The handoff verifies every
+        # lease reports inactive and submits immediately, landing in that gap --
+        # reproducibly, on device, 2026-09-15 and 2026-09-16.
+        #
+        # `--check-inhibitors=yes` is the guard that stops a suspend while the
+        # eGPU is attached, so it stays. Instead, retry the ONE refusal that is
+        # verified to have enqueued nothing: an inhibited request was rejected
+        # before any job existed, so asking again is not a second power action.
+        # A timeout or an unavailable command leaves the outcome unknown and is
+        # never retried -- that is the case the no-replay rule exists for.
+        outcome = None
+        for attempt in range(SUSPEND_SUBMIT_ATTEMPTS):
+            if attempt:
+                time.sleep(SUSPEND_INHIBITOR_SETTLE_SECONDS)
+            outcome = SystemSuspendCommandRunner().request_suspend()
+            code = getattr(outcome, 'code', '')
+            self._whole_dock_suspend_result = {
+                'requested': outcome.requested is True,
+                'code': code if type(code) is str and re.fullmatch(
+                    r'dock_power\.[a-z_]{1,48}', code) else '',
+                'attempts': attempt + 1,
+            }
+            if outcome.requested is True or code != 'dock_power.suspend_inhibited':
+                break
+        return outcome is not None and outcome.requested is True
 
     def _sleep_after_dock_down(self, request, runtime, admission, power_store=None):
         # The actual transaction lease is retained from the golden teardown.
@@ -2068,9 +2093,24 @@ class Plugin:
                 consume = lambda r: power_store.consume(r.operation,
                     runtime.binding.binding, runtime.binding.generation, r.action,
                     r.session, r.requested_at, r.deadline)
-            return self._run_sleep_request(request, transaction=transaction,
+            result = self._run_sleep_request(request, transaction=transaction,
                 verify=lambda: runtime.verify_power_continuation(runtime._operation,
                     portable_verified=self._dock_power_portable_verified), consume=consume)
+            # A bound intent outlives the operation to stop a replay. When the
+            # submission verifiably never reached the system there is nothing to
+            # replay, and leaving it strands the disconnect claim it pins: sleep
+            # has no other retirement, so the dock cannot re-attach until someone
+            # deletes root-owned files. Observed on device 2026-09-15.
+            if (power_store is not None and getattr(result, 'requested', False) is not True
+                    and getattr(self, '_whole_dock_suspend_result', {}).get('requested') is False):
+                try:
+                    power_store.release_unsubmitted(runtime._operation,
+                        runtime.binding.binding, runtime.binding.generation,
+                        lambda: getattr(self, '_whole_dock_suspend_result', {}).get('requested') is False)
+                except Exception:
+                    # Recovery is best effort; never turn a refusal into a raise.
+                    pass
+            return result
         finally:
             admission['power_handoff'] = False
 

@@ -179,6 +179,35 @@ class IntentFilesystemTests(unittest.TestCase):
             self.assertTrue(self.store.consume(*args))
         return self.claim.load()
 
+    def test_an_unsubmitted_intent_is_released_and_frees_its_claim(self):
+        # A sleep that never reached the system used to strand the claim it
+        # pins: power_intent_absent stayed false, physical-disconnect archival
+        # never ran, and retire_after_boot takes shutdowns only. On device that
+        # left the dock unable to re-attach without deleting root-owned files.
+        expected = self.prepare_boot_intent(action='sleep')
+        self.assertFalse(self.claim.power_intent_absent(expected))
+        self.assertTrue(self.store.release_unsubmitted(
+            expected.operation, expected.binding, expected.generation, lambda: True))
+        self.assertTrue(self.claim.power_intent_absent(expected))
+        # The disconnect history itself is untouched.
+        self.assertEqual(self.claim.load(), expected)
+        # Idempotent: a second release finds nothing and still reports success.
+        self.assertTrue(self.store.release_unsubmitted(
+            expected.operation, expected.binding, expected.generation, lambda: True))
+
+    def test_release_refuses_a_false_guard_or_a_mismatched_claim(self):
+        expected = self.prepare_boot_intent(action='sleep')
+        self.assertFalse(self.store.release_unsubmitted(
+            expected.operation, expected.binding, expected.generation, lambda: False))
+        self.assertFalse(self.store.release_unsubmitted(
+            'f' * 32, expected.binding, expected.generation, lambda: True))
+        self.assertFalse(self.store.release_unsubmitted(
+            expected.operation, 'other-binding', expected.generation, lambda: True))
+        self.assertFalse(self.store.release_unsubmitted(
+            'not-hex', expected.binding, expected.generation, lambda: True))
+        # Every refusal leaves the intent exactly where it was.
+        self.assertFalse(self.claim.power_intent_absent(expected))
+
     def test_shutdown_intent_retires_after_verified_new_boot(self):
         expected = self.prepare_boot_intent()
         before = self.path.read_bytes()

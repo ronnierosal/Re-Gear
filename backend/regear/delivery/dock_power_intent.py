@@ -145,6 +145,43 @@ class DockPowerIntentStore(WholeDockClaimStore):
                     pass
             return True
 
+    def release_unsubmitted(self, operation, binding, generation, guard):
+        """Discard this operation's intent when its power request never happened.
+
+        Bind records that an operation MEANS to cut power, so nothing replays
+        it and no later boot honours it blindly. That is right while the
+        outcome is unknown. It is wrong once the submission is known not to
+        have occurred: the record then pins the claim that outlives it, and
+        `power_intent_absent` keeps the physical-disconnect archival from ever
+        running. A sleep reaches no other retirement -- `retire_after_boot`
+        takes shutdowns only, because a changed boot is evidence a shutdown
+        happened and says nothing about a sleep. Observed on device
+        2026-09-15: one refused sleep left the dock unable to re-attach, with
+        no recovery short of deleting root-owned files.
+
+        Discarding cannot cause a double submission, because the caller may
+        only pass a submission it verified did not reach the system. The guard
+        is re-checked under the lock, and the claim is left exactly as it is:
+        this removes the power record, never the disconnect history.
+        """
+        if (type(operation) is not str or re.fullmatch('[0-9a-f]{32}', operation) is None
+                or type(binding) is not str or type(generation) is not str):
+            return False
+        with self._locked() as directory:
+            claim = self._load(directory)
+            if (type(claim) is not WholeDockClaim
+                    or (claim.operation, claim.binding, claim.generation)
+                    != (operation, binding, generation)):
+                return False
+            if guard() is not True or self._load(directory) != claim:
+                return False
+            try:
+                os.unlink('dock-power-' + operation + '.json', dir_fd=directory)
+            except FileNotFoundError:
+                return True
+            os.fsync(directory)
+            return True
+
     def retire_after_boot(self, expected_claim, current_boot_hash, guard):
         """Archive a verified completed shutdown from an earlier boot only.
 

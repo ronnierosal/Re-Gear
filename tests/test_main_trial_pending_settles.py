@@ -131,6 +131,67 @@ class TrialPendingSettlesTests(unittest.TestCase):
         busy = source.index('"code": "dock_teardown.trial_running", "busy": True')
         self.assertIn("self._whole_dock_trial_started = time.monotonic()", source[:busy])
 
+    def test_an_inhibited_submission_is_retried_until_logind_lets_go(self):
+        # logind drops a lock when its last holder closes it, which is not the
+        # instant the process we waited for exits: systemd-inhibit's child
+        # briefly outlives it holding the inherited lock. Reproducible on
+        # device -- the submit landed in that gap every time.
+        from types import SimpleNamespace as NS
+        from unittest.mock import patch
+        calls = []
+
+        def runner():
+            calls.append(1)
+            requested = len(calls) >= 3
+            return NS(request_suspend=lambda: NS(
+                requested=requested,
+                code=('dock_power.suspend_request_accepted_unverified' if requested
+                      else 'dock_power.suspend_inhibited')))
+
+        with patch.object(self.module, 'SystemSuspendCommandRunner', runner),              patch.object(self.module.time, 'sleep', lambda _s: None):
+            self.assertIs(self.plugin._submit_suspend(object()), True)
+        self.assertEqual(len(calls), 3)
+        self.assertEqual(self.plugin._whole_dock_suspend_result,
+                         {'requested': True, 'attempts': 3,
+                          'code': 'dock_power.suspend_request_accepted_unverified'})
+
+    def test_an_uncertain_submission_is_never_retried(self):
+        # A timeout or an unavailable command leaves the outcome unknown, and an
+        # unknown power submission must never be repeated. Only the verified
+        # refusal -- rejected before any job existed -- may be asked again.
+        from types import SimpleNamespace as NS
+        from unittest.mock import patch
+        for code in ('dock_power.suspend_timeout', 'dock_power.suspend_unavailable',
+                     'dock_power.suspend_failed', 'dock_power.root_required'):
+            calls = []
+
+            def runner(_code=code):
+                calls.append(1)
+                return NS(request_suspend=lambda: NS(requested=False, code=_code))
+
+            with self.subTest(code=code), patch.object(
+                    self.module, 'SystemSuspendCommandRunner', runner),                  patch.object(self.module.time, 'sleep', lambda _s: None):
+                self.assertIs(self.plugin._submit_suspend(object()), False)
+            self.assertEqual(len(calls), 1, code)
+            self.assertEqual(self.plugin._whole_dock_suspend_result['attempts'], 1)
+
+    def test_a_persistently_inhibited_submission_gives_up_and_says_so(self):
+        from types import SimpleNamespace as NS
+        from unittest.mock import patch
+        calls = []
+
+        def runner():
+            calls.append(1)
+            return NS(request_suspend=lambda: NS(
+                requested=False, code='dock_power.suspend_inhibited'))
+
+        with patch.object(self.module, 'SystemSuspendCommandRunner', runner),              patch.object(self.module.time, 'sleep', lambda _s: None):
+            self.assertIs(self.plugin._submit_suspend(object()), False)
+        self.assertEqual(len(calls), self.module.SUSPEND_SUBMIT_ATTEMPTS)
+        self.assertEqual(self.plugin._whole_dock_suspend_result,
+                         {'requested': False, 'code': 'dock_power.suspend_inhibited',
+                          'attempts': self.module.SUSPEND_SUBMIT_ATTEMPTS})
+
     # ----------------------------------------------------------------- worker
 
     def test_the_shipped_wrapper_clears_liveness_for_a_base_exception(self):
