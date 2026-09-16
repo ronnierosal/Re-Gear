@@ -2028,7 +2028,7 @@ class Plugin:
         result = run_observed_sleep(request, background=self._sleep_guard,
             transaction=transaction, verify=lambda r: r is request and verify() is True,
             consume=consume or self._consume_ordinary_power,
-            submit=lambda r: SystemSuspendCommandRunner().request_suspend().requested is True,
+            submit=self._submit_suspend,
             observer=SuspendObserver(), session=lambda: self._dock_power_session,
             cancelled=lambda: bool(getattr(self, '_unloading', False)), publish=publish)
         self._dock_sleep_status = {'schema_version': 1, 'code': result.code,
@@ -2036,6 +2036,25 @@ class Plugin:
             'ok': result.code == 'dock_power.sleep_cycle_observed',
             'sleep_cycle_observed': result.code == 'dock_power.sleep_cycle_observed', **identity}
         return result
+
+    def _submit_suspend(self, _request) -> bool:
+        """Ask the system to suspend, and remember why if it refused.
+
+        The coordinator only needs a boolean, and collapsing the result to one
+        threw away the single most useful fact when a sleep did not happen: a
+        refused submission and a timed-out one are the same `request_unverified`
+        to every caller. Observed on device 2026-09-15, where a completed
+        disconnect was followed by a sleep that never occurred and nothing
+        recorded the cause. Categories only; no command output crosses.
+        """
+        outcome = SystemSuspendCommandRunner().request_suspend()
+        code = getattr(outcome, 'code', '')
+        self._whole_dock_suspend_result = {
+            'requested': outcome.requested is True,
+            'code': code if type(code) is str and re.fullmatch(
+                r'dock_power\.[a-z_]{1,48}', code) else '',
+        }
+        return outcome.requested is True
 
     def _sleep_after_dock_down(self, request, runtime, admission, power_store=None):
         # The actual transaction lease is retained from the golden teardown.
@@ -2583,6 +2602,7 @@ class Plugin:
                 self._whole_dock_release_stage = "not_run"
                 self._whole_dock_release_details = {}
                 self._whole_dock_portable_outcome = {}
+                self._whole_dock_suspend_result = {}
                 self._whole_dock_arm_stage = ""
                 self._whole_dock_arm_code = ""
                 try:
@@ -2634,6 +2654,7 @@ class Plugin:
                 payload["release_stage"] = self._whole_dock_release_stage
                 payload["release"] = self._whole_dock_release_details
                 payload["portable_return"] = getattr(self, "_whole_dock_portable_outcome", {})
+                payload["suspend"] = getattr(self, "_whole_dock_suspend_result", {})
                 payload["arm_stage"] = self._whole_dock_arm_stage
                 payload["arm_code"] = self._whole_dock_arm_code
                 self._whole_dock_trial_status = payload

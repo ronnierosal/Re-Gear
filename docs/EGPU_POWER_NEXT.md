@@ -369,3 +369,43 @@ genuinely went away refuses at the preview. The recorded outcome carries
 
 This affects every route through the portable return, not just sleep: Safe
 Disconnect and Disconnect + Shutdown could lose the same race.
+
+## First complete disconnect on the sleep route, 2026-09-15 21:11 PDT
+
+0.3.116 installed 21:11:34; Disconnect + Sleep pressed ~10 s later, while the
+dock was still settling -- the case that refused twice before. The portable
+return PASSED this time (`portable_return {}`, no stale blocker recorded), and
+the teardown completed: `release_stage removed`, `live_disconnect.removed`,
+`display_release.released`, `filter_disarmed`, `software_down true`, eGPU off
+the PCI bus, claim `software_down`. The re-plan fix did its job.
+
+The sleep itself did not happen. The trial ended at `phase power_verification`
+with `dock_power.request_unverified`, `power_requested false`, and the system
+journal records no suspend attempt whatsoever.
+
+Ruled out by reading the device: the plugin runs as uid 0, so
+`dock_power.root_required` is not it; and the only non-`delay` inhibitor
+present afterwards is our own retained trial lease, restored by the handoff
+after the refusal. The handoff verifies every lease reports `active() is False`
+immediately before submitting, so both were down at submit time.
+
+What the cause is remains unknown, because `_run_sleep_request` submitted via
+`lambda r: SystemSuspendCommandRunner().request_suspend().requested is True`,
+which collapsed a four-way result into a boolean. A refused submission, a
+timeout, an unavailable command and a privilege failure all arrived as the same
+`request_unverified`.
+
+That is now fixed rather than guessed at. `Plugin._submit_suspend` records
+`suspend {requested, code}` on the terminal payload, and the control appends
+the reason to the refusal. `SystemSuspendCommandRunner` additionally
+distinguishes the one refusal with an actionable cause -- a block inhibitor
+still registered with logind when the request was made -- as
+`dock_power.suspend_inhibited`, classified from the command's stderr without
+any of that output crossing the boundary.
+
+Leading hypothesis, not established: logind may not have dropped our inhibitor
+registration by the time `systemctl --check-inhibitors=yes suspend` ran. The
+lease's own process had exited and `active()` reported false, but the D-Bus
+side of that release is not necessarily synchronous with process exit. If the
+next press reports `suspend_inhibited`, that is the answer and the fix is to
+wait for logind to agree before submitting, not to drop `--check-inhibitors`.

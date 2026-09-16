@@ -6,7 +6,7 @@ const js = ts.transpileModule(readFileSync(new URL("../src/whole-dock-control-mo
   compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 },
 }).outputText;
 const { dockControl, dockIntentControl, dockRequestAbandoned, dockRequestSettled, formatPendingRecord,
-  parsePendingRecord, shutdownRequested } = await import("data:text/javascript;base64," + Buffer.from(js).toString("base64"));
+  parsePendingRecord, shutdownRequested, suspendRefusal } = await import("data:text/javascript;base64," + Buffer.from(js).toString("base64"));
 const idle = { schema_version: 3, game_state: "idle", egpu_link: { state: "up" }, observed_at: new Date().toISOString() };
 const fresh = { schema_version: 1, busy: false, safe_to_unplug: false, code: "dock_teardown.no_trial", attachment_token: "a".repeat(64)+":"+"b".repeat(64) };
 test("initial disconnect requires supported status and idle detected GPU", () => {
@@ -452,4 +452,29 @@ test('the route selector still confirms, because a dropdown choice is not a name
   assert.match(h.modals.at(-1).view.props.strTitle, /Disconnect the dock and sleep\?/);
   assert.match(h.modals.at(-1).view.props.strDescription, /Save your work/);
   h.unmount();
+});
+
+test('a refused sleep submission says why, and an accepted one adds nothing', () => {
+  // On device a completed disconnect was followed by a sleep that never
+  // happened, and the only wording was "could not be verified". The backend
+  // now carries the category; the control has to surface it.
+  const refused = (code) => ({ ...fresh, code: 'dock_power.request_unverified', ok: false,
+    power_action: 'sleep', power_requested: false, software_down: true,
+    request_id: 'request', suspend: { requested: false, code } });
+  const view = (status) => dockIntentControl(status, { ...idle, schema_version: 3 }, 'sleep');
+
+  assert.match(view(refused('dock_power.suspend_inhibited')).message, /something was still blocking sleep/);
+  assert.match(view(refused('dock_power.suspend_timeout')).message, /request timed out/);
+  assert.match(view(refused('dock_power.root_required')).message, /did not have permission/);
+  // An unmapped code is shown as itself rather than guessed at.
+  assert.match(view(refused('dock_power.suspend_brand_new')).message, /dock_power\.suspend_brand_new/);
+  // Every one keeps the cable sentence and offers no other action.
+  for (const code of ['dock_power.suspend_inhibited', 'dock_power.suspend_failed']) {
+    assert.match(view(refused(code)).message, /Keep the cable connected/);
+    assert.equal(view(refused(code)).action, null);
+  }
+  // Nothing appended when there is no suspend record, or when it was accepted.
+  assert.equal(suspendRefusal({ ...fresh }), '');
+  assert.equal(suspendRefusal({ ...fresh, suspend: { requested: true, code: 'dock_power.suspend_request_accepted_unverified' } }), '');
+  assert.equal(suspendRefusal({ ...fresh, suspend: {} }), '');
 });

@@ -29,7 +29,24 @@ const sleepRefusals: Record<string, string> = {
   "dock_power.sleep_requested_unverified": "Sleep was requested; the result has not been observed yet.",
   "dock_power.sleep_cycle_failed": "Sleep was requested but the handheld did not complete a sleep cycle.",
   "dock_power.sleep_cycle_unresolved": "Sleep was requested; whether the handheld slept could not be determined.",
+  "dock_power.request_unverified": "The system did not accept the sleep request.",
 };
+/** Why a suspend submission was refused. The backend carries the category on
+ * `suspend.code`; without it every refusal reads the same and the cause is
+ * only in a root-owned journal. Unknown codes are shown as themselves rather
+ * than hidden -- a code a bug report can carry beats a confident wrong word. */
+const suspendReasons: Record<string, string> = {
+  "dock_power.suspend_inhibited": "something was still blocking sleep",
+  "dock_power.suspend_failed": "the system refused it",
+  "dock_power.suspend_timeout": "the request timed out",
+  "dock_power.suspend_unavailable": "the sleep command could not run",
+  "dock_power.root_required": "Re-Gear did not have permission to ask",
+};
+export function suspendRefusal(status: any): string {
+  const code = status?.suspend?.code;
+  if (typeof code !== "string" || !code || status.suspend.requested === true) return "";
+  return ` (${suspendReasons[code] ?? code})`;
+}
 export function sleepObserved(status: any): boolean {
   return status?.schema_version === 1 && status.busy === false && status.safe_to_unplug === false
     && status.code === "dock_power.sleep_cycle_observed" && status.power_action === "sleep"
@@ -221,7 +238,9 @@ export function dockIntentControl(status: any, snapshot: any, intent: DockIntent
         ? "Disconnect the dock in software, then ask the system to sleep after verification."
         : softwareDisconnected(status)
           ? "The dock is already disconnected in software. Sleep continuation is unavailable; do not repeat the operation."
-          : (sleepRefusals[status?.code] ? sleepRefusals[status.code] + " Keep the cable connected; do not repeat the operation." : view.message),
+          : (sleepRefusals[status?.code]
+            ? sleepRefusals[status.code] + suspendRefusal(status) + " Keep the cable connected; do not repeat the operation."
+            : view.message),
     };
   }
   if (intent !== "shutdown") return { action: null, label: "Action unavailable", message: "This action is not supported." };

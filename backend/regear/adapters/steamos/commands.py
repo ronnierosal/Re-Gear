@@ -606,6 +606,14 @@ class SystemSuspendCommandRunner:
         except (OSError, subprocess.SubprocessError):
             return SuspendResult(False, "dock_power.suspend_unavailable")
         if completed.returncode != 0:
+            # One refusal has a specific and actionable cause: a block
+            # inhibitor still registered with logind when the request was
+            # made. Distinguishing it turns "the system said no" into
+            # something a caller can act on. Only the CATEGORY crosses --
+            # the command's own output never does, here or anywhere.
+            stderr = completed.stderr if type(completed.stderr) is bytes else b""
+            if b"inhibit" in stderr.lower():
+                return SuspendResult(False, "dock_power.suspend_inhibited")
             return SuspendResult(False, "dock_power.suspend_failed")
         return SuspendResult(True, "dock_power.suspend_request_accepted_unverified")
 
