@@ -259,3 +259,39 @@ So the order below is not optional.
    reopened after the suspend call returned.
 
 Nothing in this section is a hardware result. It is the plan for getting one.
+
+## Safe Disconnect succeeded on 0.3.112, 2026-09-15 18:26 PDT (hardware result)
+
+Installed 0.3.112 (c80ffff) at 18:26:16 with the eGPU docked and the TV
+active (`mode=tv_docked game=idle`). The leftover `release_intent` claim from
+the 0.3.109 attempt had already been archived automatically when the dock
+came back after the reboot (`claim_stage` read `none` at 18:24). Safe
+Disconnect pressed ~18:26:24. Read from the running plugin at 18:26:54 by
+`scripts/probe_whole_dock_trial_status.mjs`, before the Command Center was
+opened:
+
+- `whole_dock_trial`: `dock_teardown.software_down`, `ok: true`,
+  `software_down: true`, `phase: dock_teardown`, `release_stage: removed`,
+  `release.code: live_disconnect.removed`, `display_release.released`,
+  `released: true`, `display_released: true`, `filter_disarmed: true`,
+  `in_flight: false`, request `2eb468cdc6d14feea35d61719d1b8df0`.
+- `whole_dock_record.claim_stage: software_down`. Pending localStorage record:
+  none. `lspci`: no `08:00.*` -- the Navi 33 and its audio function are off
+  the bus.
+- Journey: `completion.explicit_result_required` 18:26:24,
+  `audio.restore_portable` 18:26:25, `completion.portable_held` 18:26:30,
+  gamescope restarted 18:26:31, `connection.waiting_for_pci` 18:26:32,
+  `completion.portable_released` 18:26:33, sleep guard
+  `presence=absent active=False` 18:26:34. Press to removal about 10 s.
+- One Handheld Dock Mode inhibitor still held afterwards: the trial's own
+  lease, retained by design after a successful software removal.
+  `get_sleep_readiness` reports `retained_inhibitor: true` and
+  `sleep.available` (eGPU absent). Sleep is therefore blocked until that lease
+  is released by a proper handoff or the plugin restarts; the
+  "Disconnect and sleep" press refuses on this fact rather than suspending
+  into it.
+
+First recorded successful disconnect on any build since 0.3.98. The 0.3.109
+failure of 2026-09-14 did not reproduce and its cause remains unknown; its
+in-memory record was lost to the reboot. Software removal is not clearance to
+unplug; the enclosure remains powered.
