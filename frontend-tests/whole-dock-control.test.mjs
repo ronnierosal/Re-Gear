@@ -422,3 +422,34 @@ test("component keeps waiting on the record it wrote itself", async () => {
   assert.equal(h.button().props.disabled, true);
   h.unmount();
 });
+
+test('a tile-activated sleep or shutdown runs on one press, with no confirmation', async () => {
+  // The tile names the action, so pressing it is the choice; asking again in a
+  // dialog was the second press the maintainer asked to remove.
+  for (const intent of ['sleep', 'shutdown']) {
+    const h = harness(new Map(), intent, oneActivation());
+    h.execute = args => Promise.resolve(intent === 'sleep'
+      ? { ...fresh, code: 'dock_power.sleep_cycle_observed', power_action: 'sleep',
+          power_requested: true, sleep_cycle_observed: true, ok: true, request_id: args.at(-1) }
+      : shutdownAccepted(args.at(-1)));
+    await settle();
+    assert.equal(h.modals.length, 0, `${intent}: no confirmation modal`);
+    assert.equal(h.calls.length, 1, `${intent}: dispatched on the tile press alone`);
+    assert.equal(h.calls[0][3], intent === 'sleep' ? 'whole_dock_sleep' : 'whole_dock_shutdown');
+    h.unmount();
+  }
+});
+
+test('the route selector still confirms, because a dropdown choice is not a named press', async () => {
+  // This mount passes no startRequest: it is the selector inside the Safe
+  // Disconnect detail, where the player picked a route rather than pressing a
+  // tile that names it. Removing its confirmation too would drop the only
+  // place the cost is stated.
+  const h = harness(new Map(), 'sleep');
+  await settle();
+  h.click();
+  assert.equal(h.calls.length, 0, 'nothing dispatches until the dialog is answered');
+  assert.match(h.modals.at(-1).view.props.strTitle, /Disconnect the dock and sleep\?/);
+  assert.match(h.modals.at(-1).view.props.strDescription, /Save your work/);
+  h.unmount();
+});

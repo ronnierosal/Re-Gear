@@ -99,7 +99,14 @@ export function WholeDockControl({ readCurrentSnapshot, intent = "disconnect", s
         if (mounted.current) setNotice("The reply was interrupted. Waiting for backend progress; no retry was sent.");
       } finally { pending.current = false; if (mounted.current) setBusy(false); }
     };
-    if(direct && intent==="disconnect_only") { void run(); return; }
+    // One press. `direct` is set only when a named tile activated this mount:
+    // native.tsx passes a one-shot startRequest when the player presses
+    // "Safe Disconnect", "Disconnect + Sleep" or "Disconnect + Shutdown", so
+    // the press that opened this modal IS the explicit choice of this exact
+    // action, and a second dialog asks the same question twice. The route
+    // selector inside the Safe Disconnect detail passes no startRequest, so a
+    // route chosen from a dropdown still confirms before anything happens.
+    if(direct) { void run(); return; }
     modal.current = showModal(<EgpuConfirmModal strTitle={action === "whole_dock_shutdown" ? "Disconnect the dock and shut down?" : action === "whole_dock_sleep" ? "Disconnect the dock and sleep?" : "Disconnect the dock in software?"}
       strDescription={action === "whole_dock_shutdown" ? "Re-Gear will disconnect the dock in software, verify the result, then request shutdown. The TV will turn off and Gaming Mode may restart first. Save your work and keep the cable connected. Shutdown is not yet hardware-verified; this is not permission to unplug."
         : action === "whole_dock_sleep" ? "Re-Gear will disconnect the dock in software, verify the result, hand off its sleep protection, then ask the system to sleep. The TV will turn off and Gaming Mode may restart first. Save your work and keep the cable connected. Sleep with the dock connected is not yet hardware-verified; this is not permission to unplug."
