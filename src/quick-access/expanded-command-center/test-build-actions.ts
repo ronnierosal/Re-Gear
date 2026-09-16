@@ -5,8 +5,6 @@ import type { Tile } from "./model";
 export const unavailableTestActions: Record<string,string> = {
   "switch-handheld": "Display integration pending",
   resolution: "Display integration pending",
-  "disconnect-sleep": "Sleep integration pending",
-  "disconnect-shutdown": "Shutdown integration pending",
 };
 export function testBuildTiles(source:TileView):TileView {
   const quick=source.quick??[], egpu=source.egpu??[];
@@ -19,6 +17,9 @@ export function testBuildTiles(source:TileView):TileView {
     quick:quick.map(tile=>tile.id==='disconnect'?compactDisconnect:tile),
     egpu:[unavailable('switch-handheld','Handheld'),compactDisconnect,
       unavailable('resolution','Resolution'),{id:'egpu',title:'eGPU Status',value:status?.value??'Unknown',detail:egpu.filter(tile=>tile.id!=='disconnect').map(tile=>`${tile.title}: ${tile.value}. ${tile.detail}`).join(' · ')},
-      unavailable('disconnect-sleep','Disconnect + Sleep'),unavailable('disconnect-shutdown','Disconnect + Shutdown')],
+      // Both open the guarded whole-dock route with the intent preselected;
+      // readiness is the same reading Safe Disconnect makes, so the value is.
+      {...compactDisconnect,id:'disconnect-sleep',title:'Disconnect + Sleep'},
+      {...compactDisconnect,id:'disconnect-shutdown',title:'Disconnect + Shutdown'}],
   };
 }

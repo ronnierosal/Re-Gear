@@ -23,7 +23,8 @@ test("the shutdown control names the ordering instead of promising a disconnect"
   // Safety invariant 10 requires shutdown first and the physical unplug after.
   assert.doesNotMatch(source, /Shut down to disconnect/);
   const actions=readFileSync(new URL("../src/quick-access/expanded-command-center/test-build-actions.ts",import.meta.url),"utf8");
-  assert.match(actions, /"disconnect-shutdown": "Shutdown integration pending"/);
+  // Wired on 2026-09-15: both tiles open the guarded whole-dock route.
+  assert.doesNotMatch(actions, /"disconnect-(sleep|shutdown)": /);
   assert.match(backend, /"approve_supervised_portable_switch"/);
   assert.match(backend, /"execute_safe_disconnect_shutdown"/);
 });

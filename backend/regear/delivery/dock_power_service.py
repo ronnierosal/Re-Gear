@@ -48,10 +48,14 @@ def dock_power_capabilities():
             'sleep': {
                 'implementation': 'implemented',
                 'live_readiness': 'not_assessed',
-                'actionable': False,
+                # Offered through the guarded teardown route since the
+                # 2026-09-15 maintainer decision, on the same footing as
+                # shutdown: every gate on the route still runs, the two-lease
+                # handoff is what releases sleep protection, and no sleep/wake
+                # cycle has been observed on hardware through this route.
+                'actionable': True,
                 'reason_codes': [
                     'dock_power.sleep_hardware_unverified',
-                    'dock_power.live_preflight_required',
                 ],
             },
         },

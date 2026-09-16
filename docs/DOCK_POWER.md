@@ -273,3 +273,20 @@ capability response cannot replace the execution preflight.
 The [inhibitor handoff proposal](dock_power_inhibitor_handoff.md) records the
 remaining two-lease cancellation, crash-continuity and wake contracts, with
 fixture coverage of the existing seams. It does not enable cable-connected sleep.
+
+On 2026-09-15, after the first successful Safe Disconnect since 0.3.98 (0.3.112,
+software_down in ~10 s), the maintainer asked for both remaining buttons. The
+Command Center's "Disconnect + Sleep" and "Disconnect + Shutdown" tiles had
+been placeholders marked "integration pending"; they now open the same guarded
+whole-dock modal as Safe Disconnect with the intent preselected, and the
+selector inside the Safe Disconnect detail gains "Disconnect and sleep". The
+sleep intent dispatches `whole_dock_sleep`, which the backend already routes
+through the two-lease handoff (`_sleep_after_dock_down` -> `run_observed_sleep`:
+release both protections, submit one suspend, observe the cycle, restore) --
+the only path that can release the trial lease a Route B disconnect retains.
+The capability contract marks sleep actionable on the same footing as
+shutdown: every gate on the route still runs, the payload authorizes nothing,
+and no sleep/wake cycle has been observed on hardware through this route. The
+eGPU-page "Disconnect and sleep" press remains bound to the game-close route,
+which does not offer itself while the TV session holds the eGPU; it is the
+route for a running game, not for the docked TV state.

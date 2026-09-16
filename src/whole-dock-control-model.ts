@@ -1,5 +1,5 @@
-export type DockAction = "whole_dock_disconnect" | "whole_dock_shutdown";
-export type DockIntent = "disconnect" | "disconnect_only" | "shutdown";
+export type DockAction = "whole_dock_disconnect" | "whole_dock_shutdown" | "whole_dock_sleep";
+export type DockIntent = "disconnect" | "disconnect_only" | "shutdown" | "sleep";
 
 const shutdownRefusals: Record<string, string> = {
   "dock_power.preflight_changed": "Readiness changed before shutdown could be requested.",
@@ -15,6 +15,26 @@ const shutdownRefusals: Record<string, string> = {
   "dock_power.request_action_changed": "A different power action was already recorded for this request.",
   "dock_teardown.trial_unresolved": "The previous request stopped without reporting a result.",
 };
+/** The sleep route is the shutdown route with a different continuation, so
+ * it shares the power refusals above and adds the outcomes only a sleep
+ * handoff can have. Every one of these settles the request; none claims the
+ * handheld slept unless the backend observed the cycle. */
+const sleepRefusals: Record<string, string> = {
+  ...shutdownRefusals,
+  "dock_power.preflight_changed": "Readiness changed before sleep could be requested.",
+  "dock_power.intent_not_recorded": "The sleep request could not be recorded.",
+  "dock_power.disconnect_unverified": "Dock disconnect could not be verified; sleep was not requested.",
+  "dock_power.sleep_observer_unavailable": "Re-Gear could not watch for the sleep cycle, so it did not request one.",
+  "dock_power.sleep_protection_unverified": "Sleep protection could not be handed off and restored, so the handheld was left awake.",
+  "dock_power.sleep_requested_unverified": "Sleep was requested; the result has not been observed yet.",
+  "dock_power.sleep_cycle_failed": "Sleep was requested but the handheld did not complete a sleep cycle.",
+  "dock_power.sleep_cycle_unresolved": "Sleep was requested; whether the handheld slept could not be determined.",
+};
+export function sleepObserved(status: any): boolean {
+  return status?.schema_version === 1 && status.busy === false && status.safe_to_unplug === false
+    && status.code === "dock_power.sleep_cycle_observed" && status.power_action === "sleep"
+    && status.power_requested === true && status.sleep_cycle_observed === true && status.ok === true;
+}
 /** Every outcome that settles a request without a software disconnect.
  *
  * Two different backend mechanisms produce these and BOTH have to be covered.
@@ -154,7 +174,7 @@ export function dockRequestAbandoned(status: any, record: PendingRecord | null, 
     && status.request_id !== record.request;
 }
 export function dockRequestSettled(status: any, request: string, intent: DockIntent): boolean {
-  if (intent !== "disconnect" && intent !== "disconnect_only" && intent !== "shutdown") return false;
+  if (intent !== "disconnect" && intent !== "disconnect_only" && intent !== "shutdown" && intent !== "sleep") return false;
   // A pre-correlation refusal settles: the backend rejected it before minting
   // a request, so no operation is outstanding and holding the guard would
   // disable the control permanently over something that never ran.
@@ -163,6 +183,12 @@ export function dockRequestSettled(status: any, request: string, intent: DockInt
   if (intent === "disconnect") return true;
   if (intent === "disconnect_only") return softwareDisconnected(status) ||
     (status.ok === false && shutdownTeardownRefusals.has(status.code));
+  if (intent === "sleep") {
+    if (sleepObserved(status)) return true;
+    return status.ok === false
+      && (status.power_action === undefined || status.power_action === "sleep")
+      && (Object.hasOwn(sleepRefusals, status.code) || shutdownTeardownRefusals.has(status.code));
+  }
   if (shutdownRequested(status)) return true;
   return status.ok === false && (status.power_requested === undefined || status.power_requested === false)
     && (status.power_action === undefined || status.power_action === "shutdown")
@@ -182,6 +208,21 @@ export function dockIntentControl(status: any, snapshot: any, intent: DockIntent
     const view = dockControl(status, snapshot, now);
     return view.action === "whole_dock_disconnect" ? view : { action: null, label: "Disconnect unavailable",
       message: view.message };
+  }
+  if (intent === "sleep") {
+    if (sleepObserved(status)) return { action: null, label: "Sleep completed",
+      message: "The handheld slept and woke with the dock disconnected in software. Keep the cable connected; this is not permission to unplug." };
+    if (snapshot?.schema_version !== 3) return { action: null, label: "Sleep unavailable", message: "Current system status is unavailable. Refresh before continuing." };
+    const view = dockControl(status, snapshot, now);
+    return {
+      action: view.action === "whole_dock_disconnect" ? "whole_dock_sleep" : null,
+      label: view.action === "whole_dock_disconnect" ? "Disconnect and sleep" : softwareDisconnected(status) ? "Sleep unavailable" : view.label,
+      message: view.action === "whole_dock_disconnect"
+        ? "Disconnect the dock in software, then ask the system to sleep after verification."
+        : softwareDisconnected(status)
+          ? "The dock is already disconnected in software. Sleep continuation is unavailable; do not repeat the operation."
+          : (sleepRefusals[status?.code] ? sleepRefusals[status.code] + " Keep the cable connected; do not repeat the operation." : view.message),
+    };
   }
   if (intent !== "shutdown") return { action: null, label: "Action unavailable", message: "This action is not supported." };
   if (shutdownRequested(status)) return { action: null, label: "Shutdown requested", message: "Shutdown was requested. Completion is not confirmed. Keep the cable connected." };

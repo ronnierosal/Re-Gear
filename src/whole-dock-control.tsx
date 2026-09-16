@@ -86,7 +86,9 @@ export function WholeDockControl({ readCurrentSnapshot, intent = "disconnect", s
         const request = crypto.randomUUID().replaceAll("-", "");
         window.localStorage.setItem(pendingKey, formatPendingRecord(intent, panelId, request));
         uncertain.current = true;
-        setNotice(action === "whole_dock_shutdown" ? "Shutdown request sent. Keep the cable connected; Gaming Mode may restart before shutdown." : "Request sent. Keep the cable connected; Gaming Mode may restart.");
+        setNotice(action === "whole_dock_shutdown" ? "Shutdown request sent. Keep the cable connected; Gaming Mode may restart before shutdown."
+          : action === "whole_dock_sleep" ? "Sleep request sent. Keep the cable connected; Gaming Mode may restart, then the handheld should sleep."
+          : "Request sent. Keep the cable connected; Gaming Mode may restart.");
         const result = await execute(true, "", "disconnect", action, true, attachment, request);
         epoch.current++;
         if (mounted.current) { setReading({ ...fresh, status: result }); setNotice(""); }
@@ -98,9 +100,11 @@ export function WholeDockControl({ readCurrentSnapshot, intent = "disconnect", s
       } finally { pending.current = false; if (mounted.current) setBusy(false); }
     };
     if(direct && intent==="disconnect_only") { void run(); return; }
-    modal.current = showModal(<EgpuConfirmModal strTitle={action === "whole_dock_shutdown" ? "Disconnect the dock and shut down?" : "Disconnect the dock in software?"}
-      strDescription={action === "whole_dock_shutdown" ? "Re-Gear will disconnect the dock in software, verify the result, then request shutdown. The TV will turn off and Gaming Mode may restart first. Save your work and keep the cable connected. Shutdown is not yet hardware-verified; this is not permission to unplug." : "The TV will turn off and Gaming Mode may restart. Keep the dock cable connected for this trial. This is not permission to unplug."}
-      strOKButtonText={action === "whole_dock_shutdown" ? "Disconnect and shut down" : "Disconnect"} strCancelButtonText="Cancel"
+    modal.current = showModal(<EgpuConfirmModal strTitle={action === "whole_dock_shutdown" ? "Disconnect the dock and shut down?" : action === "whole_dock_sleep" ? "Disconnect the dock and sleep?" : "Disconnect the dock in software?"}
+      strDescription={action === "whole_dock_shutdown" ? "Re-Gear will disconnect the dock in software, verify the result, then request shutdown. The TV will turn off and Gaming Mode may restart first. Save your work and keep the cable connected. Shutdown is not yet hardware-verified; this is not permission to unplug."
+        : action === "whole_dock_sleep" ? "Re-Gear will disconnect the dock in software, verify the result, hand off its sleep protection, then ask the system to sleep. The TV will turn off and Gaming Mode may restart first. Save your work and keep the cable connected. Sleep with the dock connected is not yet hardware-verified; this is not permission to unplug."
+        : "The TV will turn off and Gaming Mode may restart. Keep the dock cable connected for this trial. This is not permission to unplug."}
+      strOKButtonText={action === "whole_dock_shutdown" ? "Disconnect and shut down" : action === "whole_dock_sleep" ? "Disconnect and sleep" : "Disconnect"} strCancelButtonText="Cancel"
       className="rg-whole-dock-confirm" bDestructiveWarning onOK={() => { void run(); }} onCancel={cancel} onEscKeypress={cancel}>
       <style>{`.rg-whole-dock-confirm{z-index:2147483647!important;position:fixed!important;left:50%!important;top:50%!important;right:auto!important;bottom:auto!important;margin:0!important;transform:translate(-50%,-50%)!important}`}</style>
     </EgpuConfirmModal>, undefined, { fnOnClose: cancel, bNeverPopOut: true });

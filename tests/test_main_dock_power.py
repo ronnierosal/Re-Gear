@@ -185,7 +185,9 @@ class MainDockPowerTests(unittest.TestCase):
             result = asyncio.run(self.plugin.get_egpu_disconnect_status("power_capabilities"))
         self.assertFalse(result['authorizes_action'])
         self.assertEqual(result['actions']['shutdown']['live_readiness'], 'not_assessed')
-        self.assertFalse(result['actions']['sleep']['actionable'])
+        # Offered through the guarded route since 2026-09-15; the payload
+        # still authorizes nothing and the route's own gates still run.
+        self.assertTrue(result['actions']['sleep']['actionable'])
         self.plugin._run_background_operation.assert_not_called()
         self.plugin._run_whole_dock_trial.assert_not_called()
         discovery.assert_not_called()

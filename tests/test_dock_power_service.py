@@ -40,10 +40,9 @@ class DockPowerCapabilitiesTests(unittest.TestCase):
         sleep = dock_power_capabilities()['actions']['sleep']
         self.assertEqual(sleep['implementation'], 'implemented')
         self.assertEqual(sleep['live_readiness'], 'not_assessed')
-        self.assertIs(sleep['actionable'], False)
-        self.assertEqual(sleep['reason_codes'], [
-            'dock_power.sleep_hardware_unverified',
-            'dock_power.live_preflight_required'])
+        self.assertIs(sleep['actionable'], True)
+        self.assertEqual(sleep['reason_codes'], ['dock_power.sleep_hardware_unverified'])
+        self.assertNotIn('dock_power.live_preflight_required', sleep['reason_codes'])
         self.assertEqual(create_power_request('sleep', 'session-a').action, 'sleep')
 
     def test_payload_mutation_cannot_change_subsequent_status_or_execution(self):
@@ -53,8 +52,8 @@ class DockPowerCapabilitiesTests(unittest.TestCase):
         status['actions']['sleep']['reason_codes'].clear()
         fresh = dock_power_capabilities()
         self.assertIs(fresh['authorizes_action'], False)
-        self.assertIs(fresh['actions']['sleep']['actionable'], False)
-        self.assertEqual(len(fresh['actions']['sleep']['reason_codes']), 2)
+        self.assertIs(fresh['actions']['sleep']['actionable'], True)
+        self.assertEqual(len(fresh['actions']['sleep']['reason_codes']), 1)
         self.assertEqual(create_power_request('sleep', 'session-a').action, 'sleep')
 
 

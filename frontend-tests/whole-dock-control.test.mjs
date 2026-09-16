@@ -247,7 +247,7 @@ test("shutdown interrupted transport never retries and shared pending guard bloc
 });
 
 test("unknown runtime intent fails closed rather than selecting shutdown",()=>{
-  for(const intent of ["sleep","bad",null,{},false]) {
+  for(const intent of ["sleep_connected","bad",null,{},false]) {
     assert.equal(dockIntentControl(fresh,{...idle,schema_version:3},intent).action,null);
     assert.equal(dockRequestSettled(shutdownAccepted("request"),"request",intent),false);
   }
