@@ -799,7 +799,8 @@ class PortableBeforeDisconnectTests(unittest.TestCase):
     setUp = MainDockAdmissionTests.setUp
 
     def fixture(self, *, already=False, ready=True, success=True, final_portable=True,
-                acknowledge=True, changed_user=False, changed_binding=False, foreign=False):
+                acknowledge=True, changed_user=False, changed_binding=False, foreign=False,
+                prior=None, blocked=None):
         from contextlib import ExitStack
         plugin = self.plugin
         plugin._discovery = object()
@@ -811,8 +812,19 @@ class PortableBeforeDisconnectTests(unittest.TestCase):
         service.preview.return_value = NS(ready=ready, approval_token='permit' if ready else '')
         service.execute.return_value = NS(accepted=True, durable=True, operation_id='ours',
             outcome=NS(kind=self.module.TransitionOutcomeKind.SUCCEEDED if success else None))
-        service.status.return_value = NS(durable=True, target=self.module.PlacementState.PORTABLE,
+        settled = NS(durable=True, target=self.module.PlacementState.PORTABLE,
             operation_id='foreign' if foreign else 'ours')
+        # The press reads status once before acting (a prior result it may
+        # clear) and once after the transition; `prior` is what the first read
+        # returns, the settled status what the second does.
+        if prior is None:
+            service.status.return_value = settled
+        else:
+            service.status.side_effect = [prior, settled]
+        if blocked is not None:
+            service.execute.return_value.outcome = NS(
+                kind=self.module.TransitionOutcomeKind.BLOCKED,
+                failure=NS(code=blocked, message='', recoverable=True))
         service.acknowledge.return_value = acknowledge
         modes = [self.module.OperatingMode.PORTABLE if already else self.module.OperatingMode.TV_DOCKED,
                  self.module.OperatingMode.PORTABLE if final_portable else self.module.OperatingMode.UNKNOWN,
@@ -839,6 +851,42 @@ class PortableBeforeDisconnectTests(unittest.TestCase):
         service.execute.assert_called_once_with('permit')
         service.acknowledge.assert_called_once_with('ours')
         self.plugin._automatic_dock.suppress_current_attachment_after_portable_return.assert_called_once()
+
+    def test_a_prior_acknowledgeable_result_is_cleared_by_the_press(self):
+        # On device the disconnect refused because an earlier transition still
+        # awaited acknowledgement, and the button for that lived two levels
+        # away from the tile pressed. The press is the acknowledgement.
+        prior = NS(durable=True, target=self.module.PlacementState.UNKNOWN,
+                   operation_id='old', acknowledgement_required=True)
+        passed, service = self.fixture(prior=prior)
+        self.assertTrue(passed)
+        self.assertEqual([c.args[0] for c in service.acknowledge.call_args_list], ['old', 'ours'])
+        service.preview.assert_called_once()
+        self.plugin._automatic_dock.reset_after_acknowledgement.assert_called_once()
+
+    def test_a_prior_portable_result_keeps_the_portable_choice(self):
+        prior = NS(durable=True, target=self.module.PlacementState.PORTABLE,
+                   operation_id='old', acknowledgement_required=True)
+        passed, service = self.fixture(prior=prior)
+        self.assertTrue(passed)
+        self.assertEqual(service.acknowledge.call_args_list[0].args, ('old',))
+        self.plugin._automatic_dock.reset_after_acknowledgement.assert_not_called()
+
+    def test_a_refused_acknowledgement_stops_before_any_transition(self):
+        prior = NS(durable=True, target=self.module.PlacementState.UNKNOWN,
+                   operation_id='old', acknowledgement_required=True)
+        passed, service = self.fixture(prior=prior, acknowledge=False)
+        self.assertFalse(passed)
+        service.preview.assert_not_called()
+        service.execute.assert_not_called()
+
+    def test_a_blocked_return_names_its_blocker(self):
+        # The refusal used to say only "could not be verified"; the blocker code
+        # lived in a root-owned journal. It now travels with the refusal.
+        passed, service = self.fixture(blocked='observation.stale')
+        self.assertFalse(passed)
+        self.assertEqual(self.plugin._whole_dock_portable_outcome,
+                         {'kind': 'blocked', 'code': 'observation.stale'})
 
     def test_already_portable_does_not_restart(self):
         passed, service = self.fixture(already=True)

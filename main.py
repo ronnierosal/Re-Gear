@@ -2223,6 +2223,23 @@ class Plugin:
                 and infer_operating_mode(snapshot).mode is OperatingMode.PORTABLE)
         if not portable():
             service = self._presentation_transition_service()
+            # One press. A prior transition that ended with a result waiting to
+            # be acknowledged would refuse this one at preview, and the button
+            # that clears it lives two levels away from the tile the player
+            # pressed -- on device that read as the disconnect simply not
+            # working. The press is the player's acknowledgement: clear exactly
+            # that terminal result, with the same follow-ups the explicit
+            # acknowledge RPC performs, and only when it is terminal (an
+            # interrupted transition still needs its own recovery, not a press).
+            prior = service.status()
+            if (getattr(prior, 'acknowledgement_required', False) is True
+                    and getattr(prior, 'operation_id', '')):
+                if service.acknowledge(prior.operation_id) is not True:
+                    raise ValueError('dock_teardown.portable_return_refused')
+                if prior.target is PlacementState.PORTABLE:
+                    self._automatic_dock.suppress_current_attachment_after_portable_return()
+                else:
+                    self._automatic_dock.reset_after_acknowledgement()
             preview = service.preview(PlacementState.PORTABLE, user_confirmed=True)
             if not preview.ready or not preview.approval_token:
                 raise ValueError('dock_teardown.portable_return_refused')
@@ -2231,6 +2248,17 @@ class Plugin:
                     or not result.operation_id or not result.outcome
                     or result.outcome.kind is not TransitionOutcomeKind.SUCCEEDED
                     or not portable()):
+                # Say WHY, in categories only. A blocked or failed transition
+                # carries its code; without it the refusal reads as a mystery
+                # and the only record was a root-owned journal.
+                outcome = getattr(result, 'outcome', None)
+                kind = getattr(getattr(outcome, 'kind', None), 'value', '')
+                failure = getattr(outcome, 'failure', None)
+                code = getattr(failure, 'code', '') if failure is not None else ''
+                self._whole_dock_portable_outcome = {
+                    'kind': kind if type(kind) is str else '',
+                    'code': code if type(code) is str and re.fullmatch(r'[a-z_.]{1,64}', code) else '',
+                }
                 raise ValueError('dock_teardown.portable_return_unverified')
             status = service.status()
             if (status.durable is not True or status.target is not PlacementState.PORTABLE
@@ -2525,6 +2553,7 @@ class Plugin:
                 self._whole_dock_trial_phase = "starting"
                 self._whole_dock_release_stage = "not_run"
                 self._whole_dock_release_details = {}
+                self._whole_dock_portable_outcome = {}
                 self._whole_dock_arm_stage = ""
                 self._whole_dock_arm_code = ""
                 try:
@@ -2575,6 +2604,7 @@ class Plugin:
                 payload["phase"] = self._whole_dock_trial_phase
                 payload["release_stage"] = self._whole_dock_release_stage
                 payload["release"] = self._whole_dock_release_details
+                payload["portable_return"] = getattr(self, "_whole_dock_portable_outcome", {})
                 payload["arm_stage"] = self._whole_dock_arm_stage
                 payload["arm_code"] = self._whole_dock_arm_code
                 self._whole_dock_trial_status = payload

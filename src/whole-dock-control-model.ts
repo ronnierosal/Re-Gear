@@ -271,7 +271,9 @@ export function dockControl(status: any, snapshot: any, now = Date.now()): { act
       ? "A system service is still using the eGPU. Device removal did not start."
       : status.release_stage === "removed" && status.phase === "dock_teardown"
         ? "GPU release completed, but the dock disconnect could not be verified."
-        : reasons[status.code] ?? "The last attempt is unresolved.";
+        : (reasons[status.code] ?? "The last attempt is unresolved.")
+          + (typeof status.portable_return?.code === "string" && status.portable_return.code
+            ? ` (blocked: ${status.portable_return.code})` : "");
     return { action: null, label: "Needs attention", message: reason + " Keep the cable connected; do not repeat the operation." };
   }
   if (snapshot?.game_state !== "idle") return { action: null, label: "Safely disconnect", message: "Close your game and wait for an idle reading before disconnecting." };
