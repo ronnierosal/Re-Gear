@@ -659,7 +659,7 @@ class CompletedAttachmentAbsenceTests(unittest.TestCase):
 
     def fixture(self, *, stage='software_down', absent=True, strict=True,
                 parent_power=False, settled=True, idle=True, changed=False,
-                session=None, seen=None):
+                session=None, seen=None, claim_present=True, user_ok=True):
         from contextlib import ExitStack
         plugin = self.plugin
         user = NS(uid=1000, username='deck')
@@ -688,7 +688,7 @@ class CompletedAttachmentAbsenceTests(unittest.TestCase):
             # record whose session is gone; that record would otherwise hold
             # power_intent_absent false and inhibit admission forever.
             store = patcher('DockPowerIntentStore').return_value
-            store.load.return_value = claim
+            store.load.return_value = claim if claim_present else None
             if session is not None:
                 plugin._dock_power_session = session
             if seen is not None:
@@ -706,7 +706,8 @@ class CompletedAttachmentAbsenceTests(unittest.TestCase):
             store.retire_physically_disconnected.side_effect = retire
             patcher('verified_transport_absent', return_value=strict)
             patcher('GamescopeDiscovery')
-            patcher('resolve_gamescope_user', return_value=NS(ok=True, context=user))
+            patcher('resolve_gamescope_user',
+                    return_value=NS(ok=user_ok, context=user if user_ok else None))
             patcher('HeldTrialLauncher').return_value.call.return_value = {
                 'code':'held_helper.settled', 'settled':settled}
             patcher('inner_removal_records_absent', return_value=True)
@@ -736,6 +737,40 @@ class CompletedAttachmentAbsenceTests(unittest.TestCase):
         self.assertEqual(self.fixture(session='boot:live', seen=seen), (True, 1))
         self.assertEqual([(live, guarded) for _, live, guarded in seen],
                          [('boot:live', True)])
+
+    def test_every_early_refusal_names_itself(self):
+        # These returned a bare False before. The dock then never archived and
+        # nothing said why, which is how a stale claim silently inhibited every
+        # later attach and left the GPU powered with no driver bound.
+        for options, reason in (
+            ({'stage': 'reauthorize_intent'}, 'stage_reauthorize_intent'),
+            ({'user_ok': False}, 'gamescope_user_unresolved'),
+            ({'settled': False}, 'held_helper_unsettled'),
+        ):
+            with self.subTest(options=options):
+                self.plugin._archival_refusal = None
+                self.assertEqual(self.fixture(**options), (False, 0))
+                details = [call.kwargs.get('details') for call in
+                           self.plugin._append_journey_event.call_args_list
+                           if call.kwargs.get('code') == 'automatic_dock.archival_guard_unmet']
+                self.assertEqual(details, [{'unmet': reason}])
+
+    def test_an_unchanged_refusal_is_not_repeated_every_poll(self):
+        # The loop calls this on each poll while absence is verified, so an
+        # unchanged reason must stay quiet or it floods the journey log.
+        self.plugin._archival_refusal = None
+        self.assertEqual(self.fixture(user_ok=False), (False, 0))
+        self.assertEqual(self.fixture(user_ok=False), (False, 0))
+        repeated = [call for call in self.plugin._append_journey_event.call_args_list
+                    if call.kwargs.get('code') == 'automatic_dock.archival_guard_unmet']
+        self.assertEqual(repeated, [])
+
+    def test_having_no_claim_is_silent(self):
+        # The ordinary state. Naming it would flood the log on every poll.
+        self.plugin._archival_refusal = None
+        self.assertEqual(self.fixture(claim_present=False), (False, 0))
+        self.assertEqual([call.kwargs.get('code') for call in
+                          self.plugin._append_journey_event.call_args_list], [])
 
     def test_an_unmet_guard_reports_which_condition_refused(self):
         # A silent refusal here cost two hardware sessions; the reason must

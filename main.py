@@ -1686,18 +1686,33 @@ class Plugin:
         No device commands, recovery budget reset or preference changes. A
         still-attached deauthorized router is not absence and retains inhibition.
         """
+        # The loop calls this on every poll while absence is verified, so a
+        # reason that has not changed is not repeated. Naming the refusal is
+        # what turns "the dock silently never archives" into one log line.
+        def refuse(reason):
+            if getattr(self, '_archival_refusal', None) != reason:
+                self._archival_refusal = reason
+                self._append_journey_event(severity='info',
+                    code='automatic_dock.archival_guard_unmet',
+                    component='connection', stage='admission',
+                    details={'unmet': reason}, create_timeline=False)
+            return False
         try:
             with self._dock_mutation_gate().admit(allow_inhibited=True):
                 store = DockPowerIntentStore(Path('/var/lib/handheld-dock-mode'))
                 claim = store.load()
-                if claim is None or claim.stage != 'software_down':
+                if claim is None:
+                    # Nothing to archive is the ordinary state, not a refusal.
+                    self._archival_refusal = None
                     return False
+                if claim.stage != 'software_down':
+                    return refuse('stage_' + claim.stage)
                 capture = getattr(self, '_release_capture_task', None)
                 if capture is not None and not capture.done():
-                    return False
+                    return refuse('release_capture_running')
                 user = resolve_gamescope_user(GamescopeDiscovery().scan())
                 if not user.ok or user.context is None:
-                    return False
+                    return refuse('gamescope_user_unresolved')
                 # Each condition stays lazy and keeps its original order; only
                 # the name of the first unmet one is retained. A silent refusal
                 # here strands the claim, and a stranded claim inhibits every
@@ -1744,26 +1759,21 @@ class Plugin:
                         # Reconciliation is best effort; the guard still decides.
                         pass
                 if not guard():
-                    self._append_journey_event(severity='info',
-                        code='automatic_dock.archival_guard_unmet',
-                        component='connection', stage='admission',
-                        details={'unmet': unmet[0] if unmet else 'unknown'})
-                    return False
+                    return refuse(unmet[0] if unmet else 'unknown')
                 audit = HeldTrialLauncher(uid=user.context.uid,
                     username=user.context.username).call('audit', '0' * 32)
                 if audit.get('code') != 'held_helper.settled' or audit.get('settled') is not True:
-                    self._append_journey_event(severity='info',
-                        code='automatic_dock.archival_guard_unmet',
-                        component='connection', stage='admission',
-                        details={'unmet': 'held_helper_unsettled'})
-                    return False
+                    return refuse('held_helper_unsettled')
                 store.retire_physically_disconnected(claim, guard)
+                self._archival_refusal = None
                 self._append_journey_event(severity='info',
                     code='automatic_dock.completed_attachment_archived',
                     component='connection', stage='admission')
                 return True
-        except Exception:
-            return False
+        except Exception as error:
+            # An exception here refuses just as silently as a false guard did,
+            # and admit() raising DockMutationDenied is the likeliest of them.
+            return refuse('raised_' + type(error).__name__)
 
     def _run_automatic_connection_recovery(self, recover, expected_user):
         """Connection-only admission; never retires intent or permits removal.
@@ -4561,7 +4571,7 @@ class Plugin:
 
     def _support_versions(self) -> dict[str, str]:
         return {
-            "regear": "0.3.119",
+            "regear": "0.3.120",
             "decky": str(getattr(decky, "DECKY_VERSION", "unknown")),
             "steamos": self._version_info.steamos,
             "kernel": self._version_info.kernel,
