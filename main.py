@@ -1688,7 +1688,7 @@ class Plugin:
         """
         try:
             with self._dock_mutation_gate().admit(allow_inhibited=True):
-                store = WholeDockClaimStore(Path('/var/lib/handheld-dock-mode'))
+                store = DockPowerIntentStore(Path('/var/lib/handheld-dock-mode'))
                 claim = store.load()
                 if claim is None or claim.stage != 'software_down':
                     return False
@@ -1698,30 +1698,64 @@ class Plugin:
                 user = resolve_gamescope_user(GamescopeDiscovery().scan())
                 if not user.ok or user.context is None:
                     return False
+                # Each condition stays lazy and keeps its original order; only
+                # the name of the first unmet one is retained. A silent refusal
+                # here strands the claim, and a stranded claim inhibits every
+                # later admission, so the reason must reach the journey log.
+                unmet = []
                 def guard():
                     topology = self._connection_topology.observe()
                     current = SnapshotTransitionObservationAdapter(self._discovery).observe().snapshot
                     journal = self._transition_journal_service().status()
-                    return (topology.transport_absent_verified is True
-                        and topology.transport_present is False
-                        and verified_transport_absent() is True
-                        and current.game_state is GameState.IDLE
-                        and current.gamescope.running is True
-                        and len(current.gpus) == 1
-                        and current.gpus[0].role is GpuRole.INTERNAL
-                        and current.gpus[0].present is True
-                        and current.gpus[0].confidence is Confidence.VERIFIED
-                        and resolve_runtime_profiles(current).exact_host
-                        and journal.durable and journal.owner.value == 'none'
-                        and store.power_intent_absent(claim) is True
-                        and inner_removal_records_absent()
-                        and resolve_gamescope_user(GamescopeDiscovery().scan()).context == user.context
-                        and not self._unloading)
+                    for name, satisfied in (
+                        ('transport_absent_verified', lambda: topology.transport_absent_verified is True),
+                        ('transport_present', lambda: topology.transport_present is False),
+                        ('verified_transport_absent', lambda: verified_transport_absent() is True),
+                        ('game_idle', lambda: current.game_state is GameState.IDLE),
+                        ('gamescope_running', lambda: current.gamescope.running is True),
+                        ('single_gpu', lambda: len(current.gpus) == 1),
+                        ('gpu_internal', lambda: current.gpus[0].role is GpuRole.INTERNAL),
+                        ('gpu_present', lambda: current.gpus[0].present is True),
+                        ('gpu_verified', lambda: current.gpus[0].confidence is Confidence.VERIFIED),
+                        ('exact_host', lambda: bool(resolve_runtime_profiles(current).exact_host)),
+                        ('journal_durable', lambda: bool(journal.durable)),
+                        ('journal_unowned', lambda: journal.owner.value == 'none'),
+                        ('power_intent_absent', lambda: store.power_intent_absent(claim) is True),
+                        ('inner_records_absent', lambda: bool(inner_removal_records_absent())),
+                        ('same_user', lambda: resolve_gamescope_user(
+                            GamescopeDiscovery().scan()).context == user.context),
+                        ('not_unloading', lambda: not self._unloading),
+                    ):
+                        if not satisfied():
+                            unmet[:] = [name]
+                            return False
+                    unmet[:] = []
+                    return True
+                # A sleep intent whose session is gone can never be submitted,
+                # and retaining it holds power_intent_absent false forever. Clear
+                # it here, under the same admission, before the guard reads it.
+                if getattr(self, '_dock_power_session', None) is not None:
+                    try:
+                        store.reconcile_stranded_sleep(claim, self._dock_power_session,
+                            lambda: verified_transport_absent() is True
+                                and self._connection_topology.observe().transport_present is False
+                                and not self._unloading)
+                    except Exception:
+                        # Reconciliation is best effort; the guard still decides.
+                        pass
                 if not guard():
+                    self._append_journey_event(severity='info',
+                        code='automatic_dock.archival_guard_unmet',
+                        component='connection', stage='admission',
+                        details={'unmet': unmet[0] if unmet else 'unknown'})
                     return False
                 audit = HeldTrialLauncher(uid=user.context.uid,
                     username=user.context.username).call('audit', '0' * 32)
                 if audit.get('code') != 'held_helper.settled' or audit.get('settled') is not True:
+                    self._append_journey_event(severity='info',
+                        code='automatic_dock.archival_guard_unmet',
+                        component='connection', stage='admission',
+                        details={'unmet': 'held_helper_unsettled'})
                     return False
                 store.retire_physically_disconnected(claim, guard)
                 self._append_journey_event(severity='info',
@@ -4527,7 +4561,7 @@ class Plugin:
 
     def _support_versions(self) -> dict[str, str]:
         return {
-            "regear": "0.3.118",
+            "regear": "0.3.119",
             "decky": str(getattr(decky, "DECKY_VERSION", "unknown")),
             "steamos": self._version_info.steamos,
             "kernel": self._version_info.kernel,

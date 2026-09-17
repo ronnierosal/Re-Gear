@@ -658,7 +658,8 @@ class CompletedAttachmentAbsenceTests(unittest.TestCase):
     setUp = MainDockAdmissionTests.setUp
 
     def fixture(self, *, stage='software_down', absent=True, strict=True,
-                parent_power=False, settled=True, idle=True, changed=False):
+                parent_power=False, settled=True, idle=True, changed=False,
+                session=None, seen=None):
         from contextlib import ExitStack
         plugin = self.plugin
         user = NS(uid=1000, username='deck')
@@ -683,8 +684,16 @@ class CompletedAttachmentAbsenceTests(unittest.TestCase):
         with ExitStack() as stack:
             def patcher(name, **kwargs):
                 return stack.enter_context(patch.object(self.module, name, **kwargs))
-            store = patcher('WholeDockClaimStore').return_value
+            # Archival now runs on the intent store so it can clear a sleep
+            # record whose session is gone; that record would otherwise hold
+            # power_intent_absent false and inhibit admission forever.
+            store = patcher('DockPowerIntentStore').return_value
             store.load.return_value = claim
+            if session is not None:
+                plugin._dock_power_session = session
+            if seen is not None:
+                store.reconcile_stranded_sleep.side_effect = (
+                    lambda expected, live, guard: seen.append((expected, live, guard())))
             store.power_intent_absent.return_value = not parent_power
             def retire(expected, guard):
                 self.assertIs(expected, claim)
@@ -719,6 +728,26 @@ class CompletedAttachmentAbsenceTests(unittest.TestCase):
             with self.subTest(options=options):
                 self.assertEqual(self.fixture(**options), (False, 0))
         self.assertEqual(self.fixture(changed=True), (False, 1))
+
+    def test_a_stranded_sleep_is_reconciled_under_the_same_admission(self):
+        # The record is cleared before the guard reads power_intent_absent, so
+        # a refused sleep cannot leave the claim pinned and admission inhibited.
+        seen = []
+        self.assertEqual(self.fixture(session='boot:live', seen=seen), (True, 1))
+        self.assertEqual([(live, guarded) for _, live, guarded in seen],
+                         [('boot:live', True)])
+
+    def test_an_unmet_guard_reports_which_condition_refused(self):
+        # A silent refusal here cost two hardware sessions; the reason must
+        # reach the journey log rather than vanishing into a bare False.
+        self.assertEqual(self.fixture(strict=False), (False, 0))
+        codes = [call.kwargs.get('code') for call in
+                 self.plugin._append_journey_event.call_args_list]
+        self.assertIn('automatic_dock.archival_guard_unmet', codes)
+        details = [call.kwargs.get('details') for call in
+                   self.plugin._append_journey_event.call_args_list
+                   if call.kwargs.get('code') == 'automatic_dock.archival_guard_unmet']
+        self.assertEqual(details, [{'unmet': 'verified_transport_absent'}])
 
 
 class RetainedReconnectTvTests(unittest.TestCase):
