@@ -169,6 +169,12 @@ const LABELS: Record<string, string> = {
   "automatic_dock.suppressed_for_safe_disconnect": "Waiting for eGPU removal",
   "connection.disconnected": "Waiting for eGPU",
   "connection.waiting_for_pci": "eGPU detected; starting GPU",
+  // An inhibited admission still lets the enclosure power the GPU while
+  // nothing binds a driver to it, so the card runs hot. Never leave this
+  // state unlabelled: the player has to be told to unplug.
+  "automatic_recovery.admission_inhibited": "eGPU blocked by an unfinished disconnect — unplug the eGPU",
+  "automatic_dock.admission_inhibited": "eGPU blocked by an unfinished disconnect — unplug the eGPU",
+  "automatic_dock.waiting_for_exact_g1": "Waiting for a recognised eGPU",
   "connection.waiting_for_driver": "Waiting for eGPU graphics driver",
   "connection.waiting_for_link": "Waiting for eGPU PCIe link",
   "connection.waiting_for_hdmi": "Waiting for eGPU HDMI",
