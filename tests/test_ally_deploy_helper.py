@@ -125,8 +125,10 @@ class AllyDeployHelperTests(unittest.TestCase):
 
     def test_installer_has_constrained_sudo_command_and_no_session_actions(self):
         installer = (ROOT / "scripts" / "install_ally_deploy_helper.sh").read_text(encoding="utf-8")
-        self.assertIn("install -d -m 0700 /var/lib/handheld-dock-mode", installer)
-        self.assertIn("deck ALL=(root) NOPASSWD: /var/lib/handheld-dock-mode/hdm-deploy-plugin", installer)
+        self.assertIn("install -d -m 0700 /var/lib/regear /var/lib/regear/deploy", installer)
+        self.assertIn("deck ALL=(root) NOPASSWD: /var/lib/regear/deploy/regear-deploy-plugin", installer)
+        self.assertIn("visudo -cf /etc/sudoers.d/regear-deploy-plugin.tmp", installer)
+        self.assertIn("regear-deploy-plugin --self-check", installer)
         self.assertIn("helper itself rejects every argument", installer)
         self.assertNotIn("/usr/local", installer)
         self.assertNotIn("systemctl", installer)
@@ -141,6 +143,11 @@ class AllyDeployHelperTests(unittest.TestCase):
         self.assertIn('("is-active", "--quiet", "plugin_loader.service")', source)
         self.assertIn("plugin loader restart failed; rollback attempted", source)
         self.assertNotIn("gamescope-session", source.casefold())
+
+    def test_self_check_uses_only_regear_deploy_authority(self):
+        self.assertEqual(helper.DEPLOY_ROOT, Path("/var/lib/regear/deploy"))
+        self.assertEqual(helper.PUBLIC_KEY, Path("/var/lib/regear/deploy/deploy-public-key.pem"))
+        self.assertEqual(helper.BACKUPS.name, ".regear-deploy-backups")
 
 
 @unittest.skipUnless(LINUX_ROOT, "requires Linux root descriptor semantics")

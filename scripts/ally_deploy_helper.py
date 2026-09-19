@@ -28,10 +28,11 @@ PLUGIN_PARENT = Path("/home/deck/homebrew/plugins")
 PLUGIN_NAME = "Re-Gear"
 LEGACY_NAME = "HandheldDockMode"
 TARGET = PLUGIN_PARENT / PLUGIN_NAME
-BACKUPS = PLUGIN_PARENT / ".hdm-deploy-backups"
-# SteamOS keeps /usr immutable.  /var/lib/handheld-dock-mode is the existing
-# root-owned, mode-0700 Re-Gear runtime authority and survives system updates.
-PUBLIC_KEY = Path("/var/lib/handheld-dock-mode/deploy-public-key.pem")
+BACKUPS = PLUGIN_PARENT / ".regear-deploy-backups"
+# SteamOS keeps /usr immutable. Re-Gear keeps deploy authority separate from
+# recovery/control records under one root-owned, mode-0700 directory.
+DEPLOY_ROOT = Path("/var/lib/regear/deploy")
+PUBLIC_KEY = DEPLOY_ROOT / "deploy-public-key.pem"
 SYSTEMCTL = "/usr/bin/systemctl"
 PACKAGE_RE = re.compile(r"Re-Gear-update-([0-9]+(?:\.[0-9]+){2}(?:[-+][A-Za-z0-9.-]+)?)-([0-9a-f]{12})\.zip")
 MAX_ARCHIVE_BYTES = 32 * 1024 * 1024
@@ -40,6 +41,31 @@ MAX_UNPACKED_BYTES = 96 * 1024 * 1024
 
 class DeploymentError(RuntimeError):
     pass
+
+
+def self_check() -> dict[str, str]:
+    """Validate installed authority without reading a package or restarting services."""
+    if sys.platform != "linux" or os.geteuid() != 0 or not Path("/proc/self/fd").is_dir():
+        raise DeploymentError("installation requires Linux root with procfs")
+    directory_fd = open_directory_chain(DEPLOY_ROOT)
+    try:
+        root_status = os.fstat(directory_fd)
+        if root_status.st_uid != 0 or stat.S_IMODE(root_status.st_mode) != 0o700:
+            raise DeploymentError("deployment authority must be root-owned mode 0700")
+        key_fd = os.open(PUBLIC_KEY.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory_fd)
+        try:
+            key_status = os.fstat(key_fd)
+            if (
+                not stat.S_ISREG(key_status.st_mode)
+                or key_status.st_uid != 0
+                or key_status.st_mode & 0o022
+            ):
+                raise DeploymentError("deployment verification key is unavailable")
+        finally:
+            os.close(key_fd)
+    finally:
+        os.close(directory_fd)
+    return {"state": "ready", "component": "regear-deploy-helper"}
 
 
 def fixed_download(name: str, suffix: str) -> Path:
@@ -290,11 +316,20 @@ def install_pinned(package_name: str, signature_name: str, match: re.Match[str],
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("package_name")
-    parser.add_argument("signature_name")
+    parser.add_argument("package_name", nargs="?")
+    parser.add_argument("signature_name", nargs="?")
+    parser.add_argument("--self-check", action="store_true")
     args = parser.parse_args()
     try:
-        print(json.dumps(install(args.package_name, args.signature_name), sort_keys=True))
+        if args.self_check:
+            if args.package_name is not None or args.signature_name is not None:
+                parser.error("--self-check accepts no package arguments")
+            result = self_check()
+        else:
+            if args.package_name is None or args.signature_name is None:
+                parser.error("package_name and signature_name are required")
+            result = install(args.package_name, args.signature_name)
+        print(json.dumps(result, sort_keys=True))
         return 0
     except (DeploymentError, OSError, subprocess.SubprocessError) as error:
         print(json.dumps({"state": "rejected", "reason": str(error)}), file=sys.stderr)
