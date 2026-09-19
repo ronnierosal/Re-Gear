@@ -53,6 +53,15 @@ migration:
 - treats the Gamescope file/environment cutover as prepared until a supervised
   idle-session restart proves the running process inherited the new environment.
 
+Rollback order is mandatory: stop the current runtime, use the still-installed
+`/var/lib/regear/deploy/regear-migrate-identity rollback` command to reverse the
+combined control/user-state and Gamescope drop-in transaction, and verify its
+three journals report `rolled_back`. After `/var/lib/regear/control` and the
+current Gamescope drop-in are absent, run
+`install_regear_identity_migrator.sh rollback` with visible administrator
+authority. The bootstrap refuses to remove the current helper or migrator while
+current identity state remains applied.
+
 The migration release retains exact former literals inside the dedicated
 migration module and rollback readers. Removing those readers is a later cleanup
 after installed acceptance and the rollback support window. Historical ZIPs,
@@ -104,9 +113,12 @@ migration script or authorization to act on hardware.
    revision, visible UI, read-only diagnostics, settings continuity, recovery
    state, and unload/reload behavior. Record the actual device evidence.
 5. On failure, stop the new instance and verify it stopped. Preserve its tree and
-   failure evidence outside discovery; restore the exact old tree and ownership
-   from the verified backup. Restore only state changes established in the
-   migration manifest, and only when reconciled against fresh recovery state.
+   failure evidence outside discovery. First run the current identity migrator's
+   `rollback` command and verify that control/user state and the Gamescope drop-in
+   returned to their former identities. Then run the bootstrap rollback and
+   restore the exact old tree and ownership from the verified backup. Restore
+   only state changes established in the migration manifest, and only when
+   reconciled against fresh recovery state.
    Never overwrite unknown runtime changes with a stale snapshot. Verify one old
    instance and read back its revision/state. If any step is uncertain, stop for
    supervised recovery; do not delete evidence or guess an authoritative copy.

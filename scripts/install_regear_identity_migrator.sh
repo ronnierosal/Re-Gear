@@ -22,6 +22,7 @@ BACKUP=/var/lib/regear/identity-bootstrap-v1
 BACKUP_PREPARE=/var/lib/regear/.identity-bootstrap-v1.prepare
 PHASE=$BACKUP/PHASE
 PLUGIN_PARENT=/home/deck/homebrew/plugins
+CONTROL_ROOT=/var/lib/regear/control
 
 fail() { printf '%s\n' "identity bootstrap refused: $*" >&2; exit 1; }
 regular_no_link() { test -f "$1" && test ! -L "$1"; }
@@ -258,12 +259,38 @@ publish_current() {
     install_if_absent_or_exact "$BACKUP/candidate-migrator" "$NEW_MIGRATOR" 0755
     install_if_absent_or_exact "$BACKUP/previous-public-key.pem" "$NEW_KEY" 0644
     install_if_absent_or_exact "$BACKUP/current-sudoers" "$NEW_RULE" 0440
+    verify_current_authority
+    write_phase CURRENT_VERIFIED
+}
+verify_current_authority() {
+    private_directory_safe "$NEW_ROOT" || fail "current deploy authority root is unsafe"
+    for pair in \
+        "$BACKUP/candidate-helper:$NEW_HELPER" \
+        "$BACKUP/candidate-migrator:$NEW_MIGRATOR" \
+        "$BACKUP/previous-public-key.pem:$NEW_KEY" \
+        "$BACKUP/current-sudoers:$NEW_RULE"; do
+        source=${pair%%:*}
+        destination=${pair#*:}
+        root_safe "$destination" && cmp -s "$source" "$destination" \
+            || fail "current deploy authority changed: $destination"
+    done
     visudo -cf "$NEW_RULE" >/dev/null
     "$NEW_HELPER" --self-check >/dev/null
     "$NEW_MIGRATOR" status >/dev/null
     /usr/bin/sudo -u deck /usr/bin/sudo -n "$NEW_HELPER" --self-check >/dev/null
     /usr/bin/sudo -u deck /usr/bin/sudo -n "$NEW_MIGRATOR" status >/dev/null
-    write_phase CURRENT_VERIFIED
+}
+verify_committed_authority() {
+    verify_current_authority
+    test ! -e "$OLD_HELPER" && test ! -L "$OLD_HELPER" \
+        || fail "former helper returned after bootstrap commit"
+    test ! -e "$OLD_KEY" && test ! -L "$OLD_KEY" \
+        || fail "former key returned after bootstrap commit"
+    test ! -e "$OLD_RULE" && test ! -L "$OLD_RULE" \
+        || fail "former sudo policy returned after bootstrap commit"
+    former=$(find "$PLUGIN_PARENT" -mindepth 1 -maxdepth 1 \
+        \( -name '.hdm-deploy-backups' -o -name '.hdm-staging-*' \) -print -quit)
+    test -z "$former" || fail "former private directory returned after bootstrap commit"
 }
 retire_former() {
     write_phase RETIRING_FORMER
@@ -292,7 +319,7 @@ install_authority() {
         CURRENT_VERIFIED) publish_current; retire_former ;;
         RETIRING_FORMER) publish_current; retire_former ;;
         OLD_RETIRED) publish_current; retire_former ;;
-        COMMITTED) publish_current ;;
+        COMMITTED) verify_committed_authority ;;
         ROLLED_BACK) fail "bootstrap was rolled back" ;;
         *) fail "unknown bootstrap phase" ;;
     esac
@@ -315,6 +342,32 @@ remove_current() {
     rm -f "$NEW_RULE" "$NEW_HELPER" "$NEW_MIGRATOR" "$NEW_KEY"
     if test -d "$NEW_ROOT" && test ! -L "$NEW_ROOT"; then rmdir "$NEW_ROOT"; fi
 }
+require_identity_rollback_first() {
+    test ! -e "$CONTROL_ROOT" && test ! -L "$CONTROL_ROOT" \
+        || fail "current control identity is still active; run the current Re-Gear migrator rollback first"
+    status=$("$BACKUP/candidate-migrator" status) \
+        || fail "identity migration status is unavailable; bootstrap rollback is refused"
+    printf '%s' "$status" | /usr/bin/python3 -c '
+import json, sys
+try:
+    value = json.load(sys.stdin)
+    locations = value["locations"]
+    dropin = value["gamescope_dropin"]
+    safe = (
+        isinstance(locations, dict)
+        and all(state in {"old_only", "neither"} for state in locations.values())
+        and value.get("journal_phase") in {None, "rolled_back"}
+        and value.get("combined_journal_phase") in {None, "rolled_back"}
+        and isinstance(dropin, dict)
+        and dropin.get("current") == "absent"
+        and dropin.get("former") in {"absent", "former"}
+        and dropin.get("journal_phase") in {None, "rolled_back"}
+    )
+except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+    safe = False
+raise SystemExit(0 if safe else 1)
+' || fail "current identity migration is still applied; run the current Re-Gear migrator rollback first"
+}
 rollback_authority() {
     test "$(id -u)" = 0 || fail "root is required"
     clear_backup_temporaries
@@ -325,6 +378,7 @@ rollback_authority() {
         ROLLED_BACK) printf '%s\n' '{"state":"rolled_back","component":"regear-deploy-authority"}'; return ;;
         *) fail "unknown bootstrap phase" ;;
     esac
+    require_identity_rollback_first
     restore_former
     remove_current
     write_phase ROLLED_BACK

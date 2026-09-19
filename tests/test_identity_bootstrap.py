@@ -1,4 +1,6 @@
 from pathlib import Path
+import copy
+import json
 import os
 import shlex
 import stat
@@ -82,6 +84,28 @@ class IdentityBootstrapTests(unittest.TestCase):
         self.assertIn("PREPARED|CURRENT_VERIFIED|RETIRING_FORMER|OLD_RETIRED|COMMITTED", self.source)
         self.assertNotIn("bootstrap backup already exists", self.source)
 
+    def test_committed_install_rerun_is_read_only_and_keeps_committed_phase(self):
+        case = self.source.index('COMMITTED) verify_committed_authority ;;')
+        self.assertGreater(case, self.source.index("install_authority()"))
+        verify_start = self.source.index("verify_committed_authority()")
+        verify_end = self.source.index("\n}", verify_start)
+        verify_body = self.source[verify_start:verify_end]
+        self.assertNotIn("write_phase", verify_body)
+        self.assertNotIn("install_if_absent_or_exact", verify_body)
+        self.assertNotIn("publish_current", verify_body)
+
+    def test_bootstrap_rollback_requires_current_migrator_rollback_first(self):
+        rollback = self.source.index("rollback_authority()")
+        dependency = self.source.index("require_identity_rollback_first", rollback)
+        restore = self.source.index("restore_former", dependency)
+        remove = self.source.index("remove_current", restore)
+        self.assertLess(dependency, restore)
+        self.assertLess(restore, remove)
+        self.assertIn('value.get("combined_journal_phase") in {None, "rolled_back"}', self.source)
+        self.assertIn('value.get("journal_phase") in {None, "rolled_back"}', self.source)
+        self.assertIn('dropin.get("journal_phase") in {None, "rolled_back"}', self.source)
+        self.assertIn('dropin.get("current") == "absent"', self.source)
+
     def test_prepare_is_fully_verified_before_atomic_publication(self):
         populate = self.source.index('install -p -m 0755 "$OLD_HELPER" "$BACKUP_PREPARE/previous-helper"')
         archive = self.source.index('archive_former_private "$BACKUP_PREPARE"')
@@ -130,6 +154,9 @@ class IdentityBootstrapTests(unittest.TestCase):
         commands = "\n".join(
             line for line in self.source.splitlines() if not line.lstrip().startswith("#")
         ).casefold()
+        # A read-only field in the migrator status payload is evidence, not a
+        # Gamescope command or service operation.
+        commands = commands.replace('value["gamescope_dropin"]', "")
         for forbidden in (
             "systemctl",
             "gamescope",
@@ -248,6 +275,66 @@ class FormerPrivateArchiveFixtureTests(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertTrue(former.is_dir())
             self.assertEqual((former / "value").read_text(encoding="utf-8"), "original")
+
+    def test_reverse_order_guard_accepts_only_rolled_back_or_never_applied_state(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            backup = root / "backup"
+            backup.mkdir(mode=0o700)
+            migrator = backup / "candidate-migrator"
+
+            def run_status(payload: str):
+                migrator.write_text(
+                    "#!/bin/sh\nprintf '%s\\n' " + shlex.quote(payload) + "\n",
+                    encoding="utf-8",
+                )
+                migrator.chmod(0o700)
+                script = (
+                    self.functions
+                    + "\nBACKUP=" + shlex.quote(str(backup))
+                    + "\nCONTROL_ROOT=" + shlex.quote(str(root / "control"))
+                    + "\nrequire_identity_rollback_first\n"
+                )
+                return subprocess.run(
+                    ["/bin/sh"], input=script, text=True, capture_output=True, check=False
+                )
+
+            safe = {
+                "locations": {"runtime": "old_only", "user": "old_only"},
+                "journal_phase": "rolled_back",
+                "combined_journal_phase": "rolled_back",
+                "gamescope_dropin": {
+                    "current": "absent",
+                    "former": "former",
+                    "journal_phase": "rolled_back",
+                },
+            }
+            self.assertEqual(run_status(json.dumps(safe)).returncode, 0)
+
+            state_applied = copy.deepcopy(safe)
+            state_applied["journal_phase"] = "committed"
+            combined_applied = copy.deepcopy(safe)
+            combined_applied["combined_journal_phase"] = "committed"
+            dropin_applied = copy.deepcopy(safe)
+            dropin_applied["gamescope_dropin"]["journal_phase"] = "committed"
+            current_dropin = copy.deepcopy(safe)
+            current_dropin["gamescope_dropin"]["current"] = "current"
+            applied_variants = (
+                state_applied,
+                combined_applied,
+                dropin_applied,
+                current_dropin,
+            )
+            for applied in applied_variants:
+                with self.subTest(applied=applied):
+                    refused = run_status(json.dumps(applied))
+                    self.assertNotEqual(refused.returncode, 0)
+                    self.assertIn("migrator rollback first", refused.stderr)
+
+            (root / "control").mkdir()
+            refused = run_status(json.dumps(safe))
+            self.assertNotEqual(refused.returncode, 0)
+            self.assertIn("control identity is still active", refused.stderr)
 
 
 if __name__ == "__main__":

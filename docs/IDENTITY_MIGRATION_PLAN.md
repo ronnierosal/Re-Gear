@@ -85,6 +85,15 @@ directories back; it never restores a stale snapshot over newer recovery writes.
 Unknown phase, inode drift, unexpected content or rollback divergence stops with
 the journal and all evidence intact for operator review.
 
+Rollback has one fixed dependency order. While the current deploy authority is
+still installed, run `/var/lib/regear/deploy/regear-migrate-identity rollback`
+and verify that the combined, directory and Gamescope drop-in journals are
+`rolled_back`, the current drop-in is absent, and `/var/lib/regear/control` is
+absent. Only then run the administrator bootstrap with `rollback` to restore the
+former helper, key, sudo rule and archived private deployment directories. The
+bootstrap refuses the reverse order because removing the current migrator first
+would strand the only reviewed rollback path for control and Gamescope state.
+
 ## Privilege transition
 
 The installed passwordless rule authorizes only the former helper and package
