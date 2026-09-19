@@ -43,7 +43,7 @@ class FakeTransport:
 class SupportSubmissionAdapterTests(unittest.TestCase):
     def test_endpoint_is_tls_dns_only_and_contains_no_credentials_or_query(self):
         endpoint = FixedHttpsEndpoint.parse(
-            "https://support.example.com/v1/hdm-reports"
+            "https://support.example.com/v1/regear-reports"
         )
         self.assertEqual(endpoint.host, "support.example.com")
         invalid = (
@@ -64,15 +64,15 @@ class SupportSubmissionAdapterTests(unittest.TestCase):
             BoundedHttpsResponse(
                 200,
                 "application/json",
-                b'{"ok":true,"report_id":"HDM-8F3A21"}',
+                b'{"ok":true,"report_id":"RG-8F3A21"}',
             )
         )
         adapter = FixedHttpsSupportSubmissionAdapter(
-            "https://support.example.com/v1/hdm-reports",
+            "https://support.example.com/v1/regear-reports",
             transport=transport,
         )
         result = adapter.submit(upload())
-        self.assertEqual(result.report_id, "HDM-8F3A21")
+        self.assertEqual(result.report_id, "RG-8F3A21")
         self.assertEqual(len(transport.calls), 1)
         call = transport.calls[0]
         self.assertEqual(call["body"], upload().body)
@@ -87,14 +87,14 @@ class SupportSubmissionAdapterTests(unittest.TestCase):
             BoundedHttpsResponse(
                 200,
                 "application/json",
-                b'{"ok":true,"report_id":"HDM-8F3A21","url":"https://private"}',
+                b'{"ok":true,"report_id":"RG-8F3A21","url":"https://private"}',
             ),
             BoundedHttpsResponse(200, "application/json", b"[1]"),
         )
         for response in responses:
             transport = FakeTransport(response)
             adapter = FixedHttpsSupportSubmissionAdapter(
-                "https://support.example.com/v1/hdm-reports",
+                "https://support.example.com/v1/regear-reports",
                 transport=transport,
             )
             with self.subTest(response=response), self.assertRaises(
@@ -109,7 +109,7 @@ class SupportSubmissionAdapterTests(unittest.TestCase):
                 raise OSError("secret endpoint diagnostic")
 
         adapter = FixedHttpsSupportSubmissionAdapter(
-            "https://support.example.com/v1/hdm-reports",
+            "https://support.example.com/v1/regear-reports",
             transport=FailingTransport(),
         )
         with self.assertRaises(SupportSubmissionAdapterError) as raised:
@@ -156,13 +156,13 @@ class SupportSubmissionAdapterTests(unittest.TestCase):
         ):
             response = StandardLibraryHttpsTransport().post(
                 endpoint=FixedHttpsEndpoint.parse(
-                    "https://support.example.com/v1/hdm-reports"
+                    "https://support.example.com/v1/regear-reports"
                 ),
                 headers={"Content-Type": "application/json"},
                 body=b"{}",
                 timeout_seconds=5,
             )
-        self.assertEqual(requests[0][0][:2], ("POST", "/v1/hdm-reports"))
+        self.assertEqual(requests[0][0][:2], ("POST", "/v1/regear-reports"))
         self.assertEqual(self_limit, [1025])
         self.assertEqual(response.body, b"{}")
         self.assertEqual(closed, [True])

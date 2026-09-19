@@ -17,12 +17,15 @@ class SteamIntegrationTests(unittest.TestCase):
     def setUp(self):
         self.evidence = SteamIntegrationEvidence(OS_UNIT, UNIT_SHA256, LAUNCHER_SHA256,
             (OS_LAUNCHER,), (), (), True, True, True)
-        self.args = dict(plugin_root='/plugin', state_root='/home/deck/.local/share/hdm',
+        self.args = dict(plugin_root='/plugin', state_root='/home/deck/.local/share/regear',
             shim_bytes=b'#!/usr/bin/python3\n# Re-Gear supervised Steam trial shim\n',
             actual_dropin=None, evidence=self.evidence)
 
     def test_exact_optional_integration_and_rollback(self):
         plan = plan_integration(**self.args)
+        self.assertIn('REGEAR_STATE_ROOT=', plan.after)
+        self.assertNotIn('HDM_STATE_ROOT', plan.after)
+        self.assertNotIn('handheld-dock-mode', plan.after)
         self.assertIn('ExecStart=\nExecStart=/usr/bin/env PATH=/plugin/bin:/usr/local/sbin:/usr/local/bin:/usr/bin:/usr/sbin:/bin:/sbin:/usr/lib/steamos steam-launcher\n', plan.after)
         self.assertIsNone(rollback_dropin(plan, current=plan.after))
         with self.assertRaises(ValueError):

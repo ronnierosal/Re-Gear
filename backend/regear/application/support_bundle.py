@@ -18,7 +18,7 @@ from ..domain.hardware_compatibility import HardwareCompatibilityRecord
 from ..domain.transition_journal import TransitionJournal
 
 
-BUNDLE_SCHEMA_VERSION = 2
+BUNDLE_SCHEMA_VERSION = 3
 EVENT_SCHEMA_VERSION = 1
 DEFAULT_MAX_EVENTS = 128
 DEFAULT_MAX_BYTES = 256 * 1024
@@ -530,7 +530,7 @@ class SupportBundleService:
             "schema_version": BUNDLE_SCHEMA_VERSION,
             "created_at": self._clock().astimezone(timezone.utc).isoformat(),
             "manifest": {
-                "kind": "hdm_support_bundle",
+                "kind": "regear_support_bundle",
                 "event_schema_version": EVENT_SCHEMA_VERSION,
                 "redacted": True,
                 "bounded": True,

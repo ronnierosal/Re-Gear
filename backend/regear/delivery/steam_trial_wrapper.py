@@ -7,9 +7,12 @@ from __future__ import annotations
 import os
 import re
 import subprocess
-from pathlib import Path
 
-from .gamescope_wrapper import _boot_identity, _load_config
+from .gamescope_wrapper import (
+    _boot_identity,
+    _load_config,
+    state_root_from_environment,
+)
 from .portable_trial_launch import live_candidate_from_record
 from .portable_trial_store import PortableTrialStore
 
@@ -61,11 +64,11 @@ def consume_steam_environment(state_root, *, config, environment, raw_boot_id,
 
 def main():
     environment = dict(os.environ)
-    root = Path(environment.get('HDM_STATE_ROOT', ''))
+    root = state_root_from_environment(environment)
     clean = {key: value for key, value in environment.items() if key not in TRIAL_KEYS}
     try:
         boot, _ = _boot_identity()
-        if root.is_absolute():
+        if root is not None:
             clean = consume_steam_environment(root, config=_load_config(root),
                 environment=environment, raw_boot_id=boot)
     except (OSError, ValueError):

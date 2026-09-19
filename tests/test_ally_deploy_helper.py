@@ -35,6 +35,20 @@ def write_package(path: Path, *, revision: str = REVISION, extra: str | None = N
 
 
 class AllyDeployHelperTests(unittest.TestCase):
+    def test_former_control_state_refuses_before_reading_package(self):
+        with tempfile.TemporaryDirectory() as temp:
+            former = Path(temp) / "former-control"
+            former.mkdir()
+            with patch.object(helper, "LEGACY_CONTROL_ROOT", former), patch.object(
+                helper, "fixed_download"
+            ) as download:
+                with self.assertRaisesRegex(helper.DeploymentError, "identity migration"):
+                    helper.install(
+                        "Re-Gear-update-0.2.0-aaaaaaaaaaaa.zip",
+                        "Re-Gear-update-0.2.0-aaaaaaaaaaaa.zip.sig",
+                    )
+                download.assert_not_called()
+
     def test_legacy_or_both_installations_refuse_before_reading_package(self):
         for new_present in (False, True):
             with self.subTest(new_present=new_present), tempfile.TemporaryDirectory() as temp:
@@ -59,7 +73,7 @@ class AllyDeployHelperTests(unittest.TestCase):
                 package = parent / "Re-Gear-update-0.2.0-aaaaaaaaaaaa.zip"
                 write_package(package)
                 (parent / (package.name + ".sig")).write_bytes(b"signature")
-                with patch.multiple(helper, PACKAGE_ROOT=parent, PLUGIN_PARENT=parent, TARGET=target, BACKUPS=parent / "backups"), patch.object(helper, "verify_signature"), patch.object(helper, "restart_plugin_loader"):
+                with patch.multiple(helper, PACKAGE_ROOT=parent, PLUGIN_PARENT=parent, TARGET=target, BACKUPS=parent / "backups", LEGACY_CONTROL_ROOT=parent / "former-control"), patch.object(helper, "verify_signature"), patch.object(helper, "restart_plugin_loader"):
                     result = helper.install(package.name, package.name + ".sig")
                 self.assertEqual(result["state"], "installed")
                 self.assertTrue((target / "main.py").is_file())
@@ -77,7 +91,7 @@ class AllyDeployHelperTests(unittest.TestCase):
             package = parent / "Re-Gear-update-0.2.0-aaaaaaaaaaaa.zip"
             write_package(package)
             (parent / (package.name + ".sig")).write_bytes(b"signature")
-            with patch.multiple(helper, PACKAGE_ROOT=parent, PLUGIN_PARENT=parent, TARGET=target, BACKUPS=parent / "backups"), patch.object(helper, "verify_signature"), patch.object(helper, "restart_plugin_loader", side_effect=[helper.DeploymentError("failed"), None]):
+            with patch.multiple(helper, PACKAGE_ROOT=parent, PLUGIN_PARENT=parent, TARGET=target, BACKUPS=parent / "backups", LEGACY_CONTROL_ROOT=parent / "former-control"), patch.object(helper, "verify_signature"), patch.object(helper, "restart_plugin_loader", side_effect=[helper.DeploymentError("failed"), None]):
                 with self.assertRaisesRegex(helper.DeploymentError, "rollback attempted"):
                     helper.install(package.name, package.name + ".sig")
             self.assertEqual((target / "old.txt").read_text(), "old")
@@ -125,8 +139,10 @@ class AllyDeployHelperTests(unittest.TestCase):
 
     def test_installer_has_constrained_sudo_command_and_no_session_actions(self):
         installer = (ROOT / "scripts" / "install_ally_deploy_helper.sh").read_text(encoding="utf-8")
-        self.assertIn("install -d -m 0700 /var/lib/handheld-dock-mode", installer)
-        self.assertIn("deck ALL=(root) NOPASSWD: /var/lib/handheld-dock-mode/hdm-deploy-plugin", installer)
+        self.assertIn("install -d -m 0700 /var/lib/regear /var/lib/regear/deploy", installer)
+        self.assertIn("deck ALL=(root) NOPASSWD: /var/lib/regear/deploy/regear-deploy-plugin", installer)
+        self.assertIn("visudo -cf /etc/sudoers.d/regear-deploy-plugin.tmp", installer)
+        self.assertIn("regear-deploy-plugin --self-check", installer)
         self.assertIn("helper itself rejects every argument", installer)
         self.assertNotIn("/usr/local", installer)
         self.assertNotIn("systemctl", installer)
@@ -141,6 +157,11 @@ class AllyDeployHelperTests(unittest.TestCase):
         self.assertIn('("is-active", "--quiet", "plugin_loader.service")', source)
         self.assertIn("plugin loader restart failed; rollback attempted", source)
         self.assertNotIn("gamescope-session", source.casefold())
+
+    def test_self_check_uses_only_regear_deploy_authority(self):
+        self.assertEqual(helper.DEPLOY_ROOT, Path("/var/lib/regear/deploy"))
+        self.assertEqual(helper.PUBLIC_KEY, Path("/var/lib/regear/deploy/deploy-public-key.pem"))
+        self.assertEqual(helper.BACKUPS.name, ".regear-deploy-backups")
 
 
 @unittest.skipUnless(LINUX_ROOT, "requires Linux root descriptor semantics")

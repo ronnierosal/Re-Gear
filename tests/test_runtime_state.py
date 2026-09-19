@@ -59,7 +59,7 @@ class RuntimeStateTests(unittest.TestCase):
     def test_creates_and_reuses_exact_root_only_directory(self):
         with tempfile.TemporaryDirectory() as root:
             parent = Path(root)
-            target = parent / "handheld-dock-mode"
+            target = parent / "control"
             manager = self.manager(target)
             self.assertEqual(manager.ensure(), target)
             self.assertTrue(target.is_dir())
@@ -70,7 +70,7 @@ class RuntimeStateTests(unittest.TestCase):
 
     def test_rejects_non_root_non_posix_relative_and_broad_paths(self):
         with tempfile.TemporaryDirectory() as root:
-            target = Path(root) / "handheld-dock-mode"
+            target = Path(root) / "control"
             with self.assertRaisesRegex(ValueError, "POSIX root"):
                 RootOwnedRuntimeState(
                     target, platform_name="nt", effective_uid=lambda: 0
@@ -80,17 +80,17 @@ class RuntimeStateTests(unittest.TestCase):
                     target, platform_name="posix", effective_uid=lambda: 1000
                 ).ensure()
         with self.assertRaisesRegex(ValueError, "narrow absolute"):
-            RootOwnedRuntimeState(Path("handheld-dock-mode"))
+            RootOwnedRuntimeState(Path("control"))
         with self.assertRaisesRegex(ValueError, "narrow absolute"):
             RootOwnedRuntimeState(Path(Path.cwd().anchor))
 
     def test_rejects_wrong_leaf_symlink_file_owner_and_mode(self):
         with tempfile.TemporaryDirectory() as root:
             parent = Path(root)
-            with self.assertRaisesRegex(ValueError, "fixed legacy"):
+            with self.assertRaisesRegex(ValueError, "fixed Re-Gear"):
                 self.manager(parent / "other")
 
-            file_target = parent / "handheld-dock-mode"
+            file_target = parent / "control"
             file_target.write_text("unsafe", encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "real directory"):
                 self.manager(file_target).ensure()
@@ -123,7 +123,7 @@ class RuntimeStateTests(unittest.TestCase):
 
             with self.assertRaisesRegex(ValueError, "group/world writable"):
                 RootOwnedRuntimeState(
-                    parent / "handheld-dock-mode",
+                    parent / "control",
                     platform_name="posix",
                     effective_uid=lambda: 0,
                     lstat=unsafe_lstat,
@@ -138,7 +138,7 @@ class RuntimeStateTests(unittest.TestCase):
 
             with self.assertRaisesRegex(ValueError, "parent must be root owned"):
                 RootOwnedRuntimeState(
-                    parent / "handheld-dock-mode",
+                    parent / "control",
                     platform_name="posix",
                     effective_uid=lambda: 0,
                     lstat=non_root_lstat,

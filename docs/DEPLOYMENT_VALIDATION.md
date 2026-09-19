@@ -452,8 +452,8 @@ filesystem. These guarantees cover the helper's snapshots and publication into
 the pinned directory; they do not establish what the independently restarted
 loader opens through its canonical plugin path.
 
-The public verification key is installed once at
-`/var/lib/handheld-dock-mode/deploy-public-key.pem`; the corresponding private key
+The public verification key is installed at
+`/var/lib/regear/deploy/deploy-public-key.pem`; the corresponding private key
 must remain off the Ally and outside the repository. A package that is merely
 copied to `/home/deck/` is rejected unless its signature validates against that
 key. This binds extracted bytes to a verified snapshot, but the broader loader
@@ -466,19 +466,28 @@ independently, but it is not a complete fix for arbitrary root-plugin execution.
 The loader-path authority decision remains a separate unresolved security item. A pathname identity check alone would leave another race before the
 loader opens its files.
 
-One-time setup (after the development machine has created an Ed25519 key pair
-and copied the **public** key and helper scripts to Downloads) is:
+An existing device with former deploy authority requires the supervised identity
+bootstrap before this helper can be used. The development machine stages the
+reviewed bootstrap, signed helper, signed offline migrator, and signatures in
+`/home/deck/`. The single visible administrator command is:
 
 ```text
-sudo sh /home/deck/Downloads/install_ally_deploy_helper.sh
+sudo sh /home/deck/install_regear_identity_migrator.sh
 ```
+
+The bootstrap verifies both payloads with the already root-trusted public key,
+uses a resumable root-only transaction, installs exact Re-Gear sudo commands,
+and preserves former authority for rollback. It does not stop services, restart
+Gamescope, install a plugin, or perform a hardware action. Run the offline
+identity migrator separately only after its status preflight and the supervised
+session shutdown required by [the cutover procedure](IDENTITY_CUTOVER.md).
 
 Each later candidate is built and provenance checked as usual, signed locally
 with `scripts/sign_deploy_package.py`, then staged with
 `scripts/stage_signed_deploy.py`. The automated, narrow install command is:
 
 ```text
-sudo /var/lib/handheld-dock-mode/hdm-deploy-plugin Re-Gear-update-<version>-<revision>.zip \
+sudo /var/lib/regear/deploy/regear-deploy-plugin Re-Gear-update-<version>-<revision>.zip \
   Re-Gear-update-<version>-<revision>.zip.sig
 ```
 

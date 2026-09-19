@@ -12,7 +12,7 @@ from pathlib import Path
 PR_SET_PDEATHSIG = 1
 SYSTEMD_INHIBIT = "/usr/bin/systemd-inhibit"
 PYTHON = "/usr/bin/python"
-INHIBITOR_WHO = "Handheld Dock Mode"
+INHIBITOR_WHO = "Re-Gear"
 INHIBITOR_WHY = "The attached eGPU is known to wake this handheld immediately from sleep"
 
 

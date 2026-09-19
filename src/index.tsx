@@ -26,6 +26,11 @@ import { regearControlCss } from "./regear-theme";
 import { startConnectionMonitor } from "./connection-monitor";
 import { showConnectionLivePanel } from "./connection-live-panel";
 import { PRODUCT_NAME } from "./branding";
+import {
+  dismissAttachedEgpuSleepWarning,
+  readAttachedEgpuSleepWarningDismissed,
+  resetAttachedEgpuSleepWarning,
+} from "./identity-storage";
 import { steamControllerInput } from "./controller-safe-disconnect";
 import { startOfflineFocusChecks } from "./offline-focus-checks";
 import brandIcon from "./assets/regear-icon.svg";
@@ -205,8 +210,6 @@ const LABELS: Record<string, string> = {
   user: "User",
 };
 
-const SLEEP_WARNING_KEY = "hdm.hideAttachedEgpuSleepWarning";
-const LEGACY_SLEEP_WARNING_KEY = "hdm.hideAttachedG1SleepWarning";
 const SNAPSHOT_STALE_AFTER_MS = 10_000;
 
 /** The schema this build knows how to read.
@@ -638,8 +641,7 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
   const [preflightStatus, setPreflightStatus] = useState(() => preflight.status());
   const [sleepWarningHidden, setSleepWarningHidden] = useState(
     () => (
-      localStorage.getItem(SLEEP_WARNING_KEY) === "1"
-      || localStorage.getItem(LEGACY_SLEEP_WARNING_KEY) === "1"
+      readAttachedEgpuSleepWarningDismissed()
     ),
   );
   const [supportPreview, setSupportPreview] = useState<SupportBundlePreviewPayload | null>(null);
@@ -1098,14 +1100,12 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
   }, [gameUsesEgpu, sleepGuard, sleepWarningHidden]);
 
   const hideSleepWarning = useCallback(() => {
-    localStorage.setItem(SLEEP_WARNING_KEY, "1");
-    localStorage.removeItem(LEGACY_SLEEP_WARNING_KEY);
+    dismissAttachedEgpuSleepWarning();
     setSleepWarningHidden(true);
   }, []);
 
   const showSleepWarning = useCallback(() => {
-    localStorage.removeItem(SLEEP_WARNING_KEY);
-    localStorage.removeItem(LEGACY_SLEEP_WARNING_KEY);
+    resetAttachedEgpuSleepWarning();
     warningToastShown.current = false;
     setSleepWarningHidden(false);
   }, []);

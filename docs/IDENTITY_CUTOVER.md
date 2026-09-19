@@ -27,64 +27,52 @@ The general native Decky installer is external software and is not modified by
 this patch. Staging alone neither inspects nor migrates an installed plugin.
 Do not use the native installer as a shortcut around supervised legacy cutover.
 
-## Retained identifiers
+## Full installed identity migration
 
-Re-Gear is the current product and implementation identity. An old name survives
-below only for a stated reason with removal criteria. "It would enlarge the
-change" is not a reason; it is a schedule. Each group says what breaks and what
-would have to be true to rename it.
+Current source writes the installed identities defined in
+[the migration plan](IDENTITY_MIGRATION_PLAN.md): root control state under
+`/var/lib/regear/control`, deploy authority under `/var/lib/regear/deploy`, user
+state under `~/.local/share/regear`, and the Re-Gear Gamescope environment,
+managed marker, inhibitor and diagnostic writer.
 
-### Addresses on devices we have already shipped to
+The former identifiers are accepted only by exact migration, rollback and
+historical-artifact readers. They are not alternate live paths. The privileged
+migration:
 
-These are not the product's name. They are the identity of something that exists
-on a player's disk, and renaming them here does not rename it there — it orphans
-it. Issue #167 is what that failure looks like. Each has an assertion and a
-per-item reason in `tests/test_retained_legacy_identity.py`.
+- refuses old-plus-new ambiguity, links, unsafe metadata and active lifecycle
+  state;
+- preserves recovery and completed-trial records byte-for-byte by moving whole
+  directories on the same filesystem;
+- journals each phase outside both names and holds lifecycle locks through
+  validation, rename and fsync;
+- moves the current directory back during rollback so newer recovery writes are
+  never replaced by a stale snapshot;
+- replaces helper, public key and sudo policy through one visible administrator
+  bootstrap with signed snapshots, a resumable phase journal, exact backups and
+  readback;
+- treats the Gamescope file/environment cutover as prepared until a supervised
+  idle-session restart proves the running process inherited the new environment.
 
-- `90-handheld-dock-mode.conf` — the managed Gamescope drop-in filename on every
-  install. Renaming leaves the old file in place, unmanaged and still on `PATH`.
-- `/var/lib/handheld-dock-mode` — root-owned control state and the deployment
-  public key the signed installer verifies against.
-- `HDM_STATE_ROOT` and `share/handheld-dock-mode` — rendered into the drop-in, so
-  they are bytes on disk as well as names.
-- `Handheld Dock Mode` as the sleep inhibitor `who` — what a live systemd lock
-  reports and an operator matches against recorded evidence.
-- `HandheldDockMode` as the installer's `LEGACY_NAME` — if it stops recognising
-  the old tree it stops refusing, and both trees sit side by side.
-- `hdm.hideAttachedEgpuSleepWarning` and its legacy partner — localStorage keys
-  holding a player's own dismissal.
-- `.hdm-deploy-backups`, existing config paths, recovery journals and the deploy
-  verification key — existing rollback authority.
+Rollback order is mandatory: stop the current runtime, use the still-installed
+`/var/lib/regear/deploy/regear-migrate-identity rollback` command to reverse the
+combined control/user-state and Gamescope drop-in transaction, and verify its
+three journals report `rolled_back`. After `/var/lib/regear/control` and the
+current Gamescope drop-in are absent, run
+`install_regear_identity_migrator.sh rollback` with visible administrator
+authority. The bootstrap refuses to remove the current helper or migrator while
+current identity state remains applied.
 
-Removal criteria, all of them: a migration that recognises the old rendering,
-repairs or moves it, and can roll back; regression coverage for an old install
-and old data; and supervised validation on a supported profile. Until then, do
-not clear or rename. Dated records and old ZIPs keep their original paths, names,
-bytes and checksums regardless.
+The migration release retains exact former literals inside the dedicated
+migration module and rollback readers. Removing those readers is a later cleanup
+after installed acceptance and the rollback support window. Historical ZIPs,
+reports, hashes, logs and dated evidence keep their original bytes indefinitely.
 
-### Repository identities now changed
-
-Current source uses `backend/regear/` and `regear` Python imports. Package contents,
-entry points and installer/package checks move together; there is no second
-`hdm` implementation package. Distribution metadata is `re-gear-steamos` and
-the Python project console command is `regear-diagnose`. Decky still does not
-install that command globally.
-
-New support exports use `Re-Gear-support-<timestamp>.json`; support-version data
-uses `regear`. The dormant submission adapter uses `X-Re-Gear-Content-SHA256`
-and Re-Gear report IDs. These names do not imply a deployed submission service.
-Old published archives and existing exported files retain their original bytes.
-
-See [September 10 completion](REBRAND_COMPLETION_2026-09-10.md) for scope and
-remaining device gates. The managed-drop-in migration primitive was already
-present in released source, but the application preparation preflight rejected
-its `managed_dropin_superseded` status. The companion application change addresses
-that guarded path; issue #167 still requires supervised installed verification.
-
-`HDM shutdown checkpoint: stage=` stays until both sides move together: it is
-emitted to journald and parsed by a regex in
-`scripts/capture_shutdown_evidence.py`, and renaming one side fails silently.
-
+Fresh source and new packages do not create former paths, markers, browser keys,
+helper names or journal messages. Normal deployment detects either a former
+plugin root or former root-owned control state and refuses to start the new
+runtime before migration. Former Decky directory-keyed settings, data and logs
+are moved whole to neutral Re-Gear archive paths; current directories are never
+merged with them.
 ## Loader source evidence
 
 Upstream Decky source at
@@ -125,9 +113,12 @@ migration script or authorization to act on hardware.
    revision, visible UI, read-only diagnostics, settings continuity, recovery
    state, and unload/reload behavior. Record the actual device evidence.
 5. On failure, stop the new instance and verify it stopped. Preserve its tree and
-   failure evidence outside discovery; restore the exact old tree and ownership
-   from the verified backup. Restore only state changes established in the
-   migration manifest, and only when reconciled against fresh recovery state.
+   failure evidence outside discovery. First run the current identity migrator's
+   `rollback` command and verify that control/user state and the Gamescope drop-in
+   returned to their former identities. Then run the bootstrap rollback and
+   restore the exact old tree and ownership from the verified backup. Restore
+   only state changes established in the migration manifest, and only when
+   reconciled against fresh recovery state.
    Never overwrite unknown runtime changes with a stale snapshot. Verify one old
    instance and read back its revision/state. If any step is uncertain, stop for
    supervised recovery; do not delete evidence or guess an authoritative copy.

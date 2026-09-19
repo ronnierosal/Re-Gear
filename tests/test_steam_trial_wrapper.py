@@ -7,7 +7,10 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'backend'))
-from regear.delivery.gamescope_wrapper import GamescopeLaunchConfig
+from regear.delivery.gamescope_wrapper import (
+    GamescopeLaunchConfig,
+    state_root_from_environment,
+)
 from regear.delivery.portable_trial_store import PortableTrialStore
 from regear.delivery.steam_trial_wrapper import consume_steam_environment, current_gamescope_invocation, main
 
@@ -173,6 +176,31 @@ class SteamTrialTests(unittest.TestCase):
             self.assertEqual(main(), 127)
         execute.assert_called_once_with('/usr/lib/steamos/steam-launcher',
             ('/usr/lib/steamos/steam-launcher',), self.clean)
+
+    def test_state_root_prefers_exact_current_identity(self):
+        home = self.root / 'home'
+        current = home / '.local/share/regear'
+        legacy = home / '.local/share/handheld-dock-mode'
+        environment = {
+            'HOME': str(home),
+            'REGEAR_STATE_ROOT': str(current),
+            'HDM_STATE_ROOT': str(legacy),
+        }
+        self.assertIsNone(state_root_from_environment(environment))
+
+    def test_state_root_accepts_only_exact_legacy_rollback_path(self):
+        home = self.root / 'home'
+        legacy = home / '.local/share/handheld-dock-mode'
+        self.assertEqual(state_root_from_environment({
+            'HOME': str(home), 'HDM_STATE_ROOT': str(legacy),
+        }), legacy)
+        self.assertIsNone(state_root_from_environment({
+            'HOME': str(home), 'HDM_STATE_ROOT': str(self.root / 'edited'),
+        }))
+        self.assertIsNone(state_root_from_environment({
+            'HOME': str(home), 'REGEAR_STATE_ROOT': str(self.root / 'edited'),
+            'HDM_STATE_ROOT': str(legacy),
+        }))
 
 
 if __name__ == '__main__':

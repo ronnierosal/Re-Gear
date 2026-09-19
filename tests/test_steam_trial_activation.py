@@ -65,6 +65,10 @@ class SteamActivationTests(unittest.TestCase):
     def test_preparation_readback_and_exact_deactivation(self):
         fingerprint = self.store.activation_fingerprint()
         self.assertTrue(self.store.activate().ok)
+        rendered = self.store.target.read_text()
+        self.assertIn('REGEAR_STATE_ROOT=', rendered)
+        self.assertNotIn('HDM_STATE_ROOT', rendered)
+        self.assertNotIn('handheld-dock-mode', rendered)
         self.assertEqual(self.store.activation_fingerprint(), fingerprint)
         self.assertFalse(self.store.verify_effective())
         self.loaded = True
@@ -72,6 +76,26 @@ class SteamActivationTests(unittest.TestCase):
         self.assertFalse(self.store.activate().changed)
         self.assertTrue(self.store.deactivate().changed)
         self.assertFalse(self.store.target.exists())
+
+    def test_exact_prior_environment_is_migration_input_not_current_output(self):
+        self.store.target.parent.mkdir(parents=True, exist_ok=True)
+        legacy = self.store._current_target_legacy_renderings()[0]
+        self.store.target.write_bytes(legacy.encode())
+        self.environment = (
+            'HDM_STATE_ROOT=' + self.store._legacy_state_root.as_posix()
+        )
+        status = self.store.status()
+        self.assertEqual(status.error_code, 'identity_migration_required')
+        self.assertFalse(self.store.activate().changed)
+        self.assertEqual(self.store.target.read_text(), legacy)
+
+    def test_both_state_environments_fail_closed(self):
+        self.environment = (
+            'REGEAR_STATE_ROOT=' + self.store.state_root.as_posix()
+            + ' HDM_STATE_ROOT=' + self.store._legacy_state_root.as_posix()
+        )
+        self.assertEqual(self.store.status().error_code, 'path_override_conflict')
+        self.assertFalse(self.store.activate().changed)
 
     def test_foreign_or_modified_dropin_not_overwritten(self):
         self.assertTrue(self.store.activate().ok)

@@ -150,7 +150,7 @@ class AutomaticRecoveryPrivilegedTests(unittest.TestCase):
                 stack.enter_context(patch.object(module, name, value))
             stack.enter_context(patch.object(module.time, "monotonic", side_effect=lambda: clock.now))
             state_root = RootOwnedRuntimeState().ensure()
-            self.assertEqual(state_root, Path("/var/lib/handheld-dock-mode"))
+            self.assertEqual(state_root, Path("/var/lib/regear/control"))
             self.assertEqual(state_root.stat().st_uid, 0)
             claims = WholeDockClaimStore(state_root)
 

@@ -772,28 +772,28 @@ invoke display, GPU, sleep, controller, audio, or eGPU actions. It prompts for
 the maintainer's SteamOS sudo password at the final replacement step; Codex
 must never request or handle that password.
 
-An unattended signed updater is being enabled. Its fixed root-owned helper is
-under `/var/lib/handheld-dock-mode/hdm-deploy-plugin` and accepts only a signed,
-strictly validated Re-Gear ZIP plus matching signature. It keeps a rollback backup
-and restarts only `plugin_loader.service` after a successful replacement.
-
-At this snapshot, the first sudoers rule used SteamOS argument globs that did
-not match a valid invocation. A corrected installer is staged at:
+The current signed updater uses the root-owned helper at
+`/var/lib/regear/deploy/regear-deploy-plugin`. Devices retaining former deploy
+authority must first complete the reviewed identity bootstrap and offline
+migration in [IDENTITY_CUTOVER.md](IDENTITY_CUTOVER.md). The bootstrap is staged at:
 
 ```text
-/home/deck/Downloads/install_ally_deploy_helper.sh
+/home/deck/install_regear_identity_migrator.sh
 ```
 
 The maintainer must run the following once, interactively, before an agent may
 use the signed updater without a password prompt:
 
 ```sh
-sudo sh /home/deck/Downloads/install_ally_deploy_helper.sh
+sudo sh /home/deck/install_regear_identity_migrator.sh
 ```
 
-After the maintainer confirms success, verify the exact rule with `sudo -n -l`
-and then invoke only the staged exact helper command. Do not broaden the
-sudoers rule or add arbitrary shell authority.
+It verifies the signed deploy helper and offline migrator against the existing
+root-trusted key and installs only fixed Re-Gear paths and exact sudo commands.
+It does not stop services or mutate the session. After the maintainer confirms
+success, verify the exact rule with `sudo -n -l`, complete the offline migration,
+and then invoke only the staged exact helper command. Do not broaden the sudoers
+rule or add arbitrary shell authority.
 
 ## Safety and validation boundaries
 

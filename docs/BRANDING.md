@@ -56,8 +56,10 @@ must be built with the runtime and UI from the same clean source revision.
 
 ## Current identity contracts
 
-The directory and Python namespace cutover preserves existing data and recovery
-authority. See [repository completion and device gates](REBRAND_COMPLETION_2026-09-10.md):
+Current source writes only Re-Gear identities. The offline migration preserves
+existing data and recovery authority; exact former identifiers remain only in
+bounded migration/rollback readers and historical evidence. See the
+[full migration plan](IDENTITY_MIGRATION_PLAN.md):
 
 | Surface | Repository contract |
 | --- | --- |
@@ -66,19 +68,19 @@ authority. See [repository completion and device gates](REBRAND_COMPLETION_2026-
 | npm and Python distribution name | `re-gear-steamos` |
 | Diagnostic command | `regear-diagnose` — Python project entry point; Decky does not install a global command |
 | Python package | `regear` under `backend/regear`; current imports and package validation move together |
-| Helper/state paths | existing `handheld-dock-mode` paths — addresses on installed devices |
-| Settings, managed markers and diagnostic codes | existing keys and HDM identifiers — persisted or scraped identities |
+| Root control and deploy authority | `/var/lib/regear/control` and `/var/lib/regear/deploy` |
+| User state and Gamescope environment | `~/.local/share/regear` and `REGEAR_STATE_ROOT` |
+| Managed files, inhibitor and current diagnostics | Re-Gear names and markers |
 
 Decky's plugin list and panel display Re-Gear. `publish.image` references the
 512px transparent `docs/images/re-gear-listing-icon.png`, rasterized directly
 from the canonical cyan R SVG `src/assets/regear-icon.svg`. Original assets
 are retained. Regenerate with `scripts/render_listing_icon.cjs` using the
 pinned renderer documented in its header; provenance hashes are checked by
-the Decky contract test. Historical installs may
-still use `HandheldDockMode`; normal new deployment refuses that root until the
-controlled supervised cutover. Every retained old name above has a specific
-reason and removal criteria in the cutover inventory; none is frozen merely
-because it is old.
+the Decky contract test. Historical installs may still use the former plugin
+root; normal deployment refuses that ambiguity until the controlled supervised
+cutover. Compatibility readers never create a second writer or silently select
+one tree.
 
 ## Repository name and supervised installation
 

@@ -1,63 +1,8 @@
-"""Pin the former-name strings that a rename must never touch.
+"""Installed identity contract for the completed Re-Gear cutover.
 
-Re-Gear was Handheld Dock Mode. The product name has moved and the code and
-docs should follow it, but a handful of strings are not the product's name --
-they are the identity of things that already exist on a player's device, and
-renaming them does not rename what is on disk. It orphans it.
-
-This file exists because that failure has already happened once. Issue #167:
-renaming the plugin directory from HandheldDockMode to Re-Gear left the managed
-Gamescope drop-in pointing at the old path on every installed device. Nothing
-could repair it, `session_ready` was never true, and display switching sat at
-"Checking" indefinitely. The fix was to teach the code to recognise its own
-former rendering and migrate it -- which only works for as long as the former
-strings stay exactly as they were written.
-
-So each assertion below is about a device, not a preference. The comment on
-each says what breaks if it changes. A rename sweep that trips one of these has
-found the boundary between the product's name and its installed footprint.
-
-None of this argues against the rename. It argues for doing it everywhere the
-name is only a name, and nowhere it is an address.
-
-Pinned elsewhere, listed here so the inventory is findable in one place. Each
-already has an assertion in the test named beside it; what those lack is the
-reason, which is how a sweep talks itself past them:
-
-- ``HDM_STATE_ROOT`` -- an environment variable rendered into the installed
-  drop-in, so it is bytes on disk as well as a name. Covered below.
-- ``HDM shutdown checkpoint: stage=`` -- emitted to journald and parsed by a
-  regex in ``scripts/capture_shutdown_evidence.py``. Renaming one side breaks
-  the scraper contract silently, since nothing fails until evidence is missing.
-- ``hdm.hideAttachedEgpuSleepWarning`` and its legacy partner -- localStorage
-  keys holding a player's dismissal.
-  ``frontend-tests/retained-legacy-identity.test.mjs``
-
-Four entries that used to be listed here have been renamed, because the reason
-given for each turned out not to survive checking. ``support_submission.py``
-says in its own docstring that the adapter is dormant, that production delivery
-does not construct it, and that no endpoint ships with Re-Gear. So "a server
-reads it" described a server that does not exist:
-
-- ``X-Re-Gear-Content-SHA256`` -- renamed. Producer-side only: set by the
-  adapter, asserted by ``tests/test_support_submission_adapter.py``, and built
-  by no non-test caller. There is no deployed peer to break.
-- ``REPORT_ID_RE = ^(?:RG|HDM)-[A-Z0-9]{6,16}$`` -- accepts both. This one is
-  genuinely not ours to dictate, because it parses ids a *server returns*, so
-  the legacy prefix stays accepted rather than being dropped. Removal
-  criterion: a shipped endpoint that has never issued an ``HDM-`` id.
-- the ``"regear"`` version key in the support-bundle payload -- renamed, and
-  ``scripts/check_plugin_package.py`` still reads ``"hdm"`` too, because a
-  bundle a player saved before the rename carries the old key. Removal
-  criterion: no supported build or retained bundle still writes ``"hdm"``.
-- ``Re-Gear-support-<timestamp>.json`` -- renamed. Only the *new* filename
-  changes; a file already sitting in a player's Downloads keeps the name it was
-  written with, and nothing in this repository parses the filename to find it.
-
-The implementation namespace is now ``backend/regear/``. Packaging, installer
-validation and imports move together; ``test_plugin_package`` and
-``test_regear_namespace`` prove the new tree without a legacy import fallback.
-These retained on-device identifiers remain independent of that package move.
+Current writers must use only Re-Gear names. Former names are allowed in a
+small, reviewed set of exact migration, rollback, and historical readers so an
+installed device can be migrated without abandoning safety state.
 """
 
 from __future__ import annotations
@@ -75,8 +20,14 @@ sys.path.insert(0, str(ROOT / "backend"))
 
 from regear.adapters.steamos import inhibitor_guard  # noqa: E402
 from regear.adapters.steamos.gamescope_user import GamescopeUserContext  # noqa: E402
-from regear.delivery import gamescope_integration, runtime_state  # noqa: E402
+from regear.delivery import (  # noqa: E402
+    gamescope_integration,
+    runtime_state,
+    whole_dock_completion,
+    whole_dock_reset,
+)
 from regear.delivery.gamescope_integration import GamescopeIntegrationStore  # noqa: E402
+
 
 SPEC = importlib.util.spec_from_file_location(
     "ally_deploy_helper_identity", ROOT / "scripts" / "ally_deploy_helper.py"
@@ -87,17 +38,12 @@ SPEC.loader.exec_module(_helper)
 
 
 def _store(root: Path) -> GamescopeIntegrationStore:
-    """A store shaped like an install, so assertions read real rendered output.
-
-    Deliberately not a grep of the source file: a test that searches the module
-    for its own literal passes whether or not the value is ever used.
-    """
     home = root / "home" / "deck"
     home.mkdir(parents=True)
-    plugin = root / "plugin"
+    plugin = root / "plugin" / "Re-Gear"
     shim = plugin / "bin" / "gamescope"
     shim.parent.mkdir(parents=True)
-    shim.write_text("#!/usr/bin/python3\n", encoding="utf-8")
+    shim.write_text("#!/usr/bin/python3\n# Re-Gear Gamescope argument shim\n", encoding="utf-8")
     uid = getattr(os, "getuid", lambda: 1000)()
     gid = getattr(os, "getgid", lambda: 1000)()
     user = GamescopeUserContext(
@@ -105,102 +51,101 @@ def _store(root: Path) -> GamescopeIntegrationStore:
         Path("/run/user") / str(uid), Path("/run/user") / str(uid) / "bus",
     )
     return GamescopeIntegrationStore(
-        plugin_root=plugin, user=user,
-        effective_uid=lambda: 0, set_owner=lambda path, u, g: None,
+        plugin_root=plugin,
+        user=user,
+        effective_uid=lambda: 0,
+        set_owner=lambda path, user_id, group_id: None,
     )
 
 
-class ManagedDropInIdentityTests(unittest.TestCase):
-    """The drop-in is a file this project wrote onto someone else's machine."""
-
-    def test_the_drop_in_keeps_the_filename_already_written_to_devices(self) -> None:
-        # Every install has this exact filename under
-        # ~/.config/systemd/user/gamescope-session.service.d/. Renaming it here
-        # does not rename it there: it leaves the old file in place, unmanaged
-        # and still on the PATH, and writes a second one beside it.
-        self.assertEqual(
-            gamescope_integration.DROPIN_NAME, "90-handheld-dock-mode.conf"
-        )
-
-    def test_the_rendered_drop_in_still_opens_with_the_marker_on_disk(self) -> None:
-        # status() compares the file's content against expected_text(). Change
-        # this line and every installed drop-in stops matching, reporting as
-        # `managed_dropin_modified` -- the code's word for "a player edited
-        # this, leave it alone". It would refuse to repair its own file.
-        with tempfile.TemporaryDirectory() as directory:
-            rendered = _store(Path(directory)).expected_text()
-
-        self.assertTrue(
-            rendered.startswith(
-                "# Managed by Handheld Dock Mode. Remove only through HDM.\n"
-            ),
-            rendered.splitlines()[:1],
-        )
-
-    def test_the_former_plugin_directory_stays_recognisable(self) -> None:
-        # This is the #167 migration itself. The code recognises a drop-in it
-        # wrote under the old plugin directory and repairs it. The moment this
-        # string changes, such a drop-in becomes unrecognised again and every
-        # device still carrying one is stranded exactly as before.
-        self.assertIn(
-            "HandheldDockMode", gamescope_integration.SUPERSEDED_PLUGIN_NAMES
-        )
-
-    def test_the_shim_marker_identifies_shims_already_installed(self) -> None:
-        # _shim_ready() looks for these bytes inside the installed shim to
-        # decide whether it is ours. A renamed marker makes every installed
-        # shim read as foreign, and activation refuses on shim_unavailable.
-        self.assertEqual(
-            gamescope_integration.SHIM_MARKER,
-            "Handheld Dock Mode Gamescope argument shim",
-        )
-
-
-class StateRootIdentityTests(unittest.TestCase):
-    """State roots are addresses. A renamed address is a different directory."""
-
-    def test_the_root_owned_state_directory_keeps_its_path(self) -> None:
-        # /var/lib/handheld-dock-mode holds root-owned control state and the
-        # deployment public key on installed devices. Renaming it here points
-        # the code at an empty path and silently abandons what is there --
-        # including the key the signed installer verifies against.
-        self.assertEqual(
-            runtime_state.DEFAULT_RUNTIME_STATE_ROOT,
-            Path("/var/lib/handheld-dock-mode"),
-        )
-
-    def test_the_state_root_name_is_asserted_not_merely_defaulted(self) -> None:
-        # The guard is deliberate: a caller cannot pass a renamed root either.
-        with self.assertRaises(ValueError):
-            runtime_state.RootOwnedRuntimeState(Path("/var/lib/re-gear"))
-
-    def test_the_user_state_root_is_rendered_into_the_drop_in(self) -> None:
-        # HDM_STATE_ROOT is written into the managed drop-in, so this name is
-        # part of the bytes on disk as well as a directory that already holds
-        # state for every install.
+class CurrentInstalledIdentityTests(unittest.TestCase):
+    def test_gamescope_current_writer_uses_only_regear_identity(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = _store(Path(directory))
             rendered = store.expected_text()
 
-        self.assertEqual(store.state_root.name, "handheld-dock-mode")
-        self.assertIn("HDM_STATE_ROOT=", rendered)
-        self.assertIn("share/handheld-dock-mode", rendered)
+        self.assertEqual(gamescope_integration.DROPIN_NAME, "90-regear.conf")
+        self.assertEqual(
+            gamescope_integration.SHIM_MARKER,
+            "Re-Gear Gamescope argument shim",
+        )
+        self.assertEqual(store.state_root.name, "regear")
+        self.assertTrue(rendered.startswith("# Managed by Re-Gear. Remove only through Re-Gear.\n"))
+        self.assertIn("REGEAR_STATE_ROOT=", rendered)
+        self.assertNotIn("HDM_STATE_ROOT=", rendered)
+        self.assertNotIn("handheld-dock-mode", rendered)
+
+    def test_all_current_control_callers_share_the_regear_root(self) -> None:
+        expected = Path("/var/lib/regear/control")
+        self.assertEqual(runtime_state.DEFAULT_RUNTIME_STATE_ROOT, expected)
+        self.assertEqual(whole_dock_completion.ROOT, expected)
+        self.assertEqual(whole_dock_reset.ROOT, expected)
+        with self.assertRaises(ValueError):
+            runtime_state.RootOwnedRuntimeState(Path("/var/lib/regear"))
+
+    def test_current_inhibitor_and_deploy_authority_use_regear(self) -> None:
+        self.assertEqual(inhibitor_guard.INHIBITOR_WHO, "Re-Gear")
+        self.assertEqual(_helper.PLUGIN_NAME, "Re-Gear")
+        self.assertEqual(_helper.DEPLOY_ROOT, Path("/var/lib/regear/deploy"))
+        self.assertEqual(_helper.PUBLIC_KEY, Path("/var/lib/regear/deploy/deploy-public-key.pem"))
+        self.assertEqual(_helper.BACKUPS.name, ".regear-deploy-backups")
 
 
-class InstalledIdentityTests(unittest.TestCase):
-    def test_the_sleep_inhibitor_keeps_the_name_it_registers_under(self) -> None:
-        # This is the `who` a live systemd inhibitor lock reports. An operator
-        # reading `systemd-inhibit --list` during a supervised run matches it
-        # against recorded evidence; renaming it mid-investigation makes the
-        # lock look like someone else's.
-        self.assertEqual(inhibitor_guard.INHIBITOR_WHO, "Handheld Dock Mode")
+class FormerIdentityBoundaryTests(unittest.TestCase):
+    """Former names may be read for migration; no normal writer may emit them."""
 
-    def test_the_installer_still_recognises_a_legacy_install(self) -> None:
-        # The signed helper refuses to install over an old-name plugin
-        # directory and directs the operator to a supervised cutover. If it
-        # stops recognising the name it stops refusing, and the two trees end
-        # up side by side with the loader free to pick either.
-        self.assertEqual(_helper.LEGACY_NAME, "HandheldDockMode")
+    ALLOWED_SOURCES = frozenset(
+        {
+            "backend/regear/application/support_bundle.py",
+            "backend/regear/delivery/gamescope_integration.py",
+            "backend/regear/delivery/gamescope_wrapper.py",
+            "backend/regear/delivery/identity_migration.py",
+            "backend/regear/delivery/steam_trial_activation.py",
+            "scripts/ally_deploy_helper.py",
+            "scripts/capture_shutdown_evidence.py",
+            "scripts/check_plugin_package.py",
+            "scripts/community_report.py",
+            "scripts/deploy_to_ally.ps1",
+            "scripts/install_regear_identity_migrator.sh",
+            "scripts/migrate_regear_identity.py",
+            "scripts/probe_steam_suspend_store.mjs",
+            "scripts/verify_validation_artifact.py",
+            "src/identity-storage.ts",
+        }
+    )
+    FORMER_TOKENS = (
+        "Handheld Dock Mode",
+        "HandheldDockMode",
+        "handheld-dock-mode",
+        "HDM_STATE_ROOT",
+        "HDM shutdown checkpoint",
+        "hdm.hideAttached",
+        "hdm-deploy-plugin",
+        '"hdm"',
+        "'hdm'",
+        "(?:Re-Gear|HDM)",
+    )
+
+    def test_former_literals_are_bounded_to_migration_and_historical_readers(self) -> None:
+        observed: set[str] = set()
+        for root_name in ("backend", "scripts", "src", "bin"):
+            for path in (ROOT / root_name).rglob("*"):
+                if not path.is_file() or path.suffix in {".pyc", ".map"}:
+                    continue
+                try:
+                    text = path.read_text(encoding="utf-8")
+                except UnicodeDecodeError:
+                    continue
+                if any(token in text for token in self.FORMER_TOKENS):
+                    observed.add(path.relative_to(ROOT).as_posix())
+        self.assertEqual(observed, set(self.ALLOWED_SOURCES))
+
+    def test_compatibility_names_are_not_current_targets(self) -> None:
+        self.assertNotEqual(
+            gamescope_integration.LEGACY_DROPIN_NAME,
+            gamescope_integration.DROPIN_NAME,
+        )
+        self.assertNotEqual(_helper.LEGACY_NAME, _helper.PLUGIN_NAME)
 
 
 if __name__ == "__main__":

@@ -15,12 +15,13 @@ from ..ports.presentation_activation import GamescopeUserContext
 from .user_directory import UserDirectory
 
 
-DROPIN_NAME = "90-handheld-dock-mode.conf"
+DROPIN_NAME = "90-regear.conf"
+LEGACY_DROPIN_NAME = "90-handheld-dock-mode.conf"
 # Plugin directory names this project shipped under before the current one.
 # A drop-in rendered for one of these is ours, not a player edit.
 SUPERSEDED_PLUGIN_NAMES = ("HandheldDockMode",)
 MAX_DROPIN_BYTES = 16 * 1024
-SHIM_MARKER = "Handheld Dock Mode Gamescope argument shim"
+SHIM_MARKER = "Re-Gear Gamescope argument shim"
 SAFE_POSIX_PATH = re.compile(r"^/[A-Za-z0-9_.@+/-]+$")
 
 
@@ -73,7 +74,10 @@ class GamescopeIntegrationStore:
         self._plugin_root = plugin_root
         self._user = user
         self._shim = plugin_root / "bin" / self.SHIM_NAME
-        self._state_root = user.home / ".local" / "share" / "handheld-dock-mode"
+        self._state_root = user.home / ".local" / "share" / "regear"
+        self._legacy_state_root = (
+            user.home / ".local" / "share" / "handheld-dock-mode"
+        )
         self._dropin_root = (
             user.home
             / ".config"
@@ -82,6 +86,7 @@ class GamescopeIntegrationStore:
             / (self.SERVICE + '.d')
         )
         self._target = self._dropin_root / self.DROPIN_NAME
+        self._legacy_target = self._dropin_root / LEGACY_DROPIN_NAME
         self._effective_uid = effective_uid or getattr(os, "geteuid", lambda: -1)
         self._set_owner = set_owner
         self._lock = threading.Lock()
@@ -103,12 +108,31 @@ class GamescopeIntegrationStore:
     def target(self) -> Path:
         return self._target
 
+    @property
+    def legacy_target(self) -> Path:
+        """Prior managed filename, exposed only for migration inspection."""
+        return self._legacy_target
+
     def expected_text(self) -> str:
         return self._render(self._shim.parent)
 
     def _render(self, shim_directory: Path) -> str:
         shim_directory = self._path_text(shim_directory)
         state_root = self._path_text(self._state_root)
+        path_value = (
+            f"{shim_directory}:/usr/local/sbin:/usr/local/bin:"
+            "/usr/bin:/usr/sbin:/bin:/sbin"
+        )
+        return (
+            "# Managed by Re-Gear. Remove only through Re-Gear.\n"
+            "[Service]\n"
+            f'Environment="PATH={path_value}"\n'
+            f'Environment="REGEAR_STATE_ROOT={state_root}"\n'
+        )
+
+    def _legacy_render(self, shim_directory: Path) -> str:
+        shim_directory = self._path_text(shim_directory)
+        state_root = self._path_text(self._legacy_state_root)
         path_value = (
             f"{shim_directory}:/usr/local/sbin:/usr/local/bin:"
             "/usr/bin:/usr/sbin:/bin:/sbin"
@@ -121,27 +145,27 @@ class GamescopeIntegrationStore:
         )
 
     def _superseded_renderings(self) -> tuple[str, ...]:
-        """Renderings this project wrote under an earlier plugin directory name.
-
-        Renaming the plugin moves the shim directory, so every existing install
-        keeps a drop-in that no longer matches. Recognising our own prior output
-        lets activate() migrate it, while anything matching no known rendering is
-        still refused as a player edit.
-        """
+        """Exact prior output accepted only as identity-migration input."""
         current = self._plugin_root.name
         renderings: list[str] = []
-        for name in SUPERSEDED_PLUGIN_NAMES:
-            if name == current:
-                continue
+        for name in (current, *SUPERSEDED_PLUGIN_NAMES):
             try:
-                renderings.append(self._render(self._plugin_root.parent / name / "bin"))
+                rendering = self._legacy_render(
+                    self._plugin_root.parent / name / "bin"
+                )
             except ValueError:
                 continue
+            if rendering not in renderings:
+                renderings.append(rendering)
         return tuple(renderings)
+
+    def _current_target_legacy_renderings(self) -> tuple[str, ...]:
+        """Prior exact bytes at the current filename, for subclasses only."""
+        return ()
 
     def _observed_superseded_bytes(self) -> bytes | None:
         """The on-disk drop-in, but only when it is one of our own renderings."""
-        actual = self._read_optional(self._target)
+        actual = self._read_optional(self._legacy_target)
         if actual is None or actual not in self._superseded_renderings():
             return None
         return actual.encode("utf-8")
@@ -159,38 +183,76 @@ class GamescopeIntegrationStore:
         return digest.hexdigest()
 
     def preparation_fingerprint(self) -> str:
-        """Bind consent to the prior drop-in, separately from desired output."""
+        """Bind consent to both identity filenames, separately from output."""
         actual = self._read_optional(self._target)
-        return hashlib.sha256(
-            b"absent" if actual is None else b"present\0" + actual.encode("utf-8")
-        ).hexdigest()
+        legacy = self._read_optional(self._legacy_target)
+        digest = hashlib.sha256()
+        for label, value in ((b"current", actual), (b"legacy", legacy)):
+            digest.update(label + b"\0")
+            digest.update(
+                b"absent" if value is None else b"present\0" + value.encode("utf-8")
+            )
+            digest.update(b"\0")
+        return digest.hexdigest()
 
     def status(self) -> GamescopeIntegrationStatus:
         try:
             conflicts = self._conflicts()
             actual = self._read_optional(self._target)
+            legacy = self._read_optional(self._legacy_target)
             installed = actual is not None
             matches = actual == self.expected_text() if installed else False
             managed_safe = self._managed_file_safe(self._target) if installed else True
+            legacy_safe = (
+                self._managed_file_safe(self._legacy_target)
+                if legacy is not None
+                else True
+            )
             shim_ready = self._shim_ready()
+            state_present = self._state_root.exists() or self._state_root.is_symlink()
+            legacy_state_present = (
+                self._legacy_state_root.exists()
+                or self._legacy_state_root.is_symlink()
+            )
             state_ready = self._owned_real_directory(self._state_root)
+            legacy_state_safe = (
+                self._owned_real_directory(self._legacy_state_root)
+                if legacy_state_present
+                else True
+            )
             error = ""
             if conflicts:
                 error = "path_override_conflict"
+            elif actual is not None and legacy is not None:
+                error = "identity_dropin_conflict"
             elif (not installed and self._activation_rollback is not None
                   and self._activation_rollback[0] is not None):
                 error = "activation_recovery_required"
             elif installed and not matches:
-                # Our own earlier rendering can be migrated; anything else is a
-                # player edit and stays refused.
-                superseded = managed_safe and actual in self._superseded_renderings()
                 error = (
-                    "managed_dropin_superseded"
-                    if superseded
+                    "identity_migration_required"
+                    if managed_safe
+                    and actual in self._current_target_legacy_renderings()
                     else "managed_dropin_modified"
                 )
             elif installed and not managed_safe:
                 error = "managed_dropin_unsafe"
+            elif legacy is not None and not legacy_safe:
+                error = "legacy_dropin_unsafe"
+            elif state_present and not state_ready:
+                error = "state_root_unsafe"
+            elif legacy_state_present and not legacy_state_safe:
+                error = "legacy_state_root_unsafe"
+            elif state_present and legacy_state_present:
+                error = "identity_state_root_conflict"
+            elif legacy is not None:
+                error = (
+                    "identity_migration_required"
+                    if legacy in self._superseded_renderings()
+                    else "legacy_dropin_modified"
+                )
+            elif legacy_state_present:
+                error = "identity_migration_required"
             return GamescopeIntegrationStatus(
                 installed,
                 matches,
@@ -224,7 +286,7 @@ class GamescopeIntegrationStore:
                 return GamescopeIntegrationResult(False, GamescopeIntegrationStatus(
                     False, False, before.shim_ready, before.state_root_ready,
                     error_code="activation_recovery_required"))
-            if before.error_code and before.error_code != "managed_dropin_superseded":
+            if before.error_code:
                 return GamescopeIntegrationResult(False, before)
             if not before.shim_ready:
                 return GamescopeIntegrationResult(
@@ -242,10 +304,7 @@ class GamescopeIntegrationStore:
             try:
                 prior = self._read_optional(self._target)
                 expected = self.expected_text()
-                if prior is not None and prior != expected and (
-                    not self._managed_file_safe(self._target)
-                    or prior not in self._superseded_renderings()
-                ):
+                if prior is not None and prior != expected:
                     raise ValueError("managed drop-in changed")
                 # Save before the first mutation, including before a replacement
                 # whose publication and compensating publication can both fail.
@@ -254,7 +313,7 @@ class GamescopeIntegrationStore:
                 )
                 self._activation_mutated = False
                 self._ensure_relative_directory(
-                    Path(".local") / "share" / "handheld-dock-mode", 0o700
+                    Path(".local") / "share" / "regear", 0o700
                 )
                 self._ensure_relative_directory(
                     Path(".config")
@@ -265,12 +324,6 @@ class GamescopeIntegrationStore:
                 )
                 if not before.installed:
                     self._atomic_write(self._target, expected)
-                elif before.error_code == "managed_dropin_superseded":
-                    self._atomic_write(
-                        self._target,
-                        expected,
-                        supersedes=prior.encode("utf-8") if prior is not None else None,
-                    )
             except (OSError, ValueError):
                 return GamescopeIntegrationResult(
                     self._activation_mutated,
@@ -369,6 +422,7 @@ class GamescopeIntegrationStore:
     def _validate_rendered_paths(self) -> None:
         self._path_text(self._shim.parent)
         self._path_text(self._state_root)
+        self._path_text(self._legacy_state_root)
         if self._user.home == Path(self._user.home.anchor):
             raise ValueError("Gamescope user home is too broad")
 
@@ -400,7 +454,7 @@ class GamescopeIntegrationStore:
             raise ValueError("Gamescope drop-in root is unsafe")
         conflicts: list[str] = []
         for candidate in sorted(self._dropin_root.glob("*.conf")):
-            if candidate == self._target:
+            if candidate in (self._target, self._legacy_target):
                 continue
             raw = self._read_required(candidate)
             for line in raw.splitlines():
@@ -413,7 +467,9 @@ class GamescopeIntegrationStore:
                     normalized,
                 )
                 if directive and re.search(
-                    r"(?:^|[\s\"'])PATH(?:=|[\s\"']|$)", directive.group(2)
+                    r"(?:^|[\s\"'])(?:PATH|REGEAR_STATE_ROOT|HDM_STATE_ROOT)"
+                    r"(?:=|[\s\"']|$)",
+                    directive.group(2),
                 ):
                     conflicts.append(candidate.name)
                     break

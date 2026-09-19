@@ -5,6 +5,12 @@ inventory, not evidence of a new release, installation, Wiki publication or
 hardware validation. Final checks and integration revisions belong in the owning
 task and PR. See [cutover procedure](IDENTITY_CUTOVER.md) before device work.
 
+This dated checkpoint is superseded for current implementation by the
+[full identity migration plan](IDENTITY_MIGRATION_PLAN.md). Items described below
+as retained live identities are now exact migration/rollback inputs; current
+writers use Re-Gear identities. The original September 10 evidence remains here
+to explain why uncoordinated renames were unsafe.
+
 ## Current source identity
 
 - Product, Decky manifest and new archive/install root: `Re-Gear`.
@@ -24,18 +30,18 @@ installer checks, tests and current documentation. Historical evidence and
 revision-pinned source links continue to identify the original `hdm` paths.
 Zero old-name matches is not the acceptance criterion.
 
-## Retained compatibility identities
+## Former identities now handled by migration
 
-| Identity | Why it remains | Requirement before changing it |
+| Identity | Current treatment | Installed acceptance |
 | --- | --- | --- |
 | `HandheldDockMode` legacy plugin root recognition | Detects an old installation and prevents two active trees | Controlled upgrade/rollback and unique loader-instance proof |
-| `90-handheld-dock-mode.conf` and its managed marker | Identifies an existing Gamescope drop-in; changing only the name strands active configuration | Recognize exact old bytes, guarded migration, rollback and installed verification |
-| `HDM_STATE_ROOT`, `share/handheld-dock-mode`, `/var/lib/handheld-dock-mode` | Existing user/root state, recovery journals and deployment-key locations | Preserve ownership and pending recovery authority throughout migration |
-| `.hdm-deploy-backups` and existing helper/config names | Existing rollback and signed-deployment authority | Manifest-backed migration and verified restoration of old data |
-| `hdm.hideAttachedEgpuSleepWarning` and legacy preference keys | Preserve the player's stored choice | Read-old/write-new migration with preference regression coverage |
-| `Handheld Dock Mode` inhibitor identity and `HDM shutdown checkpoint: stage=` | Correlate live systemd/journal evidence with existing consumers | Move producer and readers together, retaining interpretation of old evidence |
+| Former Gamescope drop-in and marker | Exact old bytes are recognized only for guarded migration/rollback | New effective file and running environment verified; old live file absent |
+| Former environment and user/root state roots | Whole directories move without rewriting journals or trial receipts | Ownership, modes and byte continuity verified at current roots |
+| Former deploy backups and helper/config names | Exact authority is preserved in a private rollback record before current authority is published | New helper, key and sudo policy pass fixed self-check; old live authority absent |
+| Former sleep-warning preference keys | Read-old/write-new promotion preserves the player's choice | Current key readback succeeds before old keys are removed |
+| Former inhibitor and shutdown marker | Current writer uses Re-Gear; bounded evidence parser reads previous-boot history | Live inhibitor/current logs use Re-Gear; historical evidence remains readable |
 | Old ZIPs, exported reports, dated notes and pinned source URLs | Immutable provenance and historical evidence | Preserve; a namespace change does not rewrite past artifacts |
-| `hdm_support_bundle` manifest kind, legacy `hdm` version input and `HDM-` report IDs | Interpret already exported reports and legacy responses | Version the report schema and keep old reports readable before removing compatibility |
+| Former support manifest/version/report identifiers | Current bundles use schema 3 and Re-Gear identifiers; immutable old exports remain historical artifacts | New export validated without rewriting old files |
 | Legacy names in tests and archived HTML previews | Exercise old-install compatibility or preserve historical fixtures | Update only when the fixture's contract changes; these are not current product labels |
 
 The full per-item contract remains in [identity cutover](IDENTITY_CUTOVER.md).
