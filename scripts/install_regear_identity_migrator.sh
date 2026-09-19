@@ -19,7 +19,9 @@ OLD_HELPER=$OLD_ROOT/hdm-deploy-plugin
 OLD_KEY=$OLD_ROOT/deploy-public-key.pem
 OLD_RULE=/etc/sudoers.d/hdm-deploy-plugin
 BACKUP=/var/lib/regear/identity-bootstrap-v1
+BACKUP_PREPARE=/var/lib/regear/.identity-bootstrap-v1.prepare
 PHASE=$BACKUP/PHASE
+PLUGIN_PARENT=/home/deck/homebrew/plugins
 
 fail() { printf '%s\n' "identity bootstrap refused: $*" >&2; exit 1; }
 regular_no_link() { test -f "$1" && test ! -L "$1"; }
@@ -35,21 +37,27 @@ deck_staged_safe() {
     mode=$(stat -c %a "$1")
     test $((0$mode & 022)) -eq 0 || return 1
 }
-backup_safe() {
-    test -d "$BACKUP" && test ! -L "$BACKUP" || return 1
-    test "$(stat -c %u "$BACKUP")" = 0 || return 1
-    test "$(stat -c %a "$BACKUP")" = 700 || return 1
+private_directory_safe() {
+    test -d "$1" && test ! -L "$1" || return 1
+    test "$(stat -c %u "$1")" = 0 || return 1
+    test "$(stat -c %a "$1")" = 700 || return 1
 }
+backup_safe() { private_directory_safe "$BACKUP"; }
 sync_backup() { sync -f "$BACKUP"; }
 write_phase() {
+    if test -e "$PHASE.tmp" || test -L "$PHASE.tmp"; then
+        root_safe "$PHASE.tmp" || fail "bootstrap phase temporary is unsafe"
+        rm -f "$PHASE.tmp"
+    fi
     printf '%s\n' "$1" >"$PHASE.tmp"
     chmod 0600 "$PHASE.tmp"
     mv "$PHASE.tmp" "$PHASE"
     sync_backup
 }
 verify_signature() {
-    /usr/bin/openssl pkeyutl -verify -pubin -inkey "$BACKUP/previous-public-key.pem" \
-        -rawin -in "$1" -sigfile "$2" >/dev/null 2>&1 \
+    authority=$1 payload=$2 signature=$3
+    /usr/bin/openssl pkeyutl -verify -pubin -inkey "$authority/previous-public-key.pem" \
+        -rawin -in "$payload" -sigfile "$signature" >/dev/null 2>&1 \
         || fail "candidate signature verification failed"
 }
 same_or_absent() {
@@ -62,7 +70,8 @@ install_if_absent_or_exact() {
     if test ! -e "$destination"; then install -m "$mode" "$source" "$destination"; fi
 }
 write_rule() {
-    cat >"$BACKUP/current-sudoers" <<'EOF'
+    authority=$1
+    cat >"$authority/current-sudoers" <<'EOF'
 # Developer-only Re-Gear package installer. The root-owned helpers accept only
 # their fixed signed-package or identity-migration command surfaces.
 deck ALL=(root) NOPASSWD: /var/lib/regear/deploy/regear-deploy-plugin
@@ -70,16 +79,142 @@ deck ALL=(root) NOPASSWD: /var/lib/regear/deploy/regear-migrate-identity status
 deck ALL=(root) NOPASSWD: /var/lib/regear/deploy/regear-migrate-identity apply
 deck ALL=(root) NOPASSWD: /var/lib/regear/deploy/regear-migrate-identity rollback
 EOF
-    chmod 0440 "$BACKUP/current-sudoers"
-    visudo -cf "$BACKUP/current-sudoers" >/dev/null
+    chmod 0440 "$authority/current-sudoers"
+    visudo -cf "$authority/current-sudoers" >/dev/null
+}
+expected_payload_names() {
+    printf '%s\n' candidate-helper candidate-helper.sig candidate-migrator \
+        candidate-migrator.sig candidate.sha256 current-sudoers \
+        former-private.names former-private.tar private.sha256 previous-helper \
+        previous-public-key.pem previous-sudoers previous.sha256
+}
+verify_payload() {
+    authority=$1
+    private_directory_safe "$authority" || fail "bootstrap payload directory is unsafe"
+    actual=$(find "$authority" -mindepth 1 -maxdepth 1 -printf '%f\n' | \
+        grep -v '^PHASE$' | LC_ALL=C sort)
+    expected=$(expected_payload_names | LC_ALL=C sort)
+    test "$actual" = "$expected" || fail "bootstrap payload has unexpected or missing entries"
+    (cd "$authority" && sha256sum -c previous.sha256 candidate.sha256 private.sha256 >/dev/null) \
+        || fail "bootstrap backup changed"
+    verify_signature "$authority" "$authority/candidate-helper" "$authority/candidate-helper.sig"
+    verify_signature "$authority" "$authority/candidate-migrator" "$authority/candidate-migrator.sig"
+    visudo -cf "$authority/current-sudoers" >/dev/null
+    /usr/bin/tar --list --file="$authority/former-private.tar" >/dev/null
 }
 verify_backup() {
-    backup_safe || fail "bootstrap backup is unsafe"
-    (cd "$BACKUP" && sha256sum -c previous.sha256 candidate.sha256 >/dev/null) \
-        || fail "bootstrap backup changed"
-    verify_signature "$BACKUP/candidate-helper" "$BACKUP/candidate-helper.sig"
-    verify_signature "$BACKUP/candidate-migrator" "$BACKUP/candidate-migrator.sig"
+    verify_payload "$BACKUP"
     regular_no_link "$PHASE" || fail "bootstrap phase is unavailable"
+}
+discover_former_private() {
+    destination=$1
+    test -d "$PLUGIN_PARENT" && test ! -L "$PLUGIN_PARENT" \
+        || fail "plugin parent is unsafe"
+    find "$PLUGIN_PARENT" -mindepth 1 -maxdepth 1 \
+        \( -name '.hdm-deploy-backups' -o -name '.hdm-staging-*' \) \
+        -printf '%f\n' | LC_ALL=C sort >"$destination"
+    while IFS= read -r name; do
+        case "$name" in
+            .hdm-deploy-backups|.hdm-staging-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9][0-9][0-9]) ;;
+            *) fail "unexpected former private directory name" ;;
+        esac
+        path=$PLUGIN_PARENT/$name
+        test -d "$path" && test ! -L "$path" \
+            || fail "former private path is not a real directory"
+        unexpected=$(/usr/bin/find "$path" -xdev ! -type d ! -type f -print -quit)
+        test -z "$unexpected" || fail "former private tree contains a link or special file"
+    done <"$destination"
+}
+archive_former_private() {
+    authority=$1
+    discover_former_private "$authority/former-private.names"
+    /usr/bin/tar --create --file="$authority/former-private.tar" \
+        --directory="$PLUGIN_PARENT" --numeric-owner --acls --xattrs \
+        --verbatim-files-from --files-from="$authority/former-private.names"
+    (cd "$authority" && sha256sum former-private.names former-private.tar >private.sha256)
+    compare_all_former_private "$authority"
+}
+compare_one_former_private() {
+    authority=$1 name=$2
+    path=$PLUGIN_PARENT/$name
+    test -d "$path" && test ! -L "$path" \
+        || fail "former private directory is absent or unsafe: $name"
+    /usr/bin/tar --compare --file="$authority/former-private.tar" \
+        --directory="$PLUGIN_PARENT" --numeric-owner --acls --xattrs "$name" >/dev/null \
+        || fail "former private directory changed: $name"
+}
+compare_all_former_private() {
+    authority=$1
+    current=$authority/former-private.current
+    test ! -e "$current" && test ! -L "$current" \
+        || fail "former private inventory temporary is occupied"
+    discover_former_private "$current"
+    cmp -s "$authority/former-private.names" "$current" \
+        || fail "former private directory names changed"
+    rm -f "$current"
+    while IFS= read -r name; do
+        compare_one_former_private "$authority" "$name"
+    done <"$authority/former-private.names"
+}
+verify_former_private_subset() {
+    authority=$1
+    current=$authority/former-private.current
+    test ! -e "$current" && test ! -L "$current" \
+        || fail "former private inventory temporary is occupied"
+    discover_former_private "$current"
+    while IFS= read -r name; do
+        grep -F -x "$name" "$authority/former-private.names" >/dev/null \
+            || fail "unexpected former private directory appeared"
+        compare_one_former_private "$authority" "$name"
+    done <"$current"
+    rm -f "$current"
+}
+retire_former_private() {
+    verify_former_private_subset "$BACKUP"
+    while IFS= read -r name; do
+        path=$PLUGIN_PARENT/$name
+        if test -e "$path" || test -L "$path"; then
+            compare_one_former_private "$BACKUP" "$name"
+            rm -rf -- "$path"
+        fi
+    done <"$BACKUP/former-private.names"
+    sync -f "$PLUGIN_PARENT"
+    discover_former_private "$BACKUP/former-private.current"
+    test ! -s "$BACKUP/former-private.current" \
+        || fail "former private directories remain after retirement"
+    rm -f "$BACKUP/former-private.current"
+}
+restore_former_private() {
+    verify_former_private_subset "$BACKUP"
+    while IFS= read -r name; do
+        path=$PLUGIN_PARENT/$name
+        if test -e "$path" || test -L "$path"; then
+            compare_one_former_private "$BACKUP" "$name"
+        else
+            /usr/bin/tar --extract --file="$BACKUP/former-private.tar" \
+                --directory="$PLUGIN_PARENT" --numeric-owner --same-owner \
+                --same-permissions --acls --xattrs "$name"
+            compare_one_former_private "$BACKUP" "$name"
+        fi
+    done <"$BACKUP/former-private.names"
+    sync -f "$PLUGIN_PARENT"
+    compare_all_former_private "$BACKUP"
+}
+clear_prepare() {
+    if test -e "$BACKUP_PREPARE" || test -L "$BACKUP_PREPARE"; then
+        private_directory_safe "$BACKUP_PREPARE" \
+            || fail "bootstrap prepare directory is unsafe"
+        rm -rf -- "$BACKUP_PREPARE"
+        sync -f "$(dirname "$BACKUP_PREPARE")"
+    fi
+}
+clear_backup_temporaries() {
+    for temporary in "$PHASE.tmp" "$BACKUP/former-private.current"; do
+        if test -e "$temporary" || test -L "$temporary"; then
+            root_safe "$temporary" || fail "bootstrap temporary is unsafe"
+            rm -f "$temporary"
+        fi
+    done
 }
 prepare() {
     deck_staged_safe "$STAGED_HELPER" || fail "staged Re-Gear helper is unsafe"
@@ -92,20 +227,29 @@ prepare() {
     test ! -e "$NEW_ROOT" && test ! -L "$NEW_ROOT" || fail "new deploy authority already exists"
     test ! -e "$NEW_RULE" && test ! -L "$NEW_RULE" || fail "new sudo policy already exists"
 
-    install -d -m 0700 /var/lib/regear "$BACKUP"
-    install -p -m 0755 "$OLD_HELPER" "$BACKUP/previous-helper"
-    install -p -m 0644 "$OLD_KEY" "$BACKUP/previous-public-key.pem"
-    install -p -m 0440 "$OLD_RULE" "$BACKUP/previous-sudoers"
-    install -m 0755 "$STAGED_HELPER" "$BACKUP/candidate-helper"
-    install -m 0644 "$STAGED_HELPER_SIG" "$BACKUP/candidate-helper.sig"
-    install -m 0755 "$STAGED_MIGRATOR" "$BACKUP/candidate-migrator"
-    install -m 0644 "$STAGED_MIGRATOR_SIG" "$BACKUP/candidate-migrator.sig"
-    (cd "$BACKUP" && sha256sum previous-helper previous-public-key.pem previous-sudoers >previous.sha256)
-    (cd "$BACKUP" && sha256sum candidate-helper candidate-helper.sig \
+    test ! -L /var/lib/regear || fail "Re-Gear authority parent is unsafe"
+    install -d -m 0700 /var/lib/regear
+    private_directory_safe /var/lib/regear || fail "Re-Gear authority parent is unsafe"
+    clear_prepare
+    mkdir -m 0700 "$BACKUP_PREPARE"
+    install -p -m 0755 "$OLD_HELPER" "$BACKUP_PREPARE/previous-helper"
+    install -p -m 0644 "$OLD_KEY" "$BACKUP_PREPARE/previous-public-key.pem"
+    install -p -m 0440 "$OLD_RULE" "$BACKUP_PREPARE/previous-sudoers"
+    install -m 0755 "$STAGED_HELPER" "$BACKUP_PREPARE/candidate-helper"
+    install -m 0644 "$STAGED_HELPER_SIG" "$BACKUP_PREPARE/candidate-helper.sig"
+    install -m 0755 "$STAGED_MIGRATOR" "$BACKUP_PREPARE/candidate-migrator"
+    install -m 0644 "$STAGED_MIGRATOR_SIG" "$BACKUP_PREPARE/candidate-migrator.sig"
+    (cd "$BACKUP_PREPARE" && sha256sum previous-helper previous-public-key.pem previous-sudoers >previous.sha256)
+    (cd "$BACKUP_PREPARE" && sha256sum candidate-helper candidate-helper.sig \
         candidate-migrator candidate-migrator.sig >candidate.sha256)
-    write_rule
-    verify_signature "$BACKUP/candidate-helper" "$BACKUP/candidate-helper.sig"
-    verify_signature "$BACKUP/candidate-migrator" "$BACKUP/candidate-migrator.sig"
+    write_rule "$BACKUP_PREPARE"
+    archive_former_private "$BACKUP_PREPARE"
+    verify_payload "$BACKUP_PREPARE"
+    sync -f "$BACKUP_PREPARE"
+    test ! -e "$BACKUP" && test ! -L "$BACKUP" \
+        || fail "bootstrap backup destination is occupied"
+    mv "$BACKUP_PREPARE" "$BACKUP"
+    sync -f /var/lib/regear
     write_phase PREPARED
 }
 publish_current() {
@@ -122,9 +266,11 @@ publish_current() {
     write_phase CURRENT_VERIFIED
 }
 retire_former() {
+    write_phase RETIRING_FORMER
     same_or_absent "$BACKUP/previous-helper" "$OLD_HELPER" || fail "former helper changed"
     same_or_absent "$BACKUP/previous-public-key.pem" "$OLD_KEY" || fail "former key changed"
     same_or_absent "$BACKUP/previous-sudoers" "$OLD_RULE" || fail "former sudo policy changed"
+    retire_former_private
     rm -f "$OLD_RULE" "$OLD_HELPER" "$OLD_KEY"
     write_phase OLD_RETIRED
     write_phase COMMITTED
@@ -132,11 +278,19 @@ retire_former() {
 install_authority() {
     test "$(id -u)" = 0 || fail "root is required"
     if test ! -e "$BACKUP" && test ! -L "$BACKUP"; then prepare; fi
+    clear_backup_temporaries
+    if test ! -e "$PHASE" && test ! -L "$PHASE"; then
+        verify_payload "$BACKUP"
+        compare_all_former_private "$BACKUP"
+        write_phase PREPARED
+    fi
     verify_backup
+    clear_prepare
     state=$(cat "$PHASE")
     case "$state" in
         PREPARED) publish_current; retire_former ;;
         CURRENT_VERIFIED) publish_current; retire_former ;;
+        RETIRING_FORMER) publish_current; retire_former ;;
         OLD_RETIRED) publish_current; retire_former ;;
         COMMITTED) publish_current ;;
         ROLLED_BACK) fail "bootstrap was rolled back" ;;
@@ -145,8 +299,9 @@ install_authority() {
     printf '%s\n' '{"state":"committed","component":"regear-deploy-authority"}'
 }
 restore_former() {
-    mkdir -p "$OLD_ROOT"
     test ! -L "$OLD_ROOT" || fail "former authority root is unsafe"
+    mkdir -p "$OLD_ROOT"
+    restore_former_private
     install_if_absent_or_exact "$BACKUP/previous-helper" "$OLD_HELPER" 0755
     install_if_absent_or_exact "$BACKUP/previous-public-key.pem" "$OLD_KEY" 0644
     install_if_absent_or_exact "$BACKUP/previous-sudoers" "$OLD_RULE" 0440
@@ -162,10 +317,11 @@ remove_current() {
 }
 rollback_authority() {
     test "$(id -u)" = 0 || fail "root is required"
+    clear_backup_temporaries
     verify_backup
     state=$(cat "$PHASE")
     case "$state" in
-        PREPARED|CURRENT_VERIFIED|OLD_RETIRED|COMMITTED) ;;
+        PREPARED|CURRENT_VERIFIED|RETIRING_FORMER|OLD_RETIRED|COMMITTED) ;;
         ROLLED_BACK) printf '%s\n' '{"state":"rolled_back","component":"regear-deploy-authority"}'; return ;;
         *) fail "unknown bootstrap phase" ;;
     esac
