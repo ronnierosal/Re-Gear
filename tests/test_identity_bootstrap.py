@@ -1,8 +1,10 @@
 from pathlib import Path
 import copy
+import hashlib
 import json
 import os
 import shlex
+import shutil
 import stat
 import subprocess
 import tempfile
@@ -35,7 +37,7 @@ class IdentityBootstrapTests(unittest.TestCase):
         self.assertIn("visudo -cf", self.source)
 
     def test_sudo_policy_allows_only_exact_migrator_commands(self):
-        for command in ("status", "apply", "rollback"):
+        for command in ("status", "reconcile-runtime", "apply", "rollback"):
             self.assertIn(
                 "deck ALL=(root) NOPASSWD: "
                 f"/var/lib/regear/deploy/regear-migrate-identity {command}",
@@ -78,6 +80,62 @@ class IdentityBootstrapTests(unittest.TestCase):
         self.assertLess(snapshot, verify)
         self.assertLess(verify, publish)
 
+    def test_rotation_is_explicit_and_pins_the_new_public_key_fingerprint(self):
+        self.assertIn("install-rotated <new-public-key-sha256>", self.source)
+        self.assertIn("STAGED_CURRENT_KEY=/home/deck/regear-deploy-public-key.pem", self.source)
+        self.assertIn('valid_fingerprint "$REQUESTED_KEY_FINGERPRINT"', self.source)
+        self.assertIn(
+            'test "$(public_key_fingerprint "$authority/candidate-public-key.pem")" = "$fingerprint"',
+            self.source,
+        )
+        self.assertIn(
+            'verify_signature "$authority" "$authority/candidate-helper"',
+            self.source,
+        )
+        self.assertIn(
+            '-inkey "$authority/candidate-public-key.pem"', self.source
+        )
+        self.assertIn(
+            "rotation candidate must differ from the former public key", self.source
+        )
+
+    def test_bootstrap_rejects_missing_or_extra_arguments_before_dispatch(self):
+        self.assertIn("ARGUMENT_COUNT=$#", self.source)
+        self.assertIn("0:install|1:install|1:rollback|2:install-rotated", self.source)
+        self.assertIn("with no extra arguments", self.source)
+
+    def test_rotation_snapshots_old_and_new_keys_before_publication(self):
+        old = self.source.index(
+            'install -p -m 0644 "$OLD_KEY" "$BACKUP_PREPARE/previous-public-key.pem"'
+        )
+        new = self.source.index(
+            'install -m 0644 "$STAGED_CURRENT_KEY" "$BACKUP_PREPARE/candidate-public-key.pem"'
+        )
+        trust = self.source.index('>"$BACKUP_PREPARE/trust-mode"', new)
+        verify = self.source.index('verify_payload "$BACKUP_PREPARE"', trust)
+        publish = self.source.index(
+            'install_if_absent_or_exact "$BACKUP/candidate-public-key.pem" "$NEW_KEY"'
+        )
+        self.assertLess(old, new)
+        self.assertLess(new, trust)
+        self.assertLess(trust, verify)
+        self.assertLess(verify, publish)
+
+    def test_resume_requires_the_original_trust_mode_and_fingerprint(self):
+        self.assertIn('verify_trust_mode "$BACKUP" "$(expected_trust_mode)"', self.source)
+        self.assertIn("bootstrap trust mode does not match this invocation", self.source)
+        self.assertIn("candidate-public-key.pem trust-mode >candidate.sha256", self.source)
+
+    def test_rollback_restores_the_former_key_not_the_rotated_key(self):
+        self.assertIn(
+            'install_if_absent_or_exact "$BACKUP/previous-public-key.pem" "$OLD_KEY" 0644',
+            self.source,
+        )
+        self.assertIn(
+            'same_or_absent "$BACKUP/candidate-public-key.pem" "$NEW_KEY"',
+            self.source,
+        )
+
     def test_phase_journal_allows_resume_and_rollback_before_commit(self):
         for phase in ("PREPARED", "CURRENT_VERIFIED", "RETIRING_FORMER", "OLD_RETIRED", "COMMITTED"):
             self.assertIn(phase, self.source)
@@ -105,6 +163,10 @@ class IdentityBootstrapTests(unittest.TestCase):
         self.assertIn('value.get("journal_phase") in {None, "rolled_back"}', self.source)
         self.assertIn('dropin.get("journal_phase") in {None, "rolled_back"}', self.source)
         self.assertIn('dropin.get("current") == "absent"', self.source)
+        self.assertIn(
+            'value.get("control_conflict_phase") in {None, "committed"}',
+            self.source,
+        )
 
     def test_prepare_is_fully_verified_before_atomic_publication(self):
         populate = self.source.index('install -p -m 0755 "$OLD_HELPER" "$BACKUP_PREPARE/previous-helper"')
@@ -185,6 +247,134 @@ class FormerPrivateArchiveFixtureTests(unittest.TestCase):
         return subprocess.run(
             ["/bin/sh"], input=script, text=True, capture_output=True, check=False
         )
+
+    def create_keypair(self, directory: Path, name: str) -> tuple[Path, Path]:
+        private = directory / f"{name}-private.pem"
+        public = directory / f"{name}-public.pem"
+        subprocess.run(
+            ["openssl", "genpkey", "-algorithm", "ED25519", "-out", str(private)],
+            check=True,
+            capture_output=True,
+        )
+        subprocess.run(
+            [
+                "openssl", "pkey", "-in", str(private), "-pubout", "-out", str(public)
+            ],
+            check=True,
+            capture_output=True,
+        )
+        return private, public
+
+    def run_trust_fixture(self, authority: Path, commands: str):
+        script = (
+            self.functions
+            + "\nroot_safe() { regular_no_link \"$1\"; }\n"
+            + commands
+            + "\n"
+        )
+        return subprocess.run(
+            ["/bin/sh"], input=script, text=True, capture_output=True, check=False
+        )
+
+    def test_rotation_crypto_fixture_pins_distinct_key_and_exact_signatures(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            authority = root / "authority"
+            authority.mkdir()
+            old_private, old_public = self.create_keypair(root, "old")
+            new_private, new_public = self.create_keypair(root, "new")
+            payload = authority / "candidate-helper"
+            payload.write_bytes(b"candidate helper\n")
+            signature = authority / "candidate-helper.sig"
+            subprocess.run(
+                [
+                    "openssl", "pkeyutl", "-sign", "-inkey", str(new_private),
+                    "-rawin", "-in", str(payload), "-out", str(signature),
+                ],
+                check=True,
+                capture_output=True,
+            )
+            shutil.copy2(old_public, authority / "previous-public-key.pem")
+            shutil.copy2(new_public, authority / "candidate-public-key.pem")
+            fingerprint = hashlib.sha256(new_public.read_bytes()).hexdigest()
+            (authority / "trust-mode").write_text(
+                f"rotated:{fingerprint}\n", encoding="ascii"
+            )
+            result = self.run_trust_fixture(
+                authority,
+                f'verify_trust_mode {shlex.quote(str(authority))} rotated:{fingerprint}\n'
+                f'verify_signature {shlex.quote(str(authority))} '
+                f'{shlex.quote(str(payload))} {shlex.quote(str(signature))}',
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+
+            reformatted_old = old_public.read_bytes().replace(b"\n", b"\r\n")
+            (authority / "candidate-public-key.pem").write_bytes(reformatted_old)
+            old_fingerprint = hashlib.sha256(reformatted_old).hexdigest()
+            (authority / "trust-mode").write_text(
+                f"rotated:{old_fingerprint}\n", encoding="ascii"
+            )
+            same = self.run_trust_fixture(
+                authority, f'verify_trust_mode {shlex.quote(str(authority))}'
+            )
+            self.assertNotEqual(same.returncode, 0)
+            self.assertIn("must differ", same.stderr)
+
+    def test_rotation_crypto_fixture_refuses_wrong_fingerprint_and_signature(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            authority = root / "authority"
+            authority.mkdir()
+            old_private, old_public = self.create_keypair(root, "old")
+            _, new_public = self.create_keypair(root, "new")
+            shutil.copy2(old_public, authority / "previous-public-key.pem")
+            shutil.copy2(new_public, authority / "candidate-public-key.pem")
+            (authority / "trust-mode").write_text(
+                f"rotated:{'0' * 64}\n", encoding="ascii"
+            )
+            mismatch = self.run_trust_fixture(
+                authority, f'verify_trust_mode {shlex.quote(str(authority))}'
+            )
+            self.assertNotEqual(mismatch.returncode, 0)
+            self.assertIn("fingerprint changed", mismatch.stderr)
+
+            payload = authority / "candidate-helper"
+            payload.write_bytes(b"candidate helper\n")
+            signature = authority / "candidate-helper.sig"
+            subprocess.run(
+                [
+                    "openssl", "pkeyutl", "-sign", "-inkey", str(old_private),
+                    "-rawin", "-in", str(payload), "-out", str(signature),
+                ],
+                check=True,
+                capture_output=True,
+            )
+            wrong = self.run_trust_fixture(
+                authority,
+                f'verify_signature {shlex.quote(str(authority))} '
+                f'{shlex.quote(str(payload))} {shlex.quote(str(signature))}',
+            )
+            self.assertNotEqual(wrong.returncode, 0)
+            self.assertIn("signature verification failed", wrong.stderr)
+
+    def test_rotation_cli_rejects_missing_and_extra_arguments(self):
+        script = ROOT / "scripts" / "install_regear_identity_migrator.sh"
+        missing = subprocess.run(
+            ["/bin/sh", str(script), "install-rotated"],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        extra = subprocess.run(
+            ["/bin/sh", str(script), "install-rotated", "0" * 64, "extra"],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertNotEqual(missing.returncode, 0)
+        self.assertNotEqual(extra.returncode, 0)
+        self.assertIn("no extra arguments", missing.stderr)
+        self.assertIn("no extra arguments", extra.stderr)
 
     def test_archive_retire_resume_and_rollback_preserve_tree_metadata(self):
         with tempfile.TemporaryDirectory() as directory:
