@@ -54,6 +54,7 @@ EOF
     visudo -cf "$NEW_RULE.tmp"
     mv "$NEW_RULE.tmp" "$NEW_RULE"
     "$NEW_HELPER" --self-check >/dev/null
+    /usr/bin/sudo -u deck /usr/bin/sudo -n "$NEW_HELPER" --self-check >/dev/null
     sha256sum "$NEW_HELPER" "$NEW_KEY" "$NEW_RULE" >"$BACKUP/current.sha256"
 
     rm -f "$OLD_RULE" "$OLD_HELPER" "$OLD_KEY"

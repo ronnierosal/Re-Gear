@@ -16,6 +16,10 @@ class IdentityBootstrapTests(unittest.TestCase):
         self.assertIn("NEW_ROOT=/var/lib/regear/deploy", self.source)
         self.assertIn("NEW_RULE=/etc/sudoers.d/regear-deploy-plugin", self.source)
         self.assertIn('"$NEW_HELPER" --self-check', self.source)
+        self.assertIn(
+            '/usr/bin/sudo -u deck /usr/bin/sudo -n "$NEW_HELPER" --self-check',
+            self.source,
+        )
         self.assertIn("visudo -cf", self.source)
 
     def test_preserves_exact_rollback_authority_before_retiring_old_paths(self):
