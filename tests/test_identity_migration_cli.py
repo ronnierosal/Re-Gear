@@ -85,6 +85,63 @@ class IdentityMigrationCliTests(unittest.TestCase):
             )
             self.assertEqual(tool._active_processes(proc), ("regear_backend",))
 
+    def test_process_inspection_errors_refuse_offline_proof(self):
+        with tempfile.TemporaryDirectory() as directory:
+            proc = Path(directory)
+            process = proc / "123"
+            process.mkdir()
+            comm = process / "comm"
+            cmdline = process / "cmdline"
+            comm.write_text("gamescope\n", encoding="utf-8")
+            cmdline.write_bytes(b"gamescope\0")
+            original_read_bytes = Path.read_bytes
+
+            def unreadable_cmdline(path):
+                if path == cmdline:
+                    raise PermissionError("denied")
+                return original_read_bytes(path)
+
+            with (
+                patch.object(Path, "read_bytes", unreadable_cmdline),
+                self.assertRaisesRegex(
+                    tool.IdentityMigrationError, "process inspection"
+                ),
+            ):
+                tool._active_processes(proc)
+
+            original_read_text = Path.read_text
+
+            def unreadable_comm(path, *args, **kwargs):
+                if path == comm:
+                    raise OSError("unreadable")
+                return original_read_text(path, *args, **kwargs)
+
+            with (
+                patch.object(Path, "read_text", unreadable_comm),
+                self.assertRaisesRegex(
+                    tool.IdentityMigrationError, "process inspection"
+                ),
+            ):
+                tool._active_processes(proc)
+
+    def test_disappearing_process_is_a_bounded_race(self):
+        with tempfile.TemporaryDirectory() as directory:
+            proc = Path(directory)
+            process = proc / "123"
+            process.mkdir()
+            comm = process / "comm"
+            comm.write_text("python3\n", encoding="utf-8")
+            (process / "cmdline").write_bytes(b"python3\0")
+            original = Path.read_text
+
+            def disappeared(path, *args, **kwargs):
+                if path == comm:
+                    raise FileNotFoundError(path)
+                return original(path, *args, **kwargs)
+
+            with patch.object(Path, "read_text", disappeared):
+                self.assertEqual(tool._active_processes(proc), ())
+
     def test_gamescope_environment_reports_unreadable_instead_of_inactive(self):
         with tempfile.TemporaryDirectory() as directory:
             proc = Path(directory)
@@ -160,6 +217,74 @@ class IdentityMigrationCliTests(unittest.TestCase):
             self.assertIs(result, rolled_back)
             migration.rollback.assert_called_once()
             self.assertEqual(record.load()["phase"], "rolled_back")
+
+    def test_rollback_resumes_when_never_started_participants_have_no_journals(self):
+        idle = SimpleNamespace(journal_phase=None, locations=())
+        for phase in ("prepared", "rolling_back", "dropin_rolled_back"):
+            with self.subTest(phase=phase), tempfile.TemporaryDirectory() as directory:
+                migration = SimpleNamespace(
+                    inspect=unittest.mock.Mock(return_value=idle),
+                    rollback=unittest.mock.Mock(),
+                )
+                dropin = SimpleNamespace(
+                    inspect=unittest.mock.Mock(return_value={"journal_phase": None}),
+                    rollback=unittest.mock.Mock(),
+                )
+                record = tool.CombinedMigrationRecord(
+                    Path(directory) / "combined.json"
+                )
+                document = record.create(directories=True, dropin=True)
+                if phase != "prepared":
+                    document["rollback_directories"] = False
+                    document["rollback_dropin"] = False
+                    document["phase"] = phase
+                    record.write(document)
+
+                tool.rollback_combined(migration, dropin, record)
+
+                migration.rollback.assert_not_called()
+                dropin.rollback.assert_not_called()
+                self.assertEqual(record.load()["phase"], "rolled_back")
+
+    def test_rollback_resumes_at_each_boundary_for_started_participants(self):
+        committed = SimpleNamespace(journal_phase="committed", locations=())
+        rolled_back = SimpleNamespace(journal_phase="rolled_back", locations=())
+        cases = (
+            ("committed", 1),
+            ("rolling_back", 1),
+            ("dropin_rolled_back", 0),
+        )
+        for phase, expected_dropin_calls in cases:
+            with self.subTest(phase=phase), tempfile.TemporaryDirectory() as directory:
+                migration = SimpleNamespace(
+                    inspect=unittest.mock.Mock(return_value=committed),
+                    rollback=unittest.mock.Mock(return_value=rolled_back),
+                )
+                dropin = SimpleNamespace(
+                    inspect=unittest.mock.Mock(
+                        return_value={"journal_phase": "committed"}
+                    ),
+                    rollback=unittest.mock.Mock(
+                        return_value={"journal_phase": "rolled_back"}
+                    ),
+                )
+                record = tool.CombinedMigrationRecord(
+                    Path(directory) / "combined.json"
+                )
+                document = record.create(directories=True, dropin=True)
+                if phase == "committed":
+                    document["phase"] = phase
+                else:
+                    document["rollback_directories"] = True
+                    document["rollback_dropin"] = True
+                    document["phase"] = phase
+                record.write(document)
+
+                tool.rollback_combined(migration, dropin, record)
+
+                self.assertEqual(dropin.rollback.call_count, expected_dropin_calls)
+                migration.rollback.assert_called_once()
+                self.assertEqual(record.load()["phase"], "rolled_back")
 
     def test_guard_is_read_only_and_tool_has_no_service_or_hardware_mutation(self):
         source = (ROOT / "scripts/migrate_regear_identity.py").read_text(encoding="utf-8")

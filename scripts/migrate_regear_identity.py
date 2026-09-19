@@ -41,7 +41,7 @@ PLUGIN_ROOT = Path("/home/deck/homebrew/plugins/Re-Gear")
 CURRENT_GAMESCOPE_STATE = "/home/deck/.local/share/regear"
 FORMER_GAMESCOPE_STATE = "/home/deck/.local/share/handheld-dock-mode"
 MAX_ENVIRON_BYTES = 1024 * 1024
-COMBINED_SCHEMA = 1
+COMBINED_SCHEMA = 2
 COMBINED_PHASES = frozenset(
     (
         "prepared",
@@ -91,11 +91,18 @@ def _active_processes(proc: Path = Path("/proc")) -> tuple[str, ...]:
             continue
         try:
             comm = (entry / "comm").read_text(encoding="utf-8").strip()
+        except (FileNotFoundError, ProcessLookupError):
+            continue
+        except (PermissionError, OSError) as error:
+            raise IdentityMigrationError("process inspection is unavailable") from error
+        try:
             command = (entry / "cmdline").read_bytes().replace(b"\0", b" ").decode(
                 "utf-8", "replace"
             )
-        except (FileNotFoundError, PermissionError, ProcessLookupError, OSError):
+        except (FileNotFoundError, ProcessLookupError):
             continue
+        except (PermissionError, OSError) as error:
+            raise IdentityMigrationError("process inspection is unavailable") from error
         if comm == "gamescope":
             active.add("gamescope")
         if (
@@ -237,6 +244,8 @@ class CombinedMigrationRecord:
             "phase": "prepared",
             "directories": directories,
             "dropin": dropin,
+            "rollback_directories": None,
+            "rollback_dropin": None,
         }
         self.write(document)
         return document
@@ -274,14 +283,34 @@ class CombinedMigrationRecord:
             "phase",
             "directories",
             "dropin",
+            "rollback_directories",
+            "rollback_dropin",
         }:
             raise IdentityMigrationError("combined migration journal shape is invalid")
         operation_id = document["operation_id"]
+        rollback_directories = document["rollback_directories"]
+        rollback_dropin = document["rollback_dropin"]
+        forward = document["phase"] in {
+            "prepared",
+            "directories_applied",
+            "dropin_applied",
+            "committed",
+        }
         if (
             document["schema"] != COMBINED_SCHEMA
             or document["phase"] not in COMBINED_PHASES
             or type(document["directories"]) is not bool
             or type(document["dropin"]) is not bool
+            or (forward and (rollback_directories is not None or rollback_dropin is not None))
+            or (
+                not forward
+                and (
+                    type(rollback_directories) is not bool
+                    or type(rollback_dropin) is not bool
+                )
+            )
+            or rollback_directories is True and document["directories"] is not True
+            or rollback_dropin is True and document["dropin"] is not True
             or not isinstance(operation_id, str)
             or len(operation_id) != 32
             or any(character not in "0123456789abcdef" for character in operation_id)
@@ -465,31 +494,46 @@ def rollback_combined(
             return migration.inspect(), dropin.inspect()
 
         starting_phase = str(document["phase"])
-        document["phase"] = "rolling_back"
-        record.write(document)
-        if document["dropin"]:
-            if dropin.inspect()["journal_phase"] is None:
-                if starting_phase not in {"prepared", "directories_applied"}:
-                    raise IdentityMigrationError(
-                        "combined migration lost its drop-in journal"
-                    )
-                dropin_status = dropin.inspect()
-            else:
-                dropin_status = dropin.rollback()
-        else:
-            dropin_status = dropin.inspect()
-        document["phase"] = "dropin_rolled_back"
-        record.write(document)
+        if starting_phase not in {"rolling_back", "dropin_rolled_back"}:
+            directory_journal = migration.inspect().journal_phase
+            dropin_journal = dropin.inspect()["journal_phase"]
+            if (
+                document["directories"]
+                and directory_journal is None
+                and starting_phase != "prepared"
+            ):
+                raise IdentityMigrationError(
+                    "combined migration lost its directory journal"
+                )
+            if (
+                document["dropin"]
+                and dropin_journal is None
+                and starting_phase not in {"prepared", "directories_applied"}
+            ):
+                raise IdentityMigrationError(
+                    "combined migration lost its drop-in journal"
+                )
+            document["rollback_directories"] = bool(
+                document["directories"] and directory_journal is not None
+            )
+            document["rollback_dropin"] = bool(
+                document["dropin"] and dropin_journal is not None
+            )
+            document["phase"] = "rolling_back"
+            record.write(document)
 
-        if document["directories"]:
-            if migration.inspect().journal_phase is None:
-                if starting_phase != "prepared":
-                    raise IdentityMigrationError(
-                        "combined migration lost its directory journal"
-                    )
-                status = migration.inspect()
+        if document["phase"] == "dropin_rolled_back":
+            dropin_status = dropin.inspect()
+        else:
+            if document["rollback_dropin"]:
+                dropin_status = dropin.rollback()
             else:
-                status = migration.rollback()
+                dropin_status = dropin.inspect()
+            document["phase"] = "dropin_rolled_back"
+            record.write(document)
+
+        if document["rollback_directories"]:
+            status = migration.rollback()
         else:
             status = migration.inspect()
         document["phase"] = "rolled_back"
