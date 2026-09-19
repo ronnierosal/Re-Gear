@@ -34,6 +34,8 @@ DROPIN_JOURNAL = Path("/var/lib/regear/identity-dropin-migration-v1.json")
 SYSTEMCTL = "/usr/bin/systemctl"
 DECK_USER = "deck"
 PLUGIN_ROOT = Path("/home/deck/homebrew/plugins/Re-Gear")
+CURRENT_GAMESCOPE_STATE = "/home/deck/.local/share/regear"
+MAX_ENVIRON_BYTES = 1024 * 1024
 
 
 def _plugin_loader_active() -> bool:
@@ -66,6 +68,46 @@ def _active_processes() -> tuple[str, ...]:
         if "/home/deck/homebrew/plugins/Re-Gear/" in command:
             active.add("regear_backend")
     return tuple(sorted(active))
+
+
+def _classify_gamescope_environment(environment: dict[str, str]) -> str:
+    current = environment.get("REGEAR_STATE_ROOT")
+    former = environment.get("HDM_STATE_ROOT")
+    if current is not None and former is not None:
+        return "ambiguous"
+    if former is not None:
+        return "former"
+    if current is None:
+        return "missing"
+    return "current" if current == CURRENT_GAMESCOPE_STATE else "unexpected"
+
+
+def _gamescope_environment_status() -> str:
+    observations: list[str] = []
+    for entry in Path("/proc").iterdir():
+        if not entry.name.isdecimal():
+            continue
+        try:
+            if (entry / "comm").read_text(encoding="utf-8").strip() != "gamescope":
+                continue
+            data = (entry / "environ").read_bytes()
+        except (FileNotFoundError, PermissionError, ProcessLookupError, OSError):
+            continue
+        if len(data) > MAX_ENVIRON_BYTES:
+            return "unreadable"
+        environment: dict[str, str] = {}
+        for item in data.split(b"\0"):
+            if not item or b"=" not in item:
+                continue
+            key, value = item.split(b"=", 1)
+            if key in (b"REGEAR_STATE_ROOT", b"HDM_STATE_ROOT"):
+                environment[key.decode("ascii")] = value.decode("utf-8", "replace")
+        observations.append(_classify_gamescope_environment(environment))
+    if not observations:
+        return "inactive"
+    if len(observations) != 1:
+        return "ambiguous"
+    return observations[0]
 
 
 def require_offline() -> None:
@@ -124,6 +166,7 @@ def _status_payload(
         "locations": {name: value.value for name, value in status.locations},
         "journal_phase": status.journal_phase,
         "gamescope_dropin": dropin.inspect(),
+        "gamescope_environment": _gamescope_environment_status(),
         "hardware_write": False,
         "service_write": False,
     }

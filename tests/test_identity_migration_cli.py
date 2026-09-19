@@ -16,6 +16,28 @@ SPEC.loader.exec_module(tool)
 
 
 class IdentityMigrationCliTests(unittest.TestCase):
+    def test_gamescope_environment_requires_one_exact_current_identity(self):
+        current = "/home/deck/.local/share/regear"
+        self.assertEqual(
+            tool._classify_gamescope_environment({"REGEAR_STATE_ROOT": current}),
+            "current",
+        )
+        self.assertEqual(
+            tool._classify_gamescope_environment(
+                {"REGEAR_STATE_ROOT": current, "HDM_STATE_ROOT": "/former"}
+            ),
+            "ambiguous",
+        )
+        self.assertEqual(
+            tool._classify_gamescope_environment({"HDM_STATE_ROOT": "/former"}),
+            "former",
+        )
+        self.assertEqual(tool._classify_gamescope_environment({}), "missing")
+        self.assertEqual(
+            tool._classify_gamescope_environment({"REGEAR_STATE_ROOT": "/edited"}),
+            "unexpected",
+        )
+
     def test_apply_guard_refuses_loader_or_runtime_process(self):
         with (
             patch.object(tool, "_plugin_loader_active", return_value=True),

@@ -48,7 +48,8 @@ migration:
 - moves the current directory back during rollback so newer recovery writes are
   never replaced by a stale snapshot;
 - replaces helper, public key and sudo policy through one visible administrator
-  bootstrap with exact backups and readback;
+  bootstrap with signed snapshots, a resumable phase journal, exact backups and
+  readback;
 - treats the Gamescope file/environment cutover as prepared until a supervised
   idle-session restart proves the running process inherited the new environment.
 
@@ -58,8 +59,11 @@ after installed acceptance and the rollback support window. Historical ZIPs,
 reports, hashes, logs and dated evidence keep their original bytes indefinitely.
 
 Fresh source and new packages do not create former paths, markers, browser keys,
-helper names or journal messages. Normal deployment still detects a former
-plugin root and refuses to create two active Decky instances.
+helper names or journal messages. Normal deployment detects either a former
+plugin root or former root-owned control state and refuses to start the new
+runtime before migration. Former Decky directory-keyed settings, data and logs
+are moved whole to neutral Re-Gear archive paths; current directories are never
+merged with them.
 ## Loader source evidence
 
 Upstream Decky source at

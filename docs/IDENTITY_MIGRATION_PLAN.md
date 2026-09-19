@@ -21,6 +21,7 @@ Repository tests do not establish that the device migration has run.
 | Plugin rollback storage | `.regear-deploy-backups` |
 | Browser preference prefix | `regear.` |
 | Current journal marker | `Re-Gear shutdown checkpoint: stage=` |
+| Former Decky settings/data/log directories | Whole-directory archives under `~/.local/share/regear-decky-*-archive` |
 
 `/var/lib/regear/control` is deliberately below the existing Re-Gear authority
 root. Other current components already use `/var/lib/regear`; moving the former
@@ -56,15 +57,19 @@ reconciled by its owning runtime path before another migration attempt.
 
 ## Transaction and rollback
 
-The privileged migrator uses a root-owned phase journal outside both directory
-names. Every phase records the original device/inode, owner, mode and content
-manifest and is fsynced before the next mutation.
+The privileged migrator uses root-owned phase journals outside every directory
+being moved. The journal records fixed planned paths and completed phases and is
+fsynced before the next mutation. Before each whole-directory rename, the
+migrator revalidates type, ownership, mode, bounded contents, quiescent lifecycle
+state and the same-filesystem destination. It does not claim to create a separate
+content backup of the control state.
 
-1. Create and verify a private evidence backup outside live roots.
-2. Rename the complete control directory to `/var/lib/regear/control` on the same
+1. Rename the complete control directory to `/var/lib/regear/control` on the same
    filesystem and fsync both parents.
-3. Rename the complete user directory to `~/.local/share/regear` and fsync its
+2. Rename the complete user directory to `~/.local/share/regear` and fsync its
    parent.
+3. Move former Decky directory-keyed settings, data and logs whole into neutral
+   Re-Gear archive paths. Existing current Decky directories are never merged.
 4. Replace the exact recognized Gamescope drop-in, deploy helper, public key and
    sudo policy as one reviewed installation transaction.
 5. Publish the matching Re-Gear plugin, reload the user unit configuration, and
@@ -86,8 +91,11 @@ pattern, so it cannot replace itself. One visible, supervised administrator step
 is unavoidable. `scripts/install_regear_identity_migrator.sh` is the narrow
 bootstrap for that step. It must be reviewed and copied to the device before use;
 Codex never requests or handles the device password. The completed bootstrap
-installs only fixed Re-Gear paths and a fixed-argument sudo rule, validates it with
-`visudo`, then removes former live authority only after readback succeeds.
+snapshots signed helper and migrator inputs into root-only storage, verifies both
+with the already trusted deploy public key, and uses a fsynced phase marker so an
+interrupted install or rollback can resume. It installs only fixed Re-Gear paths
+and fixed-argument sudo rules, validates them with `visudo`, then removes former
+live authority only after direct and Deck-user readback succeeds.
 
 The Gamescope phase remains prepared until a separately supervised restart proves
 the running process inherited `REGEAR_STATE_ROOT`. Removing a file is not proof
@@ -105,8 +113,11 @@ typecheck, compile, build and package checks on the combined head.
 
 Installed acceptance is supervised and separate. Capture preflight, migration
 journal, exact installed build, unique process/readback, current Gamescope
-environment, current inhibitor owner, current helper/sudo policy and absence of
-former live paths. Exercise no eGPU or power transition for identity acceptance.
+environment, current inhibitor owner, current helper/sudo policy, archived former
+Decky directories and absence of former live paths. The migrator's `status`
+output must report the restarted Gamescope environment as `current`; file-level
+readiness alone is insufficient. Exercise no eGPU or power transition for
+identity acceptance.
 The existing hardware journeys retain their own validation gates.
 
 Documentation impact: multiple
