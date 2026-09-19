@@ -18,7 +18,8 @@ export function ReGearTile({ label, artworkId, Button = 'button', buttonProps, c
   return <Button {...buttonProps} type="button"
     className={['rg-expanded-tile', buttonProps?.className].filter(Boolean).join(' ')}
     aria-disabled={unavailable || buttonProps?.['aria-disabled']}
-    onClick={unavailable ? undefined : buttonProps?.onClick}>
+    onClick={unavailable ? undefined : buttonProps?.onClick}
+    onOKButton={unavailable ? undefined : buttonProps?.onOKButton}>
     <span className="rg-expanded-tile-body">
       <span className="rg-expanded-tile-heading">
         <span className="rg-expanded-tile-icon"><TileArtwork id={artworkId}/></span>

@@ -82,6 +82,43 @@ test('static actions dispatch once with no chevron, detail route or value, and s
   assert.equal(walk(unavailable).find(n=>n.props.className==='rg-tile-metadata').props.children[0],'Unavailable');
 });
 
+test('unavailable native tiles refuse pointer and A activation while retaining focus navigation', () => {
+  let pointerCalls=0;
+  let controllerCalls=0;
+  const onFocus=()=>{};
+  const onLeft=()=>{};
+  const DeckyButton=props=>({type:'decky-button',props});
+  const buttonProps={
+    onClick:()=>pointerCalls++,
+    onOKButton:()=>controllerCalls++,
+    onFocus,
+    onLeft,
+    'data-ec-control':'safe-disconnect',
+  };
+
+  const unavailable=api.ReGearTile({
+    label:'Safe Disconnect', artworkId:'safe-disconnect', Button:DeckyButton, buttonProps, unavailable:true,
+  });
+  assert.equal(unavailable.type,'decky-button');
+  assert.equal(unavailable.props['aria-disabled'],true);
+  assert.equal(unavailable.props.onClick,undefined);
+  assert.equal(unavailable.props.onOKButton,undefined);
+  assert.equal(unavailable.props.onFocus,onFocus);
+  assert.equal(unavailable.props.onLeft,onLeft);
+  assert.equal(unavailable.props['data-ec-control'],'safe-disconnect');
+  assert.match(text(unavailable),/Safe Disconnect/);
+  assert.equal(pointerCalls,0);
+  assert.equal(controllerCalls,0);
+
+  const available=api.ReGearTile({
+    label:'Safe Disconnect', artworkId:'safe-disconnect', Button:DeckyButton, buttonProps,
+  });
+  available.props.onClick();
+  available.props.onOKButton();
+  assert.equal(pointerCalls,1);
+  assert.equal(controllerCalls,1);
+});
+
 test('static and dynamic share card geometry and forward focus and navigation hooks', () => {
   api.resetGauge();
   const onFocus=()=>{};
