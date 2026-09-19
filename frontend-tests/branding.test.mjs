@@ -13,8 +13,7 @@ test("Re-Gear is the Decky list, panel, and dialog brand", () => {
   assert.match(source, /strTitle: PRODUCT_NAME/);
   assert.match(source, /name: PRODUCT_NAME/);
   assert.equal(JSON.parse(read("../plugin.json")).name, "Re-Gear");
-  assert.match(source, /hdm\.hideAttachedEgpuSleepWarning/);
-  assert.match(source, /hdm\.hideAttachedG1SleepWarning/);
+  assert.match(read("../src/identity-storage.ts"), /regear\.hideAttachedEgpuSleepWarning\.v1/);
 });
 
 test("approved preview uses Re-Gear and keeps sample-data disclosure", () => {

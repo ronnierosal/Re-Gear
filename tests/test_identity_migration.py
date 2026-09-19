@@ -110,23 +110,25 @@ class IdentityMigrationTests(unittest.TestCase):
         self.user_old.rmdir()
         self.assertEqual(self.migration.inspect().state("user"), LocationState.NEITHER)
 
+    @unittest.skipIf(os.name == "nt", "production identity paths use POSIX semantics")
     def test_default_moves_archive_former_decky_directories_without_merging(self):
-        moves = {item.name: item for item in default_moves(Path("/home/deck"), user_uid=1000)}
+        home = Path("/home/deck")
+        moves = {item.name: item for item in default_moves(home, user_uid=1000)}
         self.assertEqual(
             moves["decky_settings"].old,
-            Path("/home/deck/homebrew/settings/HandheldDockMode"),
+            home / "homebrew/settings/HandheldDockMode",
         )
         self.assertEqual(
             moves["decky_settings"].current,
-            Path("/home/deck/.local/share/regear-decky-settings-archive"),
+            home / ".local/share/regear-decky-settings-archive",
         )
         self.assertEqual(
             moves["decky_data"].current,
-            Path("/home/deck/.local/share/regear-decky-data-archive"),
+            home / ".local/share/regear-decky-data-archive",
         )
         self.assertEqual(
             moves["decky_logs"].current,
-            Path("/home/deck/.local/share/regear-decky-logs-archive"),
+            home / ".local/share/regear-decky-logs-archive",
         )
         self.assertEqual(len(moves), 5)
 

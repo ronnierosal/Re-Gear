@@ -107,6 +107,7 @@ class FormerIdentityBoundaryTests(unittest.TestCase):
             "scripts/community_report.py",
             "scripts/deploy_to_ally.ps1",
             "scripts/install_regear_identity_migrator.sh",
+            "scripts/migrate_regear_identity.py",
             "scripts/probe_steam_suspend_store.mjs",
             "scripts/verify_validation_artifact.py",
             "src/identity-storage.ts",
