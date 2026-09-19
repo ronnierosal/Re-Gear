@@ -495,6 +495,11 @@ plugin, or perform a hardware action. Run the offline identity migrator
 separately only after its status preflight and the supervised session shutdown
 required by [the cutover procedure](IDENTITY_CUTOVER.md).
 
+On SteamOS, a later platform `(ALL) ALL` rule can override an earlier
+`NOPASSWD` tag. The bootstrap installs one identical lexically-final policy copy
+for precedence, verifies both copies against the root snapshot, and removes
+both on rollback. This does not widen the fixed helper or migrator commands.
+
 Each later candidate is built and provenance checked as usual, signed locally
 with `scripts/sign_deploy_package.py`, then staged with
 `scripts/stage_signed_deploy.py`. The automated, narrow install command is:

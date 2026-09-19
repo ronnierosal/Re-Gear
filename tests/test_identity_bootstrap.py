@@ -24,6 +24,10 @@ class IdentityBootstrapTests(unittest.TestCase):
     def test_installs_only_regear_live_deploy_authority(self):
         self.assertIn("NEW_ROOT=/var/lib/regear/deploy", self.source)
         self.assertIn("NEW_RULE=/etc/sudoers.d/regear-deploy-plugin", self.source)
+        self.assertIn(
+            "EFFECTIVE_RULE=/etc/sudoers.d/zzzzzzzz-regear-deploy-plugin",
+            self.source,
+        )
         self.assertIn('"$NEW_HELPER" --self-check', self.source)
         self.assertIn('"$NEW_MIGRATOR" status', self.source)
         self.assertIn(
@@ -35,6 +39,19 @@ class IdentityBootstrapTests(unittest.TestCase):
             self.source,
         )
         self.assertIn("visudo -cf", self.source)
+
+    def test_effective_rule_is_published_last_and_removed_on_rollback(self):
+        self.assertIn(
+            'install_if_absent_or_exact "$BACKUP/current-sudoers" "$EFFECTIVE_RULE" 0440',
+            self.source,
+        )
+        self.assertIn(
+            '"$BACKUP/current-sudoers:$EFFECTIVE_RULE"', self.source
+        )
+        self.assertIn('visudo -cf "$EFFECTIVE_RULE"', self.source)
+        self.assertIn(
+            'rm -f "$EFFECTIVE_RULE" "$NEW_RULE"', self.source
+        )
 
     def test_sudo_policy_allows_only_exact_migrator_commands(self):
         for command in ("status", "reconcile-runtime", "apply", "rollback"):
@@ -66,7 +83,7 @@ class IdentityBootstrapTests(unittest.TestCase):
             self.source,
         )
         self.assertIn(
-            'rm -f "$NEW_RULE" "$NEW_HELPER" "$NEW_MIGRATOR" "$NEW_KEY"',
+            'rm -f "$EFFECTIVE_RULE" "$NEW_RULE" "$NEW_HELPER" "$NEW_MIGRATOR" "$NEW_KEY"',
             self.source,
         )
 
