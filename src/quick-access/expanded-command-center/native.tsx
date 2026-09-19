@@ -126,7 +126,7 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
     const opened=showModal(<EgpuConfirmModal strTitle={title} strOKButtonText="Hide" bAlertDialog onOK={hide} onCancel={hide} onEscKeypress={hide} className="rg-whole-dock-progress">
       <style>{`.rg-whole-dock-progress{position:fixed!important;left:50%!important;top:50%!important;right:auto!important;bottom:auto!important;margin:0!important;transform:translate(-50%,-50%)!important}`}</style>
       <WholeDockControl intent={intent} readCurrentSnapshot={readCurrentSnapshot} startRequest={startRequest}/>
-    </EgpuConfirmModal>,host,{fnOnClose:hide,bNeverPopOut:true});
+    </EgpuConfirmModal>,undefined,{fnOnClose:hide,bNeverPopOut:true});
     if(operationGeneration!==operationToken){opened.Close();return;}
     operation=opened;
   }
@@ -143,7 +143,7 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
     const opened=showModal(<EgpuConfirmModal strTitle="Shutdown" strOKButtonText="Hide" bAlertDialog onOK={hide} onCancel={hide} onEscKeypress={hide} className="rg-whole-dock-progress">
       <style>{`.rg-whole-dock-progress{position:fixed!important;left:50%!important;top:50%!important;right:auto!important;bottom:auto!important;margin:0!important;transform:translate(-50%,-50%)!important}`}</style>
       <ShutdownStatus/>
-    </EgpuConfirmModal>,host,{fnOnClose:hide,bNeverPopOut:true});
+    </EgpuConfirmModal>,undefined,{fnOnClose:hide,bNeverPopOut:true});
     if(operationGeneration!==operationToken){opened.Close();return;}operation=opened;
   }
   function View({ token }: { token: number }) {
@@ -204,7 +204,7 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
     const opened = showModal(<ModalRoot closeModal={close} bAllowFullSize bHideCloseIcon bDisableBackgroundDismiss className="rg-expanded-modal-root" modalClassName="rg-expanded-modal-frame">
       <style>{`.rg-expanded-modal-root,.rg-expanded-modal-frame{position:fixed!important;inset:0!important;width:100vw!important;height:100vh!important;max-width:none!important;max-height:none!important;padding:0!important;margin:0!important;background:transparent!important;box-shadow:none!important}`}</style>
       <View token={token}/>
-    </ModalRoot>, host, { strTitle: "Re-Gear expanded demo", bNeverPopOut: true });
+    </ModalRoot>, undefined, { strTitle: "Re-Gear expanded demo", bNeverPopOut: true });
     if (generation !== token || stopped) { opened.Close(); return; }
     modal = opened;
     visibility.set(true);
