@@ -68,7 +68,7 @@ class ShutdownEvidenceTests(unittest.TestCase):
 
     def test_checkpoints_are_allowlisted_unit_scoped_and_bounded(self):
         data = b"".join(journal(
-            f"[INFO] HDM shutdown checkpoint: stage={stage} elapsed_ms={number}",
+            f"[INFO] Re-Gear shutdown checkpoint: stage={stage} elapsed_ms={number}",
             _SYSTEMD_UNIT="plugin_loader.service",
             __MONOTONIC_TIMESTAMP=str(1000000 + number * 1000),
         ) for number, stage in enumerate(capture.STAGES))
@@ -82,6 +82,18 @@ class ShutdownEvidenceTests(unittest.TestCase):
         self.assertEqual(report["physical_poweroff"], "unknown")
         self.assertEqual(report["collector"]["installed_revision"], "unknown")
         self.assertEqual(capture.validate_report(json.dumps(report)), report)
+
+    def test_previous_marker_remains_readable_during_rollback_window(self):
+        report = capture.classify_journal(
+            journal(
+                "HDM shutdown checkpoint: stage=unload_complete elapsed_ms=7",
+                _SYSTEMD_UNIT="plugin_loader.service",
+            )
+        )
+        self.assertEqual(
+            report["checkpoints"]["unload_complete"],
+            {"count": 1, "last_elapsed_ms": 7},
+        )
 
     def test_empty_malformed_unknown_and_tail_bounds(self):
         self.assertEqual(capture.classify_journal(b"")["status"], "no_previous_journal")
