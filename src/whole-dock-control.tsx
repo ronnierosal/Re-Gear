@@ -26,6 +26,7 @@ export function WholeDockControl({ readCurrentSnapshot, intent = "disconnect", s
   const [reading, setReading] = useState<any>(null);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
+  const [initialNotStarted, setInitialNotStarted] = useState(false);
   const mounted = useRef(true);
   const pending = useRef(false);
   const uncertain = useRef(!!pendingRequest());
@@ -54,8 +55,18 @@ export function WholeDockControl({ readCurrentSnapshot, intent = "disconnect", s
           }
         }
         setReading(next);
-        if(startRequest?.()) confirm(true,next);
-      } catch { if (!disposed && started === epoch.current) { setReading(null); startRequest?.(); } }
+        if(startRequest?.()) {
+          const initial = dockIntentControl(next.status,next.snapshot,intent);
+          if (!initial.action && !uncertain.current && !pendingRequest()) {
+            setInitialNotStarted(true);
+          } else confirm(true,next);
+        }
+      } catch { if (!disposed && started === epoch.current) {
+        setReading(null);
+        if (startRequest?.() && !uncertain.current && !pendingRequest()) {
+          setInitialNotStarted(true);
+        }
+      } }
       if (!disposed) timer = setTimeout(refresh, 2000);
     };
     void refresh();
@@ -117,7 +128,13 @@ export function WholeDockControl({ readCurrentSnapshot, intent = "disconnect", s
     </EgpuConfirmModal>, undefined, { fnOnClose: cancel, bNeverPopOut: true });
   };
   return <div style={{fontSize:13,lineHeight:"18px"}}>
-    <p style={{margin:"0 0 8px"}} role="status">{notice || (uncertain.current ? "Waiting to verify the previous request. Keep the cable connected." : view.message)}</p>
+    <p style={{margin:"0 0 8px"}} role="status">{(initialNotStarted && !uncertain.current && !pendingRequest()) ? `Safe Disconnect did not start. No request was sent by this attempt. ${view.message}` : notice || (uncertain.current ? "Waiting to verify the previous request. Keep the cable connected." : view.message)}</p>
+    {startRequest && initialNotStarted && !pending.current && !uncertain.current && !pendingRequest() && <DialogButton {...{type:"button" as const}} style={{width:"100%",minWidth:0,padding:"8px",border:"1px solid #39d8ff",borderRadius:8,background:"#112434",color:"#f4f7fb"}} disabled={!view.action || busy} onClick={(event)=>{
+      event?.preventDefault(); event?.stopPropagation();
+      if (!mounted.current || !view.action || pending.current || uncertain.current || pendingRequest()) return;
+      setInitialNotStarted(false);
+      confirm(true,reading);
+    }}>Safe Disconnect</DialogButton>}
     {!startRequest && <DialogButton style={{width:"100%",minWidth:0,padding:"8px",border:"1px solid #39d8ff",borderRadius:8,background:"#112434",color:"#f4f7fb"}} disabled={!view.action || busy || uncertain.current} onClick={()=>confirm()}>{busy ? "Working…" : uncertain.current ? "Checking previous request" : view.label}</DialogButton>}
     <p style={{margin:"8px 0 0"}}>Keep the cable connected. Physical unplug is not yet verified.</p>
   </div>;
