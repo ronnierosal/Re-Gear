@@ -212,6 +212,63 @@ class IntentFilesystemTests(unittest.TestCase):
         # The disconnect history itself is untouched.
         self.assertEqual(self.claim.load(), expected)
 
+    def test_recreated_store_reconciles_dead_sleep_without_a_live_session(self):
+        dead = '1' * 64 + ':' + 'a' * 32
+        expected = self.prepare_boot_intent(
+            action='sleep', session=dead, consume=True)
+        recreated = DockPowerIntentStore(self.root, **self.kwargs)
+
+        self.assertTrue(recreated.reconcile_stranded_sleep(
+            expected, None, lambda: True))
+        self.assertTrue(recreated.power_intent_absent(expected))
+        # Reconciliation only removes the power intent. Ordinary archival owns
+        # retirement of the disconnect history under its broader fresh guard.
+        self.assertEqual(self.claim.load(), expected)
+        self.assertFalse(recreated.consume(
+            expected.operation, expected.binding, expected.generation,
+            'sleep', dead, ARGS[5], ARGS[6]))
+        self.assertFalse(recreated.reconcile_stranded_sleep(
+            expected, None, lambda: True))
+        self.assertTrue(recreated.retire_physically_disconnected(
+            expected, lambda: recreated.power_intent_absent(expected)))
+        self.assertIsNone(self.claim.load())
+
+    def test_reconcile_requires_strict_persisted_and_live_session_tokens(self):
+        expected = self.prepare_boot_intent(
+            action='sleep', session='legacy-session', consume=True)
+        self.assertFalse(self.store.reconcile_stranded_sleep(
+            expected, None, lambda: True))
+        self.assertFalse(self.claim.power_intent_absent(expected))
+
+    def test_reconcile_rejects_invalid_live_session_and_intent_identity(self):
+        dead = '1' * 64 + ':' + 'a' * 32
+        expected = self.prepare_boot_intent(
+            action='sleep', session=dead, consume=True)
+        self.assertFalse(self.store.reconcile_stranded_sleep(
+            expected, 'legacy-session', lambda: True))
+        raw = json.loads(self.path.read_text())
+        raw['binding'] = 'other-binding'
+        self.path.write_text(json.dumps(raw))
+        self.assertFalse(self.store.reconcile_stranded_sleep(
+            expected, None, lambda: True))
+        self.assertFalse(self.claim.power_intent_absent(expected))
+
+    def test_reconcile_preserves_intent_changed_while_guard_runs(self):
+        dead = '1' * 64 + ':' + 'a' * 32
+        expected = self.prepare_boot_intent(
+            action='sleep', session=dead, consume=True)
+        replacement = '2' * 64 + ':' + 'b' * 32
+        def change_intent():
+            raw = json.loads(self.path.read_text())
+            raw['session'] = replacement
+            self.path.write_text(json.dumps(raw))
+            return True
+
+        self.assertFalse(self.store.reconcile_stranded_sleep(
+            expected, None, change_intent))
+        self.assertEqual(json.loads(self.path.read_text())['session'], replacement)
+        self.assertFalse(self.claim.power_intent_absent(expected))
+
     def test_reconcile_covers_a_consumed_sleep(self):
         # A consumed record means submission was attempted, not that it landed.
         # suspend_inhibited is refused after consumption, so the device case is

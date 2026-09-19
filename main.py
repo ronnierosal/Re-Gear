@@ -1736,11 +1736,11 @@ class Plugin:
                 # here strands the claim, and a stranded claim inhibits every
                 # later admission, so the reason must reach the journey log.
                 unmet = []
-                def guard():
+                def guard(*, require_power_intent=True):
                     topology = self._connection_topology.observe()
                     current = SnapshotTransitionObservationAdapter(self._discovery).observe().snapshot
                     journal = self._transition_journal_service().status()
-                    for name, satisfied in (
+                    conditions = (
                         ('transport_absent_verified', lambda: topology.transport_absent_verified is True),
                         ('transport_present', lambda: topology.transport_present is False),
                         ('verified_transport_absent', lambda: verified_transport_absent() is True),
@@ -1753,37 +1753,49 @@ class Plugin:
                         ('exact_host', lambda: bool(resolve_runtime_profiles(current).exact_host)),
                         ('journal_durable', lambda: bool(journal.durable)),
                         ('journal_unowned', lambda: journal.owner.value == 'none'),
-                        ('power_intent_absent', lambda: store.power_intent_absent(claim) is True),
                         ('inner_records_absent', lambda: bool(inner_removal_records_absent())),
                         ('same_user', lambda: resolve_gamescope_user(
                             GamescopeDiscovery().scan()).context == user.context),
                         ('not_unloading', lambda: not self._unloading),
-                    ):
+                    )
+                    if require_power_intent:
+                        conditions = conditions[:12] + (
+                            ('power_intent_absent',
+                             lambda: store.power_intent_absent(claim) is True),
+                        ) + conditions[12:]
+                    for name, satisfied in conditions:
                         if not satisfied():
                             unmet[:] = [name]
                             return False
                     unmet[:] = []
                     return True
-                # A sleep intent whose session is gone can never be submitted,
-                # and retaining it holds power_intent_absent false forever. Clear
-                # it here, under the same admission, before the guard reads it.
-                if getattr(self, '_dock_power_session', None) is not None:
-                    try:
-                        store.reconcile_stranded_sleep(claim, self._dock_power_session,
-                            lambda: verified_transport_absent() is True
-                                and self._connection_topology.observe().transport_present is False
-                                and not self._unloading)
-                    except Exception:
-                        # Reconciliation is best effort; the guard still decides.
-                        pass
                 phase = 'guard'
-                if not guard():
+                if not guard(require_power_intent=False):
                     return refuse('guard', unmet[0] if unmet else 'unknown')
                 phase = 'audit'
                 audit = HeldTrialLauncher(uid=user.context.uid,
                     username=user.context.username).call('audit', '0' * 32)
                 if audit.get('code') != 'held_helper.settled' or audit.get('settled') is not True:
                     return refuse('audit', 'held_helper_unsettled')
+                # A recreated Plugin has no session attribute. A strict intent
+                # persisted by its dead predecessor can no longer be consumed;
+                # remove only that sleep record after every non-power archival
+                # prerequisite and the helper audit have passed.
+                session_missing = not hasattr(self, '_dock_power_session')
+                live_session = (None if session_missing
+                                else self._dock_power_session)
+                if session_missing or live_session is not None:
+                    try:
+                        store.reconcile_stranded_sleep(
+                            claim, live_session,
+                            lambda: guard(require_power_intent=False))
+                    except Exception:
+                        # Reconciliation is best effort; the full guard below
+                        # still owns archival admission.
+                        pass
+                phase = 'guard'
+                if not guard():
+                    return refuse('guard', unmet[0] if unmet else 'unknown')
                 phase = 'retire'
                 store.retire_physically_disconnected(claim, guard)
                 self._archival_refusal = None
