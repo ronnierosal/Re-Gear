@@ -12,6 +12,7 @@ NEW_HELPER=$NEW_ROOT/regear-deploy-plugin
 NEW_MIGRATOR=$NEW_ROOT/regear-migrate-identity
 NEW_KEY=$NEW_ROOT/deploy-public-key.pem
 NEW_RULE=/etc/sudoers.d/regear-deploy-plugin
+EFFECTIVE_RULE=/etc/sudoers.d/zzzzzzzz-regear-deploy-plugin
 STAGED_HELPER=/home/deck/regear-deploy-plugin
 STAGED_HELPER_SIG=/home/deck/regear-deploy-plugin.sig
 STAGED_MIGRATOR=/home/deck/regear-migrate-identity
@@ -299,6 +300,8 @@ prepare() {
     root_safe "$OLD_RULE" || fail "former sudo policy is not exact root-owned authority"
     test ! -e "$NEW_ROOT" && test ! -L "$NEW_ROOT" || fail "new deploy authority already exists"
     test ! -e "$NEW_RULE" && test ! -L "$NEW_RULE" || fail "new sudo policy already exists"
+    test ! -e "$EFFECTIVE_RULE" && test ! -L "$EFFECTIVE_RULE" \
+        || fail "effective Re-Gear sudo policy already exists"
 
     test ! -L /var/lib/regear || fail "Re-Gear authority parent is unsafe"
     install -d -m 0700 /var/lib/regear
@@ -338,6 +341,7 @@ publish_current() {
     install_if_absent_or_exact "$BACKUP/candidate-migrator" "$NEW_MIGRATOR" 0755
     install_if_absent_or_exact "$BACKUP/candidate-public-key.pem" "$NEW_KEY" 0644
     install_if_absent_or_exact "$BACKUP/current-sudoers" "$NEW_RULE" 0440
+    install_if_absent_or_exact "$BACKUP/current-sudoers" "$EFFECTIVE_RULE" 0440
     verify_current_authority
     write_phase CURRENT_VERIFIED
 }
@@ -347,13 +351,15 @@ verify_current_authority() {
         "$BACKUP/candidate-helper:$NEW_HELPER" \
         "$BACKUP/candidate-migrator:$NEW_MIGRATOR" \
         "$BACKUP/candidate-public-key.pem:$NEW_KEY" \
-        "$BACKUP/current-sudoers:$NEW_RULE"; do
+        "$BACKUP/current-sudoers:$NEW_RULE" \
+        "$BACKUP/current-sudoers:$EFFECTIVE_RULE"; do
         source=${pair%%:*}
         destination=${pair#*:}
         root_safe "$destination" && cmp -s "$source" "$destination" \
             || fail "current deploy authority changed: $destination"
     done
     visudo -cf "$NEW_RULE" >/dev/null
+    visudo -cf "$EFFECTIVE_RULE" >/dev/null
     "$NEW_HELPER" --self-check >/dev/null
     "$NEW_MIGRATOR" status >/dev/null
     /usr/bin/sudo -u deck /usr/bin/sudo -n "$NEW_HELPER" --self-check >/dev/null
@@ -420,7 +426,9 @@ remove_current() {
     same_or_absent "$BACKUP/candidate-migrator" "$NEW_MIGRATOR" || fail "current migrator changed"
     same_or_absent "$BACKUP/candidate-public-key.pem" "$NEW_KEY" || fail "current key changed"
     same_or_absent "$BACKUP/current-sudoers" "$NEW_RULE" || fail "current sudo policy changed"
-    rm -f "$NEW_RULE" "$NEW_HELPER" "$NEW_MIGRATOR" "$NEW_KEY"
+    same_or_absent "$BACKUP/current-sudoers" "$EFFECTIVE_RULE" \
+        || fail "effective current sudo policy changed"
+    rm -f "$EFFECTIVE_RULE" "$NEW_RULE" "$NEW_HELPER" "$NEW_MIGRATOR" "$NEW_KEY"
     if test -d "$NEW_ROOT" && test ! -L "$NEW_ROOT"; then rmdir "$NEW_ROOT"; fi
 }
 require_identity_rollback_first() {

@@ -17,7 +17,7 @@ Repository tests do not establish that the device migration has run.
 | Managed-file and inhibitor owner | `Re-Gear` |
 | Privileged deploy helper | `/var/lib/regear/deploy/regear-deploy-plugin` |
 | Deploy public key | `/var/lib/regear/deploy/deploy-public-key.pem` |
-| Sudo policy | `/etc/sudoers.d/regear-deploy-plugin` |
+| Sudo policy | Canonical `/etc/sudoers.d/regear-deploy-plugin` plus an identical lexically-final SteamOS precedence copy |
 | Plugin rollback storage | `.regear-deploy-backups` |
 | Former deploy backups/staging | Whole-directory root archive under `/var/lib/regear/deploy` |
 | Browser preference prefix | `regear.` |
@@ -124,6 +124,13 @@ copied new key, records the immutable trust mode in the root-only transaction,
 and then follows the same publication, readback, retirement and rollback path.
 The new private key remains off-device and outside the repository. Ordinary
 `install` keeps the former-key trust chain unchanged.
+
+SteamOS also supplies a later general password-required rule. The bootstrap
+therefore publishes the same fixed-command policy at the canonical path and at
+`/etc/sudoers.d/zzzzzzzz-regear-deploy-plugin`, which sorts after the platform
+rule. Both copies must match the root-only snapshot, pass `visudo`, and are
+verified and removed together during rollback; the later copy grants no
+additional command surface.
 
 The Gamescope phase remains prepared until a separately supervised restart proves
 the running process inherited `REGEAR_STATE_ROOT`. Removing a file is not proof
