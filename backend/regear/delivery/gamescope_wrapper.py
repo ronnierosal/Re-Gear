@@ -314,8 +314,8 @@ def _load_config(state_root: Path) -> GamescopeLaunchConfig | None:
 def state_root_from_environment(environment: dict[str, str]) -> Path | None:
     """Resolve one exact Re-Gear state root with bounded rollback compatibility.
 
-    New identity wins when both variables are present. The prior variable is
-    accepted only for its exact former per-user root; arbitrary paths never gain
+    Dual identity is ambiguous and fails closed. The prior variable is accepted
+    only for its exact former per-user root; arbitrary paths never gain
     state-file read authority.
     """
     home_value = environment.get("HOME", "")
@@ -323,11 +323,13 @@ def state_root_from_environment(environment: dict[str, str]) -> Path | None:
     if not home.is_absolute():
         return None
     current = environment.get(STATE_ROOT_ENV)
+    legacy = environment.get(LEGACY_STATE_ROOT_ENV)
+    if current is not None and legacy is not None:
+        return None
     if current is not None:
         candidate = Path(current)
         expected = home / ".local" / "share" / "regear"
         return candidate if candidate.is_absolute() and candidate == expected else None
-    legacy = environment.get(LEGACY_STATE_ROOT_ENV)
     if legacy is None:
         return None
     candidate = Path(legacy)

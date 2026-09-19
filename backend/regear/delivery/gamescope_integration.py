@@ -467,7 +467,9 @@ class GamescopeIntegrationStore:
                     normalized,
                 )
                 if directive and re.search(
-                    r"(?:^|[\s\"'])PATH(?:=|[\s\"']|$)", directive.group(2)
+                    r"(?:^|[\s\"'])(?:PATH|REGEAR_STATE_ROOT|HDM_STATE_ROOT)"
+                    r"(?:=|[\s\"']|$)",
+                    directive.group(2),
                 ):
                     conflicts.append(candidate.name)
                     break

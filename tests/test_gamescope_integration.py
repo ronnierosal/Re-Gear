@@ -116,6 +116,9 @@ class GamescopeIntegrationStoreTests(unittest.TestCase):
             "[Service]\nEnvironment = \"PATH=/other\"\n",
             "[Service]\nPassEnvironment = PATH\n",
             "[Service]\nUnsetEnvironment = PATH\n",
+            "[Service]\nEnvironment=\"REGEAR_STATE_ROOT=/other\"\n",
+            "[Service]\nPassEnvironment=HDM_STATE_ROOT\n",
+            "[Service]\nUnsetEnvironment=REGEAR_STATE_ROOT HDM_STATE_ROOT\n",
         )
         for value in values:
             with self.subTest(value=value), tempfile.TemporaryDirectory() as directory:

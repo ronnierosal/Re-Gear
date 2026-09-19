@@ -91,17 +91,41 @@ class MigrationStatus:
             raise ValueError("unknown migration location") from error
 
 
-def default_moves(home: Path, *, user_uid: int) -> tuple[DirectoryMove, DirectoryMove]:
+def default_moves(home: Path, *, user_uid: int) -> tuple[DirectoryMove, ...]:
     """Return the fixed production identities without touching the filesystem."""
     if not home.is_absolute():
         raise ValueError("home must be absolute")
+    shared = home / ".local" / "share"
+    decky = home / "homebrew"
+    user_owned = frozenset((0, user_uid))
     return (
         DirectoryMove("runtime", LEGACY_RUNTIME_ROOT, CURRENT_RUNTIME_ROOT, frozenset((0,))),
         DirectoryMove(
             "user",
             Path(str(LEGACY_USER_ROOT).replace("~", str(home), 1)),
             Path(str(CURRENT_USER_ROOT).replace("~", str(home), 1)),
-            frozenset((0, user_uid)),
+            user_owned,
+            root_mode=0o755,
+        ),
+        DirectoryMove(
+            "decky_settings",
+            decky / "settings" / "HandheldDockMode",
+            shared / "regear-decky-settings-archive",
+            user_owned,
+            root_mode=0o755,
+        ),
+        DirectoryMove(
+            "decky_data",
+            decky / "data" / "HandheldDockMode",
+            shared / "regear-decky-data-archive",
+            user_owned,
+            root_mode=0o755,
+        ),
+        DirectoryMove(
+            "decky_logs",
+            decky / "logs" / "HandheldDockMode",
+            shared / "regear-decky-logs-archive",
+            user_owned,
             root_mode=0o755,
         ),
     )

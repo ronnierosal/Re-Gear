@@ -186,7 +186,7 @@ class SteamTrialTests(unittest.TestCase):
             'REGEAR_STATE_ROOT': str(current),
             'HDM_STATE_ROOT': str(legacy),
         }
-        self.assertEqual(state_root_from_environment(environment), current)
+        self.assertIsNone(state_root_from_environment(environment))
 
     def test_state_root_accepts_only_exact_legacy_rollback_path(self):
         home = self.root / 'home'

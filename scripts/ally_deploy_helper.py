@@ -27,6 +27,7 @@ PACKAGE_ROOT = Path("/home/deck")
 PLUGIN_PARENT = Path("/home/deck/homebrew/plugins")
 PLUGIN_NAME = "Re-Gear"
 LEGACY_NAME = "HandheldDockMode"
+LEGACY_CONTROL_ROOT = Path("/var/lib/handheld-dock-mode")
 TARGET = PLUGIN_PARENT / PLUGIN_NAME
 BACKUPS = PLUGIN_PARENT / ".regear-deploy-backups"
 # SteamOS keeps /usr immutable. Re-Gear keeps deploy authority separate from
@@ -205,6 +206,15 @@ def reject_legacy(directory_fd: int) -> None:
         raise DeploymentError("legacy installation requires supervised cutover; see docs/IDENTITY_CUTOVER.md")
 
 
+def reject_legacy_control_state() -> None:
+    """Never start a new-root runtime while former safety authority is live."""
+    if LEGACY_CONTROL_ROOT.exists() or LEGACY_CONTROL_ROOT.is_symlink():
+        raise DeploymentError(
+            "legacy control state requires supervised identity migration; "
+            "see docs/IDENTITY_MIGRATION_PLAN.md"
+        )
+
+
 def open_directory_chain(path: Path) -> int:
     """Reject symlinks in every component, retaining each parent while opening."""
     if not path.is_absolute() or ".." in path.parts:
@@ -243,6 +253,7 @@ def install(package_name: str, signature_name: str) -> dict[str, str]:
     match = PACKAGE_RE.fullmatch(package_name)
     if match is None or signature_name != f"{package_name}.sig":
         raise DeploymentError("package name is invalid")
+    reject_legacy_control_state()
     legacy = PLUGIN_PARENT / LEGACY_NAME
     if legacy.exists() or legacy.is_symlink():
         raise DeploymentError("legacy installation requires supervised cutover; see docs/IDENTITY_CUTOVER.md")
@@ -253,6 +264,7 @@ def install(package_name: str, signature_name: str) -> dict[str, str]:
     parent_fd = open_directory_chain(PLUGIN_PARENT)
     try:
         reject_legacy(parent_fd)
+        reject_legacy_control_state()
         backup_fd = open_private_backups(parent_fd)
         try:
             import fcntl
@@ -284,6 +296,7 @@ def install_pinned(package_name: str, signature_name: str, match: re.Match[str],
         if entry_exists(backup_name, backup_fd):
             raise DeploymentError("backup destination already exists")
         reject_legacy(parent_fd)
+        reject_legacy_control_state()
         try:
             if entry_exists(PLUGIN_NAME, parent_fd):
                 target_status = os.stat(PLUGIN_NAME, dir_fd=parent_fd, follow_symlinks=False)

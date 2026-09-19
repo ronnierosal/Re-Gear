@@ -110,6 +110,26 @@ class IdentityMigrationTests(unittest.TestCase):
         self.user_old.rmdir()
         self.assertEqual(self.migration.inspect().state("user"), LocationState.NEITHER)
 
+    def test_default_moves_archive_former_decky_directories_without_merging(self):
+        moves = {item.name: item for item in default_moves(Path("/home/deck"), user_uid=1000)}
+        self.assertEqual(
+            moves["decky_settings"].old,
+            Path("/home/deck/homebrew/settings/HandheldDockMode"),
+        )
+        self.assertEqual(
+            moves["decky_settings"].current,
+            Path("/home/deck/.local/share/regear-decky-settings-archive"),
+        )
+        self.assertEqual(
+            moves["decky_data"].current,
+            Path("/home/deck/.local/share/regear-decky-data-archive"),
+        )
+        self.assertEqual(
+            moves["decky_logs"].current,
+            Path("/home/deck/.local/share/regear-decky-logs-archive"),
+        )
+        self.assertEqual(len(moves), 5)
+
     def test_old_only_moves_whole_directories_and_preserves_exact_bytes(self):
         payload = b"\x00\xffexact-state\r\n"
         self._create(self.runtime_old, {"nested/claim-history.bin": payload})
@@ -218,11 +238,15 @@ class IdentityMigrationTests(unittest.TestCase):
 
     @unittest.skipUnless(os.name == "posix", "requires POSIX identity semantics")
     def test_default_user_policy_accepts_root_and_session_user_with_mode_0755(self):
-        runtime, user = default_moves(Path("/home/deck"), user_uid=1000)
+        runtime, user, settings, data, logs = default_moves(Path("/home/deck"), user_uid=1000)
         self.assertEqual(runtime.allowed_uids, frozenset((0,)))
         self.assertEqual(runtime.root_mode, 0o700)
         self.assertEqual(user.allowed_uids, frozenset((0, 1000)))
         self.assertEqual(user.root_mode, 0o755)
+        for archive in (settings, data, logs):
+            self.assertEqual(archive.allowed_uids, frozenset((0, 1000)))
+            self.assertEqual(archive.root_mode, 0o755)
+            self.assertEqual(archive.current.parent, Path("/home/deck/.local/share"))
 
         base = self.root.stat()
         root_directory = list(base)

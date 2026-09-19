@@ -35,6 +35,20 @@ def write_package(path: Path, *, revision: str = REVISION, extra: str | None = N
 
 
 class AllyDeployHelperTests(unittest.TestCase):
+    def test_former_control_state_refuses_before_reading_package(self):
+        with tempfile.TemporaryDirectory() as temp:
+            former = Path(temp) / "former-control"
+            former.mkdir()
+            with patch.object(helper, "LEGACY_CONTROL_ROOT", former), patch.object(
+                helper, "fixed_download"
+            ) as download:
+                with self.assertRaisesRegex(helper.DeploymentError, "identity migration"):
+                    helper.install(
+                        "Re-Gear-update-0.2.0-aaaaaaaaaaaa.zip",
+                        "Re-Gear-update-0.2.0-aaaaaaaaaaaa.zip.sig",
+                    )
+                download.assert_not_called()
+
     def test_legacy_or_both_installations_refuse_before_reading_package(self):
         for new_present in (False, True):
             with self.subTest(new_present=new_present), tempfile.TemporaryDirectory() as temp:
@@ -59,7 +73,7 @@ class AllyDeployHelperTests(unittest.TestCase):
                 package = parent / "Re-Gear-update-0.2.0-aaaaaaaaaaaa.zip"
                 write_package(package)
                 (parent / (package.name + ".sig")).write_bytes(b"signature")
-                with patch.multiple(helper, PACKAGE_ROOT=parent, PLUGIN_PARENT=parent, TARGET=target, BACKUPS=parent / "backups"), patch.object(helper, "verify_signature"), patch.object(helper, "restart_plugin_loader"):
+                with patch.multiple(helper, PACKAGE_ROOT=parent, PLUGIN_PARENT=parent, TARGET=target, BACKUPS=parent / "backups", LEGACY_CONTROL_ROOT=parent / "former-control"), patch.object(helper, "verify_signature"), patch.object(helper, "restart_plugin_loader"):
                     result = helper.install(package.name, package.name + ".sig")
                 self.assertEqual(result["state"], "installed")
                 self.assertTrue((target / "main.py").is_file())
@@ -77,7 +91,7 @@ class AllyDeployHelperTests(unittest.TestCase):
             package = parent / "Re-Gear-update-0.2.0-aaaaaaaaaaaa.zip"
             write_package(package)
             (parent / (package.name + ".sig")).write_bytes(b"signature")
-            with patch.multiple(helper, PACKAGE_ROOT=parent, PLUGIN_PARENT=parent, TARGET=target, BACKUPS=parent / "backups"), patch.object(helper, "verify_signature"), patch.object(helper, "restart_plugin_loader", side_effect=[helper.DeploymentError("failed"), None]):
+            with patch.multiple(helper, PACKAGE_ROOT=parent, PLUGIN_PARENT=parent, TARGET=target, BACKUPS=parent / "backups", LEGACY_CONTROL_ROOT=parent / "former-control"), patch.object(helper, "verify_signature"), patch.object(helper, "restart_plugin_loader", side_effect=[helper.DeploymentError("failed"), None]):
                 with self.assertRaisesRegex(helper.DeploymentError, "rollback attempted"):
                     helper.install(package.name, package.name + ".sig")
             self.assertEqual((target / "old.txt").read_text(), "old")
