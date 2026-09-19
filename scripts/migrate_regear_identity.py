@@ -24,11 +24,16 @@ from regear.delivery.identity_migration import (  # noqa: E402
     IdentityMigrationError,
     default_moves,
 )
+from regear.adapters.steamos.gamescope_user import GamescopeUserContext  # noqa: E402
+from regear.delivery.gamescope_integration import GamescopeIntegrationStore  # noqa: E402
+from regear.delivery.identity_dropin_migration import ManagedDropinMigration  # noqa: E402
 
 
 JOURNAL = Path("/var/lib/regear/identity-migration-v1.json")
+DROPIN_JOURNAL = Path("/var/lib/regear/identity-dropin-migration-v1.json")
 SYSTEMCTL = "/usr/bin/systemctl"
 DECK_USER = "deck"
+PLUGIN_ROOT = Path("/home/deck/homebrew/plugins/Re-Gear")
 
 
 def _plugin_loader_active() -> bool:
@@ -83,12 +88,42 @@ def build_migration() -> IdentityMigration:
     return IdentityMigration(default_moves(home, user_uid=account.pw_uid), JOURNAL)
 
 
-def _status_payload(migration: IdentityMigration) -> dict[str, object]:
+def build_dropin_migration() -> ManagedDropinMigration:
+    if sys.platform != "linux" or os.geteuid() != 0:
+        raise IdentityMigrationError("identity migration requires Linux root")
+    import pwd
+
+    account = pwd.getpwnam(DECK_USER)
+    home = Path(account.pw_dir)
+    if home != Path("/home/deck") or account.pw_uid <= 0 or account.pw_gid <= 0:
+        raise IdentityMigrationError("fixed Decky user identity is unavailable")
+    user = GamescopeUserContext(
+        DECK_USER,
+        account.pw_uid,
+        account.pw_gid,
+        home,
+        Path("/run/user") / str(account.pw_uid),
+        Path("/run/user") / str(account.pw_uid) / "bus",
+    )
+    store = GamescopeIntegrationStore(
+        plugin_root=PLUGIN_ROOT,
+        user=user,
+        effective_uid=os.geteuid,
+        set_owner=os.chown,
+    )
+    return ManagedDropinMigration(store, DROPIN_JOURNAL)
+
+
+def _status_payload(
+    migration: IdentityMigration,
+    dropin: ManagedDropinMigration,
+) -> dict[str, object]:
     status = migration.inspect()
     return {
         "state": "observed",
         "locations": {name: value.value for name, value in status.locations},
         "journal_phase": status.journal_phase,
+        "gamescope_dropin": dropin.inspect(),
         "hardware_write": False,
         "service_write": False,
     }
@@ -100,14 +135,21 @@ def main() -> int:
     args = parser.parse_args()
     try:
         migration = build_migration()
+        dropin = build_dropin_migration()
         if args.command == "status":
-            result = _status_payload(migration)
+            result = _status_payload(migration, dropin)
         else:
             require_offline()
-            status = migration.apply() if args.command == "apply" else migration.rollback()
+            if args.command == "apply":
+                status = migration.apply()
+                dropin_status = dropin.apply()
+            else:
+                dropin_status = dropin.rollback()
+                status = migration.rollback()
             result = {
                 "state": status.journal_phase or "unchanged",
                 "locations": {name: value.value for name, value in status.locations},
+                "gamescope_dropin": dropin_status,
                 "hardware_write": False,
                 "service_write": False,
             }
