@@ -244,7 +244,10 @@ from regear.delivery.peripheral_support import peripheral_support_status  # noqa
 from regear.delivery.docked_igpu_scheduler import (  # noqa: E402
     DockedIgpuLifecycleScheduler,
 )
-from regear.delivery.runtime_state import RootOwnedRuntimeState  # noqa: E402
+from regear.delivery.runtime_state import (  # noqa: E402
+    DEFAULT_RUNTIME_STATE_ROOT,
+    RootOwnedRuntimeState,
+)
 from regear.delivery.automatic_dock_preferences import (  # noqa: E402
     AutomaticDockPreferenceStore,
 )
@@ -1528,7 +1531,7 @@ class Plugin:
             samples = []
             try:
                 with self._dock_mutation_gate().admit(allow_inhibited=True):
-                    store = WholeDockClaimStore(Path("/var/lib/handheld-dock-mode"))
+                    store = WholeDockClaimStore(DEFAULT_RUNTIME_STATE_ROOT)
                     claim = store.load()
                     if claim is None or claim.stage != "release_intent":
                         raise ValueError("capture claim mismatch")
@@ -1639,7 +1642,7 @@ class Plugin:
             return result
         try:
             with self._dock_mutation_gate().admit(allow_inhibited=True):
-                store = WholeDockClaimStore(Path('/var/lib/handheld-dock-mode'))
+                store = WholeDockClaimStore(DEFAULT_RUNTIME_STATE_ROOT)
                 claim = store.load()
                 if claim is None or claim.stage not in ('claimed', 'release_intent'):
                     return result
@@ -1716,7 +1719,7 @@ class Plugin:
         try:
             with self._dock_mutation_gate().admit(allow_inhibited=True):
                 phase = 'claim_load'
-                store = DockPowerIntentStore(Path('/var/lib/handheld-dock-mode'))
+                store = DockPowerIntentStore(DEFAULT_RUNTIME_STATE_ROOT)
                 claim = store.load()
                 if claim is None:
                     self._archival_refusal = None
@@ -1833,7 +1836,7 @@ class Plugin:
             return self._run_dock_mutation(admitted)
         try:
             with self._dock_mutation_gate().admit(allow_inhibited=True):
-                store = WholeDockClaimStore(Path('/var/lib/handheld-dock-mode'))
+                store = WholeDockClaimStore(DEFAULT_RUNTIME_STATE_ROOT)
                 claim = store.load()
                 if claim is None:
                     raise DockMutationDenied('dock_mutation.inhibited')
@@ -1886,7 +1889,7 @@ class Plugin:
         dispatched = False
         try:
             with self._dock_mutation_gate().admit(allow_inhibited=True):
-                store = WholeDockClaimStore(Path('/var/lib/handheld-dock-mode'))
+                store = WholeDockClaimStore(DEFAULT_RUNTIME_STATE_ROOT)
                 claim = store.load()
                 if claim is None or claim.stage != 'reauthorize_intent':
                     raise DockMutationDenied('dock_mutation.inhibited')
@@ -1955,7 +1958,7 @@ class Plugin:
         if disposition is ShutdownReconcileDisposition.HELPER_UNSETTLED:
             return SupervisedTransitionExecution(
                 False, 'automatic_dock.shutdown_helper_unsettled')
-        claim = WholeDockClaimStore(Path('/var/lib/handheld-dock-mode')).load()
+        claim = WholeDockClaimStore(DEFAULT_RUNTIME_STATE_ROOT).load()
         if claim is not None and claim.stage == 'reauthorize_intent':
             return self._run_retained_reconnect_tv_transition(transition)
         if claim is not None:
@@ -1982,7 +1985,7 @@ class Plugin:
             if not re.fullmatch('[0-9a-f]{64}', boot):
                 return result(Disposition.BLOCKED)
             with self._dock_mutation_gate().admit(allow_inhibited=True):
-                store = DockPowerIntentStore(Path('/var/lib/handheld-dock-mode'))
+                store = DockPowerIntentStore(DEFAULT_RUNTIME_STATE_ROOT)
                 claim = store.load()
                 if claim is None or claim.stage != 'software_down':
                     return result(Disposition.BLOCKED)
@@ -2511,7 +2514,7 @@ class Plugin:
         if _request == "whole_dock_record":
             def read_record():
                 try:
-                    record = WholeDockClaimStore(Path("/var/lib/handheld-dock-mode")).load()
+                    record = WholeDockClaimStore(DEFAULT_RUNTIME_STATE_ROOT).load()
                     return record.stage if record else "none"
                 except Exception:
                     return "unknown"
@@ -2549,7 +2552,7 @@ class Plugin:
             if not result.get("busy") and result.get("ok") is False:
                 def claim_stage():
                     try:
-                        record = WholeDockClaimStore(Path("/var/lib/handheld-dock-mode")).load()
+                        record = WholeDockClaimStore(DEFAULT_RUNTIME_STATE_ROOT).load()
                         return record.stage if record else "none"
                     except Exception:
                         return "unknown"
@@ -3747,7 +3750,7 @@ class Plugin:
             }
 
     def _operator_reset_record(self, confirm=None, still_confirmed=lambda: True):
-        store = WholeDockClaimStore(Path('/var/lib/handheld-dock-mode'))
+        store = WholeDockClaimStore(DEFAULT_RUNTIME_STATE_ROOT)
         return reconcile_operator_reset(store=store, gate=self._dock_mutation_gate(),
             observe=lambda binding: observe_reset_restored(binding, store), confirm=confirm,
             still_confirmed=still_confirmed)
@@ -4582,7 +4585,7 @@ class Plugin:
         try:
             elapsed = self._bounded_elapsed_ms(started_ns, self._journey_now_ns())
             decky.logger.info(
-                "HDM shutdown checkpoint: stage=%s elapsed_ms=%s", stage, elapsed
+                "Re-Gear shutdown checkpoint: stage=%s elapsed_ms=%s", stage, elapsed
             )
         except Exception:
             pass
