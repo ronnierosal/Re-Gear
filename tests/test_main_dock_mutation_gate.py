@@ -662,12 +662,13 @@ class CompletedAttachmentAbsenceTests(unittest.TestCase):
                 session=None, seen=None, claim_present=True, user_ok=True,
                 capture=False, admission_error=None, load_error=None,
                 guard_error=None, audit_error=None, retire_error=None,
-                event_error=None, journal_error=None):
+                event_error=None, journal_error=None, journal_durable=True,
+                journal_owner='none', inner=True, unloading=False):
         from contextlib import ExitStack
         plugin = self.plugin
         user = NS(uid=1000, username='deck')
         claim = NS(stage=stage)
-        plugin._unloading = False
+        plugin._unloading = unloading
         plugin._discovery = object()
         plugin._append_journey_event = Mock(side_effect=event_error)
         plugin._release_capture_task = NS(done=lambda:not capture)
@@ -677,7 +678,7 @@ class CompletedAttachmentAbsenceTests(unittest.TestCase):
             return NS(transport_absent_verified=absent, transport_present=not absent)
         plugin._connection_topology = NS(observe=observe_topology)
         plugin._transition_journal_service = lambda:NS(status=lambda:NS(
-            durable=True, owner=NS(value='none')))
+            durable=journal_durable, owner=NS(value=journal_owner)))
         held = []
         @contextmanager
         def admit(**kwargs):
@@ -706,10 +707,16 @@ class CompletedAttachmentAbsenceTests(unittest.TestCase):
                 store.load.return_value = claim if claim_present else None
             if session is not None:
                 plugin._dock_power_session = session
+            intent_present = [parent_power]
             if seen is not None:
-                store.reconcile_stranded_sleep.side_effect = (
-                    lambda expected, live, guard: seen.append((expected, live, guard())))
-            store.power_intent_absent.return_value = not parent_power
+                def reconcile(expected, live, guard):
+                    allowed = guard()
+                    seen.append((expected, live, allowed))
+                    if allowed:
+                        intent_present[0] = False
+                    return allowed
+                store.reconcile_stranded_sleep.side_effect = reconcile
+            store.power_intent_absent.side_effect = lambda expected:not intent_present[0]
             def retire(expected, guard):
                 self.assertIs(expected, claim)
                 self.assertTrue(held)
@@ -730,7 +737,7 @@ class CompletedAttachmentAbsenceTests(unittest.TestCase):
                 audit.side_effect = audit_error
             else:
                 audit.return_value = {'code':'held_helper.settled', 'settled':settled}
-            patcher('inner_removal_records_absent', return_value=True)
+            patcher('inner_removal_records_absent', return_value=inner)
             patcher('resolve_runtime_profiles', return_value=NS(exact_host=True))
             patcher('SnapshotTransitionObservationAdapter').return_value.observe.return_value = NS(snapshot=NS(
                 game_state=self.module.GameState.IDLE if idle else self.module.GameState.UNKNOWN,
@@ -755,16 +762,36 @@ class CompletedAttachmentAbsenceTests(unittest.TestCase):
         # The record is cleared before the guard reads power_intent_absent, so
         # a refused sleep cannot leave the claim pinned and admission inhibited.
         seen = []
-        self.assertEqual(self.fixture(session='boot:live', seen=seen), (True, 1))
+        self.assertEqual(self.fixture(session='1' * 64 + ':' + 'a' * 32,
+                                      seen=seen, parent_power=True), (True, 1))
         self.assertEqual([(live, guarded) for _, live, guarded in seen],
-                         [('boot:live', True)])
+                         [('1' * 64 + ':' + 'a' * 32, True)])
 
     def test_recreated_plugin_reconciles_without_a_live_session_attribute(self):
+        self.plugin = self.module.Plugin()
         seen = []
         self.assertFalse(hasattr(self.plugin, '_dock_power_session'))
-        self.assertEqual(self.fixture(seen=seen), (True, 1))
+        self.assertEqual(self.fixture(seen=seen, parent_power=True), (True, 1))
         self.assertEqual([(live, guarded) for _, live, guarded in seen],
                          [(None, True)])
+
+    def test_present_or_unresolved_prerequisites_preserve_sleep_intent(self):
+        for options in (
+            {'absent': False}, {'strict': False}, {'idle': False},
+            {'user_ok': False}, {'settled': False}, {'capture': True},
+            {'journal_durable': False}, {'journal_owner': 'operation'},
+            {'inner': False}, {'unloading': True},
+        ):
+            with self.subTest(options=options):
+                seen = []
+                self.assertEqual(self.fixture(seen=seen, **options), (False, 0))
+                self.assertEqual(seen, [])
+
+    def test_existing_invalid_session_attribute_is_not_restart_evidence(self):
+        self.plugin._dock_power_session = None
+        seen = []
+        self.assertEqual(self.fixture(seen=seen, parent_power=True), (False, 0))
+        self.assertEqual(seen, [])
 
     def test_an_unmet_guard_reports_which_condition_refused(self):
         # A silent refusal here cost two hardware sessions; the reason must

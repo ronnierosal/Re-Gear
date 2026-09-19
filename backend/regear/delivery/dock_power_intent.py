@@ -197,21 +197,26 @@ class DockPowerIntentStore(WholeDockClaimStore):
         by hand, and the enclosure overheated on each attempted re-attach.
 
         A session token is `<boot hash>:<uuid4>`, regenerated per backend
-        process and never recovered from this store, so a token other than the
-        live one proves its session is gone: no caller can supply it to
+        process and never recovered from this store. A different strict live
+        token proves the recorded session is gone. `None` is reserved for the
+        recreated-Plugin caller whose current process has never created a power
+        session. In either case no caller can supply the recorded token to
         `consume`, and nothing will replay the request. Discarding the record
         therefore cannot cause a double submission, whether or not it was
-        consumed -- a consumed sleep was already submitted, and an unconsumed
-        one now has no route to submission.
+        consumed -- consumption records a single submission attempt, not its
+        outcome, and the dead session has no route to submit again.
 
         Sleep only. A shutdown intent stays with `retire_after_boot`, which
         holds real evidence of the outcome in the boot hash; a sleep has no such
         evidence and no other retirement. The claim itself is never touched:
         this removes the power record, never the disconnect history.
         """
+        session_pattern = '[0-9a-f]{64}:[0-9a-f]{32}'
         if (type(expected_claim) is not WholeDockClaim
                 or expected_claim.stage != 'software_down'
-                or type(live_session) is not str or not live_session):
+                or (live_session is not None
+                    and (type(live_session) is not str
+                         or re.fullmatch(session_pattern, live_session) is None))):
             return False
         with self._locked() as directory:
             claim = self._load(directory)
@@ -224,9 +229,17 @@ class DockPowerIntentStore(WholeDockClaimStore):
                 # it cannot be shown stranded either. Leave it for the operator.
                 return False
             if (type(intent) is not DockPowerIntent or intent.action != 'sleep'
-                    or intent.session == live_session):
+                    or (intent.operation, intent.binding, intent.generation) !=
+                    (claim.operation, claim.binding, claim.generation)
+                    or re.fullmatch(session_pattern, intent.session) is None
+                    or (live_session is not None and intent.session == live_session)):
                 return False
             if guard() is not True or self._load(directory) != claim:
+                return False
+            try:
+                if self._load_intent(directory, expected_claim) != intent:
+                    return False
+            except ValueError:
                 return False
             try:
                 os.unlink('dock-power-' + expected_claim.operation + '.json',
