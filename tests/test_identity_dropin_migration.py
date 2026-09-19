@@ -70,6 +70,31 @@ class ManagedDropinMigrationTests(unittest.TestCase):
         self.assertIsNone(first["journal_phase"])
         self.assertFalse(self.journal.exists())
 
+    def test_preflight_is_read_only_and_reports_participation(self):
+        self._write(self.store.legacy_target, self.legacy)
+        before = self.store.legacy_target.read_bytes()
+
+        self.assertTrue(self.migration.preflight_apply())
+        self.assertEqual(self.store.legacy_target.read_bytes(), before)
+        self.assertFalse(self.store.target.exists())
+        self.assertFalse(self.journal.exists())
+
+        self.store.legacy_target.write_bytes(b"edited\n")
+        with self.assertRaisesRegex(IdentityMigrationError, "not exact"):
+            self.migration.preflight_apply()
+        self.assertEqual(self.store.legacy_target.read_bytes(), b"edited\n")
+        self.assertFalse(self.store.target.exists())
+
+    def test_apply_does_not_reopen_a_rolled_back_journal(self):
+        self._write(self.store.legacy_target, self.legacy)
+        self.migration.apply()
+        self.migration.rollback()
+
+        with self.assertRaisesRegex(IdentityMigrationError, "records rollback"):
+            self.migration.preflight_apply()
+        with self.assertRaisesRegex(IdentityMigrationError, "records rollback"):
+            self.migration.apply()
+
     def test_both_without_journal_and_edited_former_refuse(self):
         self._write(self.store.target, self.store.expected_text())
         self._write(self.store.legacy_target, self.legacy)

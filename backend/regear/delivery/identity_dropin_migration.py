@@ -42,6 +42,55 @@ class ManagedDropinMigration:
             "journal_phase": None if document is None else document["phase"],
         }
 
+    def preflight_apply(self) -> bool:
+        """Validate an apply without publishing or removing either drop-in.
+
+        The return value records whether this component owns a reversible
+        migration.  A current-only or absent installation is already a no-op;
+        an exact former file, or an existing forward journal, participates.
+        """
+        with self._hold_lock():
+            document = self._load_journal()
+            current, legacy = self._read_files()
+            if document is None:
+                if current is not None and legacy is not None:
+                    raise IdentityMigrationError("both managed drop-in identities exist")
+                if current is not None:
+                    self._require_current(current)
+                    return False
+                if legacy is None:
+                    return False
+                self._require_legacy(legacy)
+                return True
+
+            self._validate_document(document)
+            if document["phase"] in ("rolling_back", "rolled_back"):
+                raise IdentityMigrationError(
+                    "managed drop-in journal records rollback; apply is refused"
+                )
+            expected_current = document["current"]
+            expected_legacy = document["legacy"]
+            if current is None:
+                if legacy != expected_legacy:
+                    raise IdentityMigrationError(
+                        "former managed drop-in changed during migration"
+                    )
+                self._require_legacy(legacy)
+            else:
+                if current != expected_current or not self._store._managed_file_safe(
+                    self._store.target
+                ):
+                    raise IdentityMigrationError(
+                        "current managed drop-in changed during migration"
+                    )
+                if legacy is not None:
+                    if legacy != expected_legacy:
+                        raise IdentityMigrationError(
+                            "former managed drop-in changed during migration"
+                        )
+                    self._require_legacy(legacy)
+            return True
+
     def apply(self) -> dict[str, str | None]:
         with self._hold_lock():
             document = self._load_journal()
@@ -65,6 +114,10 @@ class ManagedDropinMigration:
                 self._write_journal(document)
             else:
                 self._validate_document(document)
+                if document["phase"] in ("rolling_back", "rolled_back"):
+                    raise IdentityMigrationError(
+                        "managed drop-in journal records rollback; apply is refused"
+                    )
 
             current, legacy = self._read_files()
             expected_current = document["current"]
@@ -237,9 +290,12 @@ class ManagedDropinMigration:
         if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISDIR(metadata.st_mode):
             raise IdentityMigrationError("managed drop-in migration parent is unsafe")
         if os.name == "posix" and (
-            metadata.st_uid != 0 or stat.S_IMODE(metadata.st_mode) != 0o700
+            metadata.st_uid != os.geteuid()
+            or stat.S_IMODE(metadata.st_mode) != 0o700
         ):
-            raise IdentityMigrationError("managed drop-in migration parent must be root-owned mode 0700")
+            raise IdentityMigrationError(
+                "managed drop-in migration parent must be authority-owned mode 0700"
+            )
 
     @contextmanager
     def _hold_lock(self):
