@@ -4680,7 +4680,7 @@ class Plugin:
         )
         journal_root = RootOwnedRuntimeState().ensure()
         presentation_state_root = (
-            resolution.context.home / ".local" / "share" / "handheld-dock-mode"
+            resolution.context.home / ".local" / "share" / "regear"
         )
         observations = SnapshotTransitionObservationAdapter(self._discovery)
         journal = FileTransitionJournalStore(journal_root)
