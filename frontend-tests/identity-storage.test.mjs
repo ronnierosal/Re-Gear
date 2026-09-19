@@ -92,20 +92,21 @@ test("a failed promotion keeps former values while honoring the dismissal", asyn
   assert.equal(storage.operations.some(([operation]) => operation === "remove"), false);
 });
 
-test("former values without a dismissal are left untouched", async () => {
+test("former values without a dismissal migrate to current false and are removed", async () => {
   const module = await loadModule();
   const [firstFormer, secondFormer] =
     module.FORMER_ATTACHED_EGPU_SLEEP_WARNING_KEYS;
   const storage = fakeStorage({ [firstFormer]: "0", [secondFormer]: "" });
 
   assert.equal(module.readAttachedEgpuSleepWarningDismissed(storage), false);
-  assert.equal(storage.values.get(firstFormer), "0");
-  assert.equal(storage.values.get(secondFormer), "");
-  assert.equal(
-    storage.operations.some(([operation]) =>
-      operation === "set" || operation === "remove"),
-    false,
-  );
+  assert.equal(storage.values.get(module.ATTACHED_EGPU_SLEEP_WARNING_KEY), "0");
+  assert.equal(storage.values.has(firstFormer), false);
+  assert.equal(storage.values.has(secondFormer), false);
+  assert.deepEqual(storage.operations.slice(-3), [
+    ["set", module.ATTACHED_EGPU_SLEEP_WARNING_KEY, "0"],
+    ["remove", firstFormer],
+    ["remove", secondFormer],
+  ]);
 });
 
 test("a former-key read failure performs no writes or removals", async () => {

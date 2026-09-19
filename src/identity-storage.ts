@@ -53,17 +53,19 @@ export function readAttachedEgpuSleepWarningDismissed(
     return false;
   }
 
-  if (!formerValues.some((value) => value === "1")) return false;
+  if (formerValues.every((value) => value === null)) return false;
+
+  const dismissed = formerValues.some((value) => value === "1");
 
   try {
-    storage.setItem(ATTACHED_EGPU_SLEEP_WARNING_KEY, "1");
+    storage.setItem(ATTACHED_EGPU_SLEEP_WARNING_KEY, dismissed ? "1" : "0");
   } catch {
     // Honor the dismissal for this read, but preserve the former durable value.
-    return true;
+    return dismissed;
   }
 
   removeFormerKeys(storage);
-  return true;
+  return dismissed;
 }
 
 export function dismissAttachedEgpuSleepWarning(
