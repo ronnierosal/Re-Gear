@@ -759,6 +759,13 @@ class CompletedAttachmentAbsenceTests(unittest.TestCase):
         self.assertEqual([(live, guarded) for _, live, guarded in seen],
                          [('boot:live', True)])
 
+    def test_recreated_plugin_reconciles_without_a_live_session_attribute(self):
+        seen = []
+        self.assertFalse(hasattr(self.plugin, '_dock_power_session'))
+        self.assertEqual(self.fixture(seen=seen), (True, 1))
+        self.assertEqual([(live, guarded) for _, live, guarded in seen],
+                         [(None, True)])
+
     def test_an_unmet_guard_reports_which_condition_refused(self):
         # A silent refusal here cost two hardware sessions; the reason must
         # reach the journey log rather than vanishing into a bare False.
