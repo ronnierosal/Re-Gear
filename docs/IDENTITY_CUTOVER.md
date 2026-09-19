@@ -27,6 +27,21 @@ The general native Decky installer is external software and is not modified by
 this patch. Staging alone neither inspects nor migrates an installed plugin.
 Do not use the native installer as a shortcut around supervised legacy cutover.
 
+If a native install already created a fresh current control root, do not delete
+or merge it. After proving the eGPU absent and the game idle, take the loader and
+Gamescope offline and run the migrator's exact `reconcile-runtime` command. It
+accepts only the reviewed three-file fresh-root shape, requires byte-identical
+audio state, preserves the complete tree under
+`/var/lib/regear/pre-migration-control-v1`, and journals the rename before normal
+migration can proceed.
+
+If the former deploy private key is unavailable, the normal bootstrap must keep
+refusing unsigned candidates. After explicit credential-rotation approval,
+generate a replacement Ed25519 key off-device, retain a protected recovery
+copy, sign the exact helper and migrator, and invoke the reviewed bootstrap as
+`install-rotated <new-public-key-sha256>`. The visible fingerprint is pinned in
+the root transaction; the private key is never staged on the Ally.
+
 ## Full installed identity migration
 
 Current source writes the installed identities defined in

@@ -795,6 +795,14 @@ success, verify the exact rule with `sudo -n -l`, complete the offline migration
 and then invoke only the staged exact helper command. Do not broaden the sudoers
 rule or add arbitrary shell authority.
 
+If the former deploy private key is lost, stop rather than staging unsigned
+payloads through the normal command. With explicit maintainer approval, use the
+reviewed `install-rotated <new-public-key-sha256>` bootstrap mode. It verifies
+new-key signatures, pins the fingerprint in root-only rollback state, and keeps
+the private key off-device. A native install that created both control roots
+also requires the offline, exact `reconcile-runtime` command before `apply`;
+that command archives the fresh duplicate whole and never merges it.
+
 ## Safety and validation boundaries
 
 - The GPD G1 and TV state must be re-observed; no current connection/display

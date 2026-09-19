@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 from types import SimpleNamespace
 import tempfile
 from pathlib import Path
@@ -18,6 +19,121 @@ SPEC.loader.exec_module(tool)
 
 
 class IdentityMigrationCliTests(unittest.TestCase):
+    def conflict_fixture(self, root: Path):
+        former = root / "former-control"
+        current = root / "regear" / "control"
+        archive = root / "regear" / "pre-migration-control-v1"
+        journal = root / "regear" / "identity-control-conflict-v1.json"
+        former.mkdir(mode=0o700)
+        current.mkdir(mode=0o700, parents=True)
+        os.chmod(current.parent, 0o700)
+        audio = b'{"schema_version":1,"sink_name":"fixture"}\n'
+        for directory in (former, current):
+            (directory / "portable-audio.json").write_bytes(audio)
+            os.chmod(directory / "portable-audio.json", 0o600)
+        for name in ("dock-mutation.lock", "whole-dock-claim.lock"):
+            (current / name).write_bytes(b"")
+            os.chmod(current / name, 0o600)
+        (former / "completed-history.json").write_text("{}\n", encoding="ascii")
+        os.chmod(former / "completed-history.json", 0o600)
+        move = tool.DirectoryMove("runtime", former, current, None)
+        migration = tool.IdentityMigration((move,), root / "migration.json")
+        record = tool.ControlConflictRecord(journal, archive)
+        return migration, record, former, current, archive
+
+    def test_duplicate_runtime_reconciliation_archives_fresh_root_whole(self):
+        with tempfile.TemporaryDirectory() as directory:
+            migration, record, former, current, archive = self.conflict_fixture(
+                Path(directory)
+            )
+            result = tool.reconcile_duplicate_runtime(migration, record)
+            self.assertEqual(result["phase"], "committed")
+            self.assertTrue(former.is_dir())
+            self.assertFalse(current.exists())
+            self.assertEqual(
+                {path.name for path in archive.iterdir()},
+                {"dock-mutation.lock", "whole-dock-claim.lock", "portable-audio.json"},
+            )
+            self.assertEqual(record.load()["phase"], "committed")
+
+    def test_duplicate_runtime_reconciliation_refuses_active_former_state(self):
+        with tempfile.TemporaryDirectory() as directory:
+            migration, record, former, current, archive = self.conflict_fixture(
+                Path(directory)
+            )
+            blocker = former / "whole-dock-claim.json"
+            blocker.write_text("{}\n", encoding="ascii")
+            os.chmod(blocker, 0o600)
+            with self.assertRaisesRegex(tool.IdentityMigrationError, "active state"):
+                tool.reconcile_duplicate_runtime(migration, record)
+            self.assertTrue(current.is_dir())
+            self.assertFalse(archive.exists())
+            self.assertFalse(record.path.exists())
+
+    def test_duplicate_runtime_reconciliation_refuses_nonfresh_current_root(self):
+        with tempfile.TemporaryDirectory() as directory:
+            migration, record, _, current, archive = self.conflict_fixture(
+                Path(directory)
+            )
+            unexpected = current / "unexpected.json"
+            unexpected.write_text("{}\n", encoding="ascii")
+            os.chmod(unexpected, 0o600)
+            with self.assertRaisesRegex(tool.IdentityMigrationError, "exact fresh"):
+                tool.reconcile_duplicate_runtime(migration, record)
+            self.assertTrue(current.is_dir())
+            self.assertFalse(archive.exists())
+
+    def test_duplicate_runtime_reconciliation_resumes_after_rename(self):
+        with tempfile.TemporaryDirectory() as directory:
+            migration, record, former, current, archive = self.conflict_fixture(
+                Path(directory)
+            )
+            manifest = tool._fresh_manifest(current, former)
+            with record.hold():
+                record.create(manifest)
+            current.rename(archive)
+            result = tool.reconcile_duplicate_runtime(migration, record)
+            self.assertEqual(result["phase"], "committed")
+            self.assertFalse(current.exists())
+            self.assertTrue(archive.is_dir())
+
+    def test_duplicate_runtime_committed_archive_drift_fails_closed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            migration, record, _, _, archive = self.conflict_fixture(Path(directory))
+            tool.reconcile_duplicate_runtime(migration, record)
+            (archive / "portable-audio.json").write_text("changed\n", encoding="ascii")
+            with self.assertRaisesRegex(tool.IdentityMigrationError, "changed|differs"):
+                tool.reconcile_duplicate_runtime(migration, record)
+
+    def test_apply_refuses_prepared_or_orphaned_conflict_archive(self):
+        with tempfile.TemporaryDirectory() as directory:
+            migration, record, former, current, archive = self.conflict_fixture(
+                Path(directory)
+            )
+            manifest = tool._fresh_manifest(current, former)
+            with record.hold():
+                record.create(manifest)
+            current.rename(archive)
+            with self.assertRaisesRegex(tool.IdentityMigrationError, "rerun reconcile"):
+                tool.require_conflict_resolved_for_apply(migration, record)
+
+        with tempfile.TemporaryDirectory() as directory:
+            migration, record, _, current, archive = self.conflict_fixture(
+                Path(directory)
+            )
+            current.rename(archive)
+            with self.assertRaisesRegex(tool.IdentityMigrationError, "without its journal"):
+                tool.require_conflict_resolved_for_apply(migration, record)
+
+    def test_apply_accepts_only_exact_committed_conflict_archive(self):
+        with tempfile.TemporaryDirectory() as directory:
+            migration, record, _, _, archive = self.conflict_fixture(Path(directory))
+            tool.reconcile_duplicate_runtime(migration, record)
+            tool.require_conflict_resolved_for_apply(migration, record)
+            (archive / "portable-audio.json").write_text("changed\n", encoding="ascii")
+            with self.assertRaisesRegex(tool.IdentityMigrationError, "changed|differs"):
+                tool.require_conflict_resolved_for_apply(migration, record)
+
     def test_gamescope_environment_requires_one_exact_current_identity(self):
         current = "/home/deck/.local/share/regear"
         self.assertEqual(
