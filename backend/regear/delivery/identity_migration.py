@@ -337,12 +337,13 @@ class IdentityMigration:
 
     def _validate_quiescent_root(self, root: Path) -> None:
         """Validate one already-trusted state tree, including conflict recovery."""
-        children = tuple(root.rglob("*"))
-        trial_parents = {
-            child.parent for child in children if child.name in _PORTABLE_TRIAL_MARKERS
-        }
-        for parent in trial_parents:
-            self._validate_terminal_portable_trial(parent)
+        # Lifecycle authority lives only at the fixed state-root level.  Nested
+        # directories can contain immutable historical snapshots captured at an
+        # intermediate phase, so interpreting their deliberately partial marker
+        # sets as live authority would strand otherwise quiescent state.
+        children = tuple(root.iterdir())
+        if any(child.name in _PORTABLE_TRIAL_MARKERS for child in children):
+            self._validate_terminal_portable_trial(root)
         for child in children:
             power_intent = child.name.startswith("dock-power-") and child.name.endswith(".json")
             if child.name in _HARD_BLOCKERS or power_intent:

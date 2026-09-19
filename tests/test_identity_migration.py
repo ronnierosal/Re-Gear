@@ -209,6 +209,44 @@ class IdentityMigrationTests(unittest.TestCase):
         }
         self.assertEqual(after, before)
 
+    def test_partial_nested_trial_history_moves_unchanged(self):
+        self._create(self.runtime_old)
+        history = self.runtime_old / "trial-history" / "before-steam-handoff"
+        history.mkdir(parents=True)
+        self._arm_trial(history, terminal=False)
+        before = {
+            path.relative_to(self.runtime_old): path.read_bytes()
+            for path in history.iterdir()
+        }
+
+        self.migration.apply()
+
+        migrated = self.runtime_current / "trial-history" / "before-steam-handoff"
+        after = {
+            path.relative_to(self.runtime_current): path.read_bytes()
+            for path in migrated.iterdir()
+        }
+        self.assertEqual(after, before)
+
+    def test_nested_history_named_like_live_state_moves_unchanged(self):
+        self._create(self.runtime_old)
+        history = self.runtime_old / "historical-evidence"
+        history.mkdir()
+        records = {
+            "whole-dock-claim.json": b"historical claim",
+            "dock-power-completed.json": b"historical power intent",
+            "tdp-session.json": b"historical TDP session",
+        }
+        for name, payload in records.items():
+            (history / name).write_bytes(payload)
+
+        self.migration.apply()
+
+        migrated = self.runtime_current / "historical-evidence"
+        self.assertEqual(
+            {path.name: path.read_bytes() for path in migrated.iterdir()}, records
+        )
+
     def test_unconsumed_partial_mismatched_and_malformed_trial_states_refuse(self):
         mutations = ("unconsumed", "partial", "mismatched", "malformed")
         for index, mutation in enumerate(mutations):
