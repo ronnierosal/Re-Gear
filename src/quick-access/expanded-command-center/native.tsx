@@ -126,7 +126,7 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
     const opened=showModal(<EgpuConfirmModal strTitle={title} strOKButtonText="Hide" bAlertDialog onOK={hide} onCancel={hide} onEscKeypress={hide} className="rg-whole-dock-progress">
       <style>{`.rg-whole-dock-progress{position:fixed!important;left:50%!important;top:50%!important;right:auto!important;bottom:auto!important;margin:0!important;transform:translate(-50%,-50%)!important}`}</style>
       <WholeDockControl intent={intent} readCurrentSnapshot={readCurrentSnapshot} startRequest={startRequest}/>
-    </EgpuConfirmModal>,host,{fnOnClose:hide,bNeverPopOut:true});
+    </EgpuConfirmModal>,undefined,{fnOnClose:hide,bNeverPopOut:true});
     if(operationGeneration!==operationToken){opened.Close();return;}
     operation=opened;
   }
@@ -143,7 +143,7 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
     const opened=showModal(<EgpuConfirmModal strTitle="Shutdown" strOKButtonText="Hide" bAlertDialog onOK={hide} onCancel={hide} onEscKeypress={hide} className="rg-whole-dock-progress">
       <style>{`.rg-whole-dock-progress{position:fixed!important;left:50%!important;top:50%!important;right:auto!important;bottom:auto!important;margin:0!important;transform:translate(-50%,-50%)!important}`}</style>
       <ShutdownStatus/>
-    </EgpuConfirmModal>,host,{fnOnClose:hide,bNeverPopOut:true});
+    </EgpuConfirmModal>,undefined,{fnOnClose:hide,bNeverPopOut:true});
     if(operationGeneration!==operationToken){opened.Close();return;}operation=opened;
   }
   function View({ token }: { token: number }) {
@@ -162,7 +162,7 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
     const rawTiles = useSyncExternalStore(subscribeTo(source), readFrom(source), readFrom(source));
     const runtimeState=useSyncExternalStore(runtimeDetails?.subscribe??noSubscribe,runtimeDetails?.read??noRuntimeDetails,runtimeDetails?.read??noRuntimeDetails);
     const mappedTiles = rawTiles ? testBuildTiles(rawTiles) : undefined;
-    const tiles=mappedTiles&&runtimeDetails?{...mappedTiles,egpu:mappedTiles.egpu?.map(tile=>tile.id==="switch-handheld"?{...tile,value:runtimeState?.handheld.available?"Ready":"Unavailable",detail:runtimeState?.handheld.reason??"Current display status unavailable"}:tile),settings:mappedTiles.settings?.map(tile=>tile.id==="diagnostics"?{...tile,value:runtimeState?"Open":"Waiting",detail:"Status, recovery and support"}:tile.id==="about"?{...tile,value:version,detail:"Version and credits"}:tile.id==="quick-actions"?{...tile,value:"Customize",detail:"Focus a Quick Access button and tap Y"}:tile)}:mappedTiles;
+    const tiles=mappedTiles&&runtimeDetails?{...mappedTiles,egpu:mappedTiles.egpu?.map(tile=>tile.id==="switch-handheld"?{...tile,value:runtimeState?.handheld.available?"Ready":"Unavailable",detail:runtimeState?.handheld.reason??"Current display status unavailable",tone:runtimeState?.handheld.available?"quiet" as const:"unavailable" as const}:tile),settings:mappedTiles.settings?.map(tile=>tile.id==="diagnostics"?{...tile,value:runtimeState?"Open":"Waiting",detail:"Status, recovery and support"}:tile.id==="about"?{...tile,value:version,detail:"Version and credits"}:tile.id==="quick-actions"?{...tile,value:"Customize",detail:"Focus a Quick Access button and tap Y"}:tile)}:mappedTiles;
     const unavailable={...unavailableTestActions,...(runtimeDetails?offlineUnavailableActions:{})};
     if(runtimeDetails){if(!runtimeState?.shutdown?.available)unavailable["portable-shutdown"]=runtimeState?.shutdown?.reason??"Current status unavailable";if(runtimeState?.handheld.available)delete unavailable["switch-handheld"];else unavailable["switch-handheld"]=runtimeState?.handheld.reason??"Current display status unavailable";}
     // Defaults to the route the 0.3.98 golden cycle actually ran. The control
@@ -204,7 +204,7 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
     const opened = showModal(<ModalRoot closeModal={close} bAllowFullSize bHideCloseIcon bDisableBackgroundDismiss className="rg-expanded-modal-root" modalClassName="rg-expanded-modal-frame">
       <style>{`.rg-expanded-modal-root,.rg-expanded-modal-frame{position:fixed!important;inset:0!important;width:100vw!important;height:100vh!important;max-width:none!important;max-height:none!important;padding:0!important;margin:0!important;background:transparent!important;box-shadow:none!important}`}</style>
       <View token={token}/>
-    </ModalRoot>, host, { strTitle: "Re-Gear expanded demo", bNeverPopOut: true });
+    </ModalRoot>, undefined, { strTitle: "Re-Gear expanded demo", bNeverPopOut: true });
     if (generation !== token || stopped) { opened.Close(); return; }
     modal = opened;
     visibility.set(true);

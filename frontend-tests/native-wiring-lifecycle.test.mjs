@@ -44,10 +44,10 @@ function harness() {
     ExpandedCommandCenter: "expanded", WholeDockControl: "dock", ShortcutSettings: "settings",
     loadMenuBinding: () => "view-y", saveMenuBinding: () => true, menuBindingOptions: [],
     startMenuShortcut: options => { h.shortcutOpen = options.open; return { available: true, reset() {}, stop() { h.stopped = true; } }; },
-    showModal: (node,_host,options) => {
+    showModal: (node,parent,options) => {
       if (h.throwOpen) throw Error("host unavailable");
       h.onHostOpen?.();
-      const modal = { node, options, closed: false, Close() { this.closed = true; } };
+      const modal = { node, parent, options, closed: false, Close() { this.closed = true; } };
       h.modals.push(modal); return modal;
     },
   };
@@ -104,6 +104,15 @@ test("close, shortcut reopen, stale unmount and stop preserve exact menu lifetim
   h.cleanup.at(-1)(); assert.equal(h.menu.visibility.read(), false);
   h.menu.open(); h.mount(); h.menu.stop(); assert.equal(h.stopped, true);
   assert.equal(h.menu.visibility.read(), false); h.menu.open(); assert.equal(h.modals.length, 3);
+});
+test("shortcut and nested operations let Decky select the focused game overlay window", () => {
+  const h = harness(); h.menu.open(); const view = h.mount();
+  assert.equal(h.modals[0].parent, undefined,
+    "the plugin SharedJS window must not hide the menu behind a running game");
+  view.props.onDisconnect();
+  assert.equal(h.modals[1].parent, undefined,
+    "nested operation surfaces must stay on Decky's focused modal window");
+  h.menu.stop();
 });
 test("refused or throwing host open never leaves visibility active", () => {
   const h = harness(); h.allowed = false; h.menu.open(); assert.equal(h.modals.length, 0);

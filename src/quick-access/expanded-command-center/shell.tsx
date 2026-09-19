@@ -15,6 +15,8 @@ import { CommandCenterIcon, type CommandCenterIconId } from "../command-center-i
 import { columnsForWidth, gridCells, moveInGrid, nextTab, restoreTarget, sampleTiles, tabLabels, tabs } from "./model";
 import type { Tab, Tile } from "./model";
 import { expandedStyles } from "./styles";
+import { tileOverlayStyles } from "./regear-tile";
+import { TileArtworkSprite } from "./tile-artwork";
 import { brandIcon } from "../../brand-assets";
 
 const quickActionLabels=Object.fromEntries(controlRegistry.filter(def=>def.rightEligible).map(def=>[def.id,def.shortLabel])) as Partial<Record<UtilityId,string>>;
@@ -353,7 +355,8 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
             </Button>;
 
   return <div className="rg-expanded-backdrop">
-    <style>{expandedStyles}</style>
+    <style>{expandedStyles + (typeof tileOverlayStyles === "string" ? tileOverlayStyles : "")}</style>
+    {typeof TileArtworkSprite === "function" ? <TileArtworkSprite/> : null}
     <Container ref={panel} data-ec-panel className="rg-expanded-frame" role="dialog" aria-modal="true" aria-label={synthetic ? "Re-Gear expanded Command Center prototype" : "Re-Gear Command Center"} onKeyDown={onKeyDown} {...nativeHandlers}
       onBlurCapture={()=>gesture.current?.cancel()}
       onFocusCapture={(event:{target:EventTarget})=>{if(pickerOpen&&!(event.target as HTMLElement).closest('[data-ec-picker]')){picker.current?.querySelector<HTMLElement>('button:not(:disabled)')?.focus();}}}

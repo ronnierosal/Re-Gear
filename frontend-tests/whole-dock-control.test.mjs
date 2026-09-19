@@ -47,7 +47,7 @@ const componentJs = ts.transpileModule(readFileSync(new URL("../src/whole-dock-c
 }).outputText.replace(/^import .*;\r?$/gm, "").replace(/export function WholeDockControl/, "function WholeDockControl");
 const deferred = () => { let resolve, reject; const promise = new Promise((yes,no) => {resolve=yes;reject=no;}); return {promise,resolve,reject}; };
 const settle = async () => { for(let n=0;n<12;n++) await Promise.resolve(); };
-function harness(storage = new Map(), intent = "disconnect", startRequest, initialStatus = fresh) {
+function harness(storage = new Map(), intent = "disconnect", startRequest, initialStatus = fresh, initialRead) {
   const h = {status:{...initialStatus}, reads:[], calls:[], modals:[], timers:new Map(), failStorage:false, intent, snapshot: {...idle, schema_version:3}};
   let slots=[], index=0, effects=[], cleanups=[], serial=0;
   const useState = value => { const slot=index++; if(!(slot in slots)) slots[slot]=value; return [slots[slot], value=>{slots[slot]=typeof value==='function'?value(slots[slot]):value;}]; };
@@ -73,6 +73,7 @@ function harness(storage = new Map(), intent = "disconnect", startRequest, initi
   h.click=()=>{const button=h.button();assert.equal(button.props.disabled,false);button.props.onClick();};
   h.poll=()=>{const [id,fn]=h.timers.entries().next().value;h.timers.delete(id);fn();};
   h.unmount=()=>{for(const cleanup of cleanups.splice(0))cleanup?.();};
+  if(initialRead)h.reads.push(initialRead);
   h.storage=storage;h.render();return h;
 }
 
@@ -477,4 +478,36 @@ test('a refused sleep submission says why, and an accepted one adds nothing', ()
   assert.equal(suspendRefusal({ ...fresh }), '');
   assert.equal(suspendRefusal({ ...fresh, suspend: { requested: true, code: 'dock_power.suspend_request_accepted_unverified' } }), '');
   assert.equal(suspendRefusal({ ...fresh, suspend: {} }), '');
+});
+for(const scenario of ['read-rejection','null-snapshot','stale-snapshot'])test('unsubmitted '+scenario+' requires a fresh explicit activation after evidence recovers',async()=>{
+ const initialRead=scenario==='read-rejection'?Promise.reject(Error('first read unavailable')):undefined;
+ const h=harness(new Map(),'disconnect_only',oneActivation(),fresh,initialRead);
+ if(scenario==='null-snapshot')h.snapshot=null;
+ if(scenario==='stale-snapshot')h.snapshot={...idle,observed_at:new Date(Date.now()-60000).toISOString()};
+ await settle();assert.equal(h.calls.length,0);
+ assert.match(h.render().props.children[0].props.children[0],/did not start. No request was sent/);
+ assert.equal(h.button().props.disabled,true);
+ h.snapshot={...idle,observed_at:new Date().toISOString()};h.poll();await settle();
+ assert.equal(h.calls.length,0,'fresh poll never dispatches');assert.equal(h.button().props.disabled,false);assert.equal(h.button().props.type,'button');
+ assert.equal(h.render().props.children[0].props.children[0],`Safe Disconnect did not start. No request was sent by this attempt. ${dockIntentControl(fresh,h.snapshot,'disconnect_only').message}`);
+ const activate=h.button().props.onClick;activate();activate();await settle();
+ assert.equal(h.calls.length,1);assert.deepEqual(h.calls[0].slice(0,6),[true,'','disconnect','whole_dock_disconnect',true,fresh.attachment_token]);
+ assert.equal(h.modals.length,0,'no second confirmation');assert.equal(h.button(),undefined);
+ h.poll();await settle();assert.equal(h.calls.length,1);h.unmount();
+});
+test('unsubmitted recovery keeps attachment recheck and unmount invalidation',async()=>{
+ for(const stop of ['changed-attachment','unmount']){
+  const h=harness(new Map(),'disconnect_only',oneActivation());h.snapshot=null;await settle();
+  h.snapshot={...idle,observed_at:new Date().toISOString()};h.poll();await settle();
+  const pending=deferred();h.reads.push(pending.promise);h.click();
+  if(stop==='unmount')h.unmount();
+  pending.resolve(stop==='changed-attachment'?{...fresh,attachment_token:'c'.repeat(64)+':'+ 'd'.repeat(64)}:fresh);await settle();assert.equal(h.calls.length,0);h.unmount();
+ }
+});
+test('unsubmitted recovery never overrides pending history or retries a submitted failure',async()=>{
+ const h=harness(new Map(),'disconnect_only',oneActivation());h.snapshot=null;await settle();
+ h.snapshot={...idle,observed_at:new Date().toISOString()};h.poll();await settle();
+ h.storage.set('regear.whole-dock.pending-request','disconnect_only:other');assert.equal(h.button(),undefined);
+ h.storage.clear();h.execute=async()=>{throw Error('response lost');};h.click();await settle();
+ assert.equal(h.calls.length,1);assert.equal(h.button(),undefined);h.poll();await settle();assert.equal(h.calls.length,1);assert.equal(h.button(),undefined);h.unmount();
 });
