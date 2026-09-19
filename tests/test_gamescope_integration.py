@@ -13,7 +13,6 @@ sys.path.insert(0, str(ROOT / "backend"))
 
 from regear.adapters.steamos.gamescope_user import GamescopeUserContext  # noqa: E402
 from regear.delivery.gamescope_integration import GamescopeIntegrationStore  # noqa: E402
-from regear.delivery.user_directory import UserDirectory  # noqa: E402
 
 
 class GamescopeIntegrationStoreTests(unittest.TestCase):
@@ -26,7 +25,7 @@ class GamescopeIntegrationStoreTests(unittest.TestCase):
         shim = plugin / "bin" / "gamescope"
         shim.parent.mkdir(parents=True)
         shim.write_text(
-            '#!/usr/bin/python3\n"""Handheld Dock Mode Gamescope argument shim."""\n',
+            '#!/usr/bin/python3\n"""Re-Gear Gamescope argument shim."""\n',
             encoding="utf-8",
         )
         if os.name != "nt":
@@ -54,8 +53,12 @@ class GamescopeIntegrationStoreTests(unittest.TestCase):
             first = store.activate()
             self.assertTrue(first.ok)
             self.assertTrue(first.changed)
+            self.assertEqual(store.target.name, "90-regear.conf")
             self.assertTrue(store.target.is_file())
-            self.assertIn("HDM_STATE_ROOT=", store.target.read_text(encoding="utf-8"))
+            current = store.target.read_text(encoding="utf-8")
+            self.assertIn("REGEAR_STATE_ROOT=", current)
+            self.assertNotIn("HDM_STATE_ROOT", current)
+            self.assertNotIn("handheld-dock-mode", current)
             self.assertTrue(store.state_root.is_dir())
             self.assertTrue(owned)
 
@@ -67,6 +70,11 @@ class GamescopeIntegrationStoreTests(unittest.TestCase):
             self.assertTrue(removed.changed)
             self.assertFalse(store.target.exists())
             self.assertTrue(store.state_root.is_dir())
+
+    def test_packaged_shim_uses_only_the_current_marker(self):
+        shim = (ROOT / "bin" / "gamescope").read_text(encoding="utf-8")
+        self.assertIn("Re-Gear Gamescope argument shim", shim)
+        self.assertNotIn("Handheld Dock Mode", shim)
 
     def test_matching_dropin_with_missing_state_root_is_repaired_without_rewrite(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -133,36 +141,38 @@ class GamescopeIntegrationStoreTests(unittest.TestCase):
         """
         current = (root / "plugin" / "bin").as_posix()
         legacy = (root / "HandheldDockMode" / "bin").as_posix()
-        text = store.expected_text()
-        self.assertIn(current, text)
-        return text.replace(current, legacy)
+        return store._legacy_render(Path(legacy))
 
-    def test_dropin_from_a_previous_plugin_name_is_migrated_not_stranded(self):
+    def test_dropin_from_a_previous_plugin_name_is_migration_input_only(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             store, _ = self.make_store(root)
             store.target.parent.mkdir(parents=True)
             stranded = self.legacy_dropin_text(store, root)
-            store.target.write_text(stranded, encoding="utf-8", newline="\n")
+            store.legacy_target.write_text(stranded, encoding="utf-8", newline="\n")
 
             before = store.status()
-            self.assertTrue(before.installed)
+            self.assertFalse(before.installed)
             self.assertFalse(before.matches)
             self.assertFalse(before.ready)
-            self.assertEqual(before.error_code, "managed_dropin_superseded")
+            self.assertEqual(before.error_code, "identity_migration_required")
 
             result = store.activate()
-            self.assertTrue(result.ok, result.status)
-            self.assertEqual(
-                store.target.read_text(encoding="utf-8"), store.expected_text()
-            )
-            after = store.status()
-            self.assertTrue(after.ready)
-            self.assertEqual(after.error_code, "")
-
-            # Migration must leave the drop-in reversible through Re-Gear.
-            self.assertTrue(store.deactivate().changed)
+            self.assertFalse(result.ok, result.status)
             self.assertFalse(store.target.exists())
+            self.assertEqual(store.legacy_target.read_text(encoding="utf-8"), stranded)
+
+    def test_unsafe_prior_dropin_fails_closed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            store, _ = self.make_store(root)
+            store.legacy_target.parent.mkdir(parents=True)
+            store.legacy_target.write_bytes(
+                self.legacy_dropin_text(store, root).encode("utf-8")
+            )
+            with patch.object(store, "_managed_file_safe", return_value=False):
+                self.assertEqual(store.status().error_code, "legacy_dropin_unsafe")
+                self.assertFalse(store.activate().changed)
 
     def test_managed_marker_with_an_unknown_plugin_path_is_still_refused(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -170,65 +180,66 @@ class GamescopeIntegrationStoreTests(unittest.TestCase):
             store, _ = self.make_store(root)
             store.target.parent.mkdir(parents=True)
             # Carries our marker, but renders a directory we never shipped.
-            foreign = store.expected_text().replace(
-                (root / "plugin" / "bin").as_posix(), "/opt/somewhere/bin"
-            )
-            store.target.write_text(foreign, encoding="utf-8", newline="\n")
+            foreign = store._legacy_render(Path("/opt/somewhere/bin"))
+            store.legacy_target.write_text(foreign, encoding="utf-8", newline="\n")
 
-            self.assertEqual(store.status().error_code, "managed_dropin_modified")
+            self.assertEqual(store.status().error_code, "legacy_dropin_modified")
             self.assertFalse(store.activate().ok)
-            self.assertEqual(store.target.read_text(encoding="utf-8"), foreign)
+            self.assertEqual(store.legacy_target.read_text(encoding="utf-8"), foreign)
 
-    def test_failed_upgrade_publication_restores_prior_dropin(self):
+    def test_both_identity_dropins_fail_closed_without_mutation(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             store, _ = self.make_store(root)
             store.target.parent.mkdir(parents=True)
-            prior = self.legacy_dropin_text(store, root).encode()
-            store.target.write_bytes(prior)
-            publish = UserDirectory.publish
-            def fail_new(target, name, data, mode):
-                if data == store.expected_text().encode():
-                    raise OSError("injected publication failure")
-                return publish(target, name, data, mode)
-            with patch.object(UserDirectory, "publish", fail_new):
-                self.assertFalse(store.activate().ok)
-            self.assertEqual(store.target.read_bytes(), prior)
-            self.assertTrue(store.activate().ok)
+            current = store.expected_text().encode()
+            legacy = self.legacy_dropin_text(store, root).encode()
+            store.target.write_bytes(current)
+            store.legacy_target.write_bytes(legacy)
+            self.assertEqual(store.status().error_code, "identity_dropin_conflict")
+            self.assertFalse(store.activate().ok)
+            self.assertEqual(store.target.read_bytes(), current)
+            self.assertEqual(store.legacy_target.read_bytes(), legacy)
 
-    def test_failed_rollback_publication_retains_prepared_file_and_retry_authority(self):
+    def test_current_activation_rollback_removes_only_current_output(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             store, _ = self.make_store(root)
             store.target.parent.mkdir(parents=True)
-            prior = self.legacy_dropin_text(store, root).encode()
-            store.target.write_bytes(prior)
             self.assertTrue(store.activate().ok)
-            publish = UserDirectory.publish
-            def fail_prior(target, name, data, mode):
-                if data == prior:
-                    raise OSError("injected rollback publication failure")
-                return publish(target, name, data, mode)
-            with patch.object(UserDirectory, "publish", fail_prior):
-                self.assertFalse(store.rollback_activation().changed)
-            self.assertEqual(store.target.read_bytes(), store.expected_text().encode())
             self.assertTrue(store.rollback_activation().changed)
-            self.assertEqual(store.target.read_bytes(), prior)
-
-    def test_persistent_rollback_publication_failure_can_recover_absent_target(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            store, _ = self.make_store(root)
-            store.target.parent.mkdir(parents=True)
-            prior = self.legacy_dropin_text(store, root).encode()
-            store.target.write_bytes(prior)
-            self.assertTrue(store.activate().ok)
-            with patch.object(UserDirectory, "publish", side_effect=OSError("persistent failure")):
-                self.assertFalse(store.rollback_activation().changed)
             self.assertFalse(store.target.exists())
-            self.assertEqual(store._activation_rollback[0], prior)
-            self.assertTrue(store.rollback_activation().changed)
-            self.assertEqual(store.target.read_bytes(), prior)
+            self.assertFalse(store.legacy_target.exists())
+
+    def test_preparation_fingerprint_binds_legacy_filename(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            store, _ = self.make_store(root)
+            store.target.parent.mkdir(parents=True)
+            before = store.preparation_fingerprint()
+            store.legacy_target.parent.mkdir(parents=True, exist_ok=True)
+            store.legacy_target.write_text(self.legacy_dropin_text(store, root))
+            self.assertNotEqual(before, store.preparation_fingerprint())
+
+    def test_old_and_new_state_roots_fail_closed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            store, _ = self.make_store(root)
+            store.state_root.mkdir(parents=True)
+            store._legacy_state_root.mkdir(parents=True)
+            self.assertEqual(
+                store.status().error_code, "identity_state_root_conflict"
+            )
+            self.assertFalse(store.activate().changed)
+
+    def test_old_state_root_alone_requires_migration(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store, _ = self.make_store(Path(directory))
+            store._legacy_state_root.mkdir(parents=True)
+            self.assertEqual(
+                store.status().error_code, "identity_migration_required"
+            )
+            self.assertFalse(store.activate().changed)
 
     def test_non_root_activation_and_missing_shim_are_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -299,3 +310,6 @@ class StrandedDeviceDropinTests(unittest.TestCase):
     def test_current_rendering_points_at_the_new_plugin_directory(self):
         store = self.make_device_store()
         self.assertIn("/home/deck/homebrew/plugins/Re-Gear/bin", store.expected_text())
+        self.assertIn("REGEAR_STATE_ROOT=/home/deck/.local/share/regear", store.expected_text())
+        self.assertNotIn("Handheld Dock Mode", store.expected_text())
+        self.assertNotIn("HDM_STATE_ROOT", store.expected_text())
