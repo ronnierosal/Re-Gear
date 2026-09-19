@@ -659,22 +659,31 @@ class CompletedAttachmentAbsenceTests(unittest.TestCase):
 
     def fixture(self, *, stage='software_down', absent=True, strict=True,
                 parent_power=False, settled=True, idle=True, changed=False,
-                session=None, seen=None):
+                session=None, seen=None, claim_present=True, user_ok=True,
+                capture=False, admission_error=None, load_error=None,
+                guard_error=None, audit_error=None, retire_error=None,
+                event_error=None, journal_error=None):
         from contextlib import ExitStack
         plugin = self.plugin
         user = NS(uid=1000, username='deck')
         claim = NS(stage=stage)
         plugin._unloading = False
         plugin._discovery = object()
-        plugin._append_journey_event = Mock()
-        plugin._connection_topology = NS(observe=lambda:NS(
-            transport_absent_verified=absent, transport_present=not absent))
+        plugin._append_journey_event = Mock(side_effect=event_error)
+        plugin._release_capture_task = NS(done=lambda:not capture)
+        def observe_topology():
+            if guard_error is not None:
+                raise guard_error
+            return NS(transport_absent_verified=absent, transport_present=not absent)
+        plugin._connection_topology = NS(observe=observe_topology)
         plugin._transition_journal_service = lambda:NS(status=lambda:NS(
             durable=True, owner=NS(value='none')))
         held = []
         @contextmanager
         def admit(**kwargs):
             self.assertIs(kwargs['allow_inhibited'], True)
+            if admission_error is not None:
+                raise admission_error
             held.append(True)
             try:
                 yield
@@ -684,11 +693,17 @@ class CompletedAttachmentAbsenceTests(unittest.TestCase):
         with ExitStack() as stack:
             def patcher(name, **kwargs):
                 return stack.enter_context(patch.object(self.module, name, **kwargs))
+            journal = stack.enter_context(
+                patch.object(self.module.decky.logger, 'info',
+                             side_effect=journal_error))
             # Archival now runs on the intent store so it can clear a sleep
             # record whose session is gone; that record would otherwise hold
             # power_intent_absent false and inhibit admission forever.
             store = patcher('DockPowerIntentStore').return_value
-            store.load.return_value = claim
+            if load_error is not None:
+                store.load.side_effect = load_error
+            else:
+                store.load.return_value = claim if claim_present else None
             if session is not None:
                 plugin._dock_power_session = session
             if seen is not None:
@@ -698,6 +713,8 @@ class CompletedAttachmentAbsenceTests(unittest.TestCase):
             def retire(expected, guard):
                 self.assertIs(expected, claim)
                 self.assertTrue(held)
+                if retire_error is not None:
+                    raise retire_error
                 if changed:
                     plugin._connection_topology.observe = lambda:NS(
                         transport_absent_verified=False, transport_present=True)
@@ -706,9 +723,13 @@ class CompletedAttachmentAbsenceTests(unittest.TestCase):
             store.retire_physically_disconnected.side_effect = retire
             patcher('verified_transport_absent', return_value=strict)
             patcher('GamescopeDiscovery')
-            patcher('resolve_gamescope_user', return_value=NS(ok=True, context=user))
-            patcher('HeldTrialLauncher').return_value.call.return_value = {
-                'code':'held_helper.settled', 'settled':settled}
+            patcher('resolve_gamescope_user',
+                return_value=NS(ok=user_ok, context=user if user_ok else None))
+            audit = patcher('HeldTrialLauncher').return_value.call
+            if audit_error is not None:
+                audit.side_effect = audit_error
+            else:
+                audit.return_value = {'code':'held_helper.settled', 'settled':settled}
             patcher('inner_removal_records_absent', return_value=True)
             patcher('resolve_runtime_profiles', return_value=NS(exact_host=True))
             patcher('SnapshotTransitionObservationAdapter').return_value.observe.return_value = NS(snapshot=NS(
@@ -716,6 +737,7 @@ class CompletedAttachmentAbsenceTests(unittest.TestCase):
                 gamescope=NS(running=True), gpus=[NS(role=self.module.GpuRole.INTERNAL,
                     present=True, confidence=self.module.Confidence.VERIFIED)]))
             result = plugin._reconcile_physically_disconnected_dock()
+            plugin._test_archival_journal_calls = list(journal.call_args_list)
         return result, store.retire_physically_disconnected.call_count
 
     def test_completed_detached_attachment_is_archived_under_existing_admission(self):
@@ -747,7 +769,99 @@ class CompletedAttachmentAbsenceTests(unittest.TestCase):
         details = [call.kwargs.get('details') for call in
                    self.plugin._append_journey_event.call_args_list
                    if call.kwargs.get('code') == 'automatic_dock.archival_guard_unmet']
-        self.assertEqual(details, [{'unmet': 'verified_transport_absent'}])
+        self.assertEqual(details, [
+            {'phase': 'guard', 'unmet': 'verified_transport_absent'}])
+
+    def test_every_early_refusal_names_its_phase_and_reason(self):
+        for options, expected in (
+            ({'stage': 'reauthorize_intent'},
+             {'phase': 'claim', 'unmet': 'stage_reauthorize_intent'}),
+            ({'capture': True},
+             {'phase': 'capture', 'unmet': 'release_capture_running'}),
+            ({'user_ok': False},
+             {'phase': 'user', 'unmet': 'gamescope_user_unresolved'}),
+            ({'strict': False},
+             {'phase': 'guard', 'unmet': 'verified_transport_absent'}),
+            ({'settled': False},
+             {'phase': 'audit', 'unmet': 'held_helper_unsettled'}),
+        ):
+            with self.subTest(options=options):
+                self.plugin._archival_refusal = None
+                self.assertEqual(self.fixture(**options), (False, 0))
+                details = [call.kwargs.get('details') for call in
+                           self.plugin._append_journey_event.call_args_list
+                           if call.kwargs.get('code') ==
+                           'automatic_dock.archival_guard_unmet']
+                self.assertEqual(details, [expected])
+
+    def test_exceptions_name_the_phase_that_raised(self):
+        for options, phase in (
+            ({'admission_error': DockMutationDenied('dock_mutation.inhibited')},
+             'admission'),
+            ({'load_error': OSError('load failed')}, 'claim_load'),
+            ({'guard_error': OSError('observe failed')}, 'guard'),
+            ({'audit_error': OSError('audit failed')}, 'audit'),
+            ({'retire_error': OSError('retire failed')}, 'retire'),
+        ):
+            with self.subTest(phase=phase):
+                self.plugin._archival_refusal = None
+                self.assertEqual(self.fixture(**options),
+                                 (False, 1 if phase == 'retire' else 0))
+                details = [call.kwargs.get('details') for call in
+                           self.plugin._append_journey_event.call_args_list
+                           if call.kwargs.get('code') ==
+                           'automatic_dock.archival_guard_unmet']
+                self.assertEqual(details, [
+                    {'phase': phase, 'unmet': 'raised_' +
+                     type(next(iter(options.values()))).__name__}])
+
+    def test_an_unchanged_refusal_is_not_repeated_every_poll(self):
+        self.plugin._archival_refusal = None
+        self.assertEqual(self.fixture(user_ok=False), (False, 0))
+        self.assertEqual(self.fixture(user_ok=False), (False, 0))
+        repeated = [call for call in self.plugin._append_journey_event.call_args_list
+                    if call.kwargs.get('code') ==
+                    'automatic_dock.archival_guard_unmet']
+        self.assertEqual(repeated, [])
+
+    def test_journal_line_contains_reason_used_by_the_bounded_device_read(self):
+        self.plugin._archival_refusal = None
+        self.assertEqual(self.fixture(user_ok=False), (False, 0))
+        self.assertEqual(len(self.plugin._test_archival_journal_calls), 1)
+        call = self.plugin._test_archival_journal_calls[0]
+        self.assertIn('code=automatic_dock.archival_guard_unmet', call.args[0])
+        self.assertEqual(call.args[1:], ('user', 'gamescope_user_unresolved'))
+
+    def test_failed_journal_emission_is_retried_next_poll(self):
+        self.plugin._archival_refusal = None
+        self.assertEqual(self.fixture(user_ok=False,
+                                      journal_error=OSError('log failed')), (False, 0))
+        self.assertEqual(self.plugin._archival_refusal, None)
+        self.assertEqual(self.fixture(user_ok=False), (False, 0))
+        details = [call.kwargs.get('details') for call in
+                   self.plugin._append_journey_event.call_args_list
+                   if call.kwargs.get('code') ==
+                   'automatic_dock.archival_guard_unmet']
+        self.assertEqual(details, [
+            {'phase': 'user', 'unmet': 'gamescope_user_unresolved'}])
+
+    def test_support_event_failure_does_not_override_emitted_journal_evidence(self):
+        self.plugin._archival_refusal = None
+        self.assertEqual(self.fixture(user_ok=False,
+                                      event_error=OSError('store failed')), (False, 0))
+        self.assertEqual(self.plugin._archival_refusal,
+                         ('user', 'gamescope_user_unresolved'))
+
+    def test_completion_event_failure_does_not_reclassify_retired_claim(self):
+        self.plugin._archival_refusal = ('guard', 'power_intent_absent')
+        self.assertEqual(self.fixture(event_error=OSError('store failed')), (True, 1))
+        self.assertEqual(self.plugin._archival_refusal, None)
+
+    def test_having_no_claim_is_silent_and_clears_refusal_deduplication(self):
+        self.plugin._archival_refusal = ('user', 'gamescope_user_unresolved')
+        self.assertEqual(self.fixture(claim_present=False), (False, 0))
+        self.assertEqual(self.plugin._archival_refusal, None)
+        self.assertEqual(self.plugin._append_journey_event.call_args_list, [])
 
 
 class RetainedReconnectTvTests(unittest.TestCase):

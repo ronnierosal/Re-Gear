@@ -1686,18 +1686,51 @@ class Plugin:
         No device commands, recovery budget reset or preference changes. A
         still-attached deauthorized router is not absence and retains inhibition.
         """
+        def refuse(phase, reason):
+            refusal = (phase, reason)
+            if getattr(self, '_archival_refusal', None) != refusal:
+                try:
+                    decky.logger.info(
+                        "Re-Gear G1 journey: code=automatic_dock.archival_guard_unmet phase=%s unmet=%s",
+                        phase,
+                        reason,
+                    )
+                except Exception:
+                    # The operator's bounded journal read is the diagnostic
+                    # contract. Retry next poll if that line was not emitted.
+                    return False
+                try:
+                    self._append_journey_event(severity='info',
+                        code='automatic_dock.archival_guard_unmet',
+                        component='connection', stage='admission',
+                        details={'phase': phase, 'unmet': reason},
+                        create_timeline=False)
+                except Exception:
+                    # The detailed journal line above is sufficient for this
+                    # diagnostic. Support-event storage remains best effort.
+                    pass
+                self._archival_refusal = refusal
+            return False
+
+        phase = 'admission'
         try:
             with self._dock_mutation_gate().admit(allow_inhibited=True):
+                phase = 'claim_load'
                 store = DockPowerIntentStore(Path('/var/lib/handheld-dock-mode'))
                 claim = store.load()
-                if claim is None or claim.stage != 'software_down':
+                if claim is None:
+                    self._archival_refusal = None
                     return False
+                if claim.stage != 'software_down':
+                    return refuse('claim', 'stage_' + claim.stage)
+                phase = 'capture'
                 capture = getattr(self, '_release_capture_task', None)
                 if capture is not None and not capture.done():
-                    return False
+                    return refuse('capture', 'release_capture_running')
+                phase = 'user'
                 user = resolve_gamescope_user(GamescopeDiscovery().scan())
                 if not user.ok or user.context is None:
-                    return False
+                    return refuse('user', 'gamescope_user_unresolved')
                 # Each condition stays lazy and keeps its original order; only
                 # the name of the first unmet one is retained. A silent refusal
                 # here strands the claim, and a stranded claim inhibits every
@@ -1743,27 +1776,28 @@ class Plugin:
                     except Exception:
                         # Reconciliation is best effort; the guard still decides.
                         pass
+                phase = 'guard'
                 if not guard():
-                    self._append_journey_event(severity='info',
-                        code='automatic_dock.archival_guard_unmet',
-                        component='connection', stage='admission',
-                        details={'unmet': unmet[0] if unmet else 'unknown'})
-                    return False
+                    return refuse('guard', unmet[0] if unmet else 'unknown')
+                phase = 'audit'
                 audit = HeldTrialLauncher(uid=user.context.uid,
                     username=user.context.username).call('audit', '0' * 32)
                 if audit.get('code') != 'held_helper.settled' or audit.get('settled') is not True:
-                    self._append_journey_event(severity='info',
-                        code='automatic_dock.archival_guard_unmet',
-                        component='connection', stage='admission',
-                        details={'unmet': 'held_helper_unsettled'})
-                    return False
+                    return refuse('audit', 'held_helper_unsettled')
+                phase = 'retire'
                 store.retire_physically_disconnected(claim, guard)
-                self._append_journey_event(severity='info',
-                    code='automatic_dock.completed_attachment_archived',
-                    component='connection', stage='admission')
+                self._archival_refusal = None
+                try:
+                    self._append_journey_event(severity='info',
+                        code='automatic_dock.completed_attachment_archived',
+                        component='connection', stage='admission')
+                except Exception:
+                    # Completion logging cannot turn a completed retirement
+                    # back into an archival refusal.
+                    pass
                 return True
-        except Exception:
-            return False
+        except Exception as error:
+            return refuse(phase, 'raised_' + type(error).__name__)
 
     def _run_automatic_connection_recovery(self, recover, expected_user):
         """Connection-only admission; never retires intent or permits removal.
