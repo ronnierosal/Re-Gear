@@ -19,6 +19,7 @@ Repository tests do not establish that the device migration has run.
 | Deploy public key | `/var/lib/regear/deploy/deploy-public-key.pem` |
 | Sudo policy | `/etc/sudoers.d/regear-deploy-plugin` |
 | Plugin rollback storage | `.regear-deploy-backups` |
+| Former deploy backups/staging | Whole-directory root archive under `/var/lib/regear/deploy` |
 | Browser preference prefix | `regear.` |
 | Current journal marker | `Re-Gear shutdown checkpoint: stage=` |
 | Former Decky settings/data/log directories | Whole-directory archives under `~/.local/share/regear-decky-*-archive` |
