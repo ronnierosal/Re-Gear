@@ -42,6 +42,7 @@ from regear.adapters.steamos.gamescope_performance_target import GamescopePerfor
 from regear.domain.auto_tdp import AutoTdpPolicy  # noqa: E402
 from regear.domain.telemetry import TelemetryAdmissionKind, admit_telemetry_collection  # noqa: E402
 from regear.adapters.steamos.drm import DrmDiscovery  # noqa: E402
+from regear.adapters.steamos.egpu_cooling import EgpuCoolingDiscovery  # noqa: E402
 from regear.adapters.steamos.sleep_inhibitor import Login1SleepInhibitor  # noqa: E402
 from regear.adapters.steamos.whole_dock_topology import resolve_whole_dock, resolve_transport  # noqa: E402
 from regear.delivery.whole_dock_runtime import WholeDockRuntime  # noqa: E402
@@ -367,6 +368,40 @@ def _docked_tv_display(snapshot):
 #: host, and a wrong address here would compose a plan for something else. A
 #: second supported eGPU needs this resolved from the observation instead.
 EGPU_GPU_FUNCTION = "0000:08:00.0"
+
+
+def _cooling_payload(evidence=None, *, code: str = "egpu_cooling.unavailable"):
+    """Project bounded cooling evidence without exposing attachment identity."""
+    if evidence is None:
+        return {
+            "schema_version": 1,
+            "state": "unavailable",
+            "code": code,
+            "device_present": None,
+            "driver_name": "",
+            "scan_complete": False,
+            "temperatures_c": [],
+            "fan_rpm": None,
+            "automatic_fan_control": None,
+        }
+    complete = evidence.scan_complete is True
+    return {
+        "schema_version": 1,
+        "state": "observed" if complete else "incomplete",
+        "code": (
+            "egpu_cooling.observed"
+            if complete
+            else "egpu_cooling.evidence_incomplete"
+        ),
+        "device_present": evidence.device_present is True,
+        # Only the expected driver name is public. Do not pass arbitrary sysfs
+        # text through a player-facing RPC.
+        "driver_name": "amdgpu" if evidence.driver_name == "amdgpu" else "",
+        "scan_complete": complete,
+        "temperatures_c": list(evidence.temperatures_c),
+        "fan_rpm": evidence.fan_rpm,
+        "automatic_fan_control": evidence.automatic_fan_control,
+    }
 
 class Plugin:
     def __init__(self) -> None:
@@ -2246,6 +2281,22 @@ class Plugin:
                 self._live_disconnect_key = key
             return self._live_disconnect
 
+    def _egpu_cooling_status(self) -> dict[str, object]:
+        """Observe cooling for the exact current dock attachment; never mutate."""
+        try:
+            cards = [card for card in DrmDiscovery().scan() if card.boot_vga is False]
+            if len(cards) != 1:
+                return _cooling_payload(code="egpu_cooling.topology_unavailable")
+            binding = resolve_whole_dock(cards[0].pci_bdf)
+            evidence = EgpuCoolingDiscovery().scan(
+                gpu_bdf=binding.gpu_bdf,
+                attachment_binding=binding.binding,
+                generation=binding.generation,
+            )
+            return _cooling_payload(evidence)
+        except Exception:
+            return _cooling_payload(code="egpu_cooling.topology_unavailable")
+
     async def get_egpu_disconnect_status(
         self, _request: object = None
     ) -> dict[str, object]:
@@ -2309,6 +2360,7 @@ class Plugin:
                 except Exception:
                     result["attachment_token"] = ""
             return result
+        cooling = await asyncio.to_thread(self._egpu_cooling_status)
         try:
             runtime = await asyncio.to_thread(self._live_disconnect_runtime)
         except Exception:
@@ -2320,6 +2372,7 @@ class Plugin:
                 "code": "live_disconnect.session_unavailable",
                 "ready": False,
                 "busy": False,
+                "cooling": cooling,
             }
         try:
             status = await asyncio.to_thread(runtime.status)
@@ -2330,8 +2383,9 @@ class Plugin:
                 "code": "live_disconnect.status_unavailable",
                 "ready": False,
                 "busy": False,
+                "cooling": cooling,
             }
-        return disconnect_status_to_payload(status)
+        return {**disconnect_status_to_payload(status), "cooling": cooling}
 
     async def execute_egpu_disconnect(
         self,
