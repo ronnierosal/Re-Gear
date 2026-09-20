@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
+import { composeCommandCenterArtwork } from "../scripts/compose_command_center_artwork.mjs";
 
 const read = path => readFileSync(new URL(path, import.meta.url), "utf8");
 const shell = read("../src/quick-access/expanded-command-center/shell.tsx");
@@ -34,12 +35,27 @@ test("build composes the checked-in tile and button sprites without runtime fetc
   assert.match(component, /tile-artwork\.svg\?rich-sprite/);
   assert.match(rollup, /readFileSync\(new URL\("\.\/assets\/command-center\/tile-artwork\.svg"/);
   assert.match(rollup, /readFileSync\(new URL\("\.\/assets\/command-center\/button-artwork\.svg"/);
-  assert.match(rollup, /replaceAll\('href="button-artwork\.svg#', 'href="#'\)/);
+  assert.match(rollup, /composeCommandCenterArtwork\(tileArtwork, buttonArtwork\)/);
   assert.match(preview, /onResolve\(\{filter:\/tile-artwork\\\.svg\\\?rich-sprite\$\//);
-  assert.match(preview, /replaceAll\('href="button-artwork\.svg#','href="#'\)/);
+  assert.match(preview, /composeCommandCenterArtwork\(tileArtwork,buttonArtwork\)/);
   assert.match(tiles, /href="button-artwork\.svg#/);
   assert.match(buttons, /<symbol id="fps"/);
   assert.doesNotMatch(component, /fetch\(|XMLHttpRequest|https?:\/\//);
+});
+
+test("composed artwork namespaces every injected SVG id, reference, and class", () => {
+  const sprite = composeCommandCenterArtwork(tiles, buttons);
+  const ids = [...sprite.matchAll(/\bid="([^"]+)"/g)].map(match => match[1]);
+  const hrefs = [...sprite.matchAll(/\bhref="#([^"]+)"/g)].map(match => match[1]);
+  const urls = [...sprite.matchAll(/url\(#([^)]+)\)/g)].map(match => match[1]);
+  const classes = [...sprite.matchAll(/\bclass="([^"]+)"/g)].flatMap(match => match[1].split(/\s+/));
+  assert.ok(ids.length > 0 && classes.length > 0);
+  for (const value of [...ids, ...hrefs, ...urls, ...classes]) assert.match(value, /^rg-cc-/);
+  assert.equal(new Set(ids).size, ids.length, "composed SVG ids must be unique");
+  for (const reference of [...hrefs, ...urls]) assert.ok(ids.includes(reference), `unresolved #${reference}`);
+  assert.doesNotMatch(sprite, /button-artwork\.svg#/);
+  assert.doesNotMatch(sprite, /\.(?:s|c|g|w|r)(?=[\s,{.:#>+~[])/);
+  assert.match(component, /#rg-cc-tile-/);
 });
 
 test("artwork layer is inert and dynamic values remain React overlays", () => {
