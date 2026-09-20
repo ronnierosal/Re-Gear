@@ -45,6 +45,7 @@ PLUGIN_ROOT = Path("/home/deck/homebrew/plugins/Re-Gear")
 CURRENT_GAMESCOPE_STATE = "/home/deck/.local/share/regear"
 FORMER_GAMESCOPE_STATE = "/home/deck/.local/share/handheld-dock-mode"
 MAX_ENVIRON_BYTES = 1024 * 1024
+GAMESCOPE_PROCESS_NAMES = frozenset(("gamescope", "gamescope-wl"))
 COMBINED_SCHEMA = 2
 CONTROL_CONFLICT_SCHEMA = 1
 COMBINED_PHASES = frozenset(
@@ -108,7 +109,7 @@ def _active_processes(proc: Path = Path("/proc")) -> tuple[str, ...]:
             continue
         except (PermissionError, OSError) as error:
             raise IdentityMigrationError("process inspection is unavailable") from error
-        if comm == "gamescope":
+        if comm in GAMESCOPE_PROCESS_NAMES:
             active.add("gamescope")
         if (
             "/home/deck/homebrew/plugins/Re-Gear/" in command
@@ -136,7 +137,10 @@ def _gamescope_environment_status(proc: Path = Path("/proc")) -> str:
         if not entry.name.isdecimal():
             continue
         try:
-            if (entry / "comm").read_text(encoding="utf-8").strip() != "gamescope":
+            if (
+                (entry / "comm").read_text(encoding="utf-8").strip()
+                not in GAMESCOPE_PROCESS_NAMES
+            ):
                 continue
         except (FileNotFoundError, ProcessLookupError):
             continue
