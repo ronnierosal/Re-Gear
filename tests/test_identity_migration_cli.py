@@ -201,6 +201,26 @@ class IdentityMigrationCliTests(unittest.TestCase):
             )
             self.assertEqual(tool._active_processes(proc), ("regear_backend",))
 
+    def test_steamos_gamescope_wl_process_blocks_offline_admission(self):
+        with tempfile.TemporaryDirectory() as directory:
+            proc = Path(directory)
+            process = proc / "123"
+            process.mkdir()
+            (process / "comm").write_text("gamescope-wl\n", encoding="utf-8")
+            (process / "cmdline").write_bytes(b"/usr/bin/gamescope\0-e\0")
+            self.assertEqual(tool._active_processes(proc), ("gamescope",))
+
+    def test_steamos_gamescope_wl_environment_is_observed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            proc = Path(directory)
+            process = proc / "123"
+            process.mkdir()
+            (process / "comm").write_text("gamescope-wl\n", encoding="utf-8")
+            (process / "environ").write_bytes(
+                b"REGEAR_STATE_ROOT=/home/deck/.local/share/regear\0"
+            )
+            self.assertEqual(tool._gamescope_environment_status(proc), "current")
+
     def test_process_inspection_errors_refuse_offline_proof(self):
         with tempfile.TemporaryDirectory() as directory:
             proc = Path(directory)
