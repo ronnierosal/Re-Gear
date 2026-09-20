@@ -1,5 +1,6 @@
 import deckyPlugin from "@decky/rollup";
 import { readFileSync } from "node:fs";
+import { composeCommandCenterArtwork } from "./scripts/compose_command_center_artwork.mjs";
 
 const config = deckyPlugin({});
 const richTileSpriteImport = "assets/command-center/tile-artwork.svg?rich-sprite";
@@ -12,11 +13,7 @@ config.plugins.unshift({
     if (id !== "\0re-gear-command-center-rich-tiles") return null;
     const tileArtwork = readFileSync(new URL("./assets/command-center/tile-artwork.svg", import.meta.url), "utf8");
     const buttonArtwork = readFileSync(new URL("./assets/command-center/button-artwork.svg", import.meta.url), "utf8");
-    const buttonDefinitions = buttonArtwork.match(/<defs>([\s\S]*?)<\/defs>/)?.[1];
-    if (!buttonDefinitions) throw new Error("button-artwork.svg has no defs block");
-    const bundledSprite = tileArtwork
-      .replace("<defs>", `<defs>${buttonDefinitions}`)
-      .replaceAll('href="button-artwork.svg#', 'href="#');
+    const bundledSprite = composeCommandCenterArtwork(tileArtwork, buttonArtwork);
     return `export default ${JSON.stringify(bundledSprite)};`;
   },
 });

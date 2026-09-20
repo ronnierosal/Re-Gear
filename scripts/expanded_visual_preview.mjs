@@ -4,6 +4,7 @@ import { resolve, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { mkdir, writeFile, readFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
+import { composeCommandCenterArtwork } from './compose_command_center_artwork.mjs';
 const args = process.argv.slice(2);
 const option = (name, fallback) => args.includes(name) ? args[args.indexOf(name) + 1] : fallback;
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -20,9 +21,7 @@ await build({ entryPoints: [join(root, 'frontend-tests/expanded-render-preview.t
     b.onLoad({filter:/.*/,namespace:'regear'},async()=>{
       const tileArtwork=await readFile(join(root,'assets/command-center/tile-artwork.svg'),'utf8');
       const buttonArtwork=await readFile(join(root,'assets/command-center/button-artwork.svg'),'utf8');
-      const buttonDefinitions=buttonArtwork.match(/<defs>([\s\S]*?)<\/defs>/)?.[1];
-      if(!buttonDefinitions)throw new Error('button-artwork.svg has no defs block');
-      const sprite=tileArtwork.replace('<defs>',`<defs>${buttonDefinitions}`).replaceAll('href="button-artwork.svg#','href="#');
+      const sprite=composeCommandCenterArtwork(tileArtwork,buttonArtwork);
       return {contents:`export default ${JSON.stringify(sprite)}`,loader:'js'};
     });
   }},{name: 'forbid-device-api', setup(b) {

@@ -35,6 +35,6 @@ export function RichTileArtwork({ controlId }: { controlId: string }) {
   const artworkId = richTileArtworkId(controlId);
   if (!artworkId) return null;
   return <span className="rg-rich-tile-artwork" aria-hidden="true">
-    <svg viewBox="0 0 180 180" focusable="false"><use href={`#tile-${artworkId}`}/></svg>
+    <svg viewBox="0 0 180 180" focusable="false"><use href={`#rg-cc-tile-${artworkId}`}/></svg>
   </span>;
 }
