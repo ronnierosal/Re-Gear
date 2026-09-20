@@ -83,6 +83,12 @@ const LIFECYCLE_TEXT: Record<string, string> = {
   action_required: "Needs attention",
 };
 
+const WHOLE_DOCK_LIFECYCLE_TEXT: Record<string, string> = {
+  software_down: "Software disconnected",
+  reconnected: "Reconnected",
+  conflict: "Needs attention",
+};
+
 function bool(value: boolean | null | undefined, yes: string, no: string): string | null {
   return value === true ? yes : value === false ? no : null;
 }
@@ -127,8 +133,13 @@ export function egpuPresentation(payload: SnapshotPayload | null | undefined): E
   const model = external.length === 1 && typeof external[0].model_name === "string"
     && external[0].model_name.trim() !== "" ? external[0].model_name : null;
 
+  const durableLifecycle = payload?.whole_dock_lifecycle?.state;
   const stage = payload?.connection_readiness?.stage;
-  const lifecycle = stage ? evidence(LIFECYCLE_TEXT[stage] ?? null) : UNKNOWN;
+  const lifecycle = durableLifecycle === "unknown"
+    ? UNKNOWN
+    : durableLifecycle && durableLifecycle !== "none"
+      ? evidence(WHOLE_DOCK_LIFECYCLE_TEXT[durableLifecycle] ?? null)
+      : stage ? evidence(LIFECYCLE_TEXT[stage] ?? null) : UNKNOWN;
 
   return {
     connection, renderGpu, displayConnected, displayActive, session, game, model, lifecycle,

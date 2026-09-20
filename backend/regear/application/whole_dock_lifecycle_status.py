@@ -13,9 +13,7 @@ from enum import StrEnum
 
 class WholeDockLifecycleState(StrEnum):
     NONE = "none"
-    IN_PROGRESS = "in_progress"
     SOFTWARE_DOWN = "software_down"
-    RECONNECTING = "reconnecting"
     RECONNECTED = "reconnected"
     UNKNOWN = "unknown"
     CONFLICT = "conflict"
@@ -71,8 +69,8 @@ def classify_whole_dock_lifecycle(
         )
     if claim_stage in _TEARDOWN_STAGES:
         return WholeDockLifecycleStatus(
-            WholeDockLifecycleState.IN_PROGRESS,
-            "whole_dock.teardown_in_progress",
+            WholeDockLifecycleState.UNKNOWN,
+            "whole_dock.teardown_state_unconfirmed",
         )
     if claim_stage == "software_down":
         if external_gpu_present:
@@ -86,8 +84,8 @@ def classify_whole_dock_lifecycle(
         )
     if claim_stage == "reauthorize_intent":
         return WholeDockLifecycleStatus(
-            WholeDockLifecycleState.RECONNECTING,
-            "whole_dock.reconnecting",
+            WholeDockLifecycleState.UNKNOWN,
+            "whole_dock.reconnect_state_unconfirmed",
         )
     if claim_stage == "software_reconnected":
         if not external_gpu_present:

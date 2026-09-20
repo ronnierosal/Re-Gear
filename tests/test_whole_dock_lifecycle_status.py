@@ -39,7 +39,7 @@ class WholeDockLifecycleStatusTests(unittest.TestCase):
             },
         )
 
-    def test_teardown_stages_are_in_progress(self):
+    def test_retained_teardown_stages_do_not_claim_live_work(self):
         for stage in (
             "claimed",
             "release_intent",
@@ -52,7 +52,7 @@ class WholeDockLifecycleStatusTests(unittest.TestCase):
             with self.subTest(stage=stage):
                 self.assertEqual(
                     self.classify(stage).state,
-                    WholeDockLifecycleState.IN_PROGRESS,
+                    WholeDockLifecycleState.UNKNOWN,
                 )
 
     def test_software_down_without_external_gpu_is_reported(self):
@@ -65,11 +65,10 @@ class WholeDockLifecycleStatusTests(unittest.TestCase):
         self.assertEqual(status.state, WholeDockLifecycleState.CONFLICT)
         self.assertEqual(status.code, "whole_dock.software_down_gpu_present")
 
-    def test_reconnect_intent_never_reads_as_software_down(self):
-        self.assertEqual(
-            self.classify("reauthorize_intent").state,
-            WholeDockLifecycleState.RECONNECTING,
-        )
+    def test_retained_reconnect_intent_does_not_claim_live_work(self):
+        status = self.classify("reauthorize_intent")
+        self.assertEqual(status.state, WholeDockLifecycleState.UNKNOWN)
+        self.assertEqual(status.code, "whole_dock.reconnect_state_unconfirmed")
 
     def test_reconnected_requires_external_gpu_observation(self):
         self.assertEqual(

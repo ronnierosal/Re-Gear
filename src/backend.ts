@@ -153,6 +153,11 @@ export interface SnapshotPayload {
     checks?: Record<"gpu" | "link" | "hdmi" | "audio" | "session" | "idle", boolean> | null;
     checks_age_ms?: number;
   };
+  whole_dock_lifecycle?: {
+    schema_version: 1;
+    state: "none" | "software_down" | "reconnected" | "unknown" | "conflict";
+    code: string;
+  };
   /** Optional future read-only delivery for local journey classifiers. */
   journey?: {
     deferred_dock?: { state: string; code: string };
