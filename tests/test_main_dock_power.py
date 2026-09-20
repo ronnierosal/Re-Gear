@@ -180,7 +180,7 @@ class MainDockPowerTests(unittest.TestCase):
         self.plugin._run_whole_dock_trial.assert_not_called()
         discovery.assert_not_called()
 
-    def test_sleep_missing_observer_does_not_start_teardown(self):
+    def test_disconnect_before_sleep_is_disabled_before_observation_or_teardown(self):
         self.plugin._run_whole_dock_trial = Mock()
         async def background(fn):
             return fn()
@@ -189,7 +189,8 @@ class MainDockPowerTests(unittest.TestCase):
             observer.return_value.read.return_value = None
             result = asyncio.run(self.plugin.execute_egpu_disconnect(
                 release_display=True, trial_action='whole_dock_sleep', trial_confirmed=True))
-        self.assertEqual(result['code'], 'dock_power.sleep_observer_unavailable')
+        self.assertEqual(result['code'], 'dock_power.disconnect_sleep_disabled')
+        observer.assert_not_called()
         self.plugin._run_whole_dock_trial.assert_not_called()
 
     def test_sleep_keep_connected_selects_sleep_without_teardown(self):
@@ -259,7 +260,7 @@ class MainDockPowerTests(unittest.TestCase):
         self.assertEqual(asyncio.run(self.plugin.execute_egpu_disconnect(**args)), first)
         args['trial_action'] = 'whole_dock_sleep'
         self.assertEqual(asyncio.run(self.plugin.execute_egpu_disconnect(**args))['code'],
-                         'dock_power.request_action_changed')
+                         'dock_power.disconnect_sleep_disabled')
         self.plugin._run_dock_power_request.assert_called_once()
 
     def test_shutdown_still_requires_explicit_confirmation(self):

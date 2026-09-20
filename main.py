@@ -2369,6 +2369,13 @@ class Plugin:
             return {"schema_version": 1, "ok": False,
                     "code": "dock_reconnect.disabled", "busy": False,
                     "safe_to_unplug": False, "hardware_write": False}
+        if trial_action == 'whole_dock_sleep':
+            # A cable-retained software-down state stopped G1 cooling during
+            # supervised testing. Sleeping with the dock connected remains a
+            # separate route; disconnect-before-sleep is not executable.
+            return {"schema_version": 1, "ok": False,
+                    "code": "dock_power.disconnect_sleep_disabled", "busy": False,
+                    "safe_to_unplug": False, "hardware_write": False}
         if trial_action == 'whole_dock_physical_reset':
             # Separate operator attestation from ordinary teardown approval.
             # This action neither releases a display nor relaunches a game.
@@ -2381,7 +2388,7 @@ class Plugin:
             return await self._reconcile_egpu_after_physical_reset(trial_request_id, True)
         if trial_action:
             if (trial_confirmed is not True or release_display is not True
-                    or trial_action not in ("whole_dock_disconnect", "whole_dock_capture", "whole_dock_held_capture", "whole_dock_reconcile", "whole_dock_shutdown", "whole_dock_sleep", "whole_dock_sleep_connected")
+                    or trial_action not in ("whole_dock_disconnect", "whole_dock_capture", "whole_dock_held_capture", "whole_dock_reconcile", "whole_dock_shutdown", "whole_dock_sleep_connected")
                     or relaunch_app_id
                     or type(trial_request_id) is not str
                     or (trial_request_id and (len(trial_request_id) != 32 or any(c not in "0123456789abcdef" for c in trial_request_id)))
@@ -2395,7 +2402,7 @@ class Plugin:
                 return {"schema_version": 1, "ok": False,
                         "code": "dock_teardown.busy", "safe_to_unplug": False}
             power_request = None
-            if trial_action in ('whole_dock_shutdown', 'whole_dock_sleep', 'whole_dock_sleep_connected'):
+            if trial_action in ('whole_dock_shutdown', 'whole_dock_sleep_connected'):
                 requests = getattr(self, '_dock_power_requests', None)
                 if requests is None:
                     requests = self._dock_power_requests = {}
@@ -2418,8 +2425,7 @@ class Plugin:
                         self._dock_power_session)
                 except ValueError:
                     return {'schema_version': 1, 'ok': False,
-                        'code': 'dock_power.sleep_unverified' if trial_action == 'whole_dock_sleep'
-                            else 'dock_power.invalid_intent', 'safe_to_unplug': False}
+                        'code': 'dock_power.invalid_intent', 'safe_to_unplug': False}
                 if trial_request_id:
                     requests[trial_request_id] = (trial_action, {'schema_version': 1,
                         'code': 'dock_power.request_pending', 'ok': False, 'busy': True,
