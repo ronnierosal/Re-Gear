@@ -3,7 +3,7 @@
  * The backend owns teardown, original power intent, ordinary-power fallback,
  * and sleep observation. This module neither touches Steam nor replays requests.
  */
-export type PowerAction = "whole_dock_shutdown" | "whole_dock_sleep" | "whole_dock_sleep_connected";
+export type PowerAction = "whole_dock_shutdown" | "whole_dock_sleep_connected";
 export type PowerIntent = "sleep" | "shutdown";
 export type PowerPhase = "idle" | "choosing" | "dispatching" | "pending" | "requested"
   | "sleep_observed" | "refused" | "uncertain" | "disposed";
@@ -172,7 +172,6 @@ export function createPowerRequestCoordinator(port: PowerRequestPort, options: {
     captureSleep(attachment = "") {
       const ticket = begin("sleep", attachment);
       return ticket ? Object.freeze({
-        disconnectAndSleep: () => submit(ticket, "whole_dock_sleep"),
         keepConnectedAndSleep: () => submit(ticket, "whole_dock_sleep_connected"),
         cancel: () => cancel(ticket),
       }) : null;
