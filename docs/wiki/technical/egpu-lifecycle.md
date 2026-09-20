@@ -13,6 +13,10 @@ Use the [eGPU player guide](../player/egpu.md) and the instructions for your exa
 supervised build. Software reconnect is out of scope; do not treat a retained
 developer command as a supported way to reconnect a still-cabled dock.
 
+A newer source-only foundation can observe cooling data and classify a prepared,
+still-connected state. It is not wired to the player interface or production
+disconnect path, so it does not change the current player instructions.
+
 ## Technical details — for advanced users and contributors
 
 ### Preserved hardware baseline: v0.3.98
@@ -37,6 +41,42 @@ artifacts. Preserve the immutable archive and tag. The earlier
 [0.3.82 automatic-TV record](../../EGPU_0382_CHECKPOINT.md) and 0.3.97 release
 refusal remain evidence; the success does not establish the cause of the refusal.
 
+### Fan-safe prepared-connected foundation
+
+[PR #343](https://github.com/ronnierosal/Re-Gear/pull/343) merged the source
+foundation as `8eeb6c856aa47409c49247b922d14768b1ddc23d`. It has two parts:
+
+- `EgpuCoolingDiscovery` observes one exact PCI eGPU through the loaded `amdgpu`
+  driver's `hwmon` files. It reads temperature channels, fan RPM and whether the
+  exposed PWM mode is automatic. The scan is bounded and fails closed if the PCI
+  address is invalid, caller-supplied attachment/generation fields are empty, or
+  driver, sensor data or scan completeness is missing or ambiguous. Those supplied
+  fields do not independently prove attachment identity continuity. The observer
+  never writes fan, PWM, power, driver or transport state.
+- `decide_prepared_disconnect` is a pure decision contract. A
+  `prepared_connected` result requires the handheld display, released clients,
+  an authorized USB4 tunnel, the GPU still present and bound to `amdgpu`, and
+  complete observations reporting automatic fan mode. Zero observed RPM is valid
+  input, so this result does not prove cooling effectiveness or thermal safety.
+  The state deliberately keeps the cable connected and requires transport
+  authorization and driver presence.
+
+The contract never sets `safe_to_unplug`. After final software teardown,
+`decide_post_teardown` classifies `software_down` without verified physical
+transport absence as `unplug_required`. This includes still-present and unknown
+transport state. It is a short transition, not a stable connected state, reconnect
+state or safety clearance. The flow is complete only when physical transport
+absence is verified.
+
+This foundation is merged and covered by source tests, but has no production
+lifecycle entry point, runtime UI wiring, package/install evidence or hardware
+qualification. It implements no fan writes and no software reconnect.
+
+Authoritative source and validation: [cooling observer](../../../backend/regear/adapters/steamos/egpu_cooling.py),
+[prepared-disconnect contract](../../../backend/regear/domain/prepared_egpu_disconnect.py),
+[observer tests](../../../tests/test_egpu_cooling.py), and
+[decision tests](../../../tests/test_prepared_egpu_disconnect.py).
+
 ### Lifecycle acceptance matrix
 
 Entry points below were inspected in merged source `9421c6f`, with the later
@@ -50,9 +90,10 @@ UI primary owns mounting and request routing. Ronnie owns supervised observation
 | Bounded connection recovery | Eligible fresh attachment lacks endpoint readiness | `_run_automatic_connection_recovery` | Current admission, idle game, exact attachment, attempt budget | One recovery; endpoint/display readiness can then progress | Existing 10-second initial delay, max two attempts; preserve unknown-state and active-operation inhibition | `f6059fa` / 0.3.98 | One automatic recovery after physical replug | eGPU | Broader hardware/second-attempt evidence; not USB4 software reconnect |
 | Automatic TV transition | Required readiness established | `_run_automatic_tv_transition` | GPU/display readiness, permitted transition and game state | TV active, readiness true, claim `none` | Report refusal/failure; preserve bounded recovery and handheld fallback | `f6059fa` / 0.3.98 | 03:34:20.994 UTC; user confirmed picture/audio/controls | eGPU + UI | Repetition; preserve timing and trigger |
 | Player disconnect request | One expanded **Safely disconnect** press | `WholeDockControl intent="disconnect_only"` → `execute_egpu_disconnect(trial_action="whole_dock_disconnect")` | Current approved request and exact attachment; real mounted control | Original request enters teardown once | No repeat request merely because the session/RPC channel restarts; re-observe | `f6059fa` / 0.3.98 | Actual button press recorded | UI + eGPU | Acceptance of later mounted UI revisions |
+| Prepared-connected cooling foundation | Future explicit preparation phase; not production-wired | No production entry point; `EgpuCoolingDiscovery.scan`, `decide_prepared_disconnect` and `decide_post_teardown` are merged library contracts | Handheld display, clients released, USB4 authorized, valid PCI address, nonempty caller attachment/generation fields, `amdgpu` bound, complete temperatures/fan RPM/reported automatic-mode evidence | `prepared_connected`; contract requires transport authorization, driver presence and reported automatic fan mode | Any missing or ambiguous requirement refuses; no identity-continuity proof, effective-cooling claim, fan write or unplug clearance | `8b700df` / merged `8eeb6c8` | None; source tests only | eGPU | Production integration, identity binding, UI contract and supervised hardware qualification |
 | Return/release/remove | Accepted disconnect | `_run_whole_dock_trial`, `_return_portable_before_disconnect`, `LiveDisconnectService.disconnect`, `WholeDockRuntime.execute_claimed` | Verified return/release, identity, clients/storage, topology and operation ownership | `dock_teardown.software_down`, GPU removed, display released, filter disarmed | Refuse incomplete release; retain unresolved transaction evidence; no blanket retry/clear | `f6059fa` / 0.3.98 | 03:29:13.090 UTC; handheld picture/audio/controls confirmed | eGPU | Earlier 0.3.97 refusal cause and repeatability |
 | Physical unplug reconciliation | User physically unplugs in supervised trial | `_reconcile_physically_disconnected_dock` | Verified absent transport, completed claim | Completed history clears, claim `none`; handheld continues | Unreadable/ambiguous state is not physical absence | `f6059fa` / 0.3.98 | 03:32:34.702 UTC | eGPU; Ronnie hardware | Broader live-removal qualification |
-| Sleep/shutdown continuation | Explicit original power request | `_run_dock_power_request`, `whole_dock_shutdown`, `whole_dock_sleep`, `whole_dock_sleep_connected`; UI request coordinator | Correlated original intent, teardown/lease evidence where required, observed suspend counters | At most one continuation; sleep success requires observed kernel cycle | Failed prerequisites stay awake; unresolved submission/restoration is reported | Merged #315/#316 component evidence; not a 0.3.98 power pass | 0.3.98 manual sleep after teardown was blocked; no sleep/wake occurred | eGPU + UI | Combined mounted path and supervised sleep/wake |
+| Sleep/shutdown continuation | Explicit connected-sleep or shutdown request | `_run_dock_power_request`, `whole_dock_sleep_connected`, `whole_dock_shutdown`; UI request coordinator | Correlated original intent, lease evidence where required, observed suspend counters | At most one continuation; sleep success requires observed kernel cycle | Disconnect-before-sleep `whole_dock_sleep` is refused at the RPC boundary; failed prerequisites stay awake | Merged #315/#316 plus #344/#345 source evidence; not a 0.3.98 power pass | 0.3.98 manual sleep after teardown was blocked; no sleep/wake occurred | eGPU + UI | Combined mounted connected-sleep path and supervised sleep/wake |
 | Charging and wake continuity | Disconnect, sleep or shutdown with cable attached | Same power/disconnect paths; observed power supply and battery evidence | Preserve dock power delivery; record supply online, battery/charge trend when available, user indication and recovery-attempt counts | Handheld usable with data path down and charging retained; healthy sleep/wake with existing connection separately verified | No intentional power-delivery disable; report unknown charging; distinguish wake with recovery from wake without recovery | 0.3.98 manual observations; no automated power qualification | User confirmed clean manual shutdown and continued charging; controlled sleep/wake pending | eGPU + UI; Ronnie hardware | Capture actual connected sleep/wake, charging and before/after recovery-attempt count |
 | Software reconnect (excluded) | Historical developer request; now rejected at RPC boundary | `execute_egpu_disconnect` returns `dock_reconnect.disabled`; lower-level reconnect machinery remains | No new trial authorized by retained code | Request refused before worker/state changes | Backend allowlist/fallback removed in #335; older installed packages do not inherit this gate | 0.3.92 `6c638a8` failed trial; #335 source/fixture gate | Timeout, authorized router but missing endpoints, later heat report; no new hardware trial | eGPU + UI | Include backend gate and UI removal in combined candidate; no powered trial |
 
