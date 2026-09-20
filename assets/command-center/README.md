@@ -1,35 +1,52 @@
 # Re-Gear Command Center artwork v1
 
-Visual direction approved from the September 19, 2026 Ally UI review.
+Visual source of truth: the approved rich FPS/widget mockup language from September 2026.
+
+## Production assets
+
+- `tile-artwork.svg` — **primary rich tile artwork**, one full-tile symbol per control/widget: `#tile-fps`, `#tile-battery`, `#tile-egpu`, etc. This is what the Command Center grid should use.
+- `button-artwork.svg` — lightweight icon/fallback sprite for compact navigation, utility rails, and cases where full artwork is inappropriate.
+- `INVENTORY.md` — asset inventory.
+- `button-catalog.md` — domain/type/tab metadata.
+- `dynamic-overlays.md` — live-data overlay contract.
 
 ## Architecture
+
 Static artwork and dynamic information are deliberately separate.
 
-- Static/action tiles use artwork from `button-artwork.svg`.
-- Dynamic tiles use the same artwork layer plus live React/SVG/CSS overlays.
-- Never bake FPS, battery %, controller %, resolution, storage free space, or other changing values into PNG/SVG artwork.
-- All tiles use the same outer card geometry. The sprite contains artwork only; the Command Center component owns border/focus/state/labels.
+The rich tile artwork contains the visual atmosphere: dark glass/HUD background, glow, facet texture, and feature illustration. It intentionally contains **no live number, state, or label**.
 
-## Sprite IDs
-fps, battery, controller, egpu, display, performance, manual-tdp, auto-tdp,
-handheld, safe-disconnect, disconnect-sleep, disconnect-shutdown, resolution,
-refresh-rate, storage, wifi, mic, record, brightness, volume.
+React/CSS/SVG renders changing information above it:
+- FPS and target
+- battery percentage and estimate
+- controller battery/player
+- eGPU state/GPU identity
+- resolution/refresh
+- TDP watts
+- storage free space
+- temperatures/fan/load/power/frame time
+- focus, availability, jiggle, and animated gauges
 
-## Dynamic overlay examples
-- FPS: current FPS, target FPS, animated gauge arc.
-- Battery: %, estimated time when supported.
-- Controller: battery %, player assignment.
-- eGPU: connection state / GPU identity when verified.
-- Display: resolution + refresh.
-- Manual TDP: current watts.
-- Auto TDP: enabled/running state.
-- Storage: free space.
-- Brightness/Volume: percentage in utility rail.
+Never bake live data into artwork.
+
+## Tile IDs
+
+Every inventory ID has a rich tile counterpart. Example:
+
+```tsx
+<svg viewBox="0 0 180 180" aria-hidden="true">
+  <use href="/assets/command-center/tile-artwork.svg#tile-fps" />
+</svg>
+```
+
+The lightweight icon counterpart is `button-artwork.svg#fps`.
 
 ## Animation
-Gauge fills are live SVG/CSS overlays, not part of the artwork.
-Use a short ~200–300 ms ease between verified readings. No continuous spinning.
+
+Gauge fills are live overlays, not artwork.
+Use ~200–300 ms easing between readings. No continuous decorative animation.
 Respect reduced motion.
 
 ## Truthfulness
-Unknown stays Unknown. Unavailable stays Unavailable. Do not fabricate live values.
+
+Unknown stays Unknown. Unavailable stays Unavailable. Never fabricate live values.
