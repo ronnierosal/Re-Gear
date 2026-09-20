@@ -21,7 +21,7 @@ const deferred = () => {
   return { promise, resolve, reject };
 };
 const reply = (overrides = {}) => ({
-  schema_version: 1, request_id: firstId, power_action: "sleep", route_action: "whole_dock_sleep",
+  schema_version: 1, request_id: firstId, power_action: "sleep", route_action: "whole_dock_sleep_connected",
   busy: false, power_requested: true, ok: true,
   code: "dock_power.request_accepted_unverified", ...overrides,
 });
@@ -52,14 +52,15 @@ test("capture alone neither executes nor polls; cancel before choice returns to 
   assert.equal(h.coordinator.read().phase, "idle");
 });
 
-test("disconnect-and-sleep dispatches the captured attachment and one request id", async () => {
+test("sleep capture does not expose the cable-retained disconnect route", async () => {
   const h = harness();
   const choice = h.coordinator.captureSleep(attachment);
-  await choice.disconnectAndSleep();
-  assert.deepEqual(h.calls, [["whole_dock_sleep", attachment, firstId]]);
-  assert.equal(h.coordinator.read().action, "whole_dock_sleep");
+  assert.deepEqual(Object.keys(choice).sort(), ["cancel", "keepConnectedAndSleep"]);
+  assert.equal(choice.disconnectAndSleep, undefined);
+  await choice.keepConnectedAndSleep();
+  assert.deepEqual(h.calls, [["whole_dock_sleep_connected", attachment, firstId]]);
+  assert.equal(h.coordinator.read().action, "whole_dock_sleep_connected");
   assert.equal(h.coordinator.read().phase, "requested");
-  await choice.disconnectAndSleep();
   await choice.keepConnectedAndSleep();
   assert.equal(h.calls.length, 1);
 });
@@ -104,7 +105,7 @@ test("old confirmation handles cannot cancel or execute a newer captured request
   id = secondId;
   const current = h.coordinator.captureShutdown(otherAttachment);
   old.cancel();
-  await old.disconnectAndSleep();
+  await old.keepConnectedAndSleep();
   assert.equal(h.coordinator.read().intent, "shutdown");
   assert.equal(h.coordinator.read().phase, "choosing");
   await current.confirm();
@@ -115,7 +116,7 @@ test("in-flight execution cannot be canceled, replaced, or double dispatched", a
   const waiting = deferred();
   const h = harness({ execute: () => waiting.promise });
   const choice = h.coordinator.captureSleep(attachment);
-  const executing = choice.disconnectAndSleep();
+  const executing = choice.keepConnectedAndSleep();
   choice.cancel();
   assert.equal(h.coordinator.captureShutdown(otherAttachment), null);
   await choice.keepConnectedAndSleep();
@@ -140,38 +141,38 @@ test("reentrant change notifications cannot create a second active capture", () 
 
 test("sleep observation requires the complete correlated success contract", async () => {
   const h = harness({ execute: async () => reply({ sleep_cycle_observed: true, code: "dock_power.sleep_cycle_observed" }) });
-  await h.coordinator.captureSleep(attachment).disconnectAndSleep();
+  await h.coordinator.captureSleep(attachment).keepConnectedAndSleep();
   assert.equal(h.coordinator.read().phase, "sleep_observed");
   for (const changed of [
     { sleep_cycle_observed: false }, { code: "dock_power.request_accepted_unverified" },
     { busy: true }, { ok: false }, { power_requested: false },
-    { power_action: "shutdown" }, { route_action: "whole_dock_sleep_connected" },
+    { power_action: "shutdown" }, { route_action: "whole_dock_shutdown" },
     { request_id: secondId }, { schema_version: 2 },
   ]) {
     const alternate = harness({ execute: async () => reply({ sleep_cycle_observed: true, code: "dock_power.sleep_cycle_observed", ...changed }) });
-    await alternate.coordinator.captureSleep(attachment).disconnectAndSleep();
+    await alternate.coordinator.captureSleep(attachment).keepConnectedAndSleep();
     assert.notEqual(alternate.coordinator.read().phase, "sleep_observed", JSON.stringify(changed));
   }
 });
 
 test("unequivocal refusal releases the active guard for a new user choice", async () => {
   const h = harness({ execute: async () => reply({ power_requested: false, ok: false, code: "dock_power.sleep_unverified" }) });
-  await h.coordinator.captureSleep(attachment).disconnectAndSleep();
+  await h.coordinator.captureSleep(attachment).keepConnectedAndSleep();
   assert.equal(h.coordinator.read().phase, "refused");
   assert.ok(h.coordinator.captureShutdown(attachment));
   assert.equal(h.calls.length, 1);
 });
 
 test("reply loss and malformed replies retain uncertainty without automatic replay", async () => {
-  for (const response of [null, {}, reply({ request_id: secondId }), reply({ power_action: "shutdown" }), reply({ route_action: "whole_dock_sleep_connected" })]) {
+  for (const response of [null, {}, reply({ request_id: secondId }), reply({ power_action: "shutdown" }), reply({ route_action: "whole_dock_shutdown" })]) {
     const h = harness({ execute: async () => response });
-    await h.coordinator.captureSleep(attachment).disconnectAndSleep();
+    await h.coordinator.captureSleep(attachment).keepConnectedAndSleep();
     assert.equal(h.coordinator.read().phase, "uncertain");
     assert.equal(h.coordinator.captureShutdown(attachment), null);
     assert.equal(h.calls.length, 1);
   }
   const h = harness({ execute: async () => { throw new Error("reply lost"); } });
-  await h.coordinator.captureSleep(attachment).disconnectAndSleep();
+  await h.coordinator.captureSleep(attachment).keepConnectedAndSleep();
   assert.equal(h.coordinator.read().phase, "uncertain");
   h.setReading(reply({ sleep_cycle_observed: true, code: "dock_power.sleep_cycle_observed" }));
   await h.coordinator.refresh();
@@ -181,7 +182,7 @@ test("reply loss and malformed replies retain uncertainty without automatic repl
 
 test("an unrelated global status cannot replace this request's state", async () => {
   const h = harness({ execute: async () => reply({ busy: true, power_requested: false, ok: false, code: "dock_teardown.trial_running" }) });
-  await h.coordinator.captureSleep(attachment).disconnectAndSleep();
+  await h.coordinator.captureSleep(attachment).keepConnectedAndSleep();
   assert.equal(h.coordinator.read().phase, "pending");
   const before = { ...h.coordinator.read() };
   h.setReading(reply({ request_id: secondId, sleep_cycle_observed: true, code: "dock_power.sleep_cycle_observed" }));
@@ -229,7 +230,7 @@ test("a late pending poll cannot overwrite a newer direct accepted reply", async
   const execution = deferred();
   const observation = deferred();
   const h = harness({ execute: () => execution.promise, readStatus: () => observation.promise });
-  const submitting = h.coordinator.captureSleep(attachment).disconnectAndSleep();
+  const submitting = h.coordinator.captureSleep(attachment).keepConnectedAndSleep();
   const refreshing = h.coordinator.refresh();
   execution.resolve(reply());
   await submitting;
@@ -248,7 +249,7 @@ test("newer correlated readback wins over an older delayed status response", asy
     execute: async () => { throw new Error("reply lost"); },
     readStatus: () => reads++ === 0 ? first.promise : second.promise,
   });
-  await h.coordinator.captureSleep(attachment).disconnectAndSleep();
+  await h.coordinator.captureSleep(attachment).keepConnectedAndSleep();
   const earlier = h.coordinator.refresh();
   const later = h.coordinator.refresh();
   second.resolve(reply());
@@ -269,20 +270,20 @@ test("RPC adapter sends exactly the selected route, captured token, and correlat
   const callable = (name) => async (...args) => { calls.push([name, args]); return { marker: name }; };
   const port = new Function("callable", `${js}\nreturn powerRequestPort;`)(callable);
   assert.equal(calls.length, 0, "loading the adapter must not submit or poll");
-  for (const action of ["whole_dock_sleep", "whole_dock_sleep_connected", "whole_dock_shutdown"]) {
+  for (const action of ["whole_dock_sleep_connected", "whole_dock_shutdown"]) {
     const result = await port.execute(action, attachment, firstId);
     assert.deepEqual(calls.at(-1), ["execute_egpu_disconnect", [true, "", "disconnect", action, true, attachment, firstId]]);
     assert.deepEqual(result, { marker: "execute_egpu_disconnect" });
   }
   await port.readStatus();
   assert.deepEqual(calls.at(-1), ["get_egpu_disconnect_status", ["power_status"]]);
-  assert.equal(calls.length, 4);
+  assert.equal(calls.length, 3);
 });
 
 test("observed submission prevents an older direct refusal from releasing ownership", async () => {
   const execution = deferred();
   const h = harness({ execute: () => execution.promise });
-  const submitting = h.coordinator.captureSleep(attachment).disconnectAndSleep();
+  const submitting = h.coordinator.captureSleep(attachment).keepConnectedAndSleep();
   h.setReading(reply());
   await h.coordinator.refresh();
   assert.equal(h.coordinator.read().phase, "requested");
@@ -297,7 +298,7 @@ test("submission latch survives reply loss or malformed response and a later ref
   for (const failure of ["transport", "malformed"]) {
     const execution = deferred();
     const h = harness({ execute: () => execution.promise });
-    const submitting = h.coordinator.captureSleep(attachment).disconnectAndSleep();
+    const submitting = h.coordinator.captureSleep(attachment).keepConnectedAndSleep();
     h.setReading(reply());
     await h.coordinator.refresh();
     assert.equal(h.coordinator.read().phase, "requested");
@@ -316,7 +317,7 @@ test("submission latch survives reply loss or malformed response and a later ref
 test("busy status recording power submission also prevents a later refusal from unlocking", async () => {
   const execution = deferred();
   const h = harness({ execute: () => execution.promise });
-  const submitting = h.coordinator.captureSleep(attachment).disconnectAndSleep();
+  const submitting = h.coordinator.captureSleep(attachment).keepConnectedAndSleep();
   h.setReading(reply({ busy: true }));
   await h.coordinator.refresh();
   execution.resolve(reply({ power_requested: false, ok: false, code: "dock_power.sleep_unverified" }));
@@ -329,7 +330,7 @@ test("busy status recording power submission also prevents a later refusal from 
 test("refusal poll cannot release ownership before the unresolved direct execution replies", async () => {
   const execution = deferred();
   const h = harness({ execute: () => execution.promise });
-  const submitting = h.coordinator.captureSleep(attachment).disconnectAndSleep();
+  const submitting = h.coordinator.captureSleep(attachment).keepConnectedAndSleep();
   h.setReading(reply({ power_requested: false, ok: false, code: "dock_power.sleep_unverified" }));
   await h.coordinator.refresh();
   assert.equal(h.coordinator.read().phase, "pending");
@@ -344,7 +345,7 @@ test("refusal poll cannot release ownership before the unresolved direct executi
 
 test("after transport failure a fresh unequivocal non-submission permits a new user choice", async () => {
   const h = harness({ execute: async () => { throw new Error("transport interrupted"); } });
-  await h.coordinator.captureSleep(attachment).disconnectAndSleep();
+  await h.coordinator.captureSleep(attachment).keepConnectedAndSleep();
   assert.equal(h.coordinator.read().phase, "uncertain");
   assert.equal(h.coordinator.captureShutdown(otherAttachment), null);
   h.setReading(reply({ power_requested: false, ok: false, code: "dock_power.sleep_unverified" }));
@@ -382,11 +383,11 @@ test("unverified backend submissions never unlock a new power choice", async () 
     ["shutdown", "dock_teardown.trial_unresolved"],
     ["shutdown", "dock_power.already_consumed"],
   ]) {
-    const route = intent === "sleep" ? "whole_dock_sleep" : "whole_dock_shutdown";
+    const route = intent === "sleep" ? "whole_dock_sleep_connected" : "whole_dock_shutdown";
     const payload = reply({ power_action: intent, route_action: route,
       code, power_requested: false, ok: false });
     const h = harness({ execute: async () => payload });
-    if (intent === "sleep") await h.coordinator.captureSleep().disconnectAndSleep();
+    if (intent === "sleep") await h.coordinator.captureSleep().keepConnectedAndSleep();
     else await h.coordinator.captureShutdown().confirm();
     assert.equal(h.coordinator.read().phase, "uncertain", code);
     assert.equal(h.coordinator.captureSleep(), null, code);
@@ -403,7 +404,7 @@ test("only exact producer codes for the captured intent may settle refusal", asy
     "safe_disconnect.root_required", "safe_disconnect.poweroff_failed",
     "dock_power.request_accepted_unverified", "dock_power.sleep_cycle_observed"]) {
     const h = harness({ execute: async () => reply({ code, power_requested: false, ok: false }) });
-    await h.coordinator.captureSleep().disconnectAndSleep();
+    await h.coordinator.captureSleep().keepConnectedAndSleep();
     assert.equal(h.coordinator.read().phase, "uncertain", code);
     assert.equal(h.coordinator.captureShutdown(), null, code);
   }
