@@ -2513,6 +2513,40 @@ class Plugin:
                 self._live_disconnect_key = key
             return self._live_disconnect
 
+    @staticmethod
+    def _fresh_unclaimed_whole_dock_attachment_token() -> str | None:
+        """Return one stable attached-dock token only after old custody is gone.
+
+        This is a read-only lifecycle boundary.  A completed software-down
+        result belongs to the attachment that was removed; it must not shadow a
+        later physical attachment after its durable claim has been retired.
+        Unknown or changing inventory, and a claim appearing during observation,
+        preserve the terminal result instead of guessing that a new trial is
+        safe.  No reconnect, rescan, authorization or lease mutation occurs.
+        """
+        try:
+            store = WholeDockClaimStore(DEFAULT_RUNTIME_STATE_ROOT)
+            if store.load() is not None:
+                return None
+
+            def observe() -> str | None:
+                cards = [card for card in DrmDiscovery().scan()
+                         if card.boot_vga is False]
+                if len(cards) != 1:
+                    return None
+                binding = resolve_whole_dock(cards[0].pci_bdf)
+                return binding.binding + ":" + binding.generation
+
+            first = observe()
+            if first is None or store.load() is not None:
+                return None
+            second = observe()
+            if second != first or store.load() is not None:
+                return None
+            return first
+        except Exception:
+            return None
+
     async def get_egpu_disconnect_status(
         self, _request: object = None
     ) -> dict[str, object]:
@@ -2552,10 +2586,11 @@ class Plugin:
             return {"schema_version": 1, "claim_stage": await asyncio.to_thread(read_record),
                     "safe_to_unplug": False}
         if _request == "whole_dock_trial":
-            result = dict(getattr(self, "_whole_dock_trial_status", {
+            retained_status = getattr(self, "_whole_dock_trial_status", {
                 "schema_version": 1, "code": "dock_teardown.no_trial",
                 "busy": False, "safe_to_unplug": False,
-            }))
+            })
+            result = dict(retained_status)
             # Whether a worker is running RIGHT NOW, in this process. A caller
             # holding a pending record needs this to tell an operation that may
             # still be mid-teardown -- where continuing to wait is the only safe
@@ -2580,6 +2615,56 @@ class Plugin:
                 result.update({"code": "dock_teardown.trial_unresolved",
                                "busy": False, "ok": False, "safe_to_unplug": False})
                 self._whole_dock_trial_status = dict(result)
+            terminal_software_down = (
+                result.get("schema_version") == 1
+                and result.get("code") == "dock_teardown.software_down"
+                and result.get("busy") is False
+                and result.get("ok") is True
+                and result.get("software_down") is True
+                and result.get("safe_to_unplug") is False
+                and not in_flight
+            )
+            if terminal_software_down:
+                attachment_token = await asyncio.to_thread(
+                    self._fresh_unclaimed_whole_dock_attachment_token
+                )
+                current_status = getattr(self, "_whole_dock_trial_status", None)
+                current_in_flight = (
+                    getattr(self, "_whole_dock_trial_worker_alive", False) is True
+                )
+                if (attachment_token is not None
+                        and not current_in_flight
+                        and current_status is retained_status):
+                    # The prior result described a physically different
+                    # attachment. Keep no request correlation from it. The
+                    # ordinary action path still performs every current
+                    # readiness and mutation check before doing any work.
+                    result = {
+                        "schema_version": 1,
+                        "code": "dock_teardown.no_trial",
+                        "busy": False,
+                        "safe_to_unplug": False,
+                        "in_flight": False,
+                        "attachment_token": attachment_token,
+                    }
+                    self._whole_dock_trial_status = dict(result)
+                elif current_status is not retained_status or current_in_flight:
+                    # Observation runs off the event loop. A trial may start
+                    # while it is reading topology; never let the older result
+                    # overwrite or hide the newer busy/terminal record.
+                    result = dict(current_status or retained_status)
+                    result["in_flight"] = current_in_flight
+                    if result.get("busy") is True and current_in_flight:
+                        result["phase"] = getattr(
+                            self, "_whole_dock_trial_phase", ""
+                        )
+                        started = getattr(
+                            self, "_whole_dock_trial_started", None
+                        )
+                        result["elapsed_s"] = (
+                            max(0, int(time.monotonic() - started))
+                            if started is not None else None
+                        )
             if not result.get("busy") and result.get("ok") is False:
                 def claim_stage():
                     try:
@@ -2588,7 +2673,9 @@ class Plugin:
                     except Exception:
                         return "unknown"
                 result["claim_stage"] = await asyncio.to_thread(claim_stage)
-            if not result.get("busy") and result["code"] in ("dock_teardown.no_trial", "dock_reconnect.software_reconnected"):
+            if (not result.get("busy")
+                    and result["code"] in ("dock_teardown.no_trial", "dock_reconnect.software_reconnected")
+                    and not result.get("attachment_token")):
                 def preview_attachment():
                     cards = [c for c in DrmDiscovery().scan() if c.boot_vga is False]
                     if len(cards) != 1:
