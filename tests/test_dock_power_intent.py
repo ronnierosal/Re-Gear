@@ -2,6 +2,7 @@
 import json
 import multiprocessing
 import os
+from dataclasses import replace
 from pathlib import Path
 import sys
 import tempfile
@@ -178,6 +179,89 @@ class IntentFilesystemTests(unittest.TestCase):
         if consume:
             self.assertTrue(self.store.consume(*args))
         return self.claim.load()
+
+    def test_dead_session_sleep_is_reconciled_without_retiring_claim(self):
+        dead = '1' * 64 + ':' + 'a' * 32
+        expected = self.prepare_boot_intent(action='sleep', session=dead)
+        self.assertTrue(self.store.reconcile_stranded_sleep(
+            expected, '2' * 64 + ':' + 'b' * 32, lambda: True))
+        self.assertTrue(self.claim.power_intent_absent(expected))
+        self.assertEqual(self.claim.load(), expected)
+
+    def test_recreated_store_reconciles_consumed_sleep_without_live_session(self):
+        dead = '1' * 64 + ':' + 'a' * 32
+        expected = self.prepare_boot_intent(action='sleep', session=dead)
+        recreated = DockPowerIntentStore(self.root, **self.kwargs)
+        self.assertTrue(recreated.reconcile_stranded_sleep(
+            expected, None, lambda: True))
+        self.assertTrue(recreated.power_intent_absent(expected))
+        self.assertEqual(self.claim.load(), expected)
+        self.assertFalse(recreated.consume(
+            expected.operation, expected.binding, expected.generation,
+            'sleep', dead, ARGS[5], ARGS[6]))
+
+    def test_reconcile_rejects_legacy_or_live_session_tokens(self):
+        expected = self.prepare_boot_intent(
+            action='sleep', session='legacy-session')
+        self.assertFalse(self.store.reconcile_stranded_sleep(
+            expected, None, lambda: True))
+        self.assertFalse(self.claim.power_intent_absent(expected))
+        self.path.unlink()
+        self.claim.retire_physically_disconnected(expected, lambda: True)
+        self.claim.claim(*ARGS[:3])
+        live = '1' * 64 + ':' + 'a' * 32
+        expected = self.prepare_boot_intent(action='sleep', session=live)
+        self.assertFalse(self.store.reconcile_stranded_sleep(
+            expected, live, lambda: True))
+        self.assertFalse(self.claim.power_intent_absent(expected))
+
+    def test_reconcile_rejects_invalid_live_session_and_intent_identity(self):
+        dead = '1' * 64 + ':' + 'a' * 32
+        expected = self.prepare_boot_intent(action='sleep', session=dead)
+        self.assertFalse(self.store.reconcile_stranded_sleep(
+            expected, 'legacy-session', lambda: True))
+        raw = json.loads(self.path.read_text())
+        raw['binding'] = 'other-binding'
+        self.path.write_text(json.dumps(raw))
+        self.assertFalse(self.store.reconcile_stranded_sleep(
+            expected, None, lambda: True))
+        self.assertFalse(self.claim.power_intent_absent(expected))
+
+    def test_reconcile_preserves_intent_changed_while_guard_runs(self):
+        dead = '1' * 64 + ':' + 'a' * 32
+        expected = self.prepare_boot_intent(action='sleep', session=dead)
+        replacement = '2' * 64 + ':' + 'b' * 32
+        def change_intent():
+            raw = json.loads(self.path.read_text())
+            raw['session'] = replacement
+            self.path.write_text(json.dumps(raw))
+            return True
+        self.assertFalse(self.store.reconcile_stranded_sleep(
+            expected, None, change_intent))
+        self.assertEqual(json.loads(self.path.read_text())['session'], replacement)
+        self.assertFalse(self.claim.power_intent_absent(expected))
+
+    def test_reconcile_never_touches_shutdown_or_changed_claim(self):
+        dead = '1' * 64 + ':' + 'a' * 32
+        expected = self.prepare_boot_intent(action='shutdown', session=dead)
+        live = '2' * 64 + ':' + 'b' * 32
+        self.assertFalse(self.store.reconcile_stranded_sleep(
+            expected, live, lambda: True))
+        self.assertFalse(self.store.reconcile_stranded_sleep(
+            replace(expected, binding='other'), live, lambda: True))
+        self.assertFalse(self.store.reconcile_stranded_sleep(
+            replace(expected, stage='claimed'), live, lambda: True))
+        self.assertFalse(self.claim.power_intent_absent(expected))
+
+    def test_reconcile_false_guard_and_malformed_input_preserve_record(self):
+        dead = '1' * 64 + ':' + 'a' * 32
+        expected = self.prepare_boot_intent(action='sleep', session=dead)
+        live = '2' * 64 + ':' + 'b' * 32
+        self.assertFalse(self.store.reconcile_stranded_sleep(
+            expected, live, lambda: False))
+        self.assertFalse(self.store.reconcile_stranded_sleep(expected, '', lambda: True))
+        self.assertFalse(self.store.reconcile_stranded_sleep(None, live, lambda: True))
+        self.assertFalse(self.claim.power_intent_absent(expected))
 
     def test_shutdown_intent_retires_after_verified_new_boot(self):
         expected = self.prepare_boot_intent()

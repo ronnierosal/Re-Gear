@@ -654,18 +654,21 @@ class CompletedAttachmentAbsenceTests(unittest.TestCase):
     setUp = MainDockAdmissionTests.setUp
 
     def fixture(self, *, stage='software_down', absent=True, strict=True,
-                parent_power=False, settled=True, idle=True, changed=False):
+                parent_power=False, settled=True, idle=True, changed=False,
+                session_missing=True, session=None, user_ok=True,
+                journal_durable=True, journal_owner='none', inner=True,
+                unloading=False):
         from contextlib import ExitStack
         plugin = self.plugin
         user = NS(uid=1000, username='deck')
         claim = NS(stage=stage)
-        plugin._unloading = False
+        plugin._unloading = unloading
         plugin._discovery = object()
         plugin._append_journey_event = Mock()
         plugin._connection_topology = NS(observe=lambda:NS(
             transport_absent_verified=absent, transport_present=not absent))
         plugin._transition_journal_service = lambda:NS(status=lambda:NS(
-            durable=True, owner=NS(value='none')))
+            durable=journal_durable, owner=NS(value=journal_owner)))
         held = []
         @contextmanager
         def admit(**kwargs):
@@ -679,9 +682,21 @@ class CompletedAttachmentAbsenceTests(unittest.TestCase):
         with ExitStack() as stack:
             def patcher(name, **kwargs):
                 return stack.enter_context(patch.object(self.module, name, **kwargs))
-            store = patcher('WholeDockClaimStore').return_value
+            store = patcher('DockPowerIntentStore').return_value
             store.load.return_value = claim
-            store.power_intent_absent.return_value = not parent_power
+            intent_present = [parent_power]
+            store.power_intent_absent.side_effect = lambda expected:not intent_present[0]
+            stored_session = '1' * 64 + ':' + 'a' * 32
+            def reconcile(expected, live, guard):
+                if live == stored_session:
+                    return False
+                allowed = guard()
+                if allowed:
+                    intent_present[0] = False
+                return allowed
+            store.reconcile_stranded_sleep.side_effect = reconcile
+            if not session_missing:
+                plugin._dock_power_session = session
             def retire(expected, guard):
                 self.assertIs(expected, claim)
                 self.assertTrue(held)
@@ -693,10 +708,11 @@ class CompletedAttachmentAbsenceTests(unittest.TestCase):
             store.retire_physically_disconnected.side_effect = retire
             patcher('verified_transport_absent', return_value=strict)
             patcher('GamescopeDiscovery')
-            patcher('resolve_gamescope_user', return_value=NS(ok=True, context=user))
+            patcher('resolve_gamescope_user',
+                return_value=NS(ok=user_ok, context=user if user_ok else None))
             patcher('HeldTrialLauncher').return_value.call.return_value = {
                 'code':'held_helper.settled', 'settled':settled}
-            patcher('inner_removal_records_absent', return_value=True)
+            patcher('inner_removal_records_absent', return_value=inner)
             patcher('resolve_runtime_profiles', return_value=NS(exact_host=True))
             patcher('SnapshotTransitionObservationAdapter').return_value.observe.return_value = NS(snapshot=NS(
                 game_state=self.module.GameState.IDLE if idle else self.module.GameState.UNKNOWN,
@@ -709,12 +725,32 @@ class CompletedAttachmentAbsenceTests(unittest.TestCase):
         self.assertEqual(self.fixture(), (True, 1))
 
     def test_attached_unknown_or_unfinished_work_never_retires_disconnect_history(self):
-        for options in ({'absent':False}, {'strict':False}, {'parent_power':True},
+        for options in ({'absent':False}, {'strict':False},
+                        {'parent_power':True, 'session_missing':False,
+                         'session':'1' * 64 + ':' + 'a' * 32},
                         {'settled':False}, {'idle':False}, {'stage':'tunnel_remove_intent'},
                         {'stage':'reauthorize_intent'}):
             with self.subTest(options=options):
                 self.assertEqual(self.fixture(**options), (False, 0))
         self.assertEqual(self.fixture(changed=True), (False, 1))
+
+    def test_dead_predecessor_sleep_is_reconciled_before_archival(self):
+        self.assertEqual(self.fixture(parent_power=True), (True, 1))
+
+    def test_live_none_or_matching_session_never_clears_legacy_record(self):
+        self.assertEqual(self.fixture(parent_power=True, session_missing=False,
+                                      session=None), (False, 0))
+        self.assertEqual(self.fixture(parent_power=True, session_missing=False,
+                                      session='1' * 64 + ':' + 'a' * 32),
+                         (False, 0))
+
+    def test_failed_non_power_prerequisites_never_attempt_cleanup(self):
+        for options in ({'absent':False}, {'strict':False}, {'settled':False},
+                        {'idle':False}, {'user_ok':False},
+                        {'journal_durable':False}, {'journal_owner':'operation'},
+                        {'inner':False}, {'unloading':True}):
+            with self.subTest(options=options):
+                self.assertEqual(self.fixture(parent_power=True, **options), (False, 0))
 
 
 class RetainedReconnectTvTests(unittest.TestCase):

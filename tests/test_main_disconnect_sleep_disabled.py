@@ -43,6 +43,27 @@ class MainDisconnectSleepDisabledTests(unittest.TestCase):
         self.assertFalse(hasattr(self.plugin, "_dock_power_context"))
         self.assertFalse(hasattr(self.plugin, "_whole_dock_trial_status"))
 
+    def test_completed_legacy_cleanup_cannot_enable_disconnect_before_sleep(self):
+        self.plugin._reconcile_physically_disconnected_dock = Mock(return_value=True)
+        self.assertTrue(self.plugin._reconcile_physically_disconnected_dock())
+        self.plugin._run_background_operation = Mock()
+        self.plugin._run_whole_dock_trial = Mock()
+        self.plugin._run_dock_power_request = Mock()
+
+        result = asyncio.run(self.plugin.execute_egpu_disconnect(
+            release_display=True,
+            trial_action="whole_dock_sleep",
+            trial_confirmed=True,
+            trial_attachment_token=f"{'a' * 64}:{'b' * 64}",
+            trial_request_id="c" * 32,
+        ))
+
+        self.assertEqual(result["code"], "dock_power.disconnect_sleep_disabled")
+        self.assertFalse(result["hardware_write"])
+        self.plugin._run_background_operation.assert_not_called()
+        self.plugin._run_whole_dock_trial.assert_not_called()
+        self.plugin._run_dock_power_request.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()
