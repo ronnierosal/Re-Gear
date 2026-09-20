@@ -790,7 +790,7 @@ class Plugin:
         a successful software teardown may leave the cable connected.
         """
         try:
-            claim = WholeDockClaimStore(DEFAULT_RUNTIME_STATE_ROOT).load()
+            claim = WholeDockClaimStore(Path('/var/lib/handheld-dock-mode')).load()
             stage = None if claim is None else claim.stage
             readable = True
         except Exception:
