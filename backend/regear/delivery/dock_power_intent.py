@@ -145,6 +145,43 @@ class DockPowerIntentStore(WholeDockClaimStore):
                     pass
             return True
 
+    def reconcile_stranded_sleep(self, expected_claim, live_session, guard):
+        """Delete a legacy sleep intent that no live session can consume."""
+        session_pattern = '[0-9a-f]{64}:[0-9a-f]{32}'
+        if (type(expected_claim) is not WholeDockClaim
+                or expected_claim.stage != 'software_down'
+                or (live_session is not None
+                    and (type(live_session) is not str
+                         or re.fullmatch(session_pattern, live_session) is None))):
+            return False
+        with self._locked() as directory:
+            claim = self._load(directory)
+            if claim != expected_claim:
+                return False
+            try:
+                intent = self._load_intent(directory, expected_claim)
+            except ValueError:
+                return False
+            if (type(intent) is not DockPowerIntent or intent.action != 'sleep'
+                    or (intent.operation, intent.binding, intent.generation) !=
+                    (claim.operation, claim.binding, claim.generation)
+                    or re.fullmatch(session_pattern, intent.session) is None
+                    or (live_session is not None and intent.session == live_session)):
+                return False
+            if guard() is not True or self._load(directory) != claim:
+                return False
+            try:
+                if self._load_intent(directory, expected_claim) != intent:
+                    return False
+            except ValueError:
+                return False
+            try:
+                os.unlink(self._filename(intent), dir_fd=directory)
+            except FileNotFoundError:
+                return True
+            os.fsync(directory)
+            return True
+
     def retire_after_boot(self, expected_claim, current_boot_hash, guard):
         """Archive a verified completed shutdown from an earlier boot only.
 

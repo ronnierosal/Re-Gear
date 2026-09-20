@@ -1706,7 +1706,7 @@ class Plugin:
         """
         try:
             with self._dock_mutation_gate().admit(allow_inhibited=True):
-                store = WholeDockClaimStore(Path('/var/lib/handheld-dock-mode'))
+                store = DockPowerIntentStore(Path('/var/lib/handheld-dock-mode'))
                 claim = store.load()
                 if claim is None or claim.stage != 'software_down':
                     return False
@@ -1716,11 +1716,11 @@ class Plugin:
                 user = resolve_gamescope_user(GamescopeDiscovery().scan())
                 if not user.ok or user.context is None:
                     return False
-                def guard():
+                def guard(*, require_power_intent=True):
                     topology = self._connection_topology.observe()
                     current = SnapshotTransitionObservationAdapter(self._discovery).observe().snapshot
                     journal = self._transition_journal_service().status()
-                    return (topology.transport_absent_verified is True
+                    ready = (topology.transport_absent_verified is True
                         and topology.transport_present is False
                         and verified_transport_absent() is True
                         and current.game_state is GameState.IDLE
@@ -1731,15 +1731,27 @@ class Plugin:
                         and current.gpus[0].confidence is Confidence.VERIFIED
                         and resolve_runtime_profiles(current).exact_host
                         and journal.durable and journal.owner.value == 'none'
-                        and store.power_intent_absent(claim) is True
                         and inner_removal_records_absent()
                         and resolve_gamescope_user(GamescopeDiscovery().scan()).context == user.context
                         and not self._unloading)
-                if not guard():
+                    return (ready and (not require_power_intent
+                        or store.power_intent_absent(claim) is True))
+                if not guard(require_power_intent=False):
                     return False
                 audit = HeldTrialLauncher(uid=user.context.uid,
                     username=user.context.username).call('audit', '0' * 32)
                 if audit.get('code') != 'held_helper.settled' or audit.get('settled') is not True:
+                    return False
+                session_missing = not hasattr(self, '_dock_power_session')
+                live_session = None if session_missing else self._dock_power_session
+                if session_missing or live_session is not None:
+                    try:
+                        store.reconcile_stranded_sleep(
+                            claim, live_session,
+                            lambda: guard(require_power_intent=False))
+                    except Exception:
+                        pass
+                if not guard():
                     return False
                 store.retire_physically_disconnected(claim, guard)
                 self._append_journey_event(severity='info',
