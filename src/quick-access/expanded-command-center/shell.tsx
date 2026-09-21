@@ -6,6 +6,14 @@ import { columnsForWidth, gridCells, moveInGrid, nextTab, restoreTarget, sampleT
 import type { Tab, Tile } from "./model";
 import { expandedStyles } from "./styles";
 import { brandIcon } from "../../brand-assets";
+import { RichTileArtwork, RichTileSprite, richTileArtworkId, richTileArtworkStyles } from "./rich-tile-artwork";
+
+// Several source-level fixtures execute this module after stripping imports.
+// Keep that harness path inert while production always uses the imported layer.
+const RichArtwork = typeof RichTileArtwork === "undefined" ? () => null : RichTileArtwork;
+const RichArtworkSprite = typeof RichTileSprite === "undefined" ? () => null : RichTileSprite;
+const artworkIdFor = typeof richTileArtworkId === "undefined" ? () => undefined : richTileArtworkId;
+const artworkStyles = typeof richTileArtworkStyles === "undefined" ? "" : richTileArtworkStyles;
 
 const iconIds: Record<string, CommandCenterIconId> = {
   quick: "quick-access", performance: "performance", egpu: "egpu", controllers: "controllers", settings: "settings",
@@ -203,9 +211,10 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
               style={{ gridColumn: item.wide ? (gridColumns === 4 ? "span 2" : "1 / -1") : undefined }}
               aria-label={`${item.title}: ${item.value}. ${item.detail}.${synthetic ? " Sample data." : ""} View details.`}
               onFocus={(event: { target: EventTarget }) => { memory.current[tab] = item.id; (event.target as HTMLElement).scrollIntoView({ block: "nearest" }); }} onClick={() => { launcher.current = item.id; setNested(item.id); }}>
+              <RichArtwork controlId={item.id}/>
               <span className="rg-expanded-tile-body">
                 <span className="rg-expanded-tile-heading">
-                  <span className="rg-expanded-tile-icon"><Icon id={item.id}/></span>
+                  {!artworkIdFor(item.id) && <span className="rg-expanded-tile-icon"><Icon id={item.id}/></span>}
                   <span className="rg-expanded-label">{item.title}</span>
                 </span>
                 <span className="rg-expanded-value">{item.id === "disconnect" && <CommandCenterIcon id="status-warning" size={16}/>} {item.value}</span>
@@ -215,7 +224,8 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
             </Button>;
 
   return <div className="rg-expanded-backdrop">
-    <style>{expandedStyles}</style>
+    <style>{expandedStyles + artworkStyles}</style>
+    <RichArtworkSprite/>
     <Container ref={panel} data-ec-panel className="rg-expanded-frame" role="dialog" aria-modal="true" aria-label={synthetic ? "Re-Gear expanded Command Center prototype" : "Re-Gear Command Center"} onKeyDown={onKeyDown} {...nativeHandlers}
       onFocus={(event: { target: EventTarget }) => { detailHadFocus.current = Boolean((event.target as HTMLElement).closest("[data-ec-detail-content]")); const id = (event.target as HTMLElement).closest<HTMLElement>("[data-ec-control]")?.dataset.ecControl; if (id && !nested) memory.current[tab] = id; }}>
       {tab === "quick" && !nested && <UtilityRail side="left" Button={Button} Focusable={Container}/>}

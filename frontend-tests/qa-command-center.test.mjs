@@ -29,10 +29,11 @@ const disconnect = (over = {}) => ({
   external_display_committed: false, display_release_required: false, last: null, ...over,
 });
 
-test("the approved five tiles appear in the approved order", () => {
+test("the production controls appear in a stable order", () => {
   assert.deepEqual(tilesFor({ status: status() }).map((t) => t.id), TILE_ORDER);
   assert.deepEqual(TILE_ORDER,
-    ["fps", "tdp", "auto-tdp", "display", "safe-disconnect"]);
+    ["fps", "tdp", "auto-tdp", "display", "safe-disconnect", "sleep-connected",
+      "shutdown", "resolution", "egpu-status"]);
 });
 
 test("the grid shape never depends on live evidence", () => {
@@ -66,59 +67,32 @@ test("no tile fabricates a value", () => {
   assert.equal(unknownWatts.value.text, "Unknown", "never 0 W");
 });
 
-test("Safe Disconnect is unavailable until the backend has been read", () => {
-  // Absent status means not yet read, which is not the same as "no".
+test("Safe Disconnect delegates admission to the guarded whole-dock owner", () => {
   const tile = by(tilesFor({ status: status() }))["safe-disconnect"];
-  assert.equal(tile.available, false);
-  assert.equal(tile.value.text, "Unknown");
-  assert.equal(tile.activation, "notice", "opens information, never an operation");
-  assert.equal(tile.actionLabel, null);
-});
-
-test("Safe Disconnect availability is never inferred from anything else", () => {
-  // Not from topology, not from Auto TDP, not from a display target, not from
-  // two devices being online. Only the backend's own status decides.
-  for (const rest of [{}, { displayTarget: "TV" }]) {
-    const tile = by(tilesFor({ status: status({ enabled: true }) }, rest))["safe-disconnect"];
-    assert.equal(tile.available, false, JSON.stringify(rest));
-  }
-  const offered = by(tilesFor({ status: status() }, { disconnectStatus: disconnect() }))["safe-disconnect"];
-  assert.equal(offered.available, true, "and only the backend can turn it on");
-});
-
-test("a standing external display asks for approval rather than reading blocked", () => {
-  // Telling a player nothing can be done, when all that is missing is their
-  // approval to turn the TV off, is the wrong answer.
-  const tile = by(tilesFor({ status: status() },
-    { disconnectStatus: disconnect({ display_release_required: true }) }))["safe-disconnect"];
   assert.equal(tile.available, true);
-  assert.equal(tile.displayApprovalRequired, true);
-  assert.equal(tile.reason, null);
+  assert.equal(tile.activation, "act");
+  assert.equal(tile.value.text, "Guarded");
+  assert.equal(tile.confirmation, undefined, "the model does not recreate lifecycle confirmation");
 });
 
-test("a half-detached eGPU is attention, not a failed button press", () => {
-  const tile = by(tilesFor({ status: status() }, {
-    disconnectStatus: disconnect({
-      availability: "recovery_required", ready: false, attemptable: false,
-      code: "removal_transaction.partially_detached",
-    }),
-  }))["safe-disconnect"];
-  assert.equal(tile.attention, true);
-  assert.equal(tile.available, false);
-  assert.equal(tile.actionLabel, null, "no disconnect is offered over a half-detached device");
+test("power actions stay distinct and disconnect-before-sleep is absent", () => {
+  const tiles = by(tilesFor({ status: status() }));
+  assert.equal(tiles["sleep-connected"].activation, "act");
+  assert.equal(tiles["shutdown"].activation, "act");
+  assert.doesNotMatch(JSON.stringify(tiles), /Safe Disconnect \+ Sleep|whole_dock_sleep/i);
 });
 
-test("an unfinished scan is not a clear device", () => {
-  // holders and scan_complete travel separately; an empty list from a scan
-  // that could not finish is not evidence that nothing is using the eGPU.
-  const tile = by(tilesFor({ status: status() }, {
-    disconnectStatus: disconnect({
-      availability: "unavailable", ready: false, attemptable: false,
-      holders: [], scan_complete: false, code: "removal_safety.client_scan_incomplete",
-    }),
-  }))["safe-disconnect"];
+test("Resolution stays visible and honestly unavailable", () => {
+  const tile = by(tilesFor({ status: status() })).resolution;
   assert.equal(tile.available, false);
-  assert.match(tile.reason, /could not check every process/i);
+  assert.equal(tile.activation, "notice");
+  assert.match(tile.reason, /No verified resolution provider/);
+});
+
+test("eGPU Status is a read-only navigation target", () => {
+  const tile = by(tilesFor({ status: status() }))["egpu-status"];
+  assert.equal(tile.available, true);
+  assert.equal(tile.activation, "open");
 });
 
 test("no disconnect state ever presents unplugging as safe", () => {
@@ -135,13 +109,6 @@ test("no disconnect state ever presents unplugging as safe", () => {
     assert.doesNotMatch(rendered, /safe to (unplug|disconnect|remove)/i);
     assert.doesNotMatch(rendered, /you (can|may) (now )?(unplug|remove)/i);
   }
-});
-
-test("the confirmation is passed through untouched, not restated here", () => {
-  const tile = by(tilesFor({ status: status() }, { disconnectStatus: disconnect() }))["safe-disconnect"];
-  assert.ok(tile.confirmation, "an offered disconnect must carry its confirmation");
-  assert.match(tile.confirmation, /session will restart/i);
-  assert.match(tile.confirmation, /keep the cable connected/i);
 });
 
 test("Auto TDP offers one context action, never a toggle", () => {
@@ -169,9 +136,19 @@ test("Display target reads unknown rather than guessing", () => {
   assert.equal(by(tilesFor({ status: status() }, { displayTarget: "TV" })).display.value.text, "TV");
 });
 
-test("the display tile routes and never runs a transition itself", () => {
-  const tile = by(tilesFor({ status: status() }, { displayTarget: "TV" })).display;
-  assert.equal(tile.activation, "open", "guards stay with the surface that owns them");
+test("the display tile mirrors the guarded dynamic action", () => {
+  const tv = by(tilesFor({ status: status() }, { displayTarget: "Handheld",
+    displayAction: { target: "tv", title: "Switch to TV", disabled: false, description: "Ready" } })).display;
+  assert.equal(tv.title, "Switch to TV");
+  assert.equal(tv.activation, "act");
+  const handheld = by(tilesFor({ status: status() }, { displayTarget: "External",
+    displayAction: { target: "ally", title: "Switch to handheld", disabled: false, description: "Ready" } })).display;
+  assert.equal(handheld.title, "Switch to handheld");
+  assert.equal(handheld.activation, "act");
+  const blocked = by(tilesFor({ status: status() }, { displayAction: {
+    target: null, title: "Display switch unavailable", disabled: true, description: "State unknown" } })).display;
+  assert.equal(blocked.activation, "notice");
+  assert.equal(blocked.reason, "State unknown");
 });
 
 test("every unavailable tile gives a reason", () => {
@@ -180,13 +157,14 @@ test("every unavailable tile gives a reason", () => {
   }
 });
 
-test("two-dimensional traversal reaches all five tiles including the lone fifth", () => {
+test("two-dimensional traversal reaches all production controls", () => {
   const count = TILE_ORDER.length;
   assert.equal(stepGrid(tileIndex("fps"), count, TILE_COLUMNS, "right"), tileIndex("tdp"));
   assert.equal(stepGrid(tileIndex("fps"), count, TILE_COLUMNS, "down"), tileIndex("auto-tdp"));
-  // Safe Disconnect sits alone on the last row; both cells above must reach it.
   assert.equal(stepGrid(tileIndex("auto-tdp"), count, TILE_COLUMNS, "down"), tileIndex("safe-disconnect"));
-  assert.equal(stepGrid(tileIndex("display"), count, TILE_COLUMNS, "down"), tileIndex("safe-disconnect"));
+  assert.equal(stepGrid(tileIndex("display"), count, TILE_COLUMNS, "down"), tileIndex("sleep-connected"));
+  assert.equal(stepGrid(tileIndex("shutdown"), count, TILE_COLUMNS, "down"), tileIndex("egpu-status"));
+  assert.equal(stepGrid(tileIndex("resolution"), count, TILE_COLUMNS, "down"), tileIndex("egpu-status"));
 });
 
  test("manual power enablement never claims a running Auto TDP loop", () => {
