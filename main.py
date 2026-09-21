@@ -2667,7 +2667,27 @@ class Plugin:
                 and result.get("safe_to_unplug") is False
                 and not in_flight
             )
-            if terminal_software_down:
+            terminal_failed_connected_sleep = (
+                result.get("schema_version") == 1
+                and result.get("code") == "dock_power.request_unverified"
+                and result.get("route_action") == "whole_dock_sleep_connected"
+                and result.get("power_action") == "sleep"
+                and result.get("busy") is False
+                and result.get("ok") is False
+                and result.get("software_down") is False
+                and result.get("power_requested") is False
+                and result.get("sleep_cycle_observed") is False
+                and result.get("safe_to_unplug") is False
+                and not in_flight
+            )
+            if terminal_software_down or terminal_failed_connected_sleep:
+                # Connected sleep has its own durable presentation channel in
+                # _dock_sleep_status. Once that request has terminally failed,
+                # retaining the same payload as whole-dock trial state makes an
+                # unrelated Safe Disconnect press inherit the power failure and
+                # refuse before dispatch. Keep the power result intact, while
+                # admitting a new disconnect only after the same attachment and
+                # custody checks used for a physically reattached dock.
                 attachment_token = await asyncio.to_thread(
                     self._fresh_unclaimed_whole_dock_attachment_token
                 )
