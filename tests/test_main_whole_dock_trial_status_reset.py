@@ -61,6 +61,73 @@ class WholeDockTrialStatusResetTests(unittest.TestCase):
         self.assertIs(self.plugin._whole_dock_trial_status, result)
         self.assertNotIn("request_id", result)
 
+    def test_failed_connected_sleep_stays_on_power_channel_and_rearms_disconnect(self):
+        failed_sleep = {
+            "schema_version": 1,
+            "code": "dock_power.request_unverified",
+            "busy": False,
+            "ok": False,
+            "safe_to_unplug": False,
+            "software_down": False,
+            "power_requested": False,
+            "sleep_cycle_observed": False,
+            "power_action": "sleep",
+            "route_action": "whole_dock_sleep_connected",
+            "request_id": "d" * 32,
+        }
+        self.plugin._whole_dock_trial_status = failed_sleep
+        self.plugin._dock_sleep_status = dict(failed_sleep)
+        p1, p2, p3 = self.patches()
+        with p1, p2, p3:
+            trial = self.read()
+        power = asyncio.run(
+            self.plugin.get_egpu_disconnect_status("power_status")
+        )
+
+        self.assertEqual(trial, {
+            "schema_version": 1,
+            "code": "dock_teardown.no_trial",
+            "busy": False,
+            "safe_to_unplug": False,
+            "in_flight": False,
+            "attachment_token": TOKEN_A,
+        })
+        self.assertEqual(power, failed_sleep)
+        self.assertEqual(
+            self.plugin._whole_dock_trial_status["attachment_token"], TOKEN_A
+        )
+
+    def test_other_power_results_do_not_rearm_safe_disconnect(self):
+        original = dict(self.plugin._whole_dock_trial_status)
+        base = {
+            **original,
+            "code": "dock_power.request_unverified",
+            "ok": False,
+            "software_down": False,
+            "power_requested": False,
+            "sleep_cycle_observed": False,
+            "power_action": "sleep",
+            "route_action": "whole_dock_sleep_connected",
+        }
+        malformed = (
+            {"code": "dock_power.other_failure"},
+            {"code": "dock_teardown.failed"},
+            {"sleep_cycle_observed": True},
+            {"route_action": "whole_dock_shutdown"},
+            {"power_action": "shutdown"},
+            {"power_requested": True},
+            {"busy": True},
+            {"safe_to_unplug": True},
+        )
+        for change in malformed:
+            with self.subTest(change=change):
+                status = {**base, **change}
+                self.plugin._whole_dock_trial_status = status
+                self.plugin._fresh_unclaimed_whole_dock_attachment_token = Mock()
+                result = self.read()
+                self.plugin._fresh_unclaimed_whole_dock_attachment_token.assert_not_called()
+                self.assertNotEqual(result.get("code"), "dock_teardown.no_trial")
+
     def test_claim_must_stay_absent_before_between_and_after_observations(self):
         cases = (
             (NS(stage="software_down"),),
