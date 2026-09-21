@@ -3600,8 +3600,34 @@ class Plugin:
     ) -> dict[str, object]:
         """Issue one short-lived permit after an on-screen player confirmation."""
         try:
+            service = self._presentation_transition_service()
+            try:
+                status = await asyncio.to_thread(service.status)
+            except Exception:
+                status = None
+            if (
+                status is not None
+                and status.acknowledgement_required
+                and not status.action_required
+                and status.target is PlacementState.PORTABLE
+                and status.operation_id
+                and status.code
+                in ("transition.committed", "transition.no_op")
+            ):
+                acknowledged = await asyncio.to_thread(
+                    lambda: service.acknowledge(status.operation_id)
+                )
+                if not acknowledged:
+                    return {
+                        "schema_version": 1,
+                        "approval_token": "",
+                        "blockers": ["journal.acknowledgement_required"],
+                    }
+                self._automatic_dock.reset_after_acknowledgement()
+                if self._topology_wakeup is not None:
+                    self._topology_wakeup.invalidate()
             preview = await asyncio.to_thread(
-                lambda: self._presentation_transition_service().preview(
+                lambda: service.preview(
                     PlacementState.DOCKED_EGPU, user_confirmed=True
                 ),
             )
