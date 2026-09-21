@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 144">
+<defs>
+ <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#102d47"/><stop offset=".5" stop-color="#071a2b"/><stop offset="1" stop-color="#020913"/></linearGradient>
+ <radialGradient id="halo" cx=".76" cy=".48" r=".55"><stop stop-color="#32d7ff" stop-opacity=".30"/><stop offset="1" stop-color="#32d7ff" stop-opacity="0"/></radialGradient>
+ <linearGradient id="glass" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#ffffff" stop-opacity=".08"/><stop offset=".55" stop-color="#ffffff" stop-opacity="0"/></linearGradient>
+ <filter id="glow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="2.6" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+</defs>
+<rect x="2" y="2" width="236" height="140" rx="18" fill="url(#bg)" stroke="#32d7ff" stroke-opacity=".75" stroke-width="2"/>
+<path d="M4 4h232v42C190 28 154 19 110 26 69 33 38 30 4 17Z" fill="url(#glass)"/>
+<path d="M4 116 58 62h55l57-45h66v123H4Z" fill="#0b4d75" opacity=".16"/>
+<path d="M16 121h208M16 128h118" stroke="#32d7ff" stroke-opacity=".10"/>
+<circle cx="184" cy="70" r="58" fill="url(#halo)"/>
+<circle cx="184" cy="70" r="44" fill="none" stroke="#32d7ff" stroke-opacity=".11"/>
+<circle cx="184" cy="70" r="35" fill="none" stroke="#32d7ff" stroke-opacity=".08"/>
+<g transform="translate(145 31) scale(1.22)" filter="url(#glow)"><use href="../button-artwork.svg#handheld"/></g>
+<!-- Left 58% intentionally clear for React live values/labels. -->
+</svg>
