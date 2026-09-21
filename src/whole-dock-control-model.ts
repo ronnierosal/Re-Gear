@@ -227,20 +227,10 @@ export function dockIntentControl(status: any, snapshot: any, intent: DockIntent
       message: view.message };
   }
   if (intent === "sleep") {
-    if (sleepObserved(status)) return { action: null, label: "Sleep completed",
-      message: "The handheld slept and woke with the dock disconnected in software. Keep the cable connected; this is not permission to unplug." };
-    if (snapshot?.schema_version !== 3) return { action: null, label: "Sleep unavailable", message: "Current system status is unavailable. Refresh before continuing." };
-    const view = dockControl(status, snapshot, now);
     return {
-      action: view.action === "whole_dock_disconnect" ? "whole_dock_sleep" : null,
-      label: view.action === "whole_dock_disconnect" ? "Disconnect and sleep" : softwareDisconnected(status) ? "Sleep unavailable" : view.label,
-      message: view.action === "whole_dock_disconnect"
-        ? "Disconnect the dock in software, then ask the system to sleep after verification."
-        : softwareDisconnected(status)
-          ? "The dock is already disconnected in software. Sleep continuation is unavailable; do not repeat the operation."
-          : (sleepRefusals[status?.code]
-            ? sleepRefusals[status.code] + suspendRefusal(status) + " Keep the cable connected; do not repeat the operation."
-            : view.message),
+      action: null,
+      label: "Disconnect before sleep unavailable",
+      message: "Use Sleep — Keep eGPU Connected. Re-Gear will not disconnect the dock before sleep.",
     };
   }
   if (intent !== "shutdown") return { action: null, label: "Action unavailable", message: "This action is not supported." };

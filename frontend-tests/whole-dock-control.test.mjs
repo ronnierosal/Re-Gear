@@ -424,55 +424,44 @@ test("component keeps waiting on the record it wrote itself", async () => {
   h.unmount();
 });
 
-test('a tile-activated sleep or shutdown runs on one press, with no confirmation', async () => {
-  // The tile names the action, so pressing it is the choice; asking again in a
-  // dialog was the second press the maintainer asked to remove.
-  for (const intent of ['sleep', 'shutdown']) {
-    const h = harness(new Map(), intent, oneActivation());
-    h.execute = args => Promise.resolve(intent === 'sleep'
-      ? { ...fresh, code: 'dock_power.sleep_cycle_observed', power_action: 'sleep',
-          power_requested: true, sleep_cycle_observed: true, ok: true, request_id: args.at(-1) }
-      : shutdownAccepted(args.at(-1)));
-    await settle();
-    assert.equal(h.modals.length, 0, `${intent}: no confirmation modal`);
-    assert.equal(h.calls.length, 1, `${intent}: dispatched on the tile press alone`);
-    assert.equal(h.calls[0][3], intent === 'sleep' ? 'whole_dock_sleep' : 'whole_dock_shutdown');
-    h.unmount();
-  }
+test('tile-activated shutdown runs once while disconnect-before-sleep stays disabled', async () => {
+  const sleep = harness(new Map(), 'sleep', oneActivation());
+  await settle();
+  assert.equal(sleep.modals.length, 0);
+  assert.equal(sleep.calls.length, 0);
+  assert.match(JSON.stringify(sleep.tree), /Keep eGPU Connected/);
+  sleep.unmount();
+
+  const shutdown = harness(new Map(), 'shutdown', oneActivation());
+  shutdown.execute = args => Promise.resolve(shutdownAccepted(args.at(-1)));
+  await settle();
+  assert.equal(shutdown.modals.length, 0);
+  assert.equal(shutdown.calls.length, 1);
+  assert.equal(shutdown.calls[0][3], 'whole_dock_shutdown');
+  shutdown.unmount();
 });
 
-test('the route selector still confirms, because a dropdown choice is not a named press', async () => {
-  // This mount passes no startRequest: it is the selector inside the Safe
-  // Disconnect detail, where the player picked a route rather than pressing a
-  // tile that names it. Removing its confirmation too would drop the only
-  // place the cost is stated.
+test('a legacy sleep intent offers no confirmation or dispatch', async () => {
   const h = harness(new Map(), 'sleep');
   await settle();
-  h.click();
-  assert.equal(h.calls.length, 0, 'nothing dispatches until the dialog is answered');
-  assert.match(h.modals.at(-1).view.props.strTitle, /Disconnect the dock and sleep\?/);
-  assert.match(h.modals.at(-1).view.props.strDescription, /Save your work/);
+  assert.equal(h.calls.length, 0);
+  assert.equal(h.modals.length, 0);
+  assert.equal(h.button().props.disabled, true);
+  assert.match(JSON.stringify(h.tree), /Keep eGPU Connected/);
   h.unmount();
 });
 
-test('a refused sleep submission says why, and an accepted one adds nothing', () => {
-  // On device a completed disconnect was followed by a sleep that never
-  // happened, and the only wording was "could not be verified". The backend
-  // now carries the category; the control has to surface it.
+test('every legacy sleep result remains disabled without another action', () => {
   const refused = (code) => ({ ...fresh, code: 'dock_power.request_unverified', ok: false,
     power_action: 'sleep', power_requested: false, software_down: true,
     request_id: 'request', suspend: { requested: false, code } });
   const view = (status) => dockIntentControl(status, { ...idle, schema_version: 3 }, 'sleep');
 
-  assert.match(view(refused('dock_power.suspend_inhibited')).message, /something was still blocking sleep/);
-  assert.match(view(refused('dock_power.suspend_timeout')).message, /request timed out/);
-  assert.match(view(refused('dock_power.root_required')).message, /did not have permission/);
-  // An unmapped code is shown as itself rather than guessed at.
-  assert.match(view(refused('dock_power.suspend_brand_new')).message, /dock_power\.suspend_brand_new/);
-  // Every one keeps the cable sentence and offers no other action.
-  for (const code of ['dock_power.suspend_inhibited', 'dock_power.suspend_failed']) {
-    assert.match(view(refused(code)).message, /Keep the cable connected/);
+  for (const code of ['dock_power.suspend_inhibited', 'dock_power.suspend_timeout',
+    'dock_power.root_required', 'dock_power.suspend_brand_new']) {
+    assert.match(view(refused(code)).message, /Keep eGPU Connected/);
     assert.equal(view(refused(code)).action, null);
+    assert.equal(view(refused(code)).label, 'Disconnect before sleep unavailable');
   }
   // Nothing appended when there is no suspend record, or when it was accepted.
   assert.equal(suspendRefusal({ ...fresh }), '');

@@ -829,14 +829,7 @@ export interface PendingSleepPayload {
   code: string;
 }
 
-/** Claim the sleep a disconnect was asked for, if it may still happen.
- *
- * Freeing the eGPU restarts the Steam session, which destroys the panel that
- * pressed "Disconnect and sleep" before its sleep step can run. The wish is
- * written with the disconnect and claimed here by the panel that comes up
- * afterwards. Sleeps nothing itself: the claimer still waits for the guard
- * evidence and asks Steam.
- */
+/** Consume obsolete disconnect-before-sleep state without honoring it. */
 export const takePendingSleep = callable<[], PendingSleepPayload>(
   "take_pending_sleep",
 );

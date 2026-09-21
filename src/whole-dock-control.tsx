@@ -105,7 +105,6 @@ export function WholeDockControl({ readCurrentSnapshot, intent = "disconnect_onl
         window.localStorage.setItem(pendingKey, formatPendingRecord(intent, panelId, request));
         uncertain.current = true;
         setNotice(action === "whole_dock_shutdown" ? "Shutdown request sent. Keep the cable connected; Gaming Mode may restart before shutdown."
-          : action === "whole_dock_sleep" ? "Sleep request sent. Keep the cable connected; Gaming Mode may restart, then the handheld should sleep."
           : "Request sent. Keep the cable connected; Gaming Mode may restart.");
         const result = await execute(true, "", "disconnect", action, true, attachment, request);
         epoch.current++;
@@ -119,17 +118,16 @@ export function WholeDockControl({ readCurrentSnapshot, intent = "disconnect_onl
     };
     // One press. `direct` is set only when a named tile activated this mount:
     // native.tsx passes a one-shot startRequest when the player presses
-    // "Safe Disconnect", "Disconnect + Sleep" or "Disconnect + Shutdown", so
+    // "Safe Disconnect" or "Disconnect + Shutdown", so
     // the press that opened this modal IS the explicit choice of this exact
     // action, and a second dialog asks the same question twice. The route
     // selector inside the Safe Disconnect detail passes no startRequest, so a
     // route chosen from a dropdown still confirms before anything happens.
     if(direct) { void run(); return; }
-    modal.current = showModal(<EgpuConfirmModal strTitle={action === "whole_dock_shutdown" ? "Disconnect the dock and shut down?" : action === "whole_dock_sleep" ? "Disconnect the dock and sleep?" : "Disconnect the dock in software?"}
+    modal.current = showModal(<EgpuConfirmModal strTitle={action === "whole_dock_shutdown" ? "Disconnect the dock and shut down?" : "Disconnect the dock in software?"}
       strDescription={action === "whole_dock_shutdown" ? "Re-Gear will disconnect the dock in software, verify the result, then request shutdown. The TV will turn off and Gaming Mode may restart first. Save your work and keep the cable connected. Shutdown is not yet hardware-verified; this is not permission to unplug."
-        : action === "whole_dock_sleep" ? "Re-Gear will disconnect the dock in software, verify the result, hand off its sleep protection, then ask the system to sleep. The TV will turn off and Gaming Mode may restart first. Save your work and keep the cable connected. Sleep with the dock connected is not yet hardware-verified; this is not permission to unplug."
         : "The TV will turn off and Gaming Mode may restart. Keep the dock cable connected for this trial. This is not permission to unplug."}
-      strOKButtonText={action === "whole_dock_shutdown" ? "Disconnect and shut down" : action === "whole_dock_sleep" ? "Disconnect and sleep" : "Disconnect"} strCancelButtonText="Cancel"
+      strOKButtonText={action === "whole_dock_shutdown" ? "Disconnect and shut down" : "Disconnect"} strCancelButtonText="Cancel"
       className="rg-whole-dock-confirm" bDestructiveWarning onOK={() => { void run(); }} onCancel={cancel} onEscKeypress={cancel}>
       <style>{`.rg-whole-dock-confirm{z-index:2147483647!important;position:fixed!important;left:50%!important;top:50%!important;right:auto!important;bottom:auto!important;margin:0!important;transform:translate(-50%,-50%)!important}`}</style>
     </EgpuConfirmModal>, undefined, { fnOnClose: cancel, bNeverPopOut: true });

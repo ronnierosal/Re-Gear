@@ -12,7 +12,6 @@ import { createExpandedMenu } from "./quick-access/expanded-command-center/nativ
 import { createTilePublisher } from "./quick-access/expanded-command-center/tile-source";
 import type { Readings } from "./quick-access/expanded-command-center/tile-source";
 import { observationAge } from "./quick-access/expanded-command-center/tile-source";
-import { createSingleFlight } from "./quick-access/single-flight";
 import { EgpuModule } from "./quick-access/modules/egpu";
 import { egpuPresentation } from "./quick-access/modules/egpu-presentation";
 import { displayTargetEvidence, UNKNOWN_EVIDENCE } from "./quick-access/modules/egpu-presentation";
@@ -53,7 +52,6 @@ import {
   acknowledgeDockedIgpuStatus,
   acknowledgeSleepJournal,
   getSnapshot,
-  getSleepReadiness,
   getPeripheralStatus,
   getActionHistory,
   getAutomaticDockStatus,
@@ -98,19 +96,9 @@ import {
 // importing it here is what made a removal reachable without closing the
 // running game first. The only route to a removal from this file is now the
 // wiring, whose gates cannot be skipped by forgetting them at a call site.
-import { disconnectPresentation, gameCloseDialog } from "./egpu-disconnect-tile";
-import type { GameCloseDialog } from "./egpu-disconnect-tile";
 import { liveGameClosePorts } from "./quick-access/game-close-ports";
-import { awaitSleepGuardRelease } from "./sleep-guard-release";
-import { closeFlowMessage } from "./game-close-flow";
-import type { CloseFlowIntent } from "./quick-access/game-close-wiring";
 import {
   claimRelaunchOnMount,
-  continueSleepOnMount,
-  gameCloseWiringMessage,
-  pressFromDialog,
-  runGameClosePress,
-  type GameCloseAnswers,
 } from "./quick-access/game-close-wiring";
 import { createDeckySteamSuspendAdapter } from "./decky-steam-suspend";
 import { deliverBlockedAttempt } from "./blocked-attempt-delivery";
@@ -657,7 +645,6 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
   // The owning backend's disconnect status. Null means not read yet, which is
   // not the same as "no": the tile renders that distinction itself.
   const [egpuDisconnect, setEgpuDisconnect] = useState<DisconnectStatusPayload | null>(null);
-  const [disconnectBusy, setDisconnectBusy] = useState(false);
   const [disconnectMessage, setDisconnectMessage] = useState("");
   /** The tile whose reason is shown under the grid. */
   const [selectedTile, setSelectedTile] = useState<TileId | null>(null);
@@ -1604,94 +1591,6 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
     }
   }, []);
 
-  /** Run the press the player just confirmed, through the owning flow.
-   *
-   * Nothing dangerous happens in this file. Closing the game, waiting for the
-   * backend to say over a finished scan that it is gone, removing the device and
-   * putting the game back all belong to game-close-flow.ts, reached through the
-   * gates in game-close-wiring.ts: a fresh status at the press, consent that
-   * matches both the running game and the pressed intent, and a separate
-   * approval for turning the display off.
-   *
-   * `releaseDisplay` is still passed exactly as the presentation reported it and
-   * is never defaulted on, because turning the output off is visible to whoever
-   * is watching the TV. The message comes from gameCloseWiringMessage, which
-   * keeps the cable sentence: a software removal is not clearance to unplug.
-   */
-  // The sleep route must not suspend until fresh evidence says neither guard
-  // is still up. Only the preflight may drop the Steam-side one, and only
-  // from that same evidence. Shared by the press and by the continuation a
-  // session restart hands to the next panel.
-  const releaseSleepBlocker = useCallback(async () => (await awaitSleepGuardRelease({
-    read: getSnapshot,
-    // reconcile decides from exactly this observation, so evaluating the
-    // same predicate on the same input cannot disagree with what it did.
-    reconcile: (payload) => {
-      const observation = preflightObservation(payload);
-      const status = preflight.reconcile(observation);
-      setPreflightStatus(status);
-      // A coordinator that could not manage Steam's blocker may have left
-      // one held with no release handle. That is not a released blocker,
-      // whatever the observation says.
-      return status.state !== "unavailable" && !requiresPreflightBlocker(observation);
-    },
-    wait: (ms) => new Promise<void>((resolve) => { window.setTimeout(resolve, ms); }),
-  })).released, []);
-  /** One disconnect at a time, refused synchronously.
-   *
-   * Not the busy state: React state is not a lock, so two activations in the
-   * same tick both read the old value and both dispatch. The backend
-   * serialises, but a second press is refused here too -- a player answered one
-   * confirmation and must get one operation. See quick-access/single-flight.ts,
-   * where the behaviour is tested. */
-  // Claimed at the press, not at the dispatch. The single flight below refuses
-  // overlapping dispatches, but `disconnectBusy` is state that nothing sets
-  // until `runDisconnect` runs, so two presses in one tick both pass that
-  // check and open two confirmations. A player who answered one question
-  // twice, without meaning to, then gets two operations.
-  const disconnectPromptOpen = useRef(false);
-  const disconnectFlight = useRef(createSingleFlight()).current;
-
-  const runDisconnect = useCallback(async (
-    releaseDisplay: boolean,
-    answers: GameCloseAnswers,
-    intent: CloseFlowIntent = "disconnect",
-    // The dialog these answers belong to, when it is not the panel's own.
-    // The sleep route asks the sleep-intent question from readiness; the
-    // panel's dialog is the disconnect-intent one, and consent is per intent.
-    dialog?: GameCloseDialog | null,
-  ) => {
-    await disconnectFlight.run(async () => {
-    setDisconnectBusy(true);
-    setDisconnectMessage("");
-    try {
-      // Built from the status this panel already holds, so the dialog the player
-      // answered and the press that follows describe one reading. The wiring
-      // re-reads before it acts regardless, and refuses if that has moved.
-      const panel = disconnectPresentation(egpuDisconnect);
-      // A remembered disconnect answer leaves the panel's dialog null while
-      // the sleep prompt still asks; judging the sleep answers against the
-      // panel's dialog would refuse them as never given.
-      const view = dialog === undefined ? panel : { ...panel, dialog };
-      const result = await runGameClosePress(
-        pressFromDialog(view, intent, { ...answers, releaseDisplay }),
-        liveGameClosePorts(releaseSleepBlocker),
-      );
-      setDisconnectMessage(gameCloseWiringMessage(result));
-    } catch {
-      setDisconnectMessage("Re-Gear could not complete the disconnect request.");
-    } finally {
-      // Released on every outcome, including failure and cancellation, so a
-      // refused or failed attempt never wedges the control permanently.
-      setDisconnectBusy(false);
-      // A new attempt is a new answer, so an earlier dismissal must not hide it.
-      setResultDismissed(false);
-      // Re-read rather than assuming what the attempt left behind.
-      void refreshDisconnect();
-    }
-    });
-  }, [disconnectFlight, egpuDisconnect, refreshDisconnect, releaseSleepBlocker]);
-
   /** Perform a reopen a previous disconnect left pending.
    *
    * This is why the wish is recorded in the backend rather than remembered in a
@@ -1704,23 +1603,8 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
    * leaving the record for a later mount rather than launching a game onto a
    * device that needs a person to look at it.
    */
-  // A disconnect asked for as a sleep restarts the Steam session before its
-  // sleep step can run, so the panel that comes up afterwards -- this one,
-  // mounted with Steam rather than with the menu -- finishes it: claims the
-  // record, waits for the same guard evidence, asks Steam to sleep, and puts
-  // the game back after the suspend call returns. Nothing else may claim the
-  // reopen while that is in flight.
-  const sleepContinuing = useRef(false);
   useEffect(() => {
-    sleepContinuing.current = true;
-    void continueSleepOnMount(liveGameClosePorts(releaseSleepBlocker))
-      .then(({ continued }) => {
-        if (continued !== null) setDisconnectMessage(closeFlowMessage(continued));
-      })
-      .finally(() => { sleepContinuing.current = false; });
-  }, [releaseSleepBlocker]);
-  useEffect(() => {
-    if (!quickAccessVisible || sleepContinuing.current) return;
+    if (!quickAccessVisible) return;
     void claimRelaunchOnMount(liveGameClosePorts());
   }, [quickAccessVisible]);
 
@@ -1955,82 +1839,6 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
           {tvSwitchMessage && <PanelSectionRow>{tvSwitchMessage}</PanelSectionRow>}
 
           <DashboardSurface><DashboardAction icon="power" title="Safe Disconnect" description="Open the guarded disconnect workflow" onClick={openDisconnect}/></DashboardSurface>
-          <DashboardSurface>
-            <DashboardAction icon="power" title="Disconnect and sleep"
-              description="Releases the eGPU first, then sleeps. Keep the cable connected."
-              disabled={disconnectBusy || !disconnectPresentation(egpuDisconnect).available}
-              onClick={() => {
-                if (disconnectBusy || disconnectPromptOpen.current) return;
-                disconnectPromptOpen.current = true;
-                const releasePrompt = () => { disconnectPromptOpen.current = false; };
-                void (async () => {
-                  // Sleep readiness carries its own close prompt, re-derived for
-                  // the sleep intent: consent to close a game for a disconnect is
-                  // not consent to close it for a sleep. Read it here so the
-                  // dialog the player answers is the one the wiring will check.
-                  let readiness: Awaited<ReturnType<typeof getSleepReadiness>> | null = null;
-                  try { readiness = await getSleepReadiness(); } catch { readiness = null; }
-                  let refusal: string | null = null;
-                  if (!readiness) {
-                    refusal = "Re-Gear could not read sleep readiness. Nothing was changed.";
-                  } else if (readiness.code === "sleep.readiness_unknown") {
-                    refusal = "Re-Gear cannot tell what sleeping would need. Nothing was changed.";
-                  } else if (readiness.retained_inhibitor === true) {
-                    // A retained disconnect-transaction lease blocks every sleep
-                    // and nothing here releases it. Do not ask the player to
-                    // close a game for a sleep that cannot happen.
-                    refusal = "A sleep guard from an earlier dock disconnect is still held, so the handheld cannot sleep yet. Nothing was changed.";
-                  } else if (readiness.retained_inhibitor !== false) {
-                    refusal = "Re-Gear could not confirm whether a sleep guard is still held. Nothing was changed.";
-                  } else if (!readiness.requires_disconnect) {
-                    refusal = "Sleep does not need the eGPU released. Use the ordinary Sleep control.";
-                  }
-                  if (refusal !== null || !readiness) {
-                    releasePrompt();
-                    setDisconnectMessage(refusal ?? "Re-Gear could not read sleep readiness. Nothing was changed.");
-                    return;
-                  }
-                  const view = disconnectPresentation(egpuDisconnect);
-                  if (view.confirmation === null) {
-                    releasePrompt();
-                    setDisconnectMessage("Re-Gear cannot offer a disconnect right now. Nothing was changed.");
-                    return;
-                  }
-                  const releaseDisplay = view.displayApprovalRequired;
-                  const dialog = gameCloseDialog(readiness.close_prompt, readiness.game);
-                  // Released on the way into the dispatch as well as on close:
-                  // a yes hands the guard to disconnectBusy, and relying on the
-                  // modal to report a programmatic close would wedge the button
-                  // after its first use if it did not.
-                  try {
-                    if (dialog !== null) {
-                      showGameCloseDialog(dialog, (answers) => {
-                        releasePrompt();
-                        void runDisconnect(releaseDisplay, answers, "sleep", dialog);
-                      }, releasePrompt);
-                      return;
-                    }
-                    // The panel's own confirmation already says what the removal
-                    // costs -- including the external display turning off when
-                    // that approval is being asked for -- so the sleep sentence
-                    // is added to it rather than replacing it.
-                    showDisconnectConfirmation(
-                      `${view.confirmation} Once the eGPU is detached, Re-Gear will ask Steam to sleep the handheld.`,
-                      () => {
-                        releasePrompt();
-                        void runDisconnect(releaseDisplay, { confirmed: true }, "sleep", null);
-                      },
-                      releasePrompt,
-                      { title: "Disconnect and sleep?", ok: "Sleep" },
-                    );
-                  } catch {
-                    // A modal that could not open must not leave the guard up.
-                    releasePrompt();
-                    setDisconnectMessage("Re-Gear could not open the confirmation. Nothing was changed.");
-                  }
-                })();
-              }} />
-          </DashboardSurface>
           {disconnectMessage && (
             <PanelSectionRow>{disconnectMessage}</PanelSectionRow>
           )}
@@ -2381,110 +2189,6 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
     });
   });
   return <ProductionEgpuActionHost request={productionActionRequest} readCurrentSnapshot={()=>payload?.snapshot??null}/>;
-}
-
-/** Confirm a software disconnect.
- *
- * The body is the owning backend's confirmation string, rendered verbatim. It
- * already states that the Steam session will restart, that the external
- * display turns off when that applies, and that the cable stays connected.
- * Rewriting or supplementing it here would create a second source of truth for
- * the one piece of copy that must not drift.
- */
-function showDisconnectConfirmation(
-  confirmation: string,
-  onConfirm: () => void,
-  onClose?: () => void,
-  // The button the player presses names what happens; a sleep confirmed
-  // under a "Disconnect" button is a consent to the wrong thing.
-  labels: { title: string; ok: string } = { title: "Disconnect the eGPU?", ok: "Disconnect" },
-): ReturnType<typeof showModal> {
-  let modal: ReturnType<typeof showModal>;
-  const close = () => modal.Close();
-  modal = showModal(
-    <EgpuConfirmModal
-      strTitle={labels.title}
-      strOKButtonText={labels.ok}
-      strCancelButtonText="Cancel"
-      bDestructiveWarning={true}
-      bDisableBackgroundDismiss={true}
-      bHideCloseIcon={true}
-      onOK={() => {
-        close();
-        onConfirm();
-      }}
-      onCancel={close}
-    >
-      <div style={{ fontSize: "12px", lineHeight: "17px" }}>{confirmation}</div>
-    </EgpuConfirmModal>,
-    window,
-    // Released however the dialog ends, including cancellation and a
-    // background dismissal, so a refused prompt never wedges the control.
-    { strTitle: PRODUCT_NAME, bNeverPopOut: true, fnOnClose: onClose },
-  );
-  return modal;
-}
-
-/** The confirm-and-close dialog, for a press that will end a running game.
- *
- * Every string comes from `dialog` unchanged. gameCloseDialog in
- * egpu-disconnect-tile.ts owns this copy and the tests that pin it, and it
- * encodes things that must not be re-decided here: a null rememberLabel means
- * the choice must not be offered at all rather than starting unticked, and
- * canCloseGame false means this must not promise a close it cannot perform.
- *
- * Cancelling reports the dismissal rather than dropping it, so the caller hands
- * the wiring an explicit no instead of nothing at all.
- */
-function showGameCloseDialog(
-  dialog: GameCloseDialog,
-  onAnswer: (answers: GameCloseAnswers) => void,
-  onClose?: () => void,
-): ReturnType<typeof showModal> {
-  let modal: ReturnType<typeof showModal>;
-  // An absent label means the choice was never offered, so these stay false.
-  let remember = false;
-  let relaunch = dialog.relaunchChecked;
-  const close = () => modal.Close();
-  modal = showModal(
-    <EgpuConfirmModal
-      strTitle={dialog.title}
-      strOKButtonText={dialog.confirmLabel}
-      strCancelButtonText={dialog.cancelLabel}
-      bDestructiveWarning={true}
-      bDisableBackgroundDismiss={true}
-      bHideCloseIcon={true}
-      onOK={() => {
-        close();
-        onAnswer({ confirmed: true, remember, relaunch });
-      }}
-      onCancel={() => {
-        close();
-        onAnswer({ confirmed: false });
-      }}
-    >
-      <div style={{ fontSize: "12px", lineHeight: "17px" }}>{dialog.body}</div>
-      {dialog.rememberLabel === null ? null : (
-        <ToggleField
-          label={dialog.rememberLabel}
-          checked={remember}
-          onChange={(value: boolean) => { remember = value; }}
-        />
-      )}
-      {dialog.relaunchLabel === null ? null : (
-        <ToggleField
-          label={dialog.relaunchLabel}
-          checked={relaunch}
-          onChange={(value: boolean) => { relaunch = value; }}
-        />
-      )}
-    </EgpuConfirmModal>,
-    window,
-    // Released however the dialog ends, including cancellation and a
-    // background dismissal, so a refused prompt never wedges the control.
-    { strTitle: PRODUCT_NAME, bNeverPopOut: true, fnOnClose: onClose },
-  );
-  return modal;
 }
 
 function showBlockedAttempt(

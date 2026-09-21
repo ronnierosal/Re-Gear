@@ -60,20 +60,11 @@ test("dashboard actions keep icons and text inside one native button, not Item c
   assert.match(action, /gridTemplateColumns: "38px minmax\(0,1fr\) 18px"/);
   assert.match(action, /wordBreak: "normal",\s+overflowWrap: "normal"/);
   assert.doesNotMatch(action, /ButtonItem|noFocusRing=|outline:|overflow: "hidden"/);
-  // Five: the candidate's four, plus the disconnect-and-sleep press added
-  // on 2026-09-14. "Disconnect status" is gone with the old surface.
-  assert.equal((source.match(/<DashboardAction\s/g) ?? []).length, 5);
-  assert.match(source, /title="Disconnect and sleep"/);
-  // A yes must release the prompt guard itself and carry the sleep-intent
-  // dialog it answered.
-  assert.match(source, /releasePrompt\(\);\s*void runDisconnect\(releaseDisplay, answers, "sleep", dialog\)/);
-  assert.match(source, /releasePrompt\(\);\s*void runDisconnect\(releaseDisplay, \{ confirmed: true \}, "sleep", null\)/);
-  assert.match(source, /disconnectBusy \|\| disconnectPromptOpen\.current\) return;/);
-  assert.match(source, /\{ title: "Disconnect and sleep\?", ok: "Sleep" \}/);
-  // The panel that comes up after the session restart finishes the sleep on
-  // mount, and its result is readable beside the button rather than nowhere:
-  // the candidate declared disconnectMessage and rendered it in no slot.
-  assert.match(source, /void continueSleepOnMount\(liveGameClosePorts\(releaseSleepBlocker\)\)/);
+  assert.equal((source.match(/<DashboardAction\s/g) ?? []).length, 4);
+  assert.doesNotMatch(source, /title="Disconnect and sleep"/);
+  assert.doesNotMatch(source, /runDisconnect\([^\n]+"sleep"/);
+  assert.doesNotMatch(source, /continueSleepOnMount/);
+  assert.match(source, /action:"sleep-connected"/);
   assert.equal((source.match(/<PanelSectionRow>\{disconnectMessage\}<\/PanelSectionRow>/g) ?? []).length, 1);
   assert.match(source, /title="Dock \/ eGPU"[\s\S]*expanded=\{showHardwareDetails\}/);
   assert.doesNotMatch(source,/showDisconnectProgress|title="Disconnect status"/);

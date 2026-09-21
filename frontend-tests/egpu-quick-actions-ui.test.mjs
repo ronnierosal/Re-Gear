@@ -28,6 +28,7 @@ test("USB and sleep popups stay explicit and do not invent permanent authorizati
   assert.match(ui, /USB authorization required/);
   assert.match(ui, /Sleep with eGPU connected/);
   assert.match(ui, /Keep eGPU connected/);
-  assert.match(ui, /Safe Disconnect \+ Sleep/);
+  assert.doesNotMatch(ui, /Safe Disconnect \+ Sleep/);
+  assert.doesNotMatch(ui, /safeDisconnectSleepAction/);
   assert.doesNotMatch(ui, /Always trust/i);
 });

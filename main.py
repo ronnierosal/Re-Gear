@@ -2714,6 +2714,16 @@ class Plugin:
             return {"schema_version": 1, "ok": False,
                     "code": "dock_reconnect.disabled", "busy": False,
                     "safe_to_unplug": False, "hardware_write": False}
+        if _parse_intent(relaunch_intent) is InterruptIntent.SLEEP:
+            # The legacy dashboard encoded disconnect-before-sleep through the
+            # ordinary disconnect RPC instead of the whole-dock trial action.
+            # Refuse it before recording relaunch/continuation state, resolving
+            # a runtime, or entering the dock mutation gate. Attached sleep is
+            # available only through the separate whole_dock_sleep_connected
+            # coordinator.
+            return {"schema_version": 1, "ok": False,
+                    "code": "dock_power.disconnect_sleep_disabled", "busy": False,
+                    "safe_to_unplug": False, "hardware_write": False}
         if trial_action == 'whole_dock_sleep':
             # A cable-retained software-down state stopped G1 cooling during
             # supervised testing. Sleeping with the dock connected remains a
@@ -3012,19 +3022,16 @@ class Plugin:
     async def take_pending_sleep(
         self, _request: object = None
     ) -> dict[str, object]:
-        """Claim the sleep a disconnect was asked for, if it may still happen.
-
-        Consuming, on refusal too. Sleeps nothing: the panel that claims it
-        still waits for the guard evidence and asks Steam, exactly as the
-        panel that pressed the button would have had the session restart
-        not destroyed it first.
-        """
+        """Consume obsolete disconnect-before-sleep state without honoring it."""
         store = PendingSleepStore(CATALOG_ROOT)
         try:
             record = await asyncio.to_thread(store.take)
         except Exception:
             return {"schema_version": 1, "pending": False,
                     "code": "sleep_continuation.record_unreadable"}
+        if record is not None:
+            return {"schema_version": 1, "pending": False,
+                    "code": "dock_power.disconnect_sleep_disabled"}
         try:
             boot_hash = await asyncio.to_thread(read_boot_hash)
         except Exception:

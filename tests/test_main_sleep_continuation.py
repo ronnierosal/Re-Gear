@@ -38,11 +38,11 @@ class SleepContinuationRpcTests(unittest.TestCase):
         self.assertEqual(payload, {"schema_version": 1, "pending": False,
                                    "code": "sleep_continuation.nothing_recorded"})
 
-    def test_a_recorded_continuation_is_claimed_exactly_once(self):
+    def test_a_recorded_legacy_continuation_is_disabled_and_consumed(self):
         self.assertTrue(asyncio.run(self.plugin._record_sleep_continuation()))
         first = self.take()
-        self.assertIs(first["pending"], True)
-        self.assertEqual(first["code"], "sleep_continuation.pending")
+        self.assertIs(first["pending"], False)
+        self.assertEqual(first["code"], "dock_power.disconnect_sleep_disabled")
         second = self.take()
         self.assertIs(second["pending"], False)
         self.assertEqual(second["code"], "sleep_continuation.nothing_recorded")
@@ -57,7 +57,7 @@ class SleepContinuationRpcTests(unittest.TestCase):
             asyncio.run(self.plugin._record_sleep_continuation())
         payload = self.take()
         self.assertIs(payload["pending"], False)
-        self.assertEqual(payload["code"], "sleep_continuation.different_boot")
+        self.assertEqual(payload["code"], "dock_power.disconnect_sleep_disabled")
         self.assertEqual(self.take()["code"], "sleep_continuation.nothing_recorded")
 
     def test_a_record_that_lived_through_a_suspend_is_refused(self):
@@ -68,7 +68,7 @@ class SleepContinuationRpcTests(unittest.TestCase):
         store.record(self.module.PendingSleep(
             BOOT, time.monotonic(),
             self.module._relaunch_now(self.module.RelaunchClock.BOOTTIME) - 100.0))
-        self.assertEqual(self.take()["code"], "sleep_continuation.slept_since")
+        self.assertEqual(self.take()["code"], "dock_power.disconnect_sleep_disabled")
 
     def test_an_old_record_is_refused(self):
         import time
@@ -76,7 +76,7 @@ class SleepContinuationRpcTests(unittest.TestCase):
         store.record(self.module.PendingSleep(
             BOOT, time.monotonic() - 1000.0,
             self.module._relaunch_now(self.module.RelaunchClock.BOOTTIME) - 1000.0))
-        self.assertEqual(self.take()["code"], "sleep_continuation.expired")
+        self.assertEqual(self.take()["code"], "dock_power.disconnect_sleep_disabled")
 
     def test_a_record_that_cannot_be_written_does_not_raise(self):
         with patch.object(self.module, "CATALOG_ROOT", Path("relative/never")):

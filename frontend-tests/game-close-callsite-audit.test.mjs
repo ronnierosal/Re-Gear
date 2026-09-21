@@ -52,14 +52,11 @@ test("the panel cannot reach a removal without the wiring", () => {
   );
 });
 
-test("the disconnect press and the pending reopen both go through the wiring", () => {
-  for (const symbol of ["runGameClosePress", "pressFromDialog", "claimRelaunchOnMount"]) {
-    assert.ok(
-      indexCode.includes(symbol),
-      `src/index.tsx no longer uses ${symbol}. The press path or the mount ` +
-        "reopen has been detached from the owning flow.",
-    );
-  }
+test("the legacy panel retains only pending reopen wiring", () => {
+  assert.ok(indexCode.includes("claimRelaunchOnMount"));
+  assert.equal(indexCode.includes("runGameClosePress"), false);
+  assert.equal(indexCode.includes("pressFromDialog"), false);
+  assert.equal(indexCode.includes("continueSleepOnMount"), false);
 });
 
 test("game-close-ports is the only production route to the removal RPC", () => {

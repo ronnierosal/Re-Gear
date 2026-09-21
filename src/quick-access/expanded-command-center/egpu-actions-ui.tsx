@@ -93,38 +93,36 @@ export function UsbAuthorizationPopup({ deviceLabel, detail, authorizeAction, no
 }
 
 /**
- * Sleep choice shown only when runtime reports an eGPU is attached.
- * Sleeping with the eGPU connected is a first-class option; safe-disconnect-first is optional.
+ * Sleep surface shown only when runtime reports an eGPU is attached.
+ * Disconnect-before-sleep is disabled; runtime owns attached sleep.
  */
-export function EgpuSleepChoicePopup({ connectionLabel, sleepAttachedAction, safeDisconnectSleepAction, cancelAction, detail }: {
+export function EgpuSleepChoicePopup({ connectionLabel, sleepAttachedAction, cancelAction, detail }: {
   connectionLabel: string;
   sleepAttachedAction?: ReactNode;
-  safeDisconnectSleepAction?: ReactNode;
   cancelAction?: ReactNode;
   detail?: string;
 }) {
-  return <ReGearPopup title="Sleep with eGPU connected" status={connectionLabel} tone="active" footer={<>{cancelAction}{safeDisconnectSleepAction}{sleepAttachedAction}</>}>
+  return <ReGearPopup title="Sleep with eGPU connected" status={connectionLabel} tone="active" footer={<>{cancelAction}{sleepAttachedAction}</>}>
     <CommandDetailSurface>
-      <CommandNotice tone="active" title="Choose how to sleep">
-        {detail ?? "You can sleep while the eGPU remains connected and resume normally, or ask Re-Gear to perform Safe Disconnect before sleeping."}
+      <CommandNotice tone="active" title="Sleep with the connection attached">
+        {detail ?? "Normal sleep keeps the eGPU physically connected and leaves lifecycle policy with the runtime."}
       </CommandNotice>
       <CommandSection title="Options">
         <CommandStatusRow label="Sleep" value="Keep eGPU connected" tone="active" detail="Resume with the existing physical connection still attached."/>
-        <CommandStatusRow label="Safe Disconnect + Sleep" value="Disconnect first" tone="warning" detail="Runs the verified Safe Disconnect flow before the sleep request."/>
       </CommandSection>
     </CommandDetailSurface>
   </ReGearPopup>;
 }
 
-export function EgpuPowerActions({ safeDisconnectSleepAction, safeDisconnectShutdownAction }: {
-  safeDisconnectSleepAction?: ReactNode;
+export function EgpuPowerActions({ sleepConnectedAction, safeDisconnectShutdownAction }: {
+  sleepConnectedAction?: ReactNode;
   safeDisconnectShutdownAction?: ReactNode;
 }) {
   return <CommandDetailSurface>
     <CommandSection title="Power actions" hint="Power requests remain separate from Safe Disconnect completion and physical unplug clearance.">
-      <CommandStatusRow label="Safe Disconnect + Sleep" value="Optional" tone="warning" detail="Runs Safe Disconnect, then requests sleep only when runtime permits it."/>
+      <CommandStatusRow label="Sleep" value="Keep eGPU connected" tone="active" detail="Requests normal sleep without running Safe Disconnect."/>
       <CommandStatusRow label="Safe Disconnect + Shutdown" value="Optional" tone="warning" detail="Runs Safe Disconnect, then requests shutdown only when runtime permits it."/>
     </CommandSection>
-    {(safeDisconnectSleepAction || safeDisconnectShutdownAction) && <CommandActionRow>{safeDisconnectSleepAction}{safeDisconnectShutdownAction}</CommandActionRow>}
+    {(sleepConnectedAction || safeDisconnectShutdownAction) && <CommandActionRow>{sleepConnectedAction}{safeDisconnectShutdownAction}</CommandActionRow>}
   </CommandDetailSurface>;
 }

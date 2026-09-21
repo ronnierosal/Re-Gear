@@ -13,10 +13,11 @@ test('eGPU quick actions stay stable and use four columns', () => {
   assert.match(actions, /grid-template-columns:repeat\(4,minmax\(0,1fr\)\)/);
 });
 
-test('sleep popup preserves both attached-sleep and disconnect-first choices', () => {
+test('sleep popup preserves attached sleep and removes disconnect-before-sleep', () => {
   assert.match(actions, /Sleep with eGPU connected/);
   assert.match(actions, /Keep eGPU connected/);
-  assert.match(actions, /Safe Disconnect \+ Sleep/);
+  assert.doesNotMatch(actions, /Safe Disconnect \+ Sleep/);
+  assert.doesNotMatch(actions, /safeDisconnectSleepAction/);
   assert.match(actions, /Resume with the existing physical connection still attached/);
 });
 
