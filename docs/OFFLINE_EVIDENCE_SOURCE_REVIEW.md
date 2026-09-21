@@ -1,117 +1,312 @@
 # Offline Readiness source review boundary
 
-Status: **Implemented (review contract, candidate Steam overview projection,
-and guarded request service); live reader and selected-game wiring required**
+Status: **One reviewed local Steam source is implemented and reaching production
+through the automatic focused-tile path. The separate admission-gated collection
+port remains dormant. No source here can establish that a game launches offline.**
 
-Active workstream and continuation: [Offline Readiness handoff](OFFLINE_READINESS_HANDOFF.md).
+Verified against `da60e21` on 2026-09-13. Where this file and the code disagree,
+the code is authoritative. Presentation is owned by
+[Offline Readiness UI](OFFLINE_READINESS_UI.md); workstream state is in the
+[handoff](OFFLINE_READINESS_HANDOFF.md).
 
-Before a future Offline Readiness source can reach the existing collection
-admission gate, it must supply an identity-free declaration: local Steam or
-local launcher metadata, read-only behavior, no network, no persistence,
-identity minimization, and a bounded unique set of categorical evidence fields.
-The declaration contains no command, path, title, AppID, account, or collected
-value.
+## The one live evidence path
 
-The review accepts only a local/read-only/non-networked/non-persistent/minimized
-declaration. Its approval then composes with the existing reviewed, benchmarked,
-bounded-cost, freshness, and game-aware collection admission policy. Rejection
-is categorical and fail-closed.
+```text
+focused library tile (AppID)
+  -> RegisterForAppDetails one-shot callback        src/steam-app-details-request.ts
+  -> private lease + field minimization             src/offline-details-session.ts
+  -> classify_offline_details RPC                   main.py:688
+  -> project_steam_app_details                      backend/regear/adapters/steamos/offline_steam_details.py:19
+  -> classify_offline_readiness                     backend/regear/domain/offline_readiness.py:265
+  -> public categorical status + reason codes
+```
 
-This is not a Steam or launcher collector. It opens no files, calls no process,
-stores no data, schedules no work, and creates no UI or launch authority. A
-future source still needs separate implementation review and measurement.
+Alongside the RPC, the frontend keeps a second, private projection of the same
+callback for confidence (`src/offline-confidence.ts:35-52`). It never crosses the
+RPC boundary.
 
-## Source investigation — 2026-09-03
+### What crosses each boundary
+
+Exactly seven scalar fields reach the backend: `iInstallFolder`,
+`eDisplayStatus`, `eCloudStatus`, `bCloudAvailable`, `bCloudEnabledForAccount`,
+`bCloudEnabledForApp`, `bIsThirdPartyUpdater`
+(`src/offline-details-session.ts:9-15`, mirrored in
+`backend/regear/application/offline_details.py:14-18`). The backend rejects a
+non-dict, more than seven keys, any unknown key, a non-integer in an integer
+field, a non-boolean in a boolean field, or an integer outside `-1 .. 2**31-1`,
+returning `unknown` with `offline_evidence_unavailable`
+(`backend/regear/application/offline_details.py:36-46`). It also short-circuits
+to `offline_evidence_game_active` or `offline_evidence_game_unknown` when the
+snapshot's game state is not idle (`:33-35`).
+
+One structural cost is worth knowing before measuring anything: the RPC takes a
+**full diagnostics snapshot per check**, solely to read the game state.
+`main.py:691` calls `self._api.get_snapshot_report()` on a worker thread, which
+is `SnapshotService(SteamOsDiscovery()).observe()` (`backend/regear/api.py:11,20`)
+— a complete discovery collection plus operating-mode inference, workflow and
+peripheral observation and health assessment
+(`backend/regear/application/snapshot.py:50-75`). Only
+`report.snapshot.game_state` is used, and any exception falls back to
+`GameState.UNKNOWN` without logging (`main.py:690-695`). This is a reading of the
+call graph, not a measurement: the backend side of an offline check has never
+been timed, so do not quote it as a cost figure.
+
+Four more fields stay in frontend memory only — `nBuildID`,
+`bHasAnyLocalContent`, `bIsSubscribedTo` and the two
+`deckDerivedProperties` internet flags — together with
+`local_per_client_data.installed` from the exact overview and
+`BHasStoreCategory(2)` for the cached single-player category
+(`src/offline-confidence.ts:35-52`, `src/offline-confidence-session.ts:22-25`).
+The account name is read privately from `loginStore` for scope comparison only
+and is never displayed, persisted or sent
+(`src/offline-confidence-session.ts:7-12`). No title, AppID, account, path,
+timestamp or collector command is serialized. Nothing is written to files, logs,
+or the network, and `main.py:688-697` deliberately does not log exceptions or raw
+Steam data across the boundary.
+
+### Categorical classification, and what it can conclude
+
+`project_steam_app_details` maps the pinned numeric Steam schema conservatively
+(`backend/regear/adapters/steamos/offline_steam_details.py:19-58`):
+
+- `iInstallFolder == -1` means not installed. A nonnegative folder proves
+  nothing and stays Unknown.
+- Display `9`/`10` (ReadyToInstall/ReadyToPreload) mean not installed only when
+  the folder is absent or `-1`; an existing folder contradicts that inference.
+- Display `26`/`27` (LicensePending/LicenseExpired) require Steam authorization.
+- Display `6,18,19,20,21,39` are a pending update; `3,7,22,23,24,25,38` are a
+  pending download.
+- Cloud `8` failed, `9` conflict, `4,5,6,7,10` pending, and `3` counts as synced
+  only when availability and both enablement flags are explicitly true.
+- Display `34`/`35` (CloudError/CloudOutOfDate) add cloud attention only when the
+  cloud field has not already decided the category.
+- `bIsThirdPartyUpdater` adds a third-party launcher online check.
+
+`classify_offline_readiness` then fails closed: attention reasons win, then
+online-check requirements, then unknown reasons, and only fully positive evidence
+returns `ready_to_try_offline`
+(`backend/regear/domain/offline_readiness.py:265-287`).
+
+**This path can never return `ready_to_try_offline`.** The projection never sets
+`steam_entitlement`, so `_unknown_reasons` always contributes
+`steam_entitlement_unknown` whenever no attention or online-check reason applies
+(`backend/regear/domain/offline_readiness.py:413-425`). The positive status is
+reachable only from richer evidence that no admitted source currently produces.
+
+Checked exhaustively at `da60e21` by driving
+`classify_minimized_steam_details` with `GameState.IDLE` over every subset of the
+seven admitted keys and every value in `iInstallFolder ∈ {-1,0,1,7}`,
+`eDisplayStatus ∈ [-1,44]`, `eCloudStatus ∈ [-1,13]` and both booleans for each
+flag — 304,560 reports. Results: 212,682 `needs_attention`, 34,514
+`online_check_needed`, 57,364 `unknown`, and zero `ready_to_try_offline`. Every
+`unknown` result used one of only two reason sets, both entirely inside the
+badge's incomplete-evidence allowlist (`src/offline-badge-state.ts:15`), so a
+valid idle report always yields a badge rather than being silently suppressed.
+
+That is a statement about the **categorical** layer only. It fixes whether a
+badge appears, not what the player finally reads: the confidence layer then
+supplies the asset and label, and it can take this same `unknown` report all the
+way to a green "Likely offline-ready" (`src/offline-focus-checks.tsx:72-73`).
+
+### Frontend confidence is a separate, weaker judgement
+
+`assessOfflineConfidence` (`src/offline-confidence.ts:54-105`) is a documented
+heuristic over the private fields, not a second classifier of record:
+
+- Any blocker — missing install or local content, display `9`/`10`, pending
+  download/update, `bIsSubscribedTo === false`, display `26`/`27`, cloud
+  error/conflict/failure, either explicit internet flag true, or a third-party
+  updater — returns "Needs preparation".
+- "Likely offline-ready" requires every local preparation gate to pass *and*
+  explicit positives: a positive build ID, local content, subscription, display
+  `11` (ReadyToLaunch), a decided cloud state, the cached single-player category,
+  `bIsThirdPartyUpdater === false`, and both internet flags explicitly false.
+  Missing booleans are unknown, never false.
+- "Tested offline" requires a matching player attestation plus the preparation
+  gates and no blockers — but **not** the compatibility metadata that "Likely
+  offline-ready" needs. It is returned at `src/offline-confidence.ts:93-96`,
+  before the single-player, third-party-launcher and explicit-internet-flag
+  unknowns are appended at `:97-100`, so an attestation can override missing
+  compatibility metadata that would otherwise stop a game short of "Likely".
+- Everything else is "Unverified".
+
+The guarantee this layering gives is narrower than it looks. A categorical
+`needs_attention` or `online_check_needed` report forces "Needs preparation" and
+forgets any attestation (`src/offline-confidence-session.ts:27-30`), so
+confidence can never talk past a backend **attention or authorization blocker**.
+It can be more favourable than the backend in the other direction: an admitted
+backend `unknown` may still become "Likely offline-ready". That is deliberate —
+the backend status gates whether a badge appears at all, while confidence
+decides what it says.
+
+What "Likely offline-ready" still does not establish: file integrity, storage
+health, DRM or publisher-launcher authorization, entitlement validity offline,
+or that saves are current. ReadyToLaunch means only that Steam reported no
+pending download at check time. Cloud disabled means there is no cloud gate, not
+that saves are current. Subscription is not offline entitlement.
+
+### Player attestations
+
+`OfflineTestMemory` (`src/offline-test-memory.ts`) holds at most 32 records in
+memory, each bound to AppID, build ID, private account scope, the store object
+and the overview object, expiring after 24 hours and cleared on plugin unload
+(`src/offline-focus-checks.tsx:116`). There is no persistence, no RPC, no log.
+Any build or account change, missing preparation, a known blocker, or an explicit
+Forget invalidates the record; a later account return cannot resurrect it.
+Reinstalling the same build without an intervening observation may be
+indistinguishable, so confirmations are session-only historical evidence, never
+continuing certification.
+
+The mounted path calls `offlineConfidenceForGame` without a confirmation binding
+(`src/offline-focus-checks.tsx:73`), so nothing currently writes to this memory
+in production. The mechanism is implemented and tested, not reachable.
+
+### Freshness on the live path is enforced entirely client-side
+
+Worth stating because the backend looks like it enforces more than it does. On
+the live path the backend performs **no** source admission and **no**
+freshness or staleness check: `classify_minimized_steam_details` validates field
+shapes and the game state, then classifies. The whole admission and
+evidence-age discipline — `admit_offline_evidence_collection` (`:289`),
+`review_offline_evidence_source` (`:332`),
+`admit_reviewed_offline_evidence_source` (`:352`),
+`classify_fresh_offline_readiness` (`:364`), `OfflineReadinessObservation`
+(`:196`) and `MAX_EVIDENCE_AGE_MS` (`:17`) in
+`backend/regear/domain/offline_readiness.py` — has no non-test caller and is
+reached only through the dormant application service.
+
+What actually bounds staleness today is three frontend numbers: the 1 000 ms
+callback budget and the 1 000 ms post-receipt validity window in
+`src/offline-details-session.ts:47,52-54`, and the 65 000 ms badge expiry passed
+at `src/offline-focus-checks.tsx:75`. Those bound how long *our own* observation
+may be used. None of them bounds the age of the data Steam's cache handed us,
+which remains unknown.
+
+### The admission-gated collection port is dormant
+
+`backend/regear/application/offline_readiness.py` implements the source
+declaration review, bounded-cost admission, generation/freshness revalidation and
+`MAX_EVIDENCE_AGE_MS` staleness rules over an injected synchronous local-memory
+reader. It is imported only by `tests/test_offline_readiness_service.py`; no
+production code constructs it. It is not the path a badge uses.
+
+Its companion adapter `backend/regear/adapters/steamos/offline_steam_overview.py`
+is dormant for the same reason: only `tests/test_offline_steam_overview.py` and
+`tests/test_offline_readiness_service.py` import it. It projects one supplied
+plain decoded overview bound to a private expected AppID, accepting only a base
+game on the local client branch with affirmative platform availability, and
+discarding raw identity and unrelated metadata. It selects no game, opens no
+file, subscribes to nothing, calls no Steam API and sends no RPC. Its rules
+mirror the live projection, with one decisive difference: its line 59 is the only
+place in the repository outside tests that can produce `InstallState.INSTALLED`,
+which is part of why the live path cannot reach a positive verdict. Explicit
+install booleans decide installed or not installed and absent stays Unknown; explicit unfinished download or update states
+become attention evidence; synchronized, pending and conflict cloud values stay
+distinct while disabled, failed, unknown, malformed and future states stay
+Unknown; and ReadyToLaunch does not prove download currency. Its numeric schema
+is pinned in the module and verified with synthetic fixtures, which validate
+neither the installed Steam version nor collection authorization.
+
+Its rules still bind any *future* source: a reviewed declaration must be local,
+read-only, non-networked, non-persistent and identity-minimized, with a bounded
+unique set of categorical evidence fields and no command, path, title, AppID,
+account or collected value; rejection is categorical and fail-closed; and
+`measured_collection_cost_ms * 10 > interval_ms` rejects on cost
+(`backend/regear/domain/offline_readiness.py:289-330`). This synchronous port
+cannot preempt a blocking callback and must not be adapted to filesystem,
+subprocess, network or subscription work without separate lifecycle and timeout
+review. Generation counters must change on every selection, session or
+game-state transition, including changing away and back.
+
+## What the sources fundamentally cannot prove
 
 **FACT:** Valve's [Offline Mode instructions](https://help.steampowered.com/en/faqs/view/0E18-319B-E34B-B2C8)
 require preparation while online, completed updates, and an initial game launch.
-Installation alone is insufficient. The [ISteamApps reference](https://partner.steamgames.com/doc/api/ISteamApps#BIsAppInstalled)
-also distinguishes installation from ownership. The
+Installation alone is insufficient. The
+[ISteamApps reference](https://partner.steamgames.com/doc/api/ISteamApps#BIsAppInstalled)
+distinguishes installation from ownership, and the
 [cloud settings API](https://partner.steamgames.com/doc/api/ISteamRemoteStorage#IsCloudEnabledForApp)
 reports whether cloud functionality is enabled, not whether saves are current.
 
-| Primary source | Useful evidence | Decision / limits |
-| --- | --- | --- |
-| [Decky community Steam App types, pinned revision](https://github.com/SteamDeckHomebrew/decky-frontend-lib/blob/247eb635ea7acdc3e7807d5f99722daf854aaa70/src/globals/steam-client/App.ts) | Local overview is separate from selected/most-available remote clients. Explicit installed, display-status, and cloud-status fields are available in the declared shape. | First candidate. These are community types, not a Valve stability promise. A future reader must prove the live schema and freshness. No upstream implementation or dependency is imported. |
-| [Protontricks Steam parser](https://github.com/Matoking/protontricks/blob/master/src/protontricks/steam.py) | Library/manifest discovery and handling of absent, malformed, and unreadable metadata. | Secondary reference only. A discovered manifest cannot establish complete content, current cloud state, or authorization. Avoid a whole-library scan in this milestone. |
-| [Valve Steam Cloud](https://partner.steamgames.com/doc/features/cloud) | Describes synchronization around launch/exit and diagnostic cloud logs. | Historical log success is not current sync evidence. Do not read save content or account-bearing logs as the default source. |
-| [Ludusavi manifest](https://github.com/mtkennerly/ludusavi-manifest/blob/master/README.md) | Save-location and game metadata for backup discovery. | Does not witness current Steam cloud synchronization. No backup or cloud tooling is added. Review data licensing separately before any future reuse. |
+Callback receipt is a current report from the local client. It does not prove
+remote-server freshness, license validity, or offline launch. Reading a cache
+does not renew evidence age, and a source named `Get...` or `Register...` is not
+automatically network-free. No Steam SDK ownership workaround, cloud query or
+launcher invocation is justified by this research.
+
+Only a player actually reaching playable content while disconnected is evidence
+of offline play, and even that is bounded: a launched process or menu alone is
+not successful play, and Steam Offline Mode alone does not establish that a
+publisher launcher had no network access. Re-Gear must not disconnect
+networking, launch games, or terminate them for testing.
+
+## Remaining source gaps
+
+1. Validate the redacted local schema against a supported installed Steam client
+   for the remote-install, cloud-disabled, cloud-conflict and unfinished-update
+   cases. Pinned-schema agreement is source evidence, not per-enum device
+   validation.
+2. Establish a trustworthy observation age. Nothing in the live path supplies
+   one; the 1 000 ms request lease bounds *our* handling, not the cache's age.
+3. Re-measure reader cost as a bounded repeated sample, and measure the backend
+   side at all. The recorded figures are single frontend observations, not a
+   benchmark; the full snapshot taken per RPC has never been timed; and the
+   dormant admission gate's cost contract has no measured input.
+4. Reach a positive categorical status honestly, or decide the backend
+   `ready_to_try_offline` state stays unreachable from Steam reports alone and
+   belongs only to attested evidence.
+5. Validate native rendering and refresh recovery on a device:
+   [issue 21](https://github.com/ronnierosal/Re-Gear/issues/21).
+
+Not proposed here: an Offline Mode, automatic confirmation, a whole-library scan,
+background polling, network or account queries, credential reads, save or
+configuration writes, or game launches.
+
+## Pinned references and attribution
+
+- [Decky community Steam App types](https://github.com/SteamDeckHomebrew/decky-frontend-lib/blob/247eb635ea7acdc3e7807d5f99722daf854aaa70/src/globals/steam-client/App.ts)
+  at `247eb635ea7acdc3e7807d5f99722daf854aaa70` — the pinned numeric schema for
+  installed, display-status and cloud-status fields. Community types, not a Valve
+  stability promise; no upstream implementation or dependency is imported.
+- [Protontricks Steam parser](https://github.com/Matoking/protontricks/blob/master/src/protontricks/steam.py)
+  — secondary reference for library/manifest discovery and absent, malformed or
+  unreadable metadata. A discovered manifest cannot establish complete content,
+  current cloud state or authorization.
+- [Valve Steam Cloud](https://partner.steamgames.com/doc/features/cloud) —
+  historical log success is not current sync evidence; save content and
+  account-bearing logs are not a source.
+- [Ludusavi manifest](https://github.com/mtkennerly/ludusavi-manifest/blob/master/README.md)
+  — does not witness current Steam cloud synchronization. Review data licensing
+  separately before any future reuse.
+- Storage Cleaner's
+  [single-game details helper](https://github.com/mcarlucci/decky-storage-cleaner/blob/932e6876dbf94b6feb4b033401139b193f9cc79a/src/utils.ts)
+  was adapted into `src/steam-app-details-request.ts`; Re-Gear added abort
+  handling, immediate-callback safety, late/duplicate reply suppression and
+  strict private AppID validation. Attribution and license terms are in
+  `THIRD_PARTY_NOTICES.md`.
+- Research artifact downloaded during the 2026-09-03 inspection to the ignored
+  path `out/offline-source-research/steam-client-chunk.js`, SHA-256
+  `26ac253942bfaa80a48cc7b3176b2fcbef56c7c0eda3d5845562c68b0ed0b94d`. It is not
+  tracked and is absent from a fresh clone. Source-inspection evidence only; no
+  upstream code is bundled or copied.
+
+---
+
+## Historical evidence
+
+Retained for provenance. These entries are accurate for their dates and are
+**not** current instructions; where they disagree with the contract above, the
+contract above is correct. In particular, the repeated "no production caller",
+"live reader required" and "the categorical UI has no game-selection context"
+statements were true when written and are now resolved by the mounted automatic
+focused-tile path.
+
+### Source investigation — 2026-09-03
 
 **INFERENCE / DESIGN DECISION:** prefer one player-selected game's already-local
-Steam state over disk scanning or adding a backup service. A source named
-`Get...` or `Register...` is not automatically proven network-free; reader
-behavior must be inspected before admission. No Steam SDK ownership workaround,
-cloud query, or launcher invocation is justified by this research.
-
-## Implemented candidate projection
-
-### Bazzite review — 2026-09-04
-
-Inspected Bazzite `09cca86e0476c8b58aa58bdfffc744e7b02cddd7` (Apache-2.0).
-Its [Steam launcher](https://github.com/ublue-os/bazzite/blob/09cca86e0476c8b58aa58bdfffc744e7b02cddd7/system_files/desktop/shared/usr/bin/bazzite-steam)
-bootstraps the client for first startup; it does not assess individual games.
-Its [updater integration](https://github.com/ublue-os/bazzite/blob/09cca86e0476c8b58aa58bdfffc744e7b02cddd7/system_files/desktop/shared/usr/libexec/uupd-update)
-operates an OS update service. Adjacent uupd
-[`updateCheck.go`](https://github.com/ublue-os/uupd/blob/fd09b47a1e56ba93cb84feffec8ceaa202462fdc/cmd/updateCheck.go)
-at `fd09b47a1e56ba93cb84feffec8ceaa202462fdc` (Apache-2.0) checks system updates,
-not Steam game content or cloud saves. No direct reader was found in the inspected
-Bazzite tracked files and uupd cmd/drv/pkg/checks trees. This is a scoped finding,
-not a claim about all dependencies. No code from these projects was imported.
-
-### One-shot native details evidence — 2026-09-04
-
-The maintainer authorized completing development remotely without player presence.
-A disposable request used the adapted Storage Cleaner helper in the existing
-Steam context. Installed diagnostics confirmed Idle before and after. One native
-registration and one removal completed, with callback elapsed time 28.2 ms and
-stable exact app reference. No files/settings/game actions were performed.
-
-The native callback supplied an installation-folder index, display status 19
-(UpdateQueued), cloud status 1 (Disabled), cloud availability false, account
-cloud enabled true, app cloud enabled false, and third-party updater false.
-`offline_steam_details.py` projects these into categorical evidence: update
-attention, no positive installation-completeness or cloud-sync claim. The
-corresponding redacted fixture is covered by tests. Account/title/AppID values
-are not retained. Callback receipt is a current report from the local client;
-it does not prove remote-server freshness, license validity, or offline launch.
-
-### Reused plugin code — 2026-09-04
-
-At the maintainer's request, inspected and adapted Storage Cleaner's
-[single-game details helper](https://github.com/mcarlucci/decky-storage-cleaner/blob/932e6876dbf94b6feb4b033401139b193f9cc79a/src/utils.ts)
-into `src/steam-app-details-request.ts`. It uses one subscription with a bounded
-timeout and cleanup. Re-Gear adds abort handling, immediate-callback safety,
-late/duplicate reply suppression, and strict private AppID validation. Six focused
-tests and TypeScript checking passed. Attribution/license details are in
-`THIRD_PARTY_NOTICES.md`.
-
-The plugin's README also identifies the local overview cloud field, corroborating
-our selected cache source. Its helper does not prove cache freshness or native
-subscription cost/network behavior. This async candidate has no production caller
-and must not be inserted into the synchronous local-memory service. Native source
-review and a separate asynchronous request boundary remain required. No storage
-cleanup or backup/sync code was imported or run.
-
-`backend/regear/adapters/steamos/offline_steam_overview.py` consumes one supplied
-plain decoded overview with a private expected AppID. It accepts only a bound
-base game and the local client branch, with affirmative platform availability.
-It does not select a game, open a file, subscribe, call Steam, or send an RPC.
-Raw identity and unrelated metadata are discarded from its result.
-
-- Explicit install booleans become installed/not-installed; absent is Unknown.
-- Explicit unfinished download/update states become attention evidence.
-- Cloud synchronized, pending, and conflict values remain distinct. Disabled,
-  failed, unknown, malformed, or future states remain Unknown.
-- ReadyToLaunch does not prove download currency. No entitlement, DRM,
-  first-launch, or offline-success claim is inferred. This source alone cannot
-  produce **Ready to try offline**.
-
-The numeric schema is pinned in the module and verified with synthetic fixtures.
-Those tests do not validate the installed Steam version or authorize collection.
-The existing source declaration, cost, game-state, and freshness gates remain
-mandatory for any future application caller.
-
-## Production gates and next slice
+Steam state over disk scanning or adding a backup service. The pinned references
+above record the evidence and limits that led to choosing the local overview as
+the first candidate and rejecting a whole-library scan for this milestone.
 
 ### Client implementation inspection — 2026-09-03
 
@@ -122,192 +317,112 @@ The local-client getter selects client ID `"0"`. The overview callback updates
 the map from native messages. The lookup does not supply an observation time.
 
 **DECISION:** the exact lookup is a promising bounded reader; native callback
-registration and freshness remain unreviewed runtime boundaries. Do not call
-store initialization, enumerate all games, or replace Steam's callback. Since
-the local branch is a getter, serialize only explicitly extracted fields;
-serializing the whole object is neither privacy-minimized nor reliable.
+registration and freshness remained unreviewed runtime boundaries. Do not call
+store initialization, enumerate all games, or replace Steam's callback. Since the
+local branch is a getter, serialize only explicitly extracted fields; serializing
+the whole object is neither privacy-minimized nor reliable.
 
-Downloaded research artifact SHA-256:
-`26ac253942bfaa80a48cc7b3176b2fcbef56c7c0eda3d5845562c68b0ed0b94d`.
-It remains in ignored `out/offline-source-research/steam-client-chunk.js`; no
-upstream code is bundled or copied into the implementation. This artifact is
-source-inspection evidence only, not a freshness or supported-profile benchmark.
+### Bazzite review — 2026-09-04
 
-**NEXT EVIDENCE:** obtain the maintainer's current Ally host as required by
-`OPERATOR_HANDOFF.md`. Inspect installed client provenance/static reader behavior
-read-only, then determine whether an already available observation boundary can
-provide a trustworthy timestamp and exact selected-game/session binding. Do not
-enable remote debugging, deploy a plugin, install an observer, or trigger a
-Steam refresh to obtain evidence under this workstream's current authority.
+Inspected Bazzite `09cca86e0476c8b58aa58bdfffc744e7b02cddd7` (Apache-2.0). Its
+[Steam launcher](https://github.com/ublue-os/bazzite/blob/09cca86e0476c8b58aa58bdfffc744e7b02cddd7/system_files/desktop/shared/usr/bin/bazzite-steam)
+bootstraps the client for first startup; it does not assess individual games. Its
+[updater integration](https://github.com/ublue-os/bazzite/blob/09cca86e0476c8b58aa58bdfffc744e7b02cddd7/system_files/desktop/shared/usr/libexec/uupd-update)
+operates an OS update service. Adjacent uupd
+[`updateCheck.go`](https://github.com/ublue-os/uupd/blob/fd09b47a1e56ba93cb84feffec8ceaa202462fdc/cmd/updateCheck.go)
+at `fd09b47a1e56ba93cb84feffec8ceaa202462fdc` (Apache-2.0) checks system updates,
+not Steam game content or cloud saves. No direct reader was found in the
+inspected Bazzite tracked files and uupd cmd/drv/pkg/checks trees. This is a
+scoped finding, not a claim about all dependencies. No code was imported.
 
 ### Installed static-source verification — 2026-09-04
 
 **REMOTELY OBSERVED:** read-only SSH succeeded using the maintainer-supplied
 current host and documented key/account with strict host-key checking. No
-credentials or destination address are retained in this record.
+credentials or destination address are retained in this record. This resolved the
+earlier missing-host blocker.
 
 Inspected four installed Steam UI JavaScript files, bounded to 32 MiB total.
 Installed `chunk~2dcc5aaf7.js` is 14,382,865 bytes, SHA-256
-`4a62cebec339c3e24e5394efcb507c9e7bddc3de7cec4dc2f891c699ca389bd6`.
-Its exact-AppID method only performs map membership/lookup. Its local-client
-getter selects client ID `"0"`, and the native overview registration symbol is
-present. These methods agree with the inspected upstream behavior; the artifact
-hash differs, so this is not whole-build equivalence.
+`4a62cebec339c3e24e5394efcb507c9e7bddc3de7cec4dc2f891c699ca389bd6`. Its
+exact-AppID method only performs map membership/lookup, its local-client getter
+selects client ID `"0"`, and the native overview registration symbol is present.
+These methods agree with the inspected upstream behavior; the artifact hash
+differs, so this is not whole-build equivalence. No remote file was created, no
+runtime JavaScript was evaluated, no listener was opened, and no
+service/install/device action ran.
 
-No remote file was created, no runtime JavaScript was evaluated, no listener was
-opened, and no service/install/device action ran. This closes the installed
-static-reader inspection gap only. Cache values, callback freshness, selected
-game binding, and reader cost have not been observed or benchmarked. Next:
-identify an already available read-only runtime observation surface without
-enabling debugging or installing an observer.
+### Runtime inspection samples — 2026-09-04
 
-### Request boundary
-
-**REMOTELY OBSERVED sample, 2026-09-04:** a bounded cache inspection (at most 16
-entries and 16 client records per entry) found a locally installed base game in
-the first entry. Local platform availability was true, streaming false, display
-status 19 (UpdateQueued), and cloud status unavailable. Identity was not exported.
-The normal observable-map iteration was rejected by side-effect checking; direct
-inspection of native backing values passed with that checking still enabled.
-This verifies a real cache shape and preserves missing-cloud uncertainty. It
-does not prove source age or offline play. MobX internals are an inspection
-technique only, not an approved production integration surface.
-
-**REMOTELY OBSERVED, 2026-09-04:** existing Steam loopback debugging access was
-already enabled (protocol 1.3). A bounded side-effect-checked runtime read in
-`SharedJSContext` confirmed appStore exists, is initialized, and has the exact
+**REMOTELY OBSERVED:** existing Steam loopback debugging access was already
+enabled (protocol 1.3). A bounded side-effect-checked runtime read in
+`SharedJSContext` confirmed `appStore` exists, is initialized, and has the exact
 lookup method. No native getter was invoked and no game/account data returned.
-This establishes an available inspection surface, not production collector
-approval or evidence freshness. No selected-game route was observed; the player
-was asked to select a game before per-game inspection. No listener, subscription,
-observer, or plugin was installed, and the probe sockets were closed.
 
-The application service in `backend/regear/application/offline_readiness.py` now
-implements one request's admission/revalidation/freshness boundary over an
-injected bounded local-memory reader. It does not manufacture source approval
-or benchmark evidence. It reads no source when unreviewed, unbenchmarked,
-running, unknown, or without a selected context. It rejects a changed private
-generation, stale/future evidence, exceptions, and elapsed time beyond the
-declared measured ceiling. The source timestamp is preserved.
+A bounded cache inspection (at most 16 entries and 16 client records per entry)
+found a locally installed base game in the first entry: local platform
+availability true, streaming false, display status 19 (UpdateQueued), cloud
+status unavailable. Identity was not exported. The normal observable-map
+iteration was rejected by `throwOnSideEffect`; direct inspection of native
+backing values passed with that checking still enabled. MobX internals are an
+inspection technique only, never an approved production integration surface.
 
-This synchronous local-memory port cannot preempt a blocking callback. It must
-not be adapted to filesystem, subprocess, network, or subscription work without
-separate lifecycle and timeout review. No production implementation is admitted
-or constructed. Generation counters must change on every selection, session,
-or game-state transition, including changing away and back.
+### One-shot native details evidence — 2026-09-04
 
-1. Identify a bounded, local-only reader and a private exact game/session
-   binding. Inspect its implementation; do not trust a cached overview merely
-   because it was retrieved now. Reading a cache does not renew evidence age.
-2. Validate a redacted local schema on the supported Steam client, including
-   remote-install, cloud-disabled/conflict, and unfinished-update cases.
-3. Measure actual reader cost and define timeout/cancellation/unsubscribe,
-   size limits, and source/session invalidation. Synthetic projection timing is
-   not a Steam collector benchmark.
-4. Route one explicit request through source review and game admission, then
-   revalidate selection/session/game state and freshness before public delivery.
-   Never expose frontend-supplied paths, commands, or identities as authority.
-5. Deliver categorical reasons and a player-language next step through the
-   existing UI contract in coordination with the UI owner. No polling loop,
-   auto-launch, automatic Offline Mode, credential access, or save mutation.
+A disposable request used the adapted Storage Cleaner helper in the existing
+Steam context, with installed diagnostics confirming Idle before and after. One
+native registration and one removal completed, callback elapsed time 28.2 ms,
+stable exact app reference. The callback supplied an installation-folder index,
+display status 19 (UpdateQueued), cloud status 1 (Disabled), cloud availability
+false, account cloud enabled true, app cloud enabled false, and third-party
+updater false. Account, title and AppID values were not retained.
 
-Remaining product gap: the current categorical UI has no game-selection
-context. Do not show an unidentified game's result as whole-device readiness.
-This needs a narrow selection/context contract before production presentation.
+Later the same day, with the actual compiled code: picker 0.6 ms; three details
+requests 48.0/54.2/53.0 ms, with three registrations and three releases, a stable
+overview reference, and Idle before and after. These are small-sample
+observations, not a general overhead or game-impact benchmark.
 
+### Additional negative evidence — 2026-09-04
 
-## Additional negative evidence � 2026-09-04
+The same seven admitted fields were extended to recognize ReadyToInstall (9) and
+ReadyToPreload (10), LicensePending (26) and LicenseExpired (27), SyncFailed
+(cloud 8), and CloudError (display 34) / CloudOutOfDate (35), adding the public
+reasons `cloud_save_failed` and `steam_authorization_required` with no account
+identity and no new RPC fields. These are negative evidence, not positive offline
+authorization; unknown or future values and a favourable display status still
+cannot prove Ready. The current mapping is recorded in the live-path section
+above.
 
-The same seven admitted fields now recognize additional states from the pinned
-[Decky Steam schema](https://github.com/SteamDeckHomebrew/decky-frontend-lib/blob/247eb635ea7acdc3e7807d5f99722daf854aaa70/src/globals/steam-client/App.ts):
-ReadyToInstall (9) and ReadyToPreload (10) imply installation needed only when
-the folder is absent/-1; a nonnegative folder retains unknown installation.
-LicensePending (26) and LicenseExpired (27) explicitly require Steam
-verification. SyncFailed (cloud 8) reports a cloud problem. CloudError (display
-34) and CloudOutOfDate (35) supply cloud attention only when the cloud field
-has not already established a categorical state. These are negative evidence,
-not positive offline authorization. Third-party launcher and license requirements
-are both retained. New public reasons are cloud_save_failed and
-steam_authorization_required; no account identity or new RPC fields are added.
-Pinned schema compatibility is source evidence, not real-device validation of
-every enum. Unknown/future values and favorable display status remain unable
-to prove Ready.
+### Stronger readiness proposal — 2026-09-04
 
-## Stronger readiness: proposed next stage
+Because the callback cannot establish installed completeness, up-to-date content
+and offline authorization together, most otherwise normal games show unverified.
+The recorded decision was **not** to solve this by converting ReadyToLaunch, a
+positive folder index, subscription or playtime into offline-ready evidence, but
+to separate local preparation from player-tested offline: offer a check guide,
+then let the player confirm reaching playable content while actually
+disconnected, labelled "Tested offline" with a date and never a guarantee of
+future authorization. The 2026-09-05 entry below implements that proposal; this
+paragraph records why.
 
-The current callback cannot establish installed completeness, up-to-date
-content, and offline authorization. Most otherwise normal games therefore
-still show unverified. Do not solve this by converting ReadyToLaunch, positive
-folder index, subscription, or playtime into offline-ready evidence.
+### Confidence source extension — 2026-09-05
 
-Recommended next flow: separate local preparation from **player-tested offline**.
-Offer an explicit check guide, then let the player confirm reaching playable
-content while actually disconnected. A launched process/menu alone is not
-successful play, and Steam Offline Mode alone does not establish that a
-publisher launcher had no network access. Re-Gear must not disconnect networking,
-launch games, or terminate them automatically for testing.
+The user authorized implementing evidence-based "Likely offline-ready" and
+explicit player-tested offline confidence, superseding the earlier
+proposal-only restriction. It did not redefine the backend's stronger
+`ready_to_try_offline` classifier or its entitlement contract.
 
-Before implementation, review a minimal local confirmation record bound to the
-exact game, account scope, and installed build, including observed test time,
-player confirmation, and evidence provenance. Invalidate on build/account change,
-reinstallation, known launch/update/license blockers, and bounded age. Label it
-"Tested offline" with date, never a guarantee of future authorization. A local
-preparation breakdown should separately explain install/update/cloud facts and
-remaining authorization uncertainty. Persistence, identity handling, source
-admission, invalidation tests, and controller UX require implementation review;
-this document does not claim that flow is implemented.
+Read-only live inspection verified that `BHasStoreCategory` only reads
+`m_setStoreCategories.has`; no fetch occurs. One bounded idle read for a
+previously selected game returned the new scalar facts in 5.9 ms, with a positive
+build ID, content and subscription true, explicit internet flags false, local
+installation true and single-player true. One schema and cost observation, not a
+gameplay-performance claim.
 
-Valve's [Offline Mode guidance](https://help.steampowered.com/en/faqs/view/0E18-319B-E34B-B2C8)
-recommends preparing and trying games before relying on offline play, and notes
-initial startup requirements. The automatic highlighted-game check remains
-local and does not query that website.
-
-
-## Confidence source extension � 2026-09-05
-
-User authorized implementing evidence-based Likely offline-ready and explicit
-player-tested offline confidence. This supersedes the earlier proposal-only
-restriction for the implementation described here; it does not redefine the
-backend's stronger ready_to_try_offline classifier or its entitlement contract.
-
-The existing selected-game callback now privately projects only nBuildID,
-bHasAnyLocalContent, bIsSubscribedTo, bIsThirdPartyUpdater, display/cloud states,
-cloud enablement, and two explicit deckDerivedProperties internet flags. New
-fields stay in frontend memory, never enter RPC, logs, files, or network queries.
-Steam's local_per_client_data.installed is read from the exact overview, and
-BHasStoreCategory(2) supplies the cached single-player category. Read-only live
-inspection verified BHasStoreCategory only reads m_setStoreCategories.has; no
-fetch occurs. The account-name scope is taken privately from loginStore and
-never displayed or persisted. No cache files, licenses, credentials, save files,
-external databases, or remote library records are scanned.
-
-One bounded idle read for the previously selected Re:Story game returned the
-new scalar facts in 5.9 ms, with a positive build ID, content/subscription true,
-explicit internet flags false, local installation true, and single-player true.
-This is one schema/cost observation, not a general gameplay-performance claim.
-The existing callback source review and one-second timeout remain authoritative.
-
-Likely offline-ready is a documented heuristic: all local preparation gates,
-explicit single-player category, explicit no-internet setup/single-player flags,
-and no third-party updater are required. ReadyToLaunch means only no pending
-download reported by Steam at check time; file integrity, storage health, DRM
-activation and future offline authorization are not verified. Missing booleans
-are unknown, never false. Subscription alone is not offline entitlement.
-Known backend blockers and game-unknown/unavailable reports cannot become green.
-Cloud disabled means no cloud gate, not proof that saves are current.
-
-Player-tested confirmations are explicit attestations, not automatic tests.
-They bind game ID, build ID, private account scope, store and app object, and
-expire at 24 hours or plugin restart. At most 32 records are kept in memory.
-A fresh callback must match the displayed binding before confirmation; account
-changes invalidate request/display context. Build/account changes, missing
-preparation, known blockers, and explicit Forget invalidate stored evidence.
-There is no persistence or automatic network/game control. A separate account
-return cannot resurrect an invalidated record. Reinstalling the same build
-without an intervening observation may be indistinguishable; confirmations
-are therefore session-only historical evidence, never continuing certification.
-
-Settled highlight changes now re-read evidence instead of restoring a five-minute
-badge cache. This avoids reusing positive confidence for an old build. Work
-remains event-driven and limited to one highlighted game after 450 ms, with
-cancellation, no polling/library scan, and existing 30-second badge expiry.
+Settled highlight changes re-read evidence rather than restoring an earlier
+five-minute badge cache, so positive confidence cannot be reused for an old
+build. Work stayed event-driven and limited to one highlighted game after a
+450 ms settle, with cancellation and no polling or library scan. The badge
+lifetime quoted in that entry was the panel's 30 seconds; the mounted automatic
+path now passes 65 seconds and neutralises rather than removes the badge at
+expiry — see [Offline Readiness UI](OFFLINE_READINESS_UI.md).

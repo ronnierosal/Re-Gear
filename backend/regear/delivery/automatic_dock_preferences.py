@@ -14,15 +14,16 @@ MAX_BYTES = 1024
 
 
 class AutomaticDockPreferenceStore:
-    def __init__(self, state_root: Path) -> None:
+    def __init__(self, state_root: Path, *, recovery: bool = False) -> None:
         if not state_root.is_absolute():
             raise ValueError("automatic dock state root must be absolute")
         self._root = state_root
         self._lock = threading.Lock()
+        self._filename = "automatic-link-recovery.json" if recovery else FILENAME
 
     def load(self) -> bool:
         with self._lock:
-            target = self._root / FILENAME
+            target = self._root / self._filename
             if target.is_symlink():
                 raise ValueError("automatic dock preference cannot be a symlink")
             try:
@@ -48,7 +49,7 @@ class AutomaticDockPreferenceStore:
         if type(enabled) is not bool:
             raise ValueError("automatic dock preference must be boolean")
         with self._lock:
-            target = self._root / FILENAME
+            target = self._root / self._filename
             if target.is_symlink():
                 raise ValueError("automatic dock preference cannot be a symlink")
             raw = (
@@ -59,7 +60,7 @@ class AutomaticDockPreferenceStore:
                 )
                 + "\n"
             ).encode("ascii")
-            temporary = self._root / f".{FILENAME}.{secrets.token_hex(8)}.tmp"
+            temporary = self._root / f".{self._filename}.{secrets.token_hex(8)}.tmp"
             descriptor = os.open(
                 temporary,
                 os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0),

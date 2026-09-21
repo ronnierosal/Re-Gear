@@ -38,7 +38,12 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from ...domain.dock_teardown import TunnelCapability, WritePermission
+from ...domain.dock_teardown import (
+    StorageEvidenceGap,
+    TunnelCapability,
+    WritePermission,
+    ordered_storage_gaps,
+)
 
 
 PCI_PATTERN = re.compile(r"[0-9a-fA-F]{4}:[0-9a-fA-F]{2}:[0-9a-fA-F]{2}\.[0-7]")
@@ -164,9 +169,20 @@ class DockStorageReading:
     #: Claims on those devices that are not mounts: swap, and stacked devices.
     #: Any entry blocks a teardown exactly as a mount does.
     other_uses: tuple[DockStorageUse, ...] = ()
-    #: Whether the block-device walk, the mount read and the other-use checks
-    #: all finished. False means an empty result proves nothing.
-    complete: bool = False
+    #: Which evidence was not read, deduplicated and in declaration order.
+    #: Empty means the block-device walk, the mount read and the other-use
+    #: checks all finished.
+    gaps: tuple[StorageEvidenceGap, ...] = ()
+
+    @property
+    def complete(self) -> bool:
+        """Derived, never stored.
+
+        Two fields that have to agree is a bug waiting to be written: the
+        first time a gap is appended without clearing the flag, the reading
+        says it finished and lists a reason it did not.
+        """
+        return not self.gaps
 
 
 @dataclass(frozen=True, slots=True)
@@ -316,36 +332,46 @@ class DockBranchDiscovery:
         reading an empty list as safety.
         """
         if not PCI_PATTERN.fullmatch(controller_bdf):
-            return DockStorageReading((), (), False)
+            # Not an address, so the walk that would have found this branch's
+            # devices never happened.
+            return DockStorageReading(
+                (), (), (StorageEvidenceGap.BLOCK_DEVICE_WALK_INCOMPLETE,)
+            )
         try:
             if not (self._pci_root / controller_bdf).is_dir():
                 # No controller, so nothing of this branch is in use. A
-                # finished reading of an absent thing.
-                return DockStorageReading((), (), True)
+                # finished reading of an absent thing: no gaps.
+                return DockStorageReading((), (), ())
         except OSError:
-            return DockStorageReading((), (), False)
+            return DockStorageReading(
+                (), (), (StorageEvidenceGap.BLOCK_DEVICE_WALK_INCOMPLETE,)
+            )
 
         devices, devices_complete = self._branch_block_devices(controller_bdf)
-        mounts, mounts_complete = self._mounts_for(devices)
-        uses, uses_complete = self._other_uses(devices)
+        device_gaps = (
+            () if devices_complete
+            else (StorageEvidenceGap.BLOCK_DEVICE_WALK_INCOMPLETE,)
+        )
+        mounts, mount_gaps = self._mounts_for(devices)
+        uses, use_gaps = self._other_uses(devices)
         return DockStorageReading(
             mounts,
             uses,
-            devices_complete and mounts_complete and uses_complete,
+            ordered_storage_gaps((*device_gaps, *mount_gaps, *use_gaps)),
         )
 
     def _other_uses(
         self, devices: set[str]
-    ) -> tuple[tuple[DockStorageUse, ...], bool]:
+    ) -> tuple[tuple[DockStorageUse, ...], tuple[StorageEvidenceGap, ...]]:
         """Claims on these devices that are not mounts.
 
         Swap and stacked devices. Both are ordinary states that a mount table
         says nothing about, and both mean the device is being written to.
         """
         if not devices:
-            return (), True
+            return (), ()
         uses: list[DockStorageUse] = []
-        complete = True
+        gaps: list[StorageEvidenceGap] = []
 
         try:
             raw = self._swaps.read_text(encoding="utf-8", errors="replace")
@@ -354,7 +380,7 @@ class DockBranchDiscovery:
             # swap is configured: the no-swap case is a header row and nothing
             # under it. An absent file therefore means the table was not read,
             # which is not the same fact as nothing swapping to the branch.
-            complete = False
+            gaps.append(StorageEvidenceGap.SWAPS_UNREADABLE)
             raw = ""
         for line in raw.splitlines()[1:]:
             leaf = line.split()[0].rsplit("/", 1)[-1] if line.split() else ""
@@ -373,11 +399,11 @@ class DockBranchDiscovery:
             # holders, so both levels are walked.
             directories, enumerated = self._holder_directories(device)
             if not enumerated:
-                complete = False
+                gaps.append(StorageEvidenceGap.PARTITION_INVENTORY_UNREADABLE)
             for holders in directories:
                 if not self._collect_holders(holders, uses):
-                    complete = False
-        return tuple(uses), complete
+                    gaps.append(StorageEvidenceGap.HOLDERS_UNREADABLE)
+        return tuple(uses), ordered_storage_gaps(gaps)
 
     def _holder_directories(self, device: str) -> tuple[tuple[Path, ...], bool]:
         """The disk's holders directory and each partition's.
@@ -422,7 +448,12 @@ class DockBranchDiscovery:
         return True
 
     def _branch_block_devices(self, controller_bdf: str) -> tuple[set[str], bool]:
-        """Block device names whose sysfs path runs through this controller."""
+        """Block device names whose sysfs path runs through this controller.
+
+        Returns completeness as a bool rather than gaps: this walk has exactly
+        one way to be incomplete, so a gap tuple here would carry no
+        information a bool does not, and the caller names it.
+        """
         try:
             entries = sorted(self._block_root.iterdir(), key=lambda item: item.name)
         except OSError:
@@ -444,7 +475,9 @@ class DockBranchDiscovery:
                 names.add(entry.name)
         return names, complete
 
-    def _mount_tables(self) -> tuple[tuple[str, ...], bool]:
+    def _mount_tables(
+        self,
+    ) -> tuple[tuple[str, ...], tuple[StorageEvidenceGap, ...]]:
         """Every process's mountinfo, so no mount namespace is missed.
 
         A drive mounted inside a Flatpak app or a Steam container does not
@@ -454,17 +487,18 @@ class DockBranchDiscovery:
         -- degraded to incomplete rather than to nothing.
         """
         tables: list[str] = []
-        complete = True
+        gaps: list[StorageEvidenceGap] = []
         try:
             tables.append(
                 self._mountinfo.read_text(encoding="utf-8", errors="replace")
             )
         except OSError:
-            complete = False
+            gaps.append(StorageEvidenceGap.MOUNT_TABLE_UNREADABLE)
         try:
             entries = sorted(self._proc_root.iterdir(), key=lambda item: item.name)
         except OSError:
-            return tuple(tables), False
+            gaps.append(StorageEvidenceGap.MOUNT_NAMESPACE_UNREADABLE)
+            return tuple(tables), ordered_storage_gaps(gaps)
         for entry in entries:
             if not entry.name.isdigit():
                 continue
@@ -481,20 +515,30 @@ class DockBranchDiscovery:
             except PermissionError:
                 # A namespace that could not be read is a namespace that was
                 # not checked, and an unchecked namespace may hold a mount.
-                complete = False
+                gaps.append(StorageEvidenceGap.MOUNT_NAMESPACE_UNREADABLE)
             except OSError:
-                complete = False
-        return tuple(tables), complete
+                gaps.append(StorageEvidenceGap.MOUNT_NAMESPACE_UNREADABLE)
+        return tuple(tables), tuple(gaps)
 
-    def _mounts_for(self, devices: set[str]) -> tuple[tuple[str, ...], bool]:
+    def _mounts_for(
+        self, devices: set[str]
+    ) -> tuple[tuple[str, ...], tuple[StorageEvidenceGap, ...]]:
         """Mount points whose source device is one of, or part of, `devices`."""
         if not devices:
-            return (), True
-        tables, complete = self._mount_tables()
+            return (), ()
+        tables, table_gaps = self._mount_tables()
+        gaps: list[StorageEvidenceGap] = list(table_gaps)
         if not tables:
-            return (), False
+            gaps.append(StorageEvidenceGap.MOUNT_TABLE_UNREADABLE)
+            return (), ordered_storage_gaps(gaps)
         raw = "\n".join(tables)
-        devnums, devnums_complete = self._branch_devnums(devices)
+        # The device-number map being partial is only a GAP when an alias
+        # actually needed it. A branch whose mounts all name their kernel
+        # device is fully attributed without a single `dev` file, and
+        # reporting that as missing evidence would refuse readings that
+        # completed. Naming reasons must not change what refuses.
+        devnums, devnum_gaps = self._branch_devnums(devices)
+        devnums_complete = not devnum_gaps
         mounts: list[str] = []
         for line in raw.splitlines():
             if not line.strip():
@@ -506,7 +550,7 @@ class DockBranchDiscovery:
                 # out. Skipping it quietly is how a truncated table reads as
                 # an idle branch, and the mounts that WERE parsed are still
                 # reported: incomplete, not empty.
-                complete = False
+                gaps.append(StorageEvidenceGap.MOUNT_LINE_UNPARSABLE)
                 continue
             mount_point = fields[4]
             source = fields[separator + 2]
@@ -529,11 +573,15 @@ class DockBranchDiscovery:
             # An alias such as /dev/disk/by-uuid/... or /dev/mapper/... has a
             # basename that names nothing on this branch even when the mount
             # is on it, and without device numbers there is nothing left to
-            # compare. Unattributable is not absent.
-            complete = False
-        return tuple(sorted(set(mounts))), complete
+            # compare. Unattributable is not absent, and the partial map is
+            # reported alongside because it is why this could not be judged.
+            gaps.append(StorageEvidenceGap.MOUNT_SOURCE_UNATTRIBUTABLE)
+            gaps.extend(devnum_gaps)
+        return tuple(sorted(set(mounts))), ordered_storage_gaps(gaps)
 
-    def _branch_devnums(self, devices: set[str]) -> tuple[set[str], bool]:
+    def _branch_devnums(
+        self, devices: set[str]
+    ) -> tuple[set[str], tuple[StorageEvidenceGap, ...]]:
         """`major:minor` for each branch device and any partition of it.
 
         The second value says whether EVERY one of them was resolved. A map
@@ -543,18 +591,18 @@ class DockBranchDiscovery:
         else's. Partial knowledge answers no question.
         """
         devnums: set[str] = set()
-        complete = True
+        gaps: list[StorageEvidenceGap] = []
         for device in sorted(devices):
             root = self._block_root / device
             disk = _read_text(root / "dev")
             if _is_device_number(disk):
                 devnums.add(disk)
             else:
-                complete = False
+                gaps.append(StorageEvidenceGap.DEVICE_NUMBERS_INCOMPLETE)
             try:
                 children = sorted(root.iterdir(), key=lambda item: item.name)
             except OSError:
-                complete = False
+                gaps.append(StorageEvidenceGap.PARTITION_INVENTORY_UNREADABLE)
                 continue
             for child in children:
                 if not child.name.startswith(device) or child.name == device:
@@ -563,8 +611,8 @@ class DockBranchDiscovery:
                 if _is_device_number(partition):
                     devnums.add(partition)
                 else:
-                    complete = False
-        return devnums, complete
+                    gaps.append(StorageEvidenceGap.DEVICE_NUMBERS_INCOMPLETE)
+        return devnums, ordered_storage_gaps(gaps)
 
     # -- the tunnel -------------------------------------------------------
 

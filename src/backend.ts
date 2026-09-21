@@ -146,7 +146,7 @@ export interface SnapshotPayload {
   };
   connection_readiness?: {
     schema_version: number;
-    stage: "disconnected" | "transport_detected" | "waiting_for_pci" | "waiting_for_driver" | "waiting_for_link" | "waiting_for_hdmi" | "waiting_for_audio" | "waiting_for_session" | "game_running" | "stabilizing" | "ready_idle" | "link_training_failed" | "timed_out" | "action_required";
+    stage: "disconnected" | "transport_detected" | "waiting_for_pci" | "waiting_for_driver" | "waiting_for_link" | "waiting_for_hdmi" | "ready_display_pending" | "waiting_for_audio" | "waiting_for_session" | "game_running" | "stabilizing" | "ready_idle" | "link_training_failed" | "timed_out" | "action_required";
     code: string;
     poll_after_ms: number;
     window_age_ms: number;
@@ -354,6 +354,11 @@ export interface AutomaticDockStatusPayload {
 
 export const getAutomaticDockStatus = callable<[], AutomaticDockStatusPayload>(
   "get_automatic_dock_status",
+);
+/** Optional until the recovery backend is installed; validate at the UI boundary. */
+export const getLinkRecoveryStatus = callable<[], unknown>("get_link_recovery_status");
+export const executeLinkRecovery = callable<[boolean, "session_restart"], unknown>(
+  "execute_link_recovery",
 );
 export const setAutomaticDockEnabled = callable<
   [boolean, boolean],

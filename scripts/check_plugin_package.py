@@ -310,10 +310,19 @@ def main() -> int:
             # Read-only: what sleeping would take while the eGPU is attached.
             # Sleeps nothing itself; Steam still performs the suspend.
             "get_sleep_readiness",
+            # An eGPU whose PCIe link never trained. On the certified profile
+            # the link is observed about a second after a new session starts;
+            # why is not established, so the mechanism is a strategy the caller
+            # picks and the default is a plain session bounce. A pollable
+            # status, and one confirmed bounce that closes the session and
+            # always leaves it running again. Never automatic -- the
+            # confirmation is the authority, not the timeout.
+            "get_link_recovery_status",
+            "execute_link_recovery",
         }
         if public_methods != allowed_methods:
             failures.append(
-                "Decky RPCs must remain limited to diagnostics/logging, read-only offline report classification and peripheral/watcher/action-history status, automatic-dock preference/status, explicit manual/automatic TDP controls and read-only benchmarks/preferences, approved support export, supervised presentation, confirmed shutdown-before-disconnect, and guarded process release, and live eGPU software disconnect with its per-game close preference"
+                "Decky RPCs must remain limited to diagnostics/logging, read-only offline report classification and peripheral/watcher/action-history status, automatic-dock preference/status, explicit manual/automatic TDP controls and read-only benchmarks/preferences, approved support export, supervised presentation, confirmed shutdown-before-disconnect, and guarded process release, live eGPU software disconnect with its per-game close preference, and a confirmed session bounce for an eGPU whose PCIe link never trained"
             )
 
     sources = {}

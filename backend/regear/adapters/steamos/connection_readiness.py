@@ -3,10 +3,83 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
+import re
+import stat
 
 from ...profiles.gpd_g1 import GpdG1Match, match_gpd_g1
 from .drm import DrmDiscovery
 from .pci import PciUsb4Discovery, Usb4DeviceRecord
+
+USB4_ROOT = Path('/sys/bus/thunderbolt/devices')
+SYSFS_DEVICES_ROOT = Path('/sys/devices')
+
+
+def verified_transport_absent() -> bool:
+    """Strict absence for retained-claim archival, not ordinary attach admission.
+
+    Every external router entry blocks, even if its attributes are unreadable or
+    it was deliberately deauthorized. Empty/partial host inventories never prove
+    unplugging. Two complete matching readings catch observed topology changes.
+    """
+    def read_attribute(path):
+        if not stat.S_ISREG(path.lstat().st_mode):
+            raise ValueError('invalid host attribute')
+        with path.open('r', encoding='ascii') as source:
+            value = source.read(129)
+        if len(value) > 128:
+            raise ValueError('oversized host attribute')
+        return value.strip()
+
+    def reading():
+        entries = {}
+        for entry in USB4_ROOT.iterdir():
+            if len(entries) >= 64:
+                raise ValueError('excessive USB4 inventory')
+            # Reject external/unknown entries before touching their attributes.
+            if not (re.fullmatch(r'domain(?:0|[1-9][0-9]*)', entry.name)
+                    or re.fullmatch(r'(?:0|[1-9][0-9]*)-0', entry.name)):
+                raise ValueError('external or unknown USB4 entry')
+            entries[entry.name] = entry
+        domains = {name[6:] for name in entries if name.startswith('domain')}
+        hosts = {name[:-2] for name in entries if name.endswith('-0')}
+        if not domains or hosts != domains or len(entries) != 2 * len(domains):
+            raise ValueError('incomplete USB4 host inventory')
+        result = []
+        for index in sorted(domains):
+            domain = entries['domain' + index].resolve(strict=True)
+            host = entries[index + '-0'].resolve(strict=True)
+            if (SYSFS_DEVICES_ROOT not in domain.parents or host.parent != domain
+                    or domain.name != 'domain' + index or host.name != index + '-0'):
+                raise ValueError('USB4 host topology mismatch')
+            # A bus alias can lag or disappear while the actual router kobject
+            # remains. Inspect the canonical host view as well. Attributes and
+            # port directories are legitimate; route-shaped children are not.
+            for parent in (domain, host):
+                for count, child in enumerate(parent.iterdir()):
+                    if count >= 256:
+                        raise ValueError('excessive USB4 host children')
+                    if re.fullmatch(r'[0-9]+-[0-9a-fA-F]+', child.name):
+                        if parent != domain or child.name != index + '-0' or child.resolve(strict=True) != host:
+                            raise ValueError('unlisted USB4 router remains')
+            identities = []
+            for path in (domain, host):
+                info = path.lstat()
+                if not stat.S_ISDIR(info.st_mode):
+                    raise ValueError('USB4 host path invalid')
+                identities.append((str(path), info.st_dev, info.st_ino))
+            security = read_attribute(domain / 'security')
+            if security not in ('none', 'user', 'secure', 'dponly', 'usbonly', 'nopcie'):
+                raise ValueError('unknown USB4 security')
+            authorized = read_attribute(host / 'authorized')
+            if authorized not in ('0', '1'):
+                raise ValueError('unknown USB4 host authorization')
+            result.append((index, tuple(identities), security, authorized))
+        return tuple(result)
+    try:
+        return reading() == reading()
+    except (OSError, ValueError, UnicodeError, RuntimeError):
+        return False
 
 
 @dataclass(frozen=True, slots=True)

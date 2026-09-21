@@ -118,10 +118,11 @@ class SleepGuardController:
         self._lease = lease or Login1SleepInhibitor()
         self._lock = RLock()
         self._closed = False
+        self._handoff_owner: object | None = None
 
     def reconcile(self, presence: EgpuPresence) -> InhibitorLeaseStatus:
         with self._lock:
-            if self._closed:
+            if self._closed or self._handoff_owner is not None:
                 return self._lease.status()
             action = decide_sleep_guard(presence)
             if action is SleepGuardAction.ACQUIRE:
@@ -134,6 +135,44 @@ class SleepGuardController:
         with self._lock:
             self._closed = True
             return self._lease.release()
+
+    def prepare_handoff(self, owner: object) -> bool:
+        """Pause reconciliation without dropping the lease; ownership is local."""
+        with self._lock:
+            if self._closed or owner is None:
+                return False
+            if self._handoff_owner is not None and self._handoff_owner is not owner:
+                return False
+            self._handoff_owner = owner
+            return True
+
+    def handoff_owned(self, owner: object) -> bool:
+        with self._lock:
+            return not self._closed and owner is not None and self._handoff_owner is owner
+
+    def release_handoff(self, owner: object) -> bool:
+        with self._lock:
+            if not self.handoff_owned(owner):
+                return False
+            result = self._lease.release()
+            return result.active is False and not result.error
+
+    def reacquire_handoff(self, owner: object) -> bool:
+        with self._lock:
+            if not self.handoff_owned(owner):
+                return False
+            result = self._lease.acquire()
+            return result.active is True and not result.error
+
+    def finish_handoff(self, owner: object) -> bool:
+        with self._lock:
+            if not self.handoff_owned(owner):
+                return False
+            result = self._lease.status()
+            if result.active is not True or result.error:
+                return False
+            self._handoff_owner = None
+            return True
 
     def status(self) -> InhibitorLeaseStatus:
         with self._lock:

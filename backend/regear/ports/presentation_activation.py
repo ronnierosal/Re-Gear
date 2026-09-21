@@ -23,6 +23,23 @@ class UserServiceOperation(StrEnum):
     #: disconnect could not be driven from the backend.
     RESTART_WIREPLUMBER = "restart_wireplumber"
     RESTART_PIPEWIRE = "restart_pipewire"
+    #: A split stop and start, so a caller can hold the session down and watch
+    #: for something while it is. These exist for ONE explicitly-selected
+    #: link-recovery strategy -- `LinkRecoveryStrategy.SESSION_STOP_START` --
+    #: and not because a gap is known to be the mechanism. It is not: the
+    #: device journals put the link about a second after a *new session
+    #: started*, and in one case the session service never reported inactive at
+    #: all. The default strategy is a plain RESTART_GAMESCOPE_SESSION, which
+    #: needs neither of these. They are kept only so the stop-and-hold rung can
+    #: still be compared on hardware, and should be deleted with it if that
+    #: comparison settles against it.
+    #:
+    #: The stop is deliberately blocking, unlike every restart above it: a
+    #: caller that is about to watch for something needs the session actually
+    #: down first. The start is a separate decision it makes afterwards --
+    #: including when whatever it watched for never came.
+    STOP_GAMESCOPE_SESSION = "stop_gamescope_session"
+    START_GAMESCOPE_SESSION = "start_gamescope_session"
 
 
 @dataclass(frozen=True, slots=True)

@@ -5,12 +5,14 @@ import { ReadinessRow } from "./readiness-row";
 import { connectionPanelCss } from "./connection-panel-style";
 import { regearTheme as theme } from "./regear-theme";
 import { SectionFocus } from "./section-focus";
+import { LinkRecoveryControl } from "./link-recovery-control";
 
 const labels: Record<string, string> = {
   "GPU and driver": "GPU driver",
   "Connection link": "Connection link",
   "TV HDMI detected": "TV HDMI",
   "Audio recovery ready": "Audio recovery",
+  "Display switching ready": "Display switching ready",
   "No game running": "No game running",
 };
 
@@ -47,5 +49,9 @@ export function ConnectionQuickStatus({store, visible, onOpen}: {
         color:theme.accentSoft, fontSize:13, lineHeight:1.4}}>
       View full progress
     </DialogButton>
+    <LinkRecoveryControl eligible={visible && !stale && source.connected
+      && source.phase === "checking" && source.seconds >= 120
+      && source.rows.some(row => row.label === "GPU and driver" && row.state === "waiting")
+      && source.rows.some(row => row.label === "No game running" && row.state === "ready")} />
   </div>;
 }

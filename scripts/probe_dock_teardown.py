@@ -190,6 +190,11 @@ def main(argv: Sequence[str] | None = None) -> int:
                 for use in storage.other_uses
             ],
             "scan_complete": storage.complete,
+            # Which evidence was not read, in a stable order. One code told an
+            # operator the scan did not finish; these say what did not finish,
+            # and the remedies differ. Bare identifiers by construction: no
+            # device name, mount point or pid can appear here.
+            "gaps": [gap.value for gap in storage.gaps],
         },
         "tunnel": {
             "sysfs_id": tunnel.sysfs_id,

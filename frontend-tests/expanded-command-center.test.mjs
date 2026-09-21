@@ -22,7 +22,7 @@ test("focus restoration retains unavailable FPS and falls back after removal", (
   assert.equal(m.restoreTarget([], "fps"), undefined);
 });
 test("responsive grid prefers four columns with three before narrow fallback", () => {
-  assert.deepEqual([640, 639, 430, 429, 280, 279].map(m.columnsForWidth), [4, 3, 3, 2, 2, 1]);
+  assert.deepEqual([400, 399, 300, 299, 280, 279].map(m.columnsForWidth), [4, 3, 3, 2, 2, 1]);
 });
 test("four-column navigation respects the spanning disconnect tile", () => {
   const cells = m.gridCells(m.sampleTiles.quick, 4);
@@ -69,8 +69,9 @@ test("native modal uses Decky controls without a second raw navigation listener"
     export const views=[], effects=[], listeners=[];
     export let opens=0, clicks=0;
     const React={createElement:(type,props,...children)=>({type,props:{...props,children}})};
-    const ModalRoot='modal', ExpandedCommandCenter='shell',Button='native-button',Focusable='native-focus';
+    const ModalRoot='modal', ExpandedCommandCenter='shell',WholeDockControl='whole-dock-control',Button='native-button',Focusable='native-focus';
     const useEffect=fn=>effects.push(fn()), useState=v=>[v,()=>{}];
+    const useSyncExternalStore=(_subscribe,read)=>read();
     const loadMenuBinding=()=> 'start-select',saveMenuBinding=()=>true,menuBindingOptions=[];
     const startMenuShortcut=()=>({available:true,reset(){},stop(){}});
     const showModal=view=>{opens++;views.push(view);return {Close(){}}};
@@ -78,12 +79,15 @@ test("native modal uses Decky controls without a second raw navigation listener"
     export const host={localStorage:{},document:{querySelector(){return {contains(){return true}}},activeElement:{tagName:'BUTTON',click(){clicks++}}}};
   `;
   const native = await import(`data:text/javascript;base64,${Buffer.from(fixtures + nativeJs).toString("base64")}`);
-  const runtime = native.createExpandedMenu(native.input, native.host);
+  const readCurrentSnapshot = () => ({game_state:"idle"});
+  const runtime = native.createExpandedMenu(native.input, native.host, () => true, readCurrentSnapshot);
   runtime.open(); runtime.open(); assert.equal(native.opens, 1);
   const view = native.views[0].props.children[1];
   const shell = view.type(view.props); // Mount its cleanup and obtain close callback.
   assert.equal(shell.props.primitives.Button, 'native-button');
   assert.equal(shell.props.primitives.Focusable, 'native-focus');
+  assert.equal(shell.props.disconnectControl.type, 'whole-dock-control');
+  assert.equal(shell.props.disconnectControl.props.readCurrentSnapshot, readCurrentSnapshot);
   assert.equal(native.listeners.length, 0, 'Only the launcher may subscribe to raw input');
   shell.props.onClose(); runtime.open(); assert.equal(native.opens, 2);
   native.effects[0](); // Old animated unmount arrives after reopening.
@@ -95,23 +99,33 @@ test("native shortcut dropdown preserves selection and active chord when saving 
   const nativeSource = readFileSync(new URL("../src/quick-access/expanded-command-center/native.tsx", import.meta.url), "utf8");
   const nativeJs = ts.transpileModule(nativeSource, { compilerOptions: { module: ts.ModuleKind.ESNext, jsx: ts.JsxEmit.React } }).outputText.replace(/^import .*;$/gm, "");
   const fixture = `
-    export const views=[], states=[], saved=[];
+    export const views=[], saved=[];
     export let resets=0, stops=0;
-    let cursor=0, fail=false, deps;
+    const componentStates=new WeakMap();
+    let states=[],cursor=0, fail=false, deps;
     const React={createElement:(type,props,...children)=>({type,props:{...props,children}})};
-    const ModalRoot='modal',ExpandedCommandCenter='shell',Button='button',Focusable='focus',Dropdown='native-dropdown',ShortcutSettings='settings';
-    const useEffect=()=>{},useState=v=>{const i=cursor++;if(!(i in states))states[i]=v;return [states[i],n=>states[i]=n]};
+    const ModalRoot='modal',ExpandedCommandCenter='shell',WholeDockControl='whole-dock-control',Button='button',Focusable='focus',Dropdown='native-dropdown',ShortcutSettings='settings';
+    const useEffect=()=>{},useState=v=>{const ownStates=states,i=cursor++;if(!(i in ownStates))ownStates[i]=v;return [ownStates[i],n=>ownStates[i]=n]};
+    // Snapshot-only stub for this preference test. Subscription/liveness is
+    // exercised by the producer/consumer tests, not by sharing hook arrays.
+    const useSyncExternalStore=(_subscribe,read)=>read();
     const loadMenuBinding=()=> 'view-y',saveMenuBinding=value=>{saved.push(value);return !fail};
     const menuBindingOptions=[{label:'View / Back + Y',data:'view-y'},{label:'L3 + R3',data:'sticks'},{label:'Disabled',data:'disabled'}];
     const startMenuShortcut=d=>{deps=d;return {available:true,reset(){resets++},stop(){stops++}}};
     const showModal=view=>{views.push(view);return {Close(){}}};
-    export const currentBinding=()=>deps.readBinding(),failSave=value=>{fail=value},render=component=>{cursor=0;return component()};
+    export const currentBinding=()=>deps.readBinding(),failSave=value=>{fail=value},render=component=>{
+      cursor=0;states=componentStates.get(component)??[];
+      componentStates.set(component,states);return component();
+    };
   `;
   const native = await import(`data:text/javascript;base64,${Buffer.from(fixture + nativeJs).toString("base64")}`);
   const runtime = native.createExpandedMenu(undefined, {localStorage:{}});
   runtime.open();
   const view = native.views[0].props.children[1];
-  const settings = view.type(view.props).props.settings.type;
+  const shell = native.render(() => view.type(view.props));
+  assert.equal(shell.props.disconnectControl.props.intent, "disconnect_only");
+  assert.equal(typeof shell.props.disconnectControl.props.readCurrentSnapshot, "function");
+  const settings = shell.props.settings.type;
   let rendered = native.render(settings);
   assert.equal(rendered.props.control.type, "native-dropdown");
   assert.equal(rendered.props.control.props.selectedOption, "view-y");
@@ -133,4 +147,45 @@ test("native shortcut dropdown preserves selection and active chord when saving 
   assert.equal(native.resets, 1);
   runtime.stop();
   assert.equal(native.stops, 1);
+});
+
+test("native live source publishes into an open menu and unsubscribes on close", {
+  // The UI branch can land independently; once the bridge module is present,
+  // its consumer must satisfy this contract in the combined CI tree.
+  skip: !existsSync(new URL("../src/quick-access/expanded-command-center/tile-source.ts", import.meta.url)),
+}, async () => {
+  const body=readFileSync(new URL("../src/quick-access/expanded-command-center/native.tsx", import.meta.url),"utf8");
+  const compiled=ts.transpileModule(body,{compilerOptions:{module:ts.ModuleKind.ESNext,jsx:ts.JsxEmit.React}}).outputText.replace(/^import .*;$/gm, "");
+  const fixture=`
+    export const views=[],listeners=new Set();
+    export let current;
+    let unsubscribe,renderView;
+    let snapshot={quick:[{id:'auto',title:'Auto TDP',value:'Running',detail:'Fixture'}],performance:[],egpu:[],controllers:[],settings:[]};
+    const React={createElement:(type,props,...children)=>({type,props:{...props,children}})};
+    const ModalRoot='modal',ExpandedCommandCenter='shell',WholeDockControl='whole-dock-control',Button='button',Focusable='focus',Dropdown='dropdown',ShortcutSettings='settings';
+    const useState=v=>[v,()=>{}],useEffect=()=>{};
+    const useSyncExternalStore=(subscribe,read)=>{
+      if(!unsubscribe)unsubscribe=subscribe(()=>{current=renderView();});
+      return read();
+    };
+    const loadMenuBinding=()=> 'view-y',saveMenuBinding=()=>true,menuBindingOptions=[];
+    const startMenuShortcut=()=>({available:true,reset(){},stop(){}});
+    const showModal=view=>{views.push(view);return {Close(){unsubscribe?.();unsubscribe=undefined;}}};
+    export const source={read:()=>snapshot,subscribe(fn){listeners.add(fn);return()=>listeners.delete(fn);}};
+    export function mount(){const view=views.at(-1).props.children[1];renderView=()=>view.type(view.props);current=renderView();}
+    export function publish(){snapshot={...snapshot,quick:[{id:'auto',title:'Auto TDP',value:'Unknown',detail:'Expired'}]};for(const listener of listeners)listener();}
+  `;
+  const native=await import(`data:text/javascript;base64,${Buffer.from(fixture+compiled).toString("base64")}`);
+  const menu=native.createExpandedMenu(undefined,{localStorage:{}},()=>true,native.source);
+  menu.open();native.mount();
+  assert.equal(native.current.props.tiles.quick[0].value,"Running");
+  assert.equal(native.listeners.size,1,"opening must subscribe to the existing publisher");
+  native.publish();
+  assert.equal(native.current.props.tiles.quick[0].value,"Unknown","an open menu must update without reopening");
+  native.current.props.onClose();
+  assert.equal(native.listeners.size,0);
+  menu.open();native.mount();
+  assert.equal(native.listeners.size,1,"reopen installs one fresh subscription");
+  menu.stop();
+  assert.equal(native.listeners.size,0);
 });

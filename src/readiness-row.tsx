@@ -1,10 +1,10 @@
+import { CommandCenterIcon } from "./quick-access/command-center-icons";
 import {statusAppearance, type UiStatus} from "./ui-status";
-export function StatusIcon({state}: {state:UiStatus}) {
+export function StatusIcon({state,color}: {state:UiStatus;color?:string}) {
   const appearance=statusAppearance[state];
-  return <span className="rg-connection-icon" aria-hidden="true" style={{color:appearance.color}}>
-    {state === "ready" ? <svg className="rg-connection-check" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.7"><circle cx="12" cy="12" r="10"/><path d="m7 12 3 3 7-7"/></svg>
-      : state === "blocked" || state === "error" ? <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.7"><path d="M12 3 22 21H2Z M12 9v5 M12 17v1"/></svg>
-      : appearance.motion ? <span className="rg-connection-ring"/> : <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.7"><circle cx="12" cy="12" r="9"/></svg>}
+  const id=state === "ready" ? "status-ok" : state === "error" ? "status-error" : state === "blocked" ? "status-warning" : "status-unknown";
+  return <span className="rg-connection-icon" aria-hidden="true" style={{color:color ?? appearance.color}}>
+    <CommandCenterIcon id={id} size={22}/>
   </span>;
 }
 export function ReadinessRow({label,state,compact=false}: {label:string;state:UiStatus;compact?:boolean}) {

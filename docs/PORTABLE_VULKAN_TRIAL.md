@@ -83,12 +83,41 @@ idle and integration gates. A conflicting later config is not overwritten.
 Records remain retained and block another trial; there is no automatic cleanup
 or retrial. A future explicitly reviewed reconciliation step is required.
 
-The only new RPC is `approve_supervised_portable_vulkan_trial`. It accepts no
+The initial trial RPC is `approve_supervised_portable_vulkan_trial`. It accepts no
 device paths, commands, PIDs, environment or caller-selected GPU. Execute its
 returned token through `execute_supervised_portable_switch`. Do not expose this
 experimental approval in normal UI or automatic preferences.
 
 ## Evidence boundaries and hardware gate
+
+### Current RPC surface audit (2026-09-14)
+
+These four methods are public `Plugin` RPCs, retained by
+`tests/test_decky_contract.py`. At source revision `9421c6f4f33dd22a0fc55857fb544e36d0a43d7f`,
+none has a caller under `src/`. They remain reachable through the backend RPC
+surface. An absent button does not disable an endpoint, and the word
+"supervised" does not implement a developer identity or caller allowlist check.
+The three approval methods pass `user_confirmed=True` internally; a method call
+is therefore not independent evidence that a person confirmed the operation.
+
+| RPC | Effect and intended use | Existing enforcement |
+| --- | --- | --- |
+| `approve_supervised_portable_vulkan_trial` | Issues a live schema-1 token for the historical operator-supervised Vulkan session experiment; does not execute the switch. | Effective Steam integration must verify, then the transition preview checks the Docked-eGPU source, profile/evidence, prepared integration and journal. Returned token is consumed through `execute_supervised_portable_switch`, with execution-time revalidation. |
+| `approve_supervised_portable_graphics_trial` | Issues a live schema-2 token for the explicit OpenGL + Vulkan experiment; does not execute the switch. | Same preparation and transition gates, with schema 2 explicitly bound to the approval. It does not upgrade existing schema-1 approvals. |
+| `approve_supervised_steam_trial_preparation` | Issues an expiring single-use preparation token; no drop-in write or service restart. This token does not grant a graphics trial. | `PresentationActivationService.preview` requires idle Portable evidence, no present external GPU, a resolved Gamescope user and a valid fixed integration plan. Token lifetime is at most 120 seconds. |
+| `prepare_supervised_steam_trial_integration` | Mutates the fixed managed Steam launcher integration: creates required state directories, writes the drop-in, reloads the user service manager and verifies effective configuration. It does not directly restart Steam or execute a graphics trial. | Consumes the preparation token once, repeats preflight and matches generation/user/fingerprints before activation. Fixed OS unit/launcher hashes and conflicting configuration checks apply. Failure uses compare-before-restore rollback and reports its outcome. |
+
+Here "detached preparation" means the implemented Portable/idle/no-present-external-GPU
+checks. It is not proof that a USB4 router or physical cable is absent. These
+observation and token checks constrain an operation; they do not authenticate a
+supervisor. The documented disposition is to retain these experimental RPCs
+without adding a frontend path or claiming a new access gate. Any future UI or
+RPC gating change needs its own scoped review of the real admission path.
+
+Implementation: `main.py`, `backend/regear/application/supervised_transition.py`,
+`backend/regear/application/presentation_activation.py`, and
+`backend/regear/delivery/steam_trial_activation.py`. No RPC or hardware operation
+was executed for this audit. Trial approval remains unrelated to safe unplug.
 
 `portable_trial.application_unverified` deliberately reports that a successful
 Portable transition does not prove the trial applied. The consumed marker is
@@ -125,8 +154,9 @@ overrides, and verified detached idle Portable preparation. Its exact
 compare-before-restore rollback refuses later modifications. Preparation uses
 the existing single-use approval owner and atomic integration store, followed
 by daemon reload and exact effective-unit readback. It does not restart Steam.
-Two developer-only RPCs approve and prepare this integration. Normal UI and
-automatic paths cannot opt into the trial. Trial approval and execution require
+Two experimental public RPCs approve and prepare this integration. Current
+frontend and automatic paths do not call them; this is not an RPC access gate.
+Trial approval and execution require
 verified prepared Steam integration. No live integration has been changed.
 
 After durable engine success, a handoff window waits at most ten seconds or

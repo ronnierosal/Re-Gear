@@ -75,13 +75,19 @@ and correct the owning repository document.
   checks). Do not end the turn merely because the partner is still processing.
   Follow [reply waiting](docs/AGENT_COORDINATION.md#waiting-for-collaboration-replies)
   for deadlines, interruptions, late replies and timeout handoffs.
-- One task has one active owner. Claim an available, unblocked task atomically
-  before substantive work. A request to work the next appropriate task authorizes
-  selecting a bounded routine item. Stream leadership is inbox routing, not a
-  monopoly on its tasks. Existing ownership changes only by accepted transfer;
-  inactivity does not release it. Agents may transfer ownership directly when
-  both agree, communicate the handoff, and record an accepted hub transfer;
-  no additional human approval is required for that consensual transfer.
+- Each focused project/workstream has one Ronnie-designated primary Codex session,
+  recorded as a `primary-<scope>` hub stream owner (for example `primary-egpu`
+  or `primary-ui-wiring`). The primary assigns work to Codex
+  and Claude, resolves shared contracts, and orders integration. A primary owns its named scope, not
+  every project in the repository; cross-scope work needs joint sequencing. No session self-appoints.
+- Workers claim only a primary-assigned task (or an explicit Ronnie assignment),
+  not arbitrary available work. The primary also claims its own implementation
+  tasks and uses isolated worktrees. Record delegation before substantive work;
+  see [primary workflow](docs/AGENT_COORDINATION.md#project-primary-and-delegation).
+- One task has one active owner. Existing claims remain valid until completed or
+  transferred; primary coordination does not grant access to another checkout.
+  Consensual transfers need no human approval, but record the primary's sequencing
+  acknowledgement as well as the accepted hub transfer before work changes hands.
 - Own the problem, not a fixed list of files. Record scope, acceptance criteria,
   branch, dependencies, blockers, next action, and verification in the task.
   Expand paths within that scope after checking other claims; coordinate and
@@ -104,12 +110,15 @@ and correct the owning repository document.
   criteria, blocker and next action. Follow [backlog cleanup](docs/AGENT_COORDINATION.md#pr-and-issue-cleanup).
   Age, green CI or a merged partial fix alone never justify closure; preserve
   hardware gates, other owners' work, branches and history.
-- Validated routine work may be committed and merged autonomously by the owning
-  agent. Human approval is the exception for defined high-risk actions, not the
-  default merge mechanism. Before merging: recheck claims/dependencies, fetch the
-  current base, inspect the combined diff, pass applicable tests and final-head CI,
-  respect branch protection, and record exact revision/evidence. Use the clean
-  integration worktree and preflight described in the lifecycle.
+- Owners may commit and open/update scoped PRs autonomously. Routine validated
+  integration is controlled by the primary Codex, without per-merge human approval.
+  A worker may execute a merge only on a recorded primary delegation naming the
+  exact head/base, review evidence and integration order. Changed revisions require
+  renewed acceptance. Recheck claims, combined behavior, golden gates, final-head
+  CI and branch protection; use the clean integration worktree and preflight.
+- The primary can implement as well as coordinate. Material changes it authors
+  require an independent reviewer; self-review is not independent evidence. Review
+  golden behavior and cross-feature contracts, not merely whether files conflict.
 - Human approval is required for destructive operations or important data deletion;
   force pushes/shared history rewrites; credential/security-policy or access changes;
   release/publication/deployment unless explicitly delegated; disruptive or
@@ -124,6 +133,15 @@ and correct the owning repository document.
 
 ## Required rules
 
+- Preserve approved UI when adding features or wiring data. Read
+  [UI design contract](docs/UI_DESIGN_CONTRACT.md) before presentation changes;
+  use the [approved reference and acceptance checklist](docs/design/command-center-approved.md)
+  for Command Center composition, controls and explicit supersessions.
+  record the source baseline and bounded visual delta, compare actual source
+  before/after at the same handheld dimensions, and retain navigation checks.
+  Mockup approval is limited to the requested feature/placement; it does not
+  authorize restyling, resizing or replacing unrelated UI. Apply an explicit
+  user-requested design change without repeatedly asking for approval.
 - Credit material external inspiration as well as copied/adapted code, tests,
   text and assets. Record the project/author, source link (pinned revision where
   available), affected feature and reuse type; carry delivered credits into
@@ -148,6 +166,12 @@ and correct the owning repository document.
   rollback coverage, and corresponding safety tests.
 
 ## Workflow
+
+Preserve [golden behavior contracts](docs/GOLDEN_BEHAVIORS.md), not frozen code.
+Run `python scripts/check_golden_behaviors.py` before integration; record affected
+behavior IDs, combined-revision evidence and rollback in the PR. Never weaken or
+skip golden assertions to hide a regression. Software passes do not replace the
+supervised hardware evidence required before replacing a working installation.
 
 Use proportional verification. During iteration, run the smallest relevant
 checks. Before a focused commit, run targeted regression tests and architecture

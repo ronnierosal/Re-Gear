@@ -1,0 +1,45 @@
+> **Archived September 14, 2026.** Historical source at `9421c6f`; superseded by the [canonical Wiki](https://github.com/ronnierosal/Re-Gear/tree/main/docs/wiki). Do not use this as current instructions.
+
+# How Re-Gear works
+
+**Audience:** players, testers, and contributors<br>
+**Reviewed:** 2026-09-06<br>
+**Maturity:** implemented foundation with capability-specific validation
+
+The repository [architecture](https://github.com/ronnierosal/Re-Gear/blob/main/docs/ARCHITECTURE.md)
+and [product definition](https://github.com/ronnierosal/Re-Gear/blob/main/docs/PRODUCT.md)
+own the model summarized here.
+
+Re-Gear first observes the system, then derives a placement and health state. It
+does not assume that plugging in a cable completed a docking workflow.
+
+## Independent facts
+
+- Is an eGPU physically connected and exactly identified?
+- Which GPU is actually rendering the session?
+- Which display is active, not merely connected?
+- Is Gamescope in the expected generation and launch configuration?
+- Is a game running, idle, or unknown?
+- Is the eGPU link stable and are required clients or storage still attached?
+
+Only mutually consistent evidence can make a transition eligible. Missing or
+ambiguous evidence becomes Unknown and blocks unsafe mutation.
+
+## Profiles, capabilities, and mechanisms
+
+Hardware profiles hold exact device identity, topology, and required quirks.
+The same policy model can describe different handhelds, docks, and eGPUs. Capability contracts describe what a resolved
+profile may safely do. SteamOS adapters observe sysfs, procfs, Gamescope, and
+session state. Narrow mechanisms perform only approved operations. Pure domain
+policy decides whether a request is allowed and how it must recover.
+
+This separation is still incomplete in several P1 areas. The project is fixing
+those seams incrementally rather than replacing validated hardware behavior
+with speculative abstractions.
+
+## Verification matters
+
+A requested transition is complete only after Re-Gear re-observes the intended
+render GPU, active display, Gamescope state, and user-visible readiness.
+Command success or connector presence alone is insufficient. A timeout or
+contradiction triggers bounded rollback or retains the known-good state.

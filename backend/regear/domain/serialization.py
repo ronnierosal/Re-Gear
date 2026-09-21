@@ -69,6 +69,8 @@ def snapshot_to_dict(snapshot: ObservedSnapshot, *, include_presentation: bool =
                 "confidence": display.confidence.value,
                 "mode_committed": display.mode_committed,
                 "active_confidence": display.active_confidence.value,
+                "owning_gpu_stable_id": display.owning_gpu_stable_id,
+                "owning_gpu_confidence": display.owning_gpu_confidence.value,
                 "evidence": _evidence_to_dict(display.evidence),
             }
             for display in snapshot.displays
@@ -212,6 +214,10 @@ def snapshot_from_dict(value: dict[str, Any]) -> ObservedSnapshot:
             ),
             active_confidence=Confidence(
                 display.get("active_confidence", "unknown")
+            ),
+            owning_gpu_stable_id=str(display.get("owning_gpu_stable_id", "")),
+            owning_gpu_confidence=Confidence(
+                display.get("owning_gpu_confidence", "unknown")
             ),
             evidence=_evidence(display.get("evidence")),
         )
