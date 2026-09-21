@@ -8,7 +8,7 @@ test('Command Center mounts the approved artwork sprite and overlay styles exact
   assert.match(source, /import \{ tileOverlayStyles \} from ["']\.\/regear-tile["'];/);
   assert.match(source, /import \{ TileArtworkSprite \} from ["']\.\/tile-artwork["'];/);
   assert.equal(source.match(/<TileArtworkSprite\s*\/>/g)?.length, 1);
-  assert.match(source, /<style>\{expandedStyles \+ \(typeof tileOverlayStyles === "string" \? tileOverlayStyles : ""\)\}<\/style>/);
+  assert.match(source, /<style>\{expandedStyles \+ \(typeof tileOverlayStyles === "string" \? tileOverlayStyles : ""\) \+ artworkStyles\}<\/style>/);
   assert.match(source, /\{typeof TileArtworkSprite === "function" \? <TileArtworkSprite\/> : null\}/);
 });
 

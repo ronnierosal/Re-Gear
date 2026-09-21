@@ -77,19 +77,16 @@ test("actual native adapter mounts live tiles, details and golden disconnect tog
   assert.equal(h.menu.visibility.read(), true);
   assert.deepEqual(view.props.tiles, actionExports.testBuildTiles(h.tiles));
   assert.deepEqual(view.props.tiles.egpu.map(tile=>tile.id), ["switch-handheld","disconnect","resolution","egpu","disconnect-sleep","disconnect-shutdown"]);
-  // Both tiles route through the whole-dock control, so they carry the same
-  // readiness value as Safe Disconnect rather than a placeholder.
-  assert.equal(view.props.tiles.egpu.find(tile=>tile.id==="disconnect-sleep").value,
-    view.props.tiles.egpu.find(tile=>tile.id==="disconnect").value);
+  assert.equal(view.props.tiles.egpu.find(tile=>tile.id==="disconnect-sleep").title,
+    "Sleep — Keep eGPU Connected");
   assert.ok(!("disconnect-sleep" in view.props.unavailableActions) && !("disconnect-shutdown" in view.props.unavailableActions));
   assert.equal(view.props.renderDetail, h.detail);
-  // The control now sits behind a two-route selector, so the mount assertion
-  // reaches through it. The default route is unchanged: the one the 0.3.98
-  // golden cycle actually ran.
+  // Disconnect-before-sleep is not a selector route. Connected sleep uses its
+  // separate coordinator; Safe Disconnect keeps the verified default route.
   const [dockSelector, dockControl] = view.props.disconnectControl.props.children;
   assert.equal(dockSelector.type, "dropdown");
   assert.deepEqual(dockSelector.props.rgOptions.map(option => option.data),
-    ["disconnect_only", "shutdown", "sleep"]);
+    ["disconnect_only", "shutdown"]);
   assert.equal(dockControl.props.intent, "disconnect_only");
   assert.equal(dockControl.props.readCurrentSnapshot, h.snapshot);
   assert.ok(view.props.settings);

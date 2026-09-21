@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" style="display:none">
+<defs>
+<style>.s{fill:none;stroke:#bfeaff;stroke-width:4;stroke-linecap:round;stroke-linejoin:round}.c{fill:none;stroke:#32d7ff;stroke-width:5;stroke-linecap:round;stroke-linejoin:round}.g{fill:none;stroke:#4de3ad;stroke-width:5;stroke-linecap:round;stroke-linejoin:round}.w{fill:none;stroke:#ffbf47;stroke-width:5;stroke-linecap:round;stroke-linejoin:round}.r{fill:none;stroke:#ff6b6b;stroke-width:5;stroke-linecap:round;stroke-linejoin:round}</style>
+<symbol id="fps" viewBox="0 0 64 64"><path class="s" d="M13 43a22 22 0 1 1 38 0"/><path class="c" d="M18 39a17 17 0 0 1 28-14"/><path class="s" d="M32 32l12-8"/></symbol>
+<symbol id="battery" viewBox="0 0 64 64"><rect class="s" x="10" y="19" width="40" height="26" rx="4"/><path class="s" d="M50 27h5v10h-5"/><path class="g" d="M27 24l-6 11h9l-3 7 13-14h-9l3-4"/></symbol>
+<symbol id="controller" viewBox="0 0 64 64"><path class="s" d="M18 24h28c7 0 11 18 6 22-4 3-10-5-14-8H26c-4 3-10 11-14 8-5-4-1-22 6-22Z"/><path class="c" d="M21 31v10M16 36h10M42 33h.1M48 39h.1"/></symbol>
+<symbol id="egpu" viewBox="0 0 64 64"><rect class="s" x="9" y="16" width="46" height="32" rx="5"/><circle class="c" cx="28" cy="32" r="10"/><path class="c" d="M28 22v20M18 32h20M21 25l14 14M35 25L21 39"/><path class="g" d="M47 24v16"/></symbol>
+<symbol id="display" viewBox="0 0 64 64"><rect class="s" x="9" y="13" width="46" height="32" rx="4"/><path class="c" d="M24 52h16M32 45v7"/></symbol>
+<symbol id="performance" viewBox="0 0 64 64"><path class="s" d="M12 42a22 22 0 0 1 40 0"/><path class="c" d="M32 39l13-15"/><circle class="c" cx="32" cy="39" r="3"/></symbol>
+<symbol id="manual-tdp" viewBox="0 0 64 64"><rect class="s" x="18" y="18" width="28" height="28" rx="4"/><path class="c" d="M24 10v8M32 10v8M40 10v8M24 46v8M32 46v8M40 46v8M10 24h8M10 32h8M10 40h8M46 24h8M46 32h8M46 40h8"/><path class="s" d="M25 28h14M25 36h14"/></symbol>
+<symbol id="auto-tdp" viewBox="0 0 64 64"><path class="c" d="M17 24a18 18 0 0 1 30-5l5 5M47 40a18 18 0 0 1-30 5l-5-5"/><path class="c" d="M52 14v10H42M12 50V40h10"/><path class="g" d="M32 23c7 4 8 12 0 18-8-6-7-14 0-18Z"/></symbol>
+<symbol id="handheld" viewBox="0 0 64 64"><rect class="s" x="14" y="20" width="36" height="24" rx="5"/><path class="c" d="M21 28v8M17 32h8M41 29h.1M46 35h.1"/><path class="c" d="M13 13h17M13 13l6-5M13 13l6 5"/></symbol>
+<symbol id="safe-disconnect" viewBox="0 0 64 64"><path class="s" d="M25 13v15M39 13v15M20 28h24v5a12 12 0 0 1-24 0Z"/><path class="s" d="M32 45v8"/><circle class="r" cx="49" cy="17" r="8"/><path class="r" d="M45 13l8 8M53 13l-8 8"/></symbol>
+<symbol id="disconnect-sleep" viewBox="0 0 64 64"><path class="s" d="M16 34h28v11H16zM20 29v5M40 29v5"/><path class="c" d="M36 12a12 12 0 1 0 12 16 14 14 0 0 1-12-16Z"/><path class="s" d="M50 36v11M46 47h8"/></symbol>
+<symbol id="disconnect-shutdown" viewBox="0 0 64 64"><path class="r" d="M32 10v20"/><path class="r" d="M20 18a18 18 0 1 0 24 0"/><path class="s" d="M48 42v10M44 52h8"/></symbol>
+<symbol id="resolution" viewBox="0 0 64 64"><rect class="s" x="9" y="14" width="46" height="31" rx="4"/><path class="c" d="M17 37l10-10M17 27v10h10M47 22L37 32M47 32V22H37"/><path class="s" d="M25 52h14M32 45v7"/></symbol>
+<symbol id="refresh-rate" viewBox="0 0 64 64"><path class="c" d="M15 27a18 18 0 0 1 31-8l5 5M49 37a18 18 0 0 1-31 8l-5-5"/><path class="c" d="M51 14v10H41M13 50V40h10"/></symbol>
+<symbol id="storage" viewBox="0 0 64 64"><rect class="s" x="13" y="13" width="38" height="38" rx="5"/><circle class="c" cx="32" cy="28" r="8"/><path class="c" d="M19 43h26"/></symbol>
+<symbol id="wifi" viewBox="0 0 64 64"><path class="c" d="M9 24a35 35 0 0 1 46 0M17 34a23 23 0 0 1 30 0M25 44a11 11 0 0 1 14 0"/><path class="c" d="M32 53h.1"/></symbol>
+<symbol id="mic" viewBox="0 0 64 64"><rect class="s" x="25" y="10" width="14" height="28" rx="7"/><path class="s" d="M18 30a14 14 0 0 0 28 0M32 44v10M24 54h16"/><path class="r" d="M14 14l36 36"/></symbol>
+<symbol id="record" viewBox="0 0 64 64"><circle class="s" cx="32" cy="32" r="20"/><circle fill="#ff5b61" cx="32" cy="32" r="10"/></symbol>
+<symbol id="brightness" viewBox="0 0 64 64"><circle class="c" cx="32" cy="32" r="9"/><path class="s" d="M32 9v8M32 47v8M9 32h8M47 32h8M16 16l6 6M42 42l6 6M48 16l-6 6M22 42l-6 6"/></symbol>
+<symbol id="volume" viewBox="0 0 64 64"><path class="s" d="M10 27h10l13-11v32L20 37H10Z"/><path class="c" d="M41 24a12 12 0 0 1 0 16M47 17a22 22 0 0 1 0 30"/></symbol>
+
+<symbol id="offline-ready" viewBox="0 0 64 64"><path class="s" d="M12 24a30 30 0 0 1 40 0M20 34a18 18 0 0 1 24 0M28 44a7 7 0 0 1 8 0"/><path class="g" d="M42 45l5 5 9-12"/></symbol>
+<symbol id="charging" viewBox="0 0 64 64"><rect class="s" x="10" y="19" width="40" height="26" rx="4"/><path class="s" d="M50 27h5v10h-5"/><path class="g" d="M33 22l-8 13h8l-3 8 12-15h-8l4-6"/></symbol>
+<symbol id="temperature" viewBox="0 0 64 64"><path class="s" d="M27 13a5 5 0 0 1 10 0v25a11 11 0 1 1-10 0Z"/><path class="r" d="M32 24v21"/><circle fill="#ff6b6b" cx="32" cy="45" r="5"/></symbol>
+<symbol id="fan" viewBox="0 0 64 64"><circle class="s" cx="32" cy="32" r="5"/><path class="c" d="M32 27c-2-13 7-17 12-12 5 6-1 14-8 17M37 32c13-2 17 7 12 12-6 5-14-1-17-8M32 37c2 13-7 17-12 12-5-6 1-14 8-17M27 32c-13 2-17-7-12-12 6-5 14 1 17 8"/></symbol>
+<symbol id="network" viewBox="0 0 64 64"><circle class="s" cx="32" cy="32" r="22"/><path class="c" d="M10 32h44M32 10c7 7 10 14 10 22s-3 15-10 22M32 10c-7 7-10 14-10 22s3 15 10 22"/></symbol>
+<symbol id="game-ready" viewBox="0 0 64 64"><path class="s" d="M17 25h30c7 0 10 17 6 21-4 3-10-5-14-8H25c-4 3-10 11-14 8-4-4-1-21 6-21Z"/><path class="c" d="M20 31v9M16 35h9M42 33h.1M48 39h.1"/><path class="g" d="M39 16l5 5 9-11"/></symbol>
+<symbol id="player-order" viewBox="0 0 64 64"><path class="s" d="M10 40c3-8 9-12 17-12s14 4 17 12"/><circle class="s" cx="27" cy="18" r="7"/><circle class="c" cx="48" cy="20" r="10"/><path class="c" d="M48 15v10M44 25h8"/></symbol>
+<symbol id="audio-output" viewBox="0 0 64 64"><path class="s" d="M10 27h10l13-11v32L20 37H10Z"/><path class="c" d="M42 24a12 12 0 0 1 0 16"/><path class="g" d="M46 47h10M51 42l5 5-5 5"/></symbol>
+<symbol id="gpu-load" viewBox="0 0 64 64"><rect class="s" x="15" y="15" width="34" height="34" rx="5"/><path class="c" d="M22 41V31M30 41V24M38 41V28M46 41V20"/></symbol>
+<symbol id="power-draw" viewBox="0 0 64 64"><path class="w" d="M36 8L18 35h14l-4 21 19-30H33Z"/></symbol>
+<symbol id="frametime" viewBox="0 0 64 64"><path class="s" d="M10 46h44M10 18v28"/><path class="c" d="M13 38l9-8 7 4 8-15 7 13 8-5"/></symbol>
+<symbol id="memory" viewBox="0 0 64 64"><rect class="s" x="10" y="20" width="44" height="24" rx="4"/><path class="c" d="M18 27h8v10h-8zM31 27h8v10h-8zM44 27h3v10h-3M16 15v5M24 15v5M32 15v5M40 15v5M48 15v5M16 44v5M24 44v5M32 44v5M40 44v5M48 44v5"/></symbol>
+<symbol id="clock" viewBox="0 0 64 64"><circle class="s" cx="32" cy="32" r="22"/><path class="c" d="M32 18v15l10 6"/></symbol>
+<symbol id="quick-access" viewBox="0 0 64 64"><rect class="c" x="12" y="12" width="16" height="16" rx="3"/><rect class="c" x="36" y="12" width="16" height="16" rx="3"/><rect class="c" x="12" y="36" width="16" height="16" rx="3"/><rect class="c" x="36" y="36" width="16" height="16" rx="3"/></symbol>
+<symbol id="settings" viewBox="0 0 64 64"><circle class="s" cx="32" cy="32" r="8"/><path class="c" d="M32 9v8M32 47v8M9 32h8M47 32h8M16 16l6 6M42 42l6 6M48 16l-6 6M22 42l-6 6"/></symbol>
+<symbol id="about" viewBox="0 0 64 64"><circle class="s" cx="32" cy="32" r="22"/><path class="c" d="M32 29v16M32 20h.1"/></symbol>
+<symbol id="more" viewBox="0 0 64 64"><circle fill="#bfeaff" cx="18" cy="32" r="4"/><circle fill="#bfeaff" cx="32" cy="32" r="4"/><circle fill="#bfeaff" cx="46" cy="32" r="4"/></symbol>
+</defs></svg>

@@ -137,10 +137,10 @@ test("native shortcut dropdown preserves selection and active chord when saving 
   const [selector, control] = shell.props.disconnectControl.props.children;
   assert.equal(control.props.intent, "disconnect_only", "the golden-cycle route stays the default");
   assert.equal(typeof control.props.readCurrentSnapshot, "function");
-  // Exactly these three, since the 2026-09-15 maintainer decision to offer
-  // sleep through the same guarded route. Reconnect stays off the selector:
-  // it is refused at the RPC boundary.
-  assert.deepEqual(selector.props.rgOptions.map(item => item.data), ["disconnect_only", "shutdown", "sleep"]);
+  // Normal sleep stays connected and uses its separate coordinator. The
+  // disconnect selector exposes only the verified disconnect and shutdown
+  // routes; reconnect and disconnect-before-sleep remain absent.
+  assert.deepEqual(selector.props.rgOptions.map(item => item.data), ["disconnect_only", "shutdown"]);
   assert.equal(selector.props.selectedOption, "disconnect_only");
   // A foreign option cannot select a route that is not on the list.
   selector.props.onChange({ data: "whole_dock_reconnect" });

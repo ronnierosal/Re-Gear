@@ -3,7 +3,7 @@
  * The backend owns teardown, original power intent, ordinary-power fallback,
  * and sleep observation. This module neither touches Steam nor replays requests.
  */
-export type PowerAction = "whole_dock_shutdown" | "whole_dock_sleep" | "whole_dock_sleep_connected";
+export type PowerAction = "whole_dock_shutdown" | "whole_dock_sleep_connected";
 export type PowerIntent = "sleep" | "shutdown";
 export type PowerPhase = "idle" | "choosing" | "dispatching" | "pending" | "requested"
   | "sleep_observed" | "refused" | "uncertain" | "disposed";
@@ -14,6 +14,21 @@ export type PowerView = Readonly<{
 export interface PowerRequestPort {
   execute(action: PowerAction, attachmentToken: string, requestId: string): Promise<unknown>;
   readStatus(): Promise<unknown>;
+}
+
+export function startPowerStatusRefresh(
+  owner: { refresh(): Promise<void> },
+  schedule: (run: () => void) => ReturnType<typeof setTimeout> = (run) => setTimeout(run, 2000),
+  cancel: (timer: ReturnType<typeof setTimeout>) => void = clearTimeout,
+) {
+  let stopped = false;
+  let timer: ReturnType<typeof setTimeout>;
+  const run = async () => {
+    await owner.refresh();
+    if (!stopped) timer = schedule(() => { void run(); });
+  };
+  timer = schedule(() => { void run(); });
+  return () => { stopped = true; cancel(timer); };
 }
 type Ticket = {
   intent: PowerIntent; attachment: string; id: string; started: boolean;
@@ -172,7 +187,6 @@ export function createPowerRequestCoordinator(port: PowerRequestPort, options: {
     captureSleep(attachment = "") {
       const ticket = begin("sleep", attachment);
       return ticket ? Object.freeze({
-        disconnectAndSleep: () => submit(ticket, "whole_dock_sleep"),
         keepConnectedAndSleep: () => submit(ticket, "whole_dock_sleep_connected"),
         cancel: () => cancel(ticket),
       }) : null;

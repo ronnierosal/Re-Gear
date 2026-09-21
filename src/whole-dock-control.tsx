@@ -17,7 +17,7 @@ const pendingRecord = () => { try { return window.localStorage.getItem(pendingKe
 const pendingRequest = () => parsePendingRecord(pendingRecord())?.request;
 
 /** Only confirmed clicks mutate. Reopening the menu recovers backend progress. */
-export function WholeDockControl({ readCurrentSnapshot, intent = "disconnect", startRequest }: { readCurrentSnapshot: () => any; intent?: DockIntent; startRequest?:()=>boolean }) {
+export function WholeDockControl({ readCurrentSnapshot, intent = "disconnect_only", startRequest }: { readCurrentSnapshot: () => any; intent?: DockIntent; startRequest?: boolean | (()=>boolean) }) {
   const source = useRef(readCurrentSnapshot);
   source.current = readCurrentSnapshot;
   const currentIntent = useRef(intent);
@@ -32,6 +32,13 @@ export function WholeDockControl({ readCurrentSnapshot, intent = "disconnect", s
   const uncertain = useRef(!!pendingRequest());
   const epoch = useRef(0);
   const modal = useRef<ReturnType<typeof showModal> | null>(null);
+  const startConsumed = useRef(false);
+  const consumeStartRequest = () => {
+    if (!startRequest || startConsumed.current) return false;
+    if (typeof startRequest === "function" && !startRequest()) return false;
+    startConsumed.current = true;
+    return true;
+  };
   useEffect(() => {
     mounted.current = true;
     let disposed = false;
@@ -55,7 +62,7 @@ export function WholeDockControl({ readCurrentSnapshot, intent = "disconnect", s
           }
         }
         setReading(next);
-        if(startRequest?.()) {
+        if(consumeStartRequest()) {
           const initial = dockIntentControl(next.status,next.snapshot,intent);
           if (!initial.action && !uncertain.current && !pendingRequest()) {
             setInitialNotStarted(true);
@@ -63,7 +70,7 @@ export function WholeDockControl({ readCurrentSnapshot, intent = "disconnect", s
         }
       } catch { if (!disposed && started === epoch.current) {
         setReading(null);
-        if (startRequest?.() && !uncertain.current && !pendingRequest()) {
+        if (consumeStartRequest() && !uncertain.current && !pendingRequest()) {
           setInitialNotStarted(true);
         }
       } }

@@ -154,7 +154,7 @@ import { commandCenterTiles } from "./quick-access/command-center";
 import { disconnectResult } from "./quick-access/disconnect-result";
 import { DisconnectResultNotice } from "./quick-access/disconnect-result-notice";
 import type { TileId } from "./quick-access/command-center";
-import { CommandCenterGrid, TileReason } from "./quick-access/command-center-grid";
+import { ProductionEgpuActionHost, type ProductionEgpuActionRequest } from "./quick-access/production-egpu-actions";
 import { performanceState } from "./quick-access/performance-state";
 import { quickAccessSections } from "./quick-access-sections";
 import { connectionProgress, refreshDelayForVisibility } from "./refresh-policy";
@@ -661,6 +661,8 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
   const [disconnectMessage, setDisconnectMessage] = useState("");
   /** The tile whose reason is shown under the grid. */
   const [selectedTile, setSelectedTile] = useState<TileId | null>(null);
+  const [productionActionRequest, setProductionActionRequest] = useState<ProductionEgpuActionRequest | null>(null);
+  const productionActionNonce = useRef(0);
   /** Dismissal of the last-attempt notice, for this panel session only. It is
    * not persisted: the outcome is the answer to "what just happened to my
    * hardware", and a stored dismissal would hide it after a later restart. */
@@ -1791,12 +1793,20 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
     tdpCanEnable: performance.manual?.can_enable,
   });
   const modules = quickAccessModules(sections);
+  const primaryDisplayAction = displayAction({
+    mode: payload?.inference.mode,
+    busy: tvSwitchBusy || safeDisconnectBusy,
+    acknowledgementRequired: Boolean(tvSwitchAcknowledgementId),
+    journalBlocked: Boolean(journalStatus && journalStatus.code !== "journal.idle"),
+    shortcutAvailable: controllerShortcutAvailable,
+  });
+
   // Manual power enablement and Auto TDP activity are separate observations.
   const tiles = commandCenterTiles({
     performance: performanceState({ status: performance.manual, autoStatus: performance.auto, busy: performance.busy, stopping: performance.stopping }),
     displayTarget: !loading && snapshot?.displays.some(d => d.active === true && d.kind === "external")
       ? "External" : !loading && snapshot?.displays.some(d => d.active === true && d.kind === "internal") ? "Handheld" : undefined,
-    disconnectStatus: egpuDisconnect,
+    displayAction: primaryDisplayAction,
   });
   const shownTile = tiles.find((tile) => tile.id === selectedTile);
 
@@ -1893,14 +1903,6 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
   ];
   useEffect(()=>{setShowDiagnostics(runtimeSelection?.current==="diagnostics");},[runtimeSelection]);
   const sectionVisibility = quickAccessSectionVisibility(showDiagnostics);
-  const primaryDisplayAction = displayAction({
-    mode: payload?.inference.mode,
-    busy: tvSwitchBusy || safeDisconnectBusy,
-    acknowledgementRequired: Boolean(tvSwitchAcknowledgementId),
-    journalBlocked: Boolean(journalStatus && journalStatus.code !== "journal.idle"),
-    shortcutAvailable: controllerShortcutAvailable,
-  });
-
   const activateDisplay = () => {
     if (runtimeOwner.stopped||!menuFresh||primaryDisplayAction.disabled) return;
     if (primaryDisplayAction.target === "ally") requestControllerDisplaySwitch("ally");
@@ -2373,9 +2375,12 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
       handheld:{available:menuFresh&&primaryDisplayAction.target==="ally"&&!primaryDisplayAction.disabled,
         reason:!menuFresh?"Current display status unavailable":primaryDisplayAction.target!=="ally"?"Handheld switch is not currently offered":primaryDisplayAction.description,
         request:()=>{if(!runtimeOwner.stopped&&menuFresh&&primaryDisplayAction.target==="ally"&&!primaryDisplayAction.disabled)activateDisplay();}},
+      sleepConnected:{available:menuFresh&&!safeDisconnectBusy&&!tvSwitchBusy,
+        reason:!menuFresh?"Current status unavailable":safeDisconnectBusy||tvSwitchBusy?"Operation in progress":"Sleep with the eGPU connected",
+        request:()=>{if(!runtimeOwner.stopped&&menuFresh&&!safeDisconnectBusy&&!tvSwitchBusy)setProductionActionRequest({action:"sleep-connected",nonce:++productionActionNonce.current});}},
     });
   });
-  return null;
+  return <ProductionEgpuActionHost request={productionActionRequest} readCurrentSnapshot={()=>payload?.snapshot??null}/>;
 }
 
 /** Confirm a software disconnect.

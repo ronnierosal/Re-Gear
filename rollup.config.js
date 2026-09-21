@@ -1,5 +1,6 @@
 import deckyPlugin from "@decky/rollup";
 import { readFileSync } from "node:fs";
+import { composeCommandCenterArtwork } from "./scripts/compose_command_center_artwork.mjs";
 
 const config = deckyPlugin({});
 // Bundle the repository attribution sources; no runtime file or network reads.
@@ -11,6 +12,21 @@ config.plugins.unshift({
     const notices = readFileSync(new URL("./THIRD_PARTY_NOTICES.md", import.meta.url), "utf8");
     const license = readFileSync(new URL("./LICENSE", import.meta.url), "utf8");
     return `export const noticesText=${JSON.stringify(notices)};export const licenseText=${JSON.stringify(license)};`;
+  },
+});
+
+const richTileSpriteImport = "assets/command-center/tile-artwork.svg?rich-sprite";
+config.plugins.unshift({
+  name: "re-gear-command-center-rich-tiles",
+  resolveId(source) {
+    return source.replaceAll("\\", "/").endsWith(richTileSpriteImport) ? "\0re-gear-command-center-rich-tiles" : null;
+  },
+  load(id) {
+    if (id !== "\0re-gear-command-center-rich-tiles") return null;
+    const tileArtwork = readFileSync(new URL("./assets/command-center/tile-artwork.svg", import.meta.url), "utf8");
+    const buttonArtwork = readFileSync(new URL("./assets/command-center/button-artwork.svg", import.meta.url), "utf8");
+    const bundledSprite = composeCommandCenterArtwork(tileArtwork, buttonArtwork);
+    return `export default ${JSON.stringify(bundledSprite)};`;
   },
 });
 const offlineBadgeNames = new Set(["offline-ready", "offline-attention", "offline-verify", "offline-required", "offline-ready-gear", "offline-attention-gear", "offline-verify-gear", "offline-required-gear", "offline-ready-compact", "offline-attention-compact", "offline-verify-compact"]);

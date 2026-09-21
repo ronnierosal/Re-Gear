@@ -20,7 +20,7 @@ export function testBuildTiles(source:TileView):TileView {
     quick:quick.map(tile=>tile.id==='disconnect'?{...compactDisconnect,id:tile.id}:tile),
     egpu:[unavailable('switch-handheld','Switch to Handheld'),compactDisconnect,
       unavailable('resolution','Resolution'),{id:'egpu',title:'eGPU Status',value:status?.value??'Unknown',detail:egpu.filter(tile=>tile.id!=='disconnect').map(tile=>`${tile.title}: ${tile.value}. ${tile.detail}`).join(' · ')},
-      {...compactDisconnect,id:'disconnect-sleep',title:'Safe Disconnect + Sleep'},
+      {...compactDisconnect,id:'disconnect-sleep',title:'Sleep — Keep eGPU Connected',detail:'Normal sleep keeps the eGPU connected. Safe Disconnect is not run.'},
       {...compactDisconnect,id:'disconnect-shutdown',title:'Safe Disconnect + Shutdown'}],
   };
 }

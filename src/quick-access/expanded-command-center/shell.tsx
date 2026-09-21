@@ -18,6 +18,14 @@ import { expandedStyles } from "./styles";
 import { tileOverlayStyles } from "./regear-tile";
 import { TileArtworkSprite } from "./tile-artwork";
 import { brandIcon } from "../../brand-assets";
+import { RichTileArtwork, RichTileSprite, richTileArtworkId, richTileArtworkStyles } from "./rich-tile-artwork";
+
+// Several source-level fixtures execute this module after stripping imports.
+// Keep that harness path inert while production always uses the imported layer.
+const RichArtwork = typeof RichTileArtwork === "undefined" ? () => null : RichTileArtwork;
+const RichArtworkSprite = typeof RichTileSprite === "undefined" ? () => null : RichTileSprite;
+const artworkIdFor = typeof richTileArtworkId === "undefined" ? () => undefined : richTileArtworkId;
+const artworkStyles = typeof richTileArtworkStyles === "undefined" ? "" : richTileArtworkStyles;
 
 const quickActionLabels=Object.fromEntries(controlRegistry.filter(def=>def.rightEligible).map(def=>[def.id,def.shortLabel])) as Partial<Record<UtilityId,string>>;
 const iconIds: Record<string, CommandCenterIconId> = {
@@ -343,9 +351,10 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
               {...(native ? { preferredFocus: item.id === restoreTarget(items.map(tile => tile.id), memory.current[tab]), onGamepadFocus: () => { memory.current[tab] = item.id; const target = panel.current?.querySelector<HTMLElement>(`[data-ec-control="${item.id}"]`); if(target) { if(tab === "settings") reveal(target); else target.scrollIntoView({block:"nearest"}); } } } : {})}
               aria-label={`${editMode==="move" ? "Move button. A to place. " : ""}${item.title}: ${item.value}. ${item.detail}.${synthetic ? " Sample data." : ""} ${unavailableActions[originFor(item).tile.id] ? unavailableActions[originFor(item).tile.id] : originFor(item).tile.id === "disconnect" && onDisconnect ? "Start guarded disconnect." : hasTileDetails(item)?"View details.":""}`}
               onFocus={(event: { target: EventTarget }) => { memory.current[tab] = item.id; (event.target as HTMLElement).scrollIntoView({ block: "nearest" }); }} onClick={() => { if(pickerOpen)return;if(editMode==="move"){if(draft)commitLayout(draft);return;}if(item.empty)return;const original=originFor(item);const definition=controlForKey(original.key);if(definition?.type==='widget')return;if(unavailableActions[original.tile.id])return;if(definition?.rightEligible){const id=definition.id as UtilityId;if(!onUtilityRequest||!utilityReadings?.[id]?.available||utilityReadings?.[id]?.pending||utilityBusy.current.has(id))return;utilityErrorReadings.current.delete(id);setUtilityErrors(value=>({...value,[id]:undefined}));utilityBusy.current.add(id);void Promise.resolve().then(()=>onUtilityRequest(id)).catch(()=>{utilityErrorReadings.current.set(id,utilityReadings?.[id]);setUtilityErrors(value=>({...value,[id]:'Could not apply'}));}).finally(()=>utilityBusy.current.delete(id));return;} if(controlForKey(original.key)?.directAction==="disconnect"&&onDisconnect){onDisconnect();return;}if(onAction?.(original.tab,original.tile))return; launcher.current = item.id; setNested(item.id); }}>
+              <RichArtwork controlId={originFor(item).tile.id}/>
               <span className="rg-expanded-tile-body">
                 <span className="rg-expanded-tile-heading">
-                  <span className="rg-expanded-tile-icon"><Icon id={controlForKey(originFor(item).key)?.icon??originFor(item).tile.id}/></span>
+                  {!artworkIdFor(originFor(item).tile.id) && <span className="rg-expanded-tile-icon"><Icon id={controlForKey(originFor(item).key)?.icon??originFor(item).tile.id}/></span>}
                   <span className="rg-expanded-label">{item.title}</span>
                 </span>
                 <span className="rg-expanded-value">{originFor(item).tile.id === "disconnect" && <CommandCenterIcon id="status-warning" size={16}/>} {item.value}</span>
@@ -355,8 +364,9 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
             </Button>;
 
   return <div className="rg-expanded-backdrop">
-    <style>{expandedStyles + (typeof tileOverlayStyles === "string" ? tileOverlayStyles : "")}</style>
+    <style>{expandedStyles + (typeof tileOverlayStyles === "string" ? tileOverlayStyles : "") + artworkStyles}</style>
     {typeof TileArtworkSprite === "function" ? <TileArtworkSprite/> : null}
+    <RichArtworkSprite/>
     <Container ref={panel} data-ec-panel className="rg-expanded-frame" role="dialog" aria-modal="true" aria-label={synthetic ? "Re-Gear expanded Command Center prototype" : "Re-Gear Command Center"} onKeyDown={onKeyDown} {...nativeHandlers}
       onBlurCapture={()=>gesture.current?.cancel()}
       onFocusCapture={(event:{target:EventTarget})=>{if(pickerOpen&&!(event.target as HTMLElement).closest('[data-ec-picker]')){picker.current?.querySelector<HTMLElement>('button:not(:disabled)')?.focus();}}}

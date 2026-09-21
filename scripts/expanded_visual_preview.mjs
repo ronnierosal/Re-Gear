@@ -4,6 +4,7 @@ import { resolve, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { mkdir, writeFile, readFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
+import { composeCommandCenterArtwork } from './compose_command_center_artwork.mjs';
 const args = process.argv.slice(2);
 const option = (name, fallback) => args.includes(name) ? args[args.indexOf(name) + 1] : fallback;
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -15,7 +16,15 @@ await mkdir(output, { recursive: true });
 await build({ entryPoints: [join(root, 'frontend-tests/expanded-render-preview.tsx')], bundle: true,
   outfile: join(output, 'preview.js'), platform: 'browser', format: 'iife', jsx: 'automatic',
   loader: {'.svg': 'dataurl'}, nodePaths: [runtime], define: { 'process.env.NODE_ENV': '"development"' },
-  plugins: [{name: 'forbid-device-api', setup(b) {
+  plugins: [{name:'rich-tile-sprite',setup(b){
+    b.onResolve({filter:/tile-artwork\.svg\?rich-sprite$/},()=>({path:'rich-tile-sprite',namespace:'regear'}));
+    b.onLoad({filter:/.*/,namespace:'regear'},async()=>{
+      const tileArtwork=await readFile(join(root,'assets/command-center/tile-artwork.svg'),'utf8');
+      const buttonArtwork=await readFile(join(root,'assets/command-center/button-artwork.svg'),'utf8');
+      const sprite=composeCommandCenterArtwork(tileArtwork,buttonArtwork);
+      return {contents:`export default ${JSON.stringify(sprite)}`,loader:'js'};
+    });
+  }},{name: 'forbid-device-api', setup(b) {
     b.onResolve({filter: /^@decky\//}, a => ({errors: [{text: `Synthetic preview cannot import ${a.path}`}]}));
   }}], logLevel: 'warning' });
 await writeFile(join(output, 'index.html'), `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Re-Gear expanded synthetic prototype</title><style>

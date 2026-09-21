@@ -30,7 +30,6 @@ import { ShortcutSettings } from "./shortcut-settings";
 const dockIntentOptions: { label: string; data: DockIntent }[] = [
   { label: "Disconnect only", data: "disconnect_only" },
   { label: "Disconnect and shut down", data: "shutdown" },
-  { label: "Disconnect and sleep", data: "sleep" },
 ];
 
 /** Named Steam navigation feedback; no guessed enums or separate audio player. */
@@ -122,7 +121,7 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
     const startRequest=()=>{if(consumed)return false;consumed=true;return true;};
     const operationToken=++operationGeneration;
     const hide=()=>{if(operationGeneration===operationToken)hideOperation();};
-    const title=intent==="sleep"?"Safe Disconnect + Sleep":intent==="shutdown"?"Safe Disconnect + Shutdown":"Safe Disconnect";
+    const title=intent==="shutdown"?"Safe Disconnect + Shutdown":"Safe Disconnect";
     const opened=showModal(<EgpuConfirmModal strTitle={title} strOKButtonText="Hide" bAlertDialog onOK={hide} onCancel={hide} onEscKeypress={hide} className="rg-whole-dock-progress">
       <style>{`.rg-whole-dock-progress{position:fixed!important;left:50%!important;top:50%!important;right:auto!important;bottom:auto!important;margin:0!important;transform:translate(-50%,-50%)!important}`}</style>
       <WholeDockControl intent={intent} readCurrentSnapshot={readCurrentSnapshot} startRequest={startRequest}/>
@@ -164,7 +163,7 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
     const mappedTiles = rawTiles ? testBuildTiles(rawTiles) : undefined;
     const tiles=mappedTiles&&runtimeDetails?{...mappedTiles,egpu:mappedTiles.egpu?.map(tile=>tile.id==="switch-handheld"?{...tile,value:runtimeState?.handheld.available?"Ready":"Unavailable",detail:runtimeState?.handheld.reason??"Current display status unavailable",tone:runtimeState?.handheld.available?"quiet" as const:"unavailable" as const}:tile),settings:mappedTiles.settings?.map(tile=>tile.id==="diagnostics"?{...tile,value:runtimeState?"Open":"Waiting",detail:"Status, recovery and support"}:tile.id==="about"?{...tile,value:version,detail:"Version and credits"}:tile.id==="quick-actions"?{...tile,value:"Customize",detail:"Focus a Quick Access button and tap Y"}:tile)}:mappedTiles;
     const unavailable={...unavailableTestActions,...(runtimeDetails?offlineUnavailableActions:{})};
-    if(runtimeDetails){if(!runtimeState?.shutdown?.available)unavailable["portable-shutdown"]=runtimeState?.shutdown?.reason??"Current status unavailable";if(runtimeState?.handheld.available)delete unavailable["switch-handheld"];else unavailable["switch-handheld"]=runtimeState?.handheld.reason??"Current display status unavailable";}
+    if(runtimeDetails){if(!runtimeState?.shutdown?.available)unavailable["portable-shutdown"]=runtimeState?.shutdown?.reason??"Current status unavailable";if(runtimeState?.handheld.available)delete unavailable["switch-handheld"];else unavailable["switch-handheld"]=runtimeState?.handheld.reason??"Current display status unavailable";if(runtimeState?.sleepConnected?.available)delete unavailable["disconnect-sleep"];else unavailable["disconnect-sleep"]=runtimeState?.sleepConnected?.reason??"Current status unavailable";}
     // Defaults to the route the 0.3.98 golden cycle actually ran. The control
     // was built for a changing intent prop -- it re-checks the intent after
     // every await and recovers a pending record's intent from storage -- so a
@@ -177,7 +176,7 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
           onChange={option => { if (dockIntentOptions.some(item => item.data === option.data)) setDockIntent(option.data as DockIntent); }}/>
         <WholeDockControl intent={dockIntent} readCurrentSnapshot={readCurrentSnapshot}/>
       </Focusable>
-    } directions={{up:GamepadButton.DIR_UP,down:GamepadButton.DIR_DOWN,left:GamepadButton.DIR_LEFT,right:GamepadButton.DIR_RIGHT}} unavailableActions={unavailable} onAction={(_tab,tile)=>{if(tile.id==="disconnect-sleep"){disconnect("sleep");return true;}if(tile.id==="disconnect-shutdown"){disconnect("shutdown");return true;}if(tile.id==="portable-shutdown"){shutdown();return true;}if(tile.id==="switch-handheld"){runtimeDetails?.requestHandheld();return true;}return false;}} layoutStorage={storage} editButtons={{y:GamepadButton.OPTIONS}} primitives={{ Button: NativeMenuButton, Focusable }} settings={<Settings/>} tiles={runtimeDetails?{...tiles,egpu:[...(tiles?.egpu??[]),{id:"portable-shutdown",title:"Shutdown",value:runtimeState?.shutdown?.pending?"Pending":runtimeState?.shutdown?.available?"Ready":"Unavailable",detail:runtimeState?.shutdown?.reason??"Current status unavailable"}],offline:offlineTabTiles,settings:[...(tiles?.settings??[]).filter(tile=>tile.id==='diagnostics'),{id:'reset-layout',title:'Reset Layout',value:'Configure',detail:'Restore default card positions'},{id:'tutorials',title:'Tutorials',value:'Open',detail:'Connection, disconnect and help'},{id:'about',title:'About',value:version,detail:'Version and credits'}]}:tiles} renderDetail={runtimeDetails?((tab,tile)=>tab==='settings'&&tile.id==='tutorials'?<Tutorials/>:renderDetail?.(tab,tile)):renderDetail} catalogReadings={rawTiles} utilityReadings={utilityReadings} onUtilityRequest={utilities ? (id, percent) => {
+    } directions={{up:GamepadButton.DIR_UP,down:GamepadButton.DIR_DOWN,left:GamepadButton.DIR_LEFT,right:GamepadButton.DIR_RIGHT}} unavailableActions={unavailable} onAction={(_tab,tile)=>{if(tile.id==="disconnect-sleep"){runtimeDetails?.requestSleepConnected();return true;}if(tile.id==="disconnect-shutdown"){disconnect("shutdown");return true;}if(tile.id==="portable-shutdown"){shutdown();return true;}if(tile.id==="switch-handheld"){runtimeDetails?.requestHandheld();return true;}return false;}} layoutStorage={storage} editButtons={{y:GamepadButton.OPTIONS}} primitives={{ Button: NativeMenuButton, Focusable }} settings={<Settings/>} tiles={runtimeDetails?{...tiles,egpu:[...(tiles?.egpu??[]),{id:"portable-shutdown",title:"Shutdown",value:runtimeState?.shutdown?.pending?"Pending":runtimeState?.shutdown?.available?"Ready":"Unavailable",detail:runtimeState?.shutdown?.reason??"Current status unavailable"}],offline:offlineTabTiles,settings:[...(tiles?.settings??[]).filter(tile=>tile.id==='diagnostics'),{id:'reset-layout',title:'Reset Layout',value:'Configure',detail:'Restore default card positions'},{id:'tutorials',title:'Tutorials',value:'Open',detail:'Connection, disconnect and help'},{id:'about',title:'About',value:version,detail:'Version and credits'}]}:tiles} renderDetail={runtimeDetails?((tab,tile)=>tab==='settings'&&tile.id==='tutorials'?<Tutorials/>:renderDetail?.(tab,tile)):renderDetail} catalogReadings={rawTiles} utilityReadings={utilityReadings} onUtilityRequest={utilities ? (id, percent) => {
       if (generation !== token || stopped) return Promise.reject(new Error("Menu closed"));
       return utilities.request(id, percent);
     } : undefined}/>;
@@ -204,7 +203,7 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
     const opened = showModal(<ModalRoot closeModal={close} bAllowFullSize bHideCloseIcon bDisableBackgroundDismiss className="rg-expanded-modal-root" modalClassName="rg-expanded-modal-frame">
       <style>{`.rg-expanded-modal-root,.rg-expanded-modal-frame{position:fixed!important;inset:0!important;width:100vw!important;height:100vh!important;max-width:none!important;max-height:none!important;padding:0!important;margin:0!important;background:transparent!important;box-shadow:none!important}`}</style>
       <View token={token}/>
-    </ModalRoot>, undefined, { strTitle: "Re-Gear expanded demo", bNeverPopOut: true });
+    </ModalRoot>, undefined, { strTitle: "Re-Gear Command Center", bNeverPopOut: true });
     if (generation !== token || stopped) { opened.Close(); return; }
     modal = opened;
     visibility.set(true);
