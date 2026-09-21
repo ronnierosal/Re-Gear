@@ -8,6 +8,7 @@ import { resolve, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { mkdir, writeFile, readFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
+import { composeCommandCenterArtwork } from './compose_command_center_artwork.mjs';
 const args = process.argv.slice(2);
 const option = (name, fallback) => args.includes(name) ? args[args.indexOf(name) + 1] : fallback;
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -30,7 +31,14 @@ export const ToggleField = p => React.createElement('label',{style:{display:'blo
 await build({ entryPoints: [join(root, 'frontend-tests/qa-render-preview.tsx')], bundle: true,
   outfile: join(output, 'preview.js'), platform: 'browser', format: 'iife', jsx: 'automatic',
   nodePaths: [runtime], define: { 'process.env.NODE_ENV': '"development"' },
-  plugins: [{ name: 'preview-boundaries', setup(b) {
+  plugins: [{ name: 'rich-tile-sprite', setup(b) {
+    b.onResolve({ filter: /tile-artwork\.svg\?rich-sprite$/ }, () => ({ path: 'rich-tile-sprite', namespace: 'regear' }));
+    b.onLoad({ filter: /.*/, namespace: 'regear' }, async () => {
+      const tileArtwork = await readFile(join(root, 'assets/command-center/tile-artwork.svg'), 'utf8');
+      const buttonArtwork = await readFile(join(root, 'assets/command-center/button-artwork.svg'), 'utf8');
+      return { contents: `export default ${JSON.stringify(composeCommandCenterArtwork(tileArtwork, buttonArtwork))}`, loader: 'js' };
+    });
+  }}, { name: 'preview-boundaries', setup(b) {
     b.onResolve({ filter: /^@source\// }, a => ({ path: resolve(source, 'src', a.path.slice(8)) + '.tsx' }));
     b.onResolve({ filter: /^@decky\/ui$/ }, () => ({ path: 'decky-mock', namespace: 'preview' }));
     b.onResolve({ filter: /^@decky\/api$/ }, () => ({ path: 'api-mock', namespace: 'api-preview' }));

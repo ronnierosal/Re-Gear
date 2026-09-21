@@ -7,7 +7,7 @@ const source = readFileSync(new URL("../src/power-request-coordinator.ts", impor
 const compiled = ts.transpileModule(source, {
   compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 },
 }).outputText;
-const { createPowerRequestCoordinator } = await import(
+const { createPowerRequestCoordinator, startPowerStatusRefresh } = await import(
   `data:text/javascript;base64,${Buffer.from(compiled).toString("base64")}`,
 );
 
@@ -423,4 +423,27 @@ test("ordinary shutdown readback preserves accepted submission against later ref
   assert.equal(h.coordinator.read().phase, "uncertain");
   assert.equal(h.coordinator.captureSleep(), null);
   assert.equal(h.calls.length, 1);
+});
+
+test("status refresh is single-flight and survives presentation changes until owner cleanup", async () => {
+  const slow = deferred();
+  const queued = [];
+  let reads = 0;
+  const owner = { refresh: () => { reads++; return reads === 1 ? slow.promise : Promise.resolve(); } };
+  let canceled = 0;
+  const stop = startPowerStatusRefresh(owner, (run) => { queued.push(run); return queued.length; }, () => { canceled++; });
+  queued.shift()();
+  await Promise.resolve();
+  assert.equal(reads, 1);
+  assert.equal(queued.length, 0, "a slow read cannot overlap another read");
+  // A tile change does not own or stop this host-level loop.
+  slow.resolve();
+  await Promise.resolve(); await Promise.resolve();
+  assert.equal(queued.length, 1);
+  queued.shift()();
+  await Promise.resolve(); await Promise.resolve();
+  assert.equal(reads, 2);
+  assert.equal(queued.length, 1, "the same owner continues correlated recovery");
+  stop();
+  assert.equal(canceled, 1);
 });

@@ -2,7 +2,7 @@ import { showModal } from "@decky/ui";
 import { useEffect, useRef, useState } from "react";
 import { EgpuConfirmModal } from "../egpu-confirm-modal";
 import { powerRequestPort } from "../power-request-port";
-import { createPowerRequestCoordinator } from "../power-request-coordinator";
+import { createPowerRequestCoordinator, startPowerStatusRefresh } from "../power-request-coordinator";
 import { WholeDockControl } from "../whole-dock-control";
 
 export type ProductionEgpuAction = "safe-disconnect" | "sleep-connected" | "shutdown";
@@ -38,9 +38,7 @@ function ConnectedSleepRequest({ owner }: { owner: ReturnType<typeof createPower
       onCancel={cancel}
       onEscKeypress={cancel}
     />, undefined, { fnOnClose: cancel, bNeverPopOut: true });
-    const refresh = window.setInterval(() => { void owner.refresh(); }, 2000);
     return () => {
-      window.clearInterval(refresh);
       modal.current?.Close();
       modal.current = null;
     };
@@ -67,7 +65,11 @@ export function ProductionEgpuActionHost({ request, readCurrentSnapshot }: {
   if (!coordinator.current) coordinator.current = createPowerRequestCoordinator(powerRequestPort, {
     onChange: () => setRevision((value) => value + 1),
   });
-  useEffect(() => () => coordinator.current?.dispose(), []);
+  useEffect(() => {
+    const owner = coordinator.current!;
+    const stopRefresh = startPowerStatusRefresh(owner);
+    return () => { stopRefresh(); owner.dispose(); };
+  }, []);
   if (!request) return null;
   if (request.action === "sleep-connected") return <ConnectedSleepRequest key={request.nonce} owner={coordinator.current} />;
   return <WholeDockControl

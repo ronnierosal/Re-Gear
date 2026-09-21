@@ -8,6 +8,7 @@ const shell = read("../src/quick-access/expanded-command-center/shell.tsx");
 const component = read("../src/quick-access/expanded-command-center/rich-tile-artwork.tsx");
 const rollup = read("../rollup.config.js");
 const preview = read("../scripts/expanded_visual_preview.mjs");
+const qaPreview = read("../scripts/qa_visual_preview.mjs");
 const tiles = read("../assets/command-center/tile-artwork.svg");
 const buttons = read("../assets/command-center/button-artwork.svg");
 
@@ -24,10 +25,12 @@ test("control mapping uses exact rich tile symbols and retains legacy fallback",
   assert.deepEqual(mapped, [
     ["fps","fps"],["manual","manual-tdp"],["auto","auto-tdp"],["display","display"],
     ["egpu","egpu"],["controller","controller"],["builtin","controller"],["priority","player-order"],
-    ["disconnect","safe-disconnect"],["appearance","settings"],["about","about"],
+    ["disconnect","safe-disconnect"],["shutdown","disconnect-shutdown"],["resolution","resolution"],
+    ["appearance","settings"],["about","about"],
   ]);
   for (const [, artwork] of mapped) assert.match(tiles, new RegExp(`<symbol id="tile-${artwork}"`));
   assert.doesNotMatch(component, /render:|game:|diagnostics:/, "controls without exact artwork must keep the legacy icon");
+  assert.doesNotMatch(component, /sleep-connected:/, "connected sleep must not borrow disconnect artwork");
   assert.match(component, /if \(!artworkId\) return null/);
 });
 
@@ -38,6 +41,8 @@ test("build composes the checked-in tile and button sprites without runtime fetc
   assert.match(rollup, /composeCommandCenterArtwork\(tileArtwork, buttonArtwork\)/);
   assert.match(preview, /onResolve\(\{filter:\/tile-artwork\\\.svg\\\?rich-sprite\$\//);
   assert.match(preview, /composeCommandCenterArtwork\(tileArtwork,buttonArtwork\)/);
+  assert.match(qaPreview, /onResolve\(\{ filter: \/tile-artwork\\\.svg\\\?rich-sprite\$\//);
+  assert.match(qaPreview, /composeCommandCenterArtwork\(tileArtwork, buttonArtwork\)/);
   assert.match(tiles, /href="button-artwork\.svg#/);
   assert.match(buttons, /<symbol id="fps"/);
   assert.doesNotMatch(component, /fetch\(|XMLHttpRequest|https?:\/\//);

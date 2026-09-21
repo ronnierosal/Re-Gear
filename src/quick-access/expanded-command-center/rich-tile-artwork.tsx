@@ -10,6 +10,8 @@ const controlArtworkIds: Readonly<Record<string, string>> = {
   builtin: "controller",
   priority: "player-order",
   disconnect: "safe-disconnect",
+  shutdown: "disconnect-shutdown",
+  resolution: "resolution",
   appearance: "settings",
   about: "about",
 };

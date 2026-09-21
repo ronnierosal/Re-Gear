@@ -7,9 +7,14 @@ const host = readFileSync(new URL("../src/quick-access/production-egpu-actions.t
 const model = readFileSync(new URL("../src/quick-access/command-center.ts", import.meta.url), "utf8");
 const port = readFileSync(new URL("../src/power-request-port.ts", import.meta.url), "utf8");
 const coordinator = readFileSync(new URL("../src/power-request-coordinator.ts", import.meta.url), "utf8");
+const grid = readFileSync(new URL("../src/quick-access/command-center-grid.tsx", import.meta.url), "utf8");
+const shortcutSettings = readFileSync(new URL("../src/quick-access/expanded-command-center/shortcut-settings.tsx", import.meta.url), "utf8");
+const visualFixture = readFileSync(new URL("./qa-render-preview.tsx", import.meta.url), "utf8");
 
 test("the production grid no longer exposes the expanded demo", () => {
   assert.doesNotMatch(index, /Open expanded demo/);
+  assert.doesNotMatch(shortcutSettings, /Open expanded demo/);
+  assert.match(shortcutSettings, /Open Re-Gear from Steam's Quick Access menu/);
   assert.match(index, /<ProductionEgpuActionHost/);
 });
 
@@ -36,4 +41,15 @@ test("resolution is visible but cannot dispatch", () => {
 
 test("eGPU status opens the existing read-only status route", () => {
   assert.match(index, /id === "egpu-status"[\s\S]*openRoute\(\{ kind: "status", id: "egpu" \}/);
+});
+
+test("production tiles use exact artwork roles without duplicate legacy icons", () => {
+  assert.match(grid, /"safe-disconnect": "disconnect"/);
+  assert.match(grid, /"sleep-connected": "sleep-connected"/);
+  assert.match(grid, /shutdown: "shutdown"/);
+  assert.match(grid, /resolution: "resolution"/);
+  assert.match(grid, /const hasRichArtwork = Boolean\(richTileArtworkId\(artworkId\)\)/);
+  assert.match(grid, /\{!hasRichArtwork && <span[\s\S]*<ApprovedIcon/);
+  for (const id of ["safe-disconnect", "sleep-connected", "shutdown", "resolution", "egpu-status"])
+    assert.match(visualFixture, new RegExp(`\\['${id}'`));
 });

@@ -3,7 +3,12 @@ import { DialogButton, Focusable } from "@decky/ui";
 import type { CommandCenterTile, TileId } from "./command-center";
 import { TILE_COLUMNS } from "./command-center";
 import type { HealthPresentation } from "./health-presentation";
-import { RichTileArtwork, RichTileSprite, richTileArtworkStyles } from "./expanded-command-center/rich-tile-artwork";
+import {
+  RichTileArtwork,
+  RichTileSprite,
+  richTileArtworkId,
+  richTileArtworkStyles,
+} from "./expanded-command-center/rich-tile-artwork";
 
 /** Command Center first screen: rendering only, no policy, no requests.
  *
@@ -26,8 +31,8 @@ const C = {
 const SURFACE = "linear-gradient(135deg, rgba(19,36,58,.96), rgba(9,21,36,.98))";
 const artworkControl: Record<TileId, string> = {
   fps: "fps", tdp: "manual", "auto-tdp": "auto", display: "display",
-  "safe-disconnect": "disconnect", "sleep-connected": "disconnect", shutdown: "disconnect",
-  resolution: "display", "egpu-status": "egpu",
+  "safe-disconnect": "disconnect", "sleep-connected": "sleep-connected", shutdown: "shutdown",
+  resolution: "resolution", "egpu-status": "egpu",
 };
 
 /** Health tone to colour. The model names no colours, so the mapping lives
@@ -65,6 +70,8 @@ function Tile({ tile, onActivate }: {
   tile: CommandCenterTile; onActivate(id: TileId): void;
 }) {
   const usable = tile.available;
+  const artworkId = artworkControl[tile.id];
+  const hasRichArtwork = Boolean(richTileArtworkId(artworkId));
   return <DialogButton
     className="rg-quick-control"
     data-regear-tile={tile.id}
@@ -81,10 +88,10 @@ function Tile({ tile, onActivate }: {
       color: usable ? C.text : C.dim,
       opacity: 1,
     }}>
-    <RichTileArtwork controlId={artworkControl[tile.id]} />
-    <span style={{ position: "relative", zIndex: 1 }}><ApprovedIcon id={tile.id === "display" ? "mode-tv-docked"
+    <RichTileArtwork controlId={artworkId} />
+    {!hasRichArtwork && <span style={{ position: "relative", zIndex: 1 }}><ApprovedIcon id={tile.id === "display" ? "mode-tv-docked"
       : ["safe-disconnect", "sleep-connected", "shutdown", "resolution", "egpu-status"].includes(tile.id)
-        ? "module-egpu" : "module-auto-tdp"} /></span>
+        ? "module-egpu" : "module-auto-tdp"} /></span>}
     <span style={{ fontSize: tile.value.text.length > 12 ? 16 : 18, fontWeight: 700, order: 0,
       position: "relative", zIndex: 1, color: tile.developmental ? C.amber : tile.value.known ? C.cyan : C.muted,
       whiteSpace: "normal", overflowWrap: "normal", maxWidth: "100%" }}>

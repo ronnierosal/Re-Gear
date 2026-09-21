@@ -15,6 +15,21 @@ export interface PowerRequestPort {
   execute(action: PowerAction, attachmentToken: string, requestId: string): Promise<unknown>;
   readStatus(): Promise<unknown>;
 }
+
+export function startPowerStatusRefresh(
+  owner: { refresh(): Promise<void> },
+  schedule: (run: () => void) => ReturnType<typeof setTimeout> = (run) => setTimeout(run, 2000),
+  cancel: (timer: ReturnType<typeof setTimeout>) => void = clearTimeout,
+) {
+  let stopped = false;
+  let timer: ReturnType<typeof setTimeout>;
+  const run = async () => {
+    await owner.refresh();
+    if (!stopped) timer = schedule(() => { void run(); });
+  };
+  timer = schedule(() => { void run(); });
+  return () => { stopped = true; cancel(timer); };
+}
 type Ticket = {
   intent: PowerIntent; attachment: string; id: string; started: boolean;
   action: PowerAction | null; requested: boolean; executeSettled: boolean;
