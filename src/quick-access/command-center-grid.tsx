@@ -75,7 +75,9 @@ function Tile({ tile, onActivate }: {
       color: usable ? C.text : C.dim,
       opacity: 1,
     }}>
-    <ApprovedIcon id={tile.id === "display" ? "mode-tv-docked" : tile.id === "safe-disconnect" ? "module-egpu" : "module-auto-tdp"} />
+    <ApprovedIcon id={tile.id === "display" ? "mode-tv-docked"
+      : ["safe-disconnect", "sleep-connected", "shutdown", "resolution", "egpu-status"].includes(tile.id)
+        ? "module-egpu" : "module-auto-tdp"} />
     <span style={{ fontSize: tile.value.text.length > 12 ? 16 : 18, fontWeight: 700, order: 0,
       color: tile.developmental ? C.amber : tile.value.known ? C.cyan : C.muted,
       whiteSpace: "normal", overflowWrap: "normal", maxWidth: "100%" }}>

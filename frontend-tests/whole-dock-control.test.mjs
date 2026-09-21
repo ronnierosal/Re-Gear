@@ -40,7 +40,7 @@ const componentJs = ts.transpileModule(readFileSync(new URL("../src/whole-dock-c
 }).outputText.replace(/^import .*;\r?$/gm, "").replace(/export function WholeDockControl/, "function WholeDockControl");
 const deferred = () => { let resolve, reject; const promise = new Promise((yes,no) => {resolve=yes;reject=no;}); return {promise,resolve,reject}; };
 const settle = async () => { for(let n=0;n<12;n++) await Promise.resolve(); };
-function harness(storage = new Map(), intent = "disconnect") {
+function harness(storage = new Map(), intent = "disconnect", startRequest = false) {
   const h = {status:{...fresh}, reads:[], calls:[], modals:[], timers:new Map(), failStorage:false, intent, snapshot: {...idle, schema_version:3}};
   let slots=[], index=0, effects=[], cleanups=[], serial=0;
   const useState = value => { const slot=index++; if(!(slot in slots)) slots[slot]=value; return [slots[slot], value=>{slots[slot]=typeof value==='function'?value(slots[slot]):value;}]; };
@@ -61,7 +61,7 @@ function harness(storage = new Map(), intent = "disconnect") {
     React,useState,useRef,useEffect,callable,'button',showModal,'confirm',dockIntentControl,dockRequestSettled,window,
     {randomUUID:()=> '12345678-1234-1234-1234-123456789abc'},
     fn=>{h.timers.set(++serial,fn);return serial;},id=>h.timers.delete(id));
-  h.render=()=>{index=0;h.tree=Component({intent:h.intent,readCurrentSnapshot:()=>h.snapshot});for(const fn of effects.splice(0))cleanups.push(fn());return h.tree;};
+  h.render=()=>{index=0;h.tree=Component({intent:h.intent,startRequest,readCurrentSnapshot:()=>h.snapshot});for(const fn of effects.splice(0))cleanups.push(fn());return h.tree;};
   h.button=()=>h.render().props.children.find(child=>child?.type==='button');
   h.click=()=>{const button=h.button();assert.equal(button.props.disabled,false);button.props.onClick();};
   h.poll=()=>{const [id,fn]=h.timers.entries().next().value;h.timers.delete(id);fn();};

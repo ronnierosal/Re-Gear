@@ -11,7 +11,7 @@ const pendingRecord = () => { try { return window.localStorage.getItem(pendingKe
 const pendingRequest = () => pendingRecord()?.replace(/^(shutdown|disconnect_only):/, "");
 
 /** Only confirmed clicks mutate. Reopening the menu recovers backend progress. */
-export function WholeDockControl({ readCurrentSnapshot, intent = "disconnect" }: { readCurrentSnapshot: () => any; intent?: DockIntent }) {
+export function WholeDockControl({ readCurrentSnapshot, intent = "disconnect", startRequest = false }: { readCurrentSnapshot: () => any; intent?: DockIntent; startRequest?: boolean }) {
   const source = useRef(readCurrentSnapshot);
   source.current = readCurrentSnapshot;
   const currentIntent = useRef(intent);
@@ -25,6 +25,7 @@ export function WholeDockControl({ readCurrentSnapshot, intent = "disconnect" }:
   const uncertain = useRef(!!pendingRequest());
   const epoch = useRef(0);
   const modal = useRef<ReturnType<typeof showModal> | null>(null);
+  const startConsumed = useRef(false);
   useEffect(() => {
     mounted.current = true;
     let disposed = false;
@@ -92,9 +93,14 @@ export function WholeDockControl({ readCurrentSnapshot, intent = "disconnect" }:
       <style>{`.rg-whole-dock-confirm{z-index:2147483647!important;position:fixed!important;left:50%!important;top:50%!important;right:auto!important;bottom:auto!important;margin:0!important;transform:translate(-50%,-50%)!important}`}</style>
     </EgpuConfirmModal>, undefined, { fnOnClose: cancel, bNeverPopOut: true });
   };
+  useEffect(() => {
+    if (!startRequest || startConsumed.current || !reading) return;
+    startConsumed.current = true;
+    confirm();
+  }, [reading, startRequest]);
   return <div style={{fontSize:13,lineHeight:"18px"}}>
     <p style={{margin:"0 0 8px"}} role="status">{notice || (uncertain.current ? "Waiting to verify the previous request. Keep the cable connected." : view.message)}</p>
-    <DialogButton style={{width:"100%",minWidth:0,padding:"8px",border:"1px solid #39d8ff",borderRadius:8,background:"#112434",color:"#f4f7fb"}} disabled={!view.action || busy || uncertain.current} onClick={confirm}>{busy ? "Working…" : uncertain.current ? "Checking previous request" : view.label}</DialogButton>
+    {!startRequest && <DialogButton style={{width:"100%",minWidth:0,padding:"8px",border:"1px solid #39d8ff",borderRadius:8,background:"#112434",color:"#f4f7fb"}} disabled={!view.action || busy || uncertain.current} onClick={confirm}>{busy ? "Working…" : uncertain.current ? "Checking previous request" : view.label}</DialogButton>}
     <p style={{margin:"8px 0 0"}}>Keep the cable connected. Physical unplug is not yet verified.</p>
   </div>;
 }

@@ -1,8 +1,8 @@
 /** The Command Center quick-tile grid: pure, no React, no I/O, no requests.
  *
- * Approved layout (LAYOUT_APPROVAL.md, baseline df6a36c): two columns of
- * FPS target, TDP limit, Auto TDP and Display target, plus a fifth Safe
- * Disconnect tile marked In development.
+ * Production layout: stable two-column quick controls plus the requested
+ * display, dock-power and read-only eGPU destinations. Unavailable controls
+ * keep their cells so controller targets never move as evidence changes.
  *
  * The grid's shape is fixed. Every tile keeps its position whatever the live
  * evidence says, and an unusable tile reads unavailable with a reason instead
@@ -18,12 +18,12 @@
  * caller owns every request, and every guard stays where it already lives.
  */
 
-import type { DisconnectStatusPayload } from "../backend";
-import { disconnectPresentation } from "../egpu-disconnect-tile";
+import type { DisplayActionView } from "../display-action";
 import type { PerformanceState, TileValue } from "./performance-state";
 import { fpsTile, wattsValue } from "./performance-state";
 
-export type TileId = "fps" | "tdp" | "auto-tdp" | "display" | "safe-disconnect";
+export type TileId = "fps" | "tdp" | "auto-tdp" | "display" | "safe-disconnect"
+  | "sleep-connected" | "shutdown" | "resolution" | "egpu-status";
 
 /** What activating a tile does. `open` navigates; `act` runs the caller's
  * guarded request; `notice` shows read-only information and changes nothing. */
@@ -51,9 +51,12 @@ export type CommandCenterTile = {
   attention?: boolean;
 };
 
-/** Fixed order and fixed length. Two columns; the fifth tile sits alone on the
- * last row, which stepGrid already resolves from either cell above it. */
-export const TILE_ORDER: TileId[] = ["fps", "tdp", "auto-tdp", "display", "safe-disconnect"];
+/** Fixed order and fixed length. Two columns; the final odd tile remains
+ * reachable from either cell above through the existing grid navigator. */
+export const TILE_ORDER: TileId[] = [
+  "fps", "tdp", "auto-tdp", "display", "safe-disconnect", "sleep-connected",
+  "shutdown", "resolution", "egpu-status",
+];
 export const TILE_COLUMNS = 2;
 
 export type CommandCenterInput = {
@@ -61,11 +64,8 @@ export type CommandCenterInput = {
   /** Display target as already observed by the panel, e.g. a mode label.
    * Absent means unknown; it is never inferred from anything else. */
   displayTarget?: string;
-  /** The owning backend's disconnect status, rendered through its own
-   * presentation. Availability is a state the backend computes; it is never
-   * derived here from topology, connection state, holders, or the fact that
-   * two devices are online. Absent means not yet read, which is not "no". */
-  disconnectStatus?: DisconnectStatusPayload | null;
+  /** The single owner of dynamic TV/handheld wording and admission. */
+  displayAction?: DisplayActionView;
 };
 
 const ACTION_LABEL: Record<PerformanceState["action"], string | null> = {
@@ -108,37 +108,47 @@ export function commandCenterTiles(input: CommandCenterInput): CommandCenterTile
     // Reading plus a route. Requesting a display change stays with the surface
     // that already owns its guards; this tile does not run a transition.
     display: {
-      id: "display", title: "Display target",
+      id: "display", title: input.displayAction?.title ?? "Display switch unavailable",
       value: input.displayTarget
         ? { text: input.displayTarget, known: true }
         : { text: "Unknown", known: false },
-      available: true, reason: null, activation: "open", actionLabel: "Choose target",
+      available: input.displayAction?.disabled === false,
+      reason: input.displayAction?.disabled === false ? null
+        : input.displayAction?.description ?? "Current display mode is unverified.",
+      activation: input.displayAction?.disabled === false ? "act" : "notice",
+      actionLabel: input.displayAction?.disabled === false ? input.displayAction.title : null,
       developmental: false,
     },
-    // Wired to the owning backend's contract. Every judgement below comes from
-    // disconnectPresentation: whether the action may be offered, what it says,
-    // whether the display approval is needed, and whether this is a system
-    // needing attention rather than a failed press. Re-deriving any of that
-    // here is how the tile and the operation start disagreeing.
-    //
-    // Software removal is not unplug clearance. The confirmation copy lives in
-    // egpu-disconnect-tile.ts with the tests that pin it, and is passed through
-    // untouched rather than restated here.
-    "safe-disconnect": (() => {
-      const view = disconnectPresentation(input.disconnectStatus ?? null);
-      return {
-        id: "safe-disconnect" as const, title: "Safe Disconnect",
-        value: { text: view.value, known: view.available },
-        available: view.available,
-        reason: view.reason,
-        activation: view.available ? "act" as const : "notice" as const,
-        actionLabel: view.actionLabel,
-        developmental: false,
-        confirmation: view.confirmation,
-        displayApprovalRequired: view.displayApprovalRequired,
-        attention: view.attention,
-      };
-    })(),
+    // This tile only opens the guarded WholeDockControl owner. It intentionally
+    // makes no readiness judgement; that owner rereads the exact status,
+    // snapshot and attachment token before offering its confirmation. Software
+    // removal remains distinct from physical unplug clearance.
+    "safe-disconnect": {
+      id: "safe-disconnect", title: "Safe Disconnect",
+      value: { text: "Guarded", known: true }, available: true, reason: null,
+      activation: "act", actionLabel: "Review and disconnect", developmental: false,
+    },
+    "sleep-connected": {
+      id: "sleep-connected", title: "Sleep — Keep eGPU Connected",
+      value: { text: "Available", known: true }, available: true, reason: null,
+      activation: "act", actionLabel: "Sleep connected", developmental: false,
+    },
+    shutdown: {
+      id: "shutdown", title: "Disconnect then Shut Down",
+      value: { text: "Guarded", known: true }, available: true, reason: null,
+      activation: "act", actionLabel: "Review and shut down", developmental: false,
+    },
+    resolution: {
+      id: "resolution", title: "Resolution",
+      value: { text: "Unavailable", known: false }, available: false,
+      reason: "No verified resolution provider is available.", activation: "notice",
+      actionLabel: null, developmental: false,
+    },
+    "egpu-status": {
+      id: "egpu-status", title: "eGPU Status",
+      value: { text: "View", known: true }, available: true, reason: null,
+      activation: "open", actionLabel: "Open status", developmental: false,
+    },
   };
 
   return TILE_ORDER.map((id) => tiles[id]);
