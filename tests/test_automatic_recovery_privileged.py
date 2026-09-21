@@ -64,6 +64,11 @@ class AutomaticRecoveryPrivilegedTests(unittest.TestCase):
             root.chmod(0o700)
             (root / "var").chmod(0o755)
             (root / "var" / "lib").chmod(0o755)
+            # The installed identity migrator owns this trusted parent.
+            # RuntimeStateRoot creates only its control child and correctly
+            # fails closed when the parent is absent, so the privileged fixture
+            # must model the migrated installation before entering the chroot.
+            (root / "var" / "lib" / "regear").mkdir(mode=0o700)
             read_fd, write_fd = os.pipe()
             pid = os.fork()
             if pid == 0:
