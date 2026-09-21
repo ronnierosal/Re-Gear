@@ -157,6 +157,9 @@ from regear.application.connection_readiness import (  # noqa: E402
     ConnectionReadinessObservation,
     ConnectionReadinessStage,
 )
+from regear.application.whole_dock_lifecycle_status import (  # noqa: E402
+    classify_whole_dock_lifecycle,
+)
 from regear.application.link_recovery import (  # noqa: E402
     LinkRecoveryService,
     LinkRecoveryStrategy,
@@ -791,9 +794,37 @@ class Plugin:
             "checks": getattr(self, "_connection_checks", None),
             "checks_age_ms": max(0, int((time.monotonic() - getattr(self, "_connection_checks_at", 0.0)) * 1000)),
         }
+        payload["whole_dock_lifecycle"] = await asyncio.to_thread(
+            self._whole_dock_lifecycle_payload, report.snapshot
+        )
         payload["saved_tv"] = self._saved_tv_status()
         await asyncio.to_thread(self._record_verbose_snapshot, payload)
         return payload
+
+    @staticmethod
+    def _whole_dock_lifecycle_payload(snapshot) -> dict[str, object]:
+        """Project durable teardown state without exposing claim identity.
+
+        A retained claim is read-only evidence.  This projection never grants
+        unplug clearance and intentionally ignores transport presence because
+        a successful software teardown may leave the cable connected.
+        """
+        try:
+            claim = WholeDockClaimStore(DEFAULT_RUNTIME_STATE_ROOT).load()
+            stage = None if claim is None else claim.stage
+            readable = True
+        except Exception:
+            stage = None
+            readable = False
+        external_gpu_present = any(
+            gpu.role is GpuRole.EXTERNAL and gpu.present
+            for gpu in snapshot.gpus
+        )
+        return classify_whole_dock_lifecycle(
+            claim_stage=stage,
+            claim_readable=readable,
+            external_gpu_present=external_gpu_present,
+        ).to_payload()
 
     def _saved_tv_status(self) -> dict[str, object]:
         """Categorical state for the waiting half of a dock.
