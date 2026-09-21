@@ -113,7 +113,7 @@ export function EgpuLifecycleDetail({
   const safeStep = steps.length ? Math.max(0, Math.min(activeStep, steps.length - 1)) : 0;
   return <CommandDetailSurface>
     <CommandSection title={title} hint={elapsed ? `${elapsed} elapsed` : undefined}>
-      {summary && <CommandValue label="Current step" value={summary} tone={tone}/>} 
+      {summary && <CommandValue label="Current step" value={summary} tone={tone}/>}
       {steps.length ? <CommandProgressSteps steps={steps} activeIndex={safeStep}/> : null}
     </CommandSection>
     {warning && <CommandNotice tone="warning" title="Taking longer than expected">{warning}</CommandNotice>}
