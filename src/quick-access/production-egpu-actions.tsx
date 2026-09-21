@@ -8,24 +8,15 @@ import { WholeDockControl } from "../whole-dock-control";
 export type ProductionEgpuAction = "safe-disconnect" | "sleep-connected" | "shutdown";
 export type ProductionEgpuActionRequest = Readonly<{ action: ProductionEgpuAction; nonce: number }>;
 
-function ConnectedSleepRequest() {
-  const [, setRevision] = useState(0);
-  const coordinator = useRef<ReturnType<typeof createPowerRequestCoordinator> | null>(null);
-  if (!coordinator.current) {
-    coordinator.current = createPowerRequestCoordinator(powerRequestPort, {
-      onChange: () => setRevision((value) => value + 1),
-    });
-  }
+function ConnectedSleepRequest({ owner }: { owner: ReturnType<typeof createPowerRequestCoordinator> }) {
   const modal = useRef<ReturnType<typeof showModal> | null>(null);
   useEffect(() => {
-    const owner = coordinator.current!;
     const choice = owner.captureSleep("");
-    if (!choice) return () => owner.dispose();
     let decided = false;
     const cancel = () => {
       if (decided) return;
       decided = true;
-      choice.cancel();
+      choice?.cancel();
       modal.current?.Close();
       modal.current = null;
     };
@@ -34,9 +25,9 @@ function ConnectedSleepRequest() {
       decided = true;
       modal.current?.Close();
       modal.current = null;
-      void choice.keepConnectedAndSleep();
+      if (choice) void choice.keepConnectedAndSleep();
     };
-    modal.current = showModal(<EgpuConfirmModal
+    if (choice) modal.current = showModal(<EgpuConfirmModal
       strTitle="Sleep with eGPU connected?"
       strDescription="Re-Gear will request normal sleep and keep the eGPU connected. It will not run Safe Disconnect or remove the dock in software. Save your work before continuing."
       strOKButtonText="Sleep connected"
@@ -47,13 +38,14 @@ function ConnectedSleepRequest() {
       onCancel={cancel}
       onEscKeypress={cancel}
     />, undefined, { fnOnClose: cancel, bNeverPopOut: true });
+    const refresh = window.setInterval(() => { void owner.refresh(); }, 2000);
     return () => {
+      window.clearInterval(refresh);
       modal.current?.Close();
       modal.current = null;
-      owner.dispose();
     };
-  }, []);
-  const view = coordinator.current.read();
+  }, [owner]);
+  const view = owner.read();
   const message = view.phase === "dispatching" || view.phase === "pending"
     ? "Sleep request pending. Keep the eGPU connected."
     : view.phase === "requested" || view.phase === "sleep_observed"
@@ -70,8 +62,14 @@ export function ProductionEgpuActionHost({ request, readCurrentSnapshot }: {
   request: ProductionEgpuActionRequest | null;
   readCurrentSnapshot(): unknown;
 }) {
+  const [, setRevision] = useState(0);
+  const coordinator = useRef<ReturnType<typeof createPowerRequestCoordinator> | null>(null);
+  if (!coordinator.current) coordinator.current = createPowerRequestCoordinator(powerRequestPort, {
+    onChange: () => setRevision((value) => value + 1),
+  });
+  useEffect(() => () => coordinator.current?.dispose(), []);
   if (!request) return null;
-  if (request.action === "sleep-connected") return <ConnectedSleepRequest key={request.nonce} />;
+  if (request.action === "sleep-connected") return <ConnectedSleepRequest key={request.nonce} owner={coordinator.current} />;
   return <WholeDockControl
     key={request.nonce}
     intent={request.action === "shutdown" ? "shutdown" : "disconnect_only"}

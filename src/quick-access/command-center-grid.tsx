@@ -3,6 +3,7 @@ import { DialogButton, Focusable } from "@decky/ui";
 import type { CommandCenterTile, TileId } from "./command-center";
 import { TILE_COLUMNS } from "./command-center";
 import type { HealthPresentation } from "./health-presentation";
+import { RichTileArtwork, RichTileSprite, richTileArtworkStyles } from "./expanded-command-center/rich-tile-artwork";
 
 /** Command Center first screen: rendering only, no policy, no requests.
  *
@@ -23,6 +24,11 @@ const C = {
 };
 
 const SURFACE = "linear-gradient(135deg, rgba(19,36,58,.96), rgba(9,21,36,.98))";
+const artworkControl: Record<TileId, string> = {
+  fps: "fps", tdp: "manual", "auto-tdp": "auto", display: "display",
+  "safe-disconnect": "disconnect", "sleep-connected": "disconnect", shutdown: "disconnect",
+  resolution: "display", "egpu-status": "egpu",
+};
 
 /** Health tone to colour. The model names no colours, so the mapping lives
  * here and the palette can change without touching the model. */
@@ -68,26 +74,27 @@ function Tile({ tile, onActivate }: {
     aria-label={`${tile.title}: ${tile.value.text}`}
     style={{
       minWidth: 0, width: "auto", minHeight: 112, margin: 0, padding: "8px 10px",
-      display: "flex", flexDirection: "column", alignItems: "center",
+      position: "relative", overflow: "hidden", display: "flex", flexDirection: "column", alignItems: "center",
       justifyContent: "center", gap: 6, textAlign: "center", borderRadius: 12,
       background: SURFACE,
       border: `1px solid ${usable ? C.border : "#22374f"}`,
       color: usable ? C.text : C.dim,
       opacity: 1,
     }}>
-    <ApprovedIcon id={tile.id === "display" ? "mode-tv-docked"
+    <RichTileArtwork controlId={artworkControl[tile.id]} />
+    <span style={{ position: "relative", zIndex: 1 }}><ApprovedIcon id={tile.id === "display" ? "mode-tv-docked"
       : ["safe-disconnect", "sleep-connected", "shutdown", "resolution", "egpu-status"].includes(tile.id)
-        ? "module-egpu" : "module-auto-tdp"} />
+        ? "module-egpu" : "module-auto-tdp"} /></span>
     <span style={{ fontSize: tile.value.text.length > 12 ? 16 : 18, fontWeight: 700, order: 0,
-      color: tile.developmental ? C.amber : tile.value.known ? C.cyan : C.muted,
+      position: "relative", zIndex: 1, color: tile.developmental ? C.amber : tile.value.known ? C.cyan : C.muted,
       whiteSpace: "normal", overflowWrap: "normal", maxWidth: "100%" }}>
       {tile.value.text}
     </span>
-    <span style={{ fontSize: 12, color: C.text, whiteSpace: "normal", maxWidth: "100%" }}>
+    <span style={{ position: "relative", zIndex: 1, fontSize: 12, color: C.text, whiteSpace: "normal", maxWidth: "100%" }}>
       {tile.title}
     </span>
     {tile.actionLabel && (
-      <span style={{ fontSize: 11, color: C.muted }}>{tile.actionLabel}</span>
+      <span style={{ position: "relative", zIndex: 1, fontSize: 11, color: C.muted }}>{tile.actionLabel}</span>
     )}
   </DialogButton>;
 }
@@ -95,7 +102,7 @@ function Tile({ tile, onActivate }: {
 export function CommandCenterGrid({ tiles, onActivate }: {
   tiles: CommandCenterTile[]; onActivate(id: TileId): void;
 }) {
-  return <Focusable
+  return <><style>{richTileArtworkStyles}</style><RichTileSprite/><Focusable
     style={{
       display: "grid",
       gridTemplateColumns: `repeat(${TILE_COLUMNS}, minmax(0, 1fr))`,
@@ -106,7 +113,7 @@ export function CommandCenterGrid({ tiles, onActivate }: {
     flow-children="grid"
   >
     {tiles.map((tile) => <Tile key={tile.id} tile={tile} onActivate={onActivate} />)}
-  </Focusable>;
+  </Focusable></>;
 }
 
 /** Reason for the tile a player just selected, shown under the grid rather
