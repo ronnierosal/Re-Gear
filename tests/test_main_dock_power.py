@@ -29,7 +29,13 @@ class MainDockPowerTests(unittest.TestCase):
              patch.object(self.module, 'SystemPowerCommandRunner') as runner:
             runner.return_value.request_poweroff.return_value = NS(
                 requested=True, code='safe_disconnect.poweroff_request_accepted_unverified')
-            self.assertTrue(self.plugin._run_dock_power_request(request).requested)
+            accepted = self.plugin._run_dock_power_request(request)
+            self.assertTrue(accepted.requested)
+            # The adapter's safe_disconnect.* vocabulary must not cross the RPC
+            # boundary: the frontend settle predicate only recognises
+            # dock_power.*, and leaking the raw code orphaned the pending
+            # record after a real poweroff had already been submitted.
+            self.assertEqual(accepted.code, 'dock_power.request_accepted_unverified')
             self.assertFalse(self.plugin._run_dock_power_request(request).requested)
             runner.return_value.request_poweroff.assert_called_once()
         self.plugin._run_whole_dock_trial.assert_not_called()
@@ -71,6 +77,10 @@ class MainDockPowerTests(unittest.TestCase):
             runner.return_value.request_poweroff.return_value = NS(requested=True, code='accepted')
             result = self.plugin._run_dock_power_request(request)
             self.assertTrue(result.requested)
+            # This is the branch that bricked the control: a real poweroff is
+            # submitted, and the reply has to be one the frontend can settle or
+            # the pending record survives the reboot with nothing able to clear it.
+            self.assertEqual(result.code, 'dock_power.request_accepted_unverified')
             self.assertTrue(result.software_down)
             self.assertFalse(admission['held'])
             runner.return_value.request_poweroff.assert_called_once()
@@ -175,7 +185,9 @@ class MainDockPowerTests(unittest.TestCase):
             result = asyncio.run(self.plugin.get_egpu_disconnect_status("power_capabilities"))
         self.assertFalse(result['authorizes_action'])
         self.assertEqual(result['actions']['shutdown']['live_readiness'], 'not_assessed')
-        self.assertFalse(result['actions']['sleep']['actionable'])
+        # Offered through the guarded route since 2026-09-15; the payload
+        # still authorizes nothing and the route's own gates still run.
+        self.assertTrue(result['actions']['sleep']['actionable'])
         self.plugin._run_background_operation.assert_not_called()
         self.plugin._run_whole_dock_trial.assert_not_called()
         discovery.assert_not_called()

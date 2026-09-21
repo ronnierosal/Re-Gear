@@ -13,11 +13,11 @@ const tiles = read("../assets/command-center/tile-artwork.svg");
 const buttons = read("../assets/command-center/button-artwork.svg");
 
 test("live Command Center grid mounts rich artwork behind dynamic tile copy", () => {
-  assert.match(shell, /<RichArtwork controlId=\{item\.id\}\/>[\s\S]*<span className="rg-expanded-tile-body">/);
-  assert.match(shell, /\{!artworkIdFor\(item\.id\) && <span className="rg-expanded-tile-icon">/);
+  assert.match(shell, /<RichArtwork controlId=\{originFor\(item\)\.tile\.id\}\/>[\s\S]*<span className="rg-expanded-tile-body">/);
+  assert.match(shell, /\{!artworkIdFor\(originFor\(item\)\.tile\.id\) && <span className="rg-expanded-tile-icon">/);
   assert.match(shell, /<RichArtworkSprite\/>/);
-  assert.match(shell, /expandedStyles \+ artworkStyles/);
-  assert.ok(shell.indexOf("<RichArtwork controlId={item.id}/>") < shell.indexOf('<span className="rg-expanded-value">'));
+  assert.match(shell, /expandedStyles[\s\S]*\+ artworkStyles/);
+  assert.ok(shell.indexOf("<RichArtwork controlId={originFor(item).tile.id}/>") < shell.indexOf('<span className="rg-expanded-value">'));
 });
 
 test("control mapping uses exact rich tile symbols and retains legacy fallback", () => {

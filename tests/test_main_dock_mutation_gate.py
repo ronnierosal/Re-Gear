@@ -171,6 +171,10 @@ class MainDockAdmissionTests(unittest.TestCase):
                 trial_confirmed=True)
             self.assertTrue(result["ok"])
             status = await self.plugin.get_egpu_disconnect_status("whole_dock_trial")
+            # The read adds one live fact the dispatch's terminal payload has no
+            # reason to carry: whether a worker is running right now. Everything
+            # the trial reported still has to survive the read unchanged.
+            self.assertIs(status.pop("in_flight"), False)
             self.assertEqual(status, result)
             self.assertFalse(status["safe_to_unplug"])
         asyncio.run(run())
@@ -655,24 +659,32 @@ class CompletedAttachmentAbsenceTests(unittest.TestCase):
 
     def fixture(self, *, stage='software_down', absent=True, strict=True,
                 parent_power=False, settled=True, idle=True, changed=False,
-                session_missing=True, session=None, user_ok=True,
-                journal_durable=True, journal_owner='none', inner=True,
-                unloading=False):
+                session=None, seen=None, claim_present=True, user_ok=True,
+                capture=False, admission_error=None, load_error=None,
+                guard_error=None, audit_error=None, retire_error=None,
+                event_error=None, journal_error=None, journal_durable=True,
+                journal_owner='none', inner=True, unloading=False):
         from contextlib import ExitStack
         plugin = self.plugin
         user = NS(uid=1000, username='deck')
         claim = NS(stage=stage)
         plugin._unloading = unloading
         plugin._discovery = object()
-        plugin._append_journey_event = Mock()
-        plugin._connection_topology = NS(observe=lambda:NS(
-            transport_absent_verified=absent, transport_present=not absent))
+        plugin._append_journey_event = Mock(side_effect=event_error)
+        plugin._release_capture_task = NS(done=lambda:not capture)
+        def observe_topology():
+            if guard_error is not None:
+                raise guard_error
+            return NS(transport_absent_verified=absent, transport_present=not absent)
+        plugin._connection_topology = NS(observe=observe_topology)
         plugin._transition_journal_service = lambda:NS(status=lambda:NS(
             durable=journal_durable, owner=NS(value=journal_owner)))
         held = []
         @contextmanager
         def admit(**kwargs):
             self.assertIs(kwargs['allow_inhibited'], True)
+            if admission_error is not None:
+                raise admission_error
             held.append(True)
             try:
                 yield
@@ -682,24 +694,34 @@ class CompletedAttachmentAbsenceTests(unittest.TestCase):
         with ExitStack() as stack:
             def patcher(name, **kwargs):
                 return stack.enter_context(patch.object(self.module, name, **kwargs))
+            journal = stack.enter_context(
+                patch.object(self.module.decky.logger, 'info',
+                             side_effect=journal_error))
+            # Archival now runs on the intent store so it can clear a sleep
+            # record whose session is gone; that record would otherwise hold
+            # power_intent_absent false and inhibit admission forever.
             store = patcher('DockPowerIntentStore').return_value
-            store.load.return_value = claim
-            intent_present = [parent_power]
-            store.power_intent_absent.side_effect = lambda expected:not intent_present[0]
-            stored_session = '1' * 64 + ':' + 'a' * 32
-            def reconcile(expected, live, guard):
-                if live == stored_session:
-                    return False
-                allowed = guard()
-                if allowed:
-                    intent_present[0] = False
-                return allowed
-            store.reconcile_stranded_sleep.side_effect = reconcile
-            if not session_missing:
+            if load_error is not None:
+                store.load.side_effect = load_error
+            else:
+                store.load.return_value = claim if claim_present else None
+            if session is not None:
                 plugin._dock_power_session = session
+            intent_present = [parent_power]
+            if seen is not None:
+                def reconcile(expected, live, guard):
+                    allowed = guard()
+                    seen.append((expected, live, allowed))
+                    if allowed:
+                        intent_present[0] = False
+                    return allowed
+                store.reconcile_stranded_sleep.side_effect = reconcile
+            store.power_intent_absent.side_effect = lambda expected:not intent_present[0]
             def retire(expected, guard):
                 self.assertIs(expected, claim)
                 self.assertTrue(held)
+                if retire_error is not None:
+                    raise retire_error
                 if changed:
                     plugin._connection_topology.observe = lambda:NS(
                         transport_absent_verified=False, transport_present=True)
@@ -710,8 +732,11 @@ class CompletedAttachmentAbsenceTests(unittest.TestCase):
             patcher('GamescopeDiscovery')
             patcher('resolve_gamescope_user',
                 return_value=NS(ok=user_ok, context=user if user_ok else None))
-            patcher('HeldTrialLauncher').return_value.call.return_value = {
-                'code':'held_helper.settled', 'settled':settled}
+            audit = patcher('HeldTrialLauncher').return_value.call
+            if audit_error is not None:
+                audit.side_effect = audit_error
+            else:
+                audit.return_value = {'code':'held_helper.settled', 'settled':settled}
             patcher('inner_removal_records_absent', return_value=inner)
             patcher('resolve_runtime_profiles', return_value=NS(exact_host=True))
             patcher('SnapshotTransitionObservationAdapter').return_value.observe.return_value = NS(snapshot=NS(
@@ -719,38 +744,158 @@ class CompletedAttachmentAbsenceTests(unittest.TestCase):
                 gamescope=NS(running=True), gpus=[NS(role=self.module.GpuRole.INTERNAL,
                     present=True, confidence=self.module.Confidence.VERIFIED)]))
             result = plugin._reconcile_physically_disconnected_dock()
+            plugin._test_archival_journal_calls = list(journal.call_args_list)
         return result, store.retire_physically_disconnected.call_count
 
     def test_completed_detached_attachment_is_archived_under_existing_admission(self):
         self.assertEqual(self.fixture(), (True, 1))
 
     def test_attached_unknown_or_unfinished_work_never_retires_disconnect_history(self):
-        for options in ({'absent':False}, {'strict':False},
-                        {'parent_power':True, 'session_missing':False,
-                         'session':'1' * 64 + ':' + 'a' * 32},
+        for options in ({'absent':False}, {'strict':False}, {'parent_power':True},
                         {'settled':False}, {'idle':False}, {'stage':'tunnel_remove_intent'},
                         {'stage':'reauthorize_intent'}):
             with self.subTest(options=options):
                 self.assertEqual(self.fixture(**options), (False, 0))
         self.assertEqual(self.fixture(changed=True), (False, 1))
 
-    def test_dead_predecessor_sleep_is_reconciled_before_archival(self):
-        self.assertEqual(self.fixture(parent_power=True), (True, 1))
+    def test_a_stranded_sleep_is_reconciled_under_the_same_admission(self):
+        # The record is cleared before the guard reads power_intent_absent, so
+        # a refused sleep cannot leave the claim pinned and admission inhibited.
+        seen = []
+        self.assertEqual(self.fixture(session='1' * 64 + ':' + 'a' * 32,
+                                      seen=seen, parent_power=True), (True, 1))
+        self.assertEqual([(live, guarded) for _, live, guarded in seen],
+                         [('1' * 64 + ':' + 'a' * 32, True)])
 
-    def test_live_none_or_matching_session_never_clears_legacy_record(self):
-        self.assertEqual(self.fixture(parent_power=True, session_missing=False,
-                                      session=None), (False, 0))
-        self.assertEqual(self.fixture(parent_power=True, session_missing=False,
-                                      session='1' * 64 + ':' + 'a' * 32),
-                         (False, 0))
+    def test_recreated_plugin_reconciles_without_a_live_session_attribute(self):
+        self.plugin = self.module.Plugin()
+        seen = []
+        self.assertFalse(hasattr(self.plugin, '_dock_power_session'))
+        self.assertEqual(self.fixture(seen=seen, parent_power=True), (True, 1))
+        self.assertEqual([(live, guarded) for _, live, guarded in seen],
+                         [(None, True)])
 
-    def test_failed_non_power_prerequisites_never_attempt_cleanup(self):
-        for options in ({'absent':False}, {'strict':False}, {'settled':False},
-                        {'idle':False}, {'user_ok':False},
-                        {'journal_durable':False}, {'journal_owner':'operation'},
-                        {'inner':False}, {'unloading':True}):
+    def test_present_or_unresolved_prerequisites_preserve_sleep_intent(self):
+        for options in (
+            {'absent': False}, {'strict': False}, {'idle': False},
+            {'user_ok': False}, {'settled': False}, {'capture': True},
+            {'journal_durable': False}, {'journal_owner': 'operation'},
+            {'inner': False}, {'unloading': True},
+        ):
             with self.subTest(options=options):
-                self.assertEqual(self.fixture(parent_power=True, **options), (False, 0))
+                seen = []
+                self.assertEqual(self.fixture(seen=seen, **options), (False, 0))
+                self.assertEqual(seen, [])
+
+    def test_existing_invalid_session_attribute_is_not_restart_evidence(self):
+        self.plugin._dock_power_session = None
+        seen = []
+        self.assertEqual(self.fixture(seen=seen, parent_power=True), (False, 0))
+        self.assertEqual(seen, [])
+
+    def test_an_unmet_guard_reports_which_condition_refused(self):
+        # A silent refusal here cost two hardware sessions; the reason must
+        # reach the journey log rather than vanishing into a bare False.
+        self.assertEqual(self.fixture(strict=False), (False, 0))
+        codes = [call.kwargs.get('code') for call in
+                 self.plugin._append_journey_event.call_args_list]
+        self.assertIn('automatic_dock.archival_guard_unmet', codes)
+        details = [call.kwargs.get('details') for call in
+                   self.plugin._append_journey_event.call_args_list
+                   if call.kwargs.get('code') == 'automatic_dock.archival_guard_unmet']
+        self.assertEqual(details, [
+            {'phase': 'guard', 'unmet': 'verified_transport_absent'}])
+
+    def test_every_early_refusal_names_its_phase_and_reason(self):
+        for options, expected in (
+            ({'stage': 'reauthorize_intent'},
+             {'phase': 'claim', 'unmet': 'stage_reauthorize_intent'}),
+            ({'capture': True},
+             {'phase': 'capture', 'unmet': 'release_capture_running'}),
+            ({'user_ok': False},
+             {'phase': 'user', 'unmet': 'gamescope_user_unresolved'}),
+            ({'strict': False},
+             {'phase': 'guard', 'unmet': 'verified_transport_absent'}),
+            ({'settled': False},
+             {'phase': 'audit', 'unmet': 'held_helper_unsettled'}),
+        ):
+            with self.subTest(options=options):
+                self.plugin._archival_refusal = None
+                self.assertEqual(self.fixture(**options), (False, 0))
+                details = [call.kwargs.get('details') for call in
+                           self.plugin._append_journey_event.call_args_list
+                           if call.kwargs.get('code') ==
+                           'automatic_dock.archival_guard_unmet']
+                self.assertEqual(details, [expected])
+
+    def test_exceptions_name_the_phase_that_raised(self):
+        for options, phase in (
+            ({'admission_error': DockMutationDenied('dock_mutation.inhibited')},
+             'admission'),
+            ({'load_error': OSError('load failed')}, 'claim_load'),
+            ({'guard_error': OSError('observe failed')}, 'guard'),
+            ({'audit_error': OSError('audit failed')}, 'audit'),
+            ({'retire_error': OSError('retire failed')}, 'retire'),
+        ):
+            with self.subTest(phase=phase):
+                self.plugin._archival_refusal = None
+                self.assertEqual(self.fixture(**options),
+                                 (False, 1 if phase == 'retire' else 0))
+                details = [call.kwargs.get('details') for call in
+                           self.plugin._append_journey_event.call_args_list
+                           if call.kwargs.get('code') ==
+                           'automatic_dock.archival_guard_unmet']
+                self.assertEqual(details, [
+                    {'phase': phase, 'unmet': 'raised_' +
+                     type(next(iter(options.values()))).__name__}])
+
+    def test_an_unchanged_refusal_is_not_repeated_every_poll(self):
+        self.plugin._archival_refusal = None
+        self.assertEqual(self.fixture(user_ok=False), (False, 0))
+        self.assertEqual(self.fixture(user_ok=False), (False, 0))
+        repeated = [call for call in self.plugin._append_journey_event.call_args_list
+                    if call.kwargs.get('code') ==
+                    'automatic_dock.archival_guard_unmet']
+        self.assertEqual(repeated, [])
+
+    def test_journal_line_contains_reason_used_by_the_bounded_device_read(self):
+        self.plugin._archival_refusal = None
+        self.assertEqual(self.fixture(user_ok=False), (False, 0))
+        self.assertEqual(len(self.plugin._test_archival_journal_calls), 1)
+        call = self.plugin._test_archival_journal_calls[0]
+        self.assertIn('code=automatic_dock.archival_guard_unmet', call.args[0])
+        self.assertEqual(call.args[1:], ('user', 'gamescope_user_unresolved'))
+
+    def test_failed_journal_emission_is_retried_next_poll(self):
+        self.plugin._archival_refusal = None
+        self.assertEqual(self.fixture(user_ok=False,
+                                      journal_error=OSError('log failed')), (False, 0))
+        self.assertEqual(self.plugin._archival_refusal, None)
+        self.assertEqual(self.fixture(user_ok=False), (False, 0))
+        details = [call.kwargs.get('details') for call in
+                   self.plugin._append_journey_event.call_args_list
+                   if call.kwargs.get('code') ==
+                   'automatic_dock.archival_guard_unmet']
+        self.assertEqual(details, [
+            {'phase': 'user', 'unmet': 'gamescope_user_unresolved'}])
+
+    def test_support_event_failure_does_not_override_emitted_journal_evidence(self):
+        self.plugin._archival_refusal = None
+        self.assertEqual(self.fixture(user_ok=False,
+                                      event_error=OSError('store failed')), (False, 0))
+        self.assertEqual(self.plugin._archival_refusal,
+                         ('user', 'gamescope_user_unresolved'))
+
+    def test_completion_event_failure_does_not_reclassify_retired_claim(self):
+        self.plugin._archival_refusal = ('guard', 'power_intent_absent')
+        self.assertEqual(self.fixture(event_error=OSError('store failed')), (True, 1))
+        self.assertEqual(self.plugin._archival_refusal, None)
+
+    def test_having_no_claim_is_silent_and_clears_refusal_deduplication(self):
+        self.plugin._archival_refusal = ('user', 'gamescope_user_unresolved')
+        self.assertEqual(self.fixture(claim_present=False), (False, 0))
+        self.assertEqual(self.plugin._archival_refusal, None)
+        self.assertEqual(self.plugin._append_journey_event.call_args_list, [])
 
 
 class RetainedReconnectTvTests(unittest.TestCase):
@@ -831,7 +976,8 @@ class PortableBeforeDisconnectTests(unittest.TestCase):
     setUp = MainDockAdmissionTests.setUp
 
     def fixture(self, *, already=False, ready=True, success=True, final_portable=True,
-                acknowledge=True, changed_user=False, changed_binding=False, foreign=False):
+                acknowledge=True, changed_user=False, changed_binding=False, foreign=False,
+                prior=None, blocked=None, failed=None, stale_attempts=0):
         from contextlib import ExitStack
         plugin = self.plugin
         plugin._discovery = object()
@@ -843,8 +989,30 @@ class PortableBeforeDisconnectTests(unittest.TestCase):
         service.preview.return_value = NS(ready=ready, approval_token='permit' if ready else '')
         service.execute.return_value = NS(accepted=True, durable=True, operation_id='ours',
             outcome=NS(kind=self.module.TransitionOutcomeKind.SUCCEEDED if success else None))
-        service.status.return_value = NS(durable=True, target=self.module.PlacementState.PORTABLE,
+        settled = NS(durable=True, target=self.module.PlacementState.PORTABLE,
             operation_id='foreign' if foreign else 'ours')
+        # The press reads status once before acting (a prior result it may
+        # clear) and once after the transition; `prior` is what the first read
+        # returns, the settled status what the second does.
+        if prior is None:
+            service.status.return_value = settled
+        else:
+            service.status.side_effect = [prior, settled]
+        if blocked is not None:
+            service.execute.return_value.outcome = NS(
+                kind=self.module.TransitionOutcomeKind.BLOCKED,
+                failure=NS(code=blocked, message='', recoverable=True))
+        if failed is not None:
+            service.execute.return_value.outcome = NS(
+                kind=self.module.TransitionOutcomeKind.FAILED,
+                failure=NS(code=failed, message='', recoverable=False))
+        if stale_attempts:
+            # N attempts lose the race, then the world holds still.
+            stale = NS(accepted=True, durable=True, operation_id='ours',
+                outcome=NS(kind=self.module.TransitionOutcomeKind.BLOCKED,
+                    failure=NS(code='observation.stale', message='', recoverable=True)))
+            service.execute.side_effect = ([stale] * stale_attempts
+                + [service.execute.return_value])
         service.acknowledge.return_value = acknowledge
         modes = [self.module.OperatingMode.PORTABLE if already else self.module.OperatingMode.TV_DOCKED,
                  self.module.OperatingMode.PORTABLE if final_portable else self.module.OperatingMode.UNKNOWN,
@@ -858,6 +1026,9 @@ class PortableBeforeDisconnectTests(unittest.TestCase):
                 return_value=NS(ok=True, context=None if changed_user else user)))
             stack.enter_context(patch.object(self.module, 'resolve_whole_dock',
                 return_value=None if changed_binding else binding))
+            # The retry's settle wait is real time; the race it covers is not
+            # what these assertions are about.
+            stack.enter_context(patch.object(self.module.time, 'sleep', lambda _seconds: None))
             try:
                 plugin._return_portable_before_disconnect(binding, user)
                 passed = True
@@ -871,6 +1042,70 @@ class PortableBeforeDisconnectTests(unittest.TestCase):
         service.execute.assert_called_once_with('permit')
         service.acknowledge.assert_called_once_with('ours')
         self.plugin._automatic_dock.suppress_current_attachment_after_portable_return.assert_called_once()
+
+    def test_a_prior_acknowledgeable_result_is_cleared_by_the_press(self):
+        # On device the disconnect refused because an earlier transition still
+        # awaited acknowledgement, and the button for that lived two levels
+        # away from the tile pressed. The press is the acknowledgement.
+        prior = NS(durable=True, target=self.module.PlacementState.UNKNOWN,
+                   operation_id='old', acknowledgement_required=True)
+        passed, service = self.fixture(prior=prior)
+        self.assertTrue(passed)
+        self.assertEqual([c.args[0] for c in service.acknowledge.call_args_list], ['old', 'ours'])
+        service.preview.assert_called_once()
+        self.plugin._automatic_dock.reset_after_acknowledgement.assert_called_once()
+
+    def test_a_prior_portable_result_keeps_the_portable_choice(self):
+        prior = NS(durable=True, target=self.module.PlacementState.PORTABLE,
+                   operation_id='old', acknowledgement_required=True)
+        passed, service = self.fixture(prior=prior)
+        self.assertTrue(passed)
+        self.assertEqual(service.acknowledge.call_args_list[0].args, ('old',))
+        self.plugin._automatic_dock.reset_after_acknowledgement.assert_not_called()
+
+    def test_a_refused_acknowledgement_stops_before_any_transition(self):
+        prior = NS(durable=True, target=self.module.PlacementState.UNKNOWN,
+                   operation_id='old', acknowledgement_required=True)
+        passed, service = self.fixture(prior=prior, acknowledge=False)
+        self.assertFalse(passed)
+        service.preview.assert_not_called()
+        service.execute.assert_not_called()
+
+    def test_a_failed_return_names_its_code_and_is_never_retried(self):
+        # The refusal used to say only "could not be verified"; the code lived
+        # in a root-owned journal. It now travels with the refusal. A failure
+        # is an answer about this device, not a race worth re-running.
+        passed, service = self.fixture(failed='journal.persist_failed')
+        self.assertFalse(passed)
+        self.assertEqual(service.preview.call_count, 1)
+        self.assertEqual(self.plugin._whole_dock_portable_outcome,
+                         {'kind': 'failed', 'code': 'journal.persist_failed', 'attempts': 1})
+
+    def test_a_stale_observation_is_re_planned_not_refused(self):
+        # Observed twice on device: a press while the dock was still settling
+        # lost the race between planning and executing, and reported only that
+        # the return could not be verified. The world moved; decide again.
+        passed, service = self.fixture(stale_attempts=1)
+        self.assertTrue(passed)
+        self.assertEqual(service.preview.call_count, 2, 're-previewed, not re-used')
+        self.assertEqual(service.execute.call_count, 2)
+
+    def test_re_planning_is_bounded_and_reports_the_blocker(self):
+        passed, service = self.fixture(stale_attempts=self.module.PORTABLE_RETURN_ATTEMPTS)
+        self.assertFalse(passed)
+        self.assertEqual(service.preview.call_count, self.module.PORTABLE_RETURN_ATTEMPTS)
+        self.assertEqual(self.plugin._whole_dock_portable_outcome,
+                         {'kind': 'blocked', 'code': 'observation.stale',
+                          'attempts': self.module.PORTABLE_RETURN_ATTEMPTS})
+
+    def test_only_a_stale_observation_is_retried(self):
+        # Every other blocked or failed outcome is a real answer about this
+        # device, and repeating the operation against it would be a retry the
+        # player never asked for.
+        passed, service = self.fixture(blocked='display.unsafe')
+        self.assertFalse(passed)
+        self.assertEqual(service.preview.call_count, 1)
+        self.assertEqual(self.plugin._whole_dock_portable_outcome['code'], 'display.unsafe')
 
     def test_already_portable_does_not_restart(self):
         passed, service = self.fixture(already=True)

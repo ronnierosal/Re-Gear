@@ -47,7 +47,7 @@ test("compact dashboard keeps native controls, single guarded action and local d
   assert.match(source, /onClick=\{\(\) => setShowHardwareDetails\(\(visible\) => !visible\)\}/);
   assert.match(source, /showHardwareDetails &&[\s\S]*hardwareDetailRows\(payload\)/);
   assert.ok(source.indexOf("<DashboardSurface primary>") > source.indexOf('<ToggleField\n'));
-  assert.match(source, /Keep the eGPU connected until fully powered off/);
+  assert.match(source, /title="Safe Disconnect"[\s\S]*onClick=\{openDisconnect\}/);
   assert.match(overview, /import handheldModeIcon from "\.\/assets\/mode-handheld\.svg"/);
   assert.match(overview, /import tvModeIcon from "\.\/assets\/mode-tv\.svg"/);
   assert.match(overview, /isPortable \? handheldModeIcon : tvModeIcon/);
@@ -60,7 +60,13 @@ test("dashboard actions keep icons and text inside one native button, not Item c
   assert.match(action, /gridTemplateColumns: "38px minmax\(0,1fr\) 18px"/);
   assert.match(action, /wordBreak: "normal",\s+overflowWrap: "normal"/);
   assert.doesNotMatch(action, /ButtonItem|noFocusRing=|outline:|overflow: "hidden"/);
-  assert.equal((source.match(/<DashboardAction\s/g) ?? []).length, 5);
+  assert.equal((source.match(/<DashboardAction\s/g) ?? []).length, 4);
+  assert.doesNotMatch(source, /title="Disconnect and sleep"/);
+  assert.doesNotMatch(source, /runDisconnect\([^\n]+"sleep"/);
+  assert.doesNotMatch(source, /continueSleepOnMount/);
+  assert.match(source, /action:"sleep-connected"/);
+  assert.equal((source.match(/<PanelSectionRow>\{disconnectMessage\}<\/PanelSectionRow>/g) ?? []).length, 1);
   assert.match(source, /title="Dock \/ eGPU"[\s\S]*expanded=\{showHardwareDetails\}/);
+  assert.doesNotMatch(source,/showDisconnectProgress|title="Disconnect status"/);
   assert.match(source, /title="Troubleshoot"[\s\S]*expanded=\{showDiagnostics\}/);
 });

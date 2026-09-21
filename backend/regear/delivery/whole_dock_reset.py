@@ -26,8 +26,9 @@ from ..profiles.registry import resolve_runtime_profiles
 from .dock_mutation_gate import DockMutationGate
 from .whole_dock_claim import WholeDockClaim, WholeDockClaimStore, inner_removal_records_absent
 from .held_session_helper import dispatch as user_helper
+from .runtime_state import DEFAULT_RUNTIME_STATE_ROOT
 
-ROOT = Path('/var/lib/handheld-dock-mode')
+ROOT = DEFAULT_RUNTIME_STATE_ROOT
 CONFIRM_SECONDS = 120
 
 

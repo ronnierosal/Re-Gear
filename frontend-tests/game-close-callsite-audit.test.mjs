@@ -52,14 +52,11 @@ test("the panel cannot reach a removal without the wiring", () => {
   );
 });
 
-test("the disconnect press and the pending reopen both go through the wiring", () => {
-  for (const symbol of ["runGameClosePress", "pressFromDialog", "claimRelaunchOnMount"]) {
-    assert.ok(
-      indexCode.includes(symbol),
-      `src/index.tsx no longer uses ${symbol}. The press path or the mount ` +
-        "reopen has been detached from the owning flow.",
-    );
-  }
+test("the legacy panel retains only pending reopen wiring", () => {
+  assert.ok(indexCode.includes("claimRelaunchOnMount"));
+  assert.equal(indexCode.includes("runGameClosePress"), false);
+  assert.equal(indexCode.includes("pressFromDialog"), false);
+  assert.equal(indexCode.includes("continueSleepOnMount"), false);
 });
 
 test("game-close-ports is the only production route to the removal RPC", () => {
@@ -70,24 +67,23 @@ test("game-close-ports is the only production route to the removal RPC", () => {
   );
 });
 
-/** The gates have to be in the artifact, not only in the repository.
+/** The active whole-dock gates have to be in the artifact, not only in source.
  *
- * Every refusal below is a decision that stops a press before it reaches the
- * device. If a build drops them -- tree-shaken, mis-bundled, an import removed
- * in a refactor -- the panel still compiles and still presses, and the gate is
- * simply gone. Reading them out of the built bundle is the only check that
- * notices.
+ * The legacy game-close wiring is deliberately absent now that the production
+ * Safe Disconnect tile mounts WholeDockControl directly. Audit the refusal and
+ * uncertainty states owned by that shipped route so tree-shaking the real
+ * guards still fails this test.
  */
 const SHIPPED_GATES = [
-  "wiring.cancelled",
-  "wiring.status_unavailable",
-  "wiring.consent_required",
-  "wiring.game_changed",
-  "wiring.display_approval_required",
-  "wiring.needs_attention",
+  "Disconnect status unavailable. Refresh before continuing.",
+  "Close your game and wait for an idle reading before disconnecting.",
+  "Status changed. Review the current reading.",
+  "Waiting to verify the previous request. Keep the cable connected.",
+  "The reply was interrupted. Waiting for backend progress; no retry was sent.",
+  "This is not permission to unplug.",
 ];
 
-test("the shipped bundle still carries the press gates", () => {
+test("the shipped bundle still carries the active whole-dock gates", () => {
   const bundle = readFileSync(new URL("../dist/index.js", import.meta.url), "utf8");
   for (const gate of SHIPPED_GATES) {
     assert.ok(

@@ -64,6 +64,33 @@ class MainDisconnectSleepDisabledTests(unittest.TestCase):
         self.plugin._run_whole_dock_trial.assert_not_called()
         self.plugin._run_dock_power_request.assert_not_called()
 
+    def test_legacy_sleep_intent_refuses_before_runtime_or_continuation(self):
+        self.plugin._live_disconnect_runtime = Mock()
+        self.plugin._run_dock_mutation = Mock()
+        self.plugin._record_sleep_continuation = Mock()
+
+        with patch.object(self.module, "RelaunchIntentStore") as relaunch_store, \
+                patch.object(self.module, "PendingSleepStore") as pending_store:
+            result = asyncio.run(self.plugin.execute_egpu_disconnect(
+                release_display=True,
+                relaunch_app_id="1145360",
+                relaunch_intent="sleep",
+            ))
+
+        self.assertEqual(result, {
+            "schema_version": 1,
+            "ok": False,
+            "code": "dock_power.disconnect_sleep_disabled",
+            "busy": False,
+            "safe_to_unplug": False,
+            "hardware_write": False,
+        })
+        relaunch_store.assert_not_called()
+        pending_store.assert_not_called()
+        self.plugin._record_sleep_continuation.assert_not_called()
+        self.plugin._live_disconnect_runtime.assert_not_called()
+        self.plugin._run_dock_mutation.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

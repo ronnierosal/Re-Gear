@@ -483,12 +483,15 @@ class RelaunchClockChoiceTests(unittest.TestCase):
 
         self.assertIs(self.stored().clock, RelaunchClock.BOOTTIME)
 
-    def test_a_sleep_reopen_is_aged_on_awake_time_only(self) -> None:
-        # The player who ticked "reopen afterwards" before sleeping meant when
-        # they come back, not within five minutes of pressing sleep.
-        self.disconnect(relaunch_app_id="1145360", relaunch_intent="sleep")
+    def test_disconnect_before_sleep_records_no_relaunch(self) -> None:
+        result = self.disconnect(
+            relaunch_app_id="1145360", relaunch_intent="sleep"
+        )
 
-        self.assertIs(self.stored().clock, RelaunchClock.MONOTONIC)
+        self.assertIs(result["ok"], False)
+        self.assertEqual(result["code"], "dock_power.disconnect_sleep_disabled")
+        self.assertIsNone(self.stored())
+        self.assertEqual(self.runtime.calls, [])
 
     def test_the_default_is_the_stricter_of_the_two(self) -> None:
         self.disconnect(relaunch_app_id="1145360")
@@ -505,14 +508,13 @@ class RelaunchClockChoiceTests(unittest.TestCase):
         self.assertIs(result["ok"], True)
         self.assertIsNone(self.stored())
 
-    def test_a_sleep_reopen_is_claimable_after_a_long_suspend(self) -> None:
-        # MONOTONIC does not advance while suspended, so the record survives.
+    def test_sleep_intent_cannot_leave_a_claimable_relaunch(self) -> None:
         self.disconnect(relaunch_app_id="1145360", relaunch_intent="sleep")
 
         result = asyncio.run(self.plugin.take_pending_relaunch())
 
-        self.assertEqual(result["steam_app_id"], "1145360")
-        self.assertEqual(result["code"], "relaunch.approved")
+        self.assertEqual(result["steam_app_id"], "")
+        self.assertEqual(result["code"], "relaunch.nothing_recorded")
 
 
 if __name__ == "__main__":

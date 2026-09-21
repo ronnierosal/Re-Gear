@@ -116,6 +116,7 @@ function rig({ closesAfter = 1, statuses = null, disconnectOutcome = outcome(), 
         recorded = relaunchAppId;
         return disconnectOutcome;
       },
+      async releaseSleepBlocker() { calls.push(["releaseSleepBlocker"]); return true; },
       async suspend() { calls.push(["suspend"]); },
       async takePendingRelaunch() {
         calls.push(["take", recorded]);
@@ -255,7 +256,7 @@ test("destination journey: sleep asks for its own consent and does not reopen th
   const r = rig({
     closesAfter: 2,
     readiness: {
-      schema_version: 1, code: "sleep.requires_disconnect", requires_disconnect: true,
+      schema_version: 1, code: "sleep.requires_disconnect", requires_disconnect: true, retained_inhibitor: false,
       game: game(),
       // Re-derived for sleep: agreeing a game may close for a disconnect is not
       // agreeing it may close so the machine can suspend.
@@ -271,16 +272,16 @@ test("destination journey: sleep asks for its own consent and does not reopen th
   assert.equal(result.ok, true);
   assert.deepEqual(r.calls.find((c) => c[0] === "disconnect"), ["disconnect", false, APP, "sleep"]);
   assert.ok(names(r.calls).includes("suspend"), "the sleep destination still suspends");
-  assert.ok(
-    !names(r.calls).includes("relaunch"),
-    "reopening now would launch the game seconds before the suspend; the record waits for the wake",
-  );
+  // Reopening before the suspend would launch the game seconds before the
+  // machine goes off; the claim waits until the suspend call has returned.
+  const n = names(r.calls);
+  assert.ok(n.indexOf("suspend") < n.indexOf("relaunch"), "reopened only after the suspend");
 });
 
 test("destination journey: consent given for a disconnect does not authorise a sleep", async () => {
   const r = rig({
     readiness: {
-      schema_version: 1, code: "sleep.requires_disconnect", requires_disconnect: true,
+      schema_version: 1, code: "sleep.requires_disconnect", requires_disconnect: true, retained_inhibitor: false,
       game: game(),
       // The backend is asking about a disconnect, but the player pressed sleep.
       close_prompt: prompt({ intent: "disconnect" }),

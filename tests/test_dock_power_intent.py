@@ -1,8 +1,8 @@
 """Strict intent parsing plus real Linux persistence and replay rejection."""
+from dataclasses import replace
 import json
 import multiprocessing
 import os
-from dataclasses import replace
 from pathlib import Path
 import sys
 import tempfile
@@ -180,44 +180,70 @@ class IntentFilesystemTests(unittest.TestCase):
             self.assertTrue(self.store.consume(*args))
         return self.claim.load()
 
-    def test_dead_session_sleep_is_reconciled_without_retiring_claim(self):
+    def test_an_unsubmitted_intent_is_released_and_frees_its_claim(self):
+        # A sleep that never reached the system used to strand the claim it
+        # pins: power_intent_absent stayed false, physical-disconnect archival
+        # never ran, and retire_after_boot takes shutdowns only. On device that
+        # left the dock unable to re-attach without deleting root-owned files.
+        expected = self.prepare_boot_intent(action='sleep')
+        self.assertFalse(self.claim.power_intent_absent(expected))
+        self.assertTrue(self.store.release_unsubmitted(
+            expected.operation, expected.binding, expected.generation, lambda: True))
+        self.assertTrue(self.claim.power_intent_absent(expected))
+        # The disconnect history itself is untouched.
+        self.assertEqual(self.claim.load(), expected)
+        # Idempotent: a second release finds nothing and still reports success.
+        self.assertTrue(self.store.release_unsubmitted(
+            expected.operation, expected.binding, expected.generation, lambda: True))
+
+    def test_a_sleep_intent_from_a_dead_session_is_reconciled(self):
+        # release_unsubmitted only runs inline, when the refusal is observed.
+        # It cannot help a refusal that predates the fix or a backend that died
+        # before reaching it. Observed on device 2026-09-16: a sleep refused
+        # under 0.3.117 left an intent nothing could ever submit, admission
+        # stayed inhibited, and each re-attach left the GPU powered with no
+        # driver bound until the enclosure overheated.
         dead = '1' * 64 + ':' + 'a' * 32
         expected = self.prepare_boot_intent(action='sleep', session=dead)
+        self.assertFalse(self.claim.power_intent_absent(expected))
         self.assertTrue(self.store.reconcile_stranded_sleep(
             expected, '2' * 64 + ':' + 'b' * 32, lambda: True))
         self.assertTrue(self.claim.power_intent_absent(expected))
+        # The disconnect history itself is untouched.
         self.assertEqual(self.claim.load(), expected)
 
-    def test_recreated_store_reconciles_consumed_sleep_without_live_session(self):
+    def test_recreated_store_reconciles_dead_sleep_without_a_live_session(self):
         dead = '1' * 64 + ':' + 'a' * 32
-        expected = self.prepare_boot_intent(action='sleep', session=dead)
+        expected = self.prepare_boot_intent(
+            action='sleep', session=dead, consume=True)
         recreated = DockPowerIntentStore(self.root, **self.kwargs)
+
         self.assertTrue(recreated.reconcile_stranded_sleep(
             expected, None, lambda: True))
         self.assertTrue(recreated.power_intent_absent(expected))
+        # Reconciliation only removes the power intent. Ordinary archival owns
+        # retirement of the disconnect history under its broader fresh guard.
         self.assertEqual(self.claim.load(), expected)
         self.assertFalse(recreated.consume(
             expected.operation, expected.binding, expected.generation,
             'sleep', dead, ARGS[5], ARGS[6]))
+        self.assertFalse(recreated.reconcile_stranded_sleep(
+            expected, None, lambda: True))
+        self.assertTrue(recreated.retire_physically_disconnected(
+            expected, lambda: recreated.power_intent_absent(expected)))
+        self.assertIsNone(self.claim.load())
 
-    def test_reconcile_rejects_legacy_or_live_session_tokens(self):
+    def test_reconcile_requires_strict_persisted_and_live_session_tokens(self):
         expected = self.prepare_boot_intent(
-            action='sleep', session='legacy-session')
+            action='sleep', session='legacy-session', consume=True)
         self.assertFalse(self.store.reconcile_stranded_sleep(
             expected, None, lambda: True))
-        self.assertFalse(self.claim.power_intent_absent(expected))
-        self.path.unlink()
-        self.claim.retire_physically_disconnected(expected, lambda: True)
-        self.claim.claim(*ARGS[:3])
-        live = '1' * 64 + ':' + 'a' * 32
-        expected = self.prepare_boot_intent(action='sleep', session=live)
-        self.assertFalse(self.store.reconcile_stranded_sleep(
-            expected, live, lambda: True))
         self.assertFalse(self.claim.power_intent_absent(expected))
 
     def test_reconcile_rejects_invalid_live_session_and_intent_identity(self):
         dead = '1' * 64 + ':' + 'a' * 32
-        expected = self.prepare_boot_intent(action='sleep', session=dead)
+        expected = self.prepare_boot_intent(
+            action='sleep', session=dead, consume=True)
         self.assertFalse(self.store.reconcile_stranded_sleep(
             expected, 'legacy-session', lambda: True))
         raw = json.loads(self.path.read_text())
@@ -229,38 +255,71 @@ class IntentFilesystemTests(unittest.TestCase):
 
     def test_reconcile_preserves_intent_changed_while_guard_runs(self):
         dead = '1' * 64 + ':' + 'a' * 32
-        expected = self.prepare_boot_intent(action='sleep', session=dead)
+        expected = self.prepare_boot_intent(
+            action='sleep', session=dead, consume=True)
         replacement = '2' * 64 + ':' + 'b' * 32
         def change_intent():
             raw = json.loads(self.path.read_text())
             raw['session'] = replacement
             self.path.write_text(json.dumps(raw))
             return True
+
         self.assertFalse(self.store.reconcile_stranded_sleep(
             expected, None, change_intent))
         self.assertEqual(json.loads(self.path.read_text())['session'], replacement)
         self.assertFalse(self.claim.power_intent_absent(expected))
 
-    def test_reconcile_never_touches_shutdown_or_changed_claim(self):
+    def test_reconcile_covers_a_consumed_sleep(self):
+        # A consumed record means submission was attempted, not that it landed.
+        # suspend_inhibited is refused after consumption, so the device case is
+        # a consumed record; restricting to unconsumed ones would miss the bug.
         dead = '1' * 64 + ':' + 'a' * 32
-        expected = self.prepare_boot_intent(action='shutdown', session=dead)
-        live = '2' * 64 + ':' + 'b' * 32
-        self.assertFalse(self.store.reconcile_stranded_sleep(
-            expected, live, lambda: True))
-        self.assertFalse(self.store.reconcile_stranded_sleep(
-            replace(expected, binding='other'), live, lambda: True))
-        self.assertFalse(self.store.reconcile_stranded_sleep(
-            replace(expected, stage='claimed'), live, lambda: True))
+        expected = self.prepare_boot_intent(action='sleep', session=dead, consume=True)
+        self.assertTrue(self.store.reconcile_stranded_sleep(
+            expected, '2' * 64 + ':' + 'b' * 32, lambda: True))
+        self.assertTrue(self.claim.power_intent_absent(expected))
+
+    def test_reconcile_never_touches_the_live_session(self):
+        # The live session can still consume its own record.
+        live = '1' * 64 + ':' + 'a' * 32
+        expected = self.prepare_boot_intent(action='sleep', session=live)
+        self.assertFalse(self.store.reconcile_stranded_sleep(expected, live, lambda: True))
         self.assertFalse(self.claim.power_intent_absent(expected))
 
-    def test_reconcile_false_guard_and_malformed_input_preserve_record(self):
+    def test_reconcile_never_touches_a_shutdown(self):
+        # A shutdown keeps its boot-hash evidence with retire_after_boot; this
+        # path has no evidence of the outcome and must not guess at one.
         dead = '1' * 64 + ':' + 'a' * 32
-        expected = self.prepare_boot_intent(action='sleep', session=dead)
-        live = '2' * 64 + ':' + 'b' * 32
+        shutdown = self.prepare_boot_intent(action='shutdown', session=dead)
         self.assertFalse(self.store.reconcile_stranded_sleep(
-            expected, live, lambda: False))
+            shutdown, '2' * 64 + ':' + 'b' * 32, lambda: True))
+        self.assertFalse(self.claim.power_intent_absent(shutdown))
+
+    def test_reconcile_refuses_a_false_guard_or_an_unexpected_claim(self):
+        dead = '1' * 64 + ':' + 'a' * 32
+        live = '2' * 64 + ':' + 'b' * 32
+        expected = self.prepare_boot_intent(action='sleep', session=dead)
+        self.assertFalse(self.store.reconcile_stranded_sleep(expected, live, lambda: False))
+        self.assertFalse(self.store.reconcile_stranded_sleep(
+            replace(expected, binding='other-binding'), live, lambda: True))
+        self.assertFalse(self.store.reconcile_stranded_sleep(
+            replace(expected, stage='claimed'), live, lambda: True))
         self.assertFalse(self.store.reconcile_stranded_sleep(expected, '', lambda: True))
         self.assertFalse(self.store.reconcile_stranded_sleep(None, live, lambda: True))
+        # Every refusal leaves the record exactly where it was.
+        self.assertFalse(self.claim.power_intent_absent(expected))
+
+    def test_release_refuses_a_false_guard_or_a_mismatched_claim(self):
+        expected = self.prepare_boot_intent(action='sleep')
+        self.assertFalse(self.store.release_unsubmitted(
+            expected.operation, expected.binding, expected.generation, lambda: False))
+        self.assertFalse(self.store.release_unsubmitted(
+            'f' * 32, expected.binding, expected.generation, lambda: True))
+        self.assertFalse(self.store.release_unsubmitted(
+            expected.operation, 'other-binding', expected.generation, lambda: True))
+        self.assertFalse(self.store.release_unsubmitted(
+            'not-hex', expected.binding, expected.generation, lambda: True))
+        # Every refusal leaves the intent exactly where it was.
         self.assertFalse(self.claim.power_intent_absent(expected))
 
     def test_shutdown_intent_retires_after_verified_new_boot(self):

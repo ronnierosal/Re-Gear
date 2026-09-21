@@ -153,6 +153,11 @@ export interface SnapshotPayload {
     checks?: Record<"gpu" | "link" | "hdmi" | "audio" | "session" | "idle", boolean> | null;
     checks_age_ms?: number;
   };
+  whole_dock_lifecycle?: {
+    schema_version: 1;
+    state: "none" | "software_down" | "reconnected" | "unknown" | "conflict";
+    code: string;
+  };
   /** Optional future read-only delivery for local journey classifiers. */
   journey?: {
     deferred_dock?: { state: string; code: string };
@@ -777,6 +782,10 @@ export interface SleepReadinessPayload {
    * sleeping with it attached is refused: the dock wakes the handheld
    * immediately. */
   requires_disconnect: boolean;
+  /** True when a disconnect-transaction sleep lease this plugin holds from
+   * an earlier dock disconnect is still up. It blocks every sleep and nothing
+   * on the sleep path releases it. Null when it could not be read. */
+  retained_inhibitor: boolean | null;
   game: DisconnectGamePayload | null;
   /** Re-derived for the sleep intent, so a player who agreed a game may be
    * closed for a disconnect is still asked before it closes for a sleep. */
@@ -808,6 +817,21 @@ export interface PendingRelaunchPayload {
  */
 export const takePendingRelaunch = callable<[], PendingRelaunchPayload>(
   "take_pending_relaunch",
+);
+
+export interface PendingSleepPayload {
+  schema_version: number;
+  /** True when a disconnect asked for as a sleep is waiting for its sleep
+   * step. Claiming consumes it; a refusal consumes it too. */
+  pending: boolean;
+  /** `sleep_continuation.pending`, `sleep_continuation.nothing_recorded`,
+   * or why a record was refused. Never rendered raw. */
+  code: string;
+}
+
+/** Consume obsolete disconnect-before-sleep state without honoring it. */
+export const takePendingSleep = callable<[], PendingSleepPayload>(
+  "take_pending_sleep",
 );
 
 export interface GameClosePreferenceResult {

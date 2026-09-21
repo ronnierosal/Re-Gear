@@ -20,8 +20,9 @@ from ..domain.models import GameState, OperatingMode
 from .dock_mutation_gate import DockMutationGate
 from .whole_dock_claim import WholeDockClaimStore
 from .held_session_helper import dispatch as user_helper
+from .runtime_state import DEFAULT_RUNTIME_STATE_ROOT
 
-ROOT = Path('/var/lib/handheld-dock-mode')
+ROOT = DEFAULT_RUNTIME_STATE_ROOT
 
 
 def observe_down(binding, generation):

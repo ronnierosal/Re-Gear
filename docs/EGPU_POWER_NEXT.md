@@ -220,3 +220,230 @@ Ronnie then requested the two-choice Sleep flow recorded above. Keeping an
 already-connected dock through sleep is distinct from software reauthorization
 after intentional disconnect. The latter remains excluded. Successful connected
 sleep/wake is the user's expectation, not yet a recorded hardware result.
+
+## 0.3.111 trial protocol, prepared 2026-09-15 while the device was offline
+
+The 0.3.109 Safe Disconnect stopped after the portable return with the eGPU
+still bound to amdgpu and both inhibitors held, and the only record of where it
+stopped -- `_whole_dock_trial_status`, served by
+`get_egpu_disconnect_status("whole_dock_trial")` -- was never read. It lives in
+the plugin process; installing anything restarts that process and discards it.
+So the order below is not optional.
+
+1. **Read first, install nothing.** From the dev machine:
+   `ssh -N -L 19224:127.0.0.1:8080 -i ~/.ssh/hdm_ally_deploy_v2 deck@steamdeck.local`
+   then `node scripts/probe_whole_dock_trial_status.mjs http://127.0.0.1:19224`.
+   The probe is read-only by construction and a test pins that. Record
+   `phase`, `release_stage`, `release.code`, `arm_stage`, `arm_code`, `busy`,
+   the pending localStorage record, and `sleep_guard`. Port 19223 is another
+   agent's CDP session; do not reuse it.
+2. **Then install 0.3.111** (`out/Re-Gear-0.3.111.zip`, revision 880d941,
+   sha256 4f90c8d4...2fffa). Not 0.3.110, which has the executor-start race.
+   The restart releases both inhibitors and the first Command Center open
+   retires the old-format pending record with the "could not confirm" notice.
+3. **Safe Disconnect, captured.** Before the press: `systemd-inhibit --list`,
+   `lspci | grep -i vga`, the newest `/home/deck/homebrew/logs/Re-Gear/*.log`
+   tail. Press. After Gaming Mode returns, run the probe again before opening
+   anything else, then open the Command Center and record what the control
+   says. The disconnect has not succeeded on any build since 0.3.98; the one
+   route-relevant backend change since is `peripherals.py` eaa7684, which makes
+   a docked controller visible where 0.3.98's parser hid it. If the probe shows
+   a refusal, `release.code` names it; if it shows `trial_running` with
+   `in_flight` true, the worker is blocked and a kernel-side wait is the only
+   place left.
+4. **Disconnect and sleep, only if step 3 completed.** Same capture. The press
+   should read readiness, refuse if `retained_inhibitor` is true, disconnect,
+   and either finish the sleep in the same panel or -- if Gaming Mode restarts
+   -- have the next panel claim `take_pending_sleep` and finish it. Record
+   whether the handheld slept, whether it woke, and whether a closed game was
+   reopened after the suspend call returned.
+
+Nothing in this section is a hardware result. It is the plan for getting one.
+
+## Safe Disconnect succeeded on 0.3.112, 2026-09-15 18:26 PDT (hardware result)
+
+Installed 0.3.112 (c80ffff) at 18:26:16 with the eGPU docked and the TV
+active (`mode=tv_docked game=idle`). The leftover `release_intent` claim from
+the 0.3.109 attempt had already been archived automatically when the dock
+came back after the reboot (`claim_stage` read `none` at 18:24). Safe
+Disconnect pressed ~18:26:24. Read from the running plugin at 18:26:54 by
+`scripts/probe_whole_dock_trial_status.mjs`, before the Command Center was
+opened:
+
+- `whole_dock_trial`: `dock_teardown.software_down`, `ok: true`,
+  `software_down: true`, `phase: dock_teardown`, `release_stage: removed`,
+  `release.code: live_disconnect.removed`, `display_release.released`,
+  `released: true`, `display_released: true`, `filter_disarmed: true`,
+  `in_flight: false`, request `2eb468cdc6d14feea35d61719d1b8df0`.
+- `whole_dock_record.claim_stage: software_down`. Pending localStorage record:
+  none. `lspci`: no `08:00.*` -- the Navi 33 and its audio function are off
+  the bus.
+- Journey: `completion.explicit_result_required` 18:26:24,
+  `audio.restore_portable` 18:26:25, `completion.portable_held` 18:26:30,
+  gamescope restarted 18:26:31, `connection.waiting_for_pci` 18:26:32,
+  `completion.portable_released` 18:26:33, sleep guard
+  `presence=absent active=False` 18:26:34. Press to removal about 10 s.
+- One Handheld Dock Mode inhibitor still held afterwards: the trial's own
+  lease, retained by design after a successful software removal.
+  `get_sleep_readiness` reports `retained_inhibitor: true` and
+  `sleep.available` (eGPU absent). Sleep is therefore blocked until that lease
+  is released by a proper handoff or the plugin restarts; the
+  "Disconnect and sleep" press refuses on this fact rather than suspending
+  into it.
+
+First recorded successful disconnect on any build since 0.3.98. The 0.3.109
+failure of 2026-09-14 did not reproduce and its cause remains unknown; its
+in-memory record was lost to the reboot. Software removal is not clearance to
+unplug; the enclosure remains powered.
+
+## Steam power surface, read-only probe on device 2026-09-15
+
+Run by `scripts/probe_steam_power_surface.mjs` against the live Ally
+(0.3.113 installed, SharedJSContext). Enumeration only: member names and
+`typeof`, nothing invoked. This decides whether "safe disconnect first" can be
+attached to Steam's own Sleep and Shutdown buttons.
+
+**Sleep: a real lease exists, as the ADR describes.** The suspend store carries
+`BlockSuspendAction:function` and `m_cSuspendBlockers:number` -- the counted
+blocker Steam checks before preparing -- alongside `OnSuspendRequest`,
+`RequestSleep`, `OnPrepareForSuspendProgress`, `OnSystemResumedFromSuspend`.
+Interception is therefore possible and is already in place.
+
+Three members the adapter does not name, recorded because they bear on whether
+the single patch point is sufficient: `OnRequestSuspend:function` (distinct from
+`OnSuspendRequest`), `InitiateSleep:function`, and Steam's own confirm-sleep
+modal state (`SetShowConfirmSleepModal`, `ShowConfirmSleepModal`,
+`m_bShowConfirmSleepModal`, `BShowSuspendResumeDialogs`). Whether any of these
+is an alternate entry that reaches a suspend without passing the blocker check
+is NOT established by an enumeration; it needs the function bodies read, and
+until then no claim either way belongs in the UI.
+
+**Shutdown: no equivalent lease found.** `SteamClient.System` exposes
+`ShutdownPC`, `RestartPC`, `SuspendPC`, `RebootToAlternateSystemPartition` --
+methods that cause power actions, not hooks that hold one. The shutdown-shaped
+members found are observers:
+
+- `AddShutdownCallback:function` with `m_rgShutdownCallbacks:object`
+- `OnShutdownStart`, `OnShutdownDone`, `OnShutdownState`, `OnShutdownFailed`,
+  `GetShutdownState`, `ClearShutdownFailure`, `m_shutdownState`
+
+`BlockServerShutdown_Bool:number` and `DeviceCanPowerOff_Bool:number` are
+numbers, not callables -- the shape of settings keys, not a live blocker.
+
+Nothing here has the shape of `BlockSuspendAction`: acquire, increment a count
+Steam consults before proceeding, return a release. `OnShutdownStart` fires
+when a shutdown has begun, which is after the point where a disconnect would
+have to run. So on this Steam build, "disconnect first, then shut down" cannot
+be attached to the system shutdown button without racing a power-off, and must
+not be attempted on the strength of a callback name. Whether
+`AddShutdownCallback` can veto or defer is unknown for the same reason as
+above; that is the only remaining question worth a follow-up probe.
+
+## Why the portable return kept refusing, 2026-09-15 (root cause)
+
+Two Disconnect + Sleep presses on 0.3.113 and 0.3.115 both refused with
+`dock_teardown.portable_return_unverified` -- on screen, "The return to the
+handheld screen could not be verified". 0.3.114 added the blocker code to the
+payload, and the second press named it: `portable_return {kind: blocked, code:
+observation.stale}`.
+
+`TransitionOrchestrator` plans against one observation and re-observes before
+acting; if the snapshot's content-hash generation moved in between it refuses
+as `observation.stale` (transition_orchestrator.py:148). On a dock that has
+just attached that hash moves constantly -- link recovery, audio preflight,
+attach readiness and the TV transition each change it -- so a press issued
+while the dock is still settling can lose the race between `preview()` and
+`execute()`. Both failing presses were within ~10 s of `attach.ready_idle`;
+the successful 0.3.112 Safe Disconnect was issued onto an already-settled
+dock after a plugin restart.
+
+This is not a refusal of the action: it says the world moved while we were
+deciding. `_return_portable_before_disconnect` now re-plans up to
+`PORTABLE_RETURN_ATTEMPTS` (3) times, waiting
+`PORTABLE_RETURN_SETTLE_SECONDS` (1 s) between attempts, and only for
+`blocked/observation.stale`. Every other blocked or failed outcome still stops
+on the first answer. Each attempt calls `preview()` again rather than reusing
+an approval token, so each is independently gated and a readiness that
+genuinely went away refuses at the preview. The recorded outcome carries
+`attempts`.
+
+This affects every route through the portable return, not just sleep: Safe
+Disconnect and Disconnect + Shutdown could lose the same race.
+
+## First complete disconnect on the sleep route, 2026-09-15 21:11 PDT
+
+0.3.116 installed 21:11:34; Disconnect + Sleep pressed ~10 s later, while the
+dock was still settling -- the case that refused twice before. The portable
+return PASSED this time (`portable_return {}`, no stale blocker recorded), and
+the teardown completed: `release_stage removed`, `live_disconnect.removed`,
+`display_release.released`, `filter_disarmed`, `software_down true`, eGPU off
+the PCI bus, claim `software_down`. The re-plan fix did its job.
+
+The sleep itself did not happen. The trial ended at `phase power_verification`
+with `dock_power.request_unverified`, `power_requested false`, and the system
+journal records no suspend attempt whatsoever.
+
+Ruled out by reading the device: the plugin runs as uid 0, so
+`dock_power.root_required` is not it; and the only non-`delay` inhibitor
+present afterwards is our own retained trial lease, restored by the handoff
+after the refusal. The handoff verifies every lease reports `active() is False`
+immediately before submitting, so both were down at submit time.
+
+What the cause is remains unknown, because `_run_sleep_request` submitted via
+`lambda r: SystemSuspendCommandRunner().request_suspend().requested is True`,
+which collapsed a four-way result into a boolean. A refused submission, a
+timeout, an unavailable command and a privilege failure all arrived as the same
+`request_unverified`.
+
+That is now fixed rather than guessed at. `Plugin._submit_suspend` records
+`suspend {requested, code}` on the terminal payload, and the control appends
+the reason to the refusal. `SystemSuspendCommandRunner` additionally
+distinguishes the one refusal with an actionable cause -- a block inhibitor
+still registered with logind when the request was made -- as
+`dock_power.suspend_inhibited`, classified from the command's stderr without
+any of that output crossing the boundary.
+
+Leading hypothesis, not established: logind may not have dropped our inhibitor
+registration by the time `systemctl --check-inhibitors=yes suspend` ran. The
+lease's own process had exited and `active()` reported false, but the D-Bus
+side of that release is not necessarily synchronous with process exit. If the
+next press reports `suspend_inhibited`, that is the answer and the fix is to
+wait for logind to agree before submitting, not to drop `--check-inhibitors`.
+
+## Why the sleep never happened, 2026-09-16 (root cause, and the state it stranded)
+
+0.3.117 recorded the reason on the terminal payload, and a driven press at
+16:26 named it: `suspend {requested: false, code: dock_power.suspend_inhibited}`.
+The disconnect half completed again -- eGPU off the bus, display released,
+portable return clean -- and `systemctl --check-inhibitors=yes suspend` was
+then refused because logind still held a blocking sleep lock.
+
+The lock was ours, and the handoff had already released it. `stop()`
+terminates the `systemd-inhibit` process and waits for THAT process to exit,
+but systemd-inhibit runs the guard as a child which inherits the lock and
+briefly outlives its parent. `active()` reports false as soon as the parent is
+gone, and the handoff submits immediately -- into that gap. It is a fixed-size
+race, which is why every attempt failed the same way and why no orphan
+processes are ever left behind afterwards.
+
+`--check-inhibitors=yes` stays: it is the guard that stops a suspend while the
+eGPU is attached. Instead `Plugin._submit_suspend` retries the one refusal that
+is verified to have enqueued nothing -- an inhibited request is rejected before
+any job exists, so asking again is not a second power action. A timeout or an
+unavailable command leaves the outcome unknown and is never retried; that is
+the case the no-replay rule exists for. Bounded at `SUSPEND_SUBMIT_ATTEMPTS`
+(6) with `SUSPEND_INHIBITOR_SETTLE_SECONDS` (0.5) between, and the attempt
+count is recorded.
+
+Second, the state each failure stranded. A bound power intent outlives its
+operation so nothing replays it, which is right while the outcome is unknown
+and wrong once the submission is known not to have happened: the record pins
+the `software_down` claim through `power_intent_absent`, physical-disconnect
+archival never runs, and a sleep reaches no other retirement --
+`retire_after_boot` takes shutdowns only, because a changed boot is evidence a
+shutdown occurred and says nothing about a sleep. On device this left the dock
+unable to re-attach at all, recoverable only by deleting root-owned files.
+`DockPowerIntentStore.release_unsubmitted` now discards the intent when the
+caller has verified the submission did not reach the system; it re-checks its
+guard under the lock and never touches the claim. Its tests are Linux-only and
+were run on the Ally itself, not merely in CI.

@@ -48,9 +48,9 @@ test("the shipped bundle contains no wording that grants an unplug", () => {
   }
 });
 
-test("the bundle still carries the wording that replaced it", () => {
+test("the bundle carries the canonical whole-dock cable warning", () => {
   // A bundle with neither string is a bundle where the block vanished, which
   // would pass the audit above for the wrong reason.
-  assert.match(bundle, /not yet clearance to unplug the cable/);
-  assert.match(bundle, /shut the handheld down first/i);
+  assert.match(bundle, /Keep the cable connected\. Physical unplug is not yet verified\./);
+  assert.match(bundle, /This is not permission to unplug\./);
 });

@@ -34,6 +34,8 @@ class LeasePort(Protocol):
     WITHOUT releasing protection. owned must verify both owner and pause. release
     keeps the claim/pause. reacquire restores protection under that same claim.
     finish relinquishes the pause/claim only after BOTH protections are verified.
+    resume_protection hands an owned lease back to ambient policy after a failed
+    restore; the claim stays so a second handoff cannot start on top of it.
     False/exception can mean partial work; owned/readback must remain usable.
     """
     def prepare(self, request: DockPowerRequest) -> bool: ...
@@ -42,6 +44,7 @@ class LeasePort(Protocol):
     def release(self, request: DockPowerRequest) -> bool: ...
     def reacquire(self, request: DockPowerRequest) -> bool: ...
     def finish(self, request: DockPowerRequest) -> bool: ...
+    def resume_protection(self, request: DockPowerRequest) -> bool: ...
 
 
 @dataclass(frozen=True)
@@ -109,16 +112,19 @@ class SleepLeaseHandoff:
             self.status = HandoffStatus('dock_power.handoff_recovery_required',
                                         self.status.submission)
             return False
-        restored = []
+        restored, owned = [], []
         # Incomplete prepare does not reduce the set of required protections.
         # Never acquire a lease whose operation ownership was not established.
         for lease in self._leases:
+            held = False
             try:
-                restored.append(lease.owned(self._request) is True
+                held = lease.owned(self._request) is True
+                restored.append(held
                                 and lease.reacquire(self._request) is True
                                 and lease.active() is True)
             except Exception:
                 restored.append(False)
+            owned.append(held)
         safe = all(restored)
         if safe:
             # Never unpause one controller before the other protection is back.
@@ -129,6 +135,20 @@ class SleepLeaseHandoff:
                 except Exception:
                     safe = False
             safe = self._protection_active() and safe
+        if not safe:
+            # Every lease this handoff OWNED is one it released for the suspend
+            # and now cannot vouch for: the one that did not come back is down,
+            # and one that reacquired is only as safe as a readback that finish
+            # may have just failed. Hand all of them back to the ambient policy
+            # -- it is presence-driven, so a lease that is already held loses
+            # nothing. A lease that was never prepared was never released, and
+            # a refusal that touched no lease therefore emits nothing here.
+            for lease, was_owned in zip(self._leases, owned):
+                if was_owned:
+                    try:
+                        lease.resume_protection(self._request)
+                    except Exception:
+                        pass
         self.status = HandoffStatus(
             'dock_power.handoff_restored' if safe else 'dock_power.handoff_recovery_required',
             self.status.submission, safe)

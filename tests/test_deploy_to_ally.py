@@ -45,5 +45,7 @@ class IdentityCutoverGuardTests(unittest.TestCase):
     def test_legacy_refusal_precedes_staging_and_replacement(self):
         source = (Path(__file__).resolve().parents[1] / "scripts/deploy_to_ally.ps1").read_text(encoding="utf-8")
         self.assertIn('LEGACY_DIR="`$PLUGIN_PARENT/HandheldDockMode"', source)
+        self.assertIn('BACKUP_ROOT="`$PLUGIN_PARENT/.regear-deploy-backups"', source)
+        self.assertNotIn('.hdm-deploy-backups', source)
         self.assertIn('test -e "`$LEGACY_DIR" || test -L "`$LEGACY_DIR"', source)
         self.assertLess(source.index("Legacy installation requires supervised cutover"), source.index('mkdir -p "`$PLUGIN_PARENT"'))

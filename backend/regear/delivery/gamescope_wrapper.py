@@ -12,6 +12,8 @@ from typing import Any
 
 
 REAL_GAMESCOPE = "/usr/bin/gamescope"
+STATE_ROOT_ENV = "REGEAR_STATE_ROOT"
+LEGACY_STATE_ROOT_ENV = "HDM_STATE_ROOT"
 CONFIG_FILENAME = "presentation.json"
 MAX_CONFIG_BYTES = 4096
 CONNECTOR_RE = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
@@ -309,10 +311,35 @@ def _load_config(state_root: Path) -> GamescopeLaunchConfig | None:
         return None
 
 
+def state_root_from_environment(environment: dict[str, str]) -> Path | None:
+    """Resolve one exact Re-Gear state root with bounded rollback compatibility.
+
+    Dual identity is ambiguous and fails closed. The prior variable is accepted
+    only for its exact former per-user root; arbitrary paths never gain
+    state-file read authority.
+    """
+    home_value = environment.get("HOME", "")
+    home = Path(home_value)
+    if not home.is_absolute():
+        return None
+    current = environment.get(STATE_ROOT_ENV)
+    legacy = environment.get(LEGACY_STATE_ROOT_ENV)
+    if current is not None and legacy is not None:
+        return None
+    if current is not None:
+        candidate = Path(current)
+        expected = home / ".local" / "share" / "regear"
+        return candidate if candidate.is_absolute() and candidate == expected else None
+    if legacy is None:
+        return None
+    candidate = Path(legacy)
+    expected = home / ".local" / "share" / "handheld-dock-mode"
+    return candidate if candidate.is_absolute() and candidate == expected else None
+
+
 def main() -> int:
-    state_value = os.environ.get("HDM_STATE_ROOT", "")
-    state_root = Path(state_value)
-    config = _load_config(state_root) if state_root.is_absolute() else None
+    state_root = state_root_from_environment(dict(os.environ))
+    config = _load_config(state_root) if state_root is not None else None
     connected = _connected_connectors()
     try:
         raw_boot_id, boot_id_sha256 = _boot_identity()
@@ -329,7 +356,7 @@ def main() -> int:
     )
     arguments = tuple(os.sys.argv[1:])
     environment = dict(os.environ)
-    if state_root.is_absolute():
+    if state_root is not None:
         from .portable_trial_launch import consume_launch_candidate
         candidate = consume_launch_candidate(
             state_root, config=config, argv=arguments, environment=environment,

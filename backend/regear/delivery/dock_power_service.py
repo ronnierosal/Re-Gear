@@ -30,19 +30,32 @@ def dock_power_capabilities():
             'shutdown': {
                 'implementation': 'implemented',
                 'live_readiness': 'not_assessed',
-                'actionable': False,
+                # Offered through the guarded teardown route since the
+                # 2026-09-14 maintainer decision; every gate on that route
+                # still runs. `dock_power.live_preflight_required` used to be
+                # listed here, naming a gate that was never implemented; a
+                # contract must not cite a check that does not exist.
+                # Hardware completion remains unverified: D5.2 recorded fan
+                # and LEDs staying on until a manual power-button hold, and
+                # the later clean manual shutdown is user-reported, not an
+                # automated continuation result. This payload still
+                # authorizes nothing.
+                'actionable': True,
                 'reason_codes': [
                     'dock_power.shutdown_hardware_unverified',
-                    'dock_power.live_preflight_required',
                 ],
             },
             'sleep': {
                 'implementation': 'implemented',
                 'live_readiness': 'not_assessed',
-                'actionable': False,
+                # Offered through the guarded teardown route since the
+                # 2026-09-15 maintainer decision, on the same footing as
+                # shutdown: every gate on the route still runs, the two-lease
+                # handoff is what releases sleep protection, and no sleep/wake
+                # cycle has been observed on hardware through this route.
+                'actionable': True,
                 'reason_codes': [
                     'dock_power.sleep_hardware_unverified',
-                    'dock_power.live_preflight_required',
                 ],
             },
         },

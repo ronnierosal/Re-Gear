@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-"""Handheld Dock Mode Gamescope argument shim."""
+"""Re-Gear Gamescope argument shim."""
 
 from pathlib import Path
 import sys

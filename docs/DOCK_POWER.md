@@ -109,6 +109,83 @@ later integration. Normal Steam Sleep/Shutdown and the physical button do not
 invoke the new shutdown flow. Software-disconnect completion is not physical
 unplug clearance; the enclosure remains powered.
 
+On 2026-09-14 the maintainer decided to offer the shutdown intent through that
+same control. The native adapter now mounts a two-option selector -- disconnect
+only (the default, and the route the 0.3.98 golden cycle ran) or disconnect and
+shut down -- feeding one `WholeDockControl`, one pending record and one poll.
+Reconnect and every sleep route stay off the selector. Selection is
+presentation only: `dockIntentControl` and every backend guard still decide
+whether the chosen route is offered, and the capability contract still
+authorizes nothing. `dock_power.live_preflight_required` was removed from that
+contract because it named a gate that was never implemented. Hardware
+completion of an automated shutdown continuation remains unverified: D5.2
+recorded fan and LEDs staying on until a manual power-button hold, and the
+later clean shutdown is a user-reported manual result, not an automated
+continuation test.
+
+On 2026-09-14 the maintainer also asked for the disconnect-then-sleep press.
+It is mounted on the Quick Access surface as "Disconnect and sleep", on the
+existing game-close route (`runSleepWithGameClose`), not on the dock control's
+selector, which still offers no sleep route. The press reads sleep readiness
+first and refuses without touching the eGPU when readiness is unknown, when
+sleeping does not need a disconnect, or when a retained disconnect-transaction
+sleep lease is still held. That last fact is `retained_inhibitor`, now reported
+by `get_sleep_readiness` in every branch: the snapshot's `sleep_guard` describes
+the background controller only, and the 2026-09-13 capture recorded both
+inhibitors still up after a successful software removal. After the software
+disconnect the press does not suspend on the disconnect result. It re-reads the
+snapshot a bounded number of times until the background guard is neither
+required nor active, hands that same observation to the Steam-side preflight so
+its blocker drops on evidence, and only then asks Steam to suspend; if the guard
+is still up when the budget ends it says so and leaves the handheld awake.
+Freeing the eGPU restarts the Steam session whenever a session-reached unit
+held it, which destroys that panel before its sleep step runs, so the sleep is
+also written down with the disconnect (`take_pending_sleep`: one record,
+consumed on claim, same boot only, five awake minutes, refused if the machine
+has slept since) and the panel that comes up after the restart claims it,
+waits for the same guard evidence, and asks Steam to sleep. A game closed for
+the sleep is reopened only after the suspend call returns -- after waking
+when the machine did sleep, a moment later when Steam declined -- and a guard
+refusal reopens it at once. The readiness retained-lease fact and this
+continuation are both new on 2026-09-14 and neither has run on the device.
+Separately, a sleep handoff whose restore fails no longer silences the
+background guard for the process lifetime: `resume_protection` returns the
+controller to its ordinary presence policy for every lease the handoff owned
+-- acquire while the eGPU is present, release once it is gone -- while the
+handoff keeps its claim so a second one cannot start on top of it. The
+transaction controller is built per request and reconciled by nothing, so a
+transaction lease that fails to reacquire stays down exactly as before; that
+gap is recorded here, not closed.
+None of this is hardware-validated. No sleep/wake cycle has been run through
+the press, invariant 10 still disclaims sleep validation, and the enclosure
+remains powered.
+
+Observed on device on 2026-09-14, on the 0.3.109 candidate: a Safe Disconnect
+left the mounted control disabled for good. The trial acquired its inhibitor,
+returned presentation to portable, and then Gaming Mode restarted -- which is
+what freeing the dock does whenever a session-reached unit holds it -- taking
+with it the panel waiting on the reply. The eGPU was never removed and nothing
+was left half-detached, but the pending record that panel had written could
+never be retired: the reply went nowhere, and correlation is the only way the
+record settles. Two paths made that permanent. A worker that dies without
+writing its terminal payload -- an `except Exception` does not cover a
+BaseException -- left the recorded status busy for the life of the process; and
+a restarted backend answers `dock_teardown.no_trial` carrying no request id at
+all, so every later poll compared against nothing.
+
+The read now reports `in_flight`, which is the backend asserting about its own
+process that no worker is running, and rewrites a status recorded as running
+with nothing running it into a terminal `dock_teardown.trial_unresolved` that
+keeps its request id. The pending record now carries the identity of the panel
+that wrote it, so a record from a panel that did not survive can be retired
+against an idle backend while a record this panel is still waiting on cannot --
+that distinction is what stops an idle reading taken before the backend marks
+itself busy from dropping the guard on a live request. Retiring says only that
+the request is no longer outstanding: the player is told the result could not be
+confirmed, what the device is in is read from the fresh status, and no path
+claims the disconnect happened or that unplugging is safe. A backend too old to
+report `in_flight` retires nothing.
+
 An unwired `SleepLeaseHandoff` module now implements the proposed two-lease
 handoff contract with independent restoration readbacks and one-shot submission.
 No production adapter supplies the required pause, crash-continuity, supported
@@ -196,3 +273,20 @@ capability response cannot replace the execution preflight.
 The [inhibitor handoff proposal](dock_power_inhibitor_handoff.md) records the
 remaining two-lease cancellation, crash-continuity and wake contracts, with
 fixture coverage of the existing seams. It does not enable cable-connected sleep.
+
+On 2026-09-15, after the first successful Safe Disconnect since 0.3.98 (0.3.112,
+software_down in ~10 s), the maintainer asked for both remaining buttons. The
+Command Center's "Disconnect + Sleep" and "Disconnect + Shutdown" tiles had
+been placeholders marked "integration pending"; they now open the same guarded
+whole-dock modal as Safe Disconnect with the intent preselected, and the
+selector inside the Safe Disconnect detail gains "Disconnect and sleep". The
+sleep intent dispatches `whole_dock_sleep`, which the backend already routes
+through the two-lease handoff (`_sleep_after_dock_down` -> `run_observed_sleep`:
+release both protections, submit one suspend, observe the cycle, restore) --
+the only path that can release the trial lease a Route B disconnect retains.
+The capability contract marks sleep actionable on the same footing as
+shutdown: every gate on the route still runs, the payload authorizes nothing,
+and no sleep/wake cycle has been observed on hardware through this route. The
+eGPU-page "Disconnect and sleep" press remains bound to the game-close route,
+which does not offer itself while the TV session holds the eGPU; it is the
+route for a running game, not for the docked TV state.

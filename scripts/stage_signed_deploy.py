@@ -25,7 +25,7 @@ def stage_signed_package(*, package: Path, signature: Path, host: str, user: str
     staged = stage_package(package=package, host=host, user=user, port=port, timeout_seconds=timeout_seconds, identity_file=identity_file)
     destination = validate_destination(host, user, port)
     upload = subprocess.run(
-        ["scp", *connection_options(timeout_seconds=timeout_seconds, identity_file=identity_file), "-P", str(port), str(signature.resolve()), f"{destination}:Downloads/{expected_signature}"],
+        ["scp", *connection_options(timeout_seconds=timeout_seconds, identity_file=identity_file), "-P", str(port), str(signature.resolve()), f"{destination}:{expected_signature}"],
         text=True, capture_output=True, timeout=timeout_seconds + 30, check=False,
     )
     if upload.returncode != 0:

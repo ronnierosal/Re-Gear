@@ -65,7 +65,7 @@ STATUSES = (
     "timed_out", "size_limit", "malformed_journal",
 )
 CHECKPOINT_RE = re.compile(
-    r"HDM shutdown checkpoint: stage=(" + "|".join(STAGES)
+    r"(?:Re-Gear|HDM) shutdown checkpoint: stage=(" + "|".join(STAGES)
     + r") elapsed_ms=([0-9]{1,9})(?:$|\s)"
 )
 

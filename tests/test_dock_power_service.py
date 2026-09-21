@@ -21,10 +21,15 @@ class DockPowerCapabilitiesTests(unittest.TestCase):
         shutdown = status['actions']['shutdown']
         self.assertEqual(shutdown['implementation'], 'implemented')
         self.assertEqual(shutdown['live_readiness'], 'not_assessed')
-        self.assertIs(shutdown['actionable'], False)
+        # Offered through the guarded route since 2026-09-14; the contract
+        # still authorizes nothing and hardware completion stays unverified.
+        self.assertIs(shutdown['actionable'], True)
         self.assertEqual(shutdown['reason_codes'], [
-            'dock_power.shutdown_hardware_unverified',
-            'dock_power.live_preflight_required'])
+            'dock_power.shutdown_hardware_unverified'])
+        # The old second reason named a preflight gate that was never
+        # implemented anywhere; a contract must not cite a check that does not
+        # exist, so it must not come back.
+        self.assertNotIn('dock_power.live_preflight_required', shutdown['reason_codes'])
         self.assertEqual(json.loads(json.dumps(status)), status)
 
     def test_physical_removal_profile_does_not_promote_sleep_support(self):
@@ -35,10 +40,9 @@ class DockPowerCapabilitiesTests(unittest.TestCase):
         sleep = dock_power_capabilities()['actions']['sleep']
         self.assertEqual(sleep['implementation'], 'implemented')
         self.assertEqual(sleep['live_readiness'], 'not_assessed')
-        self.assertIs(sleep['actionable'], False)
-        self.assertEqual(sleep['reason_codes'], [
-            'dock_power.sleep_hardware_unverified',
-            'dock_power.live_preflight_required'])
+        self.assertIs(sleep['actionable'], True)
+        self.assertEqual(sleep['reason_codes'], ['dock_power.sleep_hardware_unverified'])
+        self.assertNotIn('dock_power.live_preflight_required', sleep['reason_codes'])
         self.assertEqual(create_power_request('sleep', 'session-a').action, 'sleep')
 
     def test_payload_mutation_cannot_change_subsequent_status_or_execution(self):
@@ -48,8 +52,8 @@ class DockPowerCapabilitiesTests(unittest.TestCase):
         status['actions']['sleep']['reason_codes'].clear()
         fresh = dock_power_capabilities()
         self.assertIs(fresh['authorizes_action'], False)
-        self.assertIs(fresh['actions']['sleep']['actionable'], False)
-        self.assertEqual(len(fresh['actions']['sleep']['reason_codes']), 2)
+        self.assertIs(fresh['actions']['sleep']['actionable'], True)
+        self.assertEqual(len(fresh['actions']['sleep']['reason_codes']), 1)
         self.assertEqual(create_power_request('sleep', 'session-a').action, 'sleep')
 
 

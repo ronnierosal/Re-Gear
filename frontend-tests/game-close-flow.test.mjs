@@ -15,6 +15,7 @@ const {
   runSleepWithGameClose,
   claimPendingRelaunch,
   closeFlowMessage,
+  continuePendingSleep,
 } = await import(
   "data:text/javascript;base64," + Buffer.from(js).toString("base64")
 );
@@ -54,13 +55,15 @@ const status = (decision) => ({
 });
 
 /** A rig that records every effect, and closes the game after N polls. */
-function rig({ closesAfter = 1, disconnectOutcome = outcome(), throwOn = null } = {}) {
+function rig({ closesAfter = 1, disconnectOutcome = outcome(), throwOn = null, releaseGuard = true,
+               pendingRelaunch = "", pendingSleep = false } = {}) {
   const calls = [];
   let polls = 0;
   let clock = 0;
-  // Stands in for the backend's durable record: written with the disconnect,
+  // Stands in for the backend's durable records: written with the disconnect,
   // consumed exactly once by claiming.
-  let recorded = "";
+  let recorded = pendingRelaunch;
+  let sleepPending = pendingSleep;
   return {
     calls,
     effects: {
@@ -80,6 +83,11 @@ function rig({ closesAfter = 1, disconnectOutcome = outcome(), throwOn = null } 
         recorded = relaunchAppId;
         return disconnectOutcome;
       },
+      async releaseSleepBlocker() {
+        calls.push(["releaseSleepBlocker"]);
+        if (throwOn === "releaseSleepBlocker") throw new Error("preflight unreachable");
+        return releaseGuard;
+      },
       async suspend() {
         calls.push(["suspend"]);
         if (throwOn === "suspend") throw new Error("steam refused");
@@ -90,6 +98,13 @@ function rig({ closesAfter = 1, disconnectOutcome = outcome(), throwOn = null } 
         const claimed = recorded;
         recorded = "";
         return { steam_app_id: claimed, code: claimed ? "relaunch.approved" : "relaunch.nothing_recorded" };
+      },
+      async takePendingSleep() {
+        calls.push(["takePendingSleep"]);
+        if (throwOn === "takePendingSleep") throw new Error("unreadable");
+        const claimed = sleepPending;
+        sleepPending = false;
+        return { pending: claimed, code: claimed ? "sleep_continuation.pending" : "sleep_continuation.nothing_recorded" };
       },
       async relaunchGame(appId) {
         calls.push(["relaunch", appId]);
@@ -473,7 +488,7 @@ test("sleeping closes the game, disconnects, then suspends in that order", async
 
   assert.equal(result.ok, true);
   assert.equal(result.code, "flow.slept");
-  assert.deepEqual(names(r.calls), ["terminate", "status", "disconnect", "suspend"]);
+  assert.deepEqual(names(r.calls), ["terminate", "status", "disconnect", "releaseSleepBlocker", "suspend", "take"]);
 });
 
 test("nothing suspends unless the disconnect succeeded", async () => {
@@ -512,20 +527,25 @@ test("sleeping records the reopen against the sleep clock", async () => {
 
 test("the game is not reopened before the machine suspends", async () => {
   // Launching it seconds before the machine goes off is worse than not
-  // reopening it at all. The record waits for the panel that comes up after.
+  // reopening it at all. The claim waits until the suspend call has returned
+  // -- after waking when the machine slept, since timers do not run while it
+  // is suspended -- and only then puts the game back.
   const r = rig();
   const result = await runSleepWithGameClose(request({ relaunch: true }), r.effects);
 
-  assert.equal(result.relaunched, false);
-  assert.ok(!names(r.calls).includes("relaunch"));
-  assert.ok(!names(r.calls).includes("take"));
+  assert.equal(result.relaunched, true);
+  const n = names(r.calls);
+  assert.ok(n.indexOf("suspend") < n.indexOf("take"), "claimed only after the suspend");
+  assert.ok(n.indexOf("take") < n.indexOf("relaunch"));
+  assert.deepEqual(r.calls.find(([name]) => name === "relaunch"), ["relaunch", "1145360"]);
 });
 
-test("the waiting record is claimable after waking", async () => {
+test("the reopen is claimed exactly once, by the flow that slept", async () => {
   const r = rig();
   await runSleepWithGameClose(request({ relaunch: true }), r.effects);
 
-  assert.equal(await claimPendingRelaunch(r.effects), "1145360");
+  assert.equal(await claimPendingRelaunch(r.effects), null, "nothing left for a later mount");
+  assert.equal(names(r.calls).filter((name) => name === "relaunch").length, 1);
 });
 
 test("a suspend Steam refuses is reported, not hidden", async () => {
@@ -535,6 +555,7 @@ test("a suspend Steam refuses is reported, not hidden", async () => {
   assert.equal(result.ok, false);
   assert.equal(result.code, "flow.suspend_failed");
   assert.match(closeFlowMessage(result), /did not sleep the handheld/i);
+  assert.ok(names(r.calls).includes("take"), "the closed game is put back");
 });
 
 test("a sleep whose disconnect failed still puts the game back", async () => {
@@ -565,4 +586,93 @@ test("a disconnect asked for as a disconnect still reopens immediately", async (
   );
 
   assert.equal(result.relaunched, true);
+});
+
+test("a guard that is still up refuses the sleep and leaves the handheld awake", async () => {
+  // The disconnect succeeded, but the evidence says a sleep guard is still
+  // required or still held. Suspending into it is what the 2026-09-13 manual
+  // trial hit -- sleep blocked with the dock already gone. Refuse instead.
+  const r = rig({ releaseGuard: false });
+  const result = await runSleepWithGameClose(request(), r.effects);
+
+  assert.equal(result.ok, false);
+  assert.equal(result.code, "flow.sleep_guard_still_required");
+  assert.match(closeFlowMessage(result), /sleep guard is still held/i);
+  assert.match(closeFlowMessage(result), /Keep the cable connected/i);
+  assert.deepEqual(names(r.calls), ["terminate", "status", "disconnect", "releaseSleepBlocker", "take"]);
+  assert.ok(!names(r.calls).includes("suspend"), "never suspend past a guard");
+});
+
+test("a guard refusal puts the closed game back at once", async () => {
+  // The player is awake with a closed game and no sleep; nothing is coming
+  // back later to reopen it, so this does.
+  const r = rig({ releaseGuard: false });
+  const result = await runSleepWithGameClose(request({ relaunch: true }), r.effects);
+
+  assert.equal(result.relaunched, true);
+  assert.deepEqual(r.calls.find(([name]) => name === "relaunch"), ["relaunch", "1145360"]);
+});
+
+// ---------------------------------------------------------------------------
+// Continuing a sleep whose disconnect restarted the Steam session
+// ---------------------------------------------------------------------------
+
+test("a panel loading with no sleep pending continues nothing and touches nothing", async () => {
+  const r = rig();
+  assert.equal(await continuePendingSleep(r.effects), null);
+  assert.deepEqual(names(r.calls), ["takePendingSleep"]);
+});
+
+test("a panel loading with a sleep pending waits for the guards, sleeps, then reopens", async () => {
+  // The panel that pressed the button was destroyed by the session restart
+  // its disconnect caused. This one finishes the press from the record.
+  const r = rig({ pendingSleep: true, pendingRelaunch: "1145360" });
+  const result = await continuePendingSleep(r.effects);
+
+  assert.equal(result.code, "flow.slept");
+  assert.equal(result.relaunched, true);
+  assert.deepEqual(names(r.calls), ["takePendingSleep", "status", "releaseSleepBlocker", "suspend", "take", "relaunch"]);
+  assert.match(closeFlowMessage(result), /Keep the cable connected/i);
+});
+
+test("the continuation is consumed exactly once", async () => {
+  const r = rig({ pendingSleep: true });
+  assert.notEqual(await continuePendingSleep(r.effects), null);
+  assert.equal(await continuePendingSleep(r.effects), null);
+  assert.equal(names(r.calls).filter((name) => name === "suspend").length, 1);
+});
+
+test("a continuation whose guard is still up leaves the handheld awake and reopens the game", async () => {
+  const r = rig({ pendingSleep: true, pendingRelaunch: "1145360", releaseGuard: false });
+  const result = await continuePendingSleep(r.effects);
+
+  assert.equal(result.code, "flow.sleep_guard_still_required");
+  assert.ok(!names(r.calls).includes("suspend"));
+  assert.equal(result.relaunched, true);
+});
+
+test("a continuation never sleeps or launches into a device that needs a person", async () => {
+  const r = rig({ pendingSleep: true, pendingRelaunch: "1145360", throwOn: "status" });
+  const result = await continuePendingSleep(r.effects);
+
+  assert.equal(result.code, "flow.device_needs_attention");
+  assert.equal(result.attention, true);
+  assert.deepEqual(names(r.calls), ["takePendingSleep", "status"]);
+  assert.match(closeFlowMessage(result), /unexpected state/i);
+});
+
+test("an unreadable continuation record is nothing to do, not a sleep", async () => {
+  const r = rig({ throwOn: "takePendingSleep" });
+  assert.equal(await continuePendingSleep(r.effects), null);
+  assert.ok(!names(r.calls).includes("suspend"));
+});
+
+test("a release check that cannot run is a refusal, not a pass", async () => {
+  // Unknown is not evidence that the guard dropped.
+  const r = rig({ throwOn: "releaseSleepBlocker" });
+  const result = await runSleepWithGameClose(request(), r.effects);
+
+  assert.equal(result.ok, false);
+  assert.equal(result.code, "flow.sleep_guard_still_required");
+  assert.ok(!names(r.calls).includes("suspend"));
 });

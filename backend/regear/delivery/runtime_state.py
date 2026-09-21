@@ -8,7 +8,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 
-DEFAULT_RUNTIME_STATE_ROOT = Path("/var/lib/handheld-dock-mode")
+DEFAULT_RUNTIME_STATE_ROOT = Path("/var/lib/regear/control")
 STATE_DIRECTORY_MODE = 0o700
 
 
@@ -25,8 +25,8 @@ class RootOwnedRuntimeState:
     ) -> None:
         if not state_root.is_absolute() or state_root == Path(state_root.anchor):
             raise ValueError("runtime state root must be a narrow absolute path")
-        if state_root.name != "handheld-dock-mode":
-            raise ValueError("runtime state root must use the fixed legacy directory name")
+        if state_root.name != "control":
+            raise ValueError("runtime state root must use the fixed Re-Gear directory name")
         self._root = state_root
         self._platform_name = platform_name
         self._effective_uid = effective_uid or getattr(os, "geteuid", lambda: -1)

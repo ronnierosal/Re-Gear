@@ -13,8 +13,7 @@ test("Re-Gear is the Decky list, panel, and dialog brand", () => {
   assert.match(source, /strTitle: PRODUCT_NAME/);
   assert.match(source, /name: PRODUCT_NAME/);
   assert.equal(JSON.parse(read("../plugin.json")).name, "Re-Gear");
-  assert.match(source, /hdm\.hideAttachedEgpuSleepWarning/);
-  assert.match(source, /hdm\.hideAttachedG1SleepWarning/);
+  assert.match(read("../src/identity-storage.ts"), /regear\.hideAttachedEgpuSleepWarning\.v1/);
 });
 
 test("approved preview uses Re-Gear and keeps sample-data disclosure", () => {
@@ -40,11 +39,19 @@ test("committed bundle embeds compact transparent SVG artwork without unpackaged
     const image = readFileSync(new URL(`../src/assets/${name}.svg`, import.meta.url));
     assert.ok(bundle.includes("data:image/svg+xml;base64," + image.toString("base64")), `${name} must be embedded`);
   }
-  assert.match(bundle, /M13 43a21 21 0 1 1 38 0/); // Approved inline Auto TDP gauge.
+  assert.match(bundle, /M49 24A20 20 0 0 0 16 18/); // Approved expanded Command Center Auto TDP icon.
   assert.doesNotMatch(bundle, /\/assets\/(?:regear|mode)-/);
   // The approved preview above is a design mock; this is the surface players
   // actually load, so the old product name must be absent from it too. The
   // check stays case-sensitive and word-bounded on purpose: the frozen
   // "hdm.hideAttached*" settings keys and every "hdmi" label must survive.
-  assert.doesNotMatch(bundle, /Handheld Dock Mode|\bHDM\b/);
+  // Historical legal attribution is preserved verbatim, not product branding.
+  // Exempt only the exact bundled authoritative documents, never arbitrary text.
+  let productSurface=bundle;
+  for(const path of ["../LICENSE","../THIRD_PARTY_NOTICES.md"]){
+    const literal=JSON.stringify(read(path));
+    assert.ok(productSurface.includes(literal),`${path} is bundled verbatim`);
+    productSurface=productSurface.replace(literal,'"[authoritative legal text]"');
+  }
+  assert.doesNotMatch(productSurface, /Handheld Dock Mode|\bHDM\b/);
 });

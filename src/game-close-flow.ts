@@ -297,7 +297,26 @@ export async function claimPendingRelaunch(
 export interface SleepFlowEffects extends CloseFlowEffects {
   /** Steam's own suspend. Re-Gear never suspends the machine itself. */
   suspend(): Promise<void>;
+  /** Wait, with fresh evidence, until neither sleep guard is still up.
+   *
+   * A disconnect succeeding does not release either guard by itself: the
+   * backend's login1 inhibitor drops on its next reconcile, and Re-Gear's own
+   * Steam-side blocker drops on the next panel poll. Suspending before both
+   * have dropped is refused by Steam, which is what the 2026-09-13 manual
+   * trial hit. False means a guard is still required or still held, and the
+   * flow must not sleep. Required, not optional: a caller that forgets to
+   * bind it fails closed rather than sleeping past the guard. */
+  releaseSleepBlocker(): Promise<boolean>;
+  /** Claim the sleep a disconnect was asked for, if one is waiting. Consuming. */
+  takePendingSleep(): Promise<{ pending: boolean; code: string }>;
 }
+
+/** How long to wait after asking Steam to suspend before putting the game
+ * back. Timers do not run while the machine is suspended, so when the
+ * suspend happened this fires after waking, and when Steam declined it
+ * fires a moment later on an awake handheld. Either way the player is
+ * awake with a closed game by then, which is exactly when to reopen it. */
+export const RESUME_SETTLE_MS = 1500;
 
 /** Close the game, disconnect the eGPU, then let Steam sleep the handheld.
  *
@@ -312,7 +331,13 @@ export interface SleepFlowEffects extends CloseFlowEffects {
  *
  * **The game is not reopened before the suspend.** Launching it seconds before
  * the machine goes off would be worse than not reopening it at all. The wish
- * is recorded and waits; the panel that comes up after waking claims it.
+ * is recorded and claimed only after the suspend call returns -- after waking
+ * when the machine did sleep, a moment later when Steam declined -- and a
+ * guard refusal reopens it at once.
+ *
+ * When the disconnect restarts the Steam session this panel never reaches
+ * the sleep step at all; `continuePendingSleep` is the same step, run by the
+ * panel that comes up afterwards from the record the backend kept.
  */
 export async function runSleepWithGameClose(
   request: CloseFlowRequest,
@@ -327,12 +352,83 @@ export async function runSleepWithGameClose(
     // the handheld straight back up.
     return result;
   }
+  return sleepThenReopen(effects, result);
+}
+
+/** The sleep step: wait for the guards, ask Steam, then put the game back.
+ *
+ * `result` is the successful disconnect this continues. The eGPU is gone in
+ * software, but both sleep guards are still up on stale evidence and Steam's
+ * suspend honours them, so this waits for the evidence to catch up rather
+ * than racing it. Refusing leaves the handheld awake and disconnected, which
+ * the player can see; sleeping into a guard leaves it awake and confused
+ * about why. Every exit puts a closed game back: a sleep that did not happen
+ * leaves the player awake with a closed game, and one that did leaves them
+ * waking up to one.
+ */
+async function sleepThenReopen(
+  effects: SleepFlowEffects,
+  result: CloseFlowResult,
+): Promise<CloseFlowResult> {
+  let released: boolean;
+  try {
+    released = await effects.releaseSleepBlocker();
+  } catch {
+    released = false;
+  }
+  if (!released) {
+    const relaunched = await restore(effects, result.attention);
+    return { ...result, ok: false, code: "flow.sleep_guard_still_required", relaunched };
+  }
   try {
     await effects.suspend();
   } catch {
-    return { ...result, ok: false, code: "flow.suspend_failed" };
+    const relaunched = await restore(effects, result.attention);
+    return { ...result, ok: false, code: "flow.suspend_failed", relaunched };
   }
-  return { ...result, code: "flow.slept" };
+  await effects.wait(RESUME_SETTLE_MS);
+  const relaunched = await restore(effects, result.attention);
+  return { ...result, code: "flow.slept", relaunched };
+}
+
+/** Finish a sleep whose disconnect restarted the Steam session.
+ *
+ * For the panel that comes up after that restart. The record is consumed by
+ * claiming, so exactly one panel can act on it; null means nothing was
+ * waiting and the caller carries on as an ordinary mount. A device that
+ * needs a person is not put to sleep and not launched into: the claim is
+ * spent, the refusal is reported, and the guard evidence is never consulted.
+ */
+export async function continuePendingSleep(
+  effects: SleepFlowEffects,
+): Promise<CloseFlowResult | null> {
+  let pending: boolean;
+  try {
+    pending = (await effects.takePendingSleep()).pending === true;
+  } catch {
+    return null;
+  }
+  if (!pending) {
+    return null;
+  }
+  let status: DisconnectStatusPayload | null;
+  try {
+    status = await effects.readStatus();
+  } catch {
+    status = null;
+  }
+  const base: CloseFlowResult = {
+    ok: true,
+    code: "flow.continuing_sleep",
+    outcome: null,
+    gameClosed: false,
+    relaunched: false,
+    attention: false,
+  };
+  if (status === null || status.availability === "recovery_required") {
+    return { ...base, ok: false, code: "flow.device_needs_attention", attention: true };
+  }
+  return sleepThenReopen(effects, base);
 }
 
 /** What to tell the player when the flow ends.
@@ -349,6 +445,8 @@ const FLOW_MESSAGE: Record<string, string> = {
     "The game closed, but the eGPU could not be disconnected.",
   "flow.suspend_failed":
     "The eGPU is detached in software, but Steam did not sleep the handheld. Try sleeping again.",
+  "flow.sleep_guard_still_required":
+    "The eGPU is detached in software, but a sleep guard is still held, so Re-Gear left the handheld awake. Keep the cable connected: this does not make unplugging safe.",
 };
 
 export function closeFlowMessage(result: CloseFlowResult): string {

@@ -152,7 +152,8 @@ class SupportBundleTests(unittest.TestCase):
             "regear": "0.3.73", "decky": "unknown", "steamos": "unknown", "kernel": "6.11",
         })
         # The existing serialized schema discriminator is a compatibility value.
-        self.assertEqual(bundle.payload["manifest"]["kind"], "hdm_support_bundle")
+        self.assertEqual(bundle.payload["schema_version"], 3)
+        self.assertEqual(bundle.payload["manifest"]["kind"], "regear_support_bundle")
 
     def test_legacy_version_input_is_normalized_without_losing_version(self):
         bundle = SupportBundleService().build({}, (), {"hdm": "0.2.0"})
@@ -316,7 +317,7 @@ class SupportBundleTests(unittest.TestCase):
             ),
         )
 
-        self.assertEqual(bundle.payload["schema_version"], 2)
+        self.assertEqual(bundle.payload["schema_version"], 3)
         self.assertEqual(
             bundle.payload["game_compatibility"][0]["steam_app_id"],
             "1234",

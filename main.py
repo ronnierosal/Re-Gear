@@ -74,6 +74,11 @@ from regear.delivery.game_close_preferences import (  # noqa: E402
     GameClosePreferenceStore,
 )
 from regear.delivery.relaunch_intent_store import RelaunchIntentStore  # noqa: E402
+from regear.delivery.sleep_continuation_store import PendingSleepStore  # noqa: E402
+from regear.domain.sleep_continuation import (  # noqa: E402
+    PendingSleep,
+    decide_sleep_continuation,
+)
 from regear.domain.relaunch_intent import (  # noqa: E402
     RelaunchClock,
     RelaunchIntent,
@@ -151,6 +156,9 @@ from regear.application.connection_readiness import (  # noqa: E402
     ConnectionReadinessLifecycle,
     ConnectionReadinessObservation,
     ConnectionReadinessStage,
+)
+from regear.application.whole_dock_lifecycle_status import (  # noqa: E402
+    classify_whole_dock_lifecycle,
 )
 from regear.application.link_recovery import (  # noqa: E402
     LinkRecoveryService,
@@ -240,7 +248,10 @@ from regear.delivery.peripheral_support import peripheral_support_status  # noqa
 from regear.delivery.docked_igpu_scheduler import (  # noqa: E402
     DockedIgpuLifecycleScheduler,
 )
-from regear.delivery.runtime_state import RootOwnedRuntimeState  # noqa: E402
+from regear.delivery.runtime_state import (  # noqa: E402
+    DEFAULT_RUNTIME_STATE_ROOT,
+    RootOwnedRuntimeState,
+)
 from regear.delivery.automatic_dock_preferences import (  # noqa: E402
     AutomaticDockPreferenceStore,
 )
@@ -266,6 +277,18 @@ from regear.profiles.gpd_g1 import match_gpd_g1  # noqa: E402
 
 
 MAX_JOURNEY_ELAPSED_MS = 24 * 60 * 60 * 1000
+#: A suspend submission refused as inhibited is retried this many times. The
+#: lag being waited out is logind dropping a lock whose holder has exited,
+#: which is milliseconds; this is generous without stalling a press.
+SUSPEND_SUBMIT_ATTEMPTS = 6
+SUSPEND_INHIBITOR_SETTLE_SECONDS = 0.5
+#: A portable return re-plans this many times when the orchestrator reports
+#: `observation.stale`. Three covers the settling churn observed on device
+#: without letting a genuinely unstable system retry indefinitely.
+PORTABLE_RETURN_ATTEMPTS = 3
+#: Long enough for the ~1 s observation poll that invalidated the plan to
+#: land, short enough that a player does not read the press as ignored.
+PORTABLE_RETURN_SETTLE_SECONDS = 1.0
 UNLOAD_OBSERVER_TIMEOUT_SECONDS = 1.0
 UNLOAD_GUARD_TIMEOUT_SECONDS = 3.0
 
@@ -771,9 +794,37 @@ class Plugin:
             "checks": getattr(self, "_connection_checks", None),
             "checks_age_ms": max(0, int((time.monotonic() - getattr(self, "_connection_checks_at", 0.0)) * 1000)),
         }
+        payload["whole_dock_lifecycle"] = await asyncio.to_thread(
+            self._whole_dock_lifecycle_payload, report.snapshot
+        )
         payload["saved_tv"] = self._saved_tv_status()
         await asyncio.to_thread(self._record_verbose_snapshot, payload)
         return payload
+
+    @staticmethod
+    def _whole_dock_lifecycle_payload(snapshot) -> dict[str, object]:
+        """Project durable teardown state without exposing claim identity.
+
+        A retained claim is read-only evidence.  This projection never grants
+        unplug clearance and intentionally ignores transport presence because
+        a successful software teardown may leave the cable connected.
+        """
+        try:
+            claim = WholeDockClaimStore(DEFAULT_RUNTIME_STATE_ROOT).load()
+            stage = None if claim is None else claim.stage
+            readable = True
+        except Exception:
+            stage = None
+            readable = False
+        external_gpu_present = any(
+            gpu.role is GpuRole.EXTERNAL and gpu.present
+            for gpu in snapshot.gpus
+        )
+        return classify_whole_dock_lifecycle(
+            claim_stage=stage,
+            claim_readable=readable,
+            external_gpu_present=external_gpu_present,
+        ).to_payload()
 
     def _saved_tv_status(self) -> dict[str, object]:
         """Categorical state for the waiting half of a dock.
@@ -1546,7 +1597,7 @@ class Plugin:
             samples = []
             try:
                 with self._dock_mutation_gate().admit(allow_inhibited=True):
-                    store = WholeDockClaimStore(Path("/var/lib/handheld-dock-mode"))
+                    store = WholeDockClaimStore(DEFAULT_RUNTIME_STATE_ROOT)
                     claim = store.load()
                     if claim is None or claim.stage != "release_intent":
                         raise ValueError("capture claim mismatch")
@@ -1657,7 +1708,7 @@ class Plugin:
             return result
         try:
             with self._dock_mutation_gate().admit(allow_inhibited=True):
-                store = WholeDockClaimStore(Path('/var/lib/handheld-dock-mode'))
+                store = WholeDockClaimStore(DEFAULT_RUNTIME_STATE_ROOT)
                 claim = store.load()
                 if claim is None or claim.stage not in ('claimed', 'release_intent'):
                     return result
@@ -1704,62 +1755,130 @@ class Plugin:
         No device commands, recovery budget reset or preference changes. A
         still-attached deauthorized router is not absence and retains inhibition.
         """
+        def refuse(phase, reason):
+            refusal = (phase, reason)
+            if getattr(self, '_archival_refusal', None) != refusal:
+                try:
+                    decky.logger.info(
+                        "Re-Gear G1 journey: code=automatic_dock.archival_guard_unmet phase=%s unmet=%s",
+                        phase,
+                        reason,
+                    )
+                except Exception:
+                    # The operator's bounded journal read is the diagnostic
+                    # contract. Retry next poll if that line was not emitted.
+                    return False
+                try:
+                    self._append_journey_event(severity='info',
+                        code='automatic_dock.archival_guard_unmet',
+                        component='connection', stage='admission',
+                        details={'phase': phase, 'unmet': reason},
+                        create_timeline=False)
+                except Exception:
+                    # The detailed journal line above is sufficient for this
+                    # diagnostic. Support-event storage remains best effort.
+                    pass
+                self._archival_refusal = refusal
+            return False
+
+        phase = 'admission'
         try:
             with self._dock_mutation_gate().admit(allow_inhibited=True):
-                store = DockPowerIntentStore(Path('/var/lib/handheld-dock-mode'))
+                phase = 'claim_load'
+                store = DockPowerIntentStore(DEFAULT_RUNTIME_STATE_ROOT)
                 claim = store.load()
-                if claim is None or claim.stage != 'software_down':
+                if claim is None:
+                    self._archival_refusal = None
                     return False
+                if claim.stage != 'software_down':
+                    return refuse('claim', 'stage_' + claim.stage)
+                phase = 'capture'
                 capture = getattr(self, '_release_capture_task', None)
                 if capture is not None and not capture.done():
-                    return False
+                    return refuse('capture', 'release_capture_running')
+                phase = 'user'
                 user = resolve_gamescope_user(GamescopeDiscovery().scan())
                 if not user.ok or user.context is None:
-                    return False
+                    return refuse('user', 'gamescope_user_unresolved')
+                # Each condition stays lazy and keeps its original order; only
+                # the name of the first unmet one is retained. A silent refusal
+                # here strands the claim, and a stranded claim inhibits every
+                # later admission, so the reason must reach the journey log.
+                unmet = []
                 def guard(*, require_power_intent=True):
                     topology = self._connection_topology.observe()
                     current = SnapshotTransitionObservationAdapter(self._discovery).observe().snapshot
                     journal = self._transition_journal_service().status()
-                    ready = (topology.transport_absent_verified is True
-                        and topology.transport_present is False
-                        and verified_transport_absent() is True
-                        and current.game_state is GameState.IDLE
-                        and current.gamescope.running is True
-                        and len(current.gpus) == 1
-                        and current.gpus[0].role is GpuRole.INTERNAL
-                        and current.gpus[0].present is True
-                        and current.gpus[0].confidence is Confidence.VERIFIED
-                        and resolve_runtime_profiles(current).exact_host
-                        and journal.durable and journal.owner.value == 'none'
-                        and inner_removal_records_absent()
-                        and resolve_gamescope_user(GamescopeDiscovery().scan()).context == user.context
-                        and not self._unloading)
-                    return (ready and (not require_power_intent
-                        or store.power_intent_absent(claim) is True))
+                    conditions = (
+                        ('transport_absent_verified', lambda: topology.transport_absent_verified is True),
+                        ('transport_present', lambda: topology.transport_present is False),
+                        ('verified_transport_absent', lambda: verified_transport_absent() is True),
+                        ('game_idle', lambda: current.game_state is GameState.IDLE),
+                        ('gamescope_running', lambda: current.gamescope.running is True),
+                        ('single_gpu', lambda: len(current.gpus) == 1),
+                        ('gpu_internal', lambda: current.gpus[0].role is GpuRole.INTERNAL),
+                        ('gpu_present', lambda: current.gpus[0].present is True),
+                        ('gpu_verified', lambda: current.gpus[0].confidence is Confidence.VERIFIED),
+                        ('exact_host', lambda: bool(resolve_runtime_profiles(current).exact_host)),
+                        ('journal_durable', lambda: bool(journal.durable)),
+                        ('journal_unowned', lambda: journal.owner.value == 'none'),
+                        ('inner_records_absent', lambda: bool(inner_removal_records_absent())),
+                        ('same_user', lambda: resolve_gamescope_user(
+                            GamescopeDiscovery().scan()).context == user.context),
+                        ('not_unloading', lambda: not self._unloading),
+                    )
+                    if require_power_intent:
+                        conditions = conditions[:12] + (
+                            ('power_intent_absent',
+                             lambda: store.power_intent_absent(claim) is True),
+                        ) + conditions[12:]
+                    for name, satisfied in conditions:
+                        if not satisfied():
+                            unmet[:] = [name]
+                            return False
+                    unmet[:] = []
+                    return True
+                phase = 'guard'
                 if not guard(require_power_intent=False):
-                    return False
+                    return refuse('guard', unmet[0] if unmet else 'unknown')
+                phase = 'audit'
                 audit = HeldTrialLauncher(uid=user.context.uid,
                     username=user.context.username).call('audit', '0' * 32)
                 if audit.get('code') != 'held_helper.settled' or audit.get('settled') is not True:
-                    return False
+                    return refuse('audit', 'held_helper_unsettled')
+                # A recreated Plugin has no session attribute. A strict intent
+                # persisted by its dead predecessor can no longer be consumed;
+                # remove only that sleep record after every non-power archival
+                # prerequisite and the helper audit have passed.
                 session_missing = not hasattr(self, '_dock_power_session')
-                live_session = None if session_missing else self._dock_power_session
+                live_session = (None if session_missing
+                                else self._dock_power_session)
                 if session_missing or live_session is not None:
                     try:
                         store.reconcile_stranded_sleep(
                             claim, live_session,
                             lambda: guard(require_power_intent=False))
                     except Exception:
+                        # Reconciliation is best effort; the full guard below
+                        # still owns archival admission.
                         pass
+                phase = 'guard'
                 if not guard():
-                    return False
+                    return refuse('guard', unmet[0] if unmet else 'unknown')
+                phase = 'retire'
                 store.retire_physically_disconnected(claim, guard)
-                self._append_journey_event(severity='info',
-                    code='automatic_dock.completed_attachment_archived',
-                    component='connection', stage='admission')
+                self._archival_refusal = None
+                try:
+                    self._append_journey_event(severity='info',
+                        code='automatic_dock.completed_attachment_archived',
+                        component='connection', stage='admission')
+                except Exception:
+                    # Completion logging cannot turn a completed retirement
+                    # back into an archival refusal.
+                    pass
                 return True
-        except Exception:
-            return False
+        except Exception as error:
+            return refuse(phase, 'raised_' + type(error).__name__)
 
     def _run_automatic_connection_recovery(self, recover, expected_user):
         """Connection-only admission; never retires intent or permits removal.
@@ -1783,7 +1902,7 @@ class Plugin:
             return self._run_dock_mutation(admitted)
         try:
             with self._dock_mutation_gate().admit(allow_inhibited=True):
-                store = WholeDockClaimStore(Path('/var/lib/handheld-dock-mode'))
+                store = WholeDockClaimStore(DEFAULT_RUNTIME_STATE_ROOT)
                 claim = store.load()
                 if claim is None:
                     raise DockMutationDenied('dock_mutation.inhibited')
@@ -1836,7 +1955,7 @@ class Plugin:
         dispatched = False
         try:
             with self._dock_mutation_gate().admit(allow_inhibited=True):
-                store = WholeDockClaimStore(Path('/var/lib/handheld-dock-mode'))
+                store = WholeDockClaimStore(DEFAULT_RUNTIME_STATE_ROOT)
                 claim = store.load()
                 if claim is None or claim.stage != 'reauthorize_intent':
                     raise DockMutationDenied('dock_mutation.inhibited')
@@ -1905,7 +2024,7 @@ class Plugin:
         if disposition is ShutdownReconcileDisposition.HELPER_UNSETTLED:
             return SupervisedTransitionExecution(
                 False, 'automatic_dock.shutdown_helper_unsettled')
-        claim = WholeDockClaimStore(Path('/var/lib/handheld-dock-mode')).load()
+        claim = WholeDockClaimStore(DEFAULT_RUNTIME_STATE_ROOT).load()
         if claim is not None and claim.stage == 'reauthorize_intent':
             return self._run_retained_reconnect_tv_transition(transition)
         if claim is not None:
@@ -1932,7 +2051,7 @@ class Plugin:
             if not re.fullmatch('[0-9a-f]{64}', boot):
                 return result(Disposition.BLOCKED)
             with self._dock_mutation_gate().admit(allow_inhibited=True):
-                store = DockPowerIntentStore(Path('/var/lib/handheld-dock-mode'))
+                store = DockPowerIntentStore(DEFAULT_RUNTIME_STATE_ROOT)
                 claim = store.load()
                 if claim is None or claim.stage != 'software_down':
                     return result(Disposition.BLOCKED)
@@ -2063,7 +2182,7 @@ class Plugin:
         result = run_observed_sleep(request, background=self._sleep_guard,
             transaction=transaction, verify=lambda r: r is request and verify() is True,
             consume=consume or self._consume_ordinary_power,
-            submit=lambda r: SystemSuspendCommandRunner().request_suspend().requested is True,
+            submit=self._submit_suspend,
             observer=SuspendObserver(), session=lambda: self._dock_power_session,
             cancelled=lambda: bool(getattr(self, '_unloading', False)), publish=publish)
         self._dock_sleep_status = {'schema_version': 1, 'code': result.code,
@@ -2071,6 +2190,45 @@ class Plugin:
             'ok': result.code == 'dock_power.sleep_cycle_observed',
             'sleep_cycle_observed': result.code == 'dock_power.sleep_cycle_observed', **identity}
         return result
+
+    def _submit_suspend(self, _request) -> bool:
+        """Ask the system to suspend, and remember why if it refused.
+
+        The coordinator only needs a boolean, and collapsing the result to one
+        threw away the single most useful fact when a sleep did not happen: a
+        refused submission and a timed-out one are the same `request_unverified`
+        to every caller. Observed on device 2026-09-15, where a completed
+        disconnect was followed by a sleep that never occurred and nothing
+        recorded the cause. Categories only; no command output crosses.
+        """
+        # logind drops an inhibitor when the last holder of its lock closes it,
+        # and that is not the same instant as the process we waited for exiting:
+        # systemd-inhibit runs the guard as a child, which briefly outlives its
+        # parent still holding the inherited lock. The handoff verifies every
+        # lease reports inactive and submits immediately, landing in that gap --
+        # reproducibly, on device, 2026-09-15 and 2026-09-16.
+        #
+        # `--check-inhibitors=yes` is the guard that stops a suspend while the
+        # eGPU is attached, so it stays. Instead, retry the ONE refusal that is
+        # verified to have enqueued nothing: an inhibited request was rejected
+        # before any job existed, so asking again is not a second power action.
+        # A timeout or an unavailable command leaves the outcome unknown and is
+        # never retried -- that is the case the no-replay rule exists for.
+        outcome = None
+        for attempt in range(SUSPEND_SUBMIT_ATTEMPTS):
+            if attempt:
+                time.sleep(SUSPEND_INHIBITOR_SETTLE_SECONDS)
+            outcome = SystemSuspendCommandRunner().request_suspend()
+            code = getattr(outcome, 'code', '')
+            self._whole_dock_suspend_result = {
+                'requested': outcome.requested is True,
+                'code': code if type(code) is str and re.fullmatch(
+                    r'dock_power\.[a-z_]{1,48}', code) else '',
+                'attempts': attempt + 1,
+            }
+            if outcome.requested is True or code != 'dock_power.suspend_inhibited':
+                break
+        return outcome is not None and outcome.requested is True
 
     def _sleep_after_dock_down(self, request, runtime, admission, power_store=None):
         # The actual transaction lease is retained from the golden teardown.
@@ -2084,9 +2242,24 @@ class Plugin:
                 consume = lambda r: power_store.consume(r.operation,
                     runtime.binding.binding, runtime.binding.generation, r.action,
                     r.session, r.requested_at, r.deadline)
-            return self._run_sleep_request(request, transaction=transaction,
+            result = self._run_sleep_request(request, transaction=transaction,
                 verify=lambda: runtime.verify_power_continuation(runtime._operation,
                     portable_verified=self._dock_power_portable_verified), consume=consume)
+            # A bound intent outlives the operation to stop a replay. When the
+            # submission verifiably never reached the system there is nothing to
+            # replay, and leaving it strands the disconnect claim it pins: sleep
+            # has no other retirement, so the dock cannot re-attach until someone
+            # deletes root-owned files. Observed on device 2026-09-15.
+            if (power_store is not None and getattr(result, 'requested', False) is not True
+                    and getattr(self, '_whole_dock_suspend_result', {}).get('requested') is False):
+                try:
+                    power_store.release_unsubmitted(runtime._operation,
+                        runtime.binding.binding, runtime.binding.generation,
+                        lambda: getattr(self, '_whole_dock_suspend_result', {}).get('requested') is False)
+                except Exception:
+                    # Recovery is best effort; never turn a refusal into a raise.
+                    pass
+            return result
         finally:
             admission['power_handoff'] = False
 
@@ -2103,8 +2276,18 @@ class Plugin:
             raise ValueError('dock_power.preflight_changed')
         if not self._consume_ordinary_power(request):
             return DockPowerResult('dock_power.already_consumed')
-        result = SystemPowerCommandRunner().request_poweroff()
-        return DockPowerResult(result.code, result.requested is True)
+        # One route, one vocabulary. This mirrors DockPowerCoordinator.execute()
+        # so both branches of _run_dock_power_request answer in dock_power.*
+        # terms. The adapter's safe_disconnect.* codes are internal to
+        # commands.py; leaking one through the RPC is the same boundary
+        # violation the exception filter below exists to prevent -- and it left
+        # the control permanently dead. The frontend settle predicate demands
+        # dock_power.request_accepted_unverified, so a real poweroff was
+        # submitted while the pending record was orphaned in localStorage,
+        # where it survives the reboot with no code path able to clear it.
+        if SystemPowerCommandRunner().request_poweroff().requested is not True:
+            return DockPowerResult('dock_power.request_unverified')
+        return DockPowerResult('dock_power.request_accepted_unverified', True)
 
     def _run_whole_dock_trial(self, operation: str, expected_attachment: str = "", *, power_request=None):
         """Internal cable-connected trial; admission covers release and teardown.
@@ -2220,6 +2403,28 @@ class Plugin:
                 if runtime._operation is None:
                     lease.release()
 
+    def _watched_trial(self, worker):
+        """Run a trial worker, always leaving a reader able to tell what happened.
+
+        The worker records its own terminal payload, but only for the exceptions
+        it names: a BaseException -- an interpreter going down, a thread killed
+        under it -- skips that entirely, and that left the recorded status busy
+        for the life of the process. A caller holding a pending request then
+        waits on a reply that can never come, and its control stays disabled for
+        good. This finally runs for those too, and the reader turns "recorded as
+        running, with nothing running it" into a terminal unresolved.
+
+        Liveness is raised by the dispatcher on the event loop, beside the busy
+        record, before the worker is scheduled; setting it again here is for
+        callers that run a worker directly. What this function owns is the
+        clearing, which must happen on the thread that did the work.
+        """
+        self._whole_dock_trial_worker_alive = True
+        try:
+            return worker()
+        finally:
+            self._whole_dock_trial_worker_alive = False
+
     def _return_portable_before_disconnect(self, binding, expected_user):
         """Called only under dock admission and a sleep inhibitor, before intent.
 
@@ -2233,14 +2438,64 @@ class Plugin:
                 and infer_operating_mode(snapshot).mode is OperatingMode.PORTABLE)
         if not portable():
             service = self._presentation_transition_service()
-            preview = service.preview(PlacementState.PORTABLE, user_confirmed=True)
-            if not preview.ready or not preview.approval_token:
-                raise ValueError('dock_teardown.portable_return_refused')
-            result = service.execute(preview.approval_token)
-            if (result.accepted is not True or result.durable is not True
-                    or not result.operation_id or not result.outcome
-                    or result.outcome.kind is not TransitionOutcomeKind.SUCCEEDED
-                    or not portable()):
+            # One press. A prior transition that ended with a result waiting to
+            # be acknowledged would refuse this one at preview, and the button
+            # that clears it lives two levels away from the tile the player
+            # pressed -- on device that read as the disconnect simply not
+            # working. The press is the player's acknowledgement: clear exactly
+            # that terminal result, with the same follow-ups the explicit
+            # acknowledge RPC performs, and only when it is terminal (an
+            # interrupted transition still needs its own recovery, not a press).
+            prior = service.status()
+            if (getattr(prior, 'acknowledgement_required', False) is True
+                    and getattr(prior, 'operation_id', '')):
+                if service.acknowledge(prior.operation_id) is not True:
+                    raise ValueError('dock_teardown.portable_return_refused')
+                if prior.target is PlacementState.PORTABLE:
+                    self._automatic_dock.suppress_current_attachment_after_portable_return()
+                else:
+                    self._automatic_dock.reset_after_acknowledgement()
+            # The orchestrator plans against one observation and re-observes
+            # before acting, refusing as `observation.stale` when the snapshot's
+            # content hash moved in between. On a dock that has just attached
+            # it moves constantly -- link recovery, audio, attach readiness and
+            # the TV transition all churn it -- so a single press could lose
+            # that race and report only that the return 'could not be verified'.
+            # Observed twice on device, 2026-09-15.
+            #
+            # A stale observation is not a refusal of the action; it means the
+            # world moved while we were deciding, and the answer is to decide
+            # again against what is true now. Bounded, and only for that one
+            # blocker: every other blocked or failed outcome still stops here.
+            # Each attempt re-previews, so each is independently gated -- a
+            # readiness that genuinely went away refuses at the preview.
+            for attempt in range(PORTABLE_RETURN_ATTEMPTS):
+                preview = service.preview(PlacementState.PORTABLE, user_confirmed=True)
+                if not preview.ready or not preview.approval_token:
+                    raise ValueError('dock_teardown.portable_return_refused')
+                result = service.execute(preview.approval_token)
+                if (result.accepted is True and result.durable is True
+                        and result.operation_id and result.outcome
+                        and result.outcome.kind is TransitionOutcomeKind.SUCCEEDED
+                        and portable()):
+                    break
+                # Say WHY, in categories only. A blocked or failed transition
+                # carries its code; without it the refusal reads as a mystery
+                # and the only record was a root-owned journal.
+                outcome = getattr(result, 'outcome', None)
+                kind = getattr(getattr(outcome, 'kind', None), 'value', '')
+                failure = getattr(outcome, 'failure', None)
+                code = getattr(failure, 'code', '') if failure is not None else ''
+                self._whole_dock_portable_outcome = {
+                    'kind': kind if type(kind) is str else '',
+                    'code': code if type(code) is str and re.fullmatch(r'[a-z_.]{1,64}', code) else '',
+                    'attempts': attempt + 1,
+                }
+                if (attempt + 1 < PORTABLE_RETURN_ATTEMPTS and kind == 'blocked'
+                        and code == 'observation.stale'):
+                    # Let the churn that invalidated it land before looking again.
+                    time.sleep(PORTABLE_RETURN_SETTLE_SECONDS)
+                    continue
                 raise ValueError('dock_teardown.portable_return_unverified')
             status = service.status()
             if (status.durable is not True or status.target is not PlacementState.PORTABLE
@@ -2341,7 +2596,7 @@ class Plugin:
         if _request == "whole_dock_record":
             def read_record():
                 try:
-                    record = WholeDockClaimStore(Path("/var/lib/handheld-dock-mode")).load()
+                    record = WholeDockClaimStore(DEFAULT_RUNTIME_STATE_ROOT).load()
                     return record.stage if record else "none"
                 except Exception:
                     return "unknown"
@@ -2352,10 +2607,34 @@ class Plugin:
                 "schema_version": 1, "code": "dock_teardown.no_trial",
                 "busy": False, "safe_to_unplug": False,
             }))
+            # Whether a worker is running RIGHT NOW, in this process. A caller
+            # holding a pending record needs this to tell an operation that may
+            # still be mid-teardown -- where continuing to wait is the only safe
+            # answer -- from one that cannot be outstanding at all, because the
+            # process that would be running it is this one.
+            in_flight = getattr(self, "_whole_dock_trial_worker_alive", False) is True
+            result["in_flight"] = in_flight
+            if result.get("busy") is True and in_flight:
+                # The route waits up to 90 s on a session restart with no
+                # other sign of life, and a caller that only sees "busy" for
+                # that long calls it stuck. Say which step, and since when.
+                # Read-only: the phase the worker last recorded, and a clock.
+                result["phase"] = getattr(self, "_whole_dock_trial_phase", "")
+                started = getattr(self, "_whole_dock_trial_started", None)
+                result["elapsed_s"] = (
+                    max(0, int(time.monotonic() - started)) if started is not None else None)
+            if result.get("busy") is True and not in_flight:
+                # Recorded as running with nothing running it: the worker died
+                # without settling. Terminal and unresolved -- never success.
+                # What the device is actually in is read from the fresh status
+                # beside this, not inferred from the request having ended.
+                result.update({"code": "dock_teardown.trial_unresolved",
+                               "busy": False, "ok": False, "safe_to_unplug": False})
+                self._whole_dock_trial_status = dict(result)
             if not result.get("busy") and result.get("ok") is False:
                 def claim_stage():
                     try:
-                        record = WholeDockClaimStore(Path("/var/lib/handheld-dock-mode")).load()
+                        record = WholeDockClaimStore(DEFAULT_RUNTIME_STATE_ROOT).load()
                         return record.stage if record else "none"
                     except Exception:
                         return "unknown"
@@ -2435,6 +2714,16 @@ class Plugin:
             return {"schema_version": 1, "ok": False,
                     "code": "dock_reconnect.disabled", "busy": False,
                     "safe_to_unplug": False, "hardware_write": False}
+        if _parse_intent(relaunch_intent) is InterruptIntent.SLEEP:
+            # The legacy dashboard encoded disconnect-before-sleep through the
+            # ordinary disconnect RPC instead of the whole-dock trial action.
+            # Refuse it before recording relaunch/continuation state, resolving
+            # a runtime, or entering the dock mutation gate. Attached sleep is
+            # available only through the separate whole_dock_sleep_connected
+            # coordinator.
+            return {"schema_version": 1, "ok": False,
+                    "code": "dock_power.disconnect_sleep_disabled", "busy": False,
+                    "safe_to_unplug": False, "hardware_write": False}
         if trial_action == 'whole_dock_sleep':
             # A cable-retained software-down state stopped G1 cooling during
             # supervised testing. Sleeping with the dock connected remains a
@@ -2475,8 +2764,14 @@ class Plugin:
                 if trial_request_id and trial_request_id in requests:
                     original_action, original_result = requests[trial_request_id]
                     if original_action != trial_action:
-                        return {'schema_version': 1, 'ok': False,
-                            'code': 'dock_power.request_action_changed', 'safe_to_unplug': False}
+                        # Terminal refusals on this route carry the correlation
+                        # fields every other terminal payload carries; without
+                        # them no caller can retire the pending record this
+                        # refusal terminates.
+                        return {'schema_version': 1, 'ok': False, 'busy': False,
+                            'code': 'dock_power.request_action_changed',
+                            'request_id': trial_request_id, 'power_requested': False,
+                            'safe_to_unplug': False}
                     return dict(original_result)
                 # Bind once in the backend before the worker can restart Steam.
                 if not hasattr(self, '_dock_power_session'):
@@ -2511,6 +2806,18 @@ class Plugin:
                 if result.get('ok') is True:
                     self._automatic_dock.reset_after_acknowledgement()
                 return result
+            # Raised HERE, on the event loop, in the same turn as the busy
+            # record -- not first inside the worker thread. Between
+            # create_task and the executor's first instruction a status poll
+            # would otherwise read busy with nothing alive and rewrite a
+            # trial that is about to run as unresolved, and the control would
+            # retire its record and go usable mid-teardown: the one thing the
+            # guard exists to prevent. The worker's finally still clears it on
+            # every exit; a worker that is never scheduled (unloading) leaves
+            # it set in a process that is going away, and a fresh process
+            # starts without the attribute.
+            self._whole_dock_trial_worker_alive = True
+            self._whole_dock_trial_started = time.monotonic()
             self._whole_dock_trial_status = {"schema_version": 1,
                 "code": "dock_teardown.trial_running", "busy": True,
                 "safe_to_unplug": False, "request_id": trial_request_id}
@@ -2518,6 +2825,8 @@ class Plugin:
                 self._whole_dock_trial_phase = "starting"
                 self._whole_dock_release_stage = "not_run"
                 self._whole_dock_release_details = {}
+                self._whole_dock_portable_outcome = {}
+                self._whole_dock_suspend_result = {}
                 self._whole_dock_arm_stage = ""
                 self._whole_dock_arm_code = ""
                 try:
@@ -2568,6 +2877,8 @@ class Plugin:
                 payload["phase"] = self._whole_dock_trial_phase
                 payload["release_stage"] = self._whole_dock_release_stage
                 payload["release"] = self._whole_dock_release_details
+                payload["portable_return"] = getattr(self, "_whole_dock_portable_outcome", {})
+                payload["suspend"] = getattr(self, "_whole_dock_suspend_result", {})
                 payload["arm_stage"] = self._whole_dock_arm_stage
                 payload["arm_code"] = self._whole_dock_arm_code
                 self._whole_dock_trial_status = payload
@@ -2580,7 +2891,8 @@ class Plugin:
                 if power_request is not None and trial_request_id:
                     self._dock_power_requests[trial_request_id] = (trial_action, dict(payload))
                 return payload
-            return await self._run_background_operation(trial)
+            return await self._run_background_operation(
+                lambda: self._watched_trial(trial))
         relaunch = RelaunchIntentStore(CATALOG_ROOT)
         parsed_intent = _parse_intent(relaunch_intent)
         if (
@@ -2603,11 +2915,20 @@ class Plugin:
                 # A wish that could not be written costs a manual relaunch. It
                 # is not a reason to refuse the disconnect the player asked for.
                 pass
+        continuation = parsed_intent is InterruptIntent.SLEEP
+        if continuation:
+            # The sleep step lives in the panel, and the removal may restart
+            # the Steam session underneath it. Written down first, like the
+            # relaunch wish, so the panel that comes up afterwards can finish
+            # the press; cleared below on every path where no removal ran.
+            await self._record_sleep_continuation()
         try:
             runtime = await asyncio.to_thread(self._live_disconnect_runtime)
         except Exception:
             runtime = None
         if runtime is None:
+            if continuation:
+                await self._clear_sleep_continuation()
             return {
                 "schema_version": 1,
                 "stage": "invalid",
@@ -2620,6 +2941,8 @@ class Plugin:
                     lambda: runtime.execute(release_display=bool(release_display)))
             )
         except Exception:
+            if continuation:
+                await self._clear_sleep_continuation()
             return {
                 "schema_version": 1,
                 "stage": "invalid",
@@ -2632,7 +2955,12 @@ class Plugin:
                 await asyncio.to_thread(relaunch.clear)
             except Exception:
                 pass
-        return disconnect_result_to_payload(result)
+        payload = disconnect_result_to_payload(result)
+        if continuation and (payload.get("ok") is not True or result.device_disturbed):
+            # Nothing to continue: the eGPU is still attached, or the device
+            # needs a person. A panel must not sleep the machine on this.
+            await self._clear_sleep_continuation()
+        return payload
 
     async def take_pending_relaunch(
         self, _request: object = None
@@ -2667,6 +2995,71 @@ class Plugin:
             "code": decision.code,
         }
 
+    async def _record_sleep_continuation(self) -> bool:
+        """Write down that the disconnect now running was asked for as a sleep."""
+        try:
+            await asyncio.to_thread(
+                PendingSleepStore(CATALOG_ROOT).record,
+                PendingSleep(
+                    read_boot_hash(),
+                    time.monotonic(),
+                    _relaunch_now(RelaunchClock.BOOTTIME),
+                ),
+            )
+            return True
+        except Exception:
+            # Same footing as the relaunch wish: a continuation that could
+            # not be written costs the player a manual sleep, not the
+            # disconnect they asked for.
+            return False
+
+    async def _clear_sleep_continuation(self) -> None:
+        try:
+            await asyncio.to_thread(PendingSleepStore(CATALOG_ROOT).clear)
+        except Exception:
+            pass
+
+    async def take_pending_sleep(
+        self, _request: object = None
+    ) -> dict[str, object]:
+        """Consume obsolete disconnect-before-sleep state without honoring it."""
+        store = PendingSleepStore(CATALOG_ROOT)
+        try:
+            record = await asyncio.to_thread(store.take)
+        except Exception:
+            return {"schema_version": 1, "pending": False,
+                    "code": "sleep_continuation.record_unreadable"}
+        if record is not None:
+            return {"schema_version": 1, "pending": False,
+                    "code": "dock_power.disconnect_sleep_disabled"}
+        try:
+            boot_hash = await asyncio.to_thread(read_boot_hash)
+        except Exception:
+            boot_hash = ""
+        decision = decide_sleep_continuation(
+            record,
+            boot_hash=boot_hash,
+            now_monotonic=time.monotonic(),
+            now_boottime=_relaunch_now(RelaunchClock.BOOTTIME),
+        )
+        return {"schema_version": 1, "pending": decision.should_sleep,
+                "code": decision.code}
+
+    def _retained_sleep_inhibitor(self) -> bool | None:
+        """Whether the retained disconnect-transaction sleep lease is still held.
+
+        False when no transaction acquired one this process lifetime. None
+        when the lease exists but its status cannot be read: not knowing is
+        not evidence that sleep is clear.
+        """
+        lease = getattr(self, '_whole_dock_trial_lease', None)
+        if lease is None:
+            return False
+        try:
+            return lease.status().active is True
+        except Exception:
+            return None
+
     async def get_sleep_readiness(
         self, _request: object = None
     ) -> dict[str, object]:
@@ -2682,6 +3075,12 @@ class Plugin:
         the disconnect one, so a player who agreed that a game may be closed
         for a disconnect is still asked before it is closed for a sleep.
         """
+        # A disconnect-transaction sleep lease this plugin still holds blocks
+        # every sleep until it is released, and nothing on the sleep path
+        # releases it. Reported as its own fact: the snapshot's sleep_guard
+        # is the background controller only, and the 2026-09-13 trial recorded
+        # both inhibitors still up after a successful software removal.
+        retained = await asyncio.to_thread(self._retained_sleep_inhibitor)
         try:
             presence = await asyncio.to_thread(
                 self._sleep_hardware.observe_presence
@@ -2694,6 +3093,7 @@ class Plugin:
                 "schema_version": 1,
                 "code": "sleep.available",
                 "requires_disconnect": False,
+                "retained_inhibitor": retained,
                 "game": None,
                 "close_prompt": close_prompt_to_payload(
                     decide_game_close(InterruptIntent.SLEEP, None)
@@ -2707,6 +3107,7 @@ class Plugin:
                 "schema_version": 1,
                 "code": "sleep.readiness_unknown",
                 "requires_disconnect": True,
+                "retained_inhibitor": retained,
                 "game": None,
                 "close_prompt": close_prompt_to_payload(
                     decide_game_close(
@@ -2726,6 +3127,7 @@ class Plugin:
                 "schema_version": 1,
                 "code": "sleep.readiness_unknown",
                 "requires_disconnect": True,
+                "retained_inhibitor": retained,
                 "game": None,
                 "close_prompt": close_prompt_to_payload(
                     decide_game_close(
@@ -2758,6 +3160,7 @@ class Plugin:
             "code": "sleep.requires_disconnect",
             # The eGPU is attached, so sleeping means disconnecting first.
             "requires_disconnect": True,
+            "retained_inhibitor": retained,
             "game": payload["game"],
             "close_prompt": close_prompt_to_payload(prompt),
             # Passed through so a caller renders one set of facts rather than
@@ -3445,7 +3848,7 @@ class Plugin:
             }
 
     def _operator_reset_record(self, confirm=None, still_confirmed=lambda: True):
-        store = WholeDockClaimStore(Path('/var/lib/handheld-dock-mode'))
+        store = WholeDockClaimStore(DEFAULT_RUNTIME_STATE_ROOT)
         return reconcile_operator_reset(store=store, gate=self._dock_mutation_gate(),
             observe=lambda binding: observe_reset_restored(binding, store), confirm=confirm,
             still_confirmed=still_confirmed)
@@ -4280,7 +4683,7 @@ class Plugin:
         try:
             elapsed = self._bounded_elapsed_ms(started_ns, self._journey_now_ns())
             decky.logger.info(
-                "HDM shutdown checkpoint: stage=%s elapsed_ms=%s", stage, elapsed
+                "Re-Gear shutdown checkpoint: stage=%s elapsed_ms=%s", stage, elapsed
             )
         except Exception:
             pass
@@ -4305,7 +4708,7 @@ class Plugin:
 
     def _support_versions(self) -> dict[str, str]:
         return {
-            "regear": "0.3.98",
+            "regear": "0.3.124",
             "decky": str(getattr(decky, "DECKY_VERSION", "unknown")),
             "steamos": self._version_info.steamos,
             "kernel": self._version_info.kernel,
@@ -4375,7 +4778,7 @@ class Plugin:
         )
         journal_root = RootOwnedRuntimeState().ensure()
         presentation_state_root = (
-            resolution.context.home / ".local" / "share" / "handheld-dock-mode"
+            resolution.context.home / ".local" / "share" / "regear"
         )
         observations = SnapshotTransitionObservationAdapter(self._discovery)
         journal = FileTransitionJournalStore(journal_root)

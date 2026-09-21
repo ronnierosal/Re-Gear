@@ -1,93 +1,133 @@
-# Re-Gear installed identity cutover
+# Re-Gear full installed identity migration
 
-Status: the September 8 repository directory cutover is followed by the
-September 10 Python namespace completion in the current source change. See
-[implementation inventory and procedure](IDENTITY_CUTOVER.md) and
-[completion scope](REBRAND_COMPLETION_2026-09-10.md). No new release or installed
-system is established by this change. Hardware migration and rollback validation
-remain separate supervised steps.
+Status: implementation in progress. The current plugin, archive, npm package and
+Python namespace already use Re-Gear. This migration finishes the installed
+runtime identity without discarding recovery authority left by older builds.
+Repository tests do not establish that the device migration has run.
 
-## Decision and scope
+## Target identity
 
-Use **`Re-Gear`** as the target installed Decky directory and archive root,
-consistent with the pinned upstream loader source inspected in the
-implementation inventory; the installed loader still needs supervised checks. The visible manifest/UI label is already Re-Gear. This is a
-clean identity cutover, not an ongoing dual-name compatibility layer.
+| Surface | Current target |
+| --- | --- |
+| Root-owned control state | `/var/lib/regear/control` |
+| Privileged deploy authority | `/var/lib/regear/deploy` |
+| Per-user state | `~/.local/share/regear` |
+| Gamescope drop-in | `90-regear.conf` |
+| Gamescope environment | `REGEAR_STATE_ROOT` |
+| Managed-file and inhibitor owner | `Re-Gear` |
+| Privileged deploy helper | `/var/lib/regear/deploy/regear-deploy-plugin` |
+| Deploy public key | `/var/lib/regear/deploy/deploy-public-key.pem` |
+| Sudo policy | `/etc/sudoers.d/regear-deploy-plugin` |
+| Plugin rollback storage | `.regear-deploy-backups` |
+| Former deploy backups/staging | Whole-directory root archive under `/var/lib/regear/deploy` |
+| Browser preference prefix | `regear.` |
+| Current journal marker | `Re-Gear shutdown checkpoint: stage=` |
+| Former Decky settings/data/log directories | Whole-directory archives under `~/.local/share/regear-decky-*-archive` |
 
-Ronnie reports legacy installs are limited to his own recent test device(s).
-There is no known community legacy-install cohort to support. GitHub has public
-v0.3.57/v0.3.58 development-candidate releases, so retain those immutable artifacts
-and document the cutover clearly; their existence alone is not evidence of other
-users or a reason to build indefinite migration compatibility. Decky Store/channel
-registration is separate from GitHub publication and has not been established.
+`/var/lib/regear/control` is deliberately below the existing Re-Gear authority
+root. Other current components already use `/var/lib/regear`; moving the former
+control directory directly onto that nonempty directory would merge unrelated
+authority. Deploy credentials are separated into `/var/lib/regear/deploy`.
+The control migration renames the whole directory as one filesystem object and
+never copies or rewrites individual safety records.
 
-The controlled test-install upgrade/rollback is necessary even without a store
-listing. A new directory must not leave two active plugins, duplicate observers
-or power writers, or lose safety/recovery state.
+The migration release has bounded readers for exact former identifiers. Those
+readers are migration input, not active installed identity. They remain only
+through rollback and device acceptance. A successful installed cutover has no
+former live path, drop-in, helper, environment entry, inhibitor owner, or writer.
+Historical releases, hashes, evidence and quoted logs retain their original bytes.
 
-## Contract inventory for implementation
+## Safety boundary
 
-Confirm this search inventory against the implementation base; it is not an
-instruction to replace every matching string.
+The cutover is an offline naming operation. It performs no display, eGPU, sleep,
+shutdown, power, authorization, or recovery action. Before changing files it must:
 
-| Contract | Starting points | Required decision/check |
-|---|---|---|
-| Manifest, visible identity, loader lifecycle | `plugin.json`, `src/branding.ts`, `main.py`, `tests/test_decky_contract.py` | Prove loader discovery and unique runtime identity; distinguish visible label from folder |
-| Package layout and candidate metadata | `scripts/build_plugin.py`, `scripts/prepare_release_candidate.py`, `scripts/verify_validation_artifact.py` | New root, manifests/checksums and consistent validation; reject mixed roots |
-| Native Decky staging and deployment | `scripts/stage_decky_update.py`, `scripts/deploy_to_ally.ps1`, `scripts/ally_deploy_helper.py`, `scripts/install_ally_deploy_helper.sh` | Exact target, legacy detection and safe stopped-plugin sequence; no second live instance |
-| Read-only capture and support | `scripts/remote_capture_payload.py`, `scripts/community_report.py` | Correct new root; explicit legacy-test diagnosis where needed; no ambiguous first-match fallback |
-| Recovery/state ownership | `backend/regear/delivery/runtime_state.py`, `gamescope_integration.py`, `main.py` | Inventory actual settings/journals/helpers/managed-file ownership before changing paths |
-| Distribution and import identifiers | `package.json`, `pyproject.toml`, Python `regear`, retained helper names and stored keys | Change only contracts required for the installed-identity cutover; explicitly list retained compatibility identifiers and reasons |
-| Tests and CI | Decky/package, artifact, release-candidate, staging, deployment, support/capture and runtime-state tests; `.github/workflows/ci.yml` | Assertions cover new identity, no mixed package, clean install, controlled upgrade and rollback |
-| Documentation and old artifacts | BRANDING, RELEASE_PIPELINE, deployment/support instructions and dated records | Update current procedures after implementation; keep historical paths, ZIP bytes, hashes and evidence intact |
+1. stop the Decky plugin loader and prove the Re-Gear backend is absent;
+2. prove Gamescope's game state is idle and known before the separately supervised
+   session restart needed to replace its inherited environment;
+3. acquire the runtime admission, claim, transition and TDP locks without waiting;
+4. reject links, special files, unsafe owners or modes, cross-filesystem moves,
+   edited managed files, and old-plus-new ambiguity;
+5. reject any unfinished operation, including an active transition, whole-dock
+   claim, reset marker, unconsumed dock-power intent, active portable Vulkan trial,
+   or non-idle TDP session.
 
-## Clean-cutover behavior
+Completed audit and recovery history moves byte-for-byte with the directory. The
+migrator never deletes a claim to make preflight pass. An unfinished operation is
+reconciled by its owning runtime path before another migration attempt.
 
-1. Inventory the target installation without changing it. Classify new only,
-   legacy only, neither, both, and ambiguous/corrupt state. Both identities present
-   must stop normal upgrade handling; never guess which is authoritative.
-2. New packages install only the new root. Do not ship two roots, a silent alias,
-   or a long-lived dual-writer compatibility mode.
-3. Handle Ronnie's legacy test install through a narrowly documented, explicitly
-   supervised transition. Record exact source/artifact/current identity and any
-   recovery state before the loader stops the old instance.
-4. Preserve settings and safety journals using a reviewed schema/ownership
-   decision. No blanket state-directory copy or clearing a pending transaction.
-   Unknown or unfinished recovery state blocks cutover until safely resolved.
-5. Verify old instance stopped and new instance uniquely loaded before success.
-   Any failed verification uses the prepared rollback; no simultaneous instances.
+## Transaction and rollback
 
-## Backup and rollback for the test device
+The privileged migrator uses root-owned phase journals outside every directory
+being moved. The journal records fixed planned paths and completed phases and is
+fsynced before the next mutation. Before each whole-directory rename, the
+migrator revalidates type, ownership, mode, bounded contents, quiescent lifecycle
+state and the same-filesystem destination. It does not claim to create a separate
+content backup of the control state.
 
-Before a separately authorized device step, preserve a checksum-verified old
-plugin package or bounded copy, the exact relevant settings/journals with modes
-and ownership, and a manifest of what the migration may change. Keep backups
-private and outside both plugin discovery directories; never overwrite them.
+1. Rename the complete control directory to `/var/lib/regear/control` on the same
+   filesystem and fsync both parents.
+2. Rename the complete user directory to `~/.local/share/regear` and fsync its
+   parent.
+3. Move former Decky directory-keyed settings, data and logs whole into neutral
+   Re-Gear archive paths. Existing current Decky directories are never merged.
+4. Replace the exact recognized Gamescope drop-in, deploy helper, public key and
+   sudo policy as one reviewed installation transaction.
+5. Publish the matching Re-Gear plugin, reload the user unit configuration, and
+   restart Gamescope only through the existing idle-game supervised path.
+6. Start the plugin loader and verify one Re-Gear instance, exact revision, new
+   runtime paths, state continuity, deploy signature verification, and the live
+   Gamescope process environment.
 
-Rollback stops the new instance through the native lifecycle, restores the exact
-old package/state and ownership from the manifest, then verifies one old instance
-and expected state. Do not reverse unknown runtime writes by guessing, discard
-recovery evidence, delete unrelated files or rewrite old releases. If restoration
-cannot be verified, stop and report the precise state for supervised recovery.
+Before the new runtime starts, rollback reverses exact renames and managed-file
+changes. After it starts, rollback first stops it and moves the *current* new
+directories back; it never restores a stale snapshot over newer recovery writes.
+Unknown phase, inode drift, unexpected content or rollback divergence stops with
+the journal and all evidence intact for operator review.
 
-## Verification and acceptance
+Rollback has one fixed dependency order. While the current deploy authority is
+still installed, run `/var/lib/regear/deploy/regear-migrate-identity rollback`
+and verify that the combined, directory and Gamescope drop-in journals are
+`rolled_back`, the current drop-in is absent, and `/var/lib/regear/control` is
+absent. Only then run the administrator bootstrap with `rollback` to restore the
+former helper, key, sudo rule and archived private deployment directories. The
+bootstrap refuses the reverse order because removing the current migrator first
+would strand the only reviewed rollback path for control and Gamescope state.
 
-Repository acceptance requires targeted migration/package/deploy/support tests
-plus the full relevant backend/frontend/build/package matrix and final-head CI.
-Test neither/legacy/new/both roots; malformed or mixed ZIP roots; partial staging,
-interruption and retry; stale/missing backup; conflicting state; and rollback.
-Verify old published artifacts remain byte-identical and no broad legacy-string
-replacement changed historical evidence or unrelated Python/state contracts.
+## Privilege transition
 
-Hardware acceptance is separate and must use an exact build and supervised
-baseline under DEPLOYMENT_VALIDATION. Prove a fresh new-identity installation,
-then one controlled legacy-test upgrade and rollback: unique loader lifecycle,
-settings continuity, recovery-state correctness, build readback, diagnostics,
-controller-visible UI and clean unload/restart. Exercise no eGPU transition or
-power-control action merely to validate naming. Installation is not authorized
-by successful repository tests.
+The installed passwordless rule authorizes only the former helper and package
+pattern, so it cannot replace itself. One visible, supervised administrator step
+is unavoidable. `scripts/install_regear_identity_migrator.sh` is the narrow
+bootstrap for that step. It must be reviewed and copied to the device before use;
+Codex never requests or handles the device password. The completed bootstrap
+snapshots signed helper and migrator inputs into root-only storage, verifies both
+with the already trusted deploy public key, and uses a fsynced phase marker so an
+interrupted install or rollback can resume. It installs only fixed Re-Gear paths
+and fixed-argument sudo rules, validates them with `visudo`, then removes former
+live authority only after direct and Deck-user readback succeeds.
 
-The focused implementation PR must list changed and retained identities,
-backup/rollback instructions, tests, exact source revision, and unperformed
-hardware checks. Reconcile current documentation as that PR lands. Store/channel
-publication, release artifacts and physical migration keep their separate gates.
+The Gamescope phase remains prepared until a separately supervised restart proves
+the running process inherited `REGEAR_STATE_ROOT`. Removing a file is not proof
+that the old environment left the running process.
+
+## Verification
+
+Repository acceptance covers old-only, new-only, neither and both-root fixtures;
+links and ownership failures; every active-operation blocker; byte and metadata
+continuity; interrupted phases; idempotent current state; rollback before and
+after new-runtime writes; managed drop-in exact matching; helper argument limits;
+browser and journal compatibility readers; and post-commit absence of former live
+identifiers. Run architecture, golden behavior, complete backend/frontend,
+typecheck, compile, build and package checks on the combined head.
+
+Installed acceptance is supervised and separate. Capture preflight, migration
+journal, exact installed build, unique process/readback, current Gamescope
+environment, current inhibitor owner, current helper/sudo policy, archived former
+Decky directories and absence of former live paths. The migrator's `status`
+output must report the restarted Gamescope environment as `current`; file-level
+readiness alone is insufficient. Exercise no eGPU or power transition for
+identity acceptance.
+The existing hardware journeys retain their own validation gates.
+
+Documentation impact: multiple

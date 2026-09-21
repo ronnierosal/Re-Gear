@@ -21,30 +21,14 @@ for (const [route, expected] of [
   assert.equal(PageLayout({ ...slots, route }), slots[expected]);
 });
 
-// Inspect the real composition, not a duplicate fixture of its routing rules.
+// The old route helper remains tested above; production now publishes nodes from one global owner.
 const index = readFileSync(new URL("../src/index.tsx", import.meta.url), "utf8");
-const ast = ts.createSourceFile("index.tsx", index, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
-let layout;
-function visit(node) {
-  if (ts.isJsxSelfClosingElement(node) && node.tagName.getText(ast) === "PageLayout") layout = node;
-  ts.forEachChild(node, visit);
-}
-visit(ast);
-const slot = name => layout.attributes.properties.find(p => p.name?.getText(ast) === name)?.initializer?.getText(ast) ?? "";
-test("production Command Center slot contains quick controls without legacy settings", () => {
-  assert.ok(layout);
-  assert.match(slot("commandCenter"), /CommandCenterHeader/);
-  assert.match(slot("commandCenter"), /CommandCenterGrid/);
-  assert.match(slot("commandCenter"), /ModulesButton/);
-  assert.doesNotMatch(slot("commandCenter"), /TdpControls|Automatic TV docking|Docking & actions|Support bundle/);
-  assert.match(slot("autoTdp"), /AutoTdpModule/);
-  assert.match(slot("egpu"), /Automatic TV docking/);
-  assert.match(slot("egpu"), /activateDisplay/);
-  assert.match(slot("picker"), /activateDisplay/);
-  assert.match(slot("troubleshoot"), /Support bundle/);
+test("production landing mounts no legacy grid and runtime publishes configuration details",()=>{
+ assert.match(index,/content: <ReGearLanding/);assert.doesNotMatch(index,/<CommandCenterGrid|<PageLayout|Open expanded demo/);
+ assert.match(index,/const egpuDetail=[\s\S]*Automatic TV docking/);assert.match(index,/const diagnosticDetail=[\s\S]*Support bundle/);assert.match(index,/const displayDetail=<DisplayPicker[\s\S]*onSwitch=\{activateDisplay\}/);
+ const renderer=readFileSync(new URL('../src/quick-access/expanded-command-center/non-egpu-detail-renderer.tsx',import.meta.url),'utf8');assert.match(renderer,/<AutoTdpModule controller=\{state.performance\}/);
 });
-test("hardware status destinations cannot invoke configuration actions", () => {
-  for (const key of ["egpuStatus", "controllerStatus"]) {
-    assert.doesNotMatch(slot(key), /onOpenRecovery|ToggleField|TdpControls|execute|requestSafeDisconnect/);
-  }
+test("eGPU status separates observation from explicit configuration navigation",()=>{
+ const status=index.slice(index.indexOf('views:{egpu:wrapDetail('),index.indexOf('"egpu-config":wrapDetail('));
+ assert.match(status,/<EgpuModule presentation=\{egpuPresentation\(payload\)\}\/>/);assert.match(status,/Configure docking/);assert.doesNotMatch(status,/onOpenRecovery|ToggleField|execute|requestSafeDisconnect|activateDisplay/);
 });

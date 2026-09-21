@@ -33,7 +33,13 @@ class SteamTrialIntegrationStore(GamescopeIntegrationStore):
         state = self._path_text(self._state_root)
         return ('# Managed experimental Re-Gear Steam trial.\n[Service]\n'
                 'ExecStart=\n' + f'ExecStart={self._launch_command()}\n'
-                f'Environment="HDM_STATE_ROOT={state}"\n')
+                f'Environment="REGEAR_STATE_ROOT={state}"\n')
+
+    def _current_target_legacy_renderings(self):
+        state = self._path_text(self._legacy_state_root)
+        return (('# Managed experimental Re-Gear Steam trial.\n[Service]\n'
+                 'ExecStart=\n' + f'ExecStart={self._launch_command()}\n'
+                 f'Environment="HDM_STATE_ROOT={state}"\n'),)
 
     def _launch_command(self):
         # An older package/uninstalled plugin has no shim; fixed PATH then finds
@@ -98,12 +104,19 @@ class SteamTrialIntegrationStore(GamescopeIntegrationStore):
         if [line for line in envfile.splitlines() if line.startswith('PATH=')] != ['PATH=' + original_path]:
             return ('steam_path_override',)
         environment.extend(envfile.splitlines())
+        state_keys = set()
         for entry in environment:
             key, _, value = entry.partition('=')
             if key in ROUTING_KEYS:
                 return ('steam_routing_override',)
-            if key == 'HDM_STATE_ROOT' and value != self._state_root.as_posix():
+            if key in ('REGEAR_STATE_ROOT', 'HDM_STATE_ROOT'):
+                state_keys.add(key)
+            if key == 'REGEAR_STATE_ROOT' and value != self._state_root.as_posix():
                 return ('steam_state_override',)
+            if key == 'HDM_STATE_ROOT' and value != self._legacy_state_root.as_posix():
+                return ('steam_state_override',)
+        if len(state_keys) > 1:
+            return ('steam_state_override',)
         return ()
 
     def activation_fingerprint(self):

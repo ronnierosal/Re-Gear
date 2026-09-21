@@ -145,8 +145,72 @@ class DockPowerIntentStore(WholeDockClaimStore):
                     pass
             return True
 
+    def release_unsubmitted(self, operation, binding, generation, guard):
+        """Discard this operation's intent when its power request never happened.
+
+        Bind records that an operation MEANS to cut power, so nothing replays
+        it and no later boot honours it blindly. That is right while the
+        outcome is unknown. It is wrong once the submission is known not to
+        have occurred: the record then pins the claim that outlives it, and
+        `power_intent_absent` keeps the physical-disconnect archival from ever
+        running. A sleep reaches no other retirement -- `retire_after_boot`
+        takes shutdowns only, because a changed boot is evidence a shutdown
+        happened and says nothing about a sleep. Observed on device
+        2026-09-15: one refused sleep left the dock unable to re-attach, with
+        no recovery short of deleting root-owned files.
+
+        Discarding cannot cause a double submission, because the caller may
+        only pass a submission it verified did not reach the system. The guard
+        is re-checked under the lock, and the claim is left exactly as it is:
+        this removes the power record, never the disconnect history.
+        """
+        if (type(operation) is not str or re.fullmatch('[0-9a-f]{32}', operation) is None
+                or type(binding) is not str or type(generation) is not str):
+            return False
+        with self._locked() as directory:
+            claim = self._load(directory)
+            if (type(claim) is not WholeDockClaim
+                    or (claim.operation, claim.binding, claim.generation)
+                    != (operation, binding, generation)):
+                return False
+            if guard() is not True or self._load(directory) != claim:
+                return False
+            try:
+                os.unlink('dock-power-' + operation + '.json', dir_fd=directory)
+            except FileNotFoundError:
+                return True
+            os.fsync(directory)
+            return True
+
     def reconcile_stranded_sleep(self, expected_claim, live_session, guard):
-        """Delete a legacy sleep intent that no live session can consume."""
+        """Release a sleep intent that no live session can ever submit.
+
+        `release_unsubmitted` only runs inline, at the moment a sleep refusal is
+        observed. It cannot help when the backend never reached that point: a
+        process restart, a crash between bind and release, or a refusal under a
+        build predating the fix. The intent then survives with no owner, and
+        because `power_intent_absent` treats any retained entry as live power
+        work, `retire_physically_disconnected` can never run. The claim outlives
+        the dock, admission stays inhibited, and every re-attach leaves the GPU
+        powered with no driver bound. Observed on device 2026-09-16: a refused
+        sleep under 0.3.117 wedged admission until root-owned files were removed
+        by hand, and the enclosure overheated on each attempted re-attach.
+
+        A session token is `<boot hash>:<uuid4>`, regenerated per backend
+        process and never recovered from this store. A different strict live
+        token proves the recorded session is gone. `None` is reserved for the
+        recreated-Plugin caller whose current process has never created a power
+        session. In either case no caller can supply the recorded token to
+        `consume`, and nothing will replay the request. Discarding the record
+        therefore cannot cause a double submission, whether or not it was
+        consumed -- consumption records a single submission attempt, not its
+        outcome, and the dead session has no route to submit again.
+
+        Sleep only. A shutdown intent stays with `retire_after_boot`, which
+        holds real evidence of the outcome in the boot hash; a sleep has no such
+        evidence and no other retirement. The claim itself is never touched:
+        this removes the power record, never the disconnect history.
+        """
         session_pattern = '[0-9a-f]{64}:[0-9a-f]{32}'
         if (type(expected_claim) is not WholeDockClaim
                 or expected_claim.stage != 'software_down'
@@ -161,6 +225,8 @@ class DockPowerIntentStore(WholeDockClaimStore):
             try:
                 intent = self._load_intent(directory, expected_claim)
             except ValueError:
+                # A malformed record is not evidence of a live submission, but
+                # it cannot be shown stranded either. Leave it for the operator.
                 return False
             if (type(intent) is not DockPowerIntent or intent.action != 'sleep'
                     or (intent.operation, intent.binding, intent.generation) !=
@@ -176,7 +242,8 @@ class DockPowerIntentStore(WholeDockClaimStore):
             except ValueError:
                 return False
             try:
-                os.unlink(self._filename(intent), dir_fd=directory)
+                os.unlink('dock-power-' + expected_claim.operation + '.json',
+                          dir_fd=directory)
             except FileNotFoundError:
                 return True
             os.fsync(directory)

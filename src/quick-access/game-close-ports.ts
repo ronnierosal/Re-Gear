@@ -18,6 +18,7 @@ import {
   getSleepReadiness,
   rememberGameCloseChoice,
   takePendingRelaunch,
+  takePendingSleep,
 } from "../backend";
 import type { DisconnectStatusPayload, SleepReadinessPayload } from "../backend";
 import {
@@ -27,8 +28,15 @@ import {
 } from "../steam-game-control";
 import type { GameCloseWiringPorts } from "./game-close-wiring";
 
-export function liveGameClosePorts(): GameCloseWiringPorts {
+/** `releaseSleepBlocker` needs the panel's preflight coordinator, which only
+ * the mounted panel holds, so it is supplied by the caller. The default
+ * refuses: a sleep press that reached the flow without a bound release must
+ * not suspend past a guard nobody checked. */
+export function liveGameClosePorts(
+  releaseSleepBlocker: () => Promise<boolean> = async () => false,
+): GameCloseWiringPorts {
   return {
+    releaseSleepBlocker,
     terminateGame,
     relaunchGame,
     // Steam's own suspend. Re-Gear never suspends the machine itself.
@@ -50,6 +58,7 @@ export function liveGameClosePorts(): GameCloseWiringPorts {
     disconnect: (releaseDisplay, relaunchAppId, relaunchIntent) =>
       executeEgpuDisconnect(releaseDisplay, relaunchAppId, relaunchIntent),
     takePendingRelaunch: () => takePendingRelaunch(),
+    takePendingSleep: () => takePendingSleep(),
     rememberChoice: (appId, skipConfirmation, relaunchAfter) =>
       rememberGameCloseChoice(appId, skipConfirmation, relaunchAfter),
     wait: (ms) =>

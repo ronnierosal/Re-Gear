@@ -3,6 +3,18 @@ import { readFileSync } from "node:fs";
 import { composeCommandCenterArtwork } from "./scripts/compose_command_center_artwork.mjs";
 
 const config = deckyPlugin({});
+// Bundle the repository attribution sources; no runtime file or network reads.
+config.plugins.unshift({
+  name: "re-gear-project-documents",
+  resolveId(source) { return source === "regear:project-documents" ? "\0regear:project-documents" : null; },
+  load(id) {
+    if (id !== "\0regear:project-documents") return null;
+    const notices = readFileSync(new URL("./THIRD_PARTY_NOTICES.md", import.meta.url), "utf8");
+    const license = readFileSync(new URL("./LICENSE", import.meta.url), "utf8");
+    return `export const noticesText=${JSON.stringify(notices)};export const licenseText=${JSON.stringify(license)};`;
+  },
+});
+
 const richTileSpriteImport = "assets/command-center/tile-artwork.svg?rich-sprite";
 config.plugins.unshift({
   name: "re-gear-command-center-rich-tiles",

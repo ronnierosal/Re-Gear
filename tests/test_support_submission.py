@@ -80,34 +80,27 @@ class SupportSubmissionTests(unittest.TestCase):
 
     def test_worker_response_is_strict_and_contains_only_server_report_id(self):
         result = parse_support_submission_response(
-            {"ok": True, "report_id": "HDM-8F3A21"}
+            {"ok": True, "report_id": "RG-8F3A21"}
         )
-        self.assertEqual(result.report_id, "HDM-8F3A21")
+        self.assertEqual(result.report_id, "RG-8F3A21")
         invalid = (
             {"ok": True, "report_id": "../../secret"},
-            {"ok": True, "report_id": "HDM-8F3A21", "url": "https://example"},
-            {"ok": False, "report_id": "HDM-8F3A21"},
+            {"ok": True, "report_id": "RG-8F3A21", "url": "https://example"},
+            {"ok": False, "report_id": "RG-8F3A21"},
         )
         for payload in invalid:
             with self.subTest(payload=payload):
                 with self.assertRaises(ValueError):
                     parse_support_submission_response(payload)
 
-    def test_a_renamed_report_id_is_accepted_without_widening_the_format(self):
-        """The endpoint issues these ids, so both prefixes must parse.
-
-        The test above already pins the legacy ``HDM-`` prefix, which is the
-        half that matters for a server that may still be handing out ids
-        issued before the rename. This one pins the other half: the new
-        prefix works, and accepting it did not turn the pattern into a
-        wildcard that lets an arbitrary prefix through.
-        """
+    def test_report_id_accepts_only_the_current_prefix(self):
         result = parse_support_submission_response(
             {"ok": True, "report_id": "RG-8F3A21"}
         )
         self.assertEqual(result.report_id, "RG-8F3A21")
         rejected = (
             "XX-8F3A21",
+            "HDM-8F3A21",
             "-8F3A21",
             "8F3A21",
             "RGHDM-8F3A21",

@@ -60,7 +60,7 @@ def plan_integration(*, plugin_root: str, state_root: str, shim_bytes: bytes,
     launch_argv = steam_launch_argv(plugin_root)
     expected = ('# Managed experimental Re-Gear Steam trial.\n[Service]\n'
                 'ExecStart=\n' + f'ExecStart={" ".join(launch_argv)}\n'
-                f'Environment="HDM_STATE_ROOT={state_root}"\n')
+                f'Environment="REGEAR_STATE_ROOT={state_root}"\n')
     if actual_dropin not in (None, expected):
         raise ValueError('managed Steam drop-in changed')
     expected_argv = (OS_LAUNCHER,) if actual_dropin is None else launch_argv

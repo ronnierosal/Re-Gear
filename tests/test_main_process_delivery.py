@@ -1067,7 +1067,7 @@ class MainProcessDeliveryTests(unittest.TestCase):
             plugin._record_shutdown_checkpoint("unload_started", 10_000_000)
         finally:
             self.module.decky.logger.info = previous
-        self.assertEqual(messages, ["HDM shutdown checkpoint: stage=unload_started elapsed_ms=20"])
+        self.assertEqual(messages, ["Re-Gear shutdown checkpoint: stage=unload_started elapsed_ms=20"])
 
     def test_docked_igpu_supervisor_retries_transient_build_failure(self):
         plugin, _service = self.plugin()

@@ -1,0 +1,133 @@
+# Ally last-mile Command Center contract
+
+This document captures the final on-device interaction rules for the current Command Center integration. Runtime wiring should satisfy these rules without restyling the UI.
+
+## Safe Disconnect
+
+Safe Disconnect is a **single-press action** from the card/button surface.
+
+- A single `A` press starts the existing guarded Safe Disconnect workflow.
+- Do not open a generic details page first.
+- Do not require a second confirmation press merely to begin the workflow.
+- The runtime may still block/refuse/abort if verified safety preconditions fail.
+- Progress, blockers and completion belong in the centered operation popup.
+- Never claim physical unplug clearance unless the runtime explicitly establishes it.
+
+Normal card copy should stay terse: `Safe Disconnect`, plus at most a short state such as `Ready`, `Checking`, `Blocked`, or `Unknown`. Long safety explanations belong in the progress/details surface, not the card.
+
+## Brightness and volume
+
+The left rail is icon-first. Do not add the words `Brightness` and `Volume` back into the visible rail; retain them as accessible labels.
+
+Controller behavior:
+
+- D-pad can move focus into the left utility rail.
+- Up/Down selects Brightness or Volume when traversing the rail.
+- Once a range input owns focus, its native directional adjustment is preserved.
+- A directional move back toward the main grid returns focus to the nearest first-column card.
+
+The runtime should feed current 0–100 readings into the existing `UtilityRail` seam and use its request callback. Do not replace the rail or slider components.
+
+## Card sizing and copy
+
+All top-level cards in Quick Access, Performance, eGPU, Controllers and Settings use the same one-cell size. No two-cell-wide special card is allowed. Cards show icon, label and value only. Reasons remain in accessible names or nested details. Labels clamp to two lines and values truncate instead of increasing card height.
+
+Top-level helper/status banners under the grids are removed. The selected tab already provides context.
+
+All five top-level tabs omit repeated page titles and subtitles. Nested detail titles remain. Direct actions, including the one-press Safe Disconnect path, have no detail chevron.
+
+## Right quick-action rail
+
+The right rail remains four compact slots and must not scroll. Default visible labels are Mic, Wi-Fi, Overlay and Record; Mic retains its accessible mute label. Unsupported actions remain visible/disabled so geometry does not change.
+
+## Popups
+
+Operation popups remain centered and viewport-safe. Fast eGPU/Auto-TV flow should emphasize the current lifecycle step and avoid long diagnostic copy unless Details is opened.
+
+## September 13 bounded polish
+
+Baseline: `031a9f14f4eb6e10b72511469ee320d190d6e810` (0.3.101), including PR #330.
+Ronnie's assignment `674ca0e79da74bf98302fbaa9a030ec9` supersedes baseline
+height and rail spacing only: shell height is 79.2vh (82.8vh below 520px height),
+10% shorter. Card heights remain 88px / 74px across all five tabs, with four
+columns where content width permits. The left rail is approximately 12% narrower,
+with input and thumb dimensions preserved. The four right buttons keep their size
+and sit 10px from the menu. Palette, tabs, icons, popup styling and dispatch remain.
+
+The eGPU labels are Handheld, Safe Disconnect, Resolution, eGPU Status,
+Disconnect + Sleep and Disconnect + Shutdown. Unsupported actions stay disabled;
+shorter labels do not enable adapters. Performance order remains Profile,
+FPS Target, Manual TDP, Auto TDP, Resolution, Refresh Rate. Footer retains active
+LB/RB Switch Tab, A Select and B Close (B Back inside details).
+
+`scripts/ally_polish_preview.mjs <source-root> <output-directory> <runtime-node-modules> <playwright-module>` captures actual
+source through production `buildTiles` and `testBuildTiles` at 828x466 and1280x720.
+Its missing-data model and utility readings are simulated; it performs no device
+operations. Native controller and installed appearance still need hardware review.
+
+## Native navigation correction after installed 0.3.102
+
+Ronnie's physical test reported a stuck focus and insufficient slider travel.
+Read-only live Steam inspection confirmed that the FPS card and native modal/grid
+were registered and focused. The logical direction/Cancel callback wrapper consumes
+an event unless its handler returns `false`; raw button-down is registered directly.
+The previous tile handler returned nothing for ordinary directions, preventing parent
+grid traversal. Unhandled logical events now explicitly return false. First-column
+Quick Access LEFT still enters the rail, and rail B only consumes exit from editing.
+Modal lifecycle, initial focus, shortcut, native button-down and action dispatch are
+unchanged. Regression fixtures exercise actual TSX callbacks under this observed
+Steam wrapper contract, including non-entry LEFT and Performance's absent rail.
+
+The live Ally range was 15x34px. The requested usability correction keeps its width
+and thumb and increases track height to80px on short viewports,80-112px on taller
+viewports. Both tracks fit the existing narrow rail. Real controller acceptance is
+still required after the corrected build is installed.
+
+## Right quick-action group centering
+
+Ronnie's subsequent placement request centers the entire four-button group vertically
+beside the shell. The existing relative frame anchors top50% with translateY(-50%);
+the short-viewport rule does not override that center. Button dimensions, inter-button
+gaps,10px horizontal separation and103slider/navigation behavior remain unchanged.
+
+## Physical 0.3.104 feedback: sliders and customization
+
+Live Steam input established that A focusing a raw range loses the registered native
+navigation node. Native A now enters explicit adjustment mode while the wrapper keeps
+focus. The next Up/Down dispatches an adjustment immediately; B exits adjustment and
+Right returns to the grid. Touch/keyboard range interaction remains. Route changes
+clear parent adjustment hints; unhandled logical events retain the103false contract.
+The left rail now matches shell height, with equal brightness/volume halves and tracks
+filling the remaining height. Narrow width and centered right group remain unchanged.
+
+The existing approved controls are mounted: Quick Access Y tap chooses a replacement
+main card, Y held550ms enters move mode on release, and X edits the four right slots.
+Other tabs allow reorder only. The gesture is cancelled on route changes/unmount.
+A places a move; B discards the draft. Editing never dispatches the selected action.
+The footer identifies active editing/adjustment commands.
+
+Preferences store IDs/order only under regear.command-center-layout.v1. Quick choices
+carry their source tab and ID, and each render resolves the current source reading and
+original detail/action. Withdrawing an origin removes its control. Other-tab membership
+is fixed; right slots remain exactly four, brightness/volume excluded. Unsupported
+right choices stay disabled. Invalid storage recovers defaults; write failure remains
+visible and does not claim persistence. Main replacement choices show source tabs to
+distinguish similarly named controls.
+
+Actual-source browser checks exercise choose/save, draft cancel/place and four-slot
+editor behavior at828x466/1280x720. Native wrapper regressions reproduce the observed
+A-focus failure, but corrected hardware adjustment and customization still require
+Ronnie's installed-build test.
+
+
+## Follow-up to the 0.3.105 UI test
+
+Ronnie requested five main columns at Ally widths, 3-point controller slider adjustments, a compact Y picker over the visible panel, and hold-Y activation at 550 ms while still held. This supersedes the earlier X right-editor and release-triggered hold behavior. Y targets the focused main Quick Access card or right quick-action slot; brightness and volume remain fixed. Other tabs retain reorder-only behavior. Unavailable right slots can receive controller focus for customization, but A cannot dispatch their unsupported actions.
+
+Requested slider values render immediately as a draft. The accessible value distinguishes requested and observed percentages; an intermediate readback or setter completion alone does not erase the draft. Final observed equality reconciles it. Failure restores the latest observation and shows an error. Capability withdrawal drops stale drafts and queued work. Dispatch remains one in-flight request per utility with only the newest queued target; native adapter observations remain unchanged.
+
+The compact picker leaves the original panel visible and inert, guards background callbacks, owns navigation, and restores the selected main or right control after save/cancel. Raw A/B/direction input remains available for Steam logical event synthesis. Timers cancel on route change, focus loss and unmount; release cannot invoke a tap after a hold.
+
+Native A uses Steam's named IntoGameDetail cue once and invokes the existing click once. Internal B uses the named DefaultOk cue requested from the prior A mapping. Outer modal close retains Steam's existing HideModal feedback to avoid mixing two sounds. BasicNav remains unchanged. Discovery or playback failures never block or retry an action. This is source/simulated verification, not installed sound or controller acceptance.
+
+Evidence: focused deferred-promise rail, gesture timing/cancellation, raw-to-logical picker, original-source action, background guard, focus restoration and sound-dispatch tests. Actual-source browser captures at 828x466 and 1280x720 omit global border-box styles to match the observed Steam environment. Preserve the immutable 0.3.105 archive; this source follow-up requires separate exact-head review and packaging.

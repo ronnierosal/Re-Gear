@@ -136,7 +136,7 @@ STAMP='$stamp'
 PLUGIN_PARENT=`$(dirname "`$PLUGIN_DIR")
 LEGACY_DIR="`$PLUGIN_PARENT/HandheldDockMode"
 if test -e "`$LEGACY_DIR" || test -L "`$LEGACY_DIR"; then echo "Legacy installation requires supervised cutover; see docs/IDENTITY_CUTOVER.md" >&2; exit 1; fi
-BACKUP_ROOT="`$PLUGIN_PARENT/.hdm-deploy-backups"
+BACKUP_ROOT="`$PLUGIN_PARENT/.regear-deploy-backups"
 STAGING="`$PLUGIN_PARENT/.regear-staging-`$STAMP"
 BACKUP="`$BACKUP_ROOT/Re-Gear.backup-`$STAMP"
 rollback() { if test ! -d "`$PLUGIN_DIR" && test -d "`$BACKUP"; then mv "`$BACKUP" "`$PLUGIN_DIR"; fi; }
