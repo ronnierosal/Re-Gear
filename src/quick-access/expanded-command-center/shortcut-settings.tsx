@@ -11,7 +11,7 @@ export function ShortcutSettings({ control, available = true, error, preview = f
     <div data-ec-control="binding-menu" className="rg-expanded-shortcut-control">{control}</div>
     <p className="rg-expanded-context rg-expanded-note">{available
       ? "Press both buttons together. Release both before opening again."
-      : "Controller input is unavailable. Use the Open expanded demo button in Quick Access."}</p>
+      : "Controller input is unavailable. Open Re-Gear from Steam's Quick Access menu."}</p>
     {!preview && <p className="rg-expanded-context rg-expanded-note">Saved on this Steam client. Steam or the game may also respond to these buttons.</p>}
     {error && <p role="alert">{error}</p>}
   </section>;

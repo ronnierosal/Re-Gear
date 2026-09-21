@@ -23,7 +23,11 @@ const tiles = [
   ['tdp', 'TDP limit', unavailable ? 'Unknown' : '18 W', !unavailable, 'Change limit'],
   ['auto-tdp', 'Auto TDP', unavailable ? 'Unavailable' : 'Running', !unavailable, 'Stop'],
   ['display', 'Display target', 'Handheld', !unavailable, 'Change display'],
-  ['safe-disconnect', 'Safe Disconnect', 'In development', false, null],
+  ['safe-disconnect', 'Safe Disconnect', unavailable ? 'Unavailable' : 'Ready', !unavailable, 'Disconnect'],
+  ['sleep-connected', 'Sleep Connected', unavailable ? 'Unavailable' : 'Ready', !unavailable, 'Sleep'],
+  ['shutdown', 'Disconnect + Shut Down', unavailable ? 'Unavailable' : 'Ready', !unavailable, 'Shut down'],
+  ['resolution', 'Resolution', 'Unavailable', false, null],
+  ['egpu-status', 'eGPU Status', unavailable ? 'Unknown' : 'Connected', !unavailable, 'View status'],
 ].map(([id, title, text, available, actionLabel]) => ({ id, title, value: { text, known: available }, available,
   actionLabel, activation: available ? 'open' : 'notice', developmental: id === 'safe-disconnect',
   reason: available ? null : 'Current evidence does not permit this action.' }));

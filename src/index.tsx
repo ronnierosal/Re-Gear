@@ -131,6 +131,7 @@ import { disconnectResult } from "./quick-access/disconnect-result";
 import { DisconnectResultNotice } from "./quick-access/disconnect-result-notice";
 import type { TileId } from "./quick-access/command-center";
 import { CommandCenterGrid, TileReason } from "./quick-access/command-center-grid";
+import { ProductionEgpuActionHost, type ProductionEgpuActionRequest } from "./quick-access/production-egpu-actions";
 import { performanceState } from "./quick-access/performance-state";
 import { quickAccessSections } from "./quick-access-sections";
 import { connectionProgress, refreshDelayForVisibility } from "./refresh-policy";
@@ -553,7 +554,7 @@ function preflightObservation(payload: SnapshotPayload): PreflightObservation {
   }, Date.now(), SNAPSHOT_STALE_AFTER_MS);
 }
 
-function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAvailable }: { preflight: SleepPreflightCoordinator; connection: ReturnType<typeof startConnectionMonitor>; shortcut: ReturnType<typeof createDisplayShortcutRuntime>; openExpanded(): void; menuShortcutAvailable: boolean }) {
+function Content({ preflight, connection, shortcut, menuShortcutAvailable }: { preflight: SleepPreflightCoordinator; connection: ReturnType<typeof startConnectionMonitor>; shortcut: ReturnType<typeof createDisplayShortcutRuntime>; menuShortcutAvailable: boolean }) {
   const quickAccessVisible = useQuickAccessVisible();
   const statusAnchor = useRef<HTMLDivElement | null>(null);
   const statusFocusAnchor = useRef<HTMLDivElement | null>(null);
@@ -600,6 +601,8 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
   const [disconnectMessage, setDisconnectMessage] = useState("");
   /** The tile whose reason is shown under the grid. */
   const [selectedTile, setSelectedTile] = useState<TileId | null>(null);
+  const [productionActionRequest, setProductionActionRequest] = useState<ProductionEgpuActionRequest | null>(null);
+  const productionActionNonce = useRef(0);
   /** Dismissal of the last-attempt notice, for this panel session only. It is
    * not persisted: the outcome is the answer to "what just happened to my
    * hardware", and a stored dismissal would hide it after a later restart. */
@@ -1630,12 +1633,20 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
     tdpCanEnable: performance.manual?.can_enable,
   });
   const modules = quickAccessModules(sections);
+  const primaryDisplayAction = displayAction({
+    mode: payload?.inference.mode,
+    busy: tvSwitchBusy || safeDisconnectBusy,
+    acknowledgementRequired: Boolean(tvSwitchAcknowledgementId),
+    journalBlocked: Boolean(journalStatus && journalStatus.code !== "journal.idle"),
+    shortcutAvailable: controllerShortcutAvailable,
+  });
+
   // Manual power enablement and Auto TDP activity are separate observations.
   const tiles = commandCenterTiles({
     performance: performanceState({ status: performance.manual, autoStatus: performance.auto, busy: performance.busy, stopping: performance.stopping }),
     displayTarget: !loading && snapshot?.displays.some(d => d.active === true && d.kind === "external")
       ? "External" : !loading && snapshot?.displays.some(d => d.active === true && d.kind === "internal") ? "Handheld" : undefined,
-    disconnectStatus: egpuDisconnect,
+    displayAction: primaryDisplayAction,
   });
   const shownTile = tiles.find((tile) => tile.id === selectedTile);
 
@@ -1648,14 +1659,6 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
       detail: menuShortcutAvailable ? "Menu shortcut input available" : "Menu shortcut unavailable" },
   ];
   const sectionVisibility = quickAccessSectionVisibility(showDiagnostics);
-  const primaryDisplayAction = displayAction({
-    mode: payload?.inference.mode,
-    busy: tvSwitchBusy || safeDisconnectBusy,
-    acknowledgementRequired: Boolean(tvSwitchAcknowledgementId),
-    journalBlocked: Boolean(journalStatus && journalStatus.code !== "journal.idle"),
-    shortcutAvailable: controllerShortcutAvailable,
-  });
-
   const activateDisplay = () => {
     if (primaryDisplayAction.disabled) return;
     if (primaryDisplayAction.target === "ally") requestControllerDisplaySwitch("ally");
@@ -1695,8 +1698,6 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
               action={primaryDisplayAction} onSwitch={activateDisplay} onConfigure={() => openRoute({ kind: "module", id: "egpu" }, "picker:configure")} />}
 
         commandCenter={<>
-      <PanelSection><PanelSectionRow><ButtonItem layout="below" onClick={openExpanded}>Open expanded demo</ButtonItem></PanelSectionRow></PanelSection>
-
       <PanelSection>
         <CommandCenterHeader
           summaryRef={statusFocusAnchor}
@@ -1729,27 +1730,17 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
             setSelectedTile(id);
             const tile = tiles.find((candidate) => candidate.id === id);
             if (!tile) return;
-            if (id === "safe-disconnect") {
-              // Only an offer the owning backend actually made is actionable.
-              // Anything else selects the tile so its reason is read.
-              if (tile.activation !== "act" || !tile.confirmation || disconnectBusy) return;
-              const releaseDisplay = tile.displayApprovalRequired === true;
-              const view = disconnectPresentation(egpuDisconnect);
-              // A game is going to end. Its own dialog owns that consent, and
-              // the tile confirmation is not a substitute: one is about removing
-              // a device, the other about someone's unsaved progress. The wiring
-              // refuses a press claiming an answer this never collected, so
-              // missing this branch fails closed rather than closing a game
-              // unasked.
-              if (view.dialog !== null) {
-                showGameCloseDialog(view.dialog, (answers) => {
-                  void runDisconnect(releaseDisplay, answers);
-                });
-                return;
-              }
-              showDisconnectConfirmation(tile.confirmation, () => {
-                void runDisconnect(releaseDisplay, { confirmed: true });
-              });
+            if (id === "display") {
+              if (tile.activation === "act") activateDisplay();
+              return;
+            }
+            if (id === "safe-disconnect" || id === "sleep-connected" || id === "shutdown") {
+              if (tile.activation !== "act") return;
+              setProductionActionRequest({ action: id, nonce: ++productionActionNonce.current });
+              return;
+            }
+            if (id === "egpu-status") {
+              openRoute({ kind: "status", id: "egpu" }, "tile:egpu-status");
               return;
             }
             if (id === "auto-tdp" && tile.actionLabel === "Stop") {
@@ -1757,10 +1748,14 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
               return;
             }
             if (tile.activation !== "open") return;
-            openRoute(id === "display" || id === "tdp"
+            openRoute(id === "tdp"
               ? { kind: "picker", id }
               : { kind: "module", id: "auto-tdp" }, `tile:${id}`);
           }}
+        />
+        <ProductionEgpuActionHost
+          request={productionActionRequest}
+          readCurrentSnapshot={() => payload?.snapshot ?? null}
         />
         <TileReason tile={shownTile} />
         <ButtonItem layout="below" onClick={toggleTroubleshooting}>Troubleshoot</ButtonItem>
@@ -2399,7 +2394,7 @@ export default definePlugin(() => {
   return {
     name: PRODUCT_NAME,
     titleView: <div className={staticClasses.Title} style={{ display: "flex", alignItems: "center" }}><BrandHeader /></div>,
-    content: <Content preflight={preflight} connection={connection} shortcut={shortcut} openExpanded={expandedMenu.open} menuShortcutAvailable={expandedMenu.available} />,
+    content: <Content preflight={preflight} connection={connection} shortcut={shortcut} menuShortcutAvailable={expandedMenu.available} />,
     icon: <BrandIcon />,
     alwaysRender: true,
     onDismount() {

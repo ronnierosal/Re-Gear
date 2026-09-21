@@ -42,7 +42,7 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
     modal = showModal(<ModalRoot closeModal={close} bAllowFullSize bHideCloseIcon bDisableBackgroundDismiss className="rg-expanded-modal-root" modalClassName="rg-expanded-modal-frame">
       <style>{`.rg-expanded-modal-root,.rg-expanded-modal-frame{position:fixed!important;inset:0!important;width:100vw!important;height:100vh!important;max-width:none!important;max-height:none!important;padding:0!important;margin:0!important;background:transparent!important;box-shadow:none!important}`}</style>
       <View token={token}/>
-    </ModalRoot>, host, { strTitle: "Re-Gear expanded demo", bNeverPopOut: true });
+    </ModalRoot>, undefined, { strTitle: "Re-Gear Command Center", bNeverPopOut: true });
 
   };
   const shortcut = startMenuShortcut({ input, readBinding: () => binding, open });
