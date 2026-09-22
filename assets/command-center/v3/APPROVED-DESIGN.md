@@ -15,10 +15,13 @@ reinterpret, simplify, substitute, recolor, or add another veil over its tile
 artwork. The individual production assets must visibly match the corresponding
 numbered tile in this sheet at the Ally viewport.
 
-The current files under `tiles/` are implementation candidates, not proof of a
+The older files under `tiles/` are implementation candidates, not proof of a
 visual match. Several use symbols from the lightweight `button-artwork.svg`
-fallback set. Do not describe all 37 tiles as visually accepted until an
-installed same-viewport comparison against this sheet passes.
+fallback set.
+
+The 37 numbered, self-contained SVGs under `production/` were visually approved
+by the project owner on 2026-09-22. They are the production artwork family for
+subsequent UI integration. Installed Ally acceptance remains a separate gate.
 
 ## Locked presentation
 

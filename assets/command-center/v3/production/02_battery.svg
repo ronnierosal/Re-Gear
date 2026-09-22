@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 144" role="img" aria-label="Static Battery tile artwork">
+<defs>
+ <linearGradient id="surface" x1="12" y1="5" x2="224" y2="142" gradientUnits="userSpaceOnUse"><stop stop-color="#0b3156"/><stop offset=".34" stop-color="#071f39"/><stop offset=".7" stop-color="#041326"/><stop offset="1" stop-color="#010813"/></linearGradient>
+ <linearGradient id="rim" x1="16" y1="0" x2="225" y2="144" gradientUnits="userSpaceOnUse"><stop stop-color="#6beeff"/><stop offset=".18" stop-color="#08c8ff"/><stop offset=".62" stop-color="#1589e8"/><stop offset="1" stop-color="#18e8ff"/></linearGradient>
+ <linearGradient id="glass" x1="18" y1="7" x2="132" y2="119" gradientUnits="userSpaceOnUse"><stop stop-color="#b7f8ff" stop-opacity=".16"/><stop offset=".28" stop-color="#0f89cf" stop-opacity=".06"/><stop offset="1" stop-color="#020b19" stop-opacity="0"/></linearGradient>
+ <linearGradient id="panel" x1="113" y1="15" x2="229" y2="136" gradientUnits="userSpaceOnUse"><stop stop-color="#0b80c6" stop-opacity=".26"/><stop offset=".44" stop-color="#08345e" stop-opacity=".18"/><stop offset="1" stop-color="#03101f" stop-opacity=".02"/></linearGradient>
+ <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#e9feff"/><stop offset=".22" stop-color="#62f1ff"/><stop offset=".62" stop-color="#08aeea"/><stop offset="1" stop-color="#07519f"/></linearGradient>
+ <linearGradient id="metal" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#f5fdff"/><stop offset=".2" stop-color="#9bd8ef"/><stop offset=".55" stop-color="#31658a"/><stop offset="1" stop-color="#071627"/></linearGradient>
+ <linearGradient id="green" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#caffee"/><stop offset=".28" stop-color="#39f5b0"/><stop offset="1" stop-color="#00765c"/></linearGradient>
+ <linearGradient id="danger" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#fff4ed"/><stop offset=".22" stop-color="#ff725f"/><stop offset=".72" stop-color="#e31c35"/><stop offset="1" stop-color="#6e0718"/></linearGradient>
+ <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#fffbd1"/><stop offset=".3" stop-color="#ffe52e"/><stop offset="1" stop-color="#e87b00"/></linearGradient>
+ <radialGradient id="orb"><stop stop-color="#32f6bd" stop-opacity=".28"/><stop offset=".55" stop-color="#32f6bd" stop-opacity=".09"/><stop offset="1" stop-color="#32f6bd" stop-opacity="0"/></radialGradient>
+ <filter id="outerGlow" x="-30%" y="-50%" width="160%" height="200%"><feGaussianBlur stdDeviation="2.3" result="b"/><feColorMatrix in="b" values="0 0 0 0 .02 0 0 0 0 .75 0 0 0 0 1 0 0 0 .72 0" result="c"/><feMerge><feMergeNode in="c"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+ <filter id="glow" x="-80%" y="-80%" width="260%" height="260%"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+ <filter id="shadow" x="-80%" y="-80%" width="260%" height="260%"><feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#000711" flood-opacity=".95"/></filter>
+ <clipPath id="clip"><rect x="2" y="2" width="236" height="140" rx="13"/></clipPath>
+</defs>
+<g filter="url(#outerGlow)"><rect x="2.5" y="2.5" width="235" height="139" rx="13" fill="url(#surface)" stroke="url(#rim)" stroke-width="1.5"/></g>
+<g clip-path="url(#clip)">
+ <path d="M10 7H164L129 69 86 144H4V18Q4 7 15 7Z" fill="url(#glass)"/>
+ <path d="M6 19 124 4h41l-17 30L92 43 63 94 5 113Z" fill="#0b4f7d" opacity=".09"/>
+ <path d="M86 144 145 42 174 2h30l-31 57-48 85Z" fill="url(#panel)"/>
+ <path d="m104 144 57-99 21-43h14l-24 49-54 93Z" fill="#0e75ad" opacity=".16"/>
+ <path d="m122 144 47-80 19-39 4 16-15 29-42 74Z" fill="#21b9e7" opacity=".08"/>
+ <path d="M16 118 79 8M39 144 118 5M74 144l80-139M109 144 185 10" fill="none" stroke="#178ec2" stroke-opacity=".16" stroke-width=".7"/>
+ <path d="M8 31 116 17M6 109l81-22M30 138l74-20" fill="none" stroke="#5ae9ff" stroke-opacity=".07" stroke-width=".6"/>
+ <path d="M13 8h137" stroke="#c1fbff" stroke-opacity=".17"/>
+ <ellipse cx="193" cy="78" rx="59" ry="56" fill="url(#orb)"/>
+ <g filter="url(#shadow)"><g transform="translate(157 25)"><rect x="17" y="0" width="35" height="9" rx="3" fill="url(#metal)"/><rect x="9" y="7" width="51" height="98" rx="9" fill="#051525" stroke="#73f6ff" stroke-width="2"/><rect x="15" y="14" width="39" height="84" rx="5" fill="url(#green)" opacity=".88" filter="url(#glow)"/><path d="m38 23-14 31h12l-8 30 22-39H38Z" fill="#f0ffff" filter="url(#glow)"/></g></g>
+ <path d="M5 139h119" stroke="#0ad8ff" stroke-opacity=".18"/><path d="M8 5h223" stroke="#d9fdff" stroke-opacity=".09"/>
+</g>
+<rect x="2.5" y="2.5" width="235" height="139" rx="13" fill="none" stroke="#60eaff" stroke-opacity=".38" stroke-width=".55"/>
+</svg>
