@@ -22,6 +22,15 @@ class ConfigIoError(RuntimeError):
     """The file could not be read or written. Never raised past the service."""
 
 
+class ConfigChangedError(ConfigIoError):
+    """The target changed between the decision to write and the write itself.
+
+    A subclass of ConfigIoError so no caller can accidentally ignore it, but
+    distinct so the service can report a conflict rather than a failure -- and
+    so it never triggers a rollback over bytes that are not Re-Gear's.
+    """
+
+
 @dataclass(frozen=True, slots=True)
 class ConfigBytes:
     payload: bytes
@@ -48,8 +57,12 @@ class GraphicsConfigStore:
             raise ConfigIoError(f"configuration is not {ENCODING} text: {error}") from error
         return ConfigBytes(payload=payload, text=text)
 
-    def write(self, path: Path, text: str) -> bytes:
-        """Atomically replace the file with this text; return the bytes written."""
+    def write(self, path: Path, text: str, expected: bytes | None = None) -> bytes:
+        """Atomically replace the file with this text; return the bytes written.
+
+        When ``expected`` is given, the target is re-read immediately before the
+        replacement and the write is refused if it no longer holds those bytes.
+        """
         payload = text.encode(ENCODING)
         if len(payload) > MAX_CONFIG_BYTES:
             raise ConfigIoError("refusing to write an oversized configuration")
@@ -67,16 +80,31 @@ class GraphicsConfigStore:
                 output.flush()
                 os.fsync(output.fileno())
             os.chmod(temporary, mode)
+            if expected is not None:
+                # The last look before the point of no return.
+                current = path.read_bytes()
+                if current != expected:
+                    raise ConfigChangedError(
+                        "the configuration changed between the decision to write "
+                        "and the write itself"
+                    )
             os.replace(temporary, path)
             handle = os.open(directory, os.O_RDONLY)
             try:
                 os.fsync(handle)
             finally:
                 os.close(handle)
+        except ConfigChangedError:
+            self._discard(temporary)
+            raise
         except OSError as error:
-            try:
-                temporary.unlink()
-            except OSError:
-                pass
+            self._discard(temporary)
             raise ConfigIoError(f"atomic configuration write failed: {error}") from error
         return payload
+
+    @staticmethod
+    def _discard(temporary: Path) -> None:
+        try:
+            temporary.unlink()
+        except OSError:
+            pass

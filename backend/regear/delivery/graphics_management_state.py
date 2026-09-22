@@ -6,10 +6,13 @@ intentional edit every time the placement changed. So each managed target keeps
 the digest of exactly the bytes Re-Gear last left there, the pinned baseline to
 restore, and the schema and profile version those bytes were written under.
 
-A missing or unreadable record is not permission to write. It means Re-Gear
-cannot prove the current bytes are its own, which is the same position as an
-external edit: the player's file wins and the caller is told there is a
-conflict. The one thing this record never does is rebaseline itself.
+"Absent" and "unreadable" are not the same answer, and collapsing them into
+None is what let a deleted record read as "never managed" and license an
+overwrite. `load` therefore returns a tri-state: ABSENT means no record was
+ever written here, UNTRUSTED means one exists but cannot be believed, LOADED
+means it can. Only ABSENT -- corroborated by there being no backup history for
+the target either -- is a first enrollment. The one thing this record never
+does is rebaseline itself.
 """
 
 from __future__ import annotations
@@ -20,6 +23,7 @@ import re
 import secrets
 import threading
 from dataclasses import dataclass
+from enum import StrEnum
 from pathlib import Path
 
 
@@ -70,6 +74,25 @@ class ManagementRecord:
         )
 
 
+class ManagementState(StrEnum):
+    """Whether a target's provenance is knowable, and whether it is trusted."""
+
+    ABSENT = "management.absent"
+    UNTRUSTED = "management.untrusted"
+    LOADED = "management.loaded"
+
+
+@dataclass(frozen=True, slots=True)
+class ManagementLookup:
+    state: ManagementState
+    record: ManagementRecord | None = None
+    detail: str = ""
+
+    @property
+    def trusted(self) -> bool:
+        return self.state is ManagementState.LOADED and self.record is not None
+
+
 class ManagementStateError(RuntimeError):
     """The record could not be written. Callers turn this into a failure outcome."""
 
@@ -83,22 +106,49 @@ class ManagementStateStore:
         self._root = state_root
         self._lock = threading.Lock()
 
-    def load(self, identity: str) -> ManagementRecord | None:
-        """The record for this target, or ``None`` if there is none to trust."""
+    def load(self, identity: str) -> ManagementLookup:
+        """Read this target's provenance, distinguishing absent from unreadable.
+
+        A file that is not there is ABSENT. A file that is there but cannot be
+        parsed, is too large, is a symlink, or carries a record version this
+        build does not understand is UNTRUSTED -- evidence that something was
+        recorded and is now unreliable, which is never the same as evidence
+        that nothing was.
+        """
         self._require_identity(identity)
         path = self._root / f"{identity}.json"
         try:
-            if path.is_symlink() or not path.is_file():
-                return None
+            if path.is_symlink():
+                return ManagementLookup(
+                    ManagementState.UNTRUSTED, None, "management record is a symlink"
+                )
+            if not path.exists():
+                return ManagementLookup(ManagementState.ABSENT)
+            if not path.is_file():
+                return ManagementLookup(
+                    ManagementState.UNTRUSTED, None, "management record is not a file"
+                )
             if path.stat().st_size > MAX_BYTES:
-                return None
+                return ManagementLookup(
+                    ManagementState.UNTRUSTED, None, "management record is oversized"
+                )
             value = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            return None
+        except OSError as error:
+            return ManagementLookup(
+                ManagementState.UNTRUSTED, None, f"management record is unreadable: {error}"
+            )
+        except ValueError as error:
+            return ManagementLookup(
+                ManagementState.UNTRUSTED, None, f"management record is malformed: {error}"
+            )
         if not isinstance(value, dict) or value.get("record_version") != RECORD_VERSION:
-            return None
+            return ManagementLookup(
+                ManagementState.UNTRUSTED,
+                None,
+                "management record version is not one this build wrote",
+            )
         try:
-            return ManagementRecord(
+            record = ManagementRecord(
                 identity=str(value["identity"]),
                 target_path=str(value["target_path"]),
                 managed_digest=str(value["managed_digest"]),
@@ -111,8 +161,15 @@ class ManagementStateStore:
                 schema_signature=str(value["schema_signature"]),
                 managing=bool(value.get("managing", True)),
             )
-        except (KeyError, TypeError, ValueError):
-            return None
+        except (KeyError, TypeError, ValueError) as error:
+            return ManagementLookup(
+                ManagementState.UNTRUSTED, None, f"management record is incomplete: {error}"
+            )
+        if record.identity != identity:
+            return ManagementLookup(
+                ManagementState.UNTRUSTED, None, "management record names another target"
+            )
+        return ManagementLookup(ManagementState.LOADED, record)
 
     def save(self, record: ManagementRecord) -> None:
         self._require_identity(record.identity)
@@ -127,7 +184,8 @@ class ManagementStateStore:
         touching the file. The baseline stays, so a later, separately requested
         Restore My Settings is still possible.
         """
-        existing = self.load(identity)
+        lookup = self.load(identity)
+        existing = lookup.record
         if existing is None:
             return None
         updated = ManagementRecord(

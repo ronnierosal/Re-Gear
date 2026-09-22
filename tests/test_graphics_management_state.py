@@ -13,6 +13,7 @@ sys.path.insert(0, str(ROOT / "backend"))
 from regear.delivery.graphics_management_state import (  # noqa: E402
     RECORD_VERSION,
     ManagementRecord,
+    ManagementState,
     ManagementStateStore,
 )
 
@@ -48,7 +49,10 @@ class ManagementStateTests(unittest.TestCase):
     def test_round_trip(self):
         original = record()
         self.store.save(original)
-        self.assertEqual(self.store.load(original.identity), original)
+        lookup = self.store.load(original.identity)
+        self.assertIs(lookup.state, ManagementState.LOADED)
+        self.assertTrue(lookup.trusted)
+        self.assertEqual(lookup.record, original)
 
     def test_the_record_format_version_is_not_the_game_schema_version(self):
         # These were once the same JSON key, so every record read back as
@@ -58,13 +62,37 @@ class ManagementStateTests(unittest.TestCase):
         self.assertEqual(written["record_version"], RECORD_VERSION)
         self.assertEqual(written["schema_version"], "5")
 
-    def test_missing_record_is_none(self):
-        self.assertIsNone(self.store.load("620.proton.nothing"))
+    def test_a_missing_record_is_absent_not_untrusted(self):
+        # The distinction is the whole point: absent may be a first enrollment,
+        # untrusted never is.
+        lookup = self.store.load("620.proton.nothing")
+        self.assertIs(lookup.state, ManagementState.ABSENT)
+        self.assertIsNone(lookup.record)
+        self.assertFalse(lookup.trusted)
 
-    def test_corrupt_record_is_none_rather_than_a_guess(self):
+    def test_a_corrupt_record_is_untrusted_not_absent(self):
         self.store.save(record())
         (self.root / "620.proton.abcdef.json").write_text("{not json", encoding="utf-8")
-        self.assertIsNone(self.store.load("620.proton.abcdef"))
+        lookup = self.store.load("620.proton.abcdef")
+        self.assertIs(lookup.state, ManagementState.UNTRUSTED)
+        self.assertFalse(lookup.trusted)
+        self.assertTrue(lookup.detail)
+
+    def test_a_deleted_record_is_absent_and_a_truncated_one_is_untrusted(self):
+        self.store.save(record())
+        path = self.root / "620.proton.abcdef.json"
+        path.write_text("", encoding="utf-8")
+        self.assertIs(self.store.load("620.proton.abcdef").state, ManagementState.UNTRUSTED)
+        path.unlink()
+        self.assertIs(self.store.load("620.proton.abcdef").state, ManagementState.ABSENT)
+
+    def test_a_record_naming_another_target_is_untrusted(self):
+        self.store.save(record())
+        path = self.root / "620.proton.abcdef.json"
+        value = json.loads(path.read_text())
+        value["identity"] = "620.proton.somewhere-else"
+        path.write_text(json.dumps(value), encoding="utf-8")
+        self.assertIs(self.store.load("620.proton.abcdef").state, ManagementState.UNTRUSTED)
 
     def test_a_record_from_a_future_format_is_not_trusted(self):
         self.store.save(record())
@@ -72,14 +100,14 @@ class ManagementStateTests(unittest.TestCase):
         value = json.loads(path.read_text())
         value["record_version"] = RECORD_VERSION + 1
         path.write_text(json.dumps(value), encoding="utf-8")
-        self.assertIsNone(self.store.load("620.proton.abcdef"))
+        self.assertIs(self.store.load("620.proton.abcdef").state, ManagementState.UNTRUSTED)
 
     def test_stop_managing_keeps_the_baseline_and_clears_the_claim(self):
         self.store.save(record())
         updated = self.store.stop_managing("620.proton.abcdef")
         self.assertFalse(updated.managing)
         self.assertEqual(updated.baseline_payload_name, "00000001.aa.bak")
-        self.assertFalse(self.store.load("620.proton.abcdef").managing)
+        self.assertFalse(self.store.load("620.proton.abcdef").record.managing)
 
     def test_stop_managing_an_unmanaged_target_is_none(self):
         self.assertIsNone(self.store.stop_managing("620.proton.nothing"))
@@ -87,7 +115,7 @@ class ManagementStateTests(unittest.TestCase):
     def test_forget_removes_the_record_and_is_idempotent(self):
         self.store.save(record())
         self.store.forget("620.proton.abcdef")
-        self.assertIsNone(self.store.load("620.proton.abcdef"))
+        self.assertIs(self.store.load("620.proton.abcdef").state, ManagementState.ABSENT)
         self.store.forget("620.proton.abcdef")
 
     def test_invalid_identity_is_refused(self):
@@ -100,7 +128,7 @@ class ManagementStateTests(unittest.TestCase):
         target = self.root / "620.proton.abcdef.json"
         link = self.root / "620.proton.linked.json"
         link.symlink_to(target)
-        self.assertIsNone(self.store.load("620.proton.linked"))
+        self.assertIs(self.store.load("620.proton.linked").state, ManagementState.UNTRUSTED)
 
     def test_no_temporary_files_are_left_behind(self):
         self.store.save(record())

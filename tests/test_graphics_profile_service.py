@@ -18,10 +18,13 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 sys.path.insert(0, str(ROOT / "tests"))
 
+import dataclasses  # noqa: E402
+
 import graphics_profile_fixtures as fixtures  # noqa: E402
 from regear.delivery.graphics_backup import BackupManager, digest_of  # noqa: E402
 from regear.delivery.graphics_config_locator import GraphicsConfigLocator  # noqa: E402
 from regear.delivery.graphics_config_store import (  # noqa: E402
+    ConfigChangedError,
     ConfigIoError,
     GraphicsConfigStore,
 )
@@ -225,6 +228,154 @@ class PlayerEditTests(ServiceTestCase):
         self.assertEqual(self.config.read_bytes(), self.original)
 
 
+class ProvenanceTrustTests(ServiceTestCase):
+    """Finding 1: absent, corrupt and trusted provenance are three answers."""
+
+    def state_path(self):
+        return self.base / "state" / f"{self.identity()}.json"
+
+    def test_a_deleted_record_does_not_license_an_overwrite(self):
+        self.apply(PORTABLE)
+        edited = self.config.read_bytes().replace(
+            b"sg.TextureQuality=1", b"sg.TextureQuality=2"
+        )
+        self.config.write_bytes(edited)
+        self.state_path().unlink()
+        outcome = self.apply(TV_DOCKED)
+        self.assertIs(outcome.result, ApplyResult.CONFLICT)
+        self.assertEqual(self.config.read_bytes(), edited)
+
+    def test_a_corrupt_record_does_not_license_a_restore(self):
+        self.apply(PORTABLE)
+        edited = self.config.read_bytes().replace(
+            b"MasterVolume=0.8", b"MasterVolume=0.2"
+        )
+        self.config.write_bytes(edited)
+        self.state_path().write_text("{not json", encoding="utf-8")
+        outcome = self.restore()
+        self.assertIs(outcome.result, RestoreResult.CONFLICT)
+        self.assertEqual(self.config.read_bytes(), edited)
+
+    def test_a_lost_record_still_blocks_restore_even_without_an_edit(self):
+        # Restoring needs proof of authorship, not merely the absence of a
+        # visible edit.
+        self.apply(PORTABLE)
+        applied = self.config.read_bytes()
+        self.state_path().unlink()
+        outcome = self.restore()
+        self.assertIs(outcome.result, RestoreResult.CONFLICT)
+        self.assertEqual(self.config.read_bytes(), applied)
+
+    def test_the_player_can_still_force_a_restore_with_no_record(self):
+        self.apply(PORTABLE)
+        self.state_path().unlink()
+        outcome = self.restore(accept_player_edits=True)
+        self.assertIs(outcome.result, RestoreResult.RESTORED)
+        self.assertEqual(self.config.read_bytes(), self.original)
+
+    def test_first_enrollment_still_works_with_no_provenance_at_all(self):
+        # The fix must not make provenance a prerequisite for ever starting.
+        self.assertFalse(self.state_path().exists())
+        outcome = self.apply(PORTABLE)
+        self.assertIs(outcome.result, ApplyResult.APPLIED)
+
+
+class ReplacementBoundaryTests(ServiceTestCase):
+    """Findings 2 and 3: nothing is overwritten that Re-Gear did not write."""
+
+    def racing_store(self, then_fail):
+        original = self.original
+
+        class RacingStore(GraphicsConfigStore):
+            def write(inner, path, text, expected=None):
+                # An external writer lands after the profile was planned and
+                # the backup taken, but before the replacement.
+                path.write_bytes(
+                    path.read_bytes().replace(b"MasterVolume=0.8", b"MasterVolume=0.5")
+                )
+                if then_fail:
+                    raise ConfigIoError("write failed after an external edit landed")
+                return super().write(path, text, expected)
+
+        return RacingStore()
+
+    def test_an_edit_arriving_before_the_replacement_is_not_overwritten(self):
+        service = self.build_service(store=self.racing_store(then_fail=False))
+        outcome = self.apply(PORTABLE, service=service)
+        self.assertIs(outcome.result, ApplyResult.CONFLICT)
+        self.assertIn(b"MasterVolume=0.5", self.config.read_bytes())
+
+    def test_rollback_never_restores_over_content_re_gear_did_not_write(self):
+        service = self.build_service(store=self.racing_store(then_fail=True))
+        outcome = self.apply(PORTABLE, service=service)
+        self.assertIs(outcome.result, ApplyResult.CONFLICT)
+        self.assertIn(b"MasterVolume=0.5", self.config.read_bytes())
+
+    def test_a_file_that_cannot_be_re_read_is_left_alone_not_overwritten(self):
+        class UnreadableAfterWrite(GraphicsConfigStore):
+            def __init__(inner):
+                inner.written = False
+
+            def read(inner, path):
+                if inner.written:
+                    raise ConfigIoError("the file became unreadable")
+                return super().read(path)
+
+            def write(inner, path, text, expected=None):
+                inner.written = True
+                raise ConfigIoError("write failed")
+
+        service = self.build_service(store=UnreadableAfterWrite())
+        outcome = self.apply(PORTABLE, service=service)
+        self.assertIs(outcome.result, ApplyResult.FAILED)
+        self.assertEqual(self.config.read_bytes(), self.original)
+
+    def test_the_store_refuses_a_write_whose_expected_bytes_are_stale(self):
+        store = GraphicsConfigStore()
+        with self.assertRaises(ConfigChangedError):
+            store.write(self.config, "[G]\nk=1\n", expected=b"something else entirely")
+        self.assertEqual(self.config.read_bytes(), self.original)
+
+    def test_restore_refuses_when_the_target_changes_at_the_boundary(self):
+        self.apply(PORTABLE)
+        applied = self.config.read_bytes()
+        baseline = self.backups.baseline(self.identity()).record
+
+        with self.assertRaises(Exception) as caught:
+            self.backups.restore(baseline, self.config, expected=b"stale expectation")
+        self.assertIn("changed", str(caught.exception))
+        self.assertEqual(self.config.read_bytes(), applied)
+
+
+class ProfileBindingTests(ServiceTestCase):
+    """Finding 5: a profile must be admitted, not merely recorded."""
+
+    def test_a_profile_for_another_schema_is_refused_before_any_write(self):
+        foreign = dataclasses.replace(PORTABLE, schema_id="unrelated-schema")
+        outcome = self.apply(foreign)
+        self.assertIs(outcome.result, ApplyResult.UNSUPPORTED)
+        self.assertIs(outcome.tier, SupportTier.UNKNOWN)
+        self.assertEqual(self.config.read_bytes(), self.original)
+        self.assertEqual(self.backups.records(self.identity()), ())
+
+    def test_an_unaccepted_profile_version_is_refused(self):
+        future = dataclasses.replace(PORTABLE, profile_version=999)
+        outcome = self.apply(future)
+        self.assertIs(outcome.result, ApplyResult.UNSUPPORTED)
+        self.assertEqual(self.config.read_bytes(), self.original)
+
+    def test_a_declared_accepted_version_is_admitted(self):
+        catalog = ManagedKeyCatalog({APP: VALIDATORS}, {APP: SCHEMA}, {APP: (1, 2)})
+        service = self.build_service(catalog=catalog)
+        outcome = self.apply(dataclasses.replace(PORTABLE, profile_version=2), service=service)
+        self.assertIs(outcome.result, ApplyResult.APPLIED)
+
+    def test_a_game_with_no_schema_refuses_a_schema_bound_profile(self):
+        service = self.build_service(catalog=ManagedKeyCatalog({APP: VALIDATORS}, {}))
+        outcome = self.apply(PORTABLE, service=service)
+        self.assertIs(outcome.result, ApplyResult.UNSUPPORTED)
+
+
 class BaselineTests(ServiceTestCase):
     """Finding 2: the original must outlive the rotating backups."""
 
@@ -234,7 +385,8 @@ class BaselineTests(ServiceTestCase):
         records = self.backups.records(self.identity())
         self.assertTrue(any(self.backups.payload(r) == self.original for r in records))
         baseline = self.backups.baseline(self.identity())
-        self.assertEqual(self.backups.payload(baseline), self.original)
+        self.assertTrue(baseline.verified)
+        self.assertEqual(self.backups.payload(baseline.record), self.original)
 
     def test_default_restore_returns_my_settings_not_the_last_profile(self):
         self.apply(PORTABLE)
@@ -249,14 +401,37 @@ class BaselineTests(ServiceTestCase):
         self.assertIs(outcome.result, RestoreResult.NOTHING_TO_RESTORE)
         self.assertEqual(self.config.read_bytes(), self.original)
 
+    def corrupt_the_baseline(self):
+        baseline = self.backups.baseline(self.identity())
+        (self.backups.root / self.identity() / baseline.record.payload_name).write_bytes(b"junk")
+
     def test_a_corrupt_baseline_refuses_rather_than_writing_garbage(self):
         self.apply(PORTABLE)
         applied = self.config.read_bytes()
-        baseline = self.backups.baseline(self.identity())
-        (self.backups.root / self.identity() / baseline.payload_name).write_bytes(b"junk")
+        self.corrupt_the_baseline()
         outcome = self.restore()
         self.assertIs(outcome.result, RestoreResult.FAILED)
         self.assertEqual(self.config.read_bytes(), applied)
+
+    def test_a_corrupt_baseline_blocks_further_managed_writes(self):
+        self.apply(PORTABLE)
+        applied = self.config.read_bytes()
+        self.corrupt_the_baseline()
+        outcome = self.apply(TV_DOCKED)
+        self.assertIs(outcome.result, ApplyResult.FAILED)
+        self.assertFalse(outcome.restoration_available)
+        self.assertEqual(self.config.read_bytes(), applied)
+
+    def test_losing_the_baseline_record_does_not_promote_a_rotating_copy(self):
+        self.apply(PORTABLE)
+        identity = self.identity()
+        baseline = self.backups.baseline(identity)
+        stem = baseline.record.payload_name[: -len(".bak")]
+        (self.backups.root / identity / f"{stem}.json").unlink()
+        # The original is gone; the next capture must not christen itself one.
+        outcome = self.apply(TV_DOCKED)
+        self.assertIs(outcome.result, ApplyResult.FAILED)
+        self.assertFalse(self.backups.baseline(identity).verified)
 
 
 class SchemaTests(ServiceTestCase):
@@ -358,7 +533,7 @@ class FilesystemContainmentTests(ServiceTestCase):
 
     def test_a_failed_write_rolls_back_to_the_original_bytes(self):
         class FailingStore(GraphicsConfigStore):
-            def write(self, path, text):
+            def write(self, path, text, expected=None):
                 raise ConfigIoError("disk is full")
 
         service = self.build_service(store=FailingStore())
@@ -368,8 +543,10 @@ class FilesystemContainmentTests(ServiceTestCase):
 
     def test_a_write_that_does_not_verify_is_rolled_back(self):
         class WrongStore(GraphicsConfigStore):
-            def write(self, path, text):
-                return super().write(path, text.replace("MasterVolume=0.8", "MasterVolume=0.1"))
+            def write(self, path, text, expected=None):
+                return super().write(
+                    path, text.replace("MasterVolume=0.8", "MasterVolume=0.1"), expected
+                )
 
         service = self.build_service(store=WrongStore())
         outcome = self.apply(PORTABLE, service=service)

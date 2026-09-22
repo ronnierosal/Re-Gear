@@ -13,10 +13,14 @@ observation of behaviour, documentation and on-disk layout.
 | [SteamTinkerLaunch](https://github.com/sonic2kk/steamtinkerlaunch) — wiki page [Configuration Files](https://github.com/sonic2kk/steamtinkerlaunch/wiki/Configuration-Files) | Linux wrapper for the Steam client offering per-game tool configuration | GPL-3.0 | **Inspiration only, no code.** Confirms the prevailing convention of keying per-game state by Steam AppID: game configuration under `gamecfgs/id/<AppID>` inside `$HOME/.config/steamtinkerlaunch`, with a title-named symlink for humans. Re-Gear keys backups and provenance by AppID too, but by target path as well — see the limitation this project hit that AppID alone does not cover. The wiki documents **no** backup of a game's own configuration, so nothing there informed the backup design. |
 | [stereolabs/zed-unreal-examples `DefaultGameUserSettings.ini`](https://raw.githubusercontent.com/stereolabs/zed-unreal-examples/master/UE4_Examples/Config/DefaultGameUserSettings.ini) | A published, real Unreal Engine 4 configuration file | MIT (repository) | **Schema shape only.** Evidence that the engine writes `[ScalabilityGroups]` with `sg.ResolutionQuality`, `sg.ViewDistanceQuality`, `sg.AntiAliasingQuality`, `sg.ShadowQuality`, `sg.PostProcessQuality`, `sg.TextureQuality`, `sg.EffectsQuality`, and `[/Script/Engine.GameUserSettings]` carrying a `Version` key (observed value `5`) alongside resolution and VSync keys. The fixture's contents were written for this repository, not copied; key and section names are facts about a format, not expression. |
 
-Both sources are credited here and in the PR. Neither contributed code, tests
-or text to this repository, so `THIRD_PARTY_NOTICES.md` needs no new entry; if
-any implementation is later adapted from SteamTinkerLaunch, its GPL-3.0 terms
-and a notice entry become mandatory first.
+Both sources are credited here, in the PR, and in
+[THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md). An earlier revision of this
+document said no notices entry was required because no code was copied; that was
+wrong under [source attribution](SOURCE_ATTRIBUTION.md), which requires crediting
+material *inspiration* whether or not anything was copied. The entries record
+reuse type "inspiration only" and make no copying or licensing conclusion. If any
+implementation is later adapted from SteamTinkerLaunch, its GPL-3.0 terms and a
+file-level notice become mandatory first.
 
 ## What could not be reached, and what is therefore not claimed
 
@@ -24,12 +28,22 @@ This session's network egress proxy blocks `partner.steamgames.com`,
 `help.steampowered.com` and `dev.epicgames.com`, and `api.github.com` returns
 403 through it. Consequences, stated rather than papered over:
 
-- **Steam Cloud ordering is undocumented here and remains an open gate.** No
-  claim is made about when Steam syncs a game's configuration relative to
-  launch and exit, or how it resolves a conflict when a file changed outside
-  the game. Nothing in this milestone runs against a real Steam Cloud path, and
-  filesystem atomicity is not evidence of cloud cooperation. This must be
-  resolved from Valve's own documentation before any production integration.
+- **Steam Cloud: the document is reachable, the game-specific gate is not
+  closed.** This environment cannot fetch
+  https://partner.steamgames.com/doc/features/cloud (blocked by the egress
+  proxy), but the project primary read it during review and reported that it
+  documents synchronization before and after play sessions and advises keeping
+  machine-specific video configuration *out* of Cloud. That is recorded here as
+  relayed evidence, not as something this session verified, and it closes the
+  documentation-access gap only.
+
+  The production gate stands and is narrower than it was: Valve's general
+  ordering does not establish where a Re-Gear operation would run relative to a
+  *particular* game's sync, nor whether that game's configuration is clouded at
+  all. Both are per-game facts. Notably, the advice to keep video configuration
+  out of Cloud cuts in Re-Gear's favour for exactly the files it manages, but
+  "usually not clouded" is not "not clouded for this game", so nothing in this
+  milestone relies on it. No production hook exists to order.
 - **Games rewriting settings on exit is handled structurally, not by
   documentation.** Re-Gear's answer does not depend on knowing which games do
   it: a write is only performed when the caller asserts the game is not
@@ -61,6 +75,20 @@ optimistically:
    is installed, and either reading would be a guess. Re-Gear refuses instead.
 2. **The same AppID can appear in more than one library.** Two matching
    manifests are ambiguity, not a race to the first plausible path.
+
+## The external-writer race, stated exactly
+
+Re-Gear re-reads the target immediately before replacing it and refuses if the
+bytes are not the ones it decided to replace. That narrows the window between
+deciding and writing; it does not close it. `os.replace` is atomic — no reader
+sees a half-written file — but it is **not** a compare-and-swap against other
+processes, so a writer landing in the microseconds after the check still wins,
+and its change is lost. The mitigations that do hold are: writes only happen
+when the caller asserts the game is not running, every write is attributed by
+digest so the *next* operation detects the loss rather than compounding it, and
+the pre-management baseline is always restorable. Anyone reading this should not
+infer that concurrent external writers are safely handled; they are detected
+afterwards, not prevented.
 
 ## Where this leaves the milestone
 

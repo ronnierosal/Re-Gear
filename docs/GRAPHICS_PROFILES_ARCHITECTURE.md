@@ -1,6 +1,6 @@
 # Automatic per-game graphics profiles — milestone 1 architecture
 
-Status: revision 2, after the primary review on PR #375. Canonical assignment
+Status: revision 3, after the second primary review on PR #375. Canonical assignment
 and acceptance criteria are issue #374. Scope is the first adapter milestone
 only. Nothing here authorizes display, GPU, Gamescope, TDP or controller
 mutation, and nothing here is wired into the Command Center. Source research
@@ -26,13 +26,25 @@ never "the game will not start".
   nothing about its keys. 1 Advisor: the layout is recognised but some value is
   not writable, so the player is told what to change. 2 Managed: schema, version
   and every current value are recognised. Only Managed writes.
-- **The player's edits win.** Every managed write records the digest of exactly
-  the bytes it left behind. If the file no longer matches, someone else changed
-  it, and their newer choice is kept — on apply and on restore alike. There is
-  no silent rebaseline, and a file Re-Gear cannot prove it wrote is treated as
-  the player's.
+- **The player's edits win, and proof is required in both directions.** Every
+  managed write records the digest of exactly the bytes it left behind. If the
+  file no longer matches, someone else changed it, and their newer choice is
+  kept — on apply and on restore alike. Absence of a record is not proof of
+  anything: a provenance lookup answers ABSENT, UNTRUSTED or LOADED, and only
+  ABSENT *corroborated by an empty backup history* is a first enrollment.
+  Deleting or corrupting a record must never become a way to license a write.
+- **Nothing is overwritten that Re-Gear did not write.** That includes the
+  rollback path: a failed attempt only restores its backup when the file still
+  holds the exact bytes that attempt installed, or the exact bytes it started
+  from. Anything else is somebody's change and is kept.
 - **Restore means "my settings", not "the last profile".** The first capture for
-  a target is a pinned baseline that pruning never evicts.
+  a target is a pinned baseline that pruning never evicts — and a baseline is
+  only a baseline while its payload still verifies against its digest. An
+  unverifiable original blocks further managed writes, because a write that
+  could not be undone is not one this milestone makes.
+- **A profile must be admitted, not merely recorded.** Its schema id must match
+  the schema registered for that game, and its version must be one this build
+  accepts, both checked before any mutation.
 - **Never while the game is running.** Application requires an explicit
   not-running observation supplied by the caller. Absence of evidence is not
   evidence of absence: an unknown run state refuses.
@@ -86,7 +98,8 @@ validate  parse, then assess schema id, version, required
 prove     compare the bytes against the digest Re-Gear last
           wrote; a mismatch is the player's edit → conflict   (read-only)
 backup    bounded copy, pinning the first as the baseline     (write, new file)
-apply     render only managed-key changes, atomic replace     (write, replace)
+apply     render only managed-key changes; re-read the target
+          immediately before replacing and refuse if it moved  (write, replace)
 verify    re-read, re-parse, assert managed keys are the
           requested values and the unmanaged remainder is
           unchanged; on mismatch, restore the backup          (read + rollback)
@@ -94,10 +107,20 @@ record    persist the digest just written, with the schema
           and profile versions it was written under           (write, state)
 ```
 
-A rollback is itself guarded: before writing a backup back, the service checks
-that the bytes on disk are still the ones this attempt wrote. If something else
-changed the file in between, a stale backup would destroy that change, so the
-failure is reported without a rollback instead.
+A rollback is itself guarded, and the guard is an authorship check rather than a
+difference check. The file must hold either the exact bytes this attempt
+installed or the exact bytes it started from; any other content belongs to
+somebody else and is kept, reported as a conflict. A file that cannot be re-read
+is likewise left alone — failing to read something is not permission to
+overwrite it.
+
+**The residual race is real and stated.** Re-reading immediately before
+`os.replace` narrows the window between deciding to write and writing; it does
+not close it. `os.replace` is atomic for readers but is not a compare-and-swap
+against other processes, so a writer landing just after the check still wins.
+What holds instead: writes require the caller to assert the game is not running,
+every write is attributed by digest so the next operation *detects* a lost
+change rather than compounding it, and the baseline stays restorable.
 
 `restore` restores the pinned baseline by default and refuses when the file
 holds edits Re-Gear did not make, unless the caller passes the explicit flag

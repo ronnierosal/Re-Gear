@@ -44,11 +44,24 @@ from ..domain.graphics_profiles import (
 )
 from ..domain.graphics_schema import GameSchema, SchemaAssessment, SchemaVerdict
 from ..domain.models import OperatingMode
-from .graphics_backup import BackupError, BackupManager, BackupRecord, digest_of
+from .graphics_backup import (
+    BackupChangedError,
+    BackupError,
+    BackupManager,
+    BackupRecord,
+    BaselineState,
+    digest_of,
+)
 from .graphics_config_locator import GraphicsConfigLocator, LocationOutcome
-from .graphics_config_store import ConfigIoError, GraphicsConfigStore
+from .graphics_config_store import (
+    ConfigChangedError,
+    ConfigIoError,
+    GraphicsConfigStore,
+)
 from .graphics_management_state import (
+    ManagementLookup,
     ManagementRecord,
+    ManagementState,
     ManagementStateError,
     ManagementStateStore,
 )
@@ -131,12 +144,18 @@ class ManagedKeyCatalog:
 
     by_app: Mapping[str, Mapping[str, ManagedKey]] = field(default_factory=dict)
     schemas: Mapping[str, GameSchema] = field(default_factory=dict)
+    #: Profile versions this build accepts per game. A version number being a
+    #: positive integer says nothing about whether this build understands it.
+    profile_versions: Mapping[str, tuple[int, ...]] = field(default_factory=dict)
 
     def for_app(self, steam_app_id: str) -> Mapping[str, ManagedKey]:
         return self.by_app.get(steam_app_id, {})
 
     def schema_for(self, steam_app_id: str) -> GameSchema | None:
         return self.schemas.get(steam_app_id)
+
+    def accepts_profile_version(self, steam_app_id: str, version: int) -> bool:
+        return version in self.profile_versions.get(steam_app_id, (1,))
 
 
 class GraphicsProfileService:
@@ -239,6 +258,13 @@ class GraphicsProfileService:
                 "no supported schema is registered for this game",
             )
         )
+        # The profile must be the one this catalog's adapter was written for.
+        # A profile carrying another schema's id, or a version this build does
+        # not accept, is not evidence about this file -- recording it after the
+        # fact is not the same as admitting it beforehand.
+        binding = self._binding_refusal(profile, schema)
+        if binding is not None:
+            return binding
         managed = self._catalog.for_app(profile.steam_app_id)
         plan = plan_application(document, profile, managed, assessment)
         if plan.tier is SupportTier.UNKNOWN:
@@ -254,8 +280,8 @@ class GraphicsProfileService:
         before_digest = digest_of(current.payload)
 
         # Provenance, before anything is written: are these Re-Gear's bytes?
-        provenance = self._management.load(location.identity)
-        conflict = self._conflict(provenance, before_digest, location.identity)
+        lookup = self._management.load(location.identity)
+        conflict = self._conflict(lookup, before_digest, location.identity)
         if conflict is not None:
             return conflict
 
@@ -270,6 +296,17 @@ class GraphicsProfileService:
             )
         before_remainder = unmanaged_remainder(document, profile.managed_addresses)
         try:
+            baseline_state = self._backups.baseline(location.identity)
+        except (BackupError, ValueError, OSError) as error:
+            return ApplyOutcome(ApplyResult.FAILED, f"backup store is unusable: {error}")
+        if baseline_state.state in (BaselineState.CORRUPT, BaselineState.LOST):
+            # Without a producible original, this write could not be undone.
+            return ApplyOutcome(
+                ApplyResult.FAILED,
+                f"refusing to write: {baseline_state.detail or baseline_state.state.value}",
+                restoration_available=False,
+            )
+        try:
             backup = self._backups.capture(
                 location.identity, location.config_path, profile.mode.value
             )
@@ -277,12 +314,29 @@ class GraphicsProfileService:
             # No backup, no write. A change we could not undo is not a change
             # this milestone is allowed to make.
             return ApplyOutcome(ApplyResult.FAILED, f"backup refused: {error}")
+        written: bytes | None = None
         try:
             rendered = adapter.render(document.with_values(plan.changes))
-            written = self._store.write(location.config_path, rendered)
+            # The bytes read at the top are carried all the way down: the store
+            # re-reads the target immediately before replacing it, so work done
+            # in between (backup, render) cannot mask a change that arrived
+            # meanwhile.
+            written = self._store.write(
+                location.config_path, rendered, expected=current.payload
+            )
+        except ConfigChangedError as error:
+            # Nothing was replaced, so there is nothing to roll back.
+            return ApplyOutcome(
+                ApplyResult.CONFLICT,
+                str(error),
+                before_digest=before_digest,
+                after_digest=before_digest,
+                backup=backup,
+                restoration_available=baseline_state.verified or backup.baseline,
+            )
         except (ConfigIoError, KeyError, ValueError, OSError) as error:
             return self._rollback(
-                backup, location.config_path, f"write failed: {error}", before_digest
+                backup, location.config_path, f"write failed: {error}", before_digest, None
             )
         try:
             reread = self._store.read(location.config_path)
@@ -293,14 +347,17 @@ class GraphicsProfileService:
                 location.config_path,
                 f"verification could not re-read the file: {error}",
                 before_digest,
+                digest_of(written),
             )
         ok, problems = verify_application(verified_document, profile, before_remainder)
         if not ok or reread.payload != written:
             detail = "; ".join(problems) or "the file on disk is not what was written"
-            return self._rollback(backup, location.config_path, detail, before_digest)
+            return self._rollback(
+                backup, location.config_path, detail, before_digest, digest_of(written)
+            )
 
         after_digest = digest_of(reread.payload)
-        baseline = self._baseline_for(location.identity, backup)
+        baseline = self._baseline_record(location.identity, backup)
         try:
             self._management.save(
                 ManagementRecord(
@@ -324,6 +381,7 @@ class GraphicsProfileService:
                 location.config_path,
                 f"management state could not be recorded: {error}",
                 before_digest,
+                after_digest,
             )
         return ApplyOutcome(
             ApplyResult.APPLIED,
@@ -366,9 +424,18 @@ class GraphicsProfileService:
             return RestoreOutcome(RestoreResult.FAILED, f"{problem}: {located.detail}")
         location = located.location
         try:
-            chosen = record or self._backups.baseline(location.identity)
+            baseline_state = self._backups.baseline(location.identity)
         except (BackupError, ValueError, OSError) as error:
             return RestoreOutcome(RestoreResult.FAILED, str(error))
+        if record is None and not baseline_state.verified:
+            if baseline_state.state is BaselineState.NONE:
+                return RestoreOutcome(RestoreResult.NOTHING_TO_RESTORE)
+            return RestoreOutcome(
+                RestoreResult.FAILED,
+                baseline_state.detail or baseline_state.state.value,
+                backup=baseline_state.record,
+            )
+        chosen = record or baseline_state.record
         if chosen is None:
             return RestoreOutcome(RestoreResult.NOTHING_TO_RESTORE)
         if chosen.identity != location.identity or chosen.source_path != str(
@@ -379,23 +446,35 @@ class GraphicsProfileService:
                 "the chosen backup does not belong to this configuration file",
                 backup=chosen,
             )
+        try:
+            current = self._store.read(location.config_path)
+        except (ConfigIoError, OSError) as error:
+            return RestoreOutcome(RestoreResult.FAILED, str(error), backup=chosen)
         if not accept_player_edits:
-            try:
-                current = self._store.read(location.config_path)
-            except (ConfigIoError, OSError) as error:
-                return RestoreOutcome(RestoreResult.FAILED, str(error), backup=chosen)
-            provenance = self._management.load(location.identity)
+            # Restoring needs proof of authorship, and "the record is gone" is
+            # not proof. Only a trusted record whose digest matches the file
+            # permits an unattended restore.
+            lookup = self._management.load(location.identity)
             conflict = self._conflict(
-                provenance, digest_of(current.payload), location.identity
+                lookup, digest_of(current.payload), location.identity
             )
             if conflict is not None:
                 return RestoreOutcome(
+                    RestoreResult.CONFLICT, conflict.detail, backup=chosen
+                )
+            if not lookup.trusted:
+                return RestoreOutcome(
                     RestoreResult.CONFLICT,
-                    conflict.detail,
+                    "Re-Gear cannot prove it wrote the current settings, so they "
+                    "are kept; restoring anyway is an explicit choice",
                     backup=chosen,
                 )
         try:
-            identical = self._backups.restore(chosen, location.config_path)
+            identical = self._backups.restore(
+                chosen, location.config_path, expected=current.payload
+            )
+        except BackupChangedError as error:
+            return RestoreOutcome(RestoreResult.CONFLICT, str(error), backup=chosen)
         except (BackupError, ValueError, OSError) as error:
             return RestoreOutcome(RestoreResult.FAILED, str(error), backup=chosen)
         if not identical:
@@ -449,39 +528,104 @@ class GraphicsProfileService:
 
     def _conflict(
         self,
-        provenance: ManagementRecord | None,
+        lookup: ManagementLookup,
         current_digest: str,
         identity: str,
     ) -> ApplyOutcome | None:
-        """Refuse when the bytes on disk are not the ones Re-Gear last wrote."""
-        if provenance is None:
-            return None  # Never managed: the file is the player's baseline.
-        if not provenance.managing:
+        """Refuse when the bytes on disk are not provably Re-Gear's.
+
+        The three provenance states are not interchangeable. ABSENT is a first
+        enrollment only when the backup history agrees that nothing was ever
+        managed here; an absent record beside existing backups means the record
+        was lost, which is untrusted, not new. UNTRUSTED is always a conflict:
+        something was recorded and can no longer be believed, and deleting or
+        corrupting a file must never become a way to license an overwrite.
+        """
+        available = self._baseline_available(identity)
+        if lookup.state is ManagementState.ABSENT:
+            if not self._has_history(identity):
+                return None  # Genuinely new target: first enrollment proceeds.
+            return ApplyOutcome(
+                ApplyResult.CONFLICT,
+                "this configuration has been managed before but its management "
+                "record is missing, so the current settings are not provably "
+                "Re-Gear's and are kept",
+                restoration_available=available,
+            )
+        if lookup.state is ManagementState.UNTRUSTED:
+            return ApplyOutcome(
+                ApplyResult.CONFLICT,
+                f"the management record cannot be trusted ({lookup.detail}), so "
+                "the current settings are kept",
+                restoration_available=available,
+            )
+        record = lookup.record
+        assert record is not None
+        if not record.managing:
             return ApplyOutcome(
                 ApplyResult.CONFLICT,
                 "Re-Gear was asked to stop managing this configuration",
-                restoration_available=self._baseline_available(identity),
+                restoration_available=available,
             )
-        if provenance.managed_digest != current_digest:
+        if record.managed_digest != current_digest:
             return ApplyOutcome(
                 ApplyResult.CONFLICT,
                 "the configuration changed since Re-Gear last wrote it; the "
                 "player's newer settings are kept",
-                restoration_available=self._baseline_available(identity),
+                restoration_available=available,
             )
         return None
 
-    def _baseline_for(self, identity: str, fallback: BackupRecord) -> BackupRecord | None:
-        try:
-            return self._backups.baseline(identity) or (
-                fallback if fallback.baseline else None
+    def _binding_refusal(
+        self, profile: GraphicsProfile, schema: GameSchema | None
+    ) -> ApplyOutcome | None:
+        """Refuse a profile written for another schema or an unaccepted version."""
+        if not self._catalog.accepts_profile_version(
+            profile.steam_app_id, profile.profile_version
+        ):
+            return self._unsupported(
+                f"profile version {profile.profile_version} is not one this build "
+                "accepts for this game",
+                (
+                    "This graphics profile was written by a different version of "
+                    "Re-Gear; it will not be applied.",
+                ),
             )
+        if profile.schema_id and (schema is None or profile.schema_id != schema.schema_id):
+            registered = schema.schema_id if schema is not None else "none"
+            return self._unsupported(
+                f"profile targets schema {profile.schema_id!r} but {registered!r} "
+                "is registered for this game",
+                (
+                    "This graphics profile was written for a different "
+                    "configuration layout; it will not be applied.",
+                ),
+            )
+        return None
+
+    def _has_history(self, identity: str) -> bool:
+        """Whether anything was ever backed up for this target."""
+        try:
+            return bool(self._backups.records(identity))
+        except (BackupError, ValueError, OSError):
+            # An unreadable store is not evidence that nothing was managed.
+            return True
+
+    def _baseline_record(
+        self, identity: str, fallback: BackupRecord
+    ) -> BackupRecord | None:
+        try:
+            lookup = self._backups.baseline(identity)
         except (BackupError, ValueError, OSError):
             return None
+        if lookup.verified:
+            return lookup.record
+        return fallback if fallback.baseline else None
 
     def _baseline_available(self, identity: str) -> bool:
+        """Only a baseline whose bytes verify may be advertised as restorable."""
         try:
-            return self._backups.baseline(identity) is not None
+            return self._backups.baseline(identity).verified
         except (BackupError, ValueError, OSError):
             return False
 
@@ -492,20 +636,37 @@ class GraphicsProfileService:
         )
 
     def _rollback(
-        self, backup: BackupRecord, path: Path, detail: str, before_digest: str
+        self,
+        backup: BackupRecord,
+        path: Path,
+        detail: str,
+        before_digest: str,
+        written_digest: str | None,
     ) -> ApplyOutcome:
-        """Undo a write that did not verify, and say whether the undo held.
+        """Undo this attempt's write, and only ever this attempt's write.
 
-        The rollback is itself guarded: the bytes on disk must still be the
-        ones this attempt wrote. If something else changed the file in between,
-        writing a now-stale backup over it would destroy that change, so the
-        failure is reported without a rollback instead.
+        A rollback is authorship-checked like any other write. The file on disk
+        must be provably this attempt's product -- either the exact bytes it
+        installed (`written_digest`), or still the exact bytes it started from,
+        in which case nothing needs undoing. Anything else belongs to somebody
+        else: a previous revision of this method restored the backup over any
+        content that merely differed from the starting bytes, which destroyed an
+        external edit that arrived mid-attempt. Content that is not ours is kept
+        and reported as a conflict, and a file we cannot read is not permission
+        to overwrite it either.
         """
         try:
             current = self._store.read(path)
-        except (ConfigIoError, OSError):
-            current = None
-        if current is not None and digest_of(current.payload) == before_digest:
+        except (ConfigIoError, OSError) as error:
+            return ApplyOutcome(
+                ApplyResult.FAILED,
+                f"{detail}; the file could not be re-read, so it was left as it is "
+                f"rather than overwritten: {error}",
+                backup=backup,
+                before_digest=before_digest,
+            )
+        current_digest = digest_of(current.payload)
+        if current_digest == before_digest:
             return ApplyOutcome(
                 ApplyResult.ROLLED_BACK,
                 detail + "; the file was already unchanged",
@@ -513,8 +674,25 @@ class GraphicsProfileService:
                 before_digest=before_digest,
                 after_digest=before_digest,
             )
+        if written_digest is None or current_digest != written_digest:
+            return ApplyOutcome(
+                ApplyResult.CONFLICT,
+                f"{detail}; the file now holds content Re-Gear did not write, so "
+                "it was kept rather than rolled back",
+                backup=backup,
+                before_digest=before_digest,
+                after_digest=current_digest,
+                restoration_available=self._baseline_available(backup.identity),
+            )
         try:
-            identical = self._backups.restore(backup, path)
+            identical = self._backups.restore(backup, path, expected=current.payload)
+        except BackupChangedError as error:
+            return ApplyOutcome(
+                ApplyResult.CONFLICT,
+                f"{detail}; {error}, so the newer content was kept",
+                backup=backup,
+                before_digest=before_digest,
+            )
         except (BackupError, ValueError, OSError) as error:
             return ApplyOutcome(
                 ApplyResult.FAILED,

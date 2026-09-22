@@ -12,6 +12,14 @@ never evicts it, and it is what Restore My Settings restores. Rotating the
 baseline out would leave "restore" meaning "go back to the previous Re-Gear
 profile", which is not what a player asking for their settings back means.
 
+A baseline is only a baseline while its payload still matches its digest.
+Metadata alone is not an original: `baseline()` verifies the bytes and reports
+a corrupt one as corrupt, so nothing can advertise a restoration it cannot
+perform. And a directory that already holds copies but no baseline record has
+*lost* its original; the next capture there is not a first capture, and
+labelling it one would quietly promote a Re-Gear-written file to "the player's
+settings".
+
 Restoration is byte-for-byte. The digest recorded at backup time is verified
 before the restore and again after it; a backup that does not match its own
 digest is refused rather than written over a player's working file. Every
@@ -29,6 +37,7 @@ import re
 import secrets
 import threading
 from dataclasses import dataclass
+from enum import StrEnum
 from pathlib import Path
 
 
@@ -41,6 +50,30 @@ PAYLOAD_SUFFIX = ".bak"
 
 class BackupError(RuntimeError):
     """A backup could not be taken or trusted. Callers never write past this."""
+
+
+class BackupChangedError(BackupError):
+    """The destination changed between deciding to restore and restoring."""
+
+
+class BaselineState(StrEnum):
+    """What is known about a target's pre-management original."""
+
+    NONE = "backup.baseline_none"
+    VERIFIED = "backup.baseline_verified"
+    CORRUPT = "backup.baseline_corrupt"
+    LOST = "backup.baseline_lost"
+
+
+@dataclass(frozen=True, slots=True)
+class BaselineLookup:
+    state: BaselineState
+    record: BackupRecord | None = None
+    detail: str = ""
+
+    @property
+    def verified(self) -> bool:
+        return self.state is BaselineState.VERIFIED and self.record is not None
 
 
 @dataclass(frozen=True, slots=True)
@@ -109,6 +142,13 @@ class BackupManager:
             except OSError as error:
                 raise BackupError(f"backup directory is unusable: {error}") from error
             existing = self._directory_records(directory)
+            lookup = self._assess_baseline(directory, existing)
+            if lookup.state in (BaselineState.CORRUPT, BaselineState.LOST):
+                raise BackupError(
+                    f"refusing to capture: {lookup.detail}. The pre-management "
+                    "original for this target can no longer be produced, so a "
+                    "new managed write would not be undoable."
+                )
             sequence = self._next_sequence(directory)
             token = secrets.token_hex(8)
             payload_name = f"{sequence:08d}.{token}{PAYLOAD_SUFFIX}"
@@ -120,7 +160,10 @@ class BackupManager:
                 digest=digest_of(payload),
                 size=len(payload),
                 payload_name=payload_name,
-                baseline=not any(item.baseline for item in existing),
+                # Only a genuinely empty history is a first capture. A
+                # directory holding copies but no baseline has lost its
+                # original, and is refused above rather than re-baselined.
+                baseline=not existing,
             )
             self._write_atomic(directory / payload_name, payload)
             self._write_atomic(
@@ -130,12 +173,40 @@ class BackupManager:
             self._prune_locked(directory)
             return record
 
-    def baseline(self, identity: str) -> BackupRecord | None:
-        """The pre-management original for this target, if one was kept."""
-        for record in self.records(identity):
-            if record.baseline:
-                return record
-        return None
+    def baseline(self, identity: str) -> BaselineLookup:
+        """The pre-management original, with its payload actually verified."""
+        self._require_identity(identity)
+        directory = self._root / identity
+        try:
+            existing = self._directory_records(directory) if directory.is_dir() else []
+        except OSError as error:
+            raise BackupError(f"backup directory is unreadable: {error}") from error
+        return self._assess_baseline(directory, existing)
+
+    def _assess_baseline(
+        self, directory: Path, existing: list[BackupRecord]
+    ) -> BaselineLookup:
+        candidates = [record for record in existing if record.baseline]
+        if not candidates:
+            # Records are metadata; payloads are the evidence something was
+            # captured here. A directory whose only baseline record was deleted
+            # still holds its orphaned payload, and counting records alone would
+            # read that as a clean slate and let the next Re-Gear-written file be
+            # christened "the player's original".
+            if existing or self._has_payloads(directory):
+                return BaselineLookup(
+                    BaselineState.LOST,
+                    None,
+                    "backup history exists for this target but its baseline "
+                    "record is missing",
+                )
+            return BaselineLookup(BaselineState.NONE)
+        record = candidates[0]
+        try:
+            self.payload(record)
+        except BackupError as error:
+            return BaselineLookup(BaselineState.CORRUPT, record, str(error))
+        return BaselineLookup(BaselineState.VERIFIED, record)
 
     def records(self, identity: str) -> tuple[BackupRecord, ...]:
         """Every readable backup for an identity, oldest first."""
@@ -170,7 +241,9 @@ class BackupManager:
             raise BackupError("backup payload does not match its recorded digest")
         return payload
 
-    def restore(self, record: BackupRecord, destination: Path) -> bool:
+    def restore(
+        self, record: BackupRecord, destination: Path, expected: bytes | None = None
+    ) -> bool:
         """Put the backed-up bytes back, atomically, and verify byte equality.
 
         The record must name this destination. A digest proves a payload is
@@ -189,7 +262,7 @@ class BackupManager:
                 raise BackupError("refusing to restore through a symlink")
         except OSError as error:
             raise BackupError(f"restore destination is unreadable: {error}") from error
-        self._write_atomic(destination, payload)
+        self._write_atomic(destination, payload, expected=expected)
         try:
             written = destination.read_bytes()
         except OSError as error:
@@ -241,6 +314,13 @@ class BackupManager:
         return found
 
     @staticmethod
+    def _has_payloads(directory: Path) -> bool:
+        try:
+            return any(directory.glob(f"*{PAYLOAD_SUFFIX}"))
+        except OSError as error:
+            raise BackupError(f"backup directory is unreadable: {error}") from error
+
+    @staticmethod
     def _read_record(path: Path) -> BackupRecord | None:
         try:
             raw = path.read_text(encoding="utf-8")
@@ -277,8 +357,15 @@ class BackupManager:
             raise BackupError(f"configuration is unreadable: {error}") from error
 
     @staticmethod
-    def _write_atomic(target: Path, payload: bytes) -> None:
-        """Write bytes so the target is either the old file or the whole new one."""
+    def _write_atomic(
+        target: Path, payload: bytes, expected: bytes | None = None
+    ) -> None:
+        """Write bytes so the target is either the old file or the whole new one.
+
+        With ``expected``, the target is re-read immediately before the
+        replacement and the write is refused if it changed. As in the config
+        store, this narrows the external-writer window rather than closing it.
+        """
         directory = target.parent
         temporary = directory / f".{target.name}.{secrets.token_hex(8)}.tmp"
         try:
@@ -286,12 +373,24 @@ class BackupManager:
                 output.write(payload)
                 output.flush()
                 os.fsync(output.fileno())
+            if expected is not None and target.exists():
+                if target.read_bytes() != expected:
+                    raise BackupChangedError(
+                        "the target changed between the decision to restore and "
+                        "the restore itself"
+                    )
             os.replace(temporary, target)
             handle = os.open(directory, os.O_RDONLY)
             try:
                 os.fsync(handle)
             finally:
                 os.close(handle)
+        except BackupChangedError:
+            try:
+                temporary.unlink()
+            except OSError:
+                pass
+            raise
         except OSError as error:
             try:
                 temporary.unlink()

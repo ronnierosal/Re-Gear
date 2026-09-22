@@ -64,8 +64,8 @@ class BackupManagerTests(unittest.TestCase):
             self.source.write_text(f"[G]\nk={index}\n", encoding="utf-8")
             self.manager.capture(self.identity, self.source, "tv_docked")
         baseline = self.manager.baseline(self.identity)
-        self.assertIsNotNone(baseline)
-        self.assertEqual(self.manager.payload(baseline), original)
+        self.assertTrue(baseline.verified)
+        self.assertEqual(self.manager.payload(baseline.record), original)
 
     def test_exactly_one_baseline_is_ever_recorded(self):
         for _ in range(4):
