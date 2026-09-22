@@ -32,7 +32,7 @@ export function fpsReading(current: number | null | undefined, target: number | 
   const targetKnown = typeof target === 'number' && Number.isFinite(target) && target > 0;
   return {
     ...evidence, primaryValue: valid ? current : null, unit: 'FPS',
-    secondaryValue: targetKnown ? `Target ${target} FPS` : undefined,
+    secondaryValue: targetKnown ? `Target ${target}` : undefined,
     progress: valid && targetKnown ? Math.max(0, Math.min(1, current / target)) : null,
   };
 }

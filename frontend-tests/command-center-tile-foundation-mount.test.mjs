@@ -12,7 +12,9 @@ test('Command Center mounts the approved artwork sprite and overlay styles exact
   assert.match(source, /\{typeof TileArtworkSprite === "function" \? <TileArtworkSprite\/> : null\}/);
 });
 
-test('foundation mount does not replace the existing tile renderer', () => {
-  assert.match(source, /const renderTile = \(item: Tile\) => <Button/);
+test('V3 proof is bounded to two ReGearTile branches and retains the existing renderer', () => {
+  assert.match(source, /original\.tile\.id==='fps'[\s\S]*<SharedFpsTile/);
+  assert.match(source, /original\.tile\.id==='disconnect'[\s\S]*<SharedTile/);
+  assert.match(source, /return <Button type="button"/);
   assert.match(source, /\{items\.map\(item => tab === "settings"/);
 });

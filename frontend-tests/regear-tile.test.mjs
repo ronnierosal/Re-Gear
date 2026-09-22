@@ -133,6 +133,21 @@ test('static and dynamic share card geometry and forward focus and navigation ho
   assert.equal(walk(dynamic).find(n=>n.props.className==='rg-tile-gauge-fill').props.style.transition,'none');
 });
 
+test('unavailable telemetry does not disable FPS navigation or Move placement', () => {
+  api.resetGauge();
+  let activations=0;
+  const dynamic=api.FpsTile({
+    label:'FPS Target', current:null, target:60,
+    evidence:{availability:'unavailable'},
+    buttonProps:{onClick:()=>activations++,'data-ec-control':'fps'},
+  });
+  assert.equal(dynamic.props['aria-disabled'],undefined);
+  assert.equal(typeof dynamic.props.onClick,'function');
+  dynamic.props.onClick();
+  assert.equal(activations,1);
+  assert.match(text(dynamic),/Unavailable/);
+});
+
 test('gauge interpolates only between known readings, never from unknown to known', () => {
   api.resetGauge();
   const render = current => api.FpsTile({label:'FPS',current,target:60,evidence:{availability:'available',freshness:'fresh'}});

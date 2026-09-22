@@ -16,6 +16,8 @@ import { columnsForWidth, gridCells, moveInGrid, nextTab, restoreTarget, sampleT
 import type { Tab, Tile } from "./model";
 import { expandedStyles } from "./styles";
 import { tileOverlayStyles } from "./regear-tile";
+import { FpsTile, ReGearTile } from "./regear-tile";
+import { V3TileArtwork } from "./v3-tile-artwork";
 import { TileArtworkSprite } from "./tile-artwork";
 import { brandIcon } from "../../brand-assets";
 import { RichTileArtwork, RichTileSprite, richTileArtworkId, richTileArtworkStyles } from "./rich-tile-artwork";
@@ -26,6 +28,9 @@ const RichArtwork = typeof RichTileArtwork === "undefined" ? () => null : RichTi
 const RichArtworkSprite = typeof RichTileSprite === "undefined" ? () => null : RichTileSprite;
 const artworkIdFor = typeof richTileArtworkId === "undefined" ? () => undefined : richTileArtworkId;
 const artworkStyles = typeof richTileArtworkStyles === "undefined" ? "" : richTileArtworkStyles;
+const V3Artwork = typeof V3TileArtwork === "undefined" ? () => null : V3TileArtwork;
+const SharedTile = typeof ReGearTile === "undefined" ? ({ Button = "button", buttonProps, children }: { Button?: ElementType; buttonProps?: Record<string, unknown>; children?: ReactNode }) => <Button {...buttonProps}>{children}</Button> : ReGearTile;
+const SharedFpsTile = typeof FpsTile === "undefined" ? ({ Button = "button", buttonProps, label }: { Button?: ElementType; buttonProps?: Record<string, unknown>; label: string }) => <Button {...buttonProps}><span>{label}</span></Button> : FpsTile;
 
 const quickActionLabels=Object.fromEntries(controlRegistry.filter(def=>def.rightEligible).map(def=>[def.id,def.shortLabel])) as Partial<Record<UtilityId,string>>;
 const iconIds: Record<string, CommandCenterIconId> = {
@@ -344,13 +349,36 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
   }
 
   const hasTileDetails=(item:Tile)=>{const definition=controlForKey(originFor(item).key);return !definition||definition.type==='navigation'||definition.type==='status';};
-  const renderTile = (item: Tile) => <Button type="button" key={item.id} data-ec-control={item.id} data-tone={item.tone ?? "quiet"} className="rg-expanded-tile" data-empty={item.empty||undefined}
+  const renderTile = (item: Tile) => {
+    const original=originFor(item);
+    const definition=controlForKey(original.key);
+    const disabled=editMode==="normal"&&Boolean(unavailableActions[original.tile.id]||(definition?.rightEligible&&(!utilityReadings?.[definition.id as UtilityId]?.available||utilityReadings?.[definition.id as UtilityId]?.pending)));
+    const activate=()=>{if(pickerOpen)return;if(editMode==="move"){if(draft)commitLayout(draft);return;}if(item.empty)return;if(definition?.type==='widget')return;if(unavailableActions[original.tile.id])return;if(definition?.rightEligible){const id=definition.id as UtilityId;if(!onUtilityRequest||!utilityReadings?.[id]?.available||utilityReadings?.[id]?.pending||utilityBusy.current.has(id))return;utilityErrorReadings.current.delete(id);setUtilityErrors(value=>({...value,[id]:undefined}));utilityBusy.current.add(id);void Promise.resolve().then(()=>onUtilityRequest(id)).catch(()=>{utilityErrorReadings.current.set(id,utilityReadings?.[id]);setUtilityErrors(value=>({...value,[id]:'Could not apply'}));}).finally(()=>utilityBusy.current.delete(id));return;}if(definition?.directAction==="disconnect"&&onDisconnect){onDisconnect();return;}if(onAction?.(original.tab,original.tile))return;launcher.current=item.id;setNested(item.id);};
+    const buttonProps={key:item.id,className:'rg-expanded-tile','data-ec-control':item.id,'data-tone':item.tone??'quiet','data-empty':item.empty||undefined,'aria-disabled':disabled,'data-move-selected':editMode==="move"&&selected===item.id||undefined,
+      onGamepadDirection:native&&directions?(event:CustomEvent<{button:number}>)=>{const direction=Object.keys(directions).find(key=>directions[key as keyof typeof directions]===event.detail.button) as "up"|"down"|"left"|"right"|undefined;if(direction&&moveSelected(direction)){event.preventDefault();event.stopPropagation();return true;}if(event.detail.button===directions.left&&enterRail(item.id)){event.preventDefault();event.stopPropagation();return true;}return false;}:undefined,
+      ...(native?{preferredFocus:item.id===restoreTarget(items.map(tile=>tile.id),memory.current[tab]),onGamepadFocus:()=>{memory.current[tab]=item.id;const target=panel.current?.querySelector<HTMLElement>(`[data-ec-control="${item.id}"]`);if(target){if(tab==="settings")reveal(target);else target.scrollIntoView({block:'nearest'});}}}:{}),
+      'aria-label':`${editMode==="move"?'Move button. A to place. ':''}${item.title}: ${item.value}. ${item.detail}.${synthetic?' Sample data. ':''}${unavailableActions[original.tile.id]?unavailableActions[original.tile.id]:original.tile.id==='disconnect'&&onDisconnect?'Start guarded disconnect.':hasTileDetails(item)?'View details.':''}`,
+      onFocus:(event:{target:EventTarget})=>{memory.current[tab]=item.id;(event.target as HTMLElement).scrollIntoView({block:'nearest'});},onClick:activate};
+    if(original.tile.id==='fps'){
+      const current=/^\s*(\d+(?:\.\d+)?)\s*FPS\b/i.exec(item.value)?.[1];
+      const target=/\btarget\s+(\d+(?:\.\d+)?)\b/i.exec(item.detail)?.[1];
+      const known=item.tone!=='unavailable'&&current!==undefined;
+      return <SharedFpsTile {...buttonProps} key={item.id} Button={Button} buttonProps={buttonProps} label="FPS Target" artwork={<V3Artwork controlId="fps"/>}
+        current={known?Number(current):null} target={target===undefined?null:Number(target)} evidence={known?{availability:'available',freshness:'fresh'}:{availability:item.tone==='unavailable'?'unavailable':'unknown'}}/>;
+    }
+    if(original.tile.id==='disconnect'){
+      const status=unavailableActions[original.tile.id]?'Unavailable':/unknown/i.test(item.value)?'Unknown':onDisconnect?'Ready':'Unknown';
+      return <SharedTile {...buttonProps} key={item.id} Button={Button} buttonProps={buttonProps} label="Safe Disconnect" artworkId="safe-disconnect" artwork={<V3Artwork controlId="disconnect"/>}>
+        <span className="rg-expanded-value">{status}</span>
+      </SharedTile>;
+    }
+    return <Button type="button" key={item.id} data-ec-control={item.id} data-tone={item.tone ?? "quiet"} className="rg-expanded-tile" data-empty={item.empty||undefined}
               aria-disabled={editMode==="normal"&&Boolean(unavailableActions[originFor(item).tile.id]||(controlForKey(originFor(item).key)?.rightEligible&&(!utilityReadings?.[controlForKey(originFor(item).key)!.id as UtilityId]?.available||utilityReadings?.[controlForKey(originFor(item).key)!.id as UtilityId]?.pending)))}
               data-move-selected={editMode==="move"&&selected===item.id || undefined}
               onGamepadDirection={native&&directions ? (event:CustomEvent<{button:number}>)=>{const direction=Object.keys(directions).find(key=>directions[key as keyof typeof directions]===event.detail.button) as "up"|"down"|"left"|"right"|undefined;if(direction&&moveSelected(direction)){event.preventDefault();event.stopPropagation();return true;}if(event.detail.button===directions.left&&enterRail(item.id)){event.preventDefault();event.stopPropagation();return true;}return false;} : undefined}
               {...(native ? { preferredFocus: item.id === restoreTarget(items.map(tile => tile.id), memory.current[tab]), onGamepadFocus: () => { memory.current[tab] = item.id; const target = panel.current?.querySelector<HTMLElement>(`[data-ec-control="${item.id}"]`); if(target) { if(tab === "settings") reveal(target); else target.scrollIntoView({block:"nearest"}); } } } : {})}
               aria-label={`${editMode==="move" ? "Move button. A to place. " : ""}${item.title}: ${item.value}. ${item.detail}.${synthetic ? " Sample data." : ""} ${unavailableActions[originFor(item).tile.id] ? unavailableActions[originFor(item).tile.id] : originFor(item).tile.id === "disconnect" && onDisconnect ? "Start guarded disconnect." : hasTileDetails(item)?"View details.":""}`}
-              onFocus={(event: { target: EventTarget }) => { memory.current[tab] = item.id; (event.target as HTMLElement).scrollIntoView({ block: "nearest" }); }} onClick={() => { if(pickerOpen)return;if(editMode==="move"){if(draft)commitLayout(draft);return;}if(item.empty)return;const original=originFor(item);const definition=controlForKey(original.key);if(definition?.type==='widget')return;if(unavailableActions[original.tile.id])return;if(definition?.rightEligible){const id=definition.id as UtilityId;if(!onUtilityRequest||!utilityReadings?.[id]?.available||utilityReadings?.[id]?.pending||utilityBusy.current.has(id))return;utilityErrorReadings.current.delete(id);setUtilityErrors(value=>({...value,[id]:undefined}));utilityBusy.current.add(id);void Promise.resolve().then(()=>onUtilityRequest(id)).catch(()=>{utilityErrorReadings.current.set(id,utilityReadings?.[id]);setUtilityErrors(value=>({...value,[id]:'Could not apply'}));}).finally(()=>utilityBusy.current.delete(id));return;} if(controlForKey(original.key)?.directAction==="disconnect"&&onDisconnect){onDisconnect();return;}if(onAction?.(original.tab,original.tile))return; launcher.current = item.id; setNested(item.id); }}>
+              onFocus={buttonProps.onFocus} onClick={activate}>
               <RichArtwork controlId={originFor(item).tile.id}/>
               <span className="rg-expanded-tile-body">
                 <span className="rg-expanded-tile-heading">
@@ -362,6 +390,7 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
                 {!item.empty && hasTileDetails(item) && !unavailableActions[originFor(item).tile.id] && !(originFor(item).tile.id === "disconnect" && onDisconnect) && <span className="rg-expanded-chevron" aria-hidden="true">›</span>}
               </span>
             </Button>;
+  };
 
   return <div className="rg-expanded-backdrop">
     <style>{expandedStyles + (typeof tileOverlayStyles === "string" ? tileOverlayStyles : "") + artworkStyles}</style>

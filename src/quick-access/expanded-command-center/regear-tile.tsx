@@ -10,19 +10,21 @@ type TileProps = {
   Button?: ElementType;
   buttonProps?: ButtonHTMLAttributes<HTMLButtonElement> & Record<string, unknown>;
   children?: ReactNode;
+  artwork?: ReactNode;
   unavailable?: boolean;
 };
 
 /** Uses the shell's existing card chrome; caller retains Decky focus/navigation props. */
-export function ReGearTile({ label, artworkId, Button = 'button', buttonProps, children, unavailable }: TileProps) {
+export function ReGearTile({ label, artworkId, Button = 'button', buttonProps, children, artwork, unavailable }: TileProps) {
   return <Button {...buttonProps} type="button"
-    className={['rg-expanded-tile', buttonProps?.className].filter(Boolean).join(' ')}
+    className={['rg-expanded-tile', artwork && 'rg-v3-tile', buttonProps?.className].filter(Boolean).join(' ')}
     aria-disabled={unavailable || buttonProps?.['aria-disabled']}
     onClick={unavailable ? undefined : buttonProps?.onClick}
     onOKButton={unavailable ? undefined : buttonProps?.onOKButton}>
-    <span className="rg-expanded-tile-body">
+    {artwork}
+    <span className={artwork ? 'rg-expanded-tile-body rg-v3-tile-copy' : 'rg-expanded-tile-body'}>
       <span className="rg-expanded-tile-heading">
-        <span className="rg-expanded-tile-icon"><TileArtwork id={artworkId}/></span>
+        {!artwork && <span className="rg-expanded-tile-icon"><TileArtwork id={artworkId}/></span>}
         <span className="rg-expanded-label">{label}</span>
       </span>
       {children}
@@ -42,6 +44,15 @@ export const tileOverlayStyles = `
 .rg-tile-gauge{width:48px;height:32px;display:block;overflow:visible}
 .rg-tile-gauge-track{stroke:#315c75}.rg-tile-gauge-fill{stroke:#32d7ff;transition:stroke-dashoffset 250ms ease}
 .rg-tile-gauge[data-known=false]{opacity:.3}
+.rg-expanded-tile.rg-v3-tile{position:relative;isolation:isolate;overflow:hidden;padding:0!important;text-align:left}
+.rg-expanded-tile.rg-v3-tile:after{content:'';position:absolute;inset:0;z-index:.5;background:linear-gradient(90deg,#04131fe8 0%,#04131fb8 55%,transparent 74%);pointer-events:none}
+.rg-v3-tile-artwork{position:absolute;inset:0;z-index:0;width:100%;height:100%;display:block;object-fit:fill;pointer-events:none}
+.rg-expanded-tile .rg-v3-tile-copy{position:relative;z-index:1;width:66%;height:100%;padding:8px 4px 8px 9px;align-items:flex-start;justify-content:center;gap:3px;text-align:left}
+.rg-v3-tile-copy .rg-expanded-tile-heading{justify-content:flex-start;text-align:left}
+.rg-v3-tile-copy .rg-expanded-label,.rg-v3-tile-copy .rg-expanded-value,.rg-v3-tile-copy .rg-tile-metadata{max-width:100%;text-align:left}
+.rg-v3-tile-copy .rg-expanded-value{font-size:clamp(10px,1vw,14px);white-space:normal;overflow-wrap:anywhere}
+.rg-v3-tile[data-tone=unavailable] .rg-expanded-value{color:#dbeeff;text-shadow:0 1px 2px #000}
+.rg-expanded-tile.rg-v3-tile:focus-visible{outline:2px solid #8cecff;outline-offset:-3px;box-shadow:0 0 0 2px #061521,0 0 13px #28d9ff99}
 @media(prefers-reduced-motion:reduce){.rg-tile-gauge-fill{transition:none}}
 `;
 
@@ -50,7 +61,7 @@ export function DynamicTile({ reading, gauge = false, ...props }: Omit<TileProps
   const previousProgress = useRef<number | null>(null);
   const interpolate = view.progress !== null && previousProgress.current !== null;
   useEffect(() => { previousProgress.current = view.progress; }, [view.progress]);
-  return <ReGearTile {...props} unavailable={props.unavailable || reading.availability === 'unavailable'}>
+  return <ReGearTile {...props} unavailable={props.unavailable}>
     <span className="rg-expanded-value">{view.primary}{view.unit && <> {view.unit}</>}</span>
     {view.secondary && <span className="rg-tile-metadata">{view.secondary}</span>}
     {view.status && <span className="rg-tile-metadata">{view.status}</span>}

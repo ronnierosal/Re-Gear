@@ -1,6 +1,7 @@
 import deckyPlugin from "@decky/rollup";
 import { readFileSync } from "node:fs";
 import { composeCommandCenterArtwork } from "./scripts/compose_command_center_artwork.mjs";
+import { composeV3TileArtwork } from "./scripts/compose_v3_tile_artwork.mjs";
 
 const config = deckyPlugin({});
 // Bundle the repository attribution sources; no runtime file or network reads.
@@ -12,6 +13,28 @@ config.plugins.unshift({
     const notices = readFileSync(new URL("./THIRD_PARTY_NOTICES.md", import.meta.url), "utf8");
     const license = readFileSync(new URL("./LICENSE", import.meta.url), "utf8");
     return `export const noticesText=${JSON.stringify(notices)};export const licenseText=${JSON.stringify(license)};`;
+  },
+});
+
+// Bundle only the two approved V3 proof tiles. The source SVGs retain their
+// shared button-artwork references; the bundle receives self-contained images.
+const v3ProofTiles = new Set(["fps", "safe-disconnect"]);
+config.plugins.unshift({
+  name: "re-gear-command-center-v3-proof",
+  resolveId(source) {
+    const normalized = source.replaceAll("\\", "/");
+    const match = /assets\/command-center\/v3\/tiles\/([a-z-]+)\.svg\?v3-tile$/.exec(normalized);
+    return match && v3ProofTiles.has(match[1]) ? `\0re-gear-command-center-v3:${match[1]}` : null;
+  },
+  load(id) {
+    const prefix = "\0re-gear-command-center-v3:";
+    if (!id.startsWith(prefix)) return null;
+    const name = id.slice(prefix.length);
+    if (!v3ProofTiles.has(name)) return null;
+    const tile = readFileSync(new URL(`./assets/command-center/v3/tiles/${name}.svg`, import.meta.url), "utf8");
+    const buttons = readFileSync(new URL("./assets/command-center/button-artwork.svg", import.meta.url), "utf8");
+    const composed = composeV3TileArtwork(tile, buttons, name);
+    return `export default ${JSON.stringify("data:image/svg+xml;base64," + Buffer.from(composed).toString("base64"))};`;
   },
 });
 
