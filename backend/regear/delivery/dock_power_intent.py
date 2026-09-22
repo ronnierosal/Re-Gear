@@ -182,6 +182,57 @@ class DockPowerIntentStore(WholeDockClaimStore):
             os.fsync(directory)
             return True
 
+    def release_bound_sleep(self, expected_claim, session, requested_at, deadline, guard):
+        """Discard one exact unconsumed sleep after its unplug window expires."""
+        return self._retire_exact_sleep_intent(
+            expected_claim, session, requested_at, deadline, False, guard)
+
+    def retire_observed_sleep(self, expected_claim, session, requested_at, deadline, guard):
+        """Discard one exact consumed sleep after its cycle was observed."""
+        return self._retire_exact_sleep_intent(
+            expected_claim, session, requested_at, deadline, True, guard)
+
+    def _retire_exact_sleep_intent(
+        self, expected_claim, session, requested_at, deadline, consumed, guard
+    ):
+        session_pattern = '[0-9a-f]{64}:[0-9a-f]{32}'
+        if (type(expected_claim) is not WholeDockClaim
+                or expected_claim.stage != 'software_down'
+                or type(session) is not str
+                or re.fullmatch(session_pattern, session) is None
+                or type(consumed) is not bool
+                or any(type(value) not in (int, float) or not math.isfinite(value)
+                       for value in (requested_at, deadline))):
+            return False
+        expected = DockPowerIntent(
+            expected_claim.operation,
+            expected_claim.binding,
+            expected_claim.generation,
+            'sleep',
+            session,
+            requested_at,
+            deadline,
+            consumed,
+        )
+        with self._locked() as directory:
+            if self._load(directory) != expected_claim:
+                return False
+            try:
+                if self._load_intent(directory, expected_claim) != expected:
+                    return False
+            except ValueError:
+                return False
+            if guard() is not True or self._load(directory) != expected_claim:
+                return False
+            try:
+                if self._load_intent(directory, expected_claim) != expected:
+                    return False
+            except ValueError:
+                return False
+            os.unlink(self._filename(expected), dir_fd=directory)
+            os.fsync(directory)
+            return True
+
     def reconcile_stranded_sleep(self, expected_claim, live_session, guard):
         """Release a sleep intent that no live session can ever submit.
 

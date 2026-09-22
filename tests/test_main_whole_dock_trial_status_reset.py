@@ -97,6 +97,129 @@ class WholeDockTrialStatusResetTests(unittest.TestCase):
             self.plugin._whole_dock_trial_status["attachment_token"], TOKEN_A
         )
 
+    def test_completed_connected_sleep_stays_on_power_channel_and_rearms_disconnect(self):
+        completed_sleep = {
+            "schema_version": 1,
+            "code": "dock_power.sleep_cycle_observed",
+            "busy": False,
+            "ok": True,
+            "safe_to_unplug": False,
+            "software_down": False,
+            "power_requested": True,
+            "sleep_cycle_observed": True,
+            "power_action": "sleep",
+            "route_action": "whole_dock_sleep_connected",
+            "request_id": "e" * 32,
+        }
+        self.plugin._whole_dock_trial_status = completed_sleep
+        self.plugin._dock_sleep_status = dict(completed_sleep)
+        p1, p2, p3 = self.patches()
+        with p1, p2, p3:
+            trial = self.read()
+        power = asyncio.run(
+            self.plugin.get_egpu_disconnect_status("power_status")
+        )
+
+        self.assertEqual(trial, {
+            "schema_version": 1,
+            "code": "dock_teardown.no_trial",
+            "busy": False,
+            "safe_to_unplug": False,
+            "in_flight": False,
+            "attachment_token": TOKEN_A,
+        })
+        self.assertEqual(power, completed_sleep)
+        self.assertEqual(
+            self.plugin._whole_dock_trial_status["attachment_token"], TOKEN_A
+        )
+
+    def test_completed_unplug_sleep_reconnect_rearms_disconnect(self):
+        completed_sleep = {
+            "schema_version": 1,
+            "code": "dock_power.sleep_cycle_observed",
+            "busy": False,
+            "ok": True,
+            "safe_to_unplug": False,
+            "software_down": True,
+            "power_requested": True,
+            "sleep_cycle_observed": True,
+            "unplug_required": False,
+            "power_action": "sleep",
+            "route_action": "whole_dock_sleep",
+            "request_id": "f" * 32,
+        }
+        self.plugin._whole_dock_trial_status = completed_sleep
+        self.plugin._dock_sleep_status = dict(completed_sleep)
+        p1, p2, p3 = self.patches()
+        with p1, p2, p3:
+            trial = self.read()
+        power = asyncio.run(
+            self.plugin.get_egpu_disconnect_status("power_status")
+        )
+
+        self.assertEqual(trial["code"], "dock_teardown.no_trial")
+        self.assertEqual(trial["attachment_token"], TOKEN_A)
+        self.assertEqual(power, completed_sleep)
+
+    def test_expired_unplug_sleep_reconnect_rearms_disconnect(self):
+        expired_sleep = {
+            "schema_version": 1,
+            "code": "dock_power.unplug_request_expired",
+            "busy": False,
+            "ok": False,
+            "safe_to_unplug": False,
+            "software_down": True,
+            "power_requested": False,
+            "sleep_cycle_observed": False,
+            "unplug_required": True,
+            "power_action": "sleep",
+            "route_action": "whole_dock_sleep",
+            "request_id": "9" * 32,
+        }
+        self.plugin._whole_dock_trial_status = expired_sleep
+        self.plugin._dock_sleep_status = dict(expired_sleep)
+        p1, p2, p3 = self.patches()
+        with p1, p2, p3:
+            trial = self.read()
+        power = asyncio.run(
+            self.plugin.get_egpu_disconnect_status("power_status")
+        )
+
+        self.assertEqual(trial["code"], "dock_teardown.no_trial")
+        self.assertEqual(trial["attachment_token"], TOKEN_A)
+        self.assertEqual(power, expired_sleep)
+
+    def test_unresolved_unplug_sleep_outcomes_do_not_rearm_disconnect(self):
+        base = {
+            "schema_version": 1,
+            "code": "dock_power.sleep_cycle_observed",
+            "busy": False,
+            "ok": True,
+            "safe_to_unplug": False,
+            "software_down": True,
+            "power_requested": True,
+            "sleep_cycle_observed": True,
+            "unplug_required": False,
+            "power_action": "sleep",
+            "route_action": "whole_dock_sleep",
+        }
+        malformed = (
+            {"code": "dock_power.sleep_protection_unverified"},
+            {"busy": True},
+            {"software_down": False},
+            {"power_requested": False},
+            {"sleep_cycle_observed": False},
+            {"unplug_required": True},
+            {"safe_to_unplug": True},
+        )
+        for change in malformed:
+            with self.subTest(change=change):
+                self.plugin._whole_dock_trial_status = {**base, **change}
+                self.plugin._fresh_unclaimed_whole_dock_attachment_token = Mock()
+                result = self.read()
+                self.plugin._fresh_unclaimed_whole_dock_attachment_token.assert_not_called()
+                self.assertNotEqual(result.get("code"), "dock_teardown.no_trial")
+
     def test_other_power_results_do_not_rearm_safe_disconnect(self):
         original = dict(self.plugin._whole_dock_trial_status)
         base = {
