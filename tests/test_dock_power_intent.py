@@ -322,6 +322,45 @@ class IntentFilesystemTests(unittest.TestCase):
         # Every refusal leaves the intent exactly where it was.
         self.assertFalse(self.claim.power_intent_absent(expected))
 
+    def test_exact_consumed_sleep_retires_only_after_observed_cycle(self):
+        session = '1' * 64 + ':' + 'a' * 32
+        expected = self.prepare_boot_intent(
+            action='sleep', session=session, consume=True)
+        self.assertTrue(self.store.retire_observed_sleep(
+            expected, session, ARGS[5], ARGS[6], lambda: True))
+        self.assertTrue(self.claim.power_intent_absent(expected))
+        self.assertEqual(self.claim.load(), expected)
+
+    def test_exact_sleep_retirement_rejects_wrong_state_or_identity(self):
+        session = '1' * 64 + ':' + 'a' * 32
+        expected = self.prepare_boot_intent(
+            action='sleep', session=session, consume=True)
+        for changed in (
+            ('session', '2' * 64 + ':' + 'b' * 32),
+            ('requested_at', 11),
+            ('deadline', 101),
+        ):
+            args = [expected, session, ARGS[5], ARGS[6], lambda: True]
+            args[{'session': 1, 'requested_at': 2, 'deadline': 3}[changed[0]]] = changed[1]
+            with self.subTest(changed=changed):
+                self.assertFalse(self.store.retire_observed_sleep(*args))
+        self.assertFalse(self.store.retire_observed_sleep(
+            expected, session, ARGS[5], ARGS[6], lambda: False))
+        self.assertFalse(self.store.release_bound_sleep(
+            expected, session, ARGS[5], ARGS[6], lambda: True))
+        self.assertFalse(self.claim.power_intent_absent(expected))
+
+    def test_exact_unconsumed_sleep_releases_after_expiry_without_touching_claim(self):
+        session = '1' * 64 + ':' + 'a' * 32
+        expected = self.prepare_boot_intent(
+            action='sleep', session=session, consume=False)
+        self.assertFalse(self.store.retire_observed_sleep(
+            expected, session, ARGS[5], ARGS[6], lambda: True))
+        self.assertTrue(self.store.release_bound_sleep(
+            expected, session, ARGS[5], ARGS[6], lambda: True))
+        self.assertTrue(self.claim.power_intent_absent(expected))
+        self.assertEqual(self.claim.load(), expected)
+
     def test_shutdown_intent_retires_after_verified_new_boot(self):
         expected = self.prepare_boot_intent()
         before = self.path.read_bytes()
