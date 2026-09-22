@@ -29,6 +29,8 @@ test('the production artwork loader imports all assets and maps registry identit
     ['controller-battery','battery'],['controller-priority','player-order'],
     ['offline-readiness','offline-ready'],['recording','record'],['audio','audio-output'],
   ]) assert.match(component,new RegExp(`"?${control}"?: "${artwork}"`));
+  assert.doesNotMatch(component,/"portable-shutdown":|"egpu-render":/,
+    'controls without an exact approved semantic match must retain the legacy fallback');
   assert.match(component,/data-v3-artwork=\{artworkId\}/);
   assert.doesNotMatch(component,/fetch\(|XMLHttpRequest|https?:\/\//);
 });
