@@ -1,0 +1,105 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 144" role="img" aria-label="Static FPS tile artwork">
+  <defs>
+    <linearGradient id="surface" x1="12" y1="5" x2="224" y2="142" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0b3156"/>
+      <stop offset=".34" stop-color="#071f39"/>
+      <stop offset=".7" stop-color="#041326"/>
+      <stop offset="1" stop-color="#010813"/>
+    </linearGradient>
+    <linearGradient id="rim" x1="16" y1="0" x2="225" y2="144" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#6beeff"/>
+      <stop offset=".18" stop-color="#08c8ff"/>
+      <stop offset=".62" stop-color="#1589e8"/>
+      <stop offset="1" stop-color="#18e8ff"/>
+    </linearGradient>
+    <linearGradient id="glass" x1="18" y1="7" x2="132" y2="119" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#b7f8ff" stop-opacity=".16"/>
+      <stop offset=".28" stop-color="#0f89cf" stop-opacity=".06"/>
+      <stop offset="1" stop-color="#020b19" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="panel" x1="113" y1="15" x2="229" y2="136" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0b80c6" stop-opacity=".26"/>
+      <stop offset=".44" stop-color="#08345e" stop-opacity=".18"/>
+      <stop offset="1" stop-color="#03101f" stop-opacity=".02"/>
+    </linearGradient>
+    <radialGradient id="dial" cx="55%" cy="42%" r="64%">
+      <stop stop-color="#0b4770" stop-opacity=".7"/>
+      <stop offset=".48" stop-color="#05243f" stop-opacity=".88"/>
+      <stop offset="1" stop-color="#010713"/>
+    </radialGradient>
+    <radialGradient id="hub" cx="38%" cy="30%" r="70%">
+      <stop stop-color="#dcfbff"/>
+      <stop offset=".16" stop-color="#54eaff"/>
+      <stop offset=".48" stop-color="#0876bd"/>
+      <stop offset="1" stop-color="#01111f"/>
+    </radialGradient>
+    <linearGradient id="needle" x1="191" y1="127" x2="228" y2="71" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#32eaff"/>
+      <stop offset=".55" stop-color="#d9fcff"/>
+      <stop offset="1" stop-color="#42e8ff" stop-opacity=".18"/>
+    </linearGradient>
+    <filter id="outerGlow" x="-30%" y="-50%" width="160%" height="200%" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="2.3" result="blur"/>
+      <feColorMatrix in="blur" values="0 0 0 0 0.02 0 0 0 0 0.75 0 0 0 0 1 0 0 0 .72 0" result="cyan"/>
+      <feMerge><feMergeNode in="cyan"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="softGlow" x="-80%" y="-80%" width="260%" height="260%" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="3.2" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="shadow" x="-80%" y="-80%" width="260%" height="260%">
+      <feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#000711" flood-opacity=".95"/>
+    </filter>
+    <clipPath id="tileClip"><rect x="2" y="2" width="236" height="140" rx="13"/></clipPath>
+    <clipPath id="dialClip"><rect x="116" y="2" width="122" height="140"/></clipPath>
+  </defs>
+
+  <g filter="url(#outerGlow)">
+    <rect x="2.5" y="2.5" width="235" height="139" rx="13" fill="url(#surface)" stroke="url(#rim)" stroke-width="1.5"/>
+  </g>
+
+  <g clip-path="url(#tileClip)">
+    <path d="M10 7H164L129 69 86 144H4V18Q4 7 15 7Z" fill="url(#glass)"/>
+    <path d="M6 19 124 4h41l-17 30L92 43 63 94 5 113Z" fill="#0b4f7d" opacity=".09"/>
+    <path d="M86 144 145 42 174 2h30l-31 57-48 85Z" fill="url(#panel)"/>
+    <path d="m104 144 57-99 21-43h14l-24 49-54 93Z" fill="#0e75ad" opacity=".16"/>
+    <path d="m122 144 47-80 19-39 4 16-15 29-42 74Z" fill="#21b9e7" opacity=".08"/>
+    <path d="M16 118 79 8M39 144 118 5M74 144l80-139M109 144 185 10" fill="none" stroke="#178ec2" stroke-opacity=".16" stroke-width=".7"/>
+    <path d="M8 31 116 17M6 109l81-22M30 138l74-20" fill="none" stroke="#5ae9ff" stroke-opacity=".07" stroke-width=".6"/>
+    <path d="M13 8h137" stroke="#c1fbff" stroke-opacity=".17" stroke-width="1"/>
+    <ellipse cx="192" cy="126" rx="84" ry="80" fill="#0278bd" opacity=".08" filter="url(#softGlow)"/>
+
+    <g clip-path="url(#dialClip)">
+      <circle cx="194" cy="128" r="76" fill="#03101d" stroke="#042540" stroke-width="8" filter="url(#shadow)"/>
+      <circle cx="194" cy="128" r="70" fill="none" stroke="#00486c" stroke-width="8" opacity=".75"/>
+      <circle cx="194" cy="128" r="70" fill="none" stroke="#2de8ff" stroke-width="6" stroke-linecap="round" pathLength="100" stroke-dasharray="6.8 3.2" stroke-dashoffset="1.2" filter="url(#softGlow)"/>
+      <circle cx="194" cy="128" r="61" fill="url(#dial)" stroke="#147aaa" stroke-width="1.5"/>
+      <circle cx="194" cy="128" r="56" fill="none" stroke="#47ddff" stroke-opacity=".42" stroke-width="1"/>
+      <circle cx="194" cy="128" r="49" fill="none" stroke="#0e8bc4" stroke-opacity=".45" stroke-width=".8" stroke-dasharray="1.2 3.7"/>
+      <g stroke="#66eeff" stroke-linecap="round">
+        <path d="M139.9 108.3 147.4 111" stroke-width="2.2"/>
+        <path d="M145.8 94.3 152.5 98.1" stroke-width="1.2" opacity=".7"/>
+        <path d="M155.1 82.1 160.9 87.3" stroke-width="2.2"/>
+        <path d="M167.3 72.8 171.2 79.5" stroke-width="1.2" opacity=".7"/>
+        <path d="M181.3 66.9 183.9 74.4" stroke-width="2.2"/>
+        <path d="M196.5 65 196.3 73" stroke-width="1.2" opacity=".7"/>
+        <path d="M211.3 67.6 209.1 75.1" stroke-width="2.2"/>
+        <path d="M224.9 74.3 220.7 81" stroke-width="1.2" opacity=".7"/>
+        <path d="M236.4 84.5 230.6 89.8" stroke-width="2.2"/>
+      </g>
+      <path d="M151 118A45 45 0 0 1 235 101" fill="none" stroke="#0c6c9c" stroke-opacity=".55" stroke-width="3" stroke-dasharray="2 5"/>
+      <path d="M157 119A39 39 0 0 1 228 101" fill="none" stroke="#45e8ff" stroke-opacity=".22" stroke-width="1"/>
+      <path d="m190 127 34-55-25 61Z" fill="url(#needle)" filter="url(#softGlow)"/>
+      <path d="M194 128 225 73" stroke="#e2fcff" stroke-width="1.4" stroke-linecap="round" opacity=".9"/>
+      <circle cx="194" cy="128" r="9" fill="#020b15" stroke="#32ddff" stroke-width="1.5" filter="url(#shadow)"/>
+      <circle cx="194" cy="128" r="5.5" fill="url(#hub)"/>
+      <circle cx="192.5" cy="126.5" r="1.6" fill="#effeff" opacity=".9"/>
+      <path d="M144 91A68 68 0 0 1 237 76" fill="none" stroke="#b8faff" stroke-opacity=".12" stroke-width="2"/>
+    </g>
+
+    <path d="M5 139h119" stroke="#0ad8ff" stroke-opacity=".18"/>
+    <path d="M8 5h223" stroke="#d9fdff" stroke-opacity=".09"/>
+  </g>
+
+  <rect x="2.5" y="2.5" width="235" height="139" rx="13" fill="none" stroke="#60eaff" stroke-opacity=".38" stroke-width=".55"/>
+</svg>
