@@ -25,6 +25,7 @@ launch. `prepare_for_launch` is the entry point that makes that testable.
 
 from __future__ import annotations
 
+import dataclasses
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
@@ -59,6 +60,7 @@ from .graphics_config_store import (
     GraphicsConfigStore,
 )
 from .graphics_management_state import (
+    Lifecycle,
     ManagementLookup,
     ManagementRecord,
     ManagementState,
@@ -299,13 +301,9 @@ class GraphicsProfileService:
             baseline_state = self._backups.baseline(location.identity)
         except (BackupError, ValueError, OSError) as error:
             return ApplyOutcome(ApplyResult.FAILED, f"backup store is unusable: {error}")
-        if baseline_state.state in (BaselineState.CORRUPT, BaselineState.LOST):
-            # Without a producible original, this write could not be undone.
-            return ApplyOutcome(
-                ApplyResult.FAILED,
-                f"refusing to write: {baseline_state.detail or baseline_state.state.value}",
-                restoration_available=False,
-            )
+        baseline_refusal = self._baseline_refusal(baseline_state, lookup)
+        if baseline_refusal is not None:
+            return baseline_refusal
         try:
             backup = self._backups.capture(
                 location.identity, location.config_path, profile.mode.value
@@ -314,6 +312,21 @@ class GraphicsProfileService:
             # No backup, no write. A change we could not undo is not a change
             # this milestone is allowed to make.
             return ApplyOutcome(ApplyResult.FAILED, f"backup refused: {error}")
+        baseline = self._baseline_record(location.identity, backup)
+        # Built before the write so that a rollback can record its own outcome
+        # even on a first enrollment, where no record exists yet to transition.
+        template = ManagementRecord(
+            identity=location.identity,
+            target_path=str(location.config_path),
+            managed_digest=before_digest,
+            baseline_payload_name=baseline.payload_name if baseline else "",
+            baseline_digest=baseline.digest if baseline else "",
+            mode=profile.mode.value,
+            profile_version=profile.profile_version,
+            schema_id=profile.schema_id or (schema.schema_id if schema else ""),
+            schema_version=assessment.observed_version or "",
+            schema_signature=assessment.signature,
+        )
         written: bytes | None = None
         try:
             rendered = adapter.render(document.with_values(plan.changes))
@@ -336,7 +349,8 @@ class GraphicsProfileService:
             )
         except (ConfigIoError, KeyError, ValueError, OSError) as error:
             return self._rollback(
-                backup, location.config_path, f"write failed: {error}", before_digest, None
+                backup, location.config_path, f"write failed: {error}", before_digest,
+                None, template,
             )
         try:
             reread = self._store.read(location.config_path)
@@ -348,30 +362,20 @@ class GraphicsProfileService:
                 f"verification could not re-read the file: {error}",
                 before_digest,
                 digest_of(written),
+                template,
             )
         ok, problems = verify_application(verified_document, profile, before_remainder)
         if not ok or reread.payload != written:
             detail = "; ".join(problems) or "the file on disk is not what was written"
             return self._rollback(
-                backup, location.config_path, detail, before_digest, digest_of(written)
+                backup, location.config_path, detail, before_digest,
+                digest_of(written), template,
             )
 
         after_digest = digest_of(reread.payload)
-        baseline = self._baseline_record(location.identity, backup)
         try:
             self._management.save(
-                ManagementRecord(
-                    identity=location.identity,
-                    target_path=str(location.config_path),
-                    managed_digest=after_digest,
-                    baseline_payload_name=baseline.payload_name if baseline else "",
-                    baseline_digest=baseline.digest if baseline else "",
-                    mode=profile.mode.value,
-                    profile_version=profile.profile_version,
-                    schema_id=profile.schema_id or (schema.schema_id if schema else ""),
-                    schema_version=assessment.observed_version or "",
-                    schema_signature=assessment.signature,
-                )
+                dataclasses.replace(template, managed_digest=after_digest)
             )
         except (ManagementStateError, ValueError, OSError) as error:
             # A write we cannot record is a write we could not later tell from
@@ -382,6 +386,7 @@ class GraphicsProfileService:
                 f"management state could not be recorded: {error}",
                 before_digest,
                 after_digest,
+                template,
             )
         return ApplyOutcome(
             ApplyResult.APPLIED,
@@ -484,13 +489,16 @@ class GraphicsProfileService:
                 backup=chosen,
             )
         try:
-            self._management.forget(location.identity)
+            # Not forgotten: a completed restore is a known outcome, and the
+            # digest of what it left is what lets the next apply re-enroll
+            # instead of reading a missing record as lost evidence.
+            self._management.settle(
+                location.identity, Lifecycle.RESTORED, chosen.digest
+            )
         except (ManagementStateError, ValueError, OSError) as error:
-            # The bytes are the player's again; a stale record would only make
-            # the next apply think it wrote them.
             return RestoreOutcome(
                 RestoreResult.FAILED,
-                f"restored, but the management record could not be cleared: {error}",
+                f"restored, but the management record could not be updated: {error}",
                 backup=chosen,
                 byte_identical=True,
             )
@@ -510,6 +518,18 @@ class GraphicsProfileService:
             return None
         try:
             return self._management.stop_managing(located.location.identity)
+        except (ManagementStateError, ValueError, OSError):
+            return None
+
+    def resume_managing(
+        self, profile: GraphicsProfile, relative_dir: str
+    ) -> ManagementRecord | None:
+        """Re-enroll a target the player opted out of. Explicit, never inferred."""
+        located = self.discover(profile, relative_dir)
+        if located.location is None:
+            return None
+        try:
+            return self._management.resume_managing(located.location.identity)
         except (ManagementStateError, ValueError, OSError):
             return None
 
@@ -561,10 +581,23 @@ class GraphicsProfileService:
             )
         record = lookup.record
         assert record is not None
-        if not record.managing:
+        if record.lifecycle is Lifecycle.STOPPED:
             return ApplyOutcome(
                 ApplyResult.CONFLICT,
-                "Re-Gear was asked to stop managing this configuration",
+                "Re-Gear was asked to stop managing this configuration; resuming "
+                "is an explicit choice",
+                restoration_available=available,
+            )
+        if record.settled:
+            # A completed rollback or restore left the file with the player and
+            # said exactly what it left. If those bytes are still there, nothing
+            # is in doubt and this is a re-enrollment, not a conflict.
+            if record.managed_digest == current_digest:
+                return None
+            return ApplyOutcome(
+                ApplyResult.CONFLICT,
+                "the configuration changed after Re-Gear handed it back; the "
+                "player's newer settings are kept",
                 restoration_available=available,
             )
         if record.managed_digest != current_digest:
@@ -573,6 +606,59 @@ class GraphicsProfileService:
                 "the configuration changed since Re-Gear last wrote it; the "
                 "player's newer settings are kept",
                 restoration_available=available,
+            )
+        return None
+
+    def _baseline_refusal(
+        self, baseline_state, lookup: ManagementLookup
+    ) -> ApplyOutcome | None:
+        """Refuse a managed write whose original could not be produced again.
+
+        Backup metadata alone is not the whole evidence. A target whose
+        management record names a baseline is a target that *has* one, so an
+        empty backup directory there is a lost original rather than a first
+        enrollment -- and letting capture label the current managed bytes as a
+        new "original" would quietly redefine the player's settings as whatever
+        Re-Gear last wrote. The recorded digest must also match the baseline
+        actually found, so a valid but foreign replacement is refused too.
+        """
+        record = lookup.record
+        expects_baseline = record is not None and bool(record.baseline_digest)
+        if baseline_state.state in (BaselineState.CORRUPT, BaselineState.LOST):
+            return ApplyOutcome(
+                ApplyResult.FAILED,
+                f"refusing to write: {baseline_state.detail or baseline_state.state.value}",
+                restoration_available=False,
+            )
+        if baseline_state.state is BaselineState.NONE:
+            if expects_baseline:
+                return ApplyOutcome(
+                    ApplyResult.FAILED,
+                    "refusing to write: this configuration has been managed "
+                    "before and its recorded original is no longer in the backup "
+                    "store, so a new write could not be undone and the current "
+                    "settings must not be recorded as the player's original",
+                    restoration_available=False,
+                )
+            if lookup.state is ManagementState.UNTRUSTED:
+                return ApplyOutcome(
+                    ApplyResult.FAILED,
+                    "refusing to write: the management record cannot be trusted "
+                    f"({lookup.detail}) and no original is held",
+                    restoration_available=False,
+                )
+            return None  # Genuinely first enrollment.
+        if (
+            expects_baseline
+            and baseline_state.record is not None
+            and record is not None
+            and baseline_state.record.digest != record.baseline_digest
+        ):
+            return ApplyOutcome(
+                ApplyResult.FAILED,
+                "refusing to write: the stored original is not the one this "
+                "target was enrolled with",
+                restoration_available=False,
             )
         return None
 
@@ -642,6 +728,7 @@ class GraphicsProfileService:
         detail: str,
         before_digest: str,
         written_digest: str | None,
+        template: ManagementRecord,
     ) -> ApplyOutcome:
         """Undo this attempt's write, and only ever this attempt's write.
 
@@ -667,6 +754,16 @@ class GraphicsProfileService:
             )
         current_digest = digest_of(current.payload)
         if current_digest == before_digest:
+            # Nothing was replaced, so nothing needs undoing -- but this is
+            # still a completed attempt that left the file with the player, and
+            # recording that is what makes an ordinary retry possible.
+            self._settle(
+                dataclasses.replace(
+                    template,
+                    managed_digest=before_digest,
+                    lifecycle=Lifecycle.ROLLED_BACK,
+                )
+            )
             return ApplyOutcome(
                 ApplyResult.ROLLED_BACK,
                 detail + "; the file was already unchanged",
@@ -701,6 +798,19 @@ class GraphicsProfileService:
                 before_digest=before_digest,
             )
         suffix = "" if identical else "; rollback did not reproduce the original bytes"
+        if identical:
+            # A completed rollback is a known state, not a missing record: the
+            # file is the player's and we know its digest, so an ordinary retry
+            # after a transient failure is not a permanent conflict. Written
+            # from the template rather than by transition, because a first
+            # enrollment has no earlier record to transition.
+            self._settle(
+                dataclasses.replace(
+                    template,
+                    managed_digest=before_digest,
+                    lifecycle=Lifecycle.ROLLED_BACK,
+                )
+            )
         return ApplyOutcome(
             ApplyResult.ROLLED_BACK if identical else ApplyResult.FAILED,
             detail + suffix,
@@ -708,6 +818,13 @@ class GraphicsProfileService:
             before_digest=before_digest,
             after_digest=before_digest if identical else None,
         )
+
+    def _settle(self, record: ManagementRecord) -> None:
+        """Best-effort lifecycle note. Failing to write it only costs a retry."""
+        try:
+            self._management.save(record)
+        except (ManagementStateError, ValueError, OSError):
+            return
 
 
 def mode_of(value: str) -> OperatingMode:

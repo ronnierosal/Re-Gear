@@ -119,8 +119,12 @@ overwrite it.
 not close it. `os.replace` is atomic for readers but is not a compare-and-swap
 against other processes, so a writer landing just after the check still wins.
 What holds instead: writes require the caller to assert the game is not running,
-every write is attributed by digest so the next operation *detects* a lost
-change rather than compounding it, and the baseline stays restorable.
+and the baseline stays restorable. Detection is not guaranteed either — if a
+write lands after the final read and overwrites an edit, Re-Gear then records
+the digest of its own bytes, and that record cannot reveal an edit it never
+observed, so such a loss may be permanently undetectable from Re-Gear's own
+evidence. The digest catches changes arriving *after* a completed operation, not
+during one.
 
 `restore` restores the pinned baseline by default and refuses when the file
 holds edits Re-Gear did not make, unless the caller passes the explicit flag

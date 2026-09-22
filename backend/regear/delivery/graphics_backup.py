@@ -373,7 +373,15 @@ class BackupManager:
                 output.write(payload)
                 output.flush()
                 os.fsync(output.fileno())
-            if expected is not None and target.exists():
+            if expected is not None:
+                # A target that vanished is a change too. Only writes that are
+                # meant to create a file (new backup payloads and records) pass
+                # no expectation; a restore must never resurrect a path whose
+                # absence it did not observe.
+                if not target.exists():
+                    raise BackupChangedError(
+                        "the target no longer exists, so it was not recreated"
+                    )
                 if target.read_bytes() != expected:
                     raise BackupChangedError(
                         "the target changed between the decision to restore and "

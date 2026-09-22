@@ -28,13 +28,31 @@ from pathlib import Path
 
 
 FILENAME_RE = re.compile(r"^[A-Za-z0-9_.\-]{1,160}$")
+#: Version 2 adds the lifecycle field. A version 1 record is treated as
+#: untrusted rather than upgraded in place: this milestone has never shipped, so
+#: there are no real v1 records, and guessing a lifecycle for one would be
+#: exactly the kind of assumed authorship the rest of this module refuses.
+#:
 #: The version of *this record's* format. Deliberately not named
 #: "schema_version": that belongs to the game's configuration schema, and an
 #: earlier revision of this file used one key for both meanings, so the record
 #: format version was silently overwritten by the game's and every record read
 #: back as unrecognised.
-RECORD_VERSION = 1
+RECORD_VERSION = 2
 MAX_BYTES = 8 * 1024
+
+
+class Lifecycle(StrEnum):
+    """What the last completed operation left behind on the target."""
+
+    #: Re-Gear's profile bytes are on disk.
+    MANAGED = "management.managed"
+    #: An attempt failed and undid itself; the file is the player's again.
+    ROLLED_BACK = "management.rolled_back"
+    #: Restore My Settings completed; the file is the player's original.
+    RESTORED = "management.restored"
+    #: The player opted out. Re-enrollment is an explicit act.
+    STOPPED = "management.stopped"
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,7 +69,21 @@ class ManagementRecord:
     schema_id: str
     schema_version: str
     schema_signature: str
-    managing: bool = True
+    lifecycle: Lifecycle = Lifecycle.MANAGED
+
+    @property
+    def managing(self) -> bool:
+        return self.lifecycle is Lifecycle.MANAGED
+
+    @property
+    def settled(self) -> bool:
+        """Whether the recorded digest describes bytes Re-Gear handed back.
+
+        A settled target is one whose last operation completed with the file
+        belonging to the player again. It is re-enrollable without a conflict,
+        provided the bytes are still the ones that operation left.
+        """
+        return self.lifecycle in (Lifecycle.ROLLED_BACK, Lifecycle.RESTORED)
 
     def as_json(self) -> str:
         return json.dumps(
@@ -67,7 +99,7 @@ class ManagementRecord:
                 "schema_id": self.schema_id,
                 "schema_version": self.schema_version,
                 "schema_signature": self.schema_signature,
-                "managing": self.managing,
+                "lifecycle": self.lifecycle.value,
             },
             sort_keys=True,
             separators=(",", ":"),
@@ -159,7 +191,7 @@ class ManagementStateStore:
                 schema_id=str(value["schema_id"]),
                 schema_version=str(value["schema_version"]),
                 schema_signature=str(value["schema_signature"]),
-                managing=bool(value.get("managing", True)),
+                lifecycle=Lifecycle(str(value["lifecycle"])),
             )
         except (KeyError, TypeError, ValueError) as error:
             return ManagementLookup(
@@ -184,6 +216,28 @@ class ManagementStateStore:
         touching the file. The baseline stays, so a later, separately requested
         Restore My Settings is still possible.
         """
+        return self._transition(identity, Lifecycle.STOPPED)
+
+    def resume_managing(self, identity: str) -> ManagementRecord | None:
+        """Undo an opt-out. Deliberately an explicit act, never inferred."""
+        lookup = self.load(identity)
+        if lookup.record is None or lookup.record.lifecycle is not Lifecycle.STOPPED:
+            return None
+        return self._transition(identity, Lifecycle.ROLLED_BACK)
+
+    def settle(
+        self, identity: str, lifecycle: Lifecycle, digest: str
+    ) -> ManagementRecord | None:
+        """Record that an operation completed and handed the file back.
+
+        The digest is of the bytes now on disk, so a later apply can tell "this
+        is exactly what we left" from "somebody changed it afterwards".
+        """
+        return self._transition(identity, lifecycle, digest)
+
+    def _transition(
+        self, identity: str, lifecycle: Lifecycle, digest: str | None = None
+    ) -> ManagementRecord | None:
         lookup = self.load(identity)
         existing = lookup.record
         if existing is None:
@@ -191,7 +245,7 @@ class ManagementStateStore:
         updated = ManagementRecord(
             identity=existing.identity,
             target_path=existing.target_path,
-            managed_digest=existing.managed_digest,
+            managed_digest=digest if digest is not None else existing.managed_digest,
             baseline_payload_name=existing.baseline_payload_name,
             baseline_digest=existing.baseline_digest,
             mode=existing.mode,
@@ -199,7 +253,7 @@ class ManagementStateStore:
             schema_id=existing.schema_id,
             schema_version=existing.schema_version,
             schema_signature=existing.schema_signature,
-            managing=False,
+            lifecycle=lifecycle,
         )
         self.save(updated)
         return updated

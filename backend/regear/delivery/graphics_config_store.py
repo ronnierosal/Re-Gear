@@ -68,6 +68,12 @@ class GraphicsConfigStore:
             raise ConfigIoError("refusing to write an oversized configuration")
         if path.is_symlink():
             raise ConfigIoError("refusing to write a configuration through a symlink")
+        if expected is not None and not path.exists():
+            # Checked before the permission stat so a target that vanished is
+            # reported as the change it is, rather than as an unwritable file.
+            raise ConfigChangedError(
+                "the configuration no longer exists, so it was not recreated"
+            )
         try:
             mode = path.stat().st_mode & 0o7777
         except OSError as error:
@@ -81,7 +87,12 @@ class GraphicsConfigStore:
                 os.fsync(output.fileno())
             os.chmod(temporary, mode)
             if expected is not None:
-                # The last look before the point of no return.
+                # The last look before the point of no return. A target that
+                # vanished counts as changed; this write does not recreate it.
+                if not path.exists():
+                    raise ConfigChangedError(
+                        "the configuration no longer exists, so it was not recreated"
+                    )
                 current = path.read_bytes()
                 if current != expected:
                     raise ConfigChangedError(

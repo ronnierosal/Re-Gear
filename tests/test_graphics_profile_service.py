@@ -19,6 +19,7 @@ sys.path.insert(0, str(ROOT / "backend"))
 sys.path.insert(0, str(ROOT / "tests"))
 
 import dataclasses  # noqa: E402
+import shutil  # noqa: E402
 
 import graphics_profile_fixtures as fixtures  # noqa: E402
 from regear.delivery.graphics_backup import BackupManager, digest_of  # noqa: E402
@@ -28,7 +29,9 @@ from regear.delivery.graphics_config_store import (  # noqa: E402
     ConfigIoError,
     GraphicsConfigStore,
 )
+from regear.delivery.graphics_backup import BackupChangedError  # noqa: E402
 from regear.delivery.graphics_management_state import (  # noqa: E402
+    Lifecycle,
     ManagementStateError,
     ManagementStateStore,
 )
@@ -432,6 +435,159 @@ class BaselineTests(ServiceTestCase):
         outcome = self.apply(TV_DOCKED)
         self.assertIs(outcome.result, ApplyResult.FAILED)
         self.assertFalse(self.backups.baseline(identity).verified)
+
+
+class LostBaselineTests(ServiceTestCase):
+    """Finding 1: a previously managed target's NONE is lost, not new."""
+
+    def test_losing_every_backup_file_blocks_writes_and_the_fake_original(self):
+        self.apply(PORTABLE)
+        managed = self.config.read_bytes()
+        shutil.rmtree(self.backups.root / self.identity())
+
+        outcome = self.apply(TV_DOCKED)
+        self.assertIs(outcome.result, ApplyResult.FAILED)
+        self.assertFalse(outcome.restoration_available)
+        self.assertEqual(self.config.read_bytes(), managed)
+        # Nothing was captured, so the managed bytes were not christened the
+        # player's original.
+        self.assertEqual(self.backups.records(self.identity()), ())
+
+    def test_restore_after_losing_every_backup_never_returns_managed_bytes(self):
+        self.apply(PORTABLE)
+        managed = self.config.read_bytes()
+        shutil.rmtree(self.backups.root / self.identity())
+        outcome = self.restore(accept_player_edits=True)
+        self.assertIs(outcome.result, RestoreResult.NOTHING_TO_RESTORE)
+        self.assertNotEqual(managed, self.original)
+        self.assertEqual(self.config.read_bytes(), managed)
+
+    def test_a_valid_but_foreign_baseline_is_refused(self):
+        self.apply(PORTABLE)
+        identity = self.identity()
+        shutil.rmtree(self.backups.root / identity)
+        # A perfectly valid backup of the right target, but not the original
+        # this target was enrolled with.
+        self.backups.capture(identity, self.config, "portable")
+        self.assertTrue(self.backups.baseline(identity).verified)
+        outcome = self.apply(TV_DOCKED)
+        self.assertIs(outcome.result, ApplyResult.FAILED)
+        self.assertIn("not the one this target was enrolled with", outcome.detail)
+
+    def test_a_first_enrollment_with_no_history_still_proceeds(self):
+        outcome = self.apply(PORTABLE)
+        self.assertIs(outcome.result, ApplyResult.APPLIED)
+
+
+class LifecycleTests(ServiceTestCase):
+    """Finding 2: completed operations are known states, not lost records."""
+
+    def record(self):
+        return self.management.load(self.identity()).record
+
+    def test_a_transient_write_failure_can_be_retried_through_the_launch_path(self):
+        class FailOnce(GraphicsConfigStore):
+            def __init__(inner):
+                inner.fail = True
+
+            def write(inner, path, text, expected=None):
+                if inner.fail:
+                    raise ConfigIoError("transient write failure")
+                return super().write(path, text, expected)
+
+        store = FailOnce()
+        service = self.build_service(store=store)
+        first = self.apply(PORTABLE, service=service)
+        self.assertIs(first.result, ApplyResult.ROLLED_BACK)
+        self.assertEqual(self.config.read_bytes(), self.original)
+        self.assertIs(self.record().lifecycle, Lifecycle.ROLLED_BACK)
+
+        store.fail = False
+        retry = service.prepare_for_launch(
+            PORTABLE, fixtures.GAME_CONFIG_DIR, GameRunState.NOT_RUNNING
+        )
+        self.assertTrue(retry.may_launch)
+        self.assertIs(retry.apply_outcome.result, ApplyResult.APPLIED)
+        self.assertIs(self.record().lifecycle, Lifecycle.MANAGED)
+
+    def test_apply_restore_apply_is_an_ordinary_re_enrollment(self):
+        self.apply(PORTABLE)
+        restored = self.restore()
+        self.assertIs(restored.result, RestoreResult.RESTORED)
+        self.assertIs(self.record().lifecycle, Lifecycle.RESTORED)
+        again = self.apply(TV_DOCKED)
+        self.assertIs(again.result, ApplyResult.APPLIED)
+
+    def test_an_edit_after_a_restore_is_still_a_conflict(self):
+        # Re-enrollment follows from the recorded digest, not from the mere
+        # fact that a restore happened.
+        self.apply(PORTABLE)
+        self.restore()
+        edited = self.config.read_bytes().replace(b"MasterVolume=0.8", b"MasterVolume=0.3")
+        self.config.write_bytes(edited)
+        outcome = self.apply(TV_DOCKED)
+        self.assertIs(outcome.result, ApplyResult.CONFLICT)
+        self.assertEqual(self.config.read_bytes(), edited)
+
+    def test_stop_managing_needs_an_explicit_resume(self):
+        self.apply(PORTABLE)
+        self.service.stop_managing(PORTABLE, fixtures.GAME_CONFIG_DIR)
+        self.assertIs(self.apply(TV_DOCKED).result, ApplyResult.CONFLICT)
+
+        resumed = self.service.resume_managing(PORTABLE, fixtures.GAME_CONFIG_DIR)
+        self.assertIsNotNone(resumed)
+        self.assertIs(self.apply(TV_DOCKED).result, ApplyResult.APPLIED)
+
+    def test_resuming_a_target_nobody_stopped_does_nothing(self):
+        self.apply(PORTABLE)
+        self.assertIsNone(self.service.resume_managing(PORTABLE, fixtures.GAME_CONFIG_DIR))
+
+    def test_a_genuinely_lost_record_is_still_a_conflict(self):
+        # The lifecycle states must not weaken detection of a lost record.
+        self.apply(PORTABLE)
+        (self.base / "state" / f"{self.identity()}.json").unlink()
+        self.assertIs(self.apply(TV_DOCKED).result, ApplyResult.CONFLICT)
+
+
+class VanishedTargetTests(ServiceTestCase):
+    """Finding 3: a deleted target is a change, not an invitation to create."""
+
+    def test_restore_does_not_recreate_a_target_deleted_at_the_boundary(self):
+        self.apply(PORTABLE)
+        chosen = self.backups.baseline(self.identity()).record
+        original_write = BackupManager._write_atomic
+
+        def racing(target, payload, expected=None):
+            if expected is not None:
+                Path(target).unlink()
+            return original_write(target, payload, expected)
+
+        BackupManager._write_atomic = staticmethod(racing)
+        self.addCleanup(setattr, BackupManager, "_write_atomic", staticmethod(original_write))
+        outcome = self.restore()
+        self.assertIs(outcome.result, RestoreResult.CONFLICT)
+        self.assertFalse(self.config.exists())
+
+    def test_the_backup_writer_refuses_a_missing_expected_target(self):
+        self.apply(PORTABLE)
+        chosen = self.backups.baseline(self.identity()).record
+        self.config.unlink()
+        with self.assertRaises(BackupChangedError):
+            self.backups.restore(chosen, self.config, expected=b"anything")
+        self.assertFalse(self.config.exists())
+
+    def test_the_config_store_refuses_a_missing_expected_target(self):
+        payload = self.config.read_bytes()
+        self.config.unlink()
+        with self.assertRaises(ConfigChangedError):
+            GraphicsConfigStore().write(self.config, "[G]\nk=1\n", expected=payload)
+        self.assertFalse(self.config.exists())
+
+    def test_creating_a_new_backup_file_still_works_without_an_expectation(self):
+        # The refusal must not break writes whose job is to create a file.
+        outcome = self.apply(PORTABLE)
+        self.assertIs(outcome.result, ApplyResult.APPLIED)
+        self.assertTrue(self.backups.baseline(self.identity()).verified)
 
 
 class SchemaTests(ServiceTestCase):

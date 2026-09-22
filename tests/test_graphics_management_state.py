@@ -12,6 +12,7 @@ sys.path.insert(0, str(ROOT / "backend"))
 
 from regear.delivery.graphics_management_state import (  # noqa: E402
     RECORD_VERSION,
+    Lifecycle,
     ManagementRecord,
     ManagementState,
     ManagementStateStore,
@@ -106,6 +107,7 @@ class ManagementStateTests(unittest.TestCase):
         self.store.save(record())
         updated = self.store.stop_managing("620.proton.abcdef")
         self.assertFalse(updated.managing)
+        self.assertIs(updated.lifecycle, Lifecycle.STOPPED)
         self.assertEqual(updated.baseline_payload_name, "00000001.aa.bak")
         self.assertFalse(self.store.load("620.proton.abcdef").record.managing)
 
@@ -117,6 +119,54 @@ class ManagementStateTests(unittest.TestCase):
         self.store.forget("620.proton.abcdef")
         self.assertIs(self.store.load("620.proton.abcdef").state, ManagementState.ABSENT)
         self.store.forget("620.proton.abcdef")
+
+    def test_lifecycle_round_trips_and_drives_managing(self):
+        self.store.save(record(lifecycle=Lifecycle.RESTORED))
+        loaded = self.store.load("620.proton.abcdef").record
+        self.assertIs(loaded.lifecycle, Lifecycle.RESTORED)
+        self.assertFalse(loaded.managing)
+        self.assertTrue(loaded.settled)
+
+    def test_managed_is_neither_settled_nor_stopped(self):
+        self.store.save(record())
+        loaded = self.store.load("620.proton.abcdef").record
+        self.assertTrue(loaded.managing)
+        self.assertFalse(loaded.settled)
+
+    def test_settle_records_the_digest_that_was_left_behind(self):
+        self.store.save(record())
+        updated = self.store.settle("620.proton.abcdef", Lifecycle.ROLLED_BACK, "c" * 64)
+        self.assertIs(updated.lifecycle, Lifecycle.ROLLED_BACK)
+        self.assertEqual(updated.managed_digest, "c" * 64)
+        # The baseline reference survives a lifecycle change.
+        self.assertEqual(updated.baseline_payload_name, "00000001.aa.bak")
+
+    def test_resume_only_applies_to_a_stopped_target(self):
+        self.store.save(record())
+        self.assertIsNone(self.store.resume_managing("620.proton.abcdef"))
+        self.store.stop_managing("620.proton.abcdef")
+        resumed = self.store.resume_managing("620.proton.abcdef")
+        self.assertIs(resumed.lifecycle, Lifecycle.ROLLED_BACK)
+
+    def test_an_unknown_lifecycle_value_is_untrusted(self):
+        self.store.save(record())
+        path = self.root / "620.proton.abcdef.json"
+        value = json.loads(path.read_text())
+        value["lifecycle"] = "management.something_else"
+        path.write_text(json.dumps(value), encoding="utf-8")
+        self.assertIs(self.store.load("620.proton.abcdef").state, ManagementState.UNTRUSTED)
+
+    def test_a_version_one_record_is_untrusted_rather_than_upgraded(self):
+        # Guessing a lifecycle for an older record would be exactly the assumed
+        # authorship the rest of this module refuses.
+        self.store.save(record())
+        path = self.root / "620.proton.abcdef.json"
+        value = json.loads(path.read_text())
+        value["record_version"] = 1
+        value.pop("lifecycle")
+        value["managing"] = True
+        path.write_text(json.dumps(value), encoding="utf-8")
+        self.assertIs(self.store.load("620.proton.abcdef").state, ManagementState.UNTRUSTED)
 
     def test_invalid_identity_is_refused(self):
         for value in ("", "../escape", "a/b", "x" * 200):

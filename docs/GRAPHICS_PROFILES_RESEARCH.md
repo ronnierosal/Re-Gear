@@ -83,12 +83,15 @@ bytes are not the ones it decided to replace. That narrows the window between
 deciding and writing; it does not close it. `os.replace` is atomic — no reader
 sees a half-written file — but it is **not** a compare-and-swap against other
 processes, so a writer landing in the microseconds after the check still wins,
-and its change is lost. The mitigations that do hold are: writes only happen
-when the caller asserts the game is not running, every write is attributed by
-digest so the *next* operation detects the loss rather than compounding it, and
-the pre-management baseline is always restorable. Anyone reading this should not
-infer that concurrent external writers are safely handled; they are detected
-afterwards, not prevented.
+and its change is lost. What actually holds is narrower than "the next operation notices". Writes only
+happen when the caller asserts the game is not running, and the pre-management
+baseline stays restorable. Detection is **not** guaranteed: if Re-Gear's write
+lands after its final read and overwrites an edit, it then records the digest of
+its own bytes, and that record cannot reveal an edit it never saw. Such a lost
+edit may be permanently undetectable from Re-Gear's own evidence. What the
+digest does catch is a change that arrives *after* a completed operation. This
+milestone is fixture-only and offers no guarantee against concurrent external
+writers.
 
 ## Where this leaves the milestone
 
