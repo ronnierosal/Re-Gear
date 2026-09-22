@@ -17,7 +17,7 @@ import type { Tab, Tile } from "./model";
 import { expandedStyles } from "./styles";
 import { tileOverlayStyles } from "./regear-tile";
 import { FpsTile, ReGearTile } from "./regear-tile";
-import { V3TileArtwork } from "./v3-tile-artwork";
+import { V3TileArtwork, v3TileArtworkId } from "./v3-tile-artwork";
 import { TileArtworkSprite } from "./tile-artwork";
 import { brandIcon } from "../../brand-assets";
 import { RichTileArtwork, RichTileSprite, richTileArtworkId, richTileArtworkStyles } from "./rich-tile-artwork";
@@ -29,6 +29,7 @@ const RichArtworkSprite = typeof RichTileSprite === "undefined" ? () => null : R
 const artworkIdFor = typeof richTileArtworkId === "undefined" ? () => undefined : richTileArtworkId;
 const artworkStyles = typeof richTileArtworkStyles === "undefined" ? "" : richTileArtworkStyles;
 const V3Artwork = typeof V3TileArtwork === "undefined" ? () => null : V3TileArtwork;
+const v3ArtworkIdFor = typeof v3TileArtworkId === "undefined" ? () => undefined : v3TileArtworkId;
 const SharedTile = typeof ReGearTile === "undefined" ? ({ Button = "button", buttonProps, children }: { Button?: ElementType; buttonProps?: Record<string, unknown>; children?: ReactNode }) => <Button {...buttonProps}>{children}</Button> : ReGearTile;
 const SharedFpsTile = typeof FpsTile === "undefined" ? ({ Button = "button", buttonProps, label }: { Button?: ElementType; buttonProps?: Record<string, unknown>; label: string }) => <Button {...buttonProps}><span>{label}</span></Button> : FpsTile;
 
@@ -373,8 +374,17 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
     }
     if(original.tile.id==='disconnect'){
       const status=unavailableActions[original.tile.id]?'Unavailable':/unknown/i.test(item.value)?'Unknown':onDisconnect?'Ready':'Unknown';
-      return <SharedTile {...buttonProps} key={item.id} Button={Button} buttonProps={buttonProps} label="Safe Disconnect" artworkId="safe-disconnect" artwork={<V3Artwork controlId="disconnect"/>}>
+      return <SharedTile {...buttonProps} key={item.id} Button={Button} buttonProps={buttonProps} label="Safe Disconnect" artworkId="safe-disconnect" artwork={<V3Artwork controlId="safe-disconnect"/>}>
         <span className="rg-expanded-value">{status}</span>
+      </SharedTile>;
+    }
+    const v3ControlId=definition?.id??original.tile.id;
+    const v3ArtworkId=v3ArtworkIdFor(v3ControlId);
+    if(v3ArtworkId){
+      return <SharedTile {...buttonProps} key={item.id} Button={Button} buttonProps={buttonProps} label={item.title} artworkId={v3ArtworkId} artwork={<V3Artwork controlId={v3ControlId}/> }>
+        <span className="rg-expanded-value">{item.value}</span>
+        <span className="rg-expanded-detail">{item.detail}{longReasons && item.tone === "unavailable" ? " — Provider observations are unavailable in this synthetic preview. No capability or successful operation can be inferred from the displayed sample." : ""}</span>
+        {hasTileDetails(item) && !unavailableActions[original.tile.id] && <span className="rg-expanded-chevron" aria-hidden="true">›</span>}
       </SharedTile>;
     }
     return <Button type="button" key={item.id} data-ec-control={item.id} data-tone={item.tone ?? "quiet"} className="rg-expanded-tile" data-empty={item.empty||undefined}
