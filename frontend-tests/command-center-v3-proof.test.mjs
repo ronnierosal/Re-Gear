@@ -29,7 +29,8 @@ test('FPS and Safe Disconnect share ReGearTile while the other 35 keep their exi
 test('V3 geometry keeps copy left, artwork right, focus, and reduced-motion gauge behavior', () => {
   const tile=read('src/quick-access/expanded-command-center/regear-tile.tsx');
   assert.match(tile,/\.rg-v3-tile-artwork\{position:absolute;inset:0/);
-  assert.match(tile,/\.rg-expanded-tile \.rg-v3-tile-copy[^{]*\{[^}]*width:66%/);
+  assert.match(tile,/\.rg-expanded-tile \.rg-v3-tile-copy[^{]*\{[^}]*width:58%/);
+  assert.doesNotMatch(tile,/\.rg-expanded-tile\.rg-v3-tile:after/);
   assert.match(tile,/\.rg-v3-tile-copy \.rg-expanded-value\{[^}]*overflow-wrap:anywhere/);
   assert.match(tile,/\.rg-expanded-tile\.rg-v3-tile:focus-visible/);
   assert.match(tile,/transition:stroke-dashoffset 250ms ease/);

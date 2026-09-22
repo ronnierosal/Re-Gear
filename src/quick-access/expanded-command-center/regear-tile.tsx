@@ -45,9 +45,8 @@ export const tileOverlayStyles = `
 .rg-tile-gauge-track{stroke:#315c75}.rg-tile-gauge-fill{stroke:#32d7ff;transition:stroke-dashoffset 250ms ease}
 .rg-tile-gauge[data-known=false]{opacity:.3}
 .rg-expanded-tile.rg-v3-tile{position:relative;isolation:isolate;overflow:hidden;padding:0!important;text-align:left}
-.rg-expanded-tile.rg-v3-tile:after{content:'';position:absolute;inset:0;z-index:.5;background:linear-gradient(90deg,#04131fe8 0%,#04131fb8 55%,transparent 74%);pointer-events:none}
 .rg-v3-tile-artwork{position:absolute;inset:0;z-index:0;width:100%;height:100%;display:block;object-fit:fill;pointer-events:none}
-.rg-expanded-tile .rg-v3-tile-copy{position:relative;z-index:1;width:66%;height:100%;padding:8px 4px 8px 9px;align-items:flex-start;justify-content:center;gap:3px;text-align:left}
+.rg-expanded-tile .rg-v3-tile-copy{position:relative;z-index:1;width:58%;height:100%;padding:7px 2px 7px 9px;align-items:flex-start;justify-content:center;gap:3px;text-align:left;text-shadow:0 1px 2px #000}
 .rg-v3-tile-copy .rg-expanded-tile-heading{justify-content:flex-start;text-align:left}
 .rg-v3-tile-copy .rg-expanded-label,.rg-v3-tile-copy .rg-expanded-value,.rg-v3-tile-copy .rg-tile-metadata{max-width:100%;text-align:left}
 .rg-v3-tile-copy .rg-expanded-value{font-size:clamp(10px,1vw,14px);white-space:normal;overflow-wrap:anywhere}
