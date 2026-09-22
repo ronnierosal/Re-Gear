@@ -28,15 +28,14 @@ test('live eGPU actions do not inherit an unavailable overview reading as their 
     assert.match(tile.detail,/evaluate current teardown conditions/);
   }
   const connectedSleep=view.egpu.find(item=>item.id==='disconnect-sleep');
-  assert.equal(connectedSleep.title,'Sleep — Keep eGPU Connected');
-  assert.match(connectedSleep.detail,/Normal sleep keeps the eGPU connected/);
+  assert.equal(connectedSleep.title,'Disconnect + Sleep');
+  assert.match(connectedSleep.detail,/verified absence/);
   assert.equal(view.quick[0].value,'Check readiness');
 });
 
 test('native adapter preserves verified providers and only Resolution is fixed unavailable', () => {
   assert.match(nativeSource,/tone:runtimeState\?\.handheld\.available\?"quiet" as const:"unavailable" as const/);
-  assert.match(nativeSource,/if\(tile\.id==="disconnect-sleep"\)\{runtimeDetails\?\.requestSleepConnected\(\);return true;\}/);
-  assert.doesNotMatch(nativeSource,/disconnect\("sleep"\)/);
+  assert.match(nativeSource,/if\(tile\.id==="disconnect-sleep"\)\{disconnect\("sleep"\);return true;\}/);
   assert.match(nativeSource,/if\(tile\.id==="disconnect-shutdown"\)\{disconnect\("shutdown"\);return true;\}/);
   assert.match(nativeSource,/if\(tile\.id==="switch-handheld"\)\{runtimeDetails\?\.requestHandheld\(\);return true;\}/);
   assert.deepEqual(projection.unavailableTestActions,{"switch-handheld":"Display integration pending",resolution:"Display integration pending"});

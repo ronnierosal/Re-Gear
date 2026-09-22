@@ -424,12 +424,12 @@ test("component keeps waiting on the record it wrote itself", async () => {
   h.unmount();
 });
 
-test('tile-activated shutdown runs once while disconnect-before-sleep stays disabled', async () => {
+test('tile-activated disconnect-before-sleep and shutdown each dispatch their guarded route once', async () => {
   const sleep = harness(new Map(), 'sleep', oneActivation());
   await settle();
   assert.equal(sleep.modals.length, 0);
-  assert.equal(sleep.calls.length, 0);
-  assert.match(JSON.stringify(sleep.tree), /Keep eGPU Connected/);
+  assert.equal(sleep.calls.length, 1);
+  assert.equal(sleep.calls[0][3], 'whole_dock_sleep');
   sleep.unmount();
 
   const shutdown = harness(new Map(), 'shutdown', oneActivation());
@@ -441,17 +441,19 @@ test('tile-activated shutdown runs once while disconnect-before-sleep stays disa
   shutdown.unmount();
 });
 
-test('a legacy sleep intent offers no confirmation or dispatch', async () => {
+test('sleep intent offers the guarded route and still requires confirmation outside direct tile activation', async () => {
   const h = harness(new Map(), 'sleep');
   await settle();
   assert.equal(h.calls.length, 0);
   assert.equal(h.modals.length, 0);
-  assert.equal(h.button().props.disabled, true);
-  assert.match(JSON.stringify(h.tree), /Keep eGPU Connected/);
+  assert.equal(h.button().props.disabled, false);
+  assert.equal(h.button().props.children[0], 'Disconnect + Sleep');
+  h.click();
+  assert.equal(h.modals.at(-1).view.props.strOKButtonText, 'Disconnect and sleep');
   h.unmount();
 });
 
-test('every legacy sleep result remains disabled without another action', () => {
+test('sleep presents urgent unplug state and terminal refusal without another action', () => {
   const refused = (code) => ({ ...fresh, code: 'dock_power.request_unverified', ok: false,
     power_action: 'sleep', power_requested: false, software_down: true,
     request_id: 'request', suspend: { requested: false, code } });
@@ -459,10 +461,12 @@ test('every legacy sleep result remains disabled without another action', () => 
 
   for (const code of ['dock_power.suspend_inhibited', 'dock_power.suspend_timeout',
     'dock_power.root_required', 'dock_power.suspend_brand_new']) {
-    assert.match(view(refused(code)).message, /Keep eGPU Connected/);
+    assert.match(view(refused(code)).message, /handheld remains awake/);
     assert.equal(view(refused(code)).action, null);
-    assert.equal(view(refused(code)).label, 'Disconnect before sleep unavailable');
+    assert.equal(view(refused(code)).label, 'Disconnect + Sleep stopped');
   }
+  const unplug=view({...fresh,code:'dock_power.unplug_required',busy:true,ok:false,power_action:'sleep',software_down:true,unplug_required:true});
+  assert.equal(unplug.label,'Unplug eGPU now');assert.match(unplug.message,/verified physical absence/);
   // Nothing appended when there is no suspend record, or when it was accepted.
   assert.equal(suspendRefusal({ ...fresh }), '');
   assert.equal(suspendRefusal({ ...fresh, suspend: { requested: true, code: 'dock_power.suspend_request_accepted_unverified' } }), '');
@@ -499,4 +503,29 @@ test('unsubmitted recovery never overrides pending history or retries a submitte
  h.storage.set('regear.whole-dock.pending-request','disconnect_only:other');assert.equal(h.button(),undefined);
  h.storage.clear();h.execute=async()=>{throw Error('response lost');};h.click();await settle();
  assert.equal(h.calls.length,1);assert.equal(h.button(),undefined);h.poll();await settle();assert.equal(h.calls.length,1);assert.equal(h.button(),undefined);h.unmount();
+});
+
+test('consumed but unsent direct activation survives unmount and requires explicit retry',async()=>{
+ let state='available';
+ const activation=Object.assign(()=>{if(state!=='available')return false;state='consumed';return true;},{
+  state:()=>state,markSubmitted:()=>{if(state==='consumed')state='submitted';},
+ });
+ const paused=deferred();
+ const first=harness(new Map(),'disconnect_only',activation);
+ first.reads.push(paused.promise);
+ await settle();
+ assert.equal(state,'consumed');assert.equal(first.calls.length,0);
+ first.unmount();paused.resolve(fresh);await settle();
+ assert.equal(first.calls.length,0,'retired mount never dispatches its late freshness result');
+
+ const reopened=harness(first.storage,'disconnect_only',activation);
+ await settle();
+ assert.equal(reopened.calls.length,0,'remount never replays a consumed activation');
+ assert.match(reopened.render().props.children[0].props.children[0],/did not start. No request was sent/);
+ assert.equal(reopened.button().props.disabled,false);
+ reopened.click();await settle();
+ assert.equal(reopened.calls.length,1,'fresh explicit retry submits exactly once');
+ assert.equal(state,'submitted');assert.equal(reopened.button(),undefined);
+ reopened.poll();await settle();assert.equal(reopened.calls.length,1);
+ reopened.unmount();
 });

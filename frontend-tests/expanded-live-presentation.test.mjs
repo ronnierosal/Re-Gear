@@ -320,6 +320,15 @@ test('Y imported card resolves live original detail and withdraws unavailable or
  const previous=calls.length;props.tiles.performance=[];tree=app.render(props);
  assert.equal(calls.length,previous);assert.match(text(tree),/Status unavailable/);
 });
+test('empty Quick Access slots render as accessible outlines without visible copy',async()=>{
+ const app=await fixture(),storage=storageFixture();
+ storage.setItem('regear.command-center-layout.v1',JSON.stringify({version:2,quick:['empty:0']}));
+ const tree=app.render(prefsProps(storage));
+ const empty=card(tree,'empty:0');
+ assert.equal(empty.props['data-empty'],true);
+ assert.equal(empty.props['aria-label'],'Empty Quick Access slot. Press Y to add a button.');
+ assert.equal(text(empty),'');
+});
 test('hold Y moves draft only, B cancels, A places without dispatching the action',async()=>{
  const app=await fixture(),storage=storageFixture();let starts=0;
  const props={...prefsProps(storage),tiles:{quick:[{id:'disconnect',title:'Safe Disconnect',value:'Unknown',detail:''},auto('Off','')]},onDisconnect:()=>starts++};

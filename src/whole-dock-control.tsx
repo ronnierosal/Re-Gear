@@ -16,8 +16,15 @@ const panelId = (() => { try { return crypto.randomUUID().replaceAll("-", ""); }
 const pendingRecord = () => { try { return window.localStorage.getItem(pendingKey); } catch { return "storage-unavailable"; } };
 const pendingRequest = () => parsePendingRecord(pendingRecord())?.request;
 
+export type DirectStartRequest = (() => boolean) & {
+  state(): "available" | "consumed" | "submitted";
+  markSubmitted(): void;
+};
+const directStartState = (startRequest: boolean | (() => boolean) | DirectStartRequest | undefined) =>
+  typeof startRequest === "function" && "state" in startRequest ? startRequest.state() : null;
+
 /** Only confirmed clicks mutate. Reopening the menu recovers backend progress. */
-export function WholeDockControl({ readCurrentSnapshot, intent = "disconnect_only", startRequest }: { readCurrentSnapshot: () => any; intent?: DockIntent; startRequest?: boolean | (()=>boolean) }) {
+export function WholeDockControl({ readCurrentSnapshot, intent = "disconnect_only", startRequest }: { readCurrentSnapshot: () => any; intent?: DockIntent; startRequest?: boolean | (()=>boolean) | DirectStartRequest }) {
   const source = useRef(readCurrentSnapshot);
   source.current = readCurrentSnapshot;
   const currentIntent = useRef(intent);
@@ -26,7 +33,7 @@ export function WholeDockControl({ readCurrentSnapshot, intent = "disconnect_onl
   const [reading, setReading] = useState<any>(null);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
-  const [initialNotStarted, setInitialNotStarted] = useState(false);
+  const [initialNotStarted, setInitialNotStarted] = useState(directStartState(startRequest) === "consumed");
   const mounted = useRef(true);
   const pending = useRef(false);
   const uncertain = useRef(!!pendingRequest());
@@ -103,8 +110,10 @@ export function WholeDockControl({ readCurrentSnapshot, intent = "disconnect_onl
         }
         const request = crypto.randomUUID().replaceAll("-", "");
         window.localStorage.setItem(pendingKey, formatPendingRecord(intent, panelId, request));
+        if (typeof startRequest === "function" && "markSubmitted" in startRequest) startRequest.markSubmitted();
         uncertain.current = true;
         setNotice(action === "whole_dock_shutdown" ? "Shutdown request sent. Keep the cable connected; Gaming Mode may restart before shutdown."
+          : action === "whole_dock_sleep" ? "Disconnect started. Keep the cable connected until Re-Gear asks you to unplug it."
           : "Request sent. Keep the cable connected; Gaming Mode may restart.");
         const result = await execute(true, "", "disconnect", action, true, attachment, request);
         epoch.current++;
@@ -113,7 +122,10 @@ export function WholeDockControl({ readCurrentSnapshot, intent = "disconnect_onl
           window.localStorage.removeItem(pendingKey); uncertain.current = false;
         }
       } catch {
-        if (mounted.current) setNotice("The reply was interrupted. Waiting for backend progress; no retry was sent.");
+        if (mounted.current) {
+          if (directStartState(startRequest) === "consumed" && !pendingRequest()) setInitialNotStarted(true);
+          else setNotice("The reply was interrupted. Waiting for backend progress; no retry was sent.");
+        }
       } finally { pending.current = false; if (mounted.current) setBusy(false); }
     };
     // One press. `direct` is set only when a named tile activated this mount:
@@ -124,10 +136,11 @@ export function WholeDockControl({ readCurrentSnapshot, intent = "disconnect_onl
     // selector inside the Safe Disconnect detail passes no startRequest, so a
     // route chosen from a dropdown still confirms before anything happens.
     if(direct) { void run(); return; }
-    modal.current = showModal(<EgpuConfirmModal strTitle={action === "whole_dock_shutdown" ? "Disconnect the dock and shut down?" : "Disconnect the dock in software?"}
+    modal.current = showModal(<EgpuConfirmModal strTitle={action === "whole_dock_shutdown" ? "Disconnect the dock and shut down?" : action === "whole_dock_sleep" ? "Disconnect, unplug, and sleep?" : "Disconnect the dock in software?"}
       strDescription={action === "whole_dock_shutdown" ? "Re-Gear will disconnect the dock in software, verify the result, then request shutdown. The TV will turn off and Gaming Mode may restart first. Save your work and keep the cable connected. Shutdown is not yet hardware-verified; this is not permission to unplug."
+        : action === "whole_dock_sleep" ? "Re-Gear will return to the handheld and disconnect the eGPU in software. Keep the cable connected until the urgent unplug prompt appears. Sleep starts only after physical absence is verified."
         : "The TV will turn off and Gaming Mode may restart. Keep the dock cable connected for this trial. This is not permission to unplug."}
-      strOKButtonText={action === "whole_dock_shutdown" ? "Disconnect and shut down" : "Disconnect"} strCancelButtonText="Cancel"
+      strOKButtonText={action === "whole_dock_shutdown" ? "Disconnect and shut down" : action === "whole_dock_sleep" ? "Disconnect and sleep" : "Disconnect"} strCancelButtonText="Cancel"
       className="rg-whole-dock-confirm" bDestructiveWarning onOK={() => { void run(); }} onCancel={cancel} onEscKeypress={cancel}>
       <style>{`.rg-whole-dock-confirm{z-index:2147483647!important;position:fixed!important;left:50%!important;top:50%!important;right:auto!important;bottom:auto!important;margin:0!important;transform:translate(-50%,-50%)!important}`}</style>
     </EgpuConfirmModal>, undefined, { fnOnClose: cancel, bNeverPopOut: true });
@@ -139,8 +152,10 @@ export function WholeDockControl({ readCurrentSnapshot, intent = "disconnect_onl
       if (!mounted.current || !view.action || pending.current || uncertain.current || pendingRequest()) return;
       setInitialNotStarted(false);
       confirm(true,reading);
-    }}>Safe Disconnect</DialogButton>}
+    }}>{intent === "sleep" ? "Disconnect + Sleep" : intent === "shutdown" ? "Disconnect + Shutdown" : "Safe Disconnect"}</DialogButton>}
     {!startRequest && <DialogButton style={{width:"100%",minWidth:0,padding:"8px",border:"1px solid #39d8ff",borderRadius:8,background:"#112434",color:"#f4f7fb"}} disabled={!view.action || busy || uncertain.current} onClick={()=>confirm()}>{busy ? "Working…" : uncertain.current ? "Checking previous request" : view.label}</DialogButton>}
-    <p style={{margin:"8px 0 0"}}>Keep the cable connected. Physical unplug is not yet verified.</p>
+    <p style={{margin:"8px 0 0"}}>{intent === "sleep" && reading?.status?.code === "dock_power.unplug_required"
+      ? "Unplug only after this prompt appears. Sleep waits for verified physical absence."
+      : "Keep the cable connected. Physical unplug is not yet verified."}</p>
   </div>;
 }
