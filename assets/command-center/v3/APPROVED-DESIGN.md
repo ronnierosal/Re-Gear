@@ -4,6 +4,22 @@ Status: APPROVED by project owner on 2026-09-21.
 
 This supersedes the rejected V2 experiment from PR #362.
 
+## Canonical visual reference
+
+[`APPROVED-BUTTON-ASSETS-V3.jpg`](APPROVED-BUTTON-ASSETS-V3.jpg) is the exact
+project-owner-supplied V3 review sheet. Its SHA-256 is
+`7a8c0c5fea0bccd5d4207e9741c76d25eaf1b2a0bf9d0e5774fba866da2326a4`.
+
+Treat that image as immutable visual acceptance evidence. Do not redraw,
+reinterpret, simplify, substitute, recolor, or add another veil over its tile
+artwork. The individual production assets must visibly match the corresponding
+numbered tile in this sheet at the Ally viewport.
+
+The current files under `tiles/` are implementation candidates, not proof of a
+visual match. Several use symbols from the lightweight `button-artwork.svg`
+fallback set. Do not describe all 37 tiles as visually accepted until an
+installed same-viewport comparison against this sheet passes.
+
 ## Locked presentation
 
 - 240×144 landscape tile composition.
@@ -61,6 +77,6 @@ more
 
 Do not use PR #362 assets as the production presentation.
 
-The approved V3 PNG review sheet is the visual reference. Production artwork should be exported as clean per-tile assets (no sample text/value baked in), then wired through the control registry.
+The checked-in approved V3 review sheet is the visual reference. Production artwork should be exported as clean per-tile assets (no sample text/value baked in), then wired through the control registry.
 
 Codex should implement one representative dynamic tile (FPS) and one direct action (Safe Disconnect) first, validate on Ally, then roll the component across the remaining registry.
