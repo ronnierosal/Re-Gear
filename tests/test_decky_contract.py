@@ -263,15 +263,20 @@ class DeckyContractTests(unittest.TestCase):
         production composition rather than the retired legacy launcher.
         """
         source = (ROOT / "src" / "quick-access" / "expanded-command-center" / "native.tsx").read_text(encoding="utf-8")
-        # Safe Disconnect and shutdown share the verified owner. Normal sleep
-        # stays connected and uses the separate power coordinator.
+        # Safe Disconnect, physical-unplug sleep, and shutdown share the
+        # verified owner. The owner distinguishes an activation consumed by a
+        # mount from a request durably admitted for submission.
         press = source[source.index('  function disconnect(intent: DockIntent = "disconnect_only") {'):source.index("  function View(")]
         self.assertIn("if(stopped||operation||!modal) return", press)
         self.assertLess(press.index("if(stopped||operation||!modal)"), press.index("showModal("))
-        self.assertIn("if(consumed)return false;consumed=true;return true", press)
+        self.assertIn('"available"|"consumed"|"submitted"', press)
+        self.assertIn('if(startState!=="available")return false', press)
+        self.assertIn('startState="consumed"', press)
+        self.assertIn('markSubmitted:', press)
+        self.assertIn('startState="submitted"', press)
+        self.assertLess(press.index('startState="consumed"'), press.index("showModal("))
         self.assertIn("intent={intent}", press)
-        self.assertIn('requestSleepConnected()', source)
-        self.assertNotIn('disconnect("sleep")', source)
+        self.assertIn('disconnect("sleep")', source)
         self.assertIn('disconnect("shutdown")', source)
         self.assertIn("startRequest={startRequest}", press)
         self.assertIn("operationGeneration!==operationToken", press)

@@ -359,6 +359,11 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
       ...(native?{preferredFocus:item.id===restoreTarget(items.map(tile=>tile.id),memory.current[tab]),onGamepadFocus:()=>{memory.current[tab]=item.id;const target=panel.current?.querySelector<HTMLElement>(`[data-ec-control="${item.id}"]`);if(target){if(tab==="settings")reveal(target);else target.scrollIntoView({block:'nearest'});}}}:{}),
       'aria-label':`${editMode==="move"?'Move button. A to place. ':''}${item.title}: ${item.value}. ${item.detail}.${synthetic?' Sample data. ':''}${unavailableActions[original.tile.id]?unavailableActions[original.tile.id]:original.tile.id==='disconnect'&&onDisconnect?'Start guarded disconnect.':hasTileDetails(item)?'View details.':''}`,
       onFocus:(event:{target:EventTarget})=>{memory.current[tab]=item.id;(event.target as HTMLElement).scrollIntoView({block:'nearest'});},onClick:activate};
+    // Empty Quick Access positions stay focusable so Y can add a control, but
+    // their visible treatment is only the existing outlined card geometry.
+    // Keep the instruction in the accessible name instead of repeating it in
+    // every unused slot.
+    if(item.empty) return <Button {...buttonProps} aria-label="Empty Quick Access slot. Press Y to add a button."/>;
     if(original.tile.id==='fps'){
       const current=/^\s*(\d+(?:\.\d+)?)\s*FPS\b/i.exec(item.value)?.[1];
       const target=/\btarget\s+(\d+(?:\.\d+)?)\b/i.exec(item.detail)?.[1];

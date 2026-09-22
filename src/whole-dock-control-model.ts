@@ -30,6 +30,7 @@ const sleepRefusals: Record<string, string> = {
   "dock_power.sleep_cycle_failed": "Sleep was requested but the handheld did not complete a sleep cycle.",
   "dock_power.sleep_cycle_unresolved": "Sleep was requested; whether the handheld slept could not be determined.",
   "dock_power.request_unverified": "The system did not accept the sleep request.",
+  "dock_power.unplug_request_expired": "The eGPU was not unplugged before the guarded request expired.",
 };
 /** Why a suspend submission was refused. The backend carries the category on
  * `suspend.code`; without it every refusal reads the same and the cause is
@@ -227,10 +228,27 @@ export function dockIntentControl(status: any, snapshot: any, intent: DockIntent
       message: view.message };
   }
   if (intent === "sleep") {
+    if (sleepObserved(status)) return { action: null, label: "Sleep cycle observed",
+      message: "The eGPU was removed and the handheld completed the requested sleep cycle." };
+    if (status?.schema_version === 1 && status.power_action === "sleep"
+        && status.software_down === true && status.unplug_required === true && status.busy === true) {
+      return { action: null, label: "Unplug eGPU now",
+        message: "Unplug the eGPU cable now. Re-Gear will wait for verified physical absence, then put the handheld to sleep." };
+    }
+    if (status?.schema_version === 1 && status.busy === false && status.ok === false
+        && (Object.hasOwn(sleepRefusals, status.code) || shutdownTeardownRefusals.has(status.code))) {
+      return { action: null, label: "Disconnect + Sleep stopped",
+        message: `${sleepRefusals[status.code] ?? "The dock disconnect could not be completed."} The handheld remains awake.` };
+    }
+    if (snapshot?.schema_version !== 3) return { action: null, label: "Disconnect + Sleep unavailable",
+      message: "Current system status is unavailable. Refresh before continuing." };
+    const view = dockControl(status, snapshot, now);
     return {
-      action: null,
-      label: "Disconnect before sleep unavailable",
-      message: "Use Sleep — Keep eGPU Connected. Re-Gear will not disconnect the dock before sleep.",
+      action: view.action === "whole_dock_disconnect" ? "whole_dock_sleep" : null,
+      label: view.action === "whole_dock_disconnect" ? "Disconnect + Sleep" : view.label,
+      message: view.action === "whole_dock_disconnect"
+        ? "Return to the handheld, disconnect the eGPU in software, then unplug it when Re-Gear asks. Sleep starts only after physical absence is verified."
+        : view.message,
     };
   }
   if (intent !== "shutdown") return { action: null, label: "Action unavailable", message: "This action is not supported." };
