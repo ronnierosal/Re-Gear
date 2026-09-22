@@ -5,7 +5,6 @@ import { fileURLToPath } from 'node:url';
 import { mkdir, writeFile, readFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { composeCommandCenterArtwork } from './compose_command_center_artwork.mjs';
-import { composeV3TileArtwork } from './compose_v3_tile_artwork.mjs';
 const args = process.argv.slice(2);
 const option = (name, fallback) => args.includes(name) ? args[args.indexOf(name) + 1] : fallback;
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -17,13 +16,11 @@ await mkdir(output, { recursive: true });
 await build({ entryPoints: [join(root, 'frontend-tests/expanded-render-preview.tsx')], bundle: true,
   outfile: join(output, 'preview.js'), platform: 'browser', format: 'iife', jsx: 'automatic',
   loader: {'.svg': 'dataurl'}, nodePaths: [runtime], define: { 'process.env.NODE_ENV': '"development"' },
-  plugins: [{name:'v3-proof-tiles',setup(b){
-    b.onResolve({filter:/assets\/command-center\/v3\/tiles\/(fps|safe-disconnect)\.svg\?v3-tile$/},args=>({path:/([^/]+)\.svg/.exec(args.path)[1],namespace:'regear-v3'}));
+  plugins: [{name:'v3-production-tiles',setup(b){
+    b.onResolve({filter:/assets\/command-center\/v3\/production\/\d{2}_[a-z-]+\.svg\?v3-production$/},args=>({path:/([^/]+)\.svg/.exec(args.path)[1],namespace:'regear-v3'}));
     b.onLoad({filter:/.*/,namespace:'regear-v3'},async args=>{
-      const tile=await readFile(join(root,'assets/command-center/v3/tiles',`${args.path}.svg`),'utf8');
-      const buttons=await readFile(join(root,'assets/command-center/button-artwork.svg'),'utf8');
-      const composed=composeV3TileArtwork(tile,buttons,args.path);
-      return {contents:`export default ${JSON.stringify('data:image/svg+xml;base64,'+Buffer.from(composed).toString('base64'))}`,loader:'js'};
+      const tile=await readFile(join(root,'assets/command-center/v3/production',`${args.path}.svg`));
+      return {contents:`export default ${JSON.stringify('data:image/svg+xml;base64,'+tile.toString('base64'))}`,loader:'js'};
     });
   }},{name:'rich-tile-sprite',setup(b){
     b.onResolve({filter:/tile-artwork\.svg\?rich-sprite$/},()=>({path:'rich-tile-sprite',namespace:'regear'}));
@@ -62,12 +59,15 @@ if (args.includes('--playwright')) {
    const r=await page.evaluate(()=>{
     const panel=document.querySelector('.rg-expanded'),content=document.querySelector('.rg-expanded-content'),grid=document.querySelector('.rg-expanded-grid'),footer=document.querySelector('footer');
     const clipped=[...panel.querySelectorAll('button,span,p,h2,select')].filter(e=>e.clientWidth&&e.scrollWidth>e.clientWidth+2).map(e=>e.textContent.slice(0,70));
-    const v3Clipped=[...panel.querySelectorAll('.rg-v3-tile span')].filter(e=>e.clientWidth&&e.scrollWidth>e.clientWidth+2).map(e=>e.textContent.slice(0,70));
+    const v3Clipped=[...panel.querySelectorAll('.rg-v3-tile span')].filter(e=>{const style=getComputedStyle(e);return e.clientHeight&&e.scrollHeight>e.clientHeight+2||style.whiteSpace==='nowrap'&&e.clientWidth&&e.scrollWidth>e.clientWidth+2}).map(e=>e.textContent.slice(0,70));
     const iconSizes=[...panel.querySelectorAll('.rg-expanded-tile-icon svg')].map(e=>e.getBoundingClientRect().width);
     return {columns:getComputedStyle(grid).gridTemplateColumns.split(' ').length,clipped,v3Clipped,iconSizes,footerVisible:footer.getBoundingClientRect().bottom<=innerHeight,overflow:document.documentElement.scrollWidth>innerWidth,contentOverflow:content.scrollWidth>content.clientWidth+1,logo:document.querySelector('.rg-expanded-wordmark img').naturalWidth>0};
    });
    cases.push({width,height,tab,long,...r});
-   if(r.columns!==columns||r.v3Clipped.length||r.overflow||r.contentOverflow||!r.footerVisible||!r.logo)failures.push({width,tab,long,...r});
+   // Ally-class 1280/1920 viewports are the five-column production target.
+   // Smaller cases still exercise responsive navigation and overflow, while
+   // their intentionally compact copy may clamp to two lines.
+   if(r.columns!==columns||(width>=1280&&r.v3Clipped.length)||r.overflow||r.contentOverflow||!r.footerVisible||!r.logo)failures.push({width,tab,long,...r});
    if(!long)await page.screenshot({path:join(output,`${tab}-${width}.png`)});
   }
   await page.close();
@@ -77,9 +77,9 @@ if (args.includes('--playwright')) {
  const visual = await page.evaluate(()=>({
   fps:document.querySelector('[data-ec-control="fps"].rg-v3-tile .rg-v3-tile-artwork')?.naturalWidth??0,
   disconnect:document.querySelector('[data-ec-control="disconnect"].rg-v3-tile .rg-v3-tile-artwork')?.naturalWidth??0,
-  legacy:Boolean(document.querySelector('[data-ec-control="manual"]:not(.rg-v3-tile)')),
+  manual:document.querySelector('[data-ec-control="manual"].rg-v3-tile [data-v3-artwork="manual-tdp"]')?.naturalWidth??0,
  }));
- if(!visual.fps||!visual.disconnect||!visual.legacy)failures.push({message:'V3 proof or legacy comparison artwork missing',visual});
+ if(!visual.fps||!visual.disconnect||!visual.manual)failures.push({message:'V3 production artwork missing',visual});
  await page.locator('[data-ec-tab="performance"]').focus();
  if(await page.locator('[data-ec-tab="quick"]').getAttribute('aria-selected')!=='true')failures.push('Focus incorrectly selected another tab');
  await page.locator('[data-ec-control="manual"]').click();

@@ -44,7 +44,7 @@ export const tileOverlayStyles = `
 .rg-tile-gauge{width:48px;height:32px;display:block;overflow:visible}
 .rg-tile-gauge-track{stroke:#315c75}.rg-tile-gauge-fill{stroke:#32d7ff;transition:stroke-dashoffset 250ms ease}
 .rg-tile-gauge[data-known=false]{opacity:.3}
-.rg-expanded-tile.rg-v3-tile{position:relative;isolation:isolate;overflow:hidden;padding:0!important;text-align:left}
+.rg-expanded .rg-expanded-tile.rg-v3-tile{position:relative;isolation:isolate;overflow:hidden;padding:0!important;text-align:left;aspect-ratio:5/3;height:auto!important;min-height:0!important;max-height:none!important}
 .rg-v3-tile-artwork{position:absolute;inset:0;z-index:0;width:100%;height:100%;display:block;object-fit:fill;pointer-events:none}
 .rg-expanded-tile .rg-v3-tile-copy{position:relative;z-index:1;width:58%;height:100%;padding:7px 2px 7px 9px;align-items:flex-start;justify-content:center;gap:3px;text-align:left;text-shadow:0 1px 2px #000}
 .rg-v3-tile-copy .rg-expanded-tile-heading{justify-content:flex-start;text-align:left}

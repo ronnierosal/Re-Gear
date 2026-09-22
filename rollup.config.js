@@ -1,7 +1,6 @@
 import deckyPlugin from "@decky/rollup";
 import { readFileSync } from "node:fs";
 import { composeCommandCenterArtwork } from "./scripts/compose_command_center_artwork.mjs";
-import { composeV3TileArtwork } from "./scripts/compose_v3_tile_artwork.mjs";
 
 const config = deckyPlugin({});
 // Bundle the repository attribution sources; no runtime file or network reads.
@@ -16,25 +15,33 @@ config.plugins.unshift({
   },
 });
 
-// Bundle only the two approved V3 proof tiles. The source SVGs retain their
-// shared button-artwork references; the bundle receives self-contained images.
-const v3ProofTiles = new Set(["fps", "safe-disconnect"]);
+// Bundle the owner-approved, self-contained V3 production family. The numbered
+// filenames are explicit so an arbitrary repository path can never become a
+// build-time or runtime asset read through this virtual module.
+const v3ProductionTiles = new Set([
+  "01_fps", "02_battery", "03_controller", "04_egpu", "05_display",
+  "06_performance", "07_manual-tdp", "08_auto-tdp", "09_handheld",
+  "10_safe-disconnect", "11_disconnect-sleep", "12_disconnect-shutdown",
+  "13_resolution", "14_refresh-rate", "15_storage", "16_wifi", "17_mic",
+  "18_record", "19_brightness", "20_volume", "21_offline-ready", "22_charging",
+  "23_temperature", "24_fan", "25_network", "26_game-ready", "27_player-order",
+  "28_audio-output", "29_gpu-load", "30_power-draw", "31_frametime", "32_memory",
+  "33_clock", "34_quick-access", "35_settings", "36_about", "37_more",
+]);
 config.plugins.unshift({
-  name: "re-gear-command-center-v3-proof",
+  name: "re-gear-command-center-v3-production",
   resolveId(source) {
     const normalized = source.replaceAll("\\", "/");
-    const match = /assets\/command-center\/v3\/tiles\/([a-z-]+)\.svg\?v3-tile$/.exec(normalized);
-    return match && v3ProofTiles.has(match[1]) ? `\0re-gear-command-center-v3:${match[1]}` : null;
+    const match = /assets\/command-center\/v3\/production\/(\d{2}_[a-z-]+)\.svg\?v3-production$/.exec(normalized);
+    return match && v3ProductionTiles.has(match[1]) ? `\0re-gear-command-center-v3-production:${match[1]}` : null;
   },
   load(id) {
-    const prefix = "\0re-gear-command-center-v3:";
+    const prefix = "\0re-gear-command-center-v3-production:";
     if (!id.startsWith(prefix)) return null;
     const name = id.slice(prefix.length);
-    if (!v3ProofTiles.has(name)) return null;
-    const tile = readFileSync(new URL(`./assets/command-center/v3/tiles/${name}.svg`, import.meta.url), "utf8");
-    const buttons = readFileSync(new URL("./assets/command-center/button-artwork.svg", import.meta.url), "utf8");
-    const composed = composeV3TileArtwork(tile, buttons, name);
-    return `export default ${JSON.stringify("data:image/svg+xml;base64," + Buffer.from(composed).toString("base64"))};`;
+    if (!v3ProductionTiles.has(name)) return null;
+    const tile = readFileSync(new URL(`./assets/command-center/v3/production/${name}.svg`, import.meta.url));
+    return `export default ${JSON.stringify("data:image/svg+xml;base64," + tile.toString("base64"))};`;
   },
 });
 
