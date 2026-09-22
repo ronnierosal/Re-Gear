@@ -97,6 +97,25 @@ class RestoreResult(StrEnum):
     FAILED = "graphics_profile.restore_failed"
 
 
+class OriginalEvidence(StrEnum):
+    """What a restore established about the bytes it put back.
+
+    Deliberately not a boolean defaulting to True. The previous field claimed
+    an enrolled original had been restored on every path that restored nothing
+    at all, and inferred originalness from *missing* provenance -- the same
+    claim-by-default mistake the binding check exists to prevent. This starts
+    at NOT_ESTABLISHED and is only ever raised by positive evidence.
+    """
+
+    #: Nothing was restored, or nothing proves what was.
+    NOT_ESTABLISHED = "graphics_profile.original_not_established"
+    #: Restored, verified, and matching the digest this target was enrolled with.
+    ENROLLED_ORIGINAL = "graphics_profile.enrolled_original"
+    #: Restored, but knowably not the enrolled original: an explicitly chosen
+    #: older backup, or a recovery performed without usable provenance.
+    HISTORICAL_UNVERIFIED = "graphics_profile.historical_unverified"
+
+
 class LaunchDecision(StrEnum):
     """Whether the game may start. There is exactly one value."""
 
@@ -126,10 +145,15 @@ class RestoreOutcome:
     detail: str = ""
     backup: BackupRecord | None = None
     byte_identical: bool = False
-    #: Whether the bytes restored were the ones this target was enrolled with.
-    #: A caller explicitly choosing an older backup gets a truthful False here
-    #: rather than a claim that the player's original settings are back.
-    restored_enrolled_baseline: bool = True
+    #: What this outcome actually establishes about the restored bytes. Starts
+    #: at NOT_ESTABLISHED, including on every failed, deferred and
+    #: nothing-to-restore path, because those restored nothing to describe.
+    original_evidence: OriginalEvidence = OriginalEvidence.NOT_ESTABLISHED
+
+    @property
+    def restored_enrolled_original(self) -> bool:
+        """True only where the enrolled original was proven to be back."""
+        return self.original_evidence is OriginalEvidence.ENROLLED_ORIGINAL
 
 
 @dataclass(frozen=True, slots=True)
@@ -521,15 +545,36 @@ class GraphicsProfileService:
                 backup=chosen,
                 byte_identical=True,
             )
+        # Positive evidence only: a successful, verified restore of a record
+        # whose digest matches a trusted enrollment. Missing provenance, an
+        # empty enrolled digest and an explicitly chosen older backup are all
+        # absence of proof, and are reported as such.
+        proven = (
+            record is None
+            and enrolled is not None
+            and bool(enrolled.baseline_digest)
+            and chosen.digest == enrolled.baseline_digest
+        )
+        evidence = (
+            OriginalEvidence.ENROLLED_ORIGINAL
+            if proven
+            else OriginalEvidence.HISTORICAL_UNVERIFIED
+        )
+        detail = (
+            ""
+            if proven
+            else (
+                "restored a backup this session cannot match to the settings "
+                "this configuration was enrolled with; treat it as a historical "
+                "recovery, not as Restore My Settings"
+            )
+        )
         return RestoreOutcome(
             RestoreResult.RESTORED,
+            detail,
             backup=chosen,
             byte_identical=True,
-            restored_enrolled_baseline=(
-                enrolled is None
-                or not enrolled.baseline_digest
-                or chosen.digest == enrolled.baseline_digest
-            ),
+            original_evidence=evidence,
         )
 
     def stop_managing(

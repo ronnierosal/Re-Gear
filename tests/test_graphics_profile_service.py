@@ -41,6 +41,7 @@ from regear.delivery.graphics_profile_service import (  # noqa: E402
     GraphicsProfileService,
     LaunchDecision,
     ManagedKeyCatalog,
+    OriginalEvidence,
     RestoreResult,
 )
 from regear.domain.graphics_config_format import parse_document  # noqa: E402
@@ -508,7 +509,8 @@ class LostBaselineTests(ServiceTestCase):
         outcome = self.restore()
         self.assertIs(outcome.result, RestoreResult.RESTORED)
         self.assertTrue(outcome.byte_identical)
-        self.assertTrue(outcome.restored_enrolled_baseline)
+        self.assertIs(outcome.original_evidence, OriginalEvidence.ENROLLED_ORIGINAL)
+        self.assertTrue(outcome.restored_enrolled_original)
         self.assertEqual(self.config.read_bytes(), self.original)
 
     def test_an_explicitly_chosen_older_backup_is_reported_as_not_the_original(self):
@@ -521,8 +523,64 @@ class LostBaselineTests(ServiceTestCase):
         self.assertTrue(rotating)
         outcome = self.restore(record=rotating[-1], accept_player_edits=True)
         self.assertIs(outcome.result, RestoreResult.RESTORED)
-        self.assertFalse(outcome.restored_enrolled_baseline)
+        self.assertIs(outcome.original_evidence, OriginalEvidence.HISTORICAL_UNVERIFIED)
+        self.assertFalse(outcome.restored_enrolled_original)
         self.assertNotEqual(self.config.read_bytes(), self.original)
+
+    def test_no_non_restoring_result_claims_an_enrolled_original(self):
+        """Every path that restores nothing must establish nothing.
+
+        The field this replaces defaulted to True, so failure, deferral and
+        nothing-to-restore all reported that the player's original was back.
+        """
+        cases = {}
+
+        deferred = self.restore(run_state=GameRunState.RUNNING)
+        cases["deferred"] = (deferred, RestoreResult.DEFERRED)
+
+        empty = self.build_service(backups=BackupManager(self.base / "empty-store"))
+        nothing = empty.restore(PORTABLE, fixtures.GAME_CONFIG_DIR, GameRunState.NOT_RUNNING)
+        cases["nothing to restore"] = (nothing, RestoreResult.NOTHING_TO_RESTORE)
+
+        self.apply(PORTABLE)
+
+        # An edit conflict, while the store is still intact: the binding check
+        # runs before this one, so it has to be exercised first.
+        edited = self.config.read_bytes().replace(b"MasterVolume=0.8", b"MasterVolume=0.4")
+        self.config.write_bytes(edited)
+        cases["conflict"] = (self.restore(), RestoreResult.CONFLICT)
+
+        self.replacement_baseline()
+        cases["binding failure"] = (self.restore(), RestoreResult.FAILED)
+        cases["binding failure, override"] = (
+            self.restore(accept_player_edits=True),
+            RestoreResult.FAILED,
+        )
+
+        for label, (outcome, expected) in cases.items():
+            with self.subTest(case=label):
+                self.assertIs(outcome.result, expected)
+                self.assertIs(outcome.original_evidence, OriginalEvidence.NOT_ESTABLISHED)
+                self.assertFalse(outcome.restored_enrolled_original)
+                self.assertFalse(outcome.byte_identical)
+
+    def test_a_recovery_without_provenance_is_historical_not_my_settings(self):
+        # The record is gone, so nothing proves these bytes are the enrolled
+        # original -- even though the restore itself succeeds.
+        self.apply(PORTABLE)
+        (self.base / "state" / f"{self.identity()}.json").unlink()
+        outcome = self.restore(accept_player_edits=True)
+        self.assertIs(outcome.result, RestoreResult.RESTORED)
+        self.assertIs(outcome.original_evidence, OriginalEvidence.HISTORICAL_UNVERIFIED)
+        self.assertFalse(outcome.restored_enrolled_original)
+        self.assertIn("historical recovery", outcome.detail)
+
+    def test_a_corrupt_record_recovery_is_also_historical(self):
+        self.apply(PORTABLE)
+        (self.base / "state" / f"{self.identity()}.json").write_text("{bad", encoding="utf-8")
+        outcome = self.restore(accept_player_edits=True)
+        self.assertIs(outcome.result, RestoreResult.RESTORED)
+        self.assertIs(outcome.original_evidence, OriginalEvidence.HISTORICAL_UNVERIFIED)
 
     def test_a_first_enrollment_with_no_history_still_proceeds(self):
         outcome = self.apply(PORTABLE)

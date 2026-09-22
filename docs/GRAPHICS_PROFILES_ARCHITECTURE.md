@@ -134,8 +134,14 @@ Re-Gear did not make, unless the caller passes the explicit flag
 that says the player chose to discard them. That flag authorises discarding
 edits; it never authorises redefining what "the original" is, so the baseline
 binding is checked outside it. A caller may still restore an explicitly chosen
-older backup, but the outcome reports truthfully that what came back was not the
-enrolled original. `stop_managing` ends Re-Gear's
+older backup, and a recovery may still proceed where provenance is gone, but
+the outcome says exactly what it established. `original_evidence` starts at
+NOT_ESTABLISHED — on every failed, deferred and nothing-to-restore path — and is
+raised to ENROLLED_ORIGINAL only by positive evidence: a successful verified
+restore whose digest matches a trusted enrollment. Anything else that did put
+bytes back is HISTORICAL_UNVERIFIED, a recovery rather than Restore My Settings.
+Missing provenance is absence of proof, never proof of originalness; a boolean
+defaulting to true made exactly that mistake and is why this is typed. `stop_managing` ends Re-Gear's
 authorship without touching the file and without discarding the baseline: opt
 out and restore are separate acts, and neither is a blind overwrite.
 
