@@ -11,6 +11,7 @@ something to it". It performs no writes and follows no symlink out of the root.
 
 from __future__ import annotations
 
+import hashlib
 import re
 from dataclasses import dataclass
 from enum import StrEnum
@@ -37,6 +38,8 @@ class Runtime(StrEnum):
 class LocationProblem(StrEnum):
     NO_LIBRARY = "graphics_locator.no_library"
     NOT_INSTALLED = "graphics_locator.not_installed"
+    MANIFEST_CONTRADICTS = "graphics_locator.manifest_contradicts"
+    AMBIGUOUS_INSTALL = "graphics_locator.ambiguous_install"
     NO_PREFIX = "graphics_locator.no_prefix"
     CONFIG_ABSENT = "graphics_locator.config_absent"
     ESCAPES_ROOT = "graphics_locator.escapes_root"
@@ -56,8 +59,17 @@ class ConfigLocation:
 
     @property
     def identity(self) -> str:
-        """Stable identity for backups: app, runtime and file name."""
-        return f"{self.steam_app_id}.{self.runtime.value}.{self.config_path.name}"
+        """Stable identity for backups and provenance: this exact file.
+
+        AppID, runtime and basename are not enough. One game can hold several
+        files of the same name in different directories, and the same AppID can
+        be installed in two libraries; sharing an identity between them would
+        let one target's backup be restored over another's. The canonical
+        target path is therefore part of the identity, digested so the result
+        stays a safe filename.
+        """
+        target = hashlib.sha256(str(self.config_path).encode("utf-8")).hexdigest()[:32]
+        return f"{self.steam_app_id}.{self.runtime.value}.{target}"
 
 
 @dataclass(frozen=True, slots=True)
@@ -118,21 +130,48 @@ class GraphicsConfigLocator:
         return tuple(roots)
 
     def install_directory(self, steam_app_id: str) -> tuple[Path, Path] | None:
-        """``(library_root, install_dir)`` for an installed AppID."""
+        """``(library_root, install_dir)`` for an installed AppID.
+
+        Kept for callers that only need the path. `locate` uses
+        `resolve_install` instead, which distinguishes "not installed" from
+        "the manifest disagrees with itself" and from "two libraries claim it".
+        """
+        install, problem = self.resolve_install(steam_app_id)
+        return install if problem is None else None
+
+    def resolve_install(
+        self, steam_app_id: str
+    ) -> tuple[tuple[Path, Path] | None, LocationProblem | None]:
+        """Find the one library that installs this AppID, or say why not.
+
+        A manifest is trusted only when its own contents agree with its name: a
+        file called `appmanifest_620.acf` that declares `"appid" "999999"` is
+        contradictory evidence, and picking either number would be a guess
+        about which one the player's Steam believes. Two libraries holding
+        manifests for the same AppID is ambiguity for the same reason.
+        """
         self._require_app_id(steam_app_id)
+        matches: list[tuple[Path, Path]] = []
         for library in self.library_roots():
             manifest = library / "steamapps" / f"appmanifest_{steam_app_id}.acf"
             text = self._read_small(manifest, MAX_VDF_BYTES)
             if text is None:
                 continue
             fields = dict(_quoted_pairs(text))
+            declared = fields.get("appid", "").strip()
+            if declared != steam_app_id:
+                return (None, LocationProblem.MANIFEST_CONTRADICTS)
             name = fields.get("installdir", "")
-            if not name or "/" in name or name in ("..", "."):
-                continue
+            if not name or "/" in name or "\\" in name or name in ("..", "."):
+                return (None, LocationProblem.MANIFEST_CONTRADICTS)
             install = library / "steamapps" / "common" / name
             if install.is_dir():
-                return (library, install)
-        return None
+                matches.append((library, install))
+        if not matches:
+            return (None, LocationProblem.NOT_INSTALLED)
+        if len(matches) > 1:
+            return (None, LocationProblem.AMBIGUOUS_INSTALL)
+        return (matches[0], None)
 
     def compat_prefix(self, steam_app_id: str, library: Path) -> Path | None:
         """The Proton prefix directory for an AppID, if one exists."""
@@ -157,9 +196,10 @@ class GraphicsConfigLocator:
         self._require_app_id(steam_app_id)
         if adapter_for(config_filename) is None:
             return LocationOutcome(None, LocationProblem.NO_ADAPTER, config_filename)
-        found = self.install_directory(steam_app_id)
+        found, problem = self.resolve_install(steam_app_id)
         if found is None:
-            return LocationOutcome(None, LocationProblem.NOT_INSTALLED, steam_app_id)
+            assert problem is not None
+            return LocationOutcome(None, problem, steam_app_id)
         library, install = found
         prefix = self.compat_prefix(steam_app_id, library)
         if prefix is not None:

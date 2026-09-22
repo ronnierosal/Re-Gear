@@ -6,9 +6,18 @@ bytes. Backups are bounded per configuration identity and pruned oldest-first,
 because an unbounded backup directory on a handheld is a disk-full bug waiting
 for a long play session.
 
+One backup is different from the others: the first capture for a target is the
+*baseline*, the bytes as the player had them before Re-Gear ever wrote. Pruning
+never evicts it, and it is what Restore My Settings restores. Rotating the
+baseline out would leave "restore" meaning "go back to the previous Re-Gear
+profile", which is not what a player asking for their settings back means.
+
 Restoration is byte-for-byte. The digest recorded at backup time is verified
 before the restore and again after it; a backup that does not match its own
-digest is refused rather than written over a player's working file.
+digest is refused rather than written over a player's working file. Every
+filesystem call here is converted into BackupError: an unwritable backup
+directory must become a refused profile, never an exception escaping into a
+game launch.
 """
 
 from __future__ import annotations
@@ -43,6 +52,8 @@ class BackupRecord:
     digest: str
     size: int
     payload_name: str
+    #: The pre-management original. Exactly one per identity, never pruned.
+    baseline: bool = False
 
     def as_json(self) -> str:
         return json.dumps(
@@ -54,6 +65,7 @@ class BackupRecord:
                 "digest": self.digest,
                 "size": self.size,
                 "payload_name": self.payload_name,
+                "baseline": self.baseline,
             },
             sort_keys=True,
             separators=(",", ":"),
@@ -81,12 +93,22 @@ class BackupManager:
         return self._root
 
     def capture(self, identity: str, source: Path, mode: str) -> BackupRecord:
-        """Copy the file's current bytes into a new bounded backup."""
+        """Copy the file's current bytes into a new bounded backup.
+
+        The first capture for an identity becomes its baseline. Every
+        filesystem failure here -- an unwritable root, a root that is a regular
+        file, a permission error -- is a BackupError, so the caller can refuse
+        the profile instead of propagating an OSError.
+        """
         self._require_identity(identity)
         payload = self._read_source(source)
         with self._lock:
             directory = self._root / identity
-            directory.mkdir(parents=True, exist_ok=True)
+            try:
+                directory.mkdir(parents=True, exist_ok=True)
+            except OSError as error:
+                raise BackupError(f"backup directory is unusable: {error}") from error
+            existing = self._directory_records(directory)
             sequence = self._next_sequence(directory)
             token = secrets.token_hex(8)
             payload_name = f"{sequence:08d}.{token}{PAYLOAD_SUFFIX}"
@@ -98,6 +120,7 @@ class BackupManager:
                 digest=digest_of(payload),
                 size=len(payload),
                 payload_name=payload_name,
+                baseline=not any(item.baseline for item in existing),
             )
             self._write_atomic(directory / payload_name, payload)
             self._write_atomic(
@@ -107,14 +130,25 @@ class BackupManager:
             self._prune_locked(directory)
             return record
 
+    def baseline(self, identity: str) -> BackupRecord | None:
+        """The pre-management original for this target, if one was kept."""
+        for record in self.records(identity):
+            if record.baseline:
+                return record
+        return None
+
     def records(self, identity: str) -> tuple[BackupRecord, ...]:
         """Every readable backup for an identity, oldest first."""
         self._require_identity(identity)
         directory = self._root / identity
-        if not directory.is_dir():
-            return ()
+        try:
+            if not directory.is_dir():
+                return ()
+            listing = sorted(directory.glob(f"*{RECORD_SUFFIX}"))
+        except OSError as error:
+            raise BackupError(f"backup directory is unreadable: {error}") from error
         found: list[BackupRecord] = []
-        for path in sorted(directory.glob(f"*{RECORD_SUFFIX}")):
+        for path in listing:
             record = self._read_record(path)
             if record is not None:
                 found.append(record)
@@ -137,10 +171,24 @@ class BackupManager:
         return payload
 
     def restore(self, record: BackupRecord, destination: Path) -> bool:
-        """Put the backed-up bytes back, atomically, and verify byte equality."""
+        """Put the backed-up bytes back, atomically, and verify byte equality.
+
+        The record must name this destination. A digest proves a payload is
+        intact, not that it belongs to this file, and restoring one game's
+        configuration over another's is exactly the mistake a shared identity
+        would otherwise allow.
+        """
+        if record.source_path != str(destination):
+            raise BackupError(
+                "refusing to restore a backup taken from "
+                f"{record.source_path!r} onto {str(destination)!r}"
+            )
         payload = self.payload(record)
-        if destination.is_symlink():
-            raise BackupError("refusing to restore through a symlink")
+        try:
+            if destination.is_symlink():
+                raise BackupError("refusing to restore through a symlink")
+        except OSError as error:
+            raise BackupError(f"restore destination is unreadable: {error}") from error
         self._write_atomic(destination, payload)
         try:
             written = destination.read_bytes()
@@ -150,18 +198,27 @@ class BackupManager:
 
     def _next_sequence(self, directory: Path) -> int:
         highest = 0
-        for path in directory.glob(f"*{RECORD_SUFFIX}"):
+        try:
+            listing = list(directory.glob(f"*{RECORD_SUFFIX}"))
+        except OSError as error:
+            raise BackupError(f"backup directory is unreadable: {error}") from error
+        for path in listing:
             leading = path.name.split(".", 1)[0]
             if leading.isdigit():
                 highest = max(highest, int(leading))
         return highest + 1
 
     def _prune_locked(self, directory: Path) -> None:
-        records = sorted(
-            (record for record in self._directory_records(directory)),
-            key=lambda record: record.sequence,
-        )
-        for record in records[: max(0, len(records) - self._limit)]:
+        """Drop the oldest rotating copies, never the baseline.
+
+        The limit counts rotating copies only. A store at its limit evicts the
+        oldest of those; if the baseline were included in the rotation, the one
+        record a player's Restore My Settings depends on would be the first to
+        go.
+        """
+        records = sorted(self._directory_records(directory), key=lambda item: item.sequence)
+        rotating = [record for record in records if not record.baseline]
+        for record in rotating[: max(0, len(rotating) - self._limit)]:
             stem = record.payload_name[: -len(PAYLOAD_SUFFIX)]
             for suffix in (PAYLOAD_SUFFIX, RECORD_SUFFIX):
                 try:
@@ -173,7 +230,11 @@ class BackupManager:
 
     def _directory_records(self, directory: Path) -> list[BackupRecord]:
         found = []
-        for path in sorted(directory.glob(f"*{RECORD_SUFFIX}")):
+        try:
+            listing = sorted(directory.glob(f"*{RECORD_SUFFIX}"))
+        except OSError as error:
+            raise BackupError(f"backup directory is unreadable: {error}") from error
+        for path in listing:
             record = self._read_record(path)
             if record is not None:
                 found.append(record)
@@ -197,6 +258,7 @@ class BackupManager:
                 digest=str(value["digest"]),
                 size=int(value["size"]),
                 payload_name=str(value["payload_name"]),
+                baseline=bool(value.get("baseline", False)),
             )
         except (KeyError, TypeError, ValueError):
             return None
@@ -204,7 +266,7 @@ class BackupManager:
     @staticmethod
     def _read_source(source: Path) -> bytes:
         try:
-            if source.is_symlink():
+            if source.is_symlink():  # noqa: SIM102 - distinct refusal reasons
                 raise BackupError("refusing to back up through a symlink")
             if not source.is_file():
                 raise BackupError("configuration to back up is not a regular file")

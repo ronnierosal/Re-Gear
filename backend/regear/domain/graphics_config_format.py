@@ -22,9 +22,11 @@ from typing import Mapping, Sequence
 
 
 #: A managed key is addressed as ``Section/key``; the empty section is the
-#: preamble above the first header, addressed as ``/key``.
+#: preamble above the first header, addressed as ``/key``. Real section names
+#: contain slashes -- Unreal writes ``[/Script/Engine.GameUserSettings]`` -- so
+#: an address splits at its LAST slash, which a key can never contain.
 KEY_RE = re.compile(r"^[A-Za-z0-9_.\-]{1,64}$")
-SECTION_RE = re.compile(r"^[A-Za-z0-9_.\- ]{0,96}$")
+SECTION_RE = re.compile(r"^[A-Za-z0-9_./\- ]{0,96}$")
 SECTION_LINE_RE = re.compile(r"^\s*\[(?P<name>[^\]\r\n]*)\]\s*$")
 ENTRY_LINE_RE = re.compile(
     r"^(?P<lead>\s*)(?P<key>[A-Za-z0-9_.\-]{1,64})(?P<pre>\s*)=(?P<post>\s*)"
@@ -62,7 +64,7 @@ def address(section: str, key: str) -> str:
 
 
 def split_address(value: str) -> tuple[str, str]:
-    section, separator, key = value.partition("/")
+    section, separator, key = value.rpartition("/")
     if not separator or not KEY_RE.fullmatch(key) or not SECTION_RE.fullmatch(section):
         raise ValueError("configuration key address is invalid")
     return section, key

@@ -43,23 +43,44 @@ class BackupManagerTests(unittest.TestCase):
         self.manager.capture(self.identity, self.source, "portable")
         self.assertEqual(self.source.read_bytes(), before)
 
-    def test_backups_are_bounded_and_pruned_oldest_first(self):
-        for index in range(6):
+    def test_rotating_backups_are_bounded_and_pruned_oldest_first(self):
+        original = self.source.read_bytes()
+        self.manager.capture(self.identity, self.source, "portable")
+        for index in range(5):
             self.source.write_text(f"[G]\nk={index}\n", encoding="utf-8")
             self.manager.capture(self.identity, self.source, "portable")
         records = self.manager.records(self.identity)
-        self.assertEqual(len(records), 3)
-        self.assertEqual([record.sequence for record in records], [4, 5, 6])
+        # The limit bounds the rotating copies; the baseline is kept besides.
+        self.assertEqual([record.sequence for record in records], [1, 4, 5, 6])
+        self.assertEqual([record.baseline for record in records], [True, False, False, False])
+        self.assertEqual(self.manager.payload(records[0]), original)
         payloads = sorted((self.manager.root / self.identity).glob("*.bak"))
-        self.assertEqual(len(payloads), 3)
+        self.assertEqual(len(payloads), 4)
+
+    def test_the_baseline_survives_any_number_of_later_captures(self):
+        original = self.source.read_bytes()
+        self.manager.capture(self.identity, self.source, "portable")
+        for index in range(20):
+            self.source.write_text(f"[G]\nk={index}\n", encoding="utf-8")
+            self.manager.capture(self.identity, self.source, "tv_docked")
+        baseline = self.manager.baseline(self.identity)
+        self.assertIsNotNone(baseline)
+        self.assertEqual(self.manager.payload(baseline), original)
+
+    def test_exactly_one_baseline_is_ever_recorded(self):
+        for _ in range(4):
+            self.manager.capture(self.identity, self.source, "portable")
+        baselines = [record for record in self.manager.records(self.identity) if record.baseline]
+        self.assertEqual(len(baselines), 1)
+        self.assertEqual(baselines[0].sequence, 1)
 
     def test_identities_are_bounded_independently(self):
         other = "570.native.graphics.ini"
         for _ in range(4):
             self.manager.capture(self.identity, self.source, "portable")
             self.manager.capture(other, self.source, "tv_docked")
-        self.assertEqual(len(self.manager.records(self.identity)), 3)
-        self.assertEqual(len(self.manager.records(other)), 3)
+        self.assertEqual(len(self.manager.records(self.identity)), 4)
+        self.assertEqual(len(self.manager.records(other)), 4)
 
     def test_restore_puts_back_the_exact_bytes(self):
         original = self.source.read_bytes()

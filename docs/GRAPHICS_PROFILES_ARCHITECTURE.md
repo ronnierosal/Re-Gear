@@ -1,8 +1,10 @@
 # Automatic per-game graphics profiles — milestone 1 architecture
 
-Status: initial implementation owner draft (Claude, cloud session). Scope is the
-first adapter milestone only. Nothing here authorizes display, GPU, Gamescope,
-TDP or controller mutation, and nothing here is wired into the Command Center.
+Status: revision 2, after the primary review on PR #375. Canonical assignment
+and acceptance criteria are issue #374. Scope is the first adapter milestone
+only. Nothing here authorizes display, GPU, Gamescope, TDP or controller
+mutation, and nothing here is wired into the Command Center. Source research
+and its gaps are in [GRAPHICS PROFILES RESEARCH](GRAPHICS_PROFILES_RESEARCH.md).
 
 ## Problem
 
@@ -19,9 +21,18 @@ never "the game will not start".
 - **Managed keys only.** A profile names the exact keys it owns. Everything else
   in the file — unrelated settings, ordering, comments, unknown sections,
   trailing whitespace, line endings — survives a round trip byte-for-byte.
-- **Unknown schema means Advisor.** If the file's format, or a key inside it, is
-  not one this milestone understands, the outcome is advice to the player, not a
-  write. There is no "best effort" write path.
+- **Three support levels, and evidence decides.** 0 Unknown: the file's format,
+  schema or version is not one an adapter was written against, so Re-Gear says
+  nothing about its keys. 1 Advisor: the layout is recognised but some value is
+  not writable, so the player is told what to change. 2 Managed: schema, version
+  and every current value are recognised. Only Managed writes.
+- **The player's edits win.** Every managed write records the digest of exactly
+  the bytes it left behind. If the file no longer matches, someone else changed
+  it, and their newer choice is kept — on apply and on restore alike. There is
+  no silent rebaseline, and a file Re-Gear cannot prove it wrote is treated as
+  the player's.
+- **Restore means "my settings", not "the last profile".** The first capture for
+  a target is a pinned baseline that pruning never evicts.
 - **Never while the game is running.** Application requires an explicit
   not-running observation supplied by the caller. Absence of evidence is not
   evidence of absence: an unknown run state refuses.
@@ -36,12 +47,15 @@ never "the game will not start".
 
 | Layer | Module | Responsibility |
 | --- | --- | --- |
-| domain (pure) | `domain/graphics_profiles.py` | Profile, managed key, mode binding, support tier, and the pure planner that turns (document, profile) into a change plan |
+| domain (pure) | `domain/graphics_profiles.py` | Versioned profile, managed key, mode binding, support tier, and the pure planner |
 | domain (pure) | `domain/graphics_config_format.py` | The one text-configuration adapter: parse/render a key–value document with full fidelity, plus the adapter registry |
-| delivery (I/O) | `delivery/graphics_config_locator.py` | Steam library discovery, AppID → install dir, Proton prefix vs native configuration path |
-| delivery (I/O) | `delivery/graphics_backup.py` | Bounded, pruned, restorable backups |
+| domain (pure) | `domain/graphics_schema.py` | Schema identity, version and current-value evidence; the structural signature recorded with each write |
+| domain (pure) | `domain/graphics_game_adapter.py` | Semantic experience target → one game's own keys, from a declared table; and the resolver that turns an observed mode into a profile, or into nothing |
+| delivery (I/O) | `delivery/graphics_config_locator.py` | Steam library discovery, AppID → install dir, Proton prefix vs native path, manifest contradiction and ambiguity |
+| delivery (I/O) | `delivery/graphics_backup.py` | Bounded rotating backups plus a pinned, never-pruned baseline |
+| delivery (I/O) | `delivery/graphics_management_state.py` | Durable provenance: the digest Re-Gear last wrote, the baseline, the schema and profile versions |
 | delivery (I/O) | `delivery/graphics_config_store.py` | Atomic validated writes and verified read-back |
-| delivery (I/O) | `delivery/graphics_profile_service.py` | The sequence: discover → read → validate → backup → apply → verify → restore |
+| delivery (I/O) | `delivery/graphics_profile_service.py` | The sequence, the conflict policy, Stop Managing, Restore My Settings and the launch boundary |
 
 ### Why the format adapter is in `domain`
 
@@ -64,15 +78,41 @@ directory.
 ## The apply sequence
 
 ```
-discover  locate the configuration for AppID + mode           (read-only)
+discover  locate the configuration for AppID + mode; refuse a
+          contradictory or ambiguous manifest                 (read-only)
 read      load bytes, refuse symlinks and oversized files     (read-only)
-validate  parse with a registered adapter; unknown → advisor  (pure)
-backup    bounded copy of the exact current bytes             (write, new file)
+validate  parse, then assess schema id, version, required
+          keys and CURRENT values; anything short → Unknown   (pure)
+prove     compare the bytes against the digest Re-Gear last
+          wrote; a mismatch is the player's edit → conflict   (read-only)
+backup    bounded copy, pinning the first as the baseline     (write, new file)
 apply     render only managed-key changes, atomic replace     (write, replace)
 verify    re-read, re-parse, assert managed keys are the
           requested values and the unmanaged remainder is
           unchanged; on mismatch, restore the backup          (read + rollback)
+record    persist the digest just written, with the schema
+          and profile versions it was written under           (write, state)
 ```
+
+A rollback is itself guarded: before writing a backup back, the service checks
+that the bytes on disk are still the ones this attempt wrote. If something else
+changed the file in between, a stale backup would destroy that change, so the
+failure is reported without a rollback instead.
+
+`restore` restores the pinned baseline by default and refuses when the file
+holds edits Re-Gear did not make, unless the caller passes the explicit flag
+that says the player chose to discard them. `stop_managing` ends Re-Gear's
+authorship without touching the file and without discarding the baseline: opt
+out and restore are separate acts, and neither is a blind overwrite.
+
+## The launch boundary
+
+`prepare_for_launch` is the caller-visible entry point and returns ALLOWED
+always — for every apply outcome, every filesystem failure, and even an
+unexpected exception from an injected collaborator. That contract is tested
+through the entry point with real failures injected, not asserted from a
+docstring. There is no production launch hook, no polling and no process
+control in this milestone.
 
 `restore` is independently callable and restores the exact backed-up bytes.
 Byte-for-byte equality is the acceptance criterion for restore; the semantic
@@ -88,12 +128,29 @@ was about to be applied, a monotonic sequence and the SHA-256 of the bytes. The
 digest is what makes "restored byte-for-byte" checkable after the fact rather
 than assumed.
 
+## Semantic profiles, and what is never invented
+
+A profile is written in the vocabulary of `domain/mode_profiles.py` — an
+experience target per placement — and a game adapter translates that into the
+game's own keys using a table its author declared. Nothing derives, tunes or
+measures a value. An adapter with no entry for a placement offers no profile
+for it, which is exactly how Boosted Handheld behaves until somebody declares
+one; the vocabulary existing is not permission to guess a setting, because a
+guessed "optimal" value is a claim about hardware Re-Gear has not measured.
+
+The resolver consumes a stable observed mode supplied by whoever already owns
+mode observation. It reads no hardware, and an unrecognised placement selects
+nothing at all.
+
 ## Out of scope for this milestone
 
 eGPU, Gamescope, controller, Auto TDP and Command Center code are untouched. No
 UI, no RPC, no automatic triggering on a mode change, no second configuration
 format, no registry-backed profile catalog, no live game detection — the run
-state is an input, not something this code observes.
+state is an input, not something this code observes. Steam Cloud ordering
+remains an explicit unresolved production gate: filesystem atomicity cannot
+prove cloud or game cooperation, and Valve's documentation was unreachable from
+this session (see the research document).
 
 ## Provenance
 

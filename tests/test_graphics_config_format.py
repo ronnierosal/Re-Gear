@@ -9,6 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 sys.path.insert(0, str(ROOT / "tests"))
 
+import graphics_profile_fixtures as fixtures  # noqa: E402
 from graphics_profile_fixtures import SAMPLE_CONFIG  # noqa: E402
 from regear.domain.graphics_config_format import (  # noqa: E402
     ConfigFormatError,
@@ -31,9 +32,9 @@ class ParseAndRenderTests(unittest.TestCase):
 
     def test_values_are_addressed_by_section(self):
         values = parse_document(SAMPLE_CONFIG).values()
-        self.assertEqual(values["Display/ResolutionX"], "1280")
-        self.assertEqual(values["Graphics/TextureQuality"], "3")
-        self.assertEqual(values["Audio/MasterVolume"], "0.8")
+        self.assertEqual(values["ScalabilityGroups/sg.ResolutionQuality"], "100")
+        self.assertEqual(values[fixtures.TEXTURE], "3")
+        self.assertEqual(values[fixtures.MASTER_VOLUME], "0.8")
 
     def test_preamble_keys_use_the_empty_section(self):
         document = parse_document("solo=7\n[S]\nsolo=8\n")
@@ -42,8 +43,8 @@ class ParseAndRenderTests(unittest.TestCase):
 
     def test_only_the_named_key_changes(self):
         document = parse_document(SAMPLE_CONFIG)
-        rendered = document.with_values({"Graphics/TextureQuality": "1"}).render()
-        self.assertIn("TextureQuality=1\n", rendered)
+        rendered = document.with_values({fixtures.TEXTURE: "1"}).render()
+        self.assertIn("sg.TextureQuality=1\n", rendered)
         before = [line for line in SAMPLE_CONFIG.splitlines() if "TextureQuality" not in line]
         after = [line for line in rendered.splitlines() if "TextureQuality" not in line]
         self.assertEqual(before, after)
@@ -55,12 +56,12 @@ class ParseAndRenderTests(unittest.TestCase):
 
     def test_last_duplicate_wins_and_earlier_one_is_untouched(self):
         document = parse_document(SAMPLE_CONFIG)
-        rendered = document.with_values({"Graphics/ShadowQuality": "0"}).render()
+        rendered = document.with_values({fixtures.SHADOW: "0"}).render()
         occurrences = [
-            line for line in rendered.splitlines() if line.startswith("ShadowQuality")
+            line for line in rendered.splitlines() if line.startswith("sg.ShadowQuality")
         ]
-        self.assertEqual(occurrences, ["ShadowQuality = 2", "ShadowQuality = 0"])
-        self.assertEqual(parse_document(rendered).get("Graphics/ShadowQuality"), "0")
+        self.assertEqual(occurrences, ["sg.ShadowQuality = 2", "sg.ShadowQuality = 0"])
+        self.assertEqual(parse_document(rendered).get(fixtures.SHADOW), "0")
 
     def test_writing_an_absent_key_is_refused(self):
         document = parse_document(SAMPLE_CONFIG)
@@ -88,9 +89,9 @@ class ParseAndRenderTests(unittest.TestCase):
 
     def test_remainder_excludes_managed_keys(self):
         document = parse_document(SAMPLE_CONFIG)
-        remainder = unmanaged_remainder(document, ("Graphics/TextureQuality",))
-        self.assertNotIn("Graphics/TextureQuality", remainder)
-        self.assertIn("Audio/MasterVolume", remainder)
+        remainder = unmanaged_remainder(document, (fixtures.TEXTURE,))
+        self.assertNotIn(fixtures.TEXTURE, remainder)
+        self.assertIn(fixtures.MASTER_VOLUME, remainder)
 
 
 class AdapterRegistryTests(unittest.TestCase):
@@ -104,10 +105,16 @@ class AdapterRegistryTests(unittest.TestCase):
 
     def test_addresses_are_validated(self):
         self.assertEqual(split_address("Graphics/Shadow"), ("Graphics", "Shadow"))
+        # A section name may contain slashes; the split is at the last one,
+        # because Unreal writes [/Script/Engine.GameUserSettings].
+        self.assertEqual(
+            split_address("/Script/Engine.GameUserSettings/sg.TextureQuality"),
+            ("/Script/Engine.GameUserSettings", "sg.TextureQuality"),
+        )
         with self.assertRaises(ValueError):
             split_address("Graphics")
         with self.assertRaises(ValueError):
-            split_address("Graph/ics/Shadow")
+            split_address("Graphics/has a space")
 
 
 if __name__ == "__main__":

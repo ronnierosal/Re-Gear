@@ -20,13 +20,19 @@ from enum import StrEnum
 from typing import Mapping
 
 from .graphics_config_format import ConfigDocument, KEY_RE, split_address
+from .graphics_schema import SchemaAssessment
 from .models import OperatingMode
 
 
-#: The modes a profile may bind. Boosted handheld, unknown and degraded are
-#: deliberately absent: this milestone changes settings for the two placements a
-#: player explicitly recognizes, and an unknown placement must never select one.
-SUPPORTED_MODES = (OperatingMode.PORTABLE, OperatingMode.TV_DOCKED)
+#: The modes a profile may bind. Unknown and degraded are deliberately absent:
+#: an unrecognised placement must never select settings for a player. Boosted
+#: handheld is bindable, but only where a game adapter declares a translation
+#: for it -- the vocabulary existing is not permission to invent values.
+SUPPORTED_MODES = (
+    OperatingMode.PORTABLE,
+    OperatingMode.BOOSTED_HANDHELD,
+    OperatingMode.TV_DOCKED,
+)
 
 VALUE_RE = re.compile(r"^[^\r\n\x00]{0,256}$")
 MAX_MANAGED_KEYS = 32
@@ -39,8 +45,16 @@ class ValueKind(StrEnum):
 
 
 class SupportTier(StrEnum):
-    MANAGED = "managed"
+    """Support level 0, 1 and 2, in the assignment's vocabulary.
+
+    UNKNOWN is not a degenerate ADVISOR: Advisor means Re-Gear knows what to
+    tell the player to change, Unknown means it does not even recognise the
+    file. Both write nothing; only one can give advice.
+    """
+
+    UNKNOWN = "unknown"
     ADVISOR = "advisor"
+    MANAGED = "managed"
 
 
 class PlanRefusal(StrEnum):
@@ -49,6 +63,8 @@ class PlanRefusal(StrEnum):
     KEY_ABSENT = "graphics_profile.key_absent"
     VALUE_REJECTED = "graphics_profile.value_rejected"
     MODE_UNSUPPORTED = "graphics_profile.mode_unsupported"
+    SCHEMA_UNRECOGNISED = "graphics_profile.schema_unrecognised"
+    CURRENT_VALUE_UNSUPPORTED = "graphics_profile.current_value_unsupported"
 
 
 @dataclass(frozen=True, slots=True)
@@ -101,16 +117,25 @@ class ManagedKey:
 
 @dataclass(frozen=True, slots=True)
 class GraphicsProfile:
-    """The settings one game should have in one mode."""
+    """The settings one game should have in one mode.
+
+    A profile is versioned and bound to a schema. Both travel with every write
+    Re-Gear records, so a profile written by an older Re-Gear against an older
+    game layout is recognisable as such later rather than assumed compatible.
+    """
 
     steam_app_id: str
     mode: OperatingMode
     config_filename: str
     settings: Mapping[str, str]
+    profile_version: int = 1
+    schema_id: str = ""
 
     def __post_init__(self) -> None:
         if not re.fullmatch(r"[1-9][0-9]{0,9}", self.steam_app_id):
             raise ValueError("graphics profile Steam AppID is invalid")
+        if not isinstance(self.profile_version, int) or self.profile_version < 1:
+            raise ValueError("graphics profile version is invalid")
         if self.mode not in SUPPORTED_MODES:
             raise ValueError("graphics profile mode is not supported")
         if not self.config_filename or "/" in self.config_filename:
@@ -146,12 +171,18 @@ def plan_application(
     document: ConfigDocument,
     profile: GraphicsProfile,
     managed_keys: Mapping[str, ManagedKey],
+    schema: SchemaAssessment | None = None,
 ) -> ProfilePlan:
     """Decide, purely, what this profile would change in this document.
 
-    Any single key that is absent or holds a rejected value drops the whole
-    profile to Advisor. Applying the half that happens to be valid would leave
-    the game in a combination the player never chose and Re-Gear cannot name.
+    The schema assessment comes first. Without a matched schema the support
+    level is UNKNOWN and no advice is offered about individual keys, because an
+    unrecognised file is one whose keys Re-Gear cannot claim to understand.
+
+    After that, any single key that is absent or holds a rejected value drops
+    the whole profile to Advisor. Applying the half that happens to be valid
+    would leave the game in a combination the player never chose and Re-Gear
+    cannot name.
     """
     if profile.mode not in SUPPORTED_MODES:
         return ProfilePlan(
@@ -159,7 +190,19 @@ def plan_application(
             {},
             (),
             ((profile.config_filename, PlanRefusal.MODE_UNSUPPORTED),),
-            ("Re-Gear only adjusts graphics settings for Portable and TV Docked.",),
+            ("Re-Gear only adjusts graphics settings for placements it recognises.",),
+        )
+    if schema is None or not schema.matched:
+        detail = schema.detail if schema is not None else "no schema was assessed"
+        return ProfilePlan(
+            SupportTier.UNKNOWN,
+            {},
+            (),
+            ((profile.config_filename, PlanRefusal.SCHEMA_UNRECOGNISED),),
+            (
+                "Re-Gear does not recognise this game's configuration layout "
+                f"({detail}); change these settings in the game itself.",
+            ),
         )
     present = document.values()
     changes: dict[str, str] = {}
@@ -178,6 +221,15 @@ def plan_application(
             advice.append(
                 f"{key_address}: set this to {requested!r} in the game's own "
                 "settings; Re-Gear does not add keys a game never wrote."
+            )
+            continue
+        if not definition.accepts(present[key_address]):
+            # The file holds something this adapter cannot describe. Rewriting
+            # it would discard a value Re-Gear never understood.
+            refusals.append((key_address, PlanRefusal.CURRENT_VALUE_UNSUPPORTED))
+            advice.append(
+                f"{key_address}: currently {present[key_address]!r}, which Re-Gear "
+                "does not recognise, so it will not be replaced."
             )
             continue
         if present[key_address] == requested:
