@@ -61,7 +61,7 @@ export function DynamicTile({ reading, gauge = false, ...props }: Omit<TileProps
   const previousProgress = useRef<number | null>(null);
   const interpolate = view.progress !== null && previousProgress.current !== null;
   useEffect(() => { previousProgress.current = view.progress; }, [view.progress]);
-  return <ReGearTile {...props} unavailable={props.unavailable || reading.availability === 'unavailable'}>
+  return <ReGearTile {...props} unavailable={props.unavailable}>
     <span className="rg-expanded-value">{view.primary}{view.unit && <> {view.unit}</>}</span>
     {view.secondary && <span className="rg-tile-metadata">{view.secondary}</span>}
     {view.status && <span className="rg-tile-metadata">{view.status}</span>}
