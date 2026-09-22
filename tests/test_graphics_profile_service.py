@@ -474,6 +474,56 @@ class LostBaselineTests(ServiceTestCase):
         self.assertIs(outcome.result, ApplyResult.FAILED)
         self.assertIn("not the one this target was enrolled with", outcome.detail)
 
+    def replacement_baseline(self):
+        """Wipe the store, then capture a valid backup of the MANAGED bytes."""
+        identity = self.identity()
+        shutil.rmtree(self.backups.root / identity)
+        self.backups.capture(identity, self.config, "portable")
+        self.assertTrue(self.backups.baseline(identity).verified)
+
+    def test_default_restore_refuses_a_replacement_baseline(self):
+        # Apply already refused this; Restore My Settings must too, or it hands
+        # back a Re-Gear profile while calling it the player's own settings.
+        self.apply(PORTABLE)
+        managed = self.config.read_bytes()
+        self.replacement_baseline()
+        outcome = self.restore()
+        self.assertIs(outcome.result, RestoreResult.FAILED)
+        self.assertFalse(outcome.byte_identical)
+        self.assertEqual(self.config.read_bytes(), managed)
+        self.assertNotEqual(managed, self.original)
+
+    def test_discarding_player_edits_does_not_authorise_a_replacement_baseline(self):
+        # The override discards edits; it does not redefine "the original".
+        self.apply(PORTABLE)
+        managed = self.config.read_bytes()
+        self.replacement_baseline()
+        outcome = self.restore(accept_player_edits=True)
+        self.assertIs(outcome.result, RestoreResult.FAILED)
+        self.assertEqual(self.config.read_bytes(), managed)
+
+    def test_an_intact_store_still_restores_the_enrolled_original(self):
+        self.apply(PORTABLE)
+        self.apply(TV_DOCKED)
+        outcome = self.restore()
+        self.assertIs(outcome.result, RestoreResult.RESTORED)
+        self.assertTrue(outcome.byte_identical)
+        self.assertTrue(outcome.restored_enrolled_baseline)
+        self.assertEqual(self.config.read_bytes(), self.original)
+
+    def test_an_explicitly_chosen_older_backup_is_reported_as_not_the_original(self):
+        # Explicit historical restoration stays possible, but it is not allowed
+        # to claim it returned the settings the target was enrolled with.
+        self.apply(PORTABLE)
+        self.apply(TV_DOCKED)
+        records = self.backups.records(self.identity())
+        rotating = [record for record in records if not record.baseline]
+        self.assertTrue(rotating)
+        outcome = self.restore(record=rotating[-1], accept_player_edits=True)
+        self.assertIs(outcome.result, RestoreResult.RESTORED)
+        self.assertFalse(outcome.restored_enrolled_baseline)
+        self.assertNotEqual(self.config.read_bytes(), self.original)
+
     def test_a_first_enrollment_with_no_history_still_proceeds(self):
         outcome = self.apply(PORTABLE)
         self.assertIs(outcome.result, ApplyResult.APPLIED)

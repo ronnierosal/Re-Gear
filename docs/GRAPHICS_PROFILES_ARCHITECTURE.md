@@ -126,9 +126,16 @@ observed, so such a loss may be permanently undetectable from Re-Gear's own
 evidence. The digest catches changes arriving *after* a completed operation, not
 during one.
 
-`restore` restores the pinned baseline by default and refuses when the file
-holds edits Re-Gear did not make, unless the caller passes the explicit flag
-that says the player chose to discard them. `stop_managing` ends Re-Gear's
+`restore` restores the pinned baseline by default, refuses when that baseline is
+not the one the target was enrolled with — the same binding check `apply` uses,
+shared rather than duplicated, because the two drifted apart once and the
+restore half was the more damaging one — and refuses when the file holds edits
+Re-Gear did not make, unless the caller passes the explicit flag
+that says the player chose to discard them. That flag authorises discarding
+edits; it never authorises redefining what "the original" is, so the baseline
+binding is checked outside it. A caller may still restore an explicitly chosen
+older backup, but the outcome reports truthfully that what came back was not the
+enrolled original. `stop_managing` ends Re-Gear's
 authorship without touching the file and without discarding the baseline: opt
 out and restore are separate acts, and neither is a blind overwrite.
 

@@ -126,6 +126,10 @@ class RestoreOutcome:
     detail: str = ""
     backup: BackupRecord | None = None
     byte_identical: bool = False
+    #: Whether the bytes restored were the ones this target was enrolled with.
+    #: A caller explicitly choosing an older backup gets a truthful False here
+    #: rather than a claim that the player's original settings are back.
+    restored_enrolled_baseline: bool = True
 
 
 @dataclass(frozen=True, slots=True)
@@ -443,6 +447,21 @@ class GraphicsProfileService:
         chosen = record or baseline_state.record
         if chosen is None:
             return RestoreOutcome(RestoreResult.NOTHING_TO_RESTORE)
+        enrolled = self._management.load(location.identity).record
+        if record is None:
+            # Restore My Settings claims to return the player's own settings,
+            # so the baseline must be the one this target was enrolled with.
+            # A discard-edits flag authorises discarding edits; it does not
+            # authorise silently redefining what "the original" means, so this
+            # check is deliberately outside that branch.
+            problem = self._binding_problem(baseline_state, enrolled)
+            if problem is not None:
+                return RestoreOutcome(
+                    RestoreResult.FAILED,
+                    f"refusing to restore: {problem}, so Re-Gear cannot produce "
+                    "the settings this configuration was enrolled with",
+                    backup=baseline_state.record,
+                )
         if chosen.identity != location.identity or chosen.source_path != str(
             location.config_path
         ):
@@ -502,7 +521,16 @@ class GraphicsProfileService:
                 backup=chosen,
                 byte_identical=True,
             )
-        return RestoreOutcome(RestoreResult.RESTORED, backup=chosen, byte_identical=True)
+        return RestoreOutcome(
+            RestoreResult.RESTORED,
+            backup=chosen,
+            byte_identical=True,
+            restored_enrolled_baseline=(
+                enrolled is None
+                or not enrolled.baseline_digest
+                or chosen.digest == enrolled.baseline_digest
+            ),
+        )
 
     def stop_managing(
         self, profile: GraphicsProfile, relative_dir: str
@@ -609,6 +637,31 @@ class GraphicsProfileService:
             )
         return None
 
+    @staticmethod
+    def _binding_problem(baseline_state, record: ManagementRecord | None) -> str | None:
+        """Why the stored original is not the one this target was enrolled with.
+
+        Shared by apply and restore on purpose. These two checks drifted apart
+        once already: apply refused a replaced original while Restore My
+        Settings happily handed the replacement back as the player's own
+        settings, which is the more damaging half of the same bug.
+        """
+        if record is None or not record.baseline_digest:
+            return None
+        if baseline_state.state is BaselineState.NONE:
+            return (
+                "this configuration has been managed before and its recorded "
+                "original is no longer in the backup store"
+            )
+        if baseline_state.state in (BaselineState.CORRUPT, BaselineState.LOST):
+            return baseline_state.detail or baseline_state.state.value
+        if (
+            baseline_state.record is not None
+            and baseline_state.record.digest != record.baseline_digest
+        ):
+            return "the stored original is not the one this target was enrolled with"
+        return None
+
     def _baseline_refusal(
         self, baseline_state, lookup: ManagementLookup
     ) -> ApplyOutcome | None:
@@ -623,7 +676,15 @@ class GraphicsProfileService:
         actually found, so a valid but foreign replacement is refused too.
         """
         record = lookup.record
-        expects_baseline = record is not None and bool(record.baseline_digest)
+        problem = self._binding_problem(baseline_state, record)
+        if problem is not None:
+            return ApplyOutcome(
+                ApplyResult.FAILED,
+                f"refusing to write: {problem}, so a new write could not be "
+                "undone and the current settings must not be recorded as the "
+                "player's original",
+                restoration_available=False,
+            )
         if baseline_state.state in (BaselineState.CORRUPT, BaselineState.LOST):
             return ApplyOutcome(
                 ApplyResult.FAILED,
@@ -631,15 +692,6 @@ class GraphicsProfileService:
                 restoration_available=False,
             )
         if baseline_state.state is BaselineState.NONE:
-            if expects_baseline:
-                return ApplyOutcome(
-                    ApplyResult.FAILED,
-                    "refusing to write: this configuration has been managed "
-                    "before and its recorded original is no longer in the backup "
-                    "store, so a new write could not be undone and the current "
-                    "settings must not be recorded as the player's original",
-                    restoration_available=False,
-                )
             if lookup.state is ManagementState.UNTRUSTED:
                 return ApplyOutcome(
                     ApplyResult.FAILED,
@@ -648,18 +700,6 @@ class GraphicsProfileService:
                     restoration_available=False,
                 )
             return None  # Genuinely first enrollment.
-        if (
-            expects_baseline
-            and baseline_state.record is not None
-            and record is not None
-            and baseline_state.record.digest != record.baseline_digest
-        ):
-            return ApplyOutcome(
-                ApplyResult.FAILED,
-                "refusing to write: the stored original is not the one this "
-                "target was enrolled with",
-                restoration_available=False,
-            )
         return None
 
     def _binding_refusal(
