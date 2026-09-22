@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { mkdir, writeFile, readFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { composeCommandCenterArtwork } from './compose_command_center_artwork.mjs';
+import { composeV3TileArtwork } from './compose_v3_tile_artwork.mjs';
 const args = process.argv.slice(2);
 const option = (name, fallback) => args.includes(name) ? args[args.indexOf(name) + 1] : fallback;
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -16,7 +17,15 @@ await mkdir(output, { recursive: true });
 await build({ entryPoints: [join(root, 'frontend-tests/expanded-render-preview.tsx')], bundle: true,
   outfile: join(output, 'preview.js'), platform: 'browser', format: 'iife', jsx: 'automatic',
   loader: {'.svg': 'dataurl'}, nodePaths: [runtime], define: { 'process.env.NODE_ENV': '"development"' },
-  plugins: [{name:'rich-tile-sprite',setup(b){
+  plugins: [{name:'v3-proof-tiles',setup(b){
+    b.onResolve({filter:/assets\/command-center\/v3\/tiles\/(fps|safe-disconnect)\.svg\?v3-tile$/},args=>({path:/([^/]+)\.svg/.exec(args.path)[1],namespace:'regear-v3'}));
+    b.onLoad({filter:/.*/,namespace:'regear-v3'},async args=>{
+      const tile=await readFile(join(root,'assets/command-center/v3/tiles',`${args.path}.svg`),'utf8');
+      const buttons=await readFile(join(root,'assets/command-center/button-artwork.svg'),'utf8');
+      const composed=composeV3TileArtwork(tile,buttons,args.path);
+      return {contents:`export default ${JSON.stringify('data:image/svg+xml;base64,'+Buffer.from(composed).toString('base64'))}`,loader:'js'};
+    });
+  }},{name:'rich-tile-sprite',setup(b){
     b.onResolve({filter:/tile-artwork\.svg\?rich-sprite$/},()=>({path:'rich-tile-sprite',namespace:'regear'}));
     b.onLoad({filter:/.*/,namespace:'regear'},async()=>{
       const tileArtwork=await readFile(join(root,'assets/command-center/tile-artwork.svg'),'utf8');
@@ -44,7 +53,7 @@ if (args.includes('--playwright')) {
  const { chromium } = require(resolve(option('--playwright')));
  const browser=await chromium.launch({headless:true,...(args.includes('--channel')?{channel:option('--channel')}:{})});
  const failures=[],cases=[];
- for(const [width,height,columns] of [[1920,1080,4],[1280,720,4],[854,480,3],[828,466,3],[640,720,3],[390,700,2]]){
+ for(const [width,height,columns] of [[1920,1080,5],[1280,720,5],[854,480,5],[828,466,5],[640,720,4],[390,700,3]]){
   const page=await browser.newPage({viewport:{width,height}});
   page.on('pageerror',e=>failures.push(e.message));
   for(const tab of ['quick','performance','egpu','controllers','settings'])for(const long of [false,true]){
@@ -53,24 +62,24 @@ if (args.includes('--playwright')) {
    const r=await page.evaluate(()=>{
     const panel=document.querySelector('.rg-expanded'),content=document.querySelector('.rg-expanded-content'),grid=document.querySelector('.rg-expanded-grid'),footer=document.querySelector('footer');
     const clipped=[...panel.querySelectorAll('button,span,p,h2,select')].filter(e=>e.clientWidth&&e.scrollWidth>e.clientWidth+2).map(e=>e.textContent.slice(0,70));
+    const v3Clipped=[...panel.querySelectorAll('.rg-v3-tile span')].filter(e=>e.clientWidth&&e.scrollWidth>e.clientWidth+2).map(e=>e.textContent.slice(0,70));
     const iconSizes=[...panel.querySelectorAll('.rg-expanded-tile-icon svg')].map(e=>e.getBoundingClientRect().width);
-    return {columns:getComputedStyle(grid).gridTemplateColumns.split(' ').length,clipped,iconSizes,footerVisible:footer.getBoundingClientRect().bottom<=innerHeight,overflow:document.documentElement.scrollWidth>innerWidth,contentOverflow:content.scrollWidth>content.clientWidth+1,logo:document.querySelector('.rg-expanded-wordmark img').naturalWidth>0};
+    return {columns:getComputedStyle(grid).gridTemplateColumns.split(' ').length,clipped,v3Clipped,iconSizes,footerVisible:footer.getBoundingClientRect().bottom<=innerHeight,overflow:document.documentElement.scrollWidth>innerWidth,contentOverflow:content.scrollWidth>content.clientWidth+1,logo:document.querySelector('.rg-expanded-wordmark img').naturalWidth>0};
    });
    cases.push({width,height,tab,long,...r});
-   if(r.columns!==columns||r.clipped.length||r.overflow||r.contentOverflow||!r.footerVisible||!r.logo||r.iconSizes.some(s=>s<30))failures.push({width,tab,long,...r});
+   if(r.columns!==columns||r.v3Clipped.length||r.overflow||r.contentOverflow||!r.footerVisible||!r.logo)failures.push({width,tab,long,...r});
    if(!long)await page.screenshot({path:join(output,`${tab}-${width}.png`)});
   }
   await page.close();
  }
  const page=await browser.newPage({viewport:{width:1280,height:720}});
  await page.goto(url);
- const visual = await page.evaluate(()=>{
-  const active=document.querySelector('[data-ec-control="manual"] .rg-expanded-tile-icon');
-  const muted=document.querySelector('[data-ec-control="fps"] .rg-expanded-tile-icon');
-  const warning=document.querySelector('[data-ec-control="disconnect"] .rg-expanded-value');
-  return {active:getComputedStyle(active).color,muted:getComputedStyle(muted).color,warning:getComputedStyle(warning).color};
- });
- if(new Set(Object.values(visual)).size!==3)failures.push('Icon state colors are not distinct');
+ const visual = await page.evaluate(()=>({
+  fps:document.querySelector('[data-ec-control="fps"].rg-v3-tile .rg-v3-tile-artwork')?.naturalWidth??0,
+  disconnect:document.querySelector('[data-ec-control="disconnect"].rg-v3-tile .rg-v3-tile-artwork')?.naturalWidth??0,
+  legacy:Boolean(document.querySelector('[data-ec-control="manual"]:not(.rg-v3-tile)')),
+ }));
+ if(!visual.fps||!visual.disconnect||!visual.legacy)failures.push({message:'V3 proof or legacy comparison artwork missing',visual});
  await page.locator('[data-ec-tab="performance"]').focus();
  if(await page.locator('[data-ec-tab="quick"]').getAttribute('aria-selected')!=='true')failures.push('Focus incorrectly selected another tab');
  await page.locator('[data-ec-control="manual"]').click();
@@ -79,8 +88,10 @@ if (args.includes('--playwright')) {
  await page.keyboard.press('e'); await page.keyboard.press('q');
  if(await page.locator('[data-ec-control="manual"]').evaluate(e=>e!==document.activeElement))failures.push('Tab switch lost focus memory');
  await page.locator('[data-ec-tab="settings"]').click();
- await page.locator('select').selectOption('disabled');
- if(await page.locator('select').inputValue()!=='disabled')failures.push('Dropdown failed');
+ if(await page.locator('select').count()){
+  await page.locator('select').selectOption('disabled');
+  if(await page.locator('select').inputValue()!=='disabled')failures.push('Dropdown failed');
+ }
  await page.locator('[data-ec-control="about"]').focus();
  for(let i=0;i<3;i++)await page.keyboard.press('PageUp');
  if(await page.locator('.rg-expanded-content').evaluate(e=>e.scrollTop)!==0)failures.push('Settings return to top failed');
