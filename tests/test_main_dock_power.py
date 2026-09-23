@@ -353,6 +353,82 @@ class MainDockPowerTests(unittest.TestCase):
             self.assertEqual(self.plugin._run_dock_mutation.call_count, 2)
             self.plugin._automatic_dock.reset_after_acknowledgement.assert_not_called()
 
+    def test_failed_disconnect_sleep_retires_power_intent_and_reports_correlated_terminal(self):
+        """Portable succeeds but protected Steam render custody prevents removal."""
+        from contextlib import ExitStack
+        from regear.application.live_disconnect import LiveDisconnectResult, LiveDisconnectStage
+        from regear.delivery.whole_dock_runtime import WholeDockRuntime
+        module, plugin = self.module, self.plugin
+        held = []
+        @contextmanager
+        def admit(**kwargs):
+            held.append(True)
+            try:
+                yield
+            finally:
+                held.clear()
+        plugin._dock_mutation_gate = lambda: NS(admit=admit)
+        plugin._return_portable_before_disconnect = Mock()
+        plugin._sleep_after_physical_unplug = Mock()
+        plugin._background_operations = set()
+        binding = NS(gpu_bdf='gpu', audio_bdf='audio', usb_bdf='usb',
+            router_id='router', binding='b' * 64, generation='c' * 64)
+        runtime, release, store, lease = Mock(), Mock(), Mock(), Mock()
+        runtime._operation = None
+        def begin(operation, approval, before_release):
+            runtime._operation = operation
+            self.assertTrue(before_release())
+        runtime.begin_before_release.side_effect = begin
+        runtime._owned.return_value = True
+        runtime._admission.return_value = True
+        runtime.verify_gpu_release.side_effect = lambda result: WholeDockRuntime.verify_gpu_release(runtime, result)
+        release.execute.return_value = LiveDisconnectResult(
+            LiveDisconnectStage.RELEASE_REFUSED, 'removal_safety.protected_client')
+        store.bind.return_value = True
+        def retire(operation, dock, generation, guard):
+            self.assertTrue(held)
+            self.assertTrue(guard())
+            self.assertEqual((dock, generation), (binding.binding, binding.generation))
+            return True
+        store.release_unsubmitted.side_effect = retire
+        lease.acquire.return_value.active = True
+        lease.status.return_value.active = True
+        # Exercise actual RPC routing, worker and teardown; only OS boundaries
+        # and the lower release outcome are fixtures.
+        with ExitStack() as stack:
+            def mocked(name, **kwargs):
+                return stack.enter_context(patch.object(module, name, **kwargs))
+            mocked('verified_transport_absent', return_value=False)
+            mocked('DrmDiscovery').return_value.scan.return_value = [NS(boot_vga=False, pci_bdf='gpu')]
+            mocked('resolve_whole_dock', return_value=binding)
+            mocked('GamescopeDiscovery')
+            mocked('resolve_gamescope_user', return_value=NS(context=NS(uid=1000, username='deck')))
+            mocked('RootOwnedRuntimeState')
+            mocked('Login1SleepInhibitor', return_value=lease)
+            mocked('WholeDockRuntime', return_value=runtime)
+            mocked('DockPowerIntentStore', return_value=store)
+            mocked('build_live_disconnect_runtime', return_value=release)
+            mocked('SuspendObserver').return_value.read.return_value = object()
+            result = asyncio.run(plugin.execute_egpu_disconnect(release_display=True,
+                trial_action='whole_dock_sleep', trial_confirmed=True,
+                trial_request_id='d' * 32))
+            repeated = asyncio.run(plugin.execute_egpu_disconnect(release_display=True,
+                trial_action='whole_dock_sleep', trial_confirmed=True,
+                trial_request_id='d' * 32))
+        self.assertEqual(result, repeated)
+        self.assertEqual(result['code'], 'dock_teardown.gpu_release_unverified')
+        self.assertEqual(result['request_id'], 'd' * 32)
+        self.assertEqual(result['route_action'], 'whole_dock_sleep')
+        for field in ('busy', 'in_flight', 'software_down', 'unplug_required',
+                      'power_requested', 'safe_to_unplug', 'ok'):
+            self.assertIs(result[field], False, field)
+        self.assertEqual(plugin._dock_sleep_status, result)
+        self.assertFalse(plugin._whole_dock_trial_worker_alive)
+        store.release_unsubmitted.assert_called_once()
+        runtime.execute_claimed.assert_not_called()
+        plugin._sleep_after_physical_unplug.assert_not_called()
+        plugin._return_portable_before_disconnect.assert_called_once()
+
     def test_shutdown_order_and_failures_retain_inhibition(self):
         for failure in ('', 'bind', 'release', 'teardown', 'power', 'unknown_game',
                         'tv', 'unloading', 'lease_lost_portable', 'lease_lost_after_consume'):

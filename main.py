@@ -2532,6 +2532,8 @@ class Plugin:
             if lease.acquire().active is not True:
                 raise ValueError("dock_teardown.sleep_inhibition_required")
             self._whole_dock_trial_lease = lease
+            power_store = None
+            software_down_verified = False
             try:
                 require_inhibition()
                 self._whole_dock_trial_phase = "return_portable"
@@ -2582,6 +2584,7 @@ class Plugin:
                     return result
                 if getattr(result, 'software_down', False) is not True:
                     raise ValueError('dock_power.disconnect_unverified')
+                software_down_verified = True
                 self._whole_dock_trial_phase = "power_verification"
                 if power_request.action == 'sleep':
                     power_result = self._sleep_after_physical_unplug(
@@ -2597,6 +2600,22 @@ class Plugin:
                     admission_held=guarded_admission)
                 return DockPowerResult(power_result.code, power_result.requested,
                     software_down=True)
+            except Exception:
+                if (power_request is not None and power_request.action == 'sleep'
+                        and not software_down_verified and power_store is not None):
+                    # No sleep submission exists before verified software-down.
+                    # Retire only this request's power intent, never the removal
+                    # claim or its unresolved hardware evidence.
+                    try:
+                        power_store.release_unsubmitted(operation,
+                            binding.binding, binding.generation,
+                            lambda: admission['held'] is True
+                                and not software_down_verified)
+                    except Exception:
+                        # Preserve the original release failure; failed storage
+                        # retirement remains inhibited by the retained record.
+                        pass
+                raise
             finally:
                 admission["held"] = False
                 if runtime._operation is None:
@@ -3211,6 +3230,10 @@ class Plugin:
                     payload['power_action'] = power_request.action
                     payload.setdefault('power_requested', False)
                     payload.setdefault('sleep_cycle_observed', False)
+                    if trial_action == 'whole_dock_sleep':
+                        payload.setdefault('software_down', False)
+                        payload.setdefault('unplug_required', False)
+                        payload['in_flight'] = False
                     self._dock_sleep_status = dict(payload)
                 if power_request is not None and trial_request_id:
                     self._dock_power_requests[trial_request_id] = (trial_action, dict(payload))
