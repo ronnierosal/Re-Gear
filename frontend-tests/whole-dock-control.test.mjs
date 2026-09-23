@@ -47,7 +47,7 @@ const componentJs = ts.transpileModule(readFileSync(new URL("../src/whole-dock-c
 }).outputText.replace(/^import .*;\r?$/gm, "").replace(/export function WholeDockControl/, "function WholeDockControl");
 const deferred = () => { let resolve, reject; const promise = new Promise((yes,no) => {resolve=yes;reject=no;}); return {promise,resolve,reject}; };
 const settle = async () => { for(let n=0;n<12;n++) await Promise.resolve(); };
-function harness(storage = new Map(), intent = "disconnect", startRequest, initialStatus = fresh, initialRead, statusOnly = false) {
+function harness(storage = new Map(), intent = "disconnect", startRequest, initialStatus = fresh, initialRead, statusOnly = false, onSettled) {
   const h = {status:{...initialStatus}, reads:[], calls:[], modals:[], timers:new Map(), failStorage:false, intent, snapshot: {...idle, schema_version:3}};
   let slots=[], index=0, effects=[], cleanups=[], serial=0;
   const useState = value => { const slot=index++; if(!(slot in slots)) slots[slot]=value; return [slots[slot], value=>{slots[slot]=typeof value==='function'?value(slots[slot]):value;}]; };
@@ -68,7 +68,7 @@ function harness(storage = new Map(), intent = "disconnect", startRequest, initi
     React,useState,useRef,useEffect,callable,'button',showModal,'confirm',dockIntentControl,dockRequestAbandoned,dockRequestSettled,formatPendingRecord,parsePendingRecord,window,
     {randomUUID:()=> '12345678-1234-1234-1234-123456789abc'},
     fn=>{h.timers.set(++serial,fn);return serial;},id=>h.timers.delete(id));
-  h.render=()=>{index=0;h.tree=Component({intent:h.intent,readCurrentSnapshot:()=>h.snapshot,startRequest,statusOnly});for(const fn of effects.splice(0))cleanups.push(fn());return h.tree;};
+  h.render=()=>{index=0;h.tree=Component({intent:h.intent,readCurrentSnapshot:()=>h.snapshot,startRequest,statusOnly,onSettled});for(const fn of effects.splice(0))cleanups.push(fn());return h.tree;};
   h.button=()=>h.render().props.children.find(child=>child?.type==='button');
   h.click=()=>{const button=h.button();assert.equal(button.props.disabled,false);button.props.onClick();};
   h.poll=()=>{const [id,fn]=h.timers.entries().next().value;h.timers.delete(id);fn();};
@@ -386,6 +386,32 @@ test('a correlated reply still settles without being called abandoned', () => {
   assert.equal(dockRequestSettled(done, 'req', 'disconnect_only'), true);
   const mine = parsePendingRecord(formatPendingRecord('disconnect_only', 'live', 'req'));
   assert.equal(dockRequestAbandoned(done, mine, 'live'), false);
+});
+
+test('native-owned terminal presentation keeps correlation until the popup is acknowledged',async()=>{
+  const storage=new Map(),settlements=[];
+  const h=harness(storage,'disconnect_only',oneActivation(),fresh,undefined,false,value=>settlements.push(value));
+  h.execute=args=>Promise.resolve({...fresh,code:'dock_teardown.software_down',software_down:true,
+    ok:true,request_id:args.at(-1),in_flight:false});
+  await settle();
+  assert.equal(h.calls.length,1);
+  assert.equal(storage.size,1,'terminal correlation survives the outgoing panel');
+  assert.deepEqual(settlements,[{intent:'disconnect_only',request:parsePendingRecord([...storage.values()][0]).request}]);
+  const rendered=JSON.stringify(h.render());
+  assert.match(rendered,/USB4 deauthorization was verified/);
+  assert.match(rendered,/Unplug the eGPU now/);
+  assert.doesNotMatch(rendered,/safe to unplug/i);
+  h.unmount();
+
+  const request=parsePendingRecord([...storage.values()][0]).request;
+  const resumed=[];
+  const remount=harness(storage,'disconnect_only',undefined,{...fresh,code:'dock_teardown.software_down',
+    software_down:true,ok:true,request_id:request,in_flight:false},undefined,true,value=>resumed.push(value));
+  await settle();
+  assert.equal(remount.calls.length,0,'status-only remount never replays the mutation');
+  assert.equal(storage.size,1,'reading the result is not the same as dismissing it');
+  assert.deepEqual(resumed,[{intent:'disconnect_only',request}]);
+  remount.unmount();
 });
 
 test('component stops waiting on an abandoned record and says the result is unconfirmed', async () => {
