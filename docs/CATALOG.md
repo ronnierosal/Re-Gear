@@ -6,6 +6,7 @@ Guide navigation: [Player](wiki/player/README.md), [Technical](wiki/technical/RE
 
 ## Active contracts, guidance and evidence indexes
 
+- [Automatic game optimization architecture and staged plan](AUTOMATIC_GAME_OPTIMIZATION.md)
 - [Frame-generation research and provider proposal](research/frame-generation.md)
 - [ADR SLEEP GUARD](./ADR_SLEEP_GUARD.md)
 - [ADR STEAM SLEEP PREFLIGHT](./ADR_STEAM_SLEEP_PREFLIGHT.md)
