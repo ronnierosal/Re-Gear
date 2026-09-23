@@ -208,6 +208,21 @@ class GameMapping:
     upscaling_values: Mapping[UpscalingMode, str] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
+        # Held as copies so a caller's dict cannot change a validated mapping.
+        object.__setattr__(self, "quality_keys", dict(self.quality_keys))
+        object.__setattr__(self, "upscaling_values", dict(self.upscaling_values))
+        # One address, one meaning. Two settings sharing a key would make
+        # translate() keep whichever it wrote last and still call the result
+        # complete -- a contradictory profile passing as a managed one.
+        addresses = [entry.key.address for entry in self.quality_keys.values()]
+        addresses += [
+            key.address
+            for key in (*(self.resolution_keys or ()), self.frame_limit_key, self.upscaling_key)
+            if key is not None
+        ]
+        duplicates = sorted({address for address in addresses if addresses.count(address) > 1})
+        if duplicates:
+            raise ValueError("a mapping uses one key for two settings: " + ", ".join(duplicates))
         if UpscalingMode.AUTO in self.upscaling_values:
             raise ValueError("AUTO is a request, not a setting; it cannot be mapped")
         if self.upscaling_values and self.upscaling_key is None:

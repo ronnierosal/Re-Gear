@@ -69,6 +69,34 @@ class MappingValidationTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             QualityKey(key, {Quality.HIGH: "9"})
 
+    def test_two_settings_cannot_share_one_key(self):
+        # Review finding: SHADOWS mapped onto the texture key used to translate
+        # "complete" while keeping only one of the two literals.
+        base = fx.mapping()
+        shadows_on_texture = dict(base.quality_keys)
+        shadows_on_texture[GraphicsSetting.SHADOWS] = base.quality_keys[GraphicsSetting.TEXTURES]
+        with self.assertRaisesRegex(ValueError, "sg.TextureQuality"):
+            dataclasses.replace(base, quality_keys=shadows_on_texture)
+        width, _ = base.resolution_keys
+        cases = {
+            "frame limit on a resolution key": dict(frame_limit_key=width),
+            "upscaling on a quality key": dict(
+                upscaling_key=base.quality_keys[GraphicsSetting.EFFECTS].key,
+                upscaling_values={UpscalingMode.OFF: "3"},
+            ),
+            "width and height on one key": dict(resolution_keys=(width, width)),
+        }
+        for name, change in cases.items():
+            with self.subTest(name), self.assertRaises(ValueError):
+                dataclasses.replace(base, **change)
+
+    def test_a_mapping_is_not_changed_through_the_callers_dict(self):
+        keys = dict(fx.mapping().quality_keys)
+        mapping = dataclasses.replace(fx.mapping(), quality_keys=keys)
+        keys[GraphicsSetting.SHADOWS] = keys[GraphicsSetting.TEXTURES]
+        self.assertEqual(translate(fx.TV_BALANCED, mapping).settings[fx.SHADOW], "2")
+        self.assertEqual(translate(fx.PORTABLE_BALANCED, mapping).settings[fx.SHADOW], "1")
+
     def test_auto_cannot_be_mapped(self):
         with self.assertRaises(ValueError):
             dataclasses.replace(fx.mapping(), upscaling_values={UpscalingMode.AUTO: "100"})
