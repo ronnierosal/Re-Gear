@@ -179,6 +179,101 @@ class MainDockAdmissionTests(unittest.TestCase):
             self.assertFalse(status["safe_to_unplug"])
         asyncio.run(run())
 
+    def test_tv_one_button_disconnect_settles_restart_client_and_correlates_terminal(self):
+        """The combined TV route must reach the same teardown as the manual pause.
+
+        Returning Portable can restart the Steam session.  The protected mapping
+        may therefore outlive the holder scan for a moment; this is the exact
+        hardware gap that made one-button Safe Disconnect stop after the picture
+        reached the Ally even though Switch to Ally, then Disconnect worked.
+        """
+        from regear.application.live_disconnect import LiveDisconnectStage
+        from tests.test_live_disconnect import Harness, blocked, ready, PLAN_ORDER
+
+        class Clock:
+            now = 0.0
+            sleeps = []
+
+            def monotonic(self):
+                return self.now
+
+            def sleep(self, seconds):
+                self.sleeps.append(seconds)
+                self.now += seconds
+
+        clock = Clock()
+        protected = blocked("removal_safety.clients_active_or_protected")
+        release = Harness(
+            observations=[protected, protected, ready(), ready()],
+            post_restart_settle_seconds=10.0,
+            post_restart_poll_seconds=1.0,
+            clock=clock,
+        )
+        held = []
+
+        @contextmanager
+        def admit():
+            held.append(True)
+            try:
+                yield
+            finally:
+                held.clear()
+
+        self.plugin._dock_mutation_gate = lambda: NS(admit=admit)
+        self.plugin._background_operations = set()
+        self.plugin._unloading = False
+        self.plugin._automatic_dock = Mock()
+        binding = NS(
+            gpu_bdf="gpu", audio_bdf="audio", usb_bdf="usb",
+            router_id="router", binding="binding", generation="generation",
+        )
+        runtime = Mock()
+        runtime.execute_claimed.return_value = NS(
+            code="dock_teardown.software_down", software_down=True,
+            software_reconnected=False,
+        )
+        self.plugin._return_portable_before_disconnect = Mock()
+
+        def release_execute(*, release_display):
+            self.assertTrue(release_display)
+            self.assertTrue(held)
+            result = release.run(release_display=True)
+            self.assertIs(result.stage, LiveDisconnectStage.REMOVED)
+            return result
+
+        with patch.object(self.module, "DrmDiscovery") as drm, \
+                patch.object(self.module, "resolve_whole_dock", return_value=binding), \
+                patch.object(self.module, "GamescopeDiscovery"), \
+                patch.object(self.module, "resolve_gamescope_user", return_value=NS(
+                    context=NS(uid=1000, username="deck"))), \
+                patch.object(self.module, "RootOwnedRuntimeState"), \
+                patch.object(self.module, "Login1SleepInhibitor") as inhibitor, \
+                patch.object(self.module, "WholeDockRuntime", return_value=runtime), \
+                patch.object(self.module, "build_live_disconnect_runtime") as factory:
+            drm.return_value.scan.return_value = [NS(boot_vga=False, pci_bdf="gpu")]
+            inhibitor.return_value.acquire.return_value.active = True
+            inhibitor.return_value.status.return_value.active = True
+            factory.return_value.execute.side_effect = release_execute
+            result = asyncio.run(self.plugin.execute_egpu_disconnect(
+                trial_action="whole_dock_disconnect",
+                release_display=True,
+                trial_confirmed=True,
+                trial_request_id="a" * 32,
+            ))
+
+        self.assertEqual(result["code"], "dock_teardown.software_down")
+        self.assertTrue(result["ok"])
+        self.assertTrue(result["software_down"])
+        self.assertFalse(result["safe_to_unplug"])
+        self.assertFalse(result["busy"])
+        self.assertEqual(result["request_id"], "a" * 32)
+        self.assertEqual(clock.sleeps, [1.0, 1.0])
+        self.assertEqual(release.detached, PLAN_ORDER)
+        self.plugin._return_portable_before_disconnect.assert_called_once()
+        runtime.verify_gpu_release.assert_called_once()
+        runtime.execute_claimed.assert_called_once()
+        self.assertFalse(held)
+
     def test_unavailable_factory_never_invokes_mutation(self):
         self.plugin._dock_mutation_gate = Mock(side_effect=OSError("unavailable"))
         command = Mock()
