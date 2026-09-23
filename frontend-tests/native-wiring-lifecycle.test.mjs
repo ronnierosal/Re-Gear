@@ -33,10 +33,16 @@ test('delayed close callback from an old operation cannot close the replacement'
   h.menu.stop();assert.equal(current.closed,true);
 });
 
-function harness() {
+function harness(pendingRecord = null) {
   const h = { modals: [], cleanup: [], throwOpen: false, stopped: false, allowed: true };
+  const values = new Map(pendingRecord ? [["regear.whole-dock.pending-request", pendingRecord]] : []);
+  h.storage = { getItem:key=>values.get(key)??null, setItem:(key,value)=>values.set(key,value), removeItem:key=>values.delete(key) };
   const runtime = {
     createMenuVisibility, ...actionExports, GamepadButton:{DIR_UP:9,DIR_DOWN:10,DIR_LEFT:11,DIR_RIGHT:12}, EgpuConfirmModal:"confirm",
+    parsePendingRecord: raw => {
+      const match = /^v2:(disconnect|disconnect_only|sleep|shutdown):([^:]+):([^:]+)$/.exec(raw ?? "");
+      return match ? { intent: match[1], panel: match[2], request: match[3] } : null;
+    },
     jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }),
     useEffect: callback => h.cleanup.push(callback()), useState: value => [value, () => {}],
     useSyncExternalStore: (_subscribe, read) => read(),
@@ -57,13 +63,25 @@ function harness() {
   h.source = { read: () => h.tiles, subscribe: () => () => {} };
   h.snapshot = () => ({ schema_version: 3 });
   h.detail = () => "existing-detail";
-  h.menu = exports.createExpandedMenu(undefined, {}, () => h.allowed, h.source, h.snapshot, h.detail);
+  h.menu = exports.createExpandedMenu(undefined, {localStorage:h.storage}, () => h.allowed, h.source, h.snapshot, h.detail);
   h.mount = () => {
     const child = h.modals.at(-1).node.props.children.find(child => typeof child?.type === "function");
     return child.type(child.props);
   };
   return h;
 }
+
+test('plugin remount restores pending sleep as status-only and never replays it',()=>{
+  const h=harness('v2:sleep:retired-panel:request-1');
+  assert.equal(h.modals.length,1);
+  const tree=h.modals[0].node;
+  assert.equal(tree.props.strTitle,'Disconnect + Sleep status');
+  const control=tree.props.children.find(child=>child?.type==='dock');
+  assert.equal(control.props.intent,'sleep');
+  assert.equal(control.props.statusOnly,true);
+  assert.equal(control.props.startRequest,undefined);
+  h.menu.stop();assert.equal(h.modals[0].closed,true);
+});
 
 test("visibility publishes stable changes with unsubscribe", () => {
   const store = createMenuVisibility(); let count = 0;

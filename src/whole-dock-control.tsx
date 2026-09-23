@@ -24,7 +24,7 @@ const directStartState = (startRequest: boolean | (() => boolean) | DirectStartR
   typeof startRequest === "function" && "state" in startRequest ? startRequest.state() : null;
 
 /** Only confirmed clicks mutate. Reopening the menu recovers backend progress. */
-export function WholeDockControl({ readCurrentSnapshot, intent = "disconnect_only", startRequest }: { readCurrentSnapshot: () => any; intent?: DockIntent; startRequest?: boolean | (()=>boolean) | DirectStartRequest }) {
+export function WholeDockControl({ readCurrentSnapshot, intent = "disconnect_only", startRequest, statusOnly = false }: { readCurrentSnapshot: () => any; intent?: DockIntent; startRequest?: boolean | (()=>boolean) | DirectStartRequest; statusOnly?: boolean }) {
   const source = useRef(readCurrentSnapshot);
   source.current = readCurrentSnapshot;
   const currentIntent = useRef(intent);
@@ -153,7 +153,7 @@ export function WholeDockControl({ readCurrentSnapshot, intent = "disconnect_onl
       setInitialNotStarted(false);
       confirm(true,reading);
     }}>{intent === "sleep" ? "Disconnect + Sleep" : intent === "shutdown" ? "Disconnect + Shutdown" : "Safe Disconnect"}</DialogButton>}
-    {!startRequest && <DialogButton style={{width:"100%",minWidth:0,padding:"8px",border:"1px solid #39d8ff",borderRadius:8,background:"#112434",color:"#f4f7fb"}} disabled={!view.action || busy || uncertain.current} onClick={()=>confirm()}>{busy ? "Working…" : uncertain.current ? "Checking previous request" : view.label}</DialogButton>}
+    {!startRequest && !statusOnly && <DialogButton style={{width:"100%",minWidth:0,padding:"8px",border:"1px solid #39d8ff",borderRadius:8,background:"#112434",color:"#f4f7fb"}} disabled={!view.action || busy || uncertain.current} onClick={()=>confirm()}>{busy ? "Working…" : uncertain.current ? "Checking previous request" : view.label}</DialogButton>}
     <p style={{margin:"8px 0 0"}}>{intent === "sleep" && reading?.status?.code === "dock_power.unplug_required"
       ? "Unplug only after this prompt appears. Sleep waits for verified physical absence."
       : "Keep the cable connected. Physical unplug is not yet verified."}</p>

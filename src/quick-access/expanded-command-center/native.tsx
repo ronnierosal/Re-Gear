@@ -14,7 +14,7 @@ import type { ControllerInputSource } from "../../controller-safe-disconnect";
 import { loadMenuBinding, saveMenuBinding, menuBindingOptions, startMenuShortcut } from "../../menu-shortcut";
 import type { MenuBinding } from "../../menu-shortcut";
 import { WholeDockControl } from "../../whole-dock-control";
-import type { DockIntent } from "../../whole-dock-control-model";
+import { parsePendingRecord, type DockIntent } from "../../whole-dock-control-model";
 import { EgpuConfirmModal } from "../../egpu-confirm-modal";
 import { ExpandedCommandCenter } from "./shell";
 import type { TileSource, TileView } from "./tile-source";
@@ -115,6 +115,23 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
     visibility.set(false);
     previous?.Close();
   };
+  const pendingDockIntent=()=>{
+    try{return parsePendingRecord(storage?.getItem("regear.whole-dock.pending-request"))?.intent??null;}
+    catch{return null;}
+  };
+  function resumePendingOperation(){
+    if(stopped||operation)return;
+    const intent=pendingDockIntent();
+    if(intent!=="disconnect"&&intent!=="disconnect_only"&&intent!=="sleep"&&intent!=="shutdown")return;
+    const operationToken=++operationGeneration;
+    const hide=()=>{if(operationGeneration===operationToken)hideOperation();};
+    const title=intent==="shutdown"?"Disconnect + Shutdown status":intent==="sleep"?"Disconnect + Sleep status":"Safe Disconnect status";
+    const opened=showModal(<EgpuConfirmModal strTitle={title} strOKButtonText="Hide" bAlertDialog onOK={hide} onCancel={hide} onEscKeypress={hide} className="rg-whole-dock-progress">
+      <style>{`.rg-whole-dock-progress{position:fixed!important;left:50%!important;top:50%!important;right:auto!important;bottom:auto!important;margin:0!important;transform:translate(-50%,-50%)!important}`}</style>
+      <WholeDockControl intent={intent} readCurrentSnapshot={readCurrentSnapshot} statusOnly/>
+    </EgpuConfirmModal>,undefined,{fnOnClose:hide,bNeverPopOut:true});
+    if(operationGeneration!==operationToken){opened.Close();return;}operation=opened;
+  }
   function disconnect(intent: DockIntent = "disconnect_only") {
     if(stopped||operation||!modal) return;
     // One explicit activation owns one request across React remounts. React can
@@ -216,5 +233,9 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
     } catch { utilities?.stop(); visibility.set(false); } finally { opening = false; }
   };
   const shortcut = startMenuShortcut({ input, readBinding: () => binding, open });
+  // Gamescope may replace the entire Decky/React surface while the backend
+  // continues a guarded dock request. Reconstruct only its read-only status
+  // surface from the durable request record; never replay the action.
+  resumePendingOperation();
   return { open, disconnect, Settings, visibility: visibility.source, available: shortcut.available, stop() { stopped = true; shortcut.stop(); close(); } };
 }
