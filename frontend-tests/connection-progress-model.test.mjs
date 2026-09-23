@@ -43,6 +43,13 @@ test("live renderer wires the approved overlay to the existing store and native 
  assert.doesNotMatch(overlay,/setInterval|setTimeout|fetch\(|getSnapshot|<button/);
 });
 
+test("compact popup promotes the changing current step beside elapsed time",()=>{
+ const overlay=readFileSync(new URL("../src/connection-progress-overlay.tsx",import.meta.url),"utf8");
+ assert.match(overlay,/stateLabel=.*: current;/);
+ assert.match(overlay,/headerMeta=\{elapsedLabel/);
+ assert.match(overlay,/CURRENT STEP/);
+});
+
 test("connection observation preserves the actual reason without inventing a transition",()=>{
  const s=sample(); s.title="Ready to switch to TV";
  const v=view(s,100);
