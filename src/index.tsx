@@ -22,7 +22,7 @@ import { createDisplayShortcutRuntime } from "./display-shortcut-runtime";
 import { EgpuConfirmModal } from "./egpu-confirm-modal";
 import { ConnectionQuickStatus } from "./connection-quick-status";
 import { regearControlCss } from "./regear-theme";
-import { startConnectionMonitor } from "./connection-monitor";
+import { createConnectionPresentationReceipt, startConnectionMonitor } from "./connection-monitor";
 import { showConnectionLivePanel } from "./connection-live-panel";
 import { PRODUCT_NAME } from "./branding";
 import {
@@ -2309,6 +2309,7 @@ export default definePlugin(() => {
       }
     },
     show: (store, switchTv, closed) => showConnectionLivePanel(store, switchTv, closed),
+    presentation: createConnectionPresentationReceipt(window.localStorage),
   });
 
   const publishRuntimeTiles=(readings:Readings)=>{if(!runtimeOwner.stopped)tilePublisher.publish(readings);};

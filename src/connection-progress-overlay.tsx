@@ -27,7 +27,7 @@ export function ConnectionProgressOverlay(props:ConnectionProgressOverlayProps) 
   const genericDelay=props.delayNotice && /^(Taking longer than expected|Connection hasn.t completed)/.test(props.detail ?? "");
   const current=genericDelay ? "Waiting for the next connection update" : props.detail ?? "Waiting for a status update";
   const toggleDetails=()=>{if(details.current)details.current.open=!details.current.open;};
-  const stateLabel=primary === "attention" ? "Action required" : primary === "failed" ? "Connection failed" : props.phase === "switching" ? "Switching display to TV" : props.phase === "ready" ? "TV switch complete" : "Waiting for connection";
+  const stateLabel=primary === "attention" ? "Action required" : primary === "failed" ? "Connection failed" : props.phase === "switching" ? "Switching display to TV" : props.phase === "ready" ? "TV switch complete" : current;
   return <PopupFrame title="eGPU Connection" state={primary} stateLabel={stateLabel} compact headerMeta={elapsedLabel && <span aria-label={`${elapsedLabel} elapsed`}>{elapsedLabel}</span>} footer={<>
     <DialogButton onClick={props.onHide}><span className="rg-key">B</span> Hide</DialogButton>
     <span className="rg-popup-guidance">{props.keepConnectedMessage}</span>
