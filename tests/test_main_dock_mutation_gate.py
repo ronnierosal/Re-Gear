@@ -223,6 +223,7 @@ class MainDockAdmissionTests(unittest.TestCase):
         self.plugin._background_operations = set()
         self.plugin._unloading = False
         self.plugin._automatic_dock = Mock()
+        self.plugin._complete_interrupted_whole_dock_trial = Mock(return_value=None)
         binding = NS(
             gpu_bdf="gpu", audio_bdf="audio", usb_bdf="usb",
             router_id="router", binding="binding", generation="generation",
@@ -269,6 +270,7 @@ class MainDockAdmissionTests(unittest.TestCase):
         self.assertEqual(result["request_id"], "a" * 32)
         self.assertEqual(clock.sleeps, [1.0, 1.0])
         self.assertEqual(release.detached, PLAN_ORDER)
+        self.plugin._complete_interrupted_whole_dock_trial.assert_called_once_with("a" * 32)
         self.plugin._return_portable_before_disconnect.assert_called_once()
         runtime.verify_gpu_release.assert_called_once()
         runtime.execute_claimed.assert_called_once()
