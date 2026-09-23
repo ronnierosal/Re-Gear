@@ -69,7 +69,10 @@ export function WholeDockControl({ readCurrentSnapshot, intent = "disconnect_onl
           // it. The native wrapper acknowledges it only when the player
           // dismisses that status surface. Standalone controls retain the
           // historical immediate retirement behavior.
-          if (settled && onSettled) onSettled({ intent: record.intent, request: record.request });
+          // The callback transfers receipt acknowledgement to the native
+          // status popup. It also covers an abandoned/unconfirmed answer: the
+          // popup must survive long enough to tell the player that result.
+          if (onSettled) onSettled({ intent: record.intent, request: record.request });
           else window.localStorage.removeItem(pendingKey);
           uncertain.current = false;
           if (abandoned && mounted.current) {
