@@ -101,7 +101,7 @@ test('terminal Safe Disconnect correlation is cleared only by dismissing its res
   h.menu.stop();
 });
 
-test('unconfirmed Safe Disconnect receipt is cleared only by dismissing its restored popup',()=>{
+test('unconfirmed Safe Disconnect receipt clears only when its restored popup is dismissed',()=>{
   const pending='v2:disconnect_only:retired-panel:request-unconfirmed';
   const h=harness(pending);
   const tree=h.modals[0].node;
@@ -113,8 +113,21 @@ test('unconfirmed Safe Disconnect receipt is cleared only by dismissing its rest
     'presenting unconfirmed status keeps the remount receipt');
   tree.props.onOK();
   assert.equal(h.storage.getItem('regear.whole-dock.pending-request'),null,
-    'explicit popup dismissal acknowledges the unconfirmed result');
+    'explicit dismissal acknowledges this exact unconfirmed result');
   assert.equal(h.modals[0].closed,true);
+  h.menu.stop();
+});
+
+test('dismissing a terminal popup cannot clear a newer receipt',()=>{
+  const pending='v2:disconnect_only:retired-panel:request-old';
+  const newer='v2:disconnect_only:new-panel:request-new';
+  const h=harness(pending);
+  const tree=h.modals[0].node;
+  const control=tree.props.children.find(child=>child?.type==='dock');
+  control.props.onSettled({intent:'disconnect_only',request:'request-old'});
+  h.storage.setItem('regear.whole-dock.pending-request',newer);
+  tree.props.onOK();
+  assert.equal(h.storage.getItem('regear.whole-dock.pending-request'),newer);
   h.menu.stop();
 });
 

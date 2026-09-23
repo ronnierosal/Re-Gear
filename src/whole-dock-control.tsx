@@ -7,6 +7,8 @@ import { dockIntentControl, dockRequestAbandoned, dockRequestSettled, formatPend
 
 const readTrial = callable<[string], any>("get_egpu_disconnect_status");
 const execute = callable<[boolean, string, string, DockAction, boolean, string, string], any>("execute_egpu_disconnect");
+const completionAction = "whole_dock_disconnect_complete" as DockAction;
+const submittedRequest = /^[0-9a-f]{32}$/;
 const pendingKey = "regear.whole-dock.pending-request";
 /** Identifies this panel for the life of its script, which is exactly the
  * lifetime that matters: freeing the dock restarts Gaming Mode and a new
@@ -21,6 +23,10 @@ export type DirectStartRequest = (() => boolean) & {
   markSubmitted(): void;
 };
 export type DockSettlement = { intent: DockIntent; request: string };
+const correlatedSoftwareDown = (status: any, request: string) => status?.schema_version === 1
+  && status.request_id === request && status.busy === false && status.safe_to_unplug === false
+  && status.code === "dock_teardown.software_down" && status.software_down === true
+  && status.hardware_write === false && status.ok === true;
 const directStartState = (startRequest: boolean | (() => boolean) | DirectStartRequest | undefined) =>
   typeof startRequest === "function" && "state" in startRequest ? startRequest.state() : null;
 
@@ -41,6 +47,7 @@ export function WholeDockControl({ readCurrentSnapshot, intent = "disconnect_onl
   const epoch = useRef(0);
   const modal = useRef<ReturnType<typeof showModal> | null>(null);
   const startConsumed = useRef(false);
+  const completionAttempted = useRef<string | null>(null);
   const consumeStartRequest = () => {
     if (!startRequest || startConsumed.current) return false;
     if (typeof startRequest === "function" && !startRequest()) return false;
@@ -57,12 +64,39 @@ export function WholeDockControl({ readCurrentSnapshot, intent = "disconnect_onl
         const next = await read();
         if (disposed) return;
         if (started !== epoch.current) { timer = setTimeout(refresh, 2000); return; }
-        const record = parsePendingRecord(pendingRecord());
+        const rawRecord = pendingRecord();
+        const record = parsePendingRecord(rawRecord);
         // Retiring a record whose answer never arrived is not the same as the
         // request having succeeded, so the player is told which happened
         // rather than left to infer it from the control becoming usable.
         const abandoned = dockRequestAbandoned(next.status, record, panelId);
         const settled = !!record && dockRequestSettled(next.status, record.request, record.intent);
+        const exactRemountedDisconnect = !!record && abandoned && statusOnly && !!onSettled
+          && record.intent === "disconnect_only" && !!record.panel
+          && submittedRequest.test(record.request)
+          && rawRecord === formatPendingRecord(record.intent, record.panel, record.request);
+        if (exactRemountedDisconnect && completionAttempted.current !== record.request) {
+          completionAttempted.current = record.request;
+          let completion: any = null;
+          try {
+            completion = await execute(false, "", "disconnect", completionAction, true, "", record.request);
+          } catch { /* The durable receipt remains available for a later remount. */ }
+          if (disposed || started !== epoch.current) return;
+          if (correlatedSoftwareDown(completion, record.request)) {
+            uncertain.current = false;
+            setNotice("");
+            setReading({ ...next, status: completion });
+            onSettled({ intent: record.intent, request: record.request });
+          } else {
+            uncertain.current = false;
+            setNotice("Re-Gear could not confirm how the previous request ended. Check the status below before trying again. Keep the cable connected.");
+            if (completion) setReading({ ...next, status: completion });
+            else setReading(next);
+            onSettled({ intent: record.intent, request: record.request });
+          }
+          if (!disposed) timer = setTimeout(refresh, 2000);
+          return;
+        }
         if (record && (abandoned || settled)) {
           // A correlated terminal result must survive a Gamescope/Decky
           // replacement until the replacement panel has actually presented
@@ -130,6 +164,8 @@ export function WholeDockControl({ readCurrentSnapshot, intent = "disconnect_onl
         epoch.current++;
         if (mounted.current) { setReading({ ...fresh, status: result }); setNotice(""); }
         if (dockRequestSettled(result, request, intent)) {
+          // The submitting panel received this terminal result directly. It
+          // remains ordinary dismissible settlement behavior.
           if (onSettled) onSettled({ intent, request });
           else window.localStorage.removeItem(pendingKey);
           uncertain.current = false;
@@ -168,6 +204,7 @@ export function WholeDockControl({ readCurrentSnapshot, intent = "disconnect_onl
   const disconnectComplete = intent === "disconnect_only"
     && terminalRecord?.intent === "disconnect_only"
     && reading?.status?.request_id === terminalRecord.request
+    && (completionAttempted.current !== terminalRecord.request || reading?.status?.hardware_write === false)
     && terminalSnapshotFresh
     && reading?.status?.schema_version === 1
     && reading.status.code === "dock_teardown.software_down"

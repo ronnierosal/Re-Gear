@@ -421,6 +421,7 @@ test('unplug instruction requires the pending request and a fresh attachment sna
 
   const wrongRequest=new Map([[pendingKey,formatPendingRecord('disconnect_only','dead-panel','expected')]]);
   const mismatched=harness(wrongRequest,'disconnect_only',undefined,status('other'),undefined,true,()=>{});
+  mismatched.execute=()=>Promise.resolve(status('other'));
   await settle();
   assert.doesNotMatch(JSON.stringify(mismatched.render()),/Unplug the eGPU now/);
   assert.match(JSON.stringify(mismatched.render()),/Keep the cable connected/);
@@ -456,25 +457,108 @@ test('component stops waiting on an abandoned record and says the result is unco
 });
 
 test('native-owned abandoned receipt survives remount until its unconfirmed popup is dismissed', async () => {
-  const raw = 'v2:disconnect_only:dead-panel:old-request';
+  const request = 'a'.repeat(32);
+  const raw = `v2:disconnect_only:dead-panel:${request}`;
   const storage = new Map([['regear.whole-dock.pending-request', raw]]);
   const presentations = [];
   const h = harness(storage, 'disconnect_only', undefined,
     { ...fresh, in_flight: false, request_id: 'someone-else' }, undefined, true,
     value => presentations.push(value));
+  h.execute = args => Promise.resolve({ ...fresh, code: 'dock_teardown.final_state_unverified',
+    ok: false, request_id: args.at(-1), in_flight: false });
   await settle();
   h.poll(); await settle();
-  assert.equal(h.calls.length, 0, 'status-only remount never replays the mutation');
+  assert.deepEqual(h.calls, [[false, '', 'disconnect', 'whole_dock_disconnect_complete', true, '', request]],
+    'the remount invokes only the record-completion continuation once');
+  assert.equal(h.calls.filter(args => args[3] === 'whole_dock_disconnect').length, 0,
+    'status-only remount never replays the hardware disconnect');
   assert.equal(storage.get('regear.whole-dock.pending-request'), raw,
     'the unconfirmed receipt remains until the native popup acknowledges it');
   assert.ok(presentations.length >= 1);
   assert.ok(presentations.every(value => value.intent === 'disconnect_only'
-    && value.request === 'old-request'));
+    && value.request === request));
   const text = JSON.stringify(h.render());
   assert.match(text, /could not confirm how the previous request ended/i);
   assert.match(text, /Keep the cable connected/i);
-  assert.doesNotMatch(text, /safe to unplug|you can unplug/i);
+  assert.doesNotMatch(text, /safe to unplug|you can unplug|USB4 deauthorization was verified|Unplug the eGPU now|Software disconnect complete/i);
   h.unmount();
+});
+
+test('record-only remount completion presents correlated software-down without replay', async () => {
+  const request = 'b'.repeat(32);
+  const raw = `v2:disconnect_only:dead-panel:${request}`;
+  const storage = new Map([['regear.whole-dock.pending-request', raw]]);
+  const presentations = [];
+  const h = harness(storage, 'disconnect_only', undefined,
+    { ...fresh, in_flight: false, request_id: 'someone-else' }, undefined, true,
+    value => presentations.push(value));
+  h.execute = args => Promise.resolve({ ...fresh, code: 'dock_teardown.software_down',
+    software_down: true, hardware_write: false, ok: true, request_id: args.at(-1), in_flight: false });
+  await settle();
+  assert.deepEqual(h.calls, [[false, '', 'disconnect', 'whole_dock_disconnect_complete', true, '', request]]);
+  assert.deepEqual(presentations,
+    [{ intent: 'disconnect_only', request }]);
+  assert.equal(storage.get('regear.whole-dock.pending-request'), raw,
+    'correlated success remains until the completion popup is dismissed');
+  const text = JSON.stringify(h.render());
+  assert.match(text, /Software disconnect complete/);
+  assert.match(text, /USB4 deauthorization was verified/);
+  assert.match(text, /Unplug the eGPU now/);
+  h.unmount();
+});
+
+test('record completion never accepts a hardware-writing response as success', async () => {
+  const request = 'e'.repeat(32);
+  const raw = `v2:disconnect_only:dead-panel:${request}`;
+  const storage = new Map([['regear.whole-dock.pending-request', raw]]);
+  const h = harness(storage, 'disconnect_only', undefined,
+    { ...fresh, in_flight: false, request_id: 'someone-else' }, undefined, true, () => {});
+  h.execute = args => Promise.resolve({ ...fresh, code: 'dock_teardown.software_down',
+    software_down: true, hardware_write: true, ok: true, request_id: args.at(-1), in_flight: false });
+  await settle();
+  assert.equal(storage.get('regear.whole-dock.pending-request'), raw);
+  const text = JSON.stringify(h.render());
+  assert.match(text, /could not confirm how the previous request ended/i);
+  assert.doesNotMatch(text, /USB4 deauthorization was verified|Unplug the eGPU now|Software disconnect complete/i);
+  h.unmount();
+});
+
+test('unavailable record completion retries once on each later remount and never replays disconnect', async () => {
+  const request = 'c'.repeat(32);
+  const raw = `v2:disconnect_only:dead-panel:${request}`;
+  const storage = new Map([['regear.whole-dock.pending-request', raw]]);
+  for (let mount = 0; mount < 2; mount++) {
+    const presentations = [];
+    const h = harness(storage, 'disconnect_only', undefined,
+      { ...fresh, in_flight: false, request_id: 'someone-else' }, undefined, true,
+      value => presentations.push(value));
+    h.execute = () => Promise.reject(new Error('completion unavailable'));
+    await settle();
+    h.poll(); await settle();
+    assert.deepEqual(h.calls,
+      [[false, '', 'disconnect', 'whole_dock_disconnect_complete', true, '', request]]);
+    assert.equal(h.calls.some(args => args[3] === 'whole_dock_disconnect'), false);
+    assert.equal(storage.get('regear.whole-dock.pending-request'), raw);
+    assert.ok(presentations.length >= 1);
+    assert.ok(presentations.every(value => value.intent === 'disconnect_only' && value.request === request));
+    const text = JSON.stringify(h.render());
+    assert.match(text, /could not confirm how the previous request ended/i);
+    assert.doesNotMatch(text, /USB4 deauthorization was verified|Unplug the eGPU now|Software disconnect complete/i);
+    h.unmount();
+  }
+});
+
+test('legacy, malformed or mismatched remount receipts never invoke record completion', async () => {
+  for (const raw of ['disconnect_only:legacy-request', 'v2:disconnect_only:dead-panel:not-32-hex',
+    `v2:shutdown:dead-panel:${'d'.repeat(32)}`]) {
+    const storage = new Map([['regear.whole-dock.pending-request', raw]]);
+    const h = harness(storage, 'disconnect_only', undefined,
+      { ...fresh, in_flight: false, request_id: 'someone-else' }, undefined, true, () => {});
+    await settle();
+    assert.equal(h.calls.length, 0);
+    assert.equal(storage.get('regear.whole-dock.pending-request'), raw);
+    h.unmount();
+  }
 });
 
 test("component keeps waiting on the record it wrote itself", async () => {
