@@ -155,7 +155,17 @@ export function WholeDockControl({ readCurrentSnapshot, intent = "disconnect_onl
       <style>{`.rg-whole-dock-confirm{z-index:2147483647!important;position:fixed!important;left:50%!important;top:50%!important;right:auto!important;bottom:auto!important;margin:0!important;transform:translate(-50%,-50%)!important}`}</style>
     </EgpuConfirmModal>, undefined, { fnOnClose: cancel, bNeverPopOut: true });
   };
+  const terminalRecord = parsePendingRecord(pendingRecord());
+  const terminalObservedAt = Date.parse(reading?.snapshot?.observed_at ?? "");
+  const terminalNow = Date.now();
+  const terminalSnapshotFresh = reading?.snapshot?.schema_version === 3
+    && Number.isFinite(terminalObservedAt)
+    && terminalObservedAt <= terminalNow
+    && terminalNow - terminalObservedAt < 10_000;
   const disconnectComplete = intent === "disconnect_only"
+    && terminalRecord?.intent === "disconnect_only"
+    && reading?.status?.request_id === terminalRecord.request
+    && terminalSnapshotFresh
     && reading?.status?.schema_version === 1
     && reading.status.code === "dock_teardown.software_down"
     && reading.status.busy === false && reading.status.ok === true
