@@ -21,7 +21,10 @@ from regear.domain.game_optimization_state import (  # noqa: E402
     InFlight,
     LaneKey,
     LearningPolicy,
+    ObservationBinding,
+    ObservationWindow,
     OptimizationContext,
+    PerformanceContextRef,
     Phase,
     QueuedPlan,
     WindowVerdict,
@@ -29,13 +32,16 @@ from regear.domain.game_optimization_state import (  # noqa: E402
     assess,
     begin_dispatch,
     clear_override,
+    current_binding,
     finish_dispatch,
     initial,
+    launched,
     next_dispatch,
-    observe,
-    propose,
     recover,
+    window_refusal,
 )
+from regear.domain.game_optimization_state import observe as observe_window  # noqa: E402
+from regear.domain.game_optimization_state import propose as propose_for  # noqa: E402
 from regear.domain.graphics_profiles import SupportTier  # noqa: E402
 from regear.domain.mode_profiles import ExperienceTarget  # noqa: E402
 from regear.domain.models import OperatingMode  # noqa: E402
@@ -44,7 +50,8 @@ APP = "4000000002"
 KEY = LaneKey(APP, OperatingMode.PORTABLE)
 POLICY = LearningPolicy()
 BALANCED = ExperienceTarget.BALANCED
-CONTEXT = OptimizationContext(BALANCED, "build-7", 1, 1, "schema-v5")
+PERF = PerformanceContextRef("fixture-gpu-a.display-800p")
+CONTEXT = OptimizationContext(BALANCED, "build-7", 1, 1, "schema-v5", PERF)
 CANDIDATE = QueuedPlan("candidate-a", BALANCED)
 MEETS, BELOW, UNSURE = (
     WindowVerdict.MEETS_TARGET,
@@ -53,6 +60,17 @@ MEETS, BELOW, UNSURE = (
 )
 ON = EffectiveIntent(APP, True, BALANCED, IntentReason.AUTOMATIC_INHERITED)
 OFF = EffectiveIntent(APP, False, BALANCED, IntentReason.GLOBAL_DISABLED)
+
+
+def observe(state, qualified, verdict, policy=POLICY):
+    """A window bound to the lane's current launch, as a correct observer sends it."""
+    binding = current_binding(state) or ObservationBinding(-1, CONTEXT, "")
+    return observe_window(state, ObservationWindow(binding, qualified, verdict), policy)
+
+
+def propose(state, candidate, policy=POLICY):
+    """A candidate planned against the lane's current context."""
+    return propose_for(state, candidate, state.context, policy)
 
 
 def managed(state=None, context=CONTEXT):
@@ -303,6 +321,65 @@ class RecoveryTests(unittest.TestCase):
         states = [initial(KEY), managed(), learned(), staged(), validating()]
         revisions = [state.revision for state in states]
         self.assertEqual(revisions, sorted(set(revisions)))
+
+
+class BindingTests(unittest.TestCase):
+    """Review finding: verdicts and plans must carry the launch and context they belong to."""
+
+    def window(self, binding, verdict=MEETS):
+        return ObservationWindow(binding, True, verdict)
+
+    def test_a_window_from_an_earlier_launch_changes_nothing(self):
+        state = launched(managed())
+        earlier = current_binding(state)
+        later = launched(state)
+        self.assertEqual(window_refusal(later, self.window(earlier)),
+                         "the window belongs to another launch")
+        self.assertIs(observe_window(later, self.window(earlier), POLICY), later)
+
+    def test_a_window_under_another_context_or_plan_changes_nothing(self):
+        state = validating()
+        binding = current_binding(state)
+        other_context = dataclasses.replace(
+            binding, context=dataclasses.replace(CONTEXT, performance=PerformanceContextRef("gpu-b"))
+        )
+        other_plan = dataclasses.replace(binding, plan_id="candidate-z")
+        for wrong in (other_context, other_plan):
+            self.assertIsNotNone(window_refusal(state, self.window(wrong)))
+            self.assertIs(observe_window(state, self.window(wrong), POLICY), state)
+        self.assertEqual(observe_window(state, self.window(binding), POLICY).meets, 1)
+
+    def test_binding_names_the_plan_windows_judge(self):
+        self.assertEqual(current_binding(learned()).plan_id, "")
+        self.assertIsNone(current_binding(staged()))  # not yet written: nothing counts
+        self.assertEqual(current_binding(validating()).plan_id, "candidate-a")
+        locked = feed(validating(), *[(True, MEETS)] * POLICY.accept_windows)
+        self.assertEqual(current_binding(locked).plan_id, "candidate-a")
+        marked = begin_dispatch(locked, next_dispatch(locked))
+        self.assertIsNone(current_binding(marked))  # mid-dispatch: nothing counts
+
+    def test_performance_context_change_revalidates_a_locked_plan(self):
+        locked = feed(validating(), *[(True, MEETS)] * POLICY.accept_windows)
+        moved = dataclasses.replace(CONTEXT, performance=PerformanceContextRef("gpu-b.tv-4k"))
+        state = managed(locked, moved)
+        self.assertIs(state.phase, Phase.NEEDS_REVALIDATION)
+        self.assertIn("performance", state.reason)
+        self.assertIsNone(next_dispatch(state))
+
+    def test_a_candidate_planned_for_another_context_is_refused(self):
+        state = learned()
+        stale = dataclasses.replace(CONTEXT, game_version="build-6")
+        refused = propose_for(state, CANDIDATE, stale, POLICY)
+        self.assertFalse(refused.staged)
+        self.assertIn("another context", refused.reason)
+        self.assertTrue(propose_for(state, CANDIDATE, CONTEXT, POLICY).staged)
+
+    def test_a_context_needs_its_performance_reference(self):
+        with self.assertRaises(ValueError):
+            OptimizationContext(BALANCED, "build-7", 1, 1, "schema-v5", None)
+        for bad in ("", "has space", "x" * 129):
+            with self.assertRaises(ValueError):
+                PerformanceContextRef(bad)
 
 
 class PolicyTests(unittest.TestCase):

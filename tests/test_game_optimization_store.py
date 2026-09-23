@@ -32,13 +32,17 @@ from regear.domain.game_optimization_state import (  # noqa: E402
     InFlight,
     LaneKey,
     LearningPolicy,
+    ObservationWindow,
     OptimizationContext,
+    PerformanceContextRef,
     Phase,
     QueuedPlan,
     WindowVerdict,
     assess,
     begin_dispatch,
+    current_binding,
     initial,
+    launched,
     next_dispatch,
     observe,
     propose,
@@ -54,7 +58,9 @@ KEY = LaneKey(APP, OperatingMode.PORTABLE)
 TV_KEY = LaneKey(APP, OperatingMode.TV_DOCKED)
 POLICY = LearningPolicy()
 BALANCED = ExperienceTarget.BALANCED
-CONTEXT = OptimizationContext(BALANCED, "build-7", 1, 1, "schema-v5")
+CONTEXT = OptimizationContext(
+    BALANCED, "build-7", 1, 1, "schema-v5", PerformanceContextRef("fixture-gpu-a", 2)
+)
 PLAN = PerformancePlan(
     target_display_fps=60,
     base_fps_target=30,
@@ -67,11 +73,11 @@ PLAN = PerformancePlan(
 
 def rich_state():
     """A staged candidate with a full plan and some history: most fields set."""
-    state = assess(initial(KEY), SupportTier.MANAGED, CONTEXT, POLICY)
-    for _ in range(POLICY.learning_windows):
-        state = observe(state, True, WindowVerdict.MEETS_TARGET, POLICY)
-    state = observe(state, False, WindowVerdict.BELOW_TARGET, POLICY)
-    return propose(state, QueuedPlan("candidate-a", BALANCED, PLAN), POLICY).state
+    state = launched(assess(initial(KEY), SupportTier.MANAGED, CONTEXT, POLICY))
+    for qualified in [True] * POLICY.learning_windows + [False]:
+        window = ObservationWindow(current_binding(state), qualified, WindowVerdict.MEETS_TARGET)
+        state = observe(state, window, POLICY)
+    return propose(state, QueuedPlan("candidate-a", BALANCED, PLAN), CONTEXT, POLICY).state
 
 
 class StoreTestCase(unittest.TestCase):

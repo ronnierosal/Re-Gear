@@ -63,6 +63,7 @@ from .performance_plan import PerformancePlan
 
 STATE_VERSION = 1
 CANDIDATE_ID_RE = re.compile(r"^[A-Za-z0-9_.\-]{1,64}$")
+FINGERPRINT_RE = re.compile(r"^[A-Za-z0-9_.:\-]{1,128}$")
 MAX_REASON = 240
 #: Modes a lifecycle can exist for. UNKNOWN and DEGRADED withhold automatic
 #: application altogether; they never get a lane of their own.
@@ -170,6 +171,31 @@ class LearningPolicy:
 
 
 @dataclass(frozen=True, slots=True)
+class PerformanceContextRef:
+    """The performance context a plan and its evidence belong to. Opaque here.
+
+    Render GPU, display owner, refresh and VRR, runtime, provider and its
+    revision, evidence versions: the carrier that describes them belongs to
+    the performance resolver, and this lifecycle never interprets it. It only
+    requires that one exists and notices when it changes. A launch without
+    one withholds automatic changes; missing facts are never manufactured.
+    """
+
+    fingerprint: str
+    carrier_version: int = 1
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.fingerprint, str) or not FINGERPRINT_RE.fullmatch(self.fingerprint):
+            raise ValueError("a performance context fingerprint is a short plain token")
+        if (
+            not isinstance(self.carrier_version, int)
+            or isinstance(self.carrier_version, bool)
+            or self.carrier_version < 1
+        ):
+            raise ValueError("a performance context carrier version starts at 1")
+
+
+@dataclass(frozen=True, slots=True)
 class OptimizationContext:
     """Everything whose change invalidates evidence gathered under it."""
 
@@ -178,12 +204,15 @@ class OptimizationContext:
     profile_version: int
     adapter_version: int
     schema_id: str
+    performance: PerformanceContextRef
 
     def __post_init__(self) -> None:
         if not isinstance(self.preference, ExperienceTarget):
             raise ValueError("context preference is an experience target")
         if not self.game_version or not self.schema_id:
             raise ValueError("a context names its game version and schema")
+        if not isinstance(self.performance, PerformanceContextRef):
+            raise ValueError("a context names its performance context")
         for value in (self.profile_version, self.adapter_version):
             if not isinstance(value, int) or isinstance(value, bool) or value < 1:
                 raise ValueError("context versions start at 1")
@@ -266,6 +295,9 @@ class GameOptimizationState:
     windows: int = 0
     degraded: int = 0
     attempts_used: int = 0
+    #: Increases at every admitted launch. Windows carry the launch they were
+    #: observed in, so a late verdict from an earlier launch is refused.
+    launch_seq: int = 0
     history: tuple[Attempt, ...] = ()
     reason: str = ""
     revision: int = 0
@@ -408,13 +440,72 @@ def assess(
 # ---------------------------------------------------------- observations
 
 
+@dataclass(frozen=True, slots=True)
+class ObservationBinding:
+    """What a window must have been observed under to count.
+
+    Issued at launch. A verdict counts only against the launch, context and
+    plan it was issued for; anything else is a late or misrouted window.
+    """
+
+    launch_seq: int
+    context: OptimizationContext
+    #: The candidate being validated, the accepted plan while locked, or ""
+    #: while learning from the player's own settings.
+    plan_id: str
+
+
+@dataclass(frozen=True, slots=True)
+class ObservationWindow:
+    binding: ObservationBinding
+    qualified: bool
+    verdict: WindowVerdict
+
+
+_OBSERVING = (Phase.BASELINE, Phase.LEARNING, Phase.VALIDATING, Phase.OPTIMIZED_LOCKED)
+
+
+def current_binding(state: GameOptimizationState) -> ObservationBinding | None:
+    """The binding windows need right now, or None when none may count."""
+    if state.context is None or state.phase not in _OBSERVING or state.in_flight is not None:
+        return None
+    if state.phase is Phase.VALIDATING:
+        plan_id = state.candidate.candidate_id if state.candidate else ""
+    elif state.phase is Phase.OPTIMIZED_LOCKED:
+        plan_id = state.accepted.candidate_id if state.accepted else ""
+    else:
+        plan_id = ""
+    return ObservationBinding(state.launch_seq, state.context, plan_id)
+
+
+def window_refusal(state: GameOptimizationState, window: ObservationWindow) -> str | None:
+    """Why this window cannot count, or None if it can."""
+    expected = current_binding(state)
+    if expected is None:
+        return f"no observation counts in {state.phase.value}"
+    if window.binding.launch_seq != expected.launch_seq:
+        return "the window belongs to another launch"
+    if window.binding.context != expected.context:
+        return "the window was observed under another context"
+    if window.binding.plan_id != expected.plan_id:
+        return "the window was observed under another plan"
+    return None
+
+
+def launched(state: GameOptimizationState) -> GameOptimizationState:
+    """An admitted launch: earlier bindings stop counting from here on."""
+    return _next(state, launch_seq=state.launch_seq + 1)
+
+
 def observe(
     state: GameOptimizationState,
-    qualified: bool,
-    verdict: WindowVerdict,
+    window: ObservationWindow,
     policy: LearningPolicy,
 ) -> GameOptimizationState:
-    """One externally assessed observation window from ordinary play."""
+    """One externally assessed window. A window bound elsewhere changes nothing."""
+    if window_refusal(state, window) is not None:
+        return state
+    qualified, verdict = window.qualified, window.verdict
     if state.phase in (Phase.BASELINE, Phase.LEARNING):
         if not qualified:
             return _next(state, excluded_windows=state.excluded_windows + 1)
@@ -513,11 +604,20 @@ class Proposal:
 
 
 def propose(
-    state: GameOptimizationState, candidate: QueuedPlan, policy: LearningPolicy
+    state: GameOptimizationState,
+    candidate: QueuedPlan,
+    basis: OptimizationContext,
+    policy: LearningPolicy,
 ) -> Proposal:
-    """Stage one candidate for the next launch, if the lifecycle allows one."""
+    """Stage one candidate for the next launch, if the lifecycle allows one.
+
+    ``basis`` is the context the candidate was planned against. A plan made
+    for anything but the current context is refused, never adapted.
+    """
     if state.phase not in (Phase.LEARNING, Phase.NEEDS_REVALIDATION):
         return Proposal(state, False, f"no candidate is accepted in {state.phase.value}")
+    if basis != state.context:
+        return Proposal(state, False, "the candidate was planned for another context")
     if state.context is None or candidate.preference is not state.context.preference:
         return Proposal(state, False, "the candidate is for another preference")
     if state.restore_pending:

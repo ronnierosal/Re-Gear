@@ -41,6 +41,8 @@ from regear.domain.game_optimization_state import (  # noqa: E402
     AttemptOutcome,
     LaneKey,
     LearningPolicy,
+    ObservationWindow,
+    PerformanceContextRef,
     Phase,
     QueuedPlan,
     WindowVerdict,
@@ -57,6 +59,7 @@ IDLE, RUNNING = GameRunState.NOT_RUNNING, GameRunState.RUNNING
 BALANCED = ExperienceTarget.BALANCED
 POLICY = LearningPolicy()
 MEETS, BELOW = WindowVerdict.MEETS_TARGET, WindowVerdict.BELOW_TARGET
+PERF = PerformanceContextRef("fixture-gpu-a.display-800p")
 #: A lighter candidate: 40 FPS cap and a balanced render scale.
 LIGHTER = QueuedPlan(
     "lighter-40",
@@ -79,6 +82,7 @@ class ServiceTestCase(unittest.TestCase):
         self.catalog_dir = ofx.write_catalog(self.base / "catalog")
         self.state_root = self.base / "optimization"
         self.crash_after_write = False
+        self.last = None
         self.service = self.build()
 
     def engine_factory(self, registry):
@@ -118,10 +122,19 @@ class ServiceTestCase(unittest.TestCase):
             ),
             self.engine_factory,
             POLICY,
+            allow_fixture_policy=True,
         )
 
-    def launch(self, mode=PORTABLE, state=IDLE, version=fx.GAME_BUILD, service=None):
-        return (service or self.service).prepare_launch(APP, mode, state, version)
+    def launch(self, mode=PORTABLE, state=IDLE, version=fx.GAME_BUILD, service=None, perf=PERF):
+        self.last = (service or self.service).prepare_launch(APP, mode, state, version, perf)
+        return self.last
+
+    def window(self, qualified=True, verdict=MEETS, binding=None):
+        return ObservationWindow(binding or self.last.binding, qualified, verdict)
+
+    def propose(self, candidate, mode=PORTABLE, service=None):
+        basis = self.lane(mode).value.context
+        return (service or self.service).propose(APP, mode, candidate, basis)
 
     def lane(self, mode=PORTABLE, service=None):
         return (service or self.service).state(APP, mode)
@@ -134,7 +147,8 @@ class ServiceTestCase(unittest.TestCase):
 
     def windows(self, count, verdict=MEETS, qualified=True, mode=PORTABLE):
         for _ in range(count):
-            self.assertTrue(self.service.record_window(APP, mode, qualified, verdict).ok)
+            outcome = self.service.record_window(APP, mode, self.window(qualified, verdict))
+            self.assertTrue(outcome.ok, outcome.detail)
 
     def enable(self):
         self.assertTrue(self.service.set_global(True).ok)
@@ -146,7 +160,7 @@ class ServiceTestCase(unittest.TestCase):
 
     def validating(self):
         self.learned()
-        self.assertTrue(self.service.propose(APP, PORTABLE, LIGHTER).ok)
+        self.assertTrue(self.propose(LIGHTER).ok)
         result = self.launch()
         self.assertIs(result.action, LaunchAction.APPLIED_CANDIDATE)
 
@@ -188,7 +202,7 @@ class OptInTests(ServiceTestCase):
 class NextLaunchTests(ServiceTestCase):
     def test_candidate_waits_for_the_next_idle_launch(self):
         self.learned()
-        self.assertTrue(self.service.propose(APP, PORTABLE, LIGHTER).ok)
+        self.assertTrue(self.propose(LIGHTER).ok)
         self.assertEqual(self.path.read_bytes(), self.original)  # proposing writes nothing
         running = self.launch(state=RUNNING)
         self.assertIs(running.action, LaunchAction.PASSTHROUGH)
@@ -223,8 +237,7 @@ class NextLaunchTests(ServiceTestCase):
 
     def test_uncertain_evidence_never_locks(self):
         self.validating()
-        for _ in range(POLICY.validation_window_budget):
-            self.service.record_window(APP, PORTABLE, False, MEETS)
+        self.windows(POLICY.validation_window_budget, qualified=False)
         self.assertIsNone(self.lane().value.accepted)
         self.assertEqual(self.lane().value.history[-1].outcome, AttemptOutcome.INCONCLUSIVE)
         self.launch()
@@ -234,7 +247,7 @@ class NextLaunchTests(ServiceTestCase):
         self.learned()
         fg = FrameGenerationRef("fixture-provider", 2)
         plan = PerformancePlan(60, 30, Resolution(1280, 800), UpscalingMode.QUALITY, fg)
-        self.service.propose(APP, PORTABLE, QueuedPlan("fg-60", BALANCED, plan))
+        self.propose(QueuedPlan("fg-60", BALANCED, plan))
         result = self.launch()
         self.assertEqual(result.frame_generation, fg)
         self.assertEqual(self.values()[fx.FRAME_LIMIT], "30")  # the real-frame cap
@@ -295,7 +308,7 @@ class PlayerEditTests(ServiceTestCase):
 class DisableTests(ServiceTestCase):
     def test_global_off_cancels_pending_work_in_every_lane_now(self):
         self.learned()
-        self.service.propose(APP, PORTABLE, LIGHTER)
+        self.propose(LIGHTER)
         self.launch(mode=TV)
         self.assertTrue(self.service.set_global(False).ok)
         for mode in (PORTABLE, TV):
@@ -313,7 +326,7 @@ class DisableTests(ServiceTestCase):
 
     def test_per_game_manual_cancels_only_that_game(self):
         self.learned()
-        self.service.propose(APP, PORTABLE, LIGHTER)
+        self.propose(LIGHTER)
         self.assertTrue(self.service.set_game(ofx.OTHER_APP_ID, GamePreference(GameChoice.MANUAL)).ok)
         self.assertIs(self.phase(), Phase.TESTING_PROFILE)
         self.assertTrue(self.service.set_game(APP, GamePreference(GameChoice.MANUAL)).ok)
@@ -361,6 +374,7 @@ class VersionTests(ServiceTestCase):
             ),
             self.engine_factory,
             POLICY,
+            allow_fixture_policy=True,
         )
         result = self.launch(service=service)
         self.assertIs(result.phase, Phase.NEEDS_REVALIDATION)
@@ -381,7 +395,7 @@ class RestartTests(ServiceTestCase):
 
     def test_crash_mid_write_is_uncertain_and_never_replayed(self):
         self.learned()
-        self.service.propose(APP, PORTABLE, LIGHTER)
+        self.propose(LIGHTER)
         self.crash_after_write = True
         with self.assertRaises(SimulatedCrash):
             self.launch()
@@ -399,7 +413,7 @@ class RestartTests(ServiceTestCase):
 
     def test_no_write_happens_if_the_in_flight_mark_cannot_be_saved(self):
         self.learned()
-        self.service.propose(APP, PORTABLE, LIGHTER)
+        self.propose(LIGHTER)
 
         class FailingStore(GameOptimizationStore):
             def save_state(self, state, expected_revision):
@@ -417,7 +431,7 @@ class RestartTests(ServiceTestCase):
     def test_concurrent_writer_gets_a_conflict_not_a_lost_update(self):
         self.learned()
         other = self.build()
-        other.record_window(APP, PORTABLE, True, MEETS)
+        other.record_window(APP, PORTABLE, self.window())
         stale_revision = self.lane().value.revision - 1
 
         real = GameOptimizationStore(self.state_root)
@@ -436,7 +450,7 @@ class RestartTests(ServiceTestCase):
 
         before = self.lane().value
         stale = self.build(StaleStore(self.state_root))
-        outcome = stale.record_window(APP, PORTABLE, True, MEETS)
+        outcome = stale.record_window(APP, PORTABLE, self.window())
         self.assertFalse(outcome.ok)
         self.assertIn("revision", outcome.detail)
         self.assertEqual(self.lane().value, before)  # the other writer's change stands
@@ -455,7 +469,7 @@ class CorruptionTests(ServiceTestCase):
         self.assertIs(result.action, LaunchAction.PASSTHROUGH)
         self.assertIn("untrusted", result.reasons[0])
         self.assertEqual(self.path.read_bytes(), written)
-        self.assertFalse(self.service.record_window(APP, PORTABLE, True, MEETS).ok)
+        self.assertFalse(self.service.record_window(APP, PORTABLE, self.window()).ok)
         self.assertTrue(self.service.reset_untrusted_lane(APP, PORTABLE).ok)
         self.assertIs(self.launch().phase, Phase.BASELINE)
 
@@ -490,11 +504,143 @@ class CorruptionTests(ServiceTestCase):
             load_catalog(self.catalog_dir),
             ReviewedAdapters(),
             broken,
+            allow_fixture_policy=True,
         )
-        result = service.prepare_launch(APP, PORTABLE, IDLE, fx.GAME_BUILD)
+        result = service.prepare_launch(APP, PORTABLE, IDLE, fx.GAME_BUILD, PERF)
         self.assertTrue(result.may_launch)
         self.assertIs(result.action, LaunchAction.PASSTHROUGH)
         self.assertIn("adapter bug", result.reasons[0])
+
+
+class ReviewFindingTests(ServiceTestCase):
+    """Primary review b5f4cbbc, each finding at the real dispatch path."""
+
+    FG = FrameGenerationRef("fixture-provider", 2)
+
+    def stage_fg(self):
+        self.learned()
+        plan = PerformancePlan(60, 30, Resolution(1280, 800), UpscalingMode.QUALITY, self.FG)
+        self.assertTrue(self.propose(QueuedPlan("fg-60", BALANCED, plan)).ok)
+
+    def test_frame_generation_is_withheld_unless_the_settings_landed(self):
+        # Failed: the configuration is gone, so the engine cannot locate it.
+        self.stage_fg()
+        self.path.unlink()
+        failed = self.launch()
+        self.assertIs(failed.action, LaunchAction.NOT_LANDED)
+        self.assertIsNotNone(failed.engine.frame_generation)  # the engine passed it through
+        self.assertIsNone(failed.frame_generation)
+        self.assertIsNone(failed.binding)
+
+    def test_frame_generation_is_withheld_on_conflict_and_advisor(self):
+        self.stage_fg()
+        landed = self.launch()
+        self.assertEqual(landed.frame_generation, self.FG)
+        text = self.path.read_bytes().decode("utf-8").replace("sg.TextureQuality=2", "sg.TextureQuality=0")
+        self.path.write_bytes(text.encode("utf-8"))
+        conflict = self.launch()
+        self.assertIs(conflict.engine.result, EngineResult.CONFLICT)
+        self.assertIsNone(conflict.frame_generation)
+
+    def test_frame_generation_is_withheld_when_the_file_is_locked(self):
+        self.stage_fg()
+        self.path.chmod(0o444)
+        self.addCleanup(self.path.chmod, 0o644)
+        advisor = self.launch()
+        self.assertIs(advisor.engine.result, EngineResult.ADVISOR)
+        self.assertIsNone(advisor.frame_generation)
+
+    def test_performance_context_change_stops_a_locked_plan_being_redispatched(self):
+        self.locked()
+        written = self.path.read_bytes()
+        moved = self.launch(perf=PerformanceContextRef("fixture-gpu-b.tv-4k"))
+        self.assertIs(moved.action, LaunchAction.PASSTHROUGH)
+        self.assertIs(moved.phase, Phase.NEEDS_REVALIDATION)
+        self.assertIn("performance", moved.reasons[0])
+        self.assertEqual(self.path.read_bytes(), written)
+
+    def test_unknown_performance_context_withholds_everything(self):
+        self.learned()
+        self.propose(LIGHTER)
+        result = self.launch(perf=None)
+        self.assertIs(result.action, LaunchAction.PASSTHROUGH)
+        self.assertIn("performance context is unknown", result.reasons[0])
+        self.assertEqual(self.path.read_bytes(), self.original)
+        self.assertIs(self.phase(), Phase.TESTING_PROFILE)  # still staged, not lost
+
+    def test_late_window_from_an_earlier_launch_is_refused(self):
+        self.validating()
+        earlier = self.last.binding
+        self.launch()  # the next launch re-checks the candidate
+        late = self.service.record_window(APP, PORTABLE, self.window(binding=earlier))
+        self.assertFalse(late.ok)
+        self.assertIn("another launch", late.detail)
+        self.assertEqual(self.lane().value.meets, 0)
+
+    def test_window_for_another_plan_is_refused(self):
+        self.validating()
+        wrong = dataclasses.replace(self.last.binding, plan_id="someone-elses-plan")
+        refused = self.service.record_window(APP, PORTABLE, self.window(binding=wrong))
+        self.assertFalse(refused.ok)
+        self.assertEqual(self.lane().value.meets, 0)
+
+    def test_candidate_planned_for_a_stale_context_is_refused(self):
+        self.learned()
+        stale = dataclasses.replace(self.lane().value.context, game_version="fixture-build-6")
+        outcome = self.service.propose(APP, PORTABLE, LIGHTER, stale)
+        self.assertFalse(outcome.ok)
+        self.assertIn("another context", outcome.detail)
+
+    def test_partial_lane_cancellation_is_reported_and_reads_back_reconciled(self):
+        self.learned()
+        self.propose(LIGHTER)
+
+        class FailingLanes(GameOptimizationStore):
+            def save_state(self, state, expected_revision):
+                raise StoreError("disk full")
+
+        service = self.build(FailingLanes(self.state_root))
+        outcome = service.set_global(False)
+        self.assertFalse(outcome.ok)
+        self.assertIn("preferences saved", outcome.detail)
+        self.assertIn("disk full", outcome.detail)
+        self.assertFalse(service.intent(APP).automatic)
+        # Stored record still says testing; the readback does not.
+        stored = GameOptimizationStore(self.state_root).load_state(LaneKey(APP, PORTABLE)).value
+        self.assertIs(stored.phase, Phase.TESTING_PROFILE)
+        self.assertIs(self.lane(service=service).value.phase, Phase.OPTIMIZATION_DISABLED)
+        self.assertIs(self.launch(service=service).action, LaunchAction.PASSTHROUGH)
+        self.assertEqual(self.path.read_bytes(), self.original)
+
+    def test_unlistable_lanes_are_reported_not_hidden(self):
+        class Unlistable(GameOptimizationStore):
+            def lanes(self):
+                raise StoreError("state directory unreadable")
+
+        outcome = self.build(Unlistable(self.state_root)).set_global(True)
+        self.assertFalse(outcome.ok)
+        self.assertIn("unreadable", outcome.detail)
+
+    def test_restore_with_nothing_to_restore_still_hands_the_game_back(self):
+        self.enable()
+        self.launch()  # baseline: nothing of ours was ever written
+        outcome = self.service.restore_original(APP, PORTABLE, IDLE)
+        self.assertEqual(outcome.result.name, "NOTHING_TO_RESTORE")
+        self.assertIs(self.phase(), Phase.USER_OVERRIDE)
+        self.assertEqual(self.path.read_bytes(), self.original)
+
+    def test_placeholder_policy_is_refused_outside_fixtures(self):
+        self.enable()
+        service = GameOptimizationService(
+            GameOptimizationStore(self.state_root),
+            load_catalog(self.catalog_dir),
+            ReviewedAdapters(),
+            self.engine_factory,
+        )
+        result = service.prepare_launch(APP, PORTABLE, IDLE, fx.GAME_BUILD, PERF)
+        self.assertIs(result.action, LaunchAction.PASSTHROUGH)
+        self.assertIn("placeholder", result.reasons[0])
+        self.assertIs(self.lane().state, LoadState.ABSENT)  # nothing was even read into a lane
 
 
 class CatalogAdmissionTests(ServiceTestCase):

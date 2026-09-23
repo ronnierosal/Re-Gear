@@ -131,9 +131,15 @@ or the player's original.
 
 **Rules the tests hold it to**
 
-- **Opt-in.** Nothing stored means off. Global off cancels pending work in
-  every lane at once, and writes and restores nothing. Per-game `manual` does
-  the same for one game.
+- **Opt-in.** Nothing stored means off. That is the chosen product default for
+  the first rollout (primary decision, 2026-09-23), and it changes only through
+  a reviewed UI decision. Global off dominates every per-game `automatic`.
+  It cancels pending work in every lane at once, and writes and restores
+  nothing. Per-game `manual` does the same for one game. If a lane's record
+  cannot be updated, the change is still saved and the failure is reported.
+  Launches apply the current intent, and so does reading a lane back.
+- **Restore is a takeover.** Restore My Settings ends automatic management of
+  that lane, even when nothing of Re-Gear's was left to undo.
 - **Between launches only.** A candidate is staged, then written at the next
   idle launch. A running game defers it. Nothing is written during play.
 - **Uncertain is never success.** Unqualified or inconclusive windows move
@@ -148,8 +154,21 @@ or the player's original.
   to `USER_OVERRIDE`, the edit stays, and nothing is written until the player
   hands the game back. Even then the engine's conflict rule still decides.
 - **Context.** A change to the game version, profile version, adapter
-  version, schema or preference invalidates the evidence. The accepted plan
-  is kept as history and reapplied only in the context it was accepted under.
+  version, schema, preference or performance context invalidates the
+  evidence. The accepted plan is kept as history and reapplied only in the
+  context it was accepted under.
+- **Performance context.** Each launch supplies an opaque
+  `PerformanceContextRef`. The resolver owns the carrier behind it: render
+  GPU, display owner, refresh and VRR, runtime, provider and its revision.
+  Without a reference, nothing is assessed or dispatched.
+- **Bound evidence.** Each admitted launch issues an `ObservationBinding`:
+  the launch sequence, the context, and the plan being judged. A window
+  counts only against its own binding, so a late or misrouted window is
+  refused. A candidate is refused unless it was planned against the lane's
+  current context.
+- **Frame generation.** A frame-generation reference is returned only when
+  the game settings planned with it landed. After a failed, conflicting or
+  advisory outcome, it is withheld.
 - **Crashes.** A write is durably marked in flight before it starts. If that
   mark cannot be saved, nothing is written. A lane reopened with the mark
   still set records the attempt as uncertain and never replays it.
@@ -172,10 +191,11 @@ entries are candidates, never authority.
 `inconclusive`, and whether a window is qualified) and candidate plans arrive
 from outside. This slice has no collector, resolver policy, Auto TDP control,
 launch hook or UI. `LearningPolicy` values are unreviewed placeholders
-(`policy_version` 0). The resolver owner sets the real ones. The
-`PerformancePlan` contract is unchanged (v1). A proposal separating internal
-render, game output and display resolution, and requested from selected FPS,
-is with the primary, and nothing here depends on it.
+(`policy_version` 0). Codex owns the production values and verdict
+production. The service refuses to run launches under the placeholder unless
+a test opts in. The `PerformancePlan` contract is unchanged here (v1). The
+agreed v2 contract is a follow-up. It separates internal render, game output
+and display resolution, and requested from selected FPS.
 
 ## Not in this slice
 

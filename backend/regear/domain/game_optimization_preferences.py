@@ -37,8 +37,9 @@ PREFERENCES_VERSION = 1
 #: A large library's worth of explicit choices. Games never mentioned inherit,
 #: so the bound limits only explicit choices.
 MAX_GAME_PREFERENCES = 512
-#: Nothing stored yet means opted out. Changing this default is a product
-#: decision for Ronnie and the primary, not a storage detail.
+#: Nothing stored yet means opted out: the chosen product default for the
+#: first rollout (primary decision 4fcb4c44, 2026-09-23). It changes only
+#: through a reviewed UI decision, never as a storage detail.
 DEFAULT_GLOBAL_ENABLED = False
 DEFAULT_PREFERENCE = ExperienceTarget.BALANCED
 

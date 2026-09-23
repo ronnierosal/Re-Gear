@@ -47,6 +47,7 @@ from ..domain.game_optimization_state import (
     InFlight,
     LaneKey,
     OptimizationContext,
+    PerformanceContextRef,
     Phase,
     QueuedPlan,
 )
@@ -429,6 +430,10 @@ def _encode_context(context: OptimizationContext | None) -> dict | None:
         "profile_version": context.profile_version,
         "adapter_version": context.adapter_version,
         "schema_id": context.schema_id,
+        "performance": {
+            "fingerprint": context.performance.fingerprint,
+            "carrier_version": context.performance.carrier_version,
+        },
     }
 
 
@@ -436,12 +441,18 @@ def _decode_context(value: Any) -> OptimizationContext | None:
     if value is None:
         return None
     _require(isinstance(value, dict), "context is not an object")
+    performance = value["performance"]
+    _require(isinstance(performance, dict), "performance context is not an object")
     return OptimizationContext(
         ExperienceTarget(_str(value["preference"], "preference")),
         _str(value["game_version"], "game version"),
         _int(value["profile_version"], "profile version"),
         _int(value["adapter_version"], "adapter version"),
         _str(value["schema_id"], "schema id"),
+        PerformanceContextRef(
+            _str(performance["fingerprint"], "performance fingerprint"),
+            _int(performance["carrier_version"], "carrier version"),
+        ),
     )
 
 
@@ -453,6 +464,7 @@ _COUNTERS = (
     "windows",
     "degraded",
     "attempts_used",
+    "launch_seq",
 )
 
 

@@ -24,6 +24,7 @@ treated as uncertain rather than replayed.
 
 from __future__ import annotations
 
+import dataclasses
 import threading
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -43,21 +44,26 @@ from ..domain.game_optimization_state import (
     InFlight,
     LaneKey,
     LearningPolicy,
+    ObservationBinding,
+    ObservationWindow,
     OptimizationContext,
+    PerformanceContextRef,
     Phase,
     QueuedPlan,
-    WindowVerdict,
     apply_intent,
     assess,
     begin_dispatch,
     clear_override,
+    current_binding,
     finish_dispatch,
     initial,
+    launched,
     next_dispatch,
     observe,
     player_edited,
     propose,
     recover,
+    window_refusal,
 )
 from ..domain.graphics_schema import GameSchema
 from ..domain.mode_profiles import ExperienceTarget
@@ -67,6 +73,7 @@ from ..domain.semantic_profiles import GameMapping
 from .game_optimization_store import (
     GameOptimizationStore,
     LoadState,
+    Lookup,
     StoreError,
 )
 from .game_profile_catalog import CatalogLoad
@@ -92,8 +99,12 @@ class LaunchPreparation:
     reasons: tuple[str, ...] = ()
     engine: EngineOutcome | None = None
     restore: RestoreOutcome | None = None
-    #: Passed through untouched for whoever launches the game.
+    #: Passed through untouched for whoever launches the game, and only when
+    #: the game's own settings for that plan landed.
     frame_generation: FrameGenerationRef | None = None
+    #: What observation windows from this launch must carry to count. None
+    #: when nothing observed during this launch may count.
+    binding: ObservationBinding | None = None
 
     @property
     def may_launch(self) -> bool:
@@ -149,12 +160,17 @@ class GameOptimizationService:
         adapters: ReviewedAdapters,
         engine_factory: EngineFactory,
         policy: LearningPolicy | None = None,
+        allow_fixture_policy: bool = False,
     ) -> None:
         self._store = store
         self._catalog = catalog
         self._adapters = adapters
         self._engine_factory = engine_factory
         self._policy = policy or LearningPolicy()
+        #: policy_version 0 is an unreviewed placeholder. Only tests may run
+        #: launches under it; any other caller is refused before anything
+        #: is read or written.
+        self._allow_fixture_policy = allow_fixture_policy
         self._lock = threading.Lock()
 
     # ------------------------------------------------------------ intent
@@ -203,16 +219,33 @@ class GameOptimizationService:
             except (StoreError, ValueError) as error:
                 return ServiceOutcome(False, str(error))
             # Disabling must cancel pending work now, not at the next launch
-            # of each game: a queued candidate would otherwise still read as
-            # pending wherever it is shown.
-            for key in self._store.lanes():
+            # of each game. A lane that cannot be updated is reported: the
+            # preferences are saved regardless, every launch re-applies the
+            # effective intent, and state() reads it back reconciled.
+            failed: list[str] = []
+            try:
+                keys = self._store.lanes()
+            except StoreError as error:
+                return ServiceOutcome(
+                    False, f"preferences saved; pending work not cancelled: {error}"
+                )
+            for key in keys:
                 if steam_app_id is None or key.steam_app_id == steam_app_id:
-                    self._update_lane(
+                    outcome = self._update_lane(
                         key,
-                        lambda state: apply_intent(
+                        lambda state, key=key: apply_intent(
                             state, resolve_intent(updated, key.steam_app_id), self._policy
                         ),
                     )
+                    if not outcome.ok:
+                        failed.append(f"{key.identity}: {outcome.detail}")
+            if failed:
+                return ServiceOutcome(
+                    False,
+                    "preferences saved; pending work not cancelled for "
+                    + "; ".join(failed)
+                    + ". It is withheld at launch and reconciled on read.",
+                )
             return ServiceOutcome(True, "preferences saved")
 
     @staticmethod
@@ -223,28 +256,49 @@ class GameOptimizationService:
 
     # ---------------------------------------------------------- lifecycle
 
-    def state(self, steam_app_id: str, mode: OperatingMode):
-        return self._store.load_state(LaneKey(steam_app_id, mode))
+    def state(self, steam_app_id: str, mode: OperatingMode) -> Lookup:
+        """The lane as it stands under the player's current intent.
+
+        If a preference change could not reach this lane's record, the stored
+        record still shows pending work. The readback applies the current
+        intent so it never shows work that launch would not do.
+        """
+        lookup = self._store.load_state(LaneKey(steam_app_id, mode))
+        if not lookup.trusted:
+            return lookup
+        view = apply_intent(lookup.value, self.intent(steam_app_id), self._policy)
+        return lookup if view is lookup.value else dataclasses.replace(lookup, value=view)
 
     def record_window(
-        self, steam_app_id: str, mode: OperatingMode, qualified: bool, verdict: WindowVerdict
+        self, steam_app_id: str, mode: OperatingMode, window: ObservationWindow
     ) -> ServiceOutcome:
-        with self._lock:
-            return self._update_lane(
-                LaneKey(steam_app_id, mode),
-                lambda state: observe(state, qualified, verdict, self._policy),
-            )
-
-    def propose(
-        self, steam_app_id: str, mode: OperatingMode, candidate: QueuedPlan
-    ) -> ServiceOutcome:
+        """One assessed window, bound to the launch it was observed in."""
         with self._lock:
             key = LaneKey(steam_app_id, mode)
             loaded = self._load_lane(key)
             if isinstance(loaded, ServiceOutcome):
                 return loaded
             state, revision = loaded
-            proposal = propose(state, candidate, self._policy)
+            refusal = window_refusal(state, window)
+            if refusal is not None:
+                return ServiceOutcome(False, refusal, state)
+            return self._save(observe(state, window, self._policy), revision)
+
+    def propose(
+        self,
+        steam_app_id: str,
+        mode: OperatingMode,
+        candidate: QueuedPlan,
+        basis: OptimizationContext,
+    ) -> ServiceOutcome:
+        """Stage a candidate planned against ``basis``, the lane's current context."""
+        with self._lock:
+            key = LaneKey(steam_app_id, mode)
+            loaded = self._load_lane(key)
+            if isinstance(loaded, ServiceOutcome):
+                return loaded
+            state, revision = loaded
+            proposal = propose(state, candidate, basis, self._policy)
             if not proposal.staged:
                 return ServiceOutcome(False, proposal.reason, state)
             return self._save(proposal.state, revision)
@@ -272,7 +326,9 @@ class GameOptimizationService:
         with self._lock:
             engine = self._engine(mode)
             outcome = engine.restore(steam_app_id, run_state)
-            if outcome.result is RestoreResult.RESTORED:
+            # Nothing to restore still expresses the player taking the game
+            # over, so both end automatic management of this lane.
+            if outcome.result in (RestoreResult.RESTORED, RestoreResult.NOTHING_TO_RESTORE):
                 self._update_lane(
                     LaneKey(steam_app_id, mode),
                     lambda state: player_edited(
@@ -289,11 +345,24 @@ class GameOptimizationService:
         mode: OperatingMode,
         run_state: GameRunState,
         observed_game_version: str | None,
+        performance_context: PerformanceContextRef | None,
     ) -> LaunchPreparation:
-        """Everything automatic optimization does before a game starts. Raises nothing."""
+        """Everything automatic optimization does before a game starts. Raises nothing.
+
+        ``performance_context`` identifies the render GPU, display, runtime and
+        provider context this launch runs under. Without it nothing is
+        assessed or dispatched: a plan is never reused on assumed facts.
+        """
+        if self._policy.policy_version == 0 and not self._allow_fixture_policy:
+            return LaunchPreparation(
+                LaunchAction.PASSTHROUGH,
+                reasons=("the learning policy is an unreviewed placeholder; fixture use only",),
+            )
         try:
             with self._lock:
-                return self._prepare(steam_app_id, mode, run_state, observed_game_version)
+                return self._prepare(
+                    steam_app_id, mode, run_state, observed_game_version, performance_context
+                )
         except Exception as error:  # noqa: BLE001 - the launch must survive anything
             return LaunchPreparation(
                 LaunchAction.PASSTHROUGH, reasons=(f"unexpected failure contained: {error!r}",)
@@ -305,6 +374,7 @@ class GameOptimizationService:
         mode: OperatingMode,
         run_state: GameRunState,
         observed_game_version: str | None,
+        performance_context: PerformanceContextRef | None,
     ) -> LaunchPreparation:
         if mode not in MANAGED_MODES:
             return LaunchPreparation(
@@ -322,13 +392,23 @@ class GameOptimizationService:
             return LaunchPreparation(LaunchAction.PASSTHROUGH, reasons=(intent.reason.value,))
         state = recover(state, self._policy)
         state = apply_intent(state, intent, self._policy)
+        if intent.automatic and performance_context is None:
+            saved = self._persist(state, revision)
+            reasons = ("the performance context is unknown; automatic changes are withheld",)
+            return LaunchPreparation(
+                LaunchAction.PASSTHROUGH, state.phase, reasons + ((saved,) if saved else ())
+            )
         if intent.automatic:
             engine = self._engine(mode)
             decision = engine.decide(steam_app_id, mode, intent.preference, observed_game_version)
-            context = self._context(steam_app_id, intent.preference, observed_game_version)
+            context = self._context(
+                steam_app_id, intent.preference, observed_game_version, performance_context
+            )
             state = assess(
                 state, decision.tier, context, self._policy, "; ".join(decision.reasons)
             )
+            if context is not None:
+                state = launched(state)
         dispatch = next_dispatch(state)
         if dispatch is None or run_state is not GameRunState.NOT_RUNNING:
             reasons = (state.reason,) if state.reason else ()
@@ -337,7 +417,12 @@ class GameOptimizationService:
             saved = self._persist(state, revision)
             if saved is not None:
                 reasons = (*reasons, saved)
-            return LaunchPreparation(LaunchAction.PASSTHROUGH, state.phase, reasons)
+            # A due dispatch that was skipped leaves the plan unverified, so
+            # nothing observed in this launch may count.
+            binding = current_binding(state) if dispatch is None and saved is None else None
+            return LaunchPreparation(
+                LaunchAction.PASSTHROUGH, state.phase, reasons, binding=binding
+            )
         # Mark the write in flight durably *before* it happens. If this save
         # fails, nothing is written: an unrecorded write is the one thing the
         # lifecycle could never reconcile.
@@ -383,13 +468,20 @@ class GameOptimizationService:
         # open treats the write as uncertain. That is the intended fallback.
         failure = self._persist(finished, state.revision)
         reasons = (finished.reason,) + ((failure,) if failure else ())
+        landed = result is DispatchResult.LANDED and failure is None
         return LaunchPreparation(
             action,
             finished.phase,
             reasons,
             engine=engine_outcome,
             restore=restore_outcome,
-            frame_generation=engine_outcome.frame_generation if engine_outcome else None,
+            # A frame-generation reference is only meaningful with the game
+            # settings it was planned for. After anything but a landed apply
+            # it would describe a launch that is not happening.
+            frame_generation=(
+                engine_outcome.frame_generation if engine_outcome is not None and landed else None
+            ),
+            binding=current_binding(finished) if landed else None,
         )
 
     # ------------------------------------------------------------ helpers
@@ -403,7 +495,11 @@ class GameOptimizationService:
         return self._engine_factory(registry)
 
     def _context(
-        self, steam_app_id: str, preference: ExperienceTarget, observed_game_version: str | None
+        self,
+        steam_app_id: str,
+        preference: ExperienceTarget,
+        observed_game_version: str | None,
+        performance: PerformanceContextRef,
     ) -> OptimizationContext | None:
         entry = self._catalog.entries.get(steam_app_id)
         if entry is None or not observed_game_version:
@@ -417,6 +513,7 @@ class GameOptimizationService:
             entry.document.metadata.profile_version,
             mapping.adapter_version,
             mapping.schema_id,
+            performance,
         )
 
     def _load_lane(self, key: LaneKey):
