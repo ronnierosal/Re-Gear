@@ -455,6 +455,28 @@ test('component stops waiting on an abandoned record and says the result is unco
   h.unmount();
 });
 
+test('native-owned abandoned receipt survives remount until its unconfirmed popup is dismissed', async () => {
+  const raw = 'v2:disconnect_only:dead-panel:old-request';
+  const storage = new Map([['regear.whole-dock.pending-request', raw]]);
+  const presentations = [];
+  const h = harness(storage, 'disconnect_only', undefined,
+    { ...fresh, in_flight: false, request_id: 'someone-else' }, undefined, true,
+    value => presentations.push(value));
+  await settle();
+  h.poll(); await settle();
+  assert.equal(h.calls.length, 0, 'status-only remount never replays the mutation');
+  assert.equal(storage.get('regear.whole-dock.pending-request'), raw,
+    'the unconfirmed receipt remains until the native popup acknowledges it');
+  assert.ok(presentations.length >= 1);
+  assert.ok(presentations.every(value => value.intent === 'disconnect_only'
+    && value.request === 'old-request'));
+  const text = JSON.stringify(h.render());
+  assert.match(text, /could not confirm how the previous request ended/i);
+  assert.match(text, /Keep the cable connected/i);
+  assert.doesNotMatch(text, /safe to unplug|you can unplug/i);
+  h.unmount();
+});
+
 test("component keeps waiting on the record it wrote itself", async () => {
   // Same idle backend, but the record belongs to this panel: the reply is still
   // coming and the guard must hold.
