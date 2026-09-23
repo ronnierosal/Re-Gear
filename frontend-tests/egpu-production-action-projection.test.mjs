@@ -18,19 +18,20 @@ const input = {
 test('live eGPU actions do not inherit an unavailable overview reading as their action gate', () => {
   const view = projection.testBuildTiles(input);
   assert.deepEqual(view.egpu.map(tile=>tile.id), ['switch-handheld','disconnect','resolution','egpu','disconnect-sleep','disconnect-shutdown']);
-  assert.equal(view.egpu[0].title,'Switch to Handheld');
+  assert.equal(view.egpu[0].title,'Handheld');
   assert.equal(view.egpu[2].value,'Unavailable');
   assert.equal(view.egpu[3].title,'eGPU Status');
   for(const id of ['disconnect','disconnect-shutdown']){
     const tile=view.egpu.find(item=>item.id===id);
-    assert.equal(tile.value,'Check readiness');
+    assert.equal(tile.value,'Check status');
     assert.equal(tile.tone,'warning');
     assert.match(tile.detail,/evaluate current teardown conditions/);
   }
   const connectedSleep=view.egpu.find(item=>item.id==='disconnect-sleep');
   assert.equal(connectedSleep.title,'Disconnect + Sleep');
   assert.match(connectedSleep.detail,/verified absence/);
-  assert.equal(view.quick[0].value,'Check readiness');
+  assert.equal(view.quick[0].value,'Check status');
+  assert.equal(view.egpu.find(item=>item.id==='disconnect-shutdown').title,'Disconnect + Shutdown');
 });
 
 test('native adapter preserves verified providers and only Resolution is fixed unavailable', () => {

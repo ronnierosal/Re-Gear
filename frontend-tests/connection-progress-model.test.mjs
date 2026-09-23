@@ -8,15 +8,15 @@ const sample = () => ({phase:"checking",connected:true,expiresAt:200,seconds:90,
   rows:[{label:"GPU and driver",state:"ready"},{label:"TV HDMI detected",state:"waiting"},{label:"No game running",state:"blocked"}]});
 
 test("popup uses detected GPU name and generic fallback, never a dock-brand default",()=>{
- const s=sample(); assert.equal(view(s,100).deviceLabel,"eGPU connected");
- s.gpuName="Example GPU 9000"; assert.equal(view(s,100).deviceLabel,"Example GPU 9000 connected");
- s.gpuName="Another GPU 500"; assert.equal(view(s,100).deviceLabel,"Another GPU 500 connected");
- assert.equal(view(s,200).deviceLabel,"eGPU connection");
+ const s=sample(); assert.equal(view(s,100).deviceLabel,"eGPU detected");
+ s.gpuName="Example GPU 9000"; assert.equal(view(s,100).deviceLabel,"Example GPU 9000 detected");
+ s.gpuName="Another GPU 500"; assert.equal(view(s,100).deviceLabel,"Another GPU 500 detected");
+ assert.equal(view(s,200).deviceLabel,"Waiting for eGPU");
  assert.equal(view(s,100).keepConnectedMessage,"Keep eGPU connected · Hide keeps docking active.");
 });
 test("approved overlay preserves monitor evidence and blockers without new readiness inference",()=>{
  const s=sample(); const v=view(s,100);
- assert.equal(v.phase,"connecting"); assert.equal(v.detail,s.title); assert.equal(v.elapsedSeconds,90);
+ assert.equal(v.phase,"connecting"); assert.equal(v.detail,"Looking for TV"); assert.equal(v.elapsedSeconds,90);
  assert.deepEqual(v.rows.map(r=>r.state),["ready","pending","blocked"]);
  assert.equal(s.rows[1].state,"waiting");
 });
@@ -51,18 +51,18 @@ test("connection observation preserves the actual reason without inventing a tra
  s.phase="switching";
  assert.ok(!view(s,100).rows.some(row=>row.label==="Final verification"));
  const stale=view({...s,phase:"complete"},200);
- assert.equal(stale.detail,"Waiting for a fresh status update");
+ assert.equal(stale.detail,"Refreshing status");
  assert.ok(stale.rows.every(row=>row.state!=="ready"));
 });
 
 
-test("waiting rows are unconfirmed, not active work, and stale rows lose confirmation",()=>{
+test("waiting rows use compact status copy and stale rows lose confirmation",()=>{
  const s=sample(); const v=view(s,100);
  assert.equal(v.rows[0].stateLabel,"Confirmed");
  assert.equal(v.rows[1].state,"pending");
- assert.equal(v.rows[1].stateLabel,"Not yet verified");
- assert.equal(v.rows[2].stateLabel,"Needs attention");
- assert.ok(view(s,200).rows.every(r=>r.stateLabel==="Status unavailable"));
+ assert.equal(v.rows[1].stateLabel,"Waiting");
+ assert.equal(v.rows[2].stateLabel,"Attention");
+ assert.ok(view(s,200).rows.every(r=>r.stateLabel==="Unavailable"));
 });
 test("delay guidance starts at one minute and changes at three without promising completion",()=>{
  const s={...sample(),rows:[{label:"GPU and driver",state:"waiting"}]};
@@ -88,7 +88,7 @@ test('settled eGPU waiting for a TV does not become a connection delay warning',
   const v=view({...sample(),displayPending:true,seconds,title:'eGPU ready — waiting for TV'},100);
   assert.equal(v.delayNotice,undefined);assert.equal(v.phase,'connecting');assert.equal(v.detail,'eGPU ready — waiting for TV');
  }
- const stale=view({...sample(),displayPending:true},200);assert.match(stale.detail,/fresh status/);assert.ok(stale.rows.every(row=>row.state==='pending'));
+ const stale=view({...sample(),displayPending:true},200);assert.equal(stale.detail,"Refreshing status");assert.ok(stale.rows.every(row=>row.state==='pending'));
 });
 
 

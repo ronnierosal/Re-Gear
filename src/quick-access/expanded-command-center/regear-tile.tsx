@@ -40,7 +40,7 @@ export function StaticActionTile({ readiness, ...props }: Omit<TileProps, 'child
 
 /** Mount once alongside TileArtworkSprite. Motion runs only when readings change. */
 export const tileOverlayStyles = `
-.rg-tile-metadata{display:block;font-size:.75em;line-height:1.15;overflow-wrap:anywhere}
+.rg-tile-metadata{display:block;font-size:.75em;line-height:1.15;overflow-wrap:normal;word-break:normal;hyphens:none}
 .rg-tile-gauge{width:48px;height:32px;display:block;overflow:visible}
 .rg-tile-gauge-track{stroke:#315c75}.rg-tile-gauge-fill{stroke:#32d7ff;transition:stroke-dashoffset 250ms ease}
 .rg-tile-gauge[data-known=false]{opacity:.3}
@@ -49,7 +49,8 @@ export const tileOverlayStyles = `
 .rg-expanded-tile .rg-v3-tile-copy{position:relative;z-index:1;width:58%;height:100%;padding:7px 2px 7px 9px;align-items:flex-start;justify-content:center;gap:3px;text-align:left;text-shadow:0 1px 2px #000}
 .rg-v3-tile-copy .rg-expanded-tile-heading{justify-content:flex-start;text-align:left}
 .rg-v3-tile-copy .rg-expanded-label,.rg-v3-tile-copy .rg-expanded-value,.rg-v3-tile-copy .rg-tile-metadata{max-width:100%;text-align:left}
-.rg-v3-tile-copy .rg-expanded-value{font-size:clamp(10px,1vw,14px);white-space:normal;overflow-wrap:anywhere}
+.rg-v3-tile-copy .rg-expanded-label{font-size:clamp(9px,.78vw,11px);overflow-wrap:normal;word-break:normal;hyphens:none}
+.rg-v3-tile-copy .rg-expanded-value{font-size:clamp(9px,.85vw,13px);white-space:normal;overflow-wrap:normal;word-break:normal;hyphens:none;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .rg-v3-tile[data-tone=unavailable] .rg-expanded-value{color:#dbeeff;text-shadow:0 1px 2px #000}
 .rg-expanded-tile.rg-v3-tile:focus-visible{outline:2px solid #8cecff;outline-offset:-3px;box-shadow:0 0 0 2px #061521,0 0 13px #28d9ff99}
 @media(prefers-reduced-motion:reduce){.rg-tile-gauge-fill{transition:none}}
