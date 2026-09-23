@@ -36,10 +36,11 @@ from .graphics_game_adapter import GameSettingsAdapter
 from .graphics_profiles import SUPPORTED_MODES, GraphicsProfile
 from .mode_profiles import ExperienceTarget
 from .models import GameState, OperatingMode
+from .semantic_profiles import Resolution, UpscalingMode
 
 
 INTENT_SCHEMA_VERSION = 1
-EVIDENCE_RECORD_VERSION = 1
+EVIDENCE_RECORD_VERSION = 2
 MAX_FPS = 1000
 
 
@@ -58,10 +59,34 @@ METHOD_RANK = {
 
 
 class EvidenceStatus(StrEnum):
+    THEORETICAL = "theoretical"
     UNKNOWN = "unknown"
     UNSUPPORTED = "unsupported"
     EXPERIMENTAL = "experimental"
     VALIDATED = "validated"
+
+
+class ProviderKind(StrEnum):
+    NATIVE_GAME = "native_game"
+    EXTERNAL = "external"
+
+
+class ScalingLocation(StrEnum):
+    GAME = "game"
+    COMPOSITOR = "compositor"
+
+
+@dataclass(frozen=True, slots=True)
+class UpscalingChoice:
+    provider_id: str
+    mode: UpscalingMode
+    location: ScalingLocation = ScalingLocation.GAME
+
+    def __post_init__(self) -> None:
+        if not self.provider_id or self.mode not in (
+            UpscalingMode.QUALITY, UpscalingMode.BALANCED, UpscalingMode.PERFORMANCE
+        ) or not isinstance(self.location, ScalingLocation):
+            raise ValueError("an upscaler needs a provider, concrete mode and location")
 
 
 class InjectionEligibility(StrEnum):
@@ -133,12 +158,18 @@ class PerformanceIntent:
     minimum_base_fps: int | None = None
     allow_lower_target: bool = True
     schema_version: int = INTENT_SCHEMA_VERSION
+    provider_priority: tuple[str, ...] = ()
+    upscaling_allowed: bool = True
 
     def __post_init__(self) -> None:
         if self.schema_version != INTENT_SCHEMA_VERSION:
             raise ValueError("performance intent schema version is not supported")
         _positive(self.requested_fps, "requested FPS")
+        if self.requested_fps is None:
+            raise ValueError("requested FPS is required")
         _positive(self.minimum_base_fps, "minimum base FPS")
+        if len(set(self.provider_priority)) != len(self.provider_priority):
+            raise ValueError("provider priority cannot contain duplicates")
 
 
 @dataclass(frozen=True, slots=True)
@@ -157,9 +188,20 @@ class PresentationContext:
     runtime: str
     refresh_hz: int | None
     vrr: VrrState = VrrState.UNKNOWN
+    output_resolution: Resolution | None = None
+    vrr_range: tuple[int, int] | None = None
+    capabilities: frozenset[str] = frozenset()
+    presentation_stack: str = ""
 
     def __post_init__(self) -> None:
         _positive(self.refresh_hz, "refresh rate")
+        if self.vrr_range is not None:
+            low, high = self.vrr_range
+            _positive(low, "VRR minimum")
+            _positive(high, "VRR maximum")
+            if low > high:
+                raise ValueError("VRR range is reversed")
+        object.__setattr__(self, "capabilities", frozenset(self.capabilities))
 
 
 @dataclass(frozen=True, slots=True)
@@ -208,14 +250,30 @@ class CompatibilityRecord:
     #: A per-game floor established by this evidence, if any.
     minimum_base_fps: int | None = None
     record_version: int = EVIDENCE_RECORD_VERSION
+    render_resolution: Resolution | None = None
+    output_resolution: Resolution | None = None
+    display_owner: str | None = None
+    presentation_stack: str = ""
+    upscalers: tuple[UpscalingChoice, ...] = ()
+    provider_kind: ProviderKind = ProviderKind.EXTERNAL
+    required_capabilities: frozenset[str] = frozenset()
+    required_vrr_range: tuple[int, int] | None = None
+    stable: bool = True
+    quality_acceptable: bool = True
 
     def __post_init__(self) -> None:
         if not self.record_id or not self.evidence_revision:
             raise ValueError("a compatibility record needs an id and an evidence revision")
         _positive(self.stable_base_fps, "stable base FPS")
+        if self.stable_base_fps is None or self.output_fps is None:
+            raise ValueError("base and output frame rates are required")
         _positive(self.output_fps, "output FPS")
         _positive(self.refresh_hz, "refresh rate")
         _positive(self.minimum_base_fps, "minimum base FPS")
+        if not isinstance(self.multiplier, int) or isinstance(self.multiplier, bool):
+            raise ValueError("multiplier must be an integer")
+        object.__setattr__(self, "upscalers", tuple(self.upscalers))
+        object.__setattr__(self, "required_capabilities", frozenset(self.required_capabilities))
         if self.method is RenderMethod.FRAME_GENERATION:
             if self.multiplier < 2:
                 raise ValueError("a frame-generation record needs a multiplier of at least 2")
@@ -245,6 +303,8 @@ class ProviderState:
     available: bool
     reason: str = ""
     supported_multipliers: tuple[int, ...] = ()
+    kind: ProviderKind = ProviderKind.EXTERNAL
+    requires_refresh_match: bool = True
 
 
 @dataclass(frozen=True, slots=True)
@@ -253,6 +313,8 @@ class Decision:
     requested_fps: int
     achievable_fps: int | None = None
     record: CompatibilityRecord | None = None
+    #: Measured preset only; PerformancePlan supplies the final cap/resolution.
+    #: Never apply this raw preset independently of the provider plan.
     profile: GraphicsProfile | None = None
     required_stable_base_fps: int | None = None
     multiplier: int = 1
@@ -315,6 +377,8 @@ def resolve(
             reasons=("no game adapter serves this AppID",),
         )
 
+    target = min(requested, context.refresh_hz) if context.refresh_hz else requested
+
     screen = _screen(intent, context, adapter, records, providers)
     accepted = screen.accepted
     rejected = list(screen.rejected)
@@ -324,17 +388,18 @@ def resolve(
         key=lambda r: (METHOD_RANK[r.method], r.record_id),
     )
     for record in simple:
-        if record.output_fps >= requested:
-            return _decided(record, adapter, context, requested, requested, rejected)
+        if record.output_fps >= target:
+            return _decided(record, adapter, context, requested, target, rejected)
 
     # Nothing simpler reaches the target. FG may, but only where its record
     # was explicitly compared against every simpler validated option here.
-    best_simple = _best_lower(simple, requested)
+    best_simple = _best_lower(simple, target)
+    priority = {name: index for index, name in enumerate(intent.provider_priority)}
     for record in sorted(
         (r for r in accepted if r.method is RenderMethod.FRAME_GENERATION),
-        key=lambda r: (METHOD_RANK[r.method], r.record_id),
+        key=lambda r: (priority.get(r.provider_id, len(priority)), r.record_id),
     ):
-        if record.output_fps != requested:
+        if record.output_fps != target:
             rejected.append((record.record_id, "frame-generation output does not equal the target"))
             continue
         missing = [r.record_id for r in simple if r.record_id not in record.compared_against]
@@ -347,7 +412,9 @@ def resolve(
                 )
             )
             continue
-        return _decided(record, adapter, context, requested, requested, rejected)
+        if target < requested and not intent.allow_lower_target:
+            continue
+        return _decided(record, adapter, context, requested, target, rejected)
 
     if best_simple is not None and intent.allow_lower_target:
         decision = _decided(
@@ -400,20 +467,22 @@ def _decided(
                 "base_limiter: the owner and placement of the "
                 f"{record.stable_base_fps} FPS real-frame cap are not established"
             )
-        unresolved.append(
-            "provider_initialization_failure: recovery after in-process layer "
-            "failure is an unmet production gate; a preflight fallback cannot "
-            "catch a failure that happens inside the running game"
-        )
+        if record.provider_kind is ProviderKind.EXTERNAL:
+            unresolved.append(
+                "provider_initialization_failure: recovery after in-process layer "
+                "failure is an unmet production gate; a preflight fallback cannot "
+                "catch a failure that happens inside the running game"
+            )
     return Decision(
-        METHOD_OUTCOME[record.method],
+        Outcome.LOWER_TARGET if achievable < requested else METHOD_OUTCOME[record.method],
         requested,
         achievable_fps=achievable,
         record=record,
         profile=profile,
-        required_stable_base_fps=record.stable_base_fps,
+        required_stable_base_fps=achievable // record.multiplier,
         multiplier=record.multiplier,
         unresolved=tuple(unresolved),
+        reasons=(f"requested {requested}; planned {achievable} presentation FPS",),
         rejected=tuple(rejected),
     )
 
@@ -427,7 +496,13 @@ def _screen(
 ) -> _Screen:
     accepted: list[CompatibilityRecord] = []
     rejected: list[tuple[str, str]] = []
+    counts: dict[str, int] = {}
+    for record in records:
+        counts[record.record_id] = counts.get(record.record_id, 0) + 1
     for record in sorted(records, key=lambda r: r.record_id):
+        if counts[record.record_id] != 1:
+            rejected.append((record.record_id, "ambiguous duplicate evidence identity"))
+            continue
         reason = _rejection(intent, context, adapter, record, providers)
         if reason is None:
             accepted.append(record)
@@ -446,6 +521,35 @@ def _rejection(
     """Why this record is not evidence for this context, or None if it is."""
     if record.record_version != EVIDENCE_RECORD_VERSION:
         return "evidence record version is not one this build understands"
+    if not record.stable or not record.quality_acceptable:
+        return "base stability or latency/artifact/pacing acceptance is not established"
+    if record.output_resolution != context.output_resolution:
+        return "measured at another display output resolution"
+    if record.display_owner != context.display_owner:
+        return "measured on another display owner"
+    if record.presentation_stack != context.presentation_stack:
+        return "measured with another compositor/overlay/limiter stack"
+    if not record.required_capabilities <= context.capabilities:
+        return "required GPU/runtime capabilities are unavailable"
+    if record.required_vrr_range is not None and record.required_vrr_range != context.vrr_range:
+        return "required VRR range is not established"
+    if record.requires_vrr is not None and context.vrr is not record.requires_vrr:
+        return f"requires VRR {record.requires_vrr.value}"
+    planned = min(intent.requested_fps, context.refresh_hz or intent.requested_fps,
+                  record.output_fps)
+    if record.requires_vrr is VrrState.ON and context.vrr_range is not None:
+        if not context.vrr_range[0] <= planned <= context.vrr_range[1]:
+            return "planned rate is outside the validated VRR range; LFC is not assumed"
+    if len(record.upscalers) > 1:
+        return "conflicting scaling technologies; only one upscaler may be selected"
+    if record.upscalers and not intent.upscaling_allowed:
+        return "the player turned upscaling off"
+    if record.method is RenderMethod.NATIVE and record.upscalers:
+        return "native rendering cannot also enable an upscaler"
+    if record.method is RenderMethod.UPSCALED and not record.upscalers:
+        return "upscaled evidence must name its upscaler"
+    if context.refresh_hz and context.refresh_hz < intent.requested_fps and not intent.allow_lower_target:
+        return "display refresh is below the requested target and lower targets are disabled"
     if record.steam_app_id != context.steam_app_id:
         return "evidence is for another game"
     # A record measured anywhere else is stale here, never "close enough".
@@ -482,6 +586,8 @@ def _rejection(
     if record.stable_base_fps < floor:
         return f"stable base {record.stable_base_fps} FPS is below the floor of {floor}"
     if record.method is not RenderMethod.FRAME_GENERATION:
+        if planned < floor:
+            return "planned base cap would be below the required floor"
         return None
 
     if intent.fg_policy is FrameGenerationPolicy.OFF:
@@ -492,18 +598,20 @@ def _rejection(
         return f"provider {record.provider_id} is {detail}"
     if provider.revision != record.provider_revision:
         return "stale: measured with another provider revision"
+    if provider.provider_id != record.provider_id or provider.kind is not record.provider_kind:
+        return "provider identity or kind does not match the evidence"
     if record.multiplier not in provider.supported_multipliers:
         return f"multiplier {record.multiplier}x is not supported by this provider revision"
-    if record.injection is InjectionEligibility.UNKNOWN:
+    if provider.kind is ProviderKind.EXTERNAL and record.injection is InjectionEligibility.UNKNOWN:
         return "external-injection eligibility (anti-cheat) is unknown"
-    if record.injection is InjectionEligibility.INELIGIBLE:
+    if provider.kind is ProviderKind.EXTERNAL and record.injection is InjectionEligibility.INELIGIBLE:
         return "this game is ineligible for external injection"
     # Vsync pacing needs presented output to match the display's refresh. A
     # 60 FPS plan on a 120 Hz panel is not admitted merely because 60 <= 120,
     # and refresh is never changed to make a provider eligible.
     if context.refresh_hz is None:
         return "display refresh is unknown, so presentation pacing cannot be admitted"
-    if record.output_fps != context.refresh_hz:
+    if record.output_fps > context.refresh_hz or (provider.requires_refresh_match and record.output_fps != context.refresh_hz):
         return (
             f"output {record.output_fps} FPS does not match the {context.refresh_hz} Hz "
             "display; refresh is not changed to make a provider eligible"

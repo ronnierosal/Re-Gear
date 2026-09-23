@@ -24,7 +24,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Mapping, Protocol
 
-from .performance_target_resolver import Decision, Outcome
+from .performance_target_resolver import Decision, RenderMethod, ProviderKind
 
 
 LSFG_VK_PROVIDER_ID = "lsfg-vk"
@@ -103,8 +103,10 @@ class LsfgVkProvider:
     ) -> ProviderConfiguration:
         base = ProviderConfiguration(self.provider_id, self.revision)
         record = decision.record
-        if decision.outcome is not Outcome.FRAME_GENERATION or record is None:
+        if decision.method is not RenderMethod.FRAME_GENERATION or record is None:
             return _refuse(base, "the decision did not select frame generation")
+        if record.provider_kind is not ProviderKind.EXTERNAL:
+            return _refuse(base, "LSFG-VK is an external provider")
         if record.provider_id != self.provider_id or record.provider_revision != self.revision:
             return _refuse(base, "the decision was made for another provider revision")
         if not self.dll_path or "\n" in self.dll_path or "\0" in self.dll_path:
@@ -116,7 +118,7 @@ class LsfgVkProvider:
         owned = sorted(
             key
             for key in original_environment
-            if key in LSFG_VK_ENV_KEYS or key in LSFG_VK_PLAYER_CONFIG_KEYS
+            if key.startswith("LSFGVK_")
         )
         if owned:
             return _refuse(

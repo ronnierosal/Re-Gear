@@ -43,7 +43,9 @@ from regear.domain.performance_target_resolver import (  # noqa: E402
     ProviderState,
     RenderMethod,
     VrrState,
+    UpscalingChoice,
 )
+from regear.domain.semantic_profiles import Resolution, UpscalingMode
 
 
 #: Outside every AppID Steam has issued; unmistakably synthetic.
@@ -85,6 +87,7 @@ def context(**overrides) -> PresentationContext:
         runtime=FIXTURE_RUNTIME,
         refresh_hz=60,
         vrr=VrrState.OFF,
+        output_resolution=Resolution(3840, 2160),
     )
     values.update(overrides)
     return PresentationContext(**values)
@@ -115,12 +118,16 @@ def native(record_id: str = "native-quality", fps: int = 30, **overrides) -> Com
         stable_base_fps=fps,
         output_fps=fps,
         evidence_revision="fixture-evidence-1",
+        display_owner=FIXTURE_DISPLAY,
+        output_resolution=Resolution(3840, 2160),
+        render_resolution=Resolution(1920, 1080),
     )
     values.update(overrides)
     return CompatibilityRecord(**values)
 
 
 def upscaled(record_id: str = "upscaled-balanced", fps: int = 60, **overrides) -> CompatibilityRecord:
+    overrides.setdefault("upscalers", (UpscalingChoice("fixture-fsr", UpscalingMode.QUALITY),))
     return native(
         record_id,
         fps,
@@ -157,6 +164,9 @@ def frame_generation(
         base_limiter=LimiterState.UNRESOLVED,
         compared_against=("native-quality",),
         evidence_revision="fixture-evidence-1",
+        display_owner=FIXTURE_DISPLAY,
+        output_resolution=Resolution(3840, 2160),
+        render_resolution=Resolution(1920, 1080),
     )
     values.update(overrides)
     return CompatibilityRecord(**values)
