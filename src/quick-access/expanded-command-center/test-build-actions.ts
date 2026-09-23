@@ -11,16 +11,16 @@ export function testBuildTiles(source:TileView):TileView {
   // These cards launch WholeDockControl, which owns the current readiness
   // observation. An unavailable overview reading must not masquerade as the
   // action's gate before that guarded control opens.
-  const compactDisconnect:Tile = {id:'disconnect',title:'Safe Disconnect',value:'Check readiness',
+  const compactDisconnect:Tile = {id:'disconnect',title:'Safe Disconnect',value:'Check status',
     detail:'Open to evaluate current teardown conditions',tone:'warning'};
   const unavailable=(id:string,title:string):Tile=>({id,title,value:'Unavailable',detail:unavailableTestActions[id],tone:'unavailable'});
   const status=egpu.find(tile=>tile.id==='link');
   return {...source,
     performance:source.performance?.map(tile=>tile.id === "profile" ? {...tile,title:"Profile"} : tile),
     quick:quick.map(tile=>tile.id==='disconnect'?{...compactDisconnect,id:tile.id}:tile),
-    egpu:[unavailable('switch-handheld','Switch to Handheld'),compactDisconnect,
+    egpu:[unavailable('switch-handheld','Handheld'),compactDisconnect,
       unavailable('resolution','Resolution'),{id:'egpu',title:'eGPU Status',value:status?.value??'Unknown',detail:egpu.filter(tile=>tile.id!=='disconnect').map(tile=>`${tile.title}: ${tile.value}. ${tile.detail}`).join(' · ')},
       {...compactDisconnect,id:'disconnect-sleep',title:'Disconnect + Sleep',detail:'Disconnect, prompt for physical unplug, then sleep after verified absence.'},
-      {...compactDisconnect,id:'disconnect-shutdown',title:'Safe Disconnect + Shutdown'}],
+      {...compactDisconnect,id:'disconnect-shutdown',title:'Disconnect + Shutdown'}],
   };
 }

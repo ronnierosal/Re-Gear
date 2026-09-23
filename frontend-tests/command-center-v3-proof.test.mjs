@@ -60,7 +60,7 @@ test('V3 geometry keeps copy left, artwork right, focus, and reduced-motion gaug
   assert.match(tile,/\.rg-v3-tile-artwork\{position:absolute;inset:0/);
   assert.match(tile,/\.rg-expanded-tile \.rg-v3-tile-copy[^{]*\{[^}]*width:58%/);
   assert.doesNotMatch(tile,/\.rg-expanded-tile\.rg-v3-tile:after/);
-  assert.match(tile,/\.rg-v3-tile-copy \.rg-expanded-value\{[^}]*overflow-wrap:anywhere/);
+  assert.match(tile,/\.rg-v3-tile-copy \.rg-expanded-value\{[^}]*overflow-wrap:normal[^}]*word-break:normal[^}]*hyphens:none/);
   assert.match(tile,/\.rg-expanded-tile\.rg-v3-tile:focus-visible/);
   assert.match(tile,/transition:stroke-dashoffset 250ms ease/);
   assert.match(tile,/@media\(prefers-reduced-motion:reduce\)/);

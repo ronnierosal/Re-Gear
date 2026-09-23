@@ -26,6 +26,13 @@ const api = await import('data:text/javascript;base64,' + Buffer.from(js).toStri
 const walk = node => node && typeof node === 'object' ? [node, ...(node.props?.children ?? []).flatMap(walk)] : [];
 const text = node => node && typeof node === 'object' ? (node.props?.children ?? []).map(text).join('') : node == null || node === false ? '' : String(node);
 
+test('five-column artwork copy keeps words intact and scales within its card', () => {
+  assert.match(source, /width:58%/);
+  assert.match(source, /rg-v3-tile-copy \.rg-expanded-label\{[^}]*font-size:clamp\(9px,.78vw,11px\)[^}]*overflow-wrap:normal[^}]*word-break:normal[^}]*hyphens:none/);
+  assert.match(source, /rg-v3-tile-copy \.rg-expanded-value\{[^}]*font-size:clamp\(9px,.85vw,13px\)[^}]*overflow-wrap:normal[^}]*word-break:normal[^}]*hyphens:none[^}]*-webkit-line-clamp:2/);
+  assert.doesNotMatch(source, /rg-v3-tile-copy \.rg-expanded-value\{[^}]*overflow-wrap:anywhere/);
+});
+
 test('approved sprite has 37 unique individually addressable symbols, with no fallback artwork', () => {
   assert.equal(createHash('sha256').update(api.approvedTileSprite).digest('hex'),
     'b2ecd73e379180a77f3164c57ba885de6406fd8f9d4f8d8f365bdcb0cdbab73f');

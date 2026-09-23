@@ -1,6 +1,16 @@
 import type { LiveStatus } from "./connection-live-status";
 import type { ConnectionProgressPhase, ConnectionProgressRow } from "./connection-progress-overlay";
 
+const compactDetail: Record<string, string> = {
+  "Waiting for eGPU detection": "Detecting eGPU",
+  "Waiting for GPU driver": "Loading GPU driver",
+  "Waiting for connection link": "Checking eGPU link",
+  "Waiting for TV HDMI": "Looking for TV",
+  "Checking audio recovery": "Checking audio",
+  "Waiting for display integration": "Preparing display",
+  "Checking connection stability": "Checking connection",
+};
+
 /** Presentation adapter for the existing monitor: no snapshot inference or I/O. */
 export function connectionProgressViewModel(status: LiveStatus & {displayPending?: boolean}, now = Date.now()) {
   const fresh = now < status.expiresAt;
@@ -9,8 +19,8 @@ export function connectionProgressViewModel(status: LiveStatus & {displayPending
   let rows: ConnectionProgressRow[] = status.rows.map((row, index) => ({
     key: String(index), label: row.label,
     state: !fresh || row.state === "waiting" ? "pending" : row.state,
-    stateLabel: !fresh ? "Status unavailable" : row.state === "waiting" ? "Not yet verified"
-      : row.state === "ready" ? "Confirmed" : "Needs attention",
+    stateLabel: !fresh ? "Unavailable" : row.state === "waiting" ? "Waiting"
+      : row.state === "ready" ? "Confirmed" : "Attention",
   }));
   if (phase === "switching") rows = [...rows,
     {key:"display",label:"Display activation",state:"switching"},
@@ -30,9 +40,10 @@ export function connectionProgressViewModel(status: LiveStatus & {displayPending
     activationNotice: !fresh ? "TV status is unavailable. Waiting for a fresh update."
       : status.phase !== "complete" ? "TV activation is not yet confirmed. This popup will close after the TV switch is confirmed." : undefined,
     elapsedSeconds:status.seconds,
-    deviceLabel:`${fresh && status.gpuName ? status.gpuName : "eGPU"} ${fresh && status.connected ? "connected" : "connection"}`,
-    detail:!fresh ? "Waiting for a fresh status update" : phase === "ready"
-      ? "TV transition reported complete. Check picture and sound. Closing automatically…" : status.title,
+    deviceLabel:!fresh ? "eGPU status unavailable"
+      : status.connected ? `${status.gpuName ?? "eGPU"} detected` : "Waiting for eGPU",
+    detail:!fresh ? "Refreshing status" : phase === "ready"
+      ? "TV switch complete. Check picture and sound. Closing automatically…" : compactDetail[status.title] ?? status.title,
     keepConnectedMessage:"Keep eGPU connected · Hide keeps docking active.",
   };
 }
