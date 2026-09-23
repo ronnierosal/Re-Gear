@@ -15,9 +15,12 @@ LSFG-VK is technically relevant, but research does **not** yet establish a
 suitable automatically deployable Re-Gear provider. Current licensing, SteamOS
 integration, per-game validation, and recovery after in-process injection remain
 open. Do not bundle, install, enable, or automatically launch it in this slice.
-The proposed first proof of concept below is an inert fixture plan; it is not
-implemented by this research change. A pure simulation can precede these gates,
-but cannot close them.
+The first proof of concept below is now implemented as an inert fixture plan,
+reusing Claude's PR #381 and unchanged PR #386 engine contract. This simulation
+cannot close production gates. Independent configuration of user-installed
+components can proceed without redistributing them; the rights question is about
+the eventual integration/distribution model, not a blanket prohibition on
+implementing configuration-data generation.
 
 The foundation is Claude's [PR #375](https://github.com/ronnierosal/Re-Gear/pull/375),
 accepted for architecture and a synthetic first adapter at
@@ -158,7 +161,7 @@ justify it. Otherwise retain the simpler profile and explain the shortfall.
 
 ## Proposed architecture: composition, not a second profile engine
 
-This section proposes interfaces; it does not change accepted foundation APIs.
+This section describes the design; it does not change accepted foundation APIs.
 Use an optional, versioned performance intent associated with the existing
 `GraphicsProfile`/adapter selection. `ExperienceTarget.SMOOTH_60` already exists;
 do not add a parallel game identity, config writer, mode observer or running-game
@@ -233,7 +236,7 @@ Do not overwrite pre-existing player LSFG configuration, wrappers or environment
 
 ## Recommended first proof of concept
 
-First implement an **inert, synthetic** composition test after architecture review.
+The prototype implements an **inert, synthetic** composition test.
 Use an unmistakable fixture AppID, a `GameSettingsAdapter` and its existing
 `GraphicsProfile`, supplied `OperatingMode`, fake evidence and fake availability.
 No real game becomes Managed/validated from these fixtures. All outputs explicitly
@@ -260,8 +263,8 @@ fallback: original launch data and environment exactly
 ```
 
 Use a fake provider to exercise selection without pretending LSFG availability,
-license eligibility or initialization have been validated. The above is a design
-example, not executable code or evidence of a completed prototype. A production
+license eligibility or initialization have been validated. The above is configuration
+data, not an executable command. A production
 plan with its limiter unresolved must be rejected.
 
 Required tests: native and upscaling precedence; unstable/insufficient base;
@@ -297,3 +300,65 @@ this document authorizes no wiring. Public UI remains a simple target and Auto,
 with technical details in diagnostics. No UI work is part of this change.
 
 Documentation impact: none (internal research; no delivered player capability).
+
+## Implemented continuation and engine boundary
+
+The Codex continuation composes PR #381 at `6209014` with PR #386 at `27eeda0`.
+Claude's engine, semantic mapping, schema and writer files are unchanged. The
+resolver's evidence format is now version 2; older records are refused rather
+than silently gaining missing display/scaling assertions. There is no persistent
+catalogue migration because none has shipped.
+
+`application/performance_plan_bridge.py::preview_performance` calls the pure
+resolver and returns a `PerformancePreview`: selected decision, optional existing
+`PerformancePlan`, separate output resolution, inert launch data and reasons.
+The selected record carries render resolution and at most one explicit upscaler.
+Native FG and external FG are distinguished; provider priority is supplied policy,
+and the exact-refresh restriction is provider-specific. Native FG keeps a missing
+game-key mapping requirement; its opaque reference does not enable anything.
+Compositor upscaling remains capability data and cannot produce an engine preview
+until an agreed configuration seam exists. Neither path modifies Gamescope.
+
+For the future caller, use the selected AppID, mode and profile target with the
+engine's normal validation. Pass the preview's `game_plan` as its existing
+`PerformancePlan` argument; do not apply `Decision.profile` directly. That raw
+preset is measurement identity and may contain a different cap. The engine's
+existing translation receives the resolved **base** cap and render resolution;
+provider revision/configuration and output resolution stay with the outer preview.
+No caller is wired, and no engine apply is authorized by a preview. The current
+engine maps upscaling mode, not arbitrary upscaler identity. The bridge therefore
+requires a separately supplied reviewed `game_upscaler_bindings` entry keyed by
+the full `ProfileBinding` (adapter, target, profile/schema versions), naming the
+same provider as the selected evidence. Missing or mismatched binding gives no game
+plan. This assertion must come from the game-adapter owner; the resolver cannot
+derive it from a generic QUALITY enum. The full upscaler identity stays in the
+preview's decision record. Only synthetic bindings exist in the tests.
+
+Provider object and returned configuration must both match the evidence identity
+and revision. Provider errors/opt-outs discard the game proposal as well as the
+launch overlay, and disable removes both. Running/unknown game state returns only
+a next-launch indication; the eventual queue must persist intent and re-resolve,
+not retain an executable stale plan. In-process failure recovery remains unproven.
+
+Hardware-free tests compose target -> existing adapter -> resolver -> provider ->
+engine contract -> existing semantic translation, including 30 base / 2x / 60 output
+and 4K output / 1080p rendering. They also cover native/upscaling precedence,
+provider priority/availability/validation, low or unstable base, display and VRR
+mismatches, conflicting upscalers, stale evidence, player overrides, original-launch
+preservation, and deferred mode changes. Values are synthetic, never benchmarks.
+
+Upstream v2 environment and pacing pages were rechecked during this continuation.
+The [release notes](https://lsfg-vk.dev/blog/release-v2.0.0/) describe Vulkan 1.2,
+FP16 optimizations and 32-bit layer support. These are upstream claims, not an
+Ally/RDNA3 or Steam Deck certification: verify required features, driver/container,
+bitness and per-game budget. Do not infer external-GPU offload or cross-GPU copies
+from the Windows app's feature list. The rendering GPU and display owner remain
+separate context values, with no lifecycle changes.
+
+Ronnie selected **Final Fantasy VII Remake Intergrade on Steam (1462040)** as the
+first future trial. It still resolves to Advisor without a matching adapter and
+evidence. Setup remains user-controlled: guide purchase/install and required Linux
+component, recheck supplied availability, then distinguish installed from validated.
+Next hardware step is a supervised baseline in a repeatable scene, followed by an
+explicitly authorized provider comparison only after setup/recovery requirements
+are satisfied. No hardware action is triggered by these tests or this document.

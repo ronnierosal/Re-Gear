@@ -30,7 +30,7 @@ from types import MappingProxyType
 from typing import Mapping
 
 from ..domain.frame_generation_provider import FrameGenerationProvider
-from ..domain.performance_target_resolver import Decision, Outcome
+from ..domain.performance_target_resolver import Decision, Outcome, RenderMethod
 
 
 @dataclass(frozen=True, slots=True)
@@ -118,7 +118,7 @@ def build_launch_plan(
     environment overlay, and only via its provider.
     """
     try:
-        if decision.outcome is not Outcome.FRAME_GENERATION:
+        if decision.method is not RenderMethod.FRAME_GENERATION:
             return original_plan(
                 original,
                 decision.outcome,
@@ -128,7 +128,12 @@ def build_launch_plan(
             return original_plan(
                 original, decision.outcome, "no provider was supplied for this decision"
             )
+        record = decision.record
+        if (provider.provider_id, provider.revision) != (record.provider_id, record.provider_revision):
+            return original_plan(original, decision.outcome, "provider identity/revision mismatch")
         configuration = provider.plan(decision, original.environment)
+        if (configuration.provider_id, configuration.revision) != (record.provider_id, record.provider_revision):
+            return original_plan(original, decision.outcome, "configuration identity/revision mismatch")
         if not configuration.proposes_anything:
             return original_plan(
                 original,
@@ -142,7 +147,7 @@ def build_launch_plan(
             provider_id=configuration.provider_id,
             provider_revision=configuration.revision,
             reasons=decision.reasons,
-            unresolved=configuration.unresolved,
+            unresolved=tuple(dict.fromkeys(decision.unresolved + configuration.unresolved)),
         )
     except Exception as error:  # noqa: BLE001 - the fallback must survive anything
         return original_plan(
