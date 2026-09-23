@@ -48,6 +48,11 @@ test('unmount cancels an in-flight Hide animation',()=>{const h=harness({animate
 
 const {ConnectionProgressOverlay:renderProgress}=await import('data:text/javascript;base64,'+Buffer.from(jsx+`const useRef=()=>({current:null}),DialogButton='button',PopupFrame='frame',PopupStateIcon='status',CommandCenterIcon='icon',handheldIcon='repo-handheld',tvIcon='repo-tv';`+compile('connection-progress-overlay.tsx')).toString('base64'));
 const flatten=value=>Array.isArray(value)?value.flatMap(flatten):value&&typeof value==='object'?[value,...flatten(value.props?.children),...flatten(value.props?.footer)]:[];
+test('compact connection popup uses a fixed responsive cap instead of stretching with TV width',()=>{
+ const frame=readFileSync(new URL('../src/popup-frame.tsx',import.meta.url),'utf8');
+ assert.match(frame,/\.rg-popup\.rg-compact\{width:min\(560px,94vw\)/);
+ assert.doesNotMatch(frame,/\.rg-popup\.rg-compact\{width:62vw/);
+});
 test('flow never treats TV detection or a single GPU check as completed switching',()=>{
  const rows=[{key:'gpu',label:'GPU and driver',state:'ready'},{key:'hdmi',label:'TV HDMI detected',state:'ready'}];
  const tree=renderProgress({rows,phase:'connecting',deviceLabel:'eGPU',onHide(){}});
