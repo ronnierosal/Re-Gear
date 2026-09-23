@@ -179,6 +179,162 @@ class MainDockAdmissionTests(unittest.TestCase):
             self.assertFalse(status["safe_to_unplug"])
         asyncio.run(run())
 
+    def test_ordinary_disconnect_uses_request_id_as_durable_operation(self):
+        self.plugin._background_operations = set()
+        self.plugin._unloading = False
+        self.plugin._complete_interrupted_whole_dock_trial = Mock(return_value=None)
+        self.plugin._run_whole_dock_trial = Mock(return_value=NS(
+            code="dock_teardown.software_down", software_down=True))
+        request = 'a' * 32
+        result = asyncio.run(self.plugin.execute_egpu_disconnect(
+            trial_action="whole_dock_disconnect", release_display=True,
+            trial_confirmed=True, trial_request_id=request))
+        self.assertTrue(result['ok'])
+        self.plugin._run_whole_dock_trial.assert_called_once_with(request, '')
+
+    def test_correlated_late_completion_never_starts_another_teardown(self):
+        self.plugin._background_operations = set()
+        self.plugin._unloading = False
+        request = 'b' * 32
+        completed = {
+            'schema_version':1, 'code':'dock_teardown.software_down',
+            'busy':False, 'ok':True, 'software_down':True,
+            'safe_to_unplug':False, 'hardware_write':False,
+            'request_id':request,
+        }
+        self.plugin._complete_interrupted_whole_dock_trial = Mock(return_value=completed)
+        self.plugin._run_whole_dock_trial = Mock()
+        result = asyncio.run(self.plugin.execute_egpu_disconnect(
+            trial_action="whole_dock_disconnect", release_display=True,
+            trial_confirmed=True, trial_request_id=request))
+        self.assertEqual(result, completed)
+        self.assertEqual(self.plugin._whole_dock_trial_status, completed)
+        self.plugin._run_whole_dock_trial.assert_not_called()
+
+    def test_completion_action_is_record_only_and_exactly_correlated(self):
+        self.plugin._background_operations = set()
+        self.plugin._unloading = False
+        request = '9' * 32
+        completed = {
+            'schema_version':1, 'code':'dock_teardown.software_down',
+            'busy':False, 'ok':True, 'software_down':True,
+            'safe_to_unplug':False, 'hardware_write':False,
+            'request_id':request,
+        }
+        self.plugin._complete_interrupted_whole_dock_trial = Mock(return_value=completed)
+        self.plugin._run_whole_dock_trial = Mock()
+        result = asyncio.run(self.plugin.execute_egpu_disconnect(
+            trial_action='whole_dock_disconnect_complete',
+            trial_confirmed=True, trial_request_id=request))
+        self.assertEqual(result, completed)
+        self.plugin._complete_interrupted_whole_dock_trial.assert_called_once_with(request)
+        self.plugin._run_whole_dock_trial.assert_not_called()
+
+    def test_completion_action_never_falls_through_to_new_teardown(self):
+        self.plugin._background_operations = set()
+        self.plugin._unloading = False
+        request = '8' * 32
+        self.plugin._complete_interrupted_whole_dock_trial = Mock(return_value=None)
+        self.plugin._run_whole_dock_trial = Mock()
+        result = asyncio.run(self.plugin.execute_egpu_disconnect(
+            trial_action='whole_dock_disconnect_complete',
+            trial_confirmed=True, trial_request_id=request))
+        self.assertEqual(result['code'], 'dock_teardown.trial_unresolved')
+        self.assertEqual(result['request_id'], request)
+        self.assertFalse(result['hardware_write'])
+        self.assertFalse(result['software_down'])
+        self.plugin._run_whole_dock_trial.assert_not_called()
+
+    def test_completion_action_rejects_ambiguous_or_mutating_arguments(self):
+        self.plugin._background_operations = set()
+        self.plugin._unloading = False
+        self.plugin._complete_interrupted_whole_dock_trial = Mock()
+        for options in (
+                {},
+                {'trial_confirmed':True, 'trial_request_id':'short'},
+                {'trial_confirmed':True, 'trial_request_id':'7' * 32,
+                 'release_display':True},
+                {'trial_confirmed':True, 'trial_request_id':'7' * 32,
+                 'trial_attachment_token':'a' * 64 + ':' + 'b' * 64}):
+            with self.subTest(options=options):
+                result = asyncio.run(self.plugin.execute_egpu_disconnect(
+                    trial_action='whole_dock_disconnect_complete', **options))
+                self.assertEqual(
+                    result['code'],
+                    'dock_teardown.completion_confirmation_required')
+                self.assertFalse(result['hardware_write'])
+        self.plugin._complete_interrupted_whole_dock_trial.assert_not_called()
+
+    def test_late_completion_is_exact_claim_record_only(self):
+        request = 'c' * 32
+        claim = self.module.WholeDockClaim(
+            request, 'd' * 64, 'e' * 64, 'tunnel_remove_intent')
+        store = Mock()
+        store.load.return_value = claim
+        gate = Mock()
+        self.plugin._dock_mutation_gate = Mock(return_value=gate)
+        with patch.object(self.module, 'WholeDockClaimStore', return_value=store), \
+             patch.object(self.module, 'complete_record', return_value={
+                 'code':'dock_completion.record_completed', 'ok':True,
+                 'safe_to_unplug':False, 'hardware_write':False}) as complete:
+            result = self.plugin._complete_interrupted_whole_dock_trial(request)
+        self.assertEqual(result['code'], 'dock_teardown.software_down')
+        self.assertTrue(result['software_down'])
+        self.assertFalse(result['hardware_write'])
+        self.assertEqual(result['request_id'], request)
+        self.assertEqual(result['claim_stage'], 'software_down')
+        kwargs = complete.call_args.kwargs
+        self.assertEqual((kwargs['binding'], kwargs['generation']),
+                         (claim.binding, claim.generation))
+        self.assertIs(kwargs['store'], store)
+        self.assertIs(kwargs['gate'], gate)
+        self.assertIs(kwargs['confirmed'], True)
+
+    def test_plugin_completion_uses_installed_user_audit_not_operator_archive(self):
+        request = '6' * 32
+        claim = self.module.WholeDockClaim(
+            request, 'd' * 64, 'e' * 64, 'tunnel_remove_intent')
+        store = Mock()
+        store.load.return_value = claim
+        launcher = Mock()
+        launcher.call.return_value = {'code':'held_helper.settled','settled':True}
+        user = NS(uid=1000, username='deck')
+        self.plugin._dock_mutation_gate = Mock(return_value=Mock())
+        def observe_with_audit(binding, generation, audit):
+            self.assertEqual((binding, generation), (claim.binding, claim.generation))
+            self.assertEqual(audit(user), launcher.call.return_value)
+            return 'proof'
+        def complete(**kwargs):
+            kwargs['observe'](claim.binding, claim.generation)
+            return {'code':'dock_completion.record_completed','ok':True,
+                    'safe_to_unplug':False,'hardware_write':False}
+        with patch.object(self.module, 'WholeDockClaimStore', return_value=store), \
+             patch.object(self.module, 'HeldTrialLauncher', return_value=launcher), \
+             patch.object(self.module, 'observe_down_with_audit',
+                          side_effect=observe_with_audit), \
+             patch.object(self.module, 'complete_record', side_effect=complete):
+            result = self.plugin._complete_interrupted_whole_dock_trial(request)
+        self.assertTrue(result['software_down'])
+        launcher.call.assert_called_once_with('audit', '0' * 32)
+        launcher.audit_archive.assert_not_called()
+
+    def test_late_completion_preserves_unconfirmed_or_foreign_claim(self):
+        request = 'f' * 32
+        store = Mock()
+        with patch.object(self.module, 'WholeDockClaimStore', return_value=store), \
+             patch.object(self.module, 'complete_record') as complete:
+            store.load.return_value = self.module.WholeDockClaim(
+                request, 'a' * 64, 'b' * 64, 'gpu_removed')
+            unresolved = self.plugin._complete_interrupted_whole_dock_trial(request)
+            self.assertEqual(unresolved['code'], 'dock_teardown.trial_unresolved')
+            self.assertEqual(unresolved['claim_stage'], 'gpu_removed')
+            self.assertFalse(unresolved['hardware_write'])
+            store.load.return_value = self.module.WholeDockClaim(
+                '0' * 32, 'a' * 64, 'b' * 64, 'tunnel_remove_intent')
+            self.assertIsNone(
+                self.plugin._complete_interrupted_whole_dock_trial(request))
+        complete.assert_not_called()
+
     def test_unavailable_factory_never_invokes_mutation(self):
         self.plugin._dock_mutation_gate = Mock(side_effect=OSError("unavailable"))
         command = Mock()

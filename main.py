@@ -50,6 +50,7 @@ from regear.delivery.dock_power_intent import DockPowerIntentStore  # noqa: E402
 from regear.delivery.dock_power_service import create_power_request, continue_dock_power, dock_power_capabilities  # noqa: E402
 from regear.application.dock_power import DockPowerResult  # noqa: E402
 from regear.delivery.whole_dock_claim import WholeDockClaim, WholeDockClaimStore, inner_removal_records_absent  # noqa: E402
+from regear.delivery.whole_dock_completion import complete_record, observe_down_with_audit  # noqa: E402
 from regear.delivery.whole_dock_reset import reconcile_record as reconcile_operator_reset, observe_restored as observe_reset_restored  # noqa: E402
 from regear.application.live_disconnect import LiveDisconnectResult  # noqa: E402
 from regear.ports.whole_dock_teardown import WholeDockApproval  # noqa: E402
@@ -2621,6 +2622,64 @@ class Plugin:
                 if runtime._operation is None:
                     lease.release()
 
+    def _complete_interrupted_whole_dock_trial(self, request_id: str):
+        """Finish only this request's already-written deauthorization record.
+
+        This is a correlated continuation after the Decky process that issued
+        the request disappeared.  It performs fresh, repeated absence/session
+        proof and advances only the durable record.  It never repeats a sysfs
+        write or starts a new teardown.
+        """
+        store = WholeDockClaimStore(DEFAULT_RUNTIME_STATE_ROOT)
+        try:
+            claim = store.load()
+        except Exception:
+            claim = None
+        if claim is None or claim.operation != request_id:
+            return None
+        unresolved = {
+            "schema_version": 1,
+            "code": "dock_teardown.trial_unresolved",
+            "busy": False,
+            "ok": False,
+            "software_down": False,
+            "safe_to_unplug": False,
+            "hardware_write": False,
+            "request_id": request_id,
+            "claim_stage": claim.stage,
+            "phase": "dock_teardown",
+        }
+        if claim.stage != "tunnel_remove_intent":
+            return unresolved
+
+        def observe(binding, generation):
+            return observe_down_with_audit(
+                binding,
+                generation,
+                lambda user: HeldTrialLauncher(
+                    uid=user.uid, username=user.username
+                ).call("audit", "0" * 32),
+            )
+
+        result = complete_record(
+            binding=claim.binding,
+            generation=claim.generation,
+            confirmed=True,
+            store=store,
+            gate=self._dock_mutation_gate(),
+            observe=observe,
+        )
+        if result.get("ok") is not True:
+            return unresolved
+        return {
+            **unresolved,
+            "code": "dock_teardown.software_down",
+            "ok": True,
+            "software_down": True,
+            "claim_stage": "software_down",
+            "phase": "late_completion",
+        }
+
     def _watched_trial(self, worker):
         """Run a trial worker, always leaving a reader able to tell what happened.
 
@@ -3079,6 +3138,38 @@ class Plugin:
                 return {'code': 'dock_reset.confirmation_required', 'ok': False,
                         'safe_to_unplug': False, 'hardware_write': False}
             return await self._reconcile_egpu_after_physical_reset(trial_request_id, True)
+        if trial_action == 'whole_dock_disconnect_complete':
+            # A remounted panel may continue only the exact request it wrote
+            # before Gaming Mode restarted.  This action is deliberately
+            # separate from whole_dock_disconnect so a lost response can never
+            # replay release, USB removal, or tunnel deauthorization.
+            if (trial_confirmed is not True or release_display is not False
+                    or relaunch_app_id or trial_attachment_token
+                    or type(trial_request_id) is not str
+                    or not re.fullmatch('[0-9a-f]{32}', trial_request_id)):
+                return {'schema_version': 1, 'ok': False,
+                    'code': 'dock_teardown.completion_confirmation_required',
+                    'busy': False, 'software_down': False,
+                    'safe_to_unplug': False, 'hardware_write': False,
+                    'request_id': trial_request_id if type(trial_request_id) is str else ''}
+            if (getattr(self, '_unloading', False)
+                    or getattr(self, '_whole_dock_trial_status', {}).get('busy')):
+                return {'schema_version': 1, 'ok': False,
+                    'code': 'dock_teardown.busy', 'busy': True,
+                    'software_down': False, 'safe_to_unplug': False,
+                    'hardware_write': False, 'request_id': trial_request_id}
+            completion = await self._run_background_operation(
+                self._complete_interrupted_whole_dock_trial,
+                trial_request_id,
+            )
+            if completion is None:
+                completion = {'schema_version': 1,
+                    'code': 'dock_teardown.trial_unresolved', 'busy': False,
+                    'ok': False, 'software_down': False,
+                    'safe_to_unplug': False, 'hardware_write': False,
+                    'request_id': trial_request_id, 'phase': 'late_completion'}
+            self._whole_dock_trial_status = dict(completion)
+            return completion
         if trial_action:
             if (trial_confirmed is not True or release_display is not True
                     or trial_action not in ("whole_dock_disconnect", "whole_dock_capture", "whole_dock_held_capture", "whole_dock_reconcile", "whole_dock_shutdown", "whole_dock_sleep", "whole_dock_sleep_connected")
@@ -3094,6 +3185,14 @@ class Plugin:
                     or getattr(self, "_whole_dock_trial_status", {}).get("busy")):
                 return {"schema_version": 1, "ok": False,
                         "code": "dock_teardown.busy", "safe_to_unplug": False}
+            if trial_action == "whole_dock_disconnect" and trial_request_id:
+                completion = await self._run_background_operation(
+                    self._complete_interrupted_whole_dock_trial,
+                    trial_request_id,
+                )
+                if completion is not None:
+                    self._whole_dock_trial_status = dict(completion)
+                    return completion
             power_request = None
             if trial_action in ('whole_dock_shutdown', 'whole_dock_sleep',
                                 'whole_dock_sleep_connected'):
@@ -3174,7 +3273,12 @@ class Plugin:
                             trial_attachment_token,
                             keep_connected=trial_action == 'whole_dock_sleep_connected')
                     elif trial_action == "whole_dock_disconnect":
-                        result = self._run_whole_dock_trial(uuid.uuid4().hex, trial_attachment_token)
+                        # The durable claim is the correlation record after a
+                        # Gaming Mode/Decky restart.  A validated request id
+                        # lets the same explicit request finish record-only;
+                        # the fallback preserves legacy direct callers.
+                        operation = trial_request_id or uuid.uuid4().hex
+                        result = self._run_whole_dock_trial(operation, trial_attachment_token)
                     else:
                         raise ValueError('dock_teardown.unsupported_action')
                     payload = {"schema_version": 1, "code": result.code,
