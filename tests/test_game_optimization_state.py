@@ -129,6 +129,17 @@ class ValidationTests(unittest.TestCase):
         self.assertIs(state.phase, Phase.TESTING_PROFILE)
         self.assertEqual(state.candidate, CANDIDATE)
 
+    def test_each_launch_while_validating_checks_the_candidate_is_intact(self):
+        state = feed(validating(), (True, MEETS))
+        self.assertEqual(next_dispatch(state), InFlight(DispatchKind.APPLY_CANDIDATE, "candidate-a"))
+        checked = dispatched(state)
+        self.assertIs(checked.phase, Phase.VALIDATING)
+        self.assertEqual(checked.meets, 1)  # evidence so far stands
+        self.assertIs(dispatched(state, DispatchResult.NOT_APPLIED).phase, Phase.VALIDATING)
+        edited = dispatched(state, DispatchResult.CONFLICT)
+        self.assertIs(edited.phase, Phase.USER_OVERRIDE)
+        self.assertIs(edited.history[-1].outcome, AttemptOutcome.CONFLICT)
+
     def test_qualified_meets_windows_accept_and_lock(self):
         state = feed(validating(), *[(True, MEETS)] * POLICY.accept_windows)
         self.assertIs(state.phase, Phase.OPTIMIZED_LOCKED)

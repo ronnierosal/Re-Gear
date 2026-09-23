@@ -103,14 +103,85 @@ locked file gets advice instead.
 ## Running games
 
 A running or ambiguous game is never reconfigured. A mode change during play
-returns `QUEUED_NEXT_LAUNCH` with a `NextLaunchRequest` — the request, not a
-precomputed plan, so it is resolved afresh against the context at next launch.
-Persisting that request is not yet implemented.
+returns `QUEUED_NEXT_LAUNCH` with a `NextLaunchRequest`: the request, not a
+precomputed plan. Automatic optimization (below) keeps no copy of that
+request. Its lifecycle is per game and mode, so the next launch uses the
+freshly observed mode's own lane. A replayed request would be stale by
+construction.
+
+## Automatic optimization
+
+Status: fixture-only, with no runtime caller. The design direction is the
+[automatic game optimization architecture](https://github.com/ronnierosal/Re-Gear/pull/388),
+which is still a proposal.
+
+| Piece | Module | What it holds |
+| --- | --- | --- |
+| Intent | `domain/game_optimization_preferences.py` | Global master switch (default **off**); per game `inherit` / `automatic` / `manual` and preference |
+| Lifecycle | `domain/game_optimization_state.py` | Per game × mode: `BASELINE → LEARNING → TESTING_PROFILE → VALIDATING → OPTIMIZED_LOCKED`, with `NEEDS_REVALIDATION`, `USER_OVERRIDE`, `OPTIMIZATION_DISABLED`, `ADVISOR_ONLY` and `UNSUPPORTED` |
+| Store | `delivery/game_optimization_store.py` | Atomic, revisioned, bounded records; absent, untrusted and loaded kept distinct |
+| Catalog | `delivery/game_profile_catalog.py` | Data-only profile entries with provenance, pointing at reviewed in-code mappings |
+| Service | `delivery/game_optimization_service.py` | `prepare_launch` and the inputs that feed the lifecycle |
+
+The service adds no writer. Every file operation goes through the engine and
+the foundation above, including backups, the player-edit conflict check and
+Restore My Settings. The service decides only whether this launch asks the
+engine for anything, and for what: the staged candidate, the accepted plan,
+or the player's original.
+
+**Rules the tests hold it to**
+
+- **Opt-in.** Nothing stored means off. Global off cancels pending work in
+  every lane at once, and writes and restores nothing. Per-game `manual` does
+  the same for one game.
+- **Between launches only.** A candidate is staged, then written at the next
+  idle launch. A running game defers it. Nothing is written during play.
+- **Uncertain is never success.** Unqualified or inconclusive windows move
+  nothing toward acceptance. Running out of validation windows counts as
+  rejection. A rejected candidate is replaced by the original at the next
+  launch, byte for byte.
+- **Bounded.** There is a fixed number of learning windows, validation
+  windows and attempts per context, plus a bounded history. When the attempt
+  budget is spent, the lifecycle stops proposing.
+- **The player wins.** While validating or locked, each launch checks the
+  plan through the engine. A player edit is a `CONFLICT`: the lifecycle moves
+  to `USER_OVERRIDE`, the edit stays, and nothing is written until the player
+  hands the game back. Even then the engine's conflict rule still decides.
+- **Context.** A change to the game version, profile version, adapter
+  version, schema or preference invalidates the evidence. The accepted plan
+  is kept as history and reapplied only in the context it was accepted under.
+- **Crashes.** A write is durably marked in flight before it starts. If that
+  mark cannot be saved, nothing is written. A lane reopened with the mark
+  still set records the attempt as uncertain and never replays it.
+- **Corruption.** An untrusted preferences file or lifecycle record withholds
+  automatic management. It never falls back to a default. Only an explicit
+  reset moves it aside, and nothing is deleted outright.
+
+**Catalog admission.** A catalog entry carries no paths, keys or commands, and
+unknown fields are refused. A `validated` claim is admitted only when all of
+these hold:
+
+- the source is local or Re-Gear-reviewed;
+- it names its evidence;
+- the evidence covers the requested mode.
+
+Otherwise the claim is lowered to unvalidated, which means Advisor. Community
+entries are candidates, never authority.
+
+**Boundaries.** Window verdicts (`meets_target`, `below_target`,
+`inconclusive`, and whether a window is qualified) and candidate plans arrive
+from outside. This slice has no collector, resolver policy, Auto TDP control,
+launch hook or UI. `LearningPolicy` values are unreviewed placeholders
+(`policy_version` 0). The resolver owner sets the real ones. The
+`PerformancePlan` contract is unchanged (v1). A proposal separating internal
+render, game output and display resolution, and requested from selected FPS,
+is with the primary, and nothing here depends on it.
 
 ## Not in this slice
 
-Real game mappings or evidence; persistence of profiles, preferences and
-queued requests; mode, run-state or game-version wiring (all supplied by the
-caller); reading the Steam build ID (supplied); UI; LSFG or any provider.
+Real game mappings or evidence; mode, run-state or game-version wiring (all
+supplied by the caller); reading the Steam build ID (supplied); a telemetry
+collector, launch hook or runtime caller for automatic optimization; UI; LSFG
+or any provider.
 
 Documentation impact: none (internal, fixture-only).

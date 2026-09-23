@@ -34,6 +34,10 @@ Four rules shape every transition:
   attempt is recorded as uncertain and is never retried or assumed to have
   landed.
 
+While a candidate is validating or a plan is locked, each launch dispatches
+it again as a check. That is how a player's edit is noticed before any window
+is judged against settings that are no longer Re-Gear's.
+
 Disable and player edits dominate. Every pending change is cancelled, and a
 player's edit is never overwritten -- the engine's conflict check is the final
 authority, and a conflict it reports puts the lifecycle in USER_OVERRIDE until
@@ -547,7 +551,10 @@ def next_dispatch(state: GameOptimizationState) -> InFlight | None:
         return None
     if state.restore_pending:
         return InFlight(DispatchKind.RESTORE_ORIGINAL)
-    if state.phase is Phase.TESTING_PROFILE and state.candidate is not None:
+    # While validating, every launch re-dispatches the candidate as a check:
+    # the engine answers ALREADY_MATCHES while it is intact and CONFLICT once
+    # the player has changed it, so windows never judge the player's settings.
+    if state.phase in (Phase.TESTING_PROFILE, Phase.VALIDATING) and state.candidate is not None:
         return InFlight(DispatchKind.APPLY_CANDIDATE, state.candidate.candidate_id)
     if (
         state.phase is Phase.OPTIMIZED_LOCKED
@@ -591,6 +598,10 @@ def finish_dispatch(
     if dispatch.kind is DispatchKind.REAPPLY_ACCEPTED:
         return _next(cleared, reason=detail or f"accepted plan {result.value}")
     assert state.candidate is not None
+    if state.phase is Phase.VALIDATING:
+        # A verification: the evidence so far stands if the candidate is intact,
+        # and a failed check writes nothing, so it neither counts nor restores.
+        return _next(cleared, reason=detail or f"candidate check: {result.value}")
     if result is DispatchResult.LANDED:
         return _next(
             cleared,
