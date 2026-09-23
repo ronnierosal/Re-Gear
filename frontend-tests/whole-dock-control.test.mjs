@@ -414,6 +414,27 @@ test('native-owned terminal presentation keeps correlation until the popup is ac
   remount.unmount();
 });
 
+test('unplug instruction requires the pending request and a fresh attachment snapshot',async()=>{
+  const pendingKey='regear.whole-dock.pending-request';
+  const status=request=>({...fresh,code:'dock_teardown.software_down',software_down:true,
+    ok:true,request_id:request,in_flight:false});
+
+  const wrongRequest=new Map([[pendingKey,formatPendingRecord('disconnect_only','dead-panel','expected')]]);
+  const mismatched=harness(wrongRequest,'disconnect_only',undefined,status('other'),undefined,true,()=>{});
+  await settle();
+  assert.doesNotMatch(JSON.stringify(mismatched.render()),/Unplug the eGPU now/);
+  assert.match(JSON.stringify(mismatched.render()),/Keep the cable connected/);
+  mismatched.unmount();
+
+  const staleRecord=new Map([[pendingKey,formatPendingRecord('disconnect_only','dead-panel','expected')]]);
+  const stale=harness(staleRecord,'disconnect_only',undefined,status('expected'),undefined,true,()=>{});
+  stale.snapshot={...idle,observed_at:new Date(Date.now()-20_000).toISOString()};
+  await settle();
+  assert.doesNotMatch(JSON.stringify(stale.render()),/Unplug the eGPU now/);
+  assert.match(JSON.stringify(stale.render()),/Keep the cable connected/);
+  stale.unmount();
+});
+
 test('component stops waiting on an abandoned record and says the result is unconfirmed', async () => {
   // End to end over the component: the record the previous panel left, an idle
   // backend, and one poll. The control must become usable again and must not
