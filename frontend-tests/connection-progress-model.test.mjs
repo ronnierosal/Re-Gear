@@ -11,7 +11,8 @@ test("popup uses detected GPU name and generic fallback, never a dock-brand defa
  const s=sample(); assert.equal(view(s,100).deviceLabel,"eGPU detected");
  s.gpuName="Example GPU 9000"; assert.equal(view(s,100).deviceLabel,"Example GPU 9000 detected");
  s.gpuName="Another GPU 500"; assert.equal(view(s,100).deviceLabel,"Another GPU 500 detected");
- assert.equal(view(s,200).deviceLabel,"Waiting for eGPU");
+ assert.equal(view(s,200).deviceLabel,"eGPU status unavailable");
+ assert.equal(view({...s,connected:false},100).deviceLabel,"Waiting for eGPU");
  assert.equal(view(s,100).keepConnectedMessage,"Keep eGPU connected · Hide keeps docking active.");
 });
 test("approved overlay preserves monitor evidence and blockers without new readiness inference",()=>{

@@ -20,6 +20,7 @@ test('initial connection popup uses compact waiting copy and constrained footer 
   assert.match(model, /"Waiting for eGPU detection": "Detecting eGPU"/);
   assert.match(model, /row\.state === "waiting" \? "Waiting"/);
   assert.match(model, /status\.gpuName \?\? "eGPU"} detected/);
+  assert.match(model, /!fresh \? "eGPU status unavailable"/);
   assert.match(model, /: "Waiting for eGPU"/);
   assert.match(frame, /rg-flow-node small\{display:none}/);
   assert.match(frame, /rg-compact \.rg-popup-footer button\{[^}]*width:auto!important[^}]*flex:0 0 auto!important/);

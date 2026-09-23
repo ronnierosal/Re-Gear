@@ -40,7 +40,8 @@ export function connectionProgressViewModel(status: LiveStatus & {displayPending
     activationNotice: !fresh ? "TV status is unavailable. Waiting for a fresh update."
       : status.phase !== "complete" ? "TV activation is not yet confirmed. This popup will close after the TV switch is confirmed." : undefined,
     elapsedSeconds:status.seconds,
-    deviceLabel:fresh && status.connected ? `${status.gpuName ?? "eGPU"} detected` : "Waiting for eGPU",
+    deviceLabel:!fresh ? "eGPU status unavailable"
+      : status.connected ? `${status.gpuName ?? "eGPU"} detected` : "Waiting for eGPU",
     detail:!fresh ? "Refreshing status" : phase === "ready"
       ? "TV switch complete. Check picture and sound. Closing automatically…" : compactDetail[status.title] ?? status.title,
     keepConnectedMessage:"Keep eGPU connected · Hide keeps docking active.",
