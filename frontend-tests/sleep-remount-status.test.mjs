@@ -8,7 +8,7 @@ const control=readFileSync(new URL('../src/whole-dock-control.tsx',import.meta.u
 test('remount recovery is status-only and cannot replay a dock mutation',()=>{
   const recovery=native.slice(native.indexOf('  function resumePendingOperation(){'),native.indexOf('  function disconnect('));
   assert.match(native,/parsePendingRecord/);
-  assert.match(recovery,/<WholeDockControl intent=\{intent\} readCurrentSnapshot=\{readCurrentSnapshot\} statusOnly\/>/);
+  assert.match(recovery,/<WholeDockControl intent=\{intent\} readCurrentSnapshot=\{readCurrentSnapshot\} statusOnly onSettled=\{presentDockSettlement\}\/>/);
   assert.doesNotMatch(recovery,/startRequest=/);
   assert.match(control,/!startRequest && !statusOnly/);
 });

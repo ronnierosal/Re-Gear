@@ -13,7 +13,7 @@ import { Button, Dropdown, Focusable, ModalRoot, showModal, GamepadButton, findM
 import type { ControllerInputSource } from "../../controller-safe-disconnect";
 import { loadMenuBinding, saveMenuBinding, menuBindingOptions, startMenuShortcut } from "../../menu-shortcut";
 import type { MenuBinding } from "../../menu-shortcut";
-import { WholeDockControl } from "../../whole-dock-control";
+import { WholeDockControl, type DockSettlement } from "../../whole-dock-control";
 import { parsePendingRecord, type DockIntent } from "../../whole-dock-control-model";
 import { EgpuConfirmModal } from "../../egpu-confirm-modal";
 import { ExpandedCommandCenter } from "./shell";
@@ -101,7 +101,19 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
   let modal: ReturnType<typeof showModal> | null = null;
   let operation: ReturnType<typeof showModal> | null = null;
   let operationGeneration=0;
+  let presentedDockSettlement: DockSettlement | null = null;
   const hideOperation=()=>{const previous=operation;operation=null;operationGeneration++;previous?.Close();};
+  const presentDockSettlement=(settlement:DockSettlement)=>{
+    const record=parsePendingRecord(storage?.getItem("regear.whole-dock.pending-request"));
+    if(record?.request===settlement.request&&record.intent===settlement.intent)presentedDockSettlement=settlement;
+  };
+  const acknowledgeDockSettlement=()=>{
+    if(!presentedDockSettlement)return;
+    const record=parsePendingRecord(storage?.getItem("regear.whole-dock.pending-request"));
+    if(record?.request===presentedDockSettlement.request&&record.intent===presentedDockSettlement.intent)
+      storage?.removeItem("regear.whole-dock.pending-request");
+    presentedDockSettlement=null;
+  };
   const visibility = createMenuVisibility();
   let opening = false;
   let stopped = false;
@@ -125,10 +137,11 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
     if(intent!=="disconnect"&&intent!=="disconnect_only"&&intent!=="sleep"&&intent!=="shutdown")return;
     const operationToken=++operationGeneration;
     const hide=()=>{if(operationGeneration===operationToken)hideOperation();};
+    const dismiss=()=>{acknowledgeDockSettlement();hide();};
     const title=intent==="shutdown"?"Disconnect + Shutdown status":intent==="sleep"?"Disconnect + Sleep status":"Safe Disconnect status";
-    const opened=showModal(<EgpuConfirmModal strTitle={title} strOKButtonText="Hide" bAlertDialog onOK={hide} onCancel={hide} onEscKeypress={hide} className="rg-whole-dock-progress">
+    const opened=showModal(<EgpuConfirmModal strTitle={title} strOKButtonText="Hide" bAlertDialog onOK={dismiss} onCancel={dismiss} onEscKeypress={dismiss} className="rg-whole-dock-progress">
       <style>{`.rg-whole-dock-progress{position:fixed!important;left:50%!important;top:50%!important;right:auto!important;bottom:auto!important;margin:0!important;transform:translate(-50%,-50%)!important}`}</style>
-      <WholeDockControl intent={intent} readCurrentSnapshot={readCurrentSnapshot} statusOnly/>
+      <WholeDockControl intent={intent} readCurrentSnapshot={readCurrentSnapshot} statusOnly onSettled={presentDockSettlement}/>
     </EgpuConfirmModal>,undefined,{fnOnClose:hide,bNeverPopOut:true});
     if(operationGeneration!==operationToken){opened.Close();return;}operation=opened;
   }
@@ -144,10 +157,11 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
     );
     const operationToken=++operationGeneration;
     const hide=()=>{if(operationGeneration===operationToken)hideOperation();};
+    const dismiss=()=>{acknowledgeDockSettlement();hide();};
     const title=intent==="shutdown"?"Safe Disconnect + Shutdown":intent==="sleep"?"Disconnect + Sleep":"Safe Disconnect";
-    const opened=showModal(<EgpuConfirmModal strTitle={title} strOKButtonText="Hide" bAlertDialog onOK={hide} onCancel={hide} onEscKeypress={hide} className="rg-whole-dock-progress">
+    const opened=showModal(<EgpuConfirmModal strTitle={title} strOKButtonText="Hide" bAlertDialog onOK={dismiss} onCancel={dismiss} onEscKeypress={dismiss} className="rg-whole-dock-progress">
       <style>{`.rg-whole-dock-progress{position:fixed!important;left:50%!important;top:50%!important;right:auto!important;bottom:auto!important;margin:0!important;transform:translate(-50%,-50%)!important}`}</style>
-      <WholeDockControl intent={intent} readCurrentSnapshot={readCurrentSnapshot} startRequest={startRequest}/>
+      <WholeDockControl intent={intent} readCurrentSnapshot={readCurrentSnapshot} startRequest={startRequest} onSettled={presentDockSettlement}/>
     </EgpuConfirmModal>,undefined,{fnOnClose:hide,bNeverPopOut:true});
     if(operationGeneration!==operationToken){opened.Close();return;}
     operation=opened;
@@ -219,6 +233,11 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
   }
   const open = () => {
     if (stopped || opening || modal || !canOpen()) return;
+    // A player may hide the status surface before the terminal read arrives.
+    // Keep the durable receipt and restore that surface on the next explicit
+    // Command Center open; this is presentation only and never dispatches.
+    resumePendingOperation();
+    if (operation) return;
     const token = ++generation;
     opening = true;
     try {
