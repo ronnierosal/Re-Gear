@@ -2649,9 +2649,6 @@ class Plugin:
             "claim_stage": claim.stage,
             "phase": "dock_teardown",
         }
-        if claim.stage != "tunnel_remove_intent":
-            return unresolved
-
         def observe(binding, generation):
             return observe_down_with_audit(
                 binding,
@@ -2660,6 +2657,32 @@ class Plugin:
                     uid=user.uid, username=user.username
                 ).call("audit", "0" * 32),
             )
+
+        def completed():
+            return {
+                **unresolved,
+                "code": "dock_teardown.software_down",
+                "ok": True,
+                "software_down": True,
+                "claim_stage": "software_down",
+                "phase": "late_completion",
+            }
+
+        if claim.stage == "software_down":
+            # The original worker may have committed the exact terminal record
+            # before its RPC response disappeared.  The durable terminal record
+            # is already the proof produced by the teardown; under admission,
+            # recheck that this exact record is still current and return it.
+            # Do not re-run completion, topology observation, or any writer.
+            try:
+                with self._dock_mutation_gate().admit(allow_inhibited=True):
+                    if store.load() != claim or store.load() != claim:
+                        return unresolved
+                return completed()
+            except Exception:
+                return unresolved
+        if claim.stage != "tunnel_remove_intent":
+            return unresolved
 
         result = complete_record(
             binding=claim.binding,
@@ -2671,14 +2694,7 @@ class Plugin:
         )
         if result.get("ok") is not True:
             return unresolved
-        return {
-            **unresolved,
-            "code": "dock_teardown.software_down",
-            "ok": True,
-            "software_down": True,
-            "claim_stage": "software_down",
-            "phase": "late_completion",
-        }
+        return completed()
 
     def _watched_trial(self, worker):
         """Run a trial worker, always leaving a reader able to tell what happened.
@@ -3153,7 +3169,8 @@ class Plugin:
                     'safe_to_unplug': False, 'hardware_write': False,
                     'request_id': trial_request_id if type(trial_request_id) is str else ''}
             if (getattr(self, '_unloading', False)
-                    or getattr(self, '_whole_dock_trial_status', {}).get('busy')):
+                    or getattr(self, '_whole_dock_trial_status', {}).get('busy')
+                    or getattr(self, '_whole_dock_trial_worker_alive', False) is True):
                 return {'schema_version': 1, 'ok': False,
                     'code': 'dock_teardown.busy', 'busy': True,
                     'software_down': False, 'safe_to_unplug': False,
@@ -3182,7 +3199,8 @@ class Plugin:
                         "code": "dock_teardown.trial_confirmation_required",
                         "safe_to_unplug": False}
             if (getattr(self, "_unloading", False)
-                    or getattr(self, "_whole_dock_trial_status", {}).get("busy")):
+                    or getattr(self, "_whole_dock_trial_status", {}).get("busy")
+                    or getattr(self, '_whole_dock_trial_worker_alive', False) is True):
                 return {"schema_version": 1, "ok": False,
                         "code": "dock_teardown.busy", "safe_to_unplug": False}
             if trial_action == "whole_dock_disconnect" and trial_request_id:

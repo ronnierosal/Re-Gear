@@ -335,6 +335,93 @@ class MainDockAdmissionTests(unittest.TestCase):
                 self.plugin._complete_interrupted_whole_dock_trial(request))
         complete.assert_not_called()
 
+    def test_exact_software_down_retry_is_read_only_idempotent_success(self):
+        request = '5' * 32
+        claim = self.module.WholeDockClaim(
+            request, 'a' * 64, 'b' * 64, 'software_down')
+        store = Mock()
+        store.load.return_value = claim
+        held = []
+        @contextmanager
+        def admit(*, allow_inhibited=False):
+            self.assertTrue(allow_inhibited)
+            held.append(True)
+            try:
+                yield
+            finally:
+                held.clear()
+        self.plugin._dock_mutation_gate = Mock(return_value=NS(admit=admit))
+        with patch.object(self.module, 'WholeDockClaimStore', return_value=store), \
+             patch.object(self.module, 'observe_down_with_audit',
+                          side_effect=AssertionError('must not re-observe')) as observed, \
+             patch.object(self.module, 'complete_record') as complete:
+            result = self.plugin._complete_interrupted_whole_dock_trial(request)
+        self.assertEqual(result['code'], 'dock_teardown.software_down')
+        self.assertTrue(result['ok'])
+        self.assertTrue(result['software_down'])
+        self.assertFalse(result['safe_to_unplug'])
+        self.assertFalse(result['hardware_write'])
+        self.assertEqual(result['request_id'], request)
+        observed.assert_not_called()
+        self.assertEqual(store.load.call_count, 3)
+        store.confirm_software_down.assert_not_called()
+        store.record.assert_not_called()
+        complete.assert_not_called()
+
+    def test_foreign_software_down_request_is_refused_without_observation(self):
+        request = '4' * 32
+        store = Mock()
+        store.load.return_value = self.module.WholeDockClaim(
+            '3' * 32, 'a' * 64, 'b' * 64, 'software_down')
+        with patch.object(self.module, 'WholeDockClaimStore', return_value=store), \
+             patch.object(self.module, 'observe_down_with_audit') as observed, \
+             patch.object(self.module, 'complete_record') as complete:
+            self.assertIsNone(
+                self.plugin._complete_interrupted_whole_dock_trial(request))
+        observed.assert_not_called()
+        complete.assert_not_called()
+
+    def test_ordinary_same_request_retry_returns_completed_record_without_teardown(self):
+        self.plugin._background_operations = set()
+        self.plugin._unloading = False
+        request = '2' * 32
+        completed = {
+            'schema_version':1, 'code':'dock_teardown.software_down',
+            'busy':False, 'ok':True, 'software_down':True,
+            'safe_to_unplug':False, 'hardware_write':False,
+            'request_id':request,
+        }
+        self.plugin._complete_interrupted_whole_dock_trial = Mock(
+            return_value=completed)
+        self.plugin._run_whole_dock_trial = Mock()
+        result = asyncio.run(self.plugin.execute_egpu_disconnect(
+            trial_action='whole_dock_disconnect', release_display=True,
+            trial_confirmed=True, trial_request_id=request))
+        self.assertEqual(result, completed)
+        self.plugin._complete_interrupted_whole_dock_trial.assert_called_once_with(
+            request)
+        self.plugin._run_whole_dock_trial.assert_not_called()
+
+    def test_completion_and_same_request_retry_refuse_while_worker_is_alive(self):
+        self.plugin._background_operations = set()
+        self.plugin._unloading = False
+        self.plugin._whole_dock_trial_worker_alive = True
+        self.plugin._whole_dock_trial_status = {
+            'schema_version':1, 'code':'dock_teardown.no_trial', 'busy':False}
+        request = '1' * 32
+        self.plugin._complete_interrupted_whole_dock_trial = Mock()
+        self.plugin._run_whole_dock_trial = Mock()
+        for action, release in (
+                ('whole_dock_disconnect_complete', False),
+                ('whole_dock_disconnect', True)):
+            with self.subTest(action=action):
+                result = asyncio.run(self.plugin.execute_egpu_disconnect(
+                    trial_action=action, release_display=release,
+                    trial_confirmed=True, trial_request_id=request))
+                self.assertEqual(result['code'], 'dock_teardown.busy')
+        self.plugin._complete_interrupted_whole_dock_trial.assert_not_called()
+        self.plugin._run_whole_dock_trial.assert_not_called()
+
     def test_unavailable_factory_never_invokes_mutation(self):
         self.plugin._dock_mutation_gate = Mock(side_effect=OSError("unavailable"))
         command = Mock()
