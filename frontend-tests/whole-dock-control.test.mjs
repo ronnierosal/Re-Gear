@@ -47,7 +47,7 @@ const componentJs = ts.transpileModule(readFileSync(new URL("../src/whole-dock-c
 }).outputText.replace(/^import .*;\r?$/gm, "").replace(/export function WholeDockControl/, "function WholeDockControl");
 const deferred = () => { let resolve, reject; const promise = new Promise((yes,no) => {resolve=yes;reject=no;}); return {promise,resolve,reject}; };
 const settle = async () => { for(let n=0;n<12;n++) await Promise.resolve(); };
-function harness(storage = new Map(), intent = "disconnect", startRequest, initialStatus = fresh, initialRead) {
+function harness(storage = new Map(), intent = "disconnect", startRequest, initialStatus = fresh, initialRead, statusOnly = false) {
   const h = {status:{...initialStatus}, reads:[], calls:[], modals:[], timers:new Map(), failStorage:false, intent, snapshot: {...idle, schema_version:3}};
   let slots=[], index=0, effects=[], cleanups=[], serial=0;
   const useState = value => { const slot=index++; if(!(slot in slots)) slots[slot]=value; return [slots[slot], value=>{slots[slot]=typeof value==='function'?value(slots[slot]):value;}]; };
@@ -68,7 +68,7 @@ function harness(storage = new Map(), intent = "disconnect", startRequest, initi
     React,useState,useRef,useEffect,callable,'button',showModal,'confirm',dockIntentControl,dockRequestAbandoned,dockRequestSettled,formatPendingRecord,parsePendingRecord,window,
     {randomUUID:()=> '12345678-1234-1234-1234-123456789abc'},
     fn=>{h.timers.set(++serial,fn);return serial;},id=>h.timers.delete(id));
-  h.render=()=>{index=0;h.tree=Component({intent:h.intent,readCurrentSnapshot:()=>h.snapshot,startRequest});for(const fn of effects.splice(0))cleanups.push(fn());return h.tree;};
+  h.render=()=>{index=0;h.tree=Component({intent:h.intent,readCurrentSnapshot:()=>h.snapshot,startRequest,statusOnly});for(const fn of effects.splice(0))cleanups.push(fn());return h.tree;};
   h.button=()=>h.render().props.children.find(child=>child?.type==='button');
   h.click=()=>{const button=h.button();assert.equal(button.props.disabled,false);button.props.onClick();};
   h.poll=()=>{const [id,fn]=h.timers.entries().next().value;h.timers.delete(id);fn();};
@@ -422,6 +422,20 @@ test("component keeps waiting on the record it wrote itself", async () => {
   assert.equal(storage.size, 1, 'this panel is still waiting on its own request');
   assert.equal(h.button().props.disabled, true);
   h.unmount();
+});
+
+test('remounted status-only sleep retires a correlated terminal refusal without exposing an action',async()=>{
+  const request='request-1',storage=new Map([['regear.whole-dock.pending-request',`v2:sleep:retired-panel:${request}`]]);
+  const terminal={...fresh,code:'dock_teardown.portable_return_unverified',ok:false,power_action:'sleep',
+    power_requested:false,software_down:false,request_id:request,in_flight:false};
+  const h=harness(storage,'sleep',undefined,terminal,undefined,true);
+  await settle();
+  assert.equal(h.calls.length,0);
+  assert.equal(h.button(),undefined);
+  assert.equal(storage.size,0);
+  assert.match(JSON.stringify(h.tree),/dock disconnect could not be completed/);
+  assert.match(JSON.stringify(h.tree),/Keep the cable connected/);
+  h.poll();await settle();assert.equal(h.calls.length,0);h.unmount();
 });
 
 test('tile-activated disconnect-before-sleep and shutdown each dispatch their guarded route once', async () => {
