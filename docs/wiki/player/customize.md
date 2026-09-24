@@ -1,58 +1,62 @@
 # Customize Re-Gear
 
-Re-Gear's Command Center should fit the way **you** play. Quick Access is intended to be customizable so your most useful actions are easiest to reach.
+You can choose which buttons appear in Quick Access and move cards around, so
+the actions you use most are easiest to reach. Everything is done from the
+controller.
 
 ## For players — no technical background needed
 
-> **Interface preview:** this page describes design intent and developing UI.
-> Mockups and proposed labels are not proof of your installed controls.
-> Follow the available labels in your build; see [current evidence](../technical/current-state.md).
+### Availability and limits
 
-## Customize Quick Access
+Quick Access customization is in current development builds, including the
+0.3.129 test build installed on the maintainer's test handheld. No
+customization-specific check on that handheld has been recorded yet, and there
+is no supported public release; see [Getting Started](getting-started.md).
+Screenshots will be added once the interface is validated on a device.
 
-> ### 🖼️ UI MOCKUP — Customize Quick Access
-> **TEMPORARY IMAGE PLACEHOLDER**
->
-> Show the customization screen with the current Quick Access layout on one side and available actions on the other.
->
-> Suggested asset: `assets/wiki/mockups/customize-quick-access.png`
+### The controls in one place
 
-From the customization screen you can organize which actions appear in Quick Access and where they appear.
+| On the **Quick Access** tab | What happens |
+|---|---|
+| Tap **Y** on a button | Opens **Customize Quick Access**, where you choose a different button |
+| Tap **Y** on an empty slot | Adds a button there |
+| Hold **Y** | Starts moving cards: the cards wiggle and the selected one shows **MOVE** |
 
-## Moving buttons
+On the other tabs, holding **Y** moves cards; tapping **Y** does nothing. The
+buttons available on those tabs do not change.
 
-Want a favorite action closer to the top? Rearrange the buttons rather than rebuilding your layout.
+Step-by-step guides:
 
-> ### 🖼️ UI MOCKUP — Move a button
-> **TEMPORARY IMAGE PLACEHOLDER**
->
-> Three-frame visual: select button → move button → confirm new position.
->
-> Suggested asset: `assets/wiki/mockups/rearrange-buttons.png`
+- [Change a Quick Access button](how-to/change-quick-access-button.md)
+- [Move Quick Access buttons](how-to/rearrange-quick-access.md)
+- [Reset Quick Access](how-to/reset-quick-access.md)
 
-[Step-by-step: Move Quick Access buttons →](how-to/rearrange-quick-access.md)
+### Things to know
 
-## Changing a button
-
-You can replace an action you rarely use with something more useful.
-
-> ### 🖼️ UI MOCKUP — Change a button
-> **TEMPORARY IMAGE PLACEHOLDER**
->
-> Show selecting an existing button and choosing a replacement action.
->
-> Suggested asset: `assets/wiki/mockups/change-button.png`
-
-[Step-by-step: Change a Quick Access button →](how-to/change-quick-access-button.md)
-
-## Starting over
-
-If your layout gets messy, restore the default Quick Access arrangement and customize it again from there.
-
-[Step-by-step: Reset Quick Access →](how-to/reset-quick-access.md)
-
-> **Note:** Menu names and exact button prompts may change while the customization interface is being finalized. The guides will be updated alongside the shipping UI.
+- Your layout is saved on this Steam client. Another device keeps its own.
+- If saving fails you will see **Could not save this layout. Your saved layout
+  is unchanged.** Nothing is lost; try again.
+- Only buttons marked as supported can be added. A button that cannot act right
+  now still shows, greyed out, with the reason.
+- Removing a button from Quick Access does not remove the feature. It is still
+  on its own tab.
 
 ## Technical details — for advanced users and contributors
 
-See the [owning contract/evidence](../../UI_DESIGN_CONTRACT.md) and [current state](../technical/current-state.md). UI PR329 is a separate test candidate; this page does not establish native or hardware acceptance.
+The tap/hold split is `createCustomizeGestureRecognizer` in
+`src/quick-access/expanded-command-center/customization-input.ts`
+(`CUSTOMIZE_HOLD_MS = 550`), mounted by the expanded Command Center shell. The
+native adapter binds the edit button to Y and persists layouts under
+`regear.command-center-layout.v1`. Which controls can be added, moved or replaced
+is declared per control in `control-registry.ts` (`quickEligible`, `reorder`,
+`replace`).
+
+| Evidence | What it establishes | Remaining limit |
+|---|---|---|
+| Merged source at `5ed1e3d`, 2026-09-24 | Labels, gestures, persistence and reset flow above | Source review is not native acceptance |
+| Installed 0.3.129 test build (`e8ad848`) | The feature is present in an installed build | No customization-specific result recorded for it |
+
+The earlier customization test build (PR329, 0.3.107) was closed without
+merging; this feature reached main separately. Owning UI contract:
+[UI design contract](../../UI_DESIGN_CONTRACT.md). Evidence summary:
+[current state](../technical/current-state.md).

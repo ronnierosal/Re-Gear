@@ -1,24 +1,32 @@
 # Move Quick Access buttons
 
-This developing customization task is intended to help you put frequently used controls within easy reach.
+Put the actions you use most where they are easiest to reach.
 
 ## For players — no technical background needed
 
-**Candidate-only guidance:** customization is being tested in the newer UI. The
-earlier proposed **Settings / Customize** steps do not match every implementation.
-Do not look for those controls or reinstall merely to match a mockup.
+This is in current development builds; see [Customize Re-Gear](../customize.md)
+for availability and limits.
 
-1. Check the instructions supplied with your installed test build.
-2. Use its displayed customization hint only when that action is offered.
-3. Review the resulting arrangement. If the named option is absent, stop and
-   report the build and what you see through [troubleshooting](../troubleshooting.md).
+1. Open Re-Gear with your shortcut and go to the tab you want to rearrange.
+2. Move to the card you want to move, then **hold Y** for about half a second.
+   The cards start to wiggle and the one you picked shows **MOVE**.
+3. Use the **D-pad** to move it.
+4. Press **A** to place it, or **B** to cancel and put it back.
 
-The UI owner reports a Y-on-focused-control picker and native move mode in the
-0.3.107 test candidate. This is not an installed-build acceptance or a verified
-step sequence for all versions. Exact action-specific steps await that evidence.
+On the **Quick Access** tab you can also change which buttons appear; see
+[Change a Quick Access button](change-quick-access-button.md). On other tabs you
+can only reorder the cards that are already there.
+
+### If it does not work
+
+- It changes a button instead of moving it: you tapped **Y** rather than holding
+  it. Press **B** to back out and hold **Y** a little longer.
+- Your layout did not stick: if you saw **Could not save this layout**, your
+  previous layout is unchanged. Try again.
 
 ## Technical details — for advanced users and contributors
 
-Track [PR329](https://github.com/ronnierosal/Re-Gear/pull/329) and the
-[current evidence](../../technical/current-state.md). Original design briefs remain
-in the archive; they are not executable instructions or a promise of availability.
+The hold threshold is `CUSTOMIZE_HOLD_MS = 550` in
+`src/quick-access/expanded-command-center/customization-input.ts`; move targets
+come from `moveTargetIndex` in `layout-customization.tsx`. Evidence and limits
+are on [Customize Re-Gear](../customize.md#technical-details--for-advanced-users-and-contributors).
