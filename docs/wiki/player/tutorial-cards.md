@@ -46,7 +46,7 @@ sharing it. [Get help](troubleshooting.md).
 
 ## Technical details — for advanced users and contributors
 
-Wording reviewed against merged source `5ed1e3d` and the
+Wording reviewed against merged source `36cabc3` and the
 [0.3.98 lifecycle record](../technical/egpu-lifecycle.md). The mounted control
 contract also includes the separate **Shutdown** and **Safe Disconnect +
 Shutdown** actions. A control's presence does not establish runtime readiness,
