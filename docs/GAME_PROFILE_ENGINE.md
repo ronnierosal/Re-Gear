@@ -20,8 +20,8 @@ what the player gets in words; a per-game mapping says how that game spells it.
 ```
                  supplied by owners                    Codex's resolver (future)
    ┌────────────────────────────────────┐         ┌──────────────────────────┐
-   │ AppID · OperatingMode · run state  │         │ PerformancePlan          │
-   │ observed game version · preference │         │ display/base FPS, res,   │
+   │ AppID · OperatingMode · run state  │         │ PerformancePlan v2       │
+   │ observed game version · preference │         │ FPS, 3 resolutions,      │
    └─────────────────┬──────────────────┘         │ upscaling, FG ref (opaque)│
                      │                            └────────────┬─────────────┘
                      ▼                                         │ apply_to()
@@ -57,10 +57,49 @@ what the player gets in words; a per-game mapping says how that game spells it.
 The engine imports nothing from the provider side. A `PerformancePlan`
 (`domain/performance_plan.py`) is the whole handover, and it names frame
 generation only as an opaque `FrameGenerationRef` that the engine passes
-through untouched. From a plan the engine takes resolution, upscaling, and one
-number that matters most: the **base FPS target, which becomes the game's own
-frame cap**. With 2x frame generation to 60, the game is capped at 30 real
-frames; the provider, not the engine, produces the rest.
+through untouched. The number that matters most is the **base FPS target,
+which becomes the game's own frame cap**. With 2x frame generation to 60, the
+game is capped at 30 real frames; the provider, not the engine, produces the
+rest.
+
+### Plan contract v2
+
+Version 2 is the contract the primary agreed (decision `4fcb4c44`). Rates and
+resolutions are each kept separate, and none is inferred from another.
+
+| Field | Meaning | What the engine does |
+| --- | --- | --- |
+| `requested_display_fps` | What the player asked for | Reports it; `None` only for a migrated v1 plan |
+| `target_display_fps` | The selected rate, never above the request | Reports it |
+| `base_fps_target` | Frames the game renders; base × FG multiplier = selected | Writes it as the game's frame cap |
+| `game_output_resolution` | Swapchain output, what the Resolution menu sets | Writes it through the mapping's resolution keys |
+| `internal_render` | What the game shades: a size, `DYNAMIC` or `UNKNOWN` | Writes a size only through a mapping-declared render-scale key |
+| `display_output_resolution` | The physical display | Never writes it |
+
+- **Fallbacks stay visible.** A request for 90 served by a validated 30 × 2
+  plan is `requested=90, target=60, base=30`. The engine outcome's
+  `plan_notes` reports it that way.
+- **Internal render.** A size is written only when the game's mapping
+  declares a render-scale key, as a whole, uniform percentage of a known game
+  output, within that key's range. Supersampling is allowed when the range
+  covers it. Anything else makes the profile Advisor and writes nothing:
+  - no render-scale key;
+  - `DYNAMIC`;
+  - a different aspect ratio;
+  - a fractional percentage;
+  - a size beyond the range;
+  - an unknown output.
+  `UNKNOWN` states nothing and writes nothing.
+- **No universal limit.** Internal render may exceed game output. Any limit
+  is the game mapping's.
+- **Version 1.** Readable only through `PerformancePlan.from_v1`. Its
+  `resolution` becomes game output. Internal render stays `UNKNOWN`, even
+  when there is no upscaling. The request stays `None`, never copied from the
+  selected rate.
+  - Stored queued or accepted plans are read by their own `plan_version`:
+    v1 through `from_v1`, v2 field by field. Any other version is untrusted.
+  - The catalog moved to version 2 (`game_output_resolution`,
+    `internal_render`) and refuses version 1 entries.
 
 ## Format versus game mapping
 
@@ -193,9 +232,8 @@ from outside. This slice has no collector, resolver policy, Auto TDP control,
 launch hook or UI. `LearningPolicy` values are unreviewed placeholders
 (`policy_version` 0). Codex owns the production values and verdict
 production. The service refuses to run launches under the placeholder unless
-a test opts in. The `PerformancePlan` contract is unchanged here (v1). The
-agreed v2 contract is a follow-up. It separates internal render, game output
-and display resolution, and requested from selected FPS.
+a test opts in. Plans follow contract v2 (above). The resolver's bridge still
+builds v1-shaped plans and moves to v2 separately.
 
 ## Not in this slice
 
