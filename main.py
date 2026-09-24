@@ -1701,17 +1701,27 @@ class Plugin:
         return result
 
     def _reconcile_abandoned_dock_trial(self, expected_attachment):
-        """Explicit early-abort reconciliation, never a removal completion."""
+        """Reconcile an abandoned claim against a fully restored attachment.
+
+        Early claims remain the existing abort path.  A later teardown-intent
+        claim uses a distinct restored-dock archive only after the exact whole
+        dock, session helper and inner records are stable again.  Neither lane
+        executes a device write or grants unplug clearance.
+        """
         result = {'schema_version': 1, 'code': 'dock_reconcile.refused',
                   'ok': False, 'safe_to_unplug': False}
         capture = getattr(self, '_release_capture_task', None)
-        if not expected_attachment or (capture is not None and not capture.done()):
+        if (not expected_attachment or (capture is not None and not capture.done())
+                or getattr(self, "_whole_dock_trial_worker_alive", False) is True):
             return result
         try:
             with self._dock_mutation_gate().admit(allow_inhibited=True):
                 store = WholeDockClaimStore(DEFAULT_RUNTIME_STATE_ROOT)
                 claim = store.load()
-                if claim is None or claim.stage not in ('claimed', 'release_intent'):
+                early_stages = ('claimed', 'release_intent')
+                restored_stages = ('gpu_removed', 'prepared', 'usb_remove_intent',
+                                   'usb_removed', 'tunnel_remove_intent')
+                if claim is None or claim.stage not in early_stages + restored_stages:
                     return result
                 cards = [c for c in DrmDiscovery().scan() if c.boot_vga is False]
                 if len(cards) != 1:
@@ -1744,8 +1754,13 @@ class Plugin:
                     return (current_user == user and resolve_whole_dock(binding.gpu_bdf) == binding
                         and inner_removal_records_absent()
                         and self._api.get_snapshot_report().snapshot.game_state is GameState.IDLE)
-                store.retire_abandoned(claim, guard)
-                return {**result, 'code': 'dock_reconcile.archived', 'ok': True}
+                if claim.stage in early_stages:
+                    store.retire_abandoned(claim, guard)
+                    code = 'dock_reconcile.archived'
+                else:
+                    store.retire_restored_teardown(claim, guard)
+                    code = 'dock_reconcile.restored_archived'
+                return {**result, 'code': code, 'ok': True}
         except Exception:
             return {**result, 'code': result['code'] if result['code'] != 'dock_reconcile.refused'
                     else 'dock_reconcile.unresolved'}
