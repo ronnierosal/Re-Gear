@@ -101,6 +101,11 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
   let modal: ReturnType<typeof showModal> | null = null;
   let operation: ReturnType<typeof showModal> | null = null;
   let operationGeneration=0;
+  let pendingStatusTimer:ReturnType<typeof setTimeout>|null=null;
+  const setPendingTimeout = typeof host.setTimeout === "function"
+    ? host.setTimeout.bind(host) : globalThis.setTimeout;
+  const clearPendingTimeout = typeof host.clearTimeout === "function"
+    ? host.clearTimeout.bind(host) : globalThis.clearTimeout;
   let presentedDockSettlement: DockSettlement | null = null;
   const hideOperation=()=>{const previous=operation;operation=null;operationGeneration++;previous?.Close();};
   const presentDockSettlement=(settlement:DockSettlement)=>{
@@ -145,6 +150,18 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
     </EgpuConfirmModal>,undefined,{fnOnClose:hide,bNeverPopOut:true});
     if(operationGeneration!==operationToken){opened.Close();return;}operation=opened;
   }
+  const schedulePendingStatusRebuild=(delay:number)=>{
+    if(pendingStatusTimer!==null)clearPendingTimeout(pendingStatusTimer as never);
+    pendingStatusTimer=setPendingTimeout(()=>{
+      pendingStatusTimer=null;
+      if(stopped||!pendingDockIntent())return;
+      // A Gamescope display handoff can destroy the visible modal without
+      // notifying this SharedJS owner. Replace only that stale presentation;
+      // the reconstructed control is status-only and cannot replay the write.
+      hideOperation();
+      resumePendingOperation();
+    },delay);
+  };
   function disconnect(intent: DockIntent = "disconnect_only") {
     if(stopped||operation||!modal) return;
     // One explicit activation owns one request across React remounts. React can
@@ -165,6 +182,7 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
     </EgpuConfirmModal>,undefined,{fnOnClose:hide,bNeverPopOut:true});
     if(operationGeneration!==operationToken){opened.Close();return;}
     operation=opened;
+    schedulePendingStatusRebuild(15_000);
   }
   function ShutdownStatus(){
     const state=useSyncExternalStore(runtimeDetails?.subscribe??noSubscribe,runtimeDetails?.read??noRuntimeDetails,runtimeDetails?.read??noRuntimeDetails);
@@ -256,5 +274,9 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
   // continues a guarded dock request. Reconstruct only its read-only status
   // surface from the durable request record; never replay the action.
   resumePendingOperation();
-  return { open, disconnect, Settings, visibility: visibility.source, available: shortcut.available, stop() { stopped = true; shortcut.stop(); close(); } };
+  // Decky can accept a modal before the replacement Gamescope surface is
+  // visible. One deferred reconstruction makes the pending receipt visible
+  // without polling or resubmitting the operation.
+  if(pendingDockIntent())schedulePendingStatusRebuild(1_500);
+  return { open, disconnect, Settings, visibility: visibility.source, available: shortcut.available, stop() { stopped = true; if(pendingStatusTimer!==null)clearPendingTimeout(pendingStatusTimer as never);pendingStatusTimer=null;shortcut.stop(); close(); } };
 }

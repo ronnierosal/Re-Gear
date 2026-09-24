@@ -34,7 +34,7 @@ test('delayed close callback from an old operation cannot close the replacement'
 });
 
 function harness(pendingRecord = null) {
-  const h = { modals: [], cleanup: [], throwOpen: false, stopped: false, allowed: true };
+  const h = { modals: [], cleanup: [], timers: new Map(), nextTimer: 1, throwOpen: false, stopped: false, allowed: true };
   const values = new Map(pendingRecord ? [["regear.whole-dock.pending-request", pendingRecord]] : []);
   h.storage = { getItem:key=>values.get(key)??null, setItem:(key,value)=>values.set(key,value), removeItem:key=>values.delete(key) };
   const runtime = {
@@ -63,7 +63,11 @@ function harness(pendingRecord = null) {
   h.source = { read: () => h.tiles, subscribe: () => () => {} };
   h.snapshot = () => ({ schema_version: 3 });
   h.detail = () => "existing-detail";
-  h.menu = exports.createExpandedMenu(undefined, {localStorage:h.storage}, () => h.allowed, h.source, h.snapshot, h.detail);
+  h.host = {localStorage:h.storage,
+    setTimeout(callback) { const id=h.nextTimer++;h.timers.set(id,callback);return id; },
+    clearTimeout(id) { h.timers.delete(id); }};
+  h.runLatestTimer = () => { const entry=[...h.timers.entries()].at(-1);if(!entry)return;h.timers.delete(entry[0]);entry[1](); };
+  h.menu = exports.createExpandedMenu(undefined, h.host, () => h.allowed, h.source, h.snapshot, h.detail);
   h.mount = () => {
     const child = h.modals.at(-1).node.props.children.find(child => typeof child?.type === "function");
     return child.type(child.props);
@@ -98,6 +102,26 @@ test('terminal Safe Disconnect correlation is cleared only by dismissing its res
   assert.equal(h.storage.getItem('regear.whole-dock.pending-request'),null,
     'explicit popup dismissal acknowledges the terminal result');
   assert.equal(h.modals[0].closed,true);
+  h.menu.stop();
+});
+
+test('explicit Safe Disconnect replaces a stale handoff modal with status-only presentation once',()=>{
+  const h=harness();h.menu.open();const view=h.mount();
+  view.props.onDisconnect();
+  const operation=h.modals[1].node;
+  const control=operation.props.children.find(child=>child?.type==='dock');
+  const request='request-after-handoff';
+  h.storage.setItem('regear.whole-dock.pending-request',`v2:disconnect_only:panel:${request}`);
+  h.runLatestTimer();
+  assert.equal(h.modals[1].closed,true);
+  assert.equal(h.modals.length,3);
+  const restored=h.modals[2].node;
+  assert.equal(restored.props.strTitle,'Safe Disconnect status');
+  const status=restored.props.children.find(child=>child?.type==='dock');
+  assert.equal(status.props.statusOnly,true);
+  assert.equal(status.props.startRequest,undefined);
+  assert.equal(control.props.startRequest(),true,
+    'the stale visual replacement never consumes or replays the original request');
   h.menu.stop();
 });
 
