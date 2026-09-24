@@ -430,23 +430,27 @@ class LiveDisconnectService:
         The holder scan watches descriptors.  The complete removal reading also
         watches memory mappings, and on the tested SteamOS session an exiting
         protected Steam process can briefly retain one after the approved
-        session restart has released every descriptor.  Treating that tail as
-        terminal made the one-button Disconnect + Sleep journey fail where the
-        same Safe Disconnect worked after a short human pause.
+        session restart has released every descriptor.  The same handoff can
+        also briefly make game state unknown before the replacement session
+        reports idle. Treating either transition as terminal made the one-button
+        journey fail where the same steps worked after a short human pause.
 
         The filter is still enforced for this entire method.  No restart or
         removal is repeated, and every other readiness result is returned
         immediately.  If the exact transient does not clear within the bounded
         window, the original fail-closed refusal remains.
         """
-        transient = "removal_safety.clients_active_or_protected"
+        transients = frozenset({
+            "removal_safety.clients_active_or_protected",
+            "removal_safety.game_state_unknown",
+        })
         if (not arm.session_disturbed
-                or observation.readiness.code != transient
+                or observation.readiness.code not in transients
                 or self._post_restart_settle_seconds == 0):
             return observation
         deadline = self._monotonic() + self._post_restart_settle_seconds
         current = observation
-        while current.readiness.code == transient:
+        while current.readiness.code in transients:
             remaining = deadline - self._monotonic()
             if remaining <= 0:
                 break

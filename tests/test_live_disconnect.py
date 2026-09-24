@@ -399,6 +399,34 @@ class HardwareBlockerTests(unittest.TestCase):
         self.assertEqual(harness.detached, PLAN_ORDER)
         self.assertTrue(result.filter_disarmed)
 
+    def test_post_restart_unknown_game_gets_one_bounded_settle_window(self):
+        class Clock:
+            now = 0.0
+            sleeps = []
+
+            def monotonic(self):
+                return self.now
+
+            def sleep(self, seconds):
+                self.sleeps.append(seconds)
+                self.now += seconds
+
+        clock = Clock()
+        unknown = blocked("removal_safety.game_state_unknown")
+        harness = Harness(
+            observations=[unknown, ready(), ready()],
+            post_restart_settle_seconds=10.0,
+            post_restart_poll_seconds=1.0,
+            clock=clock,
+        )
+
+        result = harness.run()
+
+        self.assertIs(result.stage, LiveDisconnectStage.REMOVED)
+        self.assertEqual(clock.sleeps, [1.0])
+        self.assertEqual(harness.detached, PLAN_ORDER)
+        self.assertTrue(result.filter_disarmed)
+
     def test_settle_window_never_weakens_an_unrelated_blocker(self):
         class Clock:
             def monotonic(self):
@@ -463,6 +491,34 @@ class HardwareBlockerTests(unittest.TestCase):
         result = harness.run()
 
         self.assertEqual(result.code, "removal_safety.clients_active_or_protected")
+        self.assertEqual(clock.sleeps, [1.0, 1.0, 0.5])
+        self.assertEqual(harness.detached, ())
+        self.assertTrue(result.filter_disarmed)
+
+    def test_post_restart_settle_timeout_preserves_unknown_game_refusal(self):
+        class Clock:
+            now = 0.0
+            sleeps = []
+
+            def monotonic(self):
+                return self.now
+
+            def sleep(self, seconds):
+                self.sleeps.append(seconds)
+                self.now += seconds
+
+        clock = Clock()
+        unknown = blocked("removal_safety.game_state_unknown")
+        harness = Harness(
+            observations=[unknown],
+            post_restart_settle_seconds=2.5,
+            post_restart_poll_seconds=1.0,
+            clock=clock,
+        )
+
+        result = harness.run()
+
+        self.assertEqual(result.code, "removal_safety.game_state_unknown")
         self.assertEqual(clock.sleeps, [1.0, 1.0, 0.5])
         self.assertEqual(harness.detached, ())
         self.assertTrue(result.filter_disarmed)
