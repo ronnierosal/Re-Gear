@@ -100,6 +100,7 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
   const subscribeBinding=(listener:()=>void)=>{bindingListeners.add(listener);return()=>{bindingListeners.delete(listener);};};
   let modal: ReturnType<typeof showModal> | null = null;
   let operation: ReturnType<typeof showModal> | null = null;
+  let operationKind:"active"|"status"|null=null;
   let operationGeneration=0;
   let pendingStatusTimer:ReturnType<typeof setTimeout>|null=null;
   const setPendingTimeout = typeof host.setTimeout === "function"
@@ -107,7 +108,7 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
   const clearPendingTimeout = typeof host.clearTimeout === "function"
     ? host.clearTimeout.bind(host) : globalThis.clearTimeout;
   let presentedDockSettlement: DockSettlement | null = null;
-  const hideOperation=()=>{const previous=operation;operation=null;operationGeneration++;previous?.Close();};
+  const hideOperation=()=>{const previous=operation;operation=null;operationKind=null;operationGeneration++;previous?.Close();};
   const presentDockSettlement=(settlement:DockSettlement)=>{
     const record=parsePendingRecord(storage?.getItem("regear.whole-dock.pending-request"));
     if(record?.request===settlement.request&&record.intent===settlement.intent)presentedDockSettlement=settlement;
@@ -132,10 +133,11 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
     visibility.set(false);
     previous?.Close();
   };
-  const pendingDockIntent=()=>{
-    try{return parsePendingRecord(storage?.getItem("regear.whole-dock.pending-request"))?.intent??null;}
+  const pendingDockRecord=()=>{
+    try{return parsePendingRecord(storage?.getItem("regear.whole-dock.pending-request"));}
     catch{return null;}
   };
+  const pendingDockIntent=()=>pendingDockRecord()?.intent??null;
   function resumePendingOperation(){
     if(stopped||operation)return;
     const intent=pendingDockIntent();
@@ -148,7 +150,7 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
       <style>{`.rg-whole-dock-progress{position:fixed!important;left:50%!important;top:50%!important;right:auto!important;bottom:auto!important;margin:0!important;transform:translate(-50%,-50%)!important}`}</style>
       <WholeDockControl intent={intent} readCurrentSnapshot={readCurrentSnapshot} statusOnly onSettled={presentDockSettlement}/>
     </EgpuConfirmModal>,undefined,{fnOnClose:hide,bNeverPopOut:true});
-    if(operationGeneration!==operationToken){opened.Close();return;}operation=opened;
+    if(operationGeneration!==operationToken){opened.Close();return;}operation=opened;operationKind="status";
   }
   const schedulePendingStatusRebuild=(delay:number)=>{
     if(pendingStatusTimer!==null)clearPendingTimeout(pendingStatusTimer as never);
@@ -163,6 +165,28 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
     },delay);
   };
   function disconnect(intent: DockIntent = "disconnect_only") {
+    if(stopped||!modal) return;
+    if(operationKind==="status"){
+      const record=pendingDockRecord();
+      const settled=presentedDockSettlement;
+      if(!record){
+        // The receipt was retired, but Gamescope did not notify this SharedJS
+        // owner that its modal disappeared. Discard only the dead handle.
+        presentedDockSettlement=null;
+        hideOperation();
+      } else if(settled?.request===record.request&&settled.intent===record.intent){
+        // The previous result was rendered and correlated. This fresh explicit
+        // press acknowledges it before starting a new request.
+        acknowledgeDockSettlement();
+        hideOperation();
+      } else {
+        // Never replace unresolved history with a new hardware write. Restore
+        // its status and require another explicit press after it settles.
+        hideOperation();
+        resumePendingOperation();
+        return;
+      }
+    }
     if(stopped||operation||!modal) return;
     // One explicit activation owns one request across React remounts. React can
     // retire the first control while its final freshness read is pending, so
@@ -182,6 +206,7 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
     </EgpuConfirmModal>,undefined,{fnOnClose:hide,bNeverPopOut:true});
     if(operationGeneration!==operationToken){opened.Close();return;}
     operation=opened;
+    operationKind="active";
     schedulePendingStatusRebuild(15_000);
   }
   function ShutdownStatus(){

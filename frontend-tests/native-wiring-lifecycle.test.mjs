@@ -125,6 +125,41 @@ test('explicit Safe Disconnect replaces a stale handoff modal with status-only p
   h.menu.stop();
 });
 
+test('fresh Safe Disconnect acknowledges an exact settled stale operation and dispatches once',()=>{
+  const h=harness();h.menu.open();const view=h.mount();
+  view.props.onDisconnect();
+  const stale=h.modals[1];
+  const staleControl=stale.node.props.children.find(child=>child?.type==='dock');
+  h.storage.setItem('regear.whole-dock.pending-request','v2:disconnect_only:panel:request-old');
+  staleControl.props.onSettled({intent:'disconnect_only',request:'request-old'});
+  h.runLatestTimer();
+  view.props.onDisconnect();
+  assert.equal(stale.closed,true);
+  assert.equal(h.storage.getItem('regear.whole-dock.pending-request'),null);
+  assert.equal(h.modals.length,4);
+  const fresh=h.modals[3].node.props.children.find(child=>child?.type==='dock');
+  assert.equal(fresh.props.statusOnly,undefined);
+  assert.equal(fresh.props.startRequest(),true);
+  assert.equal(fresh.props.startRequest(),false);
+  h.menu.stop();
+});
+
+test('fresh Safe Disconnect reopens unresolved stale status without dispatching',()=>{
+  const h=harness();h.menu.open();const view=h.mount();
+  view.props.onDisconnect();
+  const stale=h.modals[1];
+  h.storage.setItem('regear.whole-dock.pending-request','v2:disconnect_only:panel:request-unresolved');
+  h.runLatestTimer();
+  view.props.onDisconnect();
+  assert.equal(stale.closed,true);
+  assert.equal(h.modals.length,4);
+  const status=h.modals[3].node.props.children.find(child=>child?.type==='dock');
+  assert.equal(status.props.statusOnly,true);
+  assert.equal(status.props.startRequest,undefined);
+  assert.equal(h.storage.getItem('regear.whole-dock.pending-request'),'v2:disconnect_only:panel:request-unresolved');
+  h.menu.stop();
+});
+
 test('unconfirmed Safe Disconnect receipt clears only when its restored popup is dismissed',()=>{
   const pending='v2:disconnect_only:retired-panel:request-unconfirmed';
   const h=harness(pending);
