@@ -34,6 +34,7 @@ export async function recoverTerminalDockReceipt(storage?: Pick<Storage, "getIte
   try { status = await readTrial("whole_dock_trial"); } catch { return null; }
   const request = status?.request_id;
   const recoverable = status?.schema_version === 1
+    && typeof request === "string"
     && submittedRequest.test(request)
     && status.code === "dock_teardown.software_down"
     && status.busy === false && status.in_flight === false
@@ -107,6 +108,7 @@ export function WholeDockControl({ readCurrentSnapshot, intent = "disconnect_onl
         const settled = !!record && dockRequestSettled(next.status, record.request, record.intent);
         const exactRemountedDisconnect = !!record && abandoned && statusOnly && !!onSettled
           && record.intent === "disconnect_only" && !!record.panel
+          && record.panel !== recoveredPanel
           && submittedRequest.test(record.request)
           && rawRecord === formatPendingRecord(record.intent, record.panel, record.request);
         if (exactRemountedDisconnect && completionAttempted.current !== record.request) {

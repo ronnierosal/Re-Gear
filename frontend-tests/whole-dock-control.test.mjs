@@ -117,6 +117,7 @@ test('terminal receipt recovery rejects malformed or nonterminal status',async()
   for(const status of [
     {...recoveredTerminal(request),schema_version:2},
     {...recoveredTerminal(request),request_id:'bad'},
+    {...recoveredTerminal(request),request_id:[request]},
     {...recoveredTerminal(request),code:'dock_teardown.trial_unresolved',ok:false},
     {...recoveredTerminal(request),busy:true},
     {...recoveredTerminal(request),in_flight:true},
@@ -142,6 +143,29 @@ test('terminal receipt recovery cannot overwrite a receipt created during its ba
   wait.resolve(recoveredTerminal(request));
   assert.equal(await recovery,null);assert.equal(storage.get('regear.whole-dock.pending-request'),newer);
   assert.equal(h.calls.length,0);h.unmount();
+});
+
+test('synthesized terminal receipt never invokes completion if status changes before remount',async()=>{
+  const request='6'.repeat(32),storage=new Map();
+  const bootstrap=harness(storage,'disconnect_only',undefined,recoveredTerminal(request));
+  await settle();assert.deepEqual(await bootstrap.recover(),{intent:'disconnect_only',request});
+  bootstrap.unmount();
+
+  const raw=`v2:disconnect_only:backend-terminal:${request}`,presentations=[];
+  const changed={...fresh,in_flight:false,request_id:'7'.repeat(32)};
+  const remount=harness(storage,'disconnect_only',undefined,changed,undefined,true,
+    value=>presentations.push(value));
+  await settle();remount.poll();await settle();
+  assert.equal(remount.calls.length,0,
+    'recovered presentation receipts cannot call disconnect or its completion continuation');
+  assert.equal(storage.get('regear.whole-dock.pending-request'),raw);
+  assert.ok(presentations.length>=1);
+  assert.ok(presentations.every(value=>value.intent==='disconnect_only'&&value.request===request));
+  const text=JSON.stringify(remount.render());
+  assert.match(text,/could not confirm how the previous request ended/i);
+  assert.match(text,/Keep the cable connected/i);
+  assert.doesNotMatch(text,/USB4 deauthorization was verified|Unplug the eGPU now|Software disconnect complete/i);
+  remount.unmount();
 });
 
 test('component mount and canceled confirmation never mutate', async()=>{
