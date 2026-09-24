@@ -228,6 +228,12 @@ test("actual native adapter mounts live tiles, details and golden disconnect tog
     ["disconnect_only", "sleep", "shutdown"]);
   assert.equal(dockControl.props.intent, "disconnect_only");
   assert.equal(dockControl.props.readCurrentSnapshot, h.snapshot);
+  assert.equal(typeof dockControl.props.onSettled,'function');
+  const retained='v2:disconnect_only:panel:request-from-operation';
+  h.storage.setItem('regear.whole-dock.pending-request',retained);
+  dockControl.props.onSettled({intent:'disconnect_only',request:'request-from-operation'});
+  assert.equal(h.storage.getItem('regear.whole-dock.pending-request'),retained,
+    'the embedded status reader cannot retire the operation popup receipt');
   assert.ok(view.props.settings);
   h.menu.stop(); assert.equal(h.menu.visibility.read(), false);
 });
