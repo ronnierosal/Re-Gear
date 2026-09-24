@@ -52,11 +52,12 @@ export const tileOverlayStyles = `
 .rg-v3-tile-copy .rg-expanded-label{font-size:clamp(9px,.78vw,11px);overflow-wrap:normal;word-break:normal;hyphens:none}
 .rg-v3-tile-copy .rg-expanded-value{font-size:clamp(9px,.85vw,13px);white-space:normal;overflow-wrap:normal;word-break:normal;hyphens:none;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .rg-v3-tile[data-tone=unavailable] .rg-expanded-value{color:#dbeeff;text-shadow:0 1px 2px #000}
+/* Compact layouts shrink the tile: copy may scale down with it (cqi) but never above the wide-layout baseline. */
 .rg-expanded .rg-expanded-tile.rg-v3-tile{container:rg-v3-tile/inline-size}
 .rg-expanded .rg-expanded-tile.rg-v3-tile .rg-v3-tile-copy{justify-content:safe center;gap:1.5cqi;padding:4cqi 1cqi 4cqi 5cqi}
-.rg-expanded .rg-expanded-tile.rg-v3-tile .rg-v3-tile-copy .rg-expanded-label{font-size:clamp(7.5px,6.2cqi,13px);line-height:1.12;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-.rg-expanded .rg-expanded-tile.rg-v3-tile .rg-v3-tile-copy .rg-expanded-value{font-size:clamp(8px,7cqi,15px);line-height:1.12;white-space:normal;text-overflow:clip}
-.rg-expanded .rg-expanded-tile.rg-v3-tile .rg-v3-tile-copy .rg-tile-metadata{font-size:clamp(7px,5cqi,11px)}
+.rg-expanded .rg-expanded-tile.rg-v3-tile .rg-v3-tile-copy .rg-expanded-label{font-size:min(clamp(9px,.78vw,11px),max(7.5px,6.2cqi));line-height:1.12;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.rg-expanded .rg-expanded-tile.rg-v3-tile .rg-v3-tile-copy .rg-expanded-value{font-size:min(clamp(9px,.85vw,13px),max(8px,7cqi));line-height:1.12;white-space:normal;text-overflow:clip}
+.rg-expanded .rg-expanded-tile.rg-v3-tile .rg-v3-tile-copy .rg-tile-metadata{font-size:min(.75em,max(7px,5cqi))}
 .rg-expanded-tile.rg-v3-tile:focus-visible{outline:2px solid #8cecff;outline-offset:-3px;box-shadow:0 0 0 2px #061521,0 0 13px #28d9ff99}
 @media(prefers-reduced-motion:reduce){.rg-tile-gauge-fill{transition:none}}
 `;
