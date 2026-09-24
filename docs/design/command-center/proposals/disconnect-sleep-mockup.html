@@ -20,13 +20,11 @@ p.lead{color:var(--muted);margin:0 0 8px;max-width:72ch}
 @media(max-width:640px){.row{grid-template-columns:1fr}}
 </style></head><body><main>
 <h1>Disconnect tiles: artwork mockup</h1>
-<p class="lead">Proposal only. The production V3 art in <code>assets/command-center/v3/production/</code> is owner-approved and unchanged. Each row shows the three disconnect tiles with the text layer React draws on the left.</p>
+<p class="lead">The refined tiles 10, 11 and 12 were approved on 2026-09-24 and are now the production art in <code>assets/command-center/v3/production/</code>. The PNG next to this page records the before/after comparison. Each row shows the three disconnect tiles with the text layer React draws on the left.</p>
 
 <h2>Approved V3 sheet (reference)</h2>
 <div class="row" id="ref"></div>
-<h2>Current production SVGs</h2>
-<div class="row" id="prod"></div>
-<h2>Refined to match the sheet <span class="pick">· recommended</span></h2>
+<h2>Production (refined, approved 2026-09-24)</h2>
 <div class="row" id="refined"></div>
 <h2>Earlier idea A: plug + moon badge</h2>
 <div class="row" id="a"></div>
@@ -44,7 +42,7 @@ p.lead{color:var(--muted);margin:0 0 8px;max-width:72ch}
 <li><b>#11</b>: thin blue crescent with a soft blue glow, instead of the oversized flat white moon.</li>
 <li><b>#12</b>: glowing red power symbol, fully inside the tile, instead of a heavy filled disc cut off at the edge.</li>
 <li>Same background, border and 240×144 size, and no text in the artwork.</li></ul></div>
-<div class="card"><h3>Problems with the current tile</h3><ul>
+<div class="card"><h3>Problems with the previous #11 tile</h3><ul>
 <li>A moon on its own reads as <i>Sleep</i>. The eGPU tab also has a separate Sleep action that keeps the eGPU connected, so users can confuse the two.</li>
 <li>The disconnect and unplug step, which is the part that matters for safety, isn't shown at all.</li>
 <li>Flat white and purple shapes with no rim or metal. It looks lighter than the plug (#10) and ringed disc (#12) beside it.</li></ul></div>
@@ -71,10 +69,9 @@ const names=[['Safe Disconnect','Ready','Verified unplug flow'],['Disconnect + S
 const sheetTile=([x,y,w,h])=>`<div class="tile"><svg viewBox="${x} ${y} ${w} ${h}" preserveAspectRatio="none" style="position:absolute;inset:0;width:100%;height:100%"><image href="${SHEET}" width="1280" height="853"/></svg></div>`;
 document.getElementById('ref').innerHTML=crops.map(sheetTile).join('');
 const prodFiles=['10_safe-disconnect','11_disconnect-sleep','12_disconnect-shutdown'];
-document.getElementById('prod').innerHTML=prodFiles.map((f,i)=>tileHtml(P+f+'.svg',...names[i])).join('');
-document.getElementById('refined').innerHTML=prodFiles.map((f,i)=>tileHtml('refined-'+f+'.svg',...names[i])).join('');
+document.getElementById('refined').innerHTML=prodFiles.map((f,i)=>tileHtml(P+f+'.svg',...names[i])).join('');
 const side=[[P+'10_safe-disconnect.svg','Safe Disconnect','Ready','Verified unplug flow'],null,[P+'12_disconnect-shutdown.svg','Disconnect + Shutdown','Ready','Disconnect, then power off']];
 const sleep={current:P+'11_disconnect-sleep.svg',a:'disconnect-sleep-A-plug-badge.svg',b:'disconnect-sleep-B-moon-disc.svg'};
 for(const id of ['a','b']){const src=sleep[id];{document.getElementById(id).innerHTML=side.map(t=>t?tile(...t):tile(src,'Disconnect + Sleep','Ready','Unplug when prompted, then sleep',true)).join('');}}
-document.getElementById('small').innerHTML=[['#10 refined','refined-10_safe-disconnect.svg'],['#11 refined','refined-11_disconnect-sleep.svg'],['#12 refined','refined-12_disconnect-shutdown.svg'],['#11 current',sleep.current],['B',sleep.b]].map(([c,s])=>`<div>${tile(s,c.startsWith('#10')?'Safe Disconnect':c.startsWith('#12')?'Disconnect + Shutdown':'Disconnect + Sleep','Ready','')}<div class="cap"><b>${c}</b></div></div>`).join('');
+document.getElementById('small').innerHTML=[['#10',P+'10_safe-disconnect.svg'],['#11',P+'11_disconnect-sleep.svg'],['#12',P+'12_disconnect-shutdown.svg'],['A',sleep.a],['B',sleep.b]].map(([c,s])=>`<div>${tile(s,c.startsWith('#10')?'Safe Disconnect':c.startsWith('#12')?'Disconnect + Shutdown':'Disconnect + Sleep','Ready','')}<div class="cap"><b>${c}</b></div></div>`).join('');
 </script></body></html>

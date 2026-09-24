@@ -20,7 +20,8 @@ visual match. Several use symbols from the lightweight `button-artwork.svg`
 fallback set.
 
 The 37 numbered, self-contained SVGs under `production/` were visually approved
-by the project owner on 2026-09-22. They are the production artwork family for
+by the project owner on 2026-09-22 (tiles 10, 11 and 12 re-approved after a
+sheet-matching redraw on 2026-09-24). They are the production artwork family for
 subsequent UI integration. Installed Ally acceptance remains a separate gate.
 
 ## Locked presentation
