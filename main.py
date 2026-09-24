@@ -3543,9 +3543,86 @@ class Plugin:
         if lease is None:
             return False
         try:
-            return lease.status().active is True
+            status = lease.status()
+            if status.error:
+                return None
+            return status.active is True
         except Exception:
             return None
+
+    def _reconcile_physically_unplugged_trial_lease(self) -> bool:
+        """Release this process's transaction lease after strict cable absence.
+
+        Software-down is also the cable-connected, deauthorized state, so GPU
+        absence or an ambient presence result is never enough.  This path owns
+        no hardware write: it releases only the exact lease acquired for the
+        exact successful trial, after two fresh strict transport checks agree
+        that the cable is physically absent.
+        """
+        lease = getattr(self, '_whole_dock_trial_lease', None)
+        trial = getattr(self, '_whole_dock_trial_runtime', None)
+        terminal = getattr(self, '_whole_dock_trial_status', None)
+        capture = getattr(self, '_release_capture_task', None)
+        if (lease is None or type(trial) is not tuple or len(trial) != 2
+                or type(terminal) is not dict
+                or getattr(self, '_unloading', False)
+                or getattr(self, '_whole_dock_trial_worker_alive', False) is True
+                or (capture is not None and not capture.done())):
+            return False
+        runtime, admission = trial
+        request_id = terminal.get('request_id')
+        if (terminal.get('schema_version') != 1
+                or terminal.get('code') != 'dock_teardown.software_down'
+                or terminal.get('busy') is not False
+                or terminal.get('ok') is not True
+                or terminal.get('software_down') is not True
+                or terminal.get('safe_to_unplug') is not False
+                or type(request_id) is not str
+                or re.fullmatch(r'[0-9a-f]{32}', request_id) is None
+                or getattr(runtime, '_operation', None) != request_id
+                or type(admission) is not dict
+                or admission.get('held') is not False
+                or admission.get('power_handoff', False) is not False):
+            return False
+        try:
+            held = lease.status()
+            if held.active is not True or held.error:
+                return False
+        except Exception:
+            return False
+
+        def physically_absent() -> bool:
+            topology = self._connection_topology.observe()
+            return (
+                topology.transport_present is False
+                and topology.transport_absent_verified is True
+                and verified_transport_absent() is True
+            )
+
+        try:
+            with self._dock_mutation_gate().admit(allow_inhibited=True):
+                # Compare identities again under admission. A new request,
+                # power handoff, unloading process, or changed topology keeps
+                # the inhibitor held for the next reconciliation pass.
+                if (getattr(self, '_whole_dock_trial_lease', None) is not lease
+                        or getattr(self, '_whole_dock_trial_runtime', None) is not trial
+                        or getattr(self, '_whole_dock_trial_status', None) is not terminal
+                        or getattr(self, '_unloading', False)
+                        or getattr(self, '_whole_dock_trial_worker_alive', False) is True
+                        or admission.get('held') is not False
+                        or admission.get('power_handoff', False) is not False
+                        or not physically_absent()
+                        or not physically_absent()):
+                    return False
+                released = lease.release()
+                if released.active is not False or released.error:
+                    return False
+                # Preserve the runtime and terminal payload as evidence. Only
+                # the successfully released owned resource leaves live state.
+                self._whole_dock_trial_lease = None
+                return True
+        except Exception:
+            return False
 
     async def get_sleep_readiness(
         self, _request: object = None
@@ -5030,6 +5107,8 @@ class Plugin:
     async def _reconcile_sleep_guard(self) -> None:
         presence = await asyncio.to_thread(self._sleep_hardware.observe_presence)
         status = await asyncio.to_thread(self._sleep_guard.reconcile, presence)
+        if presence is EgpuPresence.ABSENT:
+            await asyncio.to_thread(self._reconcile_physically_unplugged_trial_lease)
         current = (presence.value, status.active, status.error)
         if current != self._last_sleep_guard_log:
             now_ns = self._journey_now_ns()
