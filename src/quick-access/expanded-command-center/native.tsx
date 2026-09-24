@@ -111,7 +111,16 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
   const hideOperation=()=>{const previous=operation;operation=null;operationKind=null;operationGeneration++;previous?.Close();};
   const presentDockSettlement=(settlement:DockSettlement)=>{
     const record=parsePendingRecord(storage?.getItem("regear.whole-dock.pending-request"));
-    if(record?.request===settlement.request&&record.intent===settlement.intent)presentedDockSettlement=settlement;
+    if(record?.request===settlement.request&&record.intent===settlement.intent){
+      presentedDockSettlement=settlement;
+      // The active progress surface belongs to the Gamescope instance that
+      // initiated the display handoff.  Its handle can survive after that
+      // visible surface has gone away.  Once the correlated result arrives,
+      // rebuild promptly on the replacement surface instead of waiting for
+      // the coarse stale-handle fallback below.  A status surface must not
+      // schedule itself again when it observes the same terminal result.
+      if(operationKind==="active")schedulePendingStatusRebuild(1_500);
+    }
   };
   const acknowledgeDockSettlement=()=>{
     if(!presentedDockSettlement)return;
@@ -198,7 +207,12 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
     );
     const operationToken=++operationGeneration;
     const hide=()=>{if(operationGeneration===operationToken)hideOperation();};
-    const dismiss=()=>{acknowledgeDockSettlement();hide();};
+    // Hiding or destroying the progress surface is not acknowledgement of a
+    // result. Gamescope tears this modal down during the very handoff the
+    // operation performs, and treating that host-driven close as dismissal
+    // erased the only durable receipt before the unplug popup could appear.
+    // Only the later status-only surface may acknowledge the settlement.
+    const dismiss=hide;
     const title=intent==="shutdown"?"Safe Disconnect + Shutdown":intent==="sleep"?"Disconnect + Sleep":"Safe Disconnect";
     const opened=showModal(<EgpuConfirmModal strTitle={title} strOKButtonText="Hide" bAlertDialog onOK={dismiss} onCancel={dismiss} onEscKeypress={dismiss} className="rg-whole-dock-progress">
       <style>{`.rg-whole-dock-progress{position:fixed!important;left:50%!important;top:50%!important;right:auto!important;bottom:auto!important;margin:0!important;transform:translate(-50%,-50%)!important}`}</style>

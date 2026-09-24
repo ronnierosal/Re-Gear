@@ -125,6 +125,35 @@ test('explicit Safe Disconnect replaces a stale handoff modal with status-only p
   h.menu.stop();
 });
 
+test('Gamescope teardown cannot acknowledge an active result before its replacement popup',()=>{
+  const h=harness();h.menu.open();const view=h.mount();
+  view.props.onDisconnect();
+  const active=h.modals[1];
+  const control=active.node.props.children.find(child=>child?.type==='dock');
+  const request='request-terminal-after-handoff';
+  const pending=`v2:disconnect_only:panel:${request}`;
+  h.storage.setItem('regear.whole-dock.pending-request',pending);
+
+  control.props.onSettled({intent:'disconnect_only',request});
+  // A Gamescope/modal teardown may surface through any of these callbacks.
+  // None belongs to the player-facing terminal status popup.
+  active.node.props.onCancel();
+  assert.equal(h.storage.getItem('regear.whole-dock.pending-request'),pending);
+  assert.equal(active.closed,true);
+
+  h.runLatestTimer();
+  assert.equal(h.modals.length,3);
+  const restored=h.modals[2].node;
+  assert.equal(restored.props.strTitle,'Safe Disconnect status');
+  const status=restored.props.children.find(child=>child?.type==='dock');
+  assert.equal(status.props.statusOnly,true);
+  status.props.onSettled({intent:'disconnect_only',request});
+  assert.equal(h.storage.getItem('regear.whole-dock.pending-request'),pending);
+  restored.props.onOK();
+  assert.equal(h.storage.getItem('regear.whole-dock.pending-request'),null);
+  h.menu.stop();
+});
+
 test('fresh Safe Disconnect acknowledges an exact settled stale operation and dispatches once',()=>{
   const h=harness();h.menu.open();const view=h.mount();
   view.props.onDisconnect();
