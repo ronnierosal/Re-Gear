@@ -81,7 +81,8 @@ weighted score or universal 30-FPS floor is accepted without policy review.
 
 ## Plan contract and resolution semantics
 
-Proposed extension to the existing plan, to agree with Claude before coding:
+The plan-v2 contract now carries the three resolution domains and separates
+requested, selected and base FPS. Other rows remain future contract proposals:
 
 | Field | Meaning |
 | --- | --- |
@@ -98,9 +99,10 @@ Proposed extension to the existing plan, to agree with Claude before coding:
 | `power_objective` | Advisory base target/headroom and permitted bounds for existing Auto TDP |
 | `validation` | Evidence identity, context, freshness, confidence and reason codes |
 
-Current `render_resolution`/engine `resolution` fields are not sufficient to
-represent all three resolution domains. Do not reinterpret them silently: version
-the contract, agree migration, and refuse ambiguous mappings. With FSR at 1080p
+The resolver's `render_resolution` records internal render, while its
+`output_resolution` records the physical display. The bridge requires a distinct
+`game_output_resolution` evidence field for the game's swapchain; it refuses an
+engine preview if that field is absent. With FSR at 1080p
 game output, reducing that output to 900p is not equivalent to selecting an
 internal render resolution. No accidental game + compositor + external scaler
 stack. A profile explicitly declares supported combinations.

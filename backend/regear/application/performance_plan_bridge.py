@@ -69,8 +69,9 @@ method can simulate a preparation exception, not an in-process crash recovery.
 
     if record is None:
         return declined("no selected plan; " + "; ".join(decision.reasons))
-    if record.render_resolution is None or context.output_resolution is None:
-        return declined("render and output resolution evidence required for engine preview")
+    if (record.render_resolution is None or record.game_output_resolution is None
+            or context.output_resolution is None):
+        return declined("internal render, game output and display resolution evidence required for engine preview")
     scaling = record.upscalers[0] if record.upscalers else None
     if scaling and scaling.location is ScalingLocation.COMPOSITOR:
         return declined("compositor scaling configuration has no agreed provider seam")
@@ -91,9 +92,12 @@ method can simulate a preparation exception, not an in-process crash recovery.
             )
         fg = FrameGenerationRef(record.provider_id, decision.multiplier)
     plan = PerformancePlan(
+        requested_display_fps=decision.requested_fps,
         target_display_fps=decision.achievable_fps,
         base_fps_target=decision.required_stable_base_fps,
-        resolution=record.render_resolution,
+        game_output_resolution=record.game_output_resolution,
+        internal_render=record.render_resolution,
+        display_output_resolution=context.output_resolution,
         upscaling=scaling.mode if scaling else UpscalingMode.OFF,
         frame_generation=fg,
         source=f"{record.record_id}@{record.evidence_revision}",

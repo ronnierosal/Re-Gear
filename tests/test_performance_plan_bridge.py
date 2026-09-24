@@ -101,14 +101,18 @@ class BridgeTests(unittest.TestCase):
     def test_4k_output_does_not_force_4k_rendering(self):
         result = preview()
         self.assertEqual(result.output_resolution, Resolution(3840, 2160))
-        self.assertEqual(result.game_plan.resolution, Resolution(1920, 1080))
+        self.assertEqual(result.game_plan.game_output_resolution, Resolution(1920, 1080))
+        self.assertEqual(result.game_plan.internal_render, Resolution(1920, 1080))
+        self.assertEqual(result.game_plan.display_output_resolution, Resolution(3840, 2160))
+        self.assertEqual(result.game_plan.requested_display_fps, 60)
 
     def test_portable_900p_is_declared_not_inferred_from_display(self):
         result = preview([fx.native(fps=45, mode=OperatingMode.PORTABLE,
                                     render_resolution=Resolution(1600, 900))],
                          context=fx.context(mode=OperatingMode.PORTABLE),
                          intent=PerformanceIntent(45))
-        self.assertEqual(result.game_plan.resolution, Resolution(1600, 900))
+        self.assertEqual(result.game_plan.internal_render, Resolution(1600, 900))
+        self.assertEqual(result.game_plan.game_output_resolution, Resolution(1920, 1080))
 
     def test_boosted_handheld_internal_output_independent_of_render_gpu(self):
         result = preview([fx.native(fps=60, mode=OperatingMode.BOOSTED_HANDHELD,
@@ -233,15 +237,26 @@ class BridgeTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             fx.native(multiplier=True)
 
-    def test_engine_translation_receives_base30_and_1080p_not_output4k(self):
+    def test_engine_translation_keeps_internal_render_separate_from_game_output(self):
         import game_profile_engine_fixtures as engine_fx
+        from regear.domain.graphics_profiles import ManagedKey, ValueKind
         from regear.domain.semantic_profiles import translate
-        result = preview()
-        translated = translate(result.game_plan.apply_to(engine_fx.TV_BALANCED), engine_fx.mapping())
+        result = preview([fx.frame_generation(render_resolution=Resolution(1440, 810))])
+        mapping = dataclasses.replace(engine_fx.mapping(), render_scale_key=ManagedKey(
+            engine_fx.SECTION, "InternalRenderPercent", ValueKind.INTEGER,
+            minimum=50, maximum=200,
+        ))
+        translated = translate(result.game_plan.apply_to(engine_fx.TV_BALANCED), mapping)
         self.assertTrue(translated.complete)
         self.assertEqual(translated.settings[engine_fx.FRAME_LIMIT], "30")
         self.assertEqual(translated.settings[engine_fx.WIDTH], "1920")
         self.assertEqual(translated.settings[engine_fx.HEIGHT], "1080")
+        self.assertEqual(translated.settings[f"{engine_fx.SECTION}/InternalRenderPercent"], "75")
+
+    def test_missing_game_output_evidence_declines_preview(self):
+        result = preview([fx.native(fps=60, game_output_resolution=None)])
+        self.assertIsNone(result.game_plan)
+        self.assertFalse(result.launch.changes_anything)
 
     def test_duplicate_evidence_is_ambiguous_not_input_order_dependent(self):
         a, b = fx.native(fps=60), fx.native(fps=45)

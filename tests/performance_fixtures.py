@@ -120,6 +120,7 @@ def native(record_id: str = "native-quality", fps: int = 30, **overrides) -> Com
         evidence_revision="fixture-evidence-1",
         display_owner=FIXTURE_DISPLAY,
         output_resolution=Resolution(3840, 2160),
+        game_output_resolution=Resolution(1920, 1080),
         render_resolution=Resolution(1920, 1080),
     )
     values.update(overrides)
@@ -166,6 +167,7 @@ def frame_generation(
         evidence_revision="fixture-evidence-1",
         display_owner=FIXTURE_DISPLAY,
         output_resolution=Resolution(3840, 2160),
+        game_output_resolution=Resolution(1920, 1080),
         render_resolution=Resolution(1920, 1080),
     )
     values.update(overrides)

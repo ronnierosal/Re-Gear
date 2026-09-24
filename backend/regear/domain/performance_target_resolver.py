@@ -250,6 +250,9 @@ class CompatibilityRecord:
     #: A per-game floor established by this evidence, if any.
     minimum_base_fps: int | None = None
     record_version: int = EVIDENCE_RECORD_VERSION
+    #: The game's swapchain output, separately observed from internal render
+    #: and the physical display output. Required by the engine preview bridge.
+    game_output_resolution: Resolution | None = None
     render_resolution: Resolution | None = None
     output_resolution: Resolution | None = None
     display_owner: str | None = None
