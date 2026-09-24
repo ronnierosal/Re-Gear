@@ -31,10 +31,16 @@ function harness(options={}){
 test('confirmed success dwells then closes without user confirmation',()=>{const h=harness();h.advance(3499);assert.equal(h.closed,0);h.advance(1);assert.equal(h.closed,1)});
 test('freshness loss and operation change prevent success dismissal',()=>{for(const status of [{expiresAt:4500},{phase:'checking'}]){const h=harness();h.setStatus(status);h.advance(10000);assert.equal(h.closed,0)}});
 test('expanded diagnostics hold dismissal until inspection ends',()=>{const h=harness();h.details(true);h.advance(5000);assert.equal(h.closed,0);h.details(false);h.advance(500);assert.equal(h.closed,1)});
-test('pointer, keyboard, focus and native controller handlers each renew the quiet dwell',()=>{
- for(const event of ['onPointerDownCapture','onKeyDownCapture','onFocusCapture','onGamepadFocus','onGamepadDirection','onButtonDown']){
+test('explicit pointer, keyboard and native controller input renews the quiet dwell',()=>{
+ for(const event of ['onPointerDownCapture','onKeyDownCapture','onGamepadDirection','onButtonDown']){
   const h=harness();h.advance(3000);h.tree.props.children[1].props[event]();h.advance(3000);assert.equal(h.closed,0,event);h.advance(500);assert.equal(h.closed,1,event);
  }
+});
+test('passive Steam focus notifications cannot hold a completed popup open',()=>{
+ const h=harness();
+ assert.equal(h.tree.props.children[1].props.onFocusCapture,undefined);
+ assert.equal(h.tree.props.children[1].props.onGamepadFocus,undefined);
+ h.advance(3500);assert.equal(h.closed,1);
 });
 test('unmount cancels scheduled success dismissal',()=>{const h=harness();h.cleanup();h.advance(10000);assert.equal(h.closed,0)});
 

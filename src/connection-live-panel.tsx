@@ -58,7 +58,7 @@ export function LivePanel({store, close, switchTv}: {store: Store; close(): void
     bDisableBackgroundDismiss={true} bHideCloseIcon={true}>
     <style>{connectionPanelCss}</style>
     <Focusable ref={panel} onPointerDownCapture={interacted} onKeyDownCapture={interacted}
-      onFocusCapture={interacted} onGamepadFocus={interacted} onGamepadDirection={interacted} onButtonDown={interacted}
+      onGamepadDirection={interacted} onButtonDown={interacted}
       onOptionsButton={toggleDetails} onOptionsActionDescription="Connection details">
     <ConnectionProgressOverlay {...connectionProgressViewModel(status)} onHide={hide} onSwitch={switchAction}
       recoveryAction={<LinkRecoveryControl eligible={!stale && source.connected
