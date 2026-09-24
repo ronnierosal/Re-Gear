@@ -10,6 +10,7 @@ own mapping and evidence.
 
 from __future__ import annotations
 
+import dataclasses
 import sys
 from pathlib import Path
 
@@ -135,7 +136,7 @@ PORTABLE_BALANCED = SemanticProfile(
         GraphicsSetting.VIEW_DISTANCE: Quality.MEDIUM,
     },
     target_fps=45,
-    resolution=Resolution(1280, 800),
+    game_output_resolution=Resolution(1280, 800),
     upscaling=UpscalingMode.QUALITY,
     frame_limit=45,
 )
@@ -147,7 +148,7 @@ TV_BALANCED = SemanticProfile(
         GraphicsSetting.VIEW_DISTANCE: Quality.EPIC,
     },
     target_fps=60,
-    resolution=Resolution(1920, 1080),
+    game_output_resolution=Resolution(1920, 1080),
     upscaling=UpscalingMode.OFF,
     frame_limit=60,
 )
@@ -158,7 +159,7 @@ PORTABLE_QUALITY = SemanticProfile(
         GraphicsSetting.VOLUMETRICS: Quality.HIGH,
     },
     target_fps=40,
-    resolution=Resolution(1280, 800),
+    game_output_resolution=Resolution(1280, 800),
 )
 
 
@@ -216,3 +217,34 @@ def build_library(root: Path, *, native: bool = False, config: str = SAMPLE) -> 
     # the CRLF lines on some platforms and hide exactly what tests check.
     path.write_bytes(config.encode("utf-8"))
     return steam, path
+
+
+def render_scale_mapping() -> GameMapping:
+    """The fixture game as if its evidence established sg.ResolutionQuality as
+    internal render in percent of game output, supersampling to 200 included.
+
+    It has no upscaler-mode key, so a profile naming an upscaling mode is not
+    expressible here; the render-scale document below names none.
+    """
+    return dataclasses.replace(
+        mapping(),
+        upscaling_key=None,
+        upscaling_values={},
+        render_scale_key=ManagedKey(
+            SCALABILITY, "sg.ResolutionQuality", ValueKind.INTEGER, minimum=25, maximum=200
+        ),
+    )
+
+
+def render_scale_document() -> GameProfileDocument:
+    base = document()
+    return dataclasses.replace(
+        base,
+        profiles={
+            mode: {
+                preference: dataclasses.replace(profile, upscaling=None)
+                for preference, profile in by_preference.items()
+            }
+            for mode, by_preference in base.profiles.items()
+        },
+    )

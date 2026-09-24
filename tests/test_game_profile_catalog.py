@@ -20,8 +20,9 @@ from regear.delivery.game_profile_catalog import (  # noqa: E402
     decode_entry,
     load_catalog,
 )
+from regear.domain.mode_profiles import ExperienceTarget  # noqa: E402
 from regear.domain.models import OperatingMode  # noqa: E402
-from regear.domain.semantic_profiles import ValidationStatus  # noqa: E402
+from regear.domain.semantic_profiles import InternalRender, Resolution, ValidationStatus  # noqa: E402
 
 PORTABLE, TV = OperatingMode.PORTABLE, OperatingMode.TV_DOCKED
 
@@ -58,7 +59,8 @@ class DecodeTests(unittest.TestCase):
 
     def test_invalid_values_are_refused(self):
         bad = [
-            ofx.entry(catalog_version=2),
+            ofx.entry(catalog_version=1),  # before the resolution split
+            ofx.entry(catalog_version=3),
             ofx.entry(steam_app_id="0"),
             ofx.entry(profile_version="1"),
             ofx.entry(validation="trust-me"),
@@ -66,13 +68,35 @@ class DecodeTests(unittest.TestCase):
             ofx.entry(profiles={"unknown": {"balanced": {}}}),
             ofx.entry(profiles={"degraded": {"balanced": {}}}),
             ofx.entry(profiles={"portable": {"balanced": {"graphics": {"textures": "ultra"}}}}),
-            ofx.entry(profiles={"portable": {"balanced": {"resolution": [1280]}}}),
+            ofx.entry(profiles={"portable": {"balanced": {"game_output_resolution": [1280]}}}),
             ofx.entry(profiles={"portable": {"balanced": {"target_fps": 45.5}}}),
             ofx.entry(profiles={"portable": {"balanced": {"upscaling": "auto-ish"}}}),
         ]
         for value in bad:
             with self.subTest(value=str(value)[:80]), self.assertRaises(CatalogError):
                 decode_entry(value)
+
+
+class ResolutionFieldTests(unittest.TestCase):
+    def profile(self, **fields):
+        value = ofx.entry(profiles={"portable": {"balanced": fields}})
+        return decode_entry(value).document.profile(PORTABLE, ExperienceTarget.BALANCED)
+
+    def test_game_output_and_internal_render_are_separate_fields(self):
+        profile = self.profile(game_output_resolution=[1920, 1080], internal_render=[1440, 810])
+        self.assertEqual(profile.game_output_resolution, Resolution(1920, 1080))
+        self.assertEqual(profile.internal_render, Resolution(1440, 810))
+        self.assertIs(self.profile(internal_render="dynamic").internal_render, InternalRender.DYNAMIC)
+        self.assertIsNone(self.profile().internal_render)
+
+    def test_the_old_single_resolution_field_is_refused(self):
+        with self.assertRaisesRegex(CatalogError, "unknown fields: resolution"):
+            self.profile(resolution=[1920, 1080])
+
+    def test_bad_internal_values_are_refused(self):
+        for bad in ("auto", [1440], 75, [1440.0, 810]):
+            with self.subTest(bad), self.assertRaises(CatalogError):
+                self.profile(internal_render=bad)
 
 
 class AdmissionTests(unittest.TestCase):

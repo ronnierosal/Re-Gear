@@ -30,7 +30,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Mapping
 
-from .graphics_profiles import GraphicsProfile, ManagedKey, SupportTier
+from .graphics_profiles import GraphicsProfile, ManagedKey, SupportTier, ValueKind
 from .mode_profiles import ExperienceTarget
 from .models import OperatingMode
 
@@ -64,6 +64,18 @@ class UpscalingMode(StrEnum):
     QUALITY = "quality"
     BALANCED = "balanced"
     PERFORMANCE = "performance"
+
+
+class InternalRender(StrEnum):
+    """An internal render resolution that is not a fixed size.
+
+    UNKNOWN states nothing: nobody has established what the game shades, and
+    nothing is inferred from output size or upscaling mode. DYNAMIC means the
+    game chooses per frame; writing that needs a game-specific switch.
+    """
+
+    UNKNOWN = "unknown"
+    DYNAMIC = "dynamic"
 
 
 class ValidationStatus(StrEnum):
@@ -106,15 +118,27 @@ class SemanticProfile:
 
     graphics: Mapping[GraphicsSetting, Quality] = field(default_factory=dict)
     target_fps: int | None = None
-    resolution: Resolution | None = None
+    #: The game's swapchain output: what its Resolution menu sets.
+    game_output_resolution: Resolution | None = None
     upscaling: UpscalingMode | None = None
     #: The game's own frame cap. Separate from target_fps on purpose: with
     #: frame generation, the game renders fewer real frames than are shown.
     frame_limit: int | None = None
+    #: What the game shades internally. None and UNKNOWN both state nothing.
+    #: Written only through a mapping's declared render-scale relation.
+    internal_render: Resolution | InternalRender | None = None
 
     def __post_init__(self) -> None:
         _fps(self.target_fps, "target FPS")
         _fps(self.frame_limit, "frame limit")
+        if self.game_output_resolution is not None and not isinstance(
+            self.game_output_resolution, Resolution
+        ):
+            raise ValueError("game output resolution is a resolution")
+        if self.internal_render is not None and not isinstance(
+            self.internal_render, (Resolution, InternalRender)
+        ):
+            raise ValueError("internal render is a resolution, DYNAMIC or UNKNOWN")
         for setting, quality in self.graphics.items():
             if not isinstance(setting, GraphicsSetting) or not isinstance(quality, Quality):
                 raise ValueError("graphics settings map a GraphicsSetting to a Quality")
@@ -125,8 +149,12 @@ class SemanticProfile:
         lines: list[str] = []
         if self.target_fps is not None:
             lines.append(f"Target {self.target_fps} FPS")
-        if self.resolution is not None:
-            lines.append(f"Resolution {self.resolution}")
+        if self.game_output_resolution is not None:
+            lines.append(f"Resolution {self.game_output_resolution}")
+        if isinstance(self.internal_render, Resolution):
+            lines.append(f"Render resolution {self.internal_render}")
+        elif self.internal_render is InternalRender.DYNAMIC:
+            lines.append("Render resolution dynamic")
         for setting in GraphicsSetting:
             quality = self.graphics.get(setting)
             if quality is not None:
@@ -206,6 +234,10 @@ class GameMapping:
     #: exposes one. AUTO is never mapped: it must be resolved first.
     upscaling_key: ManagedKey | None = None
     upscaling_values: Mapping[UpscalingMode, str] = field(default_factory=dict)
+    #: An integer key holding internal render as a percentage of game output,
+    #: if -- and only if -- this game's evidence establishes that relation.
+    #: Its range is the game's own limit, supersampling included.
+    render_scale_key: ManagedKey | None = None
 
     def __post_init__(self) -> None:
         # Held as copies so a caller's dict cannot change a validated mapping.
@@ -217,7 +249,12 @@ class GameMapping:
         addresses = [entry.key.address for entry in self.quality_keys.values()]
         addresses += [
             key.address
-            for key in (*(self.resolution_keys or ()), self.frame_limit_key, self.upscaling_key)
+            for key in (
+                *(self.resolution_keys or ()),
+                self.frame_limit_key,
+                self.upscaling_key,
+                self.render_scale_key,
+            )
             if key is not None
         ]
         duplicates = sorted({address for address in addresses if addresses.count(address) > 1})
@@ -231,6 +268,8 @@ class GameMapping:
             for literal in self.upscaling_values.values():
                 if not self.upscaling_key.accepts(literal):
                     raise ValueError("an upscaling value is outside its key's range")
+        if self.render_scale_key is not None and self.render_scale_key.kind is not ValueKind.INTEGER:
+            raise ValueError("a render-scale key holds an integer percentage")
 
     def managed_keys(self) -> dict[str, ManagedKey]:
         keys = {entry.key.address: entry.key for entry in self.quality_keys.values()}
@@ -238,6 +277,7 @@ class GameMapping:
             *(self.resolution_keys or ()),
             self.frame_limit_key,
             self.upscaling_key,
+            self.render_scale_key,
         ):
             if key is not None:
                 keys[key.address] = key
@@ -265,17 +305,28 @@ def translate(profile: SemanticProfile, mapping: GameMapping) -> Translation:
             unmapped.append(f"{setting.value}={quality.value}")
             continue
         settings[entry.key.address] = literal
-    if profile.resolution is not None:
+    output = profile.game_output_resolution
+    if output is not None:
         if mapping.resolution_keys is None:
-            unmapped.append(f"resolution={profile.resolution}")
+            unmapped.append(f"resolution={output}")
         else:
             width_key, height_key = mapping.resolution_keys
-            width, height = str(profile.resolution.width), str(profile.resolution.height)
+            width, height = str(output.width), str(output.height)
             if width_key.accepts(width) and height_key.accepts(height):
                 settings[width_key.address] = width
                 settings[height_key.address] = height
             else:
-                unmapped.append(f"resolution={profile.resolution}")
+                unmapped.append(f"resolution={output}")
+    internal = profile.internal_render
+    if internal is InternalRender.DYNAMIC:
+        # No mapping here declares a dynamic-resolution switch.
+        unmapped.append("internal_render=dynamic")
+    elif isinstance(internal, Resolution):
+        literal = _render_scale(internal, output, mapping.render_scale_key)
+        if literal is None:
+            unmapped.append(f"internal_render={internal}")
+        else:
+            settings[mapping.render_scale_key.address] = literal
     if profile.frame_limit is not None:
         literal = str(profile.frame_limit)
         if mapping.frame_limit_key is None or not mapping.frame_limit_key.accepts(literal):
@@ -290,6 +341,29 @@ def translate(profile: SemanticProfile, mapping: GameMapping) -> Translation:
         else:
             settings[mapping.upscaling_key.address] = literal
     return Translation(settings, tuple(unmapped))
+
+
+def _render_scale(
+    internal: Resolution, output: Resolution | None, key: ManagedKey | None
+) -> str | None:
+    """The render-scale literal for an explicit internal size, or None.
+
+    Only an exact, uniform, whole-percent scale of a known game output is
+    expressible. Anything else -- no key, unknown output, a different aspect,
+    a fractional percentage, or a value outside the key's range -- is not
+    rounded or clamped: the profile becomes Advisor instead.
+    """
+    if key is None or output is None:
+        return None
+    scaled_width = internal.width * 100
+    scaled_height = internal.height * 100
+    if scaled_width % output.width or scaled_height % output.height:
+        return None
+    percent = scaled_width // output.width
+    if percent != scaled_height // output.height:
+        return None
+    literal = str(percent)
+    return literal if key.accepts(literal) else None
 
 
 @dataclass(frozen=True, slots=True)

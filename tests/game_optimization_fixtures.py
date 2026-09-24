@@ -22,7 +22,7 @@ APP_ID = fx.APP_ID
 OTHER_APP_ID = "4000000009"
 
 ENTRY = {
-    "catalog_version": 1,
+    "catalog_version": 2,
     "steam_app_id": APP_ID,
     "mapping_id": "regear-fixture-engine-game",
     "profile_version": 1,
@@ -40,14 +40,14 @@ ENTRY = {
                     "view_distance": "medium",
                 },
                 "target_fps": 45,
-                "resolution": [1280, 800],
+                "game_output_resolution": [1280, 800],
                 "upscaling": "quality",
                 "frame_limit": 45,
             },
             "quality": {
                 "graphics": {"textures": "epic", "volumetrics": "high"},
                 "target_fps": 40,
-                "resolution": [1280, 800],
+                "game_output_resolution": [1280, 800],
             },
         },
         "tv_docked": {
@@ -59,7 +59,7 @@ ENTRY = {
                     "view_distance": "epic",
                 },
                 "target_fps": 60,
-                "resolution": [1920, 1080],
+                "game_output_resolution": [1920, 1080],
                 "upscaling": "off",
                 "frame_limit": 60,
             }

@@ -44,6 +44,7 @@ from ..domain.semantic_profiles import (
     GameProfileDocument,
     GraphicsSetting,
     ProfileMetadata,
+    InternalRender,
     Quality,
     Resolution,
     SemanticProfile,
@@ -52,7 +53,9 @@ from ..domain.semantic_profiles import (
 )
 
 
-CATALOG_VERSION = 1
+#: Version 2 names game output and internal render separately. A version 1
+#: entry is refused, not reinterpreted: its single resolution is ambiguous.
+CATALOG_VERSION = 2
 MAX_ENTRY_BYTES = 32 * 1024
 MAX_ENTRIES = 256
 IDENTIFIER_RE = re.compile(r"^[A-Za-z0-9_.\-]{1,64}$")
@@ -70,7 +73,14 @@ _ENTRY_FIELDS = {
     "profiles",
 }
 _PROVENANCE_FIELDS = {"source", "evidence_id", "validated_modes"}
-_PROFILE_FIELDS = {"graphics", "target_fps", "resolution", "upscaling", "frame_limit"}
+_PROFILE_FIELDS = {
+    "graphics",
+    "target_fps",
+    "game_output_resolution",
+    "internal_render",
+    "upscaling",
+    "frame_limit",
+}
 
 
 class ProfileSource(StrEnum):
@@ -265,16 +275,12 @@ def _profile(value: Any) -> SemanticProfile:
     graphics_value = profile.get("graphics", {})
     if not isinstance(graphics_value, dict):
         raise CatalogError("graphics is not an object")
-    resolution_value = profile.get("resolution")
-    resolution = None
-    if resolution_value is not None:
-        if (
-            not isinstance(resolution_value, list)
-            or len(resolution_value) != 2
-            or any(type(item) is not int for item in resolution_value)
-        ):
-            raise CatalogError("resolution is a [width, height] pair")
-        resolution = Resolution(*resolution_value)
+    output = _pair(profile.get("game_output_resolution"), "game output resolution")
+    internal_value = profile.get("internal_render")
+    if isinstance(internal_value, str):
+        internal = InternalRender(internal_value)
+    else:
+        internal = _pair(internal_value, "internal render")
     upscaling = profile.get("upscaling")
     for name in ("target_fps", "frame_limit"):
         if profile.get(name) is not None and type(profile[name]) is not int:
@@ -282,7 +288,20 @@ def _profile(value: Any) -> SemanticProfile:
     return SemanticProfile(
         graphics={GraphicsSetting(key): Quality(level) for key, level in graphics_value.items()},
         target_fps=profile.get("target_fps"),
-        resolution=resolution,
+        game_output_resolution=output,
+        internal_render=internal,
         upscaling=UpscalingMode(upscaling) if upscaling is not None else None,
         frame_limit=profile.get("frame_limit"),
     )
+
+
+def _pair(value: Any, what: str) -> Resolution | None:
+    if value is None:
+        return None
+    if (
+        not isinstance(value, list)
+        or len(value) != 2
+        or any(type(item) is not int for item in value)
+    ):
+        raise CatalogError(f"{what} is a [width, height] pair")
+    return Resolution(*value)

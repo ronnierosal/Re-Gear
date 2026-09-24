@@ -20,6 +20,7 @@ a game fails to launch.
 
 from __future__ import annotations
 
+import dataclasses
 import stat
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -91,6 +92,10 @@ class EngineOutcome:
     #: applied only the plan's real-frame cap; it never interprets this.
     frame_generation: FrameGenerationRef | None = None
     apply_outcome: ApplyOutcome | None = None
+    #: The plan in the player's terms, including a selected rate below the
+    #: request and the display it will be shown on. Informational only: the
+    #: engine writes none of it beyond the game-owned settings.
+    plan_notes: tuple[str, ...] = ()
 
     @property
     def wrote(self) -> bool:
@@ -165,9 +170,12 @@ class GameProfileEngine:
     ) -> EngineOutcome:
         """Resolve and, only if Managed, apply. Raises nothing."""
         try:
-            return self._apply(
+            outcome = self._apply(
                 steam_app_id, mode, preference, run_state, observed_game_version, plan
             )
+            if plan is None:
+                return outcome
+            return dataclasses.replace(outcome, plan_notes=plan.explain())
         except Exception as error:  # noqa: BLE001 - the launch must survive anything
             return EngineOutcome(
                 EngineResult.FAILED,

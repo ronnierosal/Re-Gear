@@ -64,7 +64,7 @@ PERF = PerformanceContextRef("fixture-gpu-a.display-800p")
 LIGHTER = QueuedPlan(
     "lighter-40",
     BALANCED,
-    PerformancePlan(40, 40, Resolution(1280, 800), UpscalingMode.BALANCED, source="fixture"),
+    PerformancePlan.from_v1(40, 40, Resolution(1280, 800), UpscalingMode.BALANCED, source="fixture"),
 )
 
 
@@ -243,10 +243,29 @@ class NextLaunchTests(ServiceTestCase):
         self.launch()
         self.assertEqual(self.path.read_bytes(), self.original)
 
+    def test_v2_fallback_plan_survives_staging_restart_and_dispatch(self):
+        self.learned()
+        fg = FrameGenerationRef("fixture-provider", 2)
+        plan = PerformancePlan(
+            requested_display_fps=90, target_display_fps=60, base_fps_target=30,
+            game_output_resolution=Resolution(1280, 800),
+            display_output_resolution=Resolution(3840, 2160),
+            upscaling=UpscalingMode.QUALITY, frame_generation=fg, source="fixture",
+        )
+        self.assertTrue(self.propose(QueuedPlan("fallback-60", BALANCED, plan)).ok)
+        restarted = self.build()
+        self.assertEqual(self.lane(service=restarted).value.candidate.plan, plan)
+        result = self.launch(service=restarted)
+        self.assertIs(result.action, LaunchAction.APPLIED_CANDIDATE)
+        self.assertEqual(result.frame_generation, fg)
+        self.assertEqual(self.values()[fx.FRAME_LIMIT], "30")
+        self.assertIn("Requested 90 FPS; planned 60 FPS", result.engine.plan_notes)
+        self.assertNotIn(b"3840", self.path.read_bytes())
+
     def test_frame_generation_reference_passes_through_untouched(self):
         self.learned()
         fg = FrameGenerationRef("fixture-provider", 2)
-        plan = PerformancePlan(60, 30, Resolution(1280, 800), UpscalingMode.QUALITY, fg)
+        plan = PerformancePlan.from_v1(60, 30, Resolution(1280, 800), UpscalingMode.QUALITY, fg)
         self.propose(QueuedPlan("fg-60", BALANCED, plan))
         result = self.launch()
         self.assertEqual(result.frame_generation, fg)
@@ -519,7 +538,7 @@ class ReviewFindingTests(ServiceTestCase):
 
     def stage_fg(self):
         self.learned()
-        plan = PerformancePlan(60, 30, Resolution(1280, 800), UpscalingMode.QUALITY, self.FG)
+        plan = PerformancePlan.from_v1(60, 30, Resolution(1280, 800), UpscalingMode.QUALITY, self.FG)
         self.assertTrue(self.propose(QueuedPlan("fg-60", BALANCED, plan)).ok)
 
     def test_frame_generation_is_withheld_unless_the_settings_landed(self):

@@ -51,7 +51,7 @@ from regear.domain.graphics_profiles import SupportTier  # noqa: E402
 from regear.domain.mode_profiles import ExperienceTarget  # noqa: E402
 from regear.domain.models import OperatingMode  # noqa: E402
 from regear.domain.performance_plan import FrameGenerationRef, PerformancePlan  # noqa: E402
-from regear.domain.semantic_profiles import Resolution, UpscalingMode  # noqa: E402
+from regear.domain.semantic_profiles import InternalRender, Resolution, UpscalingMode  # noqa: E402
 
 APP = "4000000002"
 KEY = LaneKey(APP, OperatingMode.PORTABLE)
@@ -61,7 +61,7 @@ BALANCED = ExperienceTarget.BALANCED
 CONTEXT = OptimizationContext(
     BALANCED, "build-7", 1, 1, "schema-v5", PerformanceContextRef("fixture-gpu-a", 2)
 )
-PLAN = PerformancePlan(
+PLAN = PerformancePlan.from_v1(
     target_display_fps=60,
     base_fps_target=30,
     resolution=Resolution(1280, 800),
@@ -217,10 +217,75 @@ class StateStoreTests(StoreTestCase):
         self.state_file().write_text(json.dumps(value), encoding="utf-8")
         self.assertIs(self.store.load_state(KEY).state, LoadState.UNTRUSTED)
 
+    def stored_plan(self, plan_value):
+        """Write a staged-candidate record whose plan is ``plan_value``, then read it."""
+        self.store.save_state(rich_state(), 0)
+        value = json.loads(self.state_file().read_text(encoding="utf-8"))
+        value["candidate"]["plan"] = plan_value
+        self.state_file().write_text(json.dumps(value), encoding="utf-8")
+        return self.store.load_state(KEY)
+
+    def test_v2_plan_round_trips_every_field(self):
+        plan = PerformancePlan(
+            requested_display_fps=90, target_display_fps=60, base_fps_target=30,
+            game_output_resolution=Resolution(1920, 1080),
+            internal_render=Resolution(1440, 810),
+            display_output_resolution=Resolution(3840, 2160),
+            upscaling=UpscalingMode.QUALITY,
+            frame_generation=FrameGenerationRef("fixture-provider", 2), source="rec-1@3",
+        )
+        state = dataclasses.replace(rich_state(), candidate=QueuedPlan("candidate-a", BALANCED, plan))
+        self.store.save_state(state, 0)
+        self.assertEqual(self.reopen().load_state(KEY).value.candidate.plan, plan)
+        for internal in (InternalRender.DYNAMIC, InternalRender.UNKNOWN):
+            with self.subTest(internal):
+                other = dataclasses.replace(plan, internal_render=internal)
+                self.state_file().unlink()
+                self.store.save_state(dataclasses.replace(
+                    state, candidate=QueuedPlan("candidate-a", BALANCED, other)), 0)
+                self.assertIs(self.store.load_state(KEY).value.candidate.plan.internal_render, internal)
+
+    def test_stored_v1_plan_is_read_only_through_the_deterministic_migration(self):
+        loaded = self.stored_plan({
+            "plan_version": 1, "target_display_fps": 60, "base_fps_target": 30,
+            "resolution": [1920, 1080], "upscaling": "quality",
+            "frame_generation": {"provider_id": "fixture-provider", "multiplier": 2},
+            "source": "old",
+        })
+        self.assertTrue(loaded.trusted, loaded.detail)
+        plan = loaded.value.candidate.plan
+        self.assertEqual(plan, PerformancePlan.from_v1(
+            60, 30, Resolution(1920, 1080), UpscalingMode.QUALITY,
+            FrameGenerationRef("fixture-provider", 2), "old"))
+        self.assertIs(plan.internal_render, InternalRender.UNKNOWN)
+        self.assertIsNone(plan.requested_display_fps)
+
+    def test_ambiguous_or_mixed_plan_records_are_untrusted(self):
+        v2 = {
+            "plan_version": 2, "requested_display_fps": 60, "target_display_fps": 60,
+            "base_fps_target": 60, "game_output_resolution": [1920, 1080],
+            "internal_render": "unknown", "display_output_resolution": None,
+            "upscaling": None, "frame_generation": None, "source": "",
+        }
+        cases = {
+            "v2 missing internal render": {k: v for k, v in v2.items() if k != "internal_render"},
+            "v2 using the v1 field": {**{k: v for k, v in v2.items() if k != "game_output_resolution"},
+                                      "resolution": [1920, 1080]},
+            "v2 selecting above the request": {**v2, "requested_display_fps": 45},
+            "unknown internal token": {**v2, "internal_render": "auto"},
+            "v1 missing its resolution field": {
+                "plan_version": 1, "target_display_fps": 60, "base_fps_target": 60,
+                "upscaling": None, "frame_generation": None, "source": ""},
+        }
+        for name, value in cases.items():
+            with self.subTest(name):
+                self.state_file().unlink(missing_ok=True)
+                self.assertIs(self.stored_plan(value).state, LoadState.UNTRUSTED)
+
     def test_queued_plan_from_a_future_contract_is_untrusted(self):
         self.store.save_state(rich_state(), 0)
         value = json.loads(self.state_file().read_text(encoding="utf-8"))
-        value["candidate"]["plan"]["plan_version"] = 2
+        value["candidate"]["plan"]["plan_version"] = 3
         self.state_file().write_text(json.dumps(value), encoding="utf-8")
         self.assertIs(self.store.load_state(KEY).state, LoadState.UNTRUSTED)
 

@@ -54,7 +54,7 @@ from ..domain.game_optimization_state import (
 from ..domain.mode_profiles import ExperienceTarget
 from ..domain.models import OperatingMode
 from ..domain.performance_plan import FrameGenerationRef, PerformancePlan
-from ..domain.semantic_profiles import Resolution, UpscalingMode
+from ..domain.semantic_profiles import InternalRender, Resolution, UpscalingMode
 
 
 PREFERENCES_FILENAME = "optimization-preferences.json"
@@ -356,14 +356,30 @@ def _decode_resolution(value: Any) -> Resolution | None:
     return Resolution(_int(value[0], "width"), _int(value[1], "height"))
 
 
+def _encode_internal(internal: Resolution | InternalRender) -> list[int] | str:
+    return internal.value if isinstance(internal, InternalRender) else _encode_resolution(internal)
+
+
+def _decode_internal(value: Any) -> Resolution | InternalRender:
+    if isinstance(value, str):
+        return InternalRender(value)
+    resolution = _decode_resolution(value)
+    _require(resolution is not None, "internal render is missing")
+    return resolution
+
+
 def _encode_plan(plan: PerformancePlan | None) -> dict | None:
+    """Plans are always written at the current version, fields named."""
     if plan is None:
         return None
     return {
         "plan_version": plan.plan_version,
+        "requested_display_fps": plan.requested_display_fps,
         "target_display_fps": plan.target_display_fps,
         "base_fps_target": plan.base_fps_target,
-        "resolution": _encode_resolution(plan.resolution),
+        "game_output_resolution": _encode_resolution(plan.game_output_resolution),
+        "internal_render": _encode_internal(plan.internal_render),
+        "display_output_resolution": _encode_resolution(plan.display_output_resolution),
         "upscaling": plan.upscaling.value if plan.upscaling is not None else None,
         "frame_generation": (
             {
@@ -378,25 +394,45 @@ def _encode_plan(plan: PerformancePlan | None) -> dict | None:
 
 
 def _decode_plan(value: Any) -> PerformancePlan | None:
+    """Read a stored plan by its own version. Nothing is inferred across versions.
+
+    Version 2 is read field for field. Version 1 is read only through
+    ``PerformancePlan.from_v1``, the contract's single deterministic
+    migration. Any other version is untrusted, never reinterpreted.
+    """
     if value is None:
         return None
     _require(isinstance(value, dict), "plan is not an object")
+    version = _int(value["plan_version"], "plan version")
     fg = value["frame_generation"]
     upscaling = value["upscaling"]
-    # PerformancePlan refuses an unknown plan_version itself, so a queued plan
-    # from a future contract is untrusted here rather than reinterpreted.
+    frame_generation = (
+        FrameGenerationRef(_str(fg["provider_id"], "provider"), _int(fg["multiplier"], "multiplier"))
+        if fg is not None
+        else None
+    )
+    upscaling_mode = UpscalingMode(_str(upscaling, "upscaling")) if upscaling is not None else None
+    if version == 1:
+        return PerformancePlan.from_v1(
+            _int(value["target_display_fps"], "display target"),
+            _int(value["base_fps_target"], "base target"),
+            _decode_resolution(value["resolution"]),
+            upscaling_mode,
+            frame_generation,
+            _str(value["source"], "source"),
+        )
+    _require(version == 2, "plan version is not one this build reads")
+    requested = value["requested_display_fps"]
     return PerformancePlan(
+        requested_display_fps=_int(requested, "requested rate") if requested is not None else None,
         target_display_fps=_int(value["target_display_fps"], "display target"),
         base_fps_target=_int(value["base_fps_target"], "base target"),
-        resolution=_decode_resolution(value["resolution"]),
-        upscaling=UpscalingMode(_str(upscaling, "upscaling")) if upscaling is not None else None,
-        frame_generation=(
-            FrameGenerationRef(_str(fg["provider_id"], "provider"), _int(fg["multiplier"], "multiplier"))
-            if fg is not None
-            else None
-        ),
+        game_output_resolution=_decode_resolution(value["game_output_resolution"]),
+        internal_render=_decode_internal(value["internal_render"]),
+        display_output_resolution=_decode_resolution(value["display_output_resolution"]),
+        upscaling=upscaling_mode,
+        frame_generation=frame_generation,
         source=_str(value["source"], "source"),
-        plan_version=_int(value["plan_version"], "plan version"),
     )
 
 

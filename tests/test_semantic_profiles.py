@@ -45,7 +45,7 @@ class TranslationTests(unittest.TestCase):
         self.assertIn("upscaling=auto", translate(profile, fx.mapping()).unmapped)
 
     def test_an_out_of_range_resolution_is_unmapped_not_clamped(self):
-        profile = dataclasses.replace(fx.TV_BALANCED, resolution=Resolution(9000, 9000))
+        profile = dataclasses.replace(fx.TV_BALANCED, game_output_resolution=Resolution(9000, 9000))
         self.assertIn("resolution=9000x9000", translate(profile, fx.mapping()).unmapped)
 
     def test_translation_is_deterministic(self):

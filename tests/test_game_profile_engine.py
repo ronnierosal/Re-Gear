@@ -33,6 +33,7 @@ from regear.domain.mode_profiles import ExperienceTarget  # noqa: E402
 from regear.domain.models import OperatingMode  # noqa: E402
 from regear.domain.performance_plan import FrameGenerationRef, PerformancePlan  # noqa: E402
 from regear.domain.semantic_profiles import (  # noqa: E402
+    InternalRender,
     Resolution,
     UpscalingMode,
     ValidationStatus,
@@ -301,7 +302,7 @@ class OverrideAndModeTests(EngineTestCase):
 
 class PerformancePlanTests(EngineTestCase):
     def test_a_frame_generation_plan_caps_real_frames_and_passes_the_provider_through(self):
-        plan = PerformancePlan(60, 30, Resolution(1600, 900), UpscalingMode.QUALITY,
+        plan = PerformancePlan.from_v1(60, 30, Resolution(1600, 900), UpscalingMode.QUALITY,
                                FrameGenerationRef("external-provider", 2), source="fixture")
         outcome = self.apply(TV, plan=plan)
         self.assertIs(outcome.result, EngineResult.APPLIED)
@@ -313,27 +314,115 @@ class PerformancePlanTests(EngineTestCase):
         self.assertIn("Target 60 FPS", outcome.recommendations)
 
     def test_a_native_plan_uses_the_display_target_as_the_cap(self):
-        outcome = self.apply(PORTABLE, plan=PerformancePlan(40, 40))
+        outcome = self.apply(PORTABLE, plan=PerformancePlan.from_v1(40, 40))
         self.assertEqual(self.values()[fx.FRAME_LIMIT], "40")
         self.assertIsNone(outcome.frame_generation)
 
     def test_a_plan_the_mapping_cannot_express_is_advisor(self):
-        outcome = self.apply(TV, plan=PerformancePlan(60, 60, Resolution(9000, 9000)))
+        outcome = self.apply(TV, plan=PerformancePlan.from_v1(60, 60, Resolution(9000, 9000)))
         self.assertIs(outcome.result, EngineResult.ADVISOR)
         self.assertEqual(self.path.read_bytes(), self.original)
 
     def test_the_plan_contract_refuses_inconsistent_or_unresolved_plans(self):
         with self.assertRaises(ValueError):
-            PerformancePlan(60, 30)                              # 30 real ≠ 60 shown
+            PerformancePlan.from_v1(60, 30)                              # 30 real ≠ 60 shown
         with self.assertRaises(ValueError):
-            PerformancePlan(60, 30, frame_generation=FrameGenerationRef("x", 3))
+            PerformancePlan.from_v1(60, 30, frame_generation=FrameGenerationRef("x", 3))
         with self.assertRaises(ValueError):
-            PerformancePlan(60, 60, upscaling=UpscalingMode.AUTO)
+            PerformancePlan.from_v1(60, 60, upscaling=UpscalingMode.AUTO)
 
     def test_a_queued_request_keeps_the_plan_for_next_launch(self):
-        plan = PerformancePlan(60, 30, frame_generation=FrameGenerationRef("x", 2))
+        plan = PerformancePlan.from_v1(60, 30, frame_generation=FrameGenerationRef("x", 2))
         outcome = self.apply(TV, state=GameRunState.RUNNING, plan=plan)
         self.assertEqual(outcome.next_launch.plan, plan)
+
+
+class PlanV2Tests(EngineTestCase):
+    """PerformancePlan v2 through the real engine and foundation, bytes on disk."""
+
+    FG = FrameGenerationRef("fixture-provider", 2)
+
+    def render_scale_engine(self):
+        return self.build(document=fx.render_scale_document(), mapping=fx.render_scale_mapping())
+
+    def v2(self, **changes):
+        values = dict(requested_display_fps=60, target_display_fps=60, base_fps_target=60)
+        values.update(changes)
+        return PerformancePlan(**values)
+
+    def test_1080p_game_output_on_a_4k_display_writes_only_the_game_output(self):
+        plan = self.v2(requested_display_fps=90, target_display_fps=60, base_fps_target=30,
+                       frame_generation=self.FG, game_output_resolution=Resolution(1920, 1080),
+                       display_output_resolution=Resolution(3840, 2160))
+        outcome = self.apply(TV, plan=plan)
+        self.assertIs(outcome.result, EngineResult.APPLIED)
+        self.assertEqual(self.values()[fx.WIDTH], "1920")
+        self.assertEqual(self.values()[fx.HEIGHT], "1080")
+        self.assertEqual(self.values()[fx.FRAME_LIMIT], "30")  # rendered frames
+        self.assertNotIn(b"3840", self.path.read_bytes())       # display is never written
+        self.assertEqual(outcome.frame_generation, self.FG)
+        self.assertIn("Requested 90 FPS; planned 60 FPS", outcome.plan_notes)
+        self.assertIn("Display 3840x2160", outcome.plan_notes)
+
+    def test_native_upscaling_keeps_internal_and_output_apart(self):
+        # 1440x810 inside a 1920x1080 output is exactly 75 percent.
+        plan = self.v2(game_output_resolution=Resolution(1920, 1080),
+                       internal_render=Resolution(1440, 810))
+        outcome = self.apply(TV, plan=plan, engine=self.render_scale_engine())
+        self.assertIs(outcome.result, EngineResult.APPLIED)
+        self.assertEqual(self.values()[fx.WIDTH], "1920")
+        self.assertEqual(self.values()[fx.SCALE], "75")
+
+    def test_supersampling_within_the_game_limit_is_written(self):
+        plan = self.v2(game_output_resolution=Resolution(1280, 800),
+                       internal_render=Resolution(1920, 1200))
+        outcome = self.apply(PORTABLE, plan=plan, engine=self.render_scale_engine())
+        self.assertIs(outcome.result, EngineResult.APPLIED)
+        self.assertEqual(self.values()[fx.SCALE], "150")
+
+    def test_unknown_internal_render_writes_no_render_scale(self):
+        outcome = self.apply(TV, plan=self.v2(game_output_resolution=Resolution(1920, 1080)),
+                             engine=self.render_scale_engine())
+        self.assertIs(outcome.result, EngineResult.APPLIED)
+        self.assertEqual(self.values()[fx.SCALE], "100")  # the player's own value
+
+    def test_inexpressible_internal_render_is_advisor_with_no_partial_write(self):
+        cases = {
+            "no render-scale relation in this mapping": (
+                self.engine, Resolution(1920, 1080), Resolution(1440, 810)),
+            "dynamic": (self.render_scale_engine(), Resolution(1920, 1080), InternalRender.DYNAMIC),
+            "different aspect": (self.render_scale_engine(), Resolution(1280, 800), Resolution(1280, 720)),
+            "fractional percent": (self.render_scale_engine(), Resolution(1920, 1080), Resolution(1280, 720)),
+            "beyond the game's limit": (self.render_scale_engine(), Resolution(1280, 800), Resolution(3200, 2000)),
+            "unknown game output": (self.render_scale_engine(), None, Resolution(640, 400)),
+        }
+        for name, (engine, output, internal) in cases.items():
+            with self.subTest(name):
+                profile_output = dict(game_output_resolution=output) if output else {}
+                plan = self.v2(internal_render=internal, **profile_output)
+                document = fx.render_scale_document()
+                if output is None:
+                    # A profile that states no output either, so nothing anchors the scale.
+                    document = dataclasses.replace(document, profiles={
+                        PORTABLE: {BALANCED: dataclasses.replace(
+                            document.profile(PORTABLE, BALANCED), game_output_resolution=None)}})
+                    engine = self.build(document=document, mapping=fx.render_scale_mapping())
+                outcome = self.apply(PORTABLE, plan=plan, engine=engine)
+                self.assertIs(outcome.result, EngineResult.ADVISOR)
+                self.assertTrue(any("internal_render" in reason for reason in outcome.reasons))
+                self.assertEqual(self.path.read_bytes(), self.original)
+
+    def test_a_render_scale_key_cannot_share_the_upscaling_key(self):
+        with self.assertRaises(ValueError):
+            dataclasses.replace(fx.mapping(), render_scale_key=fx.mapping().upscaling_key)
+
+    def test_a_queued_v2_plan_is_kept_whole_for_next_launch(self):
+        plan = self.v2(requested_display_fps=90, target_display_fps=60, base_fps_target=30,
+                       frame_generation=self.FG, display_output_resolution=Resolution(3840, 2160))
+        outcome = self.apply(TV, state=GameRunState.RUNNING, plan=plan)
+        self.assertIs(outcome.result, EngineResult.QUEUED_NEXT_LAUNCH)
+        self.assertEqual(outcome.next_launch.plan, plan)
+        self.assertEqual(self.path.read_bytes(), self.original)
 
 
 if __name__ == "__main__":
