@@ -16,6 +16,10 @@
 
  <radialGradient id="halo" cx="190" cy="72" r="58" gradientUnits="userSpaceOnUse"><stop stop-color="#01050d" stop-opacity=".92"/><stop offset=".62" stop-color="#020a17" stop-opacity=".7"/><stop offset=".86" stop-color="#35f3a0" stop-opacity=".1"/><stop offset="1" stop-color="#35f3a0" stop-opacity="0"/></radialGradient>
  <filter id="bloom" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur in="SourceAlpha" stdDeviation="4.5" result="b"/><feColorMatrix in="b" values="0 0 0 0 0.208 0 0 0 0 0.953 0 0 0 0 0.627 0 0 0 .75 0" result="c"/><feMerge><feMergeNode in="c"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+
+ <linearGradient id="chRing" x1="20" y1="10" x2="100" y2="90" gradientUnits="userSpaceOnUse"><stop stop-color="#b6ffe0"/><stop offset=".4" stop-color="#2ff0a6"/><stop offset="1" stop-color="#0aa874"/></linearGradient>
+ <linearGradient id="chPlug" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#f2faff"/><stop offset=".5" stop-color="#a9d4f2"/><stop offset="1" stop-color="#5d93c4"/></linearGradient>
+ <linearGradient id="chBolt" x1="50" y1="20" x2="78" y2="82" gradientUnits="userSpaceOnUse"><stop stop-color="#c8ffe6"/><stop offset=".45" stop-color="#34f0a8"/><stop offset="1" stop-color="#0a9e6c"/></linearGradient>
  <clipPath id="clip"><rect x="2" y="2" width="236" height="140" rx="13"/></clipPath>
 </defs>
 <g filter="url(#outerGlow)"><rect x="2.5" y="2.5" width="235" height="139" rx="13" fill="url(#surface)" stroke="url(#rim)" stroke-width="1.5"/></g>
@@ -31,7 +35,7 @@
  <circle cx="190" cy="72" r="58" fill="url(#halo)"/>
  <path d="M150 20h14l8 8h20M141 128h18l7-7h22M226 40v18l-6 6M134 60l9 9v16" fill="none" stroke="#2aa9e6" stroke-opacity=".22" stroke-width=".8"/>
  <g fill="#57d8ff" fill-opacity=".35"><circle cx="192" cy="28" r="1.2"/><circle cx="188" cy="121" r="1.2"/><circle cx="220" cy="64" r="1.2"/><circle cx="143" cy="85" r="1.2"/></g>
- <g filter="url(#bloom)"><g transform="translate(188 72) scale(0.815) translate(-198.0 -80.0)"><g filter="url(#shadow)"><g transform="translate(143 25)"><circle cx="61" cy="55" r="45" fill="#05241f" stroke="#36f1a4" stroke-width="3"/><path d="m67 18-25 46h19l-10 32 33-52H63Z" fill="url(#green)" filter="url(#glow)"/><path d="M14 26h15v19H14ZM10 29H4M10 41H4" fill="url(#metal)" stroke="#67eeff" stroke-width="2"/></g></g></g></g>
+ <g filter="url(#bloom)"><g transform="translate(188 72) scale(0.846) translate(-52.0 -48.0)"><g filter="url(#shadow)"><path d="M24.68 31.22A40 40 0 1 1 24.68 68.78" fill="none" stroke="url(#chRing)" stroke-width="8" stroke-linecap="round" filter="url(#glow)"/><path d="M22 60V80" stroke="#9ecbe8" stroke-width="3.2" stroke-linecap="round"/><rect x="15.5" y="18" width="3.4" height="12" rx="1.2" fill="#dff1ff"/><rect x="25.1" y="18" width="3.4" height="12" rx="1.2" fill="#dff1ff"/><rect x="10" y="29" width="24" height="32" rx="5" fill="url(#chPlug)" stroke="#f4fbff" stroke-width="1"/><path d="M13 33h18" stroke="#fff" stroke-opacity=".8" stroke-width="1.2" stroke-linecap="round"/><path d="M70 20L50 54H62L55 82L78 45H65L72 20Z" fill="url(#chBolt)" stroke="#d8ffe9" stroke-opacity=".6" stroke-width=".8" stroke-linejoin="round" filter="url(#glow)"/></g></g></g>
  <path d="M5 139h119" stroke="#0ad8ff" stroke-opacity=".18"/><path d="M8 5h223" stroke="#d9fdff" stroke-opacity=".09"/>
 </g>
 <rect x="2.5" y="2.5" width="235" height="139" rx="13" fill="none" stroke="#60eaff" stroke-opacity=".38" stroke-width=".55"/>
