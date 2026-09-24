@@ -11,6 +11,11 @@ import zipfile
 from collections.abc import Sequence
 from pathlib import Path
 
+if __package__:
+    from .build_profiles import PROFILE_FILENAME, PROFILE_NAMES, canonical_bytes, package_profile
+else:
+    from build_profiles import PROFILE_FILENAME, PROFILE_NAMES, canonical_bytes, package_profile
+
 
 ROOT = Path(__file__).resolve().parents[1]
 PACKAGE_VERSION = str(
@@ -136,13 +141,19 @@ def build_info_bytes(revision: str) -> bytes:
 
 
 def main(argv: Sequence[str] = ()) -> int:
-    argparse.ArgumentParser(
+    parser = argparse.ArgumentParser(
         prog="build_plugin.py",
         description=(
-            "Package the built plugin and reserve its version. Takes no arguments; "
+            "Package the built plugin and reserve its version. "
             "every invocation performs a real build and consumes a reservation."
         ),
-    ).parse_args(argv)
+    )
+    parser.add_argument("--profile", choices=PROFILE_NAMES, default="development")
+    args = parser.parse_args(argv)
+    try:
+        profile_bytes = canonical_bytes(package_profile(args.profile, root=ROOT))
+    except ValueError as error:
+        parser.exit(1, f"{error}\n")
     manifest = json.loads((ROOT / "plugin.json").read_text(encoding="utf-8"))
     if manifest.get("flags") != ["root"]:
         raise SystemExit("Refusing to package a manifest without the root delivery flag")
@@ -175,6 +186,10 @@ def main(argv: Sequence[str] = ()) -> int:
         info.date_time = (2026, 1, 1, 0, 0, 0)
         info.external_attr = 0o100644 << 16
         archive.writestr(info, build_info, compress_type=zipfile.ZIP_DEFLATED)
+        info = zipfile.ZipInfo(f"{PLUGIN_DIRECTORY}/{PROFILE_FILENAME}")
+        info.date_time = (2026, 1, 1, 0, 0, 0)
+        info.external_attr = 0o100644 << 16
+        archive.writestr(info, profile_bytes, compress_type=zipfile.ZIP_DEFLATED)
     with zipfile.ZipFile(OUTPUT) as archive:
         names = archive.namelist()
         top_levels = {name.split("/", 1)[0] for name in names}
@@ -184,6 +199,8 @@ def main(argv: Sequence[str] = ()) -> int:
             raise SystemExit("Decky archive is missing its nested plugin.json")
         if archive.read(f"{PLUGIN_DIRECTORY}/{BUILD_INFO_FILENAME}") != build_info:
             raise SystemExit("Decky archive build metadata did not round-trip")
+        if archive.read(f"{PLUGIN_DIRECTORY}/{PROFILE_FILENAME}") != profile_bytes:
+            raise SystemExit("Decky archive build profile did not round-trip")
         for launcher in ('gamescope', 'steam-launcher'):
             wrapper = archive.getinfo(f"{PLUGIN_DIRECTORY}/bin/{launcher}")
             validate_launcher_bytes(archive.read(wrapper))

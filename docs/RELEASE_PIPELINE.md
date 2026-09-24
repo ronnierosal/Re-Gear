@@ -42,6 +42,54 @@ contact Decky, register a store channel, deploy, or use publication secrets.
 
 ## Candidate versioning
 
+### Development and production profile foundation
+
+`contracts/build-profiles.json` names the two build profiles. Current packaging
+defaults to `development`; `python scripts/build_plugin.py --profile development`
+is the explicit equivalent. It preserves the existing development feature surface,
+including experimental functionality and its existing safety checks. This first
+step does not introduce feature filtering or change runtime behavior.
+
+New archives include `build_profile.json` with the selected profile, feature
+policy and canonical contract SHA-256. The existing `build_info.json` schema is
+unchanged. Candidate records and release-note templates carry the profile as well
+as the archive checksum and exact source revision. Preparing a new candidate now
+requires this profile record; old archives remain readable by the historical
+`verify_validation_artifact.py` verifier and are never retroactively relabeled.
+
+`production` reserves the intended `stable_allowlist` policy. Packaging it exits
+with `release.production_runtime_enforcement_pending` **before reserving a version
+or creating an archive**. The runtime does not yet enforce an approved feature
+allowlist at UI, RPC, startup and automatic entry points. A manifest switch cannot
+make that runtime production-ready. No existing feature is declared GA-ready by
+this foundation, and no new gate applies to ordinary development packaging.
+
+The CI workflow also has a manual **Run workflow** entry with a profile choice.
+Push and pull-request runs continue to select development. Manual development
+runs execute the same complete CI gates and upload a validation artifact;
+production requests report the explicit pending-enforcement error immediately.
+Artifact names include profile, source SHA, run ID and attempt; embedded ZIP names
+remain plain `Re-Gear-X.Y.Z.zip`. CI artifacts are run-scoped validation outputs,
+not globally version-reserved public releases. The job retains read-only repository
+permissions and does not publish, install or register a channel.
+
+Remaining delivery steps, in order:
+
+1. Agree the feature inventory/production allowlist with the UI and affected
+   backend owners, including exact supported hardware evidence.
+2. Enforce that policy through UI, RPC and automatic paths while preserving
+   recovery of retained development state; test both profiles and navigation.
+3. Add durable, serialized GitHub version reservations for distributed candidates
+   (local Git reservations alone cannot coordinate fresh CI clones).
+4. Retain and validate the exact production candidate, including supervised
+   hardware acceptance and settings/downgrade/rollback coverage.
+5. Promote those exact bytes through a protected GA publication job. Do not rebuild
+   at promotion or mark a development ZIP stable. Decky distribution remains a
+   separate reviewed integration.
+
+Use one active plugin installation per device. Profile metadata is build identity,
+not permission to bypass hardware, release or installation gates.
+
 New player-facing archives use `Re-Gear-<version>.zip`. The internal archive
 folder and new installed directory are `Re-Gear`; the visible manifest label
 is also `Re-Gear`. Historical read-only validation accepts either single old

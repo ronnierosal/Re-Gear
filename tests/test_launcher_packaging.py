@@ -52,6 +52,10 @@ class LauncherPackagingTests(unittest.TestCase):
         # repository inputs or depending on an optional pre-existing out/ ZIP.
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
+            (root / "contracts").mkdir()
+            (root / "contracts/build-profiles.json").write_bytes(
+                (build_plugin.ROOT / "contracts/build-profiles.json").read_bytes()
+            )
             wrapper = root / "bin" / "gamescope"
             wrapper.parent.mkdir()
             manifest = root / "plugin.json"

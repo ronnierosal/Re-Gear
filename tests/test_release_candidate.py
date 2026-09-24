@@ -5,6 +5,8 @@ import unittest
 import zipfile
 from pathlib import Path
 
+from scripts import build_profiles
+
 
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "prepare_release_candidate.py"
 SPEC = importlib.util.spec_from_file_location("release_candidate", SCRIPT)
@@ -15,6 +17,10 @@ SPEC.loader.exec_module(release_candidate)
 
 class ReleaseCandidateTests(unittest.TestCase):
     def make_project(self, root: Path, version: str = "1.2.3") -> None:
+        (root / "contracts").mkdir()
+        (root / "contracts/build-profiles.json").write_bytes(
+            (build_profiles.ROOT / "contracts/build-profiles.json").read_bytes()
+        )
         (root / "package.json").write_text(json.dumps({"version": version}), encoding="utf-8")
         (root / "pyproject.toml").write_text('[project]\nversion = "' + version + '"\n', encoding="utf-8")
 
@@ -23,6 +29,7 @@ class ReleaseCandidateTests(unittest.TestCase):
         with zipfile.ZipFile(archive, "w") as value:
             value.writestr("Re-Gear/package.json", json.dumps({"version": version}))
             value.writestr("Re-Gear/build_info.json", json.dumps({"schema_version": 1, "version": version, "revision": revision}))
+            value.writestr("Re-Gear/build_profile.json", json.dumps(build_profiles.package_profile(root=root)))
         return archive
 
     def test_mixed_root_is_not_a_release_candidate(self):
@@ -44,6 +51,43 @@ class ReleaseCandidateTests(unittest.TestCase):
         self.assertEqual("a" * 40, result["build"]["source_revision"])
         self.assertEqual("manual_publication_required", result["publication"]["status"])
         self.assertEqual(64, len(result["archive"]["sha256"]))
+        self.assertEqual("development", result["build"]["profile"]["profile"])
+        self.assertIn("development", release_candidate._notes_template(result))
+
+    def test_legacy_archive_cannot_be_new_profiled_candidate(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self.make_project(root)
+            archive = root / "Re-Gear-1.2.3.zip"
+            with zipfile.ZipFile(archive, "w") as value:
+                value.writestr("Re-Gear/package.json", json.dumps({"version": "1.2.3"}))
+                value.writestr("Re-Gear/build_info.json", json.dumps({
+                    "schema_version": 1, "version": "1.2.3", "revision": "a" * 40,
+                }))
+            with self.assertRaisesRegex(ValueError, "archive_metadata_invalid"):
+                release_candidate.prepare_release_candidate(archive, project_root=root)
+
+    def test_rejects_relabelled_or_mismatched_profile(self) -> None:
+        for field, replacement, reason in (
+            ("profile", "production", "production_runtime_enforcement_pending"),
+            ("contract_sha256", "0" * 64, "archive_profile_inconsistent"),
+            ("feature_policy", "stable_allowlist", "archive_profile_inconsistent"),
+            ("schema_version", True, "archive_profile_inconsistent"),
+        ):
+            with self.subTest(field=field), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                self.make_project(root)
+                profile = build_profiles.package_profile(root=root)
+                profile[field] = replacement
+                archive = root / "Re-Gear-1.2.3.zip"
+                with zipfile.ZipFile(archive, "w") as value:
+                    value.writestr("Re-Gear/package.json", json.dumps({"version": "1.2.3"}))
+                    value.writestr("Re-Gear/build_info.json", json.dumps({
+                        "schema_version": 1, "version": "1.2.3", "revision": "a" * 40,
+                    }))
+                    value.writestr("Re-Gear/build_profile.json", json.dumps(profile))
+                with self.assertRaisesRegex(ValueError, reason):
+                    release_candidate.prepare_release_candidate(archive, project_root=root)
 
     def test_rejects_inconsistent_source_versions(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

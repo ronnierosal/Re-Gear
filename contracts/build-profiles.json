@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "profiles": {
+    "development": {
+      "feature_policy": "existing_development_surface"
+    },
+    "production": {
+      "feature_policy": "stable_allowlist"
+    }
+  }
+}

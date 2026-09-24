@@ -10,6 +10,12 @@ import zipfile
 from pathlib import Path
 from typing import Any
 
+# Support direct CLI execution and importlib-based historical test callers.
+try:
+    from scripts.build_profiles import PROFILE_FILENAME, validate_packaged_profile
+except ModuleNotFoundError:
+    from build_profiles import PROFILE_FILENAME, validate_packaged_profile
+
 
 ROOT = Path(__file__).resolve().parents[1]
 PLUGIN_DIRECTORY = "Re-Gear"
@@ -55,6 +61,10 @@ def prepare_release_candidate(archive: Path, *, project_root: Path = ROOT) -> di
                 raise ValueError("release.archive_layout_invalid")
             build = json.loads(value.read(f"{PLUGIN_DIRECTORY}/build_info.json").decode("utf-8"))
             package = json.loads(value.read(f"{PLUGIN_DIRECTORY}/package.json").decode("utf-8"))
+            profile_name = f"{PLUGIN_DIRECTORY}/{PROFILE_FILENAME}"
+            if names.count(profile_name) != 1:
+                raise ValueError("release.archive_profile_missing_or_duplicate")
+            profile = json.loads(value.read(profile_name).decode("utf-8"))
     except (OSError, KeyError, UnicodeDecodeError, ValueError, zipfile.BadZipFile) as error:
         raise ValueError("release.archive_metadata_invalid") from error
     if (not isinstance(build, dict) or build.get("schema_version") != 1
@@ -62,9 +72,10 @@ def prepare_release_candidate(archive: Path, *, project_root: Path = ROOT) -> di
             or not REVISION_RE.fullmatch(build["revision"]) or not isinstance(package, dict)
             or package.get("version") != version):
         raise ValueError("release.archive_build_inconsistent")
+    profile = validate_packaged_profile(profile, root=project_root)
     return {
         "schema_version": 1, "version": version,
-        "build": {"source_revision": build["revision"]},
+        "build": {"source_revision": build["revision"], "profile": profile},
         "archive": {"filename": archive.name, "sha256": _sha256(archive)},
         "release_notes": {
             "summary": "REQUIRED: describe player-visible changes.",
@@ -80,6 +91,8 @@ def _notes_template(candidate: dict[str, Any]) -> str:
     return "\n".join((
         f"# Re-Gear {candidate['version']} release notes", "",
         f"- Build revision: `{build['source_revision']}`",
+        f"- Build profile: `{build['profile']['profile']}` (not GA acceptance)",
+        f"- Feature policy: `{build['profile']['feature_policy']}`",
         f"- Archive: `{archive['filename']}`", f"- SHA-256: `{archive['sha256']}`",
         "- Status: `Hardware Validation Required` unless separately evidenced.", "",
         "## Player-visible changes", "", "TODO", "", "## Known limitations and safety gates", "", "TODO", "",
