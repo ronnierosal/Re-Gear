@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Disconnect tiles mockup</title>
+<style>
+:root{--bg:#030a14;--ink:#dbeeff;--muted:#8fb3cc;--line:#12324d;--cyan:#32d7ff;--violet:#a89cff}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,"Segoe UI",sans-serif;padding:24px 16px 48px}
+main{max-width:1040px;margin:0 auto}h1{font-size:22px;margin:0 0 4px}h2{font-size:15px;margin:32px 0 10px;color:var(--cyan);letter-spacing:.04em;text-transform:uppercase}
+p.lead{color:var(--muted);margin:0 0 8px;max-width:72ch}
+.row{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.tile{position:relative;aspect-ratio:5/3;border-radius:12px;overflow:hidden}
+.tile.focus{outline:2px solid #8cecff;outline-offset:-3px;box-shadow:0 0 0 2px #061521,0 0 13px #28d9ff99}
+.tile img{position:absolute;inset:0;width:100%;height:100%}
+.copy{position:relative;width:58%;height:100%;padding:0 4px 0 7%;display:flex;flex-direction:column;justify-content:center;gap:3px;text-shadow:0 1px 2px #000}
+.label{font-weight:600;font-size:clamp(11px,1.5vw,15px)}.value{font-size:clamp(10px,1.3vw,13px);color:#bfeaff}.meta{font-size:clamp(9px,1.1vw,11px);color:var(--muted)}
+.cap{margin-top:6px;font-size:12px;color:var(--muted)}.cap b{color:var(--ink)}
+.small{display:grid;grid-template-columns:repeat(5,150px);gap:8px;overflow-x:auto}.small .label{font-size:10px}.small .value{font-size:9px}.small .meta{display:none}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px}
+.card{border:1px solid var(--line);border-radius:10px;padding:12px 14px;background:#061425}.card h3{margin:0 0 6px;font-size:14px}.card ul{margin:0;padding-left:18px;color:var(--muted)}
+.pick{color:#4de3ad;font-weight:600}
+@media(max-width:640px){.row{grid-template-columns:1fr}}
+</style></head><body><main>
+<h1>Disconnect tiles: artwork mockup</h1>
+<p class="lead">The refined tiles 10, 11 and 12 were approved on 2026-09-24 and are now the production art in <code>assets/command-center/v3/production/</code>. The PNG next to this page records the before/after comparison. Each row shows the three disconnect tiles with the text layer React draws on the left.</p>
+
+<h2>Approved V3 sheet (reference)</h2>
+<div class="row" id="ref"></div>
+<h2>Production (refined, approved 2026-09-24)</h2>
+<div class="row" id="refined"></div>
+<h2>Earlier idea A: plug + moon badge</h2>
+<div class="row" id="a"></div>
+<h2>Earlier idea B: moon disc + unplug badge</h2>
+<div class="row" id="b"></div>
+
+<h2>At Ally 5-column size (≈150px)</h2>
+<div class="small" id="small"></div>
+
+<h2>Notes</h2>
+<div class="cards">
+<div class="card"><h3>Refined set: what changed</h3><ul>
+<li>A dark circle and faint circuit lines sit behind each icon, as on the sheet.</li>
+<li><b>#10</b>: braided cable, shiny USB-C plug with the USB symbol, silver tip, glowing cyan arrow.</li>
+<li><b>#11</b>: thin blue crescent with a soft blue glow, instead of the oversized flat white moon.</li>
+<li><b>#12</b>: glowing red power symbol, fully inside the tile, instead of a heavy filled disc cut off at the edge.</li>
+<li>Same background, border and 240×144 size, and no text in the artwork.</li></ul></div>
+<div class="card"><h3>Problems with the previous #11 tile</h3><ul>
+<li>A moon on its own reads as <i>Sleep</i>. The eGPU tab also has a separate Sleep action that keeps the eGPU connected, so users can confuse the two.</li>
+<li>The disconnect and unplug step, which is the part that matters for safety, isn't shown at all.</li>
+<li>Flat white and purple shapes with no rim or metal. It looks lighter than the plug (#10) and ringed disc (#12) beside it.</li></ul></div>
+<div class="card"><h3>A: plug + moon badge</h3><ul>
+<li>Uses the Safe Disconnect plug at 80% size, so all three disconnect tiles look like one family.</li>
+<li>The moon moves to a badge, the same idea as the check badge on #26 Game Ready.</li>
+<li>Reads in order: unplug first, then sleep. At small sizes it's the busier of the two.</li></ul></div>
+<div class="card"><h3>B: moon disc + unplug badge</h3><ul>
+<li>Uses the same disc as #12 Shutdown, so Sleep and Shutdown look like a pair (violet and red).</li>
+<li>The cyan unplug badge adds the disconnect meaning without crowding the moon.</li>
+<li>The crescent has a gradient and rim glow to match the depth of the tiles next to it.</li></ul></div>
+<div class="card"><h3>Copy nit (separate from the art)</h3><ul>
+<li>The labels don't match: <i>Disconnect + Sleep</i> vs <i>Safe Disconnect + Shutdown</i> (egpu-action-panel.tsx). Suggest using <i>Disconnect + Shutdown</i>, which already matches the registry <code>shortLabel</code>.</li></ul></div>
+</div>
+</main>
+<script>
+const P='../../../../assets/command-center/v3/production/';
+const tile=(src,l,v,m,focus)=>`<div class="tile${focus?' focus':''}"><img src="${src}" alt=""><div class="copy"><span class="label">${l}</span><span class="value">${v}</span><span class="meta">${m}</span></div></div>`;
+const tileHtml=tile;
+const SHEET='../../../../assets/command-center/v3/APPROVED-BUTTON-ASSETS-V3.jpg';
+// Crop boxes for tiles 10, 11, 12 on the 1280x853 approved sheet.
+const crops=[[1027.5,190,236.5,71.5],[16.7,287.5,238.3,71.7],[268.3,287.5,240,71.7]];
+const names=[['Safe Disconnect','Ready','Verified unplug flow'],['Disconnect + Sleep','Ready','Unplug when prompted, then sleep'],['Disconnect + Shutdown','Ready','Disconnect, then power off']];
+const sheetTile=([x,y,w,h])=>`<div class="tile"><svg viewBox="${x} ${y} ${w} ${h}" preserveAspectRatio="none" style="position:absolute;inset:0;width:100%;height:100%"><image href="${SHEET}" width="1280" height="853"/></svg></div>`;
+document.getElementById('ref').innerHTML=crops.map(sheetTile).join('');
+const prodFiles=['10_safe-disconnect','11_disconnect-sleep','12_disconnect-shutdown'];
+document.getElementById('refined').innerHTML=prodFiles.map((f,i)=>tileHtml(P+f+'.svg',...names[i])).join('');
+const side=[[P+'10_safe-disconnect.svg','Safe Disconnect','Ready','Verified unplug flow'],null,[P+'12_disconnect-shutdown.svg','Disconnect + Shutdown','Ready','Disconnect, then power off']];
+const sleep={current:P+'11_disconnect-sleep.svg',a:'disconnect-sleep-A-plug-badge.svg',b:'disconnect-sleep-B-moon-disc.svg'};
+for(const id of ['a','b']){const src=sleep[id];{document.getElementById(id).innerHTML=side.map(t=>t?tile(...t):tile(src,'Disconnect + Sleep','Ready','Unplug when prompted, then sleep',true)).join('');}}
+document.getElementById('small').innerHTML=[['#10',P+'10_safe-disconnect.svg'],['#11',P+'11_disconnect-sleep.svg'],['#12',P+'12_disconnect-shutdown.svg'],['A',sleep.a],['B',sleep.b]].map(([c,s])=>`<div>${tile(s,c.startsWith('#10')?'Safe Disconnect':c.startsWith('#12')?'Disconnect + Shutdown':'Disconnect + Sleep','Ready','')}<div class="cap"><b>${c}</b></div></div>`).join('');
+</script></body></html>

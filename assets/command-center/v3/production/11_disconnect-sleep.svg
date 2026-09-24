@@ -13,6 +13,11 @@
  <filter id="outerGlow" x="-30%" y="-50%" width="160%" height="200%"><feGaussianBlur stdDeviation="2.3" result="b"/><feColorMatrix in="b" values="0 0 0 0 .02 0 0 0 0 .75 0 0 0 0 1 0 0 0 .72 0" result="c"/><feMerge><feMergeNode in="c"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
  <filter id="glow" x="-80%" y="-80%" width="260%" height="260%"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
  <filter id="shadow" x="-80%" y="-80%" width="260%" height="260%"><feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#000711" flood-opacity=".95"/></filter>
+
+ <radialGradient id="halo" cx="190" cy="72" r="58" gradientUnits="userSpaceOnUse"><stop stop-color="#01050d" stop-opacity=".92"/><stop offset=".62" stop-color="#020a17" stop-opacity=".7"/><stop offset=".86" stop-color="#3d6bff" stop-opacity=".1"/><stop offset="1" stop-color="#3d6bff" stop-opacity="0"/></radialGradient>
+ <linearGradient id="moonBody" x1="152" y1="40" x2="214" y2="112" gradientUnits="userSpaceOnUse"><stop stop-color="#e8f0ff"/><stop offset=".3" stop-color="#9db8ff"/><stop offset=".7" stop-color="#4d6dff"/><stop offset="1" stop-color="#2b3cf0"/></linearGradient>
+ <filter id="moonBloom" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="5" result="b"/><feColorMatrix in="b" values="0 0 0 0 .16 0 0 0 0 .32 0 0 0 0 1 0 0 0 1.2 0" result="c"/><feMerge><feMergeNode in="c"/><feMergeNode in="c"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+ <mask id="moonCut"><rect width="240" height="144" fill="#fff"/><circle cx="197" cy="64" r="35.5" fill="#000"/></mask>
  <clipPath id="clip"><rect x="2" y="2" width="236" height="140" rx="13"/></clipPath>
 </defs>
 <g filter="url(#outerGlow)"><rect x="2.5" y="2.5" width="235" height="139" rx="13" fill="url(#surface)" stroke="url(#rim)" stroke-width="1.5"/></g>
@@ -25,8 +30,11 @@
  <path d="M16 118 79 8M39 144 118 5M74 144l80-139M109 144 185 10" fill="none" stroke="#178ec2" stroke-opacity=".16" stroke-width=".7"/>
  <path d="M8 31 116 17M6 109l81-22M30 138l74-20" fill="none" stroke="#5ae9ff" stroke-opacity=".07" stroke-width=".6"/>
  <path d="M13 8h137" stroke="#c1fbff" stroke-opacity=".17"/>
- <ellipse cx="193" cy="78" rx="59" ry="56" fill="url(#orb)"/>
- <g filter="url(#shadow)"><g transform="translate(150 20)"><path d="M67 8C39 14 25 37 32 61c8 25 33 36 57 25-13 21-40 30-63 16C0 86-6 51 10 26 22 8 45 0 67 8Z" fill="#eef4ff"/><path d="M70 12C46 20 35 41 43 61c6 18 23 28 42 27-17 11-40 6-50-11-14-21-5-50 18-61 5-2 11-4 17-4Z" fill="#7d78ff" filter="url(#glow)"/></g></g>
+ <circle cx="190" cy="72" r="58" fill="url(#halo)"/>
+ <path d="M150 20h14l8 8h20M141 128h18l7-7h22M226 40v18l-6 6M134 60l9 9v16" fill="none" stroke="#2aa9e6" stroke-opacity=".22" stroke-width=".8"/>
+ <g fill="#57d8ff" fill-opacity=".35"><circle cx="192" cy="28" r="1.2"/><circle cx="188" cy="121" r="1.2"/><circle cx="220" cy="64" r="1.2"/><circle cx="143" cy="85" r="1.2"/></g>
+ <g filter="url(#moonBloom)"><circle cx="188" cy="74" r="37" fill="url(#moonBody)" mask="url(#moonCut)"/></g>
+ <circle cx="188" cy="74" r="35.5" fill="none" stroke="#ffffff" stroke-opacity=".55" stroke-width="1.2" mask="url(#moonCut)" transform="translate(-.8 .8)"/>
  <path d="M5 139h119" stroke="#0ad8ff" stroke-opacity=".18"/><path d="M8 5h223" stroke="#d9fdff" stroke-opacity=".09"/>
 </g>
 <rect x="2.5" y="2.5" width="235" height="139" rx="13" fill="none" stroke="#60eaff" stroke-opacity=".38" stroke-width=".55"/>

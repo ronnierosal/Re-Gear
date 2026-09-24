@@ -13,6 +13,10 @@
  <filter id="outerGlow" x="-30%" y="-50%" width="160%" height="200%"><feGaussianBlur stdDeviation="2.3" result="b"/><feColorMatrix in="b" values="0 0 0 0 .02 0 0 0 0 .75 0 0 0 0 1 0 0 0 .72 0" result="c"/><feMerge><feMergeNode in="c"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
  <filter id="glow" x="-80%" y="-80%" width="260%" height="260%"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
  <filter id="shadow" x="-80%" y="-80%" width="260%" height="260%"><feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#000711" flood-opacity=".95"/></filter>
+
+ <radialGradient id="halo" cx="190" cy="72" r="58" gradientUnits="userSpaceOnUse"><stop stop-color="#01050d" stop-opacity=".92"/><stop offset=".62" stop-color="#020a17" stop-opacity=".7"/><stop offset=".86" stop-color="#ff2a3a" stop-opacity=".1"/><stop offset="1" stop-color="#ff2a3a" stop-opacity="0"/></radialGradient>
+ <linearGradient id="powerBody" x1="164" y1="40" x2="216" y2="104" gradientUnits="userSpaceOnUse"><stop stop-color="#ffb3a8"/><stop offset=".3" stop-color="#ff4a4a"/><stop offset=".75" stop-color="#e3142c"/><stop offset="1" stop-color="#a10018"/></linearGradient>
+ <filter id="powerBloom" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="4.5" result="b"/><feColorMatrix in="b" values="0 0 0 0 1 0 0 0 0 .12 0 0 0 0 .16 0 0 0 1 0" result="c"/><feMerge><feMergeNode in="c"/><feMergeNode in="c"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
  <clipPath id="clip"><rect x="2" y="2" width="236" height="140" rx="13"/></clipPath>
 </defs>
 <g filter="url(#outerGlow)"><rect x="2.5" y="2.5" width="235" height="139" rx="13" fill="url(#surface)" stroke="url(#rim)" stroke-width="1.5"/></g>
@@ -25,8 +29,11 @@
  <path d="M16 118 79 8M39 144 118 5M74 144l80-139M109 144 185 10" fill="none" stroke="#178ec2" stroke-opacity=".16" stroke-width=".7"/>
  <path d="M8 31 116 17M6 109l81-22M30 138l74-20" fill="none" stroke="#5ae9ff" stroke-opacity=".07" stroke-width=".6"/>
  <path d="M13 8h137" stroke="#c1fbff" stroke-opacity=".17"/>
- <ellipse cx="193" cy="78" rx="59" ry="56" fill="url(#orb)"/>
- <g filter="url(#shadow)"><g transform="translate(150 22)"><circle cx="48" cy="57" r="41" fill="#200810" stroke="#ff4d5e" stroke-width="4" filter="url(#glow)"/><path d="M48 8v44M24 27a36 36 0 1 0 48 0" fill="none" stroke="url(#danger)" stroke-width="10" stroke-linecap="round"/></g></g>
+ <circle cx="190" cy="72" r="58" fill="url(#halo)"/>
+ <path d="M150 20h14l8 8h20M141 128h18l7-7h22M226 40v18l-6 6M134 60l9 9v16" fill="none" stroke="#2aa9e6" stroke-opacity=".22" stroke-width=".8"/>
+ <g fill="#57d8ff" fill-opacity=".35"><circle cx="192" cy="28" r="1.2"/><circle cx="188" cy="121" r="1.2"/><circle cx="220" cy="64" r="1.2"/><circle cx="143" cy="85" r="1.2"/></g>
+ <g filter="url(#powerBloom)" fill="none" stroke="url(#powerBody)" stroke-width="10" stroke-linecap="round"><path d="M173 53a30 30 0 1 0 34 0"/><path d="M190 36v35"/></g>
+ <g fill="none" stroke="#ffe3dc" stroke-opacity=".55" stroke-width="1.4" stroke-linecap="round"><path d="M171 58a27 27 0 0 0-6 13"/><path d="M188 39v28"/></g>
  <path d="M5 139h119" stroke="#0ad8ff" stroke-opacity=".18"/><path d="M8 5h223" stroke="#d9fdff" stroke-opacity=".09"/>
 </g>
 <rect x="2.5" y="2.5" width="235" height="139" rx="13" fill="none" stroke="#60eaff" stroke-opacity=".38" stroke-width=".55"/>
