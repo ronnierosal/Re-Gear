@@ -85,6 +85,11 @@ const recoveredTerminal = request => ({ ...fresh, code:'dock_teardown.software_d
   request_id:request, busy:false, in_flight:false, ok:true, software_down:true,
   safe_to_unplug:false, release_stage:'removed',
   release:{released:true,filter_disarmed:true} });
+const recoveredInterrupted = request => ({ ...fresh, code:'dock_teardown.unresolved',
+  request_id:request, busy:false, in_flight:false, ok:false, software_down:false,
+  safe_to_unplug:false, phase:'dock_teardown', release_stage:'removed',
+  release:{code:'live_disconnect.removed',released:true,display_released:true,filter_disarmed:true},
+  claim_stage:'tunnel_remove_intent' });
 
 test('missing UI receipt is recovered from one exact backend terminal without dispatch',async()=>{
   const request='1'.repeat(32),storage=new Map();
@@ -166,6 +171,73 @@ test('synthesized terminal receipt never invokes completion if status changes be
   assert.match(text,/Keep the cable connected/i);
   assert.doesNotMatch(text,/USB4 deauthorization was verified|Unplug the eGPU now|Software disconnect complete/i);
   remount.unmount();
+});
+
+test('exact interrupted backend receipt invokes only record completion once after remount',async()=>{
+  const request='8'.repeat(32),storage=new Map(),presentations=[];
+  const bootstrap=harness(storage,'disconnect_only',undefined,recoveredInterrupted(request));
+  await settle();assert.deepEqual(await bootstrap.recover(),{intent:'disconnect_only',request});
+  assert.equal(storage.get('regear.whole-dock.pending-request'),
+    `v2:disconnect_only:backend-interrupted:${request}`);
+  assert.equal(bootstrap.calls.length,0);bootstrap.unmount();
+
+  const remount=harness(storage,'disconnect_only',undefined,recoveredInterrupted(request),undefined,true,
+    value=>presentations.push(value));
+  remount.execute=args=>Promise.resolve(remount.status={...recoveredTerminal(args.at(-1)),hardware_write:false});
+  await settle();remount.poll();await settle();
+  assert.deepEqual(remount.calls,
+    [[false,'','disconnect','whole_dock_disconnect_complete',true,'',request]]);
+  assert.equal(remount.calls.some(args=>args[3]==='whole_dock_disconnect'),false);
+  assert.equal(storage.get('regear.whole-dock.pending-request'),
+    `v2:disconnect_only:backend-interrupted:${request}`);
+  assert.ok(presentations.length>=1);
+  const text=JSON.stringify(remount.render());
+  assert.match(text,/USB4 deauthorization was verified/);
+  assert.match(text,/Unplug the eGPU now/);
+  remount.unmount();
+});
+
+test('interrupted recovery requires every release and retained-claim proof field',async()=>{
+  const request='9'.repeat(32),exact=recoveredInterrupted(request);
+  for(const status of [
+    {...exact,request_id:['9'.repeat(32)]},
+    {...exact,code:'dock_teardown.trial_unresolved'},
+    {...exact,busy:true},{...exact,in_flight:true},{...exact,ok:true},
+    {...exact,software_down:true},{...exact,safe_to_unplug:true},
+    {...exact,phase:'gpu_release'},{...exact,release_stage:'not_run'},
+    {...exact,claim_stage:'software_down'},
+    {...exact,release:{...exact.release,code:'live_disconnect.incomplete'}},
+    {...exact,release:{...exact.release,released:false}},
+    {...exact,release:{...exact.release,display_released:false}},
+    {...exact,release:{...exact.release,filter_disarmed:false}},
+  ]){
+    const storage=new Map(),h=harness(storage,'disconnect_only',undefined,status);
+    await settle();assert.equal(await h.recover(),null);assert.equal(storage.size,0);
+    assert.equal(h.calls.length,0);h.unmount();
+  }
+});
+
+test('interrupted receipt races never replay hardware or generic completion',async()=>{
+  const request='a'.repeat(32);
+  for(const next of [
+    recoveredTerminal(request),
+    {...fresh,in_flight:false,request_id:'b'.repeat(32)},
+    {...recoveredInterrupted(request),claim_stage:'none'},
+  ]){
+    const storage=new Map(),bootstrap=harness(storage,'disconnect_only',undefined,recoveredInterrupted(request));
+    await settle();await bootstrap.recover();bootstrap.unmount();
+    const presentations=[],remount=harness(storage,'disconnect_only',undefined,next,undefined,true,
+      value=>presentations.push(value));
+    await settle();
+    assert.equal(remount.calls.length,0);
+    assert.equal(storage.get('regear.whole-dock.pending-request'),
+      `v2:disconnect_only:backend-interrupted:${request}`);
+    assert.ok(presentations.length>=1);
+    const text=JSON.stringify(remount.render());
+    if(next.code==='dock_teardown.software_down')assert.match(text,/Unplug the eGPU now/);
+    else assert.doesNotMatch(text,/USB4 deauthorization was verified|Unplug the eGPU now|Software disconnect complete/i);
+    remount.unmount();
+  }
 });
 
 test('component mount and canceled confirmation never mutate', async()=>{

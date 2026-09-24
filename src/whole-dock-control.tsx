@@ -11,6 +11,7 @@ const completionAction = "whole_dock_disconnect_complete" as DockAction;
 const submittedRequest = /^[0-9a-f]{32}$/;
 const pendingKey = "regear.whole-dock.pending-request";
 const recoveredPanel = "backend-terminal";
+const interruptedPanel = "backend-interrupted";
 /** Identifies this panel for the life of its script, which is exactly the
  * lifetime that matters: freeing the dock restarts Gaming Mode and a new
  * panel loads with a new one, which is how a record left by the panel that
@@ -19,21 +20,36 @@ const panelId = (() => { try { return crypto.randomUUID().replaceAll("-", ""); }
 const pendingRecord = () => { try { return window.localStorage.getItem(pendingKey); } catch { return "storage-unavailable"; } };
 const pendingRequest = () => parsePendingRecord(pendingRecord())?.request;
 
-/** Recover presentation correlation after a full Steam/Gamescope restart.
+const strictInterruptedDisconnect = (status: any, request: string) => status?.schema_version === 1
+  && status.request_id === request
+  && status.code === "dock_teardown.unresolved"
+  && status.busy === false && status.in_flight === false
+  && status.ok === false && status.software_down === false
+  && status.safe_to_unplug === false
+  && status.phase === "dock_teardown"
+  && status.release_stage === "removed"
+  && status.release?.code === "live_disconnect.removed"
+  && status.release?.released === true
+  && status.release?.display_released === true
+  && status.release?.filter_disarmed === true
+  && status.claim_stage === "tunnel_remove_intent";
+
+/** Recover result correlation after a full Steam/Gamescope restart.
  *
  * The disconnect worker and its result live in the backend process, while the
- * WebKit localStorage receipt can disappear with the old Steam UI process.  A
- * terminal result is sufficient to restore only the status receipt: this does
- * not call the disconnect or its completion continuation.  Both storage reads
- * guard against replacing a receipt created while the backend read was in
- * flight. */
+ * WebKit localStorage receipt can disappear with the old Steam UI process. A
+ * verified terminal result restores presentation only. The one strict
+ * interrupted shape restores a distinct receipt which WholeDockControl may
+ * advance through the existing record-only completion action. Both storage
+ * reads guard against replacing a receipt created while the backend read was
+ * in flight. */
 export async function recoverTerminalDockReceipt(storage?: Pick<Storage, "getItem" | "setItem">): Promise<DockSettlement | null> {
   if (!storage) return null;
   try { if (storage.getItem(pendingKey)) return null; } catch { return null; }
   let status: any;
   try { status = await readTrial("whole_dock_trial"); } catch { return null; }
   const request = status?.request_id;
-  const recoverable = status?.schema_version === 1
+  const terminal = status?.schema_version === 1
     && typeof request === "string"
     && submittedRequest.test(request)
     && status.code === "dock_teardown.software_down"
@@ -43,8 +59,10 @@ export async function recoverTerminalDockReceipt(storage?: Pick<Storage, "getIte
     && status.release_stage === "removed"
     && status.release?.released === true
     && status.release?.filter_disarmed === true;
-  if (!recoverable) return null;
-  const raw = formatPendingRecord("disconnect_only", recoveredPanel, request);
+  const interrupted = typeof request === "string" && submittedRequest.test(request)
+    && strictInterruptedDisconnect(status, request);
+  if (!terminal && !interrupted) return null;
+  const raw = formatPendingRecord("disconnect_only", terminal ? recoveredPanel : interruptedPanel, request);
   try {
     if (storage.getItem(pendingKey)) return null;
     storage.setItem(pendingKey, raw);
@@ -106,12 +124,18 @@ export function WholeDockControl({ readCurrentSnapshot, intent = "disconnect_onl
         // rather than left to infer it from the control becoming usable.
         const abandoned = dockRequestAbandoned(next.status, record, panelId);
         const settled = !!record && dockRequestSettled(next.status, record.request, record.intent);
+        const recoveredInterrupted = !!record && statusOnly && !!onSettled
+          && record.intent === "disconnect_only" && record.panel === interruptedPanel
+          && submittedRequest.test(record.request)
+          && rawRecord === formatPendingRecord(record.intent, interruptedPanel, record.request)
+          && strictInterruptedDisconnect(next.status, record.request);
         const exactRemountedDisconnect = !!record && abandoned && statusOnly && !!onSettled
           && record.intent === "disconnect_only" && !!record.panel
-          && record.panel !== recoveredPanel
+          && record.panel !== recoveredPanel && record.panel !== interruptedPanel
           && submittedRequest.test(record.request)
           && rawRecord === formatPendingRecord(record.intent, record.panel, record.request);
-        if (exactRemountedDisconnect && completionAttempted.current !== record.request) {
+        const completeRecoveredDisconnect = exactRemountedDisconnect || recoveredInterrupted;
+        if (completeRecoveredDisconnect && completionAttempted.current !== record.request) {
           completionAttempted.current = record.request;
           let completion: any = null;
           try {
