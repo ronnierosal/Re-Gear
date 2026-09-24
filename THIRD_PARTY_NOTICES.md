@@ -122,3 +122,32 @@ audio direction. Reuse type: interface research; no Steam implementation or
 assets are copied. Re-Gear implements its own subscription lifetime, observation
 store, user dispatch, and menu-generation guard. These references do not establish
 compatibility with every installed Steam client.
+
+## Automatic per-game graphics profiles
+
+The design of Re-Gear's per-game graphics profiles was informed by two external
+sources. Neither contributed code, tests, text or assets, and no source file
+from either project is copied or adapted. Detailed evidence, including the
+sources this work could not reach, is in
+[graphics profiles research](docs/GRAPHICS_PROFILES_RESEARCH.md).
+
+SteamTinkerLaunch by sonic2kk and contributors, GPL-3.0-or-later,
+https://github.com/sonic2kk/steamtinkerlaunch — wiki page
+[Configuration Files](https://github.com/sonic2kk/steamtinkerlaunch/wiki/Configuration-Files)
+as read on 2026-09-22. An exact revision could not be pinned from the
+implementing environment, which is recorded as an open item rather than
+approximated. Reuse type: inspiration only. It informed the decision to key
+per-game state by Steam AppID, which SteamTinkerLaunch stores under
+`gamecfgs/id/<AppID>`. Re-Gear independently implements its backup, provenance
+and restoration behavior; that page documents no backup of a game's own
+configuration, so nothing there informed that design. Re-Gear additionally keys
+state by canonical target path, which AppID alone does not distinguish.
+
+The Unreal Engine `GameUserSettings.ini` layout used by Re-Gear's first schema
+adapter was observed in a published UE4 configuration file,
+[stereolabs/zed-unreal-examples](https://github.com/stereolabs/zed-unreal-examples/blob/master/UE4_Examples/Config/DefaultGameUserSettings.ini)
+(MIT), as read on 2026-09-22. Reuse type: inspiration only — section names, the
+`sg.*` scalability keys and the `Version` key, which are facts about a
+configuration format. Re-Gear's fixture contents are written for this
+repository, and no shipped game's configuration has been verified, so this
+establishes a mechanism demonstration rather than support for any real game.
