@@ -31,7 +31,7 @@ test('live eGPU actions do not inherit an unavailable overview reading as their 
   assert.equal(connectedSleep.title,'Disconnect + Sleep');
   assert.match(connectedSleep.detail,/verified absence/);
   assert.equal(view.quick[0].value,'Check status');
-  assert.equal(view.egpu.find(item=>item.id==='disconnect-shutdown').title,'Disconnect + Shutdown');
+  assert.equal(view.egpu.find(item=>item.id==='disconnect-shutdown').title,'Safe Disconnect + Shutdown');
 });
 
 test('native adapter preserves verified providers and only Resolution is fixed unavailable', () => {

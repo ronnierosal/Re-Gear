@@ -134,7 +134,7 @@ export function commandCenterTiles(input: CommandCenterInput): CommandCenterTile
       activation: "act", actionLabel: "Sleep connected", developmental: false,
     },
     shutdown: {
-      id: "shutdown", title: "Disconnect then Shut Down",
+      id: "shutdown", title: "Safe Disconnect + Shutdown",
       value: { text: "Guarded", known: true }, available: true, reason: null,
       activation: "act", actionLabel: "Review and shut down", developmental: false,
     },
