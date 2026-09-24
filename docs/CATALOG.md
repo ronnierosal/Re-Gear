@@ -6,6 +6,8 @@ Guide navigation: [Player](wiki/player/README.md), [Technical](wiki/technical/RE
 
 ## Active contracts, guidance and evidence indexes
 
+- [Automatic game optimization architecture and staged plan](AUTOMATIC_GAME_OPTIMIZATION.md)
+- [Frame-generation research and provider proposal](research/frame-generation.md)
 - [ADR SLEEP GUARD](./ADR_SLEEP_GUARD.md)
 - [ADR STEAM SLEEP PREFLIGHT](./ADR_STEAM_SLEEP_PREFLIGHT.md)
 - [AGENT COORDINATION](./AGENT_COORDINATION.md)
@@ -52,9 +54,12 @@ Guide navigation: [Player](wiki/player/README.md), [Technical](wiki/technical/RE
 - [G1 USB PM TRIAL](./G1_USB_PM_TRIAL.md)
 - [GAME COMPATIBILITY](./GAME_COMPATIBILITY.md)
 - [GAME DEVELOPER COMPATIBILITY](./GAME_DEVELOPER_COMPATIBILITY.md)
+- [GAME PROFILE ENGINE](./GAME_PROFILE_ENGINE.md)
 - [GAME RUNTIME](./GAME_RUNTIME.md)
 - [GAME SAVE](./GAME_SAVE.md)
 - [GOLDEN BEHAVIORS](./GOLDEN_BEHAVIORS.md)
+- [GRAPHICS PROFILES ARCHITECTURE](./GRAPHICS_PROFILES_ARCHITECTURE.md)
+- [GRAPHICS PROFILES RESEARCH](./GRAPHICS_PROFILES_RESEARCH.md)
 - [GYRO COMPATIBILITY RESEARCH](./GYRO_COMPATIBILITY_RESEARCH.md)
 - [HARDWARE AGNOSTIC AUDIT](./HARDWARE_AGNOSTIC_AUDIT.md)
 - [HARDWARE SUPPORT](./HARDWARE_SUPPORT.md)

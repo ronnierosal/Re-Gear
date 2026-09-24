@@ -122,3 +122,70 @@ audio direction. Reuse type: interface research; no Steam implementation or
 assets are copied. Re-Gear implements its own subscription lifetime, observation
 store, user dispatch, and menu-generation guard. These references do not establish
 compatibility with every installed Steam client.
+
+## Automatic per-game graphics profiles
+
+The design of Re-Gear's per-game graphics profiles was informed by two external
+sources. Neither contributed code, tests, text or assets, and no source file
+from either project is copied or adapted. Detailed evidence, including the
+sources this work could not reach, is in
+[graphics profiles research](docs/GRAPHICS_PROFILES_RESEARCH.md).
+
+SteamTinkerLaunch by sonic2kk and contributors, GPL-3.0-or-later,
+https://github.com/sonic2kk/steamtinkerlaunch — wiki page
+[Configuration Files](https://github.com/sonic2kk/steamtinkerlaunch/wiki/Configuration-Files)
+as read on 2026-09-22. An exact revision could not be pinned from the
+implementing environment, which is recorded as an open item rather than
+approximated. Reuse type: inspiration only. It informed the decision to key
+per-game state by Steam AppID, which SteamTinkerLaunch stores under
+`gamecfgs/id/<AppID>`. Re-Gear independently implements its backup, provenance
+and restoration behavior; that page documents no backup of a game's own
+configuration, so nothing there informed that design. Re-Gear additionally keys
+state by canonical target path, which AppID alone does not distinguish.
+
+The Unreal Engine `GameUserSettings.ini` layout used by Re-Gear's first schema
+adapter was observed in a published UE4 configuration file,
+[stereolabs/zed-unreal-examples](https://github.com/stereolabs/zed-unreal-examples/blob/master/UE4_Examples/Config/DefaultGameUserSettings.ini)
+(MIT), as read on 2026-09-22. Reuse type: inspiration only — section names, the
+`sg.*` scalability keys and the `Version` key, which are facts about a
+configuration format. Re-Gear's fixture contents are written for this
+repository, and no shipped game's configuration has been verified, so this
+establishes a mechanism demonstration rather than support for any real game.
+
+## Inert frame-generation provider model
+
+The design of Re-Gear's inert frame-generation provider and target resolver was
+informed by PancakeTAS and the LSFG-VK contributors. The pinned research baseline
+is LSFG-VK tag `2.0.0`, commit
+`2333707d55b68ddd8066fd95404c3b7d07e00d3a` (annotated tag object
+`6a5450f91f7b2b6b1ad852957a111377d37b9023`):
+https://lsfg-vk.dev/blog/release-v2.0.0/
+
+Its provider constraints, environment contract, explicit player opt-out, and
+separation between a provider plan and provider installation informed the model.
+The environment contract reviewed for those boundaries is at:
+https://lsfg-vk.dev/docs/configuration/environment-variables/
+The pinned LSFG-VK license is CC BY-NC-ND 4.0:
+https://git.lsfg-vk.dev/lsfg-vk/plain/LICENSE.txt?id=2333707d55b68ddd8066fd95404c3b7d07e00d3a
+The Creative Commons license terms were reviewed at:
+https://creativecommons.org/licenses/by-nc-nd/4.0/
+
+Valve's Gamescope documentation informed the compositor and frame-limiter
+boundary; AMD GPUOpen's FidelityFX Super Resolution 3 documentation informed the
+distinction between generated presentation frames and the base render rate; and
+the OptiScaler contributors' documentation informed the alternative-provider and
+anti-cheat risk boundaries. These mutable sources were read on 2026-09-22:
+
+- https://github.com/ValveSoftware/gamescope
+- https://gpuopen.com/fidelityfx-super-resolution-3/
+- https://github.com/optiscaler/OptiScaler
+
+Reuse type for all sources in this section is research and inspiration only.
+Re-Gear independently implements the inert provider interface, target selection,
+evidence requirements, and fail-closed planning behavior. No upstream source
+code, assets, DLLs, binaries, or dependencies were copied, adapted, bundled, or
+executed. The proprietary Lossless Scaling application and its components must
+be supplied by the user and are not redistributed by Re-Gear. These credits do
+not establish production admission, license compatibility, or upstream
+endorsement. Detailed evidence and current limitations are recorded in
+[the frame-generation research note](docs/research/frame-generation.md).
