@@ -21,7 +21,8 @@ fallback set.
 
 The 37 numbered, self-contained SVGs under `production/` were visually approved
 by the project owner on 2026-09-22 (tiles 10, 11 and 12 re-approved after a
-sheet-matching redraw on 2026-09-24). They are the production artwork family for
+sheet-matching redraw on 2026-09-24; tiles 02–09 and 13–37 refitted to the
+sheet on the owner's request the same day). They are the production artwork family for
 subsequent UI integration. Installed Ally acceptance remains a separate gate.
 
 ## Locked presentation

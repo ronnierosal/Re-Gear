@@ -18,5 +18,13 @@ approved by the project owner on 2026-09-24. See
 [`docs/design/command-center/proposals/disconnect-sleep-mockup.png`](../../../../docs/design/command-center/proposals/disconnect-sleep-mockup.png)
 for the before/after comparison.
 
+The remaining tiles (02–09, 13–37) were refitted to the review sheet on
+2026-09-24 at the owner's request: dark halo and circuit traces replace the
+flat colour orb, each illustration is re-centred and scaled to sit fully
+inside the artwork zone (no right-edge clipping), and a soft bloom in the
+tile's own colour is added. Controller, temperature, frametime and more were
+also redrawn where their drawing differed from the sheet. `01_fps.svg` keeps
+its approved master composition.
+
 The immutable review reference remains
 [`../APPROVED-BUTTON-ASSETS-V3.jpg`](../APPROVED-BUTTON-ASSETS-V3.jpg).
