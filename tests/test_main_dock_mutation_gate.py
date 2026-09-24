@@ -818,10 +818,12 @@ class HeldCaptureIntegrationTests(unittest.TestCase):
 class AbandonedTrialReconciliationTests(unittest.TestCase):
     setUp = MainDockAdmissionTests.setUp
 
-    def fixture(self, *, inner_clear=True, settled=True, complete=True, idle=True, stage='release_intent', binding_matches=True):
+    def fixture(self, *, inner_clear=True, settled=True, complete=True, idle=True,
+                stage='release_intent', binding_matches=True, worker_alive=False):
         claim = NS(stage=stage, binding='dock')
         binding = NS(binding='dock' if binding_matches else 'other', generation='new', gpu_bdf='gpu')
         user = NS(uid=1000, username='deck')
+        self.plugin._whole_dock_trial_worker_alive = worker_alive
         self.plugin._api = NS(get_snapshot_report=lambda: NS(snapshot=NS(
             game_state=self.module.GameState.IDLE if idle else self.module.GameState.UNKNOWN)))
         @contextmanager
@@ -840,6 +842,7 @@ class AbandonedTrialReconciliationTests(unittest.TestCase):
                     raise ValueError('guard refused')
                 archived.append(expected)
             store.return_value.retire_abandoned.side_effect = retire
+            store.return_value.retire_restored_teardown.side_effect = retire
             result = self.plugin._reconcile_abandoned_dock_trial('dock:new')
             return result, archived
 
@@ -849,9 +852,20 @@ class AbandonedTrialReconciliationTests(unittest.TestCase):
         self.assertEqual(len(archived), 1)
         self.assertFalse(result['safe_to_unplug'])
 
+    def test_archives_restored_teardown_claim_without_replaying_hardware(self):
+        for stage in ('gpu_removed', 'prepared', 'usb_remove_intent',
+                      'usb_removed', 'tunnel_remove_intent'):
+            with self.subTest(stage=stage):
+                result, archived = self.fixture(stage=stage)
+                self.assertEqual(result['code'], 'dock_reconcile.restored_archived')
+                self.assertTrue(result['ok'])
+                self.assertEqual(len(archived), 1)
+
     def test_every_incomplete_guard_retains_claim(self):
         for options in ({'inner_clear':False}, {'settled':False}, {'complete':False},
-                        {'idle':False}, {'stage':'gpu_removed'}, {'binding_matches':False}):
+                        {'idle':False}, {'stage':'software_down'},
+                        {'stage':'reauthorize_intent'}, {'binding_matches':False},
+                        {'worker_alive':True}):
             with self.subTest(options=options):
                 result, archived = self.fixture(**options)
                 self.assertFalse(result['ok'])
@@ -978,6 +992,66 @@ class AutomaticConnectionIsolationTests(unittest.TestCase):
         self.assertEqual(plugin._automatic_link_recovery.attempts, 2)
         self.assertTrue(plugin._automatic_link_recovery.completed)
         plugin._reconcile_abandoned_dock_trial.assert_called_once_with('dock:now')
+        transition.assert_called_once_with(self.module.PlacementState.DOCKED_EGPU,
+            expected_generation='expected', standing_consent=True)
+
+    def test_tv_transition_retires_restored_tunnel_intent_then_uses_ordinary_engine(self):
+        plugin = self.plugin
+        claim = NS(stage='tunnel_remove_intent', binding='dock')
+        binding = NS(binding='dock', generation='now', gpu_bdf='gpu')
+        user = NS(uid=1000, username='deck')
+        held = []
+        ordinary_calls = []
+
+        def ordinary(fn):
+            ordinary_calls.append('gate')
+            if len(ordinary_calls) == 1:
+                raise DockMutationDenied('dock_mutation.inhibited')
+            return fn()
+
+        @contextmanager
+        def admit(**kwargs):
+            self.assertTrue(kwargs['allow_inhibited'])
+            held.append(True)
+            try:
+                yield
+            finally:
+                held.clear()
+
+        plugin._run_dock_mutation = ordinary
+        plugin._dock_mutation_gate = lambda: NS(admit=admit)
+        plugin._api = NS(get_snapshot_report=lambda: NS(snapshot=NS(
+            game_state=self.module.GameState.IDLE)))
+        plugin._whole_dock_trial_worker_alive = False
+        transition = Mock(return_value='switched')
+        plugin._presentation_transition_service = lambda: NS(execute_automatic=transition)
+
+        with patch.object(self.module, 'WholeDockClaimStore') as store_cls, \
+             patch.object(self.module, 'DrmDiscovery') as drm, \
+             patch.object(self.module, 'resolve_whole_dock', return_value=binding), \
+             patch.object(self.module, 'GamescopeDiscovery'), \
+             patch.object(self.module, 'resolve_gamescope_user', return_value=NS(context=user)), \
+             patch.object(self.module, 'build_live_disconnect_runtime') as runtime, \
+             patch.object(self.module, 'inner_removal_records_absent', return_value=True), \
+             patch.object(self.module, 'HeldTrialLauncher') as launcher:
+            store = store_cls.return_value
+            retained = [claim]
+            store.load.side_effect = lambda: retained[0]
+            def retire(expected, guard):
+                self.assertIs(expected, claim)
+                self.assertTrue(held)
+                self.assertTrue(guard())
+                retained[0] = None
+            store.retire_restored_teardown.side_effect = retire
+            drm.return_value.scan.return_value = [NS(boot_vga=False, pci_bdf='gpu')]
+            runtime.return_value.status.return_value = NS(scan_complete=True, holders=('wireplumber.service',))
+            launcher.return_value.call.return_value = {'code':'held_helper.settled', 'settled':True}
+
+            result = plugin._run_automatic_tv_transition('expected', True)
+
+        self.assertEqual(result, 'switched')
+        self.assertEqual(ordinary_calls, ['gate', 'gate'])
+        store.retire_restored_teardown.assert_called_once()
         transition.assert_called_once_with(self.module.PlacementState.DOCKED_EGPU,
             expected_generation='expected', standing_consent=True)
 
