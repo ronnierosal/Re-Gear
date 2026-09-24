@@ -240,6 +240,31 @@ class WholeDockClaimStore(AudioJournalFilesystem):
                 raise failure
             return audit
 
+    def retire_restored_teardown(self, expected, guard):
+        """Archive an interrupted teardown after the whole dock is restored.
+
+        These stages mean a destructive step may already have started, so they
+        cannot use the early-abort lane.  The caller must hold dock admission
+        and prove the exact full dock, session, helper, and inner records are
+        stable again.  This only retires stale custody; it performs no hardware
+        write and grants no unplug clearance.
+        """
+        restored_stages = {
+            "gpu_removed",
+            "prepared",
+            "usb_remove_intent",
+            "usb_removed",
+            "tunnel_remove_intent",
+        }
+        if type(expected) is not WholeDockClaim or expected.stage not in restored_stages:
+            raise ValueError("whole-dock restored teardown stage refused")
+        return self._retire_observed(
+            expected,
+            guard,
+            guard,
+            "restored-whole-dock-",
+        )
+
     def retire_operator_reset(self, expected, guard, publication_guard=lambda: True):
         """Archive a failed reconnect after explicit operator reset evidence.
 

@@ -50,6 +50,7 @@ from regear.delivery.dock_power_intent import DockPowerIntentStore  # noqa: E402
 from regear.delivery.dock_power_service import create_power_request, continue_dock_power, dock_power_capabilities  # noqa: E402
 from regear.application.dock_power import DockPowerResult  # noqa: E402
 from regear.delivery.whole_dock_claim import WholeDockClaim, WholeDockClaimStore, inner_removal_records_absent  # noqa: E402
+from regear.delivery.whole_dock_completion import complete_record, observe_down_with_audit  # noqa: E402
 from regear.delivery.whole_dock_reset import reconcile_record as reconcile_operator_reset, observe_restored as observe_reset_restored  # noqa: E402
 from regear.application.live_disconnect import LiveDisconnectResult  # noqa: E402
 from regear.ports.whole_dock_teardown import WholeDockApproval  # noqa: E402
@@ -1700,17 +1701,27 @@ class Plugin:
         return result
 
     def _reconcile_abandoned_dock_trial(self, expected_attachment):
-        """Explicit early-abort reconciliation, never a removal completion."""
+        """Reconcile an abandoned claim against a fully restored attachment.
+
+        Early claims remain the existing abort path.  A later teardown-intent
+        claim uses a distinct restored-dock archive only after the exact whole
+        dock, session helper and inner records are stable again.  Neither lane
+        executes a device write or grants unplug clearance.
+        """
         result = {'schema_version': 1, 'code': 'dock_reconcile.refused',
                   'ok': False, 'safe_to_unplug': False}
         capture = getattr(self, '_release_capture_task', None)
-        if not expected_attachment or (capture is not None and not capture.done()):
+        if (not expected_attachment or (capture is not None and not capture.done())
+                or getattr(self, "_whole_dock_trial_worker_alive", False) is True):
             return result
         try:
             with self._dock_mutation_gate().admit(allow_inhibited=True):
                 store = WholeDockClaimStore(DEFAULT_RUNTIME_STATE_ROOT)
                 claim = store.load()
-                if claim is None or claim.stage not in ('claimed', 'release_intent'):
+                early_stages = ('claimed', 'release_intent')
+                restored_stages = ('gpu_removed', 'prepared', 'usb_remove_intent',
+                                   'usb_removed', 'tunnel_remove_intent')
+                if claim is None or claim.stage not in early_stages + restored_stages:
                     return result
                 cards = [c for c in DrmDiscovery().scan() if c.boot_vga is False]
                 if len(cards) != 1:
@@ -1743,8 +1754,13 @@ class Plugin:
                     return (current_user == user and resolve_whole_dock(binding.gpu_bdf) == binding
                         and inner_removal_records_absent()
                         and self._api.get_snapshot_report().snapshot.game_state is GameState.IDLE)
-                store.retire_abandoned(claim, guard)
-                return {**result, 'code': 'dock_reconcile.archived', 'ok': True}
+                if claim.stage in early_stages:
+                    store.retire_abandoned(claim, guard)
+                    code = 'dock_reconcile.archived'
+                else:
+                    store.retire_restored_teardown(claim, guard)
+                    code = 'dock_reconcile.restored_archived'
+                return {**result, 'code': code, 'ok': True}
         except Exception:
             return {**result, 'code': result['code'] if result['code'] != 'dock_reconcile.refused'
                     else 'dock_reconcile.unresolved'}
@@ -1907,10 +1923,13 @@ class Plugin:
                 if claim is None:
                     raise DockMutationDenied('dock_mutation.inhibited')
                 if claim is not None:
-                    if claim.stage not in ('claimed', 'release_intent', 'reauthorize_intent'):
+                    if claim.stage not in (
+                            'claimed', 'release_intent', 'tunnel_remove_intent',
+                            'reauthorize_intent'):
                         raise DockMutationDenied('dock_mutation.inhibited')
                     capture = getattr(self, '_release_capture_task', None)
-                    if capture is not None and not capture.done():
+                    if ((capture is not None and not capture.done())
+                            or getattr(self, '_whole_dock_trial_worker_alive', False) is True):
                         raise DockMutationDenied('dock_mutation.inhibited')
                     transport = resolve_transport(claim.binding)
                     if not inner_removal_records_absent():
@@ -2621,6 +2640,80 @@ class Plugin:
                 if runtime._operation is None:
                     lease.release()
 
+    def _complete_interrupted_whole_dock_trial(self, request_id: str):
+        """Finish only this request's already-written deauthorization record.
+
+        This is a correlated continuation after the Decky process that issued
+        the request disappeared.  It performs fresh, repeated absence/session
+        proof and advances only the durable record.  It never repeats a sysfs
+        write or starts a new teardown.
+        """
+        store = WholeDockClaimStore(DEFAULT_RUNTIME_STATE_ROOT)
+        try:
+            claim = store.load()
+        except Exception:
+            claim = None
+        if claim is None or claim.operation != request_id:
+            return None
+        unresolved = {
+            "schema_version": 1,
+            "code": "dock_teardown.trial_unresolved",
+            "busy": False,
+            "ok": False,
+            "software_down": False,
+            "safe_to_unplug": False,
+            "hardware_write": False,
+            "request_id": request_id,
+            "claim_stage": claim.stage,
+            "phase": "dock_teardown",
+        }
+        def observe(binding, generation):
+            return observe_down_with_audit(
+                binding,
+                generation,
+                lambda user: HeldTrialLauncher(
+                    uid=user.uid, username=user.username
+                ).call("audit", "0" * 32),
+            )
+
+        def completed():
+            return {
+                **unresolved,
+                "code": "dock_teardown.software_down",
+                "ok": True,
+                "software_down": True,
+                "claim_stage": "software_down",
+                "phase": "late_completion",
+            }
+
+        if claim.stage == "software_down":
+            # The original worker may have committed the exact terminal record
+            # before its RPC response disappeared.  The durable terminal record
+            # is already the proof produced by the teardown; under admission,
+            # recheck that this exact record is still current and return it.
+            # Do not re-run completion, topology observation, or any writer.
+            try:
+                with self._dock_mutation_gate().admit(allow_inhibited=True):
+                    if store.load() != claim or store.load() != claim:
+                        return unresolved
+                return completed()
+            except Exception:
+                return unresolved
+        if claim.stage != "tunnel_remove_intent":
+            return unresolved
+
+        result = complete_record(
+            binding=claim.binding,
+            generation=claim.generation,
+            confirmed=True,
+            store=store,
+            gate=self._dock_mutation_gate(),
+            observe=observe,
+        )
+        if result.get("ok") is not True:
+            return unresolved
+        return completed()
+
     def _watched_trial(self, worker):
         """Run a trial worker, always leaving a reader able to tell what happened.
 
@@ -3079,6 +3172,39 @@ class Plugin:
                 return {'code': 'dock_reset.confirmation_required', 'ok': False,
                         'safe_to_unplug': False, 'hardware_write': False}
             return await self._reconcile_egpu_after_physical_reset(trial_request_id, True)
+        if trial_action == 'whole_dock_disconnect_complete':
+            # A remounted panel may continue only the exact request it wrote
+            # before Gaming Mode restarted.  This action is deliberately
+            # separate from whole_dock_disconnect so a lost response can never
+            # replay release, USB removal, or tunnel deauthorization.
+            if (trial_confirmed is not True or release_display is not False
+                    or relaunch_app_id or trial_attachment_token
+                    or type(trial_request_id) is not str
+                    or not re.fullmatch('[0-9a-f]{32}', trial_request_id)):
+                return {'schema_version': 1, 'ok': False,
+                    'code': 'dock_teardown.completion_confirmation_required',
+                    'busy': False, 'software_down': False,
+                    'safe_to_unplug': False, 'hardware_write': False,
+                    'request_id': trial_request_id if type(trial_request_id) is str else ''}
+            if (getattr(self, '_unloading', False)
+                    or getattr(self, '_whole_dock_trial_status', {}).get('busy')
+                    or getattr(self, '_whole_dock_trial_worker_alive', False) is True):
+                return {'schema_version': 1, 'ok': False,
+                    'code': 'dock_teardown.busy', 'busy': True,
+                    'software_down': False, 'safe_to_unplug': False,
+                    'hardware_write': False, 'request_id': trial_request_id}
+            completion = await self._run_background_operation(
+                self._complete_interrupted_whole_dock_trial,
+                trial_request_id,
+            )
+            if completion is None:
+                completion = {'schema_version': 1,
+                    'code': 'dock_teardown.trial_unresolved', 'busy': False,
+                    'ok': False, 'software_down': False,
+                    'safe_to_unplug': False, 'hardware_write': False,
+                    'request_id': trial_request_id, 'phase': 'late_completion'}
+            self._whole_dock_trial_status = dict(completion)
+            return completion
         if trial_action:
             if (trial_confirmed is not True or release_display is not True
                     or trial_action not in ("whole_dock_disconnect", "whole_dock_capture", "whole_dock_held_capture", "whole_dock_reconcile", "whole_dock_shutdown", "whole_dock_sleep", "whole_dock_sleep_connected")
@@ -3091,9 +3217,18 @@ class Plugin:
                         "code": "dock_teardown.trial_confirmation_required",
                         "safe_to_unplug": False}
             if (getattr(self, "_unloading", False)
-                    or getattr(self, "_whole_dock_trial_status", {}).get("busy")):
+                    or getattr(self, "_whole_dock_trial_status", {}).get("busy")
+                    or getattr(self, '_whole_dock_trial_worker_alive', False) is True):
                 return {"schema_version": 1, "ok": False,
                         "code": "dock_teardown.busy", "safe_to_unplug": False}
+            if trial_action == "whole_dock_disconnect" and trial_request_id:
+                completion = await self._run_background_operation(
+                    self._complete_interrupted_whole_dock_trial,
+                    trial_request_id,
+                )
+                if completion is not None:
+                    self._whole_dock_trial_status = dict(completion)
+                    return completion
             power_request = None
             if trial_action in ('whole_dock_shutdown', 'whole_dock_sleep',
                                 'whole_dock_sleep_connected'):
@@ -3174,7 +3309,12 @@ class Plugin:
                             trial_attachment_token,
                             keep_connected=trial_action == 'whole_dock_sleep_connected')
                     elif trial_action == "whole_dock_disconnect":
-                        result = self._run_whole_dock_trial(uuid.uuid4().hex, trial_attachment_token)
+                        # The durable claim is the correlation record after a
+                        # Gaming Mode/Decky restart.  A validated request id
+                        # lets the same explicit request finish record-only;
+                        # the fallback preserves legacy direct callers.
+                        operation = trial_request_id or uuid.uuid4().hex
+                        result = self._run_whole_dock_trial(operation, trial_attachment_token)
                     else:
                         raise ValueError('dock_teardown.unsupported_action')
                     payload = {"schema_version": 1, "code": result.code,
@@ -3403,9 +3543,86 @@ class Plugin:
         if lease is None:
             return False
         try:
-            return lease.status().active is True
+            status = lease.status()
+            if status.error:
+                return None
+            return status.active is True
         except Exception:
             return None
+
+    def _reconcile_physically_unplugged_trial_lease(self) -> bool:
+        """Release this process's transaction lease after strict cable absence.
+
+        Software-down is also the cable-connected, deauthorized state, so GPU
+        absence or an ambient presence result is never enough.  This path owns
+        no hardware write: it releases only the exact lease acquired for the
+        exact successful trial, after two fresh strict transport checks agree
+        that the cable is physically absent.
+        """
+        lease = getattr(self, '_whole_dock_trial_lease', None)
+        trial = getattr(self, '_whole_dock_trial_runtime', None)
+        terminal = getattr(self, '_whole_dock_trial_status', None)
+        capture = getattr(self, '_release_capture_task', None)
+        if (lease is None or type(trial) is not tuple or len(trial) != 2
+                or type(terminal) is not dict
+                or getattr(self, '_unloading', False)
+                or getattr(self, '_whole_dock_trial_worker_alive', False) is True
+                or (capture is not None and not capture.done())):
+            return False
+        runtime, admission = trial
+        request_id = terminal.get('request_id')
+        if (terminal.get('schema_version') != 1
+                or terminal.get('code') != 'dock_teardown.software_down'
+                or terminal.get('busy') is not False
+                or terminal.get('ok') is not True
+                or terminal.get('software_down') is not True
+                or terminal.get('safe_to_unplug') is not False
+                or type(request_id) is not str
+                or re.fullmatch(r'[0-9a-f]{32}', request_id) is None
+                or getattr(runtime, '_operation', None) != request_id
+                or type(admission) is not dict
+                or admission.get('held') is not False
+                or admission.get('power_handoff', False) is not False):
+            return False
+        try:
+            held = lease.status()
+            if held.active is not True or held.error:
+                return False
+        except Exception:
+            return False
+
+        def physically_absent() -> bool:
+            topology = self._connection_topology.observe()
+            return (
+                topology.transport_present is False
+                and topology.transport_absent_verified is True
+                and verified_transport_absent() is True
+            )
+
+        try:
+            with self._dock_mutation_gate().admit(allow_inhibited=True):
+                # Compare identities again under admission. A new request,
+                # power handoff, unloading process, or changed topology keeps
+                # the inhibitor held for the next reconciliation pass.
+                if (getattr(self, '_whole_dock_trial_lease', None) is not lease
+                        or getattr(self, '_whole_dock_trial_runtime', None) is not trial
+                        or getattr(self, '_whole_dock_trial_status', None) is not terminal
+                        or getattr(self, '_unloading', False)
+                        or getattr(self, '_whole_dock_trial_worker_alive', False) is True
+                        or admission.get('held') is not False
+                        or admission.get('power_handoff', False) is not False
+                        or not physically_absent()
+                        or not physically_absent()):
+                    return False
+                released = lease.release()
+                if released.active is not False or released.error:
+                    return False
+                # Preserve the runtime and terminal payload as evidence. Only
+                # the successfully released owned resource leaves live state.
+                self._whole_dock_trial_lease = None
+                return True
+        except Exception:
+            return False
 
     async def get_sleep_readiness(
         self, _request: object = None
@@ -4890,6 +5107,8 @@ class Plugin:
     async def _reconcile_sleep_guard(self) -> None:
         presence = await asyncio.to_thread(self._sleep_hardware.observe_presence)
         status = await asyncio.to_thread(self._sleep_guard.reconcile, presence)
+        if presence is EgpuPresence.ABSENT:
+            await asyncio.to_thread(self._reconcile_physically_unplugged_trial_lease)
         current = (presence.value, status.active, status.error)
         if current != self._last_sleep_guard_log:
             now_ns = self._journey_now_ns()
@@ -5081,7 +5300,7 @@ class Plugin:
 
     def _support_versions(self) -> dict[str, str]:
         return {
-            "regear": "0.3.130",
+            "regear": "0.3.147",
             "decky": str(getattr(decky, "DECKY_VERSION", "unknown")),
             "steamos": self._version_info.steamos,
             "kernel": self._version_info.kernel,

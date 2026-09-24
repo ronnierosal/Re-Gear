@@ -51,6 +51,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 from enum import StrEnum
+import math
+import time
 from typing import Callable
 
 from ..domain.device_removal import RemovalFunction, RemovalPlan, plan_is_current
@@ -219,7 +221,18 @@ class LiveDisconnectService:
         now_ns: Callable[[], int],
         owner_id: str,
         device_set: str,
+        post_restart_settle_seconds: float = 10.0,
+        post_restart_poll_seconds: float = 0.25,
+        monotonic: Callable[[], float] = time.monotonic,
+        sleep: Callable[[float], None] = time.sleep,
     ) -> None:
+        if (type(post_restart_settle_seconds) not in (int, float)
+                or not math.isfinite(post_restart_settle_seconds)
+                or post_restart_settle_seconds < 0
+                or type(post_restart_poll_seconds) not in (int, float)
+                or not math.isfinite(post_restart_poll_seconds)
+                or post_restart_poll_seconds <= 0):
+            raise ValueError("post-restart settle timing must be bounded and positive")
         self._coordinator = coordinator
         self._filter = device_filter
         self._removal = removal
@@ -233,6 +246,10 @@ class LiveDisconnectService:
         self._now_ns = now_ns
         self._owner_id = owner_id
         self._device_set = device_set
+        self._post_restart_settle_seconds = float(post_restart_settle_seconds)
+        self._post_restart_poll_seconds = float(post_restart_poll_seconds)
+        self._monotonic = monotonic
+        self._sleep = sleep
 
     def disconnect(
         self,
@@ -387,6 +404,7 @@ class LiveDisconnectService:
         self, arm: ArmSequenceResult, authorization: ParentScopeAuthorization
     ) -> LiveDisconnectResult:
         observation = self._observe()
+        observation = self._settle_post_restart_client(observation, arm)
         decision = decide_disconnect(
             ReleaseOutcome.CLEAR,
             observation.readiness,
@@ -401,6 +419,44 @@ class LiveDisconnectService:
                 session_disturbed=arm.session_disturbed,
             )
         return self._execute(decision.plan, arm, authorization)
+
+    def _settle_post_restart_client(
+        self,
+        observation: FreshRemovalObservation,
+        arm: ArmSequenceResult,
+    ) -> FreshRemovalObservation:
+        """Wait only for the measured Steam restart tail to release its mapping.
+
+        The holder scan watches descriptors.  The complete removal reading also
+        watches memory mappings, and on the tested SteamOS session an exiting
+        protected Steam process can briefly retain one after the approved
+        session restart has released every descriptor.  The same handoff can
+        also briefly make game state unknown before the replacement session
+        reports idle. Treating either transition as terminal made the one-button
+        journey fail where the same steps worked after a short human pause.
+
+        The filter is still enforced for this entire method.  No restart or
+        removal is repeated, and every other readiness result is returned
+        immediately.  If the exact transient does not clear within the bounded
+        window, the original fail-closed refusal remains.
+        """
+        transients = frozenset({
+            "removal_safety.clients_active_or_protected",
+            "removal_safety.game_state_unknown",
+        })
+        if (not arm.session_disturbed
+                or observation.readiness.code not in transients
+                or self._post_restart_settle_seconds == 0):
+            return observation
+        deadline = self._monotonic() + self._post_restart_settle_seconds
+        current = observation
+        while current.readiness.code in transients:
+            remaining = deadline - self._monotonic()
+            if remaining <= 0:
+                break
+            self._sleep(min(self._post_restart_poll_seconds, remaining))
+            current = self._observe()
+        return current
 
     # -- revalidation and execution ---------------------------------------
 

@@ -268,6 +268,9 @@ class Harness:
         lose_enforcement=False,
         display=NO_DISPLAY,
         display_fails=False,
+        post_restart_settle_seconds=0.0,
+        post_restart_poll_seconds=0.25,
+        clock=None,
     ) -> None:
         self.events: list[tuple] = []
         self.filter = FakeFilter(arm_ok=arm_ok)
@@ -281,6 +284,7 @@ class Harness:
         self._present = list(present or [()])
         self._lose_enforcement = lose_enforcement
         self.restarted: list[str] = []
+        self.clock = clock
 
         holder_scans = list(holders)
 
@@ -317,6 +321,10 @@ class Harness:
             now_ns=lambda: 1_700_000_000_000_000_000,
             owner_id="regear",
             device_set=BINDING,
+            post_restart_settle_seconds=post_restart_settle_seconds,
+            post_restart_poll_seconds=post_restart_poll_seconds,
+            monotonic=clock.monotonic if clock is not None else (lambda: 1.0),
+            sleep=clock.sleep if clock is not None else (lambda _seconds: None),
         )
 
     def _next_observation(self):
@@ -362,6 +370,158 @@ class HardwareBlockerTests(unittest.TestCase):
         self.assertEqual(harness.store.saves, 0)
         self.assertTrue(result.filter_disarmed)
         self.assertFalse(harness.filter.armed)
+
+    def test_post_restart_protected_mapping_gets_one_bounded_settle_window(self):
+        class Clock:
+            now = 0.0
+            sleeps = []
+
+            def monotonic(self):
+                return self.now
+
+            def sleep(self, seconds):
+                self.sleeps.append(seconds)
+                self.now += seconds
+
+        clock = Clock()
+        protected = blocked("removal_safety.clients_active_or_protected")
+        harness = Harness(
+            observations=[protected, protected, ready(), ready()],
+            post_restart_settle_seconds=10.0,
+            post_restart_poll_seconds=1.0,
+            clock=clock,
+        )
+
+        result = harness.run()
+
+        self.assertIs(result.stage, LiveDisconnectStage.REMOVED)
+        self.assertEqual(clock.sleeps, [1.0, 1.0])
+        self.assertEqual(harness.detached, PLAN_ORDER)
+        self.assertTrue(result.filter_disarmed)
+
+    def test_post_restart_unknown_game_gets_one_bounded_settle_window(self):
+        class Clock:
+            now = 0.0
+            sleeps = []
+
+            def monotonic(self):
+                return self.now
+
+            def sleep(self, seconds):
+                self.sleeps.append(seconds)
+                self.now += seconds
+
+        clock = Clock()
+        unknown = blocked("removal_safety.game_state_unknown")
+        harness = Harness(
+            observations=[unknown, ready(), ready()],
+            post_restart_settle_seconds=10.0,
+            post_restart_poll_seconds=1.0,
+            clock=clock,
+        )
+
+        result = harness.run()
+
+        self.assertIs(result.stage, LiveDisconnectStage.REMOVED)
+        self.assertEqual(clock.sleeps, [1.0])
+        self.assertEqual(harness.detached, PLAN_ORDER)
+        self.assertTrue(result.filter_disarmed)
+
+    def test_settle_window_never_weakens_an_unrelated_blocker(self):
+        class Clock:
+            def monotonic(self):
+                return 0.0
+
+            def sleep(self, _seconds):
+                raise AssertionError("unrelated blockers must not wait")
+
+        harness = Harness(
+            observations=[blocked("removal_safety.external_display_still_active")],
+            post_restart_settle_seconds=10.0,
+            clock=Clock(),
+        )
+
+        result = harness.run()
+
+        self.assertEqual(result.code, "removal_safety.external_display_still_active")
+        self.assertEqual(harness.detached, ())
+
+    def test_protected_mapping_without_a_session_restart_is_not_waited_out(self):
+        class Clock:
+            def monotonic(self):
+                return 0.0
+
+            def sleep(self, _seconds):
+                raise AssertionError("a persistent client must not be waited around")
+
+        protected = blocked("removal_safety.clients_active_or_protected")
+        harness = Harness(
+            observations=[protected],
+            holders=((), ()),
+            post_restart_settle_seconds=10.0,
+            clock=Clock(),
+        )
+
+        result = harness.run()
+
+        self.assertEqual(result.code, "removal_safety.clients_active_or_protected")
+        self.assertEqual(harness.detached, ())
+
+    def test_post_restart_settle_timeout_preserves_the_protected_client_refusal(self):
+        class Clock:
+            now = 0.0
+            sleeps = []
+
+            def monotonic(self):
+                return self.now
+
+            def sleep(self, seconds):
+                self.sleeps.append(seconds)
+                self.now += seconds
+
+        clock = Clock()
+        protected = blocked("removal_safety.clients_active_or_protected")
+        harness = Harness(
+            observations=[protected],
+            post_restart_settle_seconds=2.5,
+            post_restart_poll_seconds=1.0,
+            clock=clock,
+        )
+
+        result = harness.run()
+
+        self.assertEqual(result.code, "removal_safety.clients_active_or_protected")
+        self.assertEqual(clock.sleeps, [1.0, 1.0, 0.5])
+        self.assertEqual(harness.detached, ())
+        self.assertTrue(result.filter_disarmed)
+
+    def test_post_restart_settle_timeout_preserves_unknown_game_refusal(self):
+        class Clock:
+            now = 0.0
+            sleeps = []
+
+            def monotonic(self):
+                return self.now
+
+            def sleep(self, seconds):
+                self.sleeps.append(seconds)
+                self.now += seconds
+
+        clock = Clock()
+        unknown = blocked("removal_safety.game_state_unknown")
+        harness = Harness(
+            observations=[unknown],
+            post_restart_settle_seconds=2.5,
+            post_restart_poll_seconds=1.0,
+            clock=clock,
+        )
+
+        result = harness.run()
+
+        self.assertEqual(result.code, "removal_safety.game_state_unknown")
+        self.assertEqual(clock.sleeps, [1.0, 1.0, 0.5])
+        self.assertEqual(harness.detached, ())
+        self.assertTrue(result.filter_disarmed)
 
 
 class ReleaseTests(unittest.TestCase):

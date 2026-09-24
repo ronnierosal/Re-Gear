@@ -198,7 +198,7 @@ test("native menu forwards adapter state and calls into the real shell and rail"
     loadMenuBinding: () => "none", saveMenuBinding: () => true, menuBindingOptions: [],
     startMenuShortcut: () => ({ available: true, stop() {}, reset() {} }),
     Button: "button", Dropdown: "select", Focusable: "div", ModalRoot: "modal",
-    ShortcutSettings: "settings", WholeDockControl: "dock",
+    ShortcutSettings: "settings", WholeDockControl: "dock", recoverTerminalDockReceipt: async () => null,
     showModal: tree => { modalTree = tree; return { Close() { closed++; } }; },
   });
   const menu = Native(undefined, { SteamClient: { System: h.system } });

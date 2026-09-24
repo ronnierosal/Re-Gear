@@ -179,6 +179,346 @@ class MainDockAdmissionTests(unittest.TestCase):
             self.assertFalse(status["safe_to_unplug"])
         asyncio.run(run())
 
+    def test_tv_one_button_disconnect_settles_restart_client_and_correlates_terminal(self):
+        """The combined TV route must reach the same teardown as the manual pause.
+
+        Returning Portable can restart the Steam session.  The protected mapping
+        may therefore outlive the holder scan for a moment; this is the exact
+        hardware gap that made one-button Safe Disconnect stop after the picture
+        reached the Ally even though Switch to Ally, then Disconnect worked.
+        """
+        from regear.application.live_disconnect import LiveDisconnectStage
+        from tests.test_live_disconnect import Harness, blocked, ready, PLAN_ORDER
+
+        class Clock:
+            now = 0.0
+            sleeps = []
+
+            def monotonic(self):
+                return self.now
+
+            def sleep(self, seconds):
+                self.sleeps.append(seconds)
+                self.now += seconds
+
+        clock = Clock()
+        protected = blocked("removal_safety.clients_active_or_protected")
+        release = Harness(
+            observations=[protected, protected, ready(), ready()],
+            post_restart_settle_seconds=10.0,
+            post_restart_poll_seconds=1.0,
+            clock=clock,
+        )
+        held = []
+
+        @contextmanager
+        def admit():
+            held.append(True)
+            try:
+                yield
+            finally:
+                held.clear()
+
+        self.plugin._dock_mutation_gate = lambda: NS(admit=admit)
+        self.plugin._background_operations = set()
+        self.plugin._unloading = False
+        self.plugin._automatic_dock = Mock()
+        self.plugin._complete_interrupted_whole_dock_trial = Mock(return_value=None)
+        binding = NS(
+            gpu_bdf="gpu", audio_bdf="audio", usb_bdf="usb",
+            router_id="router", binding="binding", generation="generation",
+        )
+        runtime = Mock()
+        runtime.execute_claimed.return_value = NS(
+            code="dock_teardown.software_down", software_down=True,
+            software_reconnected=False,
+        )
+        self.plugin._return_portable_before_disconnect = Mock()
+
+        def release_execute(*, release_display):
+            self.assertTrue(release_display)
+            self.assertTrue(held)
+            result = release.run(release_display=True)
+            self.assertIs(result.stage, LiveDisconnectStage.REMOVED)
+            return result
+
+        with patch.object(self.module, "DrmDiscovery") as drm, \
+                patch.object(self.module, "resolve_whole_dock", return_value=binding), \
+                patch.object(self.module, "GamescopeDiscovery"), \
+                patch.object(self.module, "resolve_gamescope_user", return_value=NS(
+                    context=NS(uid=1000, username="deck"))), \
+                patch.object(self.module, "RootOwnedRuntimeState"), \
+                patch.object(self.module, "Login1SleepInhibitor") as inhibitor, \
+                patch.object(self.module, "WholeDockRuntime", return_value=runtime), \
+                patch.object(self.module, "build_live_disconnect_runtime") as factory:
+            drm.return_value.scan.return_value = [NS(boot_vga=False, pci_bdf="gpu")]
+            inhibitor.return_value.acquire.return_value.active = True
+            inhibitor.return_value.status.return_value.active = True
+            factory.return_value.execute.side_effect = release_execute
+            result = asyncio.run(self.plugin.execute_egpu_disconnect(
+                trial_action="whole_dock_disconnect",
+                release_display=True,
+                trial_confirmed=True,
+                trial_request_id="a" * 32,
+            ))
+
+        self.assertEqual(result["code"], "dock_teardown.software_down")
+        self.assertTrue(result["ok"])
+        self.assertTrue(result["software_down"])
+        self.assertFalse(result["safe_to_unplug"])
+        self.assertFalse(result["busy"])
+        self.assertEqual(result["request_id"], "a" * 32)
+        self.assertEqual(clock.sleeps, [1.0, 1.0])
+        self.assertEqual(release.detached, PLAN_ORDER)
+        self.plugin._complete_interrupted_whole_dock_trial.assert_called_once_with("a" * 32)
+        self.plugin._return_portable_before_disconnect.assert_called_once()
+        runtime.verify_gpu_release.assert_called_once()
+        runtime.execute_claimed.assert_called_once()
+        self.assertFalse(held)
+
+    def test_ordinary_disconnect_uses_request_id_as_durable_operation(self):
+        self.plugin._background_operations = set()
+        self.plugin._unloading = False
+        self.plugin._complete_interrupted_whole_dock_trial = Mock(return_value=None)
+        self.plugin._run_whole_dock_trial = Mock(return_value=NS(
+            code="dock_teardown.software_down", software_down=True))
+        request = 'a' * 32
+        result = asyncio.run(self.plugin.execute_egpu_disconnect(
+            trial_action="whole_dock_disconnect", release_display=True,
+            trial_confirmed=True, trial_request_id=request))
+        self.assertTrue(result['ok'])
+        self.plugin._run_whole_dock_trial.assert_called_once_with(request, '')
+
+    def test_correlated_late_completion_never_starts_another_teardown(self):
+        self.plugin._background_operations = set()
+        self.plugin._unloading = False
+        request = 'b' * 32
+        completed = {
+            'schema_version':1, 'code':'dock_teardown.software_down',
+            'busy':False, 'ok':True, 'software_down':True,
+            'safe_to_unplug':False, 'hardware_write':False,
+            'request_id':request,
+        }
+        self.plugin._complete_interrupted_whole_dock_trial = Mock(return_value=completed)
+        self.plugin._run_whole_dock_trial = Mock()
+        result = asyncio.run(self.plugin.execute_egpu_disconnect(
+            trial_action="whole_dock_disconnect", release_display=True,
+            trial_confirmed=True, trial_request_id=request))
+        self.assertEqual(result, completed)
+        self.assertEqual(self.plugin._whole_dock_trial_status, completed)
+        self.plugin._run_whole_dock_trial.assert_not_called()
+
+    def test_completion_action_is_record_only_and_exactly_correlated(self):
+        self.plugin._background_operations = set()
+        self.plugin._unloading = False
+        request = '9' * 32
+        completed = {
+            'schema_version':1, 'code':'dock_teardown.software_down',
+            'busy':False, 'ok':True, 'software_down':True,
+            'safe_to_unplug':False, 'hardware_write':False,
+            'request_id':request,
+        }
+        self.plugin._complete_interrupted_whole_dock_trial = Mock(return_value=completed)
+        self.plugin._run_whole_dock_trial = Mock()
+        result = asyncio.run(self.plugin.execute_egpu_disconnect(
+            trial_action='whole_dock_disconnect_complete',
+            trial_confirmed=True, trial_request_id=request))
+        self.assertEqual(result, completed)
+        self.plugin._complete_interrupted_whole_dock_trial.assert_called_once_with(request)
+        self.plugin._run_whole_dock_trial.assert_not_called()
+
+    def test_completion_action_never_falls_through_to_new_teardown(self):
+        self.plugin._background_operations = set()
+        self.plugin._unloading = False
+        request = '8' * 32
+        self.plugin._complete_interrupted_whole_dock_trial = Mock(return_value=None)
+        self.plugin._run_whole_dock_trial = Mock()
+        result = asyncio.run(self.plugin.execute_egpu_disconnect(
+            trial_action='whole_dock_disconnect_complete',
+            trial_confirmed=True, trial_request_id=request))
+        self.assertEqual(result['code'], 'dock_teardown.trial_unresolved')
+        self.assertEqual(result['request_id'], request)
+        self.assertFalse(result['hardware_write'])
+        self.assertFalse(result['software_down'])
+        self.plugin._run_whole_dock_trial.assert_not_called()
+
+    def test_completion_action_rejects_ambiguous_or_mutating_arguments(self):
+        self.plugin._background_operations = set()
+        self.plugin._unloading = False
+        self.plugin._complete_interrupted_whole_dock_trial = Mock()
+        for options in (
+                {},
+                {'trial_confirmed':True, 'trial_request_id':'short'},
+                {'trial_confirmed':True, 'trial_request_id':'7' * 32,
+                 'release_display':True},
+                {'trial_confirmed':True, 'trial_request_id':'7' * 32,
+                 'trial_attachment_token':'a' * 64 + ':' + 'b' * 64}):
+            with self.subTest(options=options):
+                result = asyncio.run(self.plugin.execute_egpu_disconnect(
+                    trial_action='whole_dock_disconnect_complete', **options))
+                self.assertEqual(
+                    result['code'],
+                    'dock_teardown.completion_confirmation_required')
+                self.assertFalse(result['hardware_write'])
+        self.plugin._complete_interrupted_whole_dock_trial.assert_not_called()
+
+    def test_late_completion_is_exact_claim_record_only(self):
+        request = 'c' * 32
+        claim = self.module.WholeDockClaim(
+            request, 'd' * 64, 'e' * 64, 'tunnel_remove_intent')
+        store = Mock()
+        store.load.return_value = claim
+        gate = Mock()
+        self.plugin._dock_mutation_gate = Mock(return_value=gate)
+        with patch.object(self.module, 'WholeDockClaimStore', return_value=store), \
+             patch.object(self.module, 'complete_record', return_value={
+                 'code':'dock_completion.record_completed', 'ok':True,
+                 'safe_to_unplug':False, 'hardware_write':False}) as complete:
+            result = self.plugin._complete_interrupted_whole_dock_trial(request)
+        self.assertEqual(result['code'], 'dock_teardown.software_down')
+        self.assertTrue(result['software_down'])
+        self.assertFalse(result['hardware_write'])
+        self.assertEqual(result['request_id'], request)
+        self.assertEqual(result['claim_stage'], 'software_down')
+        kwargs = complete.call_args.kwargs
+        self.assertEqual((kwargs['binding'], kwargs['generation']),
+                         (claim.binding, claim.generation))
+        self.assertIs(kwargs['store'], store)
+        self.assertIs(kwargs['gate'], gate)
+        self.assertIs(kwargs['confirmed'], True)
+
+    def test_plugin_completion_uses_installed_user_audit_not_operator_archive(self):
+        request = '6' * 32
+        claim = self.module.WholeDockClaim(
+            request, 'd' * 64, 'e' * 64, 'tunnel_remove_intent')
+        store = Mock()
+        store.load.return_value = claim
+        launcher = Mock()
+        launcher.call.return_value = {'code':'held_helper.settled','settled':True}
+        user = NS(uid=1000, username='deck')
+        self.plugin._dock_mutation_gate = Mock(return_value=Mock())
+        def observe_with_audit(binding, generation, audit):
+            self.assertEqual((binding, generation), (claim.binding, claim.generation))
+            self.assertEqual(audit(user), launcher.call.return_value)
+            return 'proof'
+        def complete(**kwargs):
+            kwargs['observe'](claim.binding, claim.generation)
+            return {'code':'dock_completion.record_completed','ok':True,
+                    'safe_to_unplug':False,'hardware_write':False}
+        with patch.object(self.module, 'WholeDockClaimStore', return_value=store), \
+             patch.object(self.module, 'HeldTrialLauncher', return_value=launcher), \
+             patch.object(self.module, 'observe_down_with_audit',
+                          side_effect=observe_with_audit), \
+             patch.object(self.module, 'complete_record', side_effect=complete):
+            result = self.plugin._complete_interrupted_whole_dock_trial(request)
+        self.assertTrue(result['software_down'])
+        launcher.call.assert_called_once_with('audit', '0' * 32)
+        launcher.audit_archive.assert_not_called()
+
+    def test_late_completion_preserves_unconfirmed_or_foreign_claim(self):
+        request = 'f' * 32
+        store = Mock()
+        with patch.object(self.module, 'WholeDockClaimStore', return_value=store), \
+             patch.object(self.module, 'complete_record') as complete:
+            store.load.return_value = self.module.WholeDockClaim(
+                request, 'a' * 64, 'b' * 64, 'gpu_removed')
+            unresolved = self.plugin._complete_interrupted_whole_dock_trial(request)
+            self.assertEqual(unresolved['code'], 'dock_teardown.trial_unresolved')
+            self.assertEqual(unresolved['claim_stage'], 'gpu_removed')
+            self.assertFalse(unresolved['hardware_write'])
+            store.load.return_value = self.module.WholeDockClaim(
+                '0' * 32, 'a' * 64, 'b' * 64, 'tunnel_remove_intent')
+            self.assertIsNone(
+                self.plugin._complete_interrupted_whole_dock_trial(request))
+        complete.assert_not_called()
+
+    def test_exact_software_down_retry_is_read_only_idempotent_success(self):
+        request = '5' * 32
+        claim = self.module.WholeDockClaim(
+            request, 'a' * 64, 'b' * 64, 'software_down')
+        store = Mock()
+        store.load.return_value = claim
+        held = []
+        @contextmanager
+        def admit(*, allow_inhibited=False):
+            self.assertTrue(allow_inhibited)
+            held.append(True)
+            try:
+                yield
+            finally:
+                held.clear()
+        self.plugin._dock_mutation_gate = Mock(return_value=NS(admit=admit))
+        with patch.object(self.module, 'WholeDockClaimStore', return_value=store), \
+             patch.object(self.module, 'observe_down_with_audit',
+                          side_effect=AssertionError('must not re-observe')) as observed, \
+             patch.object(self.module, 'complete_record') as complete:
+            result = self.plugin._complete_interrupted_whole_dock_trial(request)
+        self.assertEqual(result['code'], 'dock_teardown.software_down')
+        self.assertTrue(result['ok'])
+        self.assertTrue(result['software_down'])
+        self.assertFalse(result['safe_to_unplug'])
+        self.assertFalse(result['hardware_write'])
+        self.assertEqual(result['request_id'], request)
+        observed.assert_not_called()
+        self.assertEqual(store.load.call_count, 3)
+        store.confirm_software_down.assert_not_called()
+        store.record.assert_not_called()
+        complete.assert_not_called()
+
+    def test_foreign_software_down_request_is_refused_without_observation(self):
+        request = '4' * 32
+        store = Mock()
+        store.load.return_value = self.module.WholeDockClaim(
+            '3' * 32, 'a' * 64, 'b' * 64, 'software_down')
+        with patch.object(self.module, 'WholeDockClaimStore', return_value=store), \
+             patch.object(self.module, 'observe_down_with_audit') as observed, \
+             patch.object(self.module, 'complete_record') as complete:
+            self.assertIsNone(
+                self.plugin._complete_interrupted_whole_dock_trial(request))
+        observed.assert_not_called()
+        complete.assert_not_called()
+
+    def test_ordinary_same_request_retry_returns_completed_record_without_teardown(self):
+        self.plugin._background_operations = set()
+        self.plugin._unloading = False
+        request = '2' * 32
+        completed = {
+            'schema_version':1, 'code':'dock_teardown.software_down',
+            'busy':False, 'ok':True, 'software_down':True,
+            'safe_to_unplug':False, 'hardware_write':False,
+            'request_id':request,
+        }
+        self.plugin._complete_interrupted_whole_dock_trial = Mock(
+            return_value=completed)
+        self.plugin._run_whole_dock_trial = Mock()
+        result = asyncio.run(self.plugin.execute_egpu_disconnect(
+            trial_action='whole_dock_disconnect', release_display=True,
+            trial_confirmed=True, trial_request_id=request))
+        self.assertEqual(result, completed)
+        self.plugin._complete_interrupted_whole_dock_trial.assert_called_once_with(
+            request)
+        self.plugin._run_whole_dock_trial.assert_not_called()
+
+    def test_completion_and_same_request_retry_refuse_while_worker_is_alive(self):
+        self.plugin._background_operations = set()
+        self.plugin._unloading = False
+        self.plugin._whole_dock_trial_worker_alive = True
+        self.plugin._whole_dock_trial_status = {
+            'schema_version':1, 'code':'dock_teardown.no_trial', 'busy':False}
+        request = '1' * 32
+        self.plugin._complete_interrupted_whole_dock_trial = Mock()
+        self.plugin._run_whole_dock_trial = Mock()
+        for action, release in (
+                ('whole_dock_disconnect_complete', False),
+                ('whole_dock_disconnect', True)):
+            with self.subTest(action=action):
+                result = asyncio.run(self.plugin.execute_egpu_disconnect(
+                    trial_action=action, release_display=release,
+                    trial_confirmed=True, trial_request_id=request))
+                self.assertEqual(result['code'], 'dock_teardown.busy')
+        self.plugin._complete_interrupted_whole_dock_trial.assert_not_called()
+        self.plugin._run_whole_dock_trial.assert_not_called()
+
     def test_unavailable_factory_never_invokes_mutation(self):
         self.plugin._dock_mutation_gate = Mock(side_effect=OSError("unavailable"))
         command = Mock()
@@ -478,10 +818,12 @@ class HeldCaptureIntegrationTests(unittest.TestCase):
 class AbandonedTrialReconciliationTests(unittest.TestCase):
     setUp = MainDockAdmissionTests.setUp
 
-    def fixture(self, *, inner_clear=True, settled=True, complete=True, idle=True, stage='release_intent', binding_matches=True):
+    def fixture(self, *, inner_clear=True, settled=True, complete=True, idle=True,
+                stage='release_intent', binding_matches=True, worker_alive=False):
         claim = NS(stage=stage, binding='dock')
         binding = NS(binding='dock' if binding_matches else 'other', generation='new', gpu_bdf='gpu')
         user = NS(uid=1000, username='deck')
+        self.plugin._whole_dock_trial_worker_alive = worker_alive
         self.plugin._api = NS(get_snapshot_report=lambda: NS(snapshot=NS(
             game_state=self.module.GameState.IDLE if idle else self.module.GameState.UNKNOWN)))
         @contextmanager
@@ -500,6 +842,7 @@ class AbandonedTrialReconciliationTests(unittest.TestCase):
                     raise ValueError('guard refused')
                 archived.append(expected)
             store.return_value.retire_abandoned.side_effect = retire
+            store.return_value.retire_restored_teardown.side_effect = retire
             result = self.plugin._reconcile_abandoned_dock_trial('dock:new')
             return result, archived
 
@@ -509,9 +852,20 @@ class AbandonedTrialReconciliationTests(unittest.TestCase):
         self.assertEqual(len(archived), 1)
         self.assertFalse(result['safe_to_unplug'])
 
+    def test_archives_restored_teardown_claim_without_replaying_hardware(self):
+        for stage in ('gpu_removed', 'prepared', 'usb_remove_intent',
+                      'usb_removed', 'tunnel_remove_intent'):
+            with self.subTest(stage=stage):
+                result, archived = self.fixture(stage=stage)
+                self.assertEqual(result['code'], 'dock_reconcile.restored_archived')
+                self.assertTrue(result['ok'])
+                self.assertEqual(len(archived), 1)
+
     def test_every_incomplete_guard_retains_claim(self):
         for options in ({'inner_clear':False}, {'settled':False}, {'complete':False},
-                        {'idle':False}, {'stage':'gpu_removed'}, {'binding_matches':False}):
+                        {'idle':False}, {'stage':'software_down'},
+                        {'stage':'reauthorize_intent'}, {'binding_matches':False},
+                        {'worker_alive':True}):
             with self.subTest(options=options):
                 result, archived = self.fixture(**options)
                 self.assertFalse(result['ok'])
@@ -528,7 +882,8 @@ class AutomaticConnectionIsolationTests(unittest.TestCase):
 
     def fixture(self, *, stage='release_intent', inner=True, settled=True,
                 idle=True, consent=True, owner='none', changed_user=False,
-                changed_transport=False, changed_claim=False, partial=False):
+                changed_transport=False, changed_claim=False, partial=False,
+                worker=False):
         from contextlib import ExitStack
         plugin = self.plugin
         user = NS(uid=1000, username='deck')
@@ -536,6 +891,7 @@ class AutomaticConnectionIsolationTests(unittest.TestCase):
         transport = NS(binding='dock', generation='now')
         plugin._discovery = object()
         plugin._unloading = False
+        plugin._whole_dock_trial_worker_alive = worker
         plugin._automatic_dock_preferences = lambda: NS(load=lambda:consent)
         plugin._automatic_recovery_preferences = lambda: NS(load=lambda:consent)
         plugin._transition_journal_service = lambda: NS(status=lambda:NS(
@@ -586,10 +942,16 @@ class AutomaticConnectionIsolationTests(unittest.TestCase):
     def test_failed_reauthorize_history_allows_missing_gpu_recovery_without_retirement(self):
         self.assertEqual(self.fixture(stage='reauthorize_intent'), (True, 1))
 
+    def test_restored_tunnel_intent_allows_connection_only_recovery_without_retirement(self):
+        self.assertEqual(self.fixture(stage='tunnel_remove_intent'), (True, 1))
+        self.assertEqual(
+            self.fixture(stage='tunnel_remove_intent', worker=True), (False, 0))
+
     def test_failed_reauthorize_history_does_not_bypass_active_or_changed_state(self):
         for options in ({'inner':False}, {'settled':False}, {'idle':False},
                         {'consent':False}, {'owner':'transition'}, {'partial':True},
-                        {'changed_user':True}, {'changed_transport':True}, {'changed_claim':True}):
+                        {'changed_user':True}, {'changed_transport':True}, {'changed_claim':True},
+                        {'worker':True}):
             with self.subTest(options=options):
                 self.assertEqual(self.fixture(stage='reauthorize_intent', **options), (False, 0))
 
@@ -638,6 +1000,66 @@ class AutomaticConnectionIsolationTests(unittest.TestCase):
         self.assertEqual(plugin._automatic_link_recovery.attempts, 2)
         self.assertTrue(plugin._automatic_link_recovery.completed)
         plugin._reconcile_abandoned_dock_trial.assert_called_once_with('dock:now')
+        transition.assert_called_once_with(self.module.PlacementState.DOCKED_EGPU,
+            expected_generation='expected', standing_consent=True)
+
+    def test_tv_transition_retires_restored_tunnel_intent_then_uses_ordinary_engine(self):
+        plugin = self.plugin
+        claim = NS(stage='tunnel_remove_intent', binding='dock')
+        binding = NS(binding='dock', generation='now', gpu_bdf='gpu')
+        user = NS(uid=1000, username='deck')
+        held = []
+        ordinary_calls = []
+
+        def ordinary(fn):
+            ordinary_calls.append('gate')
+            if len(ordinary_calls) == 1:
+                raise DockMutationDenied('dock_mutation.inhibited')
+            return fn()
+
+        @contextmanager
+        def admit(**kwargs):
+            self.assertTrue(kwargs['allow_inhibited'])
+            held.append(True)
+            try:
+                yield
+            finally:
+                held.clear()
+
+        plugin._run_dock_mutation = ordinary
+        plugin._dock_mutation_gate = lambda: NS(admit=admit)
+        plugin._api = NS(get_snapshot_report=lambda: NS(snapshot=NS(
+            game_state=self.module.GameState.IDLE)))
+        plugin._whole_dock_trial_worker_alive = False
+        transition = Mock(return_value='switched')
+        plugin._presentation_transition_service = lambda: NS(execute_automatic=transition)
+
+        with patch.object(self.module, 'WholeDockClaimStore') as store_cls, \
+             patch.object(self.module, 'DrmDiscovery') as drm, \
+             patch.object(self.module, 'resolve_whole_dock', return_value=binding), \
+             patch.object(self.module, 'GamescopeDiscovery'), \
+             patch.object(self.module, 'resolve_gamescope_user', return_value=NS(context=user)), \
+             patch.object(self.module, 'build_live_disconnect_runtime') as runtime, \
+             patch.object(self.module, 'inner_removal_records_absent', return_value=True), \
+             patch.object(self.module, 'HeldTrialLauncher') as launcher:
+            store = store_cls.return_value
+            retained = [claim]
+            store.load.side_effect = lambda: retained[0]
+            def retire(expected, guard):
+                self.assertIs(expected, claim)
+                self.assertTrue(held)
+                self.assertTrue(guard())
+                retained[0] = None
+            store.retire_restored_teardown.side_effect = retire
+            drm.return_value.scan.return_value = [NS(boot_vga=False, pci_bdf='gpu')]
+            runtime.return_value.status.return_value = NS(scan_complete=True, holders=('wireplumber.service',))
+            launcher.return_value.call.return_value = {'code':'held_helper.settled', 'settled':True}
+
+            result = plugin._run_automatic_tv_transition('expected', True)
+
+        self.assertEqual(result, 'switched')
+        self.assertEqual(ordinary_calls, ['gate', 'gate'])
+        store.retire_restored_teardown.assert_called_once()
         transition.assert_called_once_with(self.module.PlacementState.DOCKED_EGPU,
             expected_generation='expected', standing_consent=True)
 

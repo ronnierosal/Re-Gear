@@ -33,8 +33,8 @@ test('delayed close callback from an old operation cannot close the replacement'
   h.menu.stop();assert.equal(current.closed,true);
 });
 
-function harness(pendingRecord = null) {
-  const h = { modals: [], cleanup: [], throwOpen: false, stopped: false, allowed: true };
+function harness(pendingRecord = null, recoverTerminalDockReceipt = async () => null) {
+  const h = { modals: [], cleanup: [], timers: new Map(), nextTimer: 1, throwOpen: false, stopped: false, allowed: true };
   const values = new Map(pendingRecord ? [["regear.whole-dock.pending-request", pendingRecord]] : []);
   h.storage = { getItem:key=>values.get(key)??null, setItem:(key,value)=>values.set(key,value), removeItem:key=>values.delete(key) };
   const runtime = {
@@ -47,7 +47,7 @@ function harness(pendingRecord = null) {
     useEffect: callback => h.cleanup.push(callback()), useState: value => [value, () => {}],
     useSyncExternalStore: (_subscribe, read) => read(),
     Button: "button", Focusable: "focusable", ModalRoot: "modal", Dropdown: "dropdown",
-    ExpandedCommandCenter: "expanded", WholeDockControl: "dock", ShortcutSettings: "settings",
+    ExpandedCommandCenter: "expanded", WholeDockControl: "dock", recoverTerminalDockReceipt, ShortcutSettings: "settings",
     loadMenuBinding: () => "view-y", saveMenuBinding: () => true, menuBindingOptions: [],
     startMenuShortcut: options => { h.shortcutOpen = options.open; return { available: true, reset() {}, stop() { h.stopped = true; } }; },
     showModal: (node,parent,options) => {
@@ -63,13 +63,40 @@ function harness(pendingRecord = null) {
   h.source = { read: () => h.tiles, subscribe: () => () => {} };
   h.snapshot = () => ({ schema_version: 3 });
   h.detail = () => "existing-detail";
-  h.menu = exports.createExpandedMenu(undefined, {localStorage:h.storage}, () => h.allowed, h.source, h.snapshot, h.detail);
+  h.host = {localStorage:h.storage,
+    setTimeout(callback) { const id=h.nextTimer++;h.timers.set(id,callback);return id; },
+    clearTimeout(id) { h.timers.delete(id); }};
+  h.runLatestTimer = () => { const entry=[...h.timers.entries()].at(-1);if(!entry)return;h.timers.delete(entry[0]);entry[1](); };
+  h.menu = exports.createExpandedMenu(undefined, h.host, () => h.allowed, h.source, h.snapshot, h.detail);
   h.mount = () => {
     const child = h.modals.at(-1).node.props.children.find(child => typeof child?.type === "function");
     return child.type(child.props);
   };
   return h;
 }
+
+const settle = async () => { for(let n=0;n<12;n++) await Promise.resolve(); };
+
+test('plugin remount reconstructs a missing exact terminal receipt as one status-only popup',async()=>{
+  const request='5'.repeat(32);
+  const h=harness(null,async storage=>{
+    storage.setItem('regear.whole-dock.pending-request',`v2:disconnect_only:backend-terminal:${request}`);
+    return {intent:'disconnect_only',request};
+  });
+  await settle();
+  assert.equal(h.modals.length,1);
+  const tree=h.modals[0].node;
+  assert.equal(tree.props.strTitle,'Safe Disconnect status');
+  const control=tree.props.children.find(child=>child?.type==='dock');
+  assert.equal(control.props.intent,'disconnect_only');
+  assert.equal(control.props.statusOnly,true);
+  assert.equal(control.props.startRequest,undefined,'recovery never dispatches a dock action');
+  control.props.onSettled({intent:'disconnect_only',request});
+  assert.ok(h.storage.getItem('regear.whole-dock.pending-request'));
+  tree.props.onOK();
+  assert.equal(h.storage.getItem('regear.whole-dock.pending-request'),null);
+  h.menu.stop();
+});
 
 test('plugin remount restores pending sleep as status-only and never replays it',()=>{
   const h=harness('v2:sleep:retired-panel:request-1');
@@ -81,6 +108,153 @@ test('plugin remount restores pending sleep as status-only and never replays it'
   assert.equal(control.props.statusOnly,true);
   assert.equal(control.props.startRequest,undefined);
   h.menu.stop();assert.equal(h.modals[0].closed,true);
+});
+
+test('terminal Safe Disconnect correlation is cleared only by dismissing its restored popup',()=>{
+  const pending='v2:disconnect_only:retired-panel:request-1';
+  const h=harness(pending);
+  assert.equal(h.storage.getItem('regear.whole-dock.pending-request'),pending);
+  const tree=h.modals[0].node;
+  const control=tree.props.children.find(child=>child?.type==='dock');
+  assert.equal(control.props.statusOnly,true);
+  assert.equal(control.props.startRequest,undefined);
+  control.props.onSettled({intent:'disconnect_only',request:'request-1'});
+  assert.equal(h.storage.getItem('regear.whole-dock.pending-request'),pending,
+    'presenting terminal status keeps the remount receipt');
+  tree.props.onOK();
+  assert.equal(h.storage.getItem('regear.whole-dock.pending-request'),null,
+    'explicit popup dismissal acknowledges the terminal result');
+  assert.equal(h.modals[0].closed,true);
+  h.menu.stop();
+});
+
+test('explicit Safe Disconnect replaces a stale handoff modal with status-only presentation once',()=>{
+  const h=harness();h.menu.open();const view=h.mount();
+  view.props.onDisconnect();
+  const operation=h.modals[1].node;
+  const control=operation.props.children.find(child=>child?.type==='dock');
+  const request='request-after-handoff';
+  h.storage.setItem('regear.whole-dock.pending-request',`v2:disconnect_only:panel:${request}`);
+  h.runLatestTimer();
+  assert.equal(h.modals[1].closed,true);
+  assert.equal(h.modals.length,3);
+  const restored=h.modals[2].node;
+  assert.equal(restored.props.strTitle,'Safe Disconnect status');
+  const status=restored.props.children.find(child=>child?.type==='dock');
+  assert.equal(status.props.statusOnly,true);
+  assert.equal(status.props.startRequest,undefined);
+  assert.equal(control.props.startRequest(),true,
+    'the stale visual replacement never consumes or replays the original request');
+  h.menu.stop();
+});
+
+test('Gamescope teardown cannot acknowledge an active result before its replacement popup',()=>{
+  const h=harness();h.menu.open();const view=h.mount();
+  view.props.onDisconnect();
+  const active=h.modals[1];
+  const control=active.node.props.children.find(child=>child?.type==='dock');
+  const request='request-terminal-after-handoff';
+  const pending=`v2:disconnect_only:panel:${request}`;
+  h.storage.setItem('regear.whole-dock.pending-request',pending);
+
+  control.props.onSettled({intent:'disconnect_only',request});
+  // A Gamescope/modal teardown may surface through any of these callbacks.
+  // None belongs to the player-facing terminal status popup.
+  active.node.props.onCancel();
+  assert.equal(h.storage.getItem('regear.whole-dock.pending-request'),pending);
+  assert.equal(active.closed,true);
+
+  h.runLatestTimer();
+  assert.equal(h.modals.length,3);
+  const restored=h.modals[2].node;
+  assert.equal(restored.props.strTitle,'Safe Disconnect status');
+  const status=restored.props.children.find(child=>child?.type==='dock');
+  assert.equal(status.props.statusOnly,true);
+  status.props.onSettled({intent:'disconnect_only',request});
+  assert.equal(h.storage.getItem('regear.whole-dock.pending-request'),pending);
+  restored.props.onOK();
+  assert.equal(h.storage.getItem('regear.whole-dock.pending-request'),null);
+  h.menu.stop();
+});
+
+test('fresh Safe Disconnect acknowledges an exact settled stale operation and dispatches once',()=>{
+  const h=harness();h.menu.open();const view=h.mount();
+  view.props.onDisconnect();
+  const stale=h.modals[1];
+  const staleControl=stale.node.props.children.find(child=>child?.type==='dock');
+  h.storage.setItem('regear.whole-dock.pending-request','v2:disconnect_only:panel:request-old');
+  staleControl.props.onSettled({intent:'disconnect_only',request:'request-old'});
+  h.runLatestTimer();
+  view.props.onDisconnect();
+  assert.equal(stale.closed,true);
+  assert.equal(h.storage.getItem('regear.whole-dock.pending-request'),null);
+  assert.equal(h.modals.length,4);
+  const fresh=h.modals[3].node.props.children.find(child=>child?.type==='dock');
+  assert.equal(fresh.props.statusOnly,undefined);
+  assert.equal(fresh.props.startRequest(),true);
+  assert.equal(fresh.props.startRequest(),false);
+  h.menu.stop();
+});
+
+test('fresh Safe Disconnect reopens unresolved stale status without dispatching',()=>{
+  const h=harness();h.menu.open();const view=h.mount();
+  view.props.onDisconnect();
+  const stale=h.modals[1];
+  h.storage.setItem('regear.whole-dock.pending-request','v2:disconnect_only:panel:request-unresolved');
+  h.runLatestTimer();
+  view.props.onDisconnect();
+  assert.equal(stale.closed,true);
+  assert.equal(h.modals.length,4);
+  const status=h.modals[3].node.props.children.find(child=>child?.type==='dock');
+  assert.equal(status.props.statusOnly,true);
+  assert.equal(status.props.startRequest,undefined);
+  assert.equal(h.storage.getItem('regear.whole-dock.pending-request'),'v2:disconnect_only:panel:request-unresolved');
+  h.menu.stop();
+});
+
+test('unconfirmed Safe Disconnect receipt clears only when its restored popup is dismissed',()=>{
+  const pending='v2:disconnect_only:retired-panel:request-unconfirmed';
+  const h=harness(pending);
+  const tree=h.modals[0].node;
+  const control=tree.props.children.find(child=>child?.type==='dock');
+  assert.equal(control.props.statusOnly,true);
+  assert.equal(control.props.startRequest,undefined);
+  control.props.onSettled({intent:'disconnect_only',request:'request-unconfirmed'});
+  assert.equal(h.storage.getItem('regear.whole-dock.pending-request'),pending,
+    'presenting unconfirmed status keeps the remount receipt');
+  tree.props.onOK();
+  assert.equal(h.storage.getItem('regear.whole-dock.pending-request'),null,
+    'explicit dismissal acknowledges this exact unconfirmed result');
+  assert.equal(h.modals[0].closed,true);
+  h.menu.stop();
+});
+
+test('dismissing a terminal popup cannot clear a newer receipt',()=>{
+  const pending='v2:disconnect_only:retired-panel:request-old';
+  const newer='v2:disconnect_only:new-panel:request-new';
+  const h=harness(pending);
+  const tree=h.modals[0].node;
+  const control=tree.props.children.find(child=>child?.type==='dock');
+  control.props.onSettled({intent:'disconnect_only',request:'request-old'});
+  h.storage.setItem('regear.whole-dock.pending-request',newer);
+  tree.props.onOK();
+  assert.equal(h.storage.getItem('regear.whole-dock.pending-request'),newer);
+  h.menu.stop();
+});
+
+test('hiding before terminal status keeps the receipt and restores status on the next explicit open',()=>{
+  const pending='v2:disconnect_only:retired-panel:request-2';
+  const h=harness(pending);
+  assert.equal(h.modals.length,1);
+  h.modals[0].node.props.onOK();
+  assert.equal(h.storage.getItem('regear.whole-dock.pending-request'),pending);
+  h.menu.open();
+  assert.equal(h.modals.length,2);
+  assert.equal(h.modals[1].node.props.strTitle,'Safe Disconnect status');
+  const control=h.modals[1].node.props.children.find(child=>child?.type==='dock');
+  assert.equal(control.props.statusOnly,true);
+  assert.equal(control.props.startRequest,undefined);
+  h.menu.stop();
 });
 
 test("visibility publishes stable changes with unsubscribe", () => {
@@ -106,6 +280,12 @@ test("actual native adapter mounts live tiles, details and golden disconnect tog
     ["disconnect_only", "sleep", "shutdown"]);
   assert.equal(dockControl.props.intent, "disconnect_only");
   assert.equal(dockControl.props.readCurrentSnapshot, h.snapshot);
+  assert.equal(typeof dockControl.props.onSettled,'function');
+  const retained='v2:disconnect_only:panel:request-from-operation';
+  h.storage.setItem('regear.whole-dock.pending-request',retained);
+  dockControl.props.onSettled({intent:'disconnect_only',request:'request-from-operation'});
+  assert.equal(h.storage.getItem('regear.whole-dock.pending-request'),retained,
+    'the embedded status reader cannot retire the operation popup receipt');
   assert.ok(view.props.settings);
   h.menu.stop(); assert.equal(h.menu.visibility.read(), false);
 });

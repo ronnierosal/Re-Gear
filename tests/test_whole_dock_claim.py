@@ -245,6 +245,43 @@ class AbandonedClaimTests(unittest.TestCase):
             self.store.retire_abandoned(self.store.load(), lambda: True)
         self.assertTrue(self.store.inhibited())
 
+    def test_restored_teardown_archives_each_incomplete_destructive_stage(self):
+        for stage in ('gpu_removed', 'prepared', 'usb_remove_intent',
+                      'usb_removed', 'tunnel_remove_intent'):
+            with self.subTest(stage=stage):
+                self.store.claim('restore', 'dock', 'generation')
+                self.store.record('restore', stage)
+                expected = self.store.load()
+                before = (self.root / FILENAME).read_bytes()
+                audit = self.store.retire_restored_teardown(expected, lambda: True)
+                self.assertTrue(audit.startswith('restored-whole-dock-'))
+                self.assertEqual((self.root / audit).read_bytes(), before)
+                self.assertIsNone(self.store.load())
+
+    def test_restored_teardown_refuses_early_terminal_and_changed_records(self):
+        for stage in ('claimed', 'release_intent', 'software_down',
+                      'reauthorize_intent', 'software_reconnected'):
+            with self.subTest(stage=stage):
+                self.store.claim('restore', 'dock', 'generation')
+                if stage != 'claimed':
+                    self.store.record('restore', stage)
+                expected = self.store.load()
+                with self.assertRaises(ValueError):
+                    self.store.retire_restored_teardown(expected, lambda: True)
+                self.assertEqual(self.store.load(), expected)
+                (self.root / FILENAME).unlink()
+
+        self.store.claim('restore', 'dock', 'generation')
+        self.store.record('restore', 'tunnel_remove_intent')
+        expected = self.store.load()
+        changed = WholeDockClaim('restore', 'dock', 'generation', 'software_down')
+        def mutate():
+            (self.root / FILENAME).write_bytes(self.store._encode(changed))
+            return True
+        with self.assertRaises(ValueError):
+            self.store.retire_restored_teardown(expected, mutate)
+        self.assertEqual(self.store.load(), changed)
+
     def test_abort_requires_exact_true_guard_and_expected_claim(self):
         self.store.claim('abort', 'dock', 'generation')
         expected = self.store.load()
