@@ -62,6 +62,12 @@ test('V3 geometry keeps copy left, artwork right, focus, and reduced-motion gaug
   assert.doesNotMatch(tile,/\.rg-expanded-tile\.rg-v3-tile:after/);
   assert.match(tile,/\.rg-v3-tile-copy \.rg-expanded-value\{[^}]*overflow-wrap:normal[^}]*word-break:normal[^}]*hyphens:none/);
   assert.match(tile,/\.rg-expanded-tile\.rg-v3-tile:focus-visible/);
+  // Compact device layouts shrink the tile; copy must scale with it, not stay fixed px.
+  assert.match(tile,/\.rg-expanded \.rg-expanded-tile\.rg-v3-tile\{container:rg-v3-tile\/inline-size\}/);
+  assert.match(tile,/\.rg-v3-tile-copy\{justify-content:safe center/);
+  // Scale down only: the approved wide-layout size is the ceiling.
+  assert.ok(tile.includes('.rg-v3-tile-copy .rg-expanded-label{font-size:min(clamp(9px,.78vw,11px),max(7.5px,6.2cqi))'));
+  assert.ok(tile.includes('.rg-v3-tile-copy .rg-expanded-value{font-size:min(clamp(9px,.85vw,13px),max(8px,7cqi))'));
   assert.match(tile,/transition:stroke-dashoffset 250ms ease/);
   assert.match(tile,/@media\(prefers-reduced-motion:reduce\)/);
 });

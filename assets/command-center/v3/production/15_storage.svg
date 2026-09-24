@@ -13,6 +13,9 @@
  <filter id="outerGlow" x="-30%" y="-50%" width="160%" height="200%"><feGaussianBlur stdDeviation="2.3" result="b"/><feColorMatrix in="b" values="0 0 0 0 .02 0 0 0 0 .75 0 0 0 0 1 0 0 0 .72 0" result="c"/><feMerge><feMergeNode in="c"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
  <filter id="glow" x="-80%" y="-80%" width="260%" height="260%"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
  <filter id="shadow" x="-80%" y="-80%" width="260%" height="260%"><feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#000711" flood-opacity=".95"/></filter>
+
+ <radialGradient id="halo" cx="190" cy="72" r="58" gradientUnits="userSpaceOnUse"><stop stop-color="#01050d" stop-opacity=".92"/><stop offset=".62" stop-color="#020a17" stop-opacity=".7"/><stop offset=".86" stop-color="#2adfff" stop-opacity=".1"/><stop offset="1" stop-color="#2adfff" stop-opacity="0"/></radialGradient>
+ <filter id="bloom" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur in="SourceAlpha" stdDeviation="4.5" result="b"/><feColorMatrix in="b" values="0 0 0 0 0.165 0 0 0 0 0.875 0 0 0 0 1.000 0 0 0 .75 0" result="c"/><feMerge><feMergeNode in="c"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
  <clipPath id="clip"><rect x="2" y="2" width="236" height="140" rx="13"/></clipPath>
 </defs>
 <g filter="url(#outerGlow)"><rect x="2.5" y="2.5" width="235" height="139" rx="13" fill="url(#surface)" stroke="url(#rim)" stroke-width="1.5"/></g>
@@ -25,8 +28,10 @@
  <path d="M16 118 79 8M39 144 118 5M74 144l80-139M109 144 185 10" fill="none" stroke="#178ec2" stroke-opacity=".16" stroke-width=".7"/>
  <path d="M8 31 116 17M6 109l81-22M30 138l74-20" fill="none" stroke="#5ae9ff" stroke-opacity=".07" stroke-width=".6"/>
  <path d="M13 8h137" stroke="#c1fbff" stroke-opacity=".17"/>
- <ellipse cx="193" cy="78" rx="59" ry="56" fill="url(#orb)"/>
- <g filter="url(#shadow)"><g transform="translate(150 22) rotate(8 47 51)"><rect x="12" y="5" width="72" height="101" rx="7" fill="url(#metal)" stroke="#55e8ff" stroke-width="2"/><rect x="20" y="14" width="56" height="67" rx="3" fill="#0b2640"/><rect x="27" y="86" width="42" height="10" rx="3" fill="#09ccee"/><circle cx="27" cy="20" r="3" fill="#62efff"/><circle cx="70" cy="20" r="3" fill="#62efff"/><path d="M27 70h42" stroke="#1b8ebc" stroke-width="3"/></g></g>
+ <circle cx="190" cy="72" r="58" fill="url(#halo)"/>
+ <path d="M150 20h14l8 8h20M141 128h18l7-7h22M226 40v18l-6 6M134 60l9 9v16" fill="none" stroke="#2aa9e6" stroke-opacity=".22" stroke-width=".8"/>
+ <g fill="#57d8ff" fill-opacity=".35"><circle cx="192" cy="28" r="1.2"/><circle cx="188" cy="121" r="1.2"/><circle cx="220" cy="64" r="1.2"/><circle cx="143" cy="85" r="1.2"/></g>
+ <g filter="url(#bloom)"><g transform="translate(188 72) scale(0.897) translate(-197.4 -77.6)"><g filter="url(#shadow)"><g transform="translate(150 22) rotate(8 47 51)"><rect x="12" y="5" width="72" height="101" rx="7" fill="url(#metal)" stroke="#55e8ff" stroke-width="2"/><rect x="20" y="14" width="56" height="67" rx="3" fill="#0b2640"/><rect x="27" y="86" width="42" height="10" rx="3" fill="#09ccee"/><circle cx="27" cy="20" r="3" fill="#62efff"/><circle cx="70" cy="20" r="3" fill="#62efff"/><path d="M27 70h42" stroke="#1b8ebc" stroke-width="3"/></g></g></g></g>
  <path d="M5 139h119" stroke="#0ad8ff" stroke-opacity=".18"/><path d="M8 5h223" stroke="#d9fdff" stroke-opacity=".09"/>
 </g>
 <rect x="2.5" y="2.5" width="235" height="139" rx="13" fill="none" stroke="#60eaff" stroke-opacity=".38" stroke-width=".55"/>
