@@ -1,6 +1,6 @@
 {
   "name": "re-gear-steamos",
-  "version": "0.3.134",
+  "version": "0.3.135",
   "private": true,
   "license": "GPL-3.0-or-later",
   "packageManager": "pnpm@11.19.0",
