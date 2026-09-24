@@ -44,18 +44,20 @@ test("reconnected result requires exact verified fields", () => {
 // This verifies event behavior, not source-string patterns or native rendering.
 const componentJs = ts.transpileModule(readFileSync(new URL("../src/whole-dock-control.tsx", import.meta.url), "utf8"), {
   compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022, jsx: ts.JsxEmit.React },
-}).outputText.replace(/^import .*;\r?$/gm, "").replace(/export function WholeDockControl/, "function WholeDockControl");
+}).outputText.replace(/^import .*;\r?$/gm, "")
+  .replace(/export async function recoverTerminalDockReceipt/, "async function recoverTerminalDockReceipt")
+  .replace(/export function WholeDockControl/, "function WholeDockControl");
 const deferred = () => { let resolve, reject; const promise = new Promise((yes,no) => {resolve=yes;reject=no;}); return {promise,resolve,reject}; };
 const settle = async () => { for(let n=0;n<12;n++) await Promise.resolve(); };
 function harness(storage = new Map(), intent = "disconnect", startRequest, initialStatus = fresh, initialRead, statusOnly = false, onSettled) {
-  const h = {status:{...initialStatus}, reads:[], calls:[], modals:[], timers:new Map(), failStorage:false, intent, snapshot: {...idle, schema_version:3}};
+  const h = {status:{...initialStatus}, reads:[], readCount:0, calls:[], modals:[], timers:new Map(), failStorage:false, intent, snapshot: {...idle, schema_version:3}};
   let slots=[], index=0, effects=[], cleanups=[], serial=0;
   const useState = value => { const slot=index++; if(!(slot in slots)) slots[slot]=value; return [slots[slot], value=>{slots[slot]=typeof value==='function'?value(slots[slot]):value;}]; };
   const useRef = value => {const slot=index++; if(!(slot in slots)) slots[slot]={current:value}; return slots[slot];};
   const useEffect = fn => {const slot=index++; if(!(slot in slots)){slots[slot]=true;effects.push(fn);}};
   const React={createElement:(type,props,...children)=>({type,props:{...props,children}})};
   const callable = name => (...args) => {
-    if(name==='get_egpu_disconnect_status') return h.reads.length ? h.reads.shift() : Promise.resolve(h.status);
+    if(name==='get_egpu_disconnect_status') { h.readCount++; return h.reads.length ? h.reads.shift() : Promise.resolve(h.status); }
     h.calls.push(args);
     return h.execute ? h.execute(args) : Promise.resolve({...fresh,code:'dock_teardown.software_down',software_down:true,ok:true,request_id:args.at(-1)});
   };
@@ -64,10 +66,12 @@ function harness(storage = new Map(), intent = "disconnect", startRequest, initi
     return {Close(){if(record.closed)return;record.closed=true;}};
   };
   const window={localStorage:{getItem:key=>storage.get(key)??null,setItem(key,value){if(h.failStorage)throw Error('storage denied');storage.set(key,value);},removeItem:key=>storage.delete(key)}};
-  const Component = new Function('React','useState','useRef','useEffect','callable','DialogButton','showModal','EgpuConfirmModal','dockIntentControl','dockRequestAbandoned','dockRequestSettled','formatPendingRecord','parsePendingRecord','window','crypto','setTimeout','clearTimeout', componentJs+'\nreturn WholeDockControl;')(
+  const runtime = new Function('React','useState','useRef','useEffect','callable','DialogButton','showModal','EgpuConfirmModal','dockIntentControl','dockRequestAbandoned','dockRequestSettled','formatPendingRecord','parsePendingRecord','window','crypto','setTimeout','clearTimeout', componentJs+'\nreturn {WholeDockControl,recoverTerminalDockReceipt};')(
     React,useState,useRef,useEffect,callable,'button',showModal,'confirm',dockIntentControl,dockRequestAbandoned,dockRequestSettled,formatPendingRecord,parsePendingRecord,window,
     {randomUUID:()=> '12345678-1234-1234-1234-123456789abc'},
     fn=>{h.timers.set(++serial,fn);return serial;},id=>h.timers.delete(id));
+  const Component=runtime.WholeDockControl;
+  h.recover=()=>runtime.recoverTerminalDockReceipt(window.localStorage);
   h.render=()=>{index=0;h.tree=Component({intent:h.intent,readCurrentSnapshot:()=>h.snapshot,startRequest,statusOnly,onSettled});for(const fn of effects.splice(0))cleanups.push(fn());return h.tree;};
   h.button=()=>h.render().props.children.find(child=>child?.type==='button');
   h.click=()=>{const button=h.button();assert.equal(button.props.disabled,false);button.props.onClick();};
@@ -76,6 +80,69 @@ function harness(storage = new Map(), intent = "disconnect", startRequest, initi
   if(initialRead)h.reads.push(initialRead);
   h.storage=storage;h.render();return h;
 }
+
+const recoveredTerminal = request => ({ ...fresh, code:'dock_teardown.software_down',
+  request_id:request, busy:false, in_flight:false, ok:true, software_down:true,
+  safe_to_unplug:false, release_stage:'removed',
+  release:{released:true,filter_disarmed:true} });
+
+test('missing UI receipt is recovered from one exact backend terminal without dispatch',async()=>{
+  const request='1'.repeat(32),storage=new Map();
+  const h=harness(storage,'disconnect_only',undefined,recoveredTerminal(request));
+  await settle();const before=h.readCount;
+  const recovered=await h.recover();
+  assert.deepEqual(recovered,{intent:'disconnect_only',request});
+  assert.equal(h.readCount,before+1,'recovery performs one read-only trial observation');
+  assert.equal(storage.get('regear.whole-dock.pending-request'),
+    `v2:disconnect_only:backend-terminal:${request}`);
+  assert.equal(h.calls.length,0,'terminal recovery never executes a dock action');
+  const text=JSON.stringify(h.render());
+  assert.match(text,/USB4 deauthorization was verified/);
+  assert.match(text,/Unplug the eGPU now/);
+  assert.doesNotMatch(text,/safe to unplug/i);
+  h.unmount();
+  const settlements=[];
+  const remount=harness(storage,'disconnect_only',undefined,recoveredTerminal(request),undefined,true,
+    value=>settlements.push(value));
+  await settle();
+  assert.equal(remount.calls.length,0,
+    'the synthesized settled receipt invokes neither disconnect nor completion');
+  assert.deepEqual(settlements,[{intent:'disconnect_only',request}]);
+  assert.match(JSON.stringify(remount.render()),/Unplug the eGPU now/);
+  remount.unmount();
+});
+
+test('terminal receipt recovery rejects malformed or nonterminal status',async()=>{
+  const request='2'.repeat(32);
+  for(const status of [
+    {...recoveredTerminal(request),schema_version:2},
+    {...recoveredTerminal(request),request_id:'bad'},
+    {...recoveredTerminal(request),code:'dock_teardown.trial_unresolved',ok:false},
+    {...recoveredTerminal(request),busy:true},
+    {...recoveredTerminal(request),in_flight:true},
+    {...recoveredTerminal(request),ok:false},
+    {...recoveredTerminal(request),software_down:false},
+    {...recoveredTerminal(request),safe_to_unplug:true},
+    {...recoveredTerminal(request),release_stage:'not_run'},
+    {...recoveredTerminal(request),release:undefined},
+    {...recoveredTerminal(request),release:{released:false,filter_disarmed:true}},
+    {...recoveredTerminal(request),release:{released:true,filter_disarmed:false}},
+  ]){
+    const storage=new Map(),h=harness(storage,'disconnect_only',undefined,status);
+    await settle();assert.equal(await h.recover(),null);assert.equal(storage.size,0);
+    assert.equal(h.calls.length,0);h.unmount();
+  }
+});
+
+test('terminal receipt recovery cannot overwrite a receipt created during its backend read',async()=>{
+  const request='3'.repeat(32),newer=`v2:disconnect_only:new-panel:${'4'.repeat(32)}`;
+  const wait=deferred(),storage=new Map(),h=harness(storage);
+  await settle();h.reads.push(wait.promise);const recovery=h.recover();
+  storage.set('regear.whole-dock.pending-request',newer);
+  wait.resolve(recoveredTerminal(request));
+  assert.equal(await recovery,null);assert.equal(storage.get('regear.whole-dock.pending-request'),newer);
+  assert.equal(h.calls.length,0);h.unmount();
+});
 
 test('component mount and canceled confirmation never mutate', async()=>{
   const h=harness();await settle();assert.equal(h.calls.length,0);

@@ -10,6 +10,7 @@ const execute = callable<[boolean, string, string, DockAction, boolean, string, 
 const completionAction = "whole_dock_disconnect_complete" as DockAction;
 const submittedRequest = /^[0-9a-f]{32}$/;
 const pendingKey = "regear.whole-dock.pending-request";
+const recoveredPanel = "backend-terminal";
 /** Identifies this panel for the life of its script, which is exactly the
  * lifetime that matters: freeing the dock restarts Gaming Mode and a new
  * panel loads with a new one, which is how a record left by the panel that
@@ -17,6 +18,39 @@ const pendingKey = "regear.whole-dock.pending-request";
 const panelId = (() => { try { return crypto.randomUUID().replaceAll("-", ""); } catch { return "panel"; } })();
 const pendingRecord = () => { try { return window.localStorage.getItem(pendingKey); } catch { return "storage-unavailable"; } };
 const pendingRequest = () => parsePendingRecord(pendingRecord())?.request;
+
+/** Recover presentation correlation after a full Steam/Gamescope restart.
+ *
+ * The disconnect worker and its result live in the backend process, while the
+ * WebKit localStorage receipt can disappear with the old Steam UI process.  A
+ * terminal result is sufficient to restore only the status receipt: this does
+ * not call the disconnect or its completion continuation.  Both storage reads
+ * guard against replacing a receipt created while the backend read was in
+ * flight. */
+export async function recoverTerminalDockReceipt(storage?: Pick<Storage, "getItem" | "setItem">): Promise<DockSettlement | null> {
+  if (!storage) return null;
+  try { if (storage.getItem(pendingKey)) return null; } catch { return null; }
+  let status: any;
+  try { status = await readTrial("whole_dock_trial"); } catch { return null; }
+  const request = status?.request_id;
+  const recoverable = status?.schema_version === 1
+    && submittedRequest.test(request)
+    && status.code === "dock_teardown.software_down"
+    && status.busy === false && status.in_flight === false
+    && status.ok === true && status.software_down === true
+    && status.safe_to_unplug === false
+    && status.release_stage === "removed"
+    && status.release?.released === true
+    && status.release?.filter_disarmed === true;
+  if (!recoverable) return null;
+  const raw = formatPendingRecord("disconnect_only", recoveredPanel, request);
+  try {
+    if (storage.getItem(pendingKey)) return null;
+    storage.setItem(pendingKey, raw);
+    if (storage.getItem(pendingKey) !== raw) return null;
+  } catch { return null; }
+  return { intent: "disconnect_only", request };
+}
 
 export type DirectStartRequest = (() => boolean) & {
   state(): "available" | "consumed" | "submitted";

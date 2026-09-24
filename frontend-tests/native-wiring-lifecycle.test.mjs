@@ -33,7 +33,7 @@ test('delayed close callback from an old operation cannot close the replacement'
   h.menu.stop();assert.equal(current.closed,true);
 });
 
-function harness(pendingRecord = null) {
+function harness(pendingRecord = null, recoverTerminalDockReceipt = async () => null) {
   const h = { modals: [], cleanup: [], timers: new Map(), nextTimer: 1, throwOpen: false, stopped: false, allowed: true };
   const values = new Map(pendingRecord ? [["regear.whole-dock.pending-request", pendingRecord]] : []);
   h.storage = { getItem:key=>values.get(key)??null, setItem:(key,value)=>values.set(key,value), removeItem:key=>values.delete(key) };
@@ -47,7 +47,7 @@ function harness(pendingRecord = null) {
     useEffect: callback => h.cleanup.push(callback()), useState: value => [value, () => {}],
     useSyncExternalStore: (_subscribe, read) => read(),
     Button: "button", Focusable: "focusable", ModalRoot: "modal", Dropdown: "dropdown",
-    ExpandedCommandCenter: "expanded", WholeDockControl: "dock", ShortcutSettings: "settings",
+    ExpandedCommandCenter: "expanded", WholeDockControl: "dock", recoverTerminalDockReceipt, ShortcutSettings: "settings",
     loadMenuBinding: () => "view-y", saveMenuBinding: () => true, menuBindingOptions: [],
     startMenuShortcut: options => { h.shortcutOpen = options.open; return { available: true, reset() {}, stop() { h.stopped = true; } }; },
     showModal: (node,parent,options) => {
@@ -74,6 +74,29 @@ function harness(pendingRecord = null) {
   };
   return h;
 }
+
+const settle = async () => { for(let n=0;n<12;n++) await Promise.resolve(); };
+
+test('plugin remount reconstructs a missing exact terminal receipt as one status-only popup',async()=>{
+  const request='5'.repeat(32);
+  const h=harness(null,async storage=>{
+    storage.setItem('regear.whole-dock.pending-request',`v2:disconnect_only:backend-terminal:${request}`);
+    return {intent:'disconnect_only',request};
+  });
+  await settle();
+  assert.equal(h.modals.length,1);
+  const tree=h.modals[0].node;
+  assert.equal(tree.props.strTitle,'Safe Disconnect status');
+  const control=tree.props.children.find(child=>child?.type==='dock');
+  assert.equal(control.props.intent,'disconnect_only');
+  assert.equal(control.props.statusOnly,true);
+  assert.equal(control.props.startRequest,undefined,'recovery never dispatches a dock action');
+  control.props.onSettled({intent:'disconnect_only',request});
+  assert.ok(h.storage.getItem('regear.whole-dock.pending-request'));
+  tree.props.onOK();
+  assert.equal(h.storage.getItem('regear.whole-dock.pending-request'),null);
+  h.menu.stop();
+});
 
 test('plugin remount restores pending sleep as status-only and never replays it',()=>{
   const h=harness('v2:sleep:retired-panel:request-1');

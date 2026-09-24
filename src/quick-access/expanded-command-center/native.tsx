@@ -13,7 +13,7 @@ import { Button, Dropdown, Focusable, ModalRoot, showModal, GamepadButton, findM
 import type { ControllerInputSource } from "../../controller-safe-disconnect";
 import { loadMenuBinding, saveMenuBinding, menuBindingOptions, startMenuShortcut } from "../../menu-shortcut";
 import type { MenuBinding } from "../../menu-shortcut";
-import { WholeDockControl, type DockSettlement } from "../../whole-dock-control";
+import { recoverTerminalDockReceipt, WholeDockControl, type DockSettlement } from "../../whole-dock-control";
 import { parsePendingRecord, type DockIntent } from "../../whole-dock-control-model";
 import { EgpuConfirmModal } from "../../egpu-confirm-modal";
 import { ExpandedCommandCenter } from "./shell";
@@ -62,9 +62,9 @@ export function NativeMenuButton(props:ComponentProps<typeof Button>&{"aria-disa
  * the publisher supplies every tab, Unknown included, precisely so that
  * fallback is unreachable once wired.
  *
- * This adapter starts no timer and calls no backend function. It subscribes to
- * a view someone else owns; adding a read here would be a second source of
- * truth for state a player acts on.
+ * This adapter owns no status poll. It subscribes to a view someone else owns;
+ * the sole backend read below is a bounded recovery of a terminal disconnect
+ * whose originating Steam UI process disappeared.
  */
 /** Stable per-source callbacks. useSyncExternalStore resubscribes whenever the
  * subscribe function's identity changes, so these are cached rather than built
@@ -317,5 +317,15 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
   // visible. One deferred reconstruction makes the pending receipt visible
   // without polling or resubmitting the operation.
   if(pendingDockIntent())schedulePendingStatusRebuild(1_500);
+  // A full Steam/Gamescope replacement can lose the WebKit receipt even while
+  // the backend retains the exact terminal result. Recover presentation only:
+  // the helper performs one read and can write a receipt, but never dispatches
+  // a disconnect or completion action.
+  void recoverTerminalDockReceipt(storage).then(settlement=>{
+    if(stopped||!settlement)return;
+    const record=pendingDockRecord();
+    if(record?.intent!==settlement.intent||record.request!==settlement.request)return;
+    resumePendingOperation();
+  });
   return { open, disconnect, Settings, visibility: visibility.source, available: shortcut.available, stop() { stopped = true; if(pendingStatusTimer!==null)clearPendingTimeout(pendingStatusTimer as never);pendingStatusTimer=null;shortcut.stop(); close(); } };
 }
