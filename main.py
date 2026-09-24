@@ -1923,10 +1923,13 @@ class Plugin:
                 if claim is None:
                     raise DockMutationDenied('dock_mutation.inhibited')
                 if claim is not None:
-                    if claim.stage not in ('claimed', 'release_intent', 'reauthorize_intent'):
+                    if claim.stage not in (
+                            'claimed', 'release_intent', 'tunnel_remove_intent',
+                            'reauthorize_intent'):
                         raise DockMutationDenied('dock_mutation.inhibited')
                     capture = getattr(self, '_release_capture_task', None)
-                    if capture is not None and not capture.done():
+                    if ((capture is not None and not capture.done())
+                            or getattr(self, '_whole_dock_trial_worker_alive', False) is True):
                         raise DockMutationDenied('dock_mutation.inhibited')
                     transport = resolve_transport(claim.binding)
                     if not inner_removal_records_absent():
@@ -5218,7 +5221,7 @@ class Plugin:
 
     def _support_versions(self) -> dict[str, str]:
         return {
-            "regear": "0.3.136",
+            "regear": "0.3.137",
             "decky": str(getattr(decky, "DECKY_VERSION", "unknown")),
             "steamos": self._version_info.steamos,
             "kernel": self._version_info.kernel,

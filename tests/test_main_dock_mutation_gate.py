@@ -882,7 +882,8 @@ class AutomaticConnectionIsolationTests(unittest.TestCase):
 
     def fixture(self, *, stage='release_intent', inner=True, settled=True,
                 idle=True, consent=True, owner='none', changed_user=False,
-                changed_transport=False, changed_claim=False, partial=False):
+                changed_transport=False, changed_claim=False, partial=False,
+                worker=False):
         from contextlib import ExitStack
         plugin = self.plugin
         user = NS(uid=1000, username='deck')
@@ -890,6 +891,7 @@ class AutomaticConnectionIsolationTests(unittest.TestCase):
         transport = NS(binding='dock', generation='now')
         plugin._discovery = object()
         plugin._unloading = False
+        plugin._whole_dock_trial_worker_alive = worker
         plugin._automatic_dock_preferences = lambda: NS(load=lambda:consent)
         plugin._automatic_recovery_preferences = lambda: NS(load=lambda:consent)
         plugin._transition_journal_service = lambda: NS(status=lambda:NS(
@@ -940,10 +942,16 @@ class AutomaticConnectionIsolationTests(unittest.TestCase):
     def test_failed_reauthorize_history_allows_missing_gpu_recovery_without_retirement(self):
         self.assertEqual(self.fixture(stage='reauthorize_intent'), (True, 1))
 
+    def test_restored_tunnel_intent_allows_connection_only_recovery_without_retirement(self):
+        self.assertEqual(self.fixture(stage='tunnel_remove_intent'), (True, 1))
+        self.assertEqual(
+            self.fixture(stage='tunnel_remove_intent', worker=True), (False, 0))
+
     def test_failed_reauthorize_history_does_not_bypass_active_or_changed_state(self):
         for options in ({'inner':False}, {'settled':False}, {'idle':False},
                         {'consent':False}, {'owner':'transition'}, {'partial':True},
-                        {'changed_user':True}, {'changed_transport':True}, {'changed_claim':True}):
+                        {'changed_user':True}, {'changed_transport':True}, {'changed_claim':True},
+                        {'worker':True}):
             with self.subTest(options=options):
                 self.assertEqual(self.fixture(stage='reauthorize_intent', **options), (False, 0))
 
