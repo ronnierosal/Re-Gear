@@ -226,7 +226,7 @@ test("an unavailable remembered grant keeps the same-token Allow once fallback a
   ]);
 });
 
-test("malformed replies fail closed and enroll cannot claim remembered trust without enrollment proof", async () => {
+test("malformed replies fail closed and action-specific enroll verification resumes connection", async () => {
   const malformed = dialogHarness();
   malformed.rpc.acknowledge = async token => ({...offer(), state:"unavailable", code:"device_authorization.runtime_unavailable", accepted:true, token, already_offered:true, confirmation_open:true});
   let tree = malformed.render(); malformed.effects[0]();
@@ -247,10 +247,12 @@ test("malformed replies fail closed and enroll cannot claim remembered trust wit
   tree = trusted.render(); trusted.effects[0](); await Promise.resolve(); tree = trusted.render();
   tree.props.children.props.onSecondaryButton({preventDefault(){},stopPropagation(){}});
   await Promise.resolve(); await Promise.resolve(); tree = trusted.render();
-  assert.equal(tree.props.children.props.children.props.view.phase, "checking");
-  assert.doesNotMatch(tree.props.children.props.children.props.view.headline, /remember/i);
+  assert.equal(tree.props.children.props.children.props.view.phase, "approved");
+  assert.match(tree.props.children.props.children.props.view.headline, /remember/i);
   assert.equal(tree.props.children.props.onOKActionDescription, undefined);
   assert.equal(tree.props.children.props.onSecondaryActionDescription, undefined);
+  tree.props.children.props.onCancelButton({preventDefault(){},stopPropagation(){}});
+  assert.deepEqual(trusted.closed, [true]);
 });
 
 test("rejected or unverified confirmations never resume connection progress", async () => {

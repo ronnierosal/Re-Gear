@@ -62,7 +62,7 @@ function acceptedAcknowledgement(value: unknown, status: UsbAuthorizationPayload
     && sameAttachment(payload, status);
 }
 
-function confirmationResult(value: unknown, status: UsbAuthorizationPayload, action: UsbAuthorizationAction): UsbAuthorizationPayload | null {
+function confirmationResult(value: unknown, status: UsbAuthorizationPayload): UsbAuthorizationPayload | null {
   const payload = record(value);
   if (payload?.schema_version !== 1
     || !sameAttachment(payload, status)
@@ -73,10 +73,8 @@ function confirmationResult(value: unknown, status: UsbAuthorizationPayload, act
   if (payload.requested === true) {
     if (payload.code !== "device_authorization.requested" || payload.confirmation_open !== false) return null;
   } else if (payload.verified !== null) return null;
-  // The current backend's generic `verified` bit proves authorization only.
-  // Remembered trust needs separate enrollment proof before the UI may claim it.
-  if (action === "enroll" && payload.verified === true && payload.enrolled !== true)
-    return {...payload, verified: null} as UsbAuthorizationPayload;
+  // Backend verification is action-specific: `enroll` is true only after both
+  // authorization and enrollment are read back from the same attachment.
   return payload as UsbAuthorizationPayload;
 }
 
@@ -138,7 +136,7 @@ export function UsbAuthorizationDialog({status, rpc, onClose}: {
     const request = usbAuthorizationRequest(token, action);
     void rpc.confirm(request.token, request.consent, request.action).then(answer => {
       if (!alive.current) return;
-      const checked = confirmationResult(answer, status, action);
+      const checked = confirmationResult(answer, status);
       if (!checked) { close(); return; }
       setResult(checked);
     }, () => close(false)).finally(() => { acting.current = false; });
