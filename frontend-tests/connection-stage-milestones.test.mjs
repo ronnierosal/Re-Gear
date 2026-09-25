@@ -210,6 +210,32 @@ test("stale progress keeps the observed count for assistive technology", () => {
   assert.equal(milestones(status("waiting_for_link"), NOW).observedDone, 2);
   assert.equal(milestones(status("ready_idle", {phase:"complete"}), NOW).observedDone, 5);
   assert.equal(milestones(status("some_future_stage"), NOW).observedDone, 0);
+  assert.equal(m.progressText, "Status stale. Last observed at step 5 of 5: Prepare and switch display");
+  const tv = milestones(status("waiting_for_hdmi"), NOW + 20_000);
+  assert.equal(tv.observedDone, 3);
+  assert.equal(tv.progressText, "Status stale. Last observed at step 4 of 5: Find TV");
+  assert.doesNotMatch(tv.progressText, /confirmed|current/i);
+  assert.equal(milestones(status("some_future_stage"), NOW + 20_000).progressText, "Status stale. No milestone observed");
+  assert.equal(milestones(status("waiting_for_link"), NOW).progressText, milestones(status("waiting_for_link"), NOW).currentDetail);
   const overlay = read("connection-progress-overlay.tsx");
-  assert.match(overlay, /aria-valuenow=\{m\.observedDone\} aria-valuetext=\{m\.currentDetail\}/);
+  assert.match(overlay, /aria-valuenow=\{m\.observedDone\} aria-valuetext=\{m\.progressText\}/);
+});
+
+test("attention stops active progress animation in the rendered overlay", () => {
+  const css = read("connection-panel-style.ts");
+  // Only the active state animates a segment or dot; attention has no animation rule.
+  assert.match(css, /\.rg-milestone-segment\[data-state=active\]\{[^}]*animation:/);
+  assert.match(css, /\.rg-milestone\[data-state=active\] \.rg-milestone-dot\{[^}]*animation:/);
+  assert.doesNotMatch(css, /data-state=attention\][^{]*\{[^}]*animation/);
+  const overlay = read("connection-progress-overlay.tsx");
+  assert.match(overlay, /data-active=\{!m\.stale && !m\.attention && !gpuReady/);
+  assert.match(overlay, /data-active=\{!m\.stale && !m\.attention && !done && tvFound\}/);
+  for (const m of [
+    milestones(status("waiting_for_session", {title:"Close the game to continue", rows:[{label:"No game running", state:"blocked"}]}), NOW),
+    milestones(status("waiting_for_link", {title:"Previous result needs acknowledgement", rows:[{label:"Previous result cleared", state:"blocked"}]}), NOW),
+  ]) {
+    assert.equal(m.attention, true);
+    assert.ok(!m.steps.some(step => step.state === "active"), "no milestone is in the animated active state");
+    assert.ok(m.steps.some(step => step.state === "attention"));
+  }
 });

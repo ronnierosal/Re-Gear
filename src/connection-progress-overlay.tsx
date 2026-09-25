@@ -17,7 +17,7 @@ export type ConnectionProgressOverlayProps = {
 };
 const rowState=(state:ConnectionProgressState):PopupState => state === "ready" ? "ready" : state === "blocked" ? "attention" : state === "error" ? "failed" : state === "switching" || state === "checking" ? "connecting" : "waiting";
 const coreLabels=["GPU and driver","Connection link","TV HDMI detected","Audio recovery ready","Display switching ready"];
-const unknownMilestones:MilestoneModel={activeStep:-1,observedDone:0,steps:["Detect eGPU","Load GPU driver","Verify connection","Find TV","Prepare and switch display"].map(label=>({label,state:"pending"})),headline:"Waiting for connection",currentDetail:"Waiting for a status update",complete:false,stale:false,attention:false};
+const unknownMilestones:MilestoneModel={activeStep:-1,observedDone:0,progressText:"Waiting for a status update",steps:["Detect eGPU","Load GPU driver","Verify connection","Find TV","Prepare and switch display"].map(label=>({label,state:"pending"})),headline:"Waiting for connection",currentDetail:"Waiting for a status update",complete:false,stale:false,attention:false};
 const milestoneCopy:Record<string,string>={done:"Done",active:"In progress",pending:"Waiting",attention:"Needs attention",stale:"Last observed"};
 export function ConnectionProgressOverlay(props:ConnectionProgressOverlayProps) {
   const details=useRef<HTMLDetailsElement>(null);
@@ -43,7 +43,7 @@ export function ConnectionProgressOverlay(props:ConnectionProgressOverlayProps) 
     <div className="rg-popup-recovery">{props.recoveryAction}</div>
   </>}>
     <div className="rg-milestones" data-stale={m.stale} data-complete={m.complete}>
-      <div className="rg-milestone-bar" role="progressbar" aria-label="Connection milestones" aria-valuemin={0} aria-valuemax={m.steps.length} aria-valuenow={m.observedDone} aria-valuetext={m.currentDetail}>
+      <div className="rg-milestone-bar" role="progressbar" aria-label="Connection milestones" aria-valuemin={0} aria-valuemax={m.steps.length} aria-valuenow={m.observedDone} aria-valuetext={m.progressText}>
         {m.steps.map(step=><span key={step.label} className="rg-milestone-segment" data-state={step.state}/>)}
       </div>
       <div className="rg-milestone-current" title={m.currentDetail}>{m.currentDetail}</div>

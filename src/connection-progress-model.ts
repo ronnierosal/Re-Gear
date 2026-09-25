@@ -9,6 +9,8 @@ export type MilestoneModel = {
   activeStep: number;
   /** Milestones observed complete, kept when stale so assistive text matches "Last observed". */
   observedDone: number;
+  /** Accessible progress text; stale history is never described as current. */
+  progressText: string;
   steps: Milestone[];
   headline: string;
   currentDetail: string;
@@ -88,7 +90,11 @@ export function connectionMilestones(status: LiveStatus & {displayPending?: bool
     && Number.isFinite(status.seconds) && status.seconds >= SLOW_NOTICE_SECONDS
     ? "Slower than usual · Keep the eGPU connected" : undefined;
   const observedDone = activeStep < 0 ? 0 : Math.min(activeStep, MILESTONE_LABELS.length);
-  return {activeStep, observedDone, steps, headline, currentDetail, complete, stale: !fresh, attention, slowNotice};
+  const progressText = !fresh
+    ? known ? `Status stale. Last observed at step ${activeStep + 1} of ${MILESTONE_LABELS.length}: ${MILESTONE_LABELS[activeStep]}`
+      : "Status stale. No milestone observed"
+    : currentDetail;
+  return {activeStep, observedDone, progressText, steps, headline, currentDetail, complete, stale: !fresh, attention, slowNotice};
 }
 
 /** Presentation adapter for the existing monitor: no snapshot inference or I/O. */
