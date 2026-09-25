@@ -965,10 +965,9 @@ class BoltDeviceAuthorizationRunner:
     def argv(cls, uuid: str) -> tuple[str, ...]:
         """The remembered grant. Unchanged, and deliberately still here.
 
-        Not reachable from production wiring -- the delivery facade refuses the
-        `enroll` action unless a caller opts in explicitly -- but kept because
-        it is the grant Desktop Mode performs, and deleting it would mean
-        rebuilding it from memory the day the remembered choice is approved.
+        Reachable only when the production facade explicitly offers remembered
+        trust and the player selects it. This is the grant Desktop Mode performs;
+        the service verifies both authorization and enrollment afterward.
         """
         if type(uuid) is not str or cls.UUID.fullmatch(uuid) is None:
             raise ValueError("device authorization uuid is invalid")
