@@ -74,7 +74,7 @@ class ProductionAdmissionTests(unittest.TestCase):
         for enabled in (True, False, 0, None, "false"):
             self.assertFalse(rpc_allowed("production", "set_tdp_enabled", {"enabled": enabled}))
         self.assertTrue(rpc_allowed("production", "get_tdp_status", {}))
-        self.assertTrue(rpc_allowed("production", "take_pending_sleep", {}))
+        self.assertFalse(rpc_allowed("production", "take_pending_sleep", {}))
 
     def test_positional_and_keyword_admission_agree(self):
         plugin = profiled_plugin(ExamplePlugin, "production")()

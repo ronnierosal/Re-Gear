@@ -51,6 +51,12 @@ live connection status and the plain disconnect action; other tabs, utilities,
 customization and combined sleep/shutdown actions are hidden. The backend also
 rejects unapproved public mutation calls before dispatch. Internal connection,
 sleep protection, pending-operation completion and recovery remain active.
+Production connection details and the connection popup are observational. Manual
+TV/recovery/setup controls, preference changes and development game-relaunch
+requests are not admitted. Existing automatic connection and recovery continue
+under their saved consent and lifecycle rules. An unavailable Safe Disconnect
+card stays visible without dispatching; pending disconnect status recovery is
+independent of starting a new action.
 
 Build and package the same selected profile (PowerShell example):
 

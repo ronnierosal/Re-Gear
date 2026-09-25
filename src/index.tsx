@@ -1605,7 +1605,7 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
    * device that needs a person to look at it.
    */
   useEffect(() => {
-    if (!quickAccessVisible) return;
+    if (buildProfile !== "development" || !quickAccessVisible) return;
     void claimRelaunchOnMount(liveGameClosePorts());
   }, [quickAccessVisible]);
 
@@ -1796,8 +1796,9 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
 
 
   const wrapDetail=(node:ReactNode)=><div ref={statusAnchor} tabIndex={-1}><style>{regearControlCss}</style>{node}</div>;
+  const productionEgpuDetail=<PanelSection title="eGPU status"><EgpuModule presentation={{...egpuPresentation(menuFresh ? payload : null),recovery:{reachable:true,note:null}}}/></PanelSection>;
   const egpuDetail=<>
-      <PanelSection title="eGPU"><EgpuModule presentation={egpuPresentation(payload)} onOpenRecovery={buildProfile === "development" ? toggleTroubleshooting : undefined} /></PanelSection>
+      <PanelSection title="eGPU"><EgpuModule presentation={egpuPresentation(payload)} onOpenRecovery={toggleTroubleshooting} /></PanelSection>
       {payload?.connection_readiness && payload.connection_readiness.stage !== "disconnected" &&
         <PanelSection title="eGPU readiness">
           <ConnectionQuickStatus store={connection.store} visible={quickAccessVisible}
@@ -1827,7 +1828,7 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
           {automaticDockMessage && (
             <PanelSectionRow>{automaticDockMessage}</PanelSectionRow>
           )}
-          {(buildProfile === "development" || primaryDisplayAction.target === "tv") && <DashboardSurface primary>
+          <DashboardSurface primary>
             <DashboardAction
               icon="bolt"
               tone="primary"
@@ -1836,7 +1837,7 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
               onClick={activateDisplay}
               disabled={primaryDisplayAction.disabled}
             />
-          </DashboardSurface>}
+          </DashboardSurface>
           {tvSwitchMessage && <PanelSectionRow>{tvSwitchMessage}</PanelSectionRow>}
 
           <DashboardSurface><DashboardAction icon="power" title="Safe Disconnect" description="Open the guarded disconnect workflow" onClick={openDisconnect}/></DashboardSurface>
@@ -1867,7 +1868,7 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
               </ButtonItem>
             </PanelSectionRow>
           )}
-          {buildProfile === "development" && <DashboardSurface>
+          <DashboardSurface>
             <DashboardAction
               title="Troubleshoot"
               icon="tools"
@@ -1875,7 +1876,7 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
               expanded={showDiagnostics}
               onClick={toggleTroubleshooting}
             />
-          </DashboardSurface>}
+          </DashboardSurface>
         </div>
         {needsAttention && (
           <PanelSectionRow>
@@ -2176,7 +2177,7 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
   const displayDetail=<DisplayPicker current={tiles.find(tile=>tile.id==="display")?.value.text??"Unknown"} action={primaryDisplayAction} onSwitch={activateDisplay} onConfigure={()=>runtimeDetails.source.navigate("egpu-config")}/>;
   useEffect(()=>{
     runtimeDetails.publish({
-      views:buildProfile === "production" ? {egpu:wrapDetail(egpuDetail),"egpu-config":null,diagnostics:null,display:null} : {egpu:wrapDetail(<><PanelSection title="eGPU status"><EgpuModule presentation={egpuPresentation(payload)}/></PanelSection><ButtonItem layout="below" onClick={()=>runtimeDetails.source.navigate("egpu-config")}>Configure docking</ButtonItem></>),"egpu-config":wrapDetail(egpuDetail),diagnostics:wrapDetail(diagnosticDetail),display:wrapDetail(displayDetail)},
+      views:buildProfile === "production" ? {egpu:wrapDetail(productionEgpuDetail),"egpu-config":null,diagnostics:null,display:null} : {egpu:wrapDetail(<><PanelSection title="eGPU status"><EgpuModule presentation={egpuPresentation(payload)}/></PanelSection><ButtonItem layout="below" onClick={()=>runtimeDetails.source.navigate("egpu-config")}>Configure docking</ButtonItem></>),"egpu-config":wrapDetail(egpuDetail),diagnostics:wrapDetail(diagnosticDetail),display:wrapDetail(displayDetail)},
       shutdown:{available:buildProfile === "development"&&menuFresh&&payload?.inference.mode==="portable"&&!safeDisconnectBusy&&!tvSwitchBusy,
         reason:!menuFresh?"Current status unavailable":payload?.inference.mode!=="portable"?"Return to Handheld first":safeDisconnectBusy||tvSwitchBusy?"Operation in progress":"Portable shutdown",
         pending:safeDisconnectBusy,message:safeDisconnectMessage,
@@ -2309,7 +2310,7 @@ export default definePlugin(() => {
         throw error;
       }
     },
-    show: (store, switchTv, closed) => showConnectionLivePanel(store, switchTv, closed),
+    show: (store, switchTv, closed) => showConnectionLivePanel(store, switchTv, closed, buildProfile),
     presentation: createConnectionPresentationReceipt(window.localStorage),
   });
 

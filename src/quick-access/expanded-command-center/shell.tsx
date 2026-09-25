@@ -75,6 +75,13 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
   const visibleTabs: readonly Tab[] = production ? ["egpu"] : tabs;
   if (production) {
     tiles = productionEgpuTiles(tiles);
+    const disconnectTile = tiles.egpu?.find(tile => tile.id === "disconnect");
+    if (disconnectTile?.tone === "unavailable" || /unavailable/i.test(disconnectTile?.value ?? "")) {
+      unavailableActions = {
+        ...unavailableActions,
+        disconnect: unavailableActions.disconnect || disconnectTile?.detail || "Current readiness unavailable",
+      };
+    }
     layoutStorage = undefined;
     editButtons = undefined;
     catalogReadings = undefined;

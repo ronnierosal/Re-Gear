@@ -47,6 +47,22 @@ class ProductionPluginTests(unittest.IsolatedAsyncioTestCase):
         result = await self.plugin.execute_egpu_disconnect(trial_action="whole_dock_disconnect")
         self.assertEqual("dock_teardown.trial_confirmation_required", result["code"])
 
+    async def test_manual_connection_preferences_and_game_relaunch_refuse_before_body(self):
+        for method, args in (
+            ("set_automatic_dock_enabled", (True, True, True)),
+            ("execute_link_recovery", (True, "")),
+            ("approve_supervised_tv_switch", ()),
+            ("execute_supervised_tv_switch", ("unused-token",)),
+            ("acknowledge_supervised_tv_switch", ("unused-receipt",)),
+            ("remember_game_close_choice", ("123", "disconnect", True, True)),
+            ("forget_game_close_choice", ("123", "disconnect")),
+            ("take_pending_relaunch", ()), ("take_pending_sleep", ()),
+        ):
+            with self.subTest(method=method):
+                result = await getattr(self.plugin, method)(*args)
+                self.assertEqual("build_profile.feature_unavailable", result["code"])
+        self.assertEqual({}, self.plugin.__dict__)
+
     async def test_exact_completion_calls_only_retained_completion_path(self):
         request = "a" * 32
         completion = {"code": "dock_teardown.software_down", "request_id": request,

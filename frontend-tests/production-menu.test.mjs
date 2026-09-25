@@ -151,3 +151,20 @@ test("production retains status-only settlement recovery for existing records",(
  assert.equal(dock.props.intent,"shutdown");assert.equal(dock.props.statusOnly,true);
  assert.equal(dock.props.startRequest,undefined);h.menu.stop();
 });
+
+test("production unavailable disconnect cannot dispatch or open details, while ready still dispatches",async()=>{
+ for(const tiles of [undefined,{egpu:[{id:"disconnect",title:"Safe Disconnect",value:"Unavailable",detail:"Waiting for current status"}]},{egpu:[{id:"disconnect",title:"Safe Disconnect",value:"Unknown",detail:"Stale status",tone:"unavailable"}]}]){
+  const app=await fixture();let calls=0;
+  const props={policy:"production",tiles,onDisconnect(){calls++;}};
+  let tree=app.render(props);
+  const button=nodes(tree).find(n=>n.props?.["data-ec-control"]==="disconnect");
+  assert.equal(button.props["aria-disabled"],true);
+  button.props.onClick();tree=app.render(props);
+  assert.equal(calls,0);
+  assert.equal(nodes(tree).some(n=>n.props?.className==="rg-expanded-detail-page"),false);
+ }
+ const app=await fixture();let calls=0;
+ const tree=app.render({policy:"production",tiles:{egpu:[{id:"disconnect",title:"Safe Disconnect",value:"Ready",detail:"Guarded flow"}]},onDisconnect(){calls++;}});
+ const button=nodes(tree).find(n=>n.props?.["data-ec-control"]==="disconnect");
+ assert.equal(button.props["aria-disabled"],false);button.props.onClick();assert.equal(calls,1);
+});
