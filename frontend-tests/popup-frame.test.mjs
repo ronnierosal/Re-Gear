@@ -65,8 +65,8 @@ test('flow never treats TV detection or a single GPU check as completed switchin
  const lines=flatten(tree).filter(n=>n.props?.className==='rg-flow-line');assert.deepEqual(lines.map(n=>n.props['data-ready']),[false,false]);assert.ok(JSON.stringify(tree).includes('Detected; not active'));
  const done=renderProgress({rows,phase:'ready',deviceLabel:'eGPU',onHide(){}});assert.equal(flatten(done).filter(n=>n.props?.className==='rg-flow-line')[1].props['data-ready'],true);
 });
-test('absent core observations remain unavailable and original long reasons stay in details',()=>{
+test('absent observations stay pending milestones and original long reasons stay in details',()=>{
  const detail='A long backend reason '.repeat(20);const tree=renderProgress({rows:[],phase:'connecting',deviceLabel:'eGPU',detail,onHide(){}});
- assert.equal(flatten(tree).filter(n=>n.props?.className==='rg-core-row').length,5);
- assert.ok(JSON.stringify(tree).includes('Unavailable'));assert.ok(flatten(tree).some(n=>n.type==='p'&&n.props.children[0]===detail));
+ const milestones=flatten(tree).filter(n=>n.props?.className==='rg-milestone');assert.equal(milestones.length,5);
+ assert.ok(milestones.every(n=>n.props['data-state']==='pending'),'absent observations never advance a milestone');assert.ok(flatten(tree).some(n=>n.type==='p'&&n.props.children[0]===detail));
 });
