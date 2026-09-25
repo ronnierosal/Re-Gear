@@ -37,6 +37,20 @@ class ProductionAdmissionTests(unittest.TestCase):
         asyncio.run(plugin.start_auto_tdp())
         self.assertEqual(["tdp"], plugin.calls)
 
+    def test_development_retains_sleep_and_shutdown_lifecycle_actions(self):
+        plugin = profiled_plugin(ExamplePlugin, "development")()
+        for action in ("whole_dock_sleep", "whole_dock_shutdown"):
+            result = asyncio.run(plugin.execute_egpu_disconnect(
+                release_display=True,
+                relaunch_intent="disconnect",
+                trial_action=action,
+            ))
+            self.assertEqual("existing_lifecycle_guard", result["code"])
+        self.assertEqual([
+            ("disconnect", "whole_dock_sleep"),
+            ("disconnect", "whole_dock_shutdown"),
+        ], plugin.calls)
+
     def test_plain_disconnect_and_completion_reach_existing_guard(self):
         plugin = profiled_plugin(ExamplePlugin, "production")()
         for action in ("whole_dock_disconnect", "whole_dock_disconnect_complete"):
