@@ -106,3 +106,22 @@ test("fixtures use the production 32-lowercase-hex token shape", () => {
   assert.match(TOKEN, /^[0-9a-f]{32}$/);
   assert.match(OTHER, /^[0-9a-f]{32}$/);
 });
+
+test("Always trust copy follows the action-specific readback without inferring why it failed", () => {
+  const status = offered({remembered_grant_offered:true});
+  const checking = view({status, pending:"enroll", result: offered({requested:true, verified:null})});
+  assert.equal(checking.phase, "checking");
+  assert.equal(checking.body, "Checking that Re-Gear will remember this device.");
+  const failed = view({status, pending:"enroll", result: offered({requested:true, verified:false})});
+  assert.equal(failed.phase, "not_approved");
+  assert.equal(failed.headline, "Always trust didn't take effect");
+  assert.doesNotMatch(failed.body, /not authorized/, "an enroll failure never claims the device is simply unauthorized");
+  const trusted = view({status, pending:"enroll", result: offered({requested:true, verified:true})});
+  assert.equal(trusted.headline, "Trusted — Re-Gear will remember this device");
+  // Allow once keeps its authorization-only copy.
+  const once = view({status, pending:"authorize", result: offered({requested:true, verified:false})});
+  assert.equal(once.headline, "Approval didn't take effect");
+  assert.match(once.body, /not authorized/);
+  assert.equal(view({status, pending:"authorize", result: offered({requested:true, verified:null})}).body,
+    "Waiting for the device to report that it is authorized.");
+});
