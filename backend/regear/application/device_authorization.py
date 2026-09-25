@@ -370,6 +370,9 @@ class DeviceAuthorizationService:
         #: has to prove it is about that device rather than about whatever the
         #: bus happens to hold by then.
         self._consumed_uuid = ""
+        #: The action the spent token was used for. A readback is judged by
+        #: what that action promised, so it cannot be scored against a weaker one.
+        self._consumed_action = ""
         #: Every device the owning layer has disowned and not taken back. A set
         #: keyed by UUID rather than a flag keyed by attachment: the report is
         #: normally filed for a device that is *not* attached, because
@@ -923,6 +926,7 @@ class DeviceAuthorizationService:
         self._consumed_token = token
         self._consumed_uuid = uuid
         self._consumed_generation = self._generation
+        self._consumed_action = action
         result = self._run(action, uuid)
         return DeviceAuthorizationOutcome(
             result.enrolled is True, result.code, token
@@ -935,6 +939,7 @@ class DeviceAuthorizationService:
         authorized: bool | None,
         uuid: str,
         generation: int,
+        enrolled: bool | None = None,
     ) -> bool | None:
         """Carry back what a post-action re-read of the device actually found.
 
@@ -949,6 +954,15 @@ class DeviceAuthorizationService:
         looking at -- is exactly the case this exists to answer `None` to,
         because crediting one of those to the confirmed device is how
         `verified=True` came to be drawn from a dock nobody had identified.
+
+        What counts as success depends on the action the token was spent on,
+        which this service recorded itself; the caller cannot name a weaker one.
+        ``authorize`` is verified by the same-device ``authorized`` reading.
+        ``enroll`` promised the player the device would be *remembered*, so it
+        is verified only when that reading is ``authorized is True`` **and**
+        ``enrolled is True``; ``False`` when either is definitively false;
+        ``None`` when a required fact could not be read. An unknown action
+        answers ``None``.
         """
         with self._lock:
             if not self._is_spent_token(token):
@@ -960,8 +974,23 @@ class DeviceAuthorizationService:
                 or generation != self._consumed_generation
             ):
                 return None
-            if authorized is True or authorized is False:
-                return authorized
+            # Judged by what the spent action promised, never by the caller.
+            action = self._consumed_action
+            if action == "authorize":
+                if authorized is True or authorized is False:
+                    return authorized
+                return None
+            if action == "enroll":
+                # Remembered trust is proven only by BOTH facts about this
+                # attachment: trusted now, and stored so a later plug is
+                # trusted too. Either one definitively false is a failure;
+                # anything unread is unknown, never success.
+                if authorized is False or enrolled is False:
+                    return False
+                if authorized is True and enrolled is True:
+                    return True
+                return None
+            # An action this service does not know proves nothing.
             return None
 
     # -- internals -----------------------------------------------------------

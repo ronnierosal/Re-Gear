@@ -442,6 +442,9 @@ class DeviceAuthorizationFacade:
                     # The service compares it against the generation the spent
                     # token was bound to, and that mismatch is the refusal.
                     generation=int(self._service.generation),
+                    # Remembered trust must also prove `enrolled`; the service
+                    # judges it against the action the token was spent on.
+                    enrolled=readback.enrolled,
                 )
             )
         return payload

@@ -2326,3 +2326,58 @@ class TheConfirmPayloadNamesTheDeviceThatWasActedOn(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RememberedTrustReadbackProvesBothFacts(unittest.TestCase):
+    """`enroll` promised the device would be remembered; the payload may say
+    `verified: true` only when the same attachment reads back both trusted
+    and stored."""
+
+    def confirm_enroll_with_readback(self, **readback):
+        observer, port, _, facade = build(remembered_grant_enabled=True)
+        token = offer(facade)
+        facade.acknowledge(token)
+        original = observer.scan
+        readbacks = iter([original])
+
+        def observe():
+            observer.calls += 1
+            return next(readbacks, replace(original, **readback))
+
+        observer.observe = observe
+        payload = facade.confirm(token, consent=True, action="enroll")
+        self.assertTrue(payload["requested"])
+        self.assertEqual(port.calls, [("enroll", original.uuid)])
+        return payload
+
+    def test_authorized_and_enrolled_is_verified(self):
+        payload = self.confirm_enroll_with_readback(authorized=True, enrolled=True)
+        self.assertIs(payload["verified"], True)
+
+    def test_authorized_but_not_enrolled_is_not_verified(self):
+        """The reproduced defect: this used to report `verified: true`."""
+        payload = self.confirm_enroll_with_readback(authorized=True, enrolled=False)
+        self.assertIs(payload["verified"], False)
+
+    def test_authorized_with_unreadable_enrollment_is_unknown(self):
+        payload = self.confirm_enroll_with_readback(authorized=True, enrolled=None)
+        self.assertIsNone(payload["verified"])
+
+    def test_not_authorized_is_not_verified(self):
+        payload = self.confirm_enroll_with_readback(authorized=False, enrolled=True)
+        self.assertIs(payload["verified"], False)
+
+    def test_authorize_once_is_unaffected_by_enrollment(self):
+        observer, _, _, facade = build()
+        token = offer(facade)
+        facade.acknowledge(token)
+        original = observer.scan
+        readbacks = iter([original])
+
+        def observe():
+            observer.calls += 1
+            return next(readbacks, replace(original, authorized=True, enrolled=False))
+
+        observer.observe = observe
+        payload = facade.confirm(token, consent=True, action="authorize")
+        self.assertIs(payload["verified"], True)
