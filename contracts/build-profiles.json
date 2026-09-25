@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "profiles": {
+    "development": {
+      "feature_policy": "existing_development_surface",
+      "enabled_features": ["*"]
+    },
+    "production": {
+      "feature_policy": "stable_allowlist",
+      "enabled_features": ["egpu_connection", "safe_disconnect"]
+    }
+  }
+}

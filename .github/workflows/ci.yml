@@ -3,22 +3,53 @@ name: CI
 on:
   push:
   pull_request:
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: "Build profile"
+        type: choice
+        options:
+          - development
+          - production
+        default: development
+        required: true
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}-${{ inputs.profile || 'both' }}
   cancel-in-progress: true
 
 permissions:
   contents: read
 
 jobs:
+  # Preserve the repository's required check name while validating both profiles.
   foundation:
+    needs: build_profiles
+    if: ${{ always() }}
     runs-on: ubuntu-latest
+    steps:
+      - name: Require every requested profile to pass
+        env:
+          PROFILE_RESULT: ${{ needs.build_profiles.result }}
+        run: test "$PROFILE_RESULT" = success
+
+  build_profiles:
+    strategy:
+      fail-fast: false
+      matrix:
+        profile: ${{ github.event_name == 'workflow_dispatch' && fromJSON(format('["{0}"]', inputs.profile)) || fromJSON('["development","production"]') }}
+    runs-on: ubuntu-latest
+    env:
+      REGEAR_BUILD_PROFILE: ${{ matrix.profile }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+      - name: Validate requested build profile
+        env:
+          BUILD_PROFILE: ${{ matrix.profile }}
+        run: python scripts/build_profiles.py --profile "$BUILD_PROFILE"
       - uses: pnpm/action-setup@v4
         with:
           version: 11.19.0
@@ -113,7 +144,9 @@ jobs:
       - name: Check Decky package contract
         run: python scripts/check_plugin_package.py .
       - name: Build Decky archive
-        run: python scripts/build_plugin.py
+        env:
+          BUILD_PROFILE: ${{ matrix.profile }}
+        run: python scripts/build_plugin.py --profile "$BUILD_PROFILE"
       - name: Record validation artifact provenance
         run: |
           git rev-parse HEAD > out/source-revision.txt
@@ -128,7 +161,7 @@ jobs:
       - name: Upload controlled validation artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Re-Gear-${{ github.sha }}
+          name: Re-Gear-${{ matrix.profile }}-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             out/Re-Gear-*.zip
             out/source-revision.txt

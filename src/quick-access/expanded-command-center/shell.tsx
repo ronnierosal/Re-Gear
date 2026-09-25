@@ -1,3 +1,5 @@
+import { productionEgpuTiles } from "../../build-profile";
+import type { BuildProfile } from "../../build-profile";
 import {projectRegistryWidgets,replaceControlSlot,controlRegistry,controlForKey,domainLabels} from './control-registry';
 import type {ControlDomain} from './control-registry';
 import {groupedButtonCatalog,pickerRows,movePickerFocus} from "./button-catalog";
@@ -43,7 +45,8 @@ const iconIds: Record<string, CommandCenterIconId> = {
 function Icon({ id }: { id: string }) { if(controlForKey(`utility:${id}`))return <UtilityIcon id={id as UtilityId}/>;return <CommandCenterIcon id={iconIds[id] ?? "status-unknown"} size={34}/>; }
 
 /** Shared synthetic presentation for browser preview and native Decky shell. */
-export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReasons = false, settings, native = false, primitives, previewColumns, tiles, catalogReadings, renderDetail, disconnectControl, utilityReadings, onUtilityRequest, directions, onDisconnect, unavailableActions = {}, layoutStorage, editButtons, onFeedback, onAction }: {
+export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReasons = false, settings, native = false, primitives, previewColumns, tiles, catalogReadings, renderDetail, disconnectControl, utilityReadings, onUtilityRequest, directions, onDisconnect, unavailableActions = {}, layoutStorage, editButtons, onFeedback, onAction, policy = "development" }: {
+  policy?: BuildProfile;
   onClose(): void; initialTab?: Tab; longReasons?: boolean; settings?: ReactNode; native?: boolean;
   primitives?: { Button: ElementType; Focusable: ElementType };
   /** Synthetic comparison only; native callers never pass this. */
@@ -68,9 +71,26 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
   editButtons?:{y:number};
   onFeedback?:(kind:"select"|"back")=>void;
 }) {
+  const production = policy === "production";
+  const visibleTabs: readonly Tab[] = production ? ["egpu"] : tabs;
+  if (production) {
+    tiles = productionEgpuTiles(tiles);
+    const disconnectTile = tiles.egpu?.find(tile => tile.id === "disconnect");
+    if (disconnectTile?.tone === "unavailable" || /unavailable/i.test(disconnectTile?.value ?? "")) {
+      unavailableActions = {
+        ...unavailableActions,
+        disconnect: unavailableActions.disconnect || disconnectTile?.detail || "Current readiness unavailable",
+      };
+    }
+    layoutStorage = undefined;
+    editButtons = undefined;
+    catalogReadings = undefined;
+    onUtilityRequest = undefined;
+    onAction = undefined;
+  }
   const Button = primitives?.Button ?? "button";
   const Container = primitives?.Focusable ?? "div";
-  const [tab, setTab] = useState<Tab>(initialTab);
+  const [tab, setTab] = useState<Tab>(production ? "egpu" : initialTab);
   const [nestedId, setNested] = useState<string | null>(null);
   const [tileSize,setTileSize]=useState({width:100,height:88});
   const [columns, setColumns] = useState<number>(previewColumns ?? 5);
@@ -104,9 +124,9 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
   const [utilityErrors,setUtilityErrors]=useState<Partial<Record<UtilityId,string>>>({});
   const utilityErrorReadings=useRef(new Map<UtilityId,unknown>());
   const extraUtilities=controlRegistry.filter(def=>def.rightEligible&&def.quickEligible).map(def=>{const reading=utilityReadings?.[def.id as UtilityId];return {id:`utility-${def.id}`,title:def.shortLabel,value:reading?.value??'Unavailable',detail:utilityErrors[def.id as UtilityId]??reading?.reason??'',tone:reading?.available?'quiet' as const:'unavailable' as const};});
-  const widgetTiles=projectRegistryWidgets(catalogReadings??{});
+  const widgetTiles=production ? {} : projectRegistryWidgets(catalogReadings??{});
   const rawSource=tiles??sampleTiles;
-  const composedSource=Object.fromEntries(tabs.map(tab=>[tab,[...(rawSource[tab]??[]),...(widgetTiles[tab]??[]),...(tab==='settings'?extraUtilities:[])]])) as Partial<Record<Tab,readonly Tile[]>>;
+  const composedSource=Object.fromEntries(visibleTabs.map(tab=>[tab,[...(rawSource[tab]??[]),...(widgetTiles[tab]??[]),...(tab==='settings'?extraUtilities:[])]])) as Partial<Record<Tab,readonly Tile[]>>;
   const projection=savedLayout?projectLayout(composedSource,draft??savedLayout):null;
   const allPickerGroups=groupedButtonCatalog(projection?.catalog??[]);
   const rightDefinitions=controlRegistry.filter(def=>def.rightEligible);
@@ -136,9 +156,17 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
   const resetDetail=detailOrigin?.key==='settings:reset-layout'&&savedLayout?<div><p>Restore the default Quick Access buttons, right rail and tab order?</p>{layoutError&&<p role="alert">{layoutError}</p>}<Button type="button" onClick={()=>{if(commitLayout(normalizeLayout(null),'reset-layout'))setNested(null);}}>Reset layout</Button></div>:null;
   const detailContent = dockControl ? disconnectControl : resetDetail ?? ( detailOrigin?.tab==="settings"&&detailOrigin.tile.id==="shortcut"?settings:detailOrigin ? renderDetail?.(detailOrigin.tab, detailOrigin.tile) : null);
   const hasDetail = detailContent != null && detailContent !== false;
+  const productionStatusDetail = production && detailOrigin?.tab === "egpu" && detailOrigin.tile.id === "egpu";
   const gridColumns = columns;
   const focus = (id?: string) => {
     const target = Array.from(panel.current?.querySelectorAll<HTMLElement>("[data-ec-control]") ?? []).find(el => el.dataset.ecControl === id);
+    if (id === "nested-content" && productionStatusDetail && target) {
+      // Read-only status has no action to focus. Enter the status surface at its
+      // beginning rather than scrolling past the readings to the Back button.
+      target.focus({ preventScroll: true });
+      if (content.current) content.current.scrollTop = 0;
+      return;
+    }
     const child = target?.querySelector<HTMLElement>('button:not(:disabled),select:not(:disabled),input:not(:disabled),textarea:not(:disabled),[tabindex="0"]');
     // Native Focusable may itself have tabindex; an embedded editor should
     // receive focus before its wrapper.
@@ -218,9 +246,9 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
     commitLayout(next,`utility-slot-${rightSlot}`);
   }
 
-  function switchTab(direction: -1 | 1) { cancelEdit();setNested(null); setTab(nextTab(tab, direction)); }
+  function switchTab(direction: -1 | 1) { if(production)return;cancelEdit();setNested(null); setTab(nextTab(tab, direction)); }
   function enterRail(id:string) {
-    if(tab!=="quick"||nested||gridCells(items,gridColumns).find(cell=>cell.id===id)?.column!==0) return false;
+    if(production||tab!=="quick"||nested||gridCells(items,gridColumns).find(cell=>cell.id===id)?.column!==0) return false;
     lastGrid.current=id;focus("utility-brightness");return true;
   }
   function back() {
@@ -373,7 +401,7 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
         current={known?Number(current):null} target={target===undefined?null:Number(target)} evidence={known?{availability:'available',freshness:'fresh'}:{availability:item.tone==='unavailable'?'unavailable':'unknown'}}/>;
     }
     if(original.tile.id==='disconnect'){
-      const status=unavailableActions[original.tile.id]?'Unavailable':/unknown/i.test(item.value)?'Unknown':onDisconnect?'Ready':'Unknown';
+      const status=unavailableActions[original.tile.id]||(production && /unavailable/i.test(item.value))?'Unavailable':/unknown/i.test(item.value)?'Unknown':onDisconnect?'Ready':'Unknown';
       return <SharedTile {...buttonProps} key={item.id} Button={Button} buttonProps={buttonProps} label="Safe Disconnect" artworkId="safe-disconnect" artwork={<V3Artwork controlId="safe-disconnect"/>}>
         <span className="rg-expanded-value">{status}</span>
       </SharedTile>;
@@ -415,11 +443,11 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
       onBlurCapture={()=>gesture.current?.cancel()}
       onFocusCapture={(event:{target:EventTarget})=>{if(pickerOpen&&!(event.target as HTMLElement).closest('[data-ec-picker]')){picker.current?.querySelector<HTMLElement>('button:not(:disabled)')?.focus();}}}
       onFocus={(event: { target: EventTarget }) => { detailHadFocus.current = Boolean((event.target as HTMLElement).closest("[data-ec-detail-content]")); const id = (event.target as HTMLElement).closest<HTMLElement>("[data-ec-control]")?.dataset.ecControl; if (id && !nested) {memory.current[tab] = id;setFocusContext(id==='utility-brightness'||id==='utility-volume'?'left':id.startsWith('utility-')?'right':'main');} }} onKeyUp={(event:KeyboardEvent<HTMLDivElement>)=>{if(event.key.toLowerCase()==="y"&&gesture.current?.isPressed()){event.preventDefault();event.stopPropagation();gesture.current.up();}}}>
-      {tab === "quick" && !nested && editMode!=="move" && <UtilityRail side="left" Button={Button} Focusable={Container} readings={utilityReadings} onRequest={pickerOpen?undefined:onUtilityRequest} directions={directions} onReturnToGrid={()=>focus(lastGrid.current??items[0]?.id)} onEditingChange={setUtilityEditing} onFeedback={onFeedback}/>}
+      {!production && tab === "quick" && !nested && editMode!=="move" && <UtilityRail side="left" Button={Button} Focusable={Container} readings={utilityReadings} onRequest={pickerOpen?undefined:onUtilityRequest} directions={directions} onReturnToGrid={()=>focus(lastGrid.current??items[0]?.id)} onEditingChange={setUtilityEditing} onFeedback={onFeedback}/>}
       <Container className="rg-expanded" {...(pickerOpen?{inert:"", "aria-hidden":true}:{})} {...(native ? {"flow-children":"vertical",noFocusRing:true} : {})}>
       <header className="rg-expanded-brand"><span className="rg-expanded-wordmark"><img src={brandIcon} alt=""/>Re-Gear</span><span className="rg-expanded-demo"><span className="rg-expanded-demo-label"><i/>{synthetic ? "Demo · Sample data" : "Application status"}</span><span>{synthetic ? "Hardware controls not connected" : renderDetail ? "Status and controls" : "Readings only · View details"}</span></span></header>
       <Container className="rg-expanded-tabs" role="tablist" aria-label="Command Center sections" {...(native ? { "flow-children": "horizontal", noFocusRing: true } : {})}>
-        {tabs.map(id => <Button key={id} id={`ec-tab-${id}`} type="button" role="tab" aria-selected={tab === id} aria-controls="ec-tabpanel" data-ec-tab={id} className="rg-expanded-tab"
+        {visibleTabs.map(id => <Button key={id} id={`ec-tab-${id}`} type="button" role="tab" aria-selected={tab === id} aria-controls="ec-tabpanel" data-ec-tab={id} className="rg-expanded-tab"
           onClick={() => { if(pickerOpen)return;cancelEdit();setNested(null); setTab(id); if (id === tab) focus(restoreTarget(controlIds(), memory.current[tab])); }}>
           <span className="rg-expanded-tab-body"><Icon id={id}/><span>{tabLabels[id]}</span></span>
         </Button>)}
@@ -428,9 +456,9 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
         {layoutError&&<p role="alert">{layoutError}</p>}
         {editMode==="move"&&<LayoutCustomizationBanner tab={tab} mode="move" selectedTitle={items.find(item=>item.id===selected)?.title}/>}
         {nested && <><h2>{nested.title}</h2>
-        <p className="rg-expanded-context">{hasDetail ? "Settings and actions" : synthetic ? "Configuration preview · no changes are applied" : "Current status · no changes are applied"}</p></>}
+        <p className="rg-expanded-context">{hasDetail && !productionStatusDetail ? "Settings and actions" : synthetic ? "Configuration preview · no changes are applied" : "Current status · no changes are applied"}</p></>}
         {nested ? <section className="rg-expanded-detail-page">
-          {hasDetail ? <Container key={nested.id} data-ec-control="nested-content" data-ec-detail-content {...(native ? { "flow-children": "vertical", noFocusRing: true, preferredFocus: true } : {})}>
+          {hasDetail ? <Container key={nested.id} data-ec-control="nested-content" data-ec-detail-content tabIndex={productionStatusDetail ? -1 : undefined} {...(native ? { "flow-children": "vertical", noFocusRing: true, preferredFocus: true } : {})}>
             {dockControl && <CommandNotice tone="warning" title="Keep the cable connected">Disconnect trial. Follow the guarded flow before any physical action.</CommandNotice>}
             {detailContent}</Container> : <>
           <h3>{nested.value}</h3>
@@ -459,13 +487,13 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
       </div>
       <footer className="rg-expanded-footer" data-ec-footer>
         {utilityEditing ? <><span>D-pad Adjust</span><span><kbd className="rg-expanded-round">B</kbd> Done</span><span>Right: Menu</span></> : savedLayout ? <CommandCenterFooterHints tab={tab} nested={Boolean(nested)} mode={editMode} context={focusContext}/> : <>
-        <span><kbd>LB</kbd><kbd>RB</kbd> Switch Tab</span>
+        {!production && <span><kbd>LB</kbd><kbd>RB</kbd> Switch Tab</span>}
         <span className="rg-expanded-footer-spacer" aria-hidden="true"/>
         <span><kbd className="rg-expanded-round">A</kbd> Select</span>
         <span><kbd className="rg-expanded-round">B</kbd> {nested ? "Back" : "Close"}</span></>}
       </footer>
       </Container>
-      {tab === "quick" && !nested && editMode!=="move" && <UtilityRail side="right" layout={savedLayout?.right.map((id,slot)=>({id,slot,side:"right" as const}))} Button={Button} Focusable={Container} readings={utilityReadings} onRequest={pickerOpen?undefined:onUtilityRequest}/>}
+      {!production && tab === "quick" && !nested && editMode!=="move" && <UtilityRail side="right" layout={savedLayout?.right.map((id,slot)=>({id,slot,side:"right" as const}))} Button={Button} Focusable={Container} readings={utilityReadings} onRequest={pickerOpen?undefined:onUtilityRequest}/>}
       {pickerOpen&&<div className="rg-expanded-picker-backdrop">
         <Container ref={picker} data-ec-picker className="rg-expanded-picker" style={{"--ec-picker-width":`${tileSize.width}px`,"--ec-picker-height":`${tileSize.height}px`} as CSSProperties} role="dialog" aria-modal="true" aria-label="Change button" flow-children="vertical" noFocusRing
           onGamepadDirection={directions?(event:CustomEvent<{button:number}>)=>{

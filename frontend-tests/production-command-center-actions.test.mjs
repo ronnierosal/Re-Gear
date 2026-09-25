@@ -44,7 +44,7 @@ test("resolution is visible but cannot dispatch", () => {
 });
 
 test("eGPU status opens the existing read-only status route", () => {
-  assert.match(index, /views:\{egpu:wrapDetail/);
+  assert.match(index, /views:buildProfile === "production" \? \{egpu:wrapDetail/);
   assert.match(native, /renderDetail/);
   assert.doesNotMatch(native, /tile\.id==="status"[\s\S]*execute/);
 });
