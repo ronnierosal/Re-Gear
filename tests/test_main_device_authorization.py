@@ -20,6 +20,10 @@ class MainDeviceAuthorizationTests(unittest.TestCase):
         self.plugin._device_authorization = Mock()
         self.plugin._device_authorization_observer = Mock()
 
+    def test_production_composition_explicitly_enables_remembered_trust(self):
+        plugin = self.module.Plugin()
+        self.assertIs(plugin._device_authorization._remembered_grant_enabled, True)
+
     def test_status_reconciles_lifecycle_before_reading_facade(self):
         self.plugin._reconcile_device_authorization_disconnect = Mock()
         expected = {"schema_version": 1, "state": "offered", "token": "a" * 32}
