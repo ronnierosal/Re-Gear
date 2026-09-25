@@ -156,9 +156,17 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
   const resetDetail=detailOrigin?.key==='settings:reset-layout'&&savedLayout?<div><p>Restore the default Quick Access buttons, right rail and tab order?</p>{layoutError&&<p role="alert">{layoutError}</p>}<Button type="button" onClick={()=>{if(commitLayout(normalizeLayout(null),'reset-layout'))setNested(null);}}>Reset layout</Button></div>:null;
   const detailContent = dockControl ? disconnectControl : resetDetail ?? ( detailOrigin?.tab==="settings"&&detailOrigin.tile.id==="shortcut"?settings:detailOrigin ? renderDetail?.(detailOrigin.tab, detailOrigin.tile) : null);
   const hasDetail = detailContent != null && detailContent !== false;
+  const productionStatusDetail = production && detailOrigin?.tab === "egpu" && detailOrigin.tile.id === "egpu";
   const gridColumns = columns;
   const focus = (id?: string) => {
     const target = Array.from(panel.current?.querySelectorAll<HTMLElement>("[data-ec-control]") ?? []).find(el => el.dataset.ecControl === id);
+    if (id === "nested-content" && productionStatusDetail && target) {
+      // Read-only status has no action to focus. Enter the status surface at its
+      // beginning rather than scrolling past the readings to the Back button.
+      target.focus({ preventScroll: true });
+      if (content.current) content.current.scrollTop = 0;
+      return;
+    }
     const child = target?.querySelector<HTMLElement>('button:not(:disabled),select:not(:disabled),input:not(:disabled),textarea:not(:disabled),[tabindex="0"]');
     // Native Focusable may itself have tabindex; an embedded editor should
     // receive focus before its wrapper.
@@ -448,9 +456,9 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
         {layoutError&&<p role="alert">{layoutError}</p>}
         {editMode==="move"&&<LayoutCustomizationBanner tab={tab} mode="move" selectedTitle={items.find(item=>item.id===selected)?.title}/>}
         {nested && <><h2>{nested.title}</h2>
-        <p className="rg-expanded-context">{hasDetail ? "Settings and actions" : synthetic ? "Configuration preview · no changes are applied" : "Current status · no changes are applied"}</p></>}
+        <p className="rg-expanded-context">{hasDetail && !productionStatusDetail ? "Settings and actions" : synthetic ? "Configuration preview · no changes are applied" : "Current status · no changes are applied"}</p></>}
         {nested ? <section className="rg-expanded-detail-page">
-          {hasDetail ? <Container key={nested.id} data-ec-control="nested-content" data-ec-detail-content {...(native ? { "flow-children": "vertical", noFocusRing: true, preferredFocus: true } : {})}>
+          {hasDetail ? <Container key={nested.id} data-ec-control="nested-content" data-ec-detail-content tabIndex={productionStatusDetail ? -1 : undefined} {...(native ? { "flow-children": "vertical", noFocusRing: true, preferredFocus: true } : {})}>
             {dockControl && <CommandNotice tone="warning" title="Keep the cable connected">Disconnect trial. Follow the guarded flow before any physical action.</CommandNotice>}
             {detailContent}</Container> : <>
           <h3>{nested.value}</h3>

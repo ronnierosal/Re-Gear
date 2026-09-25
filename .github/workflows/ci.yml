@@ -22,7 +22,18 @@ permissions:
   contents: read
 
 jobs:
+  # Preserve the repository's required check name while validating both profiles.
   foundation:
+    needs: build_profiles
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every requested profile to pass
+        env:
+          PROFILE_RESULT: ${{ needs.build_profiles.result }}
+        run: test "$PROFILE_RESULT" = success
+
+  build_profiles:
     strategy:
       fail-fast: false
       matrix:

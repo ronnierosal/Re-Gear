@@ -168,3 +168,28 @@ test("production unavailable disconnect cannot dispatch or open details, while r
  const button=nodes(tree).find(n=>n.props?.["data-ec-control"]==="disconnect");
  assert.equal(button.props["aria-disabled"],false);button.props.onClick();assert.equal(calls,1);
 });
+
+test("production read-only eGPU detail enters at the first reading and Back restores its launcher",async()=>{
+ const app=await fixture();
+ const props={policy:"production",tiles:{egpu:[{id:"egpu",title:"eGPU",value:"Unknown",detail:"Status unavailable"}]},renderDetail:()=>"Connection Unknown; Rendering Unknown"};
+ let tree=app.render(props);
+ nodes(tree).find(n=>n.props?.["data-ec-control"]==="egpu").props.onClick();
+ tree=app.render(props);
+ assert.match(text(tree),/Current status . no changes are applied/);
+ assert.doesNotMatch(text(tree),/Settings and actions/);
+ const contentNode=nodes(tree).find(n=>n.props?.className==="rg-expanded-content");
+ const panelNode=nodes(tree).find(n=>n.props?.["data-ec-panel"]!==undefined);
+ const nestedNode=nodes(tree).find(n=>n.props?.["data-ec-control"]==="nested-content");
+ assert.equal(nestedNode.props.tabIndex,-1);
+ const scrolling={scrollTop:240};contentNode.props.ref.current=scrolling;
+ let focusOptions,backFocus=0,launcherFocus=0;
+ const status={dataset:{ecControl:"nested-content"},focus(options){focusOptions=options;}};
+ const launcher={dataset:{ecControl:"egpu"},querySelector(){return null;},matches(){return true;},focus(){launcherFocus++;},scrollIntoView(){}};
+ panelNode.props.ref.current={querySelectorAll:()=>[status,launcher],querySelector:()=>({focus(){backFocus++;}})};
+ app.restoreFocus();
+ assert.deepEqual(focusOptions,{preventScroll:true});
+ assert.equal(scrolling.scrollTop,0);assert.equal(backFocus,0);
+ nodes(tree).find(n=>n.props?.["data-ec-control"]==="nested-back").props.onClick();
+ tree=app.render(props);app.restoreFocus();
+ assert.equal(launcherFocus,1);
+});
