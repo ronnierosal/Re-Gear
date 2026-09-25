@@ -75,6 +75,9 @@ test("monitor consumes the shared connection cycle, keeps one popup and retires 
   monitor.observe(offer());
   monitor.observe(offer());
   assert.equal(shown.length, 1);
+  let readsWhileOpen = 0;
+  monitor.refresh(async () => { readsWhileOpen++; return offer(); });
+  assert.equal(readsWhileOpen, 0);
   shown[0].onClosed();
   monitor.observe(offer({intentional_disconnect: true}));
   assert.equal(shown.length, 1);
@@ -108,9 +111,9 @@ test("a late authorization offer pauses connection progress and resolves it with
     show(status, onClosed) { shown.push({status, onClosed}); return {close(){}}; },
   });
   let opened = 0, connectionClosed = 0, finished = 0;
-  monitor.deferConnection(() => {
+  monitor.deferConnection(closed => {
     opened++;
-    return {Close() { connectionClosed++; }};
+    return {Close() { connectionClosed++; closed(); }};
   }, () => { finished++; });
   assert.equal(opened, 1);
   monitor.observe(offer());
@@ -118,6 +121,7 @@ test("a late authorization offer pauses connection progress and resolves it with
   assert.equal(shown.length, 1);
   shown[0].onClosed(true);
   assert.equal(opened, 2);
+  assert.equal(finished, 0, "internal authorization pause does not finish connection presentation");
   monitor.observe(offer());
   assert.equal(connectionClosed, 2);
   shown[1].onClosed(false);
@@ -142,7 +146,7 @@ function dialogHarness(status = offer()) {
     async confirm(token, consent, action) { calls.push(["confirm", token, consent, action]); return {...status, requested:true, verified:true, code:"device_authorization.requested", already_offered:true, confirmation_open:false}; },
   };
   const render = () => { stateCursor = 0; refCursor = 0; effectCursor = 0;
-    return runtime.UsbAuthorizationDialog({status, rpc, onClose:() => closed.push(true)}); };
+    return runtime.UsbAuthorizationDialog({status, rpc, onClose:value => closed.push(value)}); };
   return {runtime, rpc, calls, closed, effects, render};
 }
 
@@ -247,6 +251,37 @@ test("malformed replies fail closed and enroll cannot claim remembered trust wit
   assert.doesNotMatch(tree.props.children.props.children.props.view.headline, /remember/i);
   assert.equal(tree.props.children.props.onOKActionDescription, undefined);
   assert.equal(tree.props.children.props.onSecondaryActionDescription, undefined);
+});
+
+test("rejected or unverified confirmations never resume connection progress", async () => {
+  const rejected = dialogHarness();
+  rejected.rpc.confirm = async () => { throw new Error("transport failed"); };
+  let tree = rejected.render(); rejected.effects[0](); await Promise.resolve(); tree = rejected.render();
+  tree.props.children.props.onOKButton({preventDefault(){},stopPropagation(){}});
+  await Promise.resolve(); await Promise.resolve();
+  assert.deepEqual(rejected.closed, [false]);
+
+  const failed = dialogHarness();
+  failed.rpc.confirm = async (token, consent, action) => {
+    failed.calls.push(["confirm", token, consent, action]);
+    return {...offer(), requested:true, verified:false, code:"device_authorization.requested", already_offered:true, confirmation_open:false};
+  };
+  tree = failed.render(); failed.effects[0](); await Promise.resolve(); tree = failed.render();
+  tree.props.children.props.onOKButton({preventDefault(){},stopPropagation(){}});
+  await Promise.resolve(); await Promise.resolve(); tree = failed.render();
+  tree.props.children.props.onCancelButton({preventDefault(){},stopPropagation(){}});
+  assert.deepEqual(failed.closed, [false]);
+
+  const unknown = dialogHarness();
+  unknown.rpc.confirm = async (token, consent, action) => {
+    unknown.calls.push(["confirm", token, consent, action]);
+    return {...offer(), requested:true, verified:null, code:"device_authorization.requested", already_offered:true, confirmation_open:false};
+  };
+  tree = unknown.render(); unknown.effects[0](); await Promise.resolve(); tree = unknown.render();
+  tree.props.children.props.onOKButton({preventDefault(){},stopPropagation(){}});
+  await Promise.resolve(); await Promise.resolve(); tree = unknown.render();
+  tree.props.children.props.onCancelButton({preventDefault(){},stopPropagation(){}});
+  assert.deepEqual(unknown.closed, [false]);
 });
 
 test("Y toggles Details through the native Options semantic", () => {

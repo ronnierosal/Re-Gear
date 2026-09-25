@@ -141,12 +141,15 @@ export function UsbAuthorizationDialog({status, rpc, onClose}: {
       const checked = confirmationResult(answer, status, action);
       if (!checked) { close(); return; }
       setResult(checked);
-    }, close).finally(() => { acting.current = false; });
+    }, () => close(false)).finally(() => { acting.current = false; });
   };
 
   const decline = () => {
     if (acting.current) return;
-    if (result || pending) { close(result?.requested === true); return; }
+    if (result || pending) {
+      close(result?.requested === true && result.verified === true);
+      return;
+    }
     acting.current = true;
     void rpc.decline(token).finally(close);
   };
@@ -220,7 +223,7 @@ export function startUsbAuthorizationMonitor(deps: {
     });
   };
   return {observe, refresh(read: () => Promise<unknown>) {
-    if (stopped || reading) return;
+    if (stopped || reading || dialog) return;
     reading = true;
     const token = epoch;
     void read().then(value => {
@@ -230,6 +233,7 @@ export function startUsbAuthorizationMonitor(deps: {
     });
   }, deferConnection(open: (closed: () => void) => ConnectionModal, finish: () => void): ConnectionModal {
     let active: ConnectionModal | null = null;
+    let activeGeneration = 0;
     let closed = false;
     let waiting = dialog !== null;
     const finishOnce = () => {
@@ -238,11 +242,18 @@ export function startUsbAuthorizationMonitor(deps: {
       connections.delete(connection);
       finish();
     };
-    const openActive = () => { if (!closed) active = open(finishOnce); };
+    const openActive = () => {
+      if (closed) return;
+      const generation = ++activeGeneration;
+      active = open(() => {
+        if (generation === activeGeneration) finishOnce();
+      });
+    };
     const connection = {
       pause() {
         if (closed || waiting) return;
         waiting = true;
+        activeGeneration++;
         active?.Close();
         active = null;
       },
@@ -256,6 +267,7 @@ export function startUsbAuthorizationMonitor(deps: {
         if (closed) return;
         closed = true;
         connections.delete(connection);
+        activeGeneration++;
         active?.Close();
         active = null;
       },
