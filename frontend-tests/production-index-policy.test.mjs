@@ -5,9 +5,10 @@ import ts from 'typescript';
 
 const source=readFileSync(new URL('../src/index.tsx',import.meta.url),'utf8');
 const tree=ts.createSourceFile('index.tsx',source,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
-let publication;
+let publication,landingContent;
 function visit(node){
   if(ts.isCallExpression(node)&&node.expression.getText(tree)==='runtimeDetails.publish')publication=node.arguments[0];
+  if(ts.isPropertyAssignment(node)&&node.name.getText(tree)==='content'&&node.initializer.getText(tree).includes('ReGearLanding'))landingContent=node.initializer;
   ts.forEachChild(node,visit);
 }
 visit(tree);
@@ -52,4 +53,13 @@ test('hidden providers stay dormant while connection and receipt runtime remain 
   assert.match(source,/preflight.start\(\)/);
   assert.match(source,/const connection = startConnectionMonitor\(/);
   assert.match(source,/tilePublisher.source, \(\) => menuSnapshot, renderDetail, runtimeDetails.source, buildProfile/);
+});
+test('production landing retains launcher and credits without instructions for hidden features',()=>{
+  const env={buildProfile:'production',React:{Fragment:'fragment',createElement:(type,props,...children)=>({type,props,children})},
+    ReGearLanding:'development-landing',ReGearAbout:'credits',expandedMenu:{Settings:'shortcut'},
+    PanelSection:'section',PanelSectionRow:'row'};
+  const production=JSON.stringify(evaluate(landingContent,env));
+  assert.match(production,/shortcut/);assert.match(production,/credits/);assert.match(production,/Safe Disconnect/);
+  assert.doesNotMatch(production,/development-landing|Quick Access|LB\/RB|brightness|customiz/i);
+  assert.equal(evaluate(landingContent,{...env,buildProfile:'development'}).type,'development-landing');
 });

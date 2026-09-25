@@ -24,11 +24,11 @@ for (const [route, expected] of [
 // The old route helper remains tested above; production now publishes nodes from one global owner.
 const index = readFileSync(new URL("../src/index.tsx", import.meta.url), "utf8");
 test("production landing mounts no legacy grid and runtime publishes configuration details",()=>{
- assert.match(index,/content: <ReGearLanding/);assert.doesNotMatch(index,/<CommandCenterGrid|<PageLayout|Open expanded demo/);
+ assert.match(index,/content: buildProfile === "development" \? <ReGearLanding/);assert.doesNotMatch(index,/<CommandCenterGrid|<PageLayout|Open expanded demo/);
  assert.match(index,/const egpuDetail=[\s\S]*Automatic TV docking/);assert.match(index,/const diagnosticDetail=[\s\S]*Support bundle/);assert.match(index,/const displayDetail=<DisplayPicker[\s\S]*onSwitch=\{activateDisplay\}/);
  const renderer=readFileSync(new URL('../src/quick-access/expanded-command-center/non-egpu-detail-renderer.tsx',import.meta.url),'utf8');assert.match(renderer,/<AutoTdpModule controller=\{state.performance\}/);
 });
 test("eGPU status separates observation from explicit configuration navigation",()=>{
- const status=index.slice(index.indexOf('views:{egpu:wrapDetail('),index.indexOf('"egpu-config":wrapDetail('));
+ const status=index.slice(index.indexOf(': {egpu:wrapDetail('),index.indexOf('"egpu-config":wrapDetail('));
  assert.match(status,/<EgpuModule presentation=\{egpuPresentation\(payload\)\}\/>/);assert.match(status,/Configure docking/);assert.doesNotMatch(status,/onOpenRecovery|ToggleField|execute|requestSafeDisconnect|activateDisplay/);
 });
