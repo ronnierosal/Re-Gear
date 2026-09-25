@@ -7,7 +7,8 @@ const read = file => readFileSync(new URL("../src/" + file, import.meta.url), "u
 const js = ts.transpileModule(read("usb-authorization-model.ts"), {compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ES2022}}).outputText;
 const {usbAuthorizationView: view, usbAuthorizationRequest: request, usbDeviceLabel: label} = await import("data:text/javascript;base64," + Buffer.from(js).toString("base64"));
 
-const offered = (extra = {}) => ({schema_version:1, state:"offered", code:"device_authorization.offered", token:"tok-1", vendor:"Example", model:"eGPU Dock 9", generation:3, confirmation_open:true, ...extra});
+const TOKEN = "0123456789abcdef0123456789abcdef", OTHER = "fedcba9876543210fedcba9876543210";
+const offered = (extra = {}) => ({schema_version:1, state:"offered", code:"device_authorization.offered", token:TOKEN, vendor:"Example", model:"eGPU Dock 9", generation:3, confirmation_open:true, ...extra});
 
 test("an offered, named device shows Allow once and Not now; Always trust only when offered by the backend", () => {
   const v = view({status: offered()});
@@ -42,8 +43,8 @@ test("device names are sanitized and bounded", () => {
 });
 
 test("a confirmation always carries literal consent and the chosen action", () => {
-  assert.deepEqual(request("tok-1", "authorize"), {token:"tok-1", consent:true, action:"authorize"});
-  assert.deepEqual(request("tok-1", "enroll"), {token:"tok-1", consent:true, action:"enroll"});
+  assert.deepEqual(request(TOKEN, "authorize"), {token:TOKEN, consent:true, action:"authorize"});
+  assert.deepEqual(request(TOKEN, "enroll"), {token:TOKEN, consent:true, action:"enroll"});
 });
 
 test("submitted is not success; only a verified readback is approval", () => {
@@ -68,7 +69,7 @@ test("refusals keep the device blocked and never read as approval", () => {
   assert.equal(r.phase, "refused");
   assert.match(r.body, /Always trust isn't available/);
   assert.equal(r.allowOnce.visible, true, "the same live token can still be used for Allow once");
-  const gone = view({status: offered({token:"tok-2"}), pending:"enroll", result: offered({requested:false, code:"device_authorization.remembered_grant_not_offered"})});
+  const gone = view({status: offered({token:OTHER}), pending:"enroll", result: offered({requested:false, code:"device_authorization.remembered_grant_not_offered"})});
   assert.equal(gone.allowOnce.visible, false, "a replaced attachment is never retried with another token");
   const unknown = view({status: offered(), pending:"authorize", result: offered({requested:false, code:"device_authorization.identity_unresolved"})});
   assert.match(unknown.body, /can't tell which device/);
@@ -84,4 +85,24 @@ test("popup: Not now never authorizes, Always trust renders only when offered, n
     assert.doesNotMatch(read(file), /setInterval|setTimeout|fetch\(|callable|from "\.\/backend"|boltctl|\/sys\//, file);
   }
   assert.doesNotMatch(read("index.tsx"), /usb-authorization/, "not wired: no runtime caller yet");
+});
+
+test("only the understood facade schema can offer or approve", () => {
+  for (const schema_version of [undefined, 0, 2, "1", null]) {
+    const status = offered({schema_version});
+    if (schema_version === undefined) delete status.schema_version;
+    const v = view({status});
+    assert.notEqual(v.phase, "offer", `schema ${String(schema_version)}`);
+    assert.equal(v.allowOnce.visible, false);
+    assert.equal(v.alwaysTrust.visible, false);
+  }
+  assert.equal(view({status: offered()}).phase, "offer");
+  const unreadable = view({status: offered(), pending:"authorize", result: offered({schema_version:2, requested:true, verified:true})});
+  assert.equal(unreadable.phase, "refused", "an answer in an unknown shape is never approval");
+  assert.match(unreadable.body, /stays blocked/);
+});
+
+test("fixtures use the production 32-lowercase-hex token shape", () => {
+  assert.match(TOKEN, /^[0-9a-f]{32}$/);
+  assert.match(OTHER, /^[0-9a-f]{32}$/);
 });

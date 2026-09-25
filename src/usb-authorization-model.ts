@@ -16,6 +16,8 @@
  */
 
 export type UsbAuthorizationAction = "authorize" | "enroll";
+/** The facade schema this panel understands. Any other shape is refused. */
+export const USB_AUTHORIZATION_SCHEMA_VERSION = 1;
 export type UsbAuthorizationPayload = {
   schema_version?: number;
   state?: string;
@@ -94,11 +96,17 @@ const details = (label: string) => [
 export function usbAuthorizationView({status, pending = null, result = null}: UsbAuthorizationInput): UsbAuthorizationView {
   const label = usbDeviceLabel(result ?? status);
   const remembered = status?.remembered_grant_offered === true;
-  const offered = status?.state === "offered" && typeof status.token === "string" && status.token.length > 0 && label.length > 0;
+  // A shape this panel does not understand is never offered, whatever it says.
+  const understood = status?.schema_version === USB_AUTHORIZATION_SCHEMA_VERSION;
+  const offered = understood && status?.state === "offered" && typeof status.token === "string" && status.token.length > 0 && label.length > 0;
   const base = {deviceLabel: label || "Unnamed device", details: details(label),
     allowOnce: {visible: false, enabled: false}, alwaysTrust: {visible: false, enabled: false},
     notNow: {visible: true, label: "Close"}};
 
+  if (result && result.schema_version !== USB_AUTHORIZATION_SCHEMA_VERSION) {
+    return {...base, phase: "refused", tone: "attention", choice: pending ?? undefined,
+      headline: "Not approved", body: "Re-Gear couldn't read the answer, so the device stays blocked."};
+  }
   if (result) {
     const code = clean(result.code);
     if (result.requested !== true) {
