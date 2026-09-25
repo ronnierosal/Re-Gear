@@ -239,3 +239,27 @@ test("attention stops active progress animation in the rendered overlay", () => 
     assert.ok(m.steps.some(step => step.state === "attention"));
   }
 });
+
+test("the real game_running stage is final preparation and shows attention on step five", () => {
+  const m = milestones(status("game_running", {title:"Close the game to continue", rows:[{label:"No game running", state:"blocked"}]}), NOW);
+  assert.equal(m.activeStep, 4);
+  assert.equal(m.attention, true);
+  assert.equal(m.headline, "Action required");
+  assert.deepEqual(states(m), ["done", "done", "done", "done", "attention"]);
+  assert.equal(m.currentDetail, "Step 5 of 5 · Close the game to continue");
+  // Through the live status path as the backend reports it.
+  const observed = new Date(Date.now()).toISOString();
+  const live = connectionLiveStatus({snapshot:{observed_at:observed, game_state:"running"}, inference:{mode:"portable"},
+    connection_readiness:{stage:"game_running", checks_age_ms:0, checks:{gpu:true, link:true, hdmi:true, audio:true, session:true}}}, {enabled:true}, "journal.idle");
+  const fromLive = milestones(live);
+  assert.equal(fromLive.activeStep, 4);
+  assert.equal(fromLive.steps[4].state, "attention");
+  assert.equal(fromLive.currentDetail, "Step 5 of 5 · Close the game to continue");
+});
+
+test("action_required keeps no milestone claim because it also covers earlier states", () => {
+  const m = milestones(status("action_required", {title:"Connection needs attention"}), NOW);
+  assert.equal(m.activeStep, -1);
+  assert.ok(m.steps.every(step => step.state === "pending"));
+  assert.equal(m.attention, true);
+});

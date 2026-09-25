@@ -35,6 +35,9 @@ const STAGE_STEP: Record<string, number> = {
   waiting_for_session: 4,
   stabilizing: 4,
   ready_idle: 4,
+  // Emitted only after driver, link, HDMI, audio and session readiness pass;
+  // the game is the last prerequisite before display preparation.
+  game_running: 4,
 };
 // Stages that report a problem at a known position: the reason stays the
 // backend's, and the milestone shows attention instead of progress.
