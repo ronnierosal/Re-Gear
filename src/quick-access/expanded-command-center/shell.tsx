@@ -85,7 +85,11 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
     layoutStorage = undefined;
     editButtons = undefined;
     catalogReadings = undefined;
-    onUtilityRequest = undefined;
+    const requestUtility = onUtilityRequest;
+    onUtilityRequest = requestUtility ? (id, percent) => {
+      if (id !== "brightness" && id !== "volume") throw new Error("Control unavailable");
+      return requestUtility(id, percent);
+    } : undefined;
     onAction = undefined;
   }
   const Button = primitives?.Button ?? "button";
@@ -247,8 +251,9 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
   }
 
   function switchTab(direction: -1 | 1) { if(production)return;cancelEdit();setNested(null); setTab(nextTab(tab, direction)); }
+  const leftRailTab = production ? tab === "egpu" : tab === "quick";
   function enterRail(id:string) {
-    if(production||tab!=="quick"||nested||gridCells(items,gridColumns).find(cell=>cell.id===id)?.column!==0) return false;
+    if(!leftRailTab||nested||gridCells(items,gridColumns).find(cell=>cell.id===id)?.column!==0) return false;
     lastGrid.current=id;focus("utility-brightness");return true;
   }
   function back() {
@@ -443,7 +448,7 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
       onBlurCapture={()=>gesture.current?.cancel()}
       onFocusCapture={(event:{target:EventTarget})=>{if(pickerOpen&&!(event.target as HTMLElement).closest('[data-ec-picker]')){picker.current?.querySelector<HTMLElement>('button:not(:disabled)')?.focus();}}}
       onFocus={(event: { target: EventTarget }) => { detailHadFocus.current = Boolean((event.target as HTMLElement).closest("[data-ec-detail-content]")); const id = (event.target as HTMLElement).closest<HTMLElement>("[data-ec-control]")?.dataset.ecControl; if (id && !nested) {memory.current[tab] = id;setFocusContext(id==='utility-brightness'||id==='utility-volume'?'left':id.startsWith('utility-')?'right':'main');} }} onKeyUp={(event:KeyboardEvent<HTMLDivElement>)=>{if(event.key.toLowerCase()==="y"&&gesture.current?.isPressed()){event.preventDefault();event.stopPropagation();gesture.current.up();}}}>
-      {!production && tab === "quick" && !nested && editMode!=="move" && <UtilityRail side="left" Button={Button} Focusable={Container} readings={utilityReadings} onRequest={pickerOpen?undefined:onUtilityRequest} directions={directions} onReturnToGrid={()=>focus(lastGrid.current??items[0]?.id)} onEditingChange={setUtilityEditing} onFeedback={onFeedback}/>}
+      {leftRailTab && !nested && editMode!=="move" && <UtilityRail side="left" Button={Button} Focusable={Container} readings={utilityReadings} onRequest={pickerOpen?undefined:onUtilityRequest} directions={directions} onReturnToGrid={()=>focus(lastGrid.current??items[0]?.id)} onEditingChange={setUtilityEditing} onFeedback={onFeedback}/>}
       <Container className="rg-expanded" {...(pickerOpen?{inert:"", "aria-hidden":true}:{})} {...(native ? {"flow-children":"vertical",noFocusRing:true} : {})}>
       <header className="rg-expanded-brand"><span className="rg-expanded-wordmark"><img src={brandIcon} alt=""/>Re-Gear</span><span className="rg-expanded-demo"><span className="rg-expanded-demo-label"><i/>{synthetic ? "Demo · Sample data" : "Application status"}</span><span>{synthetic ? "Hardware controls not connected" : renderDetail ? "Status and controls" : "Readings only · View details"}</span></span></header>
       <Container className="rg-expanded-tabs" role="tablist" aria-label="Command Center sections" {...(native ? { "flow-children": "horizontal", noFocusRing: true } : {})}>

@@ -95,7 +95,7 @@ function readFrom(source?: TileSource) {
 export function createExpandedMenu(input: ControllerInputSource | undefined, host: Window, canOpen: () => boolean = () => true, source?: TileSource, readCurrentSnapshot: () => unknown = () => null, renderDetail?: NonEgpuDetailRenderer, runtimeDetails?:RuntimeDetailSource, policy: BuildProfile = "development") {
   const production = policy === "production";
   const system = (host as Window & { SteamClient?: { System?: UtilitySystem } }).SteamClient?.System;
-  const utilities = !production && system ? createNativeUtilities(system) : undefined;
+  const utilities = system ? createNativeUtilities(system) : undefined;
   const storage = (() => { try { return host.localStorage; } catch { return undefined; } })();
   let binding = loadMenuBinding(storage);
   const bindingListeners=new Set<()=>void>();
@@ -275,6 +275,7 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
       </Focusable>
     } directions={{up:GamepadButton.DIR_UP,down:GamepadButton.DIR_DOWN,left:GamepadButton.DIR_LEFT,right:GamepadButton.DIR_RIGHT}} unavailableActions={unavailable} onAction={(_tab,tile)=>{if(production)return false;if(tile.id==="disconnect-sleep"){disconnect("sleep");return true;}if(tile.id==="disconnect-shutdown"){disconnect("shutdown");return true;}if(tile.id==="portable-shutdown"){shutdown();return true;}if(tile.id==="switch-handheld"){runtimeDetails?.requestHandheld();return true;}return false;}} layoutStorage={production ? undefined : storage} editButtons={production ? undefined : {y:GamepadButton.OPTIONS}} primitives={{ Button: NativeMenuButton, Focusable }} settings={<Settings/>} tiles={production ? productionEgpuTiles(rawTiles) : runtimeDetails?{...tiles,egpu:[...(tiles?.egpu??[]),{id:"portable-shutdown",title:"Shutdown",value:runtimeState?.shutdown?.pending?"Pending":runtimeState?.shutdown?.available?"Ready":"Unavailable",detail:runtimeState?.shutdown?.reason??"Current status unavailable"}],offline:offlineTabTiles,settings:[...(tiles?.settings??[]).filter(tile=>tile.id==='diagnostics'),{id:'reset-layout',title:'Reset Layout',value:'Configure',detail:'Restore default card positions'},{id:'tutorials',title:'Tutorials',value:'Open',detail:'Connection, disconnect and help'},{id:'about',title:'About',value:version,detail:'Version and credits'}]}:tiles} renderDetail={production ? ((tab,tile)=>tab==="egpu"&&(tile.id==="egpu"||tile.id==="disconnect") ? renderDetail?.(tab,tile) : null) : runtimeDetails?((tab,tile)=>tab==='settings'&&tile.id==='tutorials'?<Tutorials/>:renderDetail?.(tab,tile)):renderDetail} catalogReadings={production ? undefined : rawTiles} utilityReadings={utilityReadings} onUtilityRequest={utilities ? (id, percent) => {
       if (generation !== token || stopped) return Promise.reject(new Error("Menu closed"));
+      if (production && id !== "brightness" && id !== "volume") throw new Error("Control unavailable");
       return utilities.request(id, percent);
     } : undefined}/>;
   }

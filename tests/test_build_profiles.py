@@ -50,7 +50,7 @@ class BuildProfileTests(unittest.TestCase):
             build_profiles.package_profile("prod")
 
     def test_production_has_only_approved_features(self):
-        self.assertEqual(["egpu_connection", "safe_disconnect"],
+        self.assertEqual(["egpu_connection", "safe_disconnect", "brightness", "volume"],
                          build_profiles.package_profile("production")["enabled_features"])
 
     def test_frontend_profile_rejects_mismatch_and_changed_bundle(self):

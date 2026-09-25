@@ -13,12 +13,13 @@ const { createMenuVisibility } = visibilityExports;
 const actionExports={}; new Function("exports",compile(read("test-build-actions.ts")))(actionExports);
 
 const profileExports={};new Function("exports",compile(readFileSync(new URL("../src/build-profile.ts",import.meta.url),"utf8")))(profileExports);
-function harness(pendingRecord = null, recoverTerminalDockReceipt = async () => null, policy = "production") {
+const utilityExports={};new Function("exports",compile(read("native-utilities.ts")))(utilityExports);
+function harness(pendingRecord = null, recoverTerminalDockReceipt = async () => null, policy = "production", system = {}) {
   const h = { modals: [], cleanup: [], timers: new Map(), nextTimer: 1, throwOpen: false, stopped: false, allowed: true };
   const values = new Map(pendingRecord ? [["regear.whole-dock.pending-request", pendingRecord]] : []);
   h.storage = { getItem:key=>values.get(key)??null, setItem:(key,value)=>values.set(key,value), removeItem:key=>values.delete(key) };
   const runtime = {
-    createMenuVisibility, ...actionExports, ...profileExports, createNativeUtilities:()=>{h.utilitiesCreated=true;return {};}, GamepadButton:{DIR_UP:9,DIR_DOWN:10,DIR_LEFT:11,DIR_RIGHT:12}, EgpuConfirmModal:"confirm",
+    createMenuVisibility, ...actionExports, ...profileExports, createNativeUtilities:system=>{h.utilitiesCreated=true;return utilityExports.createNativeUtilities(system);}, GamepadButton:{DIR_UP:9,DIR_DOWN:10,DIR_LEFT:11,DIR_RIGHT:12}, EgpuConfirmModal:"confirm",
     parsePendingRecord: raw => {
       const match = /^v2:(disconnect|disconnect_only|sleep|shutdown):([^:]+):([^:]+)$/.exec(raw ?? "");
       return match ? { intent: match[1], panel: match[2], request: match[3] } : null;
@@ -43,7 +44,7 @@ function harness(pendingRecord = null, recoverTerminalDockReceipt = async () => 
   h.source = { read: () => h.tiles, subscribe: () => () => {} };
   h.snapshot = () => ({ schema_version: 3 });
   h.detail = () => "existing-detail";
-  h.host = {SteamClient:{System:{}},localStorage:h.storage,
+  h.host = {SteamClient:{System:system},localStorage:h.storage,
     setTimeout(callback) { const id=h.nextTimer++;h.timers.set(id,callback);return id; },
     clearTimeout(id) { h.timers.delete(id); }};
   h.runLatestTimer = () => { const entry=[...h.timers.entries()].at(-1);if(!entry)return;h.timers.delete(entry[0]);entry[1](); };
@@ -99,14 +100,15 @@ function text(tree) {
   return typeof tree === "object" ? text(tree.props?.children) : String(tree);
 }
 
-test("production adapter excludes utilities, saved customization and non-eGPU actions",()=>{
+test("production adapter enables native sliders but excludes customization and non-eGPU actions",()=>{
  const h=harness();h.menu.open();const view=h.mount();
- assert.equal(h.utilitiesCreated,undefined);
+ assert.equal(h.utilitiesCreated,true);
  assert.equal(view.props.policy,"production");
  assert.equal(view.props.layoutStorage,undefined);
  assert.equal(view.props.editButtons,undefined);
  assert.equal(view.props.catalogReadings,undefined);
- assert.equal(view.props.onUtilityRequest,undefined);
+ assert.equal(typeof view.props.onUtilityRequest,"function");
+ assert.throws(()=>view.props.onUtilityRequest("wifi"),/Control unavailable/);
  assert.deepEqual(Object.keys(view.props.tiles),["egpu"]);
  assert.deepEqual(view.props.tiles.egpu.map(x=>x.id),["egpu","disconnect"]);
  assert.equal(nodes(view.props.disconnectControl).some(n=>n.type==="dropdown"),false);
@@ -132,7 +134,7 @@ test("production shell rejects saved layouts and limits controller navigation to
  assert.deepEqual(cards().map(n=>n.props["data-ec-control"]),["egpu","disconnect"]);
  assert.equal(reads,0);
  assert.deepEqual(nodes(tree).filter(n=>n.props?.role==="tab").map(n=>n.props["data-ec-tab"]),["egpu"]);
- assert.equal(nodes(tree).some(n=>n.type==="utility-rail"),false);
+ assert.deepEqual(nodes(tree).filter(n=>n.type==="utility-rail").map(n=>n.props.side),["left"]);
  assert.doesNotMatch(text(tree),/Switch Tab|Sample data/);
  const panel=nodes(tree).find(n=>n.props?.["data-ec-panel"]!==undefined);
  for(const button of [5,6,4])panel.props.onButtonDown({detail:{button},preventDefault(){},stopPropagation(){}});
@@ -192,4 +194,57 @@ test("production read-only eGPU detail enters at the first reading and Back rest
  nodes(tree).find(n=>n.props?.["data-ec-control"]==="nested-back").props.onClick();
  tree=app.render(props);app.restoreFocus();
  assert.equal(launcherFocus,1);
+});
+
+
+test("production native sliders observe changes, dispatch normalized values and stop across menu lifetimes",async()=>{
+ let brightness,volume=.4,unregistered=0;const writes=[];
+ const subscription=()=>({unregister(){unregistered++;}});
+ const system={Display:{RegisterForBrightnessChanges(cb){brightness=cb;return subscription();},SetBrightness(value){writes.push(["brightness",value]);}},
+ Audio:{async GetDevices(){return {activeOutputDeviceId:7,vecDevices:[{id:7,bHasOutput:true,flOutputVolume:volume}]};},async SetDeviceVolume(id,direction,value){writes.push(["volume",id,direction,value]);volume=value;return {result:1};}}};
+ const h=harness(null,undefined,"production",system);h.menu.open();brightness({flBrightness:.5});await Promise.resolve();
+ let view=h.mount();assert.equal(view.props.utilityReadings.brightness.percent,50);assert.equal(view.props.utilityReadings.volume.percent,40);
+ await view.props.onUtilityRequest("brightness",61);assert.equal(h.mount().props.utilityReadings.brightness.percent,50);
+ brightness({flBrightness:.61});assert.equal(h.mount().props.utilityReadings.brightness.percent,61);
+ await view.props.onUtilityRequest("volume",72);assert.equal(h.mount().props.utilityReadings.volume.percent,72);
+ assert.deepEqual(writes,[["brightness",.61],["volume",7,1,.72]]);
+ const oldRequest=view.props.onUtilityRequest;view.props.onClose();assert.equal(unregistered,1);
+ h.menu.open();view=h.mount();assert.equal(view.props.utilityReadings.brightness.available,false);
+ await assert.rejects(oldRequest("brightness",20),/closed|unavailable/i);
+ h.menu.stop();assert.equal(unregistered,2);
+});
+
+test("production left rail forwards only slider requests and hides while viewing details",async()=>{
+ const app=await fixture(),calls=[];
+ const props={policy:"production",onUtilityRequest:(...args)=>calls.push(args),utilityReadings:{brightness:{available:true,percent:50,value:"50%"},volume:{available:true,percent:40,value:"40%"}}};
+ let tree=app.render(props);const rail=nodes(tree).find(n=>n.type==="utility-rail");
+ rail.props.onRequest("brightness",55);rail.props.onRequest("volume",45);
+ assert.throws(()=>rail.props.onRequest("wifi"),/Control unavailable/);
+ assert.deepEqual(calls,[["brightness",55],["volume",45]]);
+ nodes(tree).find(n=>n.props?.["data-ec-control"]==="egpu").props.onClick();tree=app.render(props);
+ assert.equal(nodes(tree).some(n=>n.type==="utility-rail"),false);
+});
+
+test("production sliders stay unavailable without native capabilities",async()=>{
+ const h=harness();h.menu.open();const view=h.mount();
+ for(const id of ["brightness","volume"]){assert.equal(view.props.utilityReadings[id].available,false);await assert.rejects(view.props.onUtilityRequest(id,50),/Control unavailable/);}
+ h.menu.stop();
+});
+
+test("development still exposes both rails on Quick Access",async()=>{
+ const app=await fixture();const tree=app.render({policy:"development"});
+ assert.deepEqual(nodes(tree).filter(n=>n.type==="utility-rail").map(n=>n.props.side),["left","right"]);
+});
+
+test("production D-pad enters the left rail and returns to the launching eGPU card",async()=>{
+ const app=await fixture();const tree=app.render({policy:"production",native:true,directions:{up:9,down:10,left:11,right:12}});
+ const focused=[];
+ const controls=["egpu","utility-brightness"].map(id=>({dataset:{ecControl:id},querySelector(){return null;},matches(){return true;},focus(){focused.push(id);},scrollIntoView(){}}));
+ nodes(tree).find(n=>n.props?.["data-ec-panel"]!==undefined).props.ref.current={querySelectorAll:()=>controls};
+ let prevented=0,stopped=0;
+ const card=nodes(tree).find(n=>n.props?.["data-ec-control"]==="egpu");
+ card.props.onGamepadDirection({detail:{button:11},preventDefault(){prevented++;},stopPropagation(){stopped++;}});
+ assert.deepEqual(focused,["utility-brightness"]);assert.equal(prevented,1);assert.equal(stopped,1);
+ nodes(tree).find(n=>n.type==="utility-rail").props.onReturnToGrid();
+ assert.deepEqual(focused,["utility-brightness","egpu"]);
 });

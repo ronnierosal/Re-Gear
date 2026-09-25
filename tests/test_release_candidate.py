@@ -67,7 +67,7 @@ class ReleaseCandidateTests(unittest.TestCase):
             result = release_candidate.prepare_release_candidate(
                 self.make_archive(root, selected="production"), project_root=root)
             self.assertEqual("production", result["build"]["profile"]["profile"])
-            self.assertEqual(["egpu_connection", "safe_disconnect"],
+            self.assertEqual(["egpu_connection", "safe_disconnect", "brightness", "volume"],
                              result["build"]["profile"]["enabled_features"])
 
     def test_legacy_archive_cannot_be_new_profiled_candidate(self) -> None:
