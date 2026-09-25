@@ -76,7 +76,7 @@ test("refusals keep the device blocked and never read as approval", () => {
   assert.equal(unknown.allowOnce.visible, false);
 });
 
-test("popup: Not now never authorizes, Always trust renders only when offered, no I/O or timers", () => {
+test("popup stays presentation-only while the mounted runtime owns I/O and timers", () => {
   const popup = read("usb-authorization-popup.tsx");
   assert.match(popup, /view\.notNow\.visible && <DialogButton onClick=\{onDismiss\}>/);
   assert.match(popup, /view\.alwaysTrust\.visible && onAlwaysTrust &&/);
@@ -84,7 +84,12 @@ test("popup: Not now never authorizes, Always trust renders only when offered, n
   for (const file of ["usb-authorization-popup.tsx", "usb-authorization-model.ts"]) {
     assert.doesNotMatch(read(file), /setInterval|setTimeout|fetch\(|callable|from "\.\/backend"|boltctl|\/sys\//, file);
   }
-  assert.doesNotMatch(read("index.tsx"), /usb-authorization/, "not wired: no runtime caller yet");
+  const index = read("index.tsx");
+  const runtime = read("usb-authorization-runtime.tsx");
+  assert.match(index, /startUsbAuthorizationMonitor/);
+  assert.match(index, /showUsbAuthorizationDialog/);
+  assert.match(runtime, /authorizationOffer\(await deps\.read\(\)\)/);
+  assert.match(runtime, /setTimeout/);
 });
 
 test("only the understood facade schema can offer or approve", () => {

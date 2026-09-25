@@ -25,6 +25,7 @@ import { ConnectionQuickStatus } from "./connection-quick-status";
 import { regearControlCss } from "./regear-theme";
 import { createConnectionPresentationReceipt, startConnectionMonitor } from "./connection-monitor";
 import { showConnectionLivePanel } from "./connection-live-panel";
+import { startUsbAuthorizationMonitor, showUsbAuthorizationDialog } from "./usb-authorization-runtime";
 import { PRODUCT_NAME } from "./branding";
 import {
   dismissAttachedEgpuSleepWarning,
@@ -51,11 +52,15 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "
 
 import {
   acknowledgeDockedIgpuStatus,
+  acknowledgeDeviceAuthorization,
   acknowledgeSleepJournal,
+  confirmDeviceAuthorization,
+  declineDeviceAuthorization,
   getSnapshot,
   getPeripheralStatus,
   getActionHistory,
   getAutomaticDockStatus,
+  getDeviceAuthorizationStatus,
   setAutomaticDockEnabled,
   acknowledgeProcessRelease,
   approveProcessRelease,
@@ -2313,6 +2318,14 @@ export default definePlugin(() => {
     show: (store, switchTv, closed) => showConnectionLivePanel(store, switchTv, closed, buildProfile),
     presentation: createConnectionPresentationReceipt(window.localStorage),
   });
+  const authorization = startUsbAuthorizationMonitor({
+    read: getDeviceAuthorizationStatus,
+    show: (status, closed) => showUsbAuthorizationDialog(status, {
+      acknowledge: acknowledgeDeviceAuthorization,
+      decline: declineDeviceAuthorization,
+      confirm: confirmDeviceAuthorization,
+    }, closed),
+  });
 
   const publishRuntimeTiles=(readings:Readings)=>{if(!runtimeOwner.stopped)tilePublisher.publish(readings);};
   const publishRuntimeDetails=(state:NonEgpuDetailState|null)=>{if(!runtimeOwner.stopped)detailPublisher.publish(state);};
@@ -2328,7 +2341,7 @@ export default definePlugin(() => {
     expandedMenu.stop();shortcut.stop();
     if(warningTimer!==null){window.clearTimeout(warningTimer);warningTimer=null;}
     warningModal?.Close();warningModal=null;
-    connection.stop();offlineFocusChecks.stop();preflight.stop();
+    authorization.stop();connection.stop();offlineFocusChecks.stop();preflight.stop();
   };
   try{stopRuntime=registerRuntimeHost(routerHook,`Re-Gear-runtime-${Date.now()}-${Math.random().toString(36).slice(2)}`,Runtime,runtimeOwner);}
   catch(error){dispose();throw error;}
