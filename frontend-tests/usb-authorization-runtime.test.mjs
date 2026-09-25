@@ -85,6 +85,45 @@ test("monitor consumes the shared connection cycle, keeps one popup and retires 
   assert.equal(shown.length, 2);
 });
 
+test("shared-cycle refresh is single-flight and never joins the connection read promise", async () => {
+  const {startUsbAuthorizationMonitor} = loadRuntime();
+  let reads = 0, finish;
+  const monitor = startUsbAuthorizationMonitor({show() { throw new Error("no offer expected"); }});
+  const read = () => { reads++; return new Promise(resolve => { finish = resolve; }); };
+  monitor.refresh(read); monitor.refresh(read);
+  assert.equal(reads, 1);
+  finish(offer({state:"unavailable"}));
+  await Promise.resolve(); await Promise.resolve();
+  monitor.refresh(read);
+  assert.equal(reads, 2);
+  monitor.stop();
+  finish(offer());
+  await Promise.resolve(); await Promise.resolve();
+});
+
+test("a late authorization offer pauses connection progress and resolves it without stacked modals", () => {
+  const {startUsbAuthorizationMonitor} = loadRuntime();
+  const shown = [];
+  const monitor = startUsbAuthorizationMonitor({
+    show(status, onClosed) { shown.push({status, onClosed}); return {close(){}}; },
+  });
+  let opened = 0, connectionClosed = 0, finished = 0;
+  monitor.deferConnection(() => {
+    opened++;
+    return {Close() { connectionClosed++; }};
+  }, () => { finished++; });
+  assert.equal(opened, 1);
+  monitor.observe(offer());
+  assert.equal(connectionClosed, 1);
+  assert.equal(shown.length, 1);
+  shown[0].onClosed(true);
+  assert.equal(opened, 2);
+  monitor.observe(offer());
+  assert.equal(connectionClosed, 2);
+  shown[1].onClosed(false);
+  assert.equal(finished, 1);
+});
+
 function dialogHarness(status = offer()) {
   const states = [], refs = [], effects = [];
   let stateCursor = 0, refCursor = 0, effectCursor = 0;
@@ -185,7 +224,7 @@ test("an unavailable remembered grant keeps the same-token Allow once fallback a
 
 test("malformed replies fail closed and enroll cannot claim remembered trust without enrollment proof", async () => {
   const malformed = dialogHarness();
-  malformed.rpc.acknowledge = async token => ({schema_version:1, accepted:true, token, confirmation_open:true});
+  malformed.rpc.acknowledge = async token => ({...offer(), state:"unavailable", code:"device_authorization.runtime_unavailable", accepted:true, token, already_offered:true, confirmation_open:true});
   let tree = malformed.render(); malformed.effects[0]();
   await Promise.resolve(); await Promise.resolve();
   assert.equal(malformed.closed.length, 1);
@@ -228,8 +267,9 @@ test("plugin mounts and retires the authorization monitor with exact RPCs", () =
   for (const name of ["get_device_authorization_status", "acknowledge_device_authorization", "decline_device_authorization", "confirm_device_authorization"])
     assert.match(backend, new RegExp(`"${name}"`));
   assert.match(index, /const authorization = startUsbAuthorizationMonitor\(/);
-  assert.match(index, /getTransitionJournalStatus\(\), getDeviceAuthorizationStatus\(\)/);
-  assert.match(index, /authorization\.observe\(authorizationStatus\.value\)/);
+  assert.match(index, /authorization\.refresh\(getDeviceAuthorizationStatus\)/);
+  assert.match(index, /Promise\.all\(\[\s*getSnapshot\(\), getAutomaticDockStatus\(\), getTransitionJournalStatus\(\),/);
+  assert.doesNotMatch(index, /Promise\.all\(\[[^\]]*getDeviceAuthorizationStatus/s);
   assert.doesNotMatch(read("src/usb-authorization-runtime.tsx"), /setTimeout|setInterval/);
   assert.match(index, /authorization\.stop\(\);connection\.stop\(\)/);
 });

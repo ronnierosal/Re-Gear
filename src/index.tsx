@@ -2313,16 +2313,16 @@ export default definePlugin(() => {
   });
   const connection = startConnectionMonitor({
     read: async () => {
-      const [payload, automatic, journal, authorizationStatus] = await Promise.allSettled([
-        getSnapshot(), getAutomaticDockStatus(), getTransitionJournalStatus(), getDeviceAuthorizationStatus(),
+      authorization.refresh(getDeviceAuthorizationStatus);
+      const [payload, automatic, journal] = await Promise.all([
+        getSnapshot(), getAutomaticDockStatus(), getTransitionJournalStatus(),
       ]);
-      if (authorizationStatus.status === "fulfilled") authorization.observe(authorizationStatus.value);
-      if (payload.status === "rejected") throw payload.reason;
-      if (automatic.status === "rejected") throw automatic.reason;
-      if (journal.status === "rejected") throw journal.reason;
-      return {payload: payload.value, automatic: automatic.value, journal: journal.value.code};
+      return {payload, automatic, journal: journal.code};
     },
-    show: (store, switchTv, closed) => showConnectionLivePanel(store, switchTv, closed, buildProfile),
+    show: (store, switchTv, closed) => authorization.deferConnection(
+      deferredClosed => showConnectionLivePanel(store, switchTv, deferredClosed, buildProfile),
+      closed,
+    ),
     presentation: createConnectionPresentationReceipt(window.localStorage),
   });
 

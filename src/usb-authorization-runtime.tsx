@@ -10,6 +10,7 @@ import { UsbAuthorizationPopup } from "./usb-authorization-popup";
 
 const TOKEN = /^[0-9a-f]{32}$/;
 type Subscription = { close(): void };
+type ConnectionModal = { Close(): void };
 type Rpc = {
   acknowledge(token: string): Promise<unknown>;
   decline(token: string): Promise<unknown>;
@@ -56,7 +57,7 @@ function acceptedAcknowledgement(value: unknown, status: UsbAuthorizationPayload
   return payload?.schema_version === 1
     && payload.accepted === true
     && payload.state === "unavailable"
-    && typeof payload.code === "string"
+    && payload.code === "device_authorization.already_offered"
     && payload.confirmation_open === true
     && sameAttachment(payload, status);
 }
@@ -87,7 +88,7 @@ function stopEvent(event: {preventDefault?(): void; stopPropagation?(): void}) {
 export function UsbAuthorizationDialog({status, rpc, onClose}: {
   status: UsbAuthorizationPayload;
   rpc: Rpc;
-  onClose(): void;
+  onClose(continueConnection: boolean): void;
 }) {
   const token = status.token!;
   const [acknowledged, setAcknowledged] = useState(false);
@@ -99,10 +100,10 @@ export function UsbAuthorizationDialog({status, rpc, onClose}: {
   const acknowledging = useRef(true);
   const dismissQueued = useRef(false);
   const closed = useRef(false);
-  const close = () => {
+  const close = (continueConnection = false) => {
     if (closed.current) return;
     closed.current = true;
-    onClose();
+    onClose(continueConnection);
   };
 
   useEffect(() => {
@@ -145,7 +146,7 @@ export function UsbAuthorizationDialog({status, rpc, onClose}: {
 
   const decline = () => {
     if (acting.current) return;
-    if (result || pending) { close(); return; }
+    if (result || pending) { close(result?.requested === true); return; }
     acting.current = true;
     void rpc.decline(token).finally(close);
   };
@@ -177,14 +178,14 @@ export function UsbAuthorizationDialog({status, rpc, onClose}: {
   </ModalRoot>;
 }
 
-export function showUsbAuthorizationDialog(status: UsbAuthorizationPayload, rpc: Rpc, onClosed: () => void): Subscription {
+export function showUsbAuthorizationDialog(status: UsbAuthorizationPayload, rpc: Rpc, onClosed: (continueConnection: boolean) => void): Subscription {
   let modal: ReturnType<typeof showModal>;
   let closed = false;
-  const close = () => {
+  const close = (continueConnection = false) => {
     if (closed) return;
     closed = true;
     modal.Close();
-    onClosed();
+    onClosed(continueConnection);
   };
   modal = showModal(<UsbAuthorizationDialog status={status} rpc={rpc} onClose={close}/>, window,
     {strTitle: "Re-Gear", bNeverPopOut: true});
@@ -192,24 +193,82 @@ export function showUsbAuthorizationDialog(status: UsbAuthorizationPayload, rpc:
 }
 
 export function startUsbAuthorizationMonitor(deps: {
-  show(status: UsbAuthorizationPayload, onClosed: () => void): Subscription;
+  show(status: UsbAuthorizationPayload, onClosed: (continueConnection: boolean) => void): Subscription;
 }) {
   let stopped = false;
+  let reading = false;
   let epoch = 0;
   let dialog: Subscription | null = null;
-  return {observe(value: unknown) {
+  const connections = new Set<{
+    pause(): void;
+    settle(continueConnection: boolean): void;
+    close(): void;
+  }>();
+  const resolveConnections = (continueConnection: boolean) => {
+    for (const connection of [...connections]) connection.settle(continueConnection);
+  };
+  const observe = (value: unknown) => {
     if (stopped || dialog) return;
     const offer = authorizationOffer(value);
     if (!offer) return;
+    for (const connection of [...connections]) connection.pause();
     const token = epoch;
-    dialog = deps.show(offer, () => {
+    dialog = deps.show(offer, continueConnection => {
       if (token !== epoch) return;
       dialog = null;
+      resolveConnections(continueConnection);
     });
+  };
+  return {observe, refresh(read: () => Promise<unknown>) {
+    if (stopped || reading) return;
+    reading = true;
+    const token = epoch;
+    void read().then(value => {
+      if (!stopped && token === epoch) observe(value);
+    }, () => { /* A failed observation opens nothing. */ }).finally(() => {
+      if (token === epoch) reading = false;
+    });
+  }, deferConnection(open: (closed: () => void) => ConnectionModal, finish: () => void): ConnectionModal {
+    let active: ConnectionModal | null = null;
+    let closed = false;
+    let waiting = dialog !== null;
+    const finishOnce = () => {
+      if (closed) return;
+      closed = true;
+      connections.delete(connection);
+      finish();
+    };
+    const openActive = () => { if (!closed) active = open(finishOnce); };
+    const connection = {
+      pause() {
+        if (closed || waiting) return;
+        waiting = true;
+        active?.Close();
+        active = null;
+      },
+      settle(continueConnection: boolean) {
+        if (closed || !waiting) return;
+        waiting = false;
+        if (continueConnection) openActive();
+        else finishOnce();
+      },
+      close() {
+        if (closed) return;
+        closed = true;
+        connections.delete(connection);
+        active?.Close();
+        active = null;
+      },
+    };
+    connections.add(connection);
+    if (!waiting) openActive();
+    return {Close: connection.close};
   }, stop() {
     if (stopped) return;
     stopped = true;
     epoch++;
+    reading = false;
+    connections.clear();
     const active = dialog;
     dialog = null;
     active?.close();
