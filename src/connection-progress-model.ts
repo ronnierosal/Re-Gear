@@ -7,6 +7,8 @@ export type Milestone = {label: string; state: MilestoneState};
 export type MilestoneModel = {
   /** 0-based position of the current milestone; -1 when the stage is unknown. */
   activeStep: number;
+  /** Milestones observed complete, kept when stale so assistive text matches "Last observed". */
+  observedDone: number;
   steps: Milestone[];
   headline: string;
   currentDetail: string;
@@ -55,8 +57,10 @@ export function connectionMilestones(status: LiveStatus & {displayPending?: bool
   const complete = fresh && status.phase === "complete";
   const switching = fresh && status.phase === "switching";
   const stage = status.stage ?? "";
-  const gameBlocked = status.rows.some(row => row.label === "No game running" && row.state === "blocked");
-  const attention = fresh && !complete && (ATTENTION_STAGES.has(stage) || gameBlocked);
+  // Any current blocked prerequisite (game running, retained journal, a
+  // blocked check) is attention; the copy stays the backend-derived title.
+  const prerequisiteBlocked = status.rows.some(row => row.state === "blocked");
+  const attention = fresh && !complete && (ATTENTION_STAGES.has(stage) || prerequisiteBlocked);
   const activeStep = complete ? MILESTONE_LABELS.length
     : status.phase === "switching" ? 4
     : stage in ATTENTION_STEP ? ATTENTION_STEP[stage]
@@ -64,7 +68,7 @@ export function connectionMilestones(status: LiveStatus & {displayPending?: bool
   const steps: Milestone[] = MILESTONE_LABELS.map((label, index) => {
     const state: MilestoneState = activeStep < 0 ? "pending"
       : index < activeStep ? "done"
-      : index === activeStep ? (attention && stage in ATTENTION_STEP ? "attention" : "active")
+      : index === activeStep ? (attention ? "attention" : "active")
       : "pending";
     // Stale evidence is history: nothing stays green or animated as current.
     return {label, state: fresh ? state : state === "pending" ? "pending" : "stale"};
@@ -83,7 +87,8 @@ export function connectionMilestones(status: LiveStatus & {displayPending?: bool
   const slowNotice = fresh && !complete && !attention && !status.displayPending
     && Number.isFinite(status.seconds) && status.seconds >= SLOW_NOTICE_SECONDS
     ? "Slower than usual · Keep the eGPU connected" : undefined;
-  return {activeStep, steps, headline, currentDetail, complete, stale: !fresh, attention, slowNotice};
+  const observedDone = activeStep < 0 ? 0 : Math.min(activeStep, MILESTONE_LABELS.length);
+  return {activeStep, observedDone, steps, headline, currentDetail, complete, stale: !fresh, attention, slowNotice};
 }
 
 /** Presentation adapter for the existing monitor: no snapshot inference or I/O. */

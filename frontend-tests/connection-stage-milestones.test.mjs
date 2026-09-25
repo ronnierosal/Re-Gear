@@ -102,6 +102,9 @@ test("blocked stages keep their truthful backend reason", () => {
   const game = milestones(status("waiting_for_session", {title:"Close the game to continue", rows:[{label:"No game running", state:"blocked"}]}), NOW);
   assert.equal(game.attention, true);
   assert.equal(game.currentDetail, "Step 5 of 5 · Close the game to continue");
+  assert.equal(game.headline, "Action required");
+  assert.equal(game.steps[4].state, "attention", "a blocked prerequisite never renders as active progress");
+  assert.ok(!game.steps.some(step => step.state === "active"));
   const model = read("connection-progress-model.ts");
   assert.doesNotMatch(model, /"Close the game to continue"/, "attention copy comes from the backend-derived title");
 });
@@ -173,4 +176,40 @@ test("GPU name still comes only from verified, unambiguous evidence", () => {
     {present:true, role:"unknown", confidence:"verified", model_name:"Other GPU"}]}, inference:{mode:"portable"},
     connection_readiness:{stage:"waiting_for_driver", checks_age_ms:0, checks:{}}};
   assert.equal(connectionLiveStatus(base, null, "journal.idle").gpuName, undefined);
+});
+
+test("a retained previous result blocks as attention with the backend reason", () => {
+  const journal = milestones(status("waiting_for_hdmi", {title:"Previous result needs acknowledgement",
+    rows:[{label:"No game running", state:"ready"}, {label:"Previous result cleared", state:"blocked"}]}), NOW);
+  assert.equal(journal.attention, true);
+  assert.equal(journal.headline, "Action required");
+  assert.equal(journal.steps[3].state, "attention");
+  assert.ok(!journal.steps.some(step => step.state === "active"));
+  assert.equal(journal.currentDetail, "Step 4 of 5 · Previous result needs acknowledgement");
+  assert.equal(journal.slowNotice, undefined);
+  // The live status path produces that blocked row from a retained journal.
+  const observed = new Date(Date.now()).toISOString();
+  const live = connectionLiveStatus({snapshot:{observed_at:observed, game_state:"idle"}, inference:{mode:"portable"},
+    connection_readiness:{stage:"waiting_for_hdmi", checks_age_ms:0, checks:{}}}, {enabled:true}, "journal.failed");
+  assert.equal(milestones(live).attention, true);
+  assert.equal(milestones(live).headline, "Action required");
+});
+
+test("an unknown stage with a blocked prerequisite is attention without a milestone claim", () => {
+  const m = milestones(status("some_future_stage", {title:"Close the game to continue", rows:[{label:"No game running", state:"blocked"}]}), NOW);
+  assert.equal(m.attention, true);
+  assert.equal(m.activeStep, -1);
+  assert.ok(m.steps.every(step => step.state === "pending"));
+});
+
+test("stale progress keeps the observed count for assistive technology", () => {
+  const m = milestones(status("waiting_for_audio"), NOW + 20_000);
+  assert.equal(m.stale, true);
+  assert.equal(m.observedDone, 4);
+  assert.equal(m.currentDetail, "Last observed: Prepare and switch display");
+  assert.equal(milestones(status("waiting_for_link"), NOW).observedDone, 2);
+  assert.equal(milestones(status("ready_idle", {phase:"complete"}), NOW).observedDone, 5);
+  assert.equal(milestones(status("some_future_stage"), NOW).observedDone, 0);
+  const overlay = read("connection-progress-overlay.tsx");
+  assert.match(overlay, /aria-valuenow=\{m\.observedDone\} aria-valuetext=\{m\.currentDetail\}/);
 });
