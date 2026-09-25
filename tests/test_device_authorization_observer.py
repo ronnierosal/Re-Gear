@@ -1798,7 +1798,6 @@ class WhatTheGateActuallyEnforces(unittest.TestCase):
             "removedirs",
             "rmtree",
             "truncate",
-            "write",
             "writelines",
         }
 

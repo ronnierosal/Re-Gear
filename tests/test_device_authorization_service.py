@@ -1802,6 +1802,8 @@ def verify(svc, token, **overrides):
         "authorized": True,
         "uuid": DOCK,
         "generation": svc.generation,
+        # The default confirm enrolls, and enrollment must prove it was stored.
+        "enrolled": True,
         **overrides,
     }
     return svc.record_verification(token, **call)
@@ -1816,9 +1818,10 @@ class VerificationIsReadBackNotAssumed(unittest.TestCase):
             DeviceAuthorizationService.record_verification
         ).parameters
         self.assertEqual(
-            list(parameters), ["self", "token", "authorized", "uuid", "generation"]
+            list(parameters),
+            ["self", "token", "authorized", "uuid", "generation", "enrolled"],
         )
-        for name in ("authorized", "uuid", "generation"):
+        for name in ("authorized", "uuid", "generation", "enrolled"):
             self.assertIs(
                 parameters[name].kind, inspect.Parameter.KEYWORD_ONLY
             )
@@ -2069,7 +2072,8 @@ class AnAbsentPollIsNotAnEvent(unittest.TestCase):
         # this dock is still admitted by.
         self.assertIs(
             svc.record_verification(
-                token, authorized=True, uuid=DOCK, generation=attached
+                # An enroll readback proves both facts to count.
+                token, authorized=True, enrolled=True, uuid=DOCK, generation=attached
             ),
             True,
         )
@@ -2331,3 +2335,55 @@ class SingleFlightUnderRealThreads(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RememberedTrustIsVerifiedByBothFacts(unittest.TestCase):
+    """`enroll` promised remembering; its readback must prove it."""
+
+    def enrolled(self):
+        svc, _, token = armed()
+        confirm(svc, token, action="enroll")
+        return svc, token
+
+    def authorized_once(self):
+        svc, _, token = armed()
+        confirm(svc, token, action="authorize")
+        return svc, token
+
+    def test_enroll_needs_authorized_and_enrolled(self):
+        svc, token = self.enrolled()
+        self.assertIs(verify(svc, token, authorized=True, enrolled=True), True)
+
+    def test_enroll_authorized_but_not_stored_is_not_success(self):
+        svc, token = self.enrolled()
+        self.assertIs(verify(svc, token, authorized=True, enrolled=False), False)
+
+    def test_enroll_not_authorized_is_failure(self):
+        svc, token = self.enrolled()
+        self.assertIs(verify(svc, token, authorized=False, enrolled=True), False)
+        svc, token = self.enrolled()
+        self.assertIs(verify(svc, token, authorized=False, enrolled=None), False)
+
+    def test_enroll_with_unread_facts_is_unknown(self):
+        svc, token = self.enrolled()
+        self.assertIsNone(verify(svc, token, authorized=True, enrolled=None))
+        svc, token = self.enrolled()
+        self.assertIsNone(verify(svc, token, authorized=None, enrolled=True))
+
+    def test_authorize_follows_authorized_only(self):
+        svc, token = self.authorized_once()
+        self.assertIs(verify(svc, token, authorized=True, enrolled=False), True)
+        svc, token = self.authorized_once()
+        self.assertIs(verify(svc, token, authorized=True, enrolled=None), True)
+        svc, token = self.authorized_once()
+        self.assertIs(verify(svc, token, authorized=False, enrolled=True), False)
+
+    def test_identity_binding_still_applies_to_enroll(self):
+        svc, token = self.enrolled()
+        self.assertIsNone(verify(svc, token, authorized=True, enrolled=True, uuid=""))
+        svc, token = self.enrolled()
+        self.assertIsNone(verify(svc, token, authorized=True, enrolled=True, generation=svc.generation + 1))
+
+    def test_an_unspent_token_verifies_nothing(self):
+        svc, _, token = armed()
+        self.assertIsNone(verify(svc, token, authorized=True, enrolled=True))
