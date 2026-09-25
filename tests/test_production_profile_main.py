@@ -60,7 +60,13 @@ class ProductionPluginTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(2, self.plugin._device_authorization.confirm.call_count)
 
         self.plugin._device_authorization.reset_mock()
-        for consent, action in ((False, "authorize"), (False, "enroll"), (True, "remember")):
+        for consent, action in (
+            (False, "authorize"),
+            (False, "enroll"),
+            (True, "remember"),
+            (True, ["enroll"]),
+            (True, {"action": "enroll"}),
+        ):
             refused = await self.plugin.confirm_device_authorization(
                 token, consent, action
             )

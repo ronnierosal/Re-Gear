@@ -63,11 +63,13 @@ def rpc_allowed(profile: str, method: str, arguments: dict[str, Any]) -> bool:
         return isinstance(token, str) and re.fullmatch(r"[0-9a-f]{32}", token) is not None
     if method == "confirm_device_authorization":
         token = arguments.get("token")
+        action = arguments.get("action")
         return (
             isinstance(token, str)
             and re.fullmatch(r"[0-9a-f]{32}", token) is not None
             and arguments.get("consent") is True
-            and arguments.get("action") in {"authorize", "enroll"}
+            and isinstance(action, str)
+            and action in {"authorize", "enroll"}
         )
     return True
 

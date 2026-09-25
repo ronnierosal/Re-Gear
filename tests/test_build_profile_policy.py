@@ -147,6 +147,8 @@ class ProductionAdmissionTests(unittest.TestCase):
             lambda: plugin.decline_device_authorization("A" * 32),
             lambda: plugin.confirm_device_authorization("a" * 32, False, "authorize"),
             lambda: plugin.confirm_device_authorization("a" * 32, True, "remember"),
+            lambda: plugin.confirm_device_authorization("a" * 32, True, ["enroll"]),
+            lambda: plugin.confirm_device_authorization("a" * 32, True, {"action": "enroll"}),
         ):
             result = asyncio.run(invoke())
             self.assertEqual("build_profile.feature_unavailable", result["code"])
