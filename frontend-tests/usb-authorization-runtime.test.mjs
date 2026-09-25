@@ -45,6 +45,7 @@ const offer = overrides => ({
 test("only an exact live schema-1 offer can mount; software-down stays silent", () => {
   const {authorizationOffer} = loadRuntime();
   assert.equal(authorizationOffer(offer())?.token, "a".repeat(32));
+  assert.equal(authorizationOffer(offer({vendor:"Named Dock", model:""}))?.vendor, "Named Dock");
   for (const payload of [
     null,
     offer({schema_version: 2}),
@@ -52,7 +53,7 @@ test("only an exact live schema-1 offer can mount; software-down stays silent", 
     offer({code: "device_authorization.already_offered"}),
     offer({token: "A".repeat(32)}),
     offer({token: "a".repeat(31)}),
-    offer({model: ""}),
+    offer({vendor: "", model: ""}),
     offer({already_offered: true}),
     offer({intentional_disconnect: true}),
     offer({confirmation_open: true}),
@@ -61,42 +62,27 @@ test("only an exact live schema-1 offer can mount; software-down stays silent", 
   ]) assert.equal(authorizationOffer(payload), null);
 });
 
-test("monitor polls without overlap, keeps one popup and retires stale work", async () => {
+test("monitor consumes the shared connection cycle, keeps one popup and retires stale work", () => {
   const {startUsbAuthorizationMonitor} = loadRuntime();
-  const timers = new Map(); let next = 1;
-  const host = {
-    setTimeout(callback) { const id = next++; timers.set(id, callback); return id; },
-    clearTimeout(id) { timers.delete(id); },
-  };
-  const shown = [], statuses = [offer(), offer({intentional_disconnect: true})];
-  let reads = 0, closed = 0;
+  const shown = [];
+  let closed = 0;
   const monitor = startUsbAuthorizationMonitor({
-    timers: host,
-    async read() { reads++; return statuses.shift() ?? offer({state: "unavailable"}); },
     show(status, onClosed) {
       const shownItem = {status, onClosed}; shown.push(shownItem);
       return {close() { closed++; onClosed(); }};
     },
   });
-  await Promise.resolve(); await Promise.resolve();
-  assert.equal(reads, 1); assert.equal(shown.length, 1); assert.equal(timers.size, 1);
-  const whileOpen = [...timers.values()][0]; timers.clear(); whileOpen();
-  await Promise.resolve(); assert.equal(reads, 1); assert.equal(shown.length, 1);
+  monitor.observe(offer());
+  monitor.observe(offer());
+  assert.equal(shown.length, 1);
   shown[0].onClosed();
-  const afterClose = [...timers.values()][0]; timers.clear(); afterClose();
-  await Promise.resolve(); await Promise.resolve();
-  assert.equal(reads, 2); assert.equal(shown.length, 1);
-  monitor.stop(); assert.equal(closed, 0); assert.equal(timers.size, 0);
-
-  let finish;
-  const stale = startUsbAuthorizationMonitor({
-    timers: host,
-    read: () => new Promise(resolve => { finish = resolve; }),
-    show() { throw new Error("stale read opened a popup"); },
-  });
-  stale.stop(); finish(offer());
-  await Promise.resolve(); await Promise.resolve();
-  assert.equal(timers.size, 0);
+  monitor.observe(offer({intentional_disconnect: true}));
+  assert.equal(shown.length, 1);
+  monitor.observe(offer());
+  assert.equal(shown.length, 2);
+  monitor.stop(); assert.equal(closed, 1);
+  monitor.observe(offer());
+  assert.equal(shown.length, 2);
 });
 
 function dialogHarness(status = offer()) {
@@ -112,9 +98,9 @@ function dialogHarness(status = offer()) {
   const runtime = loadRuntime(react);
   const calls = [], closed = [];
   const rpc = {
-    async acknowledge(token) { calls.push(["acknowledge", token]); return {...status, state:"unavailable", accepted:true, already_offered:true, confirmation_open:true}; },
+    async acknowledge(token) { calls.push(["acknowledge", token]); return {...status, state:"unavailable", code:"device_authorization.already_offered", accepted:true, already_offered:true, confirmation_open:true}; },
     async decline(token) { calls.push(["decline", token]); return {...status, state:"unavailable", accepted:true}; },
-    async confirm(token, consent, action) { calls.push(["confirm", token, consent, action]); return {...status, requested:true, verified:true, code:"device_authorization.verified"}; },
+    async confirm(token, consent, action) { calls.push(["confirm", token, consent, action]); return {...status, requested:true, verified:true, code:"device_authorization.requested", already_offered:true, confirmation_open:false}; },
   };
   const render = () => { stateCursor = 0; refCursor = 0; effectCursor = 0;
     return runtime.UsbAuthorizationDialog({status, rpc, onClose:() => closed.push(true)}); };
@@ -158,6 +144,21 @@ test("X enroll is conditional and B declines without authorizing", async () => {
   assert.equal(declined.closed.length, 1);
 });
 
+test("B waits for display acknowledgement before declining the shown token", async () => {
+  const h = dialogHarness();
+  let finish;
+  h.rpc.acknowledge = token => new Promise(resolve => {
+    h.calls.push(["acknowledge", token]); finish = resolve;
+  });
+  let tree = h.render(); h.effects[0]();
+  tree.props.children.props.onCancelButton({preventDefault(){},stopPropagation(){}});
+  await Promise.resolve();
+  assert.deepEqual(h.calls.map(call => call[0]), ["acknowledge"]);
+  finish({...offer(), state:"unavailable", code:"device_authorization.already_offered", accepted:true, already_offered:true, confirmation_open:true});
+  await Promise.resolve(); await Promise.resolve();
+  assert.deepEqual(h.calls.map(call => call[0]), ["acknowledge", "decline"]);
+});
+
 test("an unavailable remembered grant keeps the same-token Allow once fallback actionable", async () => {
   const h = dialogHarness();
   let confirmations = 0;
@@ -165,8 +166,8 @@ test("an unavailable remembered grant keeps the same-token Allow once fallback a
     h.calls.push(["confirm", token, consent, action]);
     confirmations++;
     return confirmations === 1
-      ? {...offer(), requested:false, verified:null, code:"device_authorization.remembered_grant_not_offered"}
-      : {...offer(), requested:true, verified:true, code:"device_authorization.verified"};
+      ? {...offer(), requested:false, verified:null, code:"device_authorization.remembered_grant_not_offered", already_offered:true, confirmation_open:true}
+      : {...offer(), requested:true, verified:true, code:"device_authorization.requested", already_offered:true, confirmation_open:false};
   };
   let tree = h.render(); h.effects[0]();
   await Promise.resolve(); tree = h.render();
@@ -182,11 +183,53 @@ test("an unavailable remembered grant keeps the same-token Allow once fallback a
   ]);
 });
 
+test("malformed replies fail closed and enroll cannot claim remembered trust without enrollment proof", async () => {
+  const malformed = dialogHarness();
+  malformed.rpc.acknowledge = async token => ({schema_version:1, accepted:true, token, confirmation_open:true});
+  let tree = malformed.render(); malformed.effects[0]();
+  await Promise.resolve(); await Promise.resolve();
+  assert.equal(malformed.closed.length, 1);
+
+  const contradictory = dialogHarness();
+  contradictory.rpc.confirm = async (token, consent, action) => {
+    contradictory.calls.push(["confirm", token, consent, action]);
+    return {...offer(), requested:true, verified:true, code:"device_authorization.denied", already_offered:true, confirmation_open:false};
+  };
+  tree = contradictory.render(); contradictory.effects[0](); await Promise.resolve(); tree = contradictory.render();
+  tree.props.children.props.onOKButton({preventDefault(){},stopPropagation(){}});
+  await Promise.resolve(); await Promise.resolve();
+  assert.equal(contradictory.closed.length, 1);
+
+  const trusted = dialogHarness();
+  tree = trusted.render(); trusted.effects[0](); await Promise.resolve(); tree = trusted.render();
+  tree.props.children.props.onSecondaryButton({preventDefault(){},stopPropagation(){}});
+  await Promise.resolve(); await Promise.resolve(); tree = trusted.render();
+  assert.equal(tree.props.children.props.children.props.view.phase, "checking");
+  assert.doesNotMatch(tree.props.children.props.children.props.view.headline, /remember/i);
+  assert.equal(tree.props.children.props.onOKActionDescription, undefined);
+  assert.equal(tree.props.children.props.onSecondaryActionDescription, undefined);
+});
+
+test("Y toggles Details through the native Options semantic", () => {
+  const h = dialogHarness();
+  const tree = h.render();
+  const details = {open:false};
+  // The first ref belongs to the Focusable root.
+  h.render();
+  const focusable = tree.props.children;
+  focusable.props.ref.current = {querySelector: selector => selector === "details" ? details : null};
+  focusable.props.onOptionsButton({preventDefault(){},stopPropagation(){}});
+  assert.equal(details.open, true);
+  assert.equal(focusable.props.onOptionsActionDescription, "Details");
+});
+
 test("plugin mounts and retires the authorization monitor with exact RPCs", () => {
   const backend = read("src/backend.ts"), index = read("src/index.tsx");
   for (const name of ["get_device_authorization_status", "acknowledge_device_authorization", "decline_device_authorization", "confirm_device_authorization"])
     assert.match(backend, new RegExp(`"${name}"`));
   assert.match(index, /const authorization = startUsbAuthorizationMonitor\(/);
-  assert.match(index, /read: getDeviceAuthorizationStatus/);
+  assert.match(index, /getTransitionJournalStatus\(\), getDeviceAuthorizationStatus\(\)/);
+  assert.match(index, /authorization\.observe\(authorizationStatus\.value\)/);
+  assert.doesNotMatch(read("src/usb-authorization-runtime.tsx"), /setTimeout|setInterval/);
   assert.match(index, /authorization\.stop\(\);connection\.stop\(\)/);
 });

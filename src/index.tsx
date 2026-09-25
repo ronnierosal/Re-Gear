@@ -2304,27 +2304,26 @@ export default definePlugin(() => {
   );
   preflight.start();
   const offlineFocusChecks = buildProfile === "development" ? startOfflineFocusChecks() : {stop() {}};
-  const connection = startConnectionMonitor({
-    read: async () => {
-      try {
-        const [payload, automatic, journal] = await Promise.all([
-          getSnapshot(), getAutomaticDockStatus(), getTransitionJournalStatus(),
-        ]);
-        return {payload, automatic, journal: journal.code};
-      } catch (error) {
-        throw error;
-      }
-    },
-    show: (store, switchTv, closed) => showConnectionLivePanel(store, switchTv, closed, buildProfile),
-    presentation: createConnectionPresentationReceipt(window.localStorage),
-  });
   const authorization = startUsbAuthorizationMonitor({
-    read: getDeviceAuthorizationStatus,
     show: (status, closed) => showUsbAuthorizationDialog(status, {
       acknowledge: acknowledgeDeviceAuthorization,
       decline: declineDeviceAuthorization,
       confirm: confirmDeviceAuthorization,
     }, closed),
+  });
+  const connection = startConnectionMonitor({
+    read: async () => {
+      const [payload, automatic, journal, authorizationStatus] = await Promise.allSettled([
+        getSnapshot(), getAutomaticDockStatus(), getTransitionJournalStatus(), getDeviceAuthorizationStatus(),
+      ]);
+      if (authorizationStatus.status === "fulfilled") authorization.observe(authorizationStatus.value);
+      if (payload.status === "rejected") throw payload.reason;
+      if (automatic.status === "rejected") throw automatic.reason;
+      if (journal.status === "rejected") throw journal.reason;
+      return {payload: payload.value, automatic: automatic.value, journal: journal.value.code};
+    },
+    show: (store, switchTv, closed) => showConnectionLivePanel(store, switchTv, closed, buildProfile),
+    presentation: createConnectionPresentationReceipt(window.localStorage),
   });
 
   const publishRuntimeTiles=(readings:Readings)=>{if(!runtimeOwner.stopped)tilePublisher.publish(readings);};

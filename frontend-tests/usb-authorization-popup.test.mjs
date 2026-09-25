@@ -88,8 +88,8 @@ test("popup stays presentation-only while the mounted runtime owns I/O and timer
   const runtime = read("usb-authorization-runtime.tsx");
   assert.match(index, /startUsbAuthorizationMonitor/);
   assert.match(index, /showUsbAuthorizationDialog/);
-  assert.match(runtime, /authorizationOffer\(await deps\.read\(\)\)/);
-  assert.match(runtime, /setTimeout/);
+  assert.match(index, /authorization\.observe\(authorizationStatus\.value\)/);
+  assert.doesNotMatch(runtime, /setInterval|setTimeout/);
 });
 
 test("only the understood facade schema can offer or approve", () => {

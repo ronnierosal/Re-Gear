@@ -9,19 +9,12 @@ import {
 import { UsbAuthorizationPopup } from "./usb-authorization-popup";
 
 const TOKEN = /^[0-9a-f]{32}$/;
-export const USB_AUTHORIZATION_POLL_MS = 1000;
-
 type Subscription = { close(): void };
 type Rpc = {
   acknowledge(token: string): Promise<unknown>;
   decline(token: string): Promise<unknown>;
   confirm(token: string, consent: boolean, action: UsbAuthorizationAction): Promise<unknown>;
 };
-type TimerHost = {
-  setTimeout(callback: () => void, delay: number): ReturnType<typeof setTimeout>;
-  clearTimeout(timer: ReturnType<typeof setTimeout>): void;
-};
-
 const record = (value: unknown): Record<string, unknown> | null =>
   value !== null && typeof value === "object" && !Array.isArray(value)
     ? value as Record<string, unknown> : null;
@@ -38,7 +31,6 @@ export function authorizationOffer(value: unknown): UsbAuthorizationPayload | nu
     || !TOKEN.test(payload.token)
     || typeof payload.vendor !== "string"
     || typeof payload.model !== "string"
-    || payload.model.trim().length === 0
     || payload.already_offered !== false
     || payload.intentional_disconnect !== false
     || payload.confirmation_open !== false
@@ -49,21 +41,41 @@ export function authorizationOffer(value: unknown): UsbAuthorizationPayload | nu
   return usbAuthorizationView({status: candidate}).phase === "offer" ? candidate : null;
 }
 
-function acceptedAcknowledgement(value: unknown, token: string): boolean {
+function sameAttachment(payload: Record<string, unknown>, status: UsbAuthorizationPayload): boolean {
+  return payload.token === status.token
+    && payload.vendor === status.vendor
+    && payload.model === status.model
+    && payload.generation === status.generation
+    && payload.already_offered === true
+    && payload.intentional_disconnect === false
+    && payload.remembered_grant_offered === status.remembered_grant_offered;
+}
+
+function acceptedAcknowledgement(value: unknown, status: UsbAuthorizationPayload): boolean {
   const payload = record(value);
   return payload?.schema_version === 1
     && payload.accepted === true
-    && payload.token === token
-    && payload.confirmation_open === true;
+    && payload.state === "unavailable"
+    && typeof payload.code === "string"
+    && payload.confirmation_open === true
+    && sameAttachment(payload, status);
 }
 
-function confirmationResult(value: unknown, token: string): UsbAuthorizationPayload | null {
+function confirmationResult(value: unknown, status: UsbAuthorizationPayload, action: UsbAuthorizationAction): UsbAuthorizationPayload | null {
   const payload = record(value);
   if (payload?.schema_version !== 1
-    || payload.token !== token
+    || !sameAttachment(payload, status)
     || typeof payload.requested !== "boolean"
     || (payload.verified !== true && payload.verified !== false && payload.verified !== null)
-    || typeof payload.code !== "string") return null;
+    || typeof payload.code !== "string"
+    || typeof payload.confirmation_open !== "boolean") return null;
+  if (payload.requested === true) {
+    if (payload.code !== "device_authorization.requested" || payload.confirmation_open !== false) return null;
+  } else if (payload.verified !== null) return null;
+  // The current backend's generic `verified` bit proves authorization only.
+  // Remembered trust needs separate enrollment proof before the UI may claim it.
+  if (action === "enroll" && payload.verified === true && payload.enrolled !== true)
+    return {...payload, verified: null} as UsbAuthorizationPayload;
   return payload as UsbAuthorizationPayload;
 }
 
@@ -81,8 +93,11 @@ export function UsbAuthorizationDialog({status, rpc, onClose}: {
   const [acknowledged, setAcknowledged] = useState(false);
   const [pending, setPending] = useState<UsbAuthorizationAction | null>(null);
   const [result, setResult] = useState<UsbAuthorizationPayload | null>(null);
+  const root = useRef<HTMLDivElement>(null);
   const alive = useRef(true);
   const acting = useRef(false);
+  const acknowledging = useRef(true);
+  const dismissQueued = useRef(false);
   const closed = useRef(false);
   const close = () => {
     if (closed.current) return;
@@ -94,11 +109,13 @@ export function UsbAuthorizationDialog({status, rpc, onClose}: {
     alive.current = true;
     void rpc.acknowledge(token).then(answer => {
       if (!alive.current) return;
-      if (!acceptedAcknowledgement(answer, token)) { close(); return; }
+      acknowledging.current = false;
+      if (!acceptedAcknowledgement(answer, status)) { close(); return; }
+      if (dismissQueued.current) { dismissQueued.current = false; decline(); return; }
       setAcknowledged(true);
-    }, close);
+    }, () => { acknowledging.current = false; close(); });
     return () => { alive.current = false; };
-  }, [rpc, token]);
+  }, [rpc, status, token]);
 
   const rawView = usbAuthorizationView({status, pending, result});
   const view = useMemo(() => ({
@@ -120,28 +137,38 @@ export function UsbAuthorizationDialog({status, rpc, onClose}: {
     const request = usbAuthorizationRequest(token, action);
     void rpc.confirm(request.token, request.consent, request.action).then(answer => {
       if (!alive.current) return;
-      const checked = confirmationResult(answer, token);
+      const checked = confirmationResult(answer, status, action);
       if (!checked) { close(); return; }
       setResult(checked);
     }, close).finally(() => { acting.current = false; });
   };
 
-  const dismiss = () => {
+  const decline = () => {
     if (acting.current) return;
     if (result || pending) { close(); return; }
     acting.current = true;
     void rpc.decline(token).finally(close);
   };
+  const dismiss = () => {
+    if (acknowledging.current) { dismissQueued.current = true; return; }
+    decline();
+  };
+  const toggleDetails = () => {
+    const details = root.current?.querySelector<HTMLDetailsElement>("details");
+    if (details) details.open = !details.open;
+  };
 
   return <ModalRoot className="rg-popup-host" closeModal={close}
     bDisableBackgroundDismiss bHideCloseIcon>
-    <Focusable flow-children="vertical" noFocusRing preferredFocus
+    <Focusable ref={root} flow-children="vertical" noFocusRing preferredFocus
       onOKButton={event => { stopEvent(event); choose("authorize"); }}
       onSecondaryButton={event => { stopEvent(event); choose("enroll"); }}
       onCancelButton={event => { stopEvent(event); dismiss(); }}
-      onOKActionDescription="Allow once"
-      onSecondaryActionDescription={status.remembered_grant_offered === true ? "Always trust" : undefined}
-      onCancelActionDescription="Not now">
+      onOptionsButton={event => { stopEvent(event); toggleDetails(); }}
+      onOKActionDescription={view.allowOnce.visible && view.allowOnce.enabled ? "Allow once" : undefined}
+      onSecondaryActionDescription={view.alwaysTrust.visible && view.alwaysTrust.enabled ? "Always trust" : undefined}
+      onCancelActionDescription={view.notNow.visible ? view.notNow.label : undefined}
+      onOptionsActionDescription="Details">
       <UsbAuthorizationPopup view={view}
         onAllowOnce={() => choose("authorize")}
         onAlwaysTrust={status.remembered_grant_offered === true ? () => choose("enroll") : undefined}
@@ -165,45 +192,24 @@ export function showUsbAuthorizationDialog(status: UsbAuthorizationPayload, rpc:
 }
 
 export function startUsbAuthorizationMonitor(deps: {
-  read(): Promise<unknown>;
   show(status: UsbAuthorizationPayload, onClosed: () => void): Subscription;
-  timers?: TimerHost;
 }) {
-  const timers = deps.timers ?? window;
   let stopped = false;
-  let reading = false;
   let epoch = 0;
-  let timer: ReturnType<typeof setTimeout> | undefined;
   let dialog: Subscription | null = null;
-
-  const schedule = () => {
-    if (!stopped && timer === undefined) timer = timers.setTimeout(() => {
-      timer = undefined;
-      void poll();
-    }, USB_AUTHORIZATION_POLL_MS);
-  };
-  const poll = async () => {
-    if (stopped || reading || dialog) { schedule(); return; }
-    reading = true;
+  return {observe(value: unknown) {
+    if (stopped || dialog) return;
+    const offer = authorizationOffer(value);
+    if (!offer) return;
     const token = epoch;
-    try {
-      const offer = authorizationOffer(await deps.read());
-      if (stopped || token !== epoch || !offer || dialog) return;
-      dialog = deps.show(offer, () => {
-        if (token !== epoch) return;
-        dialog = null;
-        schedule();
-      });
-    } catch { /* A failed read makes no claim and opens nothing. */ }
-    finally { reading = false; schedule(); }
-  };
-  void poll();
-  return {stop() {
+    dialog = deps.show(offer, () => {
+      if (token !== epoch) return;
+      dialog = null;
+    });
+  }, stop() {
     if (stopped) return;
     stopped = true;
     epoch++;
-    if (timer !== undefined) timers.clearTimeout(timer);
-    timer = undefined;
     const active = dialog;
     dialog = null;
     active?.close();
