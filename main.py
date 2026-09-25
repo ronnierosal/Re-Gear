@@ -448,7 +448,7 @@ class Plugin:
         self._device_authorization = DeviceAuthorizationFacade(
             self._device_authorization_observer,
             DeviceAuthorizationService(BoltDeviceAuthorizationRunner()),
-            remembered_grant_enabled=False,
+            remembered_grant_enabled=True,
         )
         self._sleep_guard = SleepGuardController()
         self._sleep_hardware = G1SleepGuardHardwareDiscovery()
@@ -554,6 +554,11 @@ class Plugin:
                 payload["accepted"] = False
         return payload
 
+    @staticmethod
+    def _device_authorization_payload(payload: dict[str, object]) -> dict[str, object]:
+        """Publish the production remembered-grant capability explicitly."""
+        return {**payload, "remembered_grant_offered": True}
+
     def _reconcile_device_authorization_disconnect(self) -> None:
         """Project the durable dock claim into the attachment prompt gate."""
         try:
@@ -590,7 +595,7 @@ class Plugin:
             def status():
                 self._reconcile_device_authorization_disconnect()
                 return self._device_authorization.status()
-            return await asyncio.to_thread(status)
+            return self._device_authorization_payload(await asyncio.to_thread(status))
         except Exception:
             return self._device_authorization_unavailable()
 
@@ -600,9 +605,10 @@ class Plugin:
         if getattr(self, "_unloading", False):
             return self._device_authorization_unavailable(answer=True)
         try:
-            return await asyncio.to_thread(
+            payload = await asyncio.to_thread(
                 self._device_authorization.acknowledge, token
             )
+            return self._device_authorization_payload(payload)
         except Exception:
             return self._device_authorization_unavailable(answer=True)
 
@@ -610,7 +616,8 @@ class Plugin:
         if getattr(self, "_unloading", False):
             return self._device_authorization_unavailable(answer=True)
         try:
-            return await asyncio.to_thread(self._device_authorization.decline, token)
+            payload = await asyncio.to_thread(self._device_authorization.decline, token)
+            return self._device_authorization_payload(payload)
         except Exception:
             return self._device_authorization_unavailable(answer=True)
 
@@ -620,12 +627,13 @@ class Plugin:
         if getattr(self, "_unloading", False):
             return self._device_authorization_unavailable(confirmation=True)
         try:
-            return await asyncio.to_thread(
+            payload = await asyncio.to_thread(
                 self._device_authorization.confirm,
                 token,
                 consent=consent,
                 action=action,
             )
+            return self._device_authorization_payload(payload)
         except Exception:
             return self._device_authorization_unavailable(confirmation=True)
 

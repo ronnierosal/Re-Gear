@@ -67,7 +67,7 @@ def rpc_allowed(profile: str, method: str, arguments: dict[str, Any]) -> bool:
             isinstance(token, str)
             and re.fullmatch(r"[0-9a-f]{32}", token) is not None
             and arguments.get("consent") is True
-            and arguments.get("action") == "authorize"
+            and arguments.get("action") in {"authorize", "enroll"}
         )
     return True
 

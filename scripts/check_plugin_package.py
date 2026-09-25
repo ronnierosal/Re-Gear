@@ -300,8 +300,8 @@ def main() -> int:
             "get_egpu_disconnect_status",
             "execute_egpu_disconnect",
             # First-time USB4 trust: one read-only offer and an explicit
-            # attachment-scoped response. Production policy admits only the
-            # one-shot authorize action; no remembered enrolment RPC exists.
+            # attachment-scoped response. Production admits only the explicit
+            # one-shot authorize and remembered-enrolment choices.
             "get_device_authorization_status",
             "acknowledge_device_authorization",
             "decline_device_authorization",
@@ -359,7 +359,7 @@ def main() -> int:
             print(f"- {failure}")
         return 1
     print(
-        "Plugin package check passed: documented diagnostics, eGPU lifecycle, one-shot USB4 authorization, preferences, explicit TDP controls, support export, sleep guard, supervised presentation, confirmed shutdown-before-disconnect, and guarded process release only."
+        "Plugin package check passed: documented diagnostics, eGPU lifecycle, explicit USB4 authorization choices, preferences, explicit TDP controls, support export, sleep guard, supervised presentation, confirmed shutdown-before-disconnect, and guarded process release only."
     )
     return 0
 

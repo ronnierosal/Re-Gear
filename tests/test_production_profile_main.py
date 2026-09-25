@@ -52,16 +52,15 @@ class ProductionPluginTests(unittest.IsolatedAsyncioTestCase):
         self.plugin._unloading = False
         self.plugin._device_authorization = Mock()
         self.plugin._device_authorization.confirm.return_value = {"requested": True}
-        accepted = await self.plugin.confirm_device_authorization(
-            token, True, "authorize"
-        )
-        self.assertTrue(accepted["requested"])
-        self.plugin._device_authorization.confirm.assert_called_once_with(
-            token, consent=True, action="authorize"
-        )
+        for action in ("authorize", "enroll"):
+            accepted = await self.plugin.confirm_device_authorization(
+                token, True, action
+            )
+            self.assertTrue(accepted["requested"])
+        self.assertEqual(2, self.plugin._device_authorization.confirm.call_count)
 
         self.plugin._device_authorization.reset_mock()
-        for consent, action in ((False, "authorize"), (True, "enroll")):
+        for consent, action in ((False, "authorize"), (False, "enroll"), (True, "remember")):
             refused = await self.plugin.confirm_device_authorization(
                 token, consent, action
             )

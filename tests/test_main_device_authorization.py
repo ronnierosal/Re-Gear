@@ -1,4 +1,4 @@
-"""Plugin wiring for first-time, one-shot USB4 authorization."""
+"""Plugin wiring for first-time USB4 authorization choices."""
 
 import asyncio
 import unittest
@@ -25,7 +25,7 @@ class MainDeviceAuthorizationTests(unittest.TestCase):
         expected = {"schema_version": 1, "state": "offered", "token": "a" * 32}
         self.plugin._device_authorization.status.return_value = expected
         result = asyncio.run(self.plugin.get_device_authorization_status())
-        self.assertEqual(expected, result)
+        self.assertEqual({**expected, "remembered_grant_offered": True}, result)
         self.plugin._reconcile_device_authorization_disconnect.assert_called_once_with()
         self.plugin._device_authorization.status.assert_called_once_with()
 
@@ -33,7 +33,9 @@ class MainDeviceAuthorizationTests(unittest.TestCase):
         token = "a" * 32
         self.plugin._device_authorization.acknowledge.return_value = {"accepted": True}
         self.plugin._device_authorization.decline.return_value = {"accepted": True}
-        self.plugin._device_authorization.confirm.return_value = {"requested": True}
+        self.plugin._device_authorization.confirm.side_effect = [
+            {"requested": True}, {"requested": True}
+        ]
         self.assertTrue(
             asyncio.run(self.plugin.acknowledge_device_authorization(token))["accepted"]
         )
@@ -45,10 +47,19 @@ class MainDeviceAuthorizationTests(unittest.TestCase):
                 self.plugin.confirm_device_authorization(token, True, "authorize")
             )["requested"]
         )
+        self.assertTrue(
+            asyncio.run(
+                self.plugin.confirm_device_authorization(token, True, "enroll")
+            )["requested"]
+        )
         self.plugin._device_authorization.acknowledge.assert_called_once_with(token)
         self.plugin._device_authorization.decline.assert_called_once_with(token)
-        self.plugin._device_authorization.confirm.assert_called_once_with(
-            token, consent=True, action="authorize"
+        self.assertEqual(
+            [
+                unittest.mock.call(token, consent=True, action="authorize"),
+                unittest.mock.call(token, consent=True, action="enroll"),
+            ],
+            self.plugin._device_authorization.confirm.call_args_list,
         )
 
     def test_runtime_failure_is_bounded_and_never_reflects_the_token(self):
