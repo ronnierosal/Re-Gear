@@ -47,6 +47,27 @@ class ProductionPluginTests(unittest.IsolatedAsyncioTestCase):
         result = await self.plugin.execute_egpu_disconnect(trial_action="whole_dock_disconnect")
         self.assertEqual("dock_teardown.trial_confirmation_required", result["code"])
 
+    async def test_first_time_authorization_rpcs_are_exactly_admitted(self):
+        token = "a" * 32
+        self.plugin._unloading = False
+        self.plugin._device_authorization = Mock()
+        self.plugin._device_authorization.confirm.return_value = {"requested": True}
+        accepted = await self.plugin.confirm_device_authorization(
+            token, True, "authorize"
+        )
+        self.assertTrue(accepted["requested"])
+        self.plugin._device_authorization.confirm.assert_called_once_with(
+            token, consent=True, action="authorize"
+        )
+
+        self.plugin._device_authorization.reset_mock()
+        for consent, action in ((False, "authorize"), (True, "enroll")):
+            refused = await self.plugin.confirm_device_authorization(
+                token, consent, action
+            )
+            self.assertEqual("build_profile.feature_unavailable", refused["code"])
+        self.plugin._device_authorization.confirm.assert_not_called()
+
     async def test_manual_connection_preferences_and_game_relaunch_refuse_before_body(self):
         for method, args in (
             ("set_automatic_dock_enabled", (True, True, True)),

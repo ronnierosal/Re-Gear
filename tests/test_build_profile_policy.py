@@ -26,6 +26,22 @@ class ExamplePlugin:
     async def stop_auto_tdp(self):
         self.calls.append("stop")
 
+    async def get_device_authorization_status(self, _request=None):
+        self.calls.append("authorization_status")
+        return {"state": "offered"}
+
+    async def acknowledge_device_authorization(self, token):
+        self.calls.append(("acknowledge", token))
+        return {"accepted": True}
+
+    async def decline_device_authorization(self, token):
+        self.calls.append(("decline", token))
+        return {"accepted": True}
+
+    async def confirm_device_authorization(self, token, consent, action):
+        self.calls.append(("confirm", token, consent, action))
+        return {"requested": True}
+
     async def _main(self):
         self.calls.append("startup_and_recovery")
 
@@ -97,4 +113,37 @@ class ProductionAdmissionTests(unittest.TestCase):
             lambda: plugin.execute_egpu_disconnect(relaunch_intent="sleep", trial_action="whole_dock_disconnect"),
         ):
             self.assertFalse(asyncio.run(invoke())["ok"])
+        self.assertEqual([], plugin.calls)
+
+    def test_production_admits_only_the_one_shot_authorization_contract(self):
+        plugin = profiled_plugin(ExamplePlugin, "production")()
+        token = "a" * 32
+        self.assertEqual(
+            "offered",
+            asyncio.run(plugin.get_device_authorization_status())["state"],
+        )
+        self.assertTrue(
+            asyncio.run(plugin.acknowledge_device_authorization(token))["accepted"]
+        )
+        self.assertTrue(
+            asyncio.run(plugin.decline_device_authorization(token))["accepted"]
+        )
+        self.assertTrue(
+            asyncio.run(
+                plugin.confirm_device_authorization(token, True, "authorize")
+            )["requested"]
+        )
+        self.assertEqual(4, len(plugin.calls))
+
+    def test_production_refuses_bad_tokens_and_remembered_grants_before_body(self):
+        plugin = profiled_plugin(ExamplePlugin, "production")()
+        for invoke in (
+            lambda: plugin.acknowledge_device_authorization("bad"),
+            lambda: plugin.decline_device_authorization("A" * 32),
+            lambda: plugin.confirm_device_authorization("a" * 32, False, "authorize"),
+            lambda: plugin.confirm_device_authorization("a" * 32, True, "enroll"),
+            lambda: plugin.confirm_device_authorization("a" * 32, True, "remember"),
+        ):
+            result = asyncio.run(invoke())
+            self.assertEqual("build_profile.feature_unavailable", result["code"])
         self.assertEqual([], plugin.calls)

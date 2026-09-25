@@ -8,8 +8,9 @@ methods. Internal recovery stays available even when operator RPCs are hidden.
 
 from __future__ import annotations
 
-from functools import wraps
 import inspect
+import re
+from functools import wraps
 from typing import Any
 
 
@@ -23,6 +24,12 @@ CONNECTION_AND_DISCONNECT_RPCS = frozenset({
     "get_supervised_tv_switch_status",
     "get_sleep_readiness", "get_transition_journal_status", "acknowledge_sleep_journal",
     "get_process_release_status", "acknowledge_process_release",
+})
+DEVICE_AUTHORIZATION_RPCS = frozenset({
+    "get_device_authorization_status",
+    "acknowledge_device_authorization",
+    "decline_device_authorization",
+    "confirm_device_authorization",
 })
 
 # These expose observation only. Retained-state lookup and acknowledgement above
@@ -43,13 +50,24 @@ def rpc_allowed(profile: str, method: str, arguments: dict[str, Any]) -> bool:
         return True
     if profile != "production":
         return False
-    if method not in CONNECTION_AND_DISCONNECT_RPCS | READ_RPCS:
+    if method not in CONNECTION_AND_DISCONNECT_RPCS | DEVICE_AUTHORIZATION_RPCS | READ_RPCS:
         return False
     if method == "execute_egpu_disconnect":
         action = arguments.get("trial_action", "")
         return (
             isinstance(action, str) and action in PLAIN_DISCONNECT_ACTIONS
             and arguments.get("relaunch_intent", "disconnect") == "disconnect"
+        )
+    if method in {"acknowledge_device_authorization", "decline_device_authorization"}:
+        token = arguments.get("token")
+        return isinstance(token, str) and re.fullmatch(r"[0-9a-f]{32}", token) is not None
+    if method == "confirm_device_authorization":
+        token = arguments.get("token")
+        return (
+            isinstance(token, str)
+            and re.fullmatch(r"[0-9a-f]{32}", token) is not None
+            and arguments.get("consent") is True
+            and arguments.get("action") == "authorize"
         )
     return True
 
