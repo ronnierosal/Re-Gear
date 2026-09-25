@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       profile:
-        description: "Build profile (production awaits runtime feature enforcement)"
+        description: "Build profile"
         type: choice
         options:
           - development
@@ -15,7 +15,7 @@ on:
         required: true
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}-${{ inputs.profile || 'development' }}
+  group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}-${{ inputs.profile || 'both' }}
   cancel-in-progress: true
 
 permissions:
@@ -23,7 +23,13 @@ permissions:
 
 jobs:
   foundation:
+    strategy:
+      fail-fast: false
+      matrix:
+        profile: ${{ github.event_name == 'workflow_dispatch' && fromJSON(format('["{0}"]', inputs.profile)) || fromJSON('["development","production"]') }}
     runs-on: ubuntu-latest
+    env:
+      REGEAR_BUILD_PROFILE: ${{ matrix.profile }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -31,7 +37,7 @@ jobs:
           python-version: "3.11"
       - name: Validate requested build profile
         env:
-          BUILD_PROFILE: ${{ inputs.profile || 'development' }}
+          BUILD_PROFILE: ${{ matrix.profile }}
         run: python scripts/build_profiles.py --profile "$BUILD_PROFILE"
       - uses: pnpm/action-setup@v4
         with:
@@ -128,7 +134,7 @@ jobs:
         run: python scripts/check_plugin_package.py .
       - name: Build Decky archive
         env:
-          BUILD_PROFILE: ${{ inputs.profile || 'development' }}
+          BUILD_PROFILE: ${{ matrix.profile }}
         run: python scripts/build_plugin.py --profile "$BUILD_PROFILE"
       - name: Record validation artifact provenance
         run: |
@@ -144,7 +150,7 @@ jobs:
       - name: Upload controlled validation artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Re-Gear-${{ inputs.profile || 'development' }}-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          name: Re-Gear-${{ matrix.profile }}-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             out/Re-Gear-*.zip
             out/source-revision.txt

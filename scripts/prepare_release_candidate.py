@@ -12,9 +12,9 @@ from typing import Any
 
 # Support direct CLI execution and importlib-based historical test callers.
 try:
-    from scripts.build_profiles import PROFILE_FILENAME, validate_packaged_profile
+    from scripts.build_profiles import PROFILE_FILENAME, PROFILE_CONFIG_PATH, validate_packaged_profile, backend_config_bytes
 except ModuleNotFoundError:
-    from build_profiles import PROFILE_FILENAME, validate_packaged_profile
+    from build_profiles import PROFILE_FILENAME, PROFILE_CONFIG_PATH, validate_packaged_profile, backend_config_bytes
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -65,6 +65,11 @@ def prepare_release_candidate(archive: Path, *, project_root: Path = ROOT) -> di
             if names.count(profile_name) != 1:
                 raise ValueError("release.archive_profile_missing_or_duplicate")
             profile = json.loads(value.read(profile_name).decode("utf-8"))
+            for relative in (PROFILE_CONFIG_PATH, "dist/index.js"):
+                if names.count(f"{PLUGIN_DIRECTORY}/{relative}") != 1:
+                    raise ValueError("release.archive_profile_input_missing_or_duplicate")
+            backend_profile = value.read(f"{PLUGIN_DIRECTORY}/{PROFILE_CONFIG_PATH}")
+            frontend_digest = hashlib.sha256(value.read(f"{PLUGIN_DIRECTORY}/dist/index.js")).hexdigest()
     except (OSError, KeyError, UnicodeDecodeError, ValueError, zipfile.BadZipFile) as error:
         raise ValueError("release.archive_metadata_invalid") from error
     if (not isinstance(build, dict) or build.get("schema_version") != 1
@@ -73,6 +78,9 @@ def prepare_release_candidate(archive: Path, *, project_root: Path = ROOT) -> di
             or package.get("version") != version):
         raise ValueError("release.archive_build_inconsistent")
     profile = validate_packaged_profile(profile, root=project_root)
+    if (backend_profile != backend_config_bytes(profile["profile"])
+            or frontend_digest != profile["bundle_sha256"]):
+        raise ValueError("release.archive_profile_inconsistent")
     return {
         "schema_version": 1, "version": version,
         "build": {"source_revision": build["revision"], "profile": profile},

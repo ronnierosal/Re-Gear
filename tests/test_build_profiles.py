@@ -2,6 +2,7 @@
 
 import contextlib
 import io
+import hashlib
 import json
 import sys
 import tempfile
@@ -19,6 +20,7 @@ class BuildProfileTests(unittest.TestCase):
         self.assertEqual("development", profile["profile"])
         self.assertEqual("existing_development_surface", profile["feature_policy"])
         self.assertEqual(64, len(profile["contract_sha256"]))
+        profile["bundle_sha256"] = "a" * 64
         self.assertEqual(profile, build_profiles.validate_packaged_profile(profile))
 
     def test_profile_is_deterministic_across_contract_formatting(self):
@@ -47,25 +49,35 @@ class BuildProfileTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "profile_unknown"):
             build_profiles.package_profile("prod")
 
-    def test_production_refuses_before_reservation_or_git_or_output(self):
-        with tempfile.TemporaryDirectory() as directory:
-            output = Path(directory) / "must-not-exist.zip"
-            errors = io.StringIO()
-            with (
-                patch.object(build_plugin, "OUTPUT", output),
-                patch.object(build_plugin, "source_revision") as revision,
-                patch.object(release_coordination, "reserve") as reserve,
-                contextlib.redirect_stderr(errors),
-                self.assertRaises(SystemExit) as raised,
-            ):
-                build_plugin.main(["--profile", "production"])
-            self.assertEqual(1, raised.exception.code)
-            self.assertIn("production_runtime_enforcement_pending", errors.getvalue())
-            revision.assert_not_called()
-            reserve.assert_not_called()
-            self.assertFalse(output.exists())
+    def test_production_has_only_approved_features(self):
+        self.assertEqual(["egpu_connection", "safe_disconnect"],
+                         build_profiles.package_profile("production")["enabled_features"])
 
-    def test_real_archive_writer_embeds_development_profile_and_preserves_build_info(self):
+    def test_frontend_profile_rejects_mismatch_and_changed_bundle(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "contracts").mkdir()
+            (root / "contracts/build-profiles.json").write_bytes(
+                (build_profiles.ROOT / "contracts/build-profiles.json").read_bytes())
+            (root / "dist").mkdir()
+            bundle = root / "dist/index.js"
+            bundle.write_bytes(b"production bundle")
+            stamp = build_profiles.package_profile("production", root=root)
+            stamp["bundle_sha256"] = hashlib.sha256(bundle.read_bytes()).hexdigest()
+            (root / "dist/build_profile.json").write_text(json.dumps(stamp))
+            self.assertEqual(stamp, build_profiles.frontend_profile("production", root=root))
+            with self.assertRaisesRegex(ValueError, "frontend_profile_mismatch"):
+                build_profiles.frontend_profile("development", root=root)
+            bundle.write_bytes(b"changed")
+            with self.assertRaisesRegex(ValueError, "frontend_profile_mismatch"):
+                build_profiles.frontend_profile("production", root=root)
+
+    def test_real_archive_writer_embeds_each_profile_and_preserves_build_info(self):
+        for selected in build_profiles.PROFILE_NAMES:
+            with self.subTest(profile=selected):
+                self.check_archive_profile(selected)
+
+    def check_archive_profile(self, selected):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "contracts").mkdir()
@@ -73,7 +85,7 @@ class BuildProfileTests(unittest.TestCase):
                 (build_profiles.ROOT / "contracts/build-profiles.json").read_bytes()
             )
             for relative in (*build_plugin.TOP_LEVEL_FILES, *build_plugin.READ_ONLY_PROBES,
-                             *build_plugin.GENERATED_BUILD_OUTPUTS, "bin/gamescope", "bin/steam-launcher"):
+                             *build_plugin.GENERATED_BUILD_OUTPUTS, "bin/gamescope", "bin/steam-launcher", build_profiles.PROFILE_CONFIG_PATH):
                 target = root / relative
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_text("fixture\n", encoding="utf-8")
@@ -81,6 +93,9 @@ class BuildProfileTests(unittest.TestCase):
             (root / "package.json").write_text('{"version":"1.2.3"}', encoding="utf-8")
             for launcher in ("gamescope", "steam-launcher"):
                 (root / "bin" / launcher).write_bytes(b"#!/usr/bin/python3\npass\n")
+            stamp = build_profiles.package_profile(selected, root=root)
+            stamp["bundle_sha256"] = hashlib.sha256((root / "dist/index.js").read_bytes()).hexdigest()
+            (root / "dist/build_profile.json").write_text(json.dumps(stamp))
             output = root / "out/Re-Gear-1.2.3.zip"
             with (
                 patch.object(build_plugin, "ROOT", root),
@@ -91,14 +106,21 @@ class BuildProfileTests(unittest.TestCase):
                 patch.object(release_coordination, "reserve") as reserve,
                 contextlib.redirect_stdout(io.StringIO()),
             ):
-                self.assertEqual(0, build_plugin.main())
+                other = "production" if selected == "development" else "development"
+                with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+                    build_plugin.main(["--profile", other])
+                reserve.assert_not_called()
+                self.assertFalse(output.parent.exists())
+                self.assertEqual(0, build_plugin.main(["--profile", selected]))
                 reserve.assert_called_once_with("1.2.3")
                 with self.assertRaisesRegex(SystemExit, "Refusing to overwrite"):
-                    build_plugin.main(["--profile", "development"])
+                    build_plugin.main(["--profile", selected])
                 reserve.assert_called_once_with("1.2.3")
             with zipfile.ZipFile(output) as archive:
                 profile = json.loads(archive.read("Re-Gear/build_profile.json"))
-                self.assertEqual(build_profiles.package_profile(root=root), profile)
+                self.assertEqual(stamp, profile)
+                self.assertEqual(build_profiles.backend_config_bytes(selected),
+                                 archive.read("Re-Gear/" + build_profiles.PROFILE_CONFIG_PATH))
                 self.assertEqual({"schema_version": 1, "version": "1.2.3", "revision": "a" * 40},
                                  json.loads(archive.read("Re-Gear/build_info.json")))
 

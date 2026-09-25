@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import io
+import json
 import subprocess
 import sys
 import tempfile
@@ -39,7 +40,8 @@ class PackagedProbeTests(unittest.TestCase):
                 patch.object(build_plugin, "source_revision", return_value="a" * 40),
                 contextlib.redirect_stdout(io.StringIO()),
             ):
-                self.assertEqual(build_plugin.main(), 0)
+                profile = json.loads((build_plugin.ROOT / "dist/build_profile.json").read_text(encoding="utf-8"))["profile"]
+                self.assertEqual(build_plugin.main(["--profile", profile]), 0)
                 reserve.assert_called_once_with(build_plugin.PACKAGE_VERSION)
             with zipfile.ZipFile(output) as archive:
                 names = archive.namelist()

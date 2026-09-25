@@ -1,5 +1,6 @@
 import importlib.util
 import json
+import hashlib
 import tempfile
 import unittest
 import zipfile
@@ -24,12 +25,17 @@ class ReleaseCandidateTests(unittest.TestCase):
         (root / "package.json").write_text(json.dumps({"version": version}), encoding="utf-8")
         (root / "pyproject.toml").write_text('[project]\nversion = "' + version + '"\n', encoding="utf-8")
 
-    def make_archive(self, root: Path, *, version: str = "1.2.3", revision: str = "a" * 40) -> Path:
+    def make_archive(self, root: Path, *, version: str = "1.2.3", revision: str = "a" * 40, selected: str = "development") -> Path:
         archive = root / f"Re-Gear-{version}.zip"
         with zipfile.ZipFile(archive, "w") as value:
             value.writestr("Re-Gear/package.json", json.dumps({"version": version}))
             value.writestr("Re-Gear/build_info.json", json.dumps({"schema_version": 1, "version": version, "revision": revision}))
-            value.writestr("Re-Gear/build_profile.json", json.dumps(build_profiles.package_profile(root=root)))
+            profile = build_profiles.package_profile(selected, root=root)
+            profile["bundle_sha256"] = hashlib.sha256(b"fixture").hexdigest()
+            value.writestr("Re-Gear/build_profile.json", json.dumps(profile))
+            value.writestr("Re-Gear/dist/index.js", b"fixture")
+            value.writestr("Re-Gear/" + build_profiles.PROFILE_CONFIG_PATH,
+                           build_profiles.backend_config_bytes(selected))
         return archive
 
     def test_mixed_root_is_not_a_release_candidate(self):
@@ -54,6 +60,16 @@ class ReleaseCandidateTests(unittest.TestCase):
         self.assertEqual("development", result["build"]["profile"]["profile"])
         self.assertIn("development", release_candidate._notes_template(result))
 
+    def test_production_candidate_retains_approved_feature_identity(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self.make_project(root)
+            result = release_candidate.prepare_release_candidate(
+                self.make_archive(root, selected="production"), project_root=root)
+            self.assertEqual("production", result["build"]["profile"]["profile"])
+            self.assertEqual(["egpu_connection", "safe_disconnect"],
+                             result["build"]["profile"]["enabled_features"])
+
     def test_legacy_archive_cannot_be_new_profiled_candidate(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -69,7 +85,7 @@ class ReleaseCandidateTests(unittest.TestCase):
 
     def test_rejects_relabelled_or_mismatched_profile(self) -> None:
         for field, replacement, reason in (
-            ("profile", "production", "production_runtime_enforcement_pending"),
+            ("profile", "production", "archive_profile_inconsistent"),
             ("contract_sha256", "0" * 64, "archive_profile_inconsistent"),
             ("feature_policy", "stable_allowlist", "archive_profile_inconsistent"),
             ("schema_version", True, "archive_profile_inconsistent"),
@@ -78,6 +94,7 @@ class ReleaseCandidateTests(unittest.TestCase):
                 root = Path(temporary)
                 self.make_project(root)
                 profile = build_profiles.package_profile(root=root)
+                profile["bundle_sha256"] = hashlib.sha256(b"fixture").hexdigest()
                 profile[field] = replacement
                 archive = root / "Re-Gear-1.2.3.zip"
                 with zipfile.ZipFile(archive, "w") as value:
@@ -86,8 +103,29 @@ class ReleaseCandidateTests(unittest.TestCase):
                         "schema_version": 1, "version": "1.2.3", "revision": "a" * 40,
                     }))
                     value.writestr("Re-Gear/build_profile.json", json.dumps(profile))
+                    value.writestr("Re-Gear/dist/index.js", b"fixture")
+                    value.writestr("Re-Gear/" + build_profiles.PROFILE_CONFIG_PATH,
+                                   build_profiles.backend_config_bytes("development"))
                 with self.assertRaisesRegex(ValueError, reason):
                     release_candidate.prepare_release_candidate(archive, project_root=root)
+
+    def test_candidate_rejects_backend_or_bundle_mismatch(self):
+        for changed_path, changed_bytes in (
+            ("dist/index.js", b"changed"),
+            (build_profiles.PROFILE_CONFIG_PATH, build_profiles.backend_config_bytes("production")),
+        ):
+            with self.subTest(path=changed_path), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                self.make_project(root)
+                original = self.make_archive(root)
+                with zipfile.ZipFile(original) as archive:
+                    entries = {name: archive.read(name) for name in archive.namelist()}
+                entries["Re-Gear/" + changed_path] = changed_bytes
+                with zipfile.ZipFile(original, "w") as archive:
+                    for name, content in entries.items():
+                        archive.writestr(name, content)
+                with self.assertRaisesRegex(ValueError, "archive_profile_inconsistent"):
+                    release_candidate.prepare_release_candidate(original, project_root=root)
 
     def test_rejects_inconsistent_source_versions(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

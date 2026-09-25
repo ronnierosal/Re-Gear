@@ -5665,3 +5665,11 @@ class Plugin:
             "blockers": ["process_release.service_unavailable"],
             "confirmation_required": False,
         }
+
+
+# Build identity is supplied by packaging, never by a player setting or RPC.
+# Private lifecycle/startup/recovery paths remain the existing implementation.
+from regear.delivery.build_profile_config import BUILD_PROFILE  # noqa: E402
+from regear.delivery.build_profile_policy import profiled_plugin  # noqa: E402
+
+Plugin = profiled_plugin(Plugin, BUILD_PROFILE)

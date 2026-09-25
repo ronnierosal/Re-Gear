@@ -42,50 +42,52 @@ contact Decky, register a store channel, deploy, or use publication secrets.
 
 ## Candidate versioning
 
-### Development and production profile foundation
+### Development and production profiles
 
-`contracts/build-profiles.json` names the two build profiles. Current packaging
-defaults to `development`; `python scripts/build_plugin.py --profile development`
-is the explicit equivalent. It preserves the existing development feature surface,
-including experimental functionality and its existing safety checks. This first
-step does not introduce feature filtering or change runtime behavior.
+`contracts/build-profiles.json` names two build profiles. Development preserves
+all existing development features and their safety checks. Production enables
+only eGPU connection and Safe Disconnect. Its command center has one eGPU tab,
+live connection status and the plain disconnect action; other tabs, utilities,
+customization and combined sleep/shutdown actions are hidden. The backend also
+rejects unapproved public mutation calls before dispatch. Internal connection,
+sleep protection, pending-operation completion and recovery remain active.
 
-New archives include `build_profile.json` with the selected profile, feature
-policy and canonical contract SHA-256. The existing `build_info.json` schema is
-unchanged. Candidate records and release-note templates carry the profile as well
-as the archive checksum and exact source revision. Preparing a new candidate now
-requires this profile record; old archives remain readable by the historical
-`verify_validation_artifact.py` verifier and are never retroactively relabeled.
+Build and package the same selected profile (PowerShell example):
 
-`production` reserves the intended `stable_allowlist` policy. Packaging it exits
-with `release.production_runtime_enforcement_pending` **before reserving a version
-or creating an archive**. The runtime does not yet enforce an approved feature
-allowlist at UI, RPC, startup and automatic entry points. A manifest switch cannot
-make that runtime production-ready. No existing feature is declared GA-ready by
-this foundation, and no new gate applies to ordinary development packaging.
+```powershell
+$env:REGEAR_BUILD_PROFILE = "production"
+pnpm build
+python scripts/build_plugin.py --profile production
+```
 
-The CI workflow also has a manual **Run workflow** entry with a profile choice.
-Push and pull-request runs continue to select development. Manual development
-runs execute the same complete CI gates and upload a validation artifact;
-production requests report the explicit pending-enforcement error immediately.
-Artifact names include profile, source SHA, run ID and attempt; embedded ZIP names
-remain plain `Re-Gear-X.Y.Z.zip`. CI artifacts are run-scoped validation outputs,
-not globally version-reserved public releases. The job retains read-only repository
-permissions and does not publish, install or register a channel.
+Omitting the environment variable and package option selects development.
+Packaging checks the generated frontend profile stamp and exact bundle SHA-256
+before reserving a version. It generates the matching immutable backend profile
+inside the archive without modifying the source checkout. A stale bundle or
+mismatched profile is rejected. New `build_profile.json` metadata records the
+profile, approved feature list, contract digest and bundle digest; the existing
+`build_info.json` schema remains unchanged. Candidate preparation checks the
+frontend bytes and backend configuration against that record. Historical
+archives remain readable by `verify_validation_artifact.py`, but cannot be
+retroactively relabeled as new profiled candidates.
+
+Push and pull-request CI runs build and test both profiles in separate jobs.
+Manual **Run workflow** selects one profile. Artifact names include profile,
+source SHA, run ID and attempt; embedded ZIP names remain plain
+`Re-Gear-X.Y.Z.zip`. These are run-scoped validation outputs, not globally
+version-reserved public releases. CI retains read-only repository permissions
+and does not publish, install or register a channel.
 
 Remaining delivery steps, in order:
 
-1. Agree the feature inventory/production allowlist with the UI and affected
-   backend owners, including exact supported hardware evidence.
-2. Enforce that policy through UI, RPC and automatic paths while preserving
-   recovery of retained development state; test both profiles and navigation.
-3. Add durable, serialized GitHub version reservations for distributed candidates
+1. Complete exact-candidate UI/backend review and supervised hardware acceptance
+   for the production feature set, including retained-state recovery and rollback.
+2. Add durable, serialized GitHub version reservations for distributed candidates
    (local Git reservations alone cannot coordinate fresh CI clones).
-4. Retain and validate the exact production candidate, including supervised
-   hardware acceptance and settings/downgrade/rollback coverage.
-5. Promote those exact bytes through a protected GA publication job. Do not rebuild
-   at promotion or mark a development ZIP stable. Decky distribution remains a
-   separate reviewed integration.
+3. Retain the validated production candidate and promote those exact bytes through
+   a protected GA publication job. Do not rebuild at promotion or mark a
+   development ZIP stable. Decky distribution remains a separate reviewed
+   integration.
 
 Use one active plugin installation per device. Profile metadata is build identity,
 not permission to bypass hardware, release or installation gates.

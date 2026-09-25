@@ -2,6 +2,7 @@ import { registerRuntimeHost,type RuntimeOwner } from "./quick-access/expanded-c
 import { createRuntimeDetailPublisher } from "./quick-access/expanded-command-center/runtime-detail-source";
 import { createRuntimeDetailRenderer } from "./quick-access/expanded-command-center/runtime-detail-renderer";
 import { ReGearLanding,ReGearAbout,ReGearHelp } from "./quick-access/expanded-command-center/landing";
+import { buildProfile } from "regear:build-profile";
 import type { ReactNode } from "react";
 import { createNonEgpuDetailPublisher, type NonEgpuDetailState } from "./quick-access/expanded-command-center/non-egpu-detail-source";
 import { createControllerReadingLifetime } from "./quick-access/expanded-command-center/controller-reading-lifetime";
@@ -655,7 +656,7 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
    * hardware", and a stored dismissal would hide it after a later restart. */
   const [resultDismissed, setResultDismissed] = useState(false);
   const route = currentRoute(navStack);
-  const performance = usePerformance(quickAccessVisible || expandedVisible);
+  const performance = usePerformance(buildProfile === "development" && (quickAccessVisible || expandedVisible));
   const onCommandCenter = route.kind === "command-center";
   // Read by the refresh callback, which must not be rebuilt on every navigation:
   // adding navStack to its dependencies would restart the refresh cycle on a
@@ -1796,7 +1797,7 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
 
   const wrapDetail=(node:ReactNode)=><div ref={statusAnchor} tabIndex={-1}><style>{regearControlCss}</style>{node}</div>;
   const egpuDetail=<>
-      <PanelSection title="eGPU"><EgpuModule presentation={egpuPresentation(payload)} onOpenRecovery={toggleTroubleshooting} /></PanelSection>
+      <PanelSection title="eGPU"><EgpuModule presentation={egpuPresentation(payload)} onOpenRecovery={buildProfile === "development" ? toggleTroubleshooting : undefined} /></PanelSection>
       {payload?.connection_readiness && payload.connection_readiness.stage !== "disconnected" &&
         <PanelSection title="eGPU readiness">
           <ConnectionQuickStatus store={connection.store} visible={quickAccessVisible}
@@ -1826,7 +1827,7 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
           {automaticDockMessage && (
             <PanelSectionRow>{automaticDockMessage}</PanelSectionRow>
           )}
-          <DashboardSurface primary>
+          {(buildProfile === "development" || primaryDisplayAction.target === "tv") && <DashboardSurface primary>
             <DashboardAction
               icon="bolt"
               tone="primary"
@@ -1835,7 +1836,7 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
               onClick={activateDisplay}
               disabled={primaryDisplayAction.disabled}
             />
-          </DashboardSurface>
+          </DashboardSurface>}
           {tvSwitchMessage && <PanelSectionRow>{tvSwitchMessage}</PanelSectionRow>}
 
           <DashboardSurface><DashboardAction icon="power" title="Safe Disconnect" description="Open the guarded disconnect workflow" onClick={openDisconnect}/></DashboardSurface>
@@ -1866,7 +1867,7 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
               </ButtonItem>
             </PanelSectionRow>
           )}
-          <DashboardSurface>
+          {buildProfile === "development" && <DashboardSurface>
             <DashboardAction
               title="Troubleshoot"
               icon="tools"
@@ -1874,7 +1875,7 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
               expanded={showDiagnostics}
               onClick={toggleTroubleshooting}
             />
-          </DashboardSurface>
+          </DashboardSurface>}
         </div>
         {needsAttention && (
           <PanelSectionRow>
@@ -2175,17 +2176,17 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
   const displayDetail=<DisplayPicker current={tiles.find(tile=>tile.id==="display")?.value.text??"Unknown"} action={primaryDisplayAction} onSwitch={activateDisplay} onConfigure={()=>runtimeDetails.source.navigate("egpu-config")}/>;
   useEffect(()=>{
     runtimeDetails.publish({
-      views:{egpu:wrapDetail(<><PanelSection title="eGPU status"><EgpuModule presentation={egpuPresentation(payload)}/></PanelSection><ButtonItem layout="below" onClick={()=>runtimeDetails.source.navigate("egpu-config")}>Configure docking</ButtonItem></>),"egpu-config":wrapDetail(egpuDetail),diagnostics:wrapDetail(diagnosticDetail),display:wrapDetail(displayDetail)},
-      shutdown:{available:menuFresh&&payload?.inference.mode==="portable"&&!safeDisconnectBusy&&!tvSwitchBusy,
+      views:buildProfile === "production" ? {egpu:wrapDetail(egpuDetail),"egpu-config":null,diagnostics:null,display:null} : {egpu:wrapDetail(<><PanelSection title="eGPU status"><EgpuModule presentation={egpuPresentation(payload)}/></PanelSection><ButtonItem layout="below" onClick={()=>runtimeDetails.source.navigate("egpu-config")}>Configure docking</ButtonItem></>),"egpu-config":wrapDetail(egpuDetail),diagnostics:wrapDetail(diagnosticDetail),display:wrapDetail(displayDetail)},
+      shutdown:{available:buildProfile === "development"&&menuFresh&&payload?.inference.mode==="portable"&&!safeDisconnectBusy&&!tvSwitchBusy,
         reason:!menuFresh?"Current status unavailable":payload?.inference.mode!=="portable"?"Return to Handheld first":safeDisconnectBusy||tvSwitchBusy?"Operation in progress":"Portable shutdown",
         pending:safeDisconnectBusy,message:safeDisconnectMessage,
-        request:()=>{if(!runtimeOwner.stopped&&menuFresh&&payload?.inference.mode==="portable")void executeSafeDisconnect(true);}},
-      handheld:{available:menuFresh&&primaryDisplayAction.target==="ally"&&!primaryDisplayAction.disabled,
+        request:()=>{if(buildProfile === "development"&&!runtimeOwner.stopped&&menuFresh&&payload?.inference.mode==="portable")void executeSafeDisconnect(true);}},
+      handheld:{available:buildProfile === "development"&&menuFresh&&primaryDisplayAction.target==="ally"&&!primaryDisplayAction.disabled,
         reason:!menuFresh?"Current display status unavailable":primaryDisplayAction.target!=="ally"?"Handheld switch is not currently offered":primaryDisplayAction.description,
-        request:()=>{if(!runtimeOwner.stopped&&menuFresh&&primaryDisplayAction.target==="ally"&&!primaryDisplayAction.disabled)activateDisplay();}},
-      sleepConnected:{available:menuFresh&&!safeDisconnectBusy&&!tvSwitchBusy,
+        request:()=>{if(buildProfile === "development"&&!runtimeOwner.stopped&&menuFresh&&primaryDisplayAction.target==="ally"&&!primaryDisplayAction.disabled)activateDisplay();}},
+      sleepConnected:{available:buildProfile === "development"&&menuFresh&&!safeDisconnectBusy&&!tvSwitchBusy,
         reason:!menuFresh?"Current status unavailable":safeDisconnectBusy||tvSwitchBusy?"Operation in progress":"Sleep with the eGPU connected",
-        request:()=>{if(!runtimeOwner.stopped&&menuFresh&&!safeDisconnectBusy&&!tvSwitchBusy)setProductionActionRequest({action:"sleep-connected",nonce:++productionActionNonce.current});}},
+        request:()=>{if(buildProfile === "development"&&!runtimeOwner.stopped&&menuFresh&&!safeDisconnectBusy&&!tvSwitchBusy)setProductionActionRequest({action:"sleep-connected",nonce:++productionActionNonce.current});}},
     });
   });
   return <ProductionEgpuActionHost request={productionActionRequest} readCurrentSnapshot={()=>payload?.snapshot??null}/>;
@@ -2232,7 +2233,7 @@ export default definePlugin(() => {
   const publishMenuSnapshot = (snapshot: SnapshotPayload["snapshot"] | null) => { if(!runtimeOwner.stopped)menuSnapshot = snapshot; };
   const expandedMenu = createExpandedMenu(steamControllerInput(window), window, () =>
     !shortcut.modal.current && !shortcut.portableBusy.current && !shortcut.tvBusy.current && !warningModal,
-    tilePublisher.source, () => menuSnapshot, renderDetail, runtimeDetails.source);
+    tilePublisher.source, () => menuSnapshot, renderDetail, runtimeDetails.source, buildProfile);
   const shortcut = createDisplayShortcutRuntime({
     // View+Y now belongs exclusively to the menu. Explicit display requests
     // below retain their existing approval/confirmation path.
@@ -2296,7 +2297,7 @@ export default definePlugin(() => {
     },
   );
   preflight.start();
-  const offlineFocusChecks = startOfflineFocusChecks();
+  const offlineFocusChecks = buildProfile === "development" ? startOfflineFocusChecks() : {stop() {}};
   const connection = startConnectionMonitor({
     read: async () => {
       try {
@@ -2333,7 +2334,13 @@ export default definePlugin(() => {
   return {
     name: PRODUCT_NAME,
     titleView: <div className={staticClasses.Title} style={{ display: "flex", alignItems: "center" }}><BrandHeader /></div>,
-    content: <ReGearLanding shortcut={<expandedMenu.Settings/>}/>,
+    content: buildProfile === "development" ? <ReGearLanding shortcut={<expandedMenu.Settings/>}/> : <>
+      <PanelSection><PanelSectionRow><expandedMenu.Settings/></PanelSectionRow></PanelSection>
+      <PanelSection title="How to use"><PanelSectionRow>
+        <p>Use your shortcut to open Re-Gear for eGPU connection status and Safe Disconnect. The D-pad moves focus; A selects; B goes back or closes.</p>
+      </PanelSectionRow></PanelSection>
+      <PanelSection title="About & credits"><PanelSectionRow><ReGearAbout/></PanelSectionRow></PanelSection>
+    </>,
     icon: <BrandIcon />,
     alwaysRender: true,
     onDismount:dispose,
