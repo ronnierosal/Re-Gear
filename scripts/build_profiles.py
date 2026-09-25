@@ -20,7 +20,7 @@ POLICIES = {
 }
 FEATURES = {
     "development": ["*"],
-    "production": ["egpu_connection", "safe_disconnect"],
+    "production": ["egpu_connection", "safe_disconnect", "brightness", "volume"],
 }
 
 

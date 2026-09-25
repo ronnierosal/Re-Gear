@@ -11,7 +11,7 @@ export function canonicalJson(value) {
 }
 
 export function resolveBuildProfile(profile = 'development', contract = JSON.parse(readFileSync(new URL('../contracts/build-profiles.json', import.meta.url),'utf8'))) {
-  const expected={schema_version:1,profiles:{development:{feature_policy:'existing_development_surface',enabled_features:['*']},production:{feature_policy:'stable_allowlist',enabled_features:['egpu_connection','safe_disconnect']}}};
+  const expected={schema_version:1,profiles:{development:{feature_policy:'existing_development_surface',enabled_features:['*']},production:{feature_policy:'stable_allowlist',enabled_features:['egpu_connection','safe_disconnect','brightness','volume']}}};
   if(canonicalJson(contract)!==canonicalJson(expected))throw new Error('release.profile_contract_invalid');
   if(profile!=='development'&&profile!=='production')throw new Error('release.profile_unknown');
   return {schema_version:1,profile,feature_policy:contract.profiles[profile].feature_policy,

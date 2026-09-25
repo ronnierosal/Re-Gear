@@ -7,7 +7,7 @@
     },
     "production": {
       "feature_policy": "stable_allowlist",
-      "enabled_features": ["egpu_connection", "safe_disconnect"]
+      "enabled_features": ["egpu_connection", "safe_disconnect", "brightness", "volume"]
     }
   }
 }

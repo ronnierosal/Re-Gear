@@ -46,9 +46,11 @@ contact Decky, register a store channel, deploy, or use publication secrets.
 
 `contracts/build-profiles.json` names two build profiles. Development preserves
 all existing development features and their safety checks. Production enables
-only eGPU connection and Safe Disconnect. Its command center has one eGPU tab,
-live connection status and the plain disconnect action; other tabs, utilities,
-customization and combined sleep/shutdown actions are hidden. The backend also
+eGPU connection, Safe Disconnect, brightness and volume. Its command center has
+one eGPU tab, live connection status, the plain disconnect action and the existing
+left-side brightness/volume sliders. Right-side quick buttons, other tabs,
+customization and combined sleep/shutdown actions are hidden. Sliders reuse native
+Steam readings and setters; missing capabilities remain unavailable. The backend also
 rejects unapproved public mutation calls before dispatch. Internal connection,
 sleep protection, pending-operation completion and recovery remain active.
 Production connection details and the connection popup are observational. Manual
