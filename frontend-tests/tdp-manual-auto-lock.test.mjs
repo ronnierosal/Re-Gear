@@ -61,7 +61,7 @@ test("running Auto TDP visibly locks every manual mutation while leaving refresh
   const subject = controller({ running: true });
   const render = renderControls(subject.value);
   render();
-  const tree = render();
+  let tree = render();
 
   assert.match(flatten(tree).filter(value => typeof value === "string").join(" "), /Stop Auto TDP to adjust manually\./);
   assert.equal(control(tree, "ToggleField", "Use Re-Gear power control").props.disabled, true);
@@ -83,7 +83,7 @@ test("manual controls retain their existing behavior when Auto TDP is not runnin
   const subject = controller({ running: false });
   const render = renderControls(subject.value);
   render();
-  const tree = render();
+  let tree = render();
 
   assert.doesNotMatch(flatten(tree).filter(value => typeof value === "string").join(" "), /Stop Auto TDP to adjust manually/);
   assert.equal(control(tree, "ToggleField", "Use Re-Gear power control").props.disabled, false);
@@ -93,7 +93,8 @@ test("manual controls retain their existing behavior when Auto TDP is not runnin
 
   control(tree, "ToggleField", "Use Re-Gear power control").props.onChange(false);
   control(tree, "DropdownItem", "Power limit").props.onChange({ data: 20 });
+  tree = render();
   control(tree, "ButtonItem", "Apply power limit").props.onClick();
   control(tree, "ButtonItem", "Restore previous power settings").props.onClick();
-  assert.deepEqual(subject.calls, [["enabled", false], ["apply", 15], ["restore"]]);
+  assert.deepEqual(subject.calls, [["enabled", false], ["apply", 20], ["restore"]]);
 });
