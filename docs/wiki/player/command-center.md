@@ -1,96 +1,82 @@
 # Command Center & Quick Access
 
-The **Command Center** is Re-Gear's at-a-glance control panel. It is meant for things you may want to check or change without leaving your game.
+The **Command Center** is Re-Gear's full-screen control panel. It opens over your
+game so you can check status and act without leaving it.
 
-Quick Access is for **actions now**. Deeper configuration belongs in the individual Re-Gear pages.
+Quick Access is for **actions now**. Deeper configuration lives on the other tabs.
 
 ---
 
 ## For players — no technical background needed
 
-> **Interface preview:** this page describes design intent and developing UI.
-> Mockups and proposed labels are not proof of your installed controls.
-> Follow the available labels in your build; see [current evidence](../technical/current-state.md).
+### Availability and limits
 
-## Command Center overview
+This page describes current development builds, reviewed against merged source
+on September 24. The approved "V3" card artwork and live eGPU controls were in
+the 0.3.129 test build installed on the maintainer's test handheld. That confirms
+they are present in an installed build, not that every card has been checked on
+a device. There is no supported public release; see
+[Getting Started](getting-started.md). The [Player Visual Guide](visual-guide.md)
+shows labelled mockups until real screenshots are added.
 
-> ### 🖼️ UI MOCKUP — Command Center overview
-> **TEMPORARY IMAGE PLACEHOLDER**
->
-> Replace with a final screenshot/mockup showing the complete Re-Gear overlay over a running game.
->
-> Annotate: **Volume**, **Brightness**, **Quick Access buttons**, **active tab**, and **status information**.
->
-> Suggested asset: `assets/wiki/mockups/command-center-overview.png`
+### Open Re-Gear
 
-The main view is designed around two things:
+Open Re-Gear from your controller with the shortcut you choose in Decky's Quick
+Access menu under **Open Re-Gear**: **View / Back + Y** (the default), **L3 + R3**,
+or **Disabled**. Press both buttons together. Steam or your game may also react
+to the same buttons, because Re-Gear only listens for them.
 
-**Everyday controls** — Volume and brightness should be immediately available and visually prominent.
+### Get around
 
-**Quick actions** — A compact set of buttons gives you one-press access to the Re-Gear actions you use most.
+| Button | What it does |
+|---|---|
+| **LB** / **RB** | Change tabs |
+| **D-pad** | Move between cards |
+| **A** | Select |
+| **B** | Go back or close |
 
-## Navigation
+The tabs are **Quick Access**, **Performance**, **eGPU**, **Controllers**,
+**Offline Readiness** and **Settings**.
 
-Re-Gear is designed to work from a controller.
+### Quick Access
 
-- **D-pad / stick** — move between controls
-- **A** — select or activate
-- **B** — go back
-- **LB / RB** — move between top-level Re-Gear sections when available
+Quick Access starts with **FPS Target**, **Manual TDP**, **Auto TDP**,
+**Display Target**, **eGPU Connection**, **Safe Disconnect** and
+**Controller Status**. A column on the right holds quick toggles, starting with
+**Mic Mute**, **Wi-Fi**, **Performance Overlay** and **Record**. To adjust a
+brightness or volume slider, select it with **A**, then use **Up** / **Down**.
 
-> ### 🖼️ UI MOCKUP — Controller navigation
-> **TEMPORARY IMAGE PLACEHOLDER**
->
-> Show focus moving from Volume → Brightness → Quick Access buttons, with controller button hints.
->
-> Suggested asset: `assets/wiki/mockups/command-center-navigation.png`
+Every card shows current status. A card that cannot act right now keeps its
+place, shows why, and does nothing when selected. **Unknown** means Re-Gear could
+not confirm a value; it never guesses.
 
-## Quick Access buttons
+You can change, add, remove and move these buttons: see
+[Customize Re-Gear](customize.md).
 
-Quick Access is your personal shortcut area. The exact actions available can grow as Re-Gear modules are added.
+### The other tabs
 
-A button should tell you what it does at a glance using a recognizable icon and short label. Status-sensitive actions may also communicate whether something is connected, active, ready, or unavailable.
+- **Performance** — frame-rate target, power limit and Auto TDP.
+  [Learn more](performance.md)
+- **eGPU** — connection, display and disconnect actions.
+  [Learn more](egpu.md)
+- **Controllers** — what Re-Gear can see about your controllers.
+  [Learn more](controllers.md)
+- **Offline Readiness** — whether a game looks ready to play without internet.
+  [Learn more](offline-readiness.md)
+- **Settings** — **Diagnostics**, **Reset Layout**, **Tutorials** (short guides
+  for connecting, disconnecting and getting help) and **About** (version and
+  credits).
 
-> ### 🖼️ UI MOCKUP — Quick Access buttons
-> **TEMPORARY IMAGE PLACEHOLDER**
->
-> Close-up of the Quick Access button grid with several example actions and one focused button.
->
-> Suggested asset: `assets/wiki/mockups/quick-access-buttons.png`
+### If it does not work
 
-Want a different arrangement? See [Customize Re-Gear](customize.md) or jump directly to [Move Quick Access buttons](how-to/rearrange-quick-access.md).
-
-## The other menus
-
-The Command Center is not supposed to contain every setting. Use the top navigation for deeper controls.
-
-### Performance
-
-> 🖼️ **UI MOCKUP PLACEHOLDER — Performance menu**  
-> Suggested asset: `assets/wiki/mockups/performance-menu.png`
-
-Performance-related settings and status live here. [Learn more →](performance.md)
-
-### eGPU
-
-> 🖼️ **UI MOCKUP PLACEHOLDER — eGPU menu**  
-> Suggested asset: `assets/wiki/mockups/egpu-menu.png`
-
-External GPU, docking, display state, and safe-disconnect controls live here. [Learn more →](egpu.md)
-
-### Controllers
-
-> 🖼️ **UI MOCKUP PLACEHOLDER — Controllers menu**  
-> Suggested asset: `assets/wiki/mockups/controllers-menu.png`
-
-Controller status and controller-specific Re-Gear options live here. [Learn more →](controllers.md)
-
-### Settings
-
-> 🖼️ **UI MOCKUP PLACEHOLDER — Settings menu**  
-> Suggested asset: `assets/wiki/mockups/settings-menu.png`
-
-General preferences and customization live here.
+- The shortcut does nothing: check **Open Re-Gear** is not set to **Disabled**,
+  press both buttons at the same moment, and release both before trying again.
+  If the setting says controller input is unavailable, the shortcut cannot work
+  in this build; report it through [troubleshooting](troubleshooting.md) with
+  your Re-Gear version.
+- A card stays **Unavailable**: read its reason. It is Re-Gear declining an action
+  it cannot confirm is safe, not necessarily a fault.
+- Anything else: [troubleshooting](troubleshooting.md).
 
 ---
 
@@ -98,4 +84,20 @@ General preferences and customization live here.
 
 ## Technical details — for advanced users and contributors
 
-See the [owning contract/evidence](../../COMMAND_CENTER_VALIDATION.md) and [current state](../technical/current-state.md). UI PR329 is a separate test candidate; this page does not establish native or hardware acceptance.
+Tabs, default Quick Access controls and right-rail defaults are declared in
+`src/quick-access/expanded-command-center/model.ts` and `control-registry.ts`.
+The production Command Center routes eGPU actions directly
+([PR #353](https://github.com/ronnierosal/Re-Gear/pull/353)) and opens in the
+in-game focused overlay ([PR #354](https://github.com/ronnierosal/Re-Gear/pull/354)).
+The approved V3 artwork is wired across the registry controls
+([PR #378](https://github.com/ronnierosal/Re-Gear/pull/378)); **Render GPU** and
+plain **Shutdown** keep the earlier artwork because no approved V3 asset exists
+for them.
+
+| Evidence | What it establishes | Remaining limit |
+|---|---|---|
+| Merged source at `5ed1e3d`, 2026-09-24 | Tabs, labels, defaults, navigation and routing above | Source review is not native or hardware acceptance |
+| Installed 0.3.129 test build (`e8ad848`), 2026-09-22 | V3 artwork and production eGPU controls present in an installed build; the eGPU actions exercised in that trial are listed in [current state](../technical/current-state.md) | Later layout and text polish is not in that build; per-card native checks are not recorded |
+
+The owning evidence record is the
+[Command Center validation](../../COMMAND_CENTER_VALIDATION.md).

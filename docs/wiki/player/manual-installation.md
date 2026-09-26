@@ -24,7 +24,7 @@ must follow their exact supervised [Getting Started](getting-started.md) baselin
   entire value with the release's published value. A missing or different checksum
   means stop. A matching checksum checks the download; it does not establish
   hardware support or safety.
-- Read [Permissions and privacy](diagnostics-and-privacy.md#why-re-gear-requests-root-permission)
+- Read [Permissions and privacy](diagnostics-and-privacy.md#why-root-permission-is-requested)
   and [Safety and eGPU Handling](safety.md) before proceeding.
   Existing legacy test installations require the separately supervised
   [identity cutover procedure](https://github.com/ronnierosal/Re-Gear/blob/main/docs/IDENTITY_CUTOVER.md).
