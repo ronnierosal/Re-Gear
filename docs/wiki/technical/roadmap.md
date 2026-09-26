@@ -13,7 +13,7 @@ reviewed implementation checkpoint.
 
 | Focus | Player benefit | Priority, status, and next gate |
 |---|---|---|
-| eGPU reliability and recovery | Predictable display/audio handoff, return, and disconnect | Active reliability priority. Ordinary Safe Disconnect has supervised passes on one configuration; development build 0.3.154 adds first-time authorization, staged progress, a still-connected authorization hold, and guarded Disconnect + Sleep and Shutdown, pending supervised hardware validation. Software reconnect is excluded |
+| eGPU reliability and recovery | Predictable display/audio handoff, return, and disconnect | Active reliability priority. Ordinary Safe Disconnect has supervised passes on one configuration; merged source (packaged as local development build 0.3.154) adds first-time authorization, staged progress, a still-connected authorization hold, and guarded Disconnect + Sleep and Shutdown, pending supervised hardware validation. Software reconnect is excluded |
 | Command Center and modules | Common controls at hand, deeper settings easy to find | Active interface rebuild; approved design, existing navigation merged, new foundation under review; native controller acceptance pending |
 | Offline Readiness | Fewer surprises away from Wi-Fi | Implemented local guidance and refresh recovery; continue exact-game/view validation without turning confidence into a guarantee |
 | Performance and power | Understandable manual power limits and optional Auto TDP | Development source implemented; provider guards under review and device acceptance pending |

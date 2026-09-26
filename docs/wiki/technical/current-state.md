@@ -1,7 +1,8 @@
 # Current evidence and development state
 
-The latest eGPU lifecycle build is development build **0.3.154**: built and
-software-validated, **not installed or hardware-tested**. The ordinary Safe
+The eGPU lifecycle work is merged in `main` `fb334f2` (package version 0.3.153).
+The latest build of it is local development artifact **0.3.154**: built and
+software-validated, **not installed, released or hardware-tested**. The ordinary Safe
 Disconnect journey's hardware baseline comes from earlier builds, listed below.
 
 ## For players — no technical background needed
@@ -48,9 +49,9 @@ lifecycle evidence refresh:
 | Archive | `Re-Gear-0.3.154.zip`, development profile |
 | Revision | `f6be3edd5702f3f4c258465df861edc8f8642373` |
 | SHA-256 | `db017e82915f2bf2fb95f03c61bfbcd30cb01815f1d0d2f1c224fbffd18eb860` |
-| Composition | `main` `9dcdaff` + [PR #418](https://github.com/ronnierosal/Re-Gear/pull/418) `f98f8d0` + authorization-hold fix `5887900` |
+| Composition | `main` `9dcdaff` + [PR #418](https://github.com/ronnierosal/Re-Gear/pull/418) `f98f8d0` + authorization-hold fix `5887900`; that source has since merged as `main` `fb334f2` ([PR #425](https://github.com/ronnierosal/Re-Gear/pull/425)) |
 | Software checks | Golden 49/49 (8 contracts); frontend 1,233/1,233; focused eGPU/authorization backend 608 tests + 764 subtests; architecture, compileall, Ruff F82, TypeScript, both profile builds and package integrity passed |
-| Status | Built locally. Not installed, deployed, released or hardware-tested. Not yet recorded in CURRENT_STATE |
+| Status | Local development artifact. Not installed, deployed, released or hardware-tested. Not yet recorded in CURRENT_STATE |
 
 The [lifecycle guide](egpu-lifecycle.md#development-build-03154-built-not-yet-hardware-tested)
 breaks every 0.3.154 capability into source, package, previously observed and

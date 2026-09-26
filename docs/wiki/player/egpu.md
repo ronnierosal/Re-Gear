@@ -8,9 +8,9 @@ detected, whether your display is ready, and what action is available next.
 ### What is available
 
 Re-Gear is still a development project. There is no supported public release.
-Everything below describes development build **0.3.154**, which has been built
-and passed its software checks but has **not yet been installed or tested on a
-handheld**. Its exact status is in the
+Everything below describes the current development source, packaged as local
+development build **0.3.154**. That build passed its software checks but has
+**not been installed or tested on a handheld**. Its exact status is in the
 [0.3.154 lifecycle record](../technical/egpu-lifecycle.md#development-build-03154-built-not-yet-hardware-tested).
 
 The ordinary **Safe Disconnect** journey has already worked on the maintainer's
@@ -22,18 +22,25 @@ to unplug a powered eGPU. Outside a supervised test, shut down before unplugging
 
 ### Where the controls are
 
-Open Re-Gear and use **LB** / **RB** to reach the **eGPU** tab. Actions appear
-when Re-Gear can confirm they are safe to offer:
+Open Re-Gear and use **LB** / **RB** to reach the **eGPU** tab. It has these
+controls; each is enabled only when Re-Gear can confirm it is safe to offer:
 
-| Action | What it does |
+| Control | What it does |
 |---|---|
-| **eGPU Status** | Read-only status. Nothing changes when you open it |
-| **Switch to TV** / **Switch to Handheld** | Moves the picture between the TV and the handheld screen. The button shows whichever switch makes sense right now |
-| **Safe Disconnect** | Returns to the handheld and stops using the eGPU, then tells you to unplug it |
-| **Disconnect + Sleep** | Safe Disconnect, then waits for you to unplug before the handheld sleeps |
-| **Safe Disconnect + Shutdown** | Safe Disconnect, then shuts the handheld down |
+| **eGPU Status** | Read-only connection, display, render and readiness status. Nothing changes when you open it |
+| **Switch to Handheld** | Moves the picture to the handheld screen and keeps the eGPU connected |
+| **Resolution** | Changes the active display target |
+| **Safe Disconnect** | Returns to the handheld and disconnects the eGPU in software |
+| **Disconnect + Sleep** | Disconnects, asks you to unplug, then sleeps once the cable is confirmed gone |
+| **Shutdown** | Shuts the handheld down, without the disconnect sequence |
+| **Safe Disconnect + Shutdown** | Disconnects in software, then shuts the handheld down |
 
-A greyed-out or **Unavailable** action means Re-Gear cannot confirm it is safe
+**Switch to TV** is offered in two other places: the connection progress popup,
+once the TV is ready, and the display switch in Quick Access, whose label
+changes between **Switch to TV** and **Switch to handheld** to match the current
+display.
+
+A greyed-out or **Unavailable** control means Re-Gear cannot confirm it is safe
 to act. That is not a fault on its own.
 
 ### First connection
@@ -55,7 +62,8 @@ to act. That is not a fault on its own.
    GPU, the external display, audio, and Gaming Mode readiness. If a step is
    blocked, it shows **Needs attention** with the reason.
 4. When everything is ready, Re-Gear can switch to the TV automatically if you
-   turned that on, with a small number of retries. Otherwise use **Switch to TV**.
+   turned that on, with a small number of retries. Otherwise use **Switch to TV**
+   in the popup or Quick Access.
    Then check the picture, audio and controls. If the display does not return,
    stop and report the message and build version.
 
@@ -69,10 +77,12 @@ right now; it does not automatically mean the device is broken.
 1. Close your game and any dock-connected storage first.
 2. Select **Safe Disconnect** once and confirm. Re-Gear moves the picture back to
    the handheld, releases the eGPU, and switches the dock connection off.
-3. Keep the cable connected until Re-Gear tells you to **unplug the eGPU**. Then
-   unplug it. If Gaming Mode restarts during the disconnect, the result comes
-   back on its own — it is not a reason to press again.
+3. Keep the cable connected. If Gaming Mode restarts during the disconnect, the
+   result comes back on its own — it is not a reason to press again.
 4. Check that the handheld picture, audio and controls work.
+5. Unplug only when Re-Gear's own prompt tells you to, and only on a supervised
+   or qualified test setup. A software-removed message is not permission to
+   unplug by itself, and build 0.3.154 has not been validated on a device.
 
 After Safe Disconnect, a remembered eGPU is **not** turned back on while the cable
 is still plugged in. Re-Gear holds it off until it sees the cable has been
@@ -90,7 +100,8 @@ test setup, and Re-Gear refuses it.
 ### Sleep and wake
 
 - **Disconnect + Sleep** returns to the handheld, runs Safe Disconnect, then
-  tells you to unplug the eGPU. Unplug **only after that prompt appears**. Sleep
+  shows an urgent unplug prompt. Unplug **only after that prompt appears**, and
+  only on a supervised or qualified test setup. Sleep
   starts only once Re-Gear confirms the cable is gone, and only if that happens
   before the request expires. Otherwise the handheld stays awake.
 - **Sleeping with the eGPU still connected is not offered.** Disconnect first,
@@ -103,9 +114,13 @@ charging continues or wake is healthy without checking.
 ### Shutdown
 
 **Safe Disconnect + Shutdown** returns to the handheld, runs the guarded
-disconnect, then shuts down. Re-Gear does not switch off USB-C charging, so the
-dock is expected to keep charging the handheld. Charging and the full one-button
-shutdown have not yet been tested on a handheld with 0.3.154.
+disconnect, then shuts down. Re-Gear is designed not to switch off USB-C
+charging, so the dock should keep charging the handheld — but that is the
+intent, not a tested result. Charging and the full one-button shutdown have not
+yet been tested on a handheld with 0.3.154. Keep the cable connected; the
+confirmation itself says this is not permission to unplug.
+
+**Shutdown** on its own powers off the handheld without the disconnect sequence.
 
 ## Technical details — for advanced users and contributors
 
