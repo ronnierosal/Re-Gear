@@ -299,6 +299,13 @@ def main() -> int:
             # approval of its own. Neither is clearance to unplug.
             "get_egpu_disconnect_status",
             "execute_egpu_disconnect",
+            # First-time USB4 trust: one read-only offer and an explicit
+            # attachment-scoped response. Production admits only the explicit
+            # one-shot authorize and remembered-enrolment choices.
+            "get_device_authorization_status",
+            "acknowledge_device_authorization",
+            "decline_device_authorization",
+            "confirm_device_authorization",
             # The player's standing answer about closing one game before a
             # disconnect. Writes a per-game preference and nothing else; the
             # backend still re-derives whether that answer may be stored.
@@ -327,7 +334,7 @@ def main() -> int:
         }
         if public_methods != allowed_methods:
             failures.append(
-                "Decky RPCs must remain limited to diagnostics/logging, read-only offline report classification and peripheral/watcher/action-history status, automatic-dock preference/status, explicit manual/automatic TDP controls and read-only benchmarks/preferences, approved support export, supervised presentation, confirmed shutdown-before-disconnect, and guarded process release, live eGPU software disconnect with its per-game close preference, and a confirmed session bounce for an eGPU whose PCIe link never trained"
+                "Decky RPCs must remain limited to the documented diagnostics, eGPU lifecycle, one-shot USB4 authorization, TDP, support, presentation, and guarded process-release contracts"
             )
 
     sources = {}
@@ -352,7 +359,7 @@ def main() -> int:
             print(f"- {failure}")
         return 1
     print(
-        "Plugin package check passed: documented diagnostics, preferences, explicit TDP controls, support export, sleep guard, supervised presentation, confirmed shutdown-before-disconnect, and guarded process release only."
+        "Plugin package check passed: documented diagnostics, eGPU lifecycle, explicit USB4 authorization choices, preferences, explicit TDP controls, support export, sleep guard, supervised presentation, confirmed shutdown-before-disconnect, and guarded process release only."
     )
     return 0
 

@@ -58,10 +58,11 @@ def _authorization(binding):
 
 class WholeDockRuntime:
     def __init__(self, binding, store_root, *, idle, admission_held,
-                 monotonic=time.monotonic, wait=time.sleep):
+                 before_deauthorize=None, monotonic=time.monotonic, wait=time.sleep):
         self.binding = binding
         self._idle = idle
         self._admission = admission_held
+        self._before_deauthorize = before_deauthorize
         self._store = WholeDockClaimStore(store_root)
         self._discovery = DockBranchDiscovery()
         self._writer = WholeDockSysfsWriter()
@@ -329,6 +330,15 @@ class WholeDockRuntime:
             lambda: self._guard(observation, 'usb_remove_intent'))
 
     def deauthorize(self, observation):
+        if (self._before_deauthorize is not None
+                and (self._guard(observation, 'tunnel_remove_intent') is not True
+                     or self._before_deauthorize(
+                         self._operation,
+                         self.binding.binding,
+                         self.binding.generation,
+                         lambda: self._guard(observation, 'tunnel_remove_intent'),
+                     ) is not True)):
+            raise ValueError('dock_teardown.authorization_hold_unverified')
         self._writer.deauthorize(self.binding.router_target,
             lambda: self._guard(observation, 'tunnel_remove_intent'))
         # The authorized attribute can change before the kernel finishes

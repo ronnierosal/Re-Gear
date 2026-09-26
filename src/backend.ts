@@ -360,6 +360,21 @@ export interface AutomaticDockStatusPayload {
 export const getAutomaticDockStatus = callable<[], AutomaticDockStatusPayload>(
   "get_automatic_dock_status",
 );
+/** Authorization replies stay unknown until the mounted UI validates schema,
+ * token and state. A changed backend shape must fail closed. */
+export const getDeviceAuthorizationStatus = callable<[], unknown>(
+  "get_device_authorization_status",
+);
+export const acknowledgeDeviceAuthorization = callable<[string], unknown>(
+  "acknowledge_device_authorization",
+);
+export const declineDeviceAuthorization = callable<[string], unknown>(
+  "decline_device_authorization",
+);
+export const confirmDeviceAuthorization = callable<
+  [string, boolean, "authorize" | "enroll"],
+  unknown
+>("confirm_device_authorization");
 /** Optional until the recovery backend is installed; validate at the UI boundary. */
 export const getLinkRecoveryStatus = callable<[], unknown>("get_link_recovery_status");
 export const executeLinkRecovery = callable<[boolean, "session_restart"], unknown>(

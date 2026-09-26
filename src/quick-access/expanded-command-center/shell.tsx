@@ -90,7 +90,10 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
       if (id !== "brightness" && id !== "volume") throw new Error("Control unavailable");
       return requestUtility(id, percent);
     } : undefined;
-    onAction = undefined;
+    const requestAction = onAction;
+    onAction = requestAction ? (tab, tile) => tab === "egpu"
+      && (tile.id === "disconnect-sleep" || tile.id === "disconnect-shutdown")
+      && requestAction(tab, tile) : undefined;
   }
   const Button = primitives?.Button ?? "button";
   const Container = primitives?.Focusable ?? "div";
