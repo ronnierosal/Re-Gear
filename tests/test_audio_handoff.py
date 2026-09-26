@@ -32,8 +32,8 @@ USER = GamescopeUserContext(
     Path("/run/user/1000"),
     Path("/run/user/1000/bus"),
 )
-INTERNAL = "alsa_loopback_device.alsa_output.pci-0000_64_00.6.analog-stereo"
-EXTERNAL = "alsa_loopback_device.alsa_output.pci-0000_08_00.1.hdmi-stereo-extra1"
+INTERNAL = "alsa_output.pci-0000_64_00.6.analog-stereo"
+EXTERNAL = "alsa_output.pci-0000_08_00.1.hdmi-stereo-extra1"
 
 
 class FakeCommands:
@@ -97,7 +97,6 @@ class FakeCommands:
             "info": {
                 "props": {
                     "media.class": "Audio/Sink",
-                    "alsa.loopback": True,
                     "node.name": name,
                     "device.id": device_id,
                 }
@@ -279,7 +278,7 @@ class G1AudioHandoffTests(unittest.TestCase):
             resolve_g1_audio_bdf=lambda: "0000:08:00.1",
         )
 
-    def test_dock_selects_exact_g1_loopback_and_records_portable_sink(self):
+    def test_dock_selects_exact_g1_sink_and_records_portable_sink(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             commands = FakeCommands()
@@ -464,6 +463,24 @@ class G1AudioReadinessTests(unittest.TestCase):
             self.assertEqual(result.rollback_sink_name, INTERNAL)
             self.assertEqual(result.default_sink_name, INTERNAL)
             self.assertEqual(commands.set_ids, [])
+
+    def test_real_pipewire_sinks_do_not_require_alsa_loopback_property(self):
+        with tempfile.TemporaryDirectory() as directory:
+            commands = FakeCommands()
+            values = json.loads(commands.dump(USER).output)
+            sink_props = [
+                value["info"]["props"]
+                for value in values
+                if value.get("type") == "PipeWire:Interface:Node"
+            ]
+            self.assertTrue(sink_props)
+            self.assertTrue(all("alsa.loopback" not in props for props in sink_props))
+
+            result = self.readiness(Path(directory), commands).observe(USER)
+
+            self.assertTrue(result.ready)
+            self.assertEqual(result.code, "audio.ready")
+            self.assertEqual(result.g1_sink_name, EXTERNAL)
 
     def test_saved_non_g1_rollback_is_ready_when_g1_is_already_default(self):
         with tempfile.TemporaryDirectory() as directory:
