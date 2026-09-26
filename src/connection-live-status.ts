@@ -1,6 +1,8 @@
 import type { SnapshotPayload, AutomaticDockStatusPayload } from "./backend";
 export type Light = "ready" | "waiting" | "blocked";
-export type LiveStatus = { phase: "checking" | "switching" | "complete"; connected: boolean; displayPending?: boolean; expiresAt: number; seconds: number; title: string; gpuName?: string; rows: {label: string; state: Light}[]; canSwitch: boolean };
+export type LiveStatus = { phase: "checking" | "switching" | "complete"; connected: boolean; displayPending?: boolean; expiresAt: number; seconds: number; title: string; gpuName?: string; rows: {label: string; state: Light}[]; canSwitch: boolean;
+  /** Last observed readiness and automatic-dock stages, as reported. Presentation only. */
+  stage?: string; automaticStage?: string };
 
 function detectedGpuName(payload: SnapshotPayload | null, fresh: boolean): string | undefined {
   if (!fresh) return undefined;
@@ -47,7 +49,9 @@ export function connectionLiveStatus(payload: SnapshotPayload | null, automatic:
   return {phase: docked ? "complete" : switching ? "switching" : "checking", connected, displayPending: fresh && c?.stage === "ready_display_pending", expiresAt: fresh ? Date.now() + Math.max(0, 15000 - Math.max(snapshotAge, c?.checks_age_ms ?? 15000)) : 0, seconds: Math.floor((c?.window_age_ms ?? 0) / 1000), rows,
     title: !fresh ? "Waiting for a fresh status update" : switching ? "Switching to TV — checking picture and audio" : docked ? "TV transition reported complete" : all ? automatic?.enabled ? "Ready — waiting for automatic switch" : "Ready to switch to TV" : detail ?? "Checking connection readiness",
     gpuName: connected ? detectedGpuName(payload, fresh) : undefined,
-    canSwitch: all && automatic?.enabled === false};
+    canSwitch: all && automatic?.enabled === false,
+    stage: typeof c?.stage === "string" ? c.stage : undefined,
+    automaticStage: typeof automatic?.stage === "string" ? automatic.stage : undefined};
 }
 export function createLiveStatusStore() {
   let value: LiveStatus = {phase:"checking",connected:false,expiresAt:0,seconds:0,title:"Checking connection",rows:[],canSwitch:false};
