@@ -74,9 +74,23 @@ class ProductionAdmissionTests(unittest.TestCase):
             self.assertEqual("existing_lifecycle_guard", result["code"])
         self.assertEqual(2, len(plugin.calls))
 
-    def test_power_trial_and_unknown_actions_do_not_reach_body(self):
+    def test_guarded_sleep_and_shutdown_reach_existing_lifecycle(self):
         plugin = profiled_plugin(ExamplePlugin, "production")()
-        for action in ("", "whole_dock_sleep", "whole_dock_sleep_connected", "whole_dock_shutdown",
+        for action in ("whole_dock_sleep", "whole_dock_shutdown"):
+            result = asyncio.run(plugin.execute_egpu_disconnect(
+                release_display=True,
+                relaunch_intent="disconnect",
+                trial_action=action,
+            ))
+            self.assertEqual("existing_lifecycle_guard", result["code"])
+        self.assertEqual([
+            ("disconnect", "whole_dock_sleep"),
+            ("disconnect", "whole_dock_shutdown"),
+        ], plugin.calls)
+
+    def test_unapproved_power_and_unknown_actions_do_not_reach_body(self):
+        plugin = profiled_plugin(ExamplePlugin, "production")()
+        for action in ("", "whole_dock_sleep_connected",
                        "whole_dock_reconnect", "whole_dock_physical_reset", "whole_dock_reconcile",
                        "capture", "new_action", [], None):
             result = asyncio.run(plugin.execute_egpu_disconnect(trial_action=action))
@@ -85,6 +99,18 @@ class ProductionAdmissionTests(unittest.TestCase):
         result = asyncio.run(plugin.execute_egpu_disconnect(
             relaunch_intent="sleep", trial_action="whole_dock_disconnect"))
         self.assertFalse(result["ok"])
+        self.assertEqual([], plugin.calls)
+
+    def test_power_actions_require_the_exact_disconnect_relaunch_intent(self):
+        plugin = profiled_plugin(ExamplePlugin, "production")()
+        for action in ("whole_dock_sleep", "whole_dock_shutdown"):
+            for intent in ("sleep", "shutdown", "", None, [], {"intent": "disconnect"}):
+                result = asyncio.run(plugin.execute_egpu_disconnect(
+                    release_display=True,
+                    relaunch_intent=intent,
+                    trial_action=action,
+                ))
+                self.assertEqual("build_profile.feature_unavailable", result["code"])
         self.assertEqual([], plugin.calls)
 
     def test_unrelated_and_future_public_rpcs_are_disabled(self):

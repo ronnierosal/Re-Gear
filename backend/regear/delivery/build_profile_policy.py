@@ -1,4 +1,4 @@
-"""Production admission for the connection and plain Safe Disconnect surface.
+"""Production admission for connection and the approved dock lifecycle surface.
 
 This policy narrows product access; it never replaces lifecycle safety checks.
 Read/recovery dependencies are retained even when their feature UI is hidden.
@@ -40,8 +40,9 @@ READ_RPCS = frozenset({
     "get_diagnostic_logging_status", "get_docked_igpu_status", "acknowledge_docked_igpu_status",
     "preview_support_bundle", "preview_process_release", "classify_offline_details",
 })
-PLAIN_DISCONNECT_ACTIONS = frozenset({
+PRODUCTION_DOCK_ACTIONS = frozenset({
     "whole_dock_disconnect", "whole_dock_disconnect_complete",
+    "whole_dock_sleep", "whole_dock_shutdown",
 })
 
 
@@ -55,7 +56,7 @@ def rpc_allowed(profile: str, method: str, arguments: dict[str, Any]) -> bool:
     if method == "execute_egpu_disconnect":
         action = arguments.get("trial_action", "")
         return (
-            isinstance(action, str) and action in PLAIN_DISCONNECT_ACTIONS
+            isinstance(action, str) and action in PRODUCTION_DOCK_ACTIONS
             and arguments.get("relaunch_intent", "disconnect") == "disconnect"
         )
     if method in {"acknowledge_device_authorization", "decline_device_authorization"}:

@@ -15,10 +15,10 @@ class ProductionPluginTests(unittest.IsolatedAsyncioTestCase):
             self.module = load_main_module(real_dock_gate=True)
         self.plugin = self.module.Plugin.__new__(self.module.Plugin)
 
-    async def test_other_dock_actions_refuse_before_any_runtime_or_journal_write(self):
+    async def test_unapproved_dock_actions_refuse_before_any_runtime_or_journal_write(self):
         # An intentionally uninitialized Plugin would fail if admission reached
         # any runtime factory, approval store or lifecycle state mutation.
-        for action in ("whole_dock_shutdown", "whole_dock_sleep", "whole_dock_sleep_connected",
+        for action in ("whole_dock_sleep_connected",
                        "whole_dock_capture", "whole_dock_held_capture", "whole_dock_physical_reset",
                        "whole_dock_reconcile", "whole_dock_reconnect", ""):
             with self.subTest(action=action):
@@ -26,6 +26,31 @@ class ProductionPluginTests(unittest.IsolatedAsyncioTestCase):
                     True, "", "disconnect", action, True, "", "a" * 32)
                 self.assertEqual("build_profile.feature_unavailable", result["code"])
                 self.assertFalse(result["hardware_write"])
+        self.assertEqual({}, self.plugin.__dict__)
+
+    async def test_guarded_power_actions_reach_existing_confirmation_gate(self):
+        for action in ("whole_dock_sleep", "whole_dock_shutdown"):
+            with self.subTest(action=action):
+                result = await self.plugin.execute_egpu_disconnect(
+                    release_display=True,
+                    relaunch_intent="disconnect",
+                    trial_action=action,
+                    trial_confirmed=False,
+                )
+                self.assertEqual("dock_teardown.trial_confirmation_required", result["code"])
+                self.assertFalse(result["safe_to_unplug"])
+        self.assertEqual({}, self.plugin.__dict__)
+
+    async def test_guarded_power_actions_reject_mismatched_intent_before_body(self):
+        for action in ("whole_dock_sleep", "whole_dock_shutdown"):
+            with self.subTest(action=action):
+                result = await self.plugin.execute_egpu_disconnect(
+                    release_display=True,
+                    relaunch_intent="sleep",
+                    trial_action=action,
+                    trial_confirmed=True,
+                )
+                self.assertEqual("build_profile.feature_unavailable", result["code"])
         self.assertEqual({}, self.plugin.__dict__)
 
     async def test_tdp_trial_and_shutdown_rpcs_refuse_before_body(self):
