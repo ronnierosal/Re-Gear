@@ -25,6 +25,7 @@ import { ConnectionQuickStatus } from "./connection-quick-status";
 import { regearControlCss } from "./regear-theme";
 import { createConnectionPresentationReceipt, startConnectionMonitor } from "./connection-monitor";
 import { showConnectionLivePanel } from "./connection-live-panel";
+import { startUsbAuthorizationMonitor, showUsbAuthorizationDialog } from "./usb-authorization-runtime";
 import { PRODUCT_NAME } from "./branding";
 import {
   dismissAttachedEgpuSleepWarning,
@@ -51,11 +52,15 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "
 
 import {
   acknowledgeDockedIgpuStatus,
+  acknowledgeDeviceAuthorization,
   acknowledgeSleepJournal,
+  confirmDeviceAuthorization,
+  declineDeviceAuthorization,
   getSnapshot,
   getPeripheralStatus,
   getActionHistory,
   getAutomaticDockStatus,
+  getDeviceAuthorizationStatus,
   setAutomaticDockEnabled,
   acknowledgeProcessRelease,
   approveProcessRelease,
@@ -2299,18 +2304,25 @@ export default definePlugin(() => {
   );
   preflight.start();
   const offlineFocusChecks = buildProfile === "development" ? startOfflineFocusChecks() : {stop() {}};
+  const authorization = startUsbAuthorizationMonitor({
+    show: (status, closed) => showUsbAuthorizationDialog(status, {
+      acknowledge: acknowledgeDeviceAuthorization,
+      decline: declineDeviceAuthorization,
+      confirm: confirmDeviceAuthorization,
+    }, closed),
+  });
   const connection = startConnectionMonitor({
     read: async () => {
-      try {
-        const [payload, automatic, journal] = await Promise.all([
-          getSnapshot(), getAutomaticDockStatus(), getTransitionJournalStatus(),
-        ]);
-        return {payload, automatic, journal: journal.code};
-      } catch (error) {
-        throw error;
-      }
+      authorization.refresh(getDeviceAuthorizationStatus);
+      const [payload, automatic, journal] = await Promise.all([
+        getSnapshot(), getAutomaticDockStatus(), getTransitionJournalStatus(),
+      ]);
+      return {payload, automatic, journal: journal.code};
     },
-    show: (store, switchTv, closed) => showConnectionLivePanel(store, switchTv, closed, buildProfile),
+    show: (store, switchTv, closed) => authorization.deferConnection(
+      deferredClosed => showConnectionLivePanel(store, switchTv, deferredClosed, buildProfile),
+      closed,
+    ),
     presentation: createConnectionPresentationReceipt(window.localStorage),
   });
 
@@ -2328,7 +2340,7 @@ export default definePlugin(() => {
     expandedMenu.stop();shortcut.stop();
     if(warningTimer!==null){window.clearTimeout(warningTimer);warningTimer=null;}
     warningModal?.Close();warningModal=null;
-    connection.stop();offlineFocusChecks.stop();preflight.stop();
+    authorization.stop();connection.stop();offlineFocusChecks.stop();preflight.stop();
   };
   try{stopRuntime=registerRuntimeHost(routerHook,`Re-Gear-runtime-${Date.now()}-${Math.random().toString(36).slice(2)}`,Runtime,runtimeOwner);}
   catch(error){dispose();throw error;}

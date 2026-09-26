@@ -233,17 +233,41 @@ test("watts are the configured limit and unknown watts never become a number", (
 
 // ------------------------------------------------------------------ consistency
 
-test("the quick tab reuses mapped tiles rather than deriving a second opinion", () => {
+test("the quick tab reuses mapped readings without conflating lifecycle and link", () => {
   const view = buildTiles(full());
   const quickAuto = view.quick.find((tile) => tile.id === "auto");
   const perfAuto = view.performance.find((tile) => tile.id === "auto");
   assert.equal(quickAuto.value, perfAuto.value);
-  // Quick calls it "egpu" and the eGPU tab calls it "link" -- two approved
-  // identities for one reading. The values must still agree, or two tabs
-  // would report different things about the same observation.
+  // eGPU Status is the lifecycle summary. Connection Link remains its own
+  // reading because a link can be up while driver, TV, audio or session work
+  // is still pending.
   const quickConnection = view.quick.find((tile) => tile.id === "egpu");
   const egpuConnection = view.egpu.find((tile) => tile.id === "link");
-  assert.equal(quickConnection.value, egpuConnection.value);
+  assert.equal(quickConnection.value, "Ready");
+  assert.equal(egpuConnection.value, "Link up");
+  assert.notEqual(quickConnection.value, egpuConnection.value);
+
+  const waiting = buildTiles({
+    ...full(),
+    egpu: {
+      ...egpuPresentation(),
+      connection: evidence("Link up"),
+      lifecycle: evidence("Waiting for audio", true, false),
+    },
+  });
+  assert.equal(waiting.quick.find((tile) => tile.id === "egpu").value, "Waiting for audio");
+  assert.equal(waiting.egpu.find((tile) => tile.id === "link").value, "Link up");
+  assert.match(waiting.quick.find((tile) => tile.id === "egpu").detail, /observed, not verified/i);
+});
+
+test("the quick eGPU lifecycle summary stays Unknown when its observation is unavailable", () => {
+  const unknownLifecycle = buildTiles({
+    ...full(),
+    egpu: {...egpuPresentation(), lifecycle: evidence("Unknown", false, false)},
+  }).quick.find((tile) => tile.id === "egpu");
+  assert.equal(unknownLifecycle.value, "Unknown");
+  assert.equal(unknownLifecycle.tone, "unavailable");
+  assert.match(unknownLifecycle.detail, /No current connection lifecycle observation/);
 });
 
 test("settings states unsupported entries as unavailable rather than dropping them", () => {

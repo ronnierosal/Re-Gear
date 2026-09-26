@@ -16,9 +16,10 @@ function SharedTdpControls({ visible, controller, initiallyExpanded = false }: {
   const [expanded, setExpanded] = useState(initiallyExpanded);
   const [autoExpanded, setAutoExpanded] = useState(initiallyExpanded);
   const [selected, setSelected] = useState<number | null>(null);
-  const { manual: status, busy } = controller;
+  const { manual: status, auto, busy } = controller;
   useEffect(() => { setSelected(status?.current_watts ?? null); }, [status]);
   const controls = tdpControls(status);
+  const manualLocked = auto?.running === true;
   const options = status?.minimum_watts != null && status.maximum_watts != null
     ? Array.from({ length: status.maximum_watts - status.minimum_watts + 1 }, (_, index) => ({ data: status.minimum_watts! + index, label: `${status.minimum_watts! + index} W` })) : [];
   if (!visible) return null;
@@ -29,10 +30,11 @@ function SharedTdpControls({ visible, controller, initiallyExpanded = false }: {
       {!busy && tdpResultMessage(status) && <PanelSectionRow>Last request: {tdpResultMessage(status)}</PanelSectionRow>}
       <PanelSectionRow>{status?.current_watts != null ? `Last checked limit: ${status.current_watts} W` : "Last checked limit: unavailable"}</PanelSectionRow>
       <PanelSectionRow><span style={{ fontSize: "12px", opacity: 0.75 }}>This is the configured limit, not measured power use. Enable only after resolving other power controllers.</span></PanelSectionRow>
-      <ToggleField label="Use Re-Gear power control" checked={status?.enabled ?? false} disabled={busy || !controls.canToggle} onChange={(enabled) => { void controller.setEnabled(enabled); }} />
-      <DropdownItem label="Power limit" rgOptions={options} selectedOption={selected ?? undefined} disabled={busy || !controls.canApply} onChange={(option) => { if (options.some(entry => entry.data === option.data)) setSelected(option.data as number); }} />
-      <PanelSectionRow><ButtonItem layout="below" disabled={busy || !controls.canApply || selected === null} onClick={() => { if (selected !== null) void controller.apply(selected); }}>Apply power limit</ButtonItem></PanelSectionRow>
-      <PanelSectionRow><ButtonItem layout="below" disabled={busy || !controls.canRestore} onClick={() => { void controller.restore(); }}>Restore previous power settings</ButtonItem></PanelSectionRow>
+      {manualLocked && <PanelSectionRow><span style={{ fontSize: "12px", opacity: 0.75 }}>Stop Auto TDP to adjust manually.</span></PanelSectionRow>}
+      <ToggleField label="Use Re-Gear power control" checked={status?.enabled ?? false} disabled={busy || manualLocked || !controls.canToggle} onChange={(enabled) => { if (!manualLocked) void controller.setEnabled(enabled); }} />
+      <DropdownItem label="Power limit" rgOptions={options} selectedOption={selected ?? undefined} disabled={busy || manualLocked || !controls.canApply} onChange={(option) => { if (!manualLocked && options.some(entry => entry.data === option.data)) setSelected(option.data as number); }} />
+      <PanelSectionRow><ButtonItem layout="below" disabled={busy || manualLocked || !controls.canApply || selected === null} onClick={() => { if (!manualLocked && selected !== null) void controller.apply(selected); }}>Apply power limit</ButtonItem></PanelSectionRow>
+      <PanelSectionRow><ButtonItem layout="below" disabled={busy || manualLocked || !controls.canRestore} onClick={() => { if (!manualLocked) void controller.restore(); }}>Restore previous power settings</ButtonItem></PanelSectionRow>
       <PanelSectionRow><ButtonItem layout="below" disabled={busy} onClick={() => { void controller.refresh(); }}>Refresh power settings</ButtonItem></PanelSectionRow>
       {!initiallyExpanded && <PanelSectionRow><ButtonItem layout="below" onClick={() => setAutoExpanded(value => !value)}>{autoExpanded ? "Hide Auto TDP" : "Show Auto TDP"}</ButtonItem></PanelSectionRow>}
       {autoExpanded && <AutoTdpControls controller={controller} />}

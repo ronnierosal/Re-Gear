@@ -1123,6 +1123,12 @@ class CompletedAttachmentAbsenceTests(unittest.TestCase):
             # record whose session is gone; that record would otherwise hold
             # power_intent_absent false and inhibit admission forever.
             store = patcher('DockPowerIntentStore').return_value
+            # These archival tests model a completed disconnect created before
+            # remembered-trust holds existed. A real Plugin now constructs the
+            # authorization runner on Linux, so isolate the intended no-hold
+            # state instead of probing the production /run/regear store.
+            hold_store = patcher('DeviceAuthorizationHoldStore').return_value
+            hold_store.load_hold.return_value = None
             if load_error is not None:
                 store.load.side_effect = load_error
             else:

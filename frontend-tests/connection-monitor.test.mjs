@@ -93,3 +93,13 @@ test('hiding the popup does not cancel a pending automatic TV connection',async(
  assert.equal(opened,1);
  monitor.stop();
 });
+
+test('disconnected then fresh waiting_for_pci opens the popup exactly once',async()=>{
+ const h=harness(sample(false));await settle();assert.equal(h.opened,0);
+ const pci=sample(true);assert.equal(pci.payload.connection_readiness.stage,'waiting_for_pci');
+ await h.step(pci);assert.equal(h.opened,1);
+ const driver=sample(true);driver.payload.connection_readiness.stage='waiting_for_driver';
+ await h.step(driver);assert.equal(h.opened,1,'later stages update the same popup');
+ assert.equal(h.monitor.store.get().stage,'waiting_for_driver');
+ h.monitor.stop();
+});

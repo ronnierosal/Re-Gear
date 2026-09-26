@@ -5,15 +5,19 @@ set -eu
 umask 077
 
 ACTION=${1:-install}
+REQUESTED_KEY_FINGERPRINT=${2:-}
+ARGUMENT_COUNT=$#
 NEW_ROOT=/var/lib/regear/deploy
 NEW_HELPER=$NEW_ROOT/regear-deploy-plugin
 NEW_MIGRATOR=$NEW_ROOT/regear-migrate-identity
 NEW_KEY=$NEW_ROOT/deploy-public-key.pem
 NEW_RULE=/etc/sudoers.d/regear-deploy-plugin
+EFFECTIVE_RULE=/etc/sudoers.d/zzzzzzzz-regear-deploy-plugin
 STAGED_HELPER=/home/deck/regear-deploy-plugin
 STAGED_HELPER_SIG=/home/deck/regear-deploy-plugin.sig
 STAGED_MIGRATOR=/home/deck/regear-migrate-identity
 STAGED_MIGRATOR_SIG=/home/deck/regear-migrate-identity.sig
+STAGED_CURRENT_KEY=/home/deck/regear-deploy-public-key.pem
 OLD_ROOT=/var/lib/handheld-dock-mode
 OLD_HELPER=$OLD_ROOT/hdm-deploy-plugin
 OLD_KEY=$OLD_ROOT/deploy-public-key.pem
@@ -25,6 +29,12 @@ PLUGIN_PARENT=/home/deck/homebrew/plugins
 CONTROL_ROOT=/var/lib/regear/control
 
 fail() { printf '%s\n' "identity bootstrap refused: $*" >&2; exit 1; }
+validate_invocation() {
+    case "$ARGUMENT_COUNT:$ACTION" in
+        0:install|1:install|1:rollback|2:install-rotated) ;;
+        *) fail "expected install, install-rotated <new-public-key-sha256>, or rollback with no extra arguments" ;;
+    esac
+}
 regular_no_link() { test -f "$1" && test ! -L "$1"; }
 root_safe() {
     regular_no_link "$1" || return 1
@@ -57,7 +67,7 @@ write_phase() {
 }
 verify_signature() {
     authority=$1 payload=$2 signature=$3
-    /usr/bin/openssl pkeyutl -verify -pubin -inkey "$authority/previous-public-key.pem" \
+    /usr/bin/openssl pkeyutl -verify -pubin -inkey "$authority/candidate-public-key.pem" \
         -rawin -in "$payload" -sigfile "$signature" >/dev/null 2>&1 \
         || fail "candidate signature verification failed"
 }
@@ -77,6 +87,7 @@ write_rule() {
 # their fixed signed-package or identity-migration command surfaces.
 deck ALL=(root) NOPASSWD: /var/lib/regear/deploy/regear-deploy-plugin
 deck ALL=(root) NOPASSWD: /var/lib/regear/deploy/regear-migrate-identity status
+deck ALL=(root) NOPASSWD: /var/lib/regear/deploy/regear-migrate-identity reconcile-runtime
 deck ALL=(root) NOPASSWD: /var/lib/regear/deploy/regear-migrate-identity apply
 deck ALL=(root) NOPASSWD: /var/lib/regear/deploy/regear-migrate-identity rollback
 EOF
@@ -85,9 +96,66 @@ EOF
 }
 expected_payload_names() {
     printf '%s\n' candidate-helper candidate-helper.sig candidate-migrator \
-        candidate-migrator.sig candidate.sha256 current-sudoers \
+        candidate-migrator.sig candidate-public-key.pem candidate.sha256 current-sudoers \
         former-private.names former-private.tar private.sha256 previous-helper \
-        previous-public-key.pem previous-sudoers previous.sha256
+        previous-public-key.pem previous-sudoers previous.sha256 trust-mode
+}
+public_key_fingerprint() { sha256sum "$1" | awk '{print $1}'; }
+public_key_identity() {
+    /usr/bin/openssl pkey -pubin -in "$1" -noout >/dev/null 2>&1 || return 1
+    /usr/bin/openssl pkey -pubin -in "$1" -outform DER 2>/dev/null \
+        | sha256sum | awk '{print $1}'
+}
+valid_fingerprint() {
+    test "${#1}" = 64 || return 1
+    case "$1" in *[!0-9a-f]*) return 1 ;; esac
+}
+expected_trust_mode() {
+    case "$ACTION" in
+        install)
+            test -z "$REQUESTED_KEY_FINGERPRINT" \
+                || fail "ordinary install accepts no key fingerprint"
+            printf '%s\n' legacy
+            ;;
+        install-rotated)
+            valid_fingerprint "$REQUESTED_KEY_FINGERPRINT" \
+                || fail "rotation requires the exact lowercase SHA-256 public-key fingerprint"
+            printf 'rotated:%s\n' "$REQUESTED_KEY_FINGERPRINT"
+            ;;
+        rollback)
+            test -z "$REQUESTED_KEY_FINGERPRINT" \
+                || fail "rollback accepts no key fingerprint"
+            printf '%s\n' rollback
+            ;;
+        *) fail "expected install, install-rotated <new-public-key-sha256>, or rollback" ;;
+    esac
+}
+verify_trust_mode() {
+    authority=$1 expected=${2:-}
+    root_safe "$authority/trust-mode" || fail "bootstrap trust mode is unsafe"
+    mode=$(cat "$authority/trust-mode")
+    case "$mode" in
+        legacy)
+            cmp -s "$authority/previous-public-key.pem" "$authority/candidate-public-key.pem" \
+                || fail "legacy bootstrap candidate key changed"
+            ;;
+        rotated:[0-9a-f][0-9a-f]*)
+            fingerprint=${mode#rotated:}
+            valid_fingerprint "$fingerprint" || fail "bootstrap rotation fingerprint is invalid"
+            previous_identity=$(public_key_identity "$authority/previous-public-key.pem") \
+                || fail "former public key is invalid"
+            candidate_identity=$(public_key_identity "$authority/candidate-public-key.pem") \
+                || fail "rotation candidate public key is invalid"
+            test "$previous_identity" != "$candidate_identity" \
+                || fail "rotation candidate must differ from the former public key"
+            test "$(public_key_fingerprint "$authority/candidate-public-key.pem")" = "$fingerprint" \
+                || fail "bootstrap rotation key fingerprint changed"
+            ;;
+        *) fail "bootstrap trust mode is invalid" ;;
+    esac
+    if test -n "$expected"; then
+        test "$mode" = "$expected" || fail "bootstrap trust mode does not match this invocation"
+    fi
 }
 verify_payload() {
     authority=$1
@@ -98,6 +166,7 @@ verify_payload() {
     test "$actual" = "$expected" || fail "bootstrap payload has unexpected or missing entries"
     (cd "$authority" && sha256sum -c previous.sha256 candidate.sha256 private.sha256 >/dev/null) \
         || fail "bootstrap backup changed"
+    verify_trust_mode "$authority"
     verify_signature "$authority" "$authority/candidate-helper" "$authority/candidate-helper.sig"
     verify_signature "$authority" "$authority/candidate-migrator" "$authority/candidate-migrator.sig"
     visudo -cf "$authority/current-sudoers" >/dev/null
@@ -218,15 +287,21 @@ clear_backup_temporaries() {
     done
 }
 prepare() {
+    trust_mode=$(expected_trust_mode)
     deck_staged_safe "$STAGED_HELPER" || fail "staged Re-Gear helper is unsafe"
     deck_staged_safe "$STAGED_HELPER_SIG" || fail "staged helper signature is unsafe"
     deck_staged_safe "$STAGED_MIGRATOR" || fail "staged Re-Gear migrator is unsafe"
     deck_staged_safe "$STAGED_MIGRATOR_SIG" || fail "staged migrator signature is unsafe"
+    if test "$ACTION" = install-rotated; then
+        deck_staged_safe "$STAGED_CURRENT_KEY" || fail "staged Re-Gear public key is unsafe"
+    fi
     root_safe "$OLD_HELPER" || fail "former helper is not exact root-owned authority"
     root_safe "$OLD_KEY" || fail "former public key is not exact root-owned authority"
     root_safe "$OLD_RULE" || fail "former sudo policy is not exact root-owned authority"
     test ! -e "$NEW_ROOT" && test ! -L "$NEW_ROOT" || fail "new deploy authority already exists"
     test ! -e "$NEW_RULE" && test ! -L "$NEW_RULE" || fail "new sudo policy already exists"
+    test ! -e "$EFFECTIVE_RULE" && test ! -L "$EFFECTIVE_RULE" \
+        || fail "effective Re-Gear sudo policy already exists"
 
     test ! -L /var/lib/regear || fail "Re-Gear authority parent is unsafe"
     install -d -m 0700 /var/lib/regear
@@ -240,9 +315,16 @@ prepare() {
     install -m 0644 "$STAGED_HELPER_SIG" "$BACKUP_PREPARE/candidate-helper.sig"
     install -m 0755 "$STAGED_MIGRATOR" "$BACKUP_PREPARE/candidate-migrator"
     install -m 0644 "$STAGED_MIGRATOR_SIG" "$BACKUP_PREPARE/candidate-migrator.sig"
+    if test "$ACTION" = install-rotated; then
+        install -m 0644 "$STAGED_CURRENT_KEY" "$BACKUP_PREPARE/candidate-public-key.pem"
+    else
+        install -p -m 0644 "$OLD_KEY" "$BACKUP_PREPARE/candidate-public-key.pem"
+    fi
+    printf '%s\n' "$trust_mode" >"$BACKUP_PREPARE/trust-mode"
+    chmod 0600 "$BACKUP_PREPARE/trust-mode"
     (cd "$BACKUP_PREPARE" && sha256sum previous-helper previous-public-key.pem previous-sudoers >previous.sha256)
     (cd "$BACKUP_PREPARE" && sha256sum candidate-helper candidate-helper.sig \
-        candidate-migrator candidate-migrator.sig >candidate.sha256)
+        candidate-migrator candidate-migrator.sig candidate-public-key.pem trust-mode >candidate.sha256)
     write_rule "$BACKUP_PREPARE"
     archive_former_private "$BACKUP_PREPARE"
     verify_payload "$BACKUP_PREPARE"
@@ -257,8 +339,9 @@ publish_current() {
     install -d -m 0700 "$NEW_ROOT"
     install_if_absent_or_exact "$BACKUP/candidate-helper" "$NEW_HELPER" 0755
     install_if_absent_or_exact "$BACKUP/candidate-migrator" "$NEW_MIGRATOR" 0755
-    install_if_absent_or_exact "$BACKUP/previous-public-key.pem" "$NEW_KEY" 0644
+    install_if_absent_or_exact "$BACKUP/candidate-public-key.pem" "$NEW_KEY" 0644
     install_if_absent_or_exact "$BACKUP/current-sudoers" "$NEW_RULE" 0440
+    install_if_absent_or_exact "$BACKUP/current-sudoers" "$EFFECTIVE_RULE" 0440
     verify_current_authority
     write_phase CURRENT_VERIFIED
 }
@@ -267,14 +350,16 @@ verify_current_authority() {
     for pair in \
         "$BACKUP/candidate-helper:$NEW_HELPER" \
         "$BACKUP/candidate-migrator:$NEW_MIGRATOR" \
-        "$BACKUP/previous-public-key.pem:$NEW_KEY" \
-        "$BACKUP/current-sudoers:$NEW_RULE"; do
+        "$BACKUP/candidate-public-key.pem:$NEW_KEY" \
+        "$BACKUP/current-sudoers:$NEW_RULE" \
+        "$BACKUP/current-sudoers:$EFFECTIVE_RULE"; do
         source=${pair%%:*}
         destination=${pair#*:}
         root_safe "$destination" && cmp -s "$source" "$destination" \
             || fail "current deploy authority changed: $destination"
     done
     visudo -cf "$NEW_RULE" >/dev/null
+    visudo -cf "$EFFECTIVE_RULE" >/dev/null
     "$NEW_HELPER" --self-check >/dev/null
     "$NEW_MIGRATOR" status >/dev/null
     /usr/bin/sudo -u deck /usr/bin/sudo -n "$NEW_HELPER" --self-check >/dev/null
@@ -308,10 +393,12 @@ install_authority() {
     clear_backup_temporaries
     if test ! -e "$PHASE" && test ! -L "$PHASE"; then
         verify_payload "$BACKUP"
+        verify_trust_mode "$BACKUP" "$(expected_trust_mode)"
         compare_all_former_private "$BACKUP"
         write_phase PREPARED
     fi
     verify_backup
+    verify_trust_mode "$BACKUP" "$(expected_trust_mode)"
     clear_prepare
     state=$(cat "$PHASE")
     case "$state" in
@@ -337,9 +424,11 @@ restore_former() {
 remove_current() {
     same_or_absent "$BACKUP/candidate-helper" "$NEW_HELPER" || fail "current helper changed"
     same_or_absent "$BACKUP/candidate-migrator" "$NEW_MIGRATOR" || fail "current migrator changed"
-    same_or_absent "$BACKUP/previous-public-key.pem" "$NEW_KEY" || fail "current key changed"
+    same_or_absent "$BACKUP/candidate-public-key.pem" "$NEW_KEY" || fail "current key changed"
     same_or_absent "$BACKUP/current-sudoers" "$NEW_RULE" || fail "current sudo policy changed"
-    rm -f "$NEW_RULE" "$NEW_HELPER" "$NEW_MIGRATOR" "$NEW_KEY"
+    same_or_absent "$BACKUP/current-sudoers" "$EFFECTIVE_RULE" \
+        || fail "effective current sudo policy changed"
+    rm -f "$EFFECTIVE_RULE" "$NEW_RULE" "$NEW_HELPER" "$NEW_MIGRATOR" "$NEW_KEY"
     if test -d "$NEW_ROOT" && test ! -L "$NEW_ROOT"; then rmdir "$NEW_ROOT"; fi
 }
 require_identity_rollback_first() {
@@ -358,6 +447,7 @@ try:
         and all(state in {"old_only", "neither"} for state in locations.values())
         and value.get("journal_phase") in {None, "rolled_back"}
         and value.get("combined_journal_phase") in {None, "rolled_back"}
+        and value.get("control_conflict_phase") in {None, "committed"}
         and isinstance(dropin, dict)
         and dropin.get("current") == "absent"
         and dropin.get("former") in {"absent", "former"}
@@ -385,8 +475,9 @@ rollback_authority() {
     printf '%s\n' '{"state":"rolled_back","component":"regear-deploy-authority"}'
 }
 
+validate_invocation
 case "$ACTION" in
-    install) install_authority ;;
+    install|install-rotated) install_authority ;;
     rollback) rollback_authority ;;
-    *) fail "expected install or rollback" ;;
+    *) fail "expected install, install-rotated <new-public-key-sha256>, or rollback" ;;
 esac

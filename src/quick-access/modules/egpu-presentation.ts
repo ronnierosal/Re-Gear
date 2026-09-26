@@ -105,6 +105,7 @@ const LIFECYCLE_TEXT: Record<string, string> = {
   waiting_for_driver: "Waiting for driver",
   waiting_for_link: "Waiting for link",
   waiting_for_hdmi: "Waiting for display",
+  ready_display_pending: "Ready — waiting for TV HDMI",
   waiting_for_audio: "Waiting for audio",
   waiting_for_session: "Waiting for session",
   game_running: "Game running",
@@ -123,6 +124,37 @@ const WHOLE_DOCK_LIFECYCLE_TEXT: Record<string, string> = {
 
 function bool(value: boolean | null | undefined, yes: string, no: string): string | null {
   return value === true ? yes : value === false ? no : null;
+}
+
+/** Aggregate one independent display fact across every external connector.
+ *
+ * A positive witness is sufficient because the question is whether any
+ * external connector reports the fact.  Without a positive witness, every
+ * connector must report false before absence is known; one incomplete entry
+ * keeps the result Unknown.  Confidence follows the evidence needed for that
+ * conclusion: one verified positive verifies `true`, while `false` requires
+ * every connector and therefore every confidence grade. */
+function aggregateDisplayFact(
+  displays: SnapshotPayload["snapshot"]["displays"],
+  select: (display: SnapshotPayload["snapshot"]["displays"][number]) => boolean | null | undefined,
+  yes: string,
+  no: string,
+): Evidence {
+  if (displays.length === 0) return UNKNOWN;
+  const positive = displays.filter((display) => select(display) === true);
+  if (positive.length > 0) {
+    return {
+      text: yes,
+      known: true,
+      verified: positive.some((display) => display.confidence === "verified"),
+    };
+  }
+  if (displays.some((display) => select(display) !== false)) return UNKNOWN;
+  return {
+    text: no,
+    known: true,
+    verified: displays.every((display) => display.confidence === "verified"),
+  };
 }
 
 export function egpuPresentation(payload: SnapshotPayload | null | undefined): EgpuPresentation {
@@ -145,13 +177,12 @@ export function egpuPresentation(payload: SnapshotPayload | null | undefined): E
       ? evidence("Internal GPU", external[0].confidence)
       : UNKNOWN;
 
-  const connectedDisplay = externalDisplays[0];
-  const displayConnected = connectedDisplay
-    ? evidence(bool(connectedDisplay.connected, "Connected", "Not connected"), connectedDisplay.confidence)
-    : UNKNOWN;
-  const displayActive = connectedDisplay
-    ? evidence(bool(connectedDisplay.active, "Active", "Not active"), connectedDisplay.confidence)
-    : UNKNOWN;
+  const displayConnected = aggregateDisplayFact(
+    externalDisplays, (display) => display.connected, "Connected", "Not connected",
+  );
+  const displayActive = aggregateDisplayFact(
+    externalDisplays, (display) => display.active, "Active", "Not active",
+  );
 
   const session = snapshot?.gamescope
     ? evidence(bool(snapshot.gamescope.running, "Running", "Not running"), snapshot.gamescope.confidence)

@@ -21,7 +21,12 @@ BACKEND_ROOT = PLUGIN_ROOT / "backend"
 if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
-from regear.adapters.steamos.commands import BrokerCaptureRestoreTimer, HeldTrialLauncher, HeldTrialRestoreTimer  # noqa: E402
+from regear.adapters.steamos.commands import (  # noqa: E402
+    BoltDeviceAuthorizationRunner,
+    BrokerCaptureRestoreTimer,
+    HeldTrialLauncher,
+    HeldTrialRestoreTimer,
+)
 
 from regear.adapters.steamos.discovery import SteamOsDiscovery  # noqa: E402
 from regear.application.automatic_link_recovery import AutomaticLinkRecovery  # noqa: E402
@@ -44,7 +49,18 @@ from regear.domain.telemetry import TelemetryAdmissionKind, admit_telemetry_coll
 from regear.adapters.steamos.drm import DrmDiscovery  # noqa: E402
 from regear.adapters.steamos.egpu_cooling import EgpuCoolingDiscovery  # noqa: E402
 from regear.adapters.steamos.sleep_inhibitor import Login1SleepInhibitor  # noqa: E402
-from regear.adapters.steamos.whole_dock_topology import resolve_whole_dock, resolve_transport  # noqa: E402
+from regear.adapters.steamos.whole_dock_topology import (  # noqa: E402
+    resolve_deauthorized_transport,
+    resolve_whole_dock,
+    resolve_transport,
+)
+from regear.adapters.steamos.device_authorization_observer import DeviceAuthorizationObserver  # noqa: E402
+from regear.application.device_authorization import DeviceAuthorizationService  # noqa: E402
+from regear.delivery.device_authorization_facade import DeviceAuthorizationFacade  # noqa: E402
+from regear.delivery.device_authorization_hold import (  # noqa: E402
+    DeviceAuthorizationHold,
+    DeviceAuthorizationHoldStore,
+)
 from regear.delivery.whole_dock_runtime import WholeDockRuntime  # noqa: E402
 from regear.delivery.dock_power_intent import DockPowerIntentStore  # noqa: E402
 from regear.delivery.dock_power_service import create_power_request, continue_dock_power, dock_power_capabilities  # noqa: E402
@@ -432,6 +448,13 @@ class Plugin:
         self._unloading = False
         self._background_operations: set[asyncio.Task] = set()
         self._retiring_tasks: set[asyncio.Task] = set()
+        self._device_authorization_observer = DeviceAuthorizationObserver()
+        self._device_authorization_commands = BoltDeviceAuthorizationRunner()
+        self._device_authorization = DeviceAuthorizationFacade(
+            self._device_authorization_observer,
+            DeviceAuthorizationService(self._device_authorization_commands),
+            remembered_grant_enabled=True,
+        )
         self._sleep_guard = SleepGuardController()
         self._sleep_hardware = G1SleepGuardHardwareDiscovery()
         self._discovery = SteamOsDiscovery(
@@ -512,6 +535,112 @@ class Plugin:
         self._benchmark_request_generation = 0
         self._auto_cancel_requested = threading.Event()
         self._auto_cancel_requested.set()
+
+    @staticmethod
+    def _device_authorization_unavailable(
+        *, answer: bool = False, confirmation: bool = False
+    ) -> dict[str, object]:
+        payload: dict[str, object] = {
+            "schema_version": 1,
+            "code": "device_authorization.runtime_unavailable",
+            "token": "",
+            "vendor": "",
+            "model": "",
+            "already_offered": False,
+            "intentional_disconnect": False,
+            "confirmation_open": False,
+            "generation": 0,
+        }
+        if confirmation:
+            payload.update({"requested": False, "verified": None})
+        else:
+            payload.update({"state": "unavailable"})
+            if answer:
+                payload["accepted"] = False
+        return payload
+
+    @staticmethod
+    def _device_authorization_payload(payload: dict[str, object]) -> dict[str, object]:
+        """Publish the production remembered-grant capability explicitly."""
+        return {**payload, "remembered_grant_offered": True}
+
+    def _reconcile_device_authorization_disconnect(self) -> None:
+        """Project the durable dock claim into the attachment prompt gate."""
+        try:
+            observed = self._device_authorization_observer.observe()
+            uuid_value = getattr(observed, "uuid", "")
+            if type(uuid_value) is not str or not uuid_value:
+                return
+            claim = WholeDockClaimStore(DEFAULT_RUNTIME_STATE_ROOT).load()
+            if claim is None:
+                self._device_authorization.note_intentional_disconnect(
+                    False, uuid=uuid_value
+                )
+                return
+            if claim.stage != "software_down":
+                return
+            # Prove the retained record still names the deauthorized transport
+            # at this port. A replacement device changes the binding and must
+            # never inherit the old dock's suppression.
+            resolve_deauthorized_transport(claim.binding, claim.generation)
+            self._device_authorization.note_intentional_disconnect(
+                True, uuid=uuid_value
+            )
+        except Exception:
+            # Unreadable or intermediate state changes nothing. In particular,
+            # an unreadable claim is not rounded down to "not intentional".
+            return
+
+    async def get_device_authorization_status(
+        self, _request: object = None
+    ) -> dict[str, object]:
+        if getattr(self, "_unloading", False):
+            return self._device_authorization_unavailable()
+        try:
+            def status():
+                self._reconcile_device_authorization_disconnect()
+                return self._device_authorization.status()
+            return self._device_authorization_payload(await asyncio.to_thread(status))
+        except Exception:
+            return self._device_authorization_unavailable()
+
+    async def acknowledge_device_authorization(
+        self, token: str
+    ) -> dict[str, object]:
+        if getattr(self, "_unloading", False):
+            return self._device_authorization_unavailable(answer=True)
+        try:
+            payload = await asyncio.to_thread(
+                self._device_authorization.acknowledge, token
+            )
+            return self._device_authorization_payload(payload)
+        except Exception:
+            return self._device_authorization_unavailable(answer=True)
+
+    async def decline_device_authorization(self, token: str) -> dict[str, object]:
+        if getattr(self, "_unloading", False):
+            return self._device_authorization_unavailable(answer=True)
+        try:
+            payload = await asyncio.to_thread(self._device_authorization.decline, token)
+            return self._device_authorization_payload(payload)
+        except Exception:
+            return self._device_authorization_unavailable(answer=True)
+
+    async def confirm_device_authorization(
+        self, token: str, consent: bool, action: str
+    ) -> dict[str, object]:
+        if getattr(self, "_unloading", False):
+            return self._device_authorization_unavailable(confirmation=True)
+        try:
+            payload = await asyncio.to_thread(
+                self._device_authorization.confirm,
+                token,
+                consent=consent,
+                action=action,
+            )
+            return self._device_authorization_payload(payload)
+        except Exception:
+            return self._device_authorization_unavailable(confirmation=True)
 
     async def get_tdp_status(self, _request: object = None) -> dict[str, object]:
         return await self._tdp_call("status")
@@ -1765,6 +1894,75 @@ class Plugin:
             return {**result, 'code': result['code'] if result['code'] != 'dock_reconcile.refused'
                     else 'dock_reconcile.unresolved'}
 
+    def _hold_remembered_authorization(
+        self, operation, binding, generation, device_uuid, guard
+    ):
+        """Temporarily stop boltd auto-authorizing this still-cabled dock."""
+        commands = getattr(self, '_device_authorization_commands', None)
+        if commands is None or guard() is not True:
+            return False
+        policy = commands.policy(device_uuid)
+        store = DeviceAuthorizationHoldStore(DEFAULT_RUNTIME_STATE_ROOT)
+        if policy == 'manual':
+            try:
+                hold = store.load_hold()
+            except Exception:
+                return False
+            if hold is None:
+                return guard() is True
+            if ((hold.operation, hold.binding, hold.generation, hold.uuid) != (
+                    operation, binding, generation, device_uuid)):
+                return False
+            if hold.state == 'prepared':
+                hold = store.mark_manual(hold, guard)
+            return type(hold) is DeviceAuthorizationHold and guard() is True
+        if policy != 'auto':
+            return False
+        hold = store.prepare(
+            operation, binding, generation, device_uuid, guard
+        )
+        if type(hold) is not DeviceAuthorizationHold:
+            return False
+        if (commands.set_policy(device_uuid, 'manual') is not True
+                or commands.policy(device_uuid) != 'manual'
+                or guard() is not True):
+            return False
+        return type(store.mark_manual(hold, guard)) is DeviceAuthorizationHold
+
+    def _restore_remembered_authorization_after_absence(self, claim, guard):
+        """Restore auto trust only beyond the strict physical-absence boundary."""
+        commands = getattr(self, '_device_authorization_commands', None)
+        if commands is None:
+            # Compatibility for old/no-authorization compositions: they could
+            # not have created this build's hold record.
+            return False
+        try:
+            store = DeviceAuthorizationHoldStore(DEFAULT_RUNTIME_STATE_ROOT)
+            hold = store.load_hold()
+        except ValueError:
+            # The production root is POSIX-absolute. Windows source tests have
+            # no boltd/runtime directory and therefore cannot contain a hold.
+            return False if os.name == 'nt' else None
+        except FileNotFoundError:
+            return False
+        except Exception:
+            return None
+        if hold is None:
+            return False
+        if (type(claim) is not WholeDockClaim
+                or (hold.operation, hold.binding, hold.generation) != (
+                    claim.operation, claim.binding, claim.generation)
+                or guard() is not True):
+            return None
+        policy = commands.policy(hold.uuid)
+        if policy == 'manual':
+            if commands.set_policy(hold.uuid, 'auto') is not True:
+                return None
+            policy = commands.policy(hold.uuid)
+        if policy != 'auto' or guard() is not True:
+            return None
+        return hold
+
     def _reconcile_physically_disconnected_dock(self):
         """Archive completed software-down history once the attachment is absent.
 
@@ -1881,8 +2079,19 @@ class Plugin:
                 phase = 'guard'
                 if not guard():
                     return refuse('guard', unmet[0] if unmet else 'unknown')
+                phase = 'authorization_restore'
+                authorization_hold = self._restore_remembered_authorization_after_absence(
+                    claim, guard
+                )
+                if authorization_hold is None:
+                    return refuse('authorization', 'remembered_trust_restore_unverified')
                 phase = 'retire'
                 store.retire_physically_disconnected(claim, guard)
+                if (authorization_hold is not False
+                        and DeviceAuthorizationHoldStore(
+                            DEFAULT_RUNTIME_STATE_ROOT
+                        ).clear_after_absence(authorization_hold, guard) is not True):
+                    return refuse('authorization', 'remembered_trust_hold_retained')
                 self._archival_refusal = None
                 try:
                     self._append_journey_event(severity='info',
@@ -2369,6 +2578,11 @@ class Plugin:
                     intent_retired = power_store.power_intent_absent(claim)
                 if intent_retired is not True or absence_guard() is not True:
                     return False
+                authorization_hold = self._restore_remembered_authorization_after_absence(
+                    claim, absence_guard
+                )
+                if authorization_hold is None:
+                    return False
                 receipt = power_store.retire_physically_disconnected(
                     claim,
                     lambda: (
@@ -2377,6 +2591,13 @@ class Plugin:
                     ),
                 )
                 if type(receipt) is not str or not receipt:
+                    return False
+                if (authorization_hold is not False
+                        and DeviceAuthorizationHoldStore(
+                            DEFAULT_RUNTIME_STATE_ROOT
+                        ).clear_after_absence(
+                            authorization_hold, absence_guard
+                        ) is not True):
                     return False
                 released = self._whole_dock_trial_lease.release()
                 if getattr(released, 'active', True) is not False:
@@ -2526,6 +2747,23 @@ class Plugin:
             binding = resolve_whole_dock(cards[0].pci_bdf)
             if expected_attachment and expected_attachment != binding.binding + ":" + binding.generation:
                 raise ValueError("dock_teardown.approval_superseded")
+            # Keep the internal device id only long enough to report a
+            # successful intentional deauthorization. It never crosses an RPC
+            # boundary or enters a log or claim payload.
+            try:
+                authorization_observer = getattr(
+                    self, "_device_authorization_observer", None
+                )
+                authorization_observation = authorization_observer.observe()
+                authorization_uuid = getattr(authorization_observation, "uuid", "")
+                authorization_enrolled = (
+                    getattr(authorization_observation, "enrolled", None) is True
+                )
+                if type(authorization_uuid) is not str:
+                    authorization_uuid = ""
+            except Exception:
+                authorization_uuid = ""
+                authorization_enrolled = False
             self._whole_dock_trial_phase = "session"
             user = resolve_gamescope_user(GamescopeDiscovery().scan()).context
             if user is None:
@@ -2542,9 +2780,22 @@ class Plugin:
             def require_inhibition():
                 if guarded_admission() is not True:
                     raise ValueError("dock_teardown.sleep_inhibition_required")
+            authorization_hold_required = (
+                authorization_uuid
+                and authorization_enrolled
+                and (power_request is None or power_request.action == 'sleep')
+            )
+            before_deauthorize = None
+            if authorization_hold_required:
+                before_deauthorize = lambda op, attached, generation, guard: (
+                    self._hold_remembered_authorization(
+                        op, attached, generation, authorization_uuid, guard
+                    )
+                )
             runtime = WholeDockRuntime(binding, RootOwnedRuntimeState().ensure(),
                 idle=lambda: self._api.get_snapshot_report().snapshot.game_state is GameState.IDLE,
-                admission_held=guarded_admission)
+                admission_held=guarded_admission,
+                before_deauthorize=before_deauthorize)
             approval = WholeDockApproval(binding.binding, binding.generation,
                 TeardownApproval(binding.usb_bdf, binding.router_id))
             self._whole_dock_trial_phase = "sleep_inhibitor"
@@ -2599,6 +2850,14 @@ class Plugin:
                 self._whole_dock_trial_phase = "dock_teardown"
                 require_inhibition()
                 result = runtime.execute_claimed(operation, approval)
+                if getattr(result, 'software_down', False) is True and authorization_uuid:
+                    authorization_facade = getattr(
+                        self, "_device_authorization", None
+                    )
+                    if authorization_facade is not None:
+                        authorization_facade.note_intentional_disconnect(
+                            True, uuid=authorization_uuid
+                        )
                 if power_request is None:
                     return result
                 if getattr(result, 'software_down', False) is not True:
@@ -5300,7 +5559,7 @@ class Plugin:
 
     def _support_versions(self) -> dict[str, str]:
         return {
-            "regear": "0.3.147",
+            "regear": "0.3.153",
             "decky": str(getattr(decky, "DECKY_VERSION", "unknown")),
             "steamos": self._version_info.steamos,
             "kernel": self._version_info.kernel,

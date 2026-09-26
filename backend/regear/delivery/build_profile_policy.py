@@ -1,4 +1,4 @@
-"""Production admission for the connection and plain Safe Disconnect surface.
+"""Production admission for connection and the approved dock lifecycle surface.
 
 This policy narrows product access; it never replaces lifecycle safety checks.
 Read/recovery dependencies are retained even when their feature UI is hidden.
@@ -8,8 +8,9 @@ methods. Internal recovery stays available even when operator RPCs are hidden.
 
 from __future__ import annotations
 
-from functools import wraps
 import inspect
+import re
+from functools import wraps
 from typing import Any
 
 
@@ -24,6 +25,12 @@ CONNECTION_AND_DISCONNECT_RPCS = frozenset({
     "get_sleep_readiness", "get_transition_journal_status", "acknowledge_sleep_journal",
     "get_process_release_status", "acknowledge_process_release",
 })
+DEVICE_AUTHORIZATION_RPCS = frozenset({
+    "get_device_authorization_status",
+    "acknowledge_device_authorization",
+    "decline_device_authorization",
+    "confirm_device_authorization",
+})
 
 # These expose observation only. Retained-state lookup and acknowledgement above
 # must remain available; a hidden tab must not suppress safety status/recovery.
@@ -33,8 +40,9 @@ READ_RPCS = frozenset({
     "get_diagnostic_logging_status", "get_docked_igpu_status", "acknowledge_docked_igpu_status",
     "preview_support_bundle", "preview_process_release", "classify_offline_details",
 })
-PLAIN_DISCONNECT_ACTIONS = frozenset({
+PRODUCTION_DOCK_ACTIONS = frozenset({
     "whole_dock_disconnect", "whole_dock_disconnect_complete",
+    "whole_dock_sleep", "whole_dock_shutdown",
 })
 
 
@@ -43,13 +51,26 @@ def rpc_allowed(profile: str, method: str, arguments: dict[str, Any]) -> bool:
         return True
     if profile != "production":
         return False
-    if method not in CONNECTION_AND_DISCONNECT_RPCS | READ_RPCS:
+    if method not in CONNECTION_AND_DISCONNECT_RPCS | DEVICE_AUTHORIZATION_RPCS | READ_RPCS:
         return False
     if method == "execute_egpu_disconnect":
         action = arguments.get("trial_action", "")
         return (
-            isinstance(action, str) and action in PLAIN_DISCONNECT_ACTIONS
+            isinstance(action, str) and action in PRODUCTION_DOCK_ACTIONS
             and arguments.get("relaunch_intent", "disconnect") == "disconnect"
+        )
+    if method in {"acknowledge_device_authorization", "decline_device_authorization"}:
+        token = arguments.get("token")
+        return isinstance(token, str) and re.fullmatch(r"[0-9a-f]{32}", token) is not None
+    if method == "confirm_device_authorization":
+        token = arguments.get("token")
+        action = arguments.get("action")
+        return (
+            isinstance(token, str)
+            and re.fullmatch(r"[0-9a-f]{32}", token) is not None
+            and arguments.get("consent") is True
+            and isinstance(action, str)
+            and action in {"authorize", "enroll"}
         )
     return True
 
