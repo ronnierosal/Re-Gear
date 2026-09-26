@@ -17,7 +17,7 @@ Repository tests do not establish that the device migration has run.
 | Managed-file and inhibitor owner | `Re-Gear` |
 | Privileged deploy helper | `/var/lib/regear/deploy/regear-deploy-plugin` |
 | Deploy public key | `/var/lib/regear/deploy/deploy-public-key.pem` |
-| Sudo policy | `/etc/sudoers.d/regear-deploy-plugin` |
+| Sudo policy | Canonical `/etc/sudoers.d/regear-deploy-plugin` plus an identical lexically-final SteamOS precedence copy |
 | Plugin rollback storage | `.regear-deploy-backups` |
 | Former deploy backups/staging | Whole-directory root archive under `/var/lib/regear/deploy` |
 | Browser preference prefix | `regear.` |
@@ -85,6 +85,15 @@ directories back; it never restores a stale snapshot over newer recovery writes.
 Unknown phase, inode drift, unexpected content or rollback divergence stops with
 the journal and all evidence intact for operator review.
 
+If a native Decky install starts the current runtime before this migration, it
+can create a second `/var/lib/regear/control`. The migrator still rejects that
+ambiguity by default. Its explicit `reconcile-runtime` recovery is admitted only
+while the loader and Gamescope are offline, when the former tree is quiescent
+and the current tree contains exactly two empty lock files plus a byte-identical
+`portable-audio.json`. It journals a same-filesystem whole-tree rename to
+`/var/lib/regear/pre-migration-control-v1`, fsyncs the parent, and retains that
+tree as evidence. It never merges or deletes either authority.
+
 Rollback has one fixed dependency order. While the current deploy authority is
 still installed, run `/var/lib/regear/deploy/regear-migrate-identity rollback`
 and verify that the combined, directory and Gamescope drop-in journals are
@@ -106,6 +115,22 @@ with the already trusted deploy public key, and uses a fsynced phase marker so a
 interrupted install or rollback can resume. It installs only fixed Re-Gear paths
 and fixed-argument sudo rules, validates them with `visudo`, then removes former
 live authority only after direct and Deck-user readback succeeds.
+
+When the private key matching the former trusted public key is irrecoverably
+lost, `install-rotated <new-public-key-sha256>` is the separately approved
+credential-recovery mode. It snapshots the former authority first, pins the
+operator-supplied fingerprint, verifies the helper and migrator against the
+copied new key, records the immutable trust mode in the root-only transaction,
+and then follows the same publication, readback, retirement and rollback path.
+The new private key remains off-device and outside the repository. Ordinary
+`install` keeps the former-key trust chain unchanged.
+
+SteamOS also supplies a later general password-required rule. The bootstrap
+therefore publishes the same fixed-command policy at the canonical path and at
+`/etc/sudoers.d/zzzzzzzz-regear-deploy-plugin`, which sorts after the platform
+rule. Both copies must match the root-only snapshot, pass `visudo`, and are
+verified and removed together during rollback; the later copy grants no
+additional command surface.
 
 The Gamescope phase remains prepared until a separately supervised restart proves
 the running process inherited `REGEAR_STATE_ROOT`. Removing a file is not proof
