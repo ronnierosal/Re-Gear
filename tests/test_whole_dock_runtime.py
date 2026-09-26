@@ -78,6 +78,36 @@ class RuntimeTests(unittest.TestCase):
             'usb_removed', 'tunnel_remove_intent', 'deauthorize', 'software_down'])
         self.assertIsNotNone(self.claim)
 
+    def test_authorization_hold_runs_after_tunnel_intent_before_deauthorize(self):
+        def hold(operation, binding, generation, guard):
+            self.assertEqual((operation, binding, generation),
+                             ('operation', 'bound', 'generation'))
+            self.assertTrue(guard())
+            self.events.append('authorization_hold')
+            return True
+        runtime = module.WholeDockRuntime(
+            self.binding, '/unused', idle=lambda: True,
+            admission_held=lambda: self.admitted, before_deauthorize=hold,
+        )
+        result = runtime.execute('operation', self.approval)
+        self.assertTrue(result.software_down)
+        self.assertLess(self.events.index('tunnel_remove_intent'),
+                        self.events.index('authorization_hold'))
+        self.assertLess(self.events.index('authorization_hold'),
+                        self.events.index('deauthorize'))
+
+    def test_unverified_authorization_hold_blocks_deauthorization(self):
+        runtime = module.WholeDockRuntime(
+            self.binding, '/unused', idle=lambda: True,
+            admission_held=lambda: self.admitted,
+            before_deauthorize=lambda *args: False,
+        )
+        result = runtime.execute('operation', self.approval)
+        self.assertEqual(result.code, 'dock_teardown.unresolved')
+        self.writer.deauthorize.assert_not_called()
+        self.assertTrue(self.authorized)
+        self.assertEqual(self.claim.stage, 'tunnel_remove_intent')
+
     def test_power_intent_binds_after_claim_before_release_intent(self):
         self.names = {'gpu', 'audio', 'usb'}
         def bind():

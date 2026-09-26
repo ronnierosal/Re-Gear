@@ -125,8 +125,9 @@ class MainDeviceAuthorizationTests(unittest.TestCase):
         self.plugin._dock_mutation_gate = lambda: NS(admit=nullcontext)
         self.plugin._return_portable_before_disconnect = Mock()
         self.plugin._device_authorization_observer.observe.return_value = NS(
-            uuid=DOCK_UUID
+            uuid=DOCK_UUID, enrolled=True
         )
+        self.plugin._device_authorization_commands = Mock()
         binding = NS(
             gpu_bdf="gpu",
             audio_bdf="audio",
@@ -155,15 +156,94 @@ class MainDeviceAuthorizationTests(unittest.TestCase):
             self.module, "Login1SleepInhibitor", return_value=lease
         ), patch.object(
             self.module, "WholeDockRuntime", return_value=runtime
-        ), patch.object(
+        ) as runtime_type, patch.object(
+            self.module, "DeviceAuthorizationHoldStore"
+        ) as hold_store_type, patch.object(
             self.module, "build_live_disconnect_runtime", return_value=release
         ):
             drm.return_value.scan.return_value = [NS(boot_vga=False, pci_bdf="gpu")]
             result = self.plugin._run_whole_dock_trial("operation")
         self.assertTrue(result.software_down)
+        callback = runtime_type.call_args.kwargs["before_deauthorize"]
+        self.assertIsNotNone(callback)
+        hold = self.module.DeviceAuthorizationHold(
+            "operation", binding.binding, binding.generation, DOCK_UUID
+        )
+        hold_store_type.return_value.prepare.return_value = hold
+        hold_store_type.return_value.mark_manual.return_value = (
+            self.module.DeviceAuthorizationHold(
+                "operation", binding.binding, binding.generation, DOCK_UUID, "manual"
+            )
+        )
+        self.plugin._device_authorization_commands.policy.side_effect = [
+            "auto", "manual"
+        ]
+        self.plugin._device_authorization_commands.set_policy.return_value = True
+        with patch.object(
+            self.module,
+            "DeviceAuthorizationHoldStore",
+            return_value=hold_store_type.return_value,
+        ):
+            self.assertTrue(callback(
+                "operation", binding.binding, binding.generation, lambda: True
+            ))
+        self.plugin._device_authorization_commands.set_policy.assert_called_once_with(
+            DOCK_UUID, "manual"
+        )
         self.plugin._device_authorization.note_intentional_disconnect.assert_called_once_with(
             True, uuid=DOCK_UUID
         )
+
+    def test_remembered_trust_restores_only_after_matching_physical_absence(self):
+        self.plugin._device_authorization_commands = Mock()
+        self.plugin._device_authorization_commands.policy.side_effect = [
+            "manual", "auto"
+        ]
+        self.plugin._device_authorization_commands.set_policy.return_value = True
+        claim = self.module.WholeDockClaim(
+            "operation", "b" * 64, "c" * 64, "software_down"
+        )
+        hold = self.module.DeviceAuthorizationHold(
+            claim.operation,
+            claim.binding,
+            claim.generation,
+            DOCK_UUID,
+            "manual",
+        )
+        hold_store = Mock()
+        hold_store.load_hold.return_value = hold
+        with patch.object(
+            self.module, "DeviceAuthorizationHoldStore", return_value=hold_store
+        ):
+            restored = self.plugin._restore_remembered_authorization_after_absence(
+                claim, lambda: True
+            )
+        self.assertEqual(restored, hold)
+        self.plugin._device_authorization_commands.set_policy.assert_called_once_with(
+            DOCK_UUID, "auto"
+        )
+
+    def test_remembered_trust_never_restores_without_matching_absence_guard(self):
+        self.plugin._device_authorization_commands = Mock()
+        claim = self.module.WholeDockClaim(
+            "operation", "b" * 64, "c" * 64, "software_down"
+        )
+        hold_store = Mock()
+        hold_store.load_hold.return_value = self.module.DeviceAuthorizationHold(
+            claim.operation,
+            claim.binding,
+            claim.generation,
+            DOCK_UUID,
+            "manual",
+        )
+        with patch.object(
+            self.module, "DeviceAuthorizationHoldStore", return_value=hold_store
+        ):
+            restored = self.plugin._restore_remembered_authorization_after_absence(
+                claim, lambda: False
+            )
+        self.assertIsNone(restored)
+        self.plugin._device_authorization_commands.set_policy.assert_not_called()
 
 
 if __name__ == "__main__":

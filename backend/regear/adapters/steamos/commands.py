@@ -1000,6 +1000,60 @@ class BoltDeviceAuthorizationRunner:
     def authorize(self, uuid: str) -> DeviceEnrollmentResult:
         return self._grant(self.authorize_argv, uuid, "authorize")
 
+    @classmethod
+    def policy_argv(cls, uuid: str) -> tuple[str, ...]:
+        if type(uuid) is not str or cls.UUID.fullmatch(uuid) is None:
+            raise ValueError("device authorization uuid is invalid")
+        return (cls.BOLTCTL, "config", uuid, "device.policy")
+
+    @classmethod
+    def set_policy_argv(cls, uuid: str, policy: str) -> tuple[str, ...]:
+        if type(uuid) is not str or cls.UUID.fullmatch(uuid) is None:
+            raise ValueError("device authorization uuid is invalid")
+        if policy not in ("auto", "manual"):
+            raise ValueError("device authorization policy is invalid")
+        return (cls.BOLTCTL, "config", uuid, "device.policy", policy)
+
+    def policy(self, uuid: str) -> str | None:
+        """Read one stored policy; malformed or unavailable output is unknown."""
+        try:
+            argv = self.policy_argv(uuid)
+        except ValueError:
+            return None
+        completed = self._run_policy(argv)
+        if completed is None or completed.returncode != 0 or len(completed.stdout) > 64:
+            return None
+        try:
+            value = completed.stdout.decode("ascii").strip()
+        except UnicodeDecodeError:
+            return None
+        return value if value in ("auto", "manual") else None
+
+    def set_policy(self, uuid: str, policy: str) -> bool:
+        """Change only the remembered policy; this does not authorize a device."""
+        try:
+            argv = self.set_policy_argv(uuid, policy)
+        except ValueError:
+            return False
+        completed = self._run_policy(argv)
+        return completed is not None and completed.returncode == 0
+
+    def _run_policy(self, argv):
+        if self._effective_uid() != 0:
+            return None
+        try:
+            return subprocess.run(
+                argv,
+                capture_output=True,
+                check=False,
+                shell=False,
+                text=False,
+                timeout=self._timeout_seconds,
+                env=dict(self.CLEAN_ENVIRONMENT),
+            )
+        except (OSError, subprocess.SubprocessError):
+            return None
+
     def _grant(self, build, uuid: str, action: str) -> DeviceEnrollmentResult:
         """Run one fixed-argv grant, and report what happened to the COMMAND.
 
