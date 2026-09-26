@@ -122,6 +122,28 @@ function unknownDisconnectTile(): Tile {
     detail: "Readiness has not been observed. Re-Gear cannot confirm a safe disconnect, and this never makes unplugging safe.",
   };
 }
+
+/** The compact eGPU summary reports the connection lifecycle, not one of its
+ * prerequisites.  In particular, a PCIe link can be up while the GPU driver,
+ * television, audio or Gamescope integration is still pending.  Presenting
+ * that link as the overall status is the exact conflation the detailed eGPU
+ * view exists to avoid. */
+function egpuStatusTile(presentation: EgpuPresentation | null | undefined): Tile {
+  const lifecycle = presentation?.lifecycle;
+  if (!lifecycle?.known) {
+    return {
+      id: "egpu", title: "eGPU Status", value: "Unknown", tone: "unavailable",
+      detail: "No current connection lifecycle observation. Open for separate link, rendering and display details.",
+    };
+  }
+  return {
+    id: "egpu", title: "eGPU Status", value: lifecycle.text,
+    tone: evidenceTone(lifecycle),
+    detail: lifecycle.verified
+      ? "Current connection lifecycle. Open for separate link, rendering and display details."
+      : "Current connection lifecycle · observed, not verified. Open for separate link, rendering and display details.",
+  };
+}
 const UNKNOWN_PERFORMANCE: ReadonlyArray<[string, string]> = [
   ["profile", "Performance Profile"], ["fps", "FPS Target"],
   ["manual", "Manual TDP"], ["auto", "Auto TDP"],
@@ -178,6 +200,7 @@ function quickTiles(
   performance: Tile[], egpu: Tile[], controller: Tile[],
   displayTarget: Evidence | undefined,
   controllerSummary: Tile | null,
+  egpuStatus: Tile,
 ): Tile[] {
   // `as` re-ids a summary card: Quick shows the same reading as another tab
   // under the identity the approved Quick composition gives it, so the two can
@@ -206,7 +229,7 @@ function quickTiles(
     pick(performance, "manual"),
     pick(performance, "auto"),
     target,
-    pick(egpu, "link", "eGPU Status", "egpu"),
+    egpuStatus,
     // Presence, projected from the same presentation. NOT the Controllers
     // tab's Player 1 card, which is an assignment question with no provider.
     controllerSummary ?? pick(controller, "controller", "Controller Status"),
@@ -244,7 +267,8 @@ export function buildTiles(readings: Readings): TileView {
 
   return {
     quick: quickTiles(performance, egpu, controller, fresh ? readings.displayTarget : undefined,
-      controllerFresh && readings.controller ? controllerSummaryTile(readings.controller) : null),
+      controllerFresh && readings.controller ? controllerSummaryTile(readings.controller) : null,
+      egpuStatusTile(fresh ? readings.egpu : null)),
     performance, egpu, controllers: controller, offline: offlineTabTiles, settings: settingsTiles(),
   };
 }

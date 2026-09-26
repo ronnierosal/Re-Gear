@@ -105,6 +105,7 @@ const LIFECYCLE_TEXT: Record<string, string> = {
   waiting_for_driver: "Waiting for driver",
   waiting_for_link: "Waiting for link",
   waiting_for_hdmi: "Waiting for display",
+  ready_display_pending: "Ready — waiting for TV HDMI",
   waiting_for_audio: "Waiting for audio",
   waiting_for_session: "Waiting for session",
   game_running: "Game running",
