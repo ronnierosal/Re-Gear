@@ -401,7 +401,6 @@ def _observe_pipewire(
             device_id = props.get("device.id")
             if (
                 props.get("media.class") == "Audio/Sink"
-                and props.get("alsa.loopback") is True
                 and isinstance(name, str)
                 and NODE_NAME_RE.fullmatch(name)
                 and isinstance(device_id, int)

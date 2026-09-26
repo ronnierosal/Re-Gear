@@ -21,7 +21,12 @@ BACKEND_ROOT = PLUGIN_ROOT / "backend"
 if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
-from regear.adapters.steamos.commands import BrokerCaptureRestoreTimer, HeldTrialLauncher, HeldTrialRestoreTimer  # noqa: E402
+from regear.adapters.steamos.commands import (  # noqa: E402
+    BoltDeviceAuthorizationRunner,
+    BrokerCaptureRestoreTimer,
+    HeldTrialLauncher,
+    HeldTrialRestoreTimer,
+)
 
 from regear.adapters.steamos.discovery import SteamOsDiscovery  # noqa: E402
 from regear.application.automatic_link_recovery import AutomaticLinkRecovery  # noqa: E402
@@ -44,7 +49,14 @@ from regear.domain.telemetry import TelemetryAdmissionKind, admit_telemetry_coll
 from regear.adapters.steamos.drm import DrmDiscovery  # noqa: E402
 from regear.adapters.steamos.egpu_cooling import EgpuCoolingDiscovery  # noqa: E402
 from regear.adapters.steamos.sleep_inhibitor import Login1SleepInhibitor  # noqa: E402
-from regear.adapters.steamos.whole_dock_topology import resolve_whole_dock, resolve_transport  # noqa: E402
+from regear.adapters.steamos.whole_dock_topology import (  # noqa: E402
+    resolve_deauthorized_transport,
+    resolve_whole_dock,
+    resolve_transport,
+)
+from regear.adapters.steamos.device_authorization_observer import DeviceAuthorizationObserver  # noqa: E402
+from regear.application.device_authorization import DeviceAuthorizationService  # noqa: E402
+from regear.delivery.device_authorization_facade import DeviceAuthorizationFacade  # noqa: E402
 from regear.delivery.whole_dock_runtime import WholeDockRuntime  # noqa: E402
 from regear.delivery.dock_power_intent import DockPowerIntentStore  # noqa: E402
 from regear.delivery.dock_power_service import create_power_request, continue_dock_power, dock_power_capabilities  # noqa: E402
@@ -432,6 +444,12 @@ class Plugin:
         self._unloading = False
         self._background_operations: set[asyncio.Task] = set()
         self._retiring_tasks: set[asyncio.Task] = set()
+        self._device_authorization_observer = DeviceAuthorizationObserver()
+        self._device_authorization = DeviceAuthorizationFacade(
+            self._device_authorization_observer,
+            DeviceAuthorizationService(BoltDeviceAuthorizationRunner()),
+            remembered_grant_enabled=True,
+        )
         self._sleep_guard = SleepGuardController()
         self._sleep_hardware = G1SleepGuardHardwareDiscovery()
         self._discovery = SteamOsDiscovery(
@@ -512,6 +530,112 @@ class Plugin:
         self._benchmark_request_generation = 0
         self._auto_cancel_requested = threading.Event()
         self._auto_cancel_requested.set()
+
+    @staticmethod
+    def _device_authorization_unavailable(
+        *, answer: bool = False, confirmation: bool = False
+    ) -> dict[str, object]:
+        payload: dict[str, object] = {
+            "schema_version": 1,
+            "code": "device_authorization.runtime_unavailable",
+            "token": "",
+            "vendor": "",
+            "model": "",
+            "already_offered": False,
+            "intentional_disconnect": False,
+            "confirmation_open": False,
+            "generation": 0,
+        }
+        if confirmation:
+            payload.update({"requested": False, "verified": None})
+        else:
+            payload.update({"state": "unavailable"})
+            if answer:
+                payload["accepted"] = False
+        return payload
+
+    @staticmethod
+    def _device_authorization_payload(payload: dict[str, object]) -> dict[str, object]:
+        """Publish the production remembered-grant capability explicitly."""
+        return {**payload, "remembered_grant_offered": True}
+
+    def _reconcile_device_authorization_disconnect(self) -> None:
+        """Project the durable dock claim into the attachment prompt gate."""
+        try:
+            observed = self._device_authorization_observer.observe()
+            uuid_value = getattr(observed, "uuid", "")
+            if type(uuid_value) is not str or not uuid_value:
+                return
+            claim = WholeDockClaimStore(DEFAULT_RUNTIME_STATE_ROOT).load()
+            if claim is None:
+                self._device_authorization.note_intentional_disconnect(
+                    False, uuid=uuid_value
+                )
+                return
+            if claim.stage != "software_down":
+                return
+            # Prove the retained record still names the deauthorized transport
+            # at this port. A replacement device changes the binding and must
+            # never inherit the old dock's suppression.
+            resolve_deauthorized_transport(claim.binding, claim.generation)
+            self._device_authorization.note_intentional_disconnect(
+                True, uuid=uuid_value
+            )
+        except Exception:
+            # Unreadable or intermediate state changes nothing. In particular,
+            # an unreadable claim is not rounded down to "not intentional".
+            return
+
+    async def get_device_authorization_status(
+        self, _request: object = None
+    ) -> dict[str, object]:
+        if getattr(self, "_unloading", False):
+            return self._device_authorization_unavailable()
+        try:
+            def status():
+                self._reconcile_device_authorization_disconnect()
+                return self._device_authorization.status()
+            return self._device_authorization_payload(await asyncio.to_thread(status))
+        except Exception:
+            return self._device_authorization_unavailable()
+
+    async def acknowledge_device_authorization(
+        self, token: str
+    ) -> dict[str, object]:
+        if getattr(self, "_unloading", False):
+            return self._device_authorization_unavailable(answer=True)
+        try:
+            payload = await asyncio.to_thread(
+                self._device_authorization.acknowledge, token
+            )
+            return self._device_authorization_payload(payload)
+        except Exception:
+            return self._device_authorization_unavailable(answer=True)
+
+    async def decline_device_authorization(self, token: str) -> dict[str, object]:
+        if getattr(self, "_unloading", False):
+            return self._device_authorization_unavailable(answer=True)
+        try:
+            payload = await asyncio.to_thread(self._device_authorization.decline, token)
+            return self._device_authorization_payload(payload)
+        except Exception:
+            return self._device_authorization_unavailable(answer=True)
+
+    async def confirm_device_authorization(
+        self, token: str, consent: bool, action: str
+    ) -> dict[str, object]:
+        if getattr(self, "_unloading", False):
+            return self._device_authorization_unavailable(confirmation=True)
+        try:
+            payload = await asyncio.to_thread(
+                self._device_authorization.confirm,
+                token,
+                consent=consent,
+                action=action,
+            )
+            return self._device_authorization_payload(payload)
+        except Exception:
+            return self._device_authorization_unavailable(confirmation=True)
 
     async def get_tdp_status(self, _request: object = None) -> dict[str, object]:
         return await self._tdp_call("status")
@@ -2526,6 +2650,19 @@ class Plugin:
             binding = resolve_whole_dock(cards[0].pci_bdf)
             if expected_attachment and expected_attachment != binding.binding + ":" + binding.generation:
                 raise ValueError("dock_teardown.approval_superseded")
+            # Keep the internal device id only long enough to report a
+            # successful intentional deauthorization. It never crosses an RPC
+            # boundary or enters a log or claim payload.
+            try:
+                authorization_observer = getattr(
+                    self, "_device_authorization_observer", None
+                )
+                authorization_observation = authorization_observer.observe()
+                authorization_uuid = getattr(authorization_observation, "uuid", "")
+                if type(authorization_uuid) is not str:
+                    authorization_uuid = ""
+            except Exception:
+                authorization_uuid = ""
             self._whole_dock_trial_phase = "session"
             user = resolve_gamescope_user(GamescopeDiscovery().scan()).context
             if user is None:
@@ -2599,6 +2736,14 @@ class Plugin:
                 self._whole_dock_trial_phase = "dock_teardown"
                 require_inhibition()
                 result = runtime.execute_claimed(operation, approval)
+                if getattr(result, 'software_down', False) is True and authorization_uuid:
+                    authorization_facade = getattr(
+                        self, "_device_authorization", None
+                    )
+                    if authorization_facade is not None:
+                        authorization_facade.note_intentional_disconnect(
+                            True, uuid=authorization_uuid
+                        )
                 if power_request is None:
                     return result
                 if getattr(result, 'software_down', False) is not True:
@@ -5300,7 +5445,7 @@ class Plugin:
 
     def _support_versions(self) -> dict[str, str]:
         return {
-            "regear": "0.3.147",
+            "regear": "0.3.153",
             "decky": str(getattr(decky, "DECKY_VERSION", "unknown")),
             "steamos": self._version_info.steamos,
             "kernel": self._version_info.kernel,

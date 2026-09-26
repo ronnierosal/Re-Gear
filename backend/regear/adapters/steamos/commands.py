@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Sequence
 
 from ...ports.presentation_activation import UserServiceOperation
+from ...ports.device_authorization import DeviceEnrollmentResult
 from ...ports.system_power import PowerOffResult, SuspendResult
 from ...ports.tdp import TdpDispatchGuard, TdpDispatchRejected
 
@@ -912,3 +913,134 @@ class HeldTrialRestoreTimer:
             return result.returncode == 0 and result.stdout.strip() == b'active'
         except (OSError, subprocess.SubprocessError):
             return False
+
+
+class BoltDeviceAuthorizationRunner:
+    """Grant trust to exactly one named Thunderbolt device through `boltd`.
+
+    Two grants, because the player is told two different things. `authorize`
+    trusts the device for this attachment and stores nothing, so the next plug
+    asks again -- that is the agreed scope. `enroll` stores it with the `auto`
+    policy, which is what Desktop Mode already did to the dock that works
+    today; it is retained but is not reachable from production wiring, because
+    remembering a DMA grant is a decision nobody has approved.
+
+    `boltd` is the system's authorization owner, so this asks it rather than
+    writing `authorized` in sysfs: a direct write would leave `boltd`'s
+    enrolment database disagreeing with the kernel about which devices are
+    trusted, and the player would meet the prompt again on a later plug with no
+    way to make it stop.
+
+    The argv is fixed apart from the UUID, which is the only caller-supplied
+    value that reaches a command line in this feature. It is matched against an
+    exact pattern and refused otherwise -- not quoted, not escaped, refused.
+    With `shell=False` a stray argument could not be reinterpreted anyway, but
+    the boundary should not depend on that being remembered.
+
+    `--policy auto` matches what Desktop Mode already stores for a device
+    enrolled there, so a device trusted from Game Mode behaves identically
+    afterwards. `--chain` is deliberately NOT passed: it authorizes parent
+    devices as well, which would trust hardware the player was never shown.
+
+    A zero exit is reported as accepted, never as verified. The caller re-reads
+    the device's state to learn whether it actually became trusted.
+    """
+
+    BOLTCTL = "/usr/bin/boltctl"
+    #: `boltctl list` reports this shape, and nothing else is a device id.
+    UUID = re.compile(
+        r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+    )
+    CLEAN_ENVIRONMENT = {
+        "LANG": "C",
+        "LC_ALL": "C",
+        "PATH": "/usr/bin:/bin",
+    }
+
+    def __init__(self, timeout_seconds: float = 15.0, effective_uid=None) -> None:
+        self._timeout_seconds = timeout_seconds
+        self._effective_uid = effective_uid or getattr(os, "geteuid", lambda: -1)
+
+    @classmethod
+    def argv(cls, uuid: str) -> tuple[str, ...]:
+        """The remembered grant. Unchanged, and deliberately still here.
+
+        Reachable only when the production facade explicitly offers remembered
+        trust and the player selects it. This is the grant Desktop Mode performs;
+        the service verifies both authorization and enrollment afterward.
+        """
+        if type(uuid) is not str or cls.UUID.fullmatch(uuid) is None:
+            raise ValueError("device authorization uuid is invalid")
+        return (cls.BOLTCTL, "enroll", "--policy", "auto", uuid)
+
+    @classmethod
+    def authorize_argv(cls, uuid: str) -> tuple[str, ...]:
+        """The one-shot grant: trust this device now, remember nothing.
+
+        `boltctl authorize` leaves the enrolment database alone, so the next
+        plug asks again. That repetition is the agreed product scope, not a
+        defect in it -- the player is trusting a device for this attachment,
+        and nothing on disk outlives the cable.
+
+        No `--policy`: policy is a property of a STORED device, and passing one
+        here would be asking `boltd` to remember a decision the player was told
+        would not be remembered. No `--chain`, for the same reason it is absent
+        from enrolment: it would authorize parent devices the player was never
+        shown.
+
+        The UUID is validated identically and refused rather than quoted.
+        """
+        if type(uuid) is not str or cls.UUID.fullmatch(uuid) is None:
+            raise ValueError("device authorization uuid is invalid")
+        return (cls.BOLTCTL, "authorize", uuid)
+
+    def enroll(self, uuid: str) -> DeviceEnrollmentResult:
+        return self._grant(self.argv, uuid, "enroll")
+
+    def authorize(self, uuid: str) -> DeviceEnrollmentResult:
+        return self._grant(self.authorize_argv, uuid, "authorize")
+
+    def _grant(self, build, uuid: str, action: str) -> DeviceEnrollmentResult:
+        """Run one fixed-argv grant, and report what happened to the COMMAND.
+
+        Shared by both grants on purpose: two copies of a subprocess boundary
+        are two places to remember `shell=False`, the clean environment and the
+        timeout, and the second copy is the one that gets missed. `action` only
+        names the outcome codes -- it never reaches the command line, which is
+        built by `build` from a fixed tuple.
+        """
+        try:
+            argv = build(uuid)
+        except ValueError:
+            return DeviceEnrollmentResult(
+                False, "device_authorization.uuid_invalid"
+            )
+        if self._effective_uid() != 0:
+            return DeviceEnrollmentResult(
+                False, "device_authorization.root_required"
+            )
+        try:
+            completed = subprocess.run(
+                argv,
+                capture_output=True,
+                check=False,
+                shell=False,
+                text=False,
+                timeout=self._timeout_seconds,
+                env=dict(self.CLEAN_ENVIRONMENT),
+            )
+        except subprocess.TimeoutExpired:
+            return DeviceEnrollmentResult(
+                False, f"device_authorization.{action}_timeout"
+            )
+        except (OSError, subprocess.SubprocessError):
+            return DeviceEnrollmentResult(
+                False, f"device_authorization.{action}_unavailable"
+            )
+        if completed.returncode != 0:
+            return DeviceEnrollmentResult(
+                False, f"device_authorization.{action}_failed"
+            )
+        return DeviceEnrollmentResult(
+            True, f"device_authorization.{action}_accepted_unverified"
+        )

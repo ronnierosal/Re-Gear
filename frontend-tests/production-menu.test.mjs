@@ -100,7 +100,7 @@ function text(tree) {
   return typeof tree === "object" ? text(tree.props?.children) : String(tree);
 }
 
-test("production adapter enables native sliders but excludes customization and non-eGPU actions",()=>{
+test("production adapter enables native sliders and only the admitted guarded eGPU actions",()=>{
  const h=harness();h.menu.open();const view=h.mount();
  assert.equal(h.utilitiesCreated,true);
  assert.equal(view.props.policy,"production");
@@ -110,17 +110,24 @@ test("production adapter enables native sliders but excludes customization and n
  assert.equal(typeof view.props.onUtilityRequest,"function");
  assert.throws(()=>view.props.onUtilityRequest("wifi"),/Control unavailable/);
  assert.deepEqual(Object.keys(view.props.tiles),["egpu"]);
- assert.deepEqual(view.props.tiles.egpu.map(x=>x.id),["egpu","disconnect"]);
+ assert.deepEqual(view.props.tiles.egpu.map(x=>x.id),["egpu","disconnect","disconnect-sleep","disconnect-shutdown"]);
  assert.equal(nodes(view.props.disconnectControl).some(n=>n.type==="dropdown"),false);
- for(const intent of ["sleep","shutdown","disconnect"])view.props.onDisconnect(intent);
+ view.props.onDisconnect("disconnect");
  assert.equal(h.modals.length,1);
- for(const id of ["disconnect-sleep","disconnect-shutdown","portable-shutdown","switch-handheld"])
+ for(const id of ["portable-shutdown","switch-handheld"])
   assert.equal(view.props.onAction("egpu",{id}),false);
  assert.equal(view.props.renderDetail("performance",{id:"auto"}),null);
  view.props.onDisconnect("disconnect_only");
  const dock=nodes(h.modals[1].node).find(n=>n.type==="dock");
  assert.equal(dock.props.intent,"disconnect_only");assert.equal(dock.props.startRequest(),true);
  h.menu.stop();
+ for(const [id,intent] of [["disconnect-sleep","sleep"],["disconnect-shutdown","shutdown"]]){
+  const actionHarness=harness();actionHarness.menu.open();const actionView=actionHarness.mount();
+  assert.equal(actionView.props.onAction("egpu",{id}),true);
+  const actionDock=nodes(actionHarness.modals[1].node).find(n=>n.type==="dock");
+  assert.equal(actionDock.props.intent,intent);assert.equal(actionDock.props.startRequest(),true);
+  actionHarness.menu.stop();
+ }
 });
 test("production shell rejects saved layouts and limits controller navigation to live eGPU tiles",async()=>{
  const app=await fixture();
@@ -131,16 +138,18 @@ test("production shell rejects saved layouts and limits controller navigation to
  onAction:()=>{actions++;return true;},onDisconnect(){},catalogReadings:{egpu:[{id:"link",title:"Link",value:"Connected",detail:""}]}};
  let tree=app.render(props);
  const cards=()=>nodes(tree).filter(n=>n.props?.className==="rg-expanded-tile");
- assert.deepEqual(cards().map(n=>n.props["data-ec-control"]),["egpu","disconnect"]);
+ assert.deepEqual(cards().map(n=>n.props["data-ec-control"]),["egpu","disconnect","disconnect-sleep","disconnect-shutdown"]);
  assert.equal(reads,0);
  assert.deepEqual(nodes(tree).filter(n=>n.props?.role==="tab").map(n=>n.props["data-ec-tab"]),["egpu"]);
  assert.deepEqual(nodes(tree).filter(n=>n.type==="utility-rail").map(n=>n.props.side),["left"]);
  assert.doesNotMatch(text(tree),/Switch Tab|Sample data/);
  const panel=nodes(tree).find(n=>n.props?.["data-ec-panel"]!==undefined);
  for(const button of [5,6,4])panel.props.onButtonDown({detail:{button},preventDefault(){},stopPropagation(){}});
- tree=app.render(props);
- assert.deepEqual(cards().map(n=>n.props["data-ec-control"]),["egpu","disconnect"]);
- cards()[0].props.onClick();tree=app.render(props);assert.equal(actions,0);
+  tree=app.render(props);
+  assert.deepEqual(cards().map(n=>n.props["data-ec-control"]),["egpu","disconnect","disconnect-sleep","disconnect-shutdown"]);
+  cards()[2].props.onClick();tree=app.render(props);assert.equal(actions,1);
+  cards()[3].props.onClick();tree=app.render(props);assert.equal(actions,2);
+  cards()[0].props.onClick();tree=app.render(props);assert.equal(actions,2);
 });
 test("production without readings displays Unknown and Unavailable, never synthetic readiness",async()=>{
  const app=await fixture();const tree=app.render({policy:"production",onDisconnect(){}});
