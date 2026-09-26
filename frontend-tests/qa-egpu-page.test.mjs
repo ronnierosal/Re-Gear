@@ -139,12 +139,14 @@ test("no unsupported display capability is presented", () => {
 });
 
 test("lifecycle stages read distinctly and an unknown stage is not invented", () => {
-  const stages = ["disconnected", "waiting_for_link", "ready_idle", "link_training_failed", "timed_out"];
+  const stages = ["disconnected", "waiting_for_link", "ready_display_pending", "ready_idle", "link_training_failed", "timed_out"];
   const seen = stages.map((stage) => {
     const p = base(); p.connection_readiness = readiness(stage);
     return egpuPresentation(p).lifecycle.text;
   });
   assert.equal(new Set(seen).size, stages.length, "each stage reads distinctly");
+  const waitingForTv = base(); waitingForTv.connection_readiness = readiness("ready_display_pending");
+  assert.equal(egpuPresentation(waitingForTv).lifecycle.text, "Ready — waiting for TV HDMI");
   const later = base(); later.connection_readiness = readiness("a_stage_from_a_later_build");
   assert.equal(egpuPresentation(later).lifecycle.known, false);
 });
