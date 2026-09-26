@@ -83,6 +83,18 @@ class IdentityMigrationCliTests(unittest.TestCase):
             self.assertTrue(current.is_dir())
             self.assertFalse(archive.exists())
 
+    def test_duplicate_runtime_reconciliation_refuses_different_audio(self):
+        with tempfile.TemporaryDirectory() as directory:
+            migration, record, _, current, archive = self.conflict_fixture(
+                Path(directory)
+            )
+            (current / "portable-audio.json").write_bytes(b'{"sink_name":"different"}\n')
+            with self.assertRaisesRegex(tool.IdentityMigrationError, "audio state differs"):
+                tool.reconcile_duplicate_runtime(migration, record)
+            self.assertTrue(current.is_dir())
+            self.assertFalse(archive.exists())
+            self.assertFalse(record.path.exists())
+
     def test_duplicate_runtime_reconciliation_resumes_after_rename(self):
         with tempfile.TemporaryDirectory() as directory:
             migration, record, former, current, archive = self.conflict_fixture(
@@ -133,6 +145,36 @@ class IdentityMigrationCliTests(unittest.TestCase):
             (archive / "portable-audio.json").write_text("changed\n", encoding="ascii")
             with self.assertRaisesRegex(tool.IdentityMigrationError, "changed|differs"):
                 tool.require_conflict_resolved_for_apply(migration, record)
+
+    def test_committed_archive_survives_live_audio_updates_after_apply(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            migration, conflict, _, current, archive = self.conflict_fixture(root)
+            tool.reconcile_duplicate_runtime(migration, conflict)
+            archived_audio = (archive / "portable-audio.json").read_bytes()
+            combined = tool.CombinedMigrationRecord(root / "combined.json")
+            dropin = SimpleNamespace(
+                preflight_apply=unittest.mock.Mock(return_value=False),
+                inspect=unittest.mock.Mock(return_value={"journal_phase": None}),
+            )
+            tool.apply_combined(migration, dropin, combined, conflict)
+            (current / "portable-audio.json").write_bytes(
+                b'{"schema_version":1,"sink_name":"updated"}\n'
+            )
+            tool.apply_combined(migration, dropin, combined, conflict)
+            self.assertEqual(combined.load()["phase"], "committed")
+            self.assertEqual((archive / "portable-audio.json").read_bytes(), archived_audio)
+
+            changed_journal = conflict.load()
+            audio_entry = next(
+                entry for entry in changed_journal["manifest"]["entries"]
+                if entry["name"] == "portable-audio.json"
+            )
+            audio_entry["sha256"] = "0" * 64
+            with conflict.hold():
+                conflict.write(changed_journal)
+            with self.assertRaisesRegex(tool.IdentityMigrationError, "archive changed"):
+                tool.apply_combined(migration, dropin, combined, conflict)
 
     def test_gamescope_environment_requires_one_exact_current_identity(self):
         current = "/home/deck/.local/share/regear"

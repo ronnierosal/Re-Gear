@@ -586,8 +586,8 @@ def _validate_fresh_manifest(value: object) -> None:
         raise IdentityMigrationError("fresh control manifest names are incompatible")
 
 
-def _manifest_matches(root: Path, former: Path, expected: object) -> bool:
-    return _fresh_manifest(root, former) == expected
+def _manifest_matches(root: Path, expected: object) -> bool:
+    return _fresh_root_manifest(root)[0] == expected
 
 
 def require_conflict_resolved_for_apply(
@@ -610,9 +610,8 @@ def require_conflict_resolved_for_apply(
     state = migration._location_state(runtime)
     if state.value not in {"old_only", "current_only"}:
         raise IdentityMigrationError("committed control conflict authority is ambiguous")
-    authority = runtime.old if state.value == "old_only" else runtime.current
     if not archive_present or not _manifest_matches(
-        record.archive, authority, document["manifest"]
+        record.archive, document["manifest"]
     ):
         raise IdentityMigrationError("committed control conflict archive changed")
 
@@ -642,7 +641,7 @@ def reconcile_duplicate_runtime(
         if document["phase"] == "committed":
             if state.value != "old_only" or not record.archive.is_dir():
                 raise IdentityMigrationError("committed control conflict state diverged")
-            if not _manifest_matches(record.archive, runtime.old, manifest):
+            if not _manifest_matches(record.archive, manifest):
                 raise IdentityMigrationError("preserved control conflict archive changed")
             return document
 
@@ -651,7 +650,7 @@ def reconcile_duplicate_runtime(
             migration._validate_tree(runtime.current, runtime)
             migration._validate_quiescent_root(runtime.old)
             migration._validate_quiescent_root(runtime.current)
-            if not _manifest_matches(runtime.current, runtime.old, manifest):
+            if _fresh_manifest(runtime.current, runtime.old) != manifest:
                 raise IdentityMigrationError("fresh control root changed after journal preparation")
             if runtime.current.lstat().st_dev != record.archive.parent.lstat().st_dev:
                 raise IdentityMigrationError("control conflict archive would cross filesystems")
@@ -661,7 +660,7 @@ def reconcile_duplicate_runtime(
 
         if state.value != "old_only" or not record.archive.is_dir():
             raise IdentityMigrationError("prepared control conflict state is ambiguous")
-        if not _manifest_matches(record.archive, runtime.old, manifest):
+        if not _manifest_matches(record.archive, manifest):
             raise IdentityMigrationError("preserved control conflict archive changed")
         document["phase"] = "committed"
         record.write(document)
