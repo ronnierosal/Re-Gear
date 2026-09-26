@@ -42,6 +42,6 @@ Supervised hardware validation is a later, separate gate: record the stock Steam
 
 ## Sources and local contracts
 
-- Re-Gear: `docs/AUTOMATIC_GAME_OPTIMIZATION.md`, `docs/AUTO_TDP_INDEPENDENT_PLAN.md`, `backend/regear/domain/auto_tdp.py`, `backend/regear/application/auto_tdp_session.py`, `backend/regear/delivery/auto_tdp_evidence.py`, `backend/regear/domain/frame_time_window.py`, `backend/regear/domain/performance_plan.py`, and `backend/regear/ports/game_session.py` at `5ed1e3da`.
+- Re-Gear: `docs/AUTOMATIC_GAME_OPTIMIZATION.md`, `docs/AUTO_TDP_INDEPENDENT_PLAN.md`, `backend/regear/domain/auto_tdp.py`, `backend/regear/application/auto_tdp_session.py`, `backend/regear/delivery/auto_tdp_evidence.py`, `backend/regear/domain/frame_time_window.py`, `backend/regear/domain/performance_plan.py`, and `backend/regear/ports/game_session.py` at `6ef070bd`.
 - [Gamescope upstream](https://github.com/ValveSoftware/gamescope): compositor and frame-limiting capability does not establish a Re-Gear game base-FPS source or UI-idle detector.
 - [systemd logind session idle hint](https://wiki.freedesktop.org/www/Software/systemd/logind/): a session-provided idle hint; not evidence that SteamOS menus are responsive at a lower TDP or that a game is paused.
