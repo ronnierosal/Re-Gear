@@ -41,3 +41,21 @@ test("the probe reaches the backend through the loader's plugin api, not the leg
   assert.match(source, /init\.connect\(2, "Re-Gear"\)/);
   assert.doesNotMatch(source, /callServerMethod|DeckyBackend\./);
 });
+
+test("watch mode survives the Gamescope target replacement and reports actionable timing", () => {
+  assert.match(source, /process\.argv\.includes\("--watch"\)/);
+  assert.match(source, /while \(Date\.now\(\) - started <= timeoutMs\)/);
+  assert.match(source, /const next = await evaluate\(watchExpression\)/,
+    "each sample must rediscover SharedJSContext after the session restart");
+  assert.match(source, /phase_timeline/);
+  assert.match(source, /transport_gaps/);
+  assert.match(source, /popup_settle_ms/);
+  assert.match(source, /innerText\?\.includes\("Unplug the eGPU now"\)/);
+});
+
+test("watch mode is bounded and never treats a lost plugin target as completion", () => {
+  assert.match(source, /const timeoutMs = option\("--timeout-ms", 120_000\)/);
+  assert.match(source, /code: "probe\.plugin_unavailable"/);
+  assert.match(source, /sample\.code !== "probe\.plugin_unavailable" && !sample\.busy/);
+  assert.match(source, /if \(!sawRunning \|\| terminalAt === null\) process\.exitCode = 2/);
+});
