@@ -11,6 +11,11 @@ import zipfile
 from collections.abc import Sequence
 from pathlib import Path
 
+if __package__:
+    from .build_profiles import PROFILE_FILENAME, PROFILE_NAMES, PROFILE_CONFIG_PATH, canonical_bytes, package_profile, frontend_profile, backend_config_bytes
+else:
+    from build_profiles import PROFILE_FILENAME, PROFILE_NAMES, PROFILE_CONFIG_PATH, canonical_bytes, package_profile, frontend_profile, backend_config_bytes
+
 
 ROOT = Path(__file__).resolve().parents[1]
 PACKAGE_VERSION = str(
@@ -37,6 +42,7 @@ READ_ONLY_PROBES = ("scripts/probe_safe_undock_readiness.py",)
 
 def included_files() -> tuple[Path, ...]:
     paths = [ROOT / relative for relative in TOP_LEVEL_FILES]
+    paths.append(ROOT / PROFILE_CONFIG_PATH)
     paths.extend(ROOT / relative for relative in READ_ONLY_PROBES)
     paths.append(ROOT / "dist" / "index.js")
     paths.append(ROOT / "dist" / "index.js.map")
@@ -46,6 +52,7 @@ def included_files() -> tuple[Path, ...]:
         path
         for path in sorted((ROOT / "backend" / "regear").rglob("*"))
         if path.is_file() and "__pycache__" not in path.parts and path.suffix != ".pyc"
+        and path != ROOT / PROFILE_CONFIG_PATH
     )
     return tuple(paths)
 
@@ -59,13 +66,15 @@ def archive_mode(path: Path) -> int:
     return 0o100755 if path in (ROOT / "bin" / "gamescope", ROOT / "bin" / "steam-launcher") else 0o100644
 
 
-def archive_bytes(path: Path) -> bytes:
+def archive_bytes(path: Path, *, profile: str = "development") -> bytes:
     """Canonicalize the Linux launcher even in an older Windows checkout.
 
     Git attributes protect new checkouts, but do not rewrite existing CRLF
     files. Normalize only CRLF pairs, leaving all other source bytes intact;
     invalid shebangs or remaining bare CR bytes must fail closed.
     """
+    if path == ROOT / PROFILE_CONFIG_PATH:
+        return backend_config_bytes(profile)
     content = path.read_bytes()
     if path in (ROOT / "bin" / "gamescope", ROOT / "bin" / "steam-launcher"):
         content = content.replace(b"\r\n", b"\n")
@@ -136,13 +145,19 @@ def build_info_bytes(revision: str) -> bytes:
 
 
 def main(argv: Sequence[str] = ()) -> int:
-    argparse.ArgumentParser(
+    parser = argparse.ArgumentParser(
         prog="build_plugin.py",
         description=(
-            "Package the built plugin and reserve its version. Takes no arguments; "
+            "Package the built plugin and reserve its version. "
             "every invocation performs a real build and consumes a reservation."
         ),
-    ).parse_args(argv)
+    )
+    parser.add_argument("--profile", choices=PROFILE_NAMES, default="development")
+    args = parser.parse_args(argv)
+    try:
+        package_profile(args.profile, root=ROOT)
+    except ValueError as error:
+        parser.exit(1, f"{error}\n")
     manifest = json.loads((ROOT / "plugin.json").read_text(encoding="utf-8"))
     if manifest.get("flags") != ["root"]:
         raise SystemExit("Refusing to package a manifest without the root delivery flag")
@@ -160,6 +175,10 @@ def main(argv: Sequence[str] = ()) -> int:
                 "\nRun `pnpm build` first; this script packages what that produced."
             )
         raise SystemExit(message)
+    try:
+        profile_bytes = canonical_bytes(frontend_profile(args.profile, root=ROOT))
+    except ValueError as error:
+        parser.exit(1, f"{error}\n")
     OUTPUT.parent.mkdir(parents=True, exist_ok=True)
     from release_coordination import reserve
     if OUTPUT.exists():
@@ -170,11 +189,15 @@ def main(argv: Sequence[str] = ()) -> int:
             info = zipfile.ZipInfo(archive_name(path))
             info.date_time = (2026, 1, 1, 0, 0, 0)
             info.external_attr = archive_mode(path) << 16
-            archive.writestr(info, archive_bytes(path), compress_type=zipfile.ZIP_DEFLATED)
+            archive.writestr(info, archive_bytes(path, profile=args.profile), compress_type=zipfile.ZIP_DEFLATED)
         info = zipfile.ZipInfo(f"{PLUGIN_DIRECTORY}/{BUILD_INFO_FILENAME}")
         info.date_time = (2026, 1, 1, 0, 0, 0)
         info.external_attr = 0o100644 << 16
         archive.writestr(info, build_info, compress_type=zipfile.ZIP_DEFLATED)
+        info = zipfile.ZipInfo(f"{PLUGIN_DIRECTORY}/{PROFILE_FILENAME}")
+        info.date_time = (2026, 1, 1, 0, 0, 0)
+        info.external_attr = 0o100644 << 16
+        archive.writestr(info, profile_bytes, compress_type=zipfile.ZIP_DEFLATED)
     with zipfile.ZipFile(OUTPUT) as archive:
         names = archive.namelist()
         top_levels = {name.split("/", 1)[0] for name in names}
@@ -184,6 +207,8 @@ def main(argv: Sequence[str] = ()) -> int:
             raise SystemExit("Decky archive is missing its nested plugin.json")
         if archive.read(f"{PLUGIN_DIRECTORY}/{BUILD_INFO_FILENAME}") != build_info:
             raise SystemExit("Decky archive build metadata did not round-trip")
+        if archive.read(f"{PLUGIN_DIRECTORY}/{PROFILE_FILENAME}") != profile_bytes:
+            raise SystemExit("Decky archive build profile did not round-trip")
         for launcher in ('gamescope', 'steam-launcher'):
             wrapper = archive.getinfo(f"{PLUGIN_DIRECTORY}/bin/{launcher}")
             validate_launcher_bytes(archive.read(wrapper))

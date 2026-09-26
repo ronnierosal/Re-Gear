@@ -66,3 +66,19 @@ class CompletionTests(unittest.TestCase):
                 NS(game_state=m.GameState.IDLE),NS(game_state=m.GameState.RUNNING)]
             with self.assertRaisesRegex(ValueError,'portable_changed'):
                 m.observe_down('binding','generation')
+
+    def test_product_observer_uses_supplied_read_only_audit(self):
+        user=NS(ok=True,context=NS(uid=1000,username='deck'))
+        audit=Mock(return_value={'code':'held_helper.settled','settled':True})
+        with patch.object(m,'resolve_deauthorized_transport',return_value='transport') as topology, \
+             patch.object(m,'GamescopeDiscovery'), \
+             patch.object(m,'resolve_gamescope_user',return_value=user), \
+             patch.object(m,'infer_operating_mode',return_value=NS(mode=m.OperatingMode.PORTABLE)), \
+             patch.object(m,'SteamOsDiscovery') as discovery:
+            discovery.return_value.collect_snapshot.side_effect=[
+                NS(game_state=m.GameState.IDLE),NS(game_state=m.GameState.IDLE)]
+            self.assertEqual(
+                m.observe_down_with_audit('binding','generation',audit),
+                ('transport',user.context))
+        audit.assert_called_once_with(user.context)
+        self.assertEqual(topology.call_count,2)

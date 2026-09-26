@@ -9,7 +9,7 @@ test('physical Ally cards use concise eGPU copy and never split words in artwork
   const tiles = read('src/quick-access/expanded-command-center/regear-tile.tsx');
   assert.match(actions, /unavailable\('switch-handheld','Handheld'\)/);
   assert.match(actions, /value:'Check status'/);
-  assert.match(actions, /title:'Disconnect \+ Shutdown'/);
+  assert.match(actions, /title:'Safe Disconnect \+ Shutdown'/);
   assert.match(tiles, /rg-v3-tile-copy \.rg-expanded-value\{[^}]*overflow-wrap:normal[^}]*word-break:normal[^}]*hyphens:none/);
   assert.doesNotMatch(tiles, /rg-v3-tile-copy \.rg-expanded-value\{[^}]*overflow-wrap:anywhere/);
 });

@@ -11,13 +11,17 @@ export const tutorials=[
  ]},
  {id:'disconnect',title:'Safe Disconnect',source:guide+'eGPU-and-Docking#safe-disconnect',steps:[
   'Follow your build’s instructions about games and connected storage.',
-  'Select Safe Disconnect once, read the result, and verify handheld picture, audio and controls return.',
-  'Physical unplugging needs separate clearance for your exact supervised setup. A software result alone is not enough.',
+  'Select Safe Disconnect once and read every status message.',
+  'A shown control or a Pending, Unavailable or Refused result is not permission to unplug.',
+  'Verify handheld picture, audio and controls return.',
+  'Unplug only when Re-Gear explicitly clears the physical unplug for your exact supervised setup. A software result alone is not enough.',
  ]},
  {id:'sleep-wake',title:'Sleep & Wake',source:guide+'eGPU-and-Docking#sleep-and-wake',steps:[
   'Sleep with an eGPU is still being validated.',
-  'Sleeping with the eGPU connected and disconnecting before sleep are separate choices in the design. Your build may not support them.',
-  'If sleep is blocked, do not force it or use software reconnect.',
+  'Disconnect + Sleep starts the guarded disconnect. Follow the messages, unplug only when Re-Gear asks, and expect sleep only after absence is verified.',
+  'Sleep — Keep eGPU Connected opens a confirmation. Sleep connected uses normal sleep without running Safe Disconnect.',
+  'Shutdown and Safe Disconnect + Shutdown are separate actions. Follow the status for the action you selected.',
+  'A control can be Ready, Pending, Unavailable or Refused. If an action is unavailable or refused, stop and follow the message. Do not force sleep or use software reconnect.',
  ]},
  {id:'stuck',title:'If You Get Stuck',source:guide+'Troubleshooting',steps:[
   'Stop repeating the action. Note your version, the message, what you expected and what happened.',

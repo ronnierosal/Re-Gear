@@ -27,3 +27,12 @@ test('Tutorials restore selected topic focus and let outer B handle the topic li
  const source=read('src/quick-access/expanded-command-center/tutorials.tsx');
  assert.match(source,/restore.current=item.id/);assert.match(source,/data-tutorial-back/);assert.match(source,/topic\?\{onCancelButton/);assert.doesNotMatch(source,/callable|setInterval|executeSafe/);
 });
+test('Tutorials use the mounted eGPU labels and keep unplug clearance explicit',()=>{
+ const source=read('src/quick-access/expanded-command-center/tutorials.tsx');
+ for(const label of ['Safe Disconnect','Disconnect + Sleep','Sleep — Keep eGPU Connected','Sleep connected','Shutdown','Safe Disconnect + Shutdown'])assert.ok(source.includes(label),label);
+ for(const state of ['Ready','Pending','Unavailable','Refused'])assert.ok(source.includes(state),state);
+ assert.match(source,/not permission to unplug/);
+ assert.match(source,/absence is verified/);
+ assert.match(source,/explicitly clears the physical unplug/);
+ assert.doesNotMatch(source,/Safely disconnect|Disconnect eGPU and sleep|Your build may not support them/);
+});

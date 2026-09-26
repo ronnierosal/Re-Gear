@@ -31,10 +31,16 @@ function harness(options={}){
 test('confirmed success dwells then closes without user confirmation',()=>{const h=harness();h.advance(3499);assert.equal(h.closed,0);h.advance(1);assert.equal(h.closed,1)});
 test('freshness loss and operation change prevent success dismissal',()=>{for(const status of [{expiresAt:4500},{phase:'checking'}]){const h=harness();h.setStatus(status);h.advance(10000);assert.equal(h.closed,0)}});
 test('expanded diagnostics hold dismissal until inspection ends',()=>{const h=harness();h.details(true);h.advance(5000);assert.equal(h.closed,0);h.details(false);h.advance(500);assert.equal(h.closed,1)});
-test('pointer, keyboard, focus and native controller handlers each renew the quiet dwell',()=>{
- for(const event of ['onPointerDownCapture','onKeyDownCapture','onFocusCapture','onGamepadFocus','onGamepadDirection','onButtonDown']){
+test('explicit pointer, keyboard and native controller input renews the quiet dwell',()=>{
+ for(const event of ['onPointerDownCapture','onKeyDownCapture','onGamepadDirection','onButtonDown']){
   const h=harness();h.advance(3000);h.tree.props.children[1].props[event]();h.advance(3000);assert.equal(h.closed,0,event);h.advance(500);assert.equal(h.closed,1,event);
  }
+});
+test('passive Steam focus notifications cannot hold a completed popup open',()=>{
+ const h=harness();
+ assert.equal(h.tree.props.children[1].props.onFocusCapture,undefined);
+ assert.equal(h.tree.props.children[1].props.onGamepadFocus,undefined);
+ h.advance(3500);assert.equal(h.closed,1);
 });
 test('unmount cancels scheduled success dismissal',()=>{const h=harness();h.cleanup();h.advance(10000);assert.equal(h.closed,0)});
 
@@ -48,14 +54,19 @@ test('unmount cancels an in-flight Hide animation',()=>{const h=harness({animate
 
 const {ConnectionProgressOverlay:renderProgress}=await import('data:text/javascript;base64,'+Buffer.from(jsx+`const useRef=()=>({current:null}),DialogButton='button',PopupFrame='frame',PopupStateIcon='status',CommandCenterIcon='icon',handheldIcon='repo-handheld',tvIcon='repo-tv';`+compile('connection-progress-overlay.tsx')).toString('base64'));
 const flatten=value=>Array.isArray(value)?value.flatMap(flatten):value&&typeof value==='object'?[value,...flatten(value.props?.children),...flatten(value.props?.footer)]:[];
+test('compact connection popup uses a fixed responsive cap instead of stretching with TV width',()=>{
+ const frame=readFileSync(new URL('../src/popup-frame.tsx',import.meta.url),'utf8');
+ assert.match(frame,/\.rg-popup\.rg-compact\{width:min\(560px,94vw\)/);
+ assert.doesNotMatch(frame,/\.rg-popup\.rg-compact\{width:62vw/);
+});
 test('flow never treats TV detection or a single GPU check as completed switching',()=>{
  const rows=[{key:'gpu',label:'GPU and driver',state:'ready'},{key:'hdmi',label:'TV HDMI detected',state:'ready'}];
  const tree=renderProgress({rows,phase:'connecting',deviceLabel:'eGPU',onHide(){}});
  const lines=flatten(tree).filter(n=>n.props?.className==='rg-flow-line');assert.deepEqual(lines.map(n=>n.props['data-ready']),[false,false]);assert.ok(JSON.stringify(tree).includes('Detected; not active'));
  const done=renderProgress({rows,phase:'ready',deviceLabel:'eGPU',onHide(){}});assert.equal(flatten(done).filter(n=>n.props?.className==='rg-flow-line')[1].props['data-ready'],true);
 });
-test('absent core observations remain unavailable and original long reasons stay in details',()=>{
+test('absent observations stay pending milestones and original long reasons stay in details',()=>{
  const detail='A long backend reason '.repeat(20);const tree=renderProgress({rows:[],phase:'connecting',deviceLabel:'eGPU',detail,onHide(){}});
- assert.equal(flatten(tree).filter(n=>n.props?.className==='rg-core-row').length,5);
- assert.ok(JSON.stringify(tree).includes('Unavailable'));assert.ok(flatten(tree).some(n=>n.type==='p'&&n.props.children[0]===detail));
+ const milestones=flatten(tree).filter(n=>n.props?.className==='rg-milestone');assert.equal(milestones.length,5);
+ assert.ok(milestones.every(n=>n.props['data-state']==='pending'),'absent observations never advance a milestone');assert.ok(flatten(tree).some(n=>n.type==='p'&&n.props.children[0]===detail));
 });

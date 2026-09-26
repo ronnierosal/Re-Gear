@@ -1229,3 +1229,54 @@ remains on the Ally. Review and subsequent integration gates remain separate.
 Evidence: 0395-troubleshoot-readonly.json, 0395-troubleshoot-kernel.json,
 0395-live-1789252584051.jsonl and 0395-current-holders.json in whole-dock-disconnect/out.
 Documentation impact: Wiki
+
+## eGPU lifecycle evidence refresh — 2026-09-24
+
+This entry promotes two later, bounded hardware reports from completed project
+tasks into the authority record. They apply only to the maintainer's recorded
+ASUS ROG Ally X and GPD G1 setup. They do not establish repeatability, support
+for other hardware, or a general live-removal guarantee.
+
+### Installed 0.3.127 manual lifecycle — 2026-09-21
+
+The maintainer reported one completed manual journey on build `0.3.127`: TV to
+handheld, existing **Safe Disconnect**, physical unplug, physical reconnect, and
+return to TV. The source task is the backend physical-unplug sleep integration
+merged through [PR #367](https://github.com/ronnierosal/Re-Gear/pull/367).
+
+The retained task evidence records the installed version and observed journey,
+but not an installed revision or package checksum for this run. Treat it as one
+version-labelled maintainer report. It does not validate **Disconnect + Sleep**,
+shutdown, software reconnect, other hardware, or repeated cycles.
+
+### Installed 0.3.129 supervised lifecycle — 2026-09-22
+
+Build `0.3.129` was installed and read back at exact revision
+`e8ad848401a126028e9aed092f07ab40f8549b0c`, the merge from
+[PR #380](https://github.com/ronnierosal/Re-Gear/pull/380). Its immutable ZIP is
+1,147,923 bytes with SHA-256
+`B7E04AB88319737D778591ABDE2DAEDAECBA999F3308273FBC3647E1ED254257`.
+On the same supervised setup, automatic TV, both display switches, ordinary
+**Safe Disconnect** through `software_down`, physical unplug/reconnect, and the
+automatic return to TV passed.
+
+The combined **Disconnect + Sleep** action failed on that same installed build.
+It returned to the handheld but did not reach `software_down`, did not show the
+unplug-required state, and did not request sleep. Its retained pending record
+then blocked TV switching, while the operation status disappeared after a
+Gamescope remount. No physical unplug, reconnect, or cable-retained
+software-down state occurred during that failed attempt. The source corrections
+merged through [PR #383](https://github.com/ronnierosal/Re-Gear/pull/383), but a
+successful installed **Disconnect + Sleep** journey was not established by this
+evidence.
+
+### Current merged eGPU control inventory
+
+At merged source `5ed1e3d`, the production Command Center registry exposes seven
+distinct eGPU controls: **Switch to Handheld**, **Safe Disconnect**,
+**Resolution**, **eGPU Status**, **Disconnect + Sleep**, **Shutdown**, and
+**Safe Disconnect + Shutdown**. **Shutdown** is the portable power-off action;
+**Safe Disconnect + Shutdown** runs the whole-dock disconnect route before it
+requests shutdown. A registered control can still render unavailable, and this
+source inventory is not installed or hardware-success evidence for either
+shutdown route.

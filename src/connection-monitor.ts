@@ -3,12 +3,44 @@ import type { SnapshotPayload, AutomaticDockStatusPayload } from "./backend";
 
 type Reading = {payload: SnapshotPayload; automatic: AutomaticDockStatusPayload; journal: string};
 type Modal = {Close(): void};
+type PresentationReceipt = {active(): boolean; begin(): void; clear(): void};
 type Dependencies = {
   read(): Promise<Reading>;
   show(store: ReturnType<typeof createLiveStatusStore>, switchTv: (() => void) | undefined, closed: () => void): Modal;
   schedule?: (callback: () => void, delay: number) => ReturnType<typeof setTimeout>;
   cancel?: (timer: ReturnType<typeof setTimeout>) => void;
+  presentation?: PresentationReceipt;
 };
+
+const PRESENTATION_KEY = "regear.connection-popup.v1";
+const PRESENTATION_TTL_MS = 30_000;
+export function createConnectionPresentationReceipt(
+  storage: Pick<Storage, "getItem" | "setItem" | "removeItem"> | undefined,
+  now: () => number = Date.now,
+): PresentationReceipt {
+  return {
+    active() {
+      try {
+        const raw = storage?.getItem(PRESENTATION_KEY) ?? "";
+        const match = /^v1:(\d+)$/.exec(raw);
+        const expiresAt = match ? Number(match[1]) : 0;
+        if (!Number.isSafeInteger(expiresAt) || expiresAt <= now()) {
+          if (raw) storage?.removeItem(PRESENTATION_KEY);
+          return false;
+        }
+        return true;
+      } catch { return false; }
+    },
+    begin() {
+      try { storage?.setItem(PRESENTATION_KEY, `v1:${now() + PRESENTATION_TTL_MS}`); }
+      catch { /* Remount presentation is optional; connection remains active. */ }
+    },
+    clear() {
+      try { storage?.removeItem(PRESENTATION_KEY); }
+      catch { /* Remount presentation is optional; connection remains active. */ }
+    },
+  };
+}
 
 // Owned by the plugin, never by the Quick Access content mount. The first
 // successful sample establishes a baseline; an already attached GPU is not
@@ -21,9 +53,13 @@ export function startConnectionMonitor(deps: Dependencies) {
   let stopped = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let modal: Modal | null = null;
-  const close = () => { modal?.Close(); modal = null; };
+  const closeSurface = () => { modal?.Close(); modal = null; };
+  const retire = () => { deps.presentation?.clear(); closeSurface(); };
   const open = (switchTv?: () => void) => {
-    if (!stopped && !modal) modal = deps.show(store, switchTv, () => { modal = null; });
+    if (!stopped && !modal) modal = deps.show(store, switchTv, () => {
+      modal = null;
+      deps.presentation?.clear();
+    });
   };
   const poll = async () => {
     try {
@@ -35,10 +71,16 @@ export function startConnectionMonitor(deps: Dependencies) {
       if (payload.connection_readiness && Number.isFinite(age) && age >= -5000 && age < 15000) {
         const attached = status.connected;
         const newConnection = previous === false && attached;
+        const restorePresentation = previous === undefined && attached
+          && deps.presentation?.active() === true;
         previous = attached;
-        if (!attached) close();
+        if (!attached) retire();
+        else if (restorePresentation && payload.snapshot.game_state === "idle") open();
         else if (newConnection && payload.snapshot.game_state === "idle"
-          && payload.inference.mode !== "docked_egpu") open();
+          && payload.inference.mode !== "docked_egpu") {
+          deps.presentation?.begin();
+          open();
+        }
       }
     } catch {
       if (!stopped) store.set({...store.get(), expiresAt: 0, canSwitch: false});
@@ -48,5 +90,5 @@ export function startConnectionMonitor(deps: Dependencies) {
     }
   };
   void poll();
-  return {store, open, stop() { stopped = true; if (timer !== undefined) cancel(timer); close(); }};
+  return {store, open, stop() { stopped = true; if (timer !== undefined) cancel(timer); closeSurface(); }};
 }

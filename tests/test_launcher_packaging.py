@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import io
+import hashlib
 import json
 import tempfile
 import sys
@@ -10,7 +11,7 @@ import zipfile
 from pathlib import Path
 from unittest.mock import patch
 
-from scripts import build_plugin, check_plugin_package
+from scripts import build_plugin, check_plugin_package, build_profiles
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
 
@@ -52,6 +53,15 @@ class LauncherPackagingTests(unittest.TestCase):
         # repository inputs or depending on an optional pre-existing out/ ZIP.
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
+            (root / "contracts").mkdir()
+            (root / "contracts/build-profiles.json").write_bytes(
+                (build_plugin.ROOT / "contracts/build-profiles.json").read_bytes()
+            )
+            (root / "dist").mkdir()
+            (root / "dist/index.js").write_bytes(b"fixture")
+            stamp = build_profiles.package_profile(root=root)
+            stamp["bundle_sha256"] = hashlib.sha256(b"fixture").hexdigest()
+            (root / "dist/build_profile.json").write_text(json.dumps(stamp))
             wrapper = root / "bin" / "gamescope"
             wrapper.parent.mkdir()
             manifest = root / "plugin.json"

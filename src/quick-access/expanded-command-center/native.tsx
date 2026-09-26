@@ -1,3 +1,5 @@
+import { productionEgpuTiles } from "../../build-profile";
+import type { BuildProfile } from "../../build-profile";
 import {Tutorials} from './tutorials';
 import {offlineTabTiles,offlineUnavailableActions} from "./offline-tab";
 import type { RuntimeDetailSource } from "./runtime-detail-source";
@@ -13,7 +15,7 @@ import { Button, Dropdown, Focusable, ModalRoot, showModal, GamepadButton, findM
 import type { ControllerInputSource } from "../../controller-safe-disconnect";
 import { loadMenuBinding, saveMenuBinding, menuBindingOptions, startMenuShortcut } from "../../menu-shortcut";
 import type { MenuBinding } from "../../menu-shortcut";
-import { WholeDockControl } from "../../whole-dock-control";
+import { recoverTerminalDockReceipt, WholeDockControl, type DockSettlement } from "../../whole-dock-control";
 import { parsePendingRecord, type DockIntent } from "../../whole-dock-control-model";
 import { EgpuConfirmModal } from "../../egpu-confirm-modal";
 import { ExpandedCommandCenter } from "./shell";
@@ -62,9 +64,9 @@ export function NativeMenuButton(props:ComponentProps<typeof Button>&{"aria-disa
  * the publisher supplies every tab, Unknown included, precisely so that
  * fallback is unreachable once wired.
  *
- * This adapter starts no timer and calls no backend function. It subscribes to
- * a view someone else owns; adding a read here would be a second source of
- * truth for state a player acts on.
+ * This adapter owns no status poll. It subscribes to a view someone else owns;
+ * the sole backend read below is a bounded recovery of a terminal disconnect
+ * whose originating Steam UI process disappeared.
  */
 /** Stable per-source callbacks. useSyncExternalStore resubscribes whenever the
  * subscribe function's identity changes, so these are cached rather than built
@@ -90,7 +92,8 @@ function readFrom(source?: TileSource) {
   return cached;
 }
 
-export function createExpandedMenu(input: ControllerInputSource | undefined, host: Window, canOpen: () => boolean = () => true, source?: TileSource, readCurrentSnapshot: () => unknown = () => null, renderDetail?: NonEgpuDetailRenderer, runtimeDetails?:RuntimeDetailSource) {
+export function createExpandedMenu(input: ControllerInputSource | undefined, host: Window, canOpen: () => boolean = () => true, source?: TileSource, readCurrentSnapshot: () => unknown = () => null, renderDetail?: NonEgpuDetailRenderer, runtimeDetails?:RuntimeDetailSource, policy: BuildProfile = "development") {
+  const production = policy === "production";
   const system = (host as Window & { SteamClient?: { System?: UtilitySystem } }).SteamClient?.System;
   const utilities = system ? createNativeUtilities(system) : undefined;
   const storage = (() => { try { return host.localStorage; } catch { return undefined; } })();
@@ -100,8 +103,35 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
   const subscribeBinding=(listener:()=>void)=>{bindingListeners.add(listener);return()=>{bindingListeners.delete(listener);};};
   let modal: ReturnType<typeof showModal> | null = null;
   let operation: ReturnType<typeof showModal> | null = null;
+  let operationKind:"active"|"status"|null=null;
   let operationGeneration=0;
-  const hideOperation=()=>{const previous=operation;operation=null;operationGeneration++;previous?.Close();};
+  let pendingStatusTimer:ReturnType<typeof setTimeout>|null=null;
+  const setPendingTimeout = typeof host.setTimeout === "function"
+    ? host.setTimeout.bind(host) : globalThis.setTimeout;
+  const clearPendingTimeout = typeof host.clearTimeout === "function"
+    ? host.clearTimeout.bind(host) : globalThis.clearTimeout;
+  let presentedDockSettlement: DockSettlement | null = null;
+  const hideOperation=()=>{const previous=operation;operation=null;operationKind=null;operationGeneration++;previous?.Close();};
+  const presentDockSettlement=(settlement:DockSettlement)=>{
+    const record=parsePendingRecord(storage?.getItem("regear.whole-dock.pending-request"));
+    if(record?.request===settlement.request&&record.intent===settlement.intent){
+      presentedDockSettlement=settlement;
+      // The active progress surface belongs to the Gamescope instance that
+      // initiated the display handoff.  Its handle can survive after that
+      // visible surface has gone away.  Once the correlated result arrives,
+      // rebuild promptly on the replacement surface instead of waiting for
+      // the coarse stale-handle fallback below.  A status surface must not
+      // schedule itself again when it observes the same terminal result.
+      if(operationKind==="active")schedulePendingStatusRebuild(1_500);
+    }
+  };
+  const acknowledgeDockSettlement=()=>{
+    if(!presentedDockSettlement)return;
+    const record=parsePendingRecord(storage?.getItem("regear.whole-dock.pending-request"));
+    if(record?.request===presentedDockSettlement.request&&record.intent===presentedDockSettlement.intent)
+      storage?.removeItem("regear.whole-dock.pending-request");
+    presentedDockSettlement=null;
+  };
   const visibility = createMenuVisibility();
   let opening = false;
   let stopped = false;
@@ -115,24 +145,60 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
     visibility.set(false);
     previous?.Close();
   };
-  const pendingDockIntent=()=>{
-    try{return parsePendingRecord(storage?.getItem("regear.whole-dock.pending-request"))?.intent??null;}
+  const pendingDockRecord=()=>{
+    try{return parsePendingRecord(storage?.getItem("regear.whole-dock.pending-request"));}
     catch{return null;}
   };
+  const pendingDockIntent=()=>pendingDockRecord()?.intent??null;
   function resumePendingOperation(){
     if(stopped||operation)return;
     const intent=pendingDockIntent();
     if(intent!=="disconnect"&&intent!=="disconnect_only"&&intent!=="sleep"&&intent!=="shutdown")return;
     const operationToken=++operationGeneration;
     const hide=()=>{if(operationGeneration===operationToken)hideOperation();};
-    const title=intent==="shutdown"?"Disconnect + Shutdown status":intent==="sleep"?"Disconnect + Sleep status":"Safe Disconnect status";
-    const opened=showModal(<EgpuConfirmModal strTitle={title} strOKButtonText="Hide" bAlertDialog onOK={hide} onCancel={hide} onEscKeypress={hide} className="rg-whole-dock-progress">
+    const dismiss=()=>{acknowledgeDockSettlement();hide();};
+    const title=intent==="shutdown"?"Safe Disconnect + Shutdown status":intent==="sleep"?"Disconnect + Sleep status":"Safe Disconnect status";
+    const opened=showModal(<EgpuConfirmModal strTitle={title} strOKButtonText="Hide" bAlertDialog onOK={dismiss} onCancel={dismiss} onEscKeypress={dismiss} className="rg-whole-dock-progress">
       <style>{`.rg-whole-dock-progress{position:fixed!important;left:50%!important;top:50%!important;right:auto!important;bottom:auto!important;margin:0!important;transform:translate(-50%,-50%)!important}`}</style>
-      <WholeDockControl intent={intent} readCurrentSnapshot={readCurrentSnapshot} statusOnly/>
+      <WholeDockControl intent={intent} readCurrentSnapshot={readCurrentSnapshot} statusOnly onSettled={presentDockSettlement}/>
     </EgpuConfirmModal>,undefined,{fnOnClose:hide,bNeverPopOut:true});
-    if(operationGeneration!==operationToken){opened.Close();return;}operation=opened;
+    if(operationGeneration!==operationToken){opened.Close();return;}operation=opened;operationKind="status";
   }
+  const schedulePendingStatusRebuild=(delay:number)=>{
+    if(pendingStatusTimer!==null)clearPendingTimeout(pendingStatusTimer as never);
+    pendingStatusTimer=setPendingTimeout(()=>{
+      pendingStatusTimer=null;
+      if(stopped||!pendingDockIntent())return;
+      // A Gamescope display handoff can destroy the visible modal without
+      // notifying this SharedJS owner. Replace only that stale presentation;
+      // the reconstructed control is status-only and cannot replay the write.
+      hideOperation();
+      resumePendingOperation();
+    },delay);
+  };
   function disconnect(intent: DockIntent = "disconnect_only") {
+    if(stopped||!modal||(production && intent !== "disconnect_only")) return;
+    if(operationKind==="status"){
+      const record=pendingDockRecord();
+      const settled=presentedDockSettlement;
+      if(!record){
+        // The receipt was retired, but Gamescope did not notify this SharedJS
+        // owner that its modal disappeared. Discard only the dead handle.
+        presentedDockSettlement=null;
+        hideOperation();
+      } else if(settled?.request===record.request&&settled.intent===record.intent){
+        // The previous result was rendered and correlated. This fresh explicit
+        // press acknowledges it before starting a new request.
+        acknowledgeDockSettlement();
+        hideOperation();
+      } else {
+        // Never replace unresolved history with a new hardware write. Restore
+        // its status and require another explicit press after it settles.
+        hideOperation();
+        resumePendingOperation();
+        return;
+      }
+    }
     if(stopped||operation||!modal) return;
     // One explicit activation owns one request across React remounts. React can
     // retire the first control while its final freshness read is pending, so
@@ -144,20 +210,28 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
     );
     const operationToken=++operationGeneration;
     const hide=()=>{if(operationGeneration===operationToken)hideOperation();};
+    // Hiding or destroying the progress surface is not acknowledgement of a
+    // result. Gamescope tears this modal down during the very handoff the
+    // operation performs, and treating that host-driven close as dismissal
+    // erased the only durable receipt before the unplug popup could appear.
+    // Only the later status-only surface may acknowledge the settlement.
+    const dismiss=hide;
     const title=intent==="shutdown"?"Safe Disconnect + Shutdown":intent==="sleep"?"Disconnect + Sleep":"Safe Disconnect";
-    const opened=showModal(<EgpuConfirmModal strTitle={title} strOKButtonText="Hide" bAlertDialog onOK={hide} onCancel={hide} onEscKeypress={hide} className="rg-whole-dock-progress">
+    const opened=showModal(<EgpuConfirmModal strTitle={title} strOKButtonText="Hide" bAlertDialog onOK={dismiss} onCancel={dismiss} onEscKeypress={dismiss} className="rg-whole-dock-progress">
       <style>{`.rg-whole-dock-progress{position:fixed!important;left:50%!important;top:50%!important;right:auto!important;bottom:auto!important;margin:0!important;transform:translate(-50%,-50%)!important}`}</style>
-      <WholeDockControl intent={intent} readCurrentSnapshot={readCurrentSnapshot} startRequest={startRequest}/>
+      <WholeDockControl intent={intent} readCurrentSnapshot={readCurrentSnapshot} startRequest={startRequest} onSettled={presentDockSettlement}/>
     </EgpuConfirmModal>,undefined,{fnOnClose:hide,bNeverPopOut:true});
     if(operationGeneration!==operationToken){opened.Close();return;}
     operation=opened;
+    operationKind="active";
+    schedulePendingStatusRebuild(15_000);
   }
   function ShutdownStatus(){
     const state=useSyncExternalStore(runtimeDetails?.subscribe??noSubscribe,runtimeDetails?.read??noRuntimeDetails,runtimeDetails?.read??noRuntimeDetails);
     return <p role="status">{state?.shutdown?.message||"Checking shutdown readiness…"}</p>;
   }
   function shutdown(){
-    if(stopped||operation||!modal||!runtimeDetails?.read()?.shutdown?.available)return;
+    if(production||stopped||operation||!modal||!runtimeDetails?.read()?.shutdown?.available)return;
     const operationToken=++operationGeneration;
     const hide=()=>{if(operationGeneration===operationToken)hideOperation();};
     // Dispatch only on explicit activation, never on mount/reopen.
@@ -193,14 +267,15 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
     // flip mid-confirmation aborts cleanly rather than dispatching the wrong route.
     const [dockIntent, setDockIntent] = useState<DockIntent>("disconnect_only");
     const utilityReadings = useSyncExternalStore(utilities?.subscribe ?? noSubscribe, utilities?.read ?? noUtilities, utilities?.read ?? noUtilities);
-    return <ExpandedCommandCenter onClose={close} native onFeedback={playMenuFeedback} onDisconnect={disconnect} disconnectControl={
+    return <ExpandedCommandCenter policy={policy} onClose={close} native onFeedback={playMenuFeedback} onDisconnect={disconnect} disconnectControl={
       <Focusable>
-        <Dropdown menuLabel="Dock action" rgOptions={dockIntentOptions} selectedOption={dockIntent}
-          onChange={option => { if (dockIntentOptions.some(item => item.data === option.data)) setDockIntent(option.data as DockIntent); }}/>
-        <WholeDockControl intent={dockIntent} readCurrentSnapshot={readCurrentSnapshot}/>
+        {!production && <Dropdown menuLabel="Dock action" rgOptions={dockIntentOptions} selectedOption={dockIntent}
+          onChange={option => { if (dockIntentOptions.some(item => item.data === option.data)) setDockIntent(option.data as DockIntent); }}/>}
+        <WholeDockControl intent={production ? "disconnect_only" : dockIntent} readCurrentSnapshot={readCurrentSnapshot} onSettled={presentDockSettlement}/>
       </Focusable>
-    } directions={{up:GamepadButton.DIR_UP,down:GamepadButton.DIR_DOWN,left:GamepadButton.DIR_LEFT,right:GamepadButton.DIR_RIGHT}} unavailableActions={unavailable} onAction={(_tab,tile)=>{if(tile.id==="disconnect-sleep"){disconnect("sleep");return true;}if(tile.id==="disconnect-shutdown"){disconnect("shutdown");return true;}if(tile.id==="portable-shutdown"){shutdown();return true;}if(tile.id==="switch-handheld"){runtimeDetails?.requestHandheld();return true;}return false;}} layoutStorage={storage} editButtons={{y:GamepadButton.OPTIONS}} primitives={{ Button: NativeMenuButton, Focusable }} settings={<Settings/>} tiles={runtimeDetails?{...tiles,egpu:[...(tiles?.egpu??[]),{id:"portable-shutdown",title:"Shutdown",value:runtimeState?.shutdown?.pending?"Pending":runtimeState?.shutdown?.available?"Ready":"Unavailable",detail:runtimeState?.shutdown?.reason??"Current status unavailable"}],offline:offlineTabTiles,settings:[...(tiles?.settings??[]).filter(tile=>tile.id==='diagnostics'),{id:'reset-layout',title:'Reset Layout',value:'Configure',detail:'Restore default card positions'},{id:'tutorials',title:'Tutorials',value:'Open',detail:'Connection, disconnect and help'},{id:'about',title:'About',value:version,detail:'Version and credits'}]}:tiles} renderDetail={runtimeDetails?((tab,tile)=>tab==='settings'&&tile.id==='tutorials'?<Tutorials/>:renderDetail?.(tab,tile)):renderDetail} catalogReadings={rawTiles} utilityReadings={utilityReadings} onUtilityRequest={utilities ? (id, percent) => {
+    } directions={{up:GamepadButton.DIR_UP,down:GamepadButton.DIR_DOWN,left:GamepadButton.DIR_LEFT,right:GamepadButton.DIR_RIGHT}} unavailableActions={unavailable} onAction={(_tab,tile)=>{if(production)return false;if(tile.id==="disconnect-sleep"){disconnect("sleep");return true;}if(tile.id==="disconnect-shutdown"){disconnect("shutdown");return true;}if(tile.id==="portable-shutdown"){shutdown();return true;}if(tile.id==="switch-handheld"){runtimeDetails?.requestHandheld();return true;}return false;}} layoutStorage={production ? undefined : storage} editButtons={production ? undefined : {y:GamepadButton.OPTIONS}} primitives={{ Button: NativeMenuButton, Focusable }} settings={<Settings/>} tiles={production ? productionEgpuTiles(rawTiles) : runtimeDetails?{...tiles,egpu:[...(tiles?.egpu??[]),{id:"portable-shutdown",title:"Shutdown",value:runtimeState?.shutdown?.pending?"Pending":runtimeState?.shutdown?.available?"Ready":"Unavailable",detail:runtimeState?.shutdown?.reason??"Current status unavailable"}],offline:offlineTabTiles,settings:[...(tiles?.settings??[]).filter(tile=>tile.id==='diagnostics'),{id:'reset-layout',title:'Reset Layout',value:'Configure',detail:'Restore default card positions'},{id:'tutorials',title:'Tutorials',value:'Open',detail:'Connection, disconnect and help'},{id:'about',title:'About',value:version,detail:'Version and credits'}]}:tiles} renderDetail={production ? ((tab,tile)=>tab==="egpu"&&(tile.id==="egpu"||tile.id==="disconnect") ? renderDetail?.(tab,tile) : null) : runtimeDetails?((tab,tile)=>tab==='settings'&&tile.id==='tutorials'?<Tutorials/>:renderDetail?.(tab,tile)):renderDetail} catalogReadings={production ? undefined : rawTiles} utilityReadings={utilityReadings} onUtilityRequest={utilities ? (id, percent) => {
       if (generation !== token || stopped) return Promise.reject(new Error("Menu closed"));
+      if (production && id !== "brightness" && id !== "volume") throw new Error("Control unavailable");
       return utilities.request(id, percent);
     } : undefined}/>;
   }
@@ -219,6 +294,11 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
   }
   const open = () => {
     if (stopped || opening || modal || !canOpen()) return;
+    // A player may hide the status surface before the terminal read arrives.
+    // Keep the durable receipt and restore that surface on the next explicit
+    // Command Center open; this is presentation only and never dispatches.
+    resumePendingOperation();
+    if (operation) return;
     const token = ++generation;
     opening = true;
     try {
@@ -237,5 +317,19 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
   // continues a guarded dock request. Reconstruct only its read-only status
   // surface from the durable request record; never replay the action.
   resumePendingOperation();
-  return { open, disconnect, Settings, visibility: visibility.source, available: shortcut.available, stop() { stopped = true; shortcut.stop(); close(); } };
+  // Decky can accept a modal before the replacement Gamescope surface is
+  // visible. One deferred reconstruction makes the pending receipt visible
+  // without polling or resubmitting the operation.
+  if(pendingDockIntent())schedulePendingStatusRebuild(1_500);
+  // A full Steam/Gamescope replacement can lose the WebKit receipt even while
+  // the backend retains the exact terminal result. Recover presentation only:
+  // the helper performs one read and can write a receipt, but never dispatches
+  // a disconnect or completion action.
+  void recoverTerminalDockReceipt(storage).then(settlement=>{
+    if(stopped||!settlement)return;
+    const record=pendingDockRecord();
+    if(record?.intent!==settlement.intent||record.request!==settlement.request)return;
+    resumePendingOperation();
+  });
+  return { open, disconnect, Settings, visibility: visibility.source, available: shortcut.available, stop() { stopped = true; if(pendingStatusTimer!==null)clearPendingTimeout(pendingStatusTimer as never);pendingStatusTimer=null;shortcut.stop(); close(); } };
 }

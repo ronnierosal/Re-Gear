@@ -1,8 +1,10 @@
 import deckyPlugin from "@decky/rollup";
 import { readFileSync } from "node:fs";
 import { composeCommandCenterArtwork } from "./scripts/compose_command_center_artwork.mjs";
+import { buildProfilePlugin } from "./scripts/build_profile_contract.mjs";
 
 const config = deckyPlugin({});
+config.plugins.push(buildProfilePlugin());
 // Bundle the repository attribution sources; no runtime file or network reads.
 config.plugins.unshift({
   name: "re-gear-project-documents",

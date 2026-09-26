@@ -25,7 +25,14 @@ from .runtime_state import DEFAULT_RUNTIME_STATE_ROOT
 ROOT = DEFAULT_RUNTIME_STATE_ROOT
 
 
-def observe_down(binding, generation):
+def observe_down_with_audit(binding, generation, audit_held_session):
+    """Prove the exact retained attachment is down and its session work settled.
+
+    The caller supplies the read-only held-session audit appropriate to its
+    execution boundary.  Product code can invoke the installed helper through
+    ``HeldTrialLauncher.call``; the standalone operator archive uses its pinned
+    copy below.  Neither path performs a device write.
+    """
     transport = resolve_deauthorized_transport(binding, generation)
     user = resolve_gamescope_user(GamescopeDiscovery().scan())
     if not user.ok or user.context is None:
@@ -34,11 +41,7 @@ def observe_down(binding, generation):
     if (snapshot.game_state is not GameState.IDLE
             or infer_operating_mode(snapshot).mode is not OperatingMode.PORTABLE):
         raise ValueError('dock_completion.portable_unverified')
-    if os.geteuid() == user.context.uid:
-        audit = user_helper('audit', '0' * 32)
-    else:
-        audit = HeldTrialLauncher(uid=user.context.uid,
-            username=user.context.username).audit_archive(str(Path(sys.argv[0]).absolute()))
+    audit = audit_held_session(user.context)
     if audit.get('code') != 'held_helper.settled' or audit.get('settled') is not True:
         raise ValueError('dock_completion.held_recovery_pending')
     if (resolve_deauthorized_transport(binding, generation) != transport
@@ -49,6 +52,16 @@ def observe_down(binding, generation):
             or infer_operating_mode(snapshot).mode is not OperatingMode.PORTABLE):
         raise ValueError('dock_completion.portable_changed')
     return transport, user.context
+
+
+def observe_down(binding, generation):
+    """Standalone operator proof using the pinned completion archive."""
+    def audit(context):
+        if os.geteuid() == context.uid:
+            return user_helper('audit', '0' * 32)
+        return HeldTrialLauncher(uid=context.uid,
+            username=context.username).audit_archive(str(Path(sys.argv[0]).absolute()))
+    return observe_down_with_audit(binding, generation, audit)
 
 
 def complete_record(*, binding, generation, confirmed, store, gate, observe):

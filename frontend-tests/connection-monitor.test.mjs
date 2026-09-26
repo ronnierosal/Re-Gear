@@ -5,13 +5,13 @@ import ts from 'typescript';
 const compile = file => ts.transpileModule(readFileSync(new URL('../src/'+file, import.meta.url),'utf8'),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ES2022}}).outputText;
 const url = text => 'data:text/javascript;base64,'+Buffer.from(text).toString('base64');
 const source = compile('connection-monitor.ts').replace('"./connection-live-status"',JSON.stringify(url(compile('connection-live-status.ts'))));
-const {startConnectionMonitor} = await import(url(source));
+const {createConnectionPresentationReceipt,startConnectionMonitor} = await import(url(source));
 const sample = (connected, age=0) => ({payload:{snapshot:{observed_at:new Date(Date.now()-age).toISOString(),game_state:'idle'},inference:{mode:'portable'},connection_readiness:{stage:connected?'waiting_for_pci':'disconnected',checks_age_ms:0}},automatic:{enabled:true},journal:'journal.idle'});
 const settle = () => new Promise(resolve=>setImmediate(resolve));
-function harness(initial) {
- let value=initial, next, opened=0, closed=0;
- const monitor=startConnectionMonitor({read:async()=>{if(value instanceof Error)throw value;return value;},show:()=>{opened++;return {Close(){closed++;}};},schedule:cb=>{next=cb;return 1;},cancel:()=>{next=null;}});
- return {monitor,get opened(){return opened;},get closed(){return closed;},async step(v){value=v;next();await settle();}};
+function harness(initial,presentation) {
+ let value=initial, next, opened=0, closed=0,hidden;
+ const monitor=startConnectionMonitor({read:async()=>{if(value instanceof Error)throw value;return value;},show:(_store,_switchTv,onClose)=>{opened++;hidden=onClose;return {Close(){closed++;}};},schedule:cb=>{next=cb;return 1;},cancel:()=>{next=null;},presentation});
+ return {monitor,get opened(){return opened;},get closed(){return closed;},hide(){hidden?.();},async step(v){value=v;next();await settle();}};
 }
 test('background connection opens once without any panel mount; disconnect rearms',async()=>{
  const h=harness(sample(false));await settle();assert.equal(h.opened,0);
@@ -24,6 +24,31 @@ test('attached startup and stale absence do not create a new connection',async()
  const h=harness(sample(true));await settle();assert.equal(h.opened,0);
  await h.step(sample(false,20000));await h.step(sample(true));assert.equal(h.opened,0);
  await h.step(new Error('offline'));await h.step(sample(true));assert.equal(h.opened,0);h.monitor.stop();
+});
+
+test('active presentation survives monitor recreation without replaying connection work',async()=>{
+ let now=1000;const values=new Map();
+ const storage={getItem:key=>values.get(key)??null,setItem:(key,value)=>values.set(key,value),removeItem:key=>values.delete(key)};
+ const presentation=createConnectionPresentationReceipt(storage,()=>now);
+ const first=harness(sample(false),presentation);await settle();
+ await first.step(sample(true));assert.equal(first.opened,1);assert.equal(presentation.active(),true);
+ first.monitor.stop();assert.equal(presentation.active(),true,'lifecycle replacement preserves presentation receipt');
+
+ const remount=harness(sample(true),presentation);await settle();
+ assert.equal(remount.opened,1,'already-attached baseline restores only the active popup');
+ assert.equal(remount.monitor.store.get().connected,true);
+ remount.hide();assert.equal(presentation.active(),false,'explicit Hide retires presentation recovery');
+ remount.monitor.stop();
+});
+
+test('presentation receipt is bounded and malformed history never opens an attached baseline',async()=>{
+ let now=5000;const values=new Map();
+ const storage={getItem:key=>values.get(key)??null,setItem:(key,value)=>values.set(key,value),removeItem:key=>values.delete(key)};
+ const presentation=createConnectionPresentationReceipt(storage,()=>now);
+ presentation.begin();assert.equal(presentation.active(),true);
+ now+=30000;assert.equal(presentation.active(),false);assert.equal(values.size,0);
+ values.set('regear.connection-popup.v1','bad');
+ const h=harness(sample(true),presentation);await settle();assert.equal(h.opened,0);assert.equal(values.size,0);h.monitor.stop();
 });
 test('late RPC completion after plugin unload cannot open a modal',async()=>{
  let resolve;let opened=0;let scheduled=0;
@@ -67,4 +92,14 @@ test('hiding the popup does not cancel a pending automatic TV connection',async(
  // Dismissal is not a cancellation, and does not spuriously reopen the popup.
  assert.equal(opened,1);
  monitor.stop();
+});
+
+test('disconnected then fresh waiting_for_pci opens the popup exactly once',async()=>{
+ const h=harness(sample(false));await settle();assert.equal(h.opened,0);
+ const pci=sample(true);assert.equal(pci.payload.connection_readiness.stage,'waiting_for_pci');
+ await h.step(pci);assert.equal(h.opened,1);
+ const driver=sample(true);driver.payload.connection_readiness.stage='waiting_for_driver';
+ await h.step(driver);assert.equal(h.opened,1,'later stages update the same popup');
+ assert.equal(h.monitor.store.get().stage,'waiting_for_driver');
+ h.monitor.stop();
 });

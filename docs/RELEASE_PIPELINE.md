@@ -42,6 +42,64 @@ contact Decky, register a store channel, deploy, or use publication secrets.
 
 ## Candidate versioning
 
+### Development and production profiles
+
+`contracts/build-profiles.json` names two build profiles. Development preserves
+all existing development features and their safety checks. Production enables
+eGPU connection, Safe Disconnect, brightness and volume. Its command center has
+one eGPU tab, live connection status, the plain disconnect action and the existing
+left-side brightness/volume sliders. Right-side quick buttons, other tabs,
+customization and combined sleep/shutdown actions are hidden. Sliders reuse native
+Steam readings and setters; missing capabilities remain unavailable. The backend also
+rejects unapproved public mutation calls before dispatch. Internal connection,
+sleep protection, pending-operation completion and recovery remain active.
+Production connection details and the connection popup are observational. Manual
+TV/recovery/setup controls, preference changes and development game-relaunch
+requests are not admitted. Existing automatic connection and recovery continue
+under their saved consent and lifecycle rules. An unavailable Safe Disconnect
+card stays visible without dispatching; pending disconnect status recovery is
+independent of starting a new action.
+
+Build and package the same selected profile (PowerShell example):
+
+```powershell
+$env:REGEAR_BUILD_PROFILE = "production"
+pnpm build
+python scripts/build_plugin.py --profile production
+```
+
+Omitting the environment variable and package option selects development.
+Packaging checks the generated frontend profile stamp and exact bundle SHA-256
+before reserving a version. It generates the matching immutable backend profile
+inside the archive without modifying the source checkout. A stale bundle or
+mismatched profile is rejected. New `build_profile.json` metadata records the
+profile, approved feature list, contract digest and bundle digest; the existing
+`build_info.json` schema remains unchanged. Candidate preparation checks the
+frontend bytes and backend configuration against that record. Historical
+archives remain readable by `verify_validation_artifact.py`, but cannot be
+retroactively relabeled as new profiled candidates.
+
+Push and pull-request CI runs build and test both profiles in separate jobs.
+Manual **Run workflow** selects one profile. Artifact names include profile,
+source SHA, run ID and attempt; embedded ZIP names remain plain
+`Re-Gear-X.Y.Z.zip`. These are run-scoped validation outputs, not globally
+version-reserved public releases. CI retains read-only repository permissions
+and does not publish, install or register a channel.
+
+Remaining delivery steps, in order:
+
+1. Complete exact-candidate UI/backend review and supervised hardware acceptance
+   for the production feature set, including retained-state recovery and rollback.
+2. Add durable, serialized GitHub version reservations for distributed candidates
+   (local Git reservations alone cannot coordinate fresh CI clones).
+3. Retain the validated production candidate and promote those exact bytes through
+   a protected GA publication job. Do not rebuild at promotion or mark a
+   development ZIP stable. Decky distribution remains a separate reviewed
+   integration.
+
+Use one active plugin installation per device. Profile metadata is build identity,
+not permission to bypass hardware, release or installation gates.
+
 New player-facing archives use `Re-Gear-<version>.zip`. The internal archive
 folder and new installed directory are `Re-Gear`; the visible manifest label
 is also `Re-Gear`. Historical read-only validation accepts either single old

@@ -5,9 +5,10 @@ import { Focusable, ModalRoot, showModal } from "@decky/ui";
 import { createLiveStatusStore } from "./connection-live-status";
 import { connectionPanelCss } from "./connection-panel-style";
 import { LinkRecoveryControl } from "./link-recovery-control";
+import type { BuildProfile } from "./build-profile";
 type Store = ReturnType<typeof createLiveStatusStore>;
 
-export function LivePanel({store, close, switchTv}: {store: Store; close(): void; switchTv?: () => void}) {
+export function LivePanel({store, close, switchTv, policy = "development"}: {store: Store; close(): void; switchTv?: () => void; policy?: BuildProfile}) {
   const source = useSyncExternalStore(store.subscribe, store.get);
   const [, tick] = useReducer((value: number) => value + 1, 0);
   useEffect(() => { const timer = setInterval(tick, 1000); return () => clearInterval(timer); }, []);
@@ -50,7 +51,7 @@ export function LivePanel({store, close, switchTv}: {store: Store; close(): void
     timer = setTimeout(finish, 3500);
     return () => clearTimeout(timer);
   }, [complete, store, close]);
-  const switchAction = status.canSwitch && switchTv ? () => {
+  const switchAction = policy === "development" && status.canSwitch && switchTv ? () => {
     const latest = store.get();
     if (latest.canSwitch && Date.now() < latest.expiresAt) { close(); switchTv(); }
   } : undefined;
@@ -58,20 +59,20 @@ export function LivePanel({store, close, switchTv}: {store: Store; close(): void
     bDisableBackgroundDismiss={true} bHideCloseIcon={true}>
     <style>{connectionPanelCss}</style>
     <Focusable ref={panel} onPointerDownCapture={interacted} onKeyDownCapture={interacted}
-      onFocusCapture={interacted} onGamepadFocus={interacted} onGamepadDirection={interacted} onButtonDown={interacted}
+      onGamepadDirection={interacted} onButtonDown={interacted}
       onOptionsButton={toggleDetails} onOptionsActionDescription="Connection details">
     <ConnectionProgressOverlay {...connectionProgressViewModel(status)} onHide={hide} onSwitch={switchAction}
-      recoveryAction={<LinkRecoveryControl eligible={!stale && source.connected
+      recoveryAction={policy === "development" ? <LinkRecoveryControl eligible={!stale && source.connected
         && source.phase === "checking" && source.seconds >= 120
         && source.rows.some(row => row.label === "GPU and driver" && row.state === "waiting")
-        && source.rows.some(row => row.label === "No game running" && row.state === "ready")} />} />
+        && source.rows.some(row => row.label === "No game running" && row.state === "ready")} /> : undefined} />
     </Focusable>
   </ModalRoot>;
 }
-export function showConnectionLivePanel(store: Store, switchTv: (() => void) | undefined, onClose: () => void) {
+export function showConnectionLivePanel(store: Store, switchTv: (() => void) | undefined, onClose: () => void, policy: BuildProfile = "development") {
   let modal: ReturnType<typeof showModal>;
   let closed=false;
   const close = () => { if(closed)return;closed=true;modal.Close();onClose(); };
-  modal = showModal(<LivePanel store={store} switchTv={switchTv} close={close}/>, window, {strTitle:"Re-Gear",bNeverPopOut:true});
+  modal = showModal(<LivePanel store={store} switchTv={switchTv} close={close} policy={policy}/>, window, {strTitle:"Re-Gear",bNeverPopOut:true});
   return modal;
 }

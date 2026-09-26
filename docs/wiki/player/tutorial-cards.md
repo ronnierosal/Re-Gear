@@ -15,17 +15,27 @@ you which graphics device a game uses. [More about connecting](egpu.md#first-con
 ### Safe disconnect
 
 Follow the build's instructions about games and connected storage. Select
-**Safely disconnect** once and read the result. Verify handheld picture, audio
-and controls return. Physical unplugging needs separate clearance for your exact
-supervised setup; a software result alone is not enough.
+**Safe Disconnect** once and read every status message. A shown control or a
+**Pending**, **Unavailable** or **Refused** result is not permission to unplug.
+Verify handheld picture, audio and controls return. Unplug only when Re-Gear
+explicitly clears the physical unplug for your exact supervised setup; a
+software result alone is not enough.
 [Full disconnect guidance](egpu.md#safe-disconnect).
 
 ### Sleep and wake
 
-Sleep with an eGPU is still being validated. **Disconnect eGPU and sleep** and
-**Keep eGPU connected and sleep** are separate choices in the accepted design,
-not a promise that your build supports them. If sleep is blocked, do not force it
-or use software reconnect. [Current limits](egpu.md#sleep-and-wake).
+Sleep with an eGPU is still being validated. The two choices have different
+jobs:
+
+- **Disconnect + Sleep** starts the guarded disconnect. Follow the messages,
+  unplug only when Re-Gear asks, and expect sleep only after absence is verified.
+- **Sleep — Keep eGPU Connected** opens a confirmation. **Sleep connected** uses
+  normal sleep without running **Safe Disconnect**.
+
+The controls can be **Ready**, **Pending**, **Unavailable** or **Refused** in the
+current runtime state. If an action is unavailable or refused, stop and follow
+the message. Do not force sleep or use software reconnect.
+[Current limits](egpu.md#sleep-and-wake).
 
 ### If you get stuck
 
@@ -36,8 +46,10 @@ sharing it. [Get help](troubleshooting.md).
 
 ## Technical details — for advanced users and contributors
 
-Wording reviewed against merged source `9421c6f` and the
-[0.3.98 lifecycle record](../technical/egpu-lifecycle.md). These cards do not grant
-hardware authority or establish that their UI mount exists. The UI primary owns
-card mounting, actual available labels and the complete button path. Reconcile
-new mounted-build evidence before changing availability wording.
+Wording reviewed against merged source `36cabc3` and the
+[0.3.98 lifecycle record](../technical/egpu-lifecycle.md). The mounted control
+contract also includes the separate **Shutdown** and **Safe Disconnect +
+Shutdown** actions. A control's presence does not establish runtime readiness,
+unplug clearance or hardware qualification. The UI primary owns card mounting,
+the exact in-app copy and the complete button path. Update the Wiki contract and
+the in-app tutorial together when those labels or semantics change.

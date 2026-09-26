@@ -75,6 +75,7 @@ test("native modal uses Decky controls without a second raw navigation listener"
     export let opens=0, clicks=0;
     const React={createElement:(type,props,...children)=>({type,props:{...props,children}})};
     const ModalRoot='modal', ExpandedCommandCenter='shell',WholeDockControl='whole-dock-control',Button='native-button',Focusable='native-focus',Dropdown='native-dropdown';
+    const recoverTerminalDockReceipt=async()=>null;
     const useEffect=fn=>effects.push(fn()), useState=v=>[v,()=>{}];
     const useSyncExternalStore=(_subscribe,read)=>read();
     const loadMenuBinding=()=> 'start-select',saveMenuBinding=()=>true,menuBindingOptions=[];
@@ -116,6 +117,7 @@ test("native shortcut dropdown preserves selection and active chord when saving 
     let states=[],cursor=0, fail=false, deps;
     const React={createElement:(type,props,...children)=>({type,props:{...props,children}})};
     const ModalRoot='modal',ExpandedCommandCenter='shell',WholeDockControl='whole-dock-control',Button='button',Focusable='focus',Dropdown='native-dropdown',ShortcutSettings='settings';
+    const recoverTerminalDockReceipt=async()=>null;
     const useEffect=()=>{},useState=v=>{const ownStates=states,i=cursor++;if(!(i in ownStates))ownStates[i]=v;return [ownStates[i],n=>ownStates[i]=n]};
     // Snapshot-only stub for this preference test. Subscription/liveness is
     // exercised by the producer/consumer tests, not by sharing hook arrays.
@@ -184,6 +186,7 @@ test("native live source publishes into an open menu and unsubscribes on close",
     let snapshot={quick:[{id:'auto',title:'Auto TDP',value:'Running',detail:'Fixture'}],performance:[],egpu:[],controllers:[],settings:[]};
     const React={createElement:(type,props,...children)=>({type,props:{...props,children}})};
     const ModalRoot='modal',ExpandedCommandCenter='shell',WholeDockControl='whole-dock-control',Button='button',Focusable='focus',Dropdown='dropdown',ShortcutSettings='settings';
+    const recoverTerminalDockReceipt=async()=>null;
     const useState=v=>[v,()=>{}],useEffect=()=>{};
     const useSyncExternalStore=(subscribe,read)=>{
       if(!unsubscribe)unsubscribe=subscribe(()=>{current=renderView();});

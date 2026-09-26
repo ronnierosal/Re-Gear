@@ -7,7 +7,11 @@ import { dockIntentControl, dockRequestAbandoned, dockRequestSettled, formatPend
 
 const readTrial = callable<[string], any>("get_egpu_disconnect_status");
 const execute = callable<[boolean, string, string, DockAction, boolean, string, string], any>("execute_egpu_disconnect");
+const completionAction = "whole_dock_disconnect_complete" as DockAction;
+const submittedRequest = /^[0-9a-f]{32}$/;
 const pendingKey = "regear.whole-dock.pending-request";
+const recoveredPanel = "backend-terminal";
+const interruptedPanel = "backend-interrupted";
 /** Identifies this panel for the life of its script, which is exactly the
  * lifetime that matters: freeing the dock restarts Gaming Mode and a new
  * panel loads with a new one, which is how a record left by the panel that
@@ -16,15 +20,71 @@ const panelId = (() => { try { return crypto.randomUUID().replaceAll("-", ""); }
 const pendingRecord = () => { try { return window.localStorage.getItem(pendingKey); } catch { return "storage-unavailable"; } };
 const pendingRequest = () => parsePendingRecord(pendingRecord())?.request;
 
+const strictInterruptedDisconnect = (status: any, request: string) => status?.schema_version === 1
+  && status.request_id === request
+  && status.code === "dock_teardown.unresolved"
+  && status.busy === false && status.in_flight === false
+  && status.ok === false && status.software_down === false
+  && status.safe_to_unplug === false
+  && status.phase === "dock_teardown"
+  && status.release_stage === "removed"
+  && status.release?.code === "live_disconnect.removed"
+  && status.release?.released === true
+  && status.release?.display_released === true
+  && status.release?.filter_disarmed === true
+  && status.claim_stage === "tunnel_remove_intent";
+
+/** Recover result correlation after a full Steam/Gamescope restart.
+ *
+ * The disconnect worker and its result live in the backend process, while the
+ * WebKit localStorage receipt can disappear with the old Steam UI process. A
+ * verified terminal result restores presentation only. The one strict
+ * interrupted shape restores a distinct receipt which WholeDockControl may
+ * advance through the existing record-only completion action. Both storage
+ * reads guard against replacing a receipt created while the backend read was
+ * in flight. */
+export async function recoverTerminalDockReceipt(storage?: Pick<Storage, "getItem" | "setItem">): Promise<DockSettlement | null> {
+  if (!storage) return null;
+  try { if (storage.getItem(pendingKey)) return null; } catch { return null; }
+  let status: any;
+  try { status = await readTrial("whole_dock_trial"); } catch { return null; }
+  const request = status?.request_id;
+  const terminal = status?.schema_version === 1
+    && typeof request === "string"
+    && submittedRequest.test(request)
+    && status.code === "dock_teardown.software_down"
+    && status.busy === false && status.in_flight === false
+    && status.ok === true && status.software_down === true
+    && status.safe_to_unplug === false
+    && status.release_stage === "removed"
+    && status.release?.released === true
+    && status.release?.filter_disarmed === true;
+  const interrupted = typeof request === "string" && submittedRequest.test(request)
+    && strictInterruptedDisconnect(status, request);
+  if (!terminal && !interrupted) return null;
+  const raw = formatPendingRecord("disconnect_only", terminal ? recoveredPanel : interruptedPanel, request);
+  try {
+    if (storage.getItem(pendingKey)) return null;
+    storage.setItem(pendingKey, raw);
+    if (storage.getItem(pendingKey) !== raw) return null;
+  } catch { return null; }
+  return { intent: "disconnect_only", request };
+}
+
 export type DirectStartRequest = (() => boolean) & {
   state(): "available" | "consumed" | "submitted";
   markSubmitted(): void;
 };
+export type DockSettlement = { intent: DockIntent; request: string };
+const correlatedSoftwareDown = (status: any, request: string) => status?.schema_version === 1
+  && status.request_id === request && status.busy === false && status.safe_to_unplug === false
+  && status.code === "dock_teardown.software_down" && status.software_down === true
+  && status.hardware_write === false && status.ok === true;
 const directStartState = (startRequest: boolean | (() => boolean) | DirectStartRequest | undefined) =>
   typeof startRequest === "function" && "state" in startRequest ? startRequest.state() : null;
 
 /** Only confirmed clicks mutate. Reopening the menu recovers backend progress. */
-export function WholeDockControl({ readCurrentSnapshot, intent = "disconnect_only", startRequest, statusOnly = false }: { readCurrentSnapshot: () => any; intent?: DockIntent; startRequest?: boolean | (()=>boolean) | DirectStartRequest; statusOnly?: boolean }) {
+export function WholeDockControl({ readCurrentSnapshot, intent = "disconnect_only", startRequest, statusOnly = false, onSettled }: { readCurrentSnapshot: () => any; intent?: DockIntent; startRequest?: boolean | (()=>boolean) | DirectStartRequest; statusOnly?: boolean; onSettled?: (settlement: DockSettlement) => void }) {
   const source = useRef(readCurrentSnapshot);
   source.current = readCurrentSnapshot;
   const currentIntent = useRef(intent);
@@ -40,6 +100,7 @@ export function WholeDockControl({ readCurrentSnapshot, intent = "disconnect_onl
   const epoch = useRef(0);
   const modal = useRef<ReturnType<typeof showModal> | null>(null);
   const startConsumed = useRef(false);
+  const completionAttempted = useRef<string | null>(null);
   const consumeStartRequest = () => {
     if (!startRequest || startConsumed.current) return false;
     if (typeof startRequest === "function" && !startRequest()) return false;
@@ -56,13 +117,57 @@ export function WholeDockControl({ readCurrentSnapshot, intent = "disconnect_onl
         const next = await read();
         if (disposed) return;
         if (started !== epoch.current) { timer = setTimeout(refresh, 2000); return; }
-        const record = parsePendingRecord(pendingRecord());
+        const rawRecord = pendingRecord();
+        const record = parsePendingRecord(rawRecord);
         // Retiring a record whose answer never arrived is not the same as the
         // request having succeeded, so the player is told which happened
         // rather than left to infer it from the control becoming usable.
         const abandoned = dockRequestAbandoned(next.status, record, panelId);
-        if (record && (abandoned || dockRequestSettled(next.status, record.request, record.intent))) {
-          window.localStorage.removeItem(pendingKey);
+        const settled = !!record && dockRequestSettled(next.status, record.request, record.intent);
+        const recoveredInterrupted = !!record && statusOnly && !!onSettled
+          && record.intent === "disconnect_only" && record.panel === interruptedPanel
+          && submittedRequest.test(record.request)
+          && rawRecord === formatPendingRecord(record.intent, interruptedPanel, record.request)
+          && strictInterruptedDisconnect(next.status, record.request);
+        const exactRemountedDisconnect = !!record && abandoned && statusOnly && !!onSettled
+          && record.intent === "disconnect_only" && !!record.panel
+          && record.panel !== recoveredPanel && record.panel !== interruptedPanel
+          && submittedRequest.test(record.request)
+          && rawRecord === formatPendingRecord(record.intent, record.panel, record.request);
+        const completeRecoveredDisconnect = exactRemountedDisconnect || recoveredInterrupted;
+        if (completeRecoveredDisconnect && completionAttempted.current !== record.request) {
+          completionAttempted.current = record.request;
+          let completion: any = null;
+          try {
+            completion = await execute(false, "", "disconnect", completionAction, true, "", record.request);
+          } catch { /* The durable receipt remains available for a later remount. */ }
+          if (disposed || started !== epoch.current) return;
+          if (correlatedSoftwareDown(completion, record.request)) {
+            uncertain.current = false;
+            setNotice("");
+            setReading({ ...next, status: completion });
+            onSettled({ intent: record.intent, request: record.request });
+          } else {
+            uncertain.current = false;
+            setNotice("Re-Gear could not confirm how the previous request ended. Check the status below before trying again. Keep the cable connected.");
+            if (completion) setReading({ ...next, status: completion });
+            else setReading(next);
+            onSettled({ intent: record.intent, request: record.request });
+          }
+          if (!disposed) timer = setTimeout(refresh, 2000);
+          return;
+        }
+        if (record && (abandoned || settled)) {
+          // A correlated terminal result must survive a Gamescope/Decky
+          // replacement until the replacement panel has actually presented
+          // it. The native wrapper acknowledges it only when the player
+          // dismisses that status surface. Standalone controls retain the
+          // historical immediate retirement behavior.
+          // The callback transfers receipt acknowledgement to the native
+          // status popup. It also covers an abandoned/unconfirmed answer: the
+          // popup must survive long enough to tell the player that result.
+          if (onSettled) onSettled({ intent: record.intent, request: record.request });
+          else window.localStorage.removeItem(pendingKey);
           uncertain.current = false;
           if (abandoned && mounted.current) {
             setNotice("Re-Gear could not confirm how the previous request ended, so it stopped waiting. Check the status below before trying again. Keep the cable connected.");
@@ -119,7 +224,11 @@ export function WholeDockControl({ readCurrentSnapshot, intent = "disconnect_onl
         epoch.current++;
         if (mounted.current) { setReading({ ...fresh, status: result }); setNotice(""); }
         if (dockRequestSettled(result, request, intent)) {
-          window.localStorage.removeItem(pendingKey); uncertain.current = false;
+          // The submitting panel received this terminal result directly. It
+          // remains ordinary dismissible settlement behavior.
+          if (onSettled) onSettled({ intent, request });
+          else window.localStorage.removeItem(pendingKey);
+          uncertain.current = false;
         }
       } catch {
         if (mounted.current) {
@@ -145,16 +254,34 @@ export function WholeDockControl({ readCurrentSnapshot, intent = "disconnect_onl
       <style>{`.rg-whole-dock-confirm{z-index:2147483647!important;position:fixed!important;left:50%!important;top:50%!important;right:auto!important;bottom:auto!important;margin:0!important;transform:translate(-50%,-50%)!important}`}</style>
     </EgpuConfirmModal>, undefined, { fnOnClose: cancel, bNeverPopOut: true });
   };
+  const terminalRecord = parsePendingRecord(pendingRecord());
+  const terminalObservedAt = Date.parse(reading?.snapshot?.observed_at ?? "");
+  const terminalNow = Date.now();
+  const terminalSnapshotFresh = reading?.snapshot?.schema_version === 3
+    && Number.isFinite(terminalObservedAt)
+    && terminalObservedAt <= terminalNow
+    && terminalNow - terminalObservedAt < 10_000;
+  const disconnectComplete = intent === "disconnect_only"
+    && terminalRecord?.intent === "disconnect_only"
+    && reading?.status?.request_id === terminalRecord.request
+    && (completionAttempted.current !== terminalRecord.request || reading?.status?.hardware_write === false)
+    && terminalSnapshotFresh
+    && reading?.status?.schema_version === 1
+    && reading.status.code === "dock_teardown.software_down"
+    && reading.status.busy === false && reading.status.ok === true
+    && reading.status.software_down === true && reading.status.safe_to_unplug === false;
   return <div style={{fontSize:13,lineHeight:"18px"}}>
-    <p style={{margin:"0 0 8px"}} role="status">{(initialNotStarted && !uncertain.current && !pendingRequest()) ? `Safe Disconnect did not start. No request was sent by this attempt. ${view.message}` : notice || (uncertain.current ? "Waiting to verify the previous request. Keep the cable connected." : view.message)}</p>
+    <p style={{margin:"0 0 8px"}} role="status">{(initialNotStarted && !uncertain.current && !pendingRequest()) ? `Safe Disconnect did not start. No request was sent by this attempt. ${view.message}` : notice || (uncertain.current ? "Waiting to verify the previous request. Keep the cable connected." : disconnectComplete ? "Software disconnect complete. USB4 deauthorization was verified." : view.message)}</p>
     {startRequest && initialNotStarted && !pending.current && !uncertain.current && !pendingRequest() && <DialogButton {...{type:"button" as const}} style={{width:"100%",minWidth:0,padding:"8px",border:"1px solid #39d8ff",borderRadius:8,background:"#112434",color:"#f4f7fb"}} disabled={!view.action || busy} onClick={(event)=>{
       event?.preventDefault(); event?.stopPropagation();
       if (!mounted.current || !view.action || pending.current || uncertain.current || pendingRequest()) return;
       setInitialNotStarted(false);
       confirm(true,reading);
-    }}>{intent === "sleep" ? "Disconnect + Sleep" : intent === "shutdown" ? "Disconnect + Shutdown" : "Safe Disconnect"}</DialogButton>}
+    }}>{intent === "sleep" ? "Disconnect + Sleep" : intent === "shutdown" ? "Safe Disconnect + Shutdown" : "Safe Disconnect"}</DialogButton>}
     {!startRequest && !statusOnly && <DialogButton style={{width:"100%",minWidth:0,padding:"8px",border:"1px solid #39d8ff",borderRadius:8,background:"#112434",color:"#f4f7fb"}} disabled={!view.action || busy || uncertain.current} onClick={()=>confirm()}>{busy ? "Working…" : uncertain.current ? "Checking previous request" : view.label}</DialogButton>}
-    <p style={{margin:"8px 0 0"}}>{intent === "sleep" && reading?.status?.code === "dock_power.unplug_required"
+    <p style={{margin:"8px 0 0"}}>{disconnectComplete
+      ? "Unplug the eGPU now. Do not leave the powered dock attached in this state."
+      : intent === "sleep" && reading?.status?.code === "dock_power.unplug_required"
       ? "Unplug only after this prompt appears. Sleep waits for verified physical absence."
       : "Keep the cable connected. Physical unplug is not yet verified."}</p>
   </div>;
