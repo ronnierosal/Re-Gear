@@ -333,18 +333,23 @@ class IdentityMigration:
             if state not in (LocationState.OLD_ONLY, LocationState.CURRENT_ONLY):
                 continue
             root = item.old if state is LocationState.OLD_ONLY else item.current
-            children = tuple(root.rglob("*"))
-            trial_parents = {
-                child.parent for child in children if child.name in _PORTABLE_TRIAL_MARKERS
-            }
-            for parent in trial_parents:
-                self._validate_terminal_portable_trial(parent)
-            for child in children:
-                power_intent = child.name.startswith("dock-power-") and child.name.endswith(".json")
-                if child.name in _HARD_BLOCKERS or power_intent:
-                    raise IdentityMigrationError(f"active state blocks identity migration: {child.name}")
-                if child.name == "tdp-session.json":
-                    self._validate_idle_tdp(child)
+            self._validate_quiescent_root(root)
+
+    def _validate_quiescent_root(self, root: Path) -> None:
+        """Validate one already-trusted state tree, including conflict recovery."""
+        # Lifecycle authority lives only at the fixed state-root level.  Nested
+        # directories can contain immutable historical snapshots captured at an
+        # intermediate phase, so interpreting their deliberately partial marker
+        # sets as live authority would strand otherwise quiescent state.
+        children = tuple(root.iterdir())
+        if any(child.name in _PORTABLE_TRIAL_MARKERS for child in children):
+            self._validate_terminal_portable_trial(root)
+        for child in children:
+            power_intent = child.name.startswith("dock-power-") and child.name.endswith(".json")
+            if child.name in _HARD_BLOCKERS or power_intent:
+                raise IdentityMigrationError(f"active state blocks identity migration: {child.name}")
+            if child.name == "tdp-session.json":
+                self._validate_idle_tdp(child)
 
     @staticmethod
     def _validate_terminal_portable_trial(root: Path) -> None:
@@ -417,14 +422,21 @@ class IdentityMigration:
         try:
             for item in self._moves:
                 state = self._location_state(item)
-                if state not in (LocationState.OLD_ONLY, LocationState.CURRENT_ONLY):
-                    continue
-                root = item.old if state is LocationState.OLD_ONLY else item.current
-                for child in root.rglob("*"):
-                    if child.name.endswith(".lock") and child.is_file():
-                        descriptor = self._acquire_lock(child)
-                        if descriptor is not None:
-                            descriptors.append(descriptor)
+                roots = (
+                    (item.old,)
+                    if state is LocationState.OLD_ONLY
+                    else (item.current,)
+                    if state is LocationState.CURRENT_ONLY
+                    else (item.old, item.current)
+                    if state is LocationState.BOTH
+                    else ()
+                )
+                for root in roots:
+                    for child in root.rglob("*"):
+                        if child.name.endswith(".lock") and child.is_file():
+                            descriptor = self._acquire_lock(child)
+                            if descriptor is not None:
+                                descriptors.append(descriptor)
             yield
         finally:
             for descriptor in descriptors:

@@ -475,12 +475,30 @@ reviewed bootstrap, signed helper, signed offline migrator, and signatures in
 sudo sh /home/deck/install_regear_identity_migrator.sh
 ```
 
-The bootstrap verifies both payloads with the already root-trusted public key,
-uses a resumable root-only transaction, installs exact Re-Gear sudo commands,
-and preserves former authority for rollback. It does not stop services, restart
-Gamescope, install a plugin, or perform a hardware action. Run the offline
-identity migrator separately only after its status preflight and the supervised
-session shutdown required by [the cutover procedure](IDENTITY_CUTOVER.md).
+If the former signing private key has been proven unavailable, credential
+rotation requires separate maintainer approval. The reviewed recovery command
+is `sudo sh /home/deck/install_regear_identity_migrator.sh install-rotated
+<new-public-key-sha256>`. Before that command, read back the staged public key,
+helper, migrator, signatures and bootstrap hashes. The transaction preserves
+the former authority for rollback and records the pinned new fingerprint.
+Never remove signature verification or use the legacy helper installer to
+bypass the transaction.
+
+Ordinary bootstrap installation verifies both payloads with the already
+root-trusted public key. Approved rotation verifies them with the copied,
+operator-pinned replacement key. Both modes use the same resumable root-only
+transaction, install exact Re-Gear sudo commands, and preserve former authority
+for rollback. Authority rollback restores the former public key byte-for-byte,
+but cannot restore its signed-deployment capability while its private key
+remains lost. The bootstrap does not stop services, restart Gamescope, install a
+plugin, or perform a hardware action. Run the offline identity migrator
+separately only after its status preflight and the supervised session shutdown
+required by [the cutover procedure](IDENTITY_CUTOVER.md).
+
+On SteamOS, a later platform `(ALL) ALL` rule can override an earlier
+`NOPASSWD` tag. The bootstrap installs one identical lexically-final policy copy
+for precedence, verifies both copies against the root snapshot, and removes
+both on rollback. This does not widen the fixed helper or migrator commands.
 
 Each later candidate is built and provenance checked as usual, signed locally
 with `scripts/sign_deploy_package.py`, then staged with
