@@ -8,8 +8,9 @@
  *
  * Truth boundaries:
  * - `requested` is submission, never success.
- * - `verified` is a readback of this attachment's authorization state only.
- *   It is not proof that the GPU enumerated, the TV switched or the
+ * - `verified` is the backend's readback for the action taken: for Allow once,
+ *   this attachment is authorized; for Always trust, it is authorized AND
+ *   stored. It is not proof that the GPU enumerated, the TV switched or the
  *   connection completed.
  * - "Always trust" is shown only when the backend reports that remembered
  *   trust is offered; the backend refuses it otherwise.
@@ -124,13 +125,23 @@ export function usbAuthorizationView({status, pending = null, result = null}: Us
         body: "The device is authorized. The eGPU connection continues from here."};
     }
     if (result.verified === false) {
-      return {...base, phase: "not_approved", tone: "attention", choice: pending ?? undefined,
-        headline: "Approval didn't take effect",
-        body: "The device still reports as not authorized. Unplug it and plug it back in to try again."};
+      // For Always trust, `verified: false` means authorization or storage
+      // failed; the payload does not say which, so neither is claimed.
+      return pending === "enroll"
+        ? {...base, phase: "not_approved", tone: "attention", choice: pending,
+          headline: "Always trust didn't take effect",
+          body: "Re-Gear couldn't confirm this device will be remembered. Unplug it and plug it back in to try again."}
+        : {...base, phase: "not_approved", tone: "attention", choice: pending ?? undefined,
+          headline: "Approval didn't take effect",
+          body: "The device still reports as not authorized. Unplug it and plug it back in to try again."};
     }
-    return {...base, phase: "checking", tone: "waiting", choice: pending ?? undefined,
-      headline: "Approval sent — checking", body: "Waiting for the device to report that it is authorized.",
-      notNow: {visible: true, label: "Hide"}};
+    return pending === "enroll"
+      ? {...base, phase: "checking", tone: "waiting", choice: pending,
+        headline: "Approval sent — checking", body: "Checking that Re-Gear will remember this device.",
+        notNow: {visible: true, label: "Hide"}}
+      : {...base, phase: "checking", tone: "waiting", choice: pending ?? undefined,
+        headline: "Approval sent — checking", body: "Waiting for the device to report that it is authorized.",
+        notNow: {visible: true, label: "Hide"}};
   }
 
   if (pending) {
