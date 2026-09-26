@@ -145,9 +145,11 @@ test("production shell rejects saved layouts and limits controller navigation to
  assert.doesNotMatch(text(tree),/Switch Tab|Sample data/);
  const panel=nodes(tree).find(n=>n.props?.["data-ec-panel"]!==undefined);
  for(const button of [5,6,4])panel.props.onButtonDown({detail:{button},preventDefault(){},stopPropagation(){}});
- tree=app.render(props);
- assert.deepEqual(cards().map(n=>n.props["data-ec-control"]),["egpu","disconnect","disconnect-sleep","disconnect-shutdown"]);
- cards()[0].props.onClick();tree=app.render(props);assert.equal(actions,0);
+  tree=app.render(props);
+  assert.deepEqual(cards().map(n=>n.props["data-ec-control"]),["egpu","disconnect","disconnect-sleep","disconnect-shutdown"]);
+  cards()[2].props.onClick();tree=app.render(props);assert.equal(actions,1);
+  cards()[3].props.onClick();tree=app.render(props);assert.equal(actions,2);
+  cards()[0].props.onClick();tree=app.render(props);assert.equal(actions,2);
 });
 test("production without readings displays Unknown and Unavailable, never synthetic readiness",async()=>{
  const app=await fixture();const tree=app.render({policy:"production",onDisconnect(){}});

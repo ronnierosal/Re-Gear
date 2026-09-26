@@ -36,6 +36,9 @@ test("production native actions dispatch sleep and shutdown through WholeDockCon
   assert.match(native, /tile\.id==="disconnect-shutdown"\)\{disconnect\("shutdown"\);return true;\}/);
   assert.doesNotMatch(native, /production && intent !== "disconnect_only"/);
 
+  const shell = read("quick-access/expanded-command-center/shell.tsx");
+  assert.match(shell, /tile\.id === "disconnect-sleep" \|\| tile\.id === "disconnect-shutdown"/);
+
   const control = read("whole-dock-control.tsx");
   assert.match(control, /action === "whole_dock_sleep"/);
   assert.match(control, /action === "whole_dock_shutdown"/);
