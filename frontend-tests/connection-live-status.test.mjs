@@ -174,3 +174,44 @@ test("unavailable Gaming session is distinct from audio or setup at every age",(
  p.connection_readiness.checks_age_ms=15000;
  assert.equal(status(p,{enabled:false},"journal.idle").title,"Waiting for a fresh status update");
 });
+test("automatic recovery refines pre-GPU copy without inventing readiness",()=>{
+ const p=sample();p.connection_readiness.stage="waiting_for_pci";p.connection_readiness.checks.gpu=false;p.connection_readiness.checks.link=false;
+ const automatic={enabled:true,stage:"settling",recovery:{schema_version:1,enabled:true,code:"automatic_recovery.enabled",decision_code:"automatic_recovery.settling"}};
+ let s=status(p,automatic,"journal.idle");
+ assert.equal(s.recoveryStage,"settling");assert.equal(s.title,"eGPU detected — preparing link recovery");
+ assert.equal(s.rows[0].state,"waiting");assert.equal(s.rows[1].state,"waiting");assert.equal(s.phase,"checking");
+ automatic.recovery.decision_code="automatic_recovery.started";s=status(p,automatic,"journal.idle");
+ assert.equal(s.recoveryStage,"started");assert.equal(s.title,"Recovering eGPU link");
+ automatic.recovery.decision_code="link_recovery.trained";s=status(p,automatic,"journal.idle");
+ assert.equal(s.recoveryStage,"trained");assert.equal(s.title,"eGPU link recovered — waiting for GPU");
+ assert.equal(s.rows[0].state,"waiting");assert.equal(s.rows[1].state,"waiting");
+});
+test("unknown recovery data and later readiness keep the conservative stage",()=>{
+ const p=sample();p.connection_readiness.stage="waiting_for_pci";p.connection_readiness.checks.gpu=false;
+ for(const recovery of [
+  undefined,null,{},
+  {schema_version:1,enabled:true,code:"automatic_recovery.enabled",decision_code:null},
+  {schema_version:1,enabled:true,code:"automatic_recovery.enabled",decision_code:"automatic_recovery.unknown"},
+  {schema_version:2,enabled:true,code:"automatic_recovery.enabled",decision_code:"automatic_recovery.started"},
+  {schema_version:1,enabled:false,code:"automatic_recovery.enabled",decision_code:"automatic_recovery.started"},
+  {schema_version:1,enabled:true,code:42,decision_code:"automatic_recovery.started"}
+ ]){
+  const s=status(p,{enabled:true,stage:"settling",recovery},"journal.idle");
+  assert.equal(s.recoveryStage,undefined);assert.equal(s.title,"Waiting for eGPU detection");
+ }
+ p.connection_readiness.stage="waiting_for_link";p.connection_readiness.checks.gpu=true;p.connection_readiness.checks.link=false;
+ const s=status(p,{enabled:true,stage:"settling",recovery:{decision_code:"link_recovery.trained"}},"journal.idle");
+ assert.equal(s.recoveryStage,undefined);assert.equal(s.title,"Waiting for connection link");
+});
+test("player blockers remain prominent while recovery is observed",()=>{
+ const p=sample();p.connection_readiness.stage="waiting_for_pci";p.connection_readiness.checks.gpu=false;
+ const automatic={enabled:true,stage:"settling",recovery:{schema_version:1,enabled:true,code:"automatic_recovery.enabled",decision_code:"automatic_recovery.started"}};
+ p.snapshot.game_state="running";
+ let s=status(p,automatic,"journal.idle");
+ assert.equal(s.recoveryStage,"started");assert.equal(s.title,"Close the game to continue");
+ assert.equal(s.rows.find(row=>row.label==="No game running").state,"blocked");
+ p.snapshot.game_state="idle";
+ s=status(p,automatic,"journal.result_required");
+ assert.equal(s.recoveryStage,"started");assert.equal(s.title,"Previous result needs acknowledgement");
+ assert.equal(s.rows.at(-1).state,"blocked");
+});

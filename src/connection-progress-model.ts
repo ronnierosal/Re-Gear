@@ -66,9 +66,12 @@ export function connectionMilestones(status: LiveStatus & {displayPending?: bool
   // blocked check) is attention; the copy stays the backend-derived title.
   const prerequisiteBlocked = status.rows.some(row => row.state === "blocked");
   const attention = fresh && !complete && (ATTENTION_STAGES.has(stage) || prerequisiteBlocked);
+  const recoveringBeforeGpu = status.recoveryStage === "settling"
+    || status.recoveryStage === "started" || status.recoveryStage === "trained";
   const activeStep = complete ? MILESTONE_LABELS.length
     : status.phase === "switching" ? 4
     : stage in ATTENTION_STEP ? ATTENTION_STEP[stage]
+    : recoveringBeforeGpu ? 1
     : stage in STAGE_STEP ? STAGE_STEP[stage] : -1;
   const steps: Milestone[] = MILESTONE_LABELS.map((label, index) => {
     const state: MilestoneState = activeStep < 0 ? "pending"
