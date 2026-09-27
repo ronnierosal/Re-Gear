@@ -179,6 +179,38 @@ class MainDockAdmissionTests(unittest.TestCase):
             self.assertFalse(status["safe_to_unplug"])
         asyncio.run(run())
 
+    def test_unresolved_tunnel_stage_is_returned_and_logged_immediately(self):
+        self.plugin._background_operations = set()
+        self.plugin._unloading = False
+        self.plugin._append_journey_event = Mock()
+        self.plugin._complete_interrupted_whole_dock_trial = Mock(return_value=None)
+        def unresolved(*_args):
+            self.plugin._whole_dock_trial_phase = 'dock_teardown'
+            return NS(code='dock_teardown.unresolved', software_down=False)
+        self.plugin._run_whole_dock_trial = Mock(side_effect=unresolved)
+        request = 'b' * 32
+        claim = self.module.WholeDockClaim(
+            request, 'c' * 64, 'd' * 64, 'tunnel_remove_intent')
+        with patch.object(self.module, 'WholeDockClaimStore') as store:
+            store.return_value.load.return_value = claim
+            result = asyncio.run(self.plugin.execute_egpu_disconnect(
+                trial_action='whole_dock_disconnect', release_display=True,
+                trial_confirmed=True, trial_request_id=request))
+        self.assertEqual(result['code'], 'dock_teardown.unresolved')
+        self.assertEqual(result['claim_stage'], 'tunnel_remove_intent')
+        self.assertFalse(result['ok'])
+        self.plugin._append_journey_event.assert_called_once_with(
+            severity='warning',
+            code='dock_teardown.terminal_unresolved',
+            component='disconnect',
+            stage='dock_teardown',
+            details={
+                'phase': 'dock_teardown',
+                'claim_stage': 'tunnel_remove_intent',
+            },
+            create_timeline=False,
+        )
+
     def test_tv_one_button_disconnect_settles_restart_client_and_correlates_terminal(self):
         """The combined TV route must reach the same teardown as the manual pause.
 
@@ -1085,11 +1117,13 @@ class CompletedAttachmentAbsenceTests(unittest.TestCase):
                 capture=False, admission_error=None, load_error=None,
                 guard_error=None, audit_error=None, retire_error=None,
                 event_error=None, journal_error=None, journal_durable=True,
-                journal_owner='none', inner=True, unloading=False):
+                journal_owner='none', inner=True, unloading=False,
+                complete_interrupted=False):
         from contextlib import ExitStack
         plugin = self.plugin
         user = NS(uid=1000, username='deck')
-        claim = NS(stage=stage)
+        claim = NS(stage=stage, operation='a' * 32)
+        terminal_claim = NS(stage='software_down', operation=claim.operation)
         plugin._unloading = unloading
         plugin._discovery = object()
         plugin._append_journey_event = Mock(side_effect=event_error)
@@ -1129,10 +1163,38 @@ class CompletedAttachmentAbsenceTests(unittest.TestCase):
             # state instead of probing the production /run/regear store.
             hold_store = patcher('DeviceAuthorizationHoldStore').return_value
             hold_store.load_hold.return_value = None
+            current_claim = [claim if claim_present else None]
             if load_error is not None:
                 store.load.side_effect = load_error
             else:
-                store.load.return_value = claim if claim_present else None
+                store.load.side_effect = lambda: current_claim[0]
+            completion = plugin._complete_interrupted_whole_dock_trial = Mock()
+            if complete_interrupted:
+                def finish_interrupted(request):
+                    self.assertEqual(request, claim.operation)
+                    current_claim[0] = terminal_claim
+                    return {
+                        'schema_version': 1,
+                        'code': 'dock_teardown.software_down',
+                        'ok': True,
+                        'software_down': True,
+                        'safe_to_unplug': False,
+                        'hardware_write': False,
+                        'request_id': claim.operation,
+                        'claim_stage': 'software_down',
+                    }
+                completion.side_effect = finish_interrupted
+            else:
+                completion.return_value = {
+                    'schema_version': 1,
+                    'code': 'dock_teardown.trial_unresolved',
+                    'ok': False,
+                    'software_down': False,
+                    'safe_to_unplug': False,
+                    'hardware_write': False,
+                    'request_id': claim.operation,
+                    'claim_stage': stage,
+                }
             if session is not None:
                 plugin._dock_power_session = session
             intent_present = [parent_power]
@@ -1146,7 +1208,7 @@ class CompletedAttachmentAbsenceTests(unittest.TestCase):
                 store.reconcile_stranded_sleep.side_effect = reconcile
             store.power_intent_absent.side_effect = lambda expected:not intent_present[0]
             def retire(expected, guard):
-                self.assertIs(expected, claim)
+                self.assertIs(expected, current_claim[0])
                 self.assertTrue(held)
                 if retire_error is not None:
                     raise retire_error
@@ -1178,9 +1240,44 @@ class CompletedAttachmentAbsenceTests(unittest.TestCase):
     def test_completed_detached_attachment_is_archived_under_existing_admission(self):
         self.assertEqual(self.fixture(), (True, 1))
 
+    def test_interrupted_tunnel_record_is_completed_read_only_then_archived(self):
+        self.plugin._whole_dock_trial_status = {
+            'schema_version': 1,
+            'code': 'dock_teardown.unresolved',
+            'request_id': 'a' * 32,
+            'release_stage': 'removed',
+            'release': {'code': 'live_disconnect.removed'},
+        }
+        self.assertEqual(self.fixture(
+            stage='tunnel_remove_intent', complete_interrupted=True), (True, 1))
+        self.plugin._complete_interrupted_whole_dock_trial.assert_called_once_with(
+            'a' * 32)
+        self.assertEqual(
+            self.plugin._whole_dock_trial_status['code'],
+            'dock_teardown.software_down')
+        self.assertEqual(
+            self.plugin._whole_dock_trial_status['release_stage'], 'removed')
+        self.assertEqual(
+            self.plugin._whole_dock_trial_status['release'],
+            {'code': 'live_disconnect.removed'})
+        self.assertFalse(self.plugin._whole_dock_trial_status['in_flight'])
+
+    def test_unproven_interrupted_completion_is_retained_and_reported(self):
+        self.assertEqual(self.fixture(stage='tunnel_remove_intent'), (False, 0))
+        self.plugin._complete_interrupted_whole_dock_trial.assert_called_once_with(
+            'a' * 32)
+        details = [call.kwargs.get('details') for call in
+                   self.plugin._append_journey_event.call_args_list
+                   if call.kwargs.get('code') ==
+                   'automatic_dock.archival_guard_unmet']
+        self.assertEqual(details, [{
+            'phase': 'completion',
+            'unmet': 'dock_teardown_trial_unresolved',
+        }])
+
     def test_attached_unknown_or_unfinished_work_never_retires_disconnect_history(self):
         for options in ({'absent':False}, {'strict':False}, {'parent_power':True},
-                        {'settled':False}, {'idle':False}, {'stage':'tunnel_remove_intent'},
+                        {'settled':False}, {'idle':False},
                         {'stage':'reauthorize_intent'}):
             with self.subTest(options=options):
                 self.assertEqual(self.fixture(**options), (False, 0))

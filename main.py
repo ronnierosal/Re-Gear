@@ -1966,6 +1966,14 @@ class Plugin:
     def _reconcile_physically_disconnected_dock(self):
         """Archive completed software-down history once the attachment is absent.
 
+        An interrupted deauthorization can leave the exact durable claim at
+        ``tunnel_remove_intent`` even after the cable is physically absent.  In
+        that one state, run the existing correlated, read-only completion first;
+        it independently proves the retained transport is down, Portable is
+        active and the held session helper has settled.  It never repeats a
+        device write.  The ordinary archival guard then re-reads the terminal
+        ``software_down`` claim and applies all of its existing prerequisites.
+
         No device commands, recovery budget reset or preference changes. A
         still-attached deauthorized router is not absence and retains inhibition.
         """
@@ -1994,6 +2002,49 @@ class Plugin:
                     pass
                 self._archival_refusal = refusal
             return False
+
+        # This method is scheduled only after the connection observer reports
+        # verified physical absence.  The completion helper still performs its
+        # own independent retained-identity/session proof under admission.  The
+        # initial read grants no authority; the helper re-loads and correlates
+        # the exact operation before it can advance the record.
+        try:
+            interrupted = DockPowerIntentStore(DEFAULT_RUNTIME_STATE_ROOT).load()
+        except Exception:
+            interrupted = None
+        if interrupted is not None and interrupted.stage == 'tunnel_remove_intent':
+            completion = self._complete_interrupted_whole_dock_trial(
+                interrupted.operation
+            )
+            if not (
+                type(completion) is dict
+                and completion.get('schema_version') == 1
+                and completion.get('code') == 'dock_teardown.software_down'
+                and completion.get('ok') is True
+                and completion.get('software_down') is True
+                and completion.get('safe_to_unplug') is False
+                and completion.get('hardware_write') is False
+                and completion.get('request_id') == interrupted.operation
+                and completion.get('claim_stage') == 'software_down'
+            ):
+                code = (completion.get('code') if type(completion) is dict
+                        else 'unavailable')
+                if type(code) is not str or not re.fullmatch(r'[a-z_.]{1,96}', code):
+                    code = 'unavailable'
+                return refuse('completion', code.replace('.', '_'))
+            retained = getattr(self, '_whole_dock_trial_status', None)
+            if (type(retained) is dict
+                    and retained.get('request_id') == interrupted.operation
+                    and getattr(self, '_whole_dock_trial_worker_alive', False) is not True):
+                # Preserve the release evidence already captured by the worker
+                # while replacing its unresolved result with the correlated
+                # record-only completion.  A remounted panel can then present
+                # the real terminal outcome instead of remaining in progress.
+                self._whole_dock_trial_status = {
+                    **retained,
+                    **completion,
+                    'in_flight': False,
+                }
 
         phase = 'admission'
         try:
@@ -3598,6 +3649,16 @@ class Plugin:
                         "software_down": getattr(result, "software_down", False),
                         "software_reconnected": getattr(result, "software_reconnected", False)}
                     payload["ok"] = payload["software_down"] or payload["software_reconnected"]
+                    if (result.code == 'dock_teardown.unresolved'
+                            and trial_request_id):
+                        try:
+                            claim = WholeDockClaimStore(
+                                DEFAULT_RUNTIME_STATE_ROOT
+                            ).load()
+                            if claim is not None and claim.operation == trial_request_id:
+                                payload['claim_stage'] = claim.stage
+                        except Exception:
+                            payload['claim_stage'] = 'unknown'
                     if power_request is not None:
                         payload['power_requested'] = getattr(result, 'requested', False) is True
                         payload['ok'] = payload['power_requested']
@@ -3640,6 +3701,23 @@ class Plugin:
                 payload["suspend"] = getattr(self, "_whole_dock_suspend_result", {})
                 payload["arm_stage"] = self._whole_dock_arm_stage
                 payload["arm_code"] = self._whole_dock_arm_code
+                if payload.get('code') == 'dock_teardown.unresolved':
+                    try:
+                        self._append_journey_event(
+                            severity='warning',
+                            code='dock_teardown.terminal_unresolved',
+                            component='disconnect',
+                            stage='dock_teardown',
+                            details={
+                                'phase': payload.get('phase', ''),
+                                'claim_stage': payload.get('claim_stage', 'unknown'),
+                            },
+                            create_timeline=False,
+                        )
+                    except Exception:
+                        # The terminal RPC result remains authoritative if
+                        # support-event storage is unavailable.
+                        pass
                 self._whole_dock_trial_status = payload
                 if power_request is not None:
                     payload['route_action'] = trial_action
