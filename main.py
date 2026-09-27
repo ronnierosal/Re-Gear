@@ -2747,23 +2747,6 @@ class Plugin:
             binding = resolve_whole_dock(cards[0].pci_bdf)
             if expected_attachment and expected_attachment != binding.binding + ":" + binding.generation:
                 raise ValueError("dock_teardown.approval_superseded")
-            # Keep the internal device id only long enough to report a
-            # successful intentional deauthorization. It never crosses an RPC
-            # boundary or enters a log or claim payload.
-            try:
-                authorization_observer = getattr(
-                    self, "_device_authorization_observer", None
-                )
-                authorization_observation = authorization_observer.observe()
-                authorization_uuid = getattr(authorization_observation, "uuid", "")
-                authorization_enrolled = (
-                    getattr(authorization_observation, "enrolled", None) is True
-                )
-                if type(authorization_uuid) is not str:
-                    authorization_uuid = ""
-            except Exception:
-                authorization_uuid = ""
-                authorization_enrolled = False
             self._whole_dock_trial_phase = "session"
             user = resolve_gamescope_user(GamescopeDiscovery().scan()).context
             if user is None:
@@ -2780,22 +2763,6 @@ class Plugin:
             def require_inhibition():
                 if guarded_admission() is not True:
                     raise ValueError("dock_teardown.sleep_inhibition_required")
-            authorization_hold_required = (
-                authorization_uuid
-                and authorization_enrolled
-                and (power_request is None or power_request.action == 'sleep')
-            )
-            before_deauthorize = None
-            if authorization_hold_required:
-                before_deauthorize = lambda op, attached, generation, guard: (
-                    self._hold_remembered_authorization(
-                        op, attached, generation, authorization_uuid, guard
-                    )
-                )
-            runtime = WholeDockRuntime(binding, RootOwnedRuntimeState().ensure(),
-                idle=lambda: self._api.get_snapshot_report().snapshot.game_state is GameState.IDLE,
-                admission_held=guarded_admission,
-                before_deauthorize=before_deauthorize)
             approval = WholeDockApproval(binding.binding, binding.generation,
                 TeardownApproval(binding.usb_bdf, binding.router_id))
             self._whole_dock_trial_phase = "sleep_inhibitor"
@@ -2804,11 +2771,56 @@ class Plugin:
             self._whole_dock_trial_lease = lease
             power_store = None
             software_down_verified = False
+            runtime = None
             try:
                 require_inhibition()
                 self._whole_dock_trial_phase = "return_portable"
                 self._return_portable_before_disconnect(binding, user)
                 require_inhibition()
+                # Authorization state is needed before USB4 deauthorization,
+                # not before the player can see the handheld again.  Keeping
+                # this potentially command-backed observation ahead of the
+                # presentation transition made Safe Disconnect feel much
+                # slower than the same guarded display switch on its own.
+                # Observe it only after Portable is durably verified, while
+                # retaining the same mutation gate and sleep inhibitor.
+                self._whole_dock_trial_phase = "authorization"
+                try:
+                    authorization_observer = getattr(
+                        self, "_device_authorization_observer", None
+                    )
+                    authorization_observation = authorization_observer.observe()
+                    authorization_uuid = getattr(
+                        authorization_observation, "uuid", ""
+                    )
+                    authorization_enrolled = (
+                        getattr(authorization_observation, "enrolled", None) is True
+                    )
+                    if type(authorization_uuid) is not str:
+                        authorization_uuid = ""
+                except Exception:
+                    authorization_uuid = ""
+                    authorization_enrolled = False
+                authorization_hold_required = (
+                    authorization_uuid
+                    and authorization_enrolled
+                    and (power_request is None or power_request.action == 'sleep')
+                )
+                before_deauthorize = None
+                if authorization_hold_required:
+                    before_deauthorize = lambda op, attached, generation, guard: (
+                        self._hold_remembered_authorization(
+                            op, attached, generation, authorization_uuid, guard
+                        )
+                    )
+                runtime = WholeDockRuntime(
+                    binding,
+                    RootOwnedRuntimeState().ensure(),
+                    idle=lambda: self._api.get_snapshot_report().snapshot.game_state
+                    is GameState.IDLE,
+                    admission_held=guarded_admission,
+                    before_deauthorize=before_deauthorize,
+                )
                 self._whole_dock_trial_phase = "release_setup"
                 release = build_live_disconnect_runtime(gpu_bdf=binding.gpu_bdf,
                     uid=user.uid, username=user.username)
@@ -2896,7 +2908,12 @@ class Plugin:
                 raise
             finally:
                 admission["held"] = False
-                if runtime._operation is None:
+                # Release only a lease this process can still prove it owns.
+                # If unloading or lease loss ended admission, there is no
+                # active local inhibitor left to release safely.
+                if guarded_admission() and (
+                    runtime is None or runtime._operation is None
+                ):
                     lease.release()
 
     def _complete_interrupted_whole_dock_trial(self, request_id: str):
