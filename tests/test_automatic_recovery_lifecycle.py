@@ -217,8 +217,9 @@ class AutomaticRecoveryLifecycleTests(unittest.TestCase):
             self.assertEqual(self.commands.calls, [])
             self.assertFalse(recovery.load())
             recovery.save(True)  # A deliberate preference change, never a migration default.
-            self.assertFalse(self.poll(20))
-            self.assertTrue(self.poll(30))
+            # The original attachment settled while recovery was disabled;
+            # enabling it does not add another ten-second timer.
+            self.assertTrue(self.poll(20))
             self.assertEqual(self.commands.calls, [RESTART])
             self.make_plugin()  # Reload/update recreates runtime but preserves settings.
             self.plugin._automatic_dock_preferences = lambda: AutomaticDockPreferenceStore(Path(directory))
@@ -239,9 +240,10 @@ class AutomaticRecoveryLifecycleTests(unittest.TestCase):
                 self.current.snapshot.game_state = game
                 self.assert_denied(code)
         self.current.snapshot.game_state = GameState.IDLE
-        self.assertFalse(self.poll(20))
-        self.assertFalse(self.poll(29.999))
-        self.assertTrue(self.poll(30))
+        # The game blocked every prior observation. Once it is currently idle,
+        # the already elapsed attachment settle is enough; admission and the
+        # reserved dispatch preflight still re-read the state.
+        self.assertTrue(self.poll(20))
         self.assertEqual(self.commands.calls, [RESTART])
 
     def test_persisted_recovery_opt_out_survives_runtime_recreation(self):
