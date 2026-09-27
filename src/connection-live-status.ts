@@ -31,8 +31,10 @@ export function connectionLiveStatus(payload: SnapshotPayload | null, automatic:
   const all = fresh && c?.stage === "ready_idle" && rows.every(row => row.state === "ready");
   const switching = fresh && automatic?.stage === "switching";
   const docked = fresh && automatic?.stage === "docked" && payload?.inference.mode === "docked_egpu";
-  const recoveryDecision = typeof automatic?.recovery?.decision_code === "string"
-    ? automatic.recovery.decision_code : "";
+  const recovery = automatic?.recovery;
+  const recoveryDecision = recovery?.schema_version === 1 && recovery.enabled === true
+    && typeof recovery.code === "string" && typeof recovery.decision_code === "string"
+    ? recovery.decision_code : "";
   // Recovery only refines the pre-GPU presentation. It cannot claim that the
   // driver, link, display or audio became ready; those remain readiness facts.
   const beforeGpu = fresh && connected && c?.checks?.gpu !== true
@@ -53,17 +55,19 @@ export function connectionLiveStatus(payload: SnapshotPayload | null, automatic:
     && c.code === "connection.session_integration_unprepared";
   const sessionUnavailable = fresh && c?.stage === "waiting_for_session"
     && c.code === "connection.session_unavailable";
-  const detail = setupRequired ? "Display setup required — open Re-Gear Diagnostics"
+  const blockerDetail = setupRequired ? "Display setup required — open Re-Gear Diagnostics"
     : blocked ? waiting[c?.stage ?? ""]
     : payload?.snapshot.game_state === "running" ? "Close the game to continue"
     : journal && journal !== "journal.idle" ? "Previous result needs acknowledgement"
     : sessionUnavailable ? "Waiting for Gaming Mode"
-    : delayMessage ?? (c?.stage === "timed_out" ? "Taking longer than expected—still checking" : waiting[c?.stage ?? ""]);
+    : undefined;
+  const detail = blockerDetail
+    ?? delayMessage ?? (c?.stage === "timed_out" ? "Taking longer than expected—still checking" : waiting[c?.stage ?? ""]);
   const recoveryTitle = recoveryStage === "settling" ? "eGPU detected — preparing link recovery"
     : recoveryStage === "started" ? "Recovering eGPU link"
     : recoveryStage === "trained" ? "eGPU link recovered — waiting for GPU" : undefined;
   return {phase: docked ? "complete" : switching ? "switching" : "checking", connected, displayPending: fresh && c?.stage === "ready_display_pending", expiresAt: fresh ? Date.now() + Math.max(0, 15000 - Math.max(snapshotAge, c?.checks_age_ms ?? 15000)) : 0, seconds: Math.floor((c?.window_age_ms ?? 0) / 1000), rows,
-    title: !fresh ? "Waiting for a fresh status update" : switching ? "Switching to TV — checking picture and audio" : docked ? "TV transition reported complete" : all ? automatic?.enabled ? "Ready — waiting for automatic switch" : "Ready to switch to TV" : recoveryTitle ?? detail ?? "Checking connection readiness",
+    title: !fresh ? "Waiting for a fresh status update" : switching ? "Switching to TV — checking picture and audio" : docked ? "TV transition reported complete" : all ? automatic?.enabled ? "Ready — waiting for automatic switch" : "Ready to switch to TV" : blockerDetail ?? recoveryTitle ?? detail ?? "Checking connection readiness",
     gpuName: connected ? detectedGpuName(payload, fresh) : undefined,
     canSwitch: all && automatic?.enabled === false,
     stage: typeof c?.stage === "string" ? c.stage : undefined,
