@@ -111,6 +111,11 @@ test("production adapter enables native sliders and only the admitted guarded eG
  assert.throws(()=>view.props.onUtilityRequest("wifi"),/Control unavailable/);
  assert.deepEqual(Object.keys(view.props.tiles),["egpu"]);
  assert.deepEqual(view.props.tiles.egpu.map(x=>x.id),["egpu","disconnect","disconnect-sleep","disconnect-shutdown"]);
+ for(const id of ["disconnect","disconnect-sleep","disconnect-shutdown"]){
+  const action=view.props.tiles.egpu.find(tile=>tile.id===id);
+  assert.equal(action.value,"Check status",`${id} must open its fresh guarded control`);
+  assert.equal(action.tone,"warning");
+ }
  assert.equal(nodes(view.props.disconnectControl).some(n=>n.type==="dropdown"),false);
  view.props.onDisconnect("disconnect");
  assert.equal(h.modals.length,1);
@@ -163,7 +168,7 @@ test("production retains status-only settlement recovery for existing records",(
  assert.equal(dock.props.startRequest,undefined);h.menu.stop();
 });
 
-test("production unavailable disconnect cannot dispatch or open details, while ready still dispatches",async()=>{
+test("production unavailable disconnect cannot dispatch or open details, while guarded entry states dispatch",async()=>{
  for(const tiles of [undefined,{egpu:[{id:"disconnect",title:"Safe Disconnect",value:"Unavailable",detail:"Waiting for current status"}]},{egpu:[{id:"disconnect",title:"Safe Disconnect",value:"Unknown",detail:"Stale status",tone:"unavailable"}]}]){
   const app=await fixture();let calls=0;
   const props={policy:"production",tiles,onDisconnect(){calls++;}};
@@ -174,10 +179,12 @@ test("production unavailable disconnect cannot dispatch or open details, while r
   assert.equal(calls,0);
   assert.equal(nodes(tree).some(n=>n.props?.className==="rg-expanded-detail-page"),false);
  }
- const app=await fixture();let calls=0;
- const tree=app.render({policy:"production",tiles:{egpu:[{id:"disconnect",title:"Safe Disconnect",value:"Ready",detail:"Guarded flow"}]},onDisconnect(){calls++;}});
- const button=nodes(tree).find(n=>n.props?.["data-ec-control"]==="disconnect");
- assert.equal(button.props["aria-disabled"],false);button.props.onClick();assert.equal(calls,1);
+ for(const value of ["Ready","Check status"]){
+  const app=await fixture();let calls=0;
+  const tree=app.render({policy:"production",tiles:{egpu:[{id:"disconnect",title:"Safe Disconnect",value,detail:"Guarded flow"}]},onDisconnect(){calls++;}});
+  const button=nodes(tree).find(n=>n.props?.["data-ec-control"]==="disconnect");
+  assert.equal(button.props["aria-disabled"],false);button.props.onClick();assert.equal(calls,1);
+ }
 });
 
 test("production read-only eGPU detail enters at the first reading and Back restores its launcher",async()=>{
