@@ -106,3 +106,24 @@ test('switching preserves original prerequisites and setup blockers suppress del
  for(const original of s.rows)assert.ok(switching.rows.some(row=>row.label===original.label));
  assert.equal(view({...s,seconds:600},100).delayNotice,undefined);
 });
+
+test('recovery progress completes detection but never invents GPU or link readiness',()=>{
+ for(const recoveryStage of ['settling','started','trained']){
+  const s={...sample(),stage:'waiting_for_pci',recoveryStage,title: recoveryStage==='settling'
+    ? 'eGPU detected — preparing link recovery' : recoveryStage==='started'
+      ? 'Recovering eGPU link' : 'eGPU link recovered — waiting for GPU',
+    rows:[{label:'GPU and driver',state:'waiting'},{label:'Connection link',state:'waiting'},{label:'No game running',state:'ready'}]};
+  const v=view(s,100);
+  assert.equal(v.milestones.activeStep,1);
+  assert.equal(v.milestones.steps[0].state,'done');
+  assert.equal(v.milestones.steps[1].state,'active');
+  assert.equal(v.milestones.steps[2].state,'pending');
+  assert.match(v.milestones.currentDetail,/Step 2 of 5/);
+ }
+});
+test('fresh TV switching and completion remain authoritative over recovery copy',()=>{
+ const s={...sample(),stage:'waiting_for_pci',recoveryStage:'started',title:'Recovering eGPU link'};
+ assert.equal(view({...s,phase:'switching'},100).milestones.activeStep,4);
+ const complete=view({...s,phase:'complete'},100).milestones;
+ assert.equal(complete.complete,true);assert.ok(complete.steps.every(step=>step.state==='done'));
+});

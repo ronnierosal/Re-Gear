@@ -355,6 +355,16 @@ export interface AutomaticDockStatusPayload {
   enabled: boolean;
   stage: "disabled" | "observing" | "settling" | "waiting" | "switching" | "docked" | "action_required";
   code: string;
+  /** Observation only. Missing or malformed values never advance presentation. */
+  recovery?: {
+    schema_version: 1;
+    enabled: boolean;
+    attempts?: number;
+    max_attempts?: number;
+    delay_seconds?: number;
+    code: string;
+    decision_code: string;
+  };
 }
 
 export const getAutomaticDockStatus = callable<[], AutomaticDockStatusPayload>(
