@@ -101,7 +101,12 @@ function text(tree) {
 }
 
 test("production adapter enables native sliders and only the admitted guarded eGPU actions",()=>{
- const h=harness();h.menu.open();const view=h.mount();
+ const h=harness();
+ h.tiles={
+  quick:[{id:"egpu",title:"eGPU Status",value:"Ready",detail:"Current connection lifecycle"}],
+  egpu:[{id:"link",title:"Connection Link",value:"Connected",detail:"Physical link"}],
+ };
+ h.menu.open();const view=h.mount();
  assert.equal(h.utilitiesCreated,true);
  assert.equal(view.props.policy,"production");
  assert.equal(view.props.layoutStorage,undefined);
@@ -111,6 +116,7 @@ test("production adapter enables native sliders and only the admitted guarded eG
  assert.throws(()=>view.props.onUtilityRequest("wifi"),/Control unavailable/);
  assert.deepEqual(Object.keys(view.props.tiles),["egpu"]);
  assert.deepEqual(view.props.tiles.egpu.map(x=>x.id),["egpu","disconnect","disconnect-sleep","disconnect-shutdown"]);
+ assert.deepEqual(view.props.tiles.egpu[0],h.tiles.quick[0],"production status must remain the lifecycle summary, not the link reading");
  for(const id of ["disconnect","disconnect-sleep","disconnect-shutdown"]){
   const action=view.props.tiles.egpu.find(tile=>tile.id===id);
   assert.equal(action.value,"Check status",`${id} must open its fresh guarded control`);
