@@ -35,8 +35,8 @@ export function PopupStateIcon({state,motion=false}: {state:PopupState;motion?:b
   return <span className="rg-popup-state-icon" data-motion={motion && (state === "connecting" || state === "waiting")} aria-hidden="true"><StatusIcon state={mapped} color={state === "connecting" || state === "waiting" ? "#39d8ff" : undefined}/></span>;
 }
 /** Fixed chrome, one scrolling region. The native host owns modal lifecycle. */
-export function PopupFrame({title,state,children,footer,compact=false,headerMeta,stateLabel}: {title:ReactNode;state?:PopupState;children:ReactNode;footer:ReactNode;compact?:boolean;headerMeta?:ReactNode;stateLabel?:string}) {
-  return <section className={`rg-popup${compact ? " rg-compact" : ""}`}>
+export function PopupFrame({title,state,children,footer,compact=false,slim=false,headerMeta,stateLabel}: {title:ReactNode;state?:PopupState;children:ReactNode;footer:ReactNode;compact?:boolean;slim?:boolean;headerMeta?:ReactNode;stateLabel?:string}) {
+  return <section className={`rg-popup${compact ? " rg-compact" : ""}${slim ? " rg-slim" : ""}`}>
     <style>{popupStyles}</style>
     <header className="rg-popup-header"><div className="rg-popup-brand"><img src={brandIcon} alt="Re-Gear logo"/><span>Re-Gear</span></div><h2>{title}</h2><div className="rg-popup-meta">{headerMeta}</div>
       {state && <div className="rg-popup-primary" data-state={state} role="status"><PopupStateIcon state={state} motion/><span key={stateLabel ?? state} className="rg-state-copy">{stateLabel ?? stateLabels[state]}</span></div>}
