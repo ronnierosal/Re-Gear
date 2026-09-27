@@ -59,6 +59,14 @@ class AutomaticRecoveryTests(unittest.TestCase):
         self.assertEqual(self.policy.decision_code, "automatic_recovery.waiting_for_idle")
         self.assertTrue(self.sample(101, idle=True))
 
+    def test_transport_loss_restarts_settle_for_same_identity_return(self):
+        self.arm()
+        self.assertFalse(self.sample(11, present=False))
+        self.assertEqual(self.policy.decision_code, "automatic_recovery.waiting_for_transport")
+        self.assertFalse(self.sample(11.1))
+        self.assertFalse(self.sample(21.099))
+        self.assertTrue(self.sample(21.1))
+
     def test_disabled_or_unresolved_transport_never_dispatches(self):
         for changes in [dict(enabled=False), dict(identity="transport:unresolved"), dict(present=False)]:
             self.setUp(); self.arm()

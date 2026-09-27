@@ -35,6 +35,11 @@ class AutomaticLinkRecovery:
         if pci_complete:
             self.completed = True
         if not present or not identity.startswith("transport:") or identity == "transport:unresolved":
+            # A lost or unresolved transport invalidates the physical attach
+            # settle, even when the same identity later returns. Keep the
+            # identity and attempt budget so this is not mistaken for a fresh
+            # verified detach, but require ten stable seconds after return.
+            self.due = None
             return self._decision("waiting_for_transport" if not present else "transport_unresolved")
         if not self.identity:
             self.identity = identity
@@ -42,6 +47,8 @@ class AutomaticLinkRecovery:
         if identity != self.identity:
             self.armed = False  # identity changes do not prove physical removal
             return self._decision("transport_changed")
+        if self.due is None:
+            self.due = now + 10
         if not enabled or not idle:
             return self._decision("disabled" if not enabled else "waiting_for_idle")
         if self.completed:
@@ -49,10 +56,10 @@ class AutomaticLinkRecovery:
         if self.attempts >= 2:
             return self._decision("attempts_exhausted")
         # The attachment/cooldown timer is the settle window. A transient
-        # non-idle sample must still block the current observation, but it must
-        # not silently start a second ten-second delay after the original due
-        # time. The caller and reserved dispatch preflight both re-read the
-        # current game/session/identity evidence before any command runs.
+        # non-idle sample must still block the current observation without
+        # starting another delay; transport loss above does restart the timer.
+        # The caller and reserved dispatch preflight both re-read the current
+        # game/session/identity evidence before any command runs.
         ready = self.due is not None and now >= self.due
         return self._decision("ready" if ready else "settling", ready)
 

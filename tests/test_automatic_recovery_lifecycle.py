@@ -119,11 +119,15 @@ class AutomaticRecoveryLifecycleTests(unittest.TestCase):
             return status()
         self.plugin._observe_connection_readiness = readiness
 
-    def poll(self, now, *, absent=False):
+    def poll(self, now, *, absent=False, present=None, identity=None):
         self.state.now = now
+        if present is None:
+            present = not absent
+        if identity is None:
+            identity = "" if absent else "transport:known"
         self.plugin._last_readiness_observation = observation(
-            transport_identity="" if absent else "transport:known",
-            transport_present=not absent, transport_absent_verified=absent)
+            transport_identity=identity,
+            transport_present=present, transport_absent_verified=absent)
         return asyncio.run(self.plugin._maybe_automatic_link_recovery(self.current, True))
 
     def attach_until_due(self):
@@ -162,6 +166,19 @@ class AutomaticRecoveryLifecycleTests(unittest.TestCase):
         self.assertEqual(self.decision(), "link_recovery.trained")
         self.assertFalse(self.poll(30))
         self.assertEqual(self.commands.calls, [RESTART])
+
+    def test_transport_loss_renews_settle_without_spending_admission(self):
+        self.attach_until_due()
+        admission_entries = len(self.gate.entries)
+        self.assertFalse(self.poll(11, present=False))
+        self.assertEqual(self.decision(), "automatic_recovery.waiting_for_transport")
+        self.assertFalse(self.poll(11.1))
+        self.assertFalse(self.poll(21.099))
+        self.assertEqual(self.commands.calls, [])
+        self.assertEqual(len(self.gate.entries), admission_entries)
+        self.assertTrue(self.poll(21.1))
+        self.assertEqual(self.commands.calls, [RESTART])
+        self.assertEqual(self.plugin._automatic_link_recovery.attempts, 1)
 
     def test_ordinary_software_down_survives_plugin_recreation_and_blocks_restart(self):
         claim = self.state.claim = NS(stage="software_down", binding="dock")
