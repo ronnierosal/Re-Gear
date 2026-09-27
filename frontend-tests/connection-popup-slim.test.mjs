@@ -27,3 +27,13 @@ test("hand-off warns the screen will go dark only while a fresh switch is in pro
   assert.match(overlay, /const handoff=!m\.stale && !m\.attention && !done && props\.phase === "switching"/);
   assert.match(overlay, /Screen will go dark — look at the TV/);
 });
+
+test("slim popup keeps one visible Details entry and 44px footer hit areas", () => {
+  const css = read("connection-panel-style.ts");
+  assert.match(css, /\.rg-popup\.rg-slim \.rg-popup-footer button\{[^}]*min-height:44px!important/);
+  assert.match(css, /\.rg-slim \.rg-connection-details>summary\{position:absolute;width:1px;height:1px[^}]*clip:rect\(0 0 0 0\)/);
+  const preview = readFileSync(new URL("../scripts/popup_system_preview.mjs", import.meta.url), "utf8");
+  assert.match(preview, /import \{connectionPanelCss\} from '\.\.\/\.\.\/src\/connection-panel-style'/);
+  assert.match(preview, /Math\.min\(280,viewport\.width\*\.92\)/);
+  assert.match(preview, /Footer hit area under 44px/);
+});

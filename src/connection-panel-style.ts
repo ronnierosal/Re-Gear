@@ -79,7 +79,9 @@ export const connectionPanelCss = `
 .rg-slim .rg-popup-primary{justify-content:flex-start!important;font-size:13px!important}
 .rg-slim .rg-popup-body{padding:4px 10px!important}.rg-slim .rg-milestones{gap:5px!important}.rg-slim .rg-milestone-current{font-size:12px!important;font-weight:500;color:#c9dfef}
 .rg-milestone-handoff{font-size:12px;color:#72e5ff}
-.rg-slim .rg-popup-footer{padding:2px 6px!important;gap:4px!important}.rg-slim .rg-popup-footer button{font-size:11px!important}.rg-slim .rg-key{width:18px;height:18px;margin-right:4px;font-size:9px}
+.rg-slim .rg-popup-footer{padding:0 6px!important;gap:4px!important}.rg-popup.rg-slim .rg-popup-footer button{font-size:11px!important;min-height:44px!important}
+/* Y Details is the one visible entry; the summary stays for assistive tech. */
+.rg-slim .rg-connection-details>summary{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}.rg-slim .rg-connection-details{margin:0}.rg-slim .rg-key{width:18px;height:18px;margin-right:4px;font-size:9px}
 .rg-slim .rg-popup-guidance{display:flex;align-items:center;justify-content:flex-end;gap:4px;font-size:11px!important;color:#93adc1}.rg-slim .rg-popup-guidance[data-live=true] .rg-live-dot{background:#87da91}
 .rg-slim .rg-details-scroll .rg-connection-flow{padding:4px 0}.rg-slim .rg-details-scroll .rg-flow-node{min-width:56px;font-size:11px}.rg-slim .rg-details-scroll .rg-flow-node img,.rg-slim .rg-details-scroll .rg-flow-node>svg{width:22px;height:20px}
 .rg-slim .rg-details-scroll{max-height:40vh}
