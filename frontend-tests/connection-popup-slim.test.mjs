@@ -93,3 +93,10 @@ test("stale evidence reads Not live and never claims current progress", () => {
   assert.equal(mainOf(tree).props["data-stale"], true);
   assert.ok(!flatten(mainOf(tree)).some((n) => n.props?.["data-state"] === "active"));
 });
+
+test("the visually hidden summary is not a focus stop; Y is the only visible Details entry", () => {
+  const tree = render({...base, phase:"connecting", milestones: ms({activeStep:1})});
+  const summary = flatten(detailsOf(tree)).find((n) => n.type === "summary");
+  assert.equal(summary.props.tabIndex, -1);
+  assert.match(text(summary), /Connection details/);
+});

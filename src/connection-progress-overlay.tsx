@@ -52,7 +52,7 @@ export function ConnectionProgressOverlay(props:ConnectionProgressOverlayProps) 
       {handoff && <div className="rg-milestone-handoff" role="status">Screen will go dark — look at the TV</div>}
       {m.slowNotice && <div className="rg-milestone-slow" role="status">{m.slowNotice}</div>}
     </div>
-    <details ref={details} className="rg-connection-details"><summary>Connection details</summary><div className="rg-details-scroll" tabIndex={0} aria-label="Connection diagnostics">
+    <details ref={details} className="rg-connection-details"><summary tabIndex={-1}>Connection details</summary><div className="rg-details-scroll" tabIndex={0} aria-label="Connection diagnostics">
       <div className="rg-connection-flow" aria-label="Connection path; device presence and display activation are separate">
         <div className="rg-flow-node"><img src={handheldIcon} alt=""/><span>Handheld</span></div>
         <span className="rg-flow-line" data-ready={gpuReady} data-active={!m.stale && !m.attention && !gpuReady && m.activeStep >= 0}/>
