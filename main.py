@@ -3278,6 +3278,13 @@ class Plugin:
             # answer -- from one that cannot be outstanding at all, because the
             # process that would be running it is this one.
             in_flight = getattr(self, "_whole_dock_trial_worker_alive", False) is True
+            retained_was_unresolved = (
+                result.get("schema_version") == 1
+                and result.get("code") == "dock_teardown.trial_unresolved"
+                and result.get("busy") is False
+                and result.get("ok") is False
+                and result.get("safe_to_unplug") is False
+            )
             result["in_flight"] = in_flight
             if result.get("busy") is True and in_flight:
                 # The route waits up to 90 s on a session restart with no
@@ -3303,6 +3310,10 @@ class Plugin:
                 and result.get("ok") is True
                 and result.get("software_down") is True
                 and result.get("safe_to_unplug") is False
+                and not in_flight
+            )
+            terminal_unresolved = (
+                retained_was_unresolved
                 and not in_flight
             )
             terminal_failed_connected_sleep = (
@@ -3359,17 +3370,18 @@ class Plugin:
                 and result.get("safe_to_unplug") is False
                 and not in_flight
             )
-            if (terminal_software_down or terminal_failed_connected_sleep
+            if (terminal_software_down or terminal_unresolved
+                    or terminal_failed_connected_sleep
                     or terminal_completed_connected_sleep
                     or terminal_completed_unplug_sleep
                     or terminal_expired_unplug_sleep):
                 # Power results have their own durable presentation channel in
-                # _dock_sleep_status. Retaining a completed, custody-free power
-                # result as whole-dock trial state makes a later Safe Disconnect
-                # press inherit that outcome and refuse before dispatch. Keep
-                # the power result intact, while admitting a new disconnect only
-                # after the same attachment and custody checks used for a
-                # physically reattached dock.
+                # _dock_sleep_status. An unresolved worker result is retained
+                # history once no worker or claim survives and a complete,
+                # stable attachment has returned. Keeping either result as the
+                # active whole-dock state makes later actions inherit an old
+                # refusal. Rearm only through the same repeated attachment and
+                # custody checks used for a physically reattached dock.
                 attachment_token = await asyncio.to_thread(
                     self._fresh_unclaimed_whole_dock_attachment_token
                 )

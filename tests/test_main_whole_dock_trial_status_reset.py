@@ -61,6 +61,52 @@ class WholeDockTrialStatusResetTests(unittest.TestCase):
         self.assertIs(self.plugin._whole_dock_trial_status, result)
         self.assertNotIn("request_id", result)
 
+    def test_unresolved_trial_and_stable_reconnected_attachment_rearm_actions(self):
+        self.plugin._whole_dock_trial_status = {
+            "schema_version": 1,
+            "code": "dock_teardown.trial_unresolved",
+            "busy": False,
+            "ok": False,
+            "software_down": False,
+            "safe_to_unplug": False,
+            "hardware_write": False,
+            "request_id": "old-request",
+            "claim_stage": "none",
+        }
+        p1, p2, p3 = self.patches()
+        with p1, p2, p3:
+            result = self.read()
+
+        self.assertEqual(result, {
+            "schema_version": 1,
+            "code": "dock_teardown.no_trial",
+            "busy": False,
+            "safe_to_unplug": False,
+            "in_flight": False,
+            "attachment_token": TOKEN_A,
+        })
+        self.assertIs(self.plugin._whole_dock_trial_status, result)
+
+    def test_unresolved_trial_without_stable_unclaimed_attachment_stays_unresolved(self):
+        unresolved = {
+            "schema_version": 1,
+            "code": "dock_teardown.trial_unresolved",
+            "busy": False,
+            "ok": False,
+            "safe_to_unplug": False,
+            "request_id": "old-request",
+        }
+        for claims, tokens in (
+                ((NS(stage="software_down"),), (TOKEN_A, TOKEN_A)),
+                ((None, None, None), (TOKEN_A, TOKEN_B))):
+            with self.subTest(claims=claims, tokens=tokens):
+                self.plugin._whole_dock_trial_status = dict(unresolved)
+                p1, p2, p3 = self.patches(claims=claims, tokens=tokens)
+                with p1, p2, p3:
+                    result = self.read()
+                self.assertEqual(result["code"], "dock_teardown.trial_unresolved")
+                self.assertEqual(result["request_id"], "old-request")
+
     def test_failed_connected_sleep_stays_on_power_channel_and_rearms_disconnect(self):
         failed_sleep = {
             "schema_version": 1,
