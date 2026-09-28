@@ -182,6 +182,10 @@ class MainDockAdmissionTests(unittest.TestCase):
     def test_unresolved_tunnel_stage_is_returned_and_logged_immediately(self):
         self.plugin._background_operations = set()
         self.plugin._unloading = False
+        # Startup or an older attachment may already have supplied absence.
+        # Admitting this attempt must consume it so the same still-present
+        # attachment cannot immediately clear an unresolved result.
+        self.plugin._whole_dock_absence_observed = True
         self.plugin._append_journey_event = Mock()
         self.plugin._complete_interrupted_whole_dock_trial = Mock(return_value=None)
         def unresolved(*_args):
@@ -199,6 +203,7 @@ class MainDockAdmissionTests(unittest.TestCase):
         self.assertEqual(result['code'], 'dock_teardown.unresolved')
         self.assertEqual(result['claim_stage'], 'tunnel_remove_intent')
         self.assertFalse(result['ok'])
+        self.assertFalse(self.plugin._whole_dock_absence_observed)
         self.plugin._append_journey_event.assert_called_once_with(
             severity='warning',
             code='dock_teardown.terminal_unresolved',
