@@ -1004,7 +1004,7 @@ class BoltDeviceAuthorizationRunner:
     def policy_argv(cls, uuid: str) -> tuple[str, ...]:
         if type(uuid) is not str or cls.UUID.fullmatch(uuid) is None:
             raise ValueError("device authorization uuid is invalid")
-        return (cls.BOLTCTL, "config", uuid, "device.policy")
+        return (cls.BOLTCTL, "config", "device.policy", uuid)
 
     @classmethod
     def set_policy_argv(cls, uuid: str, policy: str) -> tuple[str, ...]:
@@ -1012,7 +1012,7 @@ class BoltDeviceAuthorizationRunner:
             raise ValueError("device authorization uuid is invalid")
         if policy not in ("auto", "manual"):
             raise ValueError("device authorization policy is invalid")
-        return (cls.BOLTCTL, "config", uuid, "device.policy", policy)
+        return (cls.BOLTCTL, "config", "device.policy", uuid, policy)
 
     def policy(self, uuid: str) -> str | None:
         """Read one stored policy; malformed or unavailable output is unknown."""
