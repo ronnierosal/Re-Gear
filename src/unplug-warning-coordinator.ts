@@ -55,6 +55,9 @@ export function createUnplugWarningCoordinator(ports: UnplugWarningPorts) {
   const begin = (requestId: string) => {
     clearTimers();
     publish({ phase: "prompt", requestId });
+    // The owner can synchronously stop while presenting the prompt. Do not
+    // leave a timer behind after that teardown callback.
+    if (state.requestId !== requestId || state.phase !== "prompt") return;
     escalation = schedule(() => {
       escalation = undefined;
       if (state.requestId !== requestId || state.phase !== "prompt") return;
@@ -77,7 +80,8 @@ export function createUnplugWarningCoordinator(ports: UnplugWarningPorts) {
       const requestId = observation.requestId;
       if (typeof requestId !== "string" || !REQUEST_ID.test(requestId)) return;
       if (observation.physicalAbsenceVerified === true) {
-        if (requestId !== state.requestId) return;
+        if ((state.phase === "prompt" || state.phase === "alarm")
+            && requestId !== state.requestId) return;
         clearTimers();
         publish({ phase: "cleared", requestId });
         return;

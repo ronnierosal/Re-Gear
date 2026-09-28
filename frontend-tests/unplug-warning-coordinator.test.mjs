@@ -109,6 +109,25 @@ test("synchronous clear during escalation installs no sound or interval", () => 
   assert.equal(h.timers(), 0);
 });
 
+test("first correlated observation after remount may already be absent", () => {
+  const h = harness();
+  h.coordinator.observe({ requestId: REQUEST, physicalAbsenceVerified: true });
+  assert.deepEqual(h.coordinator.read(), { phase: "cleared", requestId: REQUEST });
+  assert.equal(h.timers(), 0);
+  h.coordinator.observe({ requestId: REQUEST, deauthorized: true });
+  assert.equal(h.coordinator.read().phase, "cleared");
+});
+
+test("synchronous stop while publishing prompt leaves no escalation timer", () => {
+  const h = harness();
+  h.coordinator.subscribe((state) => {
+    if (state.phase === "prompt") h.coordinator.stop();
+  });
+  h.coordinator.observe({ requestId: REQUEST, deauthorized: true });
+  assert.deepEqual(h.coordinator.read(), { phase: "idle", requestId: null });
+  assert.equal(h.timers(), 0);
+});
+
 test("sound failure does not cancel the repeating warning lifecycle", () => {
   let plays = 0;
   let interval;
