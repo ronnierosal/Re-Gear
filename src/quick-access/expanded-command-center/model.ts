@@ -6,7 +6,7 @@ export const tabLabels: Record<Tab, string> = {
   controllers: "Controllers", offline:"Offline Readiness", settings: "Settings",
 };
 export type Tone = "active" | "unavailable" | "warning" | "quiet";
-export type Tile = { id: string; title: string; value: string; detail: string; tone?: Tone; wide?: boolean; empty?: boolean; layoutKey?: string; widget?:{primary:string;secondary?:string;grade:Tone} };
+export type Tile = { id: string; title: string; value: string; detail: string; tone?: Tone; wide?: boolean; empty?: boolean; layoutKey?: string; artworkControlId?: string; widget?:{primary:string;secondary?:string;grade:Tone} };
 
 /**
  * Approved UI-only sample compositions. These are visual/navigation fixtures,

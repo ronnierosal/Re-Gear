@@ -155,6 +155,7 @@ const layout = await import(`data:text/javascript;base64,${Buffer.from(compile("
 const catalog=await import(`data:text/javascript;base64,${Buffer.from(compile("button-catalog.ts").replace(/['"]\.\/control-registry['"]/g,JSON.stringify(registryUrl))).toString("base64")}`);
 const Rail = loadComponent("utility-rail.tsx", "UtilityRail", { ...hooks, ...layout, ...registry, CommandCenterIcon: "icon" });
 const Shell = loadComponent("shell.tsx", "ExpandedCommandCenter", { ...hooks, ...model, ...registry, ...catalog, UtilityRail: Rail, CommandCenterIcon: "icon", expandedStyles: "", brandIcon: "brand" });
+const displayTargetActionTile = action => ({ id: "display-target", title: action?.target === "tv" ? "Switch to TV" : action?.target === "ally" ? "Switch to Handheld" : "Display Target", value: action?.available ? "Ready" : "Unavailable", detail: action?.reason ?? "Current display status unavailable" });
 
 test("shell forwards live readings and requests to real rail range handlers; arrows stay native", async () => {
   const calls = [], readings = { brightness: { available: true, value: "50%", percent: 50 }, volume: { available: true, value: "40%", percent: 40 } };
@@ -193,7 +194,7 @@ test("native menu forwards adapter state and calls into the real shell and rail"
   const h = systemHarness();
   let modalTree, closed = 0;
   const Native = loadComponent("native.tsx", "createExpandedMenu", {
-    ...hooks, createNativeUtilities, testBuildTiles, unavailableTestActions, GamepadButton, EgpuConfirmModal:"confirm", ExpandedCommandCenter: Shell,
+    ...hooks, createNativeUtilities, testBuildTiles, unavailableTestActions, displayTargetActionTile, GamepadButton, EgpuConfirmModal:"confirm", ExpandedCommandCenter: Shell,
     createMenuVisibility: () => ({ source: {}, set() {} }),
     loadMenuBinding: () => "none", saveMenuBinding: () => true, menuBindingOptions: [],
     startMenuShortcut: () => ({ available: true, stop() {}, reset() {} }),

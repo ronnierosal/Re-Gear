@@ -22,8 +22,8 @@ test("the focused Command Center no longer exposes demo wording", () => {
 });
 
 test("display activation calls the existing guarded display owner", () => {
-  assert.match(native, /tile\.id==="switch-handheld"[\s\S]*runtimeDetails\?\.requestHandheld\(\)/);
-  assert.match(runtimeDetails, /requestHandheld\(\)[\s\S]*state\.handheld\.request\(\)/);
+  assert.match(native, /tile\.id==="display-target"[\s\S]*runtimeDetails\?\.requestDisplayTarget\(\)/);
+  assert.match(runtimeDetails, /requestDisplayTarget\(\)[\s\S]*state\?\.displayAction\.available[\s\S]*state\.displayAction\.request\(\)/);
   assert.match(index, /primaryDisplayAction\.target === "ally"[\s\S]*requestControllerDisplaySwitch\("ally"\)/);
   assert.match(index, /primaryDisplayAction\.target === "tv"[\s\S]*executeTvSwitch\(\)/);
 });

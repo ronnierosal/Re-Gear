@@ -34,10 +34,11 @@ test('live eGPU actions do not inherit an unavailable overview reading as their 
   assert.equal(view.egpu.find(item=>item.id==='disconnect-shutdown').title,'Safe Disconnect + Shutdown');
 });
 
-test('native adapter preserves verified providers and only Resolution is fixed unavailable', () => {
-  assert.match(nativeSource,/tone:runtimeState\?\.handheld\.available\?"quiet" as const:"unavailable" as const/);
+test('native adapter projects one guarded display target and only Resolution is fixed unavailable', () => {
+  assert.match(nativeSource,/displayTargetActionTile\(runtimeState\?\.displayAction\)/);
+  assert.match(nativeSource,/tile\.id==="display-target"\)\{runtimeDetails\?\.requestDisplayTarget\(\);return true;\}/);
   assert.match(nativeSource,/if\(tile\.id==="disconnect-sleep"\)\{disconnect\("sleep"\);return true;\}/);
   assert.match(nativeSource,/if\(tile\.id==="disconnect-shutdown"\)\{disconnect\("shutdown"\);return true;\}/);
-  assert.match(nativeSource,/if\(tile\.id==="switch-handheld"\)\{runtimeDetails\?\.requestHandheld\(\);return true;\}/);
+  assert.match(nativeSource,/tile\.id==="switch-handheld"\?displayTarget:tile/);
   assert.deepEqual(projection.unavailableTestActions,{"switch-handheld":"Display integration pending",resolution:"Display integration pending"});
 });
