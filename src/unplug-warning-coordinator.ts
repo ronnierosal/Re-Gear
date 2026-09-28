@@ -48,18 +48,26 @@ export function createUnplugWarningCoordinator(ports: UnplugWarningPorts) {
     alarm = undefined;
   };
 
+  const play = () => {
+    try { ports.playWarning(); } catch { /* sound failure does not end the warning */ }
+  };
+
   const begin = (requestId: string) => {
     clearTimers();
     publish({ phase: "prompt", requestId });
     escalation = schedule(() => {
       escalation = undefined;
       if (state.requestId !== requestId || state.phase !== "prompt") return;
+      const stillAlarm = () => state.requestId === requestId && state.phase === "alarm";
       publish({ phase: "alarm", requestId });
-      ports.playWarning();
+      // A subscriber may synchronously observe physical absence or tear down
+      // the owner while handling the alarm transition. Never play or install
+      // an interval after that callback cleared this exact request.
+      if (!stillAlarm()) return;
+      play();
+      if (!stillAlarm()) return;
       alarm = repeat(() => {
-        if (state.requestId === requestId && state.phase === "alarm") {
-          ports.playWarning();
-        }
+        if (stillAlarm()) play();
       }, REPEAT_EVERY_MS);
     }, ESCALATE_AFTER_MS);
   };
@@ -76,7 +84,8 @@ export function createUnplugWarningCoordinator(ports: UnplugWarningPorts) {
       }
       if (observation.deauthorized !== true) return;
       if (requestId === state.requestId
-          && (state.phase === "prompt" || state.phase === "alarm")) return;
+          && (state.phase === "prompt" || state.phase === "alarm"
+            || state.phase === "cleared")) return;
       begin(requestId);
     },
     read: () => state,

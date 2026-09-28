@@ -89,6 +89,41 @@ test("only exact correlated strict absence clears the warning", () => {
   const before = h.warnings();
   h.advance(10000);
   assert.equal(h.warnings(), before);
+  h.coordinator.observe({ requestId: REQUEST, deauthorized: true });
+  assert.deepEqual(h.coordinator.read(), { phase: "cleared", requestId: REQUEST },
+    "late software-down replay cannot reopen a cleared request");
+  assert.equal(h.timers(), 0);
+});
+
+test("synchronous clear during escalation installs no sound or interval", () => {
+  const h = harness();
+  h.coordinator.subscribe((state) => {
+    if (state.phase === "alarm") {
+      h.coordinator.observe({ requestId: REQUEST, physicalAbsenceVerified: true });
+    }
+  });
+  h.coordinator.observe({ requestId: REQUEST, deauthorized: true });
+  h.advance(5000);
+  assert.deepEqual(h.coordinator.read(), { phase: "cleared", requestId: REQUEST });
+  assert.equal(h.warnings(), 0);
+  assert.equal(h.timers(), 0);
+});
+
+test("sound failure does not cancel the repeating warning lifecycle", () => {
+  let plays = 0;
+  let interval;
+  const coordinator = createUnplugWarningCoordinator({
+    schedule(run) { run(); return 1; },
+    cancel() {},
+    repeat(run) { interval = run; return 2; },
+    cancelRepeat() {},
+    playWarning() { plays++; throw new Error("native sound unavailable"); },
+  });
+  coordinator.observe({ requestId: REQUEST, deauthorized: true });
+  assert.equal(coordinator.read().phase, "alarm");
+  assert.equal(plays, 1);
+  interval();
+  assert.equal(plays, 2);
 });
 
 test("a new request replaces old timers and stop tears everything down", () => {
