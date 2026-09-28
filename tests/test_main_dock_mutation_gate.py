@@ -321,6 +321,45 @@ class MainDockAdmissionTests(unittest.TestCase):
         self.assertTrue(result['ok'])
         self.plugin._run_whole_dock_trial.assert_called_once_with(request, '')
 
+    def test_verified_absence_then_reconnect_rearms_and_dispatches_new_request(self):
+        plugin = self.plugin
+        plugin._background_operations = set()
+        plugin._unloading = False
+        plugin._whole_dock_trial_worker_alive = False
+        plugin._whole_dock_absence_observed = True
+        plugin._whole_dock_trial_status = {
+            'schema_version': 1,
+            'code': 'dock_teardown.trial_unresolved',
+            'busy': False,
+            'ok': False,
+            'safe_to_unplug': False,
+            'request_id': 'old-request',
+        }
+        plugin._complete_interrupted_whole_dock_trial = Mock(return_value=None)
+        plugin._run_whole_dock_trial = Mock(return_value=NS(
+            code='dock_teardown.software_down', software_down=True))
+        token = 'a' * 64 + ':' + 'b' * 64
+        request = 'c' * 32
+        with patch.object(self.module, 'WholeDockClaimStore') as store, \
+                patch.object(self.module, 'DrmDiscovery') as drm, \
+                patch.object(self.module, 'resolve_whole_dock', return_value=NS(
+                    binding='a' * 64, generation='b' * 64)):
+            store.return_value.load.return_value = None
+            drm.return_value.scan.return_value = [NS(
+                boot_vga=False, pci_bdf='gpu')]
+            status = asyncio.run(plugin.get_egpu_disconnect_status(
+                'whole_dock_trial'))
+            result = asyncio.run(plugin.execute_egpu_disconnect(
+                trial_action='whole_dock_disconnect', release_display=True,
+                trial_confirmed=True, trial_request_id=request,
+                trial_attachment_token=status['attachment_token']))
+
+        self.assertEqual(status['code'], 'dock_teardown.no_trial')
+        self.assertEqual(status['attachment_token'], token)
+        self.assertFalse(plugin._whole_dock_absence_observed)
+        self.assertTrue(result['ok'])
+        plugin._run_whole_dock_trial.assert_called_once_with(request, token)
+
     def test_correlated_late_completion_never_starts_another_teardown(self):
         self.plugin._background_operations = set()
         self.plugin._unloading = False
