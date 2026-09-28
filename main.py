@@ -3640,6 +3640,10 @@ class Plugin:
             # every exit; a worker that is never scheduled (unloading) leaves
             # it set in a process that is going away, and a fresh process
             # starts without the attribute.
+            # Any absence observed before this admission belongs to an older
+            # attachment epoch. An unresolved result may rearm only after the
+            # poller witnesses strict transport absence after this attempt.
+            self._whole_dock_absence_observed = False
             self._whole_dock_trial_worker_alive = True
             self._whole_dock_trial_started = time.monotonic()
             self._whole_dock_trial_status = {"schema_version": 1,
