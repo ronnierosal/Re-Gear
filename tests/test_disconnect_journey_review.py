@@ -144,6 +144,28 @@ class AuthorizationHoldLockJourneyTests(unittest.TestCase):
         self.assertEqual(marked.state, "manual")
         self.assertEqual(self.holds.load_hold(), marked)
 
+    def test_prepare_rechecks_claim_changed_during_guard(self):
+        def changed():
+            self.assertTrue(self.guard())
+            self.claims.record("operation", "software_down")
+            return True
+
+        self.assertIsNone(self.holds.prepare(
+            "operation", "binding", "generation", self.uuid, changed))
+        self.assertIsNone(self.holds.load_hold())
+
+    def test_mark_manual_rechecks_claim_changed_during_guard(self):
+        hold = self.holds.prepare("operation", "binding", "generation",
+                                  self.uuid, lambda: True)
+
+        def changed():
+            self.assertTrue(self.guard())
+            self.claims.record("operation", "software_down")
+            return True
+
+        self.assertIsNone(self.holds.mark_manual(hold, changed))
+        self.assertEqual(self.holds.load_hold(), hold)
+
 
 if __name__ == "__main__":
     unittest.main()
