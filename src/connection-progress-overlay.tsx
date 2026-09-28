@@ -32,12 +32,14 @@ export function ConnectionProgressOverlay(props:ConnectionProgressOverlayProps) 
   const gpuReady=!m.stale && (done || m.activeStep > 2 || core[0].state === "ready" && core[1].state === "ready");
   const tvFound=!m.stale && (done || m.activeStep > 3 || core[2].state === "ready");
   const genericDelay=props.delayNotice && /^(Taking longer than expected|Connection hasn.t completed)/.test(props.detail ?? "");
+  // About 9 s end to end: the handheld goes dark when the TV takes over, so say so before it happens.
+  const handoff=!m.stale && !m.attention && !done && props.phase === "switching";
   const toggleDetails=()=>{if(details.current)details.current.open=!details.current.open;};
   const state:PopupState=m.attention && primary !== "failed" ? "attention" : primary;
   const stateLabel=state === "failed" ? "Connection failed" : m.headline;
-  return <PopupFrame title="eGPU Connection" state={state} stateLabel={stateLabel} compact headerMeta={elapsedLabel && <span aria-label={`${elapsedLabel} elapsed`}>{elapsedLabel}</span>} footer={<>
+  return <PopupFrame title="eGPU Connection" state={state} stateLabel={stateLabel} compact slim headerMeta={elapsedLabel && <span aria-label={`${elapsedLabel} elapsed`}>{elapsedLabel}</span>} footer={<>
     <DialogButton onClick={props.onHide}><span className="rg-key">B</span> Hide</DialogButton>
-    <span className="rg-popup-guidance">{props.keepConnectedMessage}</span>
+    <span className="rg-popup-guidance" data-live={!m.stale}><span className="rg-live-dot" aria-hidden="true"/>{m.stale ? "Not live" : "Live"}</span>
     {props.onSwitch && <DialogButton onClick={props.onSwitch}>Switch to TV</DialogButton>}
     <DialogButton onClick={toggleDetails}><span className="rg-key">Y</span> Details</DialogButton>
     <div className="rg-popup-recovery">{props.recoveryAction}</div>
@@ -47,6 +49,10 @@ export function ConnectionProgressOverlay(props:ConnectionProgressOverlayProps) 
         {m.steps.map(step=><span key={step.label} className="rg-milestone-segment" data-state={step.state}/>)}
       </div>
       <div className="rg-milestone-current" title={m.currentDetail}>{m.currentDetail}</div>
+      {handoff && <div className="rg-milestone-handoff" role="status">Screen will go dark — look at the TV</div>}
+      {m.slowNotice && <div className="rg-milestone-slow" role="status">{m.slowNotice}</div>}
+    </div>
+    <details ref={details} className="rg-connection-details"><summary tabIndex={-1}>Connection details</summary><div className="rg-details-scroll" tabIndex={0} aria-label="Connection diagnostics">
       <div className="rg-connection-flow" aria-label="Connection path; device presence and display activation are separate">
         <div className="rg-flow-node"><img src={handheldIcon} alt=""/><span>Handheld</span></div>
         <span className="rg-flow-line" data-ready={gpuReady} data-active={!m.stale && !m.attention && !gpuReady && m.activeStep >= 0}/>
@@ -57,10 +63,7 @@ export function ConnectionProgressOverlay(props:ConnectionProgressOverlayProps) 
       <ol className="rg-milestone-list">
         {m.steps.map(step=><li key={step.label} className="rg-milestone" data-state={step.state}><span className="rg-milestone-dot" aria-hidden="true"/><span className="rg-milestone-label">{step.label}</span><span className="rg-milestone-status">{milestoneCopy[step.state]}</span></li>)}
       </ol>
-      <div className="rg-milestone-live" data-live={!m.stale}><span className="rg-live-dot" aria-hidden="true"/>{m.stale ? "Status not updating · last observation shown" : "Live status"}</div>
-      {m.slowNotice && <div className="rg-milestone-slow" role="status">{m.slowNotice}</div>}
-    </div>
-    <details ref={details} className="rg-connection-details"><summary>Connection details</summary><div className="rg-details-scroll" tabIndex={0} aria-label="Connection diagnostics">
+      {props.keepConnectedMessage && <p>{props.keepConnectedMessage}</p>}
       {!genericDelay && <p>{props.detail}</p>}{props.activationNotice && <p>{props.activationNotice}</p>}{props.delayNotice && <p className="rg-delay-inline">{props.delayNotice}</p>}
       {props.rows.map(row=><div key={row.key} className="rg-popup-row"><span>{row.label}</span><span className="rg-popup-row-status"><PopupStateIcon state={rowState(row.state)}/>{row.stateLabel ?? (row.state === "ready" ? "Confirmed" : "Unconfirmed")}</span></div>)}
     </div></details>

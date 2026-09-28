@@ -73,5 +73,17 @@ export const connectionPanelCss = `
 @keyframes rg-milestone-pulse{0%{box-shadow:0 0 0 0 rgba(57,216,255,.55)}70%{box-shadow:0 0 0 6px rgba(57,216,255,0)}100%{box-shadow:0 0 0 0 rgba(57,216,255,0)}}
 @keyframes rg-milestone-pop{from{transform:scale(.6);opacity:.4}to{transform:scale(1);opacity:1}}
 @media(min-height:650px){.rg-milestones{gap:8px}.rg-milestone-current{font-size:16px}.rg-milestone{font-size:13px}.rg-milestone-list{padding:8px 12px;gap:3px}}
+/* Slim variant: half the compact width; the step list and path live in Details. */
+.rg-popup.rg-compact.rg-slim{width:min(280px,92vw);min-height:0}
+.rg-slim .rg-popup-header{padding:6px 10px!important;gap:2px}.rg-slim .rg-popup-brand img{width:20px;height:20px}.rg-slim h2{font-size:14px!important}.rg-slim .rg-popup-meta{font-size:12px}
+.rg-slim .rg-popup-primary{justify-content:flex-start!important;font-size:13px!important}
+.rg-slim .rg-popup-body{padding:4px 10px!important}.rg-slim .rg-milestones{gap:5px!important}.rg-slim .rg-milestone-current{font-size:12px!important;font-weight:500;color:#c9dfef}
+.rg-milestone-handoff{font-size:12px;color:#72e5ff}
+.rg-slim .rg-popup-footer{padding:0 6px!important;gap:4px!important}.rg-popup.rg-slim .rg-popup-footer button{font-size:11px!important;min-height:44px!important}
+/* Y Details is the one visible entry; the summary stays for assistive tech. */
+.rg-slim .rg-connection-details>summary{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}.rg-slim .rg-connection-details{margin:0}.rg-slim .rg-key{width:18px;height:18px;margin-right:4px;font-size:9px}
+.rg-slim .rg-popup-guidance{display:flex;align-items:center;justify-content:flex-end;gap:4px;font-size:11px!important;color:#93adc1}.rg-slim .rg-popup-guidance[data-live=true] .rg-live-dot{background:#87da91}
+.rg-slim .rg-details-scroll .rg-connection-flow{padding:4px 0}.rg-slim .rg-details-scroll .rg-flow-node{min-width:56px;font-size:11px}.rg-slim .rg-details-scroll .rg-flow-node img,.rg-slim .rg-details-scroll .rg-flow-node>svg{width:22px;height:20px}
+.rg-slim .rg-details-scroll{max-height:40vh}
 @media(prefers-reduced-motion:reduce){.rg-milestone-segment,.rg-milestone-dot,.rg-live-dot{animation:none!important}}
 `;
