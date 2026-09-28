@@ -392,6 +392,21 @@ class WholeDockTrialStatusResetTests(unittest.TestCase):
             result = self.read()
         self.assertEqual(result["code"], "dock_teardown.software_down")
 
+    def test_physical_absence_evidence_is_exact_request_correlated(self):
+        request_id = "1" * 32
+        self.plugin._whole_dock_trial_status["request_id"] = request_id
+        self.plugin._whole_dock_physical_absence_verified_request = request_id
+        p1, p2, p3 = self.patches(claims=(NS(stage="software_down"),))
+        with p1, p2, p3:
+            result = self.read()
+        self.assertIs(result["physical_absence_verified"], True)
+
+        self.plugin._whole_dock_physical_absence_verified_request = "2" * 32
+        p1, p2, p3 = self.patches(claims=(NS(stage="software_down"),))
+        with p1, p2, p3:
+            result = self.read()
+        self.assertNotIn("physical_absence_verified", result)
+
     def test_only_exact_successful_software_down_is_considered(self):
         malformed = (
             {"schema_version": 2},

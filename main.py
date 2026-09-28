@@ -480,6 +480,10 @@ class Plugin:
         # observed before a later attachment can retire unresolved UI history.
         # It is consumed only by a successful compare-and-set rearm.
         self._whole_dock_absence_observed = False
+        # Exact request whose software-down lease was released only after the
+        # existing strict repeated physical-absence checks passed. This is
+        # presentation evidence; it never grants unplug clearance or authority.
+        self._whole_dock_physical_absence_verified_request = ""
         self._native_recovery_task: asyncio.Task[None] | None = None
         self._native_recovery = NativePortableRecoverySupervisor()
         self._last_native_recovery_code = ""
@@ -2690,6 +2694,10 @@ class Plugin:
                 if getattr(released, 'active', True) is not False:
                     return False
                 self._whole_dock_trial_runtime = None
+                request_id = public_identity.get('request_id', '')
+                if (type(request_id) is str
+                        and re.fullmatch(r'[0-9a-f]{32}', request_id)):
+                    self._whole_dock_physical_absence_verified_request = request_id
                 return True
             except Exception:
                 return False
@@ -3358,6 +3366,27 @@ class Plugin:
             # answer -- from one that cannot be outstanding at all, because the
             # process that would be running it is this one.
             in_flight = getattr(self, "_whole_dock_trial_worker_alive", False) is True
+            # Disconnect + Sleep waits inside the worker after software-down,
+            # so the terminal trial payload cannot be published until the
+            # player physically unplugs. Surface the exact correlated power
+            # progress on this existing polling channel; otherwise the UI
+            # keeps showing generic teardown progress precisely when it must
+            # tell the player to remove the cable.
+            power_progress = getattr(self, "_dock_sleep_status", None)
+            if (in_flight
+                    and type(power_progress) is dict
+                    and power_progress.get("schema_version") == 1
+                    and power_progress.get("route_action") == "whole_dock_sleep"
+                    and power_progress.get("code") == "dock_power.unplug_required"
+                    and power_progress.get("busy") is True
+                    and power_progress.get("software_down") is True
+                    and power_progress.get("safe_to_unplug") is False
+                    and power_progress.get("request_id") == result.get("request_id")
+                    and type(power_progress.get("request_id")) is str
+                    and re.fullmatch(
+                        r"[0-9a-f]{32}", power_progress["request_id"]
+                    ) is not None):
+                result = dict(power_progress)
             retained_was_unresolved = (
                 result.get("schema_version") == 1
                 and result.get("code") == "dock_teardown.trial_unresolved"
@@ -3533,6 +3562,13 @@ class Plugin:
                     result["attachment_token"] = await asyncio.to_thread(preview_attachment)
                 except Exception:
                     result["attachment_token"] = ""
+            request_id = result.get("request_id")
+            if (type(request_id) is str
+                    and re.fullmatch(r"[0-9a-f]{32}", request_id) is not None
+                    and request_id == getattr(
+                        self, "_whole_dock_physical_absence_verified_request", ""
+                    )):
+                result["physical_absence_verified"] = True
             return result
         cooling = await asyncio.to_thread(self._egpu_cooling_status)
         try:
@@ -3739,6 +3775,7 @@ class Plugin:
             # attachment epoch. An unresolved result may rearm only after the
             # poller witnesses strict transport absence after this attempt.
             self._whole_dock_absence_observed = False
+            self._whole_dock_physical_absence_verified_request = ""
             self._whole_dock_trial_worker_alive = True
             self._whole_dock_trial_started = time.monotonic()
             self._whole_dock_trial_status = {"schema_version": 1,
@@ -4096,6 +4133,7 @@ class Plugin:
                 # Preserve the runtime and terminal payload as evidence. Only
                 # the successfully released owned resource leaves live state.
                 self._whole_dock_trial_lease = None
+                self._whole_dock_physical_absence_verified_request = request_id
                 return True
         except Exception:
             return False
