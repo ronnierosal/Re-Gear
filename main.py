@@ -3450,11 +3450,30 @@ class Plugin:
                 and result.get("safe_to_unplug") is False
                 and not in_flight
             )
+            terminal_refused_unplug_sleep = (
+                result.get("schema_version") == 1
+                and result.get("code") == "dock_power.request_unverified"
+                and result.get("route_action") == "whole_dock_sleep"
+                and result.get("power_action") == "sleep"
+                and result.get("busy") is False
+                and result.get("ok") is False
+                and result.get("software_down") is True
+                and result.get("power_requested") is False
+                and result.get("sleep_cycle_observed") is False
+                and result.get("unplug_required") is False
+                and result.get("safe_to_unplug") is False
+                and type(result.get("suspend")) is dict
+                and result["suspend"].get("requested") is False
+                and result["suspend"].get("code")
+                    == "dock_power.suspend_inhibited"
+                and not in_flight
+            )
             if (terminal_software_down or terminal_unresolved
                     or terminal_failed_connected_sleep
                     or terminal_completed_connected_sleep
                     or terminal_completed_unplug_sleep
-                    or terminal_expired_unplug_sleep):
+                    or terminal_expired_unplug_sleep
+                    or terminal_refused_unplug_sleep):
                 # Power results have their own durable presentation channel in
                 # _dock_sleep_status. An unresolved worker result is retained
                 # history once no worker or claim survives and a complete,
