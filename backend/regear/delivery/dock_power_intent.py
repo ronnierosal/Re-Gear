@@ -120,6 +120,43 @@ class DockPowerIntentStore(WholeDockClaimStore):
             os.fsync(directory)
             return True
 
+    def bind_sleep_after_disconnect(
+        self, expected_claim, session, requested_at, deadline
+    ):
+        """Bind one new sleep intent to an exact completed disconnect.
+
+        The public sleep request has its own correlation id, but retained
+        teardown authority remains the operation recorded by the
+        ``software_down`` claim. Validate the request before locking, then use
+        only lock-local claim equality while publishing the exclusive intent.
+        """
+        if (type(expected_claim) is not WholeDockClaim
+                or expected_claim.stage != 'software_down'):
+            return False
+        intent = DockPowerIntent(
+            expected_claim.operation,
+            expected_claim.binding,
+            expected_claim.generation,
+            'sleep',
+            session,
+            requested_at,
+            deadline,
+        )
+        with self._locked() as directory:
+            if self._load(directory) != expected_claim:
+                return False
+            try:
+                fd = os.open(self._filename(intent), os.O_WRONLY | os.O_CREAT |
+                             os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=directory)
+            except FileExistsError:
+                return False
+            try:
+                self._write_intent(fd, intent)
+            finally:
+                os.close(fd)
+            os.fsync(directory)
+            return True
+
     def consume(self, operation, binding, generation, action, session, requested_at, deadline):
         expected = DockPowerIntent(operation, binding, generation, action, session, requested_at, deadline)
         with self._locked() as directory:
