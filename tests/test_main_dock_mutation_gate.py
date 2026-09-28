@@ -1,12 +1,13 @@
 """RPC admission is exercised separately from unrelated mocked delivery tests."""
 import asyncio
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from types import SimpleNamespace as NS
 import unittest
 from unittest.mock import Mock, patch
 
 from tests.test_main_process_delivery import load_main_module
 from tests import test_main_link_recovery as recovery_fixtures
+from tests import test_main_physical_unplug_sleep as sleep_fixtures
 from regear.delivery.dock_mutation_gate import DockMutationDenied
 
 
@@ -215,6 +216,111 @@ class MainDockAdmissionTests(unittest.TestCase):
             },
             create_timeline=False,
         )
+
+    def test_new_sleep_binds_to_retained_disconnect_and_reaches_suspend(self):
+        fixture = sleep_fixtures.MainPhysicalUnplugSleepTests()
+        fixture.setUp()
+        plugin, module = fixture.plugin, fixture.module
+        old_operation = 'd' * 32
+        fixture.runtime._operation = old_operation
+        fixture.runtime._owned = lambda stage: stage == 'software_down'
+        fixture.runtime.verify_power_continuation = lambda *_args, **_kwargs: True
+        claim = module.WholeDockClaim(
+            old_operation,
+            fixture.runtime.binding.binding,
+            fixture.runtime.binding.generation,
+            'software_down',
+        )
+        fixture.store.load.return_value = claim
+        fixture.store.bind_sleep_after_disconnect.return_value = True
+        plugin._whole_dock_trial_runtime = (fixture.runtime, fixture.admission)
+        plugin._dock_mutation_gate = lambda: NS(admit=lambda **_kwargs: nullcontext())
+        plugin._connection_topology.observe.return_value = fixture._topology(
+            present=False, absent=True)
+        plugin._dock_power_portable_verified = Mock(return_value=True)
+        plugin._run_sleep_request = Mock(return_value=module.DockPowerResult(
+            'dock_power.request_unverified', requested=False))
+        plugin._dock_power_context = (fixture.request, 'e' * 32, 'whole_dock_sleep')
+
+        with patch.object(module, 'verified_transport_absent', side_effect=[False, True]), \
+                patch.object(module, 'SuspendObserver') as observer, \
+                patch.object(module, 'RootOwnedRuntimeState'), \
+                patch.object(module, 'DockPowerIntentStore', return_value=fixture.store), \
+                patch.object(module.time, 'monotonic', return_value=11):
+            observer.return_value.read.return_value = object()
+            result = plugin._run_dock_power_request(
+                fixture.request, keep_connected=False)
+
+        self.assertEqual(plugin._run_sleep_request.call_count, 1,
+                         f'Physical unplug never reached sleep: {result.code}')
+        bound_request = plugin._run_sleep_request.call_args.args[0]
+        self.assertEqual(bound_request.operation, old_operation)
+        self.assertEqual(plugin._dock_power_context,
+                         (bound_request, 'e' * 32, 'whole_dock_sleep'))
+        fixture.store.bind_sleep_after_disconnect.assert_called_once_with(
+            claim, fixture.request.session,
+            fixture.request.requested_at, fixture.request.deadline)
+
+    def test_definite_suspend_refusal_releases_intent_and_absent_claim(self):
+        fixture = sleep_fixtures.MainPhysicalUnplugSleepTests()
+        fixture.setUp()
+        plugin, module = fixture.plugin, fixture.module
+        plugin._connection_topology.observe.return_value = fixture._topology(
+            present=False, absent=True)
+        plugin._dock_power_portable_verified = Mock(return_value=True)
+        fixture.store.release_unsubmitted.return_value = True
+
+        def refused(request, **kwargs):
+            self.assertTrue(kwargs['consume'](request))
+            plugin._whole_dock_suspend_result = {
+                'requested': False,
+                'code': 'dock_power.suspend_inhibited',
+            }
+            return module.DockPowerResult('dock_power.request_unverified')
+
+        plugin._run_sleep_request = refused
+        with patch.object(module.time, 'monotonic', return_value=11), \
+                patch.object(module, 'verified_transport_absent', return_value=True):
+            result = plugin._sleep_after_physical_unplug(
+                fixture.request, fixture.runtime,
+                fixture.admission, fixture.store)
+
+        self.assertFalse(result.requested)
+        fixture.store.consume.assert_called_once()
+        fixture.store.release_unsubmitted.assert_called_once()
+        fixture.store.retire_physically_disconnected.assert_called_once()
+        plugin._whole_dock_trial_lease.release.assert_called_once()
+        self.assertIsNone(plugin._whole_dock_trial_runtime)
+
+    def test_ambiguous_suspend_timeout_retains_intent_claim_and_lease(self):
+        fixture = sleep_fixtures.MainPhysicalUnplugSleepTests()
+        fixture.setUp()
+        plugin, module = fixture.plugin, fixture.module
+        plugin._connection_topology.observe.return_value = fixture._topology(
+            present=False, absent=True)
+        plugin._dock_power_portable_verified = Mock(return_value=True)
+
+        def timed_out(request, **kwargs):
+            self.assertTrue(kwargs['consume'](request))
+            plugin._whole_dock_suspend_result = {
+                'requested': False,
+                'code': 'dock_power.suspend_timeout',
+            }
+            return module.DockPowerResult('dock_power.request_unverified')
+
+        plugin._run_sleep_request = timed_out
+        with patch.object(module.time, 'monotonic', return_value=11), \
+                patch.object(module, 'verified_transport_absent', return_value=True):
+            result = plugin._sleep_after_physical_unplug(
+                fixture.request, fixture.runtime,
+                fixture.admission, fixture.store)
+
+        self.assertEqual(result.code, 'dock_power.request_unverified')
+        fixture.store.consume.assert_called_once()
+        fixture.store.release_unsubmitted.assert_not_called()
+        fixture.store.retire_physically_disconnected.assert_not_called()
+        plugin._whole_dock_trial_lease.release.assert_not_called()
+        self.assertIsNotNone(plugin._whole_dock_trial_runtime)
 
     def test_tv_one_button_disconnect_settles_restart_client_and_correlates_terminal(self):
         """The combined TV route must reach the same teardown as the manual pause.

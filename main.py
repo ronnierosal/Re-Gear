@@ -63,7 +63,7 @@ from regear.delivery.device_authorization_hold import (  # noqa: E402
 )
 from regear.delivery.whole_dock_runtime import WholeDockRuntime  # noqa: E402
 from regear.delivery.dock_power_intent import DockPowerIntentStore  # noqa: E402
-from regear.delivery.dock_power_service import create_power_request, continue_dock_power, dock_power_capabilities  # noqa: E402
+from regear.delivery.dock_power_service import DockPowerRequest, create_power_request, continue_dock_power, dock_power_capabilities  # noqa: E402
 from regear.application.dock_power import DockPowerResult  # noqa: E402
 from regear.delivery.whole_dock_claim import WholeDockClaim, WholeDockClaimStore, inner_removal_records_absent  # noqa: E402
 from regear.delivery.whole_dock_completion import complete_record, observe_down_with_audit  # noqa: E402
@@ -2423,13 +2423,31 @@ class Plugin:
                                     result = self._sleep_after_dock_down(
                                         request, runtime, admission)
                                 else:
+                                    power_store = DockPowerIntentStore(
+                                        RootOwnedRuntimeState().ensure()
+                                    )
+                                    bound_request = request
+                                    if request.operation != runtime._operation:
+                                        claim = WholeDockClaim(
+                                            runtime._operation,
+                                            runtime.binding.binding,
+                                            runtime.binding.generation,
+                                            'software_down',
+                                        )
+                                        bound_request = self._dock_power_bound_request(
+                                            request, claim.operation
+                                        )
+                                        if power_store.bind_sleep_after_disconnect(
+                                                claim,
+                                                bound_request.session,
+                                                bound_request.requested_at,
+                                                bound_request.deadline) is not True:
+                                            raise ValueError('dock_power.intent_not_recorded')
                                     result = self._sleep_after_physical_unplug(
-                                        request,
+                                        bound_request,
                                         runtime,
                                         admission,
-                                        DockPowerIntentStore(
-                                            RootOwnedRuntimeState().ensure()
-                                        ),
+                                        power_store,
                                     )
                             else:
                                 result = self._submit_ordinary_shutdown(request)
@@ -2452,6 +2470,20 @@ class Plugin:
             if request.action == 'sleep':
                 return self._run_sleep_request(request, verify=verified_transport_absent)
             return self._submit_ordinary_shutdown(request)
+
+    def _dock_power_bound_request(self, request, operation):
+        """Use claim authority internally while retaining public correlation."""
+        bound = DockPowerRequest(
+            operation,
+            request.action,
+            request.session,
+            request.requested_at,
+            request.deadline,
+        )
+        context = getattr(self, '_dock_power_context', None)
+        if context is not None and context[0] is request:
+            self._dock_power_context = (bound, context[1], context[2])
+        return bound
 
     def _consume_ordinary_power(self, request):
         if (getattr(self, '_unloading', False)
@@ -2744,6 +2776,43 @@ class Plugin:
                         ),
                         consume=consume,
                     )
+                    suspend = getattr(self, '_whole_dock_suspend_result', {})
+                    definite_refusal = (
+                        result.requested is not True
+                        and suspend.get('requested') is False
+                        and suspend.get('code') == 'dock_power.suspend_inhibited'
+                    )
+                    if definite_refusal:
+                        refusal_still_current = (
+                            absence_guard() is True
+                            and getattr(self, '_whole_dock_suspend_result', {})
+                            == suspend
+                        )
+                        try:
+                            intent_released = refusal_still_current and (
+                                power_store.release_unsubmitted(
+                                    claim.operation,
+                                    claim.binding,
+                                    claim.generation,
+                                    lambda: (
+                                        admission.get('held') is True
+                                        and not getattr(self, '_unloading', False)
+                                        and getattr(
+                                            self, '_whole_dock_suspend_result', {}
+                                        ) == suspend
+                                    ),
+                                ) is True
+                            )
+                        except Exception:
+                            intent_released = False
+                        if (intent_released is not True
+                                or finish_absent_claim(
+                                    claim, observed_sleep=False
+                                ) is not True):
+                            return DockPowerResult(
+                                'dock_power.sleep_protection_unverified',
+                                software_down=True,
+                            )
                     if (result.code == 'dock_power.sleep_cycle_observed'
                             and result.requested is True
                             and not finish_absent_claim(claim, observed_sleep=True)):
@@ -2932,6 +3001,9 @@ class Plugin:
                 software_down_verified = True
                 self._whole_dock_trial_phase = "power_verification"
                 if power_request.action == 'sleep':
+                    power_request = self._dock_power_bound_request(
+                        power_request, operation
+                    )
                     power_result = self._sleep_after_physical_unplug(
                         power_request, runtime, admission, power_store)
                     return DockPowerResult(power_result.code, power_result.requested, software_down=True)
