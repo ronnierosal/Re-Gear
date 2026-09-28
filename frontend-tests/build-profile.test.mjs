@@ -10,16 +10,16 @@ const {productionEgpuTiles,buildAllowsDockIntent}=await import(`data:text/javasc
 const tile=id=>({id,title:id,value:'Observed',detail:'Existing detail'});
 
 test('production contains eGPU status and the admitted guarded dock actions',()=>{
- const readings={quick:['fps','manual','egpu','disconnect'].map(tile),egpu:['egpu','disconnect','disconnect-sleep','disconnect-shutdown','switch-handheld'].map(tile),settings:[tile('about')],offline:[tile('sync')]};
+ const readings={quick:['fps','manual','egpu','disconnect'].map(tile),egpu:['display-target','egpu','disconnect','disconnect-sleep','disconnect-shutdown','switch-handheld'].map(tile),settings:[tile('about')],offline:[tile('sync')]};
  const before=JSON.stringify(readings),view=productionEgpuTiles(readings);
  assert.deepEqual(Object.keys(view),['egpu']);
- assert.deepEqual(view.egpu.map(t=>t.id),['egpu','disconnect','disconnect-sleep','disconnect-shutdown']);
+ assert.deepEqual(view.egpu.map(t=>t.id),['display-target','egpu','disconnect','disconnect-sleep','disconnect-shutdown']);
  assert.equal(view.egpu[0],readings.egpu[0]);
  assert.equal(JSON.stringify(readings),before);
 });
 test('missing status cannot fall back to sample values or hidden controls',()=>{
  const view=productionEgpuTiles();
- assert.deepEqual(view.egpu.map(t=>t.value),['Unknown','Unavailable','Unavailable','Unavailable']);
+ assert.deepEqual(view.egpu.map(t=>t.value),['Unavailable','Unknown','Unavailable','Unavailable','Unavailable']);
  assert.deepEqual(productionEgpuTiles({settings:[tile('reset')]}),view);
 });
 test('production allows only backend-admitted guarded dock actions; development keeps its broader tooling',()=>{

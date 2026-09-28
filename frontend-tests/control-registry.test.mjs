@@ -12,6 +12,10 @@ test('registry separates explicit domain, interaction and native membership',()=
  const keys=controlRegistry.flatMap(x=>x.sourceKeys);assert.equal(new Set(keys).size,keys.length);
  assert.equal(controlForKey('performance:display').domain,'display');assert.equal(controlForKey('performance:display').nativeTab,'performance');
  assert.equal(controlForKey('performance:auto').type,'navigation');
+ const display=controlForKey('quick:display');
+ assert.equal(display.id,'display-target');assert.equal(display.type,'action');assert.equal(display.directAction,'display-target');
+ assert.equal(controlForKey('egpu:display-target'),display);assert.equal(controlForKey('egpu:switch-handheld'),display);
+ assert.equal(controlRegistry.some(item=>item.id==='handheld'),false);
  assert.equal(controlForKey('utility:brightness').rightEligible,false);
  assert.equal(controlForKey('performance:future-fps'),undefined);
 });

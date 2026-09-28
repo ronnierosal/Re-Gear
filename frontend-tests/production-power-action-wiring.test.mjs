@@ -19,6 +19,7 @@ test("production exposes only the three guarded WholeDockControl intents", () =>
     assert.equal(buildAllowsDockIntent("production", intent), false, intent);
 
   const source = { egpu: [
+    { id: "display-target", title: "Switch to TV", value: "Ready", detail: "Guarded display action" },
     { id: "egpu", title: "eGPU Status", value: "Connected", detail: "Observed" },
     { id: "disconnect", title: "Safe Disconnect", value: "Check status", detail: "Guarded" },
     { id: "disconnect-sleep", title: "Disconnect + Sleep", value: "Check status", detail: "Guarded" },
@@ -26,7 +27,7 @@ test("production exposes only the three guarded WholeDockControl intents", () =>
     { id: "software-reconnect", title: "Reconnect", value: "Ready", detail: "Forbidden" },
   ] };
   assert.deepEqual(productionEgpuTiles(source).egpu.map(tile => tile.id),
-    ["egpu", "disconnect", "disconnect-sleep", "disconnect-shutdown"]);
+    ["display-target", "egpu", "disconnect", "disconnect-sleep", "disconnect-shutdown"]);
 });
 
 test("production native actions dispatch sleep and shutdown through WholeDockControl", () => {
@@ -37,7 +38,7 @@ test("production native actions dispatch sleep and shutdown through WholeDockCon
   assert.doesNotMatch(native, /production && intent !== "disconnect_only"/);
 
   const shell = read("quick-access/expanded-command-center/shell.tsx");
-  assert.match(shell, /tile\.id === "disconnect-sleep" \|\| tile\.id === "disconnect-shutdown"/);
+  assert.match(shell, /tile\.id === "display-target" \|\| tile\.id === "disconnect-sleep" \|\| tile\.id === "disconnect-shutdown"/);
 
   const control = read("whole-dock-control.tsx");
   assert.match(control, /action === "whole_dock_sleep"/);

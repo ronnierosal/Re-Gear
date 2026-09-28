@@ -39,7 +39,8 @@ test('FPS, Safe Disconnect, and matching registry controls share ReGearTile with
   const shell=read('src/quick-access/expanded-command-center/shell.tsx');
   assert.match(shell,/original\.tile\.id==='fps'[\s\S]*<SharedFpsTile/);
   assert.match(shell,/original\.tile\.id==='disconnect'[\s\S]*<SharedTile/);
-  assert.match(shell,/const v3ControlId=definition\?\.id\?\?original\.tile\.id/);
+  assert.match(shell,/const v3ControlId=item\.artworkControlId\?\?definition\?\.id\?\?original\.tile\.id/,
+    'a dynamic action may select an approved semantic artwork identity explicitly');
   assert.match(shell,/if\(v3ArtworkId\)[\s\S]*<SharedTile/);
   assert.match(shell,/definition\?\.directAction==="disconnect"&&onDisconnect/);
   assert.match(shell,/definition\?\.directAction==="disconnect"&&onDisconnect\)\{onDisconnect\(\);return;\}[\s\S]*setNested\(item\.id\)/);

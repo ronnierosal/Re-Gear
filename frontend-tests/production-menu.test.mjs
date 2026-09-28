@@ -14,12 +14,13 @@ const actionExports={}; new Function("exports",compile(read("test-build-actions.
 
 const profileExports={};new Function("exports",compile(readFileSync(new URL("../src/build-profile.ts",import.meta.url),"utf8")))(profileExports);
 const utilityExports={};new Function("exports",compile(read("native-utilities.ts")))(utilityExports);
-function harness(pendingRecord = null, recoverTerminalDockReceipt = async () => null, policy = "production", system = {}) {
+const displayTargetExports={};new Function("exports",compile(read("display-target-action.ts")))(displayTargetExports);
+function harness(pendingRecord = null, recoverTerminalDockReceipt = async () => null, policy = "production", system = {}, detailState) {
   const h = { modals: [], cleanup: [], timers: new Map(), nextTimer: 1, throwOpen: false, stopped: false, allowed: true };
   const values = new Map(pendingRecord ? [["regear.whole-dock.pending-request", pendingRecord]] : []);
   h.storage = { getItem:key=>values.get(key)??null, setItem:(key,value)=>values.set(key,value), removeItem:key=>values.delete(key) };
   const runtime = {
-    createMenuVisibility, ...actionExports, ...profileExports, createNativeUtilities:system=>{h.utilitiesCreated=true;return utilityExports.createNativeUtilities(system);}, GamepadButton:{DIR_UP:9,DIR_DOWN:10,DIR_LEFT:11,DIR_RIGHT:12}, EgpuConfirmModal:"confirm",
+    createMenuVisibility, ...actionExports, ...profileExports, ...displayTargetExports, createNativeUtilities:system=>{h.utilitiesCreated=true;return utilityExports.createNativeUtilities(system);}, GamepadButton:{DIR_UP:9,DIR_DOWN:10,DIR_LEFT:11,DIR_RIGHT:12}, EgpuConfirmModal:"confirm",
     parsePendingRecord: raw => {
       const match = /^v2:(disconnect|disconnect_only|sleep|shutdown):([^:]+):([^:]+)$/.exec(raw ?? "");
       return match ? { intent: match[1], panel: match[2], request: match[3] } : null;
@@ -48,7 +49,8 @@ function harness(pendingRecord = null, recoverTerminalDockReceipt = async () => 
     setTimeout(callback) { const id=h.nextTimer++;h.timers.set(id,callback);return id; },
     clearTimeout(id) { h.timers.delete(id); }};
   h.runLatestTimer = () => { const entry=[...h.timers.entries()].at(-1);if(!entry)return;h.timers.delete(entry[0]);entry[1](); };
-  h.menu = exports.createExpandedMenu(undefined, h.host, () => h.allowed, h.source, h.snapshot, h.detail, undefined, policy);
+  h.runtimeDetails = detailState ? {read:()=>detailState,subscribe:()=>()=>{},requestDisplayTarget(){if(detailState.displayAction.available)h.displayRequests=(h.displayRequests??0)+1;}} : undefined;
+  h.menu = exports.createExpandedMenu(undefined, h.host, () => h.allowed, h.source, h.snapshot, h.detail, h.runtimeDetails, policy);
   h.mount = () => {
     const child = h.modals.at(-1).node.props.children.find(child => typeof child?.type === "function");
     return child.type(child.props);
@@ -115,8 +117,8 @@ test("production adapter enables native sliders and only the admitted guarded eG
  assert.equal(typeof view.props.onUtilityRequest,"function");
  assert.throws(()=>view.props.onUtilityRequest("wifi"),/Control unavailable/);
  assert.deepEqual(Object.keys(view.props.tiles),["egpu"]);
- assert.deepEqual(view.props.tiles.egpu.map(x=>x.id),["egpu","disconnect","disconnect-sleep","disconnect-shutdown"]);
- assert.deepEqual(view.props.tiles.egpu[0],h.tiles.quick[0],"production status must remain the lifecycle summary, not the link reading");
+ assert.deepEqual(view.props.tiles.egpu.map(x=>x.id),["display-target","egpu","disconnect","disconnect-sleep","disconnect-shutdown"]);
+ assert.deepEqual(view.props.tiles.egpu[1],h.tiles.quick[0],"production status must remain the lifecycle summary, not the link reading");
  for(const id of ["disconnect","disconnect-sleep","disconnect-shutdown"]){
   const action=view.props.tiles.egpu.find(tile=>tile.id===id);
   assert.equal(action.value,"Check status",`${id} must open its fresh guarded control`);
@@ -140,6 +142,22 @@ test("production adapter enables native sliders and only the admitted guarded eG
   actionHarness.menu.stop();
  }
 });
+test("development adapter mounts guarded Display Target for TV, Handheld and unavailable states",()=>{
+ for(const [displayAction,title,value,canDispatch] of [
+  [{target:"tv",available:true,reason:"Switch to the external display"},"Switch to TV","Ready",true],
+  [{target:"ally",available:true,reason:"Return to the built-in display"},"Switch to Handheld","Ready",true],
+  [{target:null,available:false,reason:"Current display status unavailable"},"Display Target","Unavailable",false],
+ ]){
+  const h=harness(null,async()=>null,"development",{}, {displayAction});
+  h.tiles={quick:[],egpu:[]};h.menu.open();const view=h.mount();
+  const tile=view.props.tiles.egpu.find(item=>item.id==="display-target");
+  assert.deepEqual([tile.title,tile.value,tile.detail],[title,value,displayAction.reason]);
+  assert.equal(view.props.unavailableActions["display-target"]===undefined,canDispatch);
+  assert.equal(view.props.onAction("egpu",tile),true);
+  assert.equal(h.displayRequests??0,canDispatch?1:0,"native adapter delegates final admission to the runtime source");
+  h.menu.stop();
+ }
+});
 test("production shell rejects saved layouts and limits controller navigation to live eGPU tiles",async()=>{
  const app=await fixture();
  let reads=0,actions=0;
@@ -149,7 +167,7 @@ test("production shell rejects saved layouts and limits controller navigation to
  onAction:()=>{actions++;return true;},onDisconnect(){},catalogReadings:{egpu:[{id:"link",title:"Link",value:"Connected",detail:""}]}};
  let tree=app.render(props);
  const cards=()=>nodes(tree).filter(n=>n.props?.className==="rg-expanded-tile");
- assert.deepEqual(cards().map(n=>n.props["data-ec-control"]),["egpu","disconnect","disconnect-sleep","disconnect-shutdown"]);
+ assert.deepEqual(cards().map(n=>n.props["data-ec-control"]),["display-target","egpu","disconnect","disconnect-sleep","disconnect-shutdown"]);
  assert.equal(reads,0);
  assert.deepEqual(nodes(tree).filter(n=>n.props?.role==="tab").map(n=>n.props["data-ec-tab"]),["egpu"]);
  assert.deepEqual(nodes(tree).filter(n=>n.type==="utility-rail").map(n=>n.props.side),["left"]);
@@ -157,10 +175,10 @@ test("production shell rejects saved layouts and limits controller navigation to
  const panel=nodes(tree).find(n=>n.props?.["data-ec-panel"]!==undefined);
  for(const button of [5,6,4])panel.props.onButtonDown({detail:{button},preventDefault(){},stopPropagation(){}});
   tree=app.render(props);
-  assert.deepEqual(cards().map(n=>n.props["data-ec-control"]),["egpu","disconnect","disconnect-sleep","disconnect-shutdown"]);
-  cards()[2].props.onClick();tree=app.render(props);assert.equal(actions,1);
-  cards()[3].props.onClick();tree=app.render(props);assert.equal(actions,2);
-  cards()[0].props.onClick();tree=app.render(props);assert.equal(actions,2);
+  assert.deepEqual(cards().map(n=>n.props["data-ec-control"]),["display-target","egpu","disconnect","disconnect-sleep","disconnect-shutdown"]);
+  cards()[3].props.onClick();tree=app.render(props);assert.equal(actions,1);
+  cards()[4].props.onClick();tree=app.render(props);assert.equal(actions,2);
+  cards()[1].props.onClick();tree=app.render(props);assert.equal(actions,2);
 });
 test("production without readings displays Unknown and Unavailable, never synthetic readiness",async()=>{
  const app=await fixture();const tree=app.render({policy:"production",onDisconnect(){}});
@@ -261,12 +279,12 @@ test("development still exposes both rails on Quick Access",async()=>{
 test("production D-pad enters the left rail and returns to the launching eGPU card",async()=>{
  const app=await fixture();const tree=app.render({policy:"production",native:true,directions:{up:9,down:10,left:11,right:12}});
  const focused=[];
- const controls=["egpu","utility-brightness"].map(id=>({dataset:{ecControl:id},querySelector(){return null;},matches(){return true;},focus(){focused.push(id);},scrollIntoView(){}}));
+ const controls=["display-target","utility-brightness"].map(id=>({dataset:{ecControl:id},querySelector(){return null;},matches(){return true;},focus(){focused.push(id);},scrollIntoView(){}}));
  nodes(tree).find(n=>n.props?.["data-ec-panel"]!==undefined).props.ref.current={querySelectorAll:()=>controls};
  let prevented=0,stopped=0;
- const card=nodes(tree).find(n=>n.props?.["data-ec-control"]==="egpu");
+ const card=nodes(tree).find(n=>n.props?.["data-ec-control"]==="display-target");
  card.props.onGamepadDirection({detail:{button:11},preventDefault(){prevented++;},stopPropagation(){stopped++;}});
  assert.deepEqual(focused,["utility-brightness"]);assert.equal(prevented,1);assert.equal(stopped,1);
  nodes(tree).find(n=>n.type==="utility-rail").props.onReturnToGrid();
- assert.deepEqual(focused,["utility-brightness","egpu"]);
+ assert.deepEqual(focused,["utility-brightness","display-target"]);
 });

@@ -35,11 +35,13 @@ test('production runtime publishes only eGPU content and denies retained hidden 
   const {value,calls}=state('production');
   assert.deepEqual(Object.entries(value.views).filter(([,node])=>node!==null).map(([key])=>key),['egpu']);
   assert.equal(value.views.egpu,'readonly-egpu');
-  for(const action of ['shutdown','handheld','sleepConnected']){
+  for(const action of ['shutdown','sleepConnected']){
     assert.equal(value[action].available,false);
     value[action].request();
   }
-  assert.deepEqual(calls,[]);
+  assert.equal(value.displayAction.available,true);
+  value.displayAction.request();
+  assert.deepEqual(calls,['handheld']);
 });
 test('production does not consume or launch a retained development game request',()=>{
   let calls=0;
@@ -74,7 +76,7 @@ test('real production eGPU detail mounts observation rows without controls or na
 test('development retains existing runtime views and actions',()=>{
   const {value,calls}=state('development');
   assert.deepEqual(Object.keys(value.views),['egpu','egpu-config','diagnostics','display']);
-  for(const action of ['shutdown','handheld','sleepConnected']){
+  for(const action of ['shutdown','displayAction','sleepConnected']){
     assert.equal(value[action].available,true);
     value[action].request();
   }
