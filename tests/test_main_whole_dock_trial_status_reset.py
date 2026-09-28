@@ -241,6 +241,74 @@ class WholeDockTrialStatusResetTests(unittest.TestCase):
         self.assertEqual(trial["attachment_token"], TOKEN_A)
         self.assertEqual(power, expired_sleep)
 
+    def test_definite_refusal_after_cleanup_and_reconnect_rearms_disconnect(self):
+        refused_sleep = {
+            "schema_version": 1,
+            "code": "dock_power.request_unverified",
+            "busy": False,
+            "ok": False,
+            "safe_to_unplug": False,
+            "software_down": True,
+            "power_requested": False,
+            "sleep_cycle_observed": False,
+            "unplug_required": False,
+            "power_action": "sleep",
+            "route_action": "whole_dock_sleep",
+            "request_id": "f" * 32,
+            "suspend": {
+                "requested": False,
+                "code": "dock_power.suspend_inhibited",
+                "attempts": 2,
+            },
+        }
+        self.plugin._whole_dock_trial_status = refused_sleep
+        self.plugin._dock_sleep_status = dict(refused_sleep)
+        p1, p2, p3 = self.patches()
+        with p1, p2, p3:
+            trial = self.read()
+        power = asyncio.run(
+            self.plugin.get_egpu_disconnect_status("power_status")
+        )
+
+        self.assertEqual(trial["code"], "dock_teardown.no_trial")
+        self.assertEqual(trial["attachment_token"], TOKEN_A)
+        self.assertEqual(power, refused_sleep)
+
+    def test_timeout_or_failed_refusal_cleanup_never_rearms_disconnect(self):
+        base = {
+            "schema_version": 1,
+            "code": "dock_power.request_unverified",
+            "busy": False,
+            "ok": False,
+            "safe_to_unplug": False,
+            "software_down": True,
+            "power_requested": False,
+            "sleep_cycle_observed": False,
+            "unplug_required": False,
+            "power_action": "sleep",
+            "route_action": "whole_dock_sleep",
+            "request_id": "f" * 32,
+            "suspend": {
+                "requested": False,
+                "code": "dock_power.suspend_inhibited",
+            },
+        }
+        cases = (
+            ({**base, "suspend": {
+                "requested": False,
+                "code": "dock_power.suspend_timeout",
+            }}, (None, None, None)),
+            (base, (NS(stage="software_down"),)),
+        )
+        for status, claims in cases:
+            with self.subTest(status=status, claims=claims):
+                self.plugin._whole_dock_trial_status = dict(status)
+                p1, p2, p3 = self.patches(claims=claims)
+                with p1, p2, p3:
+                    result = self.read()
+                self.assertEqual(result["code"], "dock_power.request_unverified")
+                self.assertEqual(result["request_id"], "f" * 32)
+
     def test_unresolved_unplug_sleep_outcomes_do_not_rearm_disconnect(self):
         base = {
             "schema_version": 1,
