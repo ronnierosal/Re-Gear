@@ -322,6 +322,32 @@ class MainDockAdmissionTests(unittest.TestCase):
         plugin._whole_dock_trial_lease.release.assert_not_called()
         self.assertIsNotNone(plugin._whole_dock_trial_runtime)
 
+    def test_stale_inhibited_result_cannot_release_a_new_sleep_attempt(self):
+        fixture = sleep_fixtures.MainPhysicalUnplugSleepTests()
+        fixture.setUp()
+        plugin, module = fixture.plugin, fixture.module
+        plugin._connection_topology.observe.return_value = fixture._topology(
+            present=False, absent=True)
+        plugin._dock_power_portable_verified = Mock(return_value=True)
+        plugin._whole_dock_suspend_result = {
+            'requested': False,
+            'code': 'dock_power.suspend_inhibited',
+        }
+        plugin._run_sleep_request = Mock(return_value=module.DockPowerResult(
+            'dock_power.preflight_changed'))
+
+        with patch.object(module.time, 'monotonic', return_value=11), \
+                patch.object(module, 'verified_transport_absent', return_value=True):
+            result = plugin._sleep_after_physical_unplug(
+                fixture.request, fixture.runtime,
+                fixture.admission, fixture.store)
+
+        self.assertEqual(result.code, 'dock_power.preflight_changed')
+        self.assertEqual(plugin._whole_dock_suspend_result, {})
+        fixture.store.release_unsubmitted.assert_not_called()
+        fixture.store.retire_physically_disconnected.assert_not_called()
+        plugin._whole_dock_trial_lease.release.assert_not_called()
+
     def test_tv_one_button_disconnect_settles_restart_client_and_correlates_terminal(self):
         """The combined TV route must reach the same teardown as the manual pause.
 
