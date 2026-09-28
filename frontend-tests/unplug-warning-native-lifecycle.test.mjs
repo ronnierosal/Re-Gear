@@ -19,7 +19,7 @@ new Function("exports", compile(read("test-build-actions.ts")))(actionExports);
 
 const REQUEST = "a".repeat(32);
 
-function harness(pending = null) {
+function harness(pending = null, recoverTerminalDockReceipt = async () => null) {
   const h = {
     cleanup: [], modals: [], sounds: [], timers: new Map(), intervals: new Map(),
     nextTimer: 1, warningStopped: false, reads: 0,
@@ -75,7 +75,7 @@ function harness(pending = null) {
     useSyncExternalStore: (_subscribe, readSnapshot) => readSnapshot(),
     Button: "button", Focusable: "focusable", ModalRoot: "modal", Dropdown: "dropdown",
     ExpandedCommandCenter: "expanded", WholeDockControl: "dock", ShortcutSettings: "settings",
-    recoverTerminalDockReceipt: async () => null,
+    recoverTerminalDockReceipt,
     loadMenuBinding: () => "view-y", saveMenuBinding: () => true, menuBindingOptions: [],
     startMenuShortcut: () => ({ available: true, reset() {}, stop() {} }),
     findModuleExport: predicate => {
@@ -162,6 +162,32 @@ test("Hide cannot clear an active warning; exact cleared state dismisses it", ()
   h.menu.stop();
 });
 
+test("re-activating Safe Disconnect cannot acknowledge an active alarm", async () => {
+  const pending = `v2:disconnect_only:retired-panel:${REQUEST}`;
+  const h = harness();
+  h.menu.open();
+  h.mount();
+  h.storage.setItem("regear.whole-dock.pending-request", pending);
+  h.emitWarning({ phase: "alarm", requestId: REQUEST });
+
+  h.menu.disconnect("disconnect_only");
+  assert.equal(h.modals.length, 2, "the status popup and menu remain the only surfaces");
+  assert.equal(h.storage.getItem("regear.whole-dock.pending-request"), pending);
+  assert.equal(h.warning.read().phase, "alarm");
+
+  const popup = h.modals[1];
+  popup.options.fnOnClose();
+  h.status = {
+    schema_version: 1, request_id: REQUEST, code: "dock_teardown.software_down",
+    software_down: true, safe_to_unplug: false, busy: false, ok: true,
+    physical_absence_verified: true,
+  };
+  await h.runOwnerPoll();
+  assert.equal(h.storage.getItem("regear.whole-dock.pending-request"), null,
+    "the retained observer clears only after exact physical absence");
+  h.menu.stop();
+});
+
 test("host-driven close keeps exact warning polling and restores the unplug prompt", async () => {
   const pending = `v2:disconnect_only:retired-panel:${REQUEST}`;
   const h = harness(pending);
@@ -186,5 +212,50 @@ test("host-driven close keeps exact warning polling and restores the unplug prom
   await h.runOwnerPoll();
   assert.equal(h.warning.read().phase, "cleared");
   assert.equal(h.storage.getItem("regear.whole-dock.pending-request"), null);
+  h.menu.stop();
+});
+
+test("an asynchronously recovered receipt starts the owner watcher", async () => {
+  const pending = `v2:disconnect_only:backend-terminal:${REQUEST}`;
+  const h = harness(null, async storage => {
+    storage.setItem("regear.whole-dock.pending-request", pending);
+    return { intent: "disconnect_only", request: REQUEST };
+  });
+  for (let index = 0; index < 8; index++) await Promise.resolve();
+  assert.equal(h.modals.length, 1, "recovery presents one status-only surface");
+  h.modals[0].options.fnOnClose();
+  h.status = {
+    schema_version: 1, request_id: REQUEST, code: "dock_teardown.software_down",
+    software_down: true, safe_to_unplug: false, busy: false, ok: true,
+  };
+  await h.runOwnerPoll();
+  assert.equal(h.warning.read().phase, "prompt");
+  assert.equal(h.modals.length, 2, "host close cannot orphan the recovered warning");
+
+  h.modals[1].options.fnOnClose();
+  h.status = { ...h.status, physical_absence_verified: true };
+  await h.runOwnerPoll();
+  assert.equal(h.storage.getItem("regear.whole-dock.pending-request"), null);
+  h.menu.stop();
+});
+
+test("an inline warning remains observed after the Command Center closes", async () => {
+  const pending = `v2:disconnect_only:inline-panel:${REQUEST}`;
+  const h = harness();
+  h.menu.open();
+  h.mount();
+  h.storage.setItem("regear.whole-dock.pending-request", pending);
+  h.emitWarning({ phase: "prompt", requestId: REQUEST });
+  const viewCleanup = h.cleanup.find(cleanup => typeof cleanup === "function");
+  assert.ok(viewCleanup);
+  viewCleanup();
+  h.status = {
+    schema_version: 1, request_id: REQUEST, code: "dock_teardown.software_down",
+    software_down: true, safe_to_unplug: false, busy: false, ok: true,
+  };
+  await h.runOwnerPoll();
+  assert.equal(h.warning.read().phase, "prompt");
+  assert.equal(h.modals.length, 2, "closing the menu restores a read-only warning surface");
+  assert.equal(h.storage.getItem("regear.whole-dock.pending-request"), pending);
   h.menu.stop();
 });

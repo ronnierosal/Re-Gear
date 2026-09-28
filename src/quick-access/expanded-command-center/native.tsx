@@ -174,6 +174,10 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
       && warning.requestId===record?.request;
   };
   const warningSubscription=unplugWarning.subscribe(warning=>{
+    if((warning.phase==="prompt"||warning.phase==="alarm")&&warning.requestId===pendingDockRecord()?.request){
+      scheduleOwnerWarningPoll();
+      return;
+    }
     if(warning.phase!=="cleared"||!warning.requestId)return;
     const record=pendingDockRecord();
     if(record?.request!==warning.requestId)return;
@@ -232,6 +236,7 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
       <WholeDockControl intent={intent} readCurrentSnapshot={readCurrentSnapshot} statusOnly onSettled={presentDockSettlement} unplugWarning={unplugWarning}/>
     </EgpuConfirmModal>,undefined,{fnOnClose:hide,bNeverPopOut:true});
     if(operationGeneration!==operationToken){opened.Close();return;}operation=opened;operationKind="status";
+    scheduleOwnerWarningPoll();
   }
   const schedulePendingStatusRebuild=(delay:number)=>{
     if(pendingStatusTimer!==null)clearPendingTimeout(pendingStatusTimer as never);
@@ -248,6 +253,13 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
   function disconnect(intent: DockIntent = "disconnect_only") {
     const allowed = !production || intent === "disconnect_only" || intent === "sleep" || intent === "shutdown";
     if(stopped||!modal||!allowed) return;
+    if(warningBlocksDismiss()){
+      // Re-activating the tile while the physical-unplug obligation is live
+      // must not acknowledge its settlement or replace its exact receipt.
+      if(!operation)resumePendingOperation();
+      scheduleOwnerWarningPoll();
+      return;
+    }
     if(operationKind==="status"){
       const record=pendingDockRecord();
       const settled=presentedDockSettlement;
@@ -314,7 +326,7 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
     if(operationGeneration!==operationToken){opened.Close();return;}operation=opened;
   }
   function View({ token }: { token: number }) {
-    useEffect(() => () => { if (generation === token) { hideOperation();modal = null; generation++; utilities?.stop(); visibility.set(false); } }, [token]);
+    useEffect(() => () => { if (generation === token) { hideOperation();modal = null; generation++; utilities?.stop(); visibility.set(false);if(pendingDockIntent())scheduleOwnerWarningPoll(); } }, [token]);
     // Live subscription, not a read at open.
     //
     // Reading once when the menu opened left whatever was true at that moment
