@@ -16,6 +16,7 @@ class WholeDockTrialStatusResetTests(unittest.TestCase):
         self.module = load_main_module(real_dock_gate=True)
         self.plugin = self.module.Plugin.__new__(self.module.Plugin)
         self.plugin._whole_dock_trial_worker_alive = False
+        self.plugin._whole_dock_absence_observed = False
         self.plugin._unloading = False
         self.plugin._whole_dock_trial_status = {
             "schema_version": 1,
@@ -62,6 +63,7 @@ class WholeDockTrialStatusResetTests(unittest.TestCase):
         self.assertNotIn("request_id", result)
 
     def test_unresolved_trial_and_stable_reconnected_attachment_rearm_actions(self):
+        self.plugin._whole_dock_absence_observed = True
         self.plugin._whole_dock_trial_status = {
             "schema_version": 1,
             "code": "dock_teardown.trial_unresolved",
@@ -86,6 +88,7 @@ class WholeDockTrialStatusResetTests(unittest.TestCase):
             "attachment_token": TOKEN_A,
         })
         self.assertIs(self.plugin._whole_dock_trial_status, result)
+        self.assertFalse(self.plugin._whole_dock_absence_observed)
 
     def test_unresolved_trial_without_stable_unclaimed_attachment_stays_unresolved(self):
         unresolved = {
@@ -96,16 +99,19 @@ class WholeDockTrialStatusResetTests(unittest.TestCase):
             "safe_to_unplug": False,
             "request_id": "old-request",
         }
-        for claims, tokens in (
-                ((NS(stage="software_down"),), (TOKEN_A, TOKEN_A)),
-                ((None, None, None), (TOKEN_A, TOKEN_B))):
-            with self.subTest(claims=claims, tokens=tokens):
+        for absence, claims, tokens in (
+                (False, (None, None, None), (TOKEN_A, TOKEN_A)),
+                (True, (NS(stage="software_down"),), (TOKEN_A, TOKEN_A)),
+                (True, (None, None, None), (TOKEN_A, TOKEN_B))):
+            with self.subTest(absence=absence, claims=claims, tokens=tokens):
                 self.plugin._whole_dock_trial_status = dict(unresolved)
+                self.plugin._whole_dock_absence_observed = absence
                 p1, p2, p3 = self.patches(claims=claims, tokens=tokens)
                 with p1, p2, p3:
                     result = self.read()
                 self.assertEqual(result["code"], "dock_teardown.trial_unresolved")
                 self.assertEqual(result["request_id"], "old-request")
+                self.assertIs(self.plugin._whole_dock_absence_observed, absence)
 
     def test_failed_connected_sleep_stays_on_power_channel_and_rearms_disconnect(self):
         failed_sleep = {
