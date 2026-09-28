@@ -12,11 +12,13 @@ import type { UtilityReadings, UtilitySystem } from "./native-utilities";
 import type { NonEgpuDetailRenderer } from "./non-egpu-detail-renderer";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import type { ComponentProps } from "react";
+import { callable } from "@decky/api";
 import { Button, Dropdown, Focusable, ModalRoot, showModal, GamepadButton, findModuleExport } from "@decky/ui";
 import type { ControllerInputSource } from "../../controller-safe-disconnect";
 import { loadMenuBinding, saveMenuBinding, menuBindingOptions, startMenuShortcut } from "../../menu-shortcut";
 import type { MenuBinding } from "../../menu-shortcut";
 import { recoverTerminalDockReceipt, WholeDockControl, type DockSettlement } from "../../whole-dock-control";
+import { createUnplugWarningCoordinator } from "../../unplug-warning-coordinator";
 import { parsePendingRecord, type DockIntent } from "../../whole-dock-control-model";
 import { EgpuConfirmModal } from "../../egpu-confirm-modal";
 import { ExpandedCommandCenter } from "./shell";
@@ -65,9 +67,9 @@ export function NativeMenuButton(props:ComponentProps<typeof Button>&{"aria-disa
  * the publisher supplies every tab, Unknown included, precisely so that
  * fallback is unreachable once wired.
  *
- * This adapter owns no status poll. It subscribes to a view someone else owns;
- * the sole backend read below is a bounded recovery of a terminal disconnect
- * whose originating Steam UI process disappeared.
+ * This adapter does not poll ordinary tile status. It owns only a read-only
+ * pending-request watcher so an unplug warning survives a host-driven modal
+ * close; all ordinary status remains supplied by the existing tile source.
  */
 /** Stable per-source callbacks. useSyncExternalStore resubscribes whenever the
  * subscribe function's identity changes, so these are cached rather than built
@@ -78,6 +80,7 @@ const noTiles = () => undefined;
 const emptyUtilities: UtilityReadings = {};
 const noUtilities = () => emptyUtilities;
 const noRuntimeDetails=()=>null;
+const readDockTrial = callable<[string], any>("get_egpu_disconnect_status");
 const subscribers = new WeakMap<TileSource, (listener: () => void) => () => void>();
 const readers = new WeakMap<TileSource, () => TileView | undefined>();
 function subscribeTo(source?: TileSource) {
@@ -107,10 +110,23 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
   let operationKind:"active"|"status"|null=null;
   let operationGeneration=0;
   let pendingStatusTimer:ReturnType<typeof setTimeout>|null=null;
+  let ownerWarningTimer:ReturnType<typeof setTimeout>|null=null;
+  let ownerWarningPollInFlight=false;
   const setPendingTimeout = typeof host.setTimeout === "function"
     ? host.setTimeout.bind(host) : globalThis.setTimeout;
   const clearPendingTimeout = typeof host.clearTimeout === "function"
     ? host.clearTimeout.bind(host) : globalThis.clearTimeout;
+  const setWarningInterval = typeof host.setInterval === "function"
+    ? host.setInterval.bind(host) : globalThis.setInterval;
+  const clearWarningInterval = typeof host.clearInterval === "function"
+    ? host.clearInterval.bind(host) : globalThis.clearInterval;
+  const unplugWarning = createUnplugWarningCoordinator({
+    schedule: setPendingTimeout,
+    cancel: clearPendingTimeout,
+    repeat: setWarningInterval,
+    cancelRepeat: clearWarningInterval,
+    playWarning: () => playMenuFeedback("back"),
+  });
   let presentedDockSettlement: DockSettlement | null = null;
   const hideOperation=()=>{const previous=operation;operation=null;operationKind=null;operationGeneration++;previous?.Close();};
   const presentDockSettlement=(settlement:DockSettlement)=>{
@@ -151,17 +167,69 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
     catch{return null;}
   };
   const pendingDockIntent=()=>pendingDockRecord()?.intent??null;
+  const warningBlocksDismiss=()=>{
+    const warning=unplugWarning.read();
+    const record=pendingDockRecord();
+    return (warning.phase==="prompt"||warning.phase==="alarm")
+      && warning.requestId===record?.request;
+  };
+  const warningSubscription=unplugWarning.subscribe(warning=>{
+    if(warning.phase!=="cleared"||!warning.requestId)return;
+    const record=pendingDockRecord();
+    if(record?.request!==warning.requestId)return;
+    storage?.removeItem("regear.whole-dock.pending-request");
+    if(presentedDockSettlement?.request===warning.requestId)presentedDockSettlement=null;
+    hideOperation();
+  });
+  const observePendingWarning=(status:any,record:ReturnType<typeof pendingDockRecord>)=>{
+    if(!record||status?.schema_version!==1||status.request_id!==record.request)return;
+    const deauthorized=status.software_down===true&&status.safe_to_unplug===false
+      &&((status.code==="dock_teardown.software_down"&&status.ok===true&&status.busy===false)
+        ||(record.intent==="sleep"&&status.code==="dock_power.unplug_required"));
+    unplugWarning.observe({
+      requestId:record.request,
+      deauthorized,
+      physicalAbsenceVerified:status.physical_absence_verified===true,
+    });
+  };
+  const scheduleOwnerWarningPoll=(delay=2_000)=>{
+    if(stopped||ownerWarningTimer!==null||ownerWarningPollInFlight)return;
+    ownerWarningTimer=setPendingTimeout(()=>{ownerWarningTimer=null;void pollOwnerWarning();},delay);
+  };
+  const pollOwnerWarning=async()=>{
+    if(stopped||ownerWarningPollInFlight)return;
+    // A mounted WholeDockControl already owns the read cadence. The owner
+    // takes over only after Decky tells us that surface closed.
+    if(operation){scheduleOwnerWarningPoll();return;}
+    const record=pendingDockRecord();
+    if(!record)return;
+    ownerWarningPollInFlight=true;
+    try{
+      const status=await readDockTrial("whole_dock_trial");
+      if(stopped)return;
+      const current=pendingDockRecord();
+      if(!current||current.request!==record.request||current.intent!==record.intent)return;
+      observePendingWarning(status,current);
+      const warning=unplugWarning.read();
+      if((warning.phase==="prompt"||warning.phase==="alarm")
+          &&warning.requestId===current.request&&!operation)resumePendingOperation();
+    }catch{/* The durable receipt keeps the watcher eligible for the next read. */}
+    finally{
+      ownerWarningPollInFlight=false;
+      if(!stopped&&pendingDockRecord())scheduleOwnerWarningPoll();
+    }
+  };
   function resumePendingOperation(){
     if(stopped||operation)return;
     const intent=pendingDockIntent();
     if(intent!=="disconnect"&&intent!=="disconnect_only"&&intent!=="sleep"&&intent!=="shutdown")return;
     const operationToken=++operationGeneration;
     const hide=()=>{if(operationGeneration===operationToken)hideOperation();};
-    const dismiss=()=>{acknowledgeDockSettlement();hide();};
+    const dismiss=()=>{if(warningBlocksDismiss())return;acknowledgeDockSettlement();hide();};
     const title=intent==="shutdown"?"Safe Disconnect + Shutdown status":intent==="sleep"?"Disconnect + Sleep status":"Safe Disconnect status";
     const opened=showModal(<EgpuConfirmModal strTitle={title} strOKButtonText="Hide" bAlertDialog onOK={dismiss} onCancel={dismiss} onEscKeypress={dismiss} className="rg-whole-dock-progress">
       <style>{`.rg-whole-dock-progress{position:fixed!important;left:50%!important;top:50%!important;right:auto!important;bottom:auto!important;margin:0!important;transform:translate(-50%,-50%)!important}`}</style>
-      <WholeDockControl intent={intent} readCurrentSnapshot={readCurrentSnapshot} statusOnly onSettled={presentDockSettlement}/>
+      <WholeDockControl intent={intent} readCurrentSnapshot={readCurrentSnapshot} statusOnly onSettled={presentDockSettlement} unplugWarning={unplugWarning}/>
     </EgpuConfirmModal>,undefined,{fnOnClose:hide,bNeverPopOut:true});
     if(operationGeneration!==operationToken){opened.Close();return;}operation=opened;operationKind="status";
   }
@@ -217,15 +285,16 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
     // operation performs, and treating that host-driven close as dismissal
     // erased the only durable receipt before the unplug popup could appear.
     // Only the later status-only surface may acknowledge the settlement.
-    const dismiss=hide;
+    const dismiss=()=>{if(!warningBlocksDismiss())hide();};
     const title=intent==="shutdown"?"Safe Disconnect + Shutdown":intent==="sleep"?"Disconnect + Sleep":"Safe Disconnect";
     const opened=showModal(<EgpuConfirmModal strTitle={title} strOKButtonText="Hide" bAlertDialog onOK={dismiss} onCancel={dismiss} onEscKeypress={dismiss} className="rg-whole-dock-progress">
       <style>{`.rg-whole-dock-progress{position:fixed!important;left:50%!important;top:50%!important;right:auto!important;bottom:auto!important;margin:0!important;transform:translate(-50%,-50%)!important}`}</style>
-      <WholeDockControl intent={intent} readCurrentSnapshot={readCurrentSnapshot} startRequest={startRequest} onSettled={presentDockSettlement}/>
+      <WholeDockControl intent={intent} readCurrentSnapshot={readCurrentSnapshot} startRequest={startRequest} onSettled={presentDockSettlement} unplugWarning={unplugWarning}/>
     </EgpuConfirmModal>,undefined,{fnOnClose:hide,bNeverPopOut:true});
     if(operationGeneration!==operationToken){opened.Close();return;}
     operation=opened;
     operationKind="active";
+    scheduleOwnerWarningPoll();
     schedulePendingStatusRebuild(15_000);
   }
   function ShutdownStatus(){
@@ -275,7 +344,7 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
       <Focusable>
         {!production && <Dropdown menuLabel="Dock action" rgOptions={dockIntentOptions} selectedOption={dockIntent}
           onChange={option => { if (dockIntentOptions.some(item => item.data === option.data)) setDockIntent(option.data as DockIntent); }}/>}
-        <WholeDockControl intent={production ? "disconnect_only" : dockIntent} readCurrentSnapshot={readCurrentSnapshot} onSettled={presentDockSettlement}/>
+        <WholeDockControl intent={production ? "disconnect_only" : dockIntent} readCurrentSnapshot={readCurrentSnapshot} onSettled={presentDockSettlement} unplugWarning={unplugWarning}/>
       </Focusable>
     } directions={{up:GamepadButton.DIR_UP,down:GamepadButton.DIR_DOWN,left:GamepadButton.DIR_LEFT,right:GamepadButton.DIR_RIGHT}} unavailableActions={unavailable} onAction={(_tab,tile)=>{if(tile.id==="display-target"){runtimeDetails?.requestDisplayTarget();return true;}if(tile.id==="disconnect-sleep"){disconnect("sleep");return true;}if(tile.id==="disconnect-shutdown"){disconnect("shutdown");return true;}if(production)return false;if(tile.id==="portable-shutdown"){shutdown();return true;}if(tile.id==="switch-handheld"){runtimeDetails?.requestHandheld();return true;}return false;}} layoutStorage={production ? undefined : storage} editButtons={production ? undefined : {y:GamepadButton.OPTIONS}} primitives={{ Button: NativeMenuButton, Focusable }} settings={<Settings/>} tiles={production ? productionTiles : runtimeDetails?{...tiles,egpu:[...(tiles?.egpu??[]),{id:"portable-shutdown",title:"Shutdown",value:runtimeState?.shutdown?.pending?"Pending":runtimeState?.shutdown?.available?"Ready":"Unavailable",detail:runtimeState?.shutdown?.reason??"Current status unavailable"}],offline:offlineTabTiles,settings:[...(tiles?.settings??[]).filter(tile=>tile.id==='diagnostics'),{id:'reset-layout',title:'Reset Layout',value:'Configure',detail:'Restore default card positions'},{id:'tutorials',title:'Tutorials',value:'Open',detail:'Connection, disconnect and help'},{id:'about',title:'About',value:version,detail:'Version and credits'}]}:tiles} renderDetail={production ? ((tab,tile)=>tab==="egpu"&&(tile.id==="egpu"||tile.id==="disconnect") ? renderDetail?.(tab,tile) : null) : runtimeDetails?((tab,tile)=>tab==='settings'&&tile.id==='tutorials'?<Tutorials/>:renderDetail?.(tab,tile)):renderDetail} catalogReadings={production ? undefined : rawTiles} utilityReadings={utilityReadings} onUtilityRequest={utilities ? (id, percent) => {
       if (generation !== token || stopped) return Promise.reject(new Error("Menu closed"));
@@ -321,6 +390,7 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
   // continues a guarded dock request. Reconstruct only its read-only status
   // surface from the durable request record; never replay the action.
   resumePendingOperation();
+  if(pendingDockIntent())scheduleOwnerWarningPoll();
   // Decky can accept a modal before the replacement Gamescope surface is
   // visible. One deferred reconstruction makes the pending receipt visible
   // without polling or resubmitting the operation.
@@ -335,5 +405,5 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
     if(record?.intent!==settlement.intent||record.request!==settlement.request)return;
     resumePendingOperation();
   });
-  return { open, disconnect, Settings, visibility: visibility.source, available: shortcut.available, stop() { stopped = true; if(pendingStatusTimer!==null)clearPendingTimeout(pendingStatusTimer as never);pendingStatusTimer=null;shortcut.stop(); close(); } };
+  return { open, disconnect, Settings, visibility: visibility.source, available: shortcut.available, stop() { stopped = true; warningSubscription(); unplugWarning.stop(); if(pendingStatusTimer!==null)clearPendingTimeout(pendingStatusTimer as never);pendingStatusTimer=null;if(ownerWarningTimer!==null)clearPendingTimeout(ownerWarningTimer as never);ownerWarningTimer=null;shortcut.stop(); close(); } };
 }
