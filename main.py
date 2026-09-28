@@ -2767,6 +2767,10 @@ class Plugin:
                 transaction = SleepGuardController(self._whole_dock_trial_lease)
                 admission['power_handoff'] = True
                 try:
+                    # A prior attempt's definite refusal cannot authorize
+                    # cleanup for this request if verification or consumption
+                    # stops before _submit_suspend records a new outcome.
+                    self._whole_dock_suspend_result = {}
                     result = self._run_sleep_request(
                         request,
                         transaction=transaction,
