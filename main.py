@@ -476,6 +476,10 @@ class Plugin:
         # fresh latch every time and offer the same failed recovery forever.
         self._link_recovery: LinkRecoveryService | None = None
         self._last_readiness_observation: ConnectionReadinessObservation | None = None
+        # One process-local epoch proving that strict transport absence was
+        # observed before a later attachment can retire unresolved UI history.
+        # It is consumed only by a successful compare-and-set rearm.
+        self._whole_dock_absence_observed = False
         self._native_recovery_task: asyncio.Task[None] | None = None
         self._native_recovery = NativePortableRecoverySupervisor()
         self._last_native_recovery_code = ""
@@ -3386,7 +3390,12 @@ class Plugin:
                     self._fresh_unclaimed_whole_dock_attachment_token
                 )
                 current_status = getattr(self, "_whole_dock_trial_status", None)
+                unresolved_epoch_ready = (
+                    not terminal_unresolved
+                    or getattr(self, "_whole_dock_absence_observed", False) is True
+                )
                 if (attachment_token is not None
+                        and unresolved_epoch_ready
                         and current_status is retained_status
                         and current_status.get("busy") is False
                         and not getattr(self, "_unloading", False)):
@@ -3399,6 +3408,8 @@ class Plugin:
                         "attachment_token": attachment_token,
                     }
                     self._whole_dock_trial_status = result
+                    if terminal_unresolved:
+                        self._whole_dock_absence_observed = False
                 elif current_status is not None:
                     # Observation runs off the event loop. Preserve a newer or
                     # in-place-updated status rather than overwriting it.
@@ -5363,6 +5374,9 @@ class Plugin:
         # already took. Re-observing inside an RPC would probe hardware on a
         # pollable call and could disagree with what the panel is showing.
         self._last_readiness_observation = observation
+        if (observation.transport_absent_verified is True
+                and observation.transport_present is False):
+            self._whole_dock_absence_observed = True
         if observation.transport_present or observation.transport_absent_verified:
             self._link_recovery_service().observe_transport(observation.transport_present)
         return self._connection_readiness.update(observation)
