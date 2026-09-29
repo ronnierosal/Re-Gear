@@ -1416,40 +1416,18 @@ class CompletedAttachmentAbsenceTests(unittest.TestCase):
     def test_completed_detached_attachment_is_archived_under_existing_admission(self):
         self.assertEqual(self.fixture(), (True, 1))
 
-    def test_interrupted_tunnel_record_is_completed_read_only_then_archived(self):
-        self.plugin._whole_dock_trial_status = {
-            'schema_version': 1,
-            'code': 'dock_teardown.unresolved',
-            'request_id': 'a' * 32,
-            'release_stage': 'removed',
-            'release': {'code': 'live_disconnect.removed'},
-        }
-        self.assertEqual(self.fixture(
-            stage='tunnel_remove_intent', complete_interrupted=True), (True, 1))
-        self.plugin._complete_interrupted_whole_dock_trial.assert_called_once_with(
-            'a' * 32)
-        self.assertEqual(
-            self.plugin._whole_dock_trial_status['code'],
-            'dock_teardown.software_down')
-        self.assertEqual(
-            self.plugin._whole_dock_trial_status['release_stage'], 'removed')
-        self.assertEqual(
-            self.plugin._whole_dock_trial_status['release'],
-            {'code': 'live_disconnect.removed'})
-        self.assertFalse(self.plugin._whole_dock_trial_status['in_flight'])
+    def test_interrupted_absent_record_archives_without_claiming_success(self):
+        original = {'code': 'dock_teardown.unresolved', 'request_id': 'a' * 32,
+                    'software_down': False, 'safe_to_unplug': False}
+        self.plugin._whole_dock_trial_status = original.copy()
+        self.assertEqual(self.fixture(stage='tunnel_remove_intent'), (True, 1))
+        self.plugin._complete_interrupted_whole_dock_trial.assert_not_called()
+        self.assertEqual(self.plugin._whole_dock_trial_status, original)
 
-    def test_unproven_interrupted_completion_is_retained_and_reported(self):
+    def test_active_worker_keeps_interrupted_absence_claim(self):
+        self.plugin._whole_dock_trial_worker_alive = True
         self.assertEqual(self.fixture(stage='tunnel_remove_intent'), (False, 0))
-        self.plugin._complete_interrupted_whole_dock_trial.assert_called_once_with(
-            'a' * 32)
-        details = [call.kwargs.get('details') for call in
-                   self.plugin._append_journey_event.call_args_list
-                   if call.kwargs.get('code') ==
-                   'automatic_dock.archival_guard_unmet']
-        self.assertEqual(details, [{
-            'phase': 'completion',
-            'unmet': 'dock_teardown_trial_unresolved',
-        }])
+        self.plugin._complete_interrupted_whole_dock_trial.assert_not_called()
 
     def test_attached_unknown_or_unfinished_work_never_retires_disconnect_history(self):
         for options in ({'absent':False}, {'strict':False}, {'parent_power':True},
