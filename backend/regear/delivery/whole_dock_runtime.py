@@ -63,6 +63,8 @@ class WholeDockRuntime:
         self._idle = idle
         self._admission = admission_held
         self._before_deauthorize = before_deauthorize
+        self.tunnel_stage = "not_started"
+        self.tunnel_code = ""
         self._store = WholeDockClaimStore(store_root)
         self._discovery = DockBranchDiscovery()
         self._writer = WholeDockSysfsWriter()
@@ -330,34 +332,53 @@ class WholeDockRuntime:
             lambda: self._guard(observation, 'usb_remove_intent'))
 
     def deauthorize(self, observation):
-        if (self._before_deauthorize is not None
-                and (self._guard(observation, 'tunnel_remove_intent') is not True
-                     or self._before_deauthorize(
-                         self._operation,
-                         self.binding.binding,
-                         self.binding.generation,
-                         lambda: self._guard(observation, 'tunnel_remove_intent'),
-                     ) is not True)):
-            raise ValueError('dock_teardown.authorization_hold_unverified')
-        self._writer.deauthorize(self.binding.router_target,
-            lambda: self._guard(observation, 'tunnel_remove_intent'))
-        # The authorized attribute can change before the kernel finishes
-        # removing downstream bridges. Only that exact retained-topology
-        # observation is pending; never replay the write or suppress a changed
-        # identity, unreadable attribute, endpoint, or lost ownership.
-        deadline = self._monotonic() + 10.0
-        for attempt in range(21):
-            if (self._admission() is not True or self._idle() is not True
-                    or not self._owned('tunnel_remove_intent')):
-                raise ValueError('dock_teardown.settle_admission_changed')
-            try:
-                self.observe()
-                return
-            except TopologyRefused as error:
-                if (type(error) is not TopologyRefused
-                        or error.args != ('dock_topology.pci_branch_remains',)):
-                    raise
-                remaining = deadline - self._monotonic()
-                if remaining <= 0 or attempt == 20:
-                    raise ValueError('dock_teardown.tunnel_settle_timeout') from error
-                self._wait(min(0.5, remaining))
+        self.tunnel_stage = "authorization_hold"
+        self.tunnel_code = ""
+        try:
+            if (self._before_deauthorize is not None
+                    and (self._guard(observation, 'tunnel_remove_intent') is not True
+                         or self._before_deauthorize(
+                             self._operation,
+                             self.binding.binding,
+                             self.binding.generation,
+                             lambda: self._guard(observation, 'tunnel_remove_intent'),
+                         ) is not True)):
+                raise ValueError('dock_teardown.authorization_hold_unverified')
+        except Exception:
+            self.tunnel_code = "dock_teardown.authorization_hold_unverified"
+            raise
+        self.tunnel_stage = "deauthorization_write"
+        self.tunnel_code = ""
+        try:
+            self._writer.deauthorize(self.binding.router_target,
+                lambda: self._guard(observation, 'tunnel_remove_intent'))
+        except Exception:
+            self.tunnel_code = "dock_teardown.deauthorization_write_unverified"
+            raise
+        self.tunnel_stage = "settle"
+        self.tunnel_code = ""
+        try:
+            # The authorized attribute can change before the kernel finishes
+            # removing downstream bridges. Only that exact retained-topology
+            # observation is pending; never replay the write or suppress a changed
+            # identity, unreadable attribute, endpoint, or lost ownership.
+            deadline = self._monotonic() + 10.0
+            for attempt in range(21):
+                if (self._admission() is not True or self._idle() is not True
+                        or not self._owned('tunnel_remove_intent')):
+                    raise ValueError('dock_teardown.settle_admission_changed')
+                try:
+                    self.observe()
+                    self.tunnel_stage = "completed"
+                    return
+                except TopologyRefused as error:
+                    if (type(error) is not TopologyRefused
+                            or error.args != ('dock_topology.pci_branch_remains',)):
+                        raise
+                    remaining = deadline - self._monotonic()
+                    if remaining <= 0 or attempt == 20:
+                        raise ValueError('dock_teardown.tunnel_settle_timeout') from error
+                    self._wait(min(0.5, remaining))
+        except Exception:
+            self.tunnel_code = "dock_teardown.tunnel_settle_unverified"
+            raise
