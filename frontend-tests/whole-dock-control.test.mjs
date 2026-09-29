@@ -91,6 +91,10 @@ const recoveredInterrupted = request => ({ ...fresh, code:'dock_teardown.unresol
   safe_to_unplug:false, phase:'dock_teardown', release_stage:'removed',
   release:{code:'live_disconnect.removed',released:true,display_released:true,filter_disarmed:true},
   claim_stage:'tunnel_remove_intent' });
+const recoveredSleepFailure = request => ({ ...fresh, code:'dock_power.disconnect_unverified',
+  request_id:request, busy:false, in_flight:false, ok:false, software_down:false,
+  safe_to_unplug:false, unplug_required:false, power_action:'sleep', power_requested:false,
+  route_action:'whole_dock_sleep', phase:'dock_teardown', claim_stage:'tunnel_remove_intent' });
 
 test('missing UI receipt is recovered from one exact backend terminal without dispatch',async()=>{
   const request='1'.repeat(32),storage=new Map();
@@ -149,6 +153,46 @@ test('terminal receipt recovery cannot overwrite a receipt created during its ba
   wait.resolve(recoveredTerminal(request));
   assert.equal(await recovery,null);assert.equal(storage.get('regear.whole-dock.pending-request'),newer);
   assert.equal(h.calls.length,0);h.unmount();
+});
+
+test('missing sleep receipt recovers its exact terminal failure without replaying an action',async()=>{
+  const request='d'.repeat(32),storage=new Map();
+  const h=harness(storage,'sleep',undefined,recoveredSleepFailure(request));
+  await settle();const before=h.readCount;
+  assert.deepEqual(await h.recover(),{intent:'sleep',request});
+  assert.equal(h.readCount,before+1);
+  assert.equal(storage.get('regear.whole-dock.pending-request'),
+    `v2:sleep:backend-terminal:${request}`);
+  assert.equal(h.calls.length,0,'recovery is presentation-only');
+  h.unmount();
+
+  const settlements=[];
+  const remount=harness(storage,'sleep',undefined,recoveredSleepFailure(request),undefined,true,
+    value=>settlements.push(value));
+  await settle();remount.poll();await settle();
+  assert.equal(remount.calls.length,0,'terminal sleep failure never replays disconnect or sleep');
+  assert.deepEqual(settlements,[{intent:'sleep',request},{intent:'sleep',request}]);
+  const text=JSON.stringify(remount.render());
+  assert.match(text,/Dock disconnect could not be verified; sleep was not requested/);
+  assert.match(text,/handheld remains awake/);
+  assert.doesNotMatch(text,/Unplug the eGPU now|Sleep cycle observed/);
+  remount.unmount();
+});
+
+test('sleep receipt recovery rejects near-miss terminal states',async()=>{
+  const request='e'.repeat(32),exact=recoveredSleepFailure(request);
+  for(const status of [
+    {...exact,request_id:'bad'}, {...exact,code:'dock_power.unresolved'},
+    {...exact,busy:true}, {...exact,in_flight:true}, {...exact,ok:true},
+    {...exact,software_down:true}, {...exact,safe_to_unplug:true},
+    {...exact,unplug_required:true}, {...exact,power_action:'shutdown'},
+    {...exact,power_requested:true}, {...exact,route_action:'whole_dock_disconnect'},
+    {...exact,phase:'power_request'}, {...exact,claim_stage:'software_down'},
+  ]) {
+    const storage=new Map(),h=harness(storage,'sleep',undefined,status);
+    await settle();assert.equal(await h.recover(),null);assert.equal(storage.size,0);
+    assert.equal(h.calls.length,0);h.unmount();
+  }
 });
 
 test('synthesized terminal receipt never invokes completion if status changes before remount',async()=>{
