@@ -1972,18 +1972,11 @@ class Plugin:
         return hold
 
     def _reconcile_physically_disconnected_dock(self):
-        """Archive completed software-down history once the attachment is absent.
+        """Archive terminal or interrupted history after verified physical absence.
 
-        An interrupted deauthorization can leave the exact durable claim at
-        ``tunnel_remove_intent`` even after the cable is physically absent.  In
-        that one state, run the existing correlated, read-only completion first;
-        it independently proves the retained transport is down, Portable is
-        active and the held session helper has settled.  It never repeats a
-        device write.  The ordinary archival guard then re-reads the terminal
-        ``software_down`` claim and applies all of its existing prerequisites.
-
-        No device commands, recovery budget reset or preference changes. A
-        still-attached deauthorized router is not absence and retains inhibition.
+        Absence cannot satisfy attached-router completion. Preserve an interrupted
+        record as failure history instead of manufacturing software-down success.
+        Saved authorization policy is restored only while the transport is absent.
         """
         def refuse(phase, reason):
             refusal = (phase, reason)
@@ -2011,49 +2004,6 @@ class Plugin:
                 self._archival_refusal = refusal
             return False
 
-        # This method is scheduled only after the connection observer reports
-        # verified physical absence.  The completion helper still performs its
-        # own independent retained-identity/session proof under admission.  The
-        # initial read grants no authority; the helper re-loads and correlates
-        # the exact operation before it can advance the record.
-        try:
-            interrupted = DockPowerIntentStore(DEFAULT_RUNTIME_STATE_ROOT).load()
-        except Exception:
-            interrupted = None
-        if interrupted is not None and interrupted.stage == 'tunnel_remove_intent':
-            completion = self._complete_interrupted_whole_dock_trial(
-                interrupted.operation
-            )
-            if not (
-                type(completion) is dict
-                and completion.get('schema_version') == 1
-                and completion.get('code') == 'dock_teardown.software_down'
-                and completion.get('ok') is True
-                and completion.get('software_down') is True
-                and completion.get('safe_to_unplug') is False
-                and completion.get('hardware_write') is False
-                and completion.get('request_id') == interrupted.operation
-                and completion.get('claim_stage') == 'software_down'
-            ):
-                code = (completion.get('code') if type(completion) is dict
-                        else 'unavailable')
-                if type(code) is not str or not re.fullmatch(r'[a-z_.]{1,96}', code):
-                    code = 'unavailable'
-                return refuse('completion', code.replace('.', '_'))
-            retained = getattr(self, '_whole_dock_trial_status', None)
-            if (type(retained) is dict
-                    and retained.get('request_id') == interrupted.operation
-                    and getattr(self, '_whole_dock_trial_worker_alive', False) is not True):
-                # Preserve the release evidence already captured by the worker
-                # while replacing its unresolved result with the correlated
-                # record-only completion.  A remounted panel can then present
-                # the real terminal outcome instead of remaining in progress.
-                self._whole_dock_trial_status = {
-                    **retained,
-                    **completion,
-                    'in_flight': False,
-                }
-
         phase = 'admission'
         try:
             with self._dock_mutation_gate().admit(allow_inhibited=True):
@@ -2063,7 +2013,7 @@ class Plugin:
                 if claim is None:
                     self._archival_refusal = None
                     return False
-                if claim.stage != 'software_down':
+                if claim.stage not in ('software_down', 'tunnel_remove_intent'):
                     return refuse('claim', 'stage_' + claim.stage)
                 phase = 'capture'
                 capture = getattr(self, '_release_capture_task', None)
@@ -2099,6 +2049,7 @@ class Plugin:
                         ('same_user', lambda: resolve_gamescope_user(
                             GamescopeDiscovery().scan()).context == user.context),
                         ('not_unloading', lambda: not self._unloading),
+                        ('worker_idle', lambda: getattr(self, '_whole_dock_trial_worker_alive', False) is not True),
                     )
                     if require_power_intent:
                         conditions = conditions[:12] + (

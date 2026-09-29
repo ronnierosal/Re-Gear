@@ -301,7 +301,7 @@ class DockPowerIntentStore(WholeDockClaimStore):
         """
         session_pattern = '[0-9a-f]{64}:[0-9a-f]{32}'
         if (type(expected_claim) is not WholeDockClaim
-                or expected_claim.stage != 'software_down'
+                or expected_claim.stage not in ('software_down', 'tunnel_remove_intent')
                 or (live_session is not None
                     and (type(live_session) is not str
                          or re.fullmatch(session_pattern, live_session) is None))):
