@@ -101,6 +101,27 @@ test('plugin remount reconstructs a missing exact terminal receipt as one status
   h.menu.stop();
 });
 
+test('plugin remount presents recovered terminal sleep failure without replay',async()=>{
+  const request='d'.repeat(32);
+  const h=harness(null,async storage=>{
+    storage.setItem('regear.whole-dock.pending-request',`v2:sleep:backend-terminal:${request}`);
+    return {intent:'sleep',request};
+  });
+  await settle();
+  assert.equal(h.modals.length,1);
+  const tree=h.modals[0].node;
+  assert.equal(tree.props.strTitle,'Disconnect + Sleep status');
+  const control=tree.props.children.find(child=>child?.type==='dock');
+  assert.equal(control.props.intent,'sleep');
+  assert.equal(control.props.statusOnly,true);
+  assert.equal(control.props.startRequest,undefined,'recovery cannot replay the route');
+  control.props.onSettled({intent:'sleep',request});
+  assert.ok(h.storage.getItem('regear.whole-dock.pending-request'));
+  tree.props.onOK();
+  assert.equal(h.storage.getItem('regear.whole-dock.pending-request'),null);
+  h.menu.stop();
+});
+
 test('plugin remount restores pending sleep as status-only and never replays it',()=>{
   const h=harness('v2:sleep:retired-panel:request-1');
   assert.equal(h.modals.length,1);

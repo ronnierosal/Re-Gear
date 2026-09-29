@@ -38,6 +38,17 @@ const strictInterruptedDisconnect = (status: any, request: string) => status?.sc
   && status.release?.filter_disarmed === true
   && status.claim_stage === "tunnel_remove_intent";
 
+const strictTerminalSleepFailure = (status: any, request: string) => status?.schema_version === 1
+  && status.request_id === request
+  && status.code === "dock_power.disconnect_unverified"
+  && status.busy === false && status.in_flight === false
+  && status.ok === false && status.software_down === false
+  && status.safe_to_unplug === false && status.unplug_required === false
+  && status.power_action === "sleep" && status.power_requested === false
+  && status.route_action === "whole_dock_sleep"
+  && status.phase === "dock_teardown"
+  && status.claim_stage === "tunnel_remove_intent";
+
 /** Recover result correlation after a full Steam/Gamescope restart.
  *
  * The disconnect worker and its result live in the backend process, while the
@@ -65,14 +76,17 @@ export async function recoverTerminalDockReceipt(storage?: Pick<Storage, "getIte
     && status.release?.filter_disarmed === true;
   const interrupted = typeof request === "string" && submittedRequest.test(request)
     && strictInterruptedDisconnect(status, request);
-  if (!terminal && !interrupted) return null;
-  const raw = formatPendingRecord("disconnect_only", terminal ? recoveredPanel : interruptedPanel, request);
+  const sleepFailure = typeof request === "string" && submittedRequest.test(request)
+    && strictTerminalSleepFailure(status, request);
+  if (!terminal && !interrupted && !sleepFailure) return null;
+  const intent: DockIntent = sleepFailure ? "sleep" : "disconnect_only";
+  const raw = formatPendingRecord(intent, terminal || sleepFailure ? recoveredPanel : interruptedPanel, request);
   try {
     if (storage.getItem(pendingKey)) return null;
     storage.setItem(pendingKey, raw);
     if (storage.getItem(pendingKey) !== raw) return null;
   } catch { return null; }
-  return { intent: "disconnect_only", request };
+  return { intent, request };
 }
 
 export type DirectStartRequest = (() => boolean) & {
