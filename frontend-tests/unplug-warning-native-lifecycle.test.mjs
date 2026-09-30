@@ -239,6 +239,55 @@ test("an asynchronously recovered receipt starts the owner watcher", async () =>
   h.menu.stop();
 });
 
+test("a recovered active sleep receipt restores the unplug warning without replay", async () => {
+  const pending = `v2:sleep:backend-terminal:${REQUEST}`;
+  const h = harness(null, async storage => {
+    storage.setItem("regear.whole-dock.pending-request", pending);
+    return { intent: "sleep", request: REQUEST };
+  });
+  for (let index = 0; index < 8; index++) await Promise.resolve();
+  assert.equal(h.modals.length, 1);
+  const dock = h.modals[0].node.props.children.find(child => child?.type === "dock");
+  assert.equal(dock.props.intent, "sleep");
+  assert.equal(dock.props.statusOnly, true);
+  assert.equal(dock.props.startRequest, undefined);
+  h.modals[0].options.fnOnClose();
+  h.status = {
+    schema_version: 1, request_id: REQUEST, code: "dock_power.unplug_required",
+    software_down: true, safe_to_unplug: false, unplug_required: true,
+    busy: true, in_flight: true, ok: false, power_action: "sleep", power_requested: false,
+    route_action: "whole_dock_sleep",
+  };
+  await h.runOwnerPoll();
+  assert.equal(h.warning.read().phase, "prompt");
+  assert.equal(h.modals.length, 2);
+  assert.equal(h.storage.getItem("regear.whole-dock.pending-request"), pending);
+  h.menu.stop();
+});
+
+test("expired recovered sleep still warns but never promises automatic sleep", async () => {
+  const pending = `v2:sleep:backend-terminal:${REQUEST}`;
+  const h = harness(null, async storage => {
+    storage.setItem("regear.whole-dock.pending-request", pending);
+    return { intent: "sleep", request: REQUEST };
+  });
+  for (let index = 0; index < 8; index++) await Promise.resolve();
+  h.modals[0].options.fnOnClose();
+  h.status = {
+    schema_version: 1, request_id: REQUEST, code: "dock_power.unplug_request_expired",
+    software_down: true, safe_to_unplug: false, unplug_required: true,
+    busy: false, in_flight: false, ok: false, power_action: "sleep", power_requested: false,
+    route_action: "whole_dock_sleep",
+  };
+  await h.runOwnerPoll();
+  assert.equal(h.warning.read().phase, "prompt");
+  assert.equal(h.modals.length, 2);
+  const dock=h.modals[1].node.props.children.find(child=>child?.type==="dock");
+  assert.equal(dock.props.statusOnly,true);
+  assert.equal(dock.props.startRequest,undefined);
+  h.menu.stop();
+});
+
 test("an inline warning remains observed after the Command Center closes", async () => {
   const pending = `v2:disconnect_only:inline-panel:${REQUEST}`;
   const h = harness();

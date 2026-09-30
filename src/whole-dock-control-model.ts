@@ -230,7 +230,8 @@ export function dockIntentControl(status: any, snapshot: any, intent: DockIntent
   if (intent === "sleep") {
     if (sleepObserved(status)) return { action: null, label: "Sleep cycle observed",
       message: "The eGPU was removed and the handheld completed the requested sleep cycle." };
-    if (status?.schema_version === 1 && status.power_action === "sleep"
+    if (status?.schema_version === 1 && status.code === "dock_power.unplug_required"
+        && status.power_action === "sleep"
         && status.software_down === true && status.unplug_required === true && status.busy === true) {
       return { action: null, label: "Unplug eGPU now",
         message: "Unplug the eGPU cable now. Re-Gear will wait for verified physical absence, then put the handheld to sleep." };
