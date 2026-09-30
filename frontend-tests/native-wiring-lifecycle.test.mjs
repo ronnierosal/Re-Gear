@@ -122,6 +122,21 @@ test('plugin remount presents recovered terminal sleep failure without replay',a
   h.menu.stop();
 });
 
+test('verified post-reboot absence closes the stale sleep popup and clears only its exact receipt',()=>{
+  const request='c'.repeat(32),pending=`v2:sleep:backend-terminal:${request}`;
+  const h=harness(pending);assert.equal(h.modals.length,1);
+  const tree=h.modals[0].node;
+  const control=tree.props.children.find(child=>child?.type==='dock');
+  assert.equal(typeof control.props.onResolvedAbsent,'function');
+  control.props.onResolvedAbsent({intent:'sleep',request:'d'.repeat(32)});
+  assert.equal(h.storage.getItem('regear.whole-dock.pending-request'),pending);
+  assert.equal(h.modals[0].closed,false);
+  control.props.onResolvedAbsent({intent:'sleep',request});
+  assert.equal(h.storage.getItem('regear.whole-dock.pending-request'),null);
+  assert.equal(h.modals[0].closed,true);
+  h.menu.stop();
+});
+
 test('delayed active sleep recovery opens status-only and cancels its timers on stop',async()=>{
   const request='f'.repeat(32);let reads=0;
   const h=harness(null,async storage=>{
