@@ -122,6 +122,50 @@ test('plugin remount presents recovered terminal sleep failure without replay',a
   h.menu.stop();
 });
 
+test('delayed active sleep recovery opens status-only and cancels its timers on stop',async()=>{
+  const request='f'.repeat(32);let reads=0;
+  const h=harness(null,async storage=>{
+    reads++;
+    if(reads===1)return null;
+    storage.setItem('regear.whole-dock.pending-request',`v2:sleep:backend-terminal:${request}`);
+    return {intent:'sleep',request};
+  });
+  await settle();
+  assert.equal(h.modals.length,0);
+  h.runLatestTimer();
+  await settle();
+  assert.equal(reads,2);
+  assert.equal(h.modals.length,1);
+  const tree=h.modals[0].node;
+  assert.equal(tree.props.strTitle,'Disconnect + Sleep status');
+  const control=tree.props.children.find(child=>child?.type==='dock');
+  assert.equal(control.props.intent,'sleep');
+  assert.equal(control.props.statusOnly,true);
+  assert.equal(control.props.startRequest,undefined);
+  assert.ok(h.timers.size>=1,'recovery arms warning and delayed rebuild ownership');
+  h.menu.stop();
+  assert.equal(h.timers.size,0);
+});
+
+test('missing receipt recovery survives a Gamescope transition longer than one minute',async()=>{
+  const request='9'.repeat(32);let reads=0;
+  const h=harness(null,async storage=>{
+    reads++;
+    if(reads<=46)return null;
+    storage.setItem('regear.whole-dock.pending-request',`v2:sleep:backend-terminal:${request}`);
+    return {intent:'sleep',request};
+  });
+  await settle();
+  for(let attempt=1;attempt<=46;attempt++){h.runLatestTimer();await settle();}
+  assert.equal(reads,47,'recovery remains armed after 92 seconds of two-second reads');
+  assert.equal(h.modals.length,1);
+  const control=h.modals[0].node.props.children.find(child=>child?.type==='dock');
+  assert.equal(control.props.statusOnly,true);
+  assert.equal(control.props.startRequest,undefined);
+  h.menu.stop();
+  assert.equal(h.timers.size,0);
+});
+
 test('plugin remount restores pending sleep as status-only and never replays it',()=>{
   const h=harness('v2:sleep:retired-panel:request-1');
   assert.equal(h.modals.length,1);
