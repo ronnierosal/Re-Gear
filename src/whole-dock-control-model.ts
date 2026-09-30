@@ -191,6 +191,27 @@ export function dockRequestAbandoned(status: any, record: PendingRecord | null, 
     && status.busy === false && status.safe_to_unplug === false
     && status.request_id !== record.request;
 }
+
+/** Retire only the stale UI receipt left after the backend has already
+ * archived a physically absent sleep request. Every independent surface must
+ * agree: there is no trial, no retained claim or power request, and the fresh
+ * runtime snapshot observes the eGPU link down. This never upgrades the old
+ * request to success and never authorizes another hardware action. */
+export function sleepReceiptArchivedAfterAbsence(status: any, claim: any, power: any,
+  snapshot: any, record: PendingRecord | null, now = Date.now()): boolean {
+  const observedAt = Date.parse(snapshot?.observed_at ?? "");
+  return record?.intent === "sleep" && record.panel === "backend-terminal"
+    && /^[0-9a-f]{32}$/.test(record.request)
+    && status?.schema_version === 1 && status.code === "dock_teardown.no_trial"
+    && status.busy === false && status.in_flight === false
+    && status.safe_to_unplug === false && status.attachment_token === ""
+    && claim?.schema_version === 1 && claim.claim_stage === "none"
+    && claim.safe_to_unplug === false
+    && power?.schema_version === 1 && power.code === "dock_power.idle"
+    && power.busy === false && power.power_requested === false
+    && snapshot?.schema_version === 3 && snapshot.egpu_link?.state === "down"
+    && Number.isFinite(observedAt) && observedAt <= now && now - observedAt < 10_000;
+}
 export function dockRequestSettled(status: any, request: string, intent: DockIntent): boolean {
   if (intent !== "disconnect" && intent !== "disconnect_only" && intent !== "shutdown" && intent !== "sleep") return false;
   // A pre-correlation refusal settles: the backend rejected it before minting
