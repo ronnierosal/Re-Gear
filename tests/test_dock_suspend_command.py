@@ -25,8 +25,9 @@ class DockSuspendCommandTests(unittest.TestCase):
         self.assertTrue(result.requested)
         self.assertEqual(result.code, "dock_power.suspend_request_accepted_unverified")
         run.assert_called_once_with(
-            ("/usr/bin/systemctl", "--no-block", "--no-ask-password",
-             "--check-inhibitors=yes", "suspend"),
+            ("/usr/bin/busctl", "--system", "--allow-interactive-authorization=no",
+             "call", "org.freedesktop.login1", "/org/freedesktop/login1",
+             "org.freedesktop.login1.Manager", "SuspendWithFlags", "t", "1"),
             capture_output=True, check=False, shell=False, text=False, timeout=5.0,
             env={"LANG": "C", "LC_ALL": "C", "PATH": "/usr/bin:/bin"})
 
@@ -37,12 +38,29 @@ class DockSuspendCommandTests(unittest.TestCase):
         # the same. The category crosses; the command's output does not.
         with patch("regear.adapters.steamos.commands.subprocess.run",
                    return_value=subprocess.CompletedProcess(
-                       [], 1, b"", b"Operation inhibited by \"Handheld Dock Mode\" (block).")):
+                       [], 1, b"", b"Call failed: Access denied due to active block inhibitor\n")):
             result = SystemSuspendCommandRunner(effective_uid=lambda: 0).request_suspend()
         self.assertFalse(result.requested)
         self.assertEqual(result.code, "dock_power.suspend_inhibited")
         self.assertNotIn("Handheld", result.code)
         self.assertNotIn("block", result.code)
+
+    def test_only_exact_block_refusal_is_retryable(self):
+        for stderr in (
+            b"User deck is logged in. Please close inhibitors and log out other users.",
+            b"Call failed: Access denied",
+            b"Call failed: Unknown method SuspendWithFlags",
+            b"Call failed: Invalid flags",
+            b"Failed to connect to bus: No such file or directory",
+            b"Call failed: Access denied due to active block inhibitor; unknown extra error",
+        ):
+            with self.subTest(stderr=stderr), patch(
+                    "regear.adapters.steamos.commands.subprocess.run",
+                    return_value=subprocess.CompletedProcess([], 1, b"", stderr)) as run:
+                result = SystemSuspendCommandRunner(effective_uid=lambda: 0).request_suspend()
+                self.assertFalse(result.requested)
+                self.assertEqual(result.code, "dock_power.suspend_failed")
+                run.assert_called_once()
 
     def test_failure_and_uncertain_submission_never_retry_or_expose_output(self):
         cases = [(subprocess.TimeoutExpired("private command", 5), "suspend_timeout"),

@@ -586,8 +586,12 @@ class SystemSuspendCommandRunner:
     explicit even for a privileged noninteractive caller. No wake action exists.
     """
 
-    COMMAND = ("/usr/bin/systemctl", "--no-block", "--no-ask-password",
-               "--check-inhibitors=yes", "suspend")
+    # systemctl's explicit inhibitor check also rejects the normal player
+    # session when called by root. Use login1 with ROOT_CHECK_INHIBITORS (0x01),
+    # never SKIP_INHIBITORS (0x10). A successful reply is not sleep proof.
+    COMMAND = ("/usr/bin/busctl", "--system", "--allow-interactive-authorization=no",
+               "call", "org.freedesktop.login1", "/org/freedesktop/login1",
+               "org.freedesktop.login1.Manager", "SuspendWithFlags", "t", "1")
     CLEAN_ENVIRONMENT = {"LANG": "C", "LC_ALL": "C", "PATH": "/usr/bin:/bin"}
 
     def __init__(self, timeout_seconds: float = 5.0, effective_uid=None) -> None:
@@ -613,7 +617,7 @@ class SystemSuspendCommandRunner:
             # something a caller can act on. Only the CATEGORY crosses --
             # the command's own output never does, here or anywhere.
             stderr = completed.stderr if type(completed.stderr) is bytes else b""
-            if b"inhibit" in stderr.lower():
+            if stderr.strip() == b"Call failed: Access denied due to active block inhibitor":
                 return SuspendResult(False, "dock_power.suspend_inhibited")
             return SuspendResult(False, "dock_power.suspend_failed")
         return SuspendResult(True, "dock_power.suspend_request_accepted_unverified")
