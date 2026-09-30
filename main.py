@@ -3406,7 +3406,8 @@ class Plugin:
                     and type(power_progress) is dict
                     and power_progress.get("schema_version") == 1
                     and power_progress.get("route_action") == "whole_dock_sleep"
-                    and power_progress.get("code") == "dock_power.unplug_required"
+                    and power_progress.get("code") in (
+                        "dock_power.unplug_required", "dock_power.unplug_request_expired")
                     and power_progress.get("busy") is True
                     and power_progress.get("software_down") is True
                     and power_progress.get("safe_to_unplug") is False
