@@ -195,7 +195,11 @@ export function startOfflinePreparation(
   let stopped = false;
   let lease: DownloadSubscription | undefined;
   let baseline: string | null | undefined;
+  /** True only when the baseline came from a snapshot taken before dispatch. */
+  let baselineBeforeDispatch = false;
   let dispatched = false;
+  /** Our item was seen in a live (non-terminal) state after dispatch. */
+  let seenAfterDispatch = false;
   let lastReport: string | undefined;
   let dispatching = false;
   const duringDispatch: unknown[][] = [];
@@ -252,20 +256,33 @@ export function startOfflinePreparation(
     }
     // The latest pre-dispatch snapshot is the baseline. If none arrived,
     // conservatively baseline the first local snapshot after dispatch.
-    if (!dispatched || baseline === undefined)
+    if (!dispatched || baseline === undefined) {
       baseline = projected ? fingerprint(projected.item) : null;
-    if (!dispatched || !projected) return;
+      baselineBeforeDispatch = !dispatched;
+    }
+    if (!dispatched) return;
+    if (!projected) {
+      // Our item left the download list before any outcome was observed
+      // (removed by the player, or dropped by Steam). Nothing will report on
+      // it again, so end honestly instead of watching forever.
+      if (seenAfterDispatch) { emit("unconfirmed", null); stop(); }
+      return;
+    }
     const state = observedState(projected.item, projected.errorCode);
     if (state === null) return;
-    // `queued`, `active` and `error` describe what is true right now, and a
-    // current failure is worth surfacing whoever caused it. `completed` is the
-    // one claim about an outcome, so it is only ours once the fingerprint has
-    // moved: a game that was already fully downloaded before the player asked
-    // must never read as this request succeeding.
-    if (state === "completed" && fingerprint(projected.item) === baseline) return;
+    const unmoved = fingerprint(projected.item) === baseline;
+    // `completed` is a claim about an outcome, so it is only ours once the
+    // fingerprint has moved: a game that was already fully downloaded before
+    // the player asked must never read as this request succeeding.
+    if (state === "completed" && unmoved) return;
+    // An error already present before dispatch is an earlier failure, not
+    // this request's. Wait for Steam to move the item (or for the timer).
+    // Without a pre-dispatch baseline a current failure is still surfaced.
+    if (state === "error" && unmoved && baselineBeforeDispatch && !seenAfterDispatch) return;
     clearTimeout(timer);
     emit(state, projected);
-    if (state === "completed" || state === "error") stop();
+    if (state === "completed" || state === "error") { stop(); return; }
+    seenAfterDispatch = true;
   };
 
   try {

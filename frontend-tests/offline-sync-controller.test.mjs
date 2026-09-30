@@ -59,7 +59,7 @@ function harness(options = {}) {
       return { status: "likely_offline_ready", label: "Likely offline-ready",
         reasons: [], checkedAt: clock, expiresAt: clock + 60000 };
     },
-    isIdle: () => idle,
+    isIdle: () => (options.isIdle ? options.isIdle() : idle),
     now: () => clock,
     setTimer: (run, ms) => { const id = nextTimer++; timers.set(id, { run, at: clock + ms }); return id; },
     clearTimer: (id) => { timers.delete(id); },
@@ -482,4 +482,30 @@ test("one throwing subscriber does not stop the others", async () => {
   h.controller.subscribe((s) => ok.push(s));
   h.controller.selectGame(GAME);
   assert.equal(ok.length > 0, true);
+});
+
+test("a download removed from Steam's list ends the run instead of blocking later syncs", async () => {
+  const h = harness();
+  h.controller.selectGame(GAME);
+  await h.controller.syncNow();
+  await settle();
+  h.send([item({ queue_index: 0 })]);
+  assert.equal(h.controller.getState().phase, "preparing");
+  // The player removes the item from Steam's downloads page.
+  h.send([]);
+  await settle();
+  const state = h.controller.getState();
+  assert.equal(state.running, false);
+  assert.equal(state.preparation.state, "unconfirmed");
+  assert.equal(state.phase, "done", "readiness was re-measured, not assumed");
+  assert.equal(h.calls.readiness.length, 2);
+  assert.equal(await h.controller.syncNow(), true, "a later sync is not blocked");
+});
+
+test("a running-state probe that throws is treated as not idle", async () => {
+  const h = harness({ isIdle: () => { throw new Error("probe failed"); } });
+  h.controller.selectGame(GAME);
+  assert.equal(await h.controller.syncNow(), false);
+  assert.equal(h.controller.getState().failure, "sync_game_running");
+  assert.deepEqual(h.calls.queue, []);
 });
