@@ -28,6 +28,21 @@ PCI_ROOT = Path('/sys/bus/pci/devices')
 DEVICES_ROOT = Path('/sys/devices')
 
 
+TUNNEL_SETTLE_REASONS = frozenset({
+    'dock_teardown.tunnel_settle_timeout',
+    'dock_teardown.settle_admission_changed',
+    'dock_topology.anchor_changed',
+    'dock_topology.router_changed',
+    'dock_topology.attachment_changed',
+    'dock_topology.pci_inventory_changed',
+    'dock_topology.pci_branch_remains',
+    'dock_topology.observation_incomplete',
+    'dock_teardown.authorization_invalid',
+    'dock_teardown.authorization_unknown',
+    'dock_teardown.usb_inventory_changed',
+    'dock_teardown.usb_peripherals_or_unknown',
+})
+
 @dataclass(frozen=True)
 class WholeDockReconnectResult:
     code: str
@@ -334,6 +349,8 @@ class WholeDockRuntime:
     def deauthorize(self, observation):
         self.tunnel_stage = "authorization_hold"
         self.tunnel_code = ""
+        self.tunnel_reason = ""
+        self.remaining_pci = None
         try:
             if (self._before_deauthorize is not None
                     and (self._guard(observation, 'tunnel_remove_intent') is not True
@@ -364,6 +381,7 @@ class WholeDockRuntime:
             # identity, unreadable attribute, endpoint, or lost ownership.
             deadline = self._monotonic() + 10.0
             for attempt in range(21):
+                self.remaining_pci = None
                 if (self._admission() is not True or self._idle() is not True
                         or not self._owned('tunnel_remove_intent')):
                     raise ValueError('dock_teardown.settle_admission_changed')
@@ -372,6 +390,7 @@ class WholeDockRuntime:
                     self.tunnel_stage = "completed"
                     return
                 except TopologyRefused as error:
+                    self.remaining_pci = getattr(error, 'remaining_pci', None)
                     if (type(error) is not TopologyRefused
                             or error.args != ('dock_topology.pci_branch_remains',)):
                         raise
@@ -379,6 +398,9 @@ class WholeDockRuntime:
                     if remaining <= 0 or attempt == 20:
                         raise ValueError('dock_teardown.tunnel_settle_timeout') from error
                     self._wait(min(0.5, remaining))
-        except Exception:
+        except Exception as error:
+            reason = error.args[0] if len(error.args) == 1 else None
+            self.tunnel_reason = (reason if type(reason) is str and reason in TUNNEL_SETTLE_REASONS
+                                  else 'dock_teardown.observation_unknown')
             self.tunnel_code = "dock_teardown.tunnel_settle_unverified"
             raise

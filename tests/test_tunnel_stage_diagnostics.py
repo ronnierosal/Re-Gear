@@ -53,16 +53,32 @@ class TunnelStageDiagnosticsTests(unittest.TestCase):
                             "dock_teardown.tunnel_settle_unverified", 1)
         self.runtime._wait.assert_not_called()
 
+    def test_unknown_exception_text_is_not_exposed_as_reason(self):
+        self.runtime.observe.side_effect = OSError('private-detail path UUID')
+        with self.assertRaises(OSError):
+            self.runtime.deauthorize(self.observation)
+        self.assertEqual(self.runtime.tunnel_reason, 'dock_teardown.observation_unknown')
+
+    def test_identity_refusal_is_preserved_as_fixed_reason(self):
+        self.runtime.observe.side_effect = TopologyRefused('dock_topology.anchor_changed')
+        with self.assertRaises(TopologyRefused):
+            self.runtime.deauthorize(self.observation)
+        self.assertEqual(self.runtime.tunnel_reason, 'dock_topology.anchor_changed')
+        self.runtime._wait.assert_not_called()
+
     def test_existing_settle_timeout_and_original_cause_are_preserved(self):
         error = TopologyRefused("dock_topology.pci_branch_remains")
+        error.remaining_pci = {'bridges': 3, 'endpoints': 0, 'unreadable': 0}
         self.runtime.observe.side_effect = error
         self.runtime._monotonic.side_effect = [0, 10]
         with self.assertRaisesRegex(ValueError, "tunnel_settle_timeout") as caught:
             self.runtime.deauthorize(self.observation)
         self.assertIs(caught.exception.__cause__, error)
+        self.assertEqual(self.runtime.remaining_pci, error.remaining_pci)
         self.assertEqual(self.runtime.tunnel_stage, "settle")
         self.assertEqual(self.runtime.tunnel_code,
                          "dock_teardown.tunnel_settle_unverified")
+        self.assertEqual(self.runtime.tunnel_reason, 'dock_teardown.tunnel_settle_timeout')
         self.runtime._writer.deauthorize.assert_called_once()
         self.runtime._wait.assert_not_called()
 
