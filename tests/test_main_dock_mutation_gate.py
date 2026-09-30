@@ -1656,7 +1656,7 @@ class PortableBeforeDisconnectTests(unittest.TestCase):
 
     def fixture(self, *, already=False, ready=True, success=True, final_portable=True,
                 acknowledge=True, changed_user=False, changed_binding=False, foreign=False,
-                prior=None, blocked=None, failed=None, stale_attempts=0):
+                prior=None, blocked=None, failed=None, stale_attempts=0, service_override=None):
         from contextlib import ExitStack
         plugin = self.plugin
         plugin._discovery = object()
@@ -1693,6 +1693,8 @@ class PortableBeforeDisconnectTests(unittest.TestCase):
             service.execute.side_effect = ([stale] * stale_attempts
                 + [service.execute.return_value])
         service.acknowledge.return_value = acknowledge
+        if service_override is not None:
+            service = service_override
         modes = [self.module.OperatingMode.PORTABLE if already else self.module.OperatingMode.TV_DOCKED,
                  self.module.OperatingMode.PORTABLE if final_portable else self.module.OperatingMode.UNKNOWN,
                  self.module.OperatingMode.PORTABLE]

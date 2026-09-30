@@ -233,3 +233,73 @@ class DisconnectDiagnosticTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PortableEvidenceReplanTests(unittest.TestCase):
+    def fixture(self, *, generations=("a", "b", "b", "b"), direct=None,
+                game_on_repreview=False):
+        from tests.test_supervised_transition import (
+            service, Observations, VersionedObservation, snapshot,
+            ExperimentalTransitionApprovalStore)
+        fixture = dock_support.PortableBeforeDisconnectTests()
+        fixture.setUp()
+        values = [VersionedObservation(g, snapshot("tv-docked.json",
+            game_state="running" if game_on_repreview and i >= 2 else None))
+            for i, g in enumerate(generations)]
+        actual, orchestrator, _ = service(Observations(*values))
+        actual._identifier = iter(f"operation-{i:04d}" for i in range(20)).__next__
+        actual._approvals = ExperimentalTransitionApprovalStore(
+            ttl_seconds=30, monotonic=lambda: 10,
+            token_factory=iter(f"experimental_token_{i:04d}" for i in range(10)).__next__)
+        boundary = Mock(wraps=actual)
+        boundary.status.return_value = SimpleNamespace(durable=True,
+            target=fixture.module.PlacementState.PORTABLE, operation_id="operation-0002",
+            acknowledgement_required=False)
+        boundary.acknowledge.return_value = True
+        if direct is not None:
+            boundary.execute.return_value = direct
+        passed, _ = fixture.fixture(service_override=boundary)
+        return passed, fixture.plugin, boundary, orchestrator
+
+    def test_real_service_changed_evidence_repreviews_before_one_dispatch(self):
+        passed, _, boundary, orchestrator = self.fixture()
+        self.assertTrue(passed)
+        self.assertEqual(boundary.preview.call_count, 2)
+        self.assertEqual(boundary.execute.call_count, 2)
+        self.assertNotEqual(boundary.execute.call_args_list[0], boundary.execute.call_args_list[1])
+        self.assertEqual(len(orchestrator.plans), 1)
+        self.assertEqual(orchestrator.plans[0].plan_id, "operation-0002")
+
+    def test_real_service_repreview_refuses_lost_readiness_without_dispatch(self):
+        passed, _, boundary, orchestrator = self.fixture(game_on_repreview=True)
+        self.assertFalse(passed)
+        self.assertEqual(boundary.preview.call_count, 2)
+        self.assertEqual(boundary.execute.call_count, 1)
+        self.assertEqual(orchestrator.plans, [])
+
+    def test_real_service_churn_is_bounded_without_dispatch(self):
+        passed, plugin, boundary, orchestrator = self.fixture(
+            generations=("a", "b", "c", "d", "e", "f"))
+        self.assertFalse(passed)
+        self.assertEqual(boundary.execute.call_count, 3)
+        self.assertEqual(orchestrator.plans, [])
+        self.assertEqual(plugin._whole_dock_portable_outcome,
+            {"kind": "refused", "code": "transition.evidence_changed", "attempts": 3})
+
+    def test_other_or_ambiguous_direct_refusals_do_not_retry(self):
+        from regear.application.supervised_transition import SupervisedTransitionExecution
+        cases = [(False, "transition.concurrent_request", ""),
+                 (False, "audio.recovery_required", ""),
+                 (False, "transition.preconditions_changed", ""),
+                 (False, "private/path", ""),
+                 (False, "transition.evidence_changed", "started-operation"),
+                 (True, "transition.evidence_changed", "")]
+        for accepted, code, operation in cases:
+            with self.subTest(code=code, accepted=accepted, operation=operation):
+                passed, plugin, boundary, orchestrator = self.fixture(
+                    direct=SupervisedTransitionExecution(accepted, code, operation))
+                self.assertFalse(passed)
+                self.assertEqual(boundary.execute.call_count, 1)
+                self.assertEqual(orchestrator.plans, [])
+                self.assertEqual(plugin._whole_dock_portable_outcome["code"],
+                    "" if code == "private/path" else code)

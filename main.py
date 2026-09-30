@@ -299,8 +299,8 @@ MAX_JOURNEY_ELAPSED_MS = 24 * 60 * 60 * 1000
 #: which is milliseconds; this is generous without stalling a press.
 SUSPEND_SUBMIT_ATTEMPTS = 6
 SUSPEND_INHIBITOR_SETTLE_SECONDS = 0.5
-#: A portable return re-plans this many times when the orchestrator reports
-#: `observation.stale`. Three covers the settling churn observed on device
+#: A portable return re-plans this many times for pre-dispatch changed evidence
+#: or orchestrator `observation.stale`. Three covers observed settling churn
 #: without letting a genuinely unstable system retry indefinitely.
 PORTABLE_RETURN_ATTEMPTS = 3
 #: Long enough for the ~1 s observation poll that invalidated the plan to
@@ -3240,14 +3240,23 @@ class Plugin:
                 outcome = getattr(result, 'outcome', None)
                 kind = getattr(getattr(outcome, 'kind', None), 'value', '')
                 failure = getattr(outcome, 'failure', None)
-                code = getattr(failure, 'code', '') if failure is not None else ''
+                code = (getattr(failure, 'code', '') if failure is not None
+                        else getattr(result, 'code', '') if outcome is None else '')
+                # The service may reject changed evidence before an operation
+                # exists. Preserve its categorical reason and re-preview only
+                # that definite pre-dispatch refusal within the same budget.
+                evidence_changed = (result.accepted is False and outcome is None
+                    and not result.operation_id and code == 'transition.evidence_changed')
+                if result.accepted is False and outcome is None:
+                    kind = 'refused'
                 self._whole_dock_portable_outcome = {
                     'kind': kind if type(kind) is str else '',
                     'code': code if type(code) is str and re.fullmatch(r'[a-z_.]{1,64}', code) else '',
                     'attempts': attempt + 1,
                 }
-                if (attempt + 1 < PORTABLE_RETURN_ATTEMPTS and kind == 'blocked'
-                        and code == 'observation.stale'):
+                if (attempt + 1 < PORTABLE_RETURN_ATTEMPTS
+                        and (evidence_changed or (kind == 'blocked'
+                            and code == 'observation.stale'))):
                     # Let the churn that invalidated it land before looking again.
                     time.sleep(PORTABLE_RETURN_SETTLE_SECONDS)
                     continue
