@@ -2492,8 +2492,8 @@ class Plugin:
         # lease reports inactive and submits immediately, landing in that gap --
         # reproducibly, on device, 2026-09-15 and 2026-09-16.
         #
-        # `--check-inhibitors=yes` is the guard that stops a suspend while the
-        # eGPU is attached, so it stays. Instead, retry the ONE refusal that is
+        # login1's ROOT_CHECK_INHIBITORS flag keeps blocker enforcement active.
+        # Retry only the ONE refusal that is
         # verified to have enqueued nothing: an inhibited request was rejected
         # before any job existed, so asking again is not a second power action.
         # A timeout or an unavailable command leaves the outcome unknown and is

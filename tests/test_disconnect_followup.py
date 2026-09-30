@@ -1,6 +1,7 @@
 """Retained authorization cleanup and disconnect diagnostic regressions."""
 import asyncio
 import unittest
+import subprocess
 from types import SimpleNamespace
 from contextlib import nullcontext
 from unittest.mock import Mock, patch
@@ -73,6 +74,26 @@ class DisconnectDiagnosticTests(unittest.TestCase):
         fixture = dock_support.MainDockAdmissionTests()
         fixture.setUp()
         self.module, self.plugin = fixture.module, fixture.plugin
+
+    def test_suspend_dispatch_does_not_retry_session_or_ambiguous_refusal(self):
+        from regear.adapters.steamos.commands import SystemSuspendCommandRunner
+        for outcome, code in (
+            (subprocess.CompletedProcess([], 1, b"", b"User deck is logged in; close inhibitors"),
+             "dock_power.suspend_failed"),
+            (subprocess.TimeoutExpired("busctl", 5), "dock_power.suspend_timeout"),
+        ):
+            with self.subTest(code=code), patch.object(
+                    self.module, "SystemSuspendCommandRunner",
+                    side_effect=lambda: SystemSuspendCommandRunner(effective_uid=lambda: 0)), patch(
+                    "regear.adapters.steamos.commands.subprocess.run") as run:
+                if isinstance(outcome, Exception):
+                    run.side_effect = outcome
+                else:
+                    run.return_value = outcome
+                self.assertFalse(self.plugin._submit_suspend(object()))
+                run.assert_called_once()
+                self.assertEqual(self.plugin._whole_dock_suspend_result,
+                                 {"requested": False, "code": code, "attempts": 1})
 
     def test_expired_active_sleep_wait_is_projected_without_replaying_work(self):
         plugin = self.plugin
