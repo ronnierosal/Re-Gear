@@ -53,6 +53,19 @@ class TunnelStageDiagnosticsTests(unittest.TestCase):
                             "dock_teardown.tunnel_settle_unverified", 1)
         self.runtime._wait.assert_not_called()
 
+    def test_unknown_exception_text_is_not_exposed_as_reason(self):
+        self.runtime.observe.side_effect = OSError('private-detail path UUID')
+        with self.assertRaises(OSError):
+            self.runtime.deauthorize(self.observation)
+        self.assertEqual(self.runtime.tunnel_reason, 'dock_teardown.observation_unknown')
+
+    def test_identity_refusal_is_preserved_as_fixed_reason(self):
+        self.runtime.observe.side_effect = TopologyRefused('dock_topology.anchor_changed')
+        with self.assertRaises(TopologyRefused):
+            self.runtime.deauthorize(self.observation)
+        self.assertEqual(self.runtime.tunnel_reason, 'dock_topology.anchor_changed')
+        self.runtime._wait.assert_not_called()
+
     def test_existing_settle_timeout_and_original_cause_are_preserved(self):
         error = TopologyRefused("dock_topology.pci_branch_remains")
         self.runtime.observe.side_effect = error
@@ -63,6 +76,7 @@ class TunnelStageDiagnosticsTests(unittest.TestCase):
         self.assertEqual(self.runtime.tunnel_stage, "settle")
         self.assertEqual(self.runtime.tunnel_code,
                          "dock_teardown.tunnel_settle_unverified")
+        self.assertEqual(self.runtime.tunnel_reason, 'dock_teardown.tunnel_settle_timeout')
         self.runtime._writer.deauthorize.assert_called_once()
         self.runtime._wait.assert_not_called()
 

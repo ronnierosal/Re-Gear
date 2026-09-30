@@ -122,6 +122,18 @@ class DisconnectDiagnosticTests(unittest.TestCase):
             "code": "dock_teardown.unresolved", "tunnel_stage": "settle",
             "tunnel_code": "dock_teardown.tunnel_settle_unverified"})
 
+    def test_settle_reason_survives_power_wrapper_without_raw_exception_text(self):
+        for reason, expected in (
+                ('dock_teardown.tunnel_settle_timeout', 'dock_teardown.tunnel_settle_timeout'),
+                ('private UUID/path', None)):
+            self.plugin._remember_teardown_result(
+                SimpleNamespace(code='dock_teardown.unresolved'),
+                SimpleNamespace(tunnel_stage='settle',
+                                tunnel_code='dock_teardown.tunnel_settle_unverified',
+                                tunnel_reason=reason))
+            self.assertEqual(self.plugin._whole_dock_teardown_details.get('tunnel_reason'),
+                             expected)
+
     def test_sleep_error_rpc_retains_inner_failure_and_resets_next_request(self):
         plugin, module = self.plugin, self.module
         plugin._background_operations = set()

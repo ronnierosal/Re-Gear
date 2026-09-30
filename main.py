@@ -61,7 +61,7 @@ from regear.delivery.device_authorization_hold import (  # noqa: E402
     DeviceAuthorizationHold,
     DeviceAuthorizationHoldStore,
 )
-from regear.delivery.whole_dock_runtime import WholeDockRuntime  # noqa: E402
+from regear.delivery.whole_dock_runtime import WholeDockRuntime, TUNNEL_SETTLE_REASONS  # noqa: E402
 from regear.delivery.dock_power_intent import DockPowerIntentStore  # noqa: E402
 from regear.delivery.dock_power_service import DockPowerRequest, create_power_request, continue_dock_power, dock_power_capabilities  # noqa: E402
 from regear.application.dock_power import DockPowerResult  # noqa: E402
@@ -2879,6 +2879,10 @@ class Plugin:
             details['tunnel_stage'] = stage
             if type(failure) is str and failure == failures.get(stage):
                 details['tunnel_code'] = failure
+                reason = getattr(runtime, 'tunnel_reason', '')
+                if (stage == 'settle' and type(reason) is str
+                        and reason in TUNNEL_SETTLE_REASONS | {'dock_teardown.observation_unknown'}):
+                    details['tunnel_reason'] = reason
         self._whole_dock_teardown_details = details
 
     def _run_whole_dock_trial(self, operation: str, expected_attachment: str = "", *, power_request=None):
