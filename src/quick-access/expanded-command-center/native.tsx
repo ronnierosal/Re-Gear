@@ -151,6 +151,13 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
       storage?.removeItem("regear.whole-dock.pending-request");
     presentedDockSettlement=null;
   };
+  const resolveAbsentDockReceipt=(settlement:DockSettlement)=>{
+    const record=pendingDockRecord();
+    if(record?.request!==settlement.request||record.intent!==settlement.intent)return;
+    storage?.removeItem("regear.whole-dock.pending-request");
+    if(presentedDockSettlement?.request===settlement.request)presentedDockSettlement=null;
+    hideOperation();
+  };
   const visibility = createMenuVisibility();
   let opening = false;
   let stopped = false;
@@ -237,7 +244,7 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
     const title=intent==="shutdown"?"Safe Disconnect + Shutdown status":intent==="sleep"?"Disconnect + Sleep status":"Safe Disconnect status";
     const opened=showModal(<EgpuConfirmModal strTitle={title} strOKButtonText="Hide" bAlertDialog onOK={dismiss} onCancel={dismiss} onEscKeypress={dismiss} className="rg-whole-dock-progress">
       <style>{`.rg-whole-dock-progress{position:fixed!important;left:50%!important;top:50%!important;right:auto!important;bottom:auto!important;margin:0!important;transform:translate(-50%,-50%)!important}`}</style>
-      <WholeDockControl intent={intent} readCurrentSnapshot={readCurrentSnapshot} statusOnly onSettled={presentDockSettlement} unplugWarning={unplugWarning}/>
+      <WholeDockControl intent={intent} readCurrentSnapshot={readCurrentSnapshot} statusOnly onSettled={presentDockSettlement} onResolvedAbsent={resolveAbsentDockReceipt} unplugWarning={unplugWarning}/>
     </EgpuConfirmModal>,undefined,{fnOnClose:hide,bNeverPopOut:true});
     if(operationGeneration!==operationToken){opened.Close();return;}operation=opened;operationKind="status";
     scheduleOwnerWarningPoll();

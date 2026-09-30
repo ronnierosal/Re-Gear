@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { EgpuConfirmModal } from "./egpu-confirm-modal";
 import type { createUnplugWarningCoordinator } from "./unplug-warning-coordinator";
 import { dockIntentControl, dockRequestAbandoned, dockRequestSettled, formatPendingRecord, parsePendingRecord,
+  sleepReceiptArchivedAfterAbsence,
   type DockAction, type DockIntent } from "./whole-dock-control-model";
 
 const readTrial = callable<[string], any>("get_egpu_disconnect_status");
@@ -118,7 +119,7 @@ const directStartState = (startRequest: boolean | (() => boolean) | DirectStartR
   typeof startRequest === "function" && "state" in startRequest ? startRequest.state() : null;
 
 /** Only confirmed clicks mutate. Reopening the menu recovers backend progress. */
-export function WholeDockControl({ readCurrentSnapshot, intent = "disconnect_only", startRequest, statusOnly = false, onSettled, unplugWarning }: { readCurrentSnapshot: () => any; intent?: DockIntent; startRequest?: boolean | (()=>boolean) | DirectStartRequest; statusOnly?: boolean; onSettled?: (settlement: DockSettlement) => void; unplugWarning?: UnplugWarningCoordinator }) {
+export function WholeDockControl({ readCurrentSnapshot, intent = "disconnect_only", startRequest, statusOnly = false, onSettled, onResolvedAbsent, unplugWarning }: { readCurrentSnapshot: () => any; intent?: DockIntent; startRequest?: boolean | (()=>boolean) | DirectStartRequest; statusOnly?: boolean; onSettled?: (settlement: DockSettlement) => void; onResolvedAbsent?: (settlement: DockSettlement) => void; unplugWarning?: UnplugWarningCoordinator }) {
   const source = useRef(readCurrentSnapshot);
   source.current = readCurrentSnapshot;
   const currentIntent = useRef(intent);
@@ -173,6 +174,24 @@ export function WholeDockControl({ readCurrentSnapshot, intent = "disconnect_onl
         const rawRecord = pendingRecord();
         const record = parsePendingRecord(rawRecord);
         observeUnplugWarning(next.status, record);
+        if (record?.intent === "sleep" && record.panel === recoveredPanel
+            && next.status?.code === "dock_teardown.no_trial") {
+          let claim: any = null, power: any = null;
+          try {
+            [claim, power] = await Promise.all([
+              readTrial("whole_dock_record"), readTrial("power_status"),
+            ]);
+          } catch { /* Keep the receipt when any independent proof is unavailable. */ }
+          if (disposed || started !== epoch.current) return;
+          if (pendingRecord() === rawRecord
+              && sleepReceiptArchivedAfterAbsence(next.status, claim, power, next.snapshot, record)) {
+            const settlement = { intent: record.intent, request: record.request };
+            if (onResolvedAbsent) onResolvedAbsent(settlement);
+            else if (pendingRecord() === rawRecord) window.localStorage.removeItem(pendingKey);
+            uncertain.current = false;
+            return;
+          }
+        }
         // Retiring a record whose answer never arrived is not the same as the
         // request having succeeded, so the player is told which happened
         // rather than left to infer it from the control becoming usable.
