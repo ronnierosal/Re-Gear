@@ -70,7 +70,7 @@ class TunnelStageDiagnosticsTests(unittest.TestCase):
         error = TopologyRefused("dock_topology.pci_branch_remains")
         error.remaining_pci = {'bridges': 3, 'endpoints': 0, 'unreadable': 0}
         self.runtime.observe.side_effect = error
-        self.runtime._monotonic.side_effect = [0, 10]
+        self.runtime._monotonic.side_effect = [0, 35]
         with self.assertRaisesRegex(ValueError, "tunnel_settle_timeout") as caught:
             self.runtime.deauthorize(self.observation)
         self.assertIs(caught.exception.__cause__, error)
@@ -81,6 +81,33 @@ class TunnelStageDiagnosticsTests(unittest.TestCase):
         self.assertEqual(self.runtime.tunnel_reason, 'dock_teardown.tunnel_settle_timeout')
         self.runtime._writer.deauthorize.assert_called_once()
         self.runtime._wait.assert_not_called()
+
+    def test_observed_28_second_bridge_cleanup_finishes_without_replaying_write(self):
+        clock = [0.0]
+        error = TopologyRefused('dock_topology.pci_branch_remains')
+        error.remaining_pci = {'bridges': 6, 'endpoints': 0, 'unreadable': 0}
+        def observe():
+            if clock[0] < 28.075:
+                raise error
+            return object()
+        self.runtime._monotonic = lambda: clock[0]
+        self.runtime._wait = Mock(side_effect=lambda seconds: clock.__setitem__(0, clock[0] + seconds))
+        self.runtime.observe.side_effect = observe
+        self.runtime.deauthorize(self.observation)
+        self.assertEqual(clock[0], 28.5)
+        self.assertEqual(self.runtime.tunnel_stage, 'completed')
+        self.runtime._writer.deauthorize.assert_called_once()
+
+    def test_persistent_bridges_stop_at_35_seconds(self):
+        clock = [0.0]
+        self.runtime._monotonic = lambda: clock[0]
+        self.runtime._wait = Mock(side_effect=lambda seconds: clock.__setitem__(0, clock[0] + seconds))
+        self.runtime.observe.side_effect = TopologyRefused('dock_topology.pci_branch_remains')
+        with self.assertRaisesRegex(ValueError, 'tunnel_settle_timeout'):
+            self.runtime.deauthorize(self.observation)
+        self.assertEqual(clock[0], 35.0)
+        self.assertEqual(self.runtime._wait.call_count, 70)
+        self.runtime._writer.deauthorize.assert_called_once()
 
     def test_success_clears_previous_failure_and_keeps_boundary_order(self):
         self.runtime.tunnel_code = "old_failure"

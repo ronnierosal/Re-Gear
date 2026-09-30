@@ -379,8 +379,12 @@ class WholeDockRuntime:
             # removing downstream bridges. Only that exact retained-topology
             # observation is pending; never replay the write or suppress a changed
             # identity, unreadable attribute, endpoint, or lost ownership.
-            deadline = self._monotonic() + 10.0
-            for attempt in range(21):
+            # Observed on the supervised 0.3.168 trial: kernel hotplug released
+            # the six downstream buses 28.075 seconds after deauthorization,
+            # before shutdown. Keep success immediate, but allow that bounded
+            # kernel cleanup to finish without another write or weaker proof.
+            deadline = self._monotonic() + 35.0
+            for attempt in range(71):
                 self.remaining_pci = None
                 if (self._admission() is not True or self._idle() is not True
                         or not self._owned('tunnel_remove_intent')):
@@ -395,7 +399,7 @@ class WholeDockRuntime:
                             or error.args != ('dock_topology.pci_branch_remains',)):
                         raise
                     remaining = deadline - self._monotonic()
-                    if remaining <= 0 or attempt == 20:
+                    if remaining <= 0 or attempt == 70:
                         raise ValueError('dock_teardown.tunnel_settle_timeout') from error
                     self._wait(min(0.5, remaining))
         except Exception as error:
