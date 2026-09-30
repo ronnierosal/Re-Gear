@@ -74,6 +74,39 @@ class DisconnectDiagnosticTests(unittest.TestCase):
         fixture.setUp()
         self.module, self.plugin = fixture.module, fixture.plugin
 
+    def test_expired_active_sleep_wait_is_projected_without_replaying_work(self):
+        plugin = self.plugin
+        request = "a" * 32
+        plugin._whole_dock_trial_worker_alive = True
+        plugin._whole_dock_trial_phase = "power_verification"
+        plugin._whole_dock_trial_started = 10.0
+        retained = {"schema_version": 1, "code": "dock_teardown.trial_running",
+                    "busy": True, "safe_to_unplug": False, "request_id": request}
+        plugin._whole_dock_trial_status = retained.copy()
+        progress = {"schema_version": 1, "code": "dock_power.unplug_request_expired",
+                    "busy": True, "ok": False, "safe_to_unplug": False,
+                    "software_down": True, "unplug_required": True,
+                    "power_action": "sleep", "power_requested": False,
+                    "route_action": "whole_dock_sleep", "request_id": request}
+        plugin._dock_sleep_status = progress.copy()
+        plugin._run_sleep_request = Mock()
+        with patch.object(self.module.time, "monotonic", return_value=320.0):
+            result = asyncio.run(plugin.get_egpu_disconnect_status("whole_dock_trial"))
+        self.assertEqual(result["code"], progress["code"])
+        self.assertEqual(result["phase"], "power_verification")
+        self.assertTrue(result["in_flight"])
+        self.assertFalse(result["power_requested"])
+        self.assertEqual(plugin._dock_sleep_status, progress)
+        self.assertEqual(plugin._whole_dock_trial_status, retained)
+        plugin._run_sleep_request.assert_not_called()
+        for field, wrong in (("request_id", "b" * 32),
+                             ("route_action", "whole_dock_disconnect"),
+                             ("software_down", False), ("busy", False)):
+            with self.subTest(field=field):
+                plugin._dock_sleep_status = {**progress, field: wrong}
+                result = asyncio.run(plugin.get_egpu_disconnect_status("whole_dock_trial"))
+                self.assertEqual(result["code"], retained["code"])
+
     def test_phase_durations_measure_work_without_adding_waits(self):
         with patch.object(self.module.time, "perf_counter", side_effect=[10, 12, 15, 16]):
             self.plugin._set_disconnect_phase("return_portable")
