@@ -381,6 +381,7 @@ class WholeDockRuntime:
             # identity, unreadable attribute, endpoint, or lost ownership.
             deadline = self._monotonic() + 10.0
             for attempt in range(21):
+                self.remaining_pci = None
                 if (self._admission() is not True or self._idle() is not True
                         or not self._owned('tunnel_remove_intent')):
                     raise ValueError('dock_teardown.settle_admission_changed')
