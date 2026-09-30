@@ -110,6 +110,8 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
   let operationKind:"active"|"status"|null=null;
   let operationGeneration=0;
   let pendingStatusTimer:ReturnType<typeof setTimeout>|null=null;
+  let recoveryTimer:ReturnType<typeof setTimeout>|null=null;
+  let recoveryAttempts=0;
   let ownerWarningTimer:ReturnType<typeof setTimeout>|null=null;
   let ownerWarningPollInFlight=false;
   const setPendingTimeout = typeof host.setTimeout === "function"
@@ -189,7 +191,9 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
     if(!record||status?.schema_version!==1||status.request_id!==record.request)return;
     const deauthorized=status.software_down===true&&status.safe_to_unplug===false
       &&((status.code==="dock_teardown.software_down"&&status.ok===true&&status.busy===false)
-        ||(record.intent==="sleep"&&status.code==="dock_power.unplug_required"));
+        ||(record.intent==="sleep"
+          &&(status.code==="dock_power.unplug_required"
+            ||status.code==="dock_power.unplug_request_expired")));
     unplugWarning.observe({
       requestId:record.request,
       deauthorized,
@@ -411,11 +415,22 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
   // the backend retains the exact terminal result. Recover presentation only:
   // the helper performs one read and can write a receipt, but never dispatches
   // a disconnect or completion action.
-  void recoverTerminalDockReceipt(storage).then(settlement=>{
-    if(stopped||!settlement)return;
-    const record=pendingDockRecord();
-    if(record?.intent!==settlement.intent||record.request!==settlement.request)return;
-    resumePendingOperation();
-  });
-  return { open, disconnect, Settings, visibility: visibility.source, available: shortcut.available, stop() { stopped = true; warningSubscription(); unplugWarning.stop(); if(pendingStatusTimer!==null)clearPendingTimeout(pendingStatusTimer as never);pendingStatusTimer=null;if(ownerWarningTimer!==null)clearPendingTimeout(ownerWarningTimer as never);ownerWarningTimer=null;shortcut.stop(); close(); } };
+  const recoverMissingDockReceipt=()=>{
+    if(stopped||pendingDockIntent())return;
+    void recoverTerminalDockReceipt(storage).then(settlement=>{
+      if(stopped)return;
+      if(!settlement){
+        if(++recoveryAttempts<160&&!pendingDockIntent())
+          recoveryTimer=setPendingTimeout(()=>{recoveryTimer=null;recoverMissingDockReceipt();},2_000);
+        return;
+      }
+      const record=pendingDockRecord();
+      if(record?.intent!==settlement.intent||record.request!==settlement.request)return;
+      resumePendingOperation();
+      scheduleOwnerWarningPoll();
+      schedulePendingStatusRebuild(1_500);
+    });
+  };
+  recoverMissingDockReceipt();
+  return { open, disconnect, Settings, visibility: visibility.source, available: shortcut.available, stop() { stopped = true; warningSubscription(); unplugWarning.stop(); if(recoveryTimer!==null)clearPendingTimeout(recoveryTimer as never);recoveryTimer=null;if(pendingStatusTimer!==null)clearPendingTimeout(pendingStatusTimer as never);pendingStatusTimer=null;if(ownerWarningTimer!==null)clearPendingTimeout(ownerWarningTimer as never);ownerWarningTimer=null;shortcut.stop(); close(); } };
 }

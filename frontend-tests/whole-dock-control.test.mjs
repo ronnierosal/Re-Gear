@@ -95,6 +95,11 @@ const recoveredSleepFailure = request => ({ ...fresh, code:'dock_power.disconnec
   request_id:request, busy:false, in_flight:false, ok:false, software_down:false,
   safe_to_unplug:false, unplug_required:false, power_action:'sleep', power_requested:false,
   route_action:'whole_dock_sleep', phase:'dock_teardown', claim_stage:'tunnel_remove_intent' });
+const recoveredSleepUnplug = (request,expired=false) => ({ ...fresh,
+  code:expired?'dock_power.unplug_request_expired':'dock_power.unplug_required',
+  request_id:request, busy:true, in_flight:true, ok:false, software_down:true,
+  safe_to_unplug:false, unplug_required:true, power_action:'sleep', power_requested:false,
+  route_action:'whole_dock_sleep', phase:'power_verification' });
 
 test('missing UI receipt is recovered from one exact backend terminal without dispatch',async()=>{
   const request='1'.repeat(32),storage=new Map();
@@ -188,6 +193,62 @@ test('sleep receipt recovery rejects near-miss terminal states',async()=>{
     {...exact,unplug_required:true}, {...exact,power_action:'shutdown'},
     {...exact,power_requested:true}, {...exact,route_action:'whole_dock_disconnect'},
     {...exact,phase:'power_request'}, {...exact,claim_stage:'software_down'},
+  ]) {
+    const storage=new Map(),h=harness(storage,'sleep',undefined,status);
+    await settle();assert.equal(await h.recover(),null);assert.equal(storage.size,0);
+    assert.equal(h.calls.length,0);h.unmount();
+  }
+});
+
+test('missing active sleep receipt restores the exact unplug prompt without replay',async()=>{
+  const request='f'.repeat(32),storage=new Map();
+  const h=harness(storage,'sleep',undefined,recoveredSleepUnplug(request));
+  await settle();
+  assert.deepEqual(await h.recover(),{intent:'sleep',request});
+  assert.equal(storage.get('regear.whole-dock.pending-request'),
+    `v2:sleep:backend-terminal:${request}`);
+  assert.equal(h.calls.length,0,'active recovery performs no route or completion call');
+  h.unmount();
+
+  const settlements=[];
+  const remount=harness(storage,'sleep',undefined,recoveredSleepUnplug(request),undefined,true,
+    value=>settlements.push(value));
+  await settle();remount.poll();await settle();
+  assert.equal(remount.calls.length,0);
+  assert.deepEqual(settlements,[],'an active request is never presented as settled');
+  assert.equal(dockIntentControl(recoveredSleepUnplug(request),idle,'sleep').label,'Unplug eGPU now');
+  const text=JSON.stringify(remount.render());
+  assert.match(text,/Safe disconnect is complete\. Physically unplug the eGPU now/);
+  assert.match(text,/Sleep waits for verified physical absence/);
+  assert.doesNotMatch(text,/Waiting to verify the previous request|Keep the cable connected/);
+  remount.unmount();
+});
+
+test('expired sleep unplug receipt restores warning without promising sleep',async()=>{
+  const request='0'.repeat(32),storage=new Map();
+  const h=harness(storage,'sleep',undefined,recoveredSleepUnplug(request,true));
+  await settle();
+  assert.deepEqual(await h.recover(),{intent:'sleep',request});
+  assert.equal(h.calls.length,0);
+  h.unmount();
+  const remount=harness(storage,'sleep',undefined,recoveredSleepUnplug(request,true),undefined,true);
+  await settle();
+  const text=JSON.stringify(remount.render());
+  assert.match(text,/not unplugged before the guarded request expired/);
+  assert.match(text,/handheld remains awake/);
+  assert.match(text,/Physically unplug the eGPU now/);
+  assert.doesNotMatch(text,/will wait.*sleep|Sleep cycle observed/i);
+  remount.unmount();
+});
+
+test('active sleep recovery rejects mismatched route and unsafe shapes',async()=>{
+  const request='a'.repeat(32),exact=recoveredSleepUnplug(request);
+  for(const status of [
+    {...exact,request_id:'bad'}, {...exact,busy:false}, {...exact,in_flight:false},
+    {...exact,safe_to_unplug:true}, {...exact,unplug_required:false},
+    {...exact,power_action:'shutdown'}, {...exact,power_requested:true},
+    {...exact,route_action:'whole_dock_disconnect'}, {...exact,phase:'dock_teardown'},
+    {...exact,ok:true},
   ]) {
     const storage=new Map(),h=harness(storage,'sleep',undefined,status);
     await settle();assert.equal(await h.recover(),null);assert.equal(storage.size,0);

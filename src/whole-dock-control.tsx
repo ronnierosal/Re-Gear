@@ -49,6 +49,19 @@ const strictTerminalSleepFailure = (status: any, request: string) => status?.sch
   && status.phase === "dock_teardown"
   && status.claim_stage === "tunnel_remove_intent";
 
+const strictSleepUnplugState = (status: any, request: string) => status?.schema_version === 1
+  && status.request_id === request
+  && status.ok === false && status.software_down === true
+  && status.safe_to_unplug === false && status.unplug_required === true
+  && status.power_action === "sleep" && status.power_requested === false
+  && status.route_action === "whole_dock_sleep"
+  && status.phase === "power_verification"
+  && ((status.code === "dock_power.unplug_required"
+      && status.busy === true && status.in_flight === true)
+    || (status.code === "dock_power.unplug_request_expired"
+      && ((status.busy === true && status.in_flight === true)
+        || (status.busy === false && status.in_flight === false))));
+
 /** Recover result correlation after a full Steam/Gamescope restart.
  *
  * The disconnect worker and its result live in the backend process, while the
@@ -78,9 +91,11 @@ export async function recoverTerminalDockReceipt(storage?: Pick<Storage, "getIte
     && strictInterruptedDisconnect(status, request);
   const sleepFailure = typeof request === "string" && submittedRequest.test(request)
     && strictTerminalSleepFailure(status, request);
-  if (!terminal && !interrupted && !sleepFailure) return null;
-  const intent: DockIntent = sleepFailure ? "sleep" : "disconnect_only";
-  const raw = formatPendingRecord(intent, terminal || sleepFailure ? recoveredPanel : interruptedPanel, request);
+  const sleepUnplug = typeof request === "string" && submittedRequest.test(request)
+    && strictSleepUnplugState(status, request);
+  if (!terminal && !interrupted && !sleepFailure && !sleepUnplug) return null;
+  const intent: DockIntent = sleepFailure || sleepUnplug ? "sleep" : "disconnect_only";
+  const raw = formatPendingRecord(intent, terminal || sleepFailure || sleepUnplug ? recoveredPanel : interruptedPanel, request);
   try {
     if (storage.getItem(pendingKey)) return null;
     storage.setItem(pendingKey, raw);
@@ -130,7 +145,9 @@ export function WholeDockControl({ readCurrentSnapshot, intent = "disconnect_onl
         || status.request_id !== record.request) return;
     const deauthorized = status.software_down === true && status.safe_to_unplug === false
       && ((status.code === "dock_teardown.software_down" && status.ok === true && status.busy === false)
-        || (record.intent === "sleep" && status.code === "dock_power.unplug_required"));
+        || (record.intent === "sleep"
+          && (status.code === "dock_power.unplug_required"
+            || status.code === "dock_power.unplug_request_expired")));
     unplugWarning.observe({
       requestId: record.request,
       deauthorized,
@@ -309,13 +326,22 @@ export function WholeDockControl({ readCurrentSnapshot, intent = "disconnect_onl
     && reading.status.busy === false && reading.status.ok === true
     && reading.status.software_down === true && reading.status.safe_to_unplug === false;
   const warningForRecord = terminalRecord?.request === warningState.requestId;
-  const warningMessage = warningForRecord && warningState.phase === "alarm"
+  const recoveredSleepUnplug = terminalRecord?.intent === "sleep"
+    && terminalRecord.request === reading?.status?.request_id
+    && strictSleepUnplugState(reading?.status, terminalRecord.request);
+  const recoveredSleepExpired = recoveredSleepUnplug
+    && reading?.status?.code === "dock_power.unplug_request_expired";
+  const warningMessage = recoveredSleepExpired
+    ? "The eGPU was not unplugged before the guarded request expired. The handheld remains awake."
+    : recoveredSleepUnplug
+    ? "Safe disconnect is complete. Physically unplug the eGPU now."
+    : warningForRecord && warningState.phase === "alarm"
     ? "Disconnect the eGPU cable now. The dock remains powered after software disconnect."
     : warningForRecord && warningState.phase === "prompt"
     ? "Safe disconnect is complete. Physically unplug the eGPU now."
     : null;
   return <div style={{fontSize:13,lineHeight:"18px"}}>
-    <p style={{margin:"0 0 8px"}} role="status">{(initialNotStarted && !uncertain.current && !pendingRequest()) ? `Safe Disconnect did not start. No request was sent by this attempt. ${view.message}` : notice || (uncertain.current ? "Waiting to verify the previous request. Keep the cable connected." : disconnectComplete ? "Software disconnect complete. USB4 deauthorization was verified." : view.message)}</p>
+    <p style={{margin:"0 0 8px"}} role="status">{warningMessage ?? ((initialNotStarted && !uncertain.current && !pendingRequest()) ? `Safe Disconnect did not start. No request was sent by this attempt. ${view.message}` : notice || (uncertain.current ? "Waiting to verify the previous request. Keep the cable connected." : disconnectComplete ? "Software disconnect complete. USB4 deauthorization was verified." : view.message))}</p>
     {startRequest && initialNotStarted && !pending.current && !uncertain.current && !pendingRequest() && <DialogButton {...{type:"button" as const}} style={{width:"100%",minWidth:0,padding:"8px",border:"1px solid #39d8ff",borderRadius:8,background:"#112434",color:"#f4f7fb"}} disabled={!view.action || busy} onClick={(event)=>{
       event?.preventDefault(); event?.stopPropagation();
       if (!mounted.current || !view.action || pending.current || uncertain.current || pendingRequest()) return;
@@ -323,7 +349,11 @@ export function WholeDockControl({ readCurrentSnapshot, intent = "disconnect_onl
       confirm(true,reading);
     }}>{intent === "sleep" ? "Disconnect + Sleep" : intent === "shutdown" ? "Safe Disconnect + Shutdown" : "Safe Disconnect"}</DialogButton>}
     {!startRequest && !statusOnly && <DialogButton style={{width:"100%",minWidth:0,padding:"8px",border:"1px solid #39d8ff",borderRadius:8,background:"#112434",color:"#f4f7fb"}} disabled={!view.action || busy || uncertain.current} onClick={()=>confirm()}>{busy ? "Working…" : uncertain.current ? "Checking previous request" : view.label}</DialogButton>}
-    <p style={{margin:"8px 0 0"}}>{warningMessage ?? (disconnectComplete
+    <p style={{margin:"8px 0 0"}}>{recoveredSleepExpired
+      ? "Physically unplug the eGPU now. Automatic sleep will not occur for the expired request."
+      : recoveredSleepUnplug
+      ? "Sleep waits for verified physical absence."
+      : warningMessage ?? (disconnectComplete
       ? "Unplug the eGPU now. Do not leave the powered dock attached in this state."
       : intent === "sleep" && reading?.status?.code === "dock_power.unplug_required"
       ? "Unplug only after this prompt appears. Sleep waits for verified physical absence."
