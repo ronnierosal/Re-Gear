@@ -134,6 +134,18 @@ class DisconnectDiagnosticTests(unittest.TestCase):
             self.assertEqual(self.plugin._whole_dock_teardown_details.get('tunnel_reason'),
                              expected)
 
+    def test_remaining_pci_payload_is_bounded_and_category_only(self):
+        valid = {'bridges': 3, 'endpoints': 0, 'unreadable': 0}
+        for counts in (valid, dict(valid, private='path'), dict(valid, bridges=True),
+                       dict(valid, bridges=1025), dict(valid, bridges=-1)):
+            self.plugin._remember_teardown_result(
+                SimpleNamespace(code='dock_teardown.unresolved'),
+                SimpleNamespace(tunnel_stage='settle',
+                                tunnel_code='dock_teardown.tunnel_settle_unverified',
+                                remaining_pci=counts))
+            actual = self.plugin._whole_dock_teardown_details.get('remaining_pci')
+            self.assertEqual(actual, valid if counts is valid else None)
+
     def test_sleep_error_rpc_retains_inner_failure_and_resets_next_request(self):
         plugin, module = self.plugin, self.module
         plugin._background_operations = set()

@@ -350,6 +350,7 @@ class WholeDockRuntime:
         self.tunnel_stage = "authorization_hold"
         self.tunnel_code = ""
         self.tunnel_reason = ""
+        self.remaining_pci = None
         try:
             if (self._before_deauthorize is not None
                     and (self._guard(observation, 'tunnel_remove_intent') is not True
@@ -388,6 +389,7 @@ class WholeDockRuntime:
                     self.tunnel_stage = "completed"
                     return
                 except TopologyRefused as error:
+                    self.remaining_pci = getattr(error, 'remaining_pci', None)
                     if (type(error) is not TopologyRefused
                             or error.args != ('dock_topology.pci_branch_remains',)):
                         raise

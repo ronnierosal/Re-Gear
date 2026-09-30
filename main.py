@@ -2883,6 +2883,13 @@ class Plugin:
                 if (stage == 'settle' and type(reason) is str
                         and reason in TUNNEL_SETTLE_REASONS | {'dock_teardown.observation_unknown'}):
                     details['tunnel_reason'] = reason
+                remaining = getattr(runtime, 'remaining_pci', None)
+                if (stage == 'settle' and type(remaining) is dict
+                        and set(remaining) == {'bridges', 'endpoints', 'unreadable'}
+                        and all(type(value) is int and 0 <= value <= 1024
+                                for value in remaining.values())
+                        and sum(remaining.values()) <= 1024):
+                    details['remaining_pci'] = dict(remaining)
         self._whole_dock_teardown_details = details
 
     def _run_whole_dock_trial(self, operation: str, expected_attachment: str = "", *, power_request=None):

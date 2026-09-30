@@ -68,11 +68,13 @@ class TunnelStageDiagnosticsTests(unittest.TestCase):
 
     def test_existing_settle_timeout_and_original_cause_are_preserved(self):
         error = TopologyRefused("dock_topology.pci_branch_remains")
+        error.remaining_pci = {'bridges': 3, 'endpoints': 0, 'unreadable': 0}
         self.runtime.observe.side_effect = error
         self.runtime._monotonic.side_effect = [0, 10]
         with self.assertRaisesRegex(ValueError, "tunnel_settle_timeout") as caught:
             self.runtime.deauthorize(self.observation)
         self.assertIs(caught.exception.__cause__, error)
+        self.assertEqual(self.runtime.remaining_pci, error.remaining_pci)
         self.assertEqual(self.runtime.tunnel_stage, "settle")
         self.assertEqual(self.runtime.tunnel_code,
                          "dock_teardown.tunnel_settle_unverified")
