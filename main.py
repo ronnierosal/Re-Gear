@@ -4952,7 +4952,10 @@ class Plugin:
         except Exception:
             acknowledged = False
         if acknowledged:
-            if prior_status and prior_status.target is PlacementState.PORTABLE:
+            # A failed attempt to return is not a successful handheld choice.
+            # Acknowledging it must let the fresh connection be evaluated again.
+            if (prior_status and prior_status.target is PlacementState.PORTABLE
+                    and getattr(prior_status, 'action_required', False) is not True):
                 self._automatic_dock.suppress_current_attachment_after_portable_return()
             else:
                 self._automatic_dock.reset_after_acknowledgement()
