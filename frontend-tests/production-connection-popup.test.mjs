@@ -18,6 +18,7 @@ function harness(){
     './connection-progress-model':{connectionProgressViewModel:value=>value},
     './connection-panel-style':{connectionPanelCss:''},
     './link-recovery-control':{LinkRecoveryControl:'recovery'},
+    './transition-acknowledgement-control':{TransitionAcknowledgementControl:'acknowledgement'},
   };
   const exports={};new Function('exports','require','window',code)(exports,name=>{
     assert.ok(imports[name],`unexpected runtime dependency ${name}`);return imports[name];
@@ -26,16 +27,21 @@ function harness(){
   h.show=exports.showConnectionLivePanel;return h;
 }
 function nodes(tree){return !tree||typeof tree!=='object'?[]:Array.isArray(tree)?tree.flatMap(nodes):[tree,...nodes(tree.props?.children)];}
-test('production popup preserves live status but omits manual recovery and TV switching',()=>{
+test('production popup preserves live status and display-result acknowledgement but omits manual recovery and TV switching',()=>{
   const h=harness();const tree=h.render('production');const overlay=nodes(tree).find(n=>n.type==='overlay');
-  assert.equal(overlay.props.onSwitch,undefined);assert.equal(overlay.props.recoveryAction,undefined);
+  assert.equal(overlay.props.onSwitch,undefined);
+  const actions=nodes(overlay.props.recoveryAction);
+  assert.ok(actions.some(node=>node.type==='acknowledgement'));
+  assert.ok(!actions.some(node=>node.type==='recovery'));
   assert.equal(overlay.props.rows,h.status.rows);assert.equal(overlay.props.connected,true);
   assert.equal(h.switched,0);assert.equal(h.closed,0);assert.equal(h.effects.length,3);
 });
 test('development popup keeps eligible recovery and fresh explicit TV switch',()=>{
   for(const policy of [undefined,'development']){
     const h=harness();const overlay=nodes(h.render(policy)).find(n=>n.type==='overlay');
-    assert.equal(overlay.props.recoveryAction.type,'recovery');assert.equal(overlay.props.recoveryAction.props.eligible,true);
+    const actions=nodes(overlay.props.recoveryAction);
+    assert.ok(actions.some(node=>node.type==='acknowledgement'));
+    const recovery=actions.find(node=>node.type==='recovery');assert.equal(recovery.props.eligible,true);
     overlay.props.onSwitch();assert.equal(h.switched,1);assert.equal(h.closed,1);
     h.status.expiresAt=0;overlay.props.onSwitch();assert.equal(h.switched,1);
   }
