@@ -303,3 +303,43 @@ class PortableEvidenceReplanTests(unittest.TestCase):
                 self.assertEqual(orchestrator.plans, [])
                 self.assertEqual(plugin._whole_dock_portable_outcome["code"],
                     "" if code == "private/path" else code)
+
+
+class DisplayAcknowledgementRecoveryTests(unittest.TestCase):
+    def test_real_terminal_ack_rearms_failure_but_preserves_successful_handheld_choice(self):
+        from tests.test_supervised_transition import (service, Observations,
+            TransitionJournal, append_journal_entry, JournalEventKind,
+            WorkflowState, PlacementState)
+        from regear.application.automatic_dock import AutomaticDockCoordinator
+        for kind in (JournalEventKind.BLOCKED, JournalEventKind.FAILED, JournalEventKind.COMMITTED):
+            for correct_id in (True, False):
+                with self.subTest(kind=kind, correct_id=correct_id):
+                    fixture = dock_support.MainDockAdmissionTests(); fixture.setUp()
+                    plugin = fixture.plugin
+                    journal = append_journal_entry(TransitionJournal("operation-0001", "request-0001"),
+                        kind=JournalEventKind.REQUESTED, occurred_at="2026-09-30T00:00:00Z",
+                        workflow_state=WorkflowState.IDLE, placement=PlacementState.DOCKED_EGPU,
+                        code="request.accepted", details=(("capability", "presentation_transition"),
+                            ("target_placement", "portable")))
+                    if kind is JournalEventKind.COMMITTED:
+                        for step in (JournalEventKind.OBSERVED, JournalEventKind.VALIDATED, JournalEventKind.PLANNED):
+                            journal = append_journal_entry(journal, kind=step,
+                                occurred_at="2026-09-30T00:00:00Z", workflow_state=WorkflowState.RETURNING_TO_PORTABLE,
+                                placement=PlacementState.DOCKED_EGPU, code="plan." + step.value)
+                    journal = append_journal_entry(journal, kind=kind,
+                        occurred_at="2026-09-30T00:00:01Z", workflow_state=WorkflowState.IDLE,
+                        placement=PlacementState.PORTABLE, code="transition." + kind.value)
+                    actual, orchestrator, store = service(Observations(), journal=journal)
+                    store.retire_committed = store.clear_terminal
+                    plugin._presentation_transition_service = lambda: actual
+                    plugin._automatic_dock = AutomaticDockCoordinator()
+                    plugin._automatic_dock.suppress_current_attachment_after_portable_return()
+                    plugin._topology_wakeup = Mock()
+                    result = asyncio.run(plugin.acknowledge_supervised_tv_switch(
+                        "operation-0001" if correct_id else "operation-9999"))
+                    self.assertEqual(result["acknowledged"], correct_id)
+                    self.assertEqual(plugin._automatic_dock._attempted,
+                        not correct_id or kind is JournalEventKind.COMMITTED)
+                    self.assertEqual(store.current is None, correct_id)
+                    self.assertEqual(orchestrator.plans, [], "Acknowledgement must not dispatch")
+                    self.assertEqual(plugin._topology_wakeup.invalidate.call_count, int(correct_id))
