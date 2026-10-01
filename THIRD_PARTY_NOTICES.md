@@ -1,5 +1,15 @@
 # Third-party notices
 
+## systemd login1 suspend interface
+
+The suspend command boundary is informed by the systemd contributors' v257
+[systemctl session checks](https://github.com/systemd/systemd/blob/v257/src/systemctl/systemctl-logind.c)
+and [login1 inhibitor enforcement](https://github.com/systemd/systemd/blob/v257/src/login/logind-dbus.c).
+Re-Gear independently calls the public `SuspendWithFlags` interface with
+`SD_LOGIND_ROOT_CHECK_INHIBITORS` (1), preserving block-inhibitor enforcement
+without systemctl's separate logged-in-user precheck. This is API usage and
+behavioral reference, not copied systemd implementation code.
+
 Re-Gear was designed using validated behavior and engineering lessons from the
 MIT-licensed eGPUBridge project:
 

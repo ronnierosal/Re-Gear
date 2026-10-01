@@ -201,8 +201,8 @@ class RuntimeTests(unittest.TestCase):
         with patch.object(module, 'revalidate_retained', side_effect=validate):
             result = self.runtime.execute('operation', self.approval)
         self.assertFalse(result.software_down)
-        self.assertEqual(clock[0], 10.0)
-        self.assertEqual(self.runtime._wait.call_count, 20)
+        self.assertEqual(clock[0], 35.0)
+        self.assertEqual(self.runtime._wait.call_count, 70)
         self.writer.deauthorize.assert_called_once()
         self.assertEqual(self.claim.stage, 'tunnel_remove_intent')
         self.assertFalse(self.runtime.execute('operation', self.approval).software_down)
