@@ -53,6 +53,10 @@ export type ReadinessResult = {
   reasons?: readonly string[];
   checkedAt: number;
   expiresAt: number;
+  /** The subject the evidence was measured on, when the evidence path knows
+   * it. A consumer must not present evidence for a different account/build. */
+  account?: string | null;
+  buildId?: number | null;
 };
 
 export type SyncState = {
@@ -147,8 +151,9 @@ export function createOfflineSyncController(
     cancelTimer();
     if (disposed) return;
     const prefs = preferences.get();
-    // No schedule configured means the passive path stays exactly as it was.
-    if (!prefs.enabled || prefs.intervalMinutes === null) return;
+    // No schedule configured, or no game to prepare, means no timer at all:
+    // the passive path stays exactly as it was.
+    if (!prefs.enabled || prefs.intervalMinutes === null || !game) return;
     timer = ports.setTimer(() => {
       timer = undefined;
       void start("scheduled");

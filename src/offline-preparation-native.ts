@@ -85,6 +85,9 @@ export class PreparationUnavailableError extends Error {
 
 const CONTENT_TYPES: PreparationContentType[] = ["content", "shader", "workshop"];
 const UNCONFIRMED_AFTER_MS = 30000;
+/** How long our item may be missing from the download list before the run
+ * ends as unconfirmed. Bounded, so a removed item never blocks later syncs. */
+const ABSENT_GRACE_MS = 10000;
 
 function record(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === "object" && !Array.isArray(value)
@@ -167,7 +170,7 @@ export function startOfflinePreparation(
   kind: PreparationKind,
   ports: PreparationPorts,
   onChange: (report: PreparationReport) => void,
-  options: { unconfirmedAfterMs?: number } = {},
+  options: { unconfirmedAfterMs?: number; absentGraceMs?: number } = {},
 ): { stop(): void } {
   if (!isExactAppId(appId)) {
     throw new PreparationUnavailableError("A valid local game was not selected");
@@ -197,6 +200,8 @@ export function startOfflinePreparation(
   let baseline: string | null | undefined;
   /** True only when the baseline came from a snapshot taken before dispatch. */
   let baselineBeforeDispatch = false;
+  /** The update error carried by the pre-dispatch snapshot, if any. */
+  let baselineError: number | null = null;
   let dispatched = false;
   /** Our item was seen in a live (non-terminal) state after dispatch. */
   let seenAfterDispatch = false;
@@ -204,6 +209,7 @@ export function startOfflinePreparation(
   let dispatching = false;
   const duringDispatch: unknown[][] = [];
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let absentTimer: ReturnType<typeof setTimeout> | undefined;
 
   const emit = (state: PreparationState, projected: ReturnType<typeof projectDownloadItem>) => {
     if (stopped) return;
@@ -225,6 +231,7 @@ export function startOfflinePreparation(
     if (stopped) return;
     stopped = true;
     clearTimeout(timer);
+    clearTimeout(absentTimer);
     try {
       lease?.unregister();
     } catch {
@@ -259,28 +266,48 @@ export function startOfflinePreparation(
     if (!dispatched || baseline === undefined) {
       baseline = projected ? fingerprint(projected.item) : null;
       baselineBeforeDispatch = !dispatched;
+      baselineError = !dispatched && projected?.errorCode ? projected.errorCode : null;
     }
     if (!dispatched) return;
     if (!projected) {
-      // Our item left the download list before any outcome was observed
-      // (removed by the player, or dropped by Steam). Nothing will report on
-      // it again, so end honestly instead of watching forever.
-      if (seenAfterDispatch) { emit("unconfirmed", null); stop(); }
+      // Our item is missing from this snapshot after it was seen live. One
+      // missing snapshot is not proof it left for good, so wait a bounded
+      // grace period; if it does not come back, nothing will report on it
+      // again and the run ends honestly instead of being watched forever.
+      if (seenAfterDispatch && absentTimer === undefined) {
+        absentTimer = setTimeout(() => {
+          if (stopped) return;
+          emit("unconfirmed", null);
+          stop();
+        }, options.absentGraceMs ?? ABSENT_GRACE_MS);
+      }
       return;
     }
-    const state = observedState(projected.item, projected.errorCode);
+    clearTimeout(absentTimer);
+    absentTimer = undefined;
+    let state = observedState(projected.item, projected.errorCode);
     if (state === null) return;
-    const unmoved = fingerprint(projected.item) === baseline;
+    let reported = projected;
+    // An error code already present before dispatch is an earlier failure,
+    // not this request's. Judge the item by its live fields instead, so real
+    // progress is still seen. If the item goes quiet again after being live
+    // with that code, that is a failure of this run. Without a pre-dispatch
+    // baseline a current failure is always surfaced.
+    if (state === "error" && baselineBeforeDispatch && projected.errorCode === baselineError) {
+      const live = observedState(projected.item, null);
+      if (live === null) {
+        if (!seenAfterDispatch) return;
+      } else {
+        state = live;
+        reported = { ...projected, errorCode: null };
+      }
+    }
     // `completed` is a claim about an outcome, so it is only ours once the
     // fingerprint has moved: a game that was already fully downloaded before
     // the player asked must never read as this request succeeding.
-    if (state === "completed" && unmoved) return;
-    // An error already present before dispatch is an earlier failure, not
-    // this request's. Wait for Steam to move the item (or for the timer).
-    // Without a pre-dispatch baseline a current failure is still surfaced.
-    if (state === "error" && unmoved && baselineBeforeDispatch && !seenAfterDispatch) return;
+    if (state === "completed" && fingerprint(projected.item) === baseline) return;
     clearTimeout(timer);
-    emit(state, projected);
+    emit(state, reported);
     if (state === "completed" || state === "error") { stop(); return; }
     seenAfterDispatch = true;
   };

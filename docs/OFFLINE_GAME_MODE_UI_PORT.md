@@ -138,8 +138,13 @@ never keep a stale positive badge alive until the next check.
 injected schedule is reported exactly as given. The model never fabricates
 readiness and never enables a schedule by itself.
 Schedule changes are published only after the synchronous `persistSchedule` port
-returns successfully. If it throws, the action returns `false` and retains the
-previous schedule without announcing the rejected change.
+accepts them. If it throws or explicitly returns `false`, the action returns
+`false` and retains the previous schedule without announcing the rejected change;
+returning `true` or nothing accepts it. Enabled intervals must be whole minutes
+from 15 to 10080, the same bounds as the stored preference. Readiness with no
+usable expiry, or read with an unreadable clock, is presented as expired.
+Selecting the same app, account and build under a new display name updates the
+name only; its evidence is kept.
 
 ## UI example
 

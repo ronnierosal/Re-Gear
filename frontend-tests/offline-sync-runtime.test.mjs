@@ -266,12 +266,15 @@ test("a scheduled tick during gameplay does nothing", async () => {
   assert.equal(h.snap().preparation.state, "idle");
 });
 
-test("a download removed from Steam's list releases the press", async () => {
+test("a download removed from Steam's list releases the press", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
   const h = ready(harness());
   h.runtime.syncNow();
   await settle();
   h.send([item({ queue_index: 0 })]);
   h.send([]);
+  assert.equal(h.snap().preparation.inFlight, true, "one missing snapshot is not final");
+  t.mock.timers.tick(10000);
   await settle();
   assert.equal(h.snap().preparation.state, "unconfirmed");
   assert.equal(h.snap().preparation.inFlight, false);
@@ -325,4 +328,95 @@ test("a fresh runtime after unload starts clean from the stored preference", asy
   assert.equal(second.snap().preparation.state, "idle");
   assert.equal(second.snap().preparation.inFlight, false);
   assert.deepEqual(second.snap().schedule, { enabled: true, intervalMinutes: 30 });
+});
+
+test("an unavailable tab never schedules or dispatches, even with a stored schedule", async () => {
+  const h = harness({ stored: { enabled: true, intervalMinutes: 15 } });
+  h.runtime.applyInitialState({ available: false, unavailableReason: "x", game: GAME });
+  assert.equal(h.pendingTimers(), 0);
+  await h.advance(60 * 60000);
+  assert.deepEqual(h.calls.queue, []);
+  assert.deepEqual(h.calls.readiness, []);
+});
+
+test("losing availability stops future scheduling; regaining it resumes", async () => {
+  const h = ready(harness({ stored: { enabled: true, intervalMinutes: 15 } }));
+  assert.equal(h.pendingTimers(), 1);
+  h.runtime.setAvailability({ available: false, unavailableReason: "x" });
+  assert.equal(h.pendingTimers(), 0);
+  await h.advance(60 * 60000);
+  assert.deepEqual(h.calls.queue, []);
+  h.runtime.setAvailability({ available: true });
+  assert.equal(h.pendingTimers(), 1);
+  await h.advance(15 * 60000);
+  assert.equal(h.calls.queue.length, 1);
+});
+
+test("a subscriber pressing Sync now during initial publication is not stranded", async () => {
+  const h = harness();
+  let pressed = false;
+  h.runtime.subscribe((s) => {
+    if (!pressed && s.capabilities.canSyncNow) { pressed = true; h.runtime.syncNow(); }
+  });
+  h.runtime.applyInitialState({ available: true, game: GAME });
+  await settle();
+  assert.equal(pressed, true);
+  assert.deepEqual(h.calls.queue, [[APP, CLIENT]]);
+  h.send([item({ active: true })]);
+  assert.equal(h.snap().preparation.state, "active");
+});
+
+test("a subscriber pressing Sync now during a selection change targets the new game", async () => {
+  const h = ready(harness());
+  const other = { appId: 730, name: "Other", account: "player-one", buildId: 5 };
+  let pressed = false;
+  h.runtime.subscribe((s) => {
+    if (!pressed && s.game?.appId === 730 && s.capabilities.canSyncNow) { pressed = true; h.runtime.syncNow(); }
+  });
+  h.runtime.selectGame(other);
+  await settle();
+  assert.equal(pressed, true);
+  assert.deepEqual(h.calls.queue, [[730, CLIENT]]);
+  assert.equal(h.snap().preparation.inFlight, true);
+});
+
+test("evidence measured after an update is not presented under the old build", async () => {
+  const h = ready(harness({
+    readiness: (_app, n) => ({ status: n === 1 ? "likely_offline_ready" : "tested_offline", label: "x",
+      reasons: [], checkedAt: 1000 + n, expiresAt: 61000 }),
+  }));
+  h.runtime.syncNow();
+  await settle();
+  assert.equal(h.snap().readiness.status, "likely_offline_ready");
+  h.send([item({ active: true })]);
+  h.send([item({ completed: true, completed_time: 9, buildid: 101 })]);
+  await settle();
+  const s = h.snap();
+  assert.equal(s.game.buildId, 100);
+  assert.notEqual(s.readiness.status, "tested_offline", "build-101 evidence never lands on build 100");
+  assert.equal(s.readiness.status, "unverified");
+  assert.equal(s.readiness.expired, true, "earlier build-100 evidence no longer looks current");
+});
+
+test("readiness that names a different subject is not presented", async () => {
+  const h = ready(harness({
+    readiness: () => ({ status: "tested_offline", label: "x", checkedAt: 1001, expiresAt: 61000,
+      account: "player-one", buildId: 99 }),
+  }));
+  h.runtime.syncNow();
+  await settle();
+  assert.equal(h.snap().readiness.status, null);
+});
+
+test("a renamed display name is synchronized without discarding evidence", async () => {
+  const h = ready(harness());
+  h.runtime.syncNow();
+  await settle();
+  const before = h.snap();
+  h.runtime.selectGame({ ...GAME, name: "Portal 2 (renamed)" });
+  const after = h.snap();
+  assert.equal(after.game.name, "Portal 2 (renamed)");
+  assert.equal(after.generation, before.generation);
+  assert.equal(after.readiness.status, before.readiness.status);
+  assert.deepEqual(h.calls.queue.length, 1);
 });

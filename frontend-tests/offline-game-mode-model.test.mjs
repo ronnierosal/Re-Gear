@@ -545,3 +545,28 @@ test("an unreadable clock never keeps readiness current", () => {
   clock = Number.NaN;
   assert.equal(model.getSnapshot().readiness.expired, true);
 });
+
+test("a throwing clock never keeps readiness current", () => {
+  let broken = false;
+  const model = createOfflineGameModeModel(
+    { startSync() {}, persistSchedule() {}, now: () => { if (broken) throw new Error("clock"); return 1000; } },
+    { initial: { available: true, game: GAME } },
+  );
+  const generation = model.getSnapshot().generation;
+  model.applyReadiness({ generation, appId: GAME.appId, status: "likely_offline_ready", label: "x",
+    reasons: [], checkedAt: 1000, expiresAt: 61000 });
+  assert.equal(model.getSnapshot().readiness.expired, false);
+  broken = true;
+  assert.equal(model.getSnapshot().readiness.expired, true);
+});
+
+test("a renamed display name updates the selection without discarding its evidence", () => {
+  const h = harness();
+  h.model.applyReadiness(readiness(h));
+  const before = h.model.getSnapshot();
+  h.model.selectGame({ ...GAME, name: "Portal 2 (renamed)" });
+  const after = h.model.getSnapshot();
+  assert.equal(after.game.name, "Portal 2 (renamed)");
+  assert.equal(after.generation, before.generation);
+  assert.equal(after.readiness.status, before.readiness.status);
+});

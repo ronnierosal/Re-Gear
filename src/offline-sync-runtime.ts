@@ -21,6 +21,7 @@
 
 import {
   createOfflineGameModeModel,
+  isExactAppId,
   type ConfidenceStatus,
   type OfflineGameModeSnapshot,
   type PreparationState,
@@ -108,14 +109,47 @@ export function createOfflineSyncRuntime(ports: OfflineSyncRuntimePorts) {
     return !disposed && sameIdentity(state.game, identity(snapshot.game));
   };
 
+  /** The installed build moved under the selection (for example the update
+   * this sync requested just completed), so the selection is no longer the
+   * subject that evidence describes. */
+  const buildMoved = (state: SyncState, selected: GameIdentity | null) => {
+    const reported = state.preparation?.buildId;
+    return typeof reported === "number" && typeof selected?.buildId === "number" && reported !== selected.buildId;
+  };
+
+  let invalidatedKey = "";
   const forwardReadiness = (state: SyncState) => {
+    const snapshot = model.getSnapshot();
+    if (!snapshot.game) return;
+    const selected = identity(snapshot.game);
+    if (buildMoved(state, selected)) {
+      // Evidence measured now describes a different build than the one
+      // selected. Never present it under the old identity, and do not leave
+      // earlier evidence for the old build looking current either.
+      const key = `${snapshot.generation}:${state.preparation?.buildId}`;
+      if (key === invalidatedKey) return;
+      invalidatedKey = key;
+      // No timestamps: this always replaces older evidence, and with no usable
+      // expiry the model presents it as expired.
+      model.applyReadiness({
+        generation: snapshot.generation,
+        appId: snapshot.game.appId,
+        status: "unverified",
+        label: "Unverified",
+        reasons: ["The installed game version changed. Check the current version again."],
+        checkedAt: null as unknown as number,
+        expiresAt: null as unknown as number,
+      });
+      return;
+    }
     const readiness = state.readiness;
     if (!readiness) return;
+    // Evidence that names its subject must name this one.
+    if (readiness.account !== undefined && (readiness.account ?? null) !== (selected?.account ?? null)) return;
+    if (readiness.buildId !== undefined && (readiness.buildId ?? null) !== (selected?.buildId ?? null)) return;
     const key = JSON.stringify(readiness);
     if (key === lastReadinessKey) return;
     lastReadinessKey = key;
-    const snapshot = model.getSnapshot();
-    if (!snapshot.game) return;
     model.applyReadiness({
       generation: snapshot.generation,
       appId: snapshot.game.appId,
@@ -183,11 +217,18 @@ export function createOfflineSyncRuntime(ports: OfflineSyncRuntimePorts) {
 
   const unsubscribe = controller.subscribe(forward);
 
-  const selectBoth = (game: SelectedGame) => {
+  /** Point the controller at the subject the model is about to publish. This
+   * runs before the model notifies, so a subscriber that reacts synchronously
+   * (for example by pressing Sync now) always finds both aligned. Only an
+   * available tab gives the controller a subject: without one it can neither
+   * schedule nor dispatch. An already-started Steam download is untouched. */
+  const alignController = (game: SelectedGame, available: boolean) => {
+    const target = available ? identity(game) : null;
+    if (sameIdentity(controller.getState().game, target)) return;
     pending = null;
     lastReadinessKey = "";
     lastPreparationKey = "";
-    controller.selectGame(identity(game));
+    controller.selectGame(target);
   };
 
   return {
@@ -199,31 +240,41 @@ export function createOfflineSyncRuntime(ports: OfflineSyncRuntimePorts) {
      * missing or malformed. */
     applyInitialState(initial: OfflineSyncRuntimeInitial | null): void {
       if (disposed) return;
+      const available = initial?.available ?? false;
+      const game = initial?.game && isExactAppId(initial.game.appId) ? initial.game : null;
+      pending = null;
+      alignController(game, available);
       model.applyInitialState({
-        available: initial?.available ?? false,
+        available,
         unavailableReason: initial?.unavailableReason ?? null,
-        game: initial?.game ?? null,
+        game,
         schedule: preferences.get(),
       });
-      selectBoth(model.getSnapshot().game);
     },
 
-    /** Exact identity: app, account, installed build and display name. */
+    /** Exact identity: app, account, installed build and display name. A
+     * rename of the same subject updates the name and keeps its evidence. */
     selectGame(next: SelectedGame): void {
       if (disposed) return;
-      const before = model.getSnapshot().generation;
+      const snapshot = model.getSnapshot();
+      if (!snapshot.available) return;
+      if (next !== null && !isExactAppId(next?.appId)) return;
+      alignController(next, true);
       model.selectGame(next);
-      if (model.getSnapshot().generation !== before) selectBoth(model.getSnapshot().game);
     },
 
     syncNow: (): boolean => model.syncNow(),
     setSyncSchedule: (next: SyncSchedule): boolean => model.setSyncSchedule(next),
     refresh: (): boolean => model.refresh(),
 
+    /** Losing availability also stops future scheduling and dispatch; it
+     * never cancels a Steam download that already started. */
     setAvailability(next: { available: boolean; unavailableReason?: string | null }): void {
       if (disposed) return;
+      const available = !!next?.available;
+      if (!available) pending = null;
+      alignController(model.getSnapshot().game, available);
       model.setAvailability(next);
-      if (!next?.available) pending = null;
     },
 
     /** Detach observation. Any native download keeps going, by design. */

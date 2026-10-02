@@ -197,7 +197,8 @@ export function createOfflineGameModeModel(
   let notifiedKey = "";
 
   const build = (): OfflineGameModeSnapshot => {
-    const at = ports.now();
+    let at = Number.NaN;
+    try { at = ports.now(); } catch { /* An unreadable clock is handled below as expired. */ }
     // Fail closed: evidence with no usable expiry, or an unreadable clock, is
     // never presented as current.
     const expired = readiness.status !== null
@@ -289,7 +290,11 @@ export function createOfflineGameModeModel(
     selectGame(next: SelectedGame): void {
       if (disposed || !available) return;
       if (next !== null && !isExactAppId(next.appId)) return;
-      if (sameSubject(game, next)) return;
+      if (sameSubject(game, next)) {
+        // Same evidence subject: keep its readiness, but show the current name.
+        if (game && next && game.name !== next.name) { game = { ...game, name: next.name }; notify(); }
+        return;
+      }
       game = next ? { ...next } : null;
       resetForNewSelection();
       notify();

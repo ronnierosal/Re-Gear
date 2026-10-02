@@ -484,7 +484,8 @@ test("one throwing subscriber does not stop the others", async () => {
   assert.equal(ok.length > 0, true);
 });
 
-test("a download removed from Steam's list ends the run instead of blocking later syncs", async () => {
+test("a download removed from Steam's list ends the run instead of blocking later syncs", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
   const h = harness();
   h.controller.selectGame(GAME);
   await h.controller.syncNow();
@@ -493,6 +494,8 @@ test("a download removed from Steam's list ends the run instead of blocking late
   assert.equal(h.controller.getState().phase, "preparing");
   // The player removes the item from Steam's downloads page.
   h.send([]);
+  assert.equal(h.controller.getState().phase, "preparing", "one missing snapshot is not final");
+  t.mock.timers.tick(10000);
   await settle();
   const state = h.controller.getState();
   assert.equal(state.running, false);
@@ -508,4 +511,14 @@ test("a running-state probe that throws is treated as not idle", async () => {
   assert.equal(await h.controller.syncNow(), false);
   assert.equal(h.controller.getState().failure, "sync_game_running");
   assert.deepEqual(h.calls.queue, []);
+});
+
+test("an enabled schedule arms no timer until a game is selected", () => {
+  const h = harness({ stored: { enabled: true, intervalMinutes: 30 } });
+  h.controller.selectGame(null);
+  assert.equal(h.pendingTimers(), 0);
+  h.controller.selectGame(GAME);
+  assert.equal(h.pendingTimers(), 1);
+  h.controller.selectGame(null);
+  assert.equal(h.pendingTimers(), 0);
 });
