@@ -72,7 +72,7 @@ issue**. Architectural possibility is not support.
   [controllers](../wiki/Controllers.md), [Offline Readiness](../wiki/Offline-Readiness.md)
 - Status and work: [Current state](CURRENT_STATE.md), [Roadmap](ROADMAP.md),
   [Worker queue](WORK_QUEUE.md), [release coordination](CHAT_COORDINATION.md),
-  [agent coordination](AGENT_COORDINATION.md)
+  [agent coordination](AGENT_COORDINATION.md), [scheduled Codex workers](CODEX_WORKERS.md)
 - Hardware and compatibility: [Hardware support](HARDWARE_SUPPORT.md),
   [hardware-agnostic audit](HARDWARE_AGNOSTIC_AUDIT.md)
 - UX: [UI specification](UI_SPEC.md)
