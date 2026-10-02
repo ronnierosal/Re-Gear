@@ -1,0 +1,38 @@
+name: Agent coordination update
+on:
+  workflow_dispatch:
+    inputs:
+      issue:
+        description: Task issue number
+        required: true
+        type: string
+      expected_revision:
+        description: Revision read from task record
+        required: true
+        type: string
+      record_json:
+        description: Complete proposed record, revision incremented once
+        required: true
+        type: string
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
+  statuses: write
+# GitHub may replace a pending run. No successful readback means no claim.
+concurrency:
+  group: github-task-record-writer
+  cancel-in-progress: false
+jobs:
+  update:
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - name: Validate and update task, then refresh PR gates
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/github_coordination.py apply-event
