@@ -20,10 +20,12 @@ permissions:
   statuses: write
   checks: read
   actions: write
-# Its own group: replacing a pending reconcile is harmless, and it must not
-# displace pending Agent coordination dispatches, which carry agent intent.
+# The one serialized record-writer group, shared with Agent coordination, so no
+# two writers interleave a read-check-write. GitHub keeps one pending run per
+# group; a replaced reconcile loses nothing, and agents send durable intent as
+# `regear-update` comments rather than relying on a pending dispatch.
 concurrency:
-  group: coordination-orchestrator
+  group: github-task-record-writer
   cancel-in-progress: false
 jobs:
   reconcile:

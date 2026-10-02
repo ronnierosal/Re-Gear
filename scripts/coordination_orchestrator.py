@@ -4,7 +4,9 @@ Every run re-reads live GitHub state and moves each managed task as far as its
 evidence allows, so a cancelled, replaced or duplicated run loses nothing: the
 next run recomputes the same result. The planner is pure and takes a snapshot;
 `GitHubFacts` gathers that snapshot and `apply` performs the actions through
-the same compare-and-swap issue write the dispatch workflow uses.
+the same guarded issue write the dispatch workflow uses. Record writers are
+serialized in one concurrency group; agents' durable intents arrive as
+`regear-update` comments, which no cancelled run can lose.
 
 It automates handoffs only. Owners, independent reviewers, exact head/base
 evidence, merge classes and hardware gates are unchanged, and the reconciler
@@ -26,13 +28,23 @@ import github_coordination as gc  # noqa: E402
 REQUIRED_CHECKS = ("foundation", "privileged-user-delivery")
 # Check runs that the coordination workflows create for themselves.
 COORDINATION_CHECKS = {"gate", "update", "reconcile"}
+UPDATE_BLOCK = re.compile(r"^```regear-update[ \t]*\r?\n(.*?)^```[ \t]*$", re.M | re.S)
+ACK = re.compile(r"<!-- regear:update-ack task=(\d+) comment=(\d+) -->")
 REVIEW_BLOCK = re.compile(r"^```regear-review[ \t]*\r?\n(.*?)^```[ \t]*$", re.M | re.S)
 MARKER = re.compile(r"<!-- regear:([a-z-]+) task=(\d+) head=([0-9a-f]{40}) base=([0-9a-f]{40}) -->")
 WRITERS = {"admin", "maintain", "write"}
 # Cross-agent review: the implementing family never reviews itself.
 REVIEWER_FOR = {"claude": "codex-cloud", "codex-cloud": "claude", "codex-local": "claude"}
 AUTO_MERGE_CLASSES = {"A"}
-HOLD_LABELS = {"hold", "needs-decision"}
+# Labels can only stop automation; they never grant authority.
+HOLD_LABELS = {"merge-hold", "hold", "needs-decision"}
+# Merge-authority surfaces: a PR touching any of these is never auto-merged,
+# so coordination changes cannot bootstrap their own integration.
+PROTECTED_PATHS = (".github/", "scripts/github_coordination.py", "scripts/coordination_orchestrator.py",
+                   "AGENTS.md", "CLAUDE.md", "docs/CONTINUOUS_DEVELOPMENT.md", "docs/AGENT_COORDINATION.md",
+                   "contracts/coordination-workers.json")
+MIRRORS = ("task:", "agent:", "risk:", "hardware:")
+TYPE_LABELS = {"bug", "enhancement", "documentation", "refactor", "test", "chore", "security"}
 IMPLEMENTING = {"claimed", "in-progress", "changes-requested"}
 WAITING = {"pr-open", "software-validated", "review-requested", "hardware-required",
            "hardware-validated", "ready-to-merge", "blocked"}
@@ -136,6 +148,66 @@ def hardware_card(number, record, pr, review):
     ])
 
 
+def update_intents(number, comments):
+    """Unacknowledged `regear-update` comments from writers, oldest first.
+
+    Comments are durable agent intent: unlike a pending workflow dispatch,
+    GitHub cannot cancel them, and the serialized reconciler applies them
+    with the same validation as the dispatch workflow."""
+    acked = {int(m.group(2)) for c in comments for m in ACK.finditer(c.get("body") or "")
+             if int(m.group(1)) == number}
+    pending = []
+    for comment in sorted(comments, key=lambda c: c.get("created_at") or ""):
+        match = UPDATE_BLOCK.search(comment.get("body") or "")
+        if not match or comment.get("id") in acked or comment.get("is_bot"):
+            continue
+        pending.append((comment, match.group(1)))
+    return pending
+
+
+def apply_intents(number, record, facts):
+    """Apply pending intents in order; returns (record, ack comments)."""
+    current, acks = record, []
+    for comment, text in update_intents(number, facts.get("issue_comments") or []):
+        try:
+            gc.require(comment.get("author_permission") in WRITERS, "update requires a repository writer")
+            intent = gc.load_record(text)
+            gc.require(isinstance(intent, dict) and set(intent) == {"task", "expected_revision", "record"},
+                       "update needs exactly task, expected_revision and record")
+            gc.require(intent["task"] == number, "update names a different task")
+            gc.require(type(intent["expected_revision"]) is int, "invalid expected_revision")
+            current = gc.update(current, intent["record"], intent["expected_revision"], facts.get("others", []))
+            verdict = f"APPLIED as revision {current['revision']} (`{current['status']}`)"
+        except (ValueError, TypeError, KeyError) as exc:
+            verdict = f"REFUSED: {exc}. Re-read the record and post a new update."
+        acks.append({"kind": "comment", "target": number, "body": "\n".join([
+            f"<!-- regear:update-ack task={number} comment={comment['id']} -->",
+            f"Coordination update {comment['html_url']}: {verdict}"])})
+    return current, acks
+
+
+def label_plan(record, issue_labels, pr_labels=None):
+    """Desired label sets, or None where nothing changes.
+
+    One label per mirror namespace from the record; descriptive labels are
+    kept. The PR also carries the issue's type, area and priority labels.
+    Labels are a readable mirror only and never grant authority."""
+    mirror = [f"task:{record['status']}", f"agent:{record['agent']}",
+              f"risk:{record['class']}", f"hardware:{record['hardware']}"]
+
+    def desired(current, extra):
+        keep = [label for label in current if not label.startswith(MIRRORS)]
+        return list(dict.fromkeys(keep + extra + mirror))
+    issue = desired(issue_labels, ["agent-task"])
+    result = [issue if set(issue) != set(issue_labels) else None, None]
+    if pr_labels is not None:
+        carried = [label for label in issue_labels
+                   if label in TYPE_LABELS or label.startswith("area:") or re.fullmatch(r"P\d", label)]
+        wanted = desired(pr_labels, carried)
+        result[1] = wanted if set(wanted) != set(pr_labels) else None
+    return tuple(result)
+
+
 def plan(number, record, facts):
     """Pure transition planner for one task.
 
@@ -145,8 +217,12 @@ def plan(number, record, facts):
     ready-to-merge record), behind_by, mergeable, others (other task records).
     Returns (new_record_or_None, side_actions, notes)."""
     old = record
+    record, actions = apply_intents(number, record, facts)
+    notes = []
+    if record is not old:
+        # Explicit agent intent wins this run; automatic steps follow next run.
+        return record, actions, notes
     new = copy.deepcopy(record)
-    actions, notes = [], []
     status = new["status"]
     if status in gc.TERMINAL or status == "backlog":
         return None, actions, notes
@@ -186,13 +262,18 @@ def plan(number, record, facts):
             notes.append("required CI failed on the exact head")
 
     comments = facts.get("comments") or []
-    if new["status"] in {"software-validated", "review-requested", "changes-requested"} and not pr.get("draft"):
+    # The newest valid exact-candidate review governs every candidate state, so
+    # a FAIL posted after readiness withdraws merge or hardware authorization.
+    if new["status"] in gc.CANDIDATE and not pr.get("draft"):
         review = latest_review(new, comments, number, head, base)
         if review and review["url"] != (new.get("review") or {}).get("url"):
             evidence = {"result": review["result"], "head": head, "base": base,
                         "url": review["url"], "reviewer": review["reviewer"]}
             new["review"] = evidence
-            if review["result"] == "FAIL":
+            if review["result"] == "PASS" and new["status"] not in {
+                    "software-validated", "review-requested", "changes-requested"}:
+                pass  # already accepted; the newer PASS only refreshes evidence
+            elif review["result"] == "FAIL":
                 new["status"] = "changes-requested"
                 if not has_marker(comments, "rework", number, head, base):
                     actions.append({"kind": "comment", "target": pr["number"], "body": "\n".join([
@@ -258,7 +339,12 @@ def merge_decision(number, record, pr, facts):
     if record.get("auto_merge") is False:
         blockers.append("task opted out of automatic integration")
     if HOLD_LABELS & set(facts.get("labels") or []):
-        blockers.append("hold/needs-decision label present")
+        blockers.append("merge-hold/hold/needs-decision label present")
+    files = facts.get("files")
+    if files is None:
+        blockers.append("changed files unknown")
+    elif any(path.startswith(PROTECTED_PATHS) for path in files):
+        blockers.append("PR changes protected coordination/merge-authority paths; integrate manually")
     if pr.get("draft"):
         blockers.append("draft PR")
     if facts.get("gate_error"):
@@ -361,8 +447,13 @@ class GitHubFacts:
         for issue in self.github.pages("issues?state=open"):
             if "pull_request" in issue or not any(l["name"] == "agent-task" for l in issue["labels"]):
                 continue
-            result.append({"number": issue["number"], "body": issue["body"], "record": gc.parse(issue["body"]),
-                           "labels": [l["name"] for l in issue["labels"]], "updated_at": issue.get("updated_at")})
+            row = {"number": issue["number"], "body": issue["body"], "record": None,
+                   "labels": [l["name"] for l in issue["labels"]], "updated_at": issue.get("updated_at")}
+            try:
+                row["record"] = gc.parse(issue["body"])
+            except (ValueError, TypeError) as exc:
+                row["error"] = f"invalid task record: {exc}"  # reported, never silently dropped
+            result.append(row)
         return result
 
     def permission(self, login):
@@ -378,7 +469,8 @@ class GitHubFacts:
         for c in self.github.pages(f"issues/{number}/comments"):
             user = c.get("user") or {}
             bot = user.get("type") == "Bot" or str(user.get("login", "")).endswith("[bot]")
-            rows.append({"body": c.get("body"), "html_url": c["html_url"], "created_at": c.get("created_at"),
+            rows.append({"id": c.get("id"), "body": c.get("body"), "html_url": c["html_url"],
+                         "created_at": c.get("created_at"),
                          "is_bot": bot, "author_permission": "none" if bot else self.permission(user.get("login"))})
         return rows
 
@@ -393,9 +485,16 @@ class GitHubFacts:
                 return pr
         return None
 
+    def files(self, number):
+        names = []
+        for item in self.github.pages(f"pulls/{number}/files"):
+            names += [item["filename"]] + ([item["previous_filename"]] if "previous_filename" in item else [])
+        return names
+
     def snapshot(self, issue, open_prs, all_records):
         number, record = issue["number"], issue["record"]
-        facts = {"others": [(n, r) for n, r in all_records if n != number], "labels": list(issue["labels"])}
+        facts = {"others": [(n, r) for n, r in all_records if n != number], "labels": list(issue["labels"]),
+                 "issue_labels": list(issue["labels"]), "issue_comments": self.comments(number)}
         matches = []
         for pr in open_prs:
             try:
@@ -414,17 +513,18 @@ class GitHubFacts:
             return facts
         pr = self.github.api(f"pulls/{matches[0]['number']}")
         facts["pr"] = pr
-        facts["labels"] += [l["name"] for l in pr.get("labels", [])]
+        facts["pr_labels"] = [l["name"] for l in pr.get("labels", [])]
+        facts["labels"] += facts["pr_labels"]
         head = pr["head"]["sha"]
         facts["checks"] = self.checks(head)
         if record["status"] in gc.CANDIDATE | {"pr-open"}:
             facts["comments"] = self.comments(pr["number"])
-            facts["issue_comments"] = self.comments(number) if record["hardware"] == "required" else []
         if record["status"] == "ready-to-merge":
             try:
                 gc.check_pr(self.github, pr, all_records, open_prs)
             except (ValueError, KeyError, TypeError) as exc:
                 facts["gate_error"] = str(exc)
+            facts["files"] = self.files(pr["number"])
             compare = self.github.api(f"compare/{pr['base']['ref']}...{head}")
             facts["behind_by"] = compare.get("behind_by")
             facts["mergeable"] = pr.get("mergeable")
@@ -435,14 +535,18 @@ def reconcile(github, dry_run=False, out=print):
     facts_source = GitHubFacts(github)
     issues = facts_source.managed_issues()
     open_prs = github.pages("pulls?state=open")
-    records = [(i["number"], i["record"]) for i in issues]
+    records = [(i["number"], i["record"]) for i in issues if i["record"] is not None]
     report, changed = [], False
     for issue in issues:
-        row = {"task": issue["number"], "status": issue["record"]["status"], "actions": [], "notes": []}
+        row = {"task": issue["number"], "status": (issue["record"] or {}).get("status"), "actions": [], "notes": []}
+        if issue["record"] is None:
+            row["error"] = issue["error"]
+            report.append(row)
+            continue
         try:
-            # Reconciler writes trigger no workflow, so a task that just reached
-            # ready-to-merge is re-read and evaluated for integration in this run.
-            for _ in range(2):
+            # Reconciler writes trigger no workflow, so after a write the task is
+            # re-read and planned again in this run (intent -> automatic step -> merge).
+            for _ in range(3):
                 facts = facts_source.snapshot(issue, open_prs, records)
                 new, actions, notes = plan(issue["number"], issue["record"], facts)
                 row["notes"] += notes
@@ -450,10 +554,16 @@ def reconcile(github, dry_run=False, out=print):
                     row["actions"] += [a["kind"] for a in actions] + (["update:" + new["status"]] if new else [])
                     break
                 changed |= apply(github, issue, new, actions, facts, row)
-                if not new or new["status"] != "ready-to-merge":
+                merges = [a for a in actions if a["kind"] == "merge"]
+                if merges:
+                    open_prs = github.pages("pulls?state=open")
+                    changed |= merge_if_still_eligible(github, facts_source, issue, merges[0], open_prs, records, row)
+                    break
+                if new is None:
                     break
                 fresh = github.api(f"issues/{issue['number']}")
-                issue = dict(issue, body=fresh["body"], record=gc.parse(fresh["body"]))
+                issue = dict(issue, body=fresh["body"], record=gc.parse(fresh["body"]),
+                             labels=[l["name"] for l in fresh.get("labels", [])])
                 records = [(n, issue["record"] if n == issue["number"] else r) for n, r in records]
         except (ValueError, KeyError, TypeError, gc.subprocess.CalledProcessError) as exc:
             # One task's failure never blocks the others; the next run retries from fresh state.
@@ -467,45 +577,59 @@ def reconcile(github, dry_run=False, out=print):
 
 
 def apply(github, issue, new, actions, facts, row):
-    """Side effects first (each idempotent by marker), then one CAS write.
-
-    A comment posted by a run whose write then loses the race is found by
-    marker next time and not repeated; the record is simply recomputed."""
+    """Comments first (each idempotent by marker), then one CAS write, then
+    label repair. A comment posted by a run whose write then loses the race is
+    found by marker next time and not repeated; the record is recomputed."""
     changed = False
     for action in [a for a in actions if a["kind"] == "comment"]:
         github.api(f"issues/{action['target']}/comments", "POST", {"body": action["body"]})
         row["actions"].append(f"comment:#{action['target']}")
+    current = issue["record"]
     if new is not None:
         body = gc.replace(issue["body"], new)
-        gc.write_body(github, issue["number"], issue["body"], body, new)
+        gc.write_body(github, issue["number"], issue["body"], body, new)  # also mirrors issue labels
         row["actions"].append(f"update:{new['status']}@r{new['revision']}")
-        changed = True
-    for action in [a for a in actions if a["kind"] == "merge"]:
-        merge(github, issue, action, facts, row)
-        changed = True
+        current, changed = new, True
+    issue_labels, pr_labels = label_plan(current, facts.get("issue_labels") or [], facts.get("pr_labels"))
+    if issue_labels is not None and new is None:
+        github.api(f"issues/{issue['number']}/labels", "PUT", {"labels": issue_labels})
+        row["actions"].append("labels:issue")
+    if pr_labels is not None:
+        github.api(f"issues/{facts['pr']['number']}/labels", "PUT", {"labels": pr_labels})
+        row["actions"].append("labels:pr")
     return changed
 
 
-def merge(github, issue, action, facts, row):
-    # `sha` makes GitHub refuse if the head moved after this run read it.
-    result = github.api(f"pulls/{action['pr']}/merge", "PUT",
-                        {"sha": action["sha"], "merge_method": "merge"})
+def merge_if_still_eligible(github, facts_source, issue, action, open_prs, records, row):
+    """Re-read everything immediately before merging; merge only if a fresh
+    plan from live state still produces this exact merge, then record it only
+    after GitHub confirms the merge."""
+    fresh = github.api(f"issues/{issue['number']}")
+    current = dict(issue, body=fresh["body"], record=gc.parse(fresh["body"]),
+                   labels=[l["name"] for l in fresh.get("labels", [])])
+    facts = facts_source.snapshot(current, open_prs, records)
+    _, actions, notes = plan(current["number"], current["record"], facts)
+    if action not in actions:
+        row["notes"].append("merge withdrawn on fresh re-validation: " + ("; ".join(notes) or "state changed"))
+        return False
+    # `sha` makes GitHub refuse if the head moved after this read.
+    result = github.api(f"pulls/{action['pr']}/merge", "PUT", {"sha": action["sha"], "merge_method": "merge"})
+    gc.require(isinstance(result, dict) and result.get("merged") is True, "GitHub did not confirm the merge")
     row["actions"].append(f"merge:#{action['pr']}")
-    pr = github.api(f"pulls/{action['pr']}")
-    record = issue["record"]
+    record = current["record"]
     merged = dict(copy.deepcopy(record), status="merged", revision=record["revision"] + 1,
-                  integration={"pr": action["pr"], "sha": result.get("sha") or pr.get("merge_commit_sha"),
-                               "url": pr["html_url"]})
+                  integration={"pr": action["pr"], "sha": result["sha"], "url": facts["pr"]["html_url"]})
     merged = gc.update(record, merged, record["revision"], facts.get("others", []))
-    gc.write_body(github, issue["number"], issue["body"], gc.replace(issue["body"], merged), merged)
+    gc.write_body(github, current["number"], current["body"], gc.replace(current["body"], merged), merged)
     row["actions"].append("update:merged")
-    # GITHUB_TOKEN merges trigger no push workflows; request main CI explicitly.
-    branch = facts["pr"]["base"]["ref"]
+    # GITHUB_TOKEN merges trigger no push workflows; request base-branch CI explicitly.
     for profile in ("development", "production"):
         try:
-            github.api("actions/workflows/ci.yml/dispatches", "POST", {"ref": branch, "inputs": {"profile": profile}})
+            github.api("actions/workflows/ci.yml/dispatches", "POST",
+                       {"ref": facts["pr"]["base"]["ref"], "inputs": {"profile": profile}})
         except gc.subprocess.CalledProcessError:
             row["notes"].append(f"could not dispatch post-merge {profile} CI")
+    return True
 
 
 def gather_rows(github, with_faults=False):
@@ -514,6 +638,11 @@ def gather_rows(github, with_faults=False):
     open_prs = github.pages("pulls?state=open")
     rows = []
     for issue in issues:
+        if issue["record"] is None:
+            if with_faults:
+                rows.append({"number": issue["number"], "record": {"status": "invalid", "owner": None},
+                             "labels": issue["labels"], "updated_at": None, "pr": None, "faults": [issue["error"]]})
+            continue
         pr = None
         for candidate in open_prs:
             try:

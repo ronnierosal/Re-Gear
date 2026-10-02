@@ -127,10 +127,13 @@ class PlanTests(unittest.TestCase):
 
     def test_07_class_a_reaches_integration(self):
         accepted = at("ready-to-merge", review=ev(reviewer=REVIEWER))
-        ready = facts(behind_by=0, mergeable=True)
+        ready = facts(behind_by=0, mergeable=True, files=["docs/example.md"])
         _, actions, notes = o.plan(7, accepted, ready)
         self.assertEqual(actions, [{"kind": "merge", "pr": 12, "sha": HEAD, "task": 7}], notes)
-        blocked = {"hold label": dict(ready, labels=["hold"]), "draft": dict(ready, pr=pr(draft=True)),
+        blocked = {"hold label": dict(ready, labels=["hold"]), "merge-hold": dict(ready, labels=["merge-hold"]),
+                   "draft": dict(ready, pr=pr(draft=True)), "files unknown": dict(ready, files=None),
+                   "protected path": dict(ready, files=["docs/example.md", ".github/workflows/ci.yml"]),
+                   "orchestrator": dict(ready, files=["scripts/coordination_orchestrator.py"]),
                    "behind": dict(ready, behind_by=2), "conflict": dict(ready, mergeable=False),
                    "gate": dict(ready, gate_error="scope overlaps #9"), "ci": dict(ready, checks={"state": "pending"})}
         for name, case in blocked.items():
@@ -228,6 +231,107 @@ class PlanTests(unittest.TestCase):
         self.assertIn("normal window 24h", report[0]["problems"][0])
 
 
+class FindingRegressionTests(unittest.TestCase):
+    """Regressions for the independent FAIL review of #458 head 6f3f5f6b."""
+
+    def test_newer_fail_withdraws_ready_and_hardware_acceptance(self):
+        ready = at("ready-to-merge", review=ev(reviewer=REVIEWER, url="https://example.org/pass"))
+        withdraw = review_comment(result="FAIL", url="https://example.org/withdraw")
+        new, actions, _ = o.plan(7, ready, facts(comments=[withdraw], behind_by=0, mergeable=True,
+                                                 files=["docs/example.md"]))
+        self.assertEqual(new["status"], "changes-requested")
+        self.assertFalse(any(a["kind"] == "merge" for a in actions))
+        hw = at("hardware-required", hardware="required", review=ev(reviewer=REVIEWER), **{"class": "C"})
+        self.assertEqual(o.plan(7, hw, facts(comments=[withdraw]))[0]["status"], "changes-requested")
+        # A newer PASS on an accepted candidate only refreshes evidence.
+        again = review_comment(url="https://example.org/pass-2")
+        refreshed = o.plan(7, ready, facts(comments=[again], behind_by=0, mergeable=True, files=["docs/a.md"]))[0]
+        self.assertEqual((refreshed["status"], refreshed["review"]["url"]), ("ready-to-merge", "https://example.org/pass-2"))
+
+    def test_hold_added_after_planning_stops_the_merge(self):
+        fake = FakeGitHub(at("ready-to-merge", review=ev(reviewer=REVIEWER)), pr())
+        source = o.GitHubFacts(fake)
+        [issue] = source.managed_issues()
+        records = [(7, issue["record"])]
+        _, actions, _ = o.plan(7, issue["record"], source.snapshot(issue, [fake.pull], records))
+        [action] = [a for a in actions if a["kind"] == "merge"]
+        fake.labels.append({"name": "merge-hold"})  # lands after the plan, before the PUT
+        row = {"actions": [], "notes": []}
+        self.assertFalse(o.merge_if_still_eligible(fake, source, issue, action, [fake.pull], records, row))
+        self.assertFalse(fake.merged)
+        self.assertIn("merge withdrawn", row["notes"][0])
+
+    def test_unconfirmed_merge_records_nothing(self):
+        fake = FakeGitHub(at("ready-to-merge", review=ev(reviewer=REVIEWER)), pr())
+        original = fake.api
+
+        def refuse(path, method="GET", payload=None):
+            if path == "pulls/12/merge":
+                return {"merged": False, "message": "Base branch was modified"}
+            return original(path, method, payload)
+        fake.api = refuse
+        [row] = reconcile(fake)
+        self.assertIn("did not confirm", row["error"])
+        self.assertEqual(gc.parse(fake.body)["status"], "ready-to-merge")
+
+    def test_misleading_manual_label_grants_nothing_and_is_repaired(self):
+        fake = FakeGitHub(record(status="claimed"), pr(draft=True))
+        fake.labels = [{"name": "agent-task"}, {"name": "task:ready-to-merge"}, {"name": "risk:B"},
+                       {"name": "bug"}, {"name": "P1"}, {"name": "area:ui"}]
+        [row] = reconcile(fake)
+        self.assertFalse(any(m[1] == "pulls/12/merge" for m in fake.mutations))
+        names = {l["name"] for l in fake.labels}
+        self.assertTrue({"task:claimed", "risk:A", "agent:claude", "hardware:not-required", "bug", "P1"} <= names)
+        self.assertFalse({"task:ready-to-merge", "risk:B"} & names)
+        # A PR opened with no labels (the #457 case) receives mirrors plus type/area/priority.
+        self.assertEqual({l["name"] for l in fake.pr_labels},
+                         {"task:claimed", "agent:claude", "risk:A", "hardware:not-required", "bug", "P1", "area:ui"})
+        mutations = len(fake.mutations)
+        reconcile(fake)
+        self.assertEqual(len(fake.mutations), mutations, "repaired labels are stable")
+
+    def test_label_plan_keeps_one_label_per_mirror_namespace(self):
+        issue, pr_labels = o.label_plan(record(status="pr-open"), ["task:claimed", "task:pr-open", "docs"], [])
+        self.assertEqual([l for l in issue if l.startswith("task:")], ["task:pr-open"])
+        self.assertIn("docs", issue)
+        self.assertIn("agent-task", issue)
+        mirrors = ["task:pr-open", "agent:claude", "risk:A", "hardware:not-required"]
+        self.assertEqual(o.label_plan(record(), ["agent-task"] + mirrors, mirrors), (None, None))
+
+
+class IntentTests(unittest.TestCase):
+    def intent(self, expected, new_record, cid=501, permission="write", task=7, bot=False):
+        block = json.dumps({"task": task, "expected_revision": expected, "record": new_record})
+        return {"id": cid, "body": f"```regear-update\n{block}\n```", "html_url": f"https://example.org/i/{cid}",
+                "created_at": f"2026-10-02T12:00:{cid % 60:02d}Z", "author_permission": permission, "is_bot": bot}
+
+    def test_comment_claim_is_applied_once_and_acknowledged(self):
+        backlog = record(status="backlog", owner=None, revision=1)
+        claim = self.intent(1, record(status="claimed", revision=2))
+        new, actions, _ = o.plan(7, backlog, facts(pr=None, issue_comments=[claim]))
+        self.assertEqual((new["owner"], new["status"], new["revision"]), (OWNER, "claimed", 2))
+        [ack] = actions
+        self.assertIn("regear:update-ack task=7 comment=501", ack["body"])
+        self.assertIn("APPLIED", ack["body"])
+        acked = [claim, {"id": 9, "body": ack["body"], "html_url": "x", "is_bot": True}]
+        self.assertEqual(o.plan(7, new, facts(pr=None, issue_comments=acked)), (None, [], []))
+
+    def test_competing_and_untrusted_intents_are_refused(self):
+        backlog = record(status="backlog", owner=None, revision=1)
+        first = self.intent(1, record(status="claimed", revision=2), cid=501)
+        second = self.intent(1, record(owner="codex-two", agent="codex-cloud", status="claimed", revision=2), cid=502)
+        new, actions, _ = o.plan(7, backlog, facts(pr=None, issue_comments=[first, second]))
+        self.assertEqual(new["owner"], OWNER)  # one owner; the competing claim is stale
+        self.assertIn("REFUSED", actions[1]["body"])
+        for bad in [self.intent(1, record(status="claimed", revision=2), permission="read"),
+                    self.intent(1, record(status="claimed", revision=2), task=8)]:
+            new, actions, _ = o.plan(7, backlog, facts(pr=None, issue_comments=[bad]))
+            self.assertIsNone(new)
+            self.assertIn("REFUSED", actions[0]["body"])
+        self.assertEqual(o.plan(7, backlog, facts(pr=None, issue_comments=[
+            self.intent(1, record(status="claimed", revision=2), bot=True)])), (None, [], []))
+
+
 class FakeGitHub:
     """In-memory repository API for reconcile/apply; records every mutation."""
 
@@ -240,6 +344,7 @@ class FakeGitHub:
             for n in o.REQUIRED_CHECKS]
         self.comments = {12: list(comments or []), 7: []}
         self.behind_by, self.labels, self.mutations = behind_by, [{"name": "agent-task"}], []
+        self.pr_labels, self.files = [], [{"filename": "docs/example.md"}]
         self.on_read, self.merged = None, False
 
     def tasks(self):
@@ -253,7 +358,7 @@ class FakeGitHub:
         if path.startswith("issues/") and path.endswith("/comments"):
             return self.comments[int(path.split("/")[1])]
         if path.endswith("/files"):
-            return [{"filename": "docs/example.md"}]
+            return self.files
         raise AssertionError(path)
 
     def api(self, path, method="GET", payload=None):
@@ -268,12 +373,16 @@ class FakeGitHub:
         if path == "issues/7/labels":
             self.labels = [{"name": n} for n in payload["labels"]]
             return self.labels
+        if path == "issues/12/labels":
+            self.pr_labels = [{"name": n} for n in payload["labels"]]
+            return self.pr_labels
         if path.startswith("issues/") and path.endswith("/comments"):
-            self.comments[int(path.split("/")[1])].append(
-                {"body": payload["body"], "html_url": "https://example.org/c", "user": {"login": "github-actions[bot]", "type": "Bot"}})
+            target = self.comments[int(path.split("/")[1])]
+            target.append({"id": 9000 + len(target), "body": payload["body"], "html_url": "https://example.org/c",
+                           "user": {"login": "github-actions[bot]", "type": "Bot"}})
             return {}
         if path == "pulls/12":
-            return self.pull
+            return dict(self.pull, labels=self.pr_labels)
         if path.startswith("commits/"):
             return {"check_runs": self.check_runs}
         if path.startswith("collaborators/"):
@@ -352,15 +461,23 @@ class ReconcileTests(unittest.TestCase):
         self.assertEqual(fake.mutations, [])
         self.assertIn("update:review-requested", row["actions"])
 
-    def test_workflow_runs_default_branch_code_in_its_own_group(self):
-        text = (ROOT / ".github/workflows/coordination-orchestrator.yml").read_text()
+    def test_record_writers_are_serialized_and_status_refresh_is_not(self):
+        workflows = ROOT / ".github/workflows"
+        text = (workflows / "coordination-orchestrator.yml").read_text()
         self.assertIn("github.event.repository.default_branch", text)
         self.assertIn("persist-credentials: false", text)
         self.assertNotIn("github.event.pull_request.head", text)
         self.assertNotIn("${{ inputs.", text)
-        self.assertIn("group: coordination-orchestrator", text)
-        gate = (ROOT / ".github/workflows/coordination-gate.yml").read_text()
+        # Every workflow that writes task records shares one serialized group,
+        # so no two writers interleave a read-check-write.
+        for writer in ["coordination-orchestrator.yml", "agent-coordination.yml"]:
+            body = (workflows / writer).read_text()
+            self.assertIn("group: github-task-record-writer", body, writer)
+            self.assertIn("cancel-in-progress: false", body, writer)
+        gate = (workflows / "coordination-gate.yml").read_text()
         self.assertNotIn("group: github-task-record-writer", gate)
+        self.assertNotIn("write_body", (ROOT / "scripts/github_coordination.py").read_text().split("def refresh", 1)[1]
+                         .split("def trusted", 1)[0])
 
 
 if __name__ == "__main__":

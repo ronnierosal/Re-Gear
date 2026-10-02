@@ -148,12 +148,44 @@ open `Task: #N` PR on its branch:
 | `ready-to-merge`, eligible class A | merges exactly the reviewed head and records `merged` |
 | The PR was merged by anyone | records `merged` with the merge commit |
 
-Each write is the same compare-and-swap issue update as the dispatch workflow:
-the body must still equal what the run read, the revision increments once, and
-owner/scope collisions are rechecked. A run that loses a race writes nothing;
-the next run starts from the new state. Comments carry a hidden marker per task
-and exact head/base, so a request or card is posted once even after a lost race.
-Untrusted triggers (for example a comment by a non-writer) run read-only.
+Every record writer, meaning this workflow and Agent coordination, runs in
+the one `github-task-record-writer` concurrency group, so two writers never
+interleave. Each write also re-checks that the body still equals what the run
+read, increments the revision once and rechecks owner/scope collisions. GitHub
+has no conditional issue PATCH, so serialization, not the check alone, makes
+this safe. A human editing a record body directly remains outside the
+cooperative guard. Comments carry a hidden marker per task and exact head/base,
+so a request or card is posted once even after a lost race. Untrusted triggers
+(for example a comment by a non-writer) run read-only.
+
+**Durable agent intent.** GitHub keeps one pending run per concurrency group,
+so a queued `agent-coordination` dispatch can be replaced and lost. Prefer a
+comment on the task issue, which no run can cancel:
+
+````text
+```regear-update
+{"task": 456, "expected_revision": 3, "record": { ...complete next record, revision 4... }}
+```
+````
+
+The reconciler applies pending updates oldest first with exactly the dispatch
+workflow's validation: the expected revision, transfer rules and collisions.
+It replies once per comment with `APPLIED as revision N` or `REFUSED: reason`.
+A refused or stale intent changes nothing; re-read and post a new one. Of two
+competing claims at the same revision, only the first can apply. The dispatch
+workflow remains supported; re-read after it, because a replaced run acquires
+nothing.
+
+**Labels.** Every run repairs the mirrors: exactly one `task:`, `agent:`,
+`risk:` and `hardware:` label from the record on the issue and its PR. The PR
+also gets the issue's type, `area:` and `P0`–`P3` labels. Other descriptive
+labels are kept. Labels are a readable mirror only. A misleading label grants
+nothing, and only `merge-hold`, `hold` or `needs-decision` can affect
+automation, by stopping it. Any agent creating a GitHub issue applies the
+existing type, area, priority/readiness and hardware labels at creation when
+known, and reuses a canonical label instead of inventing one. Managed tasks
+also go through the coordination record. The reconciler is the backstop, not
+the plan.
 
 ### Review
 
@@ -174,16 +206,28 @@ Use `"result": "FAIL"` with blocking findings. A block counts only when it is
 from a repository writer (not a bot), names this task, matches the current head
 and base, and names a reviewer other than the owner. The newest valid block for
 the candidate wins, so a reviewer can retract a mistaken FAIL with a later PASS.
-A review of an old head is ignored. The rework cycle needs no human:
-FAIL → owner pushes a fix → new head → CI → new review request.
+The newest valid block governs every candidate state. A FAIL posted after
+`ready-to-merge` or a hardware state withdraws that acceptance and returns
+the task to `changes-requested`. A review of an old head is ignored. The
+rework cycle needs no human: FAIL → owner pushes a fix → new head → CI → new
+review request.
 
 ### Class A integration
 
-The orchestrator merges with `merge_method: merge` and the reviewed `sha`, so
-GitHub refuses if the head moved. It merges only when all of these hold:
+Immediately before merging, the orchestrator re-reads the issue, labels, PR,
+files, CI, reviews and base, and plans again from that live state. It merges
+only if the fresh plan still produces the same merge. It uses
+`merge_method: merge` with the reviewed `sha`, so GitHub refuses if the head
+moved, and records `merged` only after GitHub confirms the merge. The plan
+requires all of these:
 
 - the class is A, `hardware` is `not-required`, and the task does not set `"auto_merge": false`;
-- there is no `hold` or `needs-decision` label on the issue or PR;
+- there is no `merge-hold`, `hold` or `needs-decision` label on the issue or PR;
+- the PR changes no protected merge-authority path: `.github/`, the coordination
+  and orchestrator scripts, `AGENTS.md`, `CLAUDE.md`, this runbook,
+  `docs/AGENT_COORDINATION.md` or `contracts/coordination-workers.json`. Those
+  changes need independent review and separate integration, so the automation
+  can never bootstrap its own authority;
 - the PR is not a draft;
 - the full `coordination/pr` gate passes: owner, branch, scope, exact software and review evidence, independent reviewer, collisions;
 - required CI is green on the head;

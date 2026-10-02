@@ -361,11 +361,14 @@ def apply_event(github, event):
 
 
 def write_body(github, number, observed, body, new):
-    """Compare-and-swap one issue body, then read back and mirror labels.
+    """Guarded write of one issue body, then read back and mirror labels.
 
-    `observed` is the body the caller derived `new` from. Any other writer in
-    between (a human edit, the dispatch workflow, another reconciler run) makes
-    this refuse rather than overwrite; the caller re-reads and recomputes."""
+    `observed` is the body the caller derived `new` from; a different current
+    body refuses the write. GitHub offers no conditional PATCH, so this is not
+    atomic by itself: it is safe because every record writer (dispatch workflow
+    and reconciler) runs in the one `github-task-record-writer` concurrency
+    group. A human edit between the check and the PATCH is still possible and
+    is the documented cooperative-guard limit."""
     # Direct edits are outside the cooperative writer protocol. Detect observed drift.
     require(github.api(f"issues/{number}")["body"] == observed, "issue changed during update")
     github.api(f"issues/{number}", "PATCH", {"body": body})
