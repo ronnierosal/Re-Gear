@@ -20,14 +20,16 @@ are shared by every worktree, so the release ledger works across agents without
 a second clone. On Windows the workspace is a normal path, for example
 `C:\Users\SLDD\AI-Dev\Re-Gear`; the tool is path-agnostic.
 
-Each concurrent task gets a dedicated branch and worktree: `codex/<topic>`,
-`claude/<topic>`, or `agent/<topic>`. The named slots are conveniences, not model
+Each concurrent task gets a dedicated branch and worktree: new tasks use
+`agent/codex-cloud/<issue>-<slug>`, `agent/claude/<issue>-<slug>`, or
+`agent/codex-local/<issue>-<slug>`. Existing active branch names remain valid. The named slots are conveniences, not model
 ownership: two Claude sessions need different worktrees too. Reuse only a clean,
 released slot after checking the hub. Shared main is inspection-only.
 
 The shared `agent-hub/` sits beside these worktrees. Its implementation is tracked
 in `scripts/agent_hub/`; its one live database is workspace-local and never copied
-into individual worktrees. See [Agent coordination](AGENT_COORDINATION.md).
+into individual worktrees. It mirrors GitHub-owned claims and sends notifications; GitHub issues are the
+cross-machine authority. See [Agent coordination](AGENT_COORDINATION.md).
 
 ## Setup tool
 

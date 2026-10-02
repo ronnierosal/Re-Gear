@@ -2,7 +2,11 @@
 
 What user or engineering problem does this solve?
 
-Linked issue / hub task (publish the issue link when remote access is available):
+Task: #<canonical GitHub issue number>
+
+Use one standalone `Task: #N` line. The issue's `regear-task` record owns the
+claim, branch, class A/B/C/D, status and hardware/validation requirements.
+Local hub links are optional notifications, not a second authority.
 
 ## Ownership and dependencies
 
@@ -32,6 +36,12 @@ plus the credit/notice location. If none was used, say so. Follow
 implementation solely because an AI wrote or rewrote it.
 
 ## Verification
+
+Change class and justification (A software / B established behavior / C hardware
+required / D high risk):
+Bug regression: fail-before/pass-after evidence, or the precise reproduction gap:
+Independent reviewer and exact head/base evidence:
+Hardware PASS / FAIL / INCONCLUSIVE / not required, exact artifact hash and evidence:
 
 List exact targeted and integration checks run, including failures diagnosed.
 Include checks for other agents' affected behavior. Distinguish worker tests

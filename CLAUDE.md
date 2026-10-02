@@ -1,7 +1,9 @@
 # Claude Code entry point
 
-Read and obey [AGENTS.md](AGENTS.md), then follow the fresh-session workflow in
-[Agent coordination](docs/AGENT_COORDINATION.md). Register your own stable Claude
-session ID in the shared workspace hub. Read your project primary's assignment
-before claiming work; return implementation evidence for primary integration. The task lifecycle, validation, ownership,
-and merge policy are the same for every agent. Reload these files on resume.
+Read [AGENTS.md](AGENTS.md) from fetched `origin/main`, then
+[Agent coordination](docs/AGENT_COORDINATION.md). Claim an assigned GitHub issue
+before implementation, using your stable session identity and isolated branch /
+worktree. Local sessions also inspect the existing hub; cloud sessions do not
+create a competing local authority. Default to focused implementation and return
+exact commits, regression/review evidence and hardware limitations. The task,
+merge and safety gates are the same for every agent. Reload on resume.

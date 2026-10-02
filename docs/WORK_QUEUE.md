@@ -1,7 +1,7 @@
 # Re-Gear worker queue
 
 This is the ordered work and durable checkpoint index. Live cross-agent ownership
-comes from the shared hub tasks and linked cross-machine issue/PR claims under
+comes from canonical GitHub issue records (the local hub mirrors them) under
 [the coordination playbook](AGENT_COORDINATION.md);
 dated owners here are not exclusive current claims. This index
 does not replace executable behavior, [the roadmap](ROADMAP.md), or the
@@ -13,9 +13,9 @@ use; see [Licensing](LICENSING.md).
 
 ## Rules
 
-- An idle worker may take the first unblocked item only when it is within its
-  authority and can remain bounded, reversible, and independently verifiable.
-  Otherwise record the blocker and take the next safe item.
+- An idle worker claims an assigned GitHub issue before implementation. This
+  historical index does not assign work or override an active owner. Use the
+  [concurrent development queue](CONTINUOUS_DEVELOPMENT.md) for current status.
 - **Implemented**, **Simulated**, **Remotely Observed**, **Hardware Validation
   Required**, **Hardware Validated**, and **Certified** are distinct statuses.
   Code or capture never upgrades hardware validation.
