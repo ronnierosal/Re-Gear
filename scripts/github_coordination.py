@@ -185,8 +185,17 @@ def update(old, new, expected_revision, others):
         # turn that review into grandfathered evidence that survives an edit.
         request = old.get("review_request")
         if request is not None and new.get("review_request") != request:
+            replacement = new.get("review_request") or {}
+            software = new.get("software") or {}
+            # A request for a new candidate (new head or base, matching new
+            # software evidence) is a restart: evidence for the old one is gone.
+            new_candidate = ((replacement.get("head"), replacement.get("base"))
+                             != (request.get("head"), request.get("base"))
+                             and (replacement.get("head"), replacement.get("base"))
+                             == (software.get("head"), software.get("base")))
             require(not any(name in new for name in ("review", "hardware_evidence"))
-                    and new["status"] not in REVIEWED_STATES,
+                    and (new["status"] not in REVIEWED_STATES
+                         or (new_candidate and new["status"] == "review-requested")),
                     "changing review_request must drop review/hardware evidence and leave reviewed states")
     collision(new, others)
     return new

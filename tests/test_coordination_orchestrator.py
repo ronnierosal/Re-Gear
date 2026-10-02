@@ -31,7 +31,10 @@ def ev(head=HEAD, base=BASE, **changes):
 
 
 def at(status, **changes):
-    """A record already holding software evidence for HEAD/BASE."""
+    """A record already holding software evidence for HEAD/BASE; a recorded
+    review was ingested by the workflow, so it carries its review_request."""
+    if "review" in changes:
+        changes.setdefault("review_request", {"head": HEAD, "base": BASE, "reviewer_agent": "codex-cloud"})
     return record(status=status, software=ev(), **changes)
 
 
@@ -591,24 +594,41 @@ class CloudReviewRegressionTests(unittest.TestCase):
         # URL pointing at a substantive prose review on the PR (no block).
         prose = dict(review_comment(), body="Independent review: PASS. Findings: none blocking.",
                      user={"login": "writer", "type": "User"})
-        legacy = at("ready-to-merge", review=REVIEWED)
-        self.assertNotIn("review_request", legacy)
-        new, actions, notes = o.plan(7, legacy, facts(comments=[prose]))
-        self.assertIsNone(new, notes)
-        self.assertFalse(any("no longer backed" in n for n in notes))
-        fake = FakeGitHub(legacy, pr(), comments=[prose])
-        with patch.dict(o.os.environ, ENV):
-            [row] = o.reconcile(fake, dry_run=True, out=lambda _: None)
-        self.assertNotIn("update:review-requested", row["actions"])
-        # A newer structured FAIL still withdraws adopted acceptance.
-        fail = dict(review_comment(result="FAIL", created="2026-10-02T13:00:00Z", url="https://example.org/f"),
-                    user={"login": "writer", "type": "User"})
-        new, _, _ = o.plan(7, legacy, facts(comments=[prose, dict(fail, author_permission="write", is_bot=False)]))
-        self.assertEqual(new["status"], "changes-requested")
-        # Adopted evidence recorded from outside this PR's comments is kept.
-        adopted = at("ready-to-merge", review=dict(REVIEWED, url="https://example.org/formal-review"))
-        new, _, _ = o.plan(7, adopted, facts(comments=[]))
-        self.assertIsNone(new)
+        legacy = {k: v for k, v in at("ready-to-merge", review=REVIEWED).items() if k != "review_request"}
+        with patch.object(o, "LEGACY_REVIEWS", {(7, REVIEWED["url"])}):
+            new, actions, notes = o.plan(7, legacy, facts(comments=[prose]))
+            self.assertIsNone(new, notes)
+            self.assertFalse(any("no longer backed" in n for n in notes))
+            fake = FakeGitHub(legacy, pr(), comments=[prose])
+            with patch.dict(o.os.environ, ENV):
+                [row] = o.reconcile(fake, dry_run=True, out=lambda _: None)
+            self.assertNotIn("update:review-requested", row["actions"])
+            # A newer structured FAIL still withdraws adopted acceptance.
+            fail = dict(review_comment(result="FAIL", created="2026-10-02T13:00:00Z", url="https://example.org/f"))
+            new, _, _ = o.plan(7, legacy, facts(comments=[prose, fail]))
+            self.assertEqual(new["status"], "changes-requested")
+        # Outside the exact allowlist, unbacked evidence is withdrawn, whether
+        # its comment was edited, deleted or never held a block.
+        for comments in ([prose], []):
+            new, _, notes = o.plan(7, legacy, facts(comments=comments))
+            self.assertEqual(new["status"], "review-requested", notes)
+            self.assertNotIn("review", new)
+        # The live allowlist names exactly the two adopted reviews.
+        self.assertEqual({n for n, _ in o.LEGACY_REVIEWS}, {441, 447})
+
+    def test_hand_stripped_marker_on_an_accepted_review_is_repaired(self):
+        accepted = at("ready-to-merge", review=REVIEWED)
+        hand_edited = {k: v for k, v in accepted.items() if k != "review_request"}
+        ready = dict(behind_by=0, mergeable=True, files=["docs/example.md"], base_rules=STRICT_RULES)
+        new, actions, _ = o.plan(7, hand_edited, facts(comments=[review_comment()], **ready))
+        self.assertEqual(new["review_request"], REQUESTED)
+        self.assertFalse(any(a["kind"] == "merge" for a in actions))
+        # Repaired or not, an invalid edit of the backing comment withdraws it.
+        invalid = dict(review_comment(), body="Retracted.")
+        for current in (new, hand_edited):
+            withdrawn, actions, _ = o.plan(7, current, facts(comments=[invalid], **ready))
+            self.assertFalse(any(a["kind"] == "merge" for a in actions))
+            self.assertEqual(withdrawn["status"], "review-requested")
 
     def test_review_routing_cannot_name_the_implementing_family(self):
         old = at("review-requested", review_request={"head": HEAD, "base": BASE, "reviewer_agent": "codex-cloud"})

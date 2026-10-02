@@ -227,16 +227,15 @@ opposite `agent` family. Like reviewer IDs, the family is a cooperative
 declaration, not authentication. The newest valid block for the candidate wins,
 so a reviewer can retract a mistaken FAIL with a later PASS. The live comment
 content governs: editing a block from PASS to FAIL (or back) takes effect on
-the next run, and a recorded review whose PR comment no longer holds a valid
-block is withdrawn and the review requested again. That applies to reviews
-this workflow ingested (records with `review_request`); evidence adopted from
-before it, such as legacy prose reviews, is kept. Once set, `review_request`
-can be removed or changed only by an update that also drops the review and
-hardware evidence and leaves the review states (`review-requested` onwards),
-for example a restart at `software-validated`. Every review the workflow
-ingests also stamps `review_request` if it is missing. A deleted review comment
-cannot be told apart from evidence recorded elsewhere, so retract with an edit
-or a newer FAIL rather than by deleting.
+the next run. Every recorded review must stay backed by a live valid block for
+the candidate: one edited invalid, deleted or recorded from anywhere else is
+withdrawn and the review requested again. The only exemption is the two
+adopted pre-workflow prose reviews of #441 and #447, listed exactly in
+`LEGACY_REVIEWS`; it ends with their current candidate. A live structured
+review also stamps a missing `review_request`, and once set, `review_request`
+can be removed or changed only together with dropping review and hardware
+evidence and leaving the review states, or by a request for a new candidate
+head/base.
 The newest valid block governs every candidate state. A FAIL posted after
 `ready-to-merge` or a hardware state withdraws that acceptance and returns
 the task to `changes-requested`. A review of an old head is ignored. The

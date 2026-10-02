@@ -45,6 +45,13 @@ HOLD_LABELS = {"merge-hold", "hold", "needs-decision"}
 PROTECTED_PATHS = (".github/", "scripts/github_coordination.py", "scripts/coordination_orchestrator.py",
                    "AGENTS.md", "CLAUDE.md", "docs/CONTINUOUS_DEVELOPMENT.md", "docs/AGENT_COORDINATION.md",
                    "contracts/coordination-workers.json")
+# Adopted pre-workflow review evidence (task, review URL): legacy prose reviews
+# with no `regear-review` block. Exact entries only; a new head or base drops
+# the evidence and with it this exemption.
+LEGACY_REVIEWS = {
+    (441, "https://github.com/ronnierosal/Re-Gear/pull/442#issuecomment-5957610193"),
+    (447, "https://github.com/ronnierosal/Re-Gear/pull/452#issuecomment-5958000102"),
+}
 MIRRORS = ("task:", "agent:", "risk:", "hardware:")
 TYPE_LABELS = {"bug", "enhancement", "documentation", "refactor", "test", "chore", "security"}
 IMPLEMENTING = {"claimed", "in-progress", "changes-requested"}
@@ -275,28 +282,27 @@ def plan(number, record, facts):
         review = latest_review(new, comments, number, head, base)
         evidence = review and {"result": review["result"], "head": head, "base": base,
                                "url": review["url"], "reviewer": review["reviewer"]}
-        recorded_url = (new.get("review") or {}).get("url")
-        # Only reviews this workflow ingested (they carry `review_request`) are
-        # bound to a live `regear-review` block. Adopted pre-workflow evidence
-        # (#441, #447) points at legacy prose reviews and is not reset.
-        structured = "review_request" in new
-        if review is None and structured and any(c.get("html_url") == recorded_url for c in comments):
-            # The comment backing the recorded review still exists but no longer
-            # holds a valid block for this candidate: acceptance is withdrawn.
+        recorded = new.get("review")
+        if review and "review_request" not in new:
+            # A live structured review proves workflow provenance: re-mark a
+            # record that lost its request (e.g. a hand edit) before comparing,
+            # so the repair is a record update and nothing merges this pass.
+            new["review_request"] = {"head": head, "base": base, "reviewer_agent": REVIEWER_FOR[new["agent"]]}
+        # Every recorded review must be backed by a live valid `regear-review`
+        # block, except the two adopted pre-workflow prose reviews. A review
+        # edited invalid, deleted, or recorded from elsewhere is withdrawn.
+        if review is None and recorded and (number, recorded.get("url")) not in LEGACY_REVIEWS:
             new.pop("review")
             if new["status"] in {"ready-to-merge", "hardware-required", "hardware-validated", "changes-requested"}:
                 new["status"] = "review-requested"
                 new.pop("hardware_evidence", None)
-                new["review_request"] = {"head": head, "base": base, "reviewer_agent": REVIEWER_FOR[new["agent"]]}
+                new.setdefault("review_request", {"head": head, "base": base,
+                                                  "reviewer_agent": REVIEWER_FOR[new["agent"]]})
             notes.append("recorded review no longer backed by a live review comment")
         # Compare the whole live evidence, not the URL: an edited comment keeps
         # its URL, so a PASS edited to FAIL (or back) must still take effect.
         if review and evidence != new.get("review"):
             new["review"] = evidence
-            # A review this workflow ingests is always marked structured, so it
-            # stays bound to its live comment even if the request was stripped.
-            new.setdefault("review_request", {"head": head, "base": base,
-                                              "reviewer_agent": REVIEWER_FOR[new["agent"]]})
             if review["result"] == "PASS" and new["status"] not in {
                     "software-validated", "review-requested", "changes-requested"}:
                 pass  # already accepted; the newer PASS only refreshes evidence
