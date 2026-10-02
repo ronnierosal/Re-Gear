@@ -55,81 +55,69 @@ project; eGPUBridge is reference evidence, not the architecture to reproduce.
 - Bounded worker ownership, checkpoints, and integration: `docs/WORK_QUEUE.md`
 - Current executable behavior: code plus tests; docs and memory never override it
 
-Use the source that owns the question. Product, safety, architecture, and
-accepted ADRs define intended contracts. Code and tests define executable
-behavior. `docs/CURRENT_STATE.md` plus linked evidence defines what is built or
-installed. Issues, pull requests, the Wiki, Codex notes, and chat history are
-context only. When sources conflict, stop the claim, verify current evidence,
-and correct the owning repository document.
+GitHub is the authoritative shared record: repository contracts define intended
+behavior, code/tests define executable behavior, issues define task ownership,
+PRs define proposed implementation, and CI/evidence links define validation.
+Local hub snapshots and chats are notifications/context, not competing authority.
+Installed/hardware claims require exact artifact and device evidence; neither
+GitHub labels nor software tests establish physical behavior.
 
 ## Ownership and coordination
 
-- This file is the common contract for Codex, Claude Code, and ChatGPT/voice
-  handoffs. Agent entry files link here; they do not duplicate policy.
-- At start/resume read [the short lifecycle](docs/AGENT_COORDINATION.md), the
-  shared hub's `status` and your `inbox`, then Git/worktree state and relevant
-  issue/PR claims. Register your own stable session ID. Recheck before integration
-  and handoff; explicitly receipt messages you read or accept.
-- During an active collaboration, keep a requested reply pending for up to
-  10 minutes, checking the inbox every 30 seconds (60 seconds after unchanged
-  checks). Do not end the turn merely because the partner is still processing.
-  Follow [reply waiting](docs/AGENT_COORDINATION.md#waiting-for-collaboration-replies)
-  for deadlines, interruptions, late replies and timeout handoffs.
-- Each focused project/workstream has one Ronnie-designated primary Codex session,
-  recorded as a `primary-<scope>` hub stream owner (for example `primary-egpu`
-  or `primary-ui-wiring`). The primary assigns work to Codex
-  and Claude, resolves shared contracts, and orders integration. A primary owns its named scope, not
-  every project in the repository; cross-scope work needs joint sequencing. No session self-appoints.
-- Workers claim only a primary-assigned task (or an explicit Ronnie assignment),
-  not arbitrary available work. The primary also claims its own implementation
-  tasks and uses isolated worktrees. Record delegation before substantive work;
-  see [primary workflow](docs/AGENT_COORDINATION.md#project-primary-and-delegation).
-- One task has one active owner. Existing claims remain valid until completed or
-  transferred; primary coordination does not grant access to another checkout.
-  Consensual transfers need no human approval, but record the primary's sequencing
-  acknowledgement as well as the accepted hub transfer before work changes hands.
-- Own the problem, not a fixed list of files. Record scope, acceptance criteria,
-  branch, dependencies, blockers, next action, and verification in the task.
-  Expand paths within that scope after checking other claims; coordinate and
-  record overlap before editing. Unrelated discoveries become new tasks.
-- Each concurrent task uses its own branch/worktree. Shared main is inspection
-  only. Never edit another session's checkout or absorb its uncommitted work.
-  File claims are collision guards; inspect semantic overlap and GitHub too.
-- Local hub state is the live workspace record; GitHub issue/PR links carry
-  cross-machine coordination. Chat history is not required. An unavailable remote
-  blocks remote integration, not explicitly assigned, nonconflicting local work.
-- PR and issue cleanup is part of completing a task. Search open and closed items
-  before creating another; update the existing PR for the same unfinished change.
-  Default to one active PR per bounded task; record why a dependency stack or
-  independently reviewable split is needed. Finish ready work before starting
-  another slice of the same task; keep newly discovered problems visible.
-- After integration and before handoff, reconcile the PRs, issues and hub records
-  in your scope: close completed items with merge/acceptance evidence, and close
-  duplicates or superseded items with a linked canonical item or successor after
-  accounting for unique work. Retained items need an owner, remaining acceptance
-  criteria, blocker and next action. Follow [backlog cleanup](docs/AGENT_COORDINATION.md#pr-and-issue-cleanup).
-  Age, green CI or a merged partial fix alone never justify closure; preserve
-  hardware gates, other owners' work, branches and history.
-- Owners may commit and open/update scoped PRs autonomously. Routine validated
-  integration is controlled by the primary Codex, without per-merge human approval.
-  A worker may execute a merge only on a recorded primary delegation naming the
-  exact head/base, review evidence and integration order. Changed revisions require
-  renewed acceptance. Recheck claims, combined behavior, golden gates, final-head
-  CI and branch protection; use the clean integration worktree and preflight.
-- The primary can implement as well as coordinate. Material changes it authors
-  require an independent reviewer; self-review is not independent evidence. Review
-  golden behavior and cross-feature contracts, not merely whether files conflict.
-- Human approval is required for destructive operations or important data deletion;
-  force pushes/shared history rewrites; credential/security-policy or access changes;
-  release/publication/deployment unless explicitly delegated; disruptive or
-  irreversible hardware actions (including changes likely to leave the handheld or
-  eGPU environment unusable); overriding another owner's active task without an
-  agreed, accepted transfer; and major
-  architecture changes outside the assigned scope. Supervised hardware gates remain.
-- Use bounded parallel agents only when useful, with disjoint task ownership and
-  evidence returned to the driver. Never independently redesign shared contracts.
-- The separate handheld/eGPU hardware driver retains that journey. Repository
-  coordination does not authorize hardware operations or changes to its active work.
+- This is the common contract for Codex Cloud, local Codex and Claude Code.
+  At start/resume fetch `origin`, read this file from `origin/main`, inspect Git
+  status/HEAD/worktrees, canonical issues, open PRs and relevant owner claims.
+  Local agents also read the existing hub status/inbox; do not create a second hub.
+- Follow [agent coordination](docs/AGENT_COORDINATION.md) and the
+  [concurrent development runbook](docs/CONTINUOUS_DEVELOPMENT.md). GitHub owns
+  cross-machine claims. One task has one primary implementation owner, issue,
+  status, branch, hardware requirement and validation requirement. Claim before
+  implementation and read back the accepted revision. Review is not ownership.
+- Codex Cloud defaults to isolated software/regression/replay work. Claude defaults
+  to assigned focused implementation. Local Codex coordinates integration and the
+  hardware bridge; hardware access does not make it the default implementer.
+  Ronnie owns product decisions and physical actions. Existing scoped primary
+  assignments remain; policy authorship does not appoint a new feature primary.
+- Every concurrent task uses its own branch/worktree. Shared main is inspection
+  only. Never modify another owner's active branch, dirty files or checkout.
+  Check semantic overlap as well as paths; record agreed sequencing or accepted
+  transfer in the GitHub issue before overlapping work. Never infer transfer
+  from silence, age, a receipt or green CI. Preserve stale history and give it an
+  explicit owner-mediated resolution; do not silently erase or block forever.
+- Use `agent/codex-cloud/<issue>-<slug>`, `agent/claude/<issue>-<slug>` or
+  `agent/codex-local/<issue>-<slug>` for new tasks; retain existing active names.
+  Start from fetched main unless the issue names a stacked dependency. Merge
+  current main into a published task branch; do not force-push/rebase shared
+  history. See the runbook for integration and current-base checks.
+- Owners may commit, push, open/update PRs and run non-destructive software checks
+  autonomously. Assigned integration drivers may merge routine class A and
+  evidence-backed class B changes after independent review, relevant tests,
+  required CI and current ownership/base checks, without per-merge Ronnie approval.
+  Classes C/D require exact-candidate local hardware PASS; D additionally requires
+  an explicit approved supervised procedure. Classification is mandatory.
+- Reserve human approval for product decisions, destructive/risky operations,
+  important data deletion, shared-history rewrites, credentials/access changes,
+  undelegated publication/deployment, and overriding an active owner without an
+  accepted transfer. Never use routine review as a new human approval queue.
+- Material changes require independent review, including coordinator-authored
+  changes. Preserve golden behaviors and indirect shared contracts. Every PR
+  links its canonical `Task: #N`, acceptance, evidence, remaining limits and rollback.
+  A new head/base invalidates prior exact-candidate acceptance.
+- Bug fixes are regression-first: capture evidence, reproduce through a real
+  admission/dispatch path or replay, demonstrate fail-before when practical,
+  fix, then pass the regression and relevant broader suites. Record any precise
+  reproduction limitation; do not repeatedly ask Ronnie to rediscover the same bug.
+- Keep handoffs in GitHub: owner, scope, exact head/base, tests/review/CI, hardware
+  state, artifact/hash, blocker and next action. Close completed or superseded
+  issues/PRs only with acceptance or successor evidence; preserve unique work.
+- Cloud agents have no assumed Ally access and cannot certify hardware. Local
+  Codex discovers the hardware queue, verifies source/artifact/installed identity,
+  collects approved logs and records PASS/FAIL/INCONCLUSIVE. Give Ronnie one
+  concise physical action at a time. Software validation never grants hardware
+  mutation, release or install authority. Preserve the separate hardware driver.
+- Use bounded parallel workers only when useful, with explicit disjoint ownership
+  and isolated worktrees. The local hub remains a notification/collision aid;
+  mirror GitHub links rather than creating an independent cross-machine task board.
 
 ## Required rules
 

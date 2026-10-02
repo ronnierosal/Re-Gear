@@ -1,5 +1,11 @@
 # Shared hub commands
 
+GitHub issues are authoritative for task ownership across machines. This hub
+remains a local notification and collision-checking aid. Mirror canonical issue
+IDs, owners and accepted GitHub transfers; a local claim does not override them.
+Do not initialize private hubs in cloud clones. Existing records and audit
+history are retained; see `docs/CONTINUOUS_DEVELOPMENT.md` in the repository.
+
 ## Setup and adoption
 
 Canonical source is this directory; install `hub.py` and `hub.ps1` into the existing
