@@ -303,13 +303,18 @@ class TransitionReplayTests(unittest.TestCase):
 
 class FreshRecoveryReplayTests(unittest.TestCase):
     def run_recovery(self, *, duplicate=False, recovery_ok=True,
-                     recovery_duration=1, observation_duration=0):
+                     recovery_duration=1, observation_duration=0,
+                     queued_restart=False, restarted=False):
         source = snapshot("portable.json")
         before = versioned_snapshot_observation(source)
         after = versioned_snapshot_observation(replace(
             source, observed_at="2026-10-02T16:00:01Z"))
         self.assertEqual(before.generation, after.generation)
         self.assertNotEqual(before.sample_id, after.sample_id)
+        if restarted:
+            after = versioned_snapshot_observation(replace(
+                after.snapshot, gamescope=replace(source.gamescope, pid=9876)))
+            self.assertNotEqual(before.generation, after.generation)
         clock = FakeClock()
 
         class Observations(ScriptedObservations):
@@ -320,7 +325,8 @@ class FreshRecoveryReplayTests(unittest.TestCase):
 
         mechanism = ScriptedMechanism(
             clock, [(1, MechanismResult(False, "display.apply_failed"))],
-            (recovery_duration, MechanismResult(recovery_ok, "recovery.result")))
+            (recovery_duration, MechanismResult(recovery_ok,
+                "recovery.restart_queued" if queued_restart else "recovery.result")))
         plan = replace(dock_plan(PlannedStep(
             TransitionStepCode.PRESENTATION_APPLY_DOCKED_EGPU, 100,
             expected_placement=PlacementState.DOCKED_EGPU)),
@@ -364,6 +370,15 @@ class FreshRecoveryReplayTests(unittest.TestCase):
 
     def test_fresh_source_at_recovery_deadline_is_accepted(self):
         result = self.run_recovery(observation_duration=49)
+        self.assertEqual(result.outcome.kind, TransitionOutcomeKind.RECOVERED)
+
+    def test_queued_restart_cannot_verify_unchanged_old_session(self):
+        result = self.run_recovery(queued_restart=True)
+        self.assertEqual(result.outcome.kind, TransitionOutcomeKind.FAILED)
+        self.assertFalse(result.outcome.recovery.verified)
+
+    def test_queued_restart_verifies_fresh_changed_session_at_source(self):
+        result = self.run_recovery(queued_restart=True, restarted=True)
         self.assertEqual(result.outcome.kind, TransitionOutcomeKind.RECOVERED)
 
 

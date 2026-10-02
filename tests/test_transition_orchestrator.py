@@ -490,13 +490,17 @@ class FreshRecoveryRuntimeTests(unittest.TestCase):
     def run_recovery(self, *, interrupted=False, duplicate=False,
                      duplicate_then_fresh=False, recovery_ok=True,
                      recovery_duration=10, observation_duration=0,
-                     fail_kind=None):
+                     fail_kind=None, queued_restart=False, restarted=False):
         source = snapshot("connected-internal.json")
         scans = [versioned_snapshot_observation(replace(
             source, observed_at=f"2026-10-02T16:00:{index:02d}Z"))
             for index in range(4)]
         self.assertEqual(len({scan.generation for scan in scans}), 1)
         self.assertEqual(len({scan.sample_id for scan in scans}), 4)
+        if restarted:
+            scans[3] = versioned_snapshot_observation(replace(
+                scans[3].snapshot, gamescope=replace(source.gamescope, pid=9876)))
+            self.assertNotEqual(scans[2].generation, scans[3].generation)
         plan = experimental_plan(source, scans[0].generation)
         clock = FakeClockWaiter()
 
@@ -514,7 +518,8 @@ class FreshRecoveryRuntimeTests(unittest.TestCase):
 
         mechanism = Mechanism(clock,
             apply=MechanismResult(False, "display.apply_failed"),
-            recover=MechanismResult(recovery_ok, "recovery.result"))
+            recover=MechanismResult(recovery_ok,
+                "recovery.restart_queued" if queued_restart else "recovery.result"))
         journal = None
         if interrupted:
             journal = TransitionJournal(plan.plan_id, plan.request_id)
@@ -592,6 +597,21 @@ class FreshRecoveryRuntimeTests(unittest.TestCase):
         self.assertTrue(result.outcome.recovery.verified)
         self.assertFalse(result.durable)
         self.assertEqual(result.outcome.failure.code, "journal.persist_failed")
+
+    def test_queued_restart_cannot_verify_unchanged_old_session(self):
+        for interrupted in (False, True):
+            with self.subTest(interrupted=interrupted):
+                result, _ = self.run_recovery(interrupted=interrupted, queued_restart=True)
+                self.assertEqual(result.outcome.kind, TransitionOutcomeKind.FAILED)
+                self.assertFalse(result.outcome.recovery.verified)
+
+    def test_queued_restart_verifies_fresh_changed_session_at_source(self):
+        for interrupted in (False, True):
+            with self.subTest(interrupted=interrupted):
+                result, _ = self.run_recovery(interrupted=interrupted,
+                    queued_restart=True, restarted=True)
+                self.assertEqual(result.outcome.kind, TransitionOutcomeKind.RECOVERED)
+                self.assertTrue(result.outcome.recovery.verified)
 
 
 if __name__ == "__main__":
