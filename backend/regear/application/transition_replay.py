@@ -111,8 +111,7 @@ class TransitionReplaySimulator:
         if not plan.steps:
             return self._blocked(journal, initial_placement, "plan.empty")
 
-        last_generation = initial.generation
-        last_sample_id = initial.sample_id
+        last_observation = initial
         current_placement = initial_placement
         for step in plan.steps:
             journal = self._append(
@@ -132,11 +131,11 @@ class TransitionReplaySimulator:
                     plan,
                     current_placement,
                     "step.deadline_exceeded",
-                    last_sample_id,
+                    last_observation,
                 )
             if not result.succeeded:
                 return self._recover(
-                    journal, plan, current_placement, result.code, last_sample_id
+                    journal, plan, current_placement, result.code, last_observation
                 )
 
             observed = self._observations.observe()
@@ -146,19 +145,18 @@ class TransitionReplaySimulator:
                     plan,
                     current_placement,
                     "observation.unavailable",
-                    last_sample_id,
+                    last_observation,
                 )
             observed_placement = infer_placement(observed.snapshot)
-            last_sample_id = observed.sample_id
-            if observed.generation == last_generation:
+            if observed.generation == last_observation.generation:
                 return self._recover(
                     journal,
                     plan,
                     observed_placement,
                     "observation.stale",
-                    last_sample_id,
+                    observed,
                 )
-            last_generation = observed.generation
+            last_observation = observed
             if observed_placement in (
                 PlacementState.UNKNOWN,
                 PlacementState.DEGRADED,
@@ -168,7 +166,7 @@ class TransitionReplaySimulator:
                     plan,
                     observed_placement,
                     "placement.unknown",
-                    last_sample_id,
+                    last_observation,
                 )
             if (
                 step.expected_placement is not None
@@ -179,7 +177,7 @@ class TransitionReplaySimulator:
                     plan,
                     observed_placement,
                     "step.verification_failed",
-                    last_sample_id,
+                    last_observation,
                 )
             current_placement = observed_placement
             journal = self._append(
@@ -197,7 +195,7 @@ class TransitionReplaySimulator:
                 plan,
                 current_placement,
                 "target.verification_failed",
-                last_sample_id,
+                last_observation,
             )
         journal = self._append(
             journal,
@@ -221,7 +219,7 @@ class TransitionReplaySimulator:
         plan: TransitionPlan,
         placement: PlacementState,
         reason_code: str,
-        previous_sample_id: str,
+        previous_observation: VersionedObservation,
     ) -> ReplayResult:
         journal = self._append(
             journal,
@@ -239,7 +237,9 @@ class TransitionReplaySimulator:
             recovery_result.succeeded
             and 0 <= recovery_elapsed <= plan.recovery_deadline_ms
             and observed is not None
-            and observed.sample_id != previous_sample_id
+            and observed.sample_id != previous_observation.sample_id
+            and (recovery_result.code != "recovery.restart_queued"
+                 or observed.generation != previous_observation.generation)
         ):
             recovered_placement = infer_placement(observed.snapshot)
             if recovered_placement is plan.from_placement:
