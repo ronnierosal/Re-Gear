@@ -15,7 +15,11 @@ BLOCK = re.compile(r"^```regear-task[ \t]*\r?\n(.*?)^```[ \t]*$", re.M | re.S)
 SHA = re.compile(r"[0-9a-f]{40}")
 ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,99}")
 ACTIVE = {"claimed", "in-progress", "blocked", "pr-open", "software-validated",
+          "review-requested", "changes-requested",
           "hardware-required", "hardware-validated", "ready-to-merge"}
+# States that bind software evidence to one exact candidate head/base.
+CANDIDATE = {"software-validated", "review-requested", "changes-requested",
+             "hardware-required", "hardware-validated", "ready-to-merge"}
 TERMINAL = {"merged", "closed", "cancelled"}
 LABELS = (["agent-task"] + [f"task:{state}" for state in sorted(ACTIVE | TERMINAL | {"backlog"})]
           + [f"agent:{agent}" for agent in ("codex-cloud", "claude", "codex-local")]
@@ -23,7 +27,10 @@ LABELS = (["agent-task"] + [f"task:{state}" for state in sorted(ACTIVE | TERMINA
           + ["hardware:required", "hardware:not-required"])
 FIELDS = {"schema", "owner", "agent", "branch", "status", "class", "hardware",
           "validation", "scope", "revision", "bug", "regression", "behavior",
-          "software", "review", "hardware_evidence", "procedure_approval", "transfer"}
+          "software", "review", "hardware_evidence", "procedure_approval", "transfer",
+          "review_request", "auto_merge", "integration"}
+OPTIONAL = {"bug", "regression", "behavior", "software", "review", "hardware_evidence",
+            "procedure_approval", "transfer", "review_request", "auto_merge", "integration"}
 
 
 def require(ok, message):
@@ -48,9 +55,7 @@ def load_record(text):
 def validate(record):
     require(isinstance(record, dict), "record must be an object")
     require(not set(record) - FIELDS, "unknown record fields")
-    required = FIELDS - {"bug", "regression", "behavior", "software", "review",
-                         "hardware_evidence", "procedure_approval", "transfer"}
-    require(required <= set(record), "missing required fields")
+    require(FIELDS - OPTIONAL <= set(record), "missing required fields")
     require(type(record["schema"]) is int and record["schema"] == 1, "schema must be 1")
     require(type(record["revision"]) is int and record["revision"] > 0, "invalid revision")
     require(record["agent"] in {"codex-cloud", "claude", "codex-local"}, "invalid agent")
@@ -76,7 +81,14 @@ def validate(record):
         require(nonempty(record.get("regression")), "bug requires regression statement")
     if record["class"] in {"C", "D"}:
         require(record["hardware"] == "required", "C/D require hardware")
-    if record["status"] in {"software-validated", "hardware-required", "hardware-validated", "ready-to-merge"}:
+    require(type(record.get("auto_merge", True)) is bool, "auto_merge must be boolean")
+    for name in ("review_request", "integration"):
+        item = record.get(name, {})
+        require(isinstance(item, dict), f"{name} must be an object")
+        for key in ("head", "base", "sha"):
+            require(key not in item or (isinstance(item[key], str) and SHA.fullmatch(item[key])),
+                    f"invalid {name} {key}")
+    if record["status"] in CANDIDATE:
         item = record.get("software", {})
         require(isinstance(item, dict) and isinstance(item.get("head"), str)
                 and SHA.fullmatch(item["head"]) and isinstance(item.get("base"), str)
@@ -341,15 +353,24 @@ def apply_event(github, event):
         old = parse(issue["body"])
         new = update(old, proposed, revision, [(n, r) for n, r in github.tasks() if n != number])
         body = replace(issue["body"], new)
-    # Direct edits are outside the cooperative writer protocol. Detect observed drift.
-    require(github.api(f"issues/{number}")["body"] == issue["body"], "issue changed during update")
-    github.api(f"issues/{number}", "PATCH", {"body": body})
-    require(parse(github.api(f"issues/{number}")["body"]) == new, "update readback mismatch")
     try:
-        mirror_labels(github, number, new)
+        write_body(github, number, issue["body"], body, new)
     finally:
         refresh(github)  # GITHUB_TOKEN writes do not generate another workflow run.
     print(json.dumps({"issue": number, "record": new}))
+
+
+def write_body(github, number, observed, body, new):
+    """Compare-and-swap one issue body, then read back and mirror labels.
+
+    `observed` is the body the caller derived `new` from. Any other writer in
+    between (a human edit, the dispatch workflow, another reconciler run) makes
+    this refuse rather than overwrite; the caller re-reads and recomputes."""
+    # Direct edits are outside the cooperative writer protocol. Detect observed drift.
+    require(github.api(f"issues/{number}")["body"] == observed, "issue changed during update")
+    github.api(f"issues/{number}", "PATCH", {"body": body})
+    require(parse(github.api(f"issues/{number}")["body"]) == new, "update readback mismatch")
+    mirror_labels(github, number, new)
 
 
 def main():

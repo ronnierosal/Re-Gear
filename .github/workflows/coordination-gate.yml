@@ -12,8 +12,11 @@ permissions:
   issues: read
   pull-requests: read
   statuses: write
+# Status refresh is level-triggered and safe to replace. A separate group keeps
+# its frequent issue/label events from displacing pending Agent coordination
+# dispatches, which GitHub would otherwise cancel (one pending run per group).
 concurrency:
-  group: github-task-record-writer
+  group: coordination-gate
   cancel-in-progress: false
 jobs:
   gate:

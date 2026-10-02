@@ -82,11 +82,16 @@ contain actual results, not merely restate PASS. Keep private raw data out.
 Lifecycle:
 
 ```text
-backlog -> claimed -> in-progress -> pr-open -> software-validated
-  -> hardware-required -> hardware-validated -> ready-to-merge -> merged -> closed
+backlog -> claimed -> in-progress -> pr-open -> software-validated -> review-requested
+  -> (changes-requested -> new head -> pr-open ...)
+  -> ready-to-merge                                    (A/B)
+  -> hardware-required -> hardware-validated -> ready-to-merge   (C/D)
+  -> merged -> closed
 ```
 
-Software-only work skips hardware states. `blocked` retains ownership and names
+Software-only work skips hardware states. From `pr-open` onward the
+[orchestrator](#automatic-handoffs) advances states; agents dispatch claims,
+transfers, `blocked`/`cancelled` and hardware evidence. `blocked` retains ownership and names
 the missing evidence/next action; `cancelled` preserves the reason and successor.
 Do not promote a status just to make CI green. The checker validates required
 evidence, but cannot establish that a human or agent's assertion is true.
@@ -116,8 +121,124 @@ Owners may autonomously implement, commit, push and open PRs for claimed work.
 The assigned integration driver may merge A, and justified B, when these gates
 pass; no additional Ronnie approval is needed. C/D merge only after their exact
 hardware gates pass. Deployment and physical actions remain separately governed
-by [deployment validation](DEPLOYMENT_VALIDATION.md). No workflow introduced here
-installs, executes hardware commands, or automatically presses Merge.
+by [deployment validation](DEPLOYMENT_VALIDATION.md). Only the Coordination
+orchestrator merges, and only eligible class A work as described below. No
+workflow installs, executes hardware commands, or merges B/C/D.
+
+## Automatic handoffs
+
+GitHub is the message bus. Chat sessions are workers that read it; no agent
+messages another agent's chat, and Ronnie does not relay results.
+`.github/workflows/coordination-orchestrator.yml` runs
+`scripts/coordination_orchestrator.py reconcile` on CI completion, PR events,
+PR/issue comments, every 30 minutes and on demand. Each run recomputes every
+managed task from live state (it is *level-triggered*), so a cancelled or
+replaced run loses nothing and duplicate runs act once. For each task with one
+open `Task: #N` PR on its branch:
+
+| When | The orchestrator |
+|---|---|
+| PR is not a draft and the task is `claimed`/`in-progress` | records `pr-open` |
+| `foundation` and `privileged-user-delivery` pass on the exact head, nothing else on it failed | records `software` PASS for that head/base and the CI link |
+| `software-validated`, no review request for this head/base | posts one compact request, assigned to the other agent family (Claude ↔ Codex), and records `review-requested` with `review_request` |
+| A valid `regear-review` PASS for this exact head/base | records `review`; A/B → `ready-to-merge`; C/D → `hardware-required` plus a hardware card on the issue |
+| A valid FAIL | records `changes-requested` and points the owner at the findings |
+| Any new head or base | drops software/review/hardware evidence and returns to `pr-open`, which repeats CI and review |
+| `hardware-validated` with exact local hardware PASS | promotes to `ready-to-merge` for the integration driver (never auto-merged) |
+| `ready-to-merge`, eligible class A | merges exactly the reviewed head and records `merged` |
+| The PR was merged by anyone | records `merged` with the merge commit |
+
+Each write is the same compare-and-swap issue update as the dispatch workflow:
+the body must still equal what the run read, the revision increments once, and
+owner/scope collisions are rechecked. A run that loses a race writes nothing;
+the next run starts from the new state. Comments carry a hidden marker per task
+and exact head/base, so a request or card is posted once even after a lost race.
+Untrusted triggers (for example a comment by a non-writer) run read-only.
+
+### Review
+
+Every review needs an exact candidate and an identity independent of the
+owner. Prefer the opposite agent family. `next` assigns the request to that
+family, but any session other than the owner may review. To submit, review the
+exact head against its base according to AGENTS.md and this runbook. Post
+findings as normal PR comments, then one comment containing:
+
+````text
+```regear-review
+{"task": 447, "head": "<40-hex head>", "base": "<40-hex base>",
+ "result": "PASS", "reviewer": "<your stable session id>"}
+```
+````
+
+Use `"result": "FAIL"` with blocking findings. A block counts only when it is
+from a repository writer (not a bot), names this task, matches the current head
+and base, and names a reviewer other than the owner. The newest valid block for
+the candidate wins, so a reviewer can retract a mistaken FAIL with a later PASS.
+A review of an old head is ignored. The rework cycle needs no human:
+FAIL → owner pushes a fix → new head → CI → new review request.
+
+### Class A integration
+
+The orchestrator merges with `merge_method: merge` and the reviewed `sha`, so
+GitHub refuses if the head moved. It merges only when all of these hold:
+
+- the class is A, `hardware` is `not-required`, and the task does not set `"auto_merge": false`;
+- there is no `hold` or `needs-decision` label on the issue or PR;
+- the PR is not a draft;
+- the full `coordination/pr` gate passes: owner, branch, scope, exact software and review evidence, independent reviewer, collisions;
+- required CI is green on the head;
+- GitHub reports the PR mergeable and the head contains the current base tip.
+
+If the base moved, it asks the owner once to merge the current base. The new
+head then repeats CI and review. A GitHub-token merge triggers no push
+workflows, so the orchestrator dispatches `CI` for both profiles on the base
+branch and refreshes PR gates itself. B is merged by the assigned integration
+driver after the same gates. C/D wait for exact-candidate local hardware PASS.
+Closing the issue stays with its owner, because merging does not mean every
+acceptance criterion is met.
+
+### Agent loop and work in progress
+
+```text
+python scripts/coordination_orchestrator.py next --repo ronnierosal/Re-Gear --agent claude --session <id>
+python scripts/coordination_orchestrator.py reconcile --repo ronnierosal/Re-Gear --dry-run
+python scripts/coordination_orchestrator.py watchdog --repo ronnierosal/Re-Gear
+```
+
+`next` lists, in order: rework on your tasks, your unfinished implementation,
+review requests for your agent family, hardware and B/C/D integration for
+`codex-local`, and then at most one eligible backlog claim. A claim is offered
+only when you have no implementation in progress and at most one task waiting.
+It matches the record's `agent` (explicit routing overrides domain defaults),
+avoids scope collisions, and is ordered by `P0`–`P3` labels. When your task is
+waiting on CI, review or hardware, run `next` again rather than going idle.
+
+`watchdog` runs after every reconcile and writes a job summary. It reports
+tasks waiting longer than their normal window: one hour without a review
+request, a day without a review, two days without rework, six hours
+ready-to-merge, three days for hardware. It also reports failed required CI
+and conflicted PRs. Ordinary waiting inside those windows is not reported.
+
+### Remaining human touchpoints and limits
+
+Ronnie is still needed for:
+
+- product decisions (`needs-decision` holds integration);
+- physical device actions;
+- class D procedure approval;
+- credential, branch-protection and repository-setting changes;
+- conflicts the owners cannot settle.
+
+Limits:
+
+- Nothing here starts an agent. Sessions find work through `next`, PR
+  subscriptions or scheduled sessions configured outside this repository.
+- All agents share one GitHub account, so reviewer identity is the declared
+  session ID. Like the task records, this is a cooperative guard, not
+  authentication.
+- Branch protection that requires an approving GitHub review blocks the
+  automatic merge. The task then stays `ready-to-merge`, and `watchdog`
+  reports it.
 
 ## Regression-first bugs
 

@@ -29,7 +29,9 @@ but delegates ordinary implementation when another worker is the appropriate fit
 
 1. Fetch origin and read `origin/main:AGENTS.md`. Inspect HEAD, worktree list and
    status. Read only the owning docs relevant to the task. Record a remote outage;
-   a cached ref is not a fresh GitHub ownership check.
+   a cached ref is not a fresh GitHub ownership check. Run
+   `python scripts/coordination_orchestrator.py next --agent <agent> --session <id>`
+   for the reviews, rework and hardware work already waiting for you.
 2. Search open/closed issues, active task records and PRs. Use
    `scripts/check_pr_collisions.py --claimants <paths>` where applicable; path
    checks are advisory and do not detect every shared-contract collision.
@@ -47,7 +49,10 @@ but delegates ordinary implementation when another worker is the appropriate fit
    main into published branches instead of rebasing/force-pushing shared history.
 7. Run proportional [development checks](DEVELOPMENT.md), record exact evidence
    and open/update the task's PR. Keep `Task: #N` in its body. Never mark installed
-   or hardware tested based on simulation, source review or CI.
+   or hardware tested based on simulation, source review or CI. Mark the PR ready
+   for review when the implementation is complete; from there the orchestrator
+   records CI, requests review and routes the result, with no relaying needed
+   ([automatic handoffs](CONTINUOUS_DEVELOPMENT.md#automatic-handoffs)).
 8. Re-read ownership, exact head/base, independent review, checks and hardware
    requirements before integration. Use a clean integration checkout and existing
    preflight. Merge through the protected remote PR, leaving shared main alone.
@@ -98,6 +103,8 @@ integration driver's standing authority once exact-candidate gates pass.
 Independent review applies even to coordinator-authored changes. Classes C/D
 remain pending until local hardware evidence passes; D also needs its explicit
 supervised procedure. No additional routine human merge-approval step exists.
+The Coordination orchestrator is the integration driver for eligible class A
+work: it merges only the reviewed exact head, current with base and green.
 Do not run software on a device merely because its PR can merge.
 
 One bounded task normally has one PR. Reuse an unfinished PR; explain necessary

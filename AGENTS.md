@@ -95,6 +95,14 @@ GitHub labels nor software tests establish physical behavior.
   required CI and current ownership/base checks, without per-merge Ronnie approval.
   Classes C/D require exact-candidate local hardware PASS; D additionally requires
   an explicit approved supervised procedure. Classification is mandatory.
+- Handoffs run through GitHub, not people. Start each session with
+  `python scripts/coordination_orchestrator.py next --agent <agent> --session <id>`
+  and do what it lists: reviews, rework, hardware, then at most one new claim.
+  The Coordination orchestrator records exact-head CI as software evidence,
+  requests a cross-agent review, and applies `regear-review` PASS/FAIL comments.
+  It invalidates evidence on any new head/base, sends class C/D to the hardware
+  queue, and merges only eligible class A. Never relay these by hand; see the
+  [runbook](docs/CONTINUOUS_DEVELOPMENT.md#automatic-handoffs).
 - Reserve human approval for product decisions, destructive/risky operations,
   important data deletion, shared-history rewrites, credentials/access changes,
   undelegated publication/deployment, and overriding an active owner without an
