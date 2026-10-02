@@ -36,8 +36,48 @@ requirement, scope and validation requirement. The workflow serializes updates,
 checks the expected revision and conflicting managed claims, preserves issue
 prose, and refreshes labels/statuses. A dispatched or queued workflow is not a
 claim. Read back the successful run and issue record before implementation.
+Only issues opted in with the `agent-task` label enter the managed inventory;
+text in an arbitrary public issue cannot claim work or block all PRs.
 GitHub may replace an older pending run in a concurrency group; a cancelled run
 acquires nothing. Re-read before resubmitting. Never blindly increment revisions.
+
+Create `task-update.json` locally with the workflow inputs (the `record_json`
+value is a JSON string containing the complete record). Dispatch without shell
+interpolation of issue content:
+
+```text
+gh workflow run agent-coordination.yml --repo ronnierosal/Re-Gear --ref main --json < task-update.json
+```
+
+In PowerShell, use `Get-Content -Raw task-update.json | gh workflow run
+agent-coordination.yml --repo ronnierosal/Re-Gear --ref main --json`.
+Inputs are `issue`, `expected_revision`, and `record_json`. Initialization uses
+expected revision 0 and an unowned `backlog` record at revision 1. The next update
+claims an owner at revision 2 with status `claimed`. Read back the issue and run
+result before creating implementation changes. A minimal record is:
+
+```json
+{
+  "schema": 1,
+  "owner": null,
+  "agent": "codex-cloud",
+  "branch": "agent/codex-cloud/123-example",
+  "status": "backlog",
+  "class": "A",
+  "hardware": "not-required",
+  "validation": "Focused regression, architecture, golden gate and required CI",
+  "scope": ["tests/test_example.py"],
+  "revision": 1
+}
+```
+
+Evidence fields `software` and `review` contain `result`, full 40-character
+`head`/`base`, and an evidence `url`; review also names `reviewer` distinct from
+owner. Hardware evidence adds `agent: codex-local`, `tester`, `tested_commit`
+matching head, and `artifact: sha256:<64 hexadecimal characters>`. Class D adds
+`procedure_approval` linking the approved procedure. Bugs set `bug: true` and a
+`regression` statement. B adds a `behavior` citation. The evidence links must
+contain actual results, not merely restate PASS. Keep private raw data out.
 
 Lifecycle:
 
@@ -99,7 +139,7 @@ candidate or a specific observation that distinguishes competing explanations.
 ## Hardware queue
 
 ```text
-python scripts/github_coordination.py queue
+python scripts/github_coordination.py queue --repo ronnierosal/Re-Gear
 gh issue list --label task:hardware-required --state open
 ```
 
