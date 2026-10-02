@@ -171,7 +171,17 @@ class TaskTests(unittest.TestCase):
             args, kwargs = run.call_args
             self.assertIsInstance(args[0], list)
             self.assertNotIn("shell", kwargs)
+            self.assertEqual(kwargs["encoding"], "utf-8")
             self.assertEqual(json.loads(kwargs["input"])["body"], "$(evil)\n`evil`")
+
+    def test_pagination_uses_correct_url_separator(self):
+        github = c.GitHub("owner/repo")
+        with patch.object(github, "api", return_value=[]) as api:
+            github.pages("pulls/445/files")
+            api.assert_called_once_with("pulls/445/files?per_page=100&page=1")
+        with patch.object(github, "api", return_value=[]) as api:
+            github.pages("pulls?state=open")
+            api.assert_called_once_with("pulls?state=open&per_page=100&page=1")
 
     def test_workflow_never_checks_out_pr_head_or_interpolates_inputs(self):
         root = Path(__file__).parents[1]

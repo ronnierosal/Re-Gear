@@ -181,7 +181,7 @@ class GitHub:
         if payload is not None:
             args += ["--input", "-"]
         result = subprocess.run(args, input=json.dumps(payload) if payload is not None else None,
-                                capture_output=True, text=True, check=True)
+                                capture_output=True, text=True, encoding="utf-8", check=True)
         return json.loads(result.stdout) if result.stdout.strip() else None
 
     def pages(self, path):
