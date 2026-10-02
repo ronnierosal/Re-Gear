@@ -28,7 +28,9 @@ export function offlineConfidenceForGame(
     offlineTestMemory.forget(appId);
     return {status: "needs_preparation", label: "Needs preparation", reasons: ["Steam reports a preparation or authorization issue. Resolve it before relying on offline play."], canConfirm: false};
   }
-  const binding = offlineConfirmationBinding(preparation, source, appId);
+  const account = offlineAccountScope();
+  const binding: OfflineTestBinding | null = app && account && preparation.buildId
+    ? { appId, buildId: preparation.buildId, account, store: source.store, app } : null;
   if (!base.canConfirm || !binding) { offlineTestMemory.forget(appId); return { ...base, canConfirm: false }; }
   if (confirm) {
     if (confirm.appId !== binding.appId || confirm.buildId !== binding.buildId || confirm.account !== binding.account ||

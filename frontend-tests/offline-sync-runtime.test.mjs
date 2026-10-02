@@ -420,3 +420,15 @@ test("a renamed display name is synchronized without discarding evidence", async
   assert.equal(after.readiness.status, before.readiness.status);
   assert.deepEqual(h.calls.queue.length, 1);
 });
+
+test("withdrawing availability during a readiness check prevents the pending dispatch", async () => {
+  const h = ready(harness());
+  const gate = h.holdReadiness();
+  assert.equal(h.runtime.syncNow(), true);
+  h.runtime.setAvailability({ available: false, unavailableReason: "x" });
+  gate.release();
+  await settle();
+  assert.deepEqual(h.calls.queue, [], "no native command after availability was withdrawn");
+  assert.equal(h.snap().available, false);
+  assert.equal(h.snap().preparation.inFlight, false);
+});
