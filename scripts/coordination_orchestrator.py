@@ -293,6 +293,10 @@ def plan(number, record, facts):
         # its URL, so a PASS edited to FAIL (or back) must still take effect.
         if review and evidence != new.get("review"):
             new["review"] = evidence
+            # A review this workflow ingests is always marked structured, so it
+            # stays bound to its live comment even if the request was stripped.
+            new.setdefault("review_request", {"head": head, "base": base,
+                                              "reviewer_agent": REVIEWER_FOR[new["agent"]]})
             if review["result"] == "PASS" and new["status"] not in {
                     "software-validated", "review-requested", "changes-requested"}:
                 pass  # already accepted; the newer PASS only refreshes evidence

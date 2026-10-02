@@ -566,6 +566,26 @@ class CloudReviewRegressionTests(unittest.TestCase):
         self.assertNotIn("review", final)
         self.assertTrue(any("REFUSED" in (c["body"] or "") for c in fake.comments[7]))
 
+    def test_provenance_cannot_be_stripped_before_the_pass(self):
+        old = at("review-requested", review_request=REQUESTED)
+        stripped = {k: v for k, v in old.items() if k != "review_request"}
+        stripped["revision"] = old["revision"] + 1
+        with self.assertRaisesRegex(ValueError, "changing review_request"):
+            gc.update(old, stripped, old["revision"], [])
+        # Even a record that lost its request (e.g. a hand edit) is re-marked
+        # when the workflow ingests the PASS, so a later edit still withdraws it.
+        ready, _, _ = o.plan(7, stripped, facts(comments=[review_comment()]))
+        self.assertEqual(ready["status"], "ready-to-merge")
+        self.assertEqual(ready["review_request"], REQUESTED)
+        invalid = dict(review_comment(), body="Retracted.")
+        withdrawn, actions, _ = o.plan(7, ready, facts(comments=[invalid], behind_by=0, mergeable=True,
+                                                       files=["docs/example.md"], base_rules=STRICT_RULES))
+        self.assertFalse(any(a["kind"] == "merge" for a in actions))
+        self.assertEqual(withdrawn["status"], "review-requested")
+        # The explicit restart before review routing remains available.
+        restarted = dict(stripped, status="software-validated")
+        gc.update(old, restarted, old["revision"], [])
+
     def test_adopted_legacy_review_evidence_is_not_reset(self):
         # Live shape of #441/#447: accepted review evidence, no review_request,
         # URL pointing at a substantive prose review on the PR (no block).
@@ -604,7 +624,9 @@ class CloudReviewRegressionTests(unittest.TestCase):
         self.assertTrue(new is None or new["status"] != "ready-to-merge")
         # Either Codex agent is the opposite family for Claude work; neither
         # reviews Codex work.
-        gc.update(old, dict(old, revision=4, review_request=dict(REQUESTED, reviewer_agent="codex-local")), 3, [])
+        validated = {k: v for k, v in old.items() if k != "review_request"}
+        validated["status"] = "software-validated"
+        gc.update(validated, dict(old, revision=4, review_request=dict(REQUESTED, reviewer_agent="codex-local")), 3, [])
         local = review_comment(reviewer="codex-local-1", agent="codex-local")
         self.assertEqual(o.plan(7, old, facts(comments=[local]))[0]["status"], "ready-to-merge")
         codex_task = dict(old, agent="codex-cloud", branch="agent/codex-cloud/7-task",

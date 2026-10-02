@@ -232,7 +232,9 @@ block is withdrawn and the review requested again. That applies to reviews
 this workflow ingested (records with `review_request`); evidence adopted from
 before it, such as legacy prose reviews, is kept. Once set, `review_request`
 can be removed or changed only by an update that also drops the review and
-hardware evidence and leaves the reviewed states. A deleted review comment
+hardware evidence and leaves the review states (`review-requested` onwards),
+for example a restart at `software-validated`. Every review the workflow
+ingests also stamps `review_request` if it is missing. A deleted review comment
 cannot be told apart from evidence recorded elsewhere, so retract with an edit
 or a newer FAIL rather than by deleting.
 The newest valid block governs every candidate state. A FAIL posted after

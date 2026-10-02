@@ -39,8 +39,10 @@ def opposite_family(task_agent, reviewer_agent):
 CANDIDATE = {"software-validated", "review-requested", "changes-requested",
              "hardware-required", "hardware-validated", "ready-to-merge"}
 TERMINAL = {"merged", "closed", "cancelled"}
-# Candidate states that rest on a recorded review.
-REVIEWED_STATES = {"changes-requested", "hardware-required", "hardware-validated", "ready-to-merge"}
+# Candidate states routed to or resting on a review; a record leaves them
+# only through an explicit restart such as `software-validated`.
+REVIEWED_STATES = {"review-requested", "changes-requested", "hardware-required", "hardware-validated",
+                   "ready-to-merge"}
 LABELS = (["agent-task"] + [f"task:{state}" for state in sorted(ACTIVE | TERMINAL | {"backlog"})]
           + [f"agent:{agent}" for agent in ("codex-cloud", "claude", "codex-local")]
           + [f"risk:{risk}" for risk in "ABCD"]
