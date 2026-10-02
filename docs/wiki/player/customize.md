@@ -1,58 +1,65 @@
 # Customize Re-Gear
 
-Re-Gear's Command Center should fit the way **you** play. Quick Access is intended to be customizable so your most useful actions are easiest to reach.
+In development builds, you can choose the buttons in Quick Access and move
+cards so your common controls are easier to reach.
 
 ## For players — no technical background needed
 
-> **Interface preview:** this page describes design intent and developing UI.
-> Mockups and proposed labels are not proof of your installed controls.
-> Follow the available labels in your build; see [current evidence](../technical/current-state.md).
+### Availability and limits
 
-## Customize Quick Access
+Customization is implemented in current merged **development** source. It is
+hidden by the production profile and is not part of a supported public release.
+The current tap-Y, hold-Y, picker, save, and reset behavior has source and
+simulated-browser validation; the complete flow still needs acceptance on an
+installed build with a controller.
 
-> ### 🖼️ UI MOCKUP — Customize Quick Access
-> **TEMPORARY IMAGE PLACEHOLDER**
->
-> Show the customization screen with the current Quick Access layout on one side and available actions on the other.
->
-> Suggested asset: `assets/wiki/mockups/customize-quick-access.png`
+Use these instructions only when your coordinated development build displays
+the matching Y-button hints. The [Player Visual Guide](visual-guide.md) contains
+labelled mock pictures that can later be replaced with device screenshots.
 
-From the customization screen you can organize which actions appear in Quick Access and where they appear.
+### The controls in one place
 
-## Moving buttons
+| Where | Input | What to expect |
+|---|---|---|
+| **Quick Access** button | Tap **Y** | Opens **Change _button name_** so you can choose a replacement |
+| Empty Quick Access slot | Tap **Y** | Opens the same picker so you can add a button |
+| Any development tab | Hold **Y** for about half a second | Cards wiggle and the selected card shows **MOVE** |
+| Other tabs | Tap **Y** | Nothing; their card membership is fixed |
 
-Want a favorite action closer to the top? Rearrange the buttons rather than rebuilding your layout.
+Step-by-step guides:
 
-> ### 🖼️ UI MOCKUP — Move a button
-> **TEMPORARY IMAGE PLACEHOLDER**
->
-> Three-frame visual: select button → move button → confirm new position.
->
-> Suggested asset: `assets/wiki/mockups/rearrange-buttons.png`
+- [Change, add, or remove a Quick Access button](how-to/change-quick-access-button.md)
+- [Move cards](how-to/rearrange-quick-access.md)
+- [Reset the layout](how-to/reset-quick-access.md)
 
-[Step-by-step: Move Quick Access buttons →](how-to/rearrange-quick-access.md)
+### What is saved
 
-## Changing a button
+The development layout is saved on that Steam client. Another device keeps its
+own layout. Removing a Quick Access button does not remove the feature from its
+own tab.
 
-You can replace an action you rarely use with something more useful.
-
-> ### 🖼️ UI MOCKUP — Change a button
-> **TEMPORARY IMAGE PLACEHOLDER**
->
-> Show selecting an existing button and choosing a replacement action.
->
-> Suggested asset: `assets/wiki/mockups/change-button.png`
-
-[Step-by-step: Change a Quick Access button →](how-to/change-quick-access-button.md)
-
-## Starting over
-
-If your layout gets messy, restore the default Quick Access arrangement and customize it again from there.
-
-[Step-by-step: Reset Quick Access →](how-to/reset-quick-access.md)
-
-> **Note:** Menu names and exact button prompts may change while the customization interface is being finalized. The guides will be updated alongside the shipping UI.
+If saving fails, Re-Gear says **Could not save this layout. Your saved layout is
+unchanged.** Your prior saved layout remains in place. Try once more, then use
+[Troubleshooting](troubleshooting.md) if the message returns.
 
 ## Technical details — for advanced users and contributors
 
-See the [owning contract/evidence](../../UI_DESIGN_CONTRACT.md) and [current state](../technical/current-state.md). UI PR329 is a separate test candidate; this page does not establish native or hardware acceptance.
+`createCustomizeGestureRecognizer` in
+`src/quick-access/expanded-command-center/customization-input.ts` separates a Y
+tap from a 550 ms hold. `layout-customization.tsx` supplies move behavior, while
+`shell.tsx` renders the picker and saves through `layout-preferences.ts` under
+`regear.command-center-layout.v1`. `control-registry.ts` declares which controls
+can be added, replaced, or reordered.
+
+The native adapter supplies Y as the edit button only outside the production
+profile. Production also omits layout storage, so this page must not be read as
+production availability.
+
+| Evidence | What it establishes | Limit |
+|---|---|---|
+| Current merged development source | Labels, 550 ms gesture split, picker, persistence, and reset path | Implemented source is not installed acceptance |
+| [Last-mile runtime contract](../../design/ally-last-mile-runtime-contract.md#follow-up-to-the-03105-ui-test) | Focused tests and actual-source browser captures for the revised tap/hold flow | Explicitly source/simulated, not installed controller proof |
+| [Release Pipeline](../../RELEASE_PIPELINE.md#development-and-production-profiles) | Production hides customization | No supported public release currently exposes this guide's flow |
+
+The owning presentation contract is the
+[UI design contract](../../UI_DESIGN_CONTRACT.md).
