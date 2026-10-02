@@ -235,6 +235,9 @@ def queue(github):
                 evidence(record, "software", pr["head"]["sha"], pr["base"]["sha"])
                 review = evidence(record, "review", pr["head"]["sha"], pr["base"]["sha"])
                 require(nonempty(review.get("reviewer")) and review["reviewer"] != record["owner"], "independent reviewer required")
+                if record["class"] == "D":
+                    require(isinstance(record.get("procedure_approval"), str) and record["procedure_approval"].startswith("https://"),
+                            "class D procedure approval link required before hardware")
                 row["hardware_queue_ready"] = True
             except ValueError as exc:
                 row["queue_blocker"] = str(exc)

@@ -3,7 +3,7 @@ on:
   pull_request_target:
     types: [opened, synchronize, reopened, edited, ready_for_review, converted_to_draft]
   issues:
-    types: [opened, edited, closed, reopened, deleted]
+    types: [opened, edited, closed, reopened, deleted, labeled, unlabeled]
   push:
     branches: [main]
   workflow_dispatch:

@@ -207,6 +207,10 @@ class TaskTests(unittest.TestCase):
         candidate["review"]["reviewer"] = candidate["owner"]
         self.assertFalse(c.queue(fake)[0]["hardware_queue_ready"])
         candidate["review"]["reviewer"] = "other"
+        candidate["class"] = "D"
+        self.assertFalse(c.queue(fake)[0]["hardware_queue_ready"])
+        candidate["procedure_approval"] = "https://example.org/approved"
+        self.assertTrue(c.queue(fake)[0]["hardware_queue_ready"])
         candidate["software"]["head"] = BASE
         row = c.queue(fake)[0]
         self.assertFalse(row["hardware_queue_ready"])
