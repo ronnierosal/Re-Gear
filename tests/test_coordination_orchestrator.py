@@ -534,6 +534,38 @@ class CloudReviewRegressionTests(unittest.TestCase):
         self.assertEqual(final["status"], "review-requested")
         self.assertNotIn("review", final)
         self.assertEqual(final["review_request"]["reviewer_agent"], "codex-cloud")
+    def test_structured_review_provenance_cannot_be_stripped(self):
+        old = at("ready-to-merge", review=REVIEWED, review_request=REQUESTED)
+        for request in [None, dict(REQUESTED, reviewer_agent="codex-local"), dict(REQUESTED, head=NEW)]:
+            changed = copy.deepcopy(old)
+            changed["revision"] += 1
+            if request is None:
+                changed.pop("review_request")
+            else:
+                changed["review_request"] = request
+            with self.assertRaisesRegex(ValueError, "changing review_request"):
+                gc.update(old, changed, old["revision"], [])
+        # Dropping the review and leaving the reviewed states is allowed.
+        restarted = {k: v for k, v in old.items() if k not in ("review", "review_request")}
+        restarted.update(status="software-validated", revision=old["revision"] + 1)
+        gc.update(old, restarted, old["revision"], [])
+        # End to end: the stripping intent is refused, so a later edit of the
+        # backing comment still withdraws acceptance and nothing merges.
+        stripped = {k: v for k, v in old.items() if k != "review_request"}
+        stripped["revision"] = old["revision"] + 1
+        fake = FakeGitHub(old, pr())
+        fake.comments[7].append({"id": 501, "html_url": "u", "created_at": "2026-10-02T12:00:00Z",
+                                 "user": {"login": "writer", "type": "User"},
+                                 "body": "```regear-update\n" + json.dumps(
+                                     {"task": 7, "expected_revision": old["revision"], "record": stripped}) + "\n```"})
+        fake.comments[12] = [dict(review_comment(), body="Retracted.", user={"login": "writer", "type": "User"})]
+        reconcile(fake)
+        self.assertFalse(fake.merged)
+        final = gc.parse(fake.body)
+        self.assertEqual(final["status"], "review-requested")
+        self.assertNotIn("review", final)
+        self.assertTrue(any("REFUSED" in (c["body"] or "") for c in fake.comments[7]))
+
     def test_adopted_legacy_review_evidence_is_not_reset(self):
         # Live shape of #441/#447: accepted review evidence, no review_request,
         # URL pointing at a substantive prose review on the PR (no block).

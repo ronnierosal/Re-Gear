@@ -39,6 +39,8 @@ def opposite_family(task_agent, reviewer_agent):
 CANDIDATE = {"software-validated", "review-requested", "changes-requested",
              "hardware-required", "hardware-validated", "ready-to-merge"}
 TERMINAL = {"merged", "closed", "cancelled"}
+# Candidate states that rest on a recorded review.
+REVIEWED_STATES = {"changes-requested", "hardware-required", "hardware-validated", "ready-to-merge"}
 LABELS = (["agent-task"] + [f"task:{state}" for state in sorted(ACTIVE | TERMINAL | {"backlog"})]
           + [f"agent:{agent}" for agent in ("codex-cloud", "claude", "codex-local")]
           + [f"risk:{risk}" for risk in "ABCD"]
@@ -176,6 +178,14 @@ def update(old, new, expected_revision, others):
         if changed:
             require(new["status"] not in CANDIDATE and not any(name in new for name in EVIDENCE),
                     f"changing {', '.join(changed)} must drop candidate evidence and leave candidate states")
+        # `review_request` marks a review as workflow-ingested, which binds it
+        # to its live `regear-review` comment. Removing or changing it must not
+        # turn that review into grandfathered evidence that survives an edit.
+        request = old.get("review_request")
+        if request is not None and new.get("review_request") != request:
+            require(not any(name in new for name in ("review", "hardware_evidence"))
+                    and new["status"] not in REVIEWED_STATES,
+                    "changing review_request must drop review/hardware evidence and leave reviewed states")
     collision(new, others)
     return new
 
