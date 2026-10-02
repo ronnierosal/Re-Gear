@@ -198,13 +198,15 @@ findings as normal PR comments, then one comment containing:
 ````text
 ```regear-review
 {"task": 447, "head": "<40-hex head>", "base": "<40-hex base>",
- "result": "PASS", "reviewer": "<your stable session id>"}
+ "result": "PASS", "reviewer": "<your stable session id>", "agent": "codex-cloud"}
 ```
 ````
 
 Use `"result": "FAIL"` with blocking findings. A block counts only when it is
 from a repository writer (not a bot), names this task, matches the current head
-and base, and names a reviewer other than the owner. The newest valid block for
+and base, names a reviewer other than the owner, and declares the requested
+opposite `agent` family (`review_request.reviewer_agent`). Like reviewer IDs,
+the family is a cooperative declaration, not authentication. The newest valid block for
 the candidate wins, so a reviewer can retract a mistaken FAIL with a later PASS.
 The newest valid block governs every candidate state. A FAIL posted after
 `ready-to-merge` or a hardware state withdraws that acceptance and returns
@@ -216,10 +218,16 @@ review request.
 
 Immediately before merging, the orchestrator re-reads the issue, labels, PR,
 files, CI, reviews and base, and plans again from that live state. It merges
-only if the fresh plan still produces the same merge. It uses
-`merge_method: merge` with the reviewed `sha`, so GitHub refuses if the head
-moved, and records `merged` only after GitHub confirms the merge. The plan
-requires all of these:
+only if the fresh plan still produces the same merge. It then fast-forwards
+the base branch to the reviewed head with `force: false`. That is the atomic
+exact-candidate guard: GitHub refuses unless the head still descends from the
+current base tip, so a base that moved after the check is never merged
+unreviewed, and the base ends up exactly at the reviewed tree. GitHub marks
+the PR merged; the orchestrator records `merged` only after the ref update is
+confirmed. If branch protection refuses direct ref updates, the task stays
+`ready-to-merge`, `watchdog` reports it, and the integration driver merges. A
+check that ends in anything other than success, neutral or skipped (including
+`startup_failure`) is never green. The plan requires all of these:
 
 - the class is A, `hardware` is `not-required`, and the task does not set `"auto_merge": false`;
 - there is no `merge-hold`, `hold` or `needs-decision` label on the issue or PR;

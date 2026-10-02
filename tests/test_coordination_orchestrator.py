@@ -47,8 +47,10 @@ GREEN = {"state": "success", "url": "https://example.org/ci"}
 
 
 def review_comment(result="PASS", reviewer=REVIEWER, head=HEAD, base=BASE, task=7, permission="write",
-                   created="2026-10-02T12:00:00Z", url="https://example.org/pr/12#review", bot=False):
-    block = json.dumps({"task": task, "head": head, "base": base, "result": result, "reviewer": reviewer})
+                   created="2026-10-02T12:00:00Z", url="https://example.org/pr/12#review", bot=False,
+                   agent="codex-cloud"):
+    block = json.dumps({"task": task, "head": head, "base": base, "result": result, "reviewer": reviewer,
+                        "agent": agent})
     return {"body": f"Findings...\n```regear-review\n{block}\n```", "html_url": url,
             "created_at": created, "author_permission": permission, "is_bot": bot}
 
@@ -266,13 +268,40 @@ class FindingRegressionTests(unittest.TestCase):
         original = fake.api
 
         def refuse(path, method="GET", payload=None):
-            if path == "pulls/12/merge":
-                return {"merged": False, "message": "Base branch was modified"}
+            if path == "git/refs/heads/main":
+                return {"ref": "refs/heads/main", "object": {"sha": BASE}}
             return original(path, method, payload)
         fake.api = refuse
         [row] = reconcile(fake)
         self.assertIn("did not confirm", row["error"])
         self.assertEqual(gc.parse(fake.body)["status"], "ready-to-merge")
+
+    def test_base_moving_after_the_check_cannot_be_merged(self):
+        # Codex P1 on 6f3f5f6b: the guard must be atomic, not a prior compare.
+        fake = FakeGitHub(at("ready-to-merge", review=ev(reviewer=REVIEWER)), pr())
+        fake.base_moved = True  # base advanced between compare and update
+        [row] = reconcile(fake)
+        self.assertIn("error", row)  # GitHub refused the non-fast-forward update
+        self.assertFalse(fake.merged)
+        self.assertEqual(gc.parse(fake.body)["status"], "ready-to-merge")
+
+    def test_startup_failure_and_unknown_conclusions_are_not_green(self):
+        ok = [{"name": n, "status": "completed", "conclusion": "success", "html_url": n} for n in o.REQUIRED_CHECKS]
+        for conclusion in ["startup_failure", "stale", "something-new"]:
+            extra = {"name": "lint", "status": "completed", "conclusion": conclusion}
+            self.assertEqual(o.checks_state(ok + [extra])["state"], "failure", conclusion)
+        self.assertEqual(o.checks_state(ok + [{"name": "x", "status": "completed", "conclusion": "skipped"}])["state"],
+                         "success")
+
+    def test_review_must_come_from_the_requested_opposite_family(self):
+        waiting = at("review-requested", review_request={"head": HEAD, "base": BASE, "reviewer_agent": "codex-cloud"})
+        for comment in [review_comment(reviewer="claude-second-session", agent="claude"),
+                        review_comment(agent=None), review_comment(agent="codex-local")]:
+            self.assertIsNone(o.plan(7, waiting, facts(comments=[comment]))[0])
+        self.assertEqual(o.plan(7, waiting, facts(comments=[review_comment()]))[0]["status"], "ready-to-merge")
+        codex_task = at("review-requested", agent="codex-cloud")
+        accepted = o.plan(7, codex_task, facts(comments=[review_comment(reviewer="claude-rev", agent="claude")]))[0]
+        self.assertEqual(accepted["status"], "ready-to-merge")
 
     def test_misleading_manual_label_grants_nothing_and_is_repaired(self):
         fake = FakeGitHub(record(status="claimed"), pr(draft=True))
@@ -345,7 +374,7 @@ class FakeGitHub:
         self.comments = {12: list(comments or []), 7: []}
         self.behind_by, self.labels, self.mutations = behind_by, [{"name": "agent-task"}], []
         self.pr_labels, self.files = [], [{"filename": "docs/example.md"}]
-        self.on_read, self.merged = None, False
+        self.on_read, self.merged, self.base_moved = None, False, False
 
     def tasks(self):
         return [(7, gc.parse(self.body))]
@@ -389,10 +418,12 @@ class FakeGitHub:
             return {"permission": "write"}
         if path.startswith("compare/"):
             return {"behind_by": self.behind_by}
-        if path == "pulls/12/merge":
+        if path == "git/refs/heads/main":
+            if payload.get("force") is not False or self.base_moved:
+                raise gc.subprocess.CalledProcessError(1, "gh", "422 Update is not a fast forward")
             self.merged = True
-            self.pull = dict(self.pull, merged_at="2026-10-02T13:00:00Z", merge_commit_sha=NEW)
-            return {"sha": NEW, "merged": True}
+            self.pull = dict(self.pull, merged_at="2026-10-02T13:00:00Z", merge_commit_sha=payload["sha"])
+            return {"ref": "refs/heads/main", "object": {"sha": payload["sha"]}}
         if path.startswith("pulls?state=closed"):
             return []
         if path.startswith("statuses/") or path.startswith("actions/workflows/"):
@@ -448,9 +479,9 @@ class ReconcileTests(unittest.TestCase):
         reconcile(fake)  # PASS -> ready-to-merge -> merged in the same run
         final = gc.parse(fake.body)
         self.assertEqual(final["status"], "merged")
-        self.assertEqual(final["integration"]["sha"], NEW)
-        merges = [m for m in fake.mutations if m[1] == "pulls/12/merge"]
-        self.assertEqual(merges, [("PUT", "pulls/12/merge", {"sha": HEAD, "merge_method": "merge"})])
+        self.assertEqual(final["integration"]["sha"], HEAD)  # exactly the reviewed tree
+        merges = [m for m in fake.mutations if m[1] == "git/refs/heads/main"]
+        self.assertEqual(merges, [("PATCH", "git/refs/heads/main", {"sha": HEAD, "force": False})])
         dispatched = [m[2]["inputs"]["profile"] for m in fake.mutations if m[1].startswith("actions/workflows/")]
         self.assertEqual(dispatched, ["development", "production"])
 

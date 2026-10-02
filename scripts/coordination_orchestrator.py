@@ -79,7 +79,9 @@ def checks_state(check_runs):
     by_name = {}
     for run in runs:
         by_name.setdefault(run.get("name"), []).append(run)
-    if any(r.get("status") == "completed" and r.get("conclusion") in {"failure", "cancelled", "timed_out", "action_required"}
+    # Allowlist, not denylist: startup_failure, stale or any future terminal
+    # conclusion must never read as green.
+    if any(r.get("status") == "completed" and r.get("conclusion") not in {"success", "neutral", "skipped"}
            for r in runs):
         return {"state": "failure", "url": None}
     if any(r.get("status") != "completed" for r in runs) or not all(name in by_name for name in REQUIRED_CHECKS):
@@ -106,6 +108,8 @@ def review_submissions(comments, number):
                 continue
             if item.get("result") not in {"PASS", "FAIL"}:
                 continue
+            if item.get("agent") not in REVIEWER_FOR:
+                continue
             if not (isinstance(item.get("head"), str) and gc.SHA.fullmatch(item["head"])
                     and isinstance(item.get("base"), str) and gc.SHA.fullmatch(item["base"])
                     and isinstance(item.get("reviewer"), str) and gc.ID.fullmatch(item["reviewer"])):
@@ -115,9 +119,12 @@ def review_submissions(comments, number):
 
 
 def latest_review(record, comments, number, head, base):
-    """Newest valid exact-candidate review by someone other than the owner."""
+    """Newest valid exact-candidate review by someone other than the owner,
+    from the requested opposite agent family (cooperative declared identity)."""
+    family = (record.get("review_request") or {}).get("reviewer_agent", REVIEWER_FOR[record["agent"]])
     valid = [s for s in review_submissions(comments, number)
-             if s["head"] == head and s["base"] == base and s["reviewer"] != record["owner"]]
+             if s["head"] == head and s["base"] == base and s["reviewer"] != record["owner"]
+             and s["agent"] == family]
     return valid[-1] if valid else None
 
 
@@ -304,7 +311,8 @@ def plan(number, record, facts):
                     f"Scope: {', '.join(new['scope'])}",
                     "",
                     "Review this exact candidate according to AGENTS.md, then reply with one "
-                    "`regear-review` block (see docs/CONTINUOUS_DEVELOPMENT.md#review)."])})
+                    f"`regear-review` block with `\"agent\": \"{reviewer_agent}\"` "
+                    "(see docs/CONTINUOUS_DEVELOPMENT.md#review)."])})
 
     if new["status"] == "hardware-validated":
         promoted = dict(copy.deepcopy(new), status="ready-to-merge")
@@ -612,13 +620,20 @@ def merge_if_still_eligible(github, facts_source, issue, action, open_prs, recor
     if action not in actions:
         row["notes"].append("merge withdrawn on fresh re-validation: " + ("; ".join(notes) or "state changed"))
         return False
-    # `sha` makes GitHub refuse if the head moved after this read.
-    result = github.api(f"pulls/{action['pr']}/merge", "PUT", {"sha": action["sha"], "merge_method": "merge"})
-    gc.require(isinstance(result, dict) and result.get("merged") is True, "GitHub did not confirm the merge")
+    # Fast-forward the base ref to the reviewed head with force=false. This is
+    # the atomic exact-candidate guard: GitHub refuses unless the head still
+    # descends from the current base tip, so a base that moved after the check
+    # cannot be merged unreviewed, and the result is exactly the reviewed tree.
+    # A protected branch that refuses direct ref updates leaves the task
+    # ready-to-merge for the integration driver (reported by watchdog).
+    ref = f"git/refs/heads/{facts['pr']['base']['ref']}"
+    result = github.api(ref, "PATCH", {"sha": action["sha"], "force": False})
+    gc.require(isinstance(result, dict) and (result.get("object") or {}).get("sha") == action["sha"],
+               "GitHub did not confirm the fast-forward to the reviewed head")
     row["actions"].append(f"merge:#{action['pr']}")
     record = current["record"]
     merged = dict(copy.deepcopy(record), status="merged", revision=record["revision"] + 1,
-                  integration={"pr": action["pr"], "sha": result["sha"], "url": facts["pr"]["html_url"]})
+                  integration={"pr": action["pr"], "sha": action["sha"], "url": facts["pr"]["html_url"]})
     merged = gc.update(record, merged, record["revision"], facts.get("others", []))
     gc.write_body(github, current["number"], current["body"], gc.replace(current["body"], merged), merged)
     row["actions"].append("update:merged")
