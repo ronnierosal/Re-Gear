@@ -14,8 +14,8 @@ profile. Read [Customize Re-Gear](../customize.md) before using these steps.
 2. Move to the button you want to replace and tap **Y**.
 3. In **Change _button name_**, optionally choose a filter such as **All**,
    **eGPU**, or **Display**.
-4. Select the replacement with **A**.
-5. Press **B** to return to Quick Access.
+4. Select the replacement with **A**. The picker closes and focus returns to
+   the replaced Quick Access button.
 
 The chosen button should take the old button's place.
 

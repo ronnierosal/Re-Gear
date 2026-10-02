@@ -9,9 +9,11 @@ and reaching common controls without leaving a game.
 
 The full Command Center described here is implemented in current **development**
 source. It is not part of a supported public release. The current production
-profile deliberately shows only the eGPU tab, Safe Disconnect, and the fixed
-brightness and volume sliders. It hides Quick Access customization, the other
-tabs, and the right-side buttons.
+profile deliberately shows one eGPU tab with **Display Target**, **eGPU** status,
+**Safe Disconnect**, **Disconnect + Sleep**, and **Safe Disconnect + Shutdown**,
+plus the fixed brightness and volume sliders. It hides Quick Access
+customization, the other tabs, and the right-side buttons. A visible action can
+still be unavailable until Re-Gear confirms its requirements.
 
 The development interface has source and simulated-browser validation. Its
 current complete controller flow has not been accepted on an installed build.
@@ -90,8 +92,11 @@ adapter mounts the controller shortcut and runtime data in `native.tsx`.
 
 `ExpandedCommandCenter` receives a build policy. Under `policy="production"`,
 it restricts `visibleTabs` to `egpu`, removes layout storage and Y-button editing,
-and omits the right rail. The owning profile contract is
-[Release Pipeline](../../RELEASE_PIPELINE.md#development-and-production-profiles).
+and omits the right rail. `src/build-profile.ts` projects the five production
+cards named above. The older inventory in
+[Release Pipeline](../../RELEASE_PIPELINE.md#development-and-production-profiles)
+does not yet list the combined actions; that documentation drift is tracked in
+[issue #455](https://github.com/ronnierosal/Re-Gear/issues/455).
 
 | Evidence | What it establishes | Limit |
 |---|---|---|
