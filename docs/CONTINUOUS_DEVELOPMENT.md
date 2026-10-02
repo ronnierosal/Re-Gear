@@ -196,17 +196,19 @@ current labels, then adds and removes individual labels. It never replaces the
 whole set, so descriptive labels, and a `merge-hold` added at the same moment,
 are kept. Labels are a readable mirror only. A misleading label grants
 nothing, and only `merge-hold`, `hold` or `needs-decision` can affect
-automation, by stopping it. Any agent creating a GitHub issue applies the
-existing type, area, priority/readiness and hardware labels at creation when
-known, and reuses a canonical label instead of inventing one. Managed tasks
+automation, by stopping it. Any agent creating a GitHub issue or pull request
+applies the existing type, area, priority/readiness and hardware labels at
+creation when known, and reuses a canonical label instead of inventing one. Managed tasks
 also go through the coordination record. The reconciler is the backstop, not
 the plan.
 
 ### Review
 
 Every review needs an exact candidate and an identity independent of the
-owner. Prefer the opposite agent family. `next` assigns the request to that
-family, but any session other than the owner may review. To submit, review the
+owner, from the opposite agent family: Claude tasks are reviewed by
+`codex-cloud`, Codex tasks by `claude`. A second session of the implementing
+family does not qualify, and `review_request.reviewer_agent` can only name that
+opposite family. `next` assigns the request to it. To submit, review the
 exact head against its base according to AGENTS.md and this runbook. Post
 findings as normal PR comments, then one comment containing:
 
@@ -220,9 +222,14 @@ findings as normal PR comments, then one comment containing:
 Use `"result": "FAIL"` with blocking findings. A block counts only when it is
 from a repository writer (not a bot), names this task, matches the current head
 and base, names a reviewer other than the owner, and declares the requested
-opposite `agent` family (`review_request.reviewer_agent`). Like reviewer IDs,
-the family is a cooperative declaration, not authentication. The newest valid block for
-the candidate wins, so a reviewer can retract a mistaken FAIL with a later PASS.
+opposite `agent` family. Like reviewer IDs, the family is a cooperative
+declaration, not authentication. The newest valid block for the candidate wins,
+so a reviewer can retract a mistaken FAIL with a later PASS. The live comment
+content governs: editing a block from PASS to FAIL (or back) takes effect on
+the next run, and a recorded review whose PR comment no longer holds a valid
+block is withdrawn and the review requested again. A deleted review comment
+cannot be told apart from evidence recorded elsewhere, so retract with an edit
+or a newer FAIL rather than by deleting.
 The newest valid block governs every candidate state. A FAIL posted after
 `ready-to-merge` or a hardware state withdraws that acceptance and returns
 the task to `changes-requested`. A review of an old head is ignored. The

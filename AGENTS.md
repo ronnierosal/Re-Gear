@@ -104,7 +104,8 @@ GitHub labels nor software tests establish physical behavior.
   queue, and merges only eligible class A outside protected coordination paths.
   Never relay these by hand. Send record updates as `regear-update` comments
   (durable) rather than relying on a pending dispatch. Label every new issue
-  with existing type/area/priority/hardware labels when known; labels never
+  and PR at creation with existing type/area/priority/hardware labels when
+  known; labels never
   grant authority. See the [runbook](docs/CONTINUOUS_DEVELOPMENT.md#automatic-handoffs).
 - Reserve human approval for product decisions, destructive/risky operations,
   important data deletion, shared-history rewrites, credentials/access changes,

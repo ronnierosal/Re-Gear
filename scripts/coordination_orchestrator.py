@@ -36,8 +36,7 @@ ACK_AUTHOR = "github-actions[bot]"
 REVIEW_BLOCK = re.compile(r"^```regear-review[ \t]*\r?\n(.*?)^```[ \t]*$", re.M | re.S)
 MARKER = re.compile(r"<!-- regear:([a-z-]+) task=(\d+) head=([0-9a-f]{40}) base=([0-9a-f]{40}) -->")
 WRITERS = {"admin", "maintain", "write"}
-# Cross-agent review: the implementing family never reviews itself.
-REVIEWER_FOR = {"claude": "codex-cloud", "codex-cloud": "claude", "codex-local": "claude"}
+REVIEWER_FOR = gc.REVIEWER_FOR
 AUTO_MERGE_CLASSES = {"A"}
 # Labels can only stop automation; they never grant authority.
 HOLD_LABELS = {"merge-hold", "hold", "needs-decision"}
@@ -124,7 +123,8 @@ def review_submissions(comments, number):
 def latest_review(record, comments, number, head, base):
     """Newest valid exact-candidate review by someone other than the owner,
     from the requested opposite agent family (cooperative declared identity)."""
-    family = (record.get("review_request") or {}).get("reviewer_agent", REVIEWER_FOR[record["agent"]])
+    # The family comes from the policy, never from editable routing metadata.
+    family = REVIEWER_FOR[record["agent"]]
     valid = [s for s in review_submissions(comments, number)
              if s["head"] == head and s["base"] == base and s["reviewer"] != record["owner"]
              and s["agent"] == family]
@@ -274,9 +274,22 @@ def plan(number, record, facts):
     # a FAIL posted after readiness withdraws merge or hardware authorization.
     if new["status"] in gc.CANDIDATE and not pr.get("draft"):
         review = latest_review(new, comments, number, head, base)
-        if review and review["url"] != (new.get("review") or {}).get("url"):
-            evidence = {"result": review["result"], "head": head, "base": base,
-                        "url": review["url"], "reviewer": review["reviewer"]}
+        evidence = review and {"result": review["result"], "head": head, "base": base,
+                               "url": review["url"], "reviewer": review["reviewer"]}
+        recorded_url = (new.get("review") or {}).get("url")
+        if review is None and any(c.get("html_url") == recorded_url for c in comments):
+            # The comment backing the recorded review still exists but no longer
+            # holds a valid block for this candidate: acceptance is withdrawn.
+            # Evidence recorded from elsewhere (adopted tasks) is not reset.
+            new.pop("review")
+            if new["status"] in {"ready-to-merge", "hardware-required", "hardware-validated", "changes-requested"}:
+                new["status"] = "review-requested"
+                new.pop("hardware_evidence", None)
+                new["review_request"] = {"head": head, "base": base, "reviewer_agent": REVIEWER_FOR[new["agent"]]}
+            notes.append("recorded review no longer backed by a live review comment")
+        # Compare the whole live evidence, not the URL: an edited comment keeps
+        # its URL, so a PASS edited to FAIL (or back) must still take effect.
+        if review and evidence != new.get("review"):
             new["review"] = evidence
             if review["result"] == "PASS" and new["status"] not in {
                     "software-validated", "review-requested", "changes-requested"}:

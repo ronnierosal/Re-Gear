@@ -62,6 +62,10 @@ def review_comment(result="PASS", reviewer=REVIEWER, head=HEAD, base=BASE, task=
             "created_at": created, "author_permission": permission, "is_bot": bot}
 
 
+# Review evidence as the reconciler records it from review_comment().
+REVIEWED = ev(reviewer=REVIEWER, url="https://example.org/pr/12#review")
+
+
 def facts(**changes):
     return dict(dict(pr=pr(), checks=GREEN, comments=[], issue_comments=[], labels=[], others=[]), **changes)
 
@@ -102,7 +106,7 @@ class PlanTests(unittest.TestCase):
             self.assertIsNone(o.plan(7, waiting, facts(comments=[stale]))[0])
 
     def test_04_changed_head_or_base_invalidates_review(self):
-        accepted = at("ready-to-merge", review=ev(reviewer=REVIEWER))
+        accepted = at("ready-to-merge", review=REVIEWED)
         for changed in [pr(head=NEW), pr(base=NEW)]:
             new, _, notes = o.plan(7, accepted, facts(pr=changed, checks={"state": "pending"}))
             self.assertEqual(new["status"], "pr-open")
@@ -125,7 +129,7 @@ class PlanTests(unittest.TestCase):
             gc.check(dict(new, status="ready-to-merge"), pr())
 
     def test_06_new_head_after_rework_requests_new_review(self):
-        failed = at("changes-requested", review=ev(result="FAIL", reviewer=REVIEWER))
+        failed = at("changes-requested", review=dict(REVIEWED, result="FAIL"))
         old_markers = [{"body": o.marker("review-request", 7, HEAD, BASE), "html_url": "x", "is_bot": True}]
         new, actions, _ = o.plan(7, failed, facts(pr=pr(head=NEW), comments=old_markers))
         self.assertEqual(new["status"], "review-requested")
@@ -135,8 +139,9 @@ class PlanTests(unittest.TestCase):
         self.assertIn(o.marker("review-request", 7, NEW, BASE), request["body"])
 
     def test_07_class_a_reaches_integration(self):
-        accepted = at("ready-to-merge", review=ev(reviewer=REVIEWER))
-        ready = facts(behind_by=0, mergeable=True, files=["docs/example.md"], base_rules=STRICT_RULES)
+        accepted = at("ready-to-merge", review=REVIEWED)
+        ready = facts(behind_by=0, mergeable=True, files=["docs/example.md"], base_rules=STRICT_RULES,
+                      comments=[review_comment()])
         _, actions, notes = o.plan(7, accepted, ready)
         self.assertEqual(actions, [{"kind": "merge", "pr": 12, "sha": HEAD, "task": 7}], notes)
         blocked = {"hold label": dict(ready, labels=["hold"]), "merge-hold": dict(ready, labels=["merge-hold"]),
@@ -156,7 +161,8 @@ class PlanTests(unittest.TestCase):
         # A moved base asks the owner once for a base merge.
         behind = o.plan(7, accepted, dict(ready, behind_by=2))[1]
         self.assertEqual([a["kind"] for a in behind], ["comment"])
-        marked = dict(ready, behind_by=2, comments=[{"body": behind[0]["body"], "html_url": "x", "is_bot": True}])
+        marked = dict(ready, behind_by=2, comments=[review_comment(),
+                                                    {"body": behind[0]["body"], "html_url": "x", "is_bot": True}])
         self.assertEqual(o.plan(7, accepted, marked)[1], [])
 
     def test_08_hardware_classes_cannot_bypass_the_gate(self):
@@ -171,16 +177,16 @@ class PlanTests(unittest.TestCase):
             forced = dict(new, status="ready-to-merge")
             decision = o.merge_decision(7, forced, pr(), facts(behind_by=0, mergeable=True))
             self.assertEqual(decision["actions"], [])
-        b = at("ready-to-merge", review=ev(reviewer=REVIEWER), behavior="docs/GOLDEN_BEHAVIORS.md#g1", **{"class": "B"})
+        b = at("ready-to-merge", review=REVIEWED, behavior="docs/GOLDEN_BEHAVIORS.md#g1", **{"class": "B"})
         self.assertEqual(o.merge_decision(7, b, pr(), facts(behind_by=0, mergeable=True))["actions"], [])
         rows = [{"number": 7, "record": b, "labels": [], "updated_at": None, "pr": pr()}]
         self.assertEqual(o.next_actions("codex-local", "local-session", rows)[0]["kind"], "integrate")
 
     def test_hardware_validated_promotes_only_with_exact_hardware_pass(self):
         hw = ev(agent="codex-local", tester="local", tested_commit=HEAD, artifact="sha256:" + "d" * 64)
-        validated = at("hardware-validated", hardware="required", review=ev(reviewer=REVIEWER),
+        validated = at("hardware-validated", hardware="required", review=REVIEWED,
                        hardware_evidence=hw, **{"class": "C"})
-        new, _, _ = o.plan(7, validated, facts())
+        new, _, _ = o.plan(7, validated, facts(comments=[review_comment()]))
         self.assertEqual(new["status"], "ready-to-merge")
         self.assertEqual(o.merge_decision(7, new, pr(), facts(behind_by=0, mergeable=True))["actions"], [])
 
@@ -198,7 +204,7 @@ class PlanTests(unittest.TestCase):
 
     def test_merged_pr_and_terminal_tasks(self):
         merged = {"number": 12, "merge_commit_sha": NEW, "html_url": "https://example.org/pr/12"}
-        new, _, _ = o.plan(7, at("ready-to-merge", review=ev(reviewer=REVIEWER)), facts(pr=None, merged_pr=merged))
+        new, _, _ = o.plan(7, at("ready-to-merge", review=REVIEWED), facts(pr=None, merged_pr=merged))
         self.assertEqual((new["status"], new["integration"]["sha"]), ("merged", NEW))
         self.assertEqual(o.plan(7, record(status="merged"), facts()), (None, [], []))
 
@@ -255,7 +261,7 @@ class FindingRegressionTests(unittest.TestCase):
                                                  files=["docs/example.md"]))
         self.assertEqual(new["status"], "changes-requested")
         self.assertFalse(any(a["kind"] == "merge" for a in actions))
-        hw = at("hardware-required", hardware="required", review=ev(reviewer=REVIEWER), **{"class": "C"})
+        hw = at("hardware-required", hardware="required", review=REVIEWED, **{"class": "C"})
         self.assertEqual(o.plan(7, hw, facts(comments=[withdraw]))[0]["status"], "changes-requested")
         # A newer PASS on an accepted candidate only refreshes evidence.
         again = review_comment(url="https://example.org/pass-2")
@@ -263,7 +269,7 @@ class FindingRegressionTests(unittest.TestCase):
         self.assertEqual((refreshed["status"], refreshed["review"]["url"]), ("ready-to-merge", "https://example.org/pass-2"))
 
     def test_hold_added_after_planning_stops_the_merge(self):
-        fake = FakeGitHub(at("ready-to-merge", review=ev(reviewer=REVIEWER)), pr())
+        fake = FakeGitHub(at("ready-to-merge", review=REVIEWED), pr())
         source = o.GitHubFacts(fake)
         [issue] = source.managed_issues()
         records = [(7, issue["record"])]
@@ -276,7 +282,7 @@ class FindingRegressionTests(unittest.TestCase):
         self.assertIn("merge withdrawn", row["notes"][0])
 
     def test_unconfirmed_merge_records_nothing(self):
-        fake = FakeGitHub(at("ready-to-merge", review=ev(reviewer=REVIEWER)), pr())
+        fake = FakeGitHub(at("ready-to-merge", review=REVIEWED), pr())
         original = fake.api
 
         def refuse(path, method="GET", payload=None):
@@ -290,7 +296,7 @@ class FindingRegressionTests(unittest.TestCase):
 
     def test_base_moving_after_the_check_cannot_be_merged(self):
         # Codex P1 on 6f3f5f6b: the guard must be atomic, not a prior compare.
-        fake = FakeGitHub(at("ready-to-merge", review=ev(reviewer=REVIEWER)), pr())
+        fake = FakeGitHub(at("ready-to-merge", review=REVIEWED), pr())
         fake.base_moved = True  # base advanced between compare and update
         [row] = reconcile(fake)
         self.assertIn("error", row)  # GitHub refused the non-fast-forward update
@@ -377,7 +383,7 @@ class LocalReviewRegressionTests(unittest.TestCase):
         self.assertEqual(new["status"], "claimed")
 
     def test_concurrent_merge_hold_survives_label_repair(self):
-        ready = at("ready-to-merge", review=ev(reviewer=REVIEWER))
+        ready = at("ready-to-merge", review=REVIEWED)
         fake = FakeGitHub(ready, pr())
         fake.labels = [{"name": "agent-task"}, {"name": "task:pr-open"}]  # drifted mirror pending repair
         original = fake.api
@@ -392,7 +398,7 @@ class LocalReviewRegressionTests(unittest.TestCase):
         self.assertFalse(fake.merged)
 
     def test_reclassification_cannot_carry_evidence_into_a_weaker_gate(self):
-        gated = at("hardware-required", hardware="required", review=ev(reviewer=REVIEWER), **{"class": "D"})
+        gated = at("hardware-required", hardware="required", review=REVIEWED, **{"class": "D"})
         weakened = dict(copy.deepcopy(gated), hardware="not-required", status="ready-to-merge", revision=4)
         weakened["class"] = "A"
         with self.assertRaisesRegex(ValueError, "drop candidate evidence"):
@@ -408,13 +414,14 @@ class LocalReviewRegressionTests(unittest.TestCase):
         # The same downgrade sent as a durable intent is refused, not merged.
         intent = IntentTests().intent(3, weakened)
         new, actions, _ = o.plan(7, gated, facts(issue_comments=[intent], behind_by=0, mergeable=True,
+                                                 comments=[review_comment()],
                                                  files=["docs/a.md"], base_rules=STRICT_RULES))
         self.assertIsNone(new)
         self.assertIn("REFUSED", actions[0]["body"])
         self.assertFalse(any(a["kind"] == "merge" for a in actions))
 
     def test_merge_needs_the_strict_ruleset_guard(self):
-        fake = FakeGitHub(at("ready-to-merge", review=ev(reviewer=REVIEWER)), pr())
+        fake = FakeGitHub(at("ready-to-merge", review=REVIEWED), pr())
         fake.rules = [{"type": "pull_request", "parameters": {}}]
         [row] = reconcile(fake)
         self.assertFalse(fake.merged)
@@ -431,7 +438,7 @@ class FinalReviewRegressionTests(unittest.TestCase):
         return gc.replace(fake.body, blocked)
 
     def test_failed_gate_at_authorization_stops_the_merge(self):
-        fake = FakeGitHub(at("ready-to-merge", review=ev(reviewer=REVIEWER)), pr())
+        fake = FakeGitHub(at("ready-to-merge", review=REVIEWED), pr())
         real = gc.publish
 
         def task_blocked_first(*args, **kwargs):  # lands between fresh plan and gate
@@ -445,7 +452,7 @@ class FinalReviewRegressionTests(unittest.TestCase):
         self.assertTrue(any("coordination gate failed" in n for n in row["notes"]), row)
 
     def test_task_change_after_a_green_gate_stops_the_merge(self):
-        fake = FakeGitHub(at("ready-to-merge", review=ev(reviewer=REVIEWER)), pr())
+        fake = FakeGitHub(at("ready-to-merge", review=REVIEWED), pr())
         real = gc.publish
 
         def task_blocked_after(*args, **kwargs):
@@ -476,7 +483,7 @@ class FinalReviewRegressionTests(unittest.TestCase):
         self.assertEqual(gc.parse(fake.body)["status"], "claimed")
 
     def test_acceptance_contract_change_drops_candidate_evidence(self):
-        accepted = at("ready-to-merge", review=ev(reviewer=REVIEWER))
+        accepted = at("ready-to-merge", review=REVIEWED)
         changes = [{"validation": "Newly required hardware-backed integration suite"},
                    {"bug": True, "regression": "Re-docking regressed after sleep"}]
         for change in changes:
@@ -490,6 +497,52 @@ class FinalReviewRegressionTests(unittest.TestCase):
         # An explicit default is the same contract as an absent one.
         gc.update(accepted, dict(copy.deepcopy(accepted), bug=False, revision=accepted["revision"] + 1),
                   accepted["revision"], [])
+
+
+class CloudReviewRegressionTests(unittest.TestCase):
+    """Regressions for the codex-cloud FAIL review of #458 head 0832f56."""
+
+    def test_review_edited_from_pass_to_fail_withdraws_acceptance(self):
+        edited = dict(review_comment(result="FAIL"), user={"login": "writer", "type": "User"})
+        fake = FakeGitHub(at("ready-to-merge", review=REVIEWED), pr(), comments=[edited])
+        reconcile(fake)
+        self.assertFalse(fake.merged)
+        final = gc.parse(fake.body)
+        self.assertEqual((final["status"], final["review"]["result"]), ("changes-requested", "FAIL"))
+
+    def test_review_edited_from_fail_to_pass_restores_acceptance(self):
+        edited = dict(review_comment(result="PASS"), user={"login": "writer", "type": "User"})
+        fake = FakeGitHub(at("changes-requested", review=dict(REVIEWED, result="FAIL")), pr(), comments=[edited])
+        reconcile(fake)
+        self.assertEqual(gc.parse(fake.body)["review"]["result"], "PASS")
+        self.assertIn(gc.parse(fake.body)["status"], {"ready-to-merge", "merged"})
+
+    def test_review_edited_into_no_valid_block_is_withdrawn(self):
+        gone = dict(review_comment(), body="Retracted.", user={"login": "writer", "type": "User"})
+        fake = FakeGitHub(at("ready-to-merge", review=REVIEWED), pr(), comments=[gone])
+        reconcile(fake)
+        self.assertFalse(fake.merged)
+        final = gc.parse(fake.body)
+        self.assertEqual(final["status"], "review-requested")
+        self.assertNotIn("review", final)
+        self.assertEqual(final["review_request"]["reviewer_agent"], "codex-cloud")
+        # Adopted evidence recorded from outside this PR's comments is kept.
+        adopted = at("ready-to-merge", review=dict(REVIEWED, url="https://example.org/formal-review"))
+        new, _, _ = o.plan(7, adopted, facts(comments=[]))
+        self.assertIsNone(new)
+
+    def test_review_routing_cannot_name_the_implementing_family(self):
+        old = at("review-requested", review_request={"head": HEAD, "base": BASE, "reviewer_agent": "codex-cloud"})
+        for routed in ["claude", "codex-local", "", None, 7]:
+            with self.assertRaisesRegex(ValueError, "opposite agent family"):
+                gc.update(old, dict(old, revision=4,
+                                    review_request={"head": HEAD, "base": BASE, "reviewer_agent": routed}), 3, [])
+        # Even a record carrying such routing (e.g. a hand edit) gains nothing:
+        # the planner takes the family from the policy, not the request.
+        routed = dict(old, review_request={"head": HEAD, "base": BASE, "reviewer_agent": "claude"})
+        same_family = review_comment(reviewer="claude-second-session", agent="claude")
+        new, _, _ = o.plan(7, routed, facts(comments=[same_family]))
+        self.assertTrue(new is None or new["status"] != "ready-to-merge")
 
 
 class IntentTests(unittest.TestCase):
@@ -535,6 +588,10 @@ class FakeGitHub:
         self.pull, self.check_runs = pull, checks if checks is not None else [
             {"name": n, "status": "completed", "conclusion": "success", "html_url": "https://example.org/ci"}
             for n in o.REQUIRED_CHECKS]
+        if comments is None and task.get("review"):
+            # Recorded review evidence is backed by its live review comment.
+            comments = [dict(review_comment(result=task["review"]["result"], created="2026-10-02T11:00:00Z"),
+                             user={"login": "writer", "type": "User"})]
         self.comments = {12: list(comments or []), 7: []}
         self.behind_by, self.labels, self.mutations = behind_by, [{"name": "agent-task"}], []
         self.pr_labels, self.files = [], [{"filename": "docs/example.md"}]
