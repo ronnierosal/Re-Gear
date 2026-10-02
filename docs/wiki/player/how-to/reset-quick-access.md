@@ -1,24 +1,31 @@
-# Reset Quick Access
+# Reset the Command Center layout
 
-This developing customization task is intended to help you restore the default arrangement.
+In a development build, **Reset Layout** restores the original Quick Access
+buttons, right-side buttons, and card order.
 
 ## For players — no technical background needed
 
-**Candidate-only guidance:** customization is being tested in the newer UI. The
-earlier proposed **Settings / Customize** steps do not match every implementation.
-Do not look for those controls or reinstall merely to match a mockup.
+This flow is implemented in development source and hidden in the production
+profile. Read [Customize Re-Gear](../customize.md) before using these steps.
 
-1. Check the instructions supplied with your installed test build.
-2. Use its displayed customization hint only when that action is offered.
-3. Review the resulting arrangement. If the named option is absent, stop and
-   report the build and what you see through [troubleshooting](../troubleshooting.md).
+1. Open Re-Gear and use **LB** / **RB** to reach **Settings**.
+2. Select **Reset Layout**. Its description is **Restore default card positions**.
+3. Re-Gear asks: *Restore the default Quick Access buttons, right rail and tab
+   order?*
+4. Select **Reset layout** to confirm, or press **B** to keep your current layout.
 
-The UI owner reports a Y-on-focused-control picker and native move mode in the
-0.3.107 test candidate. This is not an installed-build acceptance or a verified
-step sequence for all versions. Exact action-specific steps await that evidence.
+After confirmation, the default layout should reappear. This does not reset
+unrelated Re-Gear settings.
+
+### If it does not work
+
+If Re-Gear says **Could not save this layout. Your saved layout is unchanged.**,
+the reset did not replace your saved layout. Retry once, then follow
+[Troubleshooting](../troubleshooting.md) if the message returns.
 
 ## Technical details — for advanced users and contributors
 
-Track [PR329](https://github.com/ronnierosal/Re-Gear/pull/329) and the
-[current evidence](../../technical/current-state.md). Original design briefs remain
-in the archive; they are not executable instructions or a promise of availability.
+The reset calls `commitLayout(normalizeLayout(null), 'reset-layout')` in
+`src/quick-access/expanded-command-center/shell.tsx`, using the same guarded save
+path as other edits. Evidence limits are on
+[Customize Re-Gear](../customize.md#technical-details--for-advanced-users-and-contributors).
