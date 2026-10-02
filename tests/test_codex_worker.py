@@ -106,6 +106,12 @@ class SelectionTests(unittest.TestCase):
             later = row(dict(record(), branch="agent/codex-cloud/124-later"), number=124, labels=["P2"])
             self.assertEqual(worker.select([first, later])[0]["task"], 124)
 
+    def test_nested_instruction_overrides_and_agent_configuration_refused(self):
+        for path in ("backend/AGENTS.override.md", "backend/AGENTS.md", "backend/.codex/config.toml",
+                     "backend/.agents/skills/task.md", "backend/.claude/settings.json"):
+            with self.subTest(path=path), self.assertRaises(ValueError):
+                worker.safe_path(path, ["backend"])
+
     def test_only_opposite_family_reviews(self):
         r = record("claude-worker", "review-requested", "claude")
         r["review_request"] = dict(head=HEAD, base=BASE, reviewer_agent="codex-cloud")

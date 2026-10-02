@@ -31,8 +31,8 @@ def git(root, *args, text=True):
 
 def safe_path(path, scope):
     gc.require(isinstance(path, str) and re.fullmatch(r"[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*", path)
-               and all(p not in {".", "..", ".git", ".codex"} for p in path.split("/"))
-               and path.split("/")[-1] not in {"AGENTS.md", "CLAUDE.md"}, "unsafe patch path")
+               and all(p not in {".", "..", ".git", ".codex", ".agents", ".claude"} for p in path.split("/"))
+               and path.split("/")[-1] not in {"AGENTS.md", "AGENTS.override.md", "CLAUDE.md"}, "unsafe patch path")
     gc.require(any(path == p or path.startswith(p.rstrip("/") + "/") for p in scope), "outside task scope")
     gc.require(not any(path == p.rstrip("/") or path.startswith(p.rstrip("/") + "/")
                        for p in PROTECTED), "protected execution/coordination path")
