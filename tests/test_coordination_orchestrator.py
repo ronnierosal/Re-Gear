@@ -1,5 +1,6 @@
 """Reconciler handoffs: review request, PASS/FAIL routing, stale evidence,
 Class A integration and hardware gates. Deterministic; no network."""
+import copy
 import importlib.util
 import json
 from datetime import datetime, timezone
@@ -44,6 +45,12 @@ def pr(head=HEAD, base=BASE, **changes):
 
 
 GREEN = {"state": "success", "url": "https://example.org/ci"}
+# The live main ruleset shape: PR integration plus strict required checks.
+STRICT_RULES = [{"type": "pull_request", "parameters": {}},
+                {"type": "required_status_checks", "parameters": {
+                    "strict_required_status_checks_policy": True,
+                    "required_status_checks": [{"context": c} for c in
+                                               ["foundation", "privileged-user-delivery", "coordination/pr"]]}}]
 
 
 def review_comment(result="PASS", reviewer=REVIEWER, head=HEAD, base=BASE, task=7, permission="write",
@@ -129,13 +136,18 @@ class PlanTests(unittest.TestCase):
 
     def test_07_class_a_reaches_integration(self):
         accepted = at("ready-to-merge", review=ev(reviewer=REVIEWER))
-        ready = facts(behind_by=0, mergeable=True, files=["docs/example.md"])
+        ready = facts(behind_by=0, mergeable=True, files=["docs/example.md"], base_rules=STRICT_RULES)
         _, actions, notes = o.plan(7, accepted, ready)
         self.assertEqual(actions, [{"kind": "merge", "pr": 12, "sha": HEAD, "task": 7}], notes)
         blocked = {"hold label": dict(ready, labels=["hold"]), "merge-hold": dict(ready, labels=["merge-hold"]),
                    "draft": dict(ready, pr=pr(draft=True)), "files unknown": dict(ready, files=None),
                    "protected path": dict(ready, files=["docs/example.md", ".github/workflows/ci.yml"]),
                    "orchestrator": dict(ready, files=["scripts/coordination_orchestrator.py"]),
+                   "no rules": dict(ready, base_rules=[]),
+                   "non-strict": dict(ready, base_rules=[STRICT_RULES[0], {"type": "required_status_checks",
+                       "parameters": dict(STRICT_RULES[1]["parameters"], strict_required_status_checks_policy=False)}]),
+                   "gate not required": dict(ready, base_rules=[STRICT_RULES[0], {"type": "required_status_checks",
+                       "parameters": dict(STRICT_RULES[1]["parameters"], required_status_checks=[{"context": "foundation"}])}]),
                    "behind": dict(ready, behind_by=2), "conflict": dict(ready, mergeable=False),
                    "gate": dict(ready, gate_error="scope overlaps #9"), "ci": dict(ready, checks={"state": "pending"})}
         for name, case in blocked.items():
@@ -268,8 +280,8 @@ class FindingRegressionTests(unittest.TestCase):
         original = fake.api
 
         def refuse(path, method="GET", payload=None):
-            if path == "git/refs/heads/main":
-                return {"ref": "refs/heads/main", "object": {"sha": BASE}}
+            if path == "pulls/12/merge":
+                return {"merged": False, "message": "Base branch was modified"}
             return original(path, method, payload)
         fake.api = refuse
         [row] = reconcile(fake)
@@ -320,12 +332,93 @@ class FindingRegressionTests(unittest.TestCase):
         self.assertEqual(len(fake.mutations), mutations, "repaired labels are stable")
 
     def test_label_plan_keeps_one_label_per_mirror_namespace(self):
-        issue, pr_labels = o.label_plan(record(status="pr-open"), ["task:claimed", "task:pr-open", "docs"], [])
+        current = ["task:claimed", "task:pr-open", "docs", "merge-hold"]
+        issue, pr_labels = o.label_plan(record(status="pr-open"), current, [])
         self.assertEqual([l for l in issue if l.startswith("task:")], ["task:pr-open"])
-        self.assertIn("docs", issue)
-        self.assertIn("agent-task", issue)
+        add, remove = gc.label_delta(current, issue)
+        self.assertEqual(remove, ["task:claimed"])  # only stale mirrors are removed
+        self.assertIn("agent-task", add)
+        self.assertNotIn("docs", remove)
+        self.assertNotIn("merge-hold", remove)
         mirrors = ["task:pr-open", "agent:claude", "risk:A", "hardware:not-required"]
         self.assertEqual(o.label_plan(record(), ["agent-task"] + mirrors, mirrors), (None, None))
+
+
+class LocalReviewRegressionTests(unittest.TestCase):
+    """Regressions for the local Codex FAIL review of #458 head a973d1d."""
+
+    def test_ack_is_posted_only_after_the_record_is_stored(self):
+        backlog = record(status="backlog", owner=None, revision=1)
+        fake = FakeGitHub(backlog, None)
+        block = json.dumps({"task": 7, "expected_revision": 1, "record": record(status="claimed", revision=2)})
+        fake.comments[7].append({"id": 501, "body": f"```regear-update\n{block}\n```", "html_url": "u",
+                                 "created_at": "2026-10-02T12:00:00Z", "user": {"login": "writer", "type": "User"}})
+        original = fake.api
+
+        def failing_patch(path, method="GET", payload=None):
+            if path == "issues/7" and method == "PATCH":
+                raise gc.subprocess.CalledProcessError(1, "gh", "502")
+            return original(path, method, payload)
+        fake.api = failing_patch
+        reconcile(fake)
+        self.assertEqual(gc.parse(fake.body)["status"], "backlog")
+        self.assertFalse(any("update-ack" in (c["body"] or "") for c in fake.comments[7]), "no ack without a write")
+        fake.api = original
+        reconcile(fake)  # the still-pending intent is applied on the next run
+        self.assertEqual(gc.parse(fake.body)["status"], "claimed")
+        self.assertEqual(sum("update-ack" in (c["body"] or "") for c in fake.comments[7]), 1)
+
+    def test_forged_ack_from_a_person_does_not_suppress_an_intent(self):
+        claim = IntentTests().intent(1, record(status="claimed", revision=2))
+        forged = {"id": 9, "body": "<!-- regear:update-ack task=7 comment=501 -->", "html_url": "x",
+                  "is_bot": False, "author_permission": "write"}
+        new, _, _ = o.plan(7, record(status="backlog", owner=None, revision=1),
+                           facts(pr=None, issue_comments=[claim, forged]))
+        self.assertEqual(new["status"], "claimed")
+
+    def test_concurrent_merge_hold_survives_label_repair(self):
+        ready = at("ready-to-merge", review=ev(reviewer=REVIEWER))
+        fake = FakeGitHub(ready, pr())
+        fake.labels = [{"name": "agent-task"}, {"name": "task:pr-open"}]  # drifted mirror pending repair
+        original = fake.api
+
+        def hold_lands_mid_repair(path, method="GET", payload=None):
+            if path == "issues/7" and method == "GET" and not any(l["name"] == "merge-hold" for l in fake.labels):
+                fake.labels.append({"name": "merge-hold"})
+            return original(path, method, payload)
+        fake.api = hold_lands_mid_repair
+        reconcile(fake)
+        self.assertIn("merge-hold", {l["name"] for l in fake.labels})
+        self.assertFalse(fake.merged)
+
+    def test_reclassification_cannot_carry_evidence_into_a_weaker_gate(self):
+        gated = at("hardware-required", hardware="required", review=ev(reviewer=REVIEWER), **{"class": "D"})
+        weakened = dict(copy.deepcopy(gated), hardware="not-required", status="ready-to-merge", revision=4)
+        weakened["class"] = "A"
+        with self.assertRaisesRegex(ValueError, "drop candidate evidence"):
+            gc.update(gated, weakened, 3, [])
+        for key, value in [("scope", ["docs/other.md"]), ("branch", "agent/claude/7-other")]:
+            with self.assertRaisesRegex(ValueError, "drop candidate evidence"):
+                gc.update(gated, dict(copy.deepcopy(gated), revision=4, **{key: value}), 3, [])
+        # Reclassifying is allowed when it restarts validation from scratch.
+        restarted = {k: v for k, v in gated.items() if k not in gc.EVIDENCE}
+        restarted.update(status="pr-open", revision=4, hardware="not-required")
+        restarted["class"] = "A"
+        gc.update(gated, restarted, 3, [])
+        # The same downgrade sent as a durable intent is refused, not merged.
+        intent = IntentTests().intent(3, weakened)
+        new, actions, _ = o.plan(7, gated, facts(issue_comments=[intent], behind_by=0, mergeable=True,
+                                                 files=["docs/a.md"], base_rules=STRICT_RULES))
+        self.assertIsNone(new)
+        self.assertIn("REFUSED", actions[0]["body"])
+        self.assertFalse(any(a["kind"] == "merge" for a in actions))
+
+    def test_merge_needs_the_strict_ruleset_guard(self):
+        fake = FakeGitHub(at("ready-to-merge", review=ev(reviewer=REVIEWER)), pr())
+        fake.rules = [{"type": "pull_request", "parameters": {}}]
+        [row] = reconcile(fake)
+        self.assertFalse(fake.merged)
+        self.assertTrue(any("atomic exact-base guard" in n for n in row["notes"]))
 
 
 class IntentTests(unittest.TestCase):
@@ -374,6 +467,7 @@ class FakeGitHub:
         self.comments = {12: list(comments or []), 7: []}
         self.behind_by, self.labels, self.mutations = behind_by, [{"name": "agent-task"}], []
         self.pr_labels, self.files = [], [{"filename": "docs/example.md"}]
+        self.rules = STRICT_RULES
         self.on_read, self.merged, self.base_moved = None, False, False
 
     def tasks(self):
@@ -399,12 +493,17 @@ class FakeGitHub:
             elif self.on_read:
                 self.on_read()
             return {"number": 7, "body": self.body, "state": "open", "labels": self.labels}
-        if path == "issues/7/labels":
-            self.labels = [{"name": n} for n in payload["labels"]]
-            return self.labels
-        if path == "issues/12/labels":
-            self.pr_labels = [{"name": n} for n in payload["labels"]]
-            return self.pr_labels
+        if path == "issues/12" and method == "GET":
+            return {"number": 12, "labels": self.pr_labels}
+        if path.startswith(("issues/7/labels", "issues/12/labels")):
+            attr = "labels" if path.startswith("issues/7/") else "pr_labels"
+            assert method in {"POST", "DELETE"}, "label repair must never replace the whole set"
+            if method == "POST":
+                setattr(self, attr, getattr(self, attr) + [{"name": n} for n in payload["labels"]])
+            else:
+                gone = gc.urllib.parse.unquote(path.rsplit("/", 1)[1])
+                setattr(self, attr, [l for l in getattr(self, attr) if l["name"] != gone])
+            return getattr(self, attr)
         if path.startswith("issues/") and path.endswith("/comments"):
             target = self.comments[int(path.split("/")[1])]
             target.append({"id": 9000 + len(target), "body": payload["body"], "html_url": "https://example.org/c",
@@ -418,12 +517,15 @@ class FakeGitHub:
             return {"permission": "write"}
         if path.startswith("compare/"):
             return {"behind_by": self.behind_by}
-        if path == "git/refs/heads/main":
-            if payload.get("force") is not False or self.base_moved:
-                raise gc.subprocess.CalledProcessError(1, "gh", "422 Update is not a fast forward")
+        if path == "pulls/12/merge":
+            # The strict ruleset: GitHub refuses a branch that is not up to date.
+            if self.base_moved or payload.get("sha") != self.pull["head"]["sha"]:
+                raise gc.subprocess.CalledProcessError(1, "gh", "405 Head branch is out of date")
             self.merged = True
-            self.pull = dict(self.pull, merged_at="2026-10-02T13:00:00Z", merge_commit_sha=payload["sha"])
-            return {"ref": "refs/heads/main", "object": {"sha": payload["sha"]}}
+            self.pull = dict(self.pull, merged_at="2026-10-02T13:00:00Z", merge_commit_sha=NEW)
+            return {"sha": NEW, "merged": True}
+        if path == "rules/branches/main":
+            return self.rules
         if path.startswith("pulls?state=closed"):
             return []
         if path.startswith("statuses/") or path.startswith("actions/workflows/"):
@@ -479,9 +581,12 @@ class ReconcileTests(unittest.TestCase):
         reconcile(fake)  # PASS -> ready-to-merge -> merged in the same run
         final = gc.parse(fake.body)
         self.assertEqual(final["status"], "merged")
-        self.assertEqual(final["integration"]["sha"], HEAD)  # exactly the reviewed tree
-        merges = [m for m in fake.mutations if m[1] == "git/refs/heads/main"]
-        self.assertEqual(merges, [("PATCH", "git/refs/heads/main", {"sha": HEAD, "force": False})])
+        self.assertEqual(final["integration"]["sha"], NEW)
+        merges = [m for m in fake.mutations if m[1] == "pulls/12/merge"]
+        self.assertEqual(merges, [("PUT", "pulls/12/merge", {"sha": HEAD, "merge_method": "merge"})])
+        merge_at = fake.mutations.index(merges[0])
+        published = [m for m in fake.mutations[:merge_at] if m[1] == f"statuses/{HEAD}"]
+        self.assertEqual(published[-1][2]["state"], "success", "green gate published before the merge")
         dispatched = [m[2]["inputs"]["profile"] for m in fake.mutations if m[1].startswith("actions/workflows/")]
         self.assertEqual(dispatched, ["development", "production"])
 

@@ -161,8 +161,10 @@ def update_intents(number, comments):
     Comments are durable agent intent: unlike a pending workflow dispatch,
     GitHub cannot cancel them, and the serialized reconciler applies them
     with the same validation as the dispatch workflow."""
-    acked = {int(m.group(2)) for c in comments for m in ACK.finditer(c.get("body") or "")
-             if int(m.group(1)) == number}
+    # Only the reconciler's own (bot) acknowledgements count, and it posts them
+    # only after the record write succeeded, so an ack always means stored.
+    acked = {int(m.group(2)) for c in comments if c.get("is_bot")
+             for m in ACK.finditer(c.get("body") or "") if int(m.group(1)) == number}
     pending = []
     for comment in sorted(comments, key=lambda c: c.get("created_at") or ""):
         match = UPDATE_BLOCK.search(comment.get("body") or "")
@@ -187,31 +189,27 @@ def apply_intents(number, record, facts):
             verdict = f"APPLIED as revision {current['revision']} (`{current['status']}`)"
         except (ValueError, TypeError, KeyError) as exc:
             verdict = f"REFUSED: {exc}. Re-read the record and post a new update."
-        acks.append({"kind": "comment", "target": number, "body": "\n".join([
+        acks.append({"kind": "ack", "target": number, "body": "\n".join([
             f"<!-- regear:update-ack task={number} comment={comment['id']} -->",
             f"Coordination update {comment['html_url']}: {verdict}"])})
     return current, acks
 
 
 def label_plan(record, issue_labels, pr_labels=None):
-    """Desired label sets, or None where nothing changes.
+    """Wanted labels for the issue and its PR (None where nothing changes).
 
-    One label per mirror namespace from the record; descriptive labels are
-    kept. The PR also carries the issue's type, area and priority labels.
-    Labels are a readable mirror only and never grant authority."""
-    mirror = [f"task:{record['status']}", f"agent:{record['agent']}",
-              f"risk:{record['class']}", f"hardware:{record['hardware']}"]
-
-    def desired(current, extra):
-        keep = [label for label in current if not label.startswith(MIRRORS)]
-        return list(dict.fromkeys(keep + extra + mirror))
-    issue = desired(issue_labels, ["agent-task"])
-    result = [issue if set(issue) != set(issue_labels) else None, None]
+    One label per mirror namespace from the record; the PR also carries the
+    issue's type, area and priority labels. Applied as add/remove deltas, so
+    descriptive and concurrently added labels survive. Labels are a readable
+    mirror only and never grant authority."""
+    mirror = gc.record_mirrors(record)
+    issue = ["agent-task"] + mirror
+    result = [issue if any(gc.label_delta(issue_labels, issue)) else None, None]
     if pr_labels is not None:
         carried = [label for label in issue_labels
                    if label in TYPE_LABELS or label.startswith("area:") or re.fullmatch(r"P\d", label)]
-        wanted = desired(pr_labels, carried)
-        result[1] = wanted if set(wanted) != set(pr_labels) else None
+        wanted = mirror + carried
+        result[1] = wanted if any(gc.label_delta(pr_labels, wanted)) else None
     return tuple(result)
 
 
@@ -337,6 +335,25 @@ def finish(old, new, facts):
     return gc.update(old, new, old["revision"], facts.get("others", []))
 
 
+GUARDED_CHECKS = {"foundation", "privileged-user-delivery", "coordination/pr"}
+
+
+def strict_base_guard(rules):
+    """True only if the base branch's rules make GitHub itself refuse a merge
+    that is not up to date with the base or lacks the required checks. That
+    strict policy is the atomic exact-base guard the merge relies on."""
+    rules = rules or []
+    if not any(rule.get("type") == "pull_request" for rule in rules):
+        return False
+    for rule in rules:
+        params = rule.get("parameters") or {}
+        contexts = {item.get("context") for item in params.get("required_status_checks") or []}
+        if (rule.get("type") == "required_status_checks" and params.get("strict_required_status_checks_policy") is True
+                and GUARDED_CHECKS <= contexts):
+            return True
+    return False
+
+
 def merge_decision(number, record, pr, facts):
     """Automatic integration only for eligible Class A; everything else waits
     for the assigned integration driver. Returns blockers and actions."""
@@ -370,6 +387,9 @@ def merge_decision(number, record, pr, facts):
                 "The new head is re-validated and re-reviewed automatically."])})
     if facts.get("mergeable") is not True:
         blockers.append("GitHub does not report the PR as mergeable")
+    if not strict_base_guard(facts.get("base_rules")):
+        blockers.append("base branch rules do not enforce strict up-to-date required checks; "
+                        "the merge would have no atomic exact-base guard")
     if not blockers:
         actions.append({"kind": "merge", "pr": pr["number"], "sha": head, "task": number})
     return {"blockers": blockers, "actions": actions}
@@ -536,6 +556,7 @@ class GitHubFacts:
             compare = self.github.api(f"compare/{pr['base']['ref']}...{head}")
             facts["behind_by"] = compare.get("behind_by")
             facts["mergeable"] = pr.get("mergeable")
+            facts["base_rules"] = self.github.api(f"rules/branches/{pr['base']['ref']}") or []
         return facts
 
 
@@ -598,12 +619,17 @@ def apply(github, issue, new, actions, facts, row):
         gc.write_body(github, issue["number"], issue["body"], body, new)  # also mirrors issue labels
         row["actions"].append(f"update:{new['status']}@r{new['revision']}")
         current, changed = new, True
+    # Intent acks only after the write succeeded: an ack always means stored,
+    # and a failed write leaves the intent pending for the next run.
+    for action in [a for a in actions if a["kind"] == "ack"]:
+        github.api(f"issues/{action['target']}/comments", "POST", {"body": action["body"]})
+        row["actions"].append(f"ack:#{action['target']}")
     issue_labels, pr_labels = label_plan(current, facts.get("issue_labels") or [], facts.get("pr_labels"))
     if issue_labels is not None and new is None:
-        github.api(f"issues/{issue['number']}/labels", "PUT", {"labels": issue_labels})
+        gc.sync_labels(github, issue["number"], issue_labels)  # re-reads, then add/remove only
         row["actions"].append("labels:issue")
     if pr_labels is not None:
-        github.api(f"issues/{facts['pr']['number']}/labels", "PUT", {"labels": pr_labels})
+        gc.sync_labels(github, facts["pr"]["number"], pr_labels)
         row["actions"].append("labels:pr")
     return changed
 
@@ -620,20 +646,19 @@ def merge_if_still_eligible(github, facts_source, issue, action, open_prs, recor
     if action not in actions:
         row["notes"].append("merge withdrawn on fresh re-validation: " + ("; ".join(notes) or "state changed"))
         return False
-    # Fast-forward the base ref to the reviewed head with force=false. This is
-    # the atomic exact-candidate guard: GitHub refuses unless the head still
-    # descends from the current base tip, so a base that moved after the check
-    # cannot be merged unreviewed, and the result is exactly the reviewed tree.
-    # A protected branch that refuses direct ref updates leaves the task
-    # ready-to-merge for the integration driver (reported by watchdog).
-    ref = f"git/refs/heads/{facts['pr']['base']['ref']}"
-    result = github.api(ref, "PATCH", {"sha": action["sha"], "force": False})
-    gc.require(isinstance(result, dict) and (result.get("object") or {}).get("sha") == action["sha"],
-               "GitHub did not confirm the fast-forward to the reviewed head")
+    # The ruleset requires a green coordination/pr on this head; publish it
+    # from this fresh state rather than waiting for the gate workflow.
+    gc.publish(github, facts["pr"], records, open_prs)
+    # Merge through the protected-branch path. `sha` refuses a moved head;
+    # strict_base_guard (checked in the fresh plan) means GitHub itself also
+    # refuses a branch that is not up to date with the current base, so the
+    # exact-base guard is atomic on GitHub's side.
+    result = github.api(f"pulls/{action['pr']}/merge", "PUT", {"sha": action["sha"], "merge_method": "merge"})
+    gc.require(isinstance(result, dict) and result.get("merged") is True, "GitHub did not confirm the merge")
     row["actions"].append(f"merge:#{action['pr']}")
     record = current["record"]
     merged = dict(copy.deepcopy(record), status="merged", revision=record["revision"] + 1,
-                  integration={"pr": action["pr"], "sha": action["sha"], "url": facts["pr"]["html_url"]})
+                  integration={"pr": action["pr"], "sha": result["sha"], "url": facts["pr"]["html_url"]})
     merged = gc.update(record, merged, record["revision"], facts.get("others", []))
     gc.write_body(github, current["number"], current["body"], gc.replace(current["body"], merged), merged)
     row["actions"].append("update:merged")

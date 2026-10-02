@@ -8,6 +8,7 @@ import json
 import os
 import re
 import subprocess
+import urllib.parse
 import sys
 from pathlib import Path
 
@@ -17,6 +18,10 @@ ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,99}")
 ACTIVE = {"claimed", "in-progress", "blocked", "pr-open", "software-validated",
           "review-requested", "changes-requested",
           "hardware-required", "hardware-validated", "ready-to-merge"}
+# Record fields an exact-candidate result is bound to, and the evidence fields
+# that must not survive a change of any of them.
+CANDIDATE_BINDING = ("class", "hardware", "branch", "scope", "agent", "behavior", "procedure_approval")
+EVIDENCE = ("software", "review", "review_request", "hardware_evidence")
 # States that bind software evidence to one exact candidate head/base.
 CANDIDATE = {"software-validated", "review-requested", "changes-requested",
              "hardware-required", "hardware-validated", "ready-to-merge"}
@@ -142,6 +147,14 @@ def update(old, new, expected_revision, others):
         require(new.get("transfer") == dict(offer, accepted=True), "transfer acceptance required")
     elif old["agent"] != new["agent"]:
         raise ValueError("agent change requires ownership transfer")
+    if old["owner"] is not None:
+        # Evidence is bound to the classification, scope and branch it was
+        # gathered under. Changing any of them must not carry that evidence
+        # into a weaker gate (e.g. a class D candidate rewritten as class A).
+        changed = [key for key in CANDIDATE_BINDING if old.get(key) != new.get(key)]
+        if changed:
+            require(new["status"] not in CANDIDATE and not any(name in new for name in EVIDENCE),
+                    f"changing {', '.join(changed)} must drop candidate evidence and leave candidate states")
     collision(new, others)
     return new
 
@@ -324,16 +337,35 @@ def trusted(github, event):
 
 
 
+MIRROR_NAMESPACES = ("task:", "agent:", "risk:", "hardware:")
+
+
+def record_mirrors(record):
+    return [f"task:{record['status']}", f"agent:{record['agent']}",
+            f"risk:{record['class']}", f"hardware:{record['hardware']}"]
+
+
+def label_delta(current, wanted):
+    """Labels to add and mirror labels to remove. Never a whole-set
+    replacement, so a label added concurrently (e.g. merge-hold) survives."""
+    add = [label for label in wanted if label not in current]
+    remove = [label for label in current if label.startswith(MIRROR_NAMESPACES) and label not in wanted]
+    return add, remove
+
+
+def sync_labels(github, number, wanted):
+    current = [x["name"] for x in github.api(f"issues/{number}")["labels"]]
+    add, remove = label_delta(current, wanted)
+    if add:
+        github.api(f"issues/{number}/labels", "POST", {"labels": add})
+    for label in remove:
+        github.api(f"issues/{number}/labels/{urllib.parse.quote(label, safe='')}", "DELETE")
+    return add, remove
+
+
 def mirror_labels(github, number, record):
-    # Replace only these mirror namespaces; unrelated labels survive.
-    issue = github.api(f"issues/{number}")
-    labels = [x["name"] for x in issue["labels"]
-              if not x["name"].startswith(("task:", "agent:", "risk:", "hardware:"))]
-    labels += [f"task:{record['status']}", f"agent:{record['agent']}",
-               f"risk:{record['class']}", f"hardware:{record['hardware']}"]
-    if "agent-task" not in labels:
-        labels.append("agent-task")
-    github.api(f"issues/{number}/labels", "PUT", {"labels": labels})
+    # Only the mirror namespaces change; unrelated labels survive.
+    sync_labels(github, number, ["agent-task"] + record_mirrors(record))
 
 def apply_event(github, event):
     trusted(github, event)

@@ -171,6 +171,17 @@ comment on the task issue, which no run can cancel:
 The reconciler applies pending updates oldest first with exactly the dispatch
 workflow's validation: the expected revision, transfer rules and collisions.
 It replies once per comment with `APPLIED as revision N` or `REFUSED: reason`.
+The reply is posted only after the record write succeeded, and only the
+reconciler's own replies count. A failed write therefore leaves the intent
+pending for the next run, and a hand-written acknowledgement cannot suppress
+one.
+
+After a claim, changing a task's class, hardware requirement, branch, scope,
+agent, behavior citation or procedure approval is accepted only if the update
+also drops all software/review/hardware evidence and leaves the candidate
+states. Validation then restarts from CI and review under the new
+classification. A downgrade such as D → A can never carry old evidence into a
+weaker gate.
 A refused or stale intent changes nothing; re-read and post a new one. Of two
 competing claims at the same revision, only the first can apply. The dispatch
 workflow remains supported; re-read after it, because a replaced run acquires
@@ -178,8 +189,10 @@ nothing.
 
 **Labels.** Every run repairs the mirrors: exactly one `task:`, `agent:`,
 `risk:` and `hardware:` label from the record on the issue and its PR. The PR
-also gets the issue's type, `area:` and `P0`–`P3` labels. Other descriptive
-labels are kept. Labels are a readable mirror only. A misleading label grants
+also gets the issue's type, `area:` and `P0`–`P3` labels. Repair re-reads the
+current labels, then adds and removes individual labels. It never replaces the
+whole set, so descriptive labels, and a `merge-hold` added at the same moment,
+are kept. Labels are a readable mirror only. A misleading label grants
 nothing, and only `merge-hold`, `hold` or `needs-decision` can affect
 automation, by stopping it. Any agent creating a GitHub issue applies the
 existing type, area, priority/readiness and hardware labels at creation when
@@ -218,15 +231,22 @@ review request.
 
 Immediately before merging, the orchestrator re-reads the issue, labels, PR,
 files, CI, reviews and base, and plans again from that live state. It merges
-only if the fresh plan still produces the same merge. It then fast-forwards
-the base branch to the reviewed head with `force: false`. That is the atomic
-exact-candidate guard: GitHub refuses unless the head still descends from the
-current base tip, so a base that moved after the check is never merged
-unreviewed, and the base ends up exactly at the reviewed tree. GitHub marks
-the PR merged; the orchestrator records `merged` only after the ref update is
-confirmed. If branch protection refuses direct ref updates, the task stays
-`ready-to-merge`, `watchdog` reports it, and the integration driver merges. A
-check that ends in anything other than success, neutral or skipped (including
+only if the fresh plan still produces the same merge. It then publishes the
+PR's `coordination/pr` status from that state and merges through the
+protected-branch PR merge API with the reviewed `sha`. The exact-base guard is
+GitHub's own:
+
+- The orchestrator first reads the base branch rules and auto-merges only if
+  they require pull-request integration and **strict** (up-to-date)
+  `foundation`, `privileged-user-delivery` and `coordination/pr` checks, as
+  `main`'s ruleset does today.
+- With that policy, GitHub refuses a branch that is not current with the base
+  at merge time, and `sha` refuses a moved head.
+- If the rules weaken, automatic integration stops with a reported blocker
+  instead of merging unguarded.
+
+The orchestrator records `merged` only after GitHub confirms it. A check that
+ends in anything other than success, neutral or skipped (including
 `startup_failure`) is never green. The plan requires all of these:
 
 - the class is A, `hardware` is `not-required`, and the task does not set `"auto_merge": false`;
