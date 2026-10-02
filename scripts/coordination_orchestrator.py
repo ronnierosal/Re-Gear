@@ -30,6 +30,9 @@ REQUIRED_CHECKS = ("foundation", "privileged-user-delivery")
 COORDINATION_CHECKS = {"gate", "update", "reconcile"}
 UPDATE_BLOCK = re.compile(r"^```regear-update[ \t]*\r?\n(.*?)^```[ \t]*$", re.M | re.S)
 ACK = re.compile(r"<!-- regear:update-ack task=(\d+) comment=(\d+) -->")
+# The only identity that writes records and acks: the workflow's GITHUB_TOKEN.
+# Another installed bot must not be able to suppress an intent with a marker.
+ACK_AUTHOR = "github-actions[bot]"
 REVIEW_BLOCK = re.compile(r"^```regear-review[ \t]*\r?\n(.*?)^```[ \t]*$", re.M | re.S)
 MARKER = re.compile(r"<!-- regear:([a-z-]+) task=(\d+) head=([0-9a-f]{40}) base=([0-9a-f]{40}) -->")
 WRITERS = {"admin", "maintain", "write"}
@@ -161,9 +164,9 @@ def update_intents(number, comments):
     Comments are durable agent intent: unlike a pending workflow dispatch,
     GitHub cannot cancel them, and the serialized reconciler applies them
     with the same validation as the dispatch workflow."""
-    # Only the reconciler's own (bot) acknowledgements count, and it posts them
-    # only after the record write succeeded, so an ack always means stored.
-    acked = {int(m.group(2)) for c in comments if c.get("is_bot")
+    # Only the reconciler's own acknowledgements count, and it posts them only
+    # after the record write succeeded, so an ack always means stored.
+    acked = {int(m.group(2)) for c in comments if c.get("is_bot") and c.get("author") == ACK_AUTHOR
              for m in ACK.finditer(c.get("body") or "") if int(m.group(1)) == number}
     pending = []
     for comment in sorted(comments, key=lambda c: c.get("created_at") or ""):
@@ -499,7 +502,8 @@ class GitHubFacts:
             bot = user.get("type") == "Bot" or str(user.get("login", "")).endswith("[bot]")
             rows.append({"id": c.get("id"), "body": c.get("body"), "html_url": c["html_url"],
                          "created_at": c.get("created_at"),
-                         "is_bot": bot, "author_permission": "none" if bot else self.permission(user.get("login"))})
+                         "is_bot": bot, "author": user.get("login"),
+                         "author_permission": "none" if bot else self.permission(user.get("login"))})
         return rows
 
     def checks(self, sha):
@@ -647,8 +651,17 @@ def merge_if_still_eligible(github, facts_source, issue, action, open_prs, recor
         row["notes"].append("merge withdrawn on fresh re-validation: " + ("; ".join(notes) or "state changed"))
         return False
     # The ruleset requires a green coordination/pr on this head; publish it
-    # from this fresh state rather than waiting for the gate workflow.
-    gc.publish(github, facts["pr"], records, open_prs)
+    # from this fresh state rather than waiting for the gate workflow, and
+    # merge only on this exact success verdict.
+    state, detail = gc.publish(github, facts["pr"], records, open_prs)
+    if state != "success":
+        row["notes"].append("merge withdrawn: coordination gate failed: " + detail)
+        return False
+    # A task write that landed after the fresh plan withdraws the merge too;
+    # the gate verdict above was computed from the record read before it.
+    if github.api(f"issues/{issue['number']}")["body"] != fresh["body"]:
+        row["notes"].append("merge withdrawn: task record changed during authorization")
+        return False
     # Merge through the protected-branch path. `sha` refuses a moved head;
     # strict_base_guard (checked in the fresh plan) means GitHub itself also
     # refuses a branch that is not up to date with the current base, so the

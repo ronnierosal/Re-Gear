@@ -145,7 +145,7 @@ open `Task: #N` PR on its branch:
 | A valid FAIL | records `changes-requested` and points the owner at the findings |
 | Any new head or base | drops software/review/hardware evidence and returns to `pr-open`, which repeats CI and review |
 | `hardware-validated` with exact local hardware PASS | promotes to `ready-to-merge` for the integration driver (never auto-merged) |
-| `ready-to-merge`, eligible class A | merges exactly the reviewed head and records `merged` |
+| `ready-to-merge`, eligible class A | re-plans from fresh state, publishes `coordination/pr` and merges exactly the reviewed head only if that gate passed and the record is unchanged since, then records `merged` |
 | The PR was merged by anyone | records `merged` with the merge commit |
 
 Every record writer, meaning this workflow and Agent coordination, runs in
@@ -172,12 +172,14 @@ The reconciler applies pending updates oldest first with exactly the dispatch
 workflow's validation: the expected revision, transfer rules and collisions.
 It replies once per comment with `APPLIED as revision N` or `REFUSED: reason`.
 The reply is posted only after the record write succeeded, and only the
-reconciler's own replies count. A failed write therefore leaves the intent
+reconciler's own replies count: those from `github-actions[bot]`, the
+workflow token's identity, not any other installed bot. A failed write therefore leaves the intent
 pending for the next run, and a hand-written acknowledgement cannot suppress
 one.
 
 After a claim, changing a task's class, hardware requirement, branch, scope,
-agent, behavior citation or procedure approval is accepted only if the update
+agent, behavior citation, procedure approval, validation requirement or
+bug/regression statement is accepted only if the update
 also drops all software/review/hardware evidence and leaves the candidate
 states. Validation then restarts from CI and review under the new
 classification. A downgrade such as D → A can never carry old evidence into a

@@ -421,6 +421,77 @@ class LocalReviewRegressionTests(unittest.TestCase):
         self.assertTrue(any("atomic exact-base guard" in n for n in row["notes"]))
 
 
+class FinalReviewRegressionTests(unittest.TestCase):
+    """Regressions for the local Codex FAIL review of #458 head 36dbdc1."""
+
+    def blocked_body(self, fake):
+        current = gc.parse(fake.body)
+        blocked = {k: v for k, v in current.items() if k not in gc.EVIDENCE}
+        blocked.update(status="blocked", revision=current["revision"] + 1)
+        return gc.replace(fake.body, blocked)
+
+    def test_failed_gate_at_authorization_stops_the_merge(self):
+        fake = FakeGitHub(at("ready-to-merge", review=ev(reviewer=REVIEWER)), pr())
+        real = gc.publish
+
+        def task_blocked_first(*args, **kwargs):  # lands between fresh plan and gate
+            fake.body = self.blocked_body(fake)
+            return real(*args, **kwargs)
+        with patch.object(gc, "publish", task_blocked_first):
+            [row] = reconcile(fake)
+        self.assertFalse(fake.merged)
+        statuses = [m[2]["state"] for m in fake.mutations if m[1] == f"statuses/{HEAD}"]
+        self.assertEqual(statuses[-1], "failure")
+        self.assertTrue(any("coordination gate failed" in n for n in row["notes"]), row)
+
+    def test_task_change_after_a_green_gate_stops_the_merge(self):
+        fake = FakeGitHub(at("ready-to-merge", review=ev(reviewer=REVIEWER)), pr())
+        real = gc.publish
+
+        def task_blocked_after(*args, **kwargs):
+            verdict = real(*args, **kwargs)
+            fake.body = self.blocked_body(fake)
+            return verdict
+        with patch.object(gc, "publish", task_blocked_after):
+            [row] = reconcile(fake)
+        self.assertFalse(fake.merged)
+        self.assertTrue(any("changed during authorization" in n for n in row["notes"]), row)
+
+    def test_ack_from_a_foreign_bot_does_not_suppress_an_intent(self):
+        claim = IntentTests().intent(1, record(status="claimed", revision=2))
+        foreign = {"id": 9, "body": "<!-- regear:update-ack task=7 comment=501 -->", "html_url": "x",
+                   "is_bot": True, "author": "other-app[bot]", "author_permission": "none"}
+        new, _, _ = o.plan(7, record(status="backlog", owner=None, revision=1),
+                           facts(pr=None, issue_comments=[claim, foreign]))
+        self.assertEqual(new["status"], "claimed")
+        # End to end: GitHubFacts keeps the login, so the live path agrees.
+        fake = FakeGitHub(record(status="backlog", owner=None, revision=1), None)
+        block = json.dumps({"task": 7, "expected_revision": 1, "record": record(status="claimed", revision=2)})
+        fake.comments[7] += [
+            {"id": 501, "body": f"```regear-update\n{block}\n```", "html_url": "u",
+             "created_at": "2026-10-02T12:00:00Z", "user": {"login": "writer", "type": "User"}},
+            {"id": 502, "body": foreign["body"], "html_url": "u", "created_at": "2026-10-02T12:00:01Z",
+             "user": {"login": "other-app[bot]", "type": "Bot"}}]
+        reconcile(fake)
+        self.assertEqual(gc.parse(fake.body)["status"], "claimed")
+
+    def test_acceptance_contract_change_drops_candidate_evidence(self):
+        accepted = at("ready-to-merge", review=ev(reviewer=REVIEWER))
+        changes = [{"validation": "Newly required hardware-backed integration suite"},
+                   {"bug": True, "regression": "Re-docking regressed after sleep"}]
+        for change in changes:
+            with self.assertRaisesRegex(ValueError, "drop candidate evidence"):
+                gc.update(accepted, dict(copy.deepcopy(accepted), revision=accepted["revision"] + 1, **change),
+                          accepted["revision"], [])
+        bugged = dict(copy.deepcopy(accepted), bug=True, regression="Re-docking regressed after sleep")
+        with self.assertRaisesRegex(ValueError, "drop candidate evidence"):
+            gc.update(bugged, dict(copy.deepcopy(bugged), regression="Different regression",
+                                   revision=accepted["revision"] + 1), accepted["revision"], [])
+        # An explicit default is the same contract as an absent one.
+        gc.update(accepted, dict(copy.deepcopy(accepted), bug=False, revision=accepted["revision"] + 1),
+                  accepted["revision"], [])
+
+
 class IntentTests(unittest.TestCase):
     def intent(self, expected, new_record, cid=501, permission="write", task=7, bot=False):
         block = json.dumps({"task": task, "expected_revision": expected, "record": new_record})
@@ -435,7 +506,7 @@ class IntentTests(unittest.TestCase):
         [ack] = actions
         self.assertIn("regear:update-ack task=7 comment=501", ack["body"])
         self.assertIn("APPLIED", ack["body"])
-        acked = [claim, {"id": 9, "body": ack["body"], "html_url": "x", "is_bot": True}]
+        acked = [claim, {"id": 9, "body": ack["body"], "html_url": "x", "is_bot": True, "author": o.ACK_AUTHOR}]
         self.assertEqual(o.plan(7, new, facts(pr=None, issue_comments=acked)), (None, [], []))
 
     def test_competing_and_untrusted_intents_are_refused(self):

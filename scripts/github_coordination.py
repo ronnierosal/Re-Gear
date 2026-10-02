@@ -20,7 +20,10 @@ ACTIVE = {"claimed", "in-progress", "blocked", "pr-open", "software-validated",
           "hardware-required", "hardware-validated", "ready-to-merge"}
 # Record fields an exact-candidate result is bound to, and the evidence fields
 # that must not survive a change of any of them.
-CANDIDATE_BINDING = ("class", "hardware", "branch", "scope", "agent", "behavior", "procedure_approval")
+CANDIDATE_BINDING = ("class", "hardware", "branch", "scope", "agent", "behavior", "procedure_approval",
+                     "validation", "bug", "regression")
+# Absent and the default are the same acceptance contract.
+BINDING_DEFAULTS = {"bug": False}
 EVIDENCE = ("software", "review", "review_request", "hardware_evidence")
 # States that bind software evidence to one exact candidate head/base.
 CANDIDATE = {"software-validated", "review-requested", "changes-requested",
@@ -148,10 +151,12 @@ def update(old, new, expected_revision, others):
     elif old["agent"] != new["agent"]:
         raise ValueError("agent change requires ownership transfer")
     if old["owner"] is not None:
-        # Evidence is bound to the classification, scope and branch it was
-        # gathered under. Changing any of them must not carry that evidence
-        # into a weaker gate (e.g. a class D candidate rewritten as class A).
-        changed = [key for key in CANDIDATE_BINDING if old.get(key) != new.get(key)]
+        # Evidence is bound to the classification, scope, branch and acceptance
+        # contract (validation, bug/regression) it was gathered under. Changing
+        # any of them must not carry that evidence into a weaker gate (e.g. a
+        # class D candidate rewritten as class A).
+        changed = [key for key in CANDIDATE_BINDING
+                   if old.get(key, BINDING_DEFAULTS.get(key)) != new.get(key, BINDING_DEFAULTS.get(key))]
         if changed:
             require(new["status"] not in CANDIDATE and not any(name in new for name in EVIDENCE),
                     f"changing {', '.join(changed)} must drop candidate evidence and leave candidate states")
@@ -308,6 +313,7 @@ def publish(github, pr, tasks, open_prs=None):
         "state": state, "context": "coordination/pr", "description": detail[:140],
         "target_url": pr["html_url"],
     })
+    return state, detail
 
 
 def refresh(github):
