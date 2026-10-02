@@ -1,101 +1,108 @@
 # Command Center & Quick Access
 
-The **Command Center** is Re-Gear's at-a-glance control panel. It is meant for things you may want to check or change without leaving your game.
-
-Quick Access is for **actions now**. Deeper configuration belongs in the individual Re-Gear pages.
-
----
+The **Command Center** is Re-Gear's controller-friendly panel for checking status
+and reaching common controls without leaving a game.
 
 ## For players — no technical background needed
 
-> **Interface preview:** this page describes design intent and developing UI.
-> Mockups and proposed labels are not proof of your installed controls.
-> Follow the available labels in your build; see [current evidence](../technical/current-state.md).
+### Availability and limits
 
-## Command Center overview
+The full Command Center described here is implemented in current **development**
+source. It is not part of a supported public release. The current production
+profile deliberately shows one eGPU tab with **Display Target**, **eGPU** status,
+**Safe Disconnect**, **Disconnect + Sleep**, and **Safe Disconnect + Shutdown**,
+plus the fixed brightness and volume sliders. It hides Quick Access
+customization, the other tabs, and the right-side buttons. A visible action can
+still be unavailable until Re-Gear confirms its requirements.
 
-> ### 🖼️ UI MOCKUP — Command Center overview
-> **TEMPORARY IMAGE PLACEHOLDER**
->
-> Replace with a final screenshot/mockup showing the complete Re-Gear overlay over a running game.
->
-> Annotate: **Volume**, **Brightness**, **Quick Access buttons**, **active tab**, and **status information**.
->
-> Suggested asset: `assets/wiki/mockups/command-center-overview.png`
+The development interface has source and simulated-browser validation. Its
+current complete controller flow has not been accepted on an installed build.
+Use the labels in your build, and see [Current State](../technical/current-state.md)
+before treating a development guide as installed behavior.
 
-The main view is designed around two things:
+### Open and close Re-Gear
 
-**Everyday controls** — Volume and brightness should be immediately available and visually prominent.
+In a development build, choose **Open Re-Gear** in Decky's Quick Access menu.
+The choices are **View / Back + Y**, **L3 + R3**, and **Disabled**. Press both
+buttons in the selected shortcut together. Steam or a game may also react to
+them because Re-Gear observes the shortcut without suppressing other input.
 
-**Quick actions** — A compact set of buttons gives you one-press access to the Re-Gear actions you use most.
+If controller shortcut input is unavailable, open Re-Gear from Steam's Quick
+Access menu instead. Press **B** from the main panel to close Re-Gear.
 
-## Navigation
+### Get around
 
-Re-Gear is designed to work from a controller.
+| Button | What it does |
+|---|---|
+| **LB** / **RB** | Change tabs |
+| **D-pad** | Move between cards |
+| **A** | Select the focused control |
+| **B** | Go back, cancel, or close |
 
-- **D-pad / stick** — move between controls
-- **A** — select or activate
-- **B** — go back
-- **LB / RB** — move between top-level Re-Gear sections when available
+The development tabs are **Quick Access**, **Performance**, **eGPU**,
+**Controllers**, **Offline Readiness**, and **Settings**.
 
-> ### 🖼️ UI MOCKUP — Controller navigation
-> **TEMPORARY IMAGE PLACEHOLDER**
->
-> Show focus moving from Volume → Brightness → Quick Access buttons, with controller button hints.
->
-> Suggested asset: `assets/wiki/mockups/command-center-navigation.png`
+### Quick Access
 
-## Quick Access buttons
+Quick Access starts with **FPS Target**, **Manual TDP**, **Auto TDP**,
+**Display Target**, **eGPU Connection**, **Safe Disconnect**, and
+**Controller Status**. The right side starts with **Mic Mute**, **Wi-Fi**,
+**Performance Overlay**, and **Record**. Brightness and volume stay fixed on
+the left.
 
-Quick Access is your personal shortcut area. The exact actions available can grow as Re-Gear modules are added.
+Select a brightness or volume slider with **A**, then use **Up** / **Down**.
+A card marked **Unavailable** cannot act and should explain why. **Unknown**
+means Re-Gear could not confirm the value. Neither label is proof of a fault.
 
-A button should tell you what it does at a glance using a recognizable icon and short label. Status-sensitive actions may also communicate whether something is connected, active, ready, or unavailable.
+To change the development layout, see [Customize Re-Gear](customize.md).
+Labelled picture placeholders are in the [Player Visual Guide](visual-guide.md).
 
-> ### 🖼️ UI MOCKUP — Quick Access buttons
-> **TEMPORARY IMAGE PLACEHOLDER**
->
-> Close-up of the Quick Access button grid with several example actions and one focused button.
->
-> Suggested asset: `assets/wiki/mockups/quick-access-buttons.png`
+### The other tabs
 
-Want a different arrangement? See [Customize Re-Gear](customize.md) or jump directly to [Move Quick Access buttons](how-to/rearrange-quick-access.md).
+- **Performance** — frame-rate target, power controls, and Auto TDP.
+  [Learn more](performance.md)
+- **eGPU** — connection, display, and guarded disconnect actions.
+  [Learn more](egpu.md)
+- **Controllers** — observed controller information.
+  [Learn more](controllers.md)
+- **Offline Readiness** — preparation information for playing without internet.
+  [Learn more](offline-readiness.md)
+- **Settings** — **Diagnostics**, **Reset Layout**, **Tutorials**, and
+  **About Re-Gear** in the current development source.
 
-## The other menus
+### If it does not work
 
-The Command Center is not supposed to contain every setting. Use the top navigation for deeper controls.
-
-### Performance
-
-> 🖼️ **UI MOCKUP PLACEHOLDER — Performance menu**  
-> Suggested asset: `assets/wiki/mockups/performance-menu.png`
-
-Performance-related settings and status live here. [Learn more →](performance.md)
-
-### eGPU
-
-> 🖼️ **UI MOCKUP PLACEHOLDER — eGPU menu**  
-> Suggested asset: `assets/wiki/mockups/egpu-menu.png`
-
-External GPU, docking, display state, and safe-disconnect controls live here. [Learn more →](egpu.md)
-
-### Controllers
-
-> 🖼️ **UI MOCKUP PLACEHOLDER — Controllers menu**  
-> Suggested asset: `assets/wiki/mockups/controllers-menu.png`
-
-Controller status and controller-specific Re-Gear options live here. [Learn more →](controllers.md)
-
-### Settings
-
-> 🖼️ **UI MOCKUP PLACEHOLDER — Settings menu**  
-> Suggested asset: `assets/wiki/mockups/settings-menu.png`
-
-General preferences and customization live here.
-
----
-
-**Next:** [Customize Re-Gear →](customize.md)
+- Shortcut does nothing: check **Open Re-Gear** is not **Disabled**, press both
+  buttons together, and release both before retrying. Use Steam's Quick Access
+  menu if the interface says controller input is unavailable.
+- A card stays **Unavailable**: read its reason. Re-Gear is declining an action
+  it cannot currently perform or verify.
+- Your build shows only the eGPU tab: that is the intentional production profile,
+  not a missing Quick Access setting.
+- For other failures, follow [Troubleshooting](troubleshooting.md) and include
+  the displayed Re-Gear version and revision.
 
 ## Technical details — for advanced users and contributors
 
-See the [owning contract/evidence](../../COMMAND_CENTER_VALIDATION.md) and [current state](../technical/current-state.md). UI PR329 is a separate test candidate; this page does not establish native or hardware acceptance.
+The development tab list lives in
+`src/quick-access/expanded-command-center/model.ts`. Control identities,
+default Quick Access membership, and right-rail defaults live in
+`control-registry.ts`; `layout-preferences.ts` projects saved layouts. The native
+adapter mounts the controller shortcut and runtime data in `native.tsx`.
+
+`ExpandedCommandCenter` receives a build policy. Under `policy="production"`,
+it restricts `visibleTabs` to `egpu`, removes layout storage and Y-button editing,
+and omits the right rail. `src/build-profile.ts` projects the five production
+cards named above. The older inventory in
+[Release Pipeline](../../RELEASE_PIPELINE.md#development-and-production-profiles)
+does not yet list the combined actions; that documentation drift is tracked in
+[issue #455](https://github.com/ronnierosal/Re-Gear/issues/455).
+
+| Evidence | What it establishes | Limit |
+|---|---|---|
+| Merged source on current `main` | Current development labels, tab structure, defaults, and production restriction | Source is not installed controller acceptance |
+| [Last-mile runtime contract](../../design/ally-last-mile-runtime-contract.md#follow-up-to-the-03105-ui-test) | Simulated gesture, picker, focus-restoration, and responsive-browser checks | Explicitly not installed sound or controller acceptance |
+| [Current State](../technical/current-state.md) | Current build and hardware evidence by revision | Does not promote the full development Command Center to a supported release |
+
+The broader validation checklist is in
+[Command Center validation](../../COMMAND_CENTER_VALIDATION.md).
