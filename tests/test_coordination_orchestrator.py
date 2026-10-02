@@ -64,6 +64,7 @@ def review_comment(result="PASS", reviewer=REVIEWER, head=HEAD, base=BASE, task=
 
 # Review evidence as the reconciler records it from review_comment().
 REVIEWED = ev(reviewer=REVIEWER, url="https://example.org/pr/12#review")
+REQUESTED = {"head": HEAD, "base": BASE, "reviewer_agent": "codex-cloud"}
 
 
 def facts(**changes):
@@ -311,12 +312,19 @@ class FindingRegressionTests(unittest.TestCase):
         self.assertEqual(o.checks_state(ok + [{"name": "x", "status": "completed", "conclusion": "skipped"}])["state"],
                          "success")
 
-    def test_review_must_come_from_the_requested_opposite_family(self):
+    def test_review_must_come_from_the_opposite_family(self):
         waiting = at("review-requested", review_request={"head": HEAD, "base": BASE, "reviewer_agent": "codex-cloud"})
         for comment in [review_comment(reviewer="claude-second-session", agent="claude"),
-                        review_comment(agent=None), review_comment(agent="codex-local")]:
+                        review_comment(agent=None), review_comment(agent="codex-other")]:
             self.assertIsNone(o.plan(7, waiting, facts(comments=[comment]))[0])
-        self.assertEqual(o.plan(7, waiting, facts(comments=[review_comment()]))[0]["status"], "ready-to-merge")
+        for agent in ["codex-cloud", "codex-local"]:  # both are the Codex family
+            self.assertEqual(o.plan(7, waiting, facts(comments=[review_comment(agent=agent)]))[0]["status"],
+                             "ready-to-merge")
+        # A FAIL from the other Codex agent is not ignored while a PASS stands.
+        local_fail = review_comment(result="FAIL", agent="codex-local", created="2026-10-02T13:00:00Z",
+                                    url="https://example.org/local-fail")
+        new = o.plan(7, waiting, facts(comments=[review_comment(), local_fail]))[0]
+        self.assertEqual(new["status"], "changes-requested")
         codex_task = at("review-requested", agent="codex-cloud")
         accepted = o.plan(7, codex_task, facts(comments=[review_comment(reviewer="claude-rev", agent="claude")]))[0]
         self.assertEqual(accepted["status"], "ready-to-merge")
@@ -519,13 +527,32 @@ class CloudReviewRegressionTests(unittest.TestCase):
 
     def test_review_edited_into_no_valid_block_is_withdrawn(self):
         gone = dict(review_comment(), body="Retracted.", user={"login": "writer", "type": "User"})
-        fake = FakeGitHub(at("ready-to-merge", review=REVIEWED), pr(), comments=[gone])
+        fake = FakeGitHub(at("ready-to-merge", review=REVIEWED, review_request=REQUESTED), pr(), comments=[gone])
         reconcile(fake)
         self.assertFalse(fake.merged)
         final = gc.parse(fake.body)
         self.assertEqual(final["status"], "review-requested")
         self.assertNotIn("review", final)
         self.assertEqual(final["review_request"]["reviewer_agent"], "codex-cloud")
+    def test_adopted_legacy_review_evidence_is_not_reset(self):
+        # Live shape of #441/#447: accepted review evidence, no review_request,
+        # URL pointing at a substantive prose review on the PR (no block).
+        prose = dict(review_comment(), body="Independent review: PASS. Findings: none blocking.",
+                     user={"login": "writer", "type": "User"})
+        legacy = at("ready-to-merge", review=REVIEWED)
+        self.assertNotIn("review_request", legacy)
+        new, actions, notes = o.plan(7, legacy, facts(comments=[prose]))
+        self.assertIsNone(new, notes)
+        self.assertFalse(any("no longer backed" in n for n in notes))
+        fake = FakeGitHub(legacy, pr(), comments=[prose])
+        with patch.dict(o.os.environ, ENV):
+            [row] = o.reconcile(fake, dry_run=True, out=lambda _: None)
+        self.assertNotIn("update:review-requested", row["actions"])
+        # A newer structured FAIL still withdraws adopted acceptance.
+        fail = dict(review_comment(result="FAIL", created="2026-10-02T13:00:00Z", url="https://example.org/f"),
+                    user={"login": "writer", "type": "User"})
+        new, _, _ = o.plan(7, legacy, facts(comments=[prose, dict(fail, author_permission="write", is_bot=False)]))
+        self.assertEqual(new["status"], "changes-requested")
         # Adopted evidence recorded from outside this PR's comments is kept.
         adopted = at("ready-to-merge", review=dict(REVIEWED, url="https://example.org/formal-review"))
         new, _, _ = o.plan(7, adopted, facts(comments=[]))
@@ -533,7 +560,7 @@ class CloudReviewRegressionTests(unittest.TestCase):
 
     def test_review_routing_cannot_name_the_implementing_family(self):
         old = at("review-requested", review_request={"head": HEAD, "base": BASE, "reviewer_agent": "codex-cloud"})
-        for routed in ["claude", "codex-local", "", None, 7]:
+        for routed in ["claude", "other", "", None, 7]:
             with self.assertRaisesRegex(ValueError, "opposite agent family"):
                 gc.update(old, dict(old, revision=4,
                                     review_request={"head": HEAD, "base": BASE, "reviewer_agent": routed}), 3, [])
@@ -543,6 +570,20 @@ class CloudReviewRegressionTests(unittest.TestCase):
         same_family = review_comment(reviewer="claude-second-session", agent="claude")
         new, _, _ = o.plan(7, routed, facts(comments=[same_family]))
         self.assertTrue(new is None or new["status"] != "ready-to-merge")
+        # Either Codex agent is the opposite family for Claude work; neither
+        # reviews Codex work.
+        gc.update(old, dict(old, revision=4, review_request=dict(REQUESTED, reviewer_agent="codex-local")), 3, [])
+        local = review_comment(reviewer="codex-local-1", agent="codex-local")
+        self.assertEqual(o.plan(7, old, facts(comments=[local]))[0]["status"], "ready-to-merge")
+        codex_task = dict(old, agent="codex-cloud", branch="agent/codex-cloud/7-task",
+                          review_request=dict(REQUESTED, reviewer_agent="claude"))
+        new, _, _ = o.plan(7, codex_task, facts(pr=pr(head={"ref": "agent/codex-cloud/7-task", "sha": HEAD,
+                                                            "repo": {"full_name": "owner/repo"}}),
+                                                comments=[local]))
+        self.assertTrue(new is None or new["status"] != "ready-to-merge")
+        with self.assertRaisesRegex(ValueError, "opposite agent family"):
+            gc.update(codex_task, dict(codex_task, revision=4,
+                                       review_request=dict(REQUESTED, reviewer_agent="codex-local")), 3, [])
 
 
 class IntentTests(unittest.TestCase):

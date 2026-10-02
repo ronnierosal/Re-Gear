@@ -205,10 +205,11 @@ the plan.
 ### Review
 
 Every review needs an exact candidate and an identity independent of the
-owner, from the opposite agent family: Claude tasks are reviewed by
-`codex-cloud`, Codex tasks by `claude`. A second session of the implementing
-family does not qualify, and `review_request.reviewer_agent` can only name that
-opposite family. `next` assigns the request to it. To submit, review the
+owner, from the opposite agent family: Claude tasks are reviewed by Codex
+(`codex-cloud` or `codex-local`), Codex tasks by `claude`. A second session of
+the implementing family does not qualify, and `review_request.reviewer_agent`
+can only name the opposite family. `next` routes the request to
+`codex-cloud` or `claude` by default. To submit, review the
 exact head against its base according to AGENTS.md and this runbook. Post
 findings as normal PR comments, then one comment containing:
 
@@ -227,7 +228,9 @@ declaration, not authentication. The newest valid block for the candidate wins,
 so a reviewer can retract a mistaken FAIL with a later PASS. The live comment
 content governs: editing a block from PASS to FAIL (or back) takes effect on
 the next run, and a recorded review whose PR comment no longer holds a valid
-block is withdrawn and the review requested again. A deleted review comment
+block is withdrawn and the review requested again. That applies to reviews
+this workflow ingested (records with `review_request`); evidence adopted from
+before it, such as legacy prose reviews, is kept. A deleted review comment
 cannot be told apart from evidence recorded elsewhere, so retract with an edit
 or a newer FAIL rather than by deleting.
 The newest valid block governs every candidate state. A FAIL posted after

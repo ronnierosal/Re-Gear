@@ -122,12 +122,11 @@ def review_submissions(comments, number):
 
 def latest_review(record, comments, number, head, base):
     """Newest valid exact-candidate review by someone other than the owner,
-    from the requested opposite agent family (cooperative declared identity)."""
-    # The family comes from the policy, never from editable routing metadata.
-    family = REVIEWER_FOR[record["agent"]]
+    from the opposite agent family (cooperative declared identity)."""
+    # The family rule comes from the policy, never from editable routing metadata.
     valid = [s for s in review_submissions(comments, number)
              if s["head"] == head and s["base"] == base and s["reviewer"] != record["owner"]
-             and s["agent"] == family]
+             and gc.opposite_family(record["agent"], s["agent"])]
     return valid[-1] if valid else None
 
 
@@ -277,10 +276,13 @@ def plan(number, record, facts):
         evidence = review and {"result": review["result"], "head": head, "base": base,
                                "url": review["url"], "reviewer": review["reviewer"]}
         recorded_url = (new.get("review") or {}).get("url")
-        if review is None and any(c.get("html_url") == recorded_url for c in comments):
+        # Only reviews this workflow ingested (they carry `review_request`) are
+        # bound to a live `regear-review` block. Adopted pre-workflow evidence
+        # (#441, #447) points at legacy prose reviews and is not reset.
+        structured = "review_request" in new
+        if review is None and structured and any(c.get("html_url") == recorded_url for c in comments):
             # The comment backing the recorded review still exists but no longer
             # holds a valid block for this candidate: acceptance is withdrawn.
-            # Evidence recorded from elsewhere (adopted tasks) is not reset.
             new.pop("review")
             if new["status"] in {"ready-to-merge", "hardware-required", "hardware-validated", "changes-requested"}:
                 new["status"] = "review-requested"

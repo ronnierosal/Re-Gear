@@ -25,8 +25,16 @@ CANDIDATE_BINDING = ("class", "hardware", "branch", "scope", "agent", "behavior"
 # Absent and the default are the same acceptance contract.
 BINDING_DEFAULTS = {"bug": False}
 EVIDENCE = ("software", "review", "review_request", "hardware_evidence")
-# Cross-agent review: the implementing family never reviews itself.
+# Cross-agent review: the implementing family (Claude or Codex) never reviews
+# itself. REVIEWER_FOR is the default routing; any agent of the opposite
+# family may review.
+FAMILY = {"claude": "claude", "codex-cloud": "codex", "codex-local": "codex"}
 REVIEWER_FOR = {"claude": "codex-cloud", "codex-cloud": "claude", "codex-local": "claude"}
+
+
+def opposite_family(task_agent, reviewer_agent):
+    return (task_agent in FAMILY and reviewer_agent in FAMILY
+            and FAMILY[reviewer_agent] != FAMILY[task_agent])
 # States that bind software evidence to one exact candidate head/base.
 CANDIDATE = {"software-validated", "review-requested", "changes-requested",
              "hardware-required", "hardware-validated", "ready-to-merge"}
@@ -95,7 +103,8 @@ def validate(record):
     request = record.get("review_request")
     if isinstance(request, dict) and "reviewer_agent" in request:
         # Routing metadata cannot weaken the opposite-family review policy.
-        require(request["reviewer_agent"] == REVIEWER_FOR.get(record["agent"]),
+        require(isinstance(request["reviewer_agent"], str)
+                and opposite_family(record["agent"], request["reviewer_agent"]),
                 "review_request.reviewer_agent must be the opposite agent family")
     for name in ("review_request", "integration"):
         item = record.get(name, {})
