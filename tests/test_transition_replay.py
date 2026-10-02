@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import sys
 import unittest
+from dataclasses import replace
 from pathlib import Path
 
 
@@ -10,6 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
 from regear.application.transition_replay import TransitionReplaySimulator  # noqa: E402
+from regear.adapters.transition_runtime import versioned_snapshot_observation  # noqa: E402
 from regear.domain.control_plane import (  # noqa: E402
     PlacementState,
     PlannedStep,
@@ -297,6 +299,72 @@ class TransitionReplayTests(unittest.TestCase):
         result = self.run_replay(observations, mechanism, plan)
         self.assertEqual(result.outcome.kind, TransitionOutcomeKind.NO_OP)
         self.assertEqual(mechanism.applied, [])
+
+
+class FreshRecoveryReplayTests(unittest.TestCase):
+    def run_recovery(self, *, duplicate=False, recovery_ok=True,
+                     recovery_duration=1, observation_duration=0):
+        source = snapshot("portable.json")
+        before = versioned_snapshot_observation(source)
+        after = versioned_snapshot_observation(replace(
+            source, observed_at="2026-10-02T16:00:01Z"))
+        self.assertEqual(before.generation, after.generation)
+        self.assertNotEqual(before.sample_id, after.sample_id)
+        clock = FakeClock()
+
+        class Observations(ScriptedObservations):
+            def observe(self):
+                if len(self.values) == 1:
+                    clock.advance(observation_duration)
+                return super().observe()
+
+        mechanism = ScriptedMechanism(
+            clock, [(1, MechanismResult(False, "display.apply_failed"))],
+            (recovery_duration, MechanismResult(recovery_ok, "recovery.result")))
+        plan = replace(dock_plan(PlannedStep(
+            TransitionStepCode.PRESENTATION_APPLY_DOCKED_EGPU, 100,
+            expected_placement=PlacementState.DOCKED_EGPU)),
+            observed_generation=before.generation, recovery_deadline_ms=50)
+        result = TransitionReplaySimulator(
+            Observations(before, before if duplicate else after), mechanism, clock
+        ).run(plan)
+        self.assertEqual(mechanism.recoveries, 1)
+        self.assertEqual(result.outcome.placement, PlacementState.PORTABLE)
+        self.assertNotIn(JournalEventKind.COMMITTED,
+                         [entry.kind for entry in result.journal.entries])
+        return result
+
+    def test_fresh_unchanged_source_verifies_recovery(self):
+        result = self.run_recovery()
+        self.assertEqual(result.outcome.kind, TransitionOutcomeKind.RECOVERED)
+        self.assertTrue(result.outcome.recovery.verified)
+        self.assertEqual(result.outcome.failure.code, "display.apply_failed")
+        self.assertEqual(result.journal.entries[-1].kind,
+                         JournalEventKind.RECOVERY_VERIFIED)
+
+    def test_duplicate_source_sample_cannot_verify_recovery(self):
+        result = self.run_recovery(duplicate=True)
+        self.assertEqual(result.outcome.kind, TransitionOutcomeKind.FAILED)
+        self.assertFalse(result.outcome.recovery.verified)
+
+    def test_fresh_source_cannot_hide_failed_recovery_mechanism(self):
+        result = self.run_recovery(recovery_ok=False)
+        self.assertEqual(result.outcome.kind, TransitionOutcomeKind.FAILED)
+        self.assertFalse(result.outcome.recovery.verified)
+
+    def test_fresh_source_cannot_hide_recovery_mechanism_timeout(self):
+        result = self.run_recovery(recovery_duration=51)
+        self.assertEqual(result.outcome.kind, TransitionOutcomeKind.FAILED)
+        self.assertFalse(result.outcome.recovery.verified)
+
+    def test_recovery_deadline_includes_fresh_observation_time(self):
+        result = self.run_recovery(observation_duration=50)
+        self.assertEqual(result.outcome.kind, TransitionOutcomeKind.FAILED)
+        self.assertFalse(result.outcome.recovery.verified)
+
+    def test_fresh_source_at_recovery_deadline_is_accepted(self):
+        result = self.run_recovery(observation_duration=49)
+        self.assertEqual(result.outcome.kind, TransitionOutcomeKind.RECOVERED)
 
 
 if __name__ == "__main__":
