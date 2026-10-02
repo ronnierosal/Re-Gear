@@ -172,7 +172,7 @@ function settingsTiles(): Tile[] {
     // The real control is the native adapter row, not a tile. The approved
     // composition still carries a card here, so it says where the control is
     // rather than pretending none exists.
-    entry("shortcut", "Command Center Shortcut",
+    entry("shortcut", "Menu Shortcut",
       "Configured from the shortcut row above, not from this card."),
     entry("appearance", "Appearance", "No appearance preference is stored."),
     entry("updates", "Updates", "Re-Gear does not check for updates."),
@@ -214,7 +214,7 @@ function quickTiles(
   // quiet and says so, and only `verified` earns the tone a player reads as
   // "this is true right now".
   const target: Tile = {
-    id: "display", title: "Display Target",
+    id: "display", title: "Display",
     value: displayTarget?.known ? displayTarget.text : "Unknown",
     tone: displayTarget ? evidenceTone(displayTarget) : "unavailable",
     detail: !displayTarget?.known

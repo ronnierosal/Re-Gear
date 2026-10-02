@@ -387,8 +387,8 @@ function showSafeDisconnectConfirmation(
   };
   modal = showModal(
     <EgpuConfirmModal
-      strTitle={portable ? "Shut down for eGPU disconnect?" : "Return to Ally for eGPU disconnect?"}
-      strOKButtonText={portable ? "Shut down" : "Return to Ally"}
+      strTitle={portable ? "Shut down for eGPU disconnect?" : "Switch to Handheld for eGPU disconnect?"}
+      strOKButtonText={portable ? "Shut Down" : "Switch to Handheld"}
       strCancelButtonText="Cancel"
       bDestructiveWarning={true}
       bDisableBackgroundDismiss={true}
@@ -427,8 +427,8 @@ function showControllerDisplayConfirmation(
   const close = () => { modal.Close(); onClose(); };
   modal = showModal(
     <ConfirmModal
-      strTitle={target === "tv" ? "Switch to TV?" : "Return to Ally?"}
-      strOKButtonText={target === "tv" ? "Switch to TV" : "Return to Ally"}
+      strTitle={target === "tv" ? "Switch to TV?" : "Switch to Handheld?"}
+      strOKButtonText={target === "tv" ? "Switch to TV" : "Switch to Handheld"}
       strCancelButtonText="Cancel"
       bDisableBackgroundDismiss={true}
       bHideCloseIcon={true}
@@ -1358,13 +1358,13 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
       if (!approval.approval_token || approval.blockers.length > 0) {
         setSafeDisconnectMessage(
           approval.blockers.length > 0
-            ? `Return to Ally blocked: ${approval.blockers.map(label).join(", ")}.`
+            ? `Switch to Handheld blocked: ${approval.blockers.map(label).join(", ")}.`
             : "Portable transition approval was not issued. Inspect again.",
         );
         return;
       }
       toaster.toast({
-        title: "Re-Gear is returning to the Ally",
+        title: "Re-Gear is switching to the handheld screen",
         body: "Do not disconnect the eGPU. Wait for Portable verification, then shut down.",
         critical: true,
         duration: 30000,

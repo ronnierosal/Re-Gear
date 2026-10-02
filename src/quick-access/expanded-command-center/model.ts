@@ -18,7 +18,7 @@ export const sampleTiles: Record<Tab, readonly Tile[]> = {
     { id: "fps", title: "FPS Target", value: "Unavailable", detail: "No provider detected", tone: "unavailable" },
     { id: "manual", title: "Manual TDP", value: "18 W", detail: "Current limit", tone: "active" },
     { id: "auto", title: "Auto TDP", value: "Off", detail: "Configure to start" },
-    { id: "display", title: "Display Target", value: "1080p · 60Hz", detail: "Internal Display", tone: "active" },
+    { id: "display", title: "Display", value: "Handheld", detail: "The screen currently in use", tone: "active" },
     { id: "egpu", title: "eGPU Status", value: "Connected", detail: "RX 7600M XT" },
     { id: "controller", title: "Controller Status", value: "External (P1)", detail: "Built-in off" },
     { id: "disconnect", title: "Safe Disconnect", value: "Readiness check required", detail: "Review apps using the eGPU. No unplug clearance.", tone: "warning" },
@@ -50,7 +50,7 @@ export const sampleTiles: Record<Tab, readonly Tile[]> = {
   offline: [],
   settings: [
     { id: "quick-actions", title: "Quick Actions", value: "4 actions", detail: "Choose supported right-rail shortcuts" },
-    { id: "shortcut", title: "Command Center Shortcut", value: "Configured", detail: "Choose how Re-Gear opens" },
+    { id: "shortcut", title: "Menu Shortcut", value: "Configured", detail: "Choose how Re-Gear opens" },
     { id: "appearance", title: "Appearance", value: "Re-Gear", detail: "Approved Command Center presentation" },
     { id: "updates", title: "Updates", value: "Unknown", detail: "Update state when a verified source exists", tone: "unavailable" },
     { id: "diagnostics", title: "Diagnostics", value: "Available", detail: "Support and troubleshooting details" },
