@@ -192,6 +192,11 @@ class TaskTests(unittest.TestCase):
             self.assertNotIn("${{ inputs.", text)
             self.assertIn("persist-credentials: false", text)
 
+    def test_closing_duplicate_pr_refreshes_surviving_status(self):
+        text = (Path(__file__).parents[1] / ".github/workflows/coordination-gate.yml").read_text()
+        pr_events = text.split("pull_request_target:", 1)[1].split("issues:", 1)[0]
+        self.assertIn("closed", pr_events)
+
     def test_hardware_queue_checks_live_pr_revision(self):
         candidate = record(status="hardware-required", hardware="required", software=ev(), review=ev(reviewer="other"))
         class Fake:
