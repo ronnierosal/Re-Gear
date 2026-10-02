@@ -1,0 +1,35 @@
+name: Engineering task
+description: One owner, bounded acceptance and explicit software/hardware gates
+title: ""
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem and evidence
+      description: Expected versus actual behavior, source revision and redacted evidence. Search for duplicates first.
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope and acceptance
+      description: Include what is out of scope, dependencies and demonstrated behavior to preserve.
+    validations:
+      required: true
+  - type: textarea
+    id: assignment
+    attributes:
+      label: Assignment and validation
+      description: Proposed owner role/session, branch, class A/B/C/D, hardware requirement and required tests. A proposal is not a claim; use the Agent coordination workflow before implementation.
+    validations:
+      required: true
+  - type: textarea
+    id: regression
+    attributes:
+      label: Regression and hardware plan
+      description: For bugs, name the fail-before/pass-after test or precise reproduction gap. For hardware, name the local driver, expected behavior, evidence, stop conditions and rollback. Never include raw private logs.
+  - type: textarea
+    id: next
+    attributes:
+      label: Next action
+      description: One bounded next action, blocker if any, and related issue/PR links.
