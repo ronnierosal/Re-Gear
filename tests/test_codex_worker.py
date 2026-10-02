@@ -100,6 +100,12 @@ class SelectionTests(unittest.TestCase):
                 self.assertIsNone(worker.select([row(dict(record(), **override))]))
         self.assertIsNone(worker.select([row(labels=["hold"])]))
 
+    def test_unsupported_first_claim_does_not_hide_eligible_cloud_backlog(self):
+        for override in ({"class": "C", "hardware": "required"}, {"scope": [".github/workflows/ci.yml"]}):
+            first = row(dict(record(), **override), labels=["P0"])
+            later = row(dict(record(), branch="agent/codex-cloud/124-later"), number=124, labels=["P2"])
+            self.assertEqual(worker.select([first, later])[0]["task"], 124)
+
     def test_only_opposite_family_reviews(self):
         r = record("claude-worker", "review-requested", "claude")
         r["review_request"] = dict(head=HEAD, base=BASE, reviewer_agent="codex-cloud")

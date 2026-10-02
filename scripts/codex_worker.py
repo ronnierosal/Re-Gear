@@ -48,7 +48,23 @@ def fingerprint(action, record, base):
 def select(rows, excluded=()):
     eligible = {r["number"]: r for r in rows if r["record"]["status"] != "invalid"
                 and not co.HOLD_LABELS.intersection(r["labels"])}
-    for action in co.next_actions("codex-cloud", SESSION, rows):
+    # next_actions offers one claim, so remove only unsupported *unowned backlog*
+    # candidates before asking it. Retain every owned/active row for WIP/collisions.
+    offered = []
+    for item in rows:
+        r = item["record"]
+        if r["status"] == "backlog" and r["owner"] is None:
+            if item["number"] not in eligible or item["number"] in excluded:
+                continue
+            if r["class"] != "A" or r["hardware"] != "not-required":
+                continue
+            try:
+                for path in r["scope"]:
+                    safe_path(path, r["scope"])
+            except ValueError:
+                continue
+        offered.append(item)
+    for action in co.next_actions("codex-cloud", SESSION, offered):
         row = eligible.get(action["task"])
         if action["task"] in excluded or row is None or action["kind"] not in {"claim", "implement", "rework", "review"}:
             continue
