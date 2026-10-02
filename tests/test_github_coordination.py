@@ -102,7 +102,8 @@ class TaskTests(unittest.TestCase):
             state = "open"
 
             def api(self, path):
-                return {"state": self.state, "body": "```regear-task\n" + json.dumps(ready()) + "\n```"}
+                return {"state": self.state, "labels": [{"name": "agent-task"}],
+                        "body": "```regear-task\n" + json.dumps(ready()) + "\n```"}
         fake = Fake()
         c.check_pr(fake, pr(), [], [pr()])
         with self.assertRaisesRegex(ValueError, "exactly one"):
@@ -171,7 +172,7 @@ class TaskTests(unittest.TestCase):
             self.assertIn("persist-credentials: false", text)
 
     def test_hardware_queue_checks_live_pr_revision(self):
-        candidate = record(status="hardware-required", hardware="required", software=ev())
+        candidate = record(status="hardware-required", hardware="required", software=ev(), review=ev(reviewer="other"))
         class Fake:
             def tasks(self):
                 return [(444, candidate)]
@@ -183,6 +184,15 @@ class TaskTests(unittest.TestCase):
         row = c.queue(Fake())[0]
         self.assertFalse(row["hardware_queue_ready"])
         self.assertIn("stale", row["queue_blocker"])
+
+    def test_public_unmanaged_issues_do_not_poison_inventory(self):
+        github = c.GitHub("owner/repo")
+        issue = {"number": 444, "labels": [], "body": "```regear-task\ninvalid"}
+        with patch.object(github, "pages", return_value=[issue]):
+            self.assertEqual(github.tasks(), [])
+            issue["labels"] = [{"name": "agent-task"}]
+            with self.assertRaises(ValueError):
+                github.tasks()
 
     def test_invalid_inventory_cannot_leave_success_status(self):
         class Fake:

@@ -17,7 +17,7 @@ ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,99}")
 ACTIVE = {"claimed", "in-progress", "blocked", "pr-open", "software-validated",
           "hardware-required", "hardware-validated", "ready-to-merge"}
 TERMINAL = {"merged", "closed", "cancelled"}
-LABELS = ([f"task:{state}" for state in sorted(ACTIVE | TERMINAL | {"backlog"})]
+LABELS = (["agent-task"] + [f"task:{state}" for state in sorted(ACTIVE | TERMINAL | {"backlog"})]
           + [f"agent:{agent}" for agent in ("codex-cloud", "claude", "codex-local")]
           + [f"risk:{risk}" for risk in "ABCD"]
           + ["hardware:required", "hardware:not-required"])
@@ -196,7 +196,7 @@ class GitHub:
     def tasks(self):
         result = []
         for issue in self.pages("issues?state=open"):
-            if "pull_request" not in issue and "```regear-task" in (issue.get("body") or ""):
+            if "pull_request" not in issue and any(label["name"] == "agent-task" for label in issue["labels"]):
                 result.append((issue["number"], parse(issue["body"])))
         return result
 
@@ -226,6 +226,8 @@ def queue(github):
                 pr = matches[0]
                 require(pr["head"]["ref"] == record["branch"], "task/PR branch mismatch")
                 evidence(record, "software", pr["head"]["sha"], pr["base"]["sha"])
+                review = evidence(record, "review", pr["head"]["sha"], pr["base"]["sha"])
+                require(nonempty(review.get("reviewer")) and review["reviewer"] != record["owner"], "independent reviewer required")
                 row["hardware_queue_ready"] = True
             except ValueError as exc:
                 row["queue_blocker"] = str(exc)
@@ -245,6 +247,7 @@ def check_pr(github, pr, tasks, open_prs=None):
     require(siblings == [pr["number"]], "task requires exactly one open PR")
     issue = github.api(f"issues/{number}")
     require("pull_request" not in issue and issue["state"] == "open", "task must be an open issue")
+    require(any(label["name"] == "agent-task" for label in issue["labels"]), "task must be opted in by a repository writer")
     check(parse(issue["body"]), pr, [(n, r) for n, r in tasks if n != number])
     latest = github.api(f"issues/{number}")
     require(latest["state"] == "open" and latest["body"] == issue["body"], "task changed while checking")
@@ -296,6 +299,8 @@ def mirror_labels(github, number, record):
               if not x["name"].startswith(("task:", "agent:", "risk:", "hardware:"))]
     labels += [f"task:{record['status']}", f"agent:{record['agent']}",
                f"risk:{record['class']}", f"hardware:{record['hardware']}"]
+    if "agent-task" not in labels:
+        labels.append("agent-task")
     github.api(f"issues/{number}/labels", "PUT", {"labels": labels})
 
 def apply_event(github, event):
