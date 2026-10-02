@@ -187,7 +187,8 @@ class GitHub:
     def pages(self, path):
         result = []
         for page in range(1, 1001):
-            batch = self.api(f"{path}&per_page=100&page={page}")
+            separator = "&" if "?" in path else "?"
+            batch = self.api(f"{path}{separator}per_page=100&page={page}")
             result.extend(batch)
             if len(batch) < 100:
                 return result
@@ -224,7 +225,13 @@ def queue(github):
             try:
                 require(len(matches) == 1, "hardware queue requires exactly one open task PR")
                 pr = matches[0]
+                require(sum(p["head"]["sha"] == pr["head"]["sha"] for p in prs) == 1,
+                        "multiple open PRs share this head; status context is ambiguous")
+                require(pr["head"]["repo"] is not None and pr["head"]["repo"]["full_name"] == pr["base"]["repo"]["full_name"],
+                        "task branch must be in this repository")
+                require(not pr.get("draft"), "draft PR is not ready")
                 require(pr["head"]["ref"] == record["branch"], "task/PR branch mismatch")
+                collision(record, [(n, r) for n, r in tasks if n != number])
                 evidence(record, "software", pr["head"]["sha"], pr["base"]["sha"])
                 review = evidence(record, "review", pr["head"]["sha"], pr["base"]["sha"])
                 require(nonempty(review.get("reviewer")) and review["reviewer"] != record["owner"], "independent reviewer required")
@@ -237,8 +244,11 @@ def queue(github):
 
 def check_pr(github, pr, tasks, open_prs=None):
     number = task_number(pr.get("body"))
+    open_prs = open_prs if open_prs is not None else github.pages("pulls?state=open")
+    require(sum(p["head"]["sha"] == pr["head"]["sha"] for p in open_prs) == 1,
+            "multiple open PRs share this head; status context is ambiguous")
     siblings = []
-    for other in open_prs if open_prs is not None else github.pages("pulls?state=open"):
+    for other in open_prs:
         try:
             if task_number(other.get("body")) == number:
                 siblings.append(other["number"])
@@ -248,7 +258,14 @@ def check_pr(github, pr, tasks, open_prs=None):
     issue = github.api(f"issues/{number}")
     require("pull_request" not in issue and issue["state"] == "open", "task must be an open issue")
     require(any(label["name"] == "agent-task" for label in issue["labels"]), "task must be opted in by a repository writer")
-    check(parse(issue["body"]), pr, [(n, r) for n, r in tasks if n != number])
+    record = parse(issue["body"])
+    check(record, pr, [(n, r) for n, r in tasks if n != number])
+    files = github.pages(f"pulls/{pr['number']}/files")
+    require(len(files) == pr["changed_files"], "incomplete PR file inventory")
+    for file in files:
+        for path in [file["filename"]] + ([file["previous_filename"]] if "previous_filename" in file else []):
+            require(any(path == scope or path.startswith(scope + "/") for scope in record["scope"]),
+                    f"PR path outside claimed scope: {path}")
     latest = github.api(f"issues/{number}")
     require(latest["state"] == "open" and latest["body"] == issue["body"], "task changed while checking")
 

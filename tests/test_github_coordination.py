@@ -31,7 +31,7 @@ def ready(**changes):
 
 def pr(**changes):
     repo = {"full_name": "owner/repo"}
-    result = dict(number=12, body="Task: #444", draft=False, html_url="https://example.org/pr",
+    result = dict(number=12, body="Task: #444", draft=False, changed_files=1, html_url="https://example.org/pr",
                   head={"ref": "agent/task", "sha": HEAD, "repo": repo},
                   base={"sha": BASE, "repo": repo})
     result.update(changes)
@@ -100,14 +100,25 @@ class TaskTests(unittest.TestCase):
     def test_duplicate_pr_and_closed_task_rejected(self):
         class Fake:
             state = "open"
+            files = [{"filename": "docs/example.md"}]
+
+            def pages(self, path):
+                return self.files
 
             def api(self, path):
                 return {"state": self.state, "labels": [{"name": "agent-task"}],
                         "body": "```regear-task\n" + json.dumps(ready()) + "\n```"}
         fake = Fake()
         c.check_pr(fake, pr(), [], [pr()])
-        with self.assertRaisesRegex(ValueError, "exactly one"):
+        with self.assertRaisesRegex(ValueError, "share this head"):
             c.check_pr(fake, pr(), [], [pr(), pr(number=13)])
+        with self.assertRaisesRegex(ValueError, "share this head"):
+            c.check_pr(fake, pr(), [], [pr(), pr(number=13, body="Task: #555")])
+        for files in [[{"filename": "other.md"}], [{"filename": "docs/example.md", "previous_filename": "other.md"}], []]:
+            fake.files = files
+            with self.assertRaisesRegex(ValueError, "scope|inventory"):
+                c.check_pr(fake, pr(), [], [pr()])
+        fake.files = [{"filename": "docs/example.md"}]
         fake.state = "closed"
         with self.assertRaisesRegex(ValueError, "open issue"):
             c.check_pr(fake, pr(), [], [pr()])
@@ -174,14 +185,30 @@ class TaskTests(unittest.TestCase):
     def test_hardware_queue_checks_live_pr_revision(self):
         candidate = record(status="hardware-required", hardware="required", software=ev(), review=ev(reviewer="other"))
         class Fake:
+            pulls = [pr()]
+            extra_tasks = []
+
             def tasks(self):
-                return [(444, candidate)]
+                return [(444, candidate)] + self.extra_tasks
 
             def pages(self, path):
-                return [pr()]
-        self.assertTrue(c.queue(Fake())[0]["hardware_queue_ready"])
+                return self.pulls
+        fake = Fake()
+        self.assertTrue(c.queue(fake)[0]["hardware_queue_ready"])
+        for changed_pr in [pr(draft=True), pr(head={"ref": "agent/task", "sha": HEAD, "repo": {"full_name": "fork/repo"}})]:
+            fake.pulls = [changed_pr]
+            self.assertFalse(c.queue(fake)[0]["hardware_queue_ready"])
+        fake.pulls = [pr(), pr(number=13, body="Task: #555")]
+        self.assertFalse(c.queue(fake)[0]["hardware_queue_ready"])
+        fake.pulls = [pr()]
+        fake.extra_tasks = [(555, record(branch="other"))]
+        self.assertFalse(c.queue(fake)[0]["hardware_queue_ready"])
+        fake.extra_tasks = []
+        candidate["review"]["reviewer"] = candidate["owner"]
+        self.assertFalse(c.queue(fake)[0]["hardware_queue_ready"])
+        candidate["review"]["reviewer"] = "other"
         candidate["software"]["head"] = BASE
-        row = c.queue(Fake())[0]
+        row = c.queue(fake)[0]
         self.assertFalse(row["hardware_queue_ready"])
         self.assertIn("stale", row["queue_blocker"])
 
