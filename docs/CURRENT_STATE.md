@@ -1,5 +1,47 @@
 # Current state
 
+## Software-validated candidate 0.3.180 — October 3, 2026
+
+The immutable development-profile candidate is **built and software-validated**,
+not installed, hardware-accepted or released. Its source remains proposed in
+[draft PR #465](https://github.com/ronnierosal/Re-Gear/pull/465), separate from
+merged `main`. The last recorded installed build is **0.3.173**; this documentation
+refresh supplies no fresh device readback. Neither 0.3.179 nor 0.3.180 has an
+installed or hardware PASS.
+
+| Evidence field | Recorded value |
+|---|---|
+| Candidate source | `d1ee13dc54db1f789eaec683717072ab1090f3a8` |
+| Review base / merged main at review | `cb8f0199f3aa5954a66b1061934fff70c696abdd` |
+| Immutable archive | `Re-Gear-0.3.180.zip`, development profile, 1,371,670 bytes |
+| SHA-256 | `2a36f021f8aa02c036d4192c1f0f61a930bac315589476fa0f39918d619a2c13` |
+| Artifact and validation handoff | [Producer record, #464](https://github.com/ronnierosal/Re-Gear/issues/464#issuecomment-5972496453) |
+| Independent combined software review | [PASS at source `1b2c4f0`](https://github.com/ronnierosal/Re-Gear/issues/448#issuecomment-5972339102); [PASS at exact final head](https://github.com/ronnierosal/Re-Gear/issues/448#issuecomment-5972475393) |
+| Exact-head required CI | [CI PASS](https://github.com/ronnierosal/Re-Gear/actions/runs/37146099028); [privileged delivery PASS](https://github.com/ronnierosal/Re-Gear/actions/runs/37146099055) |
+
+The producer/reviewer records report both profiles' 5,130 backend tests with 33
+skips each, 1,382 frontend tests per profile, 49 golden checks, architecture,
+compilation, typecheck, builds and package validation passing. These are attributed
+software results, not documentation-worker runtime acceptance or hardware proof.
+F1–F6 and the factual Portable GPU presentation fixes are software-validated;
+[the combined PR](https://github.com/ronnierosal/Re-Gear/pull/465) describes their
+request/attempt, ownership, strict-absence and durability guards.
+
+The residual expired deauthorized sleep request can retain its unplug alarm until
+correlated physical absence is verified. Native acknowledgement visibility and
+controller focus, real F6 close/reopen behavior, and exact-candidate connection,
+TV, disconnect, physical reconnect, sleep/wake, shutdown, boot and power checks
+remain open. [Runtime task #464](https://github.com/ronnierosal/Re-Gear/issues/464)
+is **Class D, hardware-required**: an explicitly approved supervised procedure,
+exact-candidate hardware acceptance and the normal integration gates remain
+mandatory. Software reconnect remains excluded. No installation, deployment,
+physical trial or new support claim is authorized by these software passes.
+
+All historical hardware results below retain their original dates, builds,
+configuration and limits; none transfers to 0.3.180. See the
+[current Wiki summary](wiki/technical/current-state.md) and
+[lifecycle candidate boundary](wiki/technical/egpu-lifecycle.md#candidate-03180-software-validation-only).
+
 ## Current evidence summary — September 14, 2026
 
 The preserved eGPU lifecycle baseline is [v0.3.98](EGPU_0398_CHECKPOINT.md), source
