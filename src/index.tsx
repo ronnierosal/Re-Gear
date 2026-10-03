@@ -14,6 +14,7 @@ import { createTilePublisher } from "./quick-access/expanded-command-center/tile
 import type { Readings } from "./quick-access/expanded-command-center/tile-source";
 import { observationAge } from "./quick-access/expanded-command-center/tile-source";
 import { EgpuModule } from "./quick-access/modules/egpu";
+import { TransitionAcknowledgementControl } from "./transition-acknowledgement-control";
 import { egpuPresentation } from "./quick-access/modules/egpu-presentation";
 import { displayTargetEvidence, UNKNOWN_EVIDENCE } from "./quick-access/modules/egpu-presentation";
 import { ControllerModule } from "./quick-access/modules/controller";
@@ -1801,7 +1802,7 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
 
 
   const wrapDetail=(node:ReactNode)=><div ref={statusAnchor} tabIndex={-1}><style>{regearControlCss}</style>{node}</div>;
-  const productionEgpuDetail=<PanelSection title="eGPU status"><EgpuModule presentation={{...egpuPresentation(menuFresh ? payload : null),recovery:{reachable:true,note:null}}}/></PanelSection>;
+  const productionEgpuDetail=<PanelSection title="eGPU status"><EgpuModule presentation={{...egpuPresentation(menuFresh ? payload : null),recovery:{reachable:true,note:null}}}/><TransitionAcknowledgementControl/></PanelSection>;
   const egpuDetail=<>
       <PanelSection title="eGPU"><EgpuModule presentation={egpuPresentation(payload)} onOpenRecovery={toggleTroubleshooting} /></PanelSection>
       {payload?.connection_readiness && payload.connection_readiness.stage !== "disconnected" &&
@@ -2182,7 +2183,7 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
   const displayDetail=<DisplayPicker current={tiles.find(tile=>tile.id==="display")?.value.text??"Unknown"} action={primaryDisplayAction} onSwitch={activateDisplay} onConfigure={()=>runtimeDetails.source.navigate("egpu-config")}/>;
   useEffect(()=>{
     runtimeDetails.publish({
-      views:buildProfile === "production" ? {egpu:wrapDetail(productionEgpuDetail),"egpu-config":null,diagnostics:null,display:null} : {egpu:wrapDetail(<><PanelSection title="eGPU status"><EgpuModule presentation={egpuPresentation(payload)}/></PanelSection><ButtonItem layout="below" onClick={()=>runtimeDetails.source.navigate("egpu-config")}>Configure docking</ButtonItem></>),"egpu-config":wrapDetail(egpuDetail),diagnostics:wrapDetail(diagnosticDetail),display:wrapDetail(displayDetail)},
+      views:buildProfile === "production" ? {egpu:wrapDetail(productionEgpuDetail),"egpu-config":null,diagnostics:null,display:null} : {egpu:wrapDetail(<><PanelSection title="eGPU status"><EgpuModule presentation={egpuPresentation(payload)}/><TransitionAcknowledgementControl/></PanelSection><ButtonItem layout="below" onClick={()=>runtimeDetails.source.navigate("egpu-config")}>Configure docking</ButtonItem></>),"egpu-config":wrapDetail(egpuDetail),diagnostics:wrapDetail(diagnosticDetail),display:wrapDetail(displayDetail)},
       shutdown:{available:buildProfile === "development"&&menuFresh&&payload?.inference.mode==="portable"&&!safeDisconnectBusy&&!tvSwitchBusy,
         reason:!menuFresh?"Current status unavailable":payload?.inference.mode!=="portable"?"Return to Handheld first":safeDisconnectBusy||tvSwitchBusy?"Operation in progress":"Portable shutdown",
         pending:safeDisconnectBusy,message:safeDisconnectMessage,

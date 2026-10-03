@@ -28,7 +28,7 @@ function state(profile,target='ally'){
     setProductionActionRequest:()=>calls.push('sleep'),productionActionNonce:{current:0},
     productionEgpuDetail:'readonly-egpu',egpuDetail:'egpu',diagnosticDetail:'diagnostic',displayDetail:'display',wrapDetail:value=>value,
     React:{createElement:()=>({node:true}),Fragment:'fragment'},PanelSection:'section',EgpuModule:'egpu',
-    ButtonItem:'button',egpuPresentation:()=>({}),runtimeDetails:{source:{navigate:()=>{}}}};
+    ButtonItem:'button',TransitionAcknowledgementControl:'guarded-display-ack',egpuPresentation:()=>({}),runtimeDetails:{source:{navigate:()=>{}}}};
   return {value:evaluate(publication,env),calls};
 }
 test('production runtime publishes only eGPU content and denies retained hidden callbacks',()=>{
@@ -49,7 +49,7 @@ test('production does not consume or launch a retained development game request'
   evaluate(relaunchEffect,env)();assert.equal(calls,0);
   evaluate(relaunchEffect,{...env,buildProfile:'development'})();assert.equal(calls,1);
 });
-test('real production eGPU detail mounts observation rows without controls or navigation',()=>{
+test('real production eGPU detail mounts observations and only the existing guarded result control',()=>{
   const jsx=(type,props)=>({type,props});
   function module(path){
     const exports={};
@@ -59,7 +59,9 @@ test('real production eGPU detail mounts observation rows without controls or na
   }
   const {EgpuModule}=module('../src/quick-access/modules/egpu.tsx');
   const {egpuPresentation}=module('../src/quick-access/modules/egpu-presentation.ts');
+  let acknowledgementMounts=0;
   const env={menuFresh:false,payload:{ignored:true},PanelSection:'section',EgpuModule,egpuPresentation,
+    TransitionAcknowledgementControl:()=>{acknowledgementMounts++;return null;},
     React:{createElement:(type,props,...children)=>jsx(type,{...props,children})}};
   function mount(node){
     if(Array.isArray(node))return node.map(mount);
@@ -71,6 +73,7 @@ test('real production eGPU detail mounts observation rows without controls or na
   }
   const rendered=JSON.stringify(mount(evaluate(productionDetail,env)));
   assert.match(rendered,/Unknown/);
+  assert.equal(acknowledgementMounts,1);
   assert.doesNotMatch(rendered,/Automatic TV docking|Configure docking|Troubleshoot|onClick|ToggleField|recovery is still available/);
 });
 test('development retains existing runtime views and actions',()=>{
