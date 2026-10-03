@@ -33,6 +33,36 @@ def supported(constructor, **kwargs):
 
 
 class BootRetirementCompositionTests(unittest.TestCase):
+    def test_acknowledgement_between_boot_audit_and_unlink_stays_removed(self):
+        original = self.create_retained()
+        acknowledgement = FileTransitionJournalStore(self.root)
+        unlink = Path.unlink
+        acknowledged = False
+
+        def race(path, *args, **kwargs):
+            nonlocal acknowledged
+            if path == self.root / "active-transition.json" and not acknowledged:
+                acknowledged = True
+                acknowledgement.clear_terminal(original.operation_id)
+            return unlink(path, *args, **kwargs)
+
+        with patch.object(Path, "unlink", race):
+            self.store.retire_after_boot(original.operation_id, OLD_BOOT, NEW_BOOT)
+        self.assertTrue(acknowledged)
+        self.assertIsNone(self.store.load_current())
+        self.assertFalse(self.service().status().acknowledgement_required)
+        audit = json.loads((self.root / "boot-retired-presentation.json").read_text())
+        self.assertEqual(audit["journal"], journal_to_dict(original))
+        self.assertEqual(self.mechanism.mock_calls, [])
+
+    def test_interrupted_tunnel_claim_does_not_deadlock_boot_result_retirement(self):
+        self.create_retained()
+        self.boot = NEW_BOOT
+        guard, _ = self.production_guard(claim=SimpleNamespace(stage="tunnel_remove_intent"))
+        self.assertTrue(self.service(guard).reconcile_completion(self.port.observe()).finalized)
+        self.assertIsNone(self.store.load_current())
+        self.assertEqual(self.mechanism.mock_calls, [])
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)

@@ -210,6 +210,11 @@ class FileTransitionJournalStore:
             }, self._root / BOOT_RETIRED_FILENAME, strict=True)
             try:
                 self._target.unlink()
+            except FileNotFoundError:
+                # A separately locked acknowledgement already removed it.
+                # This call did not unlink, so it must never resurrect it.
+                return
+            try:
                 self._sync_directory(strict=True)
             except Exception:
                 # A post-unlink directory failure must not report retirement.

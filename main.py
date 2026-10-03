@@ -5995,7 +5995,8 @@ class Plugin:
                 if audio_transaction is not None and audio_transaction.pending() is not None:
                     raise ValueError("pending audio transaction")
                 claim = WholeDockClaimStore(journal_root).load()
-                if claim is not None and claim.stage not in {"software_down", "software_reconnected"}:
+                if claim is not None and claim.stage not in {
+                        "software_down", "software_reconnected", "tunnel_remove_intent"}:
                     raise ValueError("unresolved whole dock transaction")
                 if PortableTrialStore(presentation_state_root).read() is not None:
                     raise ValueError("pending portable trial")
