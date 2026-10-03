@@ -66,10 +66,10 @@ export function displayAction(state: DisplayActionState): DisplayActionView {
     title: busy
       ? "Switching…"
       : target === "ally"
-        ? "Switch to handheld"
+        ? "Switch to Handheld"
         : target === "tv"
           ? "Switch to TV"
-          : "Display switch unavailable",
+          : "Switch Display",
     disabled: reason !== null,
     description:
       reason ??

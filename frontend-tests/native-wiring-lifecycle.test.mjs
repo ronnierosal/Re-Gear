@@ -272,7 +272,7 @@ test("actual native adapter mounts live tiles, details and golden disconnect tog
   assert.deepEqual(view.props.tiles, actionExports.testBuildTiles(h.tiles));
   assert.deepEqual(view.props.tiles.egpu.map(tile=>tile.id), ["switch-handheld","disconnect","resolution","egpu","disconnect-sleep","disconnect-shutdown"]);
   assert.equal(view.props.tiles.egpu.find(tile=>tile.id==="disconnect-sleep").title,
-    "Disconnect + Sleep");
+    "Disconnect eGPU & Sleep");
   assert.ok(!("disconnect-sleep" in view.props.unavailableActions) && !("disconnect-shutdown" in view.props.unavailableActions));
   assert.equal(view.props.renderDetail, h.detail);
   // Every destructive route stays behind the same guarded WholeDockControl.
