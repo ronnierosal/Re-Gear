@@ -12,11 +12,11 @@ export function productionEgpuTiles(readings?: Partial<Record<Tab, readonly Tile
   const sleep = readings?.egpu?.find(tile => tile.id === "disconnect-sleep");
   const shutdown = readings?.egpu?.find(tile => tile.id === "disconnect-shutdown");
   return { egpu: [
-    displayTarget ?? { id: "display-target", title: "Display Target", value: "Unavailable", detail: "Current display status unavailable", tone: "unavailable" },
-    egpu ?? { id: "egpu", title: "eGPU", value: "Unknown", detail: "Connection status unavailable" },
+    displayTarget ?? { id: "display-target", title: "Switch Display", value: "Unavailable", detail: "Current display status unavailable", tone: "unavailable" },
+    egpu ?? { id: "egpu", title: "eGPU Status", value: "Unknown", detail: "Connection status unavailable" },
     disconnect ?? { id: "disconnect", title: "Safe Disconnect", value: "Unavailable", detail: "Current readiness unavailable" },
-    sleep ?? { id: "disconnect-sleep", title: "Disconnect + Sleep", value: "Unavailable", detail: "Current readiness unavailable" },
-    shutdown ?? { id: "disconnect-shutdown", title: "Safe Disconnect + Shutdown", value: "Unavailable", detail: "Current readiness unavailable" },
+    sleep ?? { id: "disconnect-sleep", title: "Disconnect eGPU & Sleep", value: "Unavailable", detail: "Current readiness unavailable" },
+    shutdown ?? { id: "disconnect-shutdown", title: "Disconnect eGPU & Shut Down", value: "Unavailable", detail: "Current readiness unavailable" },
   ] };
 }
 
