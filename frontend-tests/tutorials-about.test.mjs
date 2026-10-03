@@ -29,7 +29,7 @@ test('Tutorials restore selected topic focus and let outer B handle the topic li
 });
 test('Tutorials use the mounted eGPU labels and keep unplug clearance explicit',()=>{
  const source=read('src/quick-access/expanded-command-center/tutorials.tsx');
- for(const label of ['Safe Disconnect','Disconnect + Sleep','Sleep — Keep eGPU Connected','Sleep connected','Shutdown','Safe Disconnect + Shutdown'])assert.ok(source.includes(label),label);
+ for(const label of ['Safe Disconnect','Disconnect eGPU & Sleep','Sleep — Keep eGPU Connected','Shut Down','Disconnect eGPU & Shut Down'])assert.ok(source.includes(label),label);
  for(const state of ['Ready','Pending','Unavailable','Refused'])assert.ok(source.includes(state),state);
  assert.match(source,/not permission to unplug/);
  assert.match(source,/absence is verified/);

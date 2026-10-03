@@ -16,7 +16,7 @@ test("display target describes the next destination with matching artwork",()=>{
 
 test("unknown and blocked display targets remain visible and unavailable",()=>{
  const unknown=displayTargetActionTile();
- assert.deepEqual([unknown.id,unknown.title,unknown.value,unknown.tone],["display-target","Display Target","Unavailable","unavailable"]);
+ assert.deepEqual([unknown.id,unknown.title,unknown.value,unknown.tone],["display-target","Switch Display","Unavailable","unavailable"]);
  const blocked=displayTargetActionTile({target:"tv",available:false,reason:"Resolve the prior operation"});
  assert.equal(blocked.title,"Switch to TV");assert.equal(blocked.value,"Unavailable");assert.equal(blocked.detail,"Resolve the prior operation");
 });
