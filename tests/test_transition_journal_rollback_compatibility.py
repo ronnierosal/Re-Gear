@@ -13,7 +13,7 @@ from regear.delivery.transition_journal_store import FileTransitionJournalStore
 
 
 class RollbackCompatibilityTests(unittest.TestCase):
-    def test_actual_retained_result_can_be_read_and_acknowledged_after_rollback(self):
+    def test_actual_retained_result_is_readable_by_frozen_rollback_decoder(self):
         harness = boot_fixture.BootRetirementCompositionTests()
         harness.setUp()
         self.addCleanup(harness.doCleanups)
@@ -23,6 +23,8 @@ class RollbackCompatibilityTests(unittest.TestCase):
         self.assertEqual(rolled_back.operation_id, result.operation_id)
         self.assertEqual(rolled_back.entries, result.entries)
         self.assertEqual(rolled_back.origin_boot_id, "")
+        # This final check uses the new service. It is not a certification of
+        # an installed old-runtime rollback or its main.py composition.
         self.assertTrue(harness.service().acknowledge(rolled_back.operation_id))
         self.assertIsNone(harness.store.load_current())
 
