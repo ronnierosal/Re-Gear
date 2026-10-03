@@ -11,6 +11,7 @@ from regear.application.supervised_transition import SupervisedPresentationTrans
 from regear.delivery.transition_journal_store import FileTransitionJournalStore
 from regear.domain.control_plane import PlacementState, WorkflowState
 from regear.domain.transition_journal import TransitionJournal, JournalEventKind, append_journal_entry
+from regear.ports.audio_recovery import AudioRecoveryBlocked
 
 
 ACK_ID = "DJ-" + "a" * 18
@@ -98,6 +99,41 @@ class ProductionAcknowledgementTests(unittest.IsolatedAsyncioTestCase):
             result = await self.plugin.acknowledge_supervised_tv_switch(*args, **kwargs)
             self.assertEqual("build_profile.feature_unavailable", result["code"])
         self.plugin._presentation_transition_service.assert_not_called()
+
+    async def test_inflight_transition_refuses_without_clearing_or_rearming(self):
+        original = retained()
+        self.store.save(original)
+        self.service._lock.acquire()
+        try:
+            result = await self.plugin.acknowledge_supervised_tv_switch(ACK_ID)
+        finally:
+            self.service._lock.release()
+        self.assertFalse(result.get("acknowledged"), result)
+        self.assertEqual(self.store.load_current(), original)
+        self.plugin._automatic_dock.reset_after_acknowledgement.assert_not_called()
+        self.plugin._topology_wakeup.invalidate.assert_not_called()
+
+    async def test_existing_audio_guard_refuses_without_clearing(self):
+        original = retained()
+        self.store.save(original)
+        audio = Mock()
+        audio.recovery_status.return_value = "audio.recovery_required"
+        audio.transition_guard.side_effect = AudioRecoveryBlocked("audio.recovery_required")
+        self.service._audio_recovery = audio
+        result = await self.plugin.acknowledge_supervised_tv_switch(ACK_ID)
+        self.assertFalse(result.get("acknowledged"), result)
+        self.assertEqual(self.store.load_current(), original)
+        self.plugin._automatic_dock.reset_after_acknowledgement.assert_not_called()
+
+    async def test_journal_clear_error_preserves_result_and_does_not_rearm(self):
+        original = retained()
+        self.store.save(original)
+        with patch.object(self.store, "clear_terminal", side_effect=OSError("journal unavailable")):
+            result = await self.plugin.acknowledge_supervised_tv_switch(ACK_ID)
+        self.assertFalse(result.get("acknowledged"), result)
+        self.assertEqual(self.store.load_current(), original)
+        self.plugin._automatic_dock.reset_after_acknowledgement.assert_not_called()
+        self.plugin._topology_wakeup.invalidate.assert_not_called()
 
     def test_policy_admits_only_exact_acknowledgement_contract(self):
         self.assertTrue(rpc_allowed("production", "acknowledge_supervised_tv_switch",
