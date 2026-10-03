@@ -15,6 +15,8 @@
  * centre state stays separate from the Auto TDP performance gear.
  */
 
+import { isUsableInterval } from "./offline-sync-preferences.ts";
+
 export type ConfidenceStatus =
   | "needs_preparation"
   | "likely_offline_ready"
@@ -86,8 +88,10 @@ export type OfflineGameModePorts = {
    * `attempt` exists so a late reply from an earlier press of the same button,
    * on the same selection, can be told apart from the current one. */
   startSync(appId: number, generation: number, attempt: number): void;
-  /** Record a schedule the player changed. Never called to enable one by itself. */
-  persistSchedule(schedule: SyncSchedule): void;
+  /** Record a schedule the player changed. Never called to enable one by itself.
+   * Returning `false` (or throwing) means the store refused it, and the model
+   * keeps showing the last schedule that actually stuck. */
+  persistSchedule(schedule: SyncSchedule): boolean | void;
   now(): number;
 };
 
@@ -193,8 +197,12 @@ export function createOfflineGameModeModel(
   let notifiedKey = "";
 
   const build = (): OfflineGameModeSnapshot => {
-    const at = ports.now();
-    const expired = readiness.expiresAt !== null && Number.isFinite(at) && at >= readiness.expiresAt;
+    let at = Number.NaN;
+    try { at = ports.now(); } catch { /* An unreadable clock is handled below as expired. */ }
+    // Fail closed: evidence with no usable expiry, or an unreadable clock, is
+    // never presented as current.
+    const expired = readiness.status !== null
+      && (readiness.expiresAt === null || !Number.isFinite(at) || at >= readiness.expiresAt);
     return freeze({
       loading, available, unavailableReason, generation, attempt,
       game: game ? { ...game } : null,
@@ -282,7 +290,11 @@ export function createOfflineGameModeModel(
     selectGame(next: SelectedGame): void {
       if (disposed || !available) return;
       if (next !== null && !isExactAppId(next.appId)) return;
-      if (sameSubject(game, next)) return;
+      if (sameSubject(game, next)) {
+        // Same evidence subject: keep its readiness, but show the current name.
+        if (game && next && game.name !== next.name) { game = { ...game, name: next.name }; notify(); }
+        return;
+      }
       game = next ? { ...next } : null;
       resetForNewSelection();
       notify();
@@ -329,10 +341,12 @@ export function createOfflineGameModeModel(
     setSyncSchedule(next: SyncSchedule): boolean {
       if (disposed || !available || !next || typeof next.enabled !== "boolean") return false;
       const interval = next.intervalMinutes;
-      if (next.enabled && !(typeof interval === "number" && Number.isFinite(interval) && interval > 0)) return false;
+      // Same bounds as the stored preference, so the tab never shows a
+      // cadence the store would refuse.
+      if (next.enabled && !isUsableInterval(interval)) return false;
       const candidate = { enabled: next.enabled, intervalMinutes: next.enabled ? (interval as number) : null };
       try {
-        ports.persistSchedule({ ...candidate });
+        if (ports.persistSchedule({ ...candidate }) === false) return false;
       } catch {
         return false;
       }
