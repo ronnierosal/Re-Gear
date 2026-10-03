@@ -223,11 +223,11 @@ class TransitionOrchestrator:
                 mechanism_result = None
             if mechanism_result is None:
                 return self._recover(
-                    journal, plan, placement, "mechanism.exception", before.generation
+                    journal, plan, placement, "mechanism.exception", before
                 )
             if not mechanism_result.succeeded:
                 return self._recover(
-                    journal, plan, placement, mechanism_result.code, before.generation
+                    journal, plan, placement, mechanism_result.code, before
                 )
             verified = self._verify_step(plan, step, before.generation, started)
             if verified is None:
@@ -236,7 +236,7 @@ class TransitionOrchestrator:
                     plan,
                     placement,
                     "step.verification_timeout",
-                    before.generation,
+                    before,
                 )
             placement = infer_placement(verified.snapshot)
             try:
@@ -254,14 +254,14 @@ class TransitionOrchestrator:
                     plan,
                     placement,
                     "journal.persist_failed",
-                    verified.generation,
+                    verified,
                     durable=False,
                 )
             last = verified
 
         if placement is not plan.target_placement:
             return self._recover(
-                journal, plan, placement, "target.verification_failed", last.generation
+                journal, plan, placement, "target.verification_failed", last
             )
         try:
             journal = self._append_save(
@@ -277,7 +277,7 @@ class TransitionOrchestrator:
                 plan,
                 placement,
                 "journal.persist_failed",
-                last.generation,
+                last,
                 durable=False,
             )
         return RuntimeTransitionResult(
@@ -380,9 +380,9 @@ class TransitionOrchestrator:
                     False,
                 )
         started = self._clock.now_ms()
-        prior_generation = observed.generation if observed is not None else ""
         # A queued restart or partially changed audio can outlive the source
-        # display snapshot. Always recover and verify a fresh generation.
+        # display snapshot. A fresh scan verifies completed recovery; a queued
+        # restart additionally retains the existing semantic-change guard.
         try:
             result = self._mechanism.recover(
                 source,
@@ -392,7 +392,8 @@ class TransitionOrchestrator:
         except Exception:
             result = None
         verified = self._verify_recovery(
-            source, prior_generation, started, deadline_ms
+            source, observed, started, deadline_ms,
+            restart_pending=result is not None and result.code == "recovery.restart_queued",
         )
         if result is not None and result.succeeded and verified is not None:
             recovered = infer_placement(verified.snapshot)
@@ -490,7 +491,7 @@ class TransitionOrchestrator:
         plan,
         placement,
         reason,
-        prior_generation,
+        prior_observation,
         *,
         durable=True,
     ):
@@ -508,7 +509,8 @@ class TransitionOrchestrator:
         before = self._observe()
         started = self._clock.now_ms()
         # A queued restart or partially changed audio can outlive the source
-        # display snapshot. Always recover and verify a fresh generation.
+        # display snapshot. Mechanism success still needs a fresh source scan;
+        # queued restart acceptance is not completed recovery.
         try:
             result = self._mechanism.recover(
                 plan.from_placement,
@@ -519,9 +521,10 @@ class TransitionOrchestrator:
             result = None
         verified = self._verify_recovery(
             plan.from_placement,
-            before.generation if before is not None else prior_generation,
+            before if before is not None else prior_observation,
             started,
             plan.recovery_deadline_ms,
+            restart_pending=result is not None and result.code == "recovery.restart_queued",
         )
         if result is not None and result.succeeded and verified is not None:
             recovered = infer_placement(verified.snapshot)
@@ -605,18 +608,44 @@ class TransitionOrchestrator:
             durable,
         )
 
-    def _verify_recovery(self, target, prior_generation, started, deadline_ms):
+    def _verify_recovery(self, target, prior_observation, started, deadline_ms,
+                         *, restart_pending=False):
         while True:
             elapsed = self._clock.now_ms() - started
             if elapsed < 0 or elapsed > deadline_ms:
                 return None
             observed = self._observe()
-            if (
+            # Collection itself consumes the same recovery deadline.
+            elapsed = self._clock.now_ms() - started
+            if elapsed < 0 or elapsed > deadline_ms:
+                return None
+            fresh_source = (
                 observed is not None
-                and observed.generation != prior_generation
+                and (prior_observation is None
+                     or observed.sample_id != prior_observation.sample_id)
                 and infer_placement(observed.snapshot) is target
-            ):
-                return observed
+            )
+            if fresh_source:
+                restart_verified = (not restart_pending or prior_observation is None
+                    or observed.generation != prior_observation.generation)
+                if not restart_verified:
+                    # A fresh scan can retain identical semantic facts after
+                    # completed recovery. Only this mechanism's independently
+                    # observed new active service invocation can resolve that
+                    # ambiguity; queue acceptance and timestamps cannot.
+                    completion = getattr(self._mechanism, "recovery_restart_completed", None)
+                    remaining = deadline_ms - elapsed
+                    if callable(completion) and remaining > 0:
+                        try:
+                            restart_verified = completion(observed.snapshot,
+                                timeout_seconds=remaining / 1000) is True
+                        except Exception:
+                            restart_verified = False
+                        elapsed = self._clock.now_ms() - started
+                        if elapsed < 0 or elapsed > deadline_ms:
+                            return None
+                if restart_verified:
+                    return observed
             remaining = deadline_ms - (self._clock.now_ms() - started)
             if remaining <= 0:
                 return None

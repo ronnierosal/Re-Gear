@@ -499,3 +499,74 @@ test("a preparation observation without a matching attempt is refused", () => {
   }
   assert.equal(h.model.getSnapshot().preparation.state, "requested");
 });
+
+test("schedule bounds match the stored preference", () => {
+  const h = harness();
+  for (const interval of [1, 0.5, 14, 10081, 30.5]) {
+    assert.equal(h.model.setSyncSchedule({ enabled: true, intervalMinutes: interval }), false, String(interval));
+  }
+  assert.deepEqual(h.calls.schedule, []);
+  assert.equal(h.model.setSyncSchedule({ enabled: true, intervalMinutes: 15 }), true);
+  assert.equal(h.model.setSyncSchedule({ enabled: true, intervalMinutes: 10080 }), true);
+});
+
+test("a store that refuses a schedule leaves the last accepted one visible", () => {
+  let accept = true;
+  const model = createOfflineGameModeModel(
+    { startSync() {}, persistSchedule: () => accept, now: () => 0 },
+    { initial: { available: true, game: GAME } },
+  );
+  assert.equal(model.setSyncSchedule({ enabled: true, intervalMinutes: 60 }), true);
+  accept = false;
+  assert.equal(model.setSyncSchedule({ enabled: true, intervalMinutes: 30 }), false);
+  assert.deepEqual(model.getSnapshot().schedule, { enabled: true, intervalMinutes: 60 });
+});
+
+test("readiness without a usable expiry is presented as expired", () => {
+  for (const expiresAt of [undefined, null, 1.5, Number.NaN, "61000"]) {
+    const h = harness();
+    assert.equal(h.model.applyReadiness(readiness(h, { expiresAt })), true);
+    const snap = h.model.getSnapshot();
+    assert.equal(snap.readiness.expiresAt, null);
+    assert.equal(snap.readiness.expired, true, String(expiresAt));
+  }
+});
+
+test("an unreadable clock never keeps readiness current", () => {
+  let clock = 1000;
+  const model = createOfflineGameModeModel(
+    { startSync() {}, persistSchedule() {}, now: () => clock },
+    { initial: { available: true, game: GAME } },
+  );
+  const generation = model.getSnapshot().generation;
+  model.applyReadiness({ generation, appId: GAME.appId, status: "likely_offline_ready", label: "x",
+    reasons: [], checkedAt: 1000, expiresAt: 61000 });
+  assert.equal(model.getSnapshot().readiness.expired, false);
+  clock = Number.NaN;
+  assert.equal(model.getSnapshot().readiness.expired, true);
+});
+
+test("a throwing clock never keeps readiness current", () => {
+  let broken = false;
+  const model = createOfflineGameModeModel(
+    { startSync() {}, persistSchedule() {}, now: () => { if (broken) throw new Error("clock"); return 1000; } },
+    { initial: { available: true, game: GAME } },
+  );
+  const generation = model.getSnapshot().generation;
+  model.applyReadiness({ generation, appId: GAME.appId, status: "likely_offline_ready", label: "x",
+    reasons: [], checkedAt: 1000, expiresAt: 61000 });
+  assert.equal(model.getSnapshot().readiness.expired, false);
+  broken = true;
+  assert.equal(model.getSnapshot().readiness.expired, true);
+});
+
+test("a renamed display name updates the selection without discarding its evidence", () => {
+  const h = harness();
+  h.model.applyReadiness(readiness(h));
+  const before = h.model.getSnapshot();
+  h.model.selectGame({ ...GAME, name: "Portal 2 (renamed)" });
+  const after = h.model.getSnapshot();
+  assert.equal(after.game.name, "Portal 2 (renamed)");
+  assert.equal(after.generation, before.generation);
+  assert.equal(after.readiness.status, before.readiness.status);
+});

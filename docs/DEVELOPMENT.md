@@ -72,9 +72,12 @@ A failure starts diagnosis:
 2. Inspect bounded Re-Gear logs, current transaction/action history, and applicable
    system state.
 3. Correlate timestamps and identify the earliest divergence.
-4. Form one concrete hypothesis.
+4. Form one concrete hypothesis and add a regression/replay through the real
+   admission or dispatch boundary. Demonstrate failure before the fix when
+   practical; record why if captured hardware behavior cannot yet be reproduced.
 5. Apply the smallest justified fix.
-6. Re-run the failing check, then the relevant regression gate.
+6. Re-run that regression, then the relevant broader gate. Only then queue a
+   hardware-dependent candidate using [the hardware queue](CONTINUOUS_DEVELOPMENT.md).
 
 When authorized and useful, a worker may use the documented read-only SSH
 capture instead of waiting for another prompt. Remote mutation still obeys
@@ -95,8 +98,10 @@ driver's ownership.
   driver owns the worktree or has coordinated the shared paths.
 - Create a branch when isolation is useful or explicitly requested; report its
   starting point.
-- Merge only after ancestry, conflicts, diff scope, and relevant checks are
-  known. Prefer fast-forward integration for bounded worker branches.
+- Merge current `origin/main` into published task branches; resolve only your
+  owned scope and record dependency merges. Do not rewrite another owner's branch
+  or force-push shared history. Review ancestry, conflicts, scope and checks
+  before integration. Use the protected remote PR merge with exact-head matching.
 - Scoped commits, branch pushes, PRs, and validated routine merges have standing
   authorization under `AGENTS.md`. Its narrow high-risk boundaries govern release,
   publication, history rewriting, credentials, and hardware actions.

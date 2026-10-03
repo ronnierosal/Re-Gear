@@ -122,7 +122,7 @@ test("production adapter enables native sliders and only the admitted guarded eG
  assert.deepEqual(view.props.tiles.egpu[1],h.tiles.quick[0],"production status must remain the lifecycle summary, not the link reading");
  for(const id of ["disconnect","disconnect-sleep","disconnect-shutdown"]){
   const action=view.props.tiles.egpu.find(tile=>tile.id===id);
-  assert.equal(action.value,"Check status",`${id} must open its fresh guarded control`);
+  assert.equal(action.value,"Guarded",`${id} must open its fresh guarded control`);
   assert.equal(action.tone,"warning");
  }
  assert.equal(nodes(view.props.disconnectControl).some(n=>n.type==="dropdown"),false);
@@ -147,7 +147,7 @@ test("development adapter mounts guarded Display Target for TV, Handheld and una
  for(const [displayAction,title,value,canDispatch] of [
   [{target:"tv",available:true,reason:"Switch to the external display"},"Switch to TV","Ready",true],
   [{target:"ally",available:true,reason:"Return to the built-in display"},"Switch to Handheld","Ready",true],
-  [{target:null,available:false,reason:"Current display status unavailable"},"Display Target","Unavailable",false],
+  [{target:null,available:false,reason:"Current display status unavailable"},"Switch Display","Unavailable",false],
  ]){
   const h=harness(null,async()=>null,"development",{}, {displayAction});
   h.tiles={quick:[],egpu:[]};h.menu.open();const view=h.mount();
@@ -204,7 +204,7 @@ test("production unavailable disconnect cannot dispatch or open details, while g
   assert.equal(calls,0);
   assert.equal(nodes(tree).some(n=>n.props?.className==="rg-expanded-detail-page"),false);
  }
- for(const value of ["Ready","Check status"]){
+ for(const value of ["Ready","Guarded"]){
   const app=await fixture();let calls=0;
   const tree=app.render({policy:"production",tiles:{egpu:[{id:"disconnect",title:"Safe Disconnect",value,detail:"Guarded flow"}]},onDisconnect(){calls++;}});
   const button=nodes(tree).find(n=>n.props?.["data-ec-control"]==="disconnect");
