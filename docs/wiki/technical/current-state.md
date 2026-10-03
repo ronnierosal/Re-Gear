@@ -1,9 +1,14 @@
 # Current evidence and development state
 
-The eGPU lifecycle work is merged in `main` `fb334f2` (package version 0.3.153).
-The latest build of it is local development artifact **0.3.154**: built and
-software-validated, **not installed, released or hardware-tested**. The ordinary Safe
-Disconnect journey's hardware baseline comes from earlier builds, listed below.
+The current candidate is immutable development-profile **0.3.180**, built and
+software-validated at source `d1ee13dc54db1f789eaec683717072ab1090f3a8` against
+merged main `cb8f0199f3aa5954a66b1061934fff70c696abdd`. Its source is proposed in
+[draft PR #465](https://github.com/ronnierosal/Re-Gear/pull/465); it is **not
+installed, hardware-accepted or released**. The last recorded installed build
+remains **0.3.173**, with no fresh device readback in this update.
+The [technical authority](../../CURRENT_STATE.md#software-validated-candidate-03180--october-3-2026)
+records the exact artifact and evidence. Earlier hardware results remain bounded
+to their original builds and configuration.
 
 ## For players — no technical background needed
 
@@ -14,11 +19,12 @@ to the handheld, **Safe Disconnect**, unplug, plug back in, TV picture returns �
 has worked on earlier test builds. The disconnect-and-sleep journey has not yet
 worked on an installed build.
 
-Build 0.3.154 adds a first-time device permission popup, step-by-step connection
-progress, protection that keeps a disconnected eGPU off while it is still
-plugged in, and one-button **Disconnect + Sleep** and **Safe Disconnect +
-Shutdown**. None of that has been tried on a handheld yet. The
-[eGPU guide](../player/egpu.md) explains what to expect.
+Candidate 0.3.180 repairs software paths for retained display results, unplug
+warnings, sleep-request cleanup and factual Portable GPU status. These software
+checks do not establish how the native controls or lifecycle behave on a handheld.
+An expired deauthorized sleep request can keep its alarm until correlated physical
+absence is verified. The [lifecycle guide](egpu-lifecycle.md#candidate-03180-software-validation-only)
+records the remaining supervised checks and separate hardware gates.
 
 A new build number is not the same as a tested build. A built package is not
 automatically installed, supported or safe on other hardware.
@@ -29,6 +35,30 @@ Evidence levels are kept separate: **implemented in source**, **included in a
 package**, **installed** (read back on the test handheld) and **supervised
 hardware result** (an observed outcome on that one configuration). None extends
 to other handhelds, docks, graphics cards or builds.
+
+### Candidate 0.3.180: exact software evidence
+
+| Field | Recorded value |
+|---|---|
+| Source / review base | `d1ee13dc54db1f789eaec683717072ab1090f3a8` / `cb8f0199f3aa5954a66b1061934fff70c696abdd` |
+| Immutable archive | `Re-Gear-0.3.180.zip`, development profile, 1,371,670 bytes |
+| SHA-256 | `2a36f021f8aa02c036d4192c1f0f61a930bac315589476fa0f39918d619a2c13` |
+| Producer evidence | [Artifact/test handoff](https://github.com/ronnierosal/Re-Gear/issues/464#issuecomment-5972496453) |
+| Independent software review | [Combined PASS](https://github.com/ronnierosal/Re-Gear/issues/448#issuecomment-5972339102), then [exact final-head PASS](https://github.com/ronnierosal/Re-Gear/issues/448#issuecomment-5972475393) |
+| Exact-head required CI | [CI PASS](https://github.com/ronnierosal/Re-Gear/actions/runs/37146099028), [privileged delivery PASS](https://github.com/ronnierosal/Re-Gear/actions/runs/37146099055) |
+
+Producer/reviewer evidence reports both profiles' 5,130 backend tests with 33
+skips each, 1,382 frontend tests per profile, 49 golden checks, architecture,
+compilation, typecheck, builds and package validation passing. F1–F6 and the
+Portable GPU presentation fixes are software-validated. This attribution does
+not imply this documentation worker reran candidate runtime acceptance.
+
+[Task #464](https://github.com/ronnierosal/Re-Gear/issues/464) remains Class D,
+hardware-required. Native acknowledgement/controller focus, real F6 warning
+close/reopen, and exact-candidate lifecycle, boot and power checks require an
+approved supervised procedure and hardware acceptance before integration.
+Neither 0.3.179 nor 0.3.180 has installed/hardware PASS; source review and CI do
+not establish compatibility, safe unplugging or a public release.
 
 ### Hardware results recorded in the authority
 
@@ -43,6 +73,8 @@ lifecycle evidence refresh:
 | 2026-09-22 | 0.3.129 (`e8ad848`) | **Disconnect + Sleep failed**: returned to the handheld but did not reach software-down, the unplug prompt or sleep | Source fixes merged in [PR #383](https://github.com/ronnierosal/Re-Gear/pull/383); not re-proven on hardware |
 
 ### Development build 0.3.154
+
+Historical artifact record; superseded as the current candidate by 0.3.180.
 
 | Field | Value |
 |---|---|
