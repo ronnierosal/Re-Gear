@@ -14,6 +14,7 @@ import secrets
 import threading
 from collections.abc import Callable
 from pathlib import Path
+from dataclasses import replace as replace_journal
 
 from ..domain.control_plane import PlacementState
 from ..domain.transition_journal import (
@@ -30,6 +31,7 @@ MAX_JOURNAL_BYTES = 128 * 1024
 JOURNAL_FILENAME = "active-transition.json"
 COMPLETED_FILENAME = "completed-presentation.json"
 BOOT_RETIRED_FILENAME = "boot-retired-presentation.json"
+BOOT_ORIGIN_FILENAME = "presentation-origin-boot.json"
 TEMP_TOKEN_RE = re.compile(r"^[a-zA-Z0-9_-]{8,48}$")
 
 
@@ -46,6 +48,7 @@ class FileTransitionJournalStore:
         self._root = state_root
         self._target = state_root / JOURNAL_FILENAME
         self._completed = state_root / COMPLETED_FILENAME
+        self._origin = state_root / BOOT_ORIGIN_FILENAME
         self._replace = replace
         self._token_factory = token_factory or (lambda: secrets.token_hex(8))
         self._lock = threading.Lock()
@@ -61,6 +64,26 @@ class FileTransitionJournalStore:
             return journal
 
     def _load(self, path: Path) -> TransitionJournal | None:
+        value = self._read_payload(path)
+        if value is None:
+            return None
+        journal = journal_from_dict(value)
+        # Active/receipt schema stays readable by immutable older candidates.
+        # A separate bounded record is authority only for this exact operation,
+        # request and first persisted entry; it never retrofits another journal.
+        origin = self._read_payload(self._origin)
+        if origin is not None:
+            if (set(origin) != {"schema_version", "operation_id", "request_id", "started_at", "origin_boot_id"}
+                    or type(origin["schema_version"]) is not int or origin["schema_version"] != 1
+                    or not valid_boot_id(origin["origin_boot_id"])):
+                raise ValueError("presentation origin boot record is invalid")
+            if (journal.entries and origin["operation_id"] == journal.operation_id
+                    and origin["request_id"] == journal.request_id
+                    and origin["started_at"] == journal.entries[0].occurred_at):
+                journal = replace_journal(journal, origin_boot_id=origin["origin_boot_id"])
+        return journal
+
+    def _read_payload(self, path: Path) -> dict | None:
         self._validate_root()
         if path.is_symlink():
             raise ValueError("transition journal target cannot be a symlink")
@@ -79,7 +102,7 @@ class FileTransitionJournalStore:
             raise ValueError("transition journal JSON is invalid") from error
         if not isinstance(value, dict):
             raise ValueError("transition journal root must be an object")
-        return journal_from_dict(value)
+        return value
 
     def save(self, journal: TransitionJournal) -> None:
         with self._lock:
@@ -92,6 +115,12 @@ class FileTransitionJournalStore:
             return
         if current is not None:
             self._validate_progress(current, journal)
+        elif journal.origin_boot_id:
+            if not journal.entries:
+                raise ValueError("origin boot requires persisted request history")
+            self._write_payload({"schema_version": 1, "operation_id": journal.operation_id,
+                "request_id": journal.request_id, "started_at": journal.entries[0].occurred_at,
+                "origin_boot_id": journal.origin_boot_id}, self._origin, strict=True)
         self._write(journal, self._target)
 
     def _write(self, journal: TransitionJournal, path: Path) -> None:
@@ -176,6 +205,7 @@ class FileTransitionJournalStore:
                 "schema_version": 1,
                 "reason": "presentation.new_boot_acknowledgement_retired",
                 "current_boot_id": current_boot_id,
+                "origin_boot_id": current.origin_boot_id,
                 "journal": journal_to_dict(current),
             }, self._root / BOOT_RETIRED_FILENAME, strict=True)
             try:

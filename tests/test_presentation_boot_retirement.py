@@ -103,6 +103,7 @@ class BootRetirementCompositionTests(unittest.TestCase):
         original = self.create_retained()
         value = journal_to_dict(original)
         value.pop("origin_boot_id", None)
+        (self.root / "presentation-origin-boot.json").unlink(missing_ok=True)
         (self.root / "active-transition.json").write_text(json.dumps(value))
         self.boot = NEW_BOOT
         self.assertFalse(self.reconcile().finalized)

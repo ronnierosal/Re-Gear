@@ -235,7 +235,6 @@ def append_journal_entry(
 
 def journal_to_dict(journal: TransitionJournal) -> dict[str, Any]:
     return {
-        **({"origin_boot_id": journal.origin_boot_id} if journal.origin_boot_id else {}),
         "schema_version": journal.schema_version,
         "operation_id": journal.operation_id,
         "request_id": journal.request_id,

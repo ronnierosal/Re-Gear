@@ -5,6 +5,7 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 from tests.test_main_process_delivery import load_main_module
+from tests.issued_presentation_result import issue_result
 from regear.delivery import build_profile_config
 from regear.delivery.build_profile_policy import rpc_allowed
 from regear.application.supervised_transition import SupervisedPresentationTransitionService
@@ -57,6 +58,19 @@ class ProductionAcknowledgementTests(unittest.IsolatedAsyncioTestCase):
         self.plugin._automatic_dock.suppress_current_attachment_after_portable_return.assert_not_called()
         self.plugin._topology_wakeup.invalidate.assert_called_once()
 
+    async def test_real_preview_execute_issued_id_is_admitted_and_acknowledged(self):
+        plugin, store, identity = issue_result(Path(self.temp.name).resolve())
+        journal = await plugin.get_transition_journal_status()
+        status = await plugin.get_supervised_tv_switch_status()
+        self.assertEqual(journal["acknowledgement_id"], identity)
+        self.assertEqual(status["acknowledgement_id"], identity)
+        self.assertEqual(len(identity), 24)
+        self.assertTrue(rpc_allowed("production", "acknowledge_supervised_tv_switch",
+                                    {"acknowledgement_id": identity}))
+        result = await plugin.acknowledge_supervised_tv_switch(identity)
+        self.assertTrue(result.get("acknowledged"), result)
+        self.assertIsNone(store.load_current())
+
     async def test_keyword_rpc_uses_the_same_actual_handler(self):
         self.store.save(retained())
         result = await self.plugin.acknowledge_supervised_tv_switch(acknowledgement_id=ACK_ID)
@@ -85,8 +99,8 @@ class ProductionAcknowledgementTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_malformed_id_is_refused_before_production_body(self):
         self.store.save(retained())
-        for identity in (None, True, 4, [], {}, "", "unused-receipt", "DJ-" + "a" * 15,
-                         "DJ-" + "a" * 97, "DJ-" + "a" * 16 + "\n", "DJ-" + "a" * 16 + "/"):
+        for identity in (None, True, 4, [], {}, "", "a" * 7, "a" * 65,
+                         "a" * 24 + "\n", "a" * 24 + "/", "a" * 23 + "."):
             result = await self.plugin.acknowledge_supervised_tv_switch(identity)
             self.assertEqual("build_profile.feature_unavailable", result["code"])
         self.plugin._presentation_transition_service.assert_not_called()
@@ -138,7 +152,7 @@ class ProductionAcknowledgementTests(unittest.IsolatedAsyncioTestCase):
     def test_policy_admits_only_exact_acknowledgement_contract(self):
         self.assertTrue(rpc_allowed("production", "acknowledge_supervised_tv_switch",
                                     {"acknowledgement_id": ACK_ID}))
-        for value in (None, False, [], "", "invalid", "DJ-" + "a" * 15, "DJ-" + "a" * 97):
+        for value in (None, False, [], "", "invalid", "a" * 7, "a" * 65):
             self.assertFalse(rpc_allowed("production", "acknowledge_supervised_tv_switch",
                                          {"acknowledgement_id": value}))
         self.assertFalse(rpc_allowed("unknown", "acknowledge_supervised_tv_switch",

@@ -56,7 +56,7 @@ def rpc_allowed(profile: str, method: str, arguments: dict[str, Any]) -> bool:
         return False
     if method == "acknowledge_supervised_tv_switch":
         identity = arguments.get("acknowledgement_id")
-        return isinstance(identity, str) and re.fullmatch(r"DJ-[A-Za-z0-9_-]{16,96}", identity) is not None
+        return isinstance(identity, str) and re.fullmatch(r"[A-Za-z0-9_-]{8,64}", identity) is not None
     if method == "execute_egpu_disconnect":
         action = arguments.get("trial_action", "")
         return (
