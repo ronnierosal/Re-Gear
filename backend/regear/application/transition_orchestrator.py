@@ -619,15 +619,33 @@ class TransitionOrchestrator:
             elapsed = self._clock.now_ms() - started
             if elapsed < 0 or elapsed > deadline_ms:
                 return None
-            if (
+            fresh_source = (
                 observed is not None
                 and (prior_observation is None
                      or observed.sample_id != prior_observation.sample_id)
-                and (not restart_pending or prior_observation is None
-                     or observed.generation != prior_observation.generation)
                 and infer_placement(observed.snapshot) is target
-            ):
-                return observed
+            )
+            if fresh_source:
+                restart_verified = (not restart_pending or prior_observation is None
+                    or observed.generation != prior_observation.generation)
+                if not restart_verified:
+                    # A fresh scan can retain identical semantic facts after
+                    # completed recovery. Only this mechanism's independently
+                    # observed new active service invocation can resolve that
+                    # ambiguity; queue acceptance and timestamps cannot.
+                    completion = getattr(self._mechanism, "recovery_restart_completed", None)
+                    remaining = deadline_ms - elapsed
+                    if callable(completion) and remaining > 0:
+                        try:
+                            restart_verified = completion(observed.snapshot,
+                                timeout_seconds=remaining / 1000) is True
+                        except Exception:
+                            restart_verified = False
+                        elapsed = self._clock.now_ms() - started
+                        if elapsed < 0 or elapsed > deadline_ms:
+                            return None
+                if restart_verified:
+                    return observed
             remaining = deadline_ms - (self._clock.now_ms() - started)
             if remaining <= 0:
                 return None
