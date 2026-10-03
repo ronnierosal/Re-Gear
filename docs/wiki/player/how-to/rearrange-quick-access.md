@@ -1,24 +1,35 @@
-# Move Quick Access buttons
+# Move Command Center cards
 
-This developing customization task is intended to help you put frequently used controls within easy reach.
+In a development build, hold **Y** to move cards without activating them.
 
 ## For players — no technical background needed
 
-**Candidate-only guidance:** customization is being tested in the newer UI. The
-earlier proposed **Settings / Customize** steps do not match every implementation.
-Do not look for those controls or reinstall merely to match a mockup.
+This flow is implemented in development source and hidden in the production
+profile. Read [Customize Re-Gear](../customize.md) before using these steps.
 
-1. Check the instructions supplied with your installed test build.
-2. Use its displayed customization hint only when that action is offered.
-3. Review the resulting arrangement. If the named option is absent, stop and
-   report the build and what you see through [troubleshooting](../troubleshooting.md).
+1. Open Re-Gear and go to the development tab you want to rearrange.
+2. Move to a card, then hold **Y** for about half a second.
+3. When the cards wiggle and the selected card shows **MOVE**, release **Y**.
+4. Use the **D-pad** to move the card.
+5. Press **A** to place it, or **B** to cancel and restore its earlier position.
 
-The UI owner reports a Y-on-focused-control picker and native move mode in the
-0.3.107 test candidate. This is not an installed-build acceptance or a verified
-step sequence for all versions. Exact action-specific steps await that evidence.
+On **Quick Access**, you can also change which buttons appear. See
+[Change a Quick Access button](change-quick-access-button.md). On other tabs,
+you can move existing cards but cannot change tab membership.
+
+### If it does not work
+
+- A picker opens: you tapped Y too quickly. Press **B**, then hold **Y** until
+  the cards start moving.
+- Nothing happens: confirm the build displays Y editing hints. The production
+  profile does not include layout editing.
+- The new position does not persist: if Re-Gear reported a save error, your
+  previous saved layout remains unchanged.
 
 ## Technical details — for advanced users and contributors
 
-Track [PR329](https://github.com/ronnierosal/Re-Gear/pull/329) and the
-[current evidence](../../technical/current-state.md). Original design briefs remain
-in the archive; they are not executable instructions or a promise of availability.
+The hold threshold is `CUSTOMIZE_HOLD_MS = 550` in
+`src/quick-access/expanded-command-center/customization-input.ts`. Move targets
+come from `moveTargetIndex` in `layout-customization.tsx`, and the draft is
+committed only after **A**. Evidence limits are on
+[Customize Re-Gear](../customize.md#technical-details--for-advanced-users-and-contributors).

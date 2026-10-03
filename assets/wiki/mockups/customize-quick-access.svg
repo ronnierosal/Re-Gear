@@ -1,1 +1,30 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="960" height="540"><rect width="960" height="540" rx="22" fill="#08131d"/><rect x="18" y="18" width="924" height="64" rx="14" fill="#0d2638"/><text x="44" y="58" fill="#59c7ff" font-family="Arial" font-size="28" font-weight="700">Customize Quick Access</text><text x="48" y="125" fill="#b9d0dc" font-family="Arial" font-size="18">Move, replace, or remove shortcuts. Changes stay in your personal layout.</text><g font-family="Arial"><g fill="#102633" stroke="#315166"><rect x="55" y="165" width="180" height="130" rx="15"/><rect x="255" y="165" width="180" height="130" rx="15"/><rect x="455" y="165" width="180" height="130" rx="15"/><rect x="655" y="165" width="180" height="130" rx="15"/><rect x="55" y="315" width="180" height="130" rx="15"/><rect x="255" y="315" width="180" height="130" rx="15"/></g><g fill="white" font-size="20" text-anchor="middle"><text x="145" y="235">FPS Target</text><text x="345" y="235">Auto TDP</text><text x="545" y="235">eGPU</text><text x="745" y="235">Controller</text><text x="145" y="385">Display</text><text x="345" y="385">Safe Disconnect</text></g><rect x="655" y="315" width="180" height="130" rx="15" fill="none" stroke="#59c7ff" stroke-dasharray="9 8"/><text x="745" y="380" text-anchor="middle" fill="#59c7ff" font-size="24">+ Add Button</text><text x="480" y="515" text-anchor="middle" fill="#91a8b6" font-size="16">TEMPORARY UI MOCKUP — layout controls may change</text></g></svg>
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="540" viewBox="0 0 960 540" role="img" aria-labelledby="title desc">
+  <title id="title">Quick Access customization mockup</title>
+  <desc id="desc">A conceptual Quick Access grid showing that Y changes a button and holding Y moves cards.</desc>
+  <rect width="960" height="540" rx="22" fill="#08131d"/>
+  <rect x="18" y="18" width="924" height="64" rx="14" fill="#0d2638"/>
+  <text x="44" y="58" fill="#59c7ff" font-family="Arial" font-size="28" font-weight="700">Customize Quick Access</text>
+  <text x="48" y="120" fill="#e9f4fa" font-family="Arial" font-size="19">Tap Y to change or add a button · Hold Y to move a card</text>
+  <g font-family="Arial">
+    <g fill="#102633" stroke="#315166">
+      <rect x="55" y="155" width="180" height="130" rx="15"/>
+      <rect x="255" y="155" width="180" height="130" rx="15"/>
+      <rect x="455" y="155" width="180" height="130" rx="15"/>
+      <rect x="655" y="155" width="180" height="130" rx="15"/>
+      <rect x="55" y="305" width="180" height="130" rx="15"/>
+      <rect x="255" y="305" width="180" height="130" rx="15"/>
+    </g>
+    <g fill="white" font-size="20" text-anchor="middle">
+      <text x="145" y="225">FPS Target</text>
+      <text x="345" y="225">Auto TDP</text>
+      <text x="545" y="225">eGPU</text>
+      <text x="745" y="225">Controller</text>
+      <text x="145" y="375">Display</text>
+      <text x="345" y="375">Safe Disconnect</text>
+    </g>
+    <rect x="655" y="305" width="180" height="130" rx="15" fill="none" stroke="#59c7ff" stroke-width="2" stroke-dasharray="9 8"/>
+    <text x="745" y="372" text-anchor="middle" fill="#59c7ff" font-size="22">Empty slot</text>
+    <text x="480" y="492" text-anchor="middle" fill="#91a8b6" font-size="16">DEVELOPMENT UI MOCKUP — illustration, not an installed screenshot</text>
+    <text x="480" y="518" text-anchor="middle" fill="#91a8b6" font-size="15">Production profile currently hides layout customization</text>
+  </g>
+</svg>
