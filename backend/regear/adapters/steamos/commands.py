@@ -617,7 +617,13 @@ class SystemSuspendCommandRunner:
             # something a caller can act on. Only the CATEGORY crosses --
             # the command's own output never does, here or anywhere.
             stderr = completed.stderr if type(completed.stderr) is bytes else b""
-            if stderr.strip() == b"Call failed: Access denied due to active block inhibitor":
+            # Exact login1 refusal variants from systemd v255-v258. Do not
+            # retry a broader access-denied or incidental inhibitor message.
+            if stderr.strip() in {
+                b"Call failed: Access denied to root due to active block inhibitor",
+                b"Call failed: Access denied due to active block inhibitor",
+                b"Call failed: Operation denied due to active block inhibitor",
+            }:
                 return SuspendResult(False, "dock_power.suspend_inhibited")
             return SuspendResult(False, "dock_power.suspend_failed")
         return SuspendResult(True, "dock_power.suspend_request_accepted_unverified")

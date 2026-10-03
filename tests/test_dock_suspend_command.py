@@ -11,6 +11,30 @@ from regear.adapters.steamos.commands import SystemSuspendCommandRunner  # noqa:
 
 
 class DockSuspendCommandTests(unittest.TestCase):
+    def test_supported_block_refusals_use_production_retry_path(self):
+        from tests.test_main_process_delivery import load_main_module
+        module = load_main_module(real_dock_gate=True)
+        for wording in (
+            b"Call failed: Access denied to root due to active block inhibitor",
+            b"Call failed: Access denied due to active block inhibitor",
+            b"Call failed: Operation denied due to active block inhibitor",
+        ):
+            with self.subTest(wording=wording):
+                plugin = module.Plugin.__new__(module.Plugin)
+                runner = SystemSuspendCommandRunner(effective_uid=lambda: 0)
+                with patch.object(module, "SystemSuspendCommandRunner", return_value=runner), \
+                        patch.object(module.time, "sleep"), patch(
+                            "regear.adapters.steamos.commands.subprocess.run",
+                            side_effect=[subprocess.CompletedProcess([], 1, b"", wording),
+                                         subprocess.CompletedProcess([], 0, b"", b"")]) as run:
+                    self.assertTrue(plugin._submit_suspend(None))
+                self.assertEqual(run.call_count, 2)
+                self.assertEqual(plugin._whole_dock_suspend_result, {
+                    "requested": True,
+                    "code": "dock_power.suspend_request_accepted_unverified",
+                    "attempts": 2,
+                })
+
     def test_construction_and_nonroot_never_dispatch(self):
         with patch("regear.adapters.steamos.commands.subprocess.run") as run:
             runner = SystemSuspendCommandRunner(effective_uid=lambda: 1000)
