@@ -16,6 +16,7 @@ class WholeDockTrialStatusResetTests(unittest.TestCase):
         self.module = load_main_module(real_dock_gate=True)
         self.plugin = self.module.Plugin.__new__(self.module.Plugin)
         self.plugin._whole_dock_trial_worker_alive = False
+        self.plugin._whole_dock_absence_observed = False
         self.plugin._unloading = False
         self.plugin._whole_dock_trial_status = {
             "schema_version": 1,
@@ -60,6 +61,57 @@ class WholeDockTrialStatusResetTests(unittest.TestCase):
         })
         self.assertIs(self.plugin._whole_dock_trial_status, result)
         self.assertNotIn("request_id", result)
+
+    def test_unresolved_trial_and_stable_reconnected_attachment_rearm_actions(self):
+        self.plugin._whole_dock_absence_observed = True
+        self.plugin._whole_dock_trial_status = {
+            "schema_version": 1,
+            "code": "dock_teardown.trial_unresolved",
+            "busy": False,
+            "ok": False,
+            "software_down": False,
+            "safe_to_unplug": False,
+            "hardware_write": False,
+            "request_id": "old-request",
+            "claim_stage": "none",
+        }
+        p1, p2, p3 = self.patches()
+        with p1, p2, p3:
+            result = self.read()
+
+        self.assertEqual(result, {
+            "schema_version": 1,
+            "code": "dock_teardown.no_trial",
+            "busy": False,
+            "safe_to_unplug": False,
+            "in_flight": False,
+            "attachment_token": TOKEN_A,
+        })
+        self.assertIs(self.plugin._whole_dock_trial_status, result)
+        self.assertFalse(self.plugin._whole_dock_absence_observed)
+
+    def test_unresolved_trial_without_stable_unclaimed_attachment_stays_unresolved(self):
+        unresolved = {
+            "schema_version": 1,
+            "code": "dock_teardown.trial_unresolved",
+            "busy": False,
+            "ok": False,
+            "safe_to_unplug": False,
+            "request_id": "old-request",
+        }
+        for absence, claims, tokens in (
+                (False, (None, None, None), (TOKEN_A, TOKEN_A)),
+                (True, (NS(stage="software_down"),), (TOKEN_A, TOKEN_A)),
+                (True, (None, None, None), (TOKEN_A, TOKEN_B))):
+            with self.subTest(absence=absence, claims=claims, tokens=tokens):
+                self.plugin._whole_dock_trial_status = dict(unresolved)
+                self.plugin._whole_dock_absence_observed = absence
+                p1, p2, p3 = self.patches(claims=claims, tokens=tokens)
+                with p1, p2, p3:
+                    result = self.read()
+                self.assertEqual(result["code"], "dock_teardown.trial_unresolved")
+                self.assertEqual(result["request_id"], "old-request")
+                self.assertIs(self.plugin._whole_dock_absence_observed, absence)
 
     def test_failed_connected_sleep_stays_on_power_channel_and_rearms_disconnect(self):
         failed_sleep = {
@@ -189,6 +241,74 @@ class WholeDockTrialStatusResetTests(unittest.TestCase):
         self.assertEqual(trial["attachment_token"], TOKEN_A)
         self.assertEqual(power, expired_sleep)
 
+    def test_definite_refusal_after_cleanup_and_reconnect_rearms_disconnect(self):
+        refused_sleep = {
+            "schema_version": 1,
+            "code": "dock_power.request_unverified",
+            "busy": False,
+            "ok": False,
+            "safe_to_unplug": False,
+            "software_down": True,
+            "power_requested": False,
+            "sleep_cycle_observed": False,
+            "unplug_required": False,
+            "power_action": "sleep",
+            "route_action": "whole_dock_sleep",
+            "request_id": "f" * 32,
+            "suspend": {
+                "requested": False,
+                "code": "dock_power.suspend_inhibited",
+                "attempts": 2,
+            },
+        }
+        self.plugin._whole_dock_trial_status = refused_sleep
+        self.plugin._dock_sleep_status = dict(refused_sleep)
+        p1, p2, p3 = self.patches()
+        with p1, p2, p3:
+            trial = self.read()
+        power = asyncio.run(
+            self.plugin.get_egpu_disconnect_status("power_status")
+        )
+
+        self.assertEqual(trial["code"], "dock_teardown.no_trial")
+        self.assertEqual(trial["attachment_token"], TOKEN_A)
+        self.assertEqual(power, refused_sleep)
+
+    def test_timeout_or_failed_refusal_cleanup_never_rearms_disconnect(self):
+        base = {
+            "schema_version": 1,
+            "code": "dock_power.request_unverified",
+            "busy": False,
+            "ok": False,
+            "safe_to_unplug": False,
+            "software_down": True,
+            "power_requested": False,
+            "sleep_cycle_observed": False,
+            "unplug_required": False,
+            "power_action": "sleep",
+            "route_action": "whole_dock_sleep",
+            "request_id": "f" * 32,
+            "suspend": {
+                "requested": False,
+                "code": "dock_power.suspend_inhibited",
+            },
+        }
+        cases = (
+            ({**base, "suspend": {
+                "requested": False,
+                "code": "dock_power.suspend_timeout",
+            }}, (None, None, None)),
+            (base, (NS(stage="software_down"),)),
+        )
+        for status, claims in cases:
+            with self.subTest(status=status, claims=claims):
+                self.plugin._whole_dock_trial_status = dict(status)
+                p1, p2, p3 = self.patches(claims=claims)
+                with p1, p2, p3:
+                    result = self.read()
+                self.assertEqual(result["code"], "dock_power.request_unverified")
+                self.assertEqual(result["request_id"], "f" * 32)
+
     def test_unresolved_unplug_sleep_outcomes_do_not_rearm_disconnect(self):
         base = {
             "schema_version": 1,
@@ -271,6 +391,21 @@ class WholeDockTrialStatusResetTests(unittest.TestCase):
         with p1, p2, p3:
             result = self.read()
         self.assertEqual(result["code"], "dock_teardown.software_down")
+
+    def test_physical_absence_evidence_is_exact_request_correlated(self):
+        request_id = "1" * 32
+        self.plugin._whole_dock_trial_status["request_id"] = request_id
+        self.plugin._whole_dock_physical_absence_verified_request = request_id
+        p1, p2, p3 = self.patches(claims=(NS(stage="software_down"),))
+        with p1, p2, p3:
+            result = self.read()
+        self.assertIs(result["physical_absence_verified"], True)
+
+        self.plugin._whole_dock_physical_absence_verified_request = "2" * 32
+        p1, p2, p3 = self.patches(claims=(NS(stage="software_down"),))
+        with p1, p2, p3:
+            result = self.read()
+        self.assertNotIn("physical_absence_verified", result)
 
     def test_only_exact_successful_software_down_is_considered(self):
         malformed = (

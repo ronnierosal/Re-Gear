@@ -27,6 +27,7 @@ from ..profiles.registry import resolve_runtime_profiles
 from .experimental_transition import ExperimentalTransitionApprovalStore
 from .transition_orchestrator import RuntimeTransitionResult, TransitionOrchestrator
 from .presentation_completion import PresentationCompletion, committed_target, reconcile_presentation_completion
+from .presentation_boot_retirement import reconcile_boot_result, utc_now
 
 
 IDENTIFIER_RE = re.compile(r"^[A-Za-z0-9_.-]{8,64}$")
@@ -92,8 +93,14 @@ class SupervisedPresentationTransitionService:
         identifier_factory: Callable[[], str] | None = None,
         portable_trial_runner: Callable | None = None,
         audio_recovery: AudioRecoveryPort | None = None,
+        read_boot_id: Callable[[], str] | None = None,
+        boot_retirement_now: Callable | None = None,
+        boot_retirement_guard: Callable | None = None,
     ) -> None:
         self._audio_recovery = audio_recovery
+        self._read_boot_id = read_boot_id
+        self._boot_retirement_now = boot_retirement_now or utc_now
+        self._boot_retirement_guard = boot_retirement_guard
         self._observations = observations
         self._orchestrator = orchestrator
         self._journal_store = journal_store
@@ -393,6 +400,10 @@ class SupervisedPresentationTransitionService:
             return PresentationCompletion("completion.transition_busy")
         try:
             with self._audio_guard():
+                retired = reconcile_boot_result(self._journal_store, self._observations,
+                    self._read_boot_id, self._boot_retirement_now, self._boot_retirement_guard)
+                if retired is not None:
+                    return retired
                 return reconcile_presentation_completion(self._journal_store, current)
         except AudioRecoveryBlocked as exc:
             return PresentationCompletion(str(exc))

@@ -586,8 +586,12 @@ class SystemSuspendCommandRunner:
     explicit even for a privileged noninteractive caller. No wake action exists.
     """
 
-    COMMAND = ("/usr/bin/systemctl", "--no-block", "--no-ask-password",
-               "--check-inhibitors=yes", "suspend")
+    # systemctl's explicit inhibitor check also rejects the normal player
+    # session when called by root. Use login1 with ROOT_CHECK_INHIBITORS (0x01),
+    # never SKIP_INHIBITORS (0x10). A successful reply is not sleep proof.
+    COMMAND = ("/usr/bin/busctl", "--system", "--allow-interactive-authorization=no",
+               "call", "org.freedesktop.login1", "/org/freedesktop/login1",
+               "org.freedesktop.login1.Manager", "SuspendWithFlags", "t", "1")
     CLEAN_ENVIRONMENT = {"LANG": "C", "LC_ALL": "C", "PATH": "/usr/bin:/bin"}
 
     def __init__(self, timeout_seconds: float = 5.0, effective_uid=None) -> None:
@@ -613,7 +617,13 @@ class SystemSuspendCommandRunner:
             # something a caller can act on. Only the CATEGORY crosses --
             # the command's own output never does, here or anywhere.
             stderr = completed.stderr if type(completed.stderr) is bytes else b""
-            if b"inhibit" in stderr.lower():
+            # Exact login1 refusal variants from systemd v255-v258. Do not
+            # retry a broader access-denied or incidental inhibitor message.
+            if stderr.strip() in {
+                b"Call failed: Access denied to root due to active block inhibitor",
+                b"Call failed: Access denied due to active block inhibitor",
+                b"Call failed: Operation denied due to active block inhibitor",
+            }:
                 return SuspendResult(False, "dock_power.suspend_inhibited")
             return SuspendResult(False, "dock_power.suspend_failed")
         return SuspendResult(True, "dock_power.suspend_request_accepted_unverified")
@@ -1004,7 +1014,7 @@ class BoltDeviceAuthorizationRunner:
     def policy_argv(cls, uuid: str) -> tuple[str, ...]:
         if type(uuid) is not str or cls.UUID.fullmatch(uuid) is None:
             raise ValueError("device authorization uuid is invalid")
-        return (cls.BOLTCTL, "config", uuid, "device.policy")
+        return (cls.BOLTCTL, "config", "device.policy", uuid)
 
     @classmethod
     def set_policy_argv(cls, uuid: str, policy: str) -> tuple[str, ...]:
@@ -1012,7 +1022,7 @@ class BoltDeviceAuthorizationRunner:
             raise ValueError("device authorization uuid is invalid")
         if policy not in ("auto", "manual"):
             raise ValueError("device authorization policy is invalid")
-        return (cls.BOLTCTL, "config", uuid, "device.policy", policy)
+        return (cls.BOLTCTL, "config", "device.policy", uuid, policy)
 
     def policy(self, uuid: str) -> str | None:
         """Read one stored policy; malformed or unavailable output is unknown."""
