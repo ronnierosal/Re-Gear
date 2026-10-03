@@ -9,7 +9,7 @@ import {
 } from "./backend";
 import { regearTheme as theme } from "./regear-theme";
 
-const acknowledgementId = /^DJ-[A-Za-z0-9_-]{16,96}$/;
+const acknowledgementId = /^[A-Za-z0-9_-]{8,64}$/;
 
 export function displayAcknowledgementId(
   journal: TransitionJournalStatusPayload | null,

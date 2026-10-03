@@ -5,7 +5,8 @@ import ts from 'typescript';
 
 const source=readFileSync(new URL('../src/transition-acknowledgement-control.tsx',import.meta.url),'utf8');
 const code=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX,target:ts.ScriptTarget.ES2022}}).outputText;
-const ID='DJ-6XJcMH8MAbHu6uZmX9SIp';
+const ID='nhqq1NRq9r7NFV2p9x_1BiCg';
+const LEGACY_ID='DJ-6XJcMH8MAbHu6uZmX9SIp';
 const journal={schema_version:1,code:'transition.blocked',owner:'presentation',acknowledgement_required:true,action_required:true,acknowledgement_id:ID,durable:true};
 const status={schema_version:1,code:'transition.blocked',acknowledgement_required:true,action_required:true,acknowledgement_id:ID,durable:true,target:'portable'};
 const settle=async()=>{for(let n=0;n<12;n++)await Promise.resolve();};
@@ -41,6 +42,17 @@ test('exact owner result exposes one accessible action and rechecks before ackno
     assert.deepEqual(h.acks,[ID]);
     assert.match(JSON.stringify(h.render()),/Prior display result acknowledged/);
   }finally{h.restore();}
+});
+
+test('URL-safe service IDs and retained DJ IDs are admitted without accepting malformed IDs',async()=>{
+  for(const id of [ID,LEGACY_ID]){
+    const h=harness({...journal,acknowledgement_id:id},{...status,acknowledgement_id:id});
+    try{assert.ok(nodes(await h.mount()).some(node=>node.type==='button'));}finally{h.restore();}
+  }
+  for(const id of ['short','result.with.dot','result with space','result/with/slash']){
+    const h=harness({...journal,acknowledgement_id:id},{...status,acknowledgement_id:id});
+    try{assert.equal(await h.mount(),null);}finally{h.restore();}
+  }
 });
 
 test('unmount during the freshness recheck cannot acknowledge or publish a late result',async()=>{
