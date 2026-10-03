@@ -2105,6 +2105,19 @@ class Plugin:
                     return refuse('authorization', 'remembered_trust_hold_retained')
                 phase = 'retire'
                 store.retire_physically_disconnected(claim, guard)
+                # Remember only this process's exact retained resource after
+                # the durable claim archive and all absence guards succeeded.
+                # A failed release can then retry through the existing strict
+                # absence reconciler without rewriting the terminal result.
+                lease = getattr(self, '_whole_dock_trial_lease', None)
+                trial = getattr(self, '_whole_dock_trial_runtime', None)
+                terminal = getattr(self, '_whole_dock_trial_status', None)
+                if (lease is not None and type(trial) is tuple and len(trial) == 2
+                        and type(terminal) is dict
+                        and terminal.get('request_id') == claim.operation
+                        and getattr(trial[0], '_operation', None) == claim.operation):
+                    self._whole_dock_absent_archived_trial = (
+                        claim.operation, lease, trial, terminal)
                 self._archival_refusal = None
                 try:
                     self._append_journey_event(severity='info',
@@ -2114,7 +2127,8 @@ class Plugin:
                     # Completion logging cannot turn a completed retirement
                     # back into an archival refusal.
                     pass
-                return True
+            self._reconcile_physically_unplugged_trial_lease()
+            return True
         except Exception as error:
             return refuse(phase, 'raised_' + type(error).__name__)
 
@@ -3075,11 +3089,12 @@ class Plugin:
                         pass
                 raise
             finally:
+                owned_admission = guarded_admission()
                 admission["held"] = False
                 # Release only a lease this process can still prove it owns.
                 # If unloading or lease loss ended admission, there is no
                 # active local inhibitor left to release safely.
-                if guarded_admission() and (
+                if owned_admission and (
                     runtime is None or runtime._operation is None
                 ):
                     lease.release()
@@ -4128,11 +4143,15 @@ class Plugin:
             return False
         runtime, admission = trial
         request_id = terminal.get('request_id')
+        archived = getattr(self, '_whole_dock_absent_archived_trial', None)
+        archived_owned = (type(archived) is tuple and len(archived) == 4
+            and archived[0] == request_id and archived[1] is lease
+            and archived[2] is trial and archived[3] is terminal)
+        successful_trial = (terminal.get('code') == 'dock_teardown.software_down'
+            and terminal.get('ok') is True and terminal.get('software_down') is True)
         if (terminal.get('schema_version') != 1
-                or terminal.get('code') != 'dock_teardown.software_down'
+                or not (successful_trial or archived_owned)
                 or terminal.get('busy') is not False
-                or terminal.get('ok') is not True
-                or terminal.get('software_down') is not True
                 or terminal.get('safe_to_unplug') is not False
                 or type(request_id) is not str
                 or re.fullmatch(r'[0-9a-f]{32}', request_id) is None
@@ -4164,6 +4183,14 @@ class Plugin:
                 if (getattr(self, '_whole_dock_trial_lease', None) is not lease
                         or getattr(self, '_whole_dock_trial_runtime', None) is not trial
                         or getattr(self, '_whole_dock_trial_status', None) is not terminal
+                        or terminal.get('schema_version') != 1
+                        or terminal.get('busy') is not False
+                        or terminal.get('safe_to_unplug') is not False
+                        or getattr(runtime, '_operation', None) != request_id
+                        or getattr(self, '_release_capture_task', None) is not capture
+                        or (capture is not None and not capture.done())
+                        or (archived_owned and getattr(
+                            self, '_whole_dock_absent_archived_trial', None) is not archived)
                         or getattr(self, '_unloading', False)
                         or getattr(self, '_whole_dock_trial_worker_alive', False) is True
                         or admission.get('held') is not False
@@ -4177,6 +4204,8 @@ class Plugin:
                 # Preserve the runtime and terminal payload as evidence. Only
                 # the successfully released owned resource leaves live state.
                 self._whole_dock_trial_lease = None
+                if archived_owned:
+                    self._whole_dock_absent_archived_trial = None
                 self._whole_dock_physical_absence_verified_request = request_id
                 return True
         except Exception:

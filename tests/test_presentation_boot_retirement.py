@@ -56,11 +56,18 @@ class BootRetirementCompositionTests(unittest.TestCase):
         self.assertEqual(self.mechanism.mock_calls, [])
 
     def test_interrupted_tunnel_claim_does_not_deadlock_boot_result_retirement(self):
+        from tests.test_main_dock_mutation_gate import CompletedAttachmentAbsenceTests
         self.create_retained()
         self.boot = NEW_BOOT
+        archive = CompletedAttachmentAbsenceTests()
+        archive.setUp()
+        self.addCleanup(archive.doCleanups)
+        self.assertEqual(archive.fixture(stage="tunnel_remove_intent", journal_owner="presentation"),
+                         (False, 0), "actual archival waits for the retained display journal")
         guard, _ = self.production_guard(claim=SimpleNamespace(stage="tunnel_remove_intent"))
         self.assertTrue(self.service(guard).reconcile_completion(self.port.observe()).finalized)
         self.assertIsNone(self.store.load_current())
+        self.assertEqual(archive.fixture(stage="tunnel_remove_intent", journal_owner="none"), (True, 1))
         self.assertEqual(self.mechanism.mock_calls, [])
 
     def setUp(self):
