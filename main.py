@@ -5864,7 +5864,7 @@ class Plugin:
 
     def _support_versions(self) -> dict[str, str]:
         return {
-            "regear": "0.3.174",
+            "regear": "0.3.175",
             "decky": str(getattr(decky, "DECKY_VERSION", "unknown")),
             "steamos": self._version_info.steamos,
             "kernel": self._version_info.kernel,
@@ -5974,7 +5974,32 @@ class Plugin:
             journal_store=journal,
             clock=SystemMonotonicClock(),
             waiter=BoundedDeadlineWaiter(),
+            read_boot_id=self._boot_session_id,
         )
+        from contextlib import contextmanager, nullcontext
+        from regear.delivery.audio_profile_trial_store import AudioTrialStore, ROOT as AUDIO_TRIAL_ROOT
+
+        @contextmanager
+        def boot_retirement_guard():
+            # A read-only pending check under the audio transaction's durable
+            # lock. No restoration, trial cancellation or teardown is invoked.
+            # The journal factory never creates its root. A missing root under
+            # the validated root-owned runtime parent means no audio trial was
+            # armed. Other stat/read errors remain fail closed.
+            try:
+                Path(AUDIO_TRIAL_ROOT).lstat()
+                audio_guard = AudioTrialStore().transaction()
+            except FileNotFoundError:
+                audio_guard = nullcontext()
+            with audio_guard as audio_transaction:
+                if audio_transaction is not None and audio_transaction.pending() is not None:
+                    raise ValueError("pending audio transaction")
+                claim = WholeDockClaimStore(journal_root).load()
+                if claim is not None and claim.stage not in {"software_down", "software_reconnected"}:
+                    raise ValueError("unresolved whole dock transaction")
+                if PortableTrialStore(presentation_state_root).read() is not None:
+                    raise ValueError("pending portable trial")
+                yield
         return SupervisedPresentationTransitionService(
             observations=observations,
             orchestrator=orchestrator,
@@ -5982,6 +6007,8 @@ class Plugin:
             integration_ready=lambda: integration.status().ready,
             approvals=self._presentation_transition_approvals,
             portable_trial_runner=mechanism.run_portable_trial,
+            read_boot_id=self._boot_session_id,
+            boot_retirement_guard=boot_retirement_guard,
         )
 
     def _audio_handoff_service(self) -> G1AudioHandoff:
