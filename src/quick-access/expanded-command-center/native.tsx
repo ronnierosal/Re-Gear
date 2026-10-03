@@ -114,6 +114,7 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
   let recoveryAttempts=0;
   let ownerWarningTimer:ReturnType<typeof setTimeout>|null=null;
   let ownerWarningPollInFlight=false;
+  let ownerWarningReadAfterClose=false;
   const setPendingTimeout = typeof host.setTimeout === "function"
     ? host.setTimeout.bind(host) : globalThis.setTimeout;
   const clearPendingTimeout = typeof host.clearTimeout === "function"
@@ -154,6 +155,7 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
   const resolveAbsentDockReceipt=(settlement:DockSettlement)=>{
     const record=pendingDockRecord();
     if(record?.request!==settlement.request||record.intent!==settlement.intent)return;
+    unplugWarning.retire(record.request);
     storage?.removeItem("regear.whole-dock.pending-request");
     if(presentedDockSettlement?.request===settlement.request)presentedDockSettlement=null;
     hideOperation();
@@ -201,6 +203,10 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
         ||(record.intent==="sleep"
           &&(status.code==="dock_power.unplug_required"
             ||status.code==="dock_power.unplug_request_expired")));
+    if(status.busy===false&&!deauthorized&&status.physical_absence_verified!==true){
+      unplugWarning.retire(record.request);
+      return;
+    }
     unplugWarning.observe({
       requestId:record.request,
       deauthorized,
@@ -215,7 +221,8 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
     if(stopped||ownerWarningPollInFlight)return;
     // A mounted WholeDockControl already owns the read cadence. The owner
     // takes over only after Decky tells us that surface closed.
-    if(operation){scheduleOwnerWarningPoll();return;}
+    if(operation&&!ownerWarningReadAfterClose){scheduleOwnerWarningPoll();return;}
+    ownerWarningReadAfterClose=false;
     const record=pendingDockRecord();
     if(!record)return;
     ownerWarningPollInFlight=true;
@@ -226,7 +233,7 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
       if(!current||current.request!==record.request||current.intent!==record.intent)return;
       observePendingWarning(status,current);
       const warning=unplugWarning.read();
-      if((warning.phase==="prompt"||warning.phase==="alarm")
+      if((warning.phase==="prompt"||warning.phase==="alarm"||warning.phase==="retired")
           &&warning.requestId===current.request&&!operation)resumePendingOperation();
     }catch{/* The durable receipt keeps the watcher eligible for the next read. */}
     finally{
@@ -240,12 +247,23 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
     if(intent!=="disconnect"&&intent!=="disconnect_only"&&intent!=="sleep"&&intent!=="shutdown")return;
     const operationToken=++operationGeneration;
     const hide=()=>{if(operationGeneration===operationToken)hideOperation();};
+    const hostClosed=()=>{
+      if(operationGeneration!==operationToken)return;
+      hide();
+      if(!stopped&&warningBlocksDismiss()){
+        resumePendingOperation();
+        // Verify the first read after replacement even before its new child
+        // has taken over polling. Subsequent owner reads remain single-flight.
+        ownerWarningReadAfterClose=true;
+        scheduleOwnerWarningPoll();
+      }
+    };
     const dismiss=()=>{if(warningBlocksDismiss())return;acknowledgeDockSettlement();hide();};
     const title=intent==="shutdown"?"Safe Disconnect + Shutdown status":intent==="sleep"?"Disconnect + Sleep status":"Safe Disconnect status";
     const opened=showModal(<EgpuConfirmModal strTitle={title} strOKButtonText="Hide" bAlertDialog onOK={dismiss} onCancel={dismiss} onEscKeypress={dismiss} className="rg-whole-dock-progress">
       <style>{`.rg-whole-dock-progress{position:fixed!important;left:50%!important;top:50%!important;right:auto!important;bottom:auto!important;margin:0!important;transform:translate(-50%,-50%)!important}`}</style>
       <WholeDockControl intent={intent} readCurrentSnapshot={readCurrentSnapshot} statusOnly onSettled={presentDockSettlement} onResolvedAbsent={resolveAbsentDockReceipt} unplugWarning={unplugWarning}/>
-    </EgpuConfirmModal>,undefined,{fnOnClose:hide,bNeverPopOut:true});
+    </EgpuConfirmModal>,undefined,{fnOnClose:hostClosed,bNeverPopOut:true});
     if(operationGeneration!==operationToken){opened.Close();return;}operation=opened;operationKind="status";
     scheduleOwnerWarningPoll();
   }
@@ -303,6 +321,15 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
     );
     const operationToken=++operationGeneration;
     const hide=()=>{if(operationGeneration===operationToken)hideOperation();};
+    const hostClosed=()=>{
+      if(operationGeneration!==operationToken)return;
+      hide();
+      if(!stopped&&warningBlocksDismiss()){
+        resumePendingOperation();
+        ownerWarningReadAfterClose=true;
+        scheduleOwnerWarningPoll();
+      }
+    };
     // Hiding or destroying the progress surface is not acknowledgement of a
     // result. Gamescope tears this modal down during the very handoff the
     // operation performs, and treating that host-driven close as dismissal
@@ -313,7 +340,7 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
     const opened=showModal(<EgpuConfirmModal strTitle={title} strOKButtonText="Hide" bAlertDialog onOK={dismiss} onCancel={dismiss} onEscKeypress={dismiss} className="rg-whole-dock-progress">
       <style>{`.rg-whole-dock-progress{position:fixed!important;left:50%!important;top:50%!important;right:auto!important;bottom:auto!important;margin:0!important;transform:translate(-50%,-50%)!important}`}</style>
       <WholeDockControl intent={intent} readCurrentSnapshot={readCurrentSnapshot} startRequest={startRequest} onSettled={presentDockSettlement} unplugWarning={unplugWarning}/>
-    </EgpuConfirmModal>,undefined,{fnOnClose:hide,bNeverPopOut:true});
+    </EgpuConfirmModal>,undefined,{fnOnClose:hostClosed,bNeverPopOut:true});
     if(operationGeneration!==operationToken){opened.Close();return;}
     operation=opened;
     operationKind="active";

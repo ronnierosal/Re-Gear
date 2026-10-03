@@ -1,4 +1,4 @@
-export type UnplugWarningPhase = "idle" | "prompt" | "alarm" | "cleared";
+export type UnplugWarningPhase = "idle" | "prompt" | "alarm" | "cleared" | "retired";
 
 export type UnplugWarningObservation = {
   requestId?: string;
@@ -89,8 +89,15 @@ export function createUnplugWarningCoordinator(ports: UnplugWarningPorts) {
       if (observation.deauthorized !== true) return;
       if (requestId === state.requestId
           && (state.phase === "prompt" || state.phase === "alarm"
-            || state.phase === "cleared")) return;
+            || state.phase === "cleared" || state.phase === "retired")) return;
       begin(requestId);
+    },
+    retire(requestId: string) {
+      if (requestId !== state.requestId
+          || (state.phase !== "prompt" && state.phase !== "alarm")) return;
+      clearTimers();
+      // Stop requesting unplug; this is not verified physical absence.
+      publish({ phase: "retired", requestId });
     },
     read: () => state,
     subscribe(listener: (next: UnplugWarningState) => void) {

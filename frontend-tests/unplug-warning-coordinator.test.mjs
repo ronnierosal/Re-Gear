@@ -6,6 +6,22 @@ import { createUnplugWarningCoordinator } from "../src/unplug-warning-coordinato
 const REQUEST = "a".repeat(32);
 const NEXT = "b".repeat(32);
 
+test("exact terminal retirement stops alarm without asserting physical absence", () => {
+  const h = harness();
+  h.coordinator.observe({ requestId: REQUEST, deauthorized: true });
+  h.advance(5000);
+  h.coordinator.retire(NEXT);
+  assert.equal(h.coordinator.read().phase, "alarm", "foreign retirement is ignored");
+  h.coordinator.retire(REQUEST);
+  assert.deepEqual(h.coordinator.read(), { phase: "retired", requestId: REQUEST });
+  assert.equal(h.timers(), 0);
+  h.coordinator.observe({ requestId: REQUEST, deauthorized: true });
+  h.advance(10000);
+  assert.equal(h.warnings(), 1, "stale observation cannot restart a retired request");
+  h.coordinator.observe({ requestId: NEXT, deauthorized: true });
+  assert.equal(h.coordinator.read().phase, "prompt");
+});
+
 function harness() {
   let now = 0;
   let next = 1;

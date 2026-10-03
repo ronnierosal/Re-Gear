@@ -149,6 +149,11 @@ export function WholeDockControl({ readCurrentSnapshot, intent = "disconnect_onl
         || (record.intent === "sleep"
           && (status.code === "dock_power.unplug_required"
             || status.code === "dock_power.unplug_request_expired")));
+    if (status.busy === false && !deauthorized
+        && status.physical_absence_verified !== true) {
+      unplugWarning.retire(record.request);
+      return;
+    }
     unplugWarning.observe({
       requestId: record.request,
       deauthorized,

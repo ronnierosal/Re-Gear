@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
 import ts from "typescript";
+import { createUnplugWarningCoordinator } from "../src/unplug-warning-coordinator.ts";
 
 const modelJs = ts.transpileModule(
   readFileSync(new URL("../src/whole-dock-control-model.ts", import.meta.url), "utf8"),
@@ -130,4 +131,28 @@ test("the existing WholeDock poll drives exact prompt and physical-absence clean
   });
   assert.equal(unplugWarning.read().phase, "cleared");
   h.unmount();
+});
+
+test("actual WholeDock terminal mapping retires warning but not busy or foreign status", async () => {
+  const warning = createUnplugWarningCoordinator({
+    schedule: () => 1, cancel() {}, repeat: () => 2, cancelRepeat() {}, playWarning() {},
+  });
+  warning.observe({ requestId: REQUEST, deauthorized: true });
+  const terminal = { schema_version: 1, code: "dock_power.sleep_protection_unverified",
+    request_id: REQUEST, busy: false, ok: false, software_down: true, safe_to_unplug: false };
+  const h = harness({ ...terminal, request_id: "a".repeat(32) }, warning);
+  await settle();
+  assert.equal(warning.read().phase, "prompt", "foreign terminal cannot retire this request");
+  h.status = { ...terminal, busy: true };
+  h.poll();
+  await settle();
+  assert.equal(warning.read().phase, "prompt", "busy status cannot retire this request");
+  h.status = terminal;
+  h.poll();
+  await settle();
+  assert.equal(warning.read().phase, "retired");
+  assert.notEqual(warning.read().phase, "cleared", "no physical absence is invented");
+  assert.doesNotMatch(JSON.stringify(h.render()), /Physically unplug the eGPU now/);
+  h.unmount();
+  warning.stop();
 });

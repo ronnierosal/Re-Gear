@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
 import ts from "typescript";
+import { createUnplugWarningCoordinator as realWarningCoordinator } from "../src/unplug-warning-coordinator.ts";
 
 const read = path => readFileSync(
   new URL(`../src/quick-access/expanded-command-center/${path}`, import.meta.url),
@@ -19,7 +20,7 @@ new Function("exports", compile(read("test-build-actions.ts")))(actionExports);
 
 const REQUEST = "a".repeat(32);
 
-function harness(pending = null, recoverTerminalDockReceipt = async () => null) {
+function harness(pending = null, recoverTerminalDockReceipt = async () => null, realWarning = false) {
   const h = {
     cleanup: [], modals: [], sounds: [], timers: new Map(), intervals: new Map(),
     nextTimer: 1, warningStopped: false, reads: 0,
@@ -38,6 +39,10 @@ function harness(pending = null, recoverTerminalDockReceipt = async () => null) 
     ...actionExports,
     createUnplugWarningCoordinator: ports => {
       h.warningPorts = ports;
+      if (realWarning) {
+        h.warning = realWarningCoordinator(ports);
+        return h.warning;
+      }
       h.warning = {
         read: () => warningState,
         observe(observation) {
@@ -50,6 +55,11 @@ function harness(pending = null, recoverTerminalDockReceipt = async () => null) 
           }
         },
         subscribe(listener) { warningListeners.add(listener); return () => warningListeners.delete(listener); },
+        retire(requestId) {
+          if (warningState.requestId === requestId
+              && (warningState.phase === "prompt" || warningState.phase === "alarm"))
+            h.emitWarning({ phase: "retired", requestId });
+        },
         stop() { h.warningStopped = true; warningState = { phase: "idle", requestId: null }; },
       };
       h.emitWarning = next => {
@@ -116,6 +126,40 @@ function harness(pending = null, recoverTerminalDockReceipt = async () => null) 
   };
   return h;
 }
+
+test("actual owner and coordinator retire correlated unverified terminal warning", async () => {
+  const pending = `v2:sleep:retired-panel:${REQUEST}`;
+  const h = harness(pending, undefined, true);
+  h.warning.observe({ requestId: REQUEST, deauthorized: true });
+  const popup = h.modals[0];
+  popup.options.fnOnClose();
+  h.status = { schema_version: 1, request_id: REQUEST,
+    code: "dock_power.sleep_protection_unverified", busy: false,
+    software_down: true, safe_to_unplug: false, ok: false };
+  await h.runOwnerPoll();
+  assert.equal(h.warning.read().phase, "retired");
+  assert.equal(h.intervals.size, 0);
+  assert.equal(h.storage.getItem("regear.whole-dock.pending-request"), pending);
+  const terminal = h.modals.at(-1);
+  terminal.node.props.onOK();
+  assert.equal(terminal.closed, true, "terminal result is dismissable without a safe claim");
+  h.menu.stop();
+});
+
+test("simulated native auto-close restores blocking warning immediately, not at next poll", () => {
+  const pending = `v2:sleep:retired-panel:${REQUEST}`;
+  const h = harness(pending, undefined, true);
+  h.warning.observe({ requestId: REQUEST, deauthorized: true });
+  const popup = h.modals[0];
+  popup.node.props.onOK();
+  popup.closed = true; // Native host semantics injected; not native proof.
+  popup.options.fnOnClose();
+  assert.equal(h.modals.length, 2);
+  assert.equal(h.modals[1].closed, false);
+  assert.equal(h.warning.read().phase, "prompt");
+  assert.equal(h.storage.getItem("regear.whole-dock.pending-request"), pending);
+  h.menu.stop();
+});
 
 test("all dock surfaces share one owner-lifetime warning coordinator", () => {
   const h = harness();
