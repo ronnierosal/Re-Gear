@@ -1,7 +1,8 @@
 import { callable } from "@decky/api";
 import { DialogButton, showModal } from "@decky/ui";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { EgpuConfirmModal } from "./egpu-confirm-modal";
+import type { createUnplugWarningCoordinator } from "./unplug-warning-coordinator";
 import { dockIntentControl, dockRequestAbandoned, dockRequestSettled, formatPendingRecord, parsePendingRecord,
   type DockAction, type DockIntent } from "./whole-dock-control-model";
 
@@ -12,6 +13,9 @@ const submittedRequest = /^[0-9a-f]{32}$/;
 const pendingKey = "regear.whole-dock.pending-request";
 const recoveredPanel = "backend-terminal";
 const interruptedPanel = "backend-interrupted";
+const idleUnplugWarningState = { phase: "idle" as const, requestId: null };
+const readIdleUnplugWarning = () => idleUnplugWarningState;
+const subscribeToNothing = () => () => {};
 /** Identifies this panel for the life of its script, which is exactly the
  * lifetime that matters: freeing the dock restarts Gaming Mode and a new
  * panel loads with a new one, which is how a record left by the panel that
@@ -76,6 +80,7 @@ export type DirectStartRequest = (() => boolean) & {
   markSubmitted(): void;
 };
 export type DockSettlement = { intent: DockIntent; request: string };
+export type UnplugWarningCoordinator = ReturnType<typeof createUnplugWarningCoordinator>;
 const correlatedSoftwareDown = (status: any, request: string) => status?.schema_version === 1
   && status.request_id === request && status.busy === false && status.safe_to_unplug === false
   && status.code === "dock_teardown.software_down" && status.software_down === true
@@ -84,7 +89,7 @@ const directStartState = (startRequest: boolean | (() => boolean) | DirectStartR
   typeof startRequest === "function" && "state" in startRequest ? startRequest.state() : null;
 
 /** Only confirmed clicks mutate. Reopening the menu recovers backend progress. */
-export function WholeDockControl({ readCurrentSnapshot, intent = "disconnect_only", startRequest, statusOnly = false, onSettled }: { readCurrentSnapshot: () => any; intent?: DockIntent; startRequest?: boolean | (()=>boolean) | DirectStartRequest; statusOnly?: boolean; onSettled?: (settlement: DockSettlement) => void }) {
+export function WholeDockControl({ readCurrentSnapshot, intent = "disconnect_only", startRequest, statusOnly = false, onSettled, unplugWarning }: { readCurrentSnapshot: () => any; intent?: DockIntent; startRequest?: boolean | (()=>boolean) | DirectStartRequest; statusOnly?: boolean; onSettled?: (settlement: DockSettlement) => void; unplugWarning?: UnplugWarningCoordinator }) {
   const source = useRef(readCurrentSnapshot);
   source.current = readCurrentSnapshot;
   const currentIntent = useRef(intent);
@@ -101,6 +106,23 @@ export function WholeDockControl({ readCurrentSnapshot, intent = "disconnect_onl
   const modal = useRef<ReturnType<typeof showModal> | null>(null);
   const startConsumed = useRef(false);
   const completionAttempted = useRef<string | null>(null);
+  const warningState = useSyncExternalStore(
+    unplugWarning ? listener => unplugWarning.subscribe(() => listener()) : subscribeToNothing,
+    unplugWarning ? unplugWarning.read : readIdleUnplugWarning,
+    unplugWarning ? unplugWarning.read : readIdleUnplugWarning,
+  );
+  const observeUnplugWarning = (status: any, record: ReturnType<typeof parsePendingRecord>) => {
+    if (!unplugWarning || !record || status?.schema_version !== 1
+        || status.request_id !== record.request) return;
+    const deauthorized = status.software_down === true && status.safe_to_unplug === false
+      && ((status.code === "dock_teardown.software_down" && status.ok === true && status.busy === false)
+        || (record.intent === "sleep" && status.code === "dock_power.unplug_required"));
+    unplugWarning.observe({
+      requestId: record.request,
+      deauthorized,
+      physicalAbsenceVerified: status.physical_absence_verified === true,
+    });
+  };
   const consumeStartRequest = () => {
     if (!startRequest || startConsumed.current) return false;
     if (typeof startRequest === "function" && !startRequest()) return false;
@@ -119,6 +141,7 @@ export function WholeDockControl({ readCurrentSnapshot, intent = "disconnect_onl
         if (started !== epoch.current) { timer = setTimeout(refresh, 2000); return; }
         const rawRecord = pendingRecord();
         const record = parsePendingRecord(rawRecord);
+        observeUnplugWarning(next.status, record);
         // Retiring a record whose answer never arrived is not the same as the
         // request having succeeded, so the player is told which happened
         // rather than left to infer it from the control becoming usable.
@@ -222,6 +245,7 @@ export function WholeDockControl({ readCurrentSnapshot, intent = "disconnect_onl
           : "Request sent. Keep the cable connected; Gaming Mode may restart.");
         const result = await execute(true, "", "disconnect", action, true, attachment, request);
         epoch.current++;
+        observeUnplugWarning(result, parsePendingRecord(pendingRecord()));
         if (mounted.current) { setReading({ ...fresh, status: result }); setNotice(""); }
         if (dockRequestSettled(result, request, intent)) {
           // The submitting panel received this terminal result directly. It
@@ -270,6 +294,12 @@ export function WholeDockControl({ readCurrentSnapshot, intent = "disconnect_onl
     && reading.status.code === "dock_teardown.software_down"
     && reading.status.busy === false && reading.status.ok === true
     && reading.status.software_down === true && reading.status.safe_to_unplug === false;
+  const warningForRecord = terminalRecord?.request === warningState.requestId;
+  const warningMessage = warningForRecord && warningState.phase === "alarm"
+    ? "Disconnect the eGPU cable now. The dock remains powered after software disconnect."
+    : warningForRecord && warningState.phase === "prompt"
+    ? "Safe disconnect is complete. Physically unplug the eGPU now."
+    : null;
   return <div style={{fontSize:13,lineHeight:"18px"}}>
     <p style={{margin:"0 0 8px"}} role="status">{(initialNotStarted && !uncertain.current && !pendingRequest()) ? `Safe Disconnect did not start. No request was sent by this attempt. ${view.message}` : notice || (uncertain.current ? "Waiting to verify the previous request. Keep the cable connected." : disconnectComplete ? "Software disconnect complete. USB4 deauthorization was verified." : view.message)}</p>
     {startRequest && initialNotStarted && !pending.current && !uncertain.current && !pendingRequest() && <DialogButton {...{type:"button" as const}} style={{width:"100%",minWidth:0,padding:"8px",border:"1px solid #39d8ff",borderRadius:8,background:"#112434",color:"#f4f7fb"}} disabled={!view.action || busy} onClick={(event)=>{
@@ -279,10 +309,10 @@ export function WholeDockControl({ readCurrentSnapshot, intent = "disconnect_onl
       confirm(true,reading);
     }}>{intent === "sleep" ? "Disconnect + Sleep" : intent === "shutdown" ? "Safe Disconnect + Shutdown" : "Safe Disconnect"}</DialogButton>}
     {!startRequest && !statusOnly && <DialogButton style={{width:"100%",minWidth:0,padding:"8px",border:"1px solid #39d8ff",borderRadius:8,background:"#112434",color:"#f4f7fb"}} disabled={!view.action || busy || uncertain.current} onClick={()=>confirm()}>{busy ? "Working…" : uncertain.current ? "Checking previous request" : view.label}</DialogButton>}
-    <p style={{margin:"8px 0 0"}}>{disconnectComplete
+    <p style={{margin:"8px 0 0"}}>{warningMessage ?? (disconnectComplete
       ? "Unplug the eGPU now. Do not leave the powered dock attached in this state."
       : intent === "sleep" && reading?.status?.code === "dock_power.unplug_required"
       ? "Unplug only after this prompt appears. Sleep waits for verified physical absence."
-      : "Keep the cable connected. Physical unplug is not yet verified."}</p>
+      : "Keep the cable connected. Physical unplug is not yet verified.")}</p>
   </div>;
 }

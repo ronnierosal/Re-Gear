@@ -98,6 +98,20 @@ class IntentFilesystemTests(unittest.TestCase):
         self.assertFalse(self.store.bind(*ARGS))
         self.assertFalse(self.store.consume(*ARGS))
 
+    def test_sleep_after_disconnect_binds_once_to_exact_software_down_claim(self):
+        self.claim.record(ARGS[0], 'software_down')
+        expected = self.claim.load()
+        session = '1' * 64 + ':' + 'a' * 32
+        self.assertTrue(self.store.bind_sleep_after_disconnect(
+            expected, session, ARGS[5], ARGS[6]))
+        self.assertFalse(self.store.bind_sleep_after_disconnect(
+            expected, session, ARGS[5], ARGS[6]))
+        self.assertTrue(self.store.consume(
+            expected.operation, expected.binding, expected.generation,
+            'sleep', session, ARGS[5], ARGS[6]))
+        self.assertFalse(self.store.bind_sleep_after_disconnect(
+            replace(expected, generation='changed'), session, ARGS[5], ARGS[6]))
+
     def test_corrupt_or_unsafe_record_refused(self):
         self.store.bind(*ARGS)
         self.claim.record(ARGS[0], 'software_down')
