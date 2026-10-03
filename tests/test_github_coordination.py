@@ -268,9 +268,13 @@ class TaskTests(unittest.TestCase):
                     return {"default_branch": "main"}
                 if path == "collaborators/writer/permission":
                     return {"permission": "write"}
-                if path == "issues/444/labels":
-                    self.labels = [{"name": name} for name in payload["labels"]]
+                if path == "issues/444/labels" and method == "POST":
+                    self.labels += [{"name": name} for name in payload["labels"]]
                     return self.labels
+                if path.startswith("issues/444/labels/") and method == "DELETE":
+                    gone = c.urllib.parse.unquote(path.rsplit("/", 1)[1])
+                    self.labels = [label for label in self.labels if label["name"] != gone]
+                    return None
                 if path == "issues/444":
                     if method == "PATCH":
                         self.body = payload["body"]

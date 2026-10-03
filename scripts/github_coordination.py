@@ -8,6 +8,7 @@ import json
 import os
 import re
 import subprocess
+import urllib.parse
 import sys
 from pathlib import Path
 
@@ -15,15 +16,43 @@ BLOCK = re.compile(r"^```regear-task[ \t]*\r?\n(.*?)^```[ \t]*$", re.M | re.S)
 SHA = re.compile(r"[0-9a-f]{40}")
 ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,99}")
 ACTIVE = {"claimed", "in-progress", "blocked", "pr-open", "software-validated",
+          "review-requested", "changes-requested",
           "hardware-required", "hardware-validated", "ready-to-merge"}
+# Record fields an exact-candidate result is bound to, and the evidence fields
+# that must not survive a change of any of them.
+CANDIDATE_BINDING = ("class", "hardware", "branch", "scope", "agent", "behavior", "procedure_approval",
+                     "validation", "bug", "regression")
+# Absent and the default are the same acceptance contract.
+BINDING_DEFAULTS = {"bug": False}
+EVIDENCE = ("software", "review", "review_request", "hardware_evidence")
+# Cross-agent review: the implementing family (Claude or Codex) never reviews
+# itself. REVIEWER_FOR is the default routing; any agent of the opposite
+# family may review.
+FAMILY = {"claude": "claude", "codex-cloud": "codex", "codex-local": "codex"}
+REVIEWER_FOR = {"claude": "codex-cloud", "codex-cloud": "claude", "codex-local": "claude"}
+
+
+def opposite_family(task_agent, reviewer_agent):
+    return (task_agent in FAMILY and reviewer_agent in FAMILY
+            and FAMILY[reviewer_agent] != FAMILY[task_agent])
+# States that bind software evidence to one exact candidate head/base.
+CANDIDATE = {"software-validated", "review-requested", "changes-requested",
+             "hardware-required", "hardware-validated", "ready-to-merge"}
 TERMINAL = {"merged", "closed", "cancelled"}
+# Candidate states routed to or resting on a review; a record leaves them
+# only through an explicit restart such as `software-validated`.
+REVIEWED_STATES = {"review-requested", "changes-requested", "hardware-required", "hardware-validated",
+                   "ready-to-merge"}
 LABELS = (["agent-task"] + [f"task:{state}" for state in sorted(ACTIVE | TERMINAL | {"backlog"})]
           + [f"agent:{agent}" for agent in ("codex-cloud", "claude", "codex-local")]
           + [f"risk:{risk}" for risk in "ABCD"]
           + ["hardware:required", "hardware:not-required"])
 FIELDS = {"schema", "owner", "agent", "branch", "status", "class", "hardware",
           "validation", "scope", "revision", "bug", "regression", "behavior",
-          "software", "review", "hardware_evidence", "procedure_approval", "transfer"}
+          "software", "review", "hardware_evidence", "procedure_approval", "transfer",
+          "review_request", "auto_merge", "integration"}
+OPTIONAL = {"bug", "regression", "behavior", "software", "review", "hardware_evidence",
+            "procedure_approval", "transfer", "review_request", "auto_merge", "integration"}
 
 
 def require(ok, message):
@@ -48,9 +77,7 @@ def load_record(text):
 def validate(record):
     require(isinstance(record, dict), "record must be an object")
     require(not set(record) - FIELDS, "unknown record fields")
-    required = FIELDS - {"bug", "regression", "behavior", "software", "review",
-                         "hardware_evidence", "procedure_approval", "transfer"}
-    require(required <= set(record), "missing required fields")
+    require(FIELDS - OPTIONAL <= set(record), "missing required fields")
     require(type(record["schema"]) is int and record["schema"] == 1, "schema must be 1")
     require(type(record["revision"]) is int and record["revision"] > 0, "invalid revision")
     require(record["agent"] in {"codex-cloud", "claude", "codex-local"}, "invalid agent")
@@ -76,7 +103,20 @@ def validate(record):
         require(nonempty(record.get("regression")), "bug requires regression statement")
     if record["class"] in {"C", "D"}:
         require(record["hardware"] == "required", "C/D require hardware")
-    if record["status"] in {"software-validated", "hardware-required", "hardware-validated", "ready-to-merge"}:
+    require(type(record.get("auto_merge", True)) is bool, "auto_merge must be boolean")
+    request = record.get("review_request")
+    if isinstance(request, dict) and "reviewer_agent" in request:
+        # Routing metadata cannot weaken the opposite-family review policy.
+        require(isinstance(request["reviewer_agent"], str)
+                and opposite_family(record["agent"], request["reviewer_agent"]),
+                "review_request.reviewer_agent must be the opposite agent family")
+    for name in ("review_request", "integration"):
+        item = record.get(name, {})
+        require(isinstance(item, dict), f"{name} must be an object")
+        for key in ("head", "base", "sha"):
+            require(key not in item or (isinstance(item[key], str) and SHA.fullmatch(item[key])),
+                    f"invalid {name} {key}")
+    if record["status"] in CANDIDATE:
         item = record.get("software", {})
         require(isinstance(item, dict) and isinstance(item.get("head"), str)
                 and SHA.fullmatch(item["head"]) and isinstance(item.get("base"), str)
@@ -130,6 +170,33 @@ def update(old, new, expected_revision, others):
         require(new.get("transfer") == dict(offer, accepted=True), "transfer acceptance required")
     elif old["agent"] != new["agent"]:
         raise ValueError("agent change requires ownership transfer")
+    if old["owner"] is not None:
+        # Evidence is bound to the classification, scope, branch and acceptance
+        # contract (validation, bug/regression) it was gathered under. Changing
+        # any of them must not carry that evidence into a weaker gate (e.g. a
+        # class D candidate rewritten as class A).
+        changed = [key for key in CANDIDATE_BINDING
+                   if old.get(key, BINDING_DEFAULTS.get(key)) != new.get(key, BINDING_DEFAULTS.get(key))]
+        if changed:
+            require(new["status"] not in CANDIDATE and not any(name in new for name in EVIDENCE),
+                    f"changing {', '.join(changed)} must drop candidate evidence and leave candidate states")
+        # `review_request` marks a review as workflow-ingested, which binds it
+        # to its live `regear-review` comment. Removing or changing it must not
+        # turn that review into grandfathered evidence that survives an edit.
+        request = old.get("review_request")
+        if request is not None and new.get("review_request") != request:
+            replacement = new.get("review_request") or {}
+            software = new.get("software") or {}
+            # A request for a new candidate (new head or base, matching new
+            # software evidence) is a restart: evidence for the old one is gone.
+            new_candidate = ((replacement.get("head"), replacement.get("base"))
+                             != (request.get("head"), request.get("base"))
+                             and (replacement.get("head"), replacement.get("base"))
+                             == (software.get("head"), software.get("base")))
+            require(not any(name in new for name in ("review", "hardware_evidence"))
+                    and (new["status"] not in REVIEWED_STATES
+                         or (new_candidate and new["status"] == "review-requested")),
+                    "changing review_request must drop review/hardware evidence and leave reviewed states")
     collision(new, others)
     return new
 
@@ -283,6 +350,7 @@ def publish(github, pr, tasks, open_prs=None):
         "state": state, "context": "coordination/pr", "description": detail[:140],
         "target_url": pr["html_url"],
     })
+    return state, detail
 
 
 def refresh(github):
@@ -312,16 +380,35 @@ def trusted(github, event):
 
 
 
+MIRROR_NAMESPACES = ("task:", "agent:", "risk:", "hardware:")
+
+
+def record_mirrors(record):
+    return [f"task:{record['status']}", f"agent:{record['agent']}",
+            f"risk:{record['class']}", f"hardware:{record['hardware']}"]
+
+
+def label_delta(current, wanted):
+    """Labels to add and mirror labels to remove. Never a whole-set
+    replacement, so a label added concurrently (e.g. merge-hold) survives."""
+    add = [label for label in wanted if label not in current]
+    remove = [label for label in current if label.startswith(MIRROR_NAMESPACES) and label not in wanted]
+    return add, remove
+
+
+def sync_labels(github, number, wanted):
+    current = [x["name"] for x in github.api(f"issues/{number}")["labels"]]
+    add, remove = label_delta(current, wanted)
+    if add:
+        github.api(f"issues/{number}/labels", "POST", {"labels": add})
+    for label in remove:
+        github.api(f"issues/{number}/labels/{urllib.parse.quote(label, safe='')}", "DELETE")
+    return add, remove
+
+
 def mirror_labels(github, number, record):
-    # Replace only these mirror namespaces; unrelated labels survive.
-    issue = github.api(f"issues/{number}")
-    labels = [x["name"] for x in issue["labels"]
-              if not x["name"].startswith(("task:", "agent:", "risk:", "hardware:"))]
-    labels += [f"task:{record['status']}", f"agent:{record['agent']}",
-               f"risk:{record['class']}", f"hardware:{record['hardware']}"]
-    if "agent-task" not in labels:
-        labels.append("agent-task")
-    github.api(f"issues/{number}/labels", "PUT", {"labels": labels})
+    # Only the mirror namespaces change; unrelated labels survive.
+    sync_labels(github, number, ["agent-task"] + record_mirrors(record))
 
 def apply_event(github, event):
     trusted(github, event)
@@ -341,15 +428,27 @@ def apply_event(github, event):
         old = parse(issue["body"])
         new = update(old, proposed, revision, [(n, r) for n, r in github.tasks() if n != number])
         body = replace(issue["body"], new)
-    # Direct edits are outside the cooperative writer protocol. Detect observed drift.
-    require(github.api(f"issues/{number}")["body"] == issue["body"], "issue changed during update")
-    github.api(f"issues/{number}", "PATCH", {"body": body})
-    require(parse(github.api(f"issues/{number}")["body"]) == new, "update readback mismatch")
     try:
-        mirror_labels(github, number, new)
+        write_body(github, number, issue["body"], body, new)
     finally:
         refresh(github)  # GITHUB_TOKEN writes do not generate another workflow run.
     print(json.dumps({"issue": number, "record": new}))
+
+
+def write_body(github, number, observed, body, new):
+    """Guarded write of one issue body, then read back and mirror labels.
+
+    `observed` is the body the caller derived `new` from; a different current
+    body refuses the write. GitHub offers no conditional PATCH, so this is not
+    atomic by itself: it is safe because every record writer (dispatch workflow
+    and reconciler) runs in the one `github-task-record-writer` concurrency
+    group. A human edit between the check and the PATCH is still possible and
+    is the documented cooperative-guard limit."""
+    # Direct edits are outside the cooperative writer protocol. Detect observed drift.
+    require(github.api(f"issues/{number}")["body"] == observed, "issue changed during update")
+    github.api(f"issues/{number}", "PATCH", {"body": body})
+    require(parse(github.api(f"issues/{number}")["body"]) == new, "update readback mismatch")
+    mirror_labels(github, number, new)
 
 
 def main():

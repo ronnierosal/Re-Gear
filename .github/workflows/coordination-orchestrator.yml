@@ -1,0 +1,47 @@
+name: Coordination orchestrator
+# Level-triggered: every run recomputes all managed tasks from live GitHub
+# state, so a cancelled or replaced run loses nothing. Writes use the same
+# compare-and-swap issue update as the Agent coordination workflow.
+on:
+  workflow_run:
+    workflows: [CI, Privileged user delivery]
+    types: [completed]
+  pull_request_target:
+    types: [opened, synchronize, reopened, edited, closed, ready_for_review, converted_to_draft]
+  issue_comment:
+    types: [created, edited]
+  schedule:
+    - cron: "17,47 * * * *"
+  workflow_dispatch:
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+  statuses: write
+  checks: read
+  actions: write
+# The one serialized record-writer group, shared with Agent coordination, so no
+# two writers interleave a read-check-write. GitHub keeps one pending run per
+# group; a replaced reconcile loses nothing, and agents send durable intent as
+# `regear-update` comments rather than relying on a pending dispatch.
+concurrency:
+  group: github-task-record-writer
+  cancel-in-progress: false
+jobs:
+  reconcile:
+    runs-on: ubuntu-latest
+    steps:
+      # Never check out or execute pull-request code with this token.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - name: Reconcile managed tasks
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/coordination_orchestrator.py reconcile
+      - name: Report stuck work
+        if: ${{ always() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/coordination_orchestrator.py watchdog
