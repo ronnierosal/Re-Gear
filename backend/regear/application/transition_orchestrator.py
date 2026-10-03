@@ -21,6 +21,7 @@ from ..domain.transition_journal import (
     JournalEventKind,
     TransitionJournal,
     append_journal_entry,
+    valid_boot_id,
 )
 from ..ports.runtime_transition import (
     DeadlineWaitPort,
@@ -60,8 +61,10 @@ class TransitionOrchestrator:
         waiter: DeadlineWaitPort,
         occurred_at: Callable[[], str] = _utc_now,
         policy: StrictRuntimeTransitionPolicy | None = None,
+        read_boot_id: Callable[[], str] | None = None,
     ) -> None:
         self._observations = observations
+        self._read_boot_id = read_boot_id
         self._mechanism = mechanism
         self._journal_store = journal_store
         self._clock = clock
@@ -103,7 +106,12 @@ class TransitionOrchestrator:
                 True,
             )
 
-        journal = TransitionJournal(plan.plan_id, plan.request_id)
+        try:
+            boot = self._read_boot_id() if self._read_boot_id else ""
+        except Exception:
+            boot = ""
+        journal = TransitionJournal(plan.plan_id, plan.request_id,
+            origin_boot_id=boot if valid_boot_id(boot) else "")
         try:
             journal = self._append_save(
                 journal,
