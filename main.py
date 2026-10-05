@@ -2904,6 +2904,17 @@ class Plugin:
                                 for value in remaining.values())
                         and sum(remaining.values()) <= 1024):
                     details['remaining_pci'] = dict(remaining)
+        timings = getattr(runtime, 'teardown_timings_ms', None)
+        if type(timings) is dict:
+            bounded = {name: value for name, value in timings.items()
+                       if type(name) is str and name in {
+                           'usb_remove', 'authorization_hold', 'deauthorization_write', 'pci_settle'}
+                       and type(value) is int and 0 <= value <= 7200000}
+            if bounded:
+                details['timings_ms'] = bounded
+        observations = getattr(runtime, 'settle_observations', None)
+        if type(observations) is int and 0 <= observations <= 71:
+            details['settle_observations'] = observations
         self._whole_dock_teardown_details = details
 
     def _run_whole_dock_trial(self, operation: str, expected_attachment: str = "", *, power_request=None):
