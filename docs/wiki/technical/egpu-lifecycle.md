@@ -1,13 +1,12 @@
 # eGPU lifecycle: baseline and acceptance
 
-Re-Gear's ordinary **Safe Disconnect** journey has recorded hardware passes on
-v0.3.98 (the preserved reference), a 0.3.127 maintainer report and a supervised
-0.3.129 trial, all on one configuration. Merged source, packaged as local development
-artifact 0.3.154, adds first-time authorization, staged connection progress, a still-connected
-authorization hold, and guarded **Disconnect + Sleep** and **Safe Disconnect +
-Shutdown** wiring. It is built and software-validated only; see
-[its status record](#development-build-03154-built-not-yet-hardware-tested).
-Repeatability, other hardware, sleep and shutdown are not established.
+Development build **0.3.180 is installed and loaded**, verified against source
+`d1ee13dc54db1f789eaec683717072ab1090f3a8` and the unchanged reviewed ZIP.
+On the recorded test configuration, two consecutive connection/TV/Safe Disconnect
++ Sleep cycles were user-observed successes. A separate retained request has
+instrumented terminal and timing evidence. This is a bounded working checkpoint,
+not complete Class D acceptance, general hardware support or a public release.
+See the [current-state authority](../../CURRENT_STATE.md#installed-03180-working-checkpoint--october-5-2026-utc).
 
 ## For players — no technical background needed
 
@@ -22,13 +21,108 @@ A newer source-only foundation can observe cooling data and classify a prepared,
 still-connected state. It is not wired to the player interface or production
 disconnect path, so it does not change the current player instructions.
 
-Build 0.3.154 has not been installed on a handheld yet. Until it is, treat its new
-sleep, shutdown and authorization behavior as untested, and keep following the
-[eGPU player guide](../player/egpu.md).
+On the maintainer's recorded setup, the connection, TV picture, Safe Disconnect
+and sleep journey worked twice in succession. That result applies to this exact
+build and configuration. Shutdown, next-boot cleanup, eligible acknowledgement,
+failure recovery and hiding the popup while a request is pending still need
+separate checks. Follow the [eGPU player guide](../player/egpu.md) and the exact
+supervised build instructions; software reconnect stays excluded.
 
 ## Technical details — for advanced users and contributors
 
+### Installed 0.3.180: bounded working checkpoint
+
+The [October 5 UTC checkpoint](https://github.com/ronnierosal/Re-Gear/issues/464#issuecomment-5987964708)
+verifies installed disk source, live backend and loaded frontend against the
+immutable development-profile `Re-Gear-0.3.180.zip` (1,371,670 bytes), source
+`d1ee13dc54db1f789eaec683717072ab1090f3a8`, SHA-256
+`2a36f021f8aa02c036d4192c1f0f61a930bac315589476fa0f39918d619a2c13`.
+Two consecutive connection/TV/Safe Disconnect + Sleep successes are separately
+user-observed. Normal B-close/reopen and controller navigation were confirmed;
+four attached/absent GPU-display captures share one boot identity.
+
+The [superseding terminal/timing addendum](https://github.com/ronnierosal/Re-Gear/issues/464#issuecomment-5989274483)
+reports `sleep_cycle_observed`, verified physical absence, completed teardown,
+**one accepted suspend request**, no retained whole-dock claim, idle journal/no
+acknowledgement required, and Portable/internal GPU/eGPU absent/no blockers.
+This independently instruments one retained request, not two distinct cycles;
+it supersedes earlier unavailable suspend/terminal/timing statements.
+
+| Latest retained-request measurement | Duration |
+|---|---|
+| Before power verification | 40.9 seconds |
+| Dock teardown | 30.9 seconds |
+| Portable return | 6.0 seconds |
+| GPU release | 3.6 seconds |
+
+Teardown is the largest measured phase. Do not add these potentially overlapping
+durations or attribute them to the first cycle without request-identity matching.
+No historical latency regression or inner teardown cause is established.
+Separate local timing/terminal archive SHA-256:
+`a9512da5661e5a2d6f3cf45fb37f3aa7462e21b646a56cb8b715cb11f8f16d53`.
+Original ZIP/checkpoint archives remain unchanged; private photos/raw device
+records are not published.
+
+Shutdown, next-boot acknowledgement retirement, genuine eligible acknowledgement
+activation, failure recovery and Hide-while-pending remain open. Normal
+B-close/reopen is not pending-warning F6 or eligible acknowledgement acceptance.
+[#464](https://github.com/ronnierosal/Re-Gear/issues/464) remains Class D,
+hardware-required, with separate approved-procedure and full exact-candidate
+acceptance gates. The residual expired deauthorized sleep alarm remains a
+fail-closed limitation until correlated absence; these successes do not qualify
+that negative path. Software reconnect is excluded. See the
+[technical authority](../../CURRENT_STATE.md#installed-03180-working-checkpoint--october-5-2026-utc)
+for milestone #54's accepted successor and the still-open #438/#136/#161
+obligations; unresolved PRs are not closed by this checkpoint.
+
+### Candidate 0.3.180: software validation only
+
+Historical October 3 software-review snapshot. Installation and bounded hardware
+observations are superseded by the October 5 record above; all original software
+evidence and outstanding acceptance boundaries are retained below.
+
+As of October 3, 2026, source `d1ee13dc54db1f789eaec683717072ab1090f3a8` was
+reviewed against merged main `cb8f0199f3aa5954a66b1061934fff70c696abdd`.
+The immutable development-profile archive is `Re-Gear-0.3.180.zip`, 1,371,670
+bytes, SHA-256
+`2a36f021f8aa02c036d4192c1f0f61a930bac315589476fa0f39918d619a2c13`.
+The [artifact/test handoff](https://github.com/ronnierosal/Re-Gear/issues/464#issuecomment-5972496453),
+[combined software PASS](https://github.com/ronnierosal/Re-Gear/issues/448#issuecomment-5972339102),
+[exact final-head software PASS](https://github.com/ronnierosal/Re-Gear/issues/448#issuecomment-5972475393),
+[CI PASS](https://github.com/ronnierosal/Re-Gear/actions/runs/37146099028) and
+[privileged delivery PASS](https://github.com/ronnierosal/Re-Gear/actions/runs/37146099055)
+are separate from device acceptance.
+
+The producer/reviewer records report both profiles' 5,130 backend tests with 33
+skips each, 1,382 frontend tests per profile, 49 golden checks, architecture,
+compilation, typecheck, builds and package validation passing. F1–F6 and factual
+Portable GPU presentation fixes are software-validated: the combined candidate
+repairs retained-result, warning and sleep-cleanup paths while preserving exact
+request/attempt identity, ownership, strict absence and durability guards.
+These are attributed candidate software results, not this documentation worker's
+runtime or hardware acceptance.
+
+The residual expired deauthorized sleep request can keep its unplug alarm until
+correlated physical absence is verified. Native acknowledgement visibility and
+controller focus, real F6 warning close/reopen, and the exact-candidate connection,
+TV, disconnect, physical reconnect, sleep/wake, shutdown, boot and power checks
+remain open. [Task #464](https://github.com/ronnierosal/Re-Gear/issues/464) remains
+**Class D, hardware-required**: an explicitly approved supervised procedure and
+exact-candidate hardware acceptance are required before the normal integration
+gates can complete. Neither 0.3.179 nor 0.3.180 has installed/hardware PASS;
+0.3.173 remains the last recorded installed build, without a fresh readback here.
+Software reconnect stays excluded. No test PASS grants unplug clearance, hardware
+support, deployment authority or public-release readiness.
+
+The [current-state authority](../../CURRENT_STATE.md#software-validated-candidate-03180--october-3-2026)
+records the candidate separately from every historical build below. The 0.3.154
+artifact and acceptance matrix remain historical snapshots; their outstanding
+checks and older observations do not certify 0.3.180.
+
 ### Development build 0.3.154: built, not yet hardware-tested
+
+Historical 0.3.154 snapshot; retained identity, source composition and validation
+limits below apply to that artifact rather than the current candidate.
 
 | Build field | Recorded value |
 |---|---|
@@ -39,7 +133,7 @@ sleep, shutdown and authorization behavior as untested, and keep following the
 | Composition | `origin/main` `9dcdaff` + [PR #418](https://github.com/ronnierosal/Re-Gear/pull/418) head `f98f8d0` + Safe Disconnect authorization-hold fix `5887900` |
 | Status | Local development artifact, built and software-validated. **Not installed, deployed, released or hardware-tested** |
 
-All 0.3.154 lifecycle source is now merged. Truthful connection status
+At this historical checkpoint, all 0.3.154 lifecycle source was merged. Truthful connection status
 ([PR #420](https://github.com/ronnierosal/Re-Gear/pull/420)) and the stage-driven
 connection popup ([PR #421](https://github.com/ronnierosal/Re-Gear/pull/421))
 merged first. [PR #425](https://github.com/ronnierosal/Re-Gear/pull/425) then
@@ -47,7 +141,7 @@ integrated the [PR #417](https://github.com/ronnierosal/Re-Gear/pull/417)/[PR #4
 stack (first-time USB4 authorization, PipeWire sink readiness, production
 sleep/shutdown admission and UI wiring, multi-connector display aggregation) and
 the authorization-hold fix `5887900` as merged `main` `fb334f2`. The package
-version on `main` remains 0.3.153. `Re-Gear-0.3.154.zip` at build revision
+version on `main` at that checkpoint was 0.3.153. `Re-Gear-0.3.154.zip` at build revision
 `f6be3ed` is a separate local development artifact built from the same source.
 
 Evidence tiers used in the table:
@@ -92,8 +186,9 @@ Evidence tiers used in the table:
 | Broader backend suite on Windows | Known POSIX directory-fsync failures retained; these are platform limits, not evidence of an eGPU regression |
 
 The authority for installed and hardware results remains
-[CURRENT_STATE](../../CURRENT_STATE.md). When 0.3.154 is installed and read back,
-its result belongs there first; this section is then updated from that record.
+[CURRENT_STATE](../../CURRENT_STATE.md). Any later installed or hardware result
+belongs there with its exact build identity; this historical snapshot does not
+substitute for that evidence.
 
 ### Preserved hardware baseline: v0.3.98
 
@@ -154,6 +249,9 @@ Authoritative source and validation: [cooling observer](../../../backend/regear/
 [decision tests](../../../tests/test_prepared_egpu_disconnect.py).
 
 ### Lifecycle acceptance matrix
+
+Historical source/acceptance snapshot. The next acceptance target is the exact
+0.3.180 candidate above; the original tested revisions and gaps remain below.
 
 Entry points below were inspected in merged source `9421c6f` (the sleep/shutdown row
 was re-checked against merged `fb334f2`), with the later

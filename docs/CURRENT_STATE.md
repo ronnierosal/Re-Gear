@@ -1,5 +1,112 @@
 # Current state
 
+## Installed 0.3.180 working checkpoint — October 5, 2026 UTC
+
+The [supervised checkpoint](https://github.com/ronnierosal/Re-Gear/issues/464#issuecomment-5987964708)
+records exact 0.3.180 disk source, live backend and loaded frontend readback
+matching the reviewed development archive on the recorded Ally X + GPD G1
+configuration. Ronnie requested preserving this working/golden checkpoint.
+It supersedes 0.3.173 as the last recorded installed build; it is not a public
+release, general hardware qualification or complete Class D acceptance.
+
+| Identity | Preserved value |
+|---|---|
+| Source | `d1ee13dc54db1f789eaec683717072ab1090f3a8` |
+| Development archive | `Re-Gear-0.3.180.zip`, 1,371,670 bytes |
+| ZIP SHA-256 | `2a36f021f8aa02c036d4192c1f0f61a930bac315589476fa0f39918d619a2c13` |
+
+Two consecutive connection → TV → Safe Disconnect + Sleep cycles were
+**user-observed successes**. Normal B-close/reopen and controller navigation
+were user-confirmed. Bounded captures observed external GPU/display at 04:00:52,
+external GPU absent/internal display at 04:01:50, absent eGPU/internal display
+post-wake at 04:03:11, and second attachment/external display at 04:04:35 UTC.
+These four snapshots share one boot identity. User-reported button/unplug/sleep
+and wake times are observations, not measured runtime phase durations.
+
+The [terminal/timing addendum](https://github.com/ronnierosal/Re-Gear/issues/464#issuecomment-5989274483)
+**supersedes earlier unavailable suspend, terminal and timing evidence wording**.
+Latest retained-request live status independently reports `sleep_cycle_observed`,
+verified physical absence, completed teardown, **one accepted suspend request**,
+no retained whole-dock claim, idle journal/no acknowledgement required, and
+Portable/internal GPU/eGPU absent/no blockers. This instruments one retained
+request; it does not independently instrument both user-observed cycles.
+
+| Latest retained-request measurement | Duration |
+|---|---|
+| Before power verification | 40.9 seconds |
+| Dock teardown | 30.9 seconds |
+| Portable return | 6.0 seconds |
+| GPU release | 3.6 seconds |
+
+Teardown is the largest reported phase. Durations are not assumed disjoint or
+additive; request identity must be matched before attributing these measurements
+to the first user-reported cycle. No historical latency regression or inner
+teardown cause is established. The separately retained local timing/terminal
+archive has SHA-256
+`a9512da5661e5a2d6f3cf45fb37f3aa7462e21b646a56cb8b715cb11f8f16d53`;
+the original ZIP and checkpoint archive remain unchanged. Private photos, raw
+paths and unsanitized device data are not public documentation artifacts.
+
+Shutdown, next-boot acknowledgement retirement, genuine eligible acknowledgement
+activation, failure recovery and Hide-while-pending remain untested by this
+sequence. Normal B-close/reopen does not establish pending-warning F6 behavior
+or eligible acknowledgement activation. [#464](https://github.com/ronnierosal/Re-Gear/issues/464)
+remains **Class D, hardware-required**, with separate approved-procedure and
+full exact-candidate acceptance gates. Software reconnect remains excluded;
+these observations do not authorize new device actions or source integration.
+
+[#54](https://github.com/ronnierosal/Re-Gear/issues/54) closed as a historical
+milestone after successor adoption at #464 revision 20
+([accepted run](https://github.com/ronnierosal/Re-Gear/actions/runs/37263974023)).
+[#438](https://github.com/ronnierosal/Re-Gear/pull/438),
+[#136](https://github.com/ronnierosal/Re-Gear/issues/136),
+[#161](https://github.com/ronnierosal/Re-Gear/issues/161) and other unresolved PRs
+retain their individual evidence and obligations. The absent-state warning copy
+remains tracked under [#450](https://github.com/ronnierosal/Re-Gear/issues/450).
+All earlier records below remain dated historical evidence.
+
+## Software-validated candidate 0.3.180 — October 3, 2026
+
+The immutable development-profile candidate is **built and software-validated**,
+not installed, hardware-accepted or released. Its source remains proposed in
+[draft PR #465](https://github.com/ronnierosal/Re-Gear/pull/465), separate from
+merged `main`. The last recorded installed build is **0.3.173**; this documentation
+refresh supplies no fresh device readback. Neither 0.3.179 nor 0.3.180 has an
+installed or hardware PASS.
+
+| Evidence field | Recorded value |
+|---|---|
+| Candidate source | `d1ee13dc54db1f789eaec683717072ab1090f3a8` |
+| Review base / merged main at review | `cb8f0199f3aa5954a66b1061934fff70c696abdd` |
+| Immutable archive | `Re-Gear-0.3.180.zip`, development profile, 1,371,670 bytes |
+| SHA-256 | `2a36f021f8aa02c036d4192c1f0f61a930bac315589476fa0f39918d619a2c13` |
+| Artifact and validation handoff | [Producer record, #464](https://github.com/ronnierosal/Re-Gear/issues/464#issuecomment-5972496453) |
+| Independent combined software review | [PASS at source `1b2c4f0`](https://github.com/ronnierosal/Re-Gear/issues/448#issuecomment-5972339102); [PASS at exact final head](https://github.com/ronnierosal/Re-Gear/issues/448#issuecomment-5972475393) |
+| Exact-head required CI | [CI PASS](https://github.com/ronnierosal/Re-Gear/actions/runs/37146099028); [privileged delivery PASS](https://github.com/ronnierosal/Re-Gear/actions/runs/37146099055) |
+
+The producer/reviewer records report both profiles' 5,130 backend tests with 33
+skips each, 1,382 frontend tests per profile, 49 golden checks, architecture,
+compilation, typecheck, builds and package validation passing. These are attributed
+software results, not documentation-worker runtime acceptance or hardware proof.
+F1–F6 and the factual Portable GPU presentation fixes are software-validated;
+[the combined PR](https://github.com/ronnierosal/Re-Gear/pull/465) describes their
+request/attempt, ownership, strict-absence and durability guards.
+
+The residual expired deauthorized sleep request can retain its unplug alarm until
+correlated physical absence is verified. Native acknowledgement visibility and
+controller focus, real F6 close/reopen behavior, and exact-candidate connection,
+TV, disconnect, physical reconnect, sleep/wake, shutdown, boot and power checks
+remain open. [Runtime task #464](https://github.com/ronnierosal/Re-Gear/issues/464)
+is **Class D, hardware-required**: an explicitly approved supervised procedure,
+exact-candidate hardware acceptance and the normal integration gates remain
+mandatory. Software reconnect remains excluded. No installation, deployment,
+physical trial or new support claim is authorized by these software passes.
+
+All historical hardware results below retain their original dates, builds,
+configuration and limits; none transfers to 0.3.180. See the
+[current Wiki summary](wiki/technical/current-state.md) and
+[lifecycle candidate boundary](wiki/technical/egpu-lifecycle.md#candidate-03180-software-validation-only).
+
 ## Current evidence summary — September 14, 2026
 
 The preserved eGPU lifecycle baseline is [v0.3.98](EGPU_0398_CHECKPOINT.md), source
