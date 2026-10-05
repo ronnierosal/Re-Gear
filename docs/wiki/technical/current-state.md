@@ -1,30 +1,23 @@
 # Current evidence and development state
 
-The current candidate is immutable development-profile **0.3.180**, built and
-software-validated at source `d1ee13dc54db1f789eaec683717072ab1090f3a8` against
-merged main `cb8f0199f3aa5954a66b1061934fff70c696abdd`. Its source is proposed in
-[draft PR #465](https://github.com/ronnierosal/Re-Gear/pull/465); it is **not
-installed, hardware-accepted or released**. The last recorded installed build
-remains **0.3.173**, with no fresh device readback in this update.
-The [technical authority](../../CURRENT_STATE.md#software-validated-candidate-03180--october-3-2026)
-records the exact artifact and evidence. Earlier hardware results remain bounded
-to their original builds and configuration.
+Development build **0.3.180 is installed and loaded**, verified against source
+`d1ee13dc54db1f789eaec683717072ab1090f3a8` and the unchanged reviewed ZIP.
+On the recorded test configuration, two consecutive connection/TV/Safe Disconnect
++ Sleep cycles were user-observed successes. A separate retained request has
+instrumented terminal and timing evidence. This is a bounded working checkpoint,
+not complete Class D acceptance, general hardware support or a public release.
+See the [current-state authority](../../CURRENT_STATE.md#installed-03180-working-checkpoint--october-5-2026-utc).
 
 ## For players — no technical background needed
 
 Re-Gear is still in development and has no supported public release.
 
-On the maintainer's single recorded test setup, the ordinary journey — return
-to the handheld, **Safe Disconnect**, unplug, plug back in, TV picture returns —
-has worked on earlier test builds. The disconnect-and-sleep journey has not yet
-worked on an installed build.
-
-Candidate 0.3.180 repairs software paths for retained display results, unplug
-warnings, sleep-request cleanup and factual Portable GPU status. These software
-checks do not establish how the native controls or lifecycle behave on a handheld.
-An expired deauthorized sleep request can keep its alarm until correlated physical
-absence is verified. The [lifecycle guide](egpu-lifecycle.md#candidate-03180-software-validation-only)
-records the remaining supervised checks and separate hardware gates.
+On the maintainer's recorded setup, the connection, TV picture, Safe Disconnect
+and sleep journey worked twice in succession. That result applies to this exact
+build and configuration. Shutdown, next-boot cleanup, eligible acknowledgement,
+failure recovery and hiding the popup while a request is pending still need
+separate checks. Follow the [eGPU player guide](../player/egpu.md) and the exact
+supervised build instructions; software reconnect stays excluded.
 
 A new build number is not the same as a tested build. A built package is not
 automatically installed, supported or safe on other hardware.
@@ -36,7 +29,56 @@ package**, **installed** (read back on the test handheld) and **supervised
 hardware result** (an observed outcome on that one configuration). None extends
 to other handhelds, docks, graphics cards or builds.
 
+### Installed 0.3.180: bounded working checkpoint
+
+The [October 5 UTC checkpoint](https://github.com/ronnierosal/Re-Gear/issues/464#issuecomment-5987964708)
+verifies installed disk source, live backend and loaded frontend against the
+immutable development-profile `Re-Gear-0.3.180.zip` (1,371,670 bytes), source
+`d1ee13dc54db1f789eaec683717072ab1090f3a8`, SHA-256
+`2a36f021f8aa02c036d4192c1f0f61a930bac315589476fa0f39918d619a2c13`.
+Two consecutive connection/TV/Safe Disconnect + Sleep successes are separately
+user-observed. Normal B-close/reopen and controller navigation were confirmed;
+four attached/absent GPU-display captures share one boot identity.
+
+The [superseding terminal/timing addendum](https://github.com/ronnierosal/Re-Gear/issues/464#issuecomment-5989274483)
+reports `sleep_cycle_observed`, verified physical absence, completed teardown,
+**one accepted suspend request**, no retained whole-dock claim, idle journal/no
+acknowledgement required, and Portable/internal GPU/eGPU absent/no blockers.
+This independently instruments one retained request, not two distinct cycles;
+it supersedes earlier unavailable suspend/terminal/timing statements.
+
+| Latest retained-request measurement | Duration |
+|---|---|
+| Before power verification | 40.9 seconds |
+| Dock teardown | 30.9 seconds |
+| Portable return | 6.0 seconds |
+| GPU release | 3.6 seconds |
+
+Teardown is the largest measured phase. Do not add these potentially overlapping
+durations or attribute them to the first cycle without request-identity matching.
+No historical latency regression or inner teardown cause is established.
+Separate local timing/terminal archive SHA-256:
+`a9512da5661e5a2d6f3cf45fb37f3aa7462e21b646a56cb8b715cb11f8f16d53`.
+Original ZIP/checkpoint archives remain unchanged; private photos/raw device
+records are not published.
+
+Shutdown, next-boot acknowledgement retirement, genuine eligible acknowledgement
+activation, failure recovery and Hide-while-pending remain open. Normal
+B-close/reopen is not pending-warning F6 or eligible acknowledgement acceptance.
+[#464](https://github.com/ronnierosal/Re-Gear/issues/464) remains Class D,
+hardware-required, with separate approved-procedure and full exact-candidate
+acceptance gates. The residual expired deauthorized sleep alarm remains a
+fail-closed limitation until correlated absence; these successes do not qualify
+that negative path. Software reconnect is excluded. See the
+[technical authority](../../CURRENT_STATE.md#installed-03180-working-checkpoint--october-5-2026-utc)
+for milestone #54's accepted successor and the still-open #438/#136/#161
+obligations; unresolved PRs are not closed by this checkpoint.
+
 ### Candidate 0.3.180: exact software evidence
+
+Historical October 3 software-review snapshot. Installation and bounded hardware
+observations are superseded by the October 5 record above; all original software
+evidence and outstanding acceptance boundaries are retained below.
 
 | Field | Recorded value |
 |---|---|
