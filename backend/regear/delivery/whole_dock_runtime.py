@@ -423,7 +423,10 @@ class WholeDockRuntime:
                             or not self._owned('tunnel_remove_intent')):
                         raise ValueError('dock_teardown.settle_admission_changed')
                     try:
-                        self.settle_observations += 1
+                        try:
+                            self.settle_observations = min(71, getattr(self, 'settle_observations', 0) + 1)
+                        except Exception:
+                            pass
                         self.observe()
                         self.tunnel_stage = "completed"
                         return

@@ -155,3 +155,21 @@ class LatencyObservationTests(unittest.TestCase):
             case.writer.deauthorize.assert_called_once()
         finally:
             case.doCleanups()
+
+    def test_counter_storage_failure_cannot_change_teardown_success(self):
+        case = fixtures.RuntimeTests()
+        case.setUp()
+        try:
+            class CounterUnavailable(type(case.runtime)):
+                @property
+                def settle_observations(self):
+                    raise RuntimeError('diagnostic counter unavailable')
+            case.runtime.__class__ = CounterUnavailable
+            case.runtime._wait = Mock()
+            result = case.runtime.execute('operation', case.approval)
+            self.assertTrue(result.software_down)
+            self.assertFalse(result.safe_to_unplug)
+            case.writer.deauthorize.assert_called_once()
+            case.runtime._wait.assert_not_called()
+        finally:
+            case.doCleanups()
