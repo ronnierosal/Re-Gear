@@ -27,8 +27,8 @@ class MainPhysicalUnplugShutdownTests(unittest.TestCase):
             binding=NS(binding='b' * 64, generation='c' * 64))
         self.admission = {'held': True}
         self.plugin._whole_dock_trial_lease = Mock()
-        self.plugin._whole_dock_trial_lease.status.return_value = NS(active=True)
-        self.plugin._whole_dock_trial_lease.release.return_value = NS(active=False)
+        self.plugin._whole_dock_trial_lease.status.return_value = NS(active=True, error='')
+        self.plugin._whole_dock_trial_lease.release.return_value = NS(active=False, error='')
         self.plugin._whole_dock_trial_runtime = (self.runtime, self.admission)
         self.plugin._dock_power_portable_verified = Mock(return_value=True)
         self.plugin._restore_remembered_authorization_after_absence = Mock(return_value=False)
@@ -42,6 +42,7 @@ class MainPhysicalUnplugShutdownTests(unittest.TestCase):
         self.root = Path(self.directory.name)
         self.root.chmod(0o700)
         fd = os.open(self.root, os.O_RDONLY | os.O_DIRECTORY)
+        self.fd = fd
         self.addCleanup(os.close, fd)
         from regear.delivery.dock_power_intent import DockPowerIntentStore
         self.store = DockPowerIntentStore(self.root, owner_uid=os.geteuid(), trusted_directory_fd=fd)
@@ -140,7 +141,8 @@ class MainPhysicalUnplugShutdownTests(unittest.TestCase):
         def stop(_): self.plugin._unloading = True
         self.assertFalse(self.run_waiter(strict=False, poll=stop).requested)
         self.power.request_poweroff.assert_not_called()
-        self.assertFalse(json.loads(self.path.read_bytes())['consumed'])
+        self.assertFalse(self.path.exists())
+        self.assertEqual(self.store.load().stage, 'software_down')
 
     def test_ambiguous_power_submission_consumed_never_replayed(self):
         self.power.request_poweroff.side_effect = TimeoutError()
@@ -162,7 +164,8 @@ class MainPhysicalUnplugShutdownTests(unittest.TestCase):
         result = self.run_waiter(poll=lambda _: None)
         self.assertEqual(result.code, 'dock_power.preflight_changed')
         self.power.request_poweroff.assert_not_called()
-        self.assertFalse(json.loads(self.path.read_bytes())['consumed'])
+        self.assertFalse(self.path.exists())
+        self.assertEqual(self.store.load().stage, 'software_down')
 
     def test_absence_lost_during_consumption_retains_attempt_and_refuses_power(self):
         consume = self.store.consume
@@ -269,6 +272,95 @@ class MainPhysicalUnplugShutdownTests(unittest.TestCase):
         self.assertEqual(second['code'], 'dock_teardown.no_trial')
         self.assertEqual(second['attachment_token'], token)
         self.power.request_poweroff.assert_not_called()
+
+    def recover_same_process(self, *, expected=True):
+        """Real production absence reconciler and gate, same plugin/store/session."""
+        from regear.delivery.dock_mutation_gate import DockMutationGate
+        gate = DockMutationGate(self.root, owner_uid=os.geteuid(), trusted_directory_fd=self.fd)
+        self.plugin._dock_mutation_gate = lambda: gate
+        self.admission['held'] = False
+        self.plugin._whole_dock_trial_worker_alive = False
+        self.plugin._whole_dock_trial_status = {'schema_version': 1, 'busy': False,
+            'request_id': '3' * 32, 'safe_to_unplug': False, 'software_down': True,
+            'code': 'dock_power.preflight_changed', 'power_action': 'shutdown',
+            'route_action': 'whole_dock_shutdown', 'power_requested': False,
+            'ok': False, 'unplug_required': False}
+        self.plugin._release_capture_task = NS(done=lambda: True)
+        self.plugin._transition_journal_service = lambda: NS(status=lambda: NS(
+            durable=True, owner=NS(value='none')))
+        self.plugin._connection_topology.observe.side_effect = None
+        self.plugin._connection_topology.observe.return_value = NS(
+            transport_present=False, transport_absent_verified=True)
+        self.plugin._dock_power_portable_verified.return_value = True
+        self.plugin._discovery = object()
+        self.plugin._append_journey_event = Mock()
+        snapshot = NS(game_state=self.module.GameState.IDLE, gamescope=NS(running=True),
+            gpus=[NS(role=self.module.GpuRole.INTERNAL, present=True,
+                confidence=self.module.Confidence.VERIFIED)])
+        with ExitStack() as stack:
+            for name, value in (
+                ('DockPowerIntentStore', self.store), ('verified_transport_absent', True),
+                ('inner_removal_records_absent', True), ('read_boot_hash', self.boot),
+                ('resolve_runtime_profiles', NS(exact_host=True)),
+                ('resolve_gamescope_user', NS(ok=True, context=NS(uid=1000, username='fixture')))):
+                stack.enter_context(patch.object(self.module, name, return_value=value))
+            stack.enter_context(patch.object(self.module, 'GamescopeDiscovery'))
+            helper = stack.enter_context(patch.object(self.module, 'HeldTrialLauncher'))
+            helper.return_value.call.return_value = {'code': 'held_helper.settled', 'settled': True}
+            observation = stack.enter_context(patch.object(self.module, 'SnapshotTransitionObservationAdapter'))
+            observation.return_value.observe.return_value = NS(snapshot=snapshot)
+            power = stack.enter_context(patch.object(self.module, 'SystemPowerCommandRunner'))
+            result = self.plugin._reconcile_physically_disconnected_dock()
+            power.assert_not_called()
+        self.assertEqual(result, expected)
+        if not expected:
+            self.assertIsNotNone(self.store.load())
+            self.power.request_poweroff.assert_not_called()
+            return
+        self.assertIsNone(self.store.load())
+        with gate.admit(): pass
+        self.assertIsNone(self.plugin._whole_dock_trial_lease)
+        self.power.request_poweroff.assert_not_called()
+
+    def test_replug_dead_waiter_recovers_in_same_plugin_and_live_session(self):
+        observations = iter([NS(transport_present=False, transport_absent_verified=False),
+            NS(transport_present=True, transport_absent_verified=False)])
+        self.plugin._connection_topology.observe.side_effect = lambda: next(observations)
+        self.assertEqual(self.run_waiter(poll=lambda _: None).code, 'dock_power.preflight_changed')
+        self.recover_same_process()
+
+    def test_game_launch_dead_waiter_recovers_after_idle_without_plugin_restart(self):
+        self.plugin._connection_topology.observe.return_value = NS(
+            transport_present=True, transport_absent_verified=False)
+        def launch(_): self.plugin._dock_power_portable_verified.return_value = False
+        self.assertEqual(self.run_waiter(poll=launch).code, 'dock_power.preflight_changed')
+        self.recover_same_process()
+        token = '4' * 64 + ':' + '5' * 64
+        self.plugin._fresh_unclaimed_whole_dock_attachment_token = Mock(return_value=token)
+        status = asyncio.run(self.plugin.get_egpu_disconnect_status('whole_dock_trial'))
+        self.assertEqual(status['code'], 'dock_teardown.no_trial')
+        self.assertEqual(status['attachment_token'], token)
+
+    def test_dead_waiter_archival_fault_retries_only_in_full_same_process_absence_recovery(self):
+        self.plugin._connection_topology.observe.return_value = NS(
+            transport_present=True, transport_absent_verified=False)
+        def launch(_): self.plugin._dock_power_portable_verified.return_value = False
+        with patch.object(self.store, 'release_bound_shutdown', side_effect=OSError('publication failed')):
+            self.assertEqual(self.run_waiter(poll=launch).code, 'dock_power.preflight_changed')
+        self.assertTrue(self.path.exists())
+        self.assertTrue(self.plugin._dock_shutdown_wait['finished'])
+        self.recover_same_process()
+
+    def test_live_or_foreign_waiter_never_authorizes_same_session_record_cleanup(self):
+        claim = self.store.load()
+        for delta in ({'finished': False}, {'phase': 'waiting'}, {'runtime': object()},
+                      {'admission': {}}, {'claim': None}):
+            self.plugin._dock_shutdown_wait = {'finished': True, 'phase': 'finished',
+                'request_id': '3' * 32, 'request': self.request, 'claim': claim,
+                'runtime': self.runtime, 'admission': self.admission, **delta}
+            self.recover_same_process(expected=False)
+            self.assertTrue(self.path.exists())
+            self.plugin._whole_dock_trial_lease.release.assert_not_called()
 
 
 if __name__ == '__main__': unittest.main()

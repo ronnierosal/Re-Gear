@@ -2086,6 +2086,12 @@ class Plugin:
                         store.reconcile_stranded_shutdown_wait(
                             claim, live_session,
                             lambda: guard(require_power_intent=False))
+                        finished = self._finished_shutdown_request(claim)
+                        if finished is not None:
+                            store.release_bound_shutdown(claim, finished.session,
+                                finished.requested_at, finished.deadline,
+                                lambda: (self._finished_shutdown_request(claim) is finished
+                                    and guard(require_power_intent=False)))
                     except Exception:
                         # Reconciliation is best effort; the full guard below
                         # still owns archival admission.
@@ -2146,12 +2152,20 @@ class Plugin:
                 lease = getattr(self, '_whole_dock_trial_lease', None)
                 trial = getattr(self, '_whole_dock_trial_runtime', None)
                 terminal = getattr(self, '_whole_dock_trial_status', None)
+                finished_power = self._finished_shutdown_request(claim)
+                finished_wait = getattr(self, '_dock_shutdown_wait', None)
+                power_terminal_owned = (finished_power is not None
+                    and type(terminal) is dict and type(finished_wait) is dict
+                    and finished_wait.get('request_id') == terminal.get('request_id')
+                    and terminal.get('route_action') == 'whole_dock_shutdown'
+                    and terminal.get('power_action') == 'shutdown'
+                    and terminal.get('power_requested') is False)
                 if (lease is not None and type(trial) is tuple and len(trial) == 2
                         and type(terminal) is dict
-                        and terminal.get('request_id') == claim.operation
+                        and (terminal.get('request_id') == claim.operation or power_terminal_owned)
                         and getattr(trial[0], '_operation', None) == claim.operation):
                     self._whole_dock_absent_archived_trial = (
-                        claim.operation, lease, trial, terminal)
+                        terminal.get('request_id'), lease, trial, terminal)
                 self._archival_refusal = None
                 try:
                     self._append_journey_event(severity='info',
@@ -2876,6 +2890,27 @@ class Plugin:
         finally:
             wait['lock'].release()
 
+    def _finished_shutdown_request(self, claim):
+        """Proof for record-only cleanup of this process's exact ended waiter."""
+        wait = getattr(self, '_dock_shutdown_wait', None)
+        trial = getattr(self, '_whole_dock_trial_runtime', None)
+        if (type(wait) is not dict or wait.get('finished') is not True
+                or wait.get('phase') not in ('finished', 'consuming')
+                or type(trial) is not tuple or len(trial) != 2
+                or wait.get('runtime') is not trial[0] or wait.get('admission') is not trial[1]
+                or type(claim) is not WholeDockClaim or claim != wait.get('claim')):
+            return None
+        request = wait.get('request')
+        if (type(request) is not DockPowerRequest or request.action != 'shutdown'
+                or request.operation != claim.operation
+                or getattr(trial[0], '_operation', None) != claim.operation
+                or (getattr(getattr(trial[0], 'binding', None), 'binding', None),
+                    getattr(getattr(trial[0], 'binding', None), 'generation', None))
+                    != (claim.binding, claim.generation)
+                or getattr(self, '_dock_power_session', None) != request.session):
+            return None
+        return request
+
     def _shutdown_after_physical_unplug(self, request, runtime, admission, power_store):
         """Hold one prepared transaction until absence, expiry or explicit cancel.
 
@@ -2889,7 +2924,8 @@ class Plugin:
         claim = WholeDockClaim(request.operation, runtime.binding.binding,
             runtime.binding.generation, 'software_down')
         wait = {'request_id': public_id, 'request': request, 'lock': threading.Lock(),
-            'phase': 'waiting', 'cancelled': False}
+            'phase': 'waiting', 'cancelled': False, 'finished': False,
+            'claim': claim, 'runtime': runtime, 'admission': admission}
         self._dock_shutdown_wait = wait
 
         def owned(*, check_claim=True):
@@ -2998,8 +3034,22 @@ class Plugin:
             return DockPowerResult('dock_power.unresolved', software_down=True)
         finally:
             with wait['lock']:
+                # This stack can no longer submit power. Disable before record
+                # cleanup even when Portable/lease/topology proof failed. Only
+                # the exact unconsumed intent may archive; claim/lease and all
+                # hardware guards remain for later strict absence recovery.
+                wait['finished'] = True
                 if wait['phase'] != 'consuming':
                     wait['phase'] = 'finished'
+                try:
+                    power_store.release_bound_shutdown(claim, request.session,
+                        request.requested_at, request.deadline,
+                        lambda: (admission.get('held') is True
+                            and self._finished_shutdown_request(claim) is request))
+                except Exception:
+                    # Failed publication retains inhibition. The full absence
+                    # reconciler can retry this exact finished request later.
+                    pass
 
     def _dock_power_portable_verified(self):
         snapshot = SnapshotTransitionObservationAdapter(self._discovery).observe().snapshot
@@ -3757,13 +3807,15 @@ class Plugin:
             terminal_stopped_unplug_shutdown = (
                 result.get("schema_version") == 1
                 and result.get("code") in (
-                    "dock_power.unplug_request_expired", "dock_power.unplug_request_cancelled")
+                    "dock_power.unplug_request_expired", "dock_power.unplug_request_cancelled",
+                    "dock_power.preflight_changed", "dock_power.unresolved")
                 and result.get("route_action") == "whole_dock_shutdown"
                 and result.get("power_action") == "shutdown"
                 and result.get("busy") is False and result.get("ok") is False
                 and result.get("software_down") is True
                 and result.get("power_requested") is False
-                and result.get("unplug_required") is True
+                and result.get("unplug_required") is (result.get("code") in (
+                    "dock_power.unplug_request_expired", "dock_power.unplug_request_cancelled"))
                 and result.get("safe_to_unplug") is False and not in_flight
             )
             if (terminal_software_down or terminal_unresolved
@@ -4368,6 +4420,18 @@ class Plugin:
         archived_owned = (type(archived) is tuple and len(archived) == 4
             and archived[0] == request_id and archived[1] is lease
             and archived[2] is trial and archived[3] is terminal)
+        authority_id = request_id
+        power_archive_owned = False
+        wait = getattr(self, '_dock_shutdown_wait', None)
+        if (archived_owned and type(wait) is dict
+                and type(wait.get('request')) is DockPowerRequest
+                and wait.get('request_id') == request_id
+                and terminal.get('route_action') == 'whole_dock_shutdown'
+                and terminal.get('power_action') == 'shutdown'
+                and terminal.get('power_requested') is False
+                and self._finished_shutdown_request(wait.get('claim')) is wait.get('request')):
+            authority_id = wait['claim'].operation
+            power_archive_owned = True
         successful_trial = (terminal.get('code') == 'dock_teardown.software_down'
             and terminal.get('ok') is True and terminal.get('software_down') is True)
         if (terminal.get('schema_version') != 1
@@ -4376,7 +4440,7 @@ class Plugin:
                 or terminal.get('safe_to_unplug') is not False
                 or type(request_id) is not str
                 or re.fullmatch(r'[0-9a-f]{32}', request_id) is None
-                or getattr(runtime, '_operation', None) != request_id
+                or getattr(runtime, '_operation', None) != authority_id
                 or type(admission) is not dict
                 or admission.get('held') is not False
                 or admission.get('power_handoff', False) is not False):
@@ -4407,11 +4471,14 @@ class Plugin:
                         or terminal.get('schema_version') != 1
                         or terminal.get('busy') is not False
                         or terminal.get('safe_to_unplug') is not False
-                        or getattr(runtime, '_operation', None) != request_id
+                        or getattr(runtime, '_operation', None) != authority_id
                         or getattr(self, '_release_capture_task', None) is not capture
                         or (capture is not None and not capture.done())
                         or (archived_owned and getattr(
                             self, '_whole_dock_absent_archived_trial', None) is not archived)
+                        or (power_archive_owned and (
+                            getattr(self, '_dock_shutdown_wait', None) is not wait
+                            or self._finished_shutdown_request(wait['claim']) is not wait['request']))
                         or getattr(self, '_unloading', False)
                         or getattr(self, '_whole_dock_trial_worker_alive', False) is True
                         or admission.get('held') is not False
