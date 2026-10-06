@@ -1,5 +1,68 @@
 # Current state
 
+## Installed 0.3.183 shutdown checkpoint — October 6, 2026 UTC
+
+[Exact checkpoint reconciliation](https://github.com/ronnierosal/Re-Gear/issues/464#issuecomment-6009350961)
+records installed disk, live backend and loaded frontend identity on the recorded
+Ally X + GPD G1 configuration. This is the latest bounded installed checkpoint,
+not complete hardware certification, runtime merge acceptance or a public release.
+
+| Identity | Preserved value |
+|---|---|
+| Source | `ba9d2395d449e211a0b60c776b0177e5ac329e40` |
+| Development archive | `Re-Gear-0.3.183.zip`, 1,372,956 bytes |
+| ZIP SHA-256 | `da51b7d4277b3f0bffd9894c59ff573ccd327fefcd28ccd3e2bfbc2c5e642c5e` |
+| Local checkpoint archive SHA-256 | `966e03d1e96597668d2700bf2773b415f20c84ec84b1471f11fd2cf7be7938b5` |
+
+Before trials, the prior stranded old-boot failed `tunnel_remove_intent` was
+automatically archived to claim `none`, with idle Portable/eGPU absent. **No
+manual clearing** occurred. [Two supervised Safe Disconnect + Shutdown runs](https://github.com/ronnierosal/Re-Gear/issues/18#issuecomment-6009297588)
+from TV were user-observed power-off successes. The first subsequent changed
+boot was independently claim-free with healthy TV reconnect. During the second
+request, `return_portable` was captured at 04:21:30.418 UTC, transport was lost at
+04:21:32.165, and the user confirmed power off at 04:22. Transport loss is not
+power-off proof, and report intervals do not establish exact shutdown latency.
+
+The [final detached-boot correction](https://github.com/ronnierosal/Re-Gear/issues/18#issuecomment-6009330454)
+at 04:25:25 UTC confirms a new boot, exact 183, idle Portable/internal rendering,
+eGPU absent, idle journals and no reported blockers or retained inhibitor, but
+**durable claim `software_down`, not `none`**. Completed teardown is supported;
+retirement/admission clearance and exact private power-intent correlation are
+unverified. Explicit terminal power-off markers and teardown substage timing
+were not captured. Controller function was not independently tested.
+
+[Source-only characterization](https://github.com/ronnierosal/Re-Gear/issues/18#issuecomment-6009350086)
+reproduced a cleanup coverage gap under a synthetic consumed old-boot shutdown
+intent with strict detached prerequisites. Actual device intent fields were not
+read, so this is a conditional diagnosis, not a proven device cause or another
+shutdown failure. Remaining cleanup work belongs to the runtime owner; no future
+fix is asserted here.
+
+[Additional sleep observation](https://github.com/ronnierosal/Re-Gear/issues/464#issuecomment-6009393535)
+reports another Safe Disconnect + Sleep success at 04:32 UTC. An accidental R2
+press near sleep appeared to interrupt it, but cancel versus wake versus
+coincidence is unknown. The user subsequently reported normal Sleep button
+success at 04:33 UTC; no causal R2 defect or controller-cancel feature is established.
+
+Preserve 0.3.180's two observed sleep successes below and its later
+[six-bridge shutdown timeout FAIL](https://github.com/ronnierosal/Re-Gear/issues/18#issuecomment-6005442766)
+with ordinary OS recovery. 0.3.182 is intermediate source/artifact evidence, not
+this installed 183 checkpoint. Eight ancestor PRs (#435/#436/#437/#438/#439/#440/
+#443/#453) closed **unmerged as source-superseded** under #464 revision 25;
+closure is source adoption, not hardware PASS, and their obligations/history remain.
+The [#18 supersession proposal](https://github.com/ronnierosal/Re-Gear/issues/464#issuecomment-6009420758)
+distinguishes these safe-shutdown runs from the original ordinary attached-shutdown
+hang: the original route/cause is unverified and the proposal is not closure proof.
+
+The exact 183 GitHub CI development artifact is available; an artifact is not a
+GitHub Release. No new tag or public Release was created by this update.
+[Release-pipeline](RELEASE_PIPELINE.md) hardware/certification gates still apply.
+#464/#472 retain completed-record retirement, power correlation, missing terminal
+and timing evidence, native F6/controller/fault/latency and full Class D/procedure
+acceptance. Independent #19/#446/#448/#466/#136/#161 and #17/#428 obligations are
+not resolved by these observations. Software reconnect stays excluded. No new
+hardware action or blanket support claim follows from this record.
+
 ## Installed 0.3.180 working checkpoint — October 5, 2026 UTC
 
 The [supervised checkpoint](https://github.com/ronnierosal/Re-Gear/issues/464#issuecomment-5987964708)

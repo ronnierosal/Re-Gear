@@ -1,12 +1,12 @@
 # eGPU lifecycle: baseline and acceptance
 
-Development build **0.3.180 is installed and loaded**, verified against source
-`d1ee13dc54db1f789eaec683717072ab1090f3a8` and the unchanged reviewed ZIP.
-On the recorded test configuration, two consecutive connection/TV/Safe Disconnect
-+ Sleep cycles were user-observed successes. A separate retained request has
-instrumented terminal and timing evidence. This is a bounded working checkpoint,
-not complete Class D acceptance, general hardware support or a public release.
-See the [current-state authority](../../CURRENT_STATE.md#installed-03180-working-checkpoint--october-5-2026-utc).
+Development build **0.3.183 is installed and loaded**, verified against source
+`ba9d2395d449e211a0b60c776b0177e5ac329e40` and its immutable development ZIP.
+Two Safe Disconnect + Shutdown runs were user-observed successes; the first
+subsequent boot/TV reconnect was claim-free, while the final detached boot retained
+**`software_down`, not `none`**. This is bounded evidence, not complete Class D
+acceptance, general hardware support or a public release. See the
+[current-state authority](../../CURRENT_STATE.md#installed-03183-shutdown-checkpoint--october-6-2026-utc).
 
 ## For players — no technical background needed
 
@@ -21,16 +21,61 @@ A newer source-only foundation can observe cooling data and classify a prepared,
 still-connected state. It is not wired to the player interface or production
 disconnect path, so it does not change the current player instructions.
 
-On the maintainer's recorded setup, the connection, TV picture, Safe Disconnect
-and sleep journey worked twice in succession. That result applies to this exact
-build and configuration. Shutdown, next-boot cleanup, eligible acknowledgement,
-failure recovery and hiding the popup while a request is pending still need
-separate checks. Follow the [eGPU player guide](../player/egpu.md) and the exact
-supervised build instructions; software reconnect stays excluded.
+On the recorded setup, Safe Disconnect + Shutdown powered off twice and the
+first reboot returned to a healthy TV connection. A final detached boot remained
+usable on the handheld but retained a completed teardown claim; cleanup still
+needs validation. Later sleep successes were reported. An accidental R2 press
+near sleep is an uncorrelated observation, not a confirmed defect. Follow the
+[eGPU player guide](../player/egpu.md) and the exact supervised build instructions.
+Software reconnect remains excluded.
 
 ## Technical details — for advanced users and contributors
 
+### Installed 0.3.183: shutdown and retained-claim boundary
+
+[The exact checkpoint](https://github.com/ronnierosal/Re-Gear/issues/464#issuecomment-6009350961)
+verifies installed disk/live backend/loaded frontend: source
+`ba9d2395d449e211a0b60c776b0177e5ac329e40`, development archive
+`Re-Gear-0.3.183.zip`, 1,372,956 bytes, SHA-256
+`da51b7d4277b3f0bffd9894c59ff573ccd327fefcd28ccd3e2bfbc2c5e642c5e`.
+The prior failed old-boot `tunnel_remove_intent` automatically archived to `none`
+without manual clearing. Two shutdown successes are user-observed; the first
+changed boot and healthy TV reconnect were independently captured claim-free.
+
+The [final detached boot](https://github.com/ronnierosal/Re-Gear/issues/18#issuecomment-6009330454)
+was exact 183, new boot, idle Portable/internal/eGPU absent/journals idle/no
+reported blockers or retained inhibitor, **but durable claim `software_down`
+remained**. Completed teardown is supported; exact intent correlation and
+retirement/admission clearance remain unverified. Terminal power-off markers,
+substage timing and independent controller tests are missing; transport loss or
+chat intervals do not prove power-off timing. Local checkpoint archive SHA-256:
+`966e03d1e96597668d2700bf2773b415f20c84ec84b1471f11fd2cf7be7938b5`.
+
+[Source characterization](https://github.com/ronnierosal/Re-Gear/issues/18#issuecomment-6009350086)
+shows a cleanup coverage gap with a synthetic consumed old-boot shutdown intent,
+not a proven final-device cause or additional shutdown failure. Runtime cleanup
+is separately owned; no future fix is claimed. [Later sleep success and R2 observation](https://github.com/ronnierosal/Re-Gear/issues/464#issuecomment-6009393535)
+remain user reports: cancel/wake/coincidence is unknown; subsequent normal Sleep
+button success does not establish a causal defect or broad controller acceptance.
+
+0.3.180's two sleep successes remain historical; its later
+[shutdown timeout FAIL](https://github.com/ronnierosal/Re-Gear/issues/18#issuecomment-6005442766)
+and ordinary OS recovery are not retroactively changed. 0.3.182 is intermediate
+source/artifact evidence. Eight ancestor PRs closed unmerged under #464 revision
+25 as source-superseded, not hardware PASS. The
+[#18 proposal](https://github.com/ronnierosal/Re-Gear/issues/464#issuecomment-6009420758)
+is historical supersession, not proof that the original ordinary shutdown hang
+was fixed or retested. See the [authority](../../CURRENT_STATE.md#installed-03183-shutdown-checkpoint--october-6-2026-utc)
+for preserved successor and independent obligations.
+
+The 183 CI development artifact is available, distinct from a public Release;
+no new tag/Release was created by this update. [Release gates](../../RELEASE_PIPELINE.md)
+and full Class D/procedure, cleanup/power correlation, native F6/controller,
+fault and latency checks remain. No private raw topology or photos are published.
+
 ### Installed 0.3.180: bounded working checkpoint
+
+Historical October 5 checkpoint; 183 is the latest installed record above.
 
 The [October 5 UTC checkpoint](https://github.com/ronnierosal/Re-Gear/issues/464#issuecomment-5987964708)
 verifies installed disk source, live backend and loaded frontend against the
