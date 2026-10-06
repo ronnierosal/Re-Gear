@@ -1416,6 +1416,109 @@ class CompletedAttachmentAbsenceTests(unittest.TestCase):
     def test_completed_detached_attachment_is_archived_under_existing_admission(self):
         self.assertEqual(self.fixture(), (True, 1))
 
+    def shutdown_absence_fixture(self, *, strict=True, absent=True, idle=True,
+                                 user_ok=True, settled=True, inner=True,
+                                 journal_durable=True, journal_owner='none',
+                                 consumed=False, boot='2' * 64, worker=False,
+                                 authorization=False, unloading=False, capture=False):
+        import os
+        import tempfile
+        from pathlib import Path
+        from contextlib import ExitStack
+        from regear.delivery.dock_power_intent import DockPowerIntentStore
+        from regear.delivery.dock_mutation_gate import DockMutationGate
+        from regear.delivery.whole_dock_claim import WholeDockClaimStore
+        with tempfile.TemporaryDirectory() as root, ExitStack() as stack:
+            os.chmod(root, 0o700)
+            fd = os.open(root, os.O_RDONLY | os.O_DIRECTORY)
+            stack.callback(os.close, fd)
+            kwargs = dict(owner_uid=os.geteuid(), trusted_directory_fd=fd)
+            store = DockPowerIntentStore(root, **kwargs)
+            gate = DockMutationGate(root, **kwargs)
+            op = 'a' * 32
+            self.assertTrue(store.claim(op, 'dock', 'generation'))
+            self.assertTrue(store.bind(op, 'dock', 'generation', 'shutdown',
+                                      '1' * 64 + ':' + 'b' * 32, 10, 100))
+            store.record(op, 'tunnel_remove_intent')
+            claim = store.load()
+            if consumed:
+                import json
+                path = Path(root) / ('dock-power-' + op + '.json')
+                raw = json.loads(path.read_bytes())
+                raw['consumed'] = True
+                path.write_text(json.dumps(raw))
+            self.plugin._unloading = unloading
+            self.plugin._release_capture_task = NS(done=lambda: not capture)
+            self.plugin._discovery = object()
+            self.plugin._dock_mutation_gate = lambda: gate
+            self.plugin._connection_topology = NS(observe=lambda: NS(
+                transport_absent_verified=absent, transport_present=not absent))
+            self.plugin._transition_journal_service = lambda: NS(status=lambda: NS(
+                durable=journal_durable, owner=NS(value=journal_owner)))
+            self.plugin._whole_dock_trial_worker_alive = worker
+            self.plugin._append_journey_event = Mock()
+            self.plugin._restore_remembered_authorization_after_absence = Mock(return_value=authorization)
+            snapshot = NS(game_state=self.module.GameState.IDLE if idle else self.module.GameState.UNKNOWN,
+                          gamescope=NS(running=True),
+                          gpus=[NS(role=self.module.GpuRole.INTERNAL, present=True,
+                                   confidence=self.module.Confidence.VERIFIED)])
+            user = NS(uid=1000, username='deck')
+            for name, value in (
+                ('DockPowerIntentStore', store),
+                ('verified_transport_absent', strict),
+                ('inner_removal_records_absent', inner),
+                ('resolve_gamescope_user', NS(ok=user_ok, context=user if user_ok else None)),
+                ('resolve_runtime_profiles', NS(exact_host=True)),
+            ):
+                stack.enter_context(patch.object(self.module, name, return_value=value))
+            boot_reader = stack.enter_context(patch.object(self.module, 'read_boot_hash'))
+            if isinstance(boot, list):
+                boot_reader.side_effect = boot
+            else:
+                boot_reader.return_value = boot
+            stack.enter_context(patch.object(self.module, 'GamescopeDiscovery'))
+            launcher = stack.enter_context(patch.object(self.module, 'HeldTrialLauncher'))
+            launcher.return_value.call.return_value = {'code': 'held_helper.settled', 'settled': settled}
+            adapter = stack.enter_context(patch.object(self.module, 'SnapshotTransitionObservationAdapter'))
+            adapter.return_value.observe.return_value = NS(snapshot=snapshot)
+            power_runner = stack.enter_context(patch.object(self.module, 'SystemPowerCommandRunner'))
+            suspend_runner = stack.enter_context(patch.object(self.module, 'SystemSuspendCommandRunner'))
+            result = self.plugin._reconcile_physically_disconnected_dock()
+            power_runner.assert_not_called()
+            suspend_runner.assert_not_called()
+            audits = list(Path(root).glob('interrupted-absent-dock-*.json'))
+            if audits:
+                self.assertEqual(audits[0].read_bytes(), WholeDockClaimStore._encode(claim))
+            power_audits = list(Path(root).glob('unsubmitted-shutdown-*.json'))
+            if result:
+                self.assertIsNone(store.load())
+                with gate.admit():
+                    pass
+            else:
+                self.assertEqual(store.load(), claim)
+                with self.assertRaises(DockMutationDenied):
+                    with gate.admit():
+                        pass
+            return result, len(audits), len(power_audits)
+
+    def test_production_absence_reconciliation_archives_unsubmitted_shutdown(self):
+        self.assertEqual(self.shutdown_absence_fixture(), (True, 1, 1))
+
+    def test_production_shutdown_recovery_preserves_unresolved_prerequisites(self):
+        for options in (
+            {'strict': False}, {'absent': False}, {'idle': False}, {'user_ok': False},
+            {'settled': False}, {'inner': False}, {'journal_durable': False},
+            {'journal_owner': 'presentation'}, {'consumed': True}, {'worker': True},
+            {'unloading': True}, {'capture': True},
+            {'boot': '1' * 64}, {'boot': ''}, {'boot': None},
+            {'boot': ['2' * 64, '3' * 64]},
+        ):
+            with self.subTest(options=options):
+                self.assertEqual(self.shutdown_absence_fixture(**options), (False, 0, 0))
+
+    def test_power_archival_does_not_clear_claim_if_authorization_restore_is_unknown(self):
+        self.assertEqual(self.shutdown_absence_fixture(authorization=None), (False, 0, 1))
+
     def test_interrupted_absent_record_archives_without_claiming_success(self):
         original = {'code': 'dock_teardown.unresolved', 'request_id': 'a' * 32,
                     'software_down': False, 'safe_to_unplug': False}

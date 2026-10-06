@@ -337,6 +337,55 @@ class DockPowerIntentStore(WholeDockClaimStore):
             os.fsync(directory)
             return True
 
+    def reconcile_unsubmitted_shutdown(self, expected_claim, current_boot_hash, guard):
+        """Archive an exact shutdown intent proven never submitted before reboot.
+
+        Submission requires durable consumption after software_down. A strictly
+        unconsumed intent on interrupted teardown from a different verified boot
+        cannot be replayed by this process. Caller holds admission and repeatedly
+        proves physical absence and settled session work, including stable boot.
+        Keep ambiguous/consumed records. This archives power intent only; the
+        interrupted claim remains until its separate strict absence retirement.
+        """
+        if (type(expected_claim) is not WholeDockClaim
+                or expected_claim.stage != 'tunnel_remove_intent'
+                or type(current_boot_hash) is not str
+                or re.fullmatch('[0-9a-f]{64}', current_boot_hash) is None):
+            return False
+        with self._locked() as directory:
+            if self._load(directory) != expected_claim:
+                return False
+            try:
+                intent = self._load_intent(directory, expected_claim)
+            except ValueError:
+                return False
+            if (type(intent) is not DockPowerIntent
+                    or intent.action != 'shutdown' or intent.consumed is not False
+                    or (intent.operation, intent.binding, intent.generation) !=
+                    (expected_claim.operation, expected_claim.binding, expected_claim.generation)
+                    or re.fullmatch('[0-9a-f]{64}:[0-9a-f]{32}', intent.session) is None
+                    or intent.session.split(':', 1)[0] == current_boot_hash):
+                return False
+            if guard() is not True or self._load(directory) != expected_claim:
+                return False
+            try:
+                if self._load_intent(directory, expected_claim) != intent:
+                    return False
+            except ValueError:
+                return False
+            audit = 'unsubmitted-shutdown-' + secrets.token_hex(16) + '.json'
+            _publish_exclusive(directory, self._filename(intent), audit)
+            try:
+                os.fsync(directory)
+            except OSError as failure:
+                try:
+                    _publish_exclusive(directory, audit, self._filename(intent))
+                    os.fsync(directory)
+                except OSError as restore_failure:
+                    raise OSError('dock_power.unsubmitted_durability_unresolved') from restore_failure
+                raise failure
+            return True
+
     def retire_after_boot(self, expected_claim, current_boot_hash, guard):
         """Archive a verified completed shutdown from an earlier boot only.
 

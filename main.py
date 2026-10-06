@@ -2086,6 +2086,19 @@ class Plugin:
                         # Reconciliation is best effort; the full guard below
                         # still owns archival admission.
                         pass
+                # A failed shutdown can leave an unconsumed intent before
+                # software-down, outside the completed-shutdown boot lane.
+                # Only positive old-boot/no-submission proof may archive it;
+                # the existing strict absence guard still owns claim retirement.
+                try:
+                    boot = read_boot_hash()
+                    store.reconcile_unsubmitted_shutdown(
+                        claim, boot,
+                        lambda: (guard(require_power_intent=False)
+                                 and read_boot_hash() == boot))
+                except Exception:
+                    # Unknown intent/boot/storage remains inhibited below.
+                    pass
                 phase = 'guard'
                 if not guard():
                     return refuse('guard', unmet[0] if unmet else 'unknown')

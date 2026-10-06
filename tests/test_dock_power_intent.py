@@ -71,6 +71,144 @@ class IntentFilesystemTests(unittest.TestCase):
         os.close(self.fd)
         self.temp.cleanup()
 
+    def test_old_boot_unsubmitted_shutdown_can_retire_without_touching_claim(self):
+        args = (*ARGS[:4], '1' * 64 + ':' + 'b' * 32, *ARGS[5:])
+        self.assertTrue(self.store.bind(*args))
+        self.claim.record(ARGS[0], 'tunnel_remove_intent')
+        expected = self.claim.load()
+        before = self.path.read_bytes()
+        self.assertTrue(self.store.reconcile_unsubmitted_shutdown(
+            expected, '2' * 64, lambda: True))
+        self.assertEqual(self.claim.load(), expected)
+        self.assertTrue(self.claim.power_intent_absent(expected))
+        archives = list(self.root.glob('unsubmitted-shutdown-*.json'))
+        self.assertEqual(len(archives), 1)
+        self.assertEqual(archives[0].read_bytes(), before)
+        self.assertFalse(self.store.consume(*args))
+        self.assertFalse(self.store.reconcile_unsubmitted_shutdown(
+            expected, '2' * 64, lambda: True))
+
+    def shutdown_failure(self):
+        args = (*ARGS[:4], '1' * 64 + ':' + 'b' * 32, *ARGS[5:])
+        self.assertTrue(self.store.bind(*args))
+        self.claim.record(ARGS[0], 'tunnel_remove_intent')
+        return self.claim.load(), self.path.read_bytes()
+
+    def test_unsubmitted_shutdown_refuses_ambiguous_or_unrelated_intents(self):
+        expected, before = self.shutdown_failure()
+        original = json.loads(before)
+        for changes in (
+            {'consumed': True}, {'consumed': 0}, {'consumed': 'false'},
+            {'action': 'sleep'}, {'operation': 'b' * 32},
+            {'binding': 'other'}, {'generation': 'other'},
+            {'session': 'legacy'}, {'session': '2' * 64 + ':' + 'a' * 32},
+            {'session': 'G' * 64 + ':' + 'a' * 32},
+            {'schema_version': True}, {'extra': 'unknown'},
+        ):
+            with self.subTest(changes=changes):
+                self.path.write_text(json.dumps(dict(original, **changes)))
+                raw = self.path.read_bytes()
+                self.assertFalse(self.store.reconcile_unsubmitted_shutdown(
+                    expected, '2' * 64, lambda: True))
+                self.assertEqual(self.path.read_bytes(), raw)
+                self.assertEqual(self.claim.load(), expected)
+        for raw in (b'{', b'{}', b'x' * 4097,
+                    before.replace(b'{', b'{"consumed":true,', 1)):
+            with self.subTest(raw=raw[:30]):
+                self.path.write_bytes(raw)
+                self.assertFalse(self.store.reconcile_unsubmitted_shutdown(
+                    expected, '2' * 64, lambda: True))
+                self.assertEqual(self.path.read_bytes(), raw)
+        self.assertEqual(list(self.root.glob('unsubmitted-shutdown-*.json')), [])
+
+    def test_unsubmitted_shutdown_requires_exact_interrupted_claim_boot_and_guard(self):
+        expected, before = self.shutdown_failure()
+        for claim, boot, guard in (
+            (expected, '1' * 64, lambda: True),
+            (expected, '', lambda: True),
+            (expected, None, lambda: True),
+            (expected, True, lambda: True),
+            (expected, '2' * 63, lambda: True),
+            (expected, 'G' * 64, lambda: True),
+            (replace(expected, operation='b' * 32), '2' * 64, lambda: True),
+            (replace(expected, binding='other'), '2' * 64, lambda: True),
+            (replace(expected, generation='other'), '2' * 64, lambda: True),
+            (replace(expected, stage='software_down'), '2' * 64, lambda: True),
+            (replace(expected, stage='reauthorize_intent'), '2' * 64, lambda: True),
+            (None, '2' * 64, lambda: True),
+            (expected, '2' * 64, lambda: False),
+            (expected, '2' * 64, lambda: 1),
+        ):
+            with self.subTest(claim=claim, boot=boot):
+                self.assertFalse(self.store.reconcile_unsubmitted_shutdown(claim, boot, guard))
+                self.assertEqual(self.path.read_bytes(), before)
+                self.assertEqual(self.claim.load(), expected)
+
+    def test_unsubmitted_shutdown_rechecks_claim_and_intent_after_guard(self):
+        expected, before = self.shutdown_failure()
+        def changed_intent():
+            raw = json.loads(before)
+            raw['consumed'] = True
+            self.path.write_text(json.dumps(raw))
+            return True
+        self.assertFalse(self.store.reconcile_unsubmitted_shutdown(
+            expected, '2' * 64, changed_intent))
+        self.assertTrue(json.loads(self.path.read_bytes())['consumed'])
+        self.path.write_bytes(before)
+        changed = replace(expected, generation='other')
+        def changed_claim():
+            (self.root / FILENAME).write_bytes(self.claim._encode(changed))
+            return True
+        self.assertFalse(self.store.reconcile_unsubmitted_shutdown(
+            expected, '2' * 64, changed_claim))
+        self.assertEqual(self.claim.load(), changed)
+        self.assertEqual(self.path.read_bytes(), before)
+
+    def test_unsubmitted_shutdown_storage_and_guard_failures_preserve_inhibition(self):
+        expected, before = self.shutdown_failure()
+        with patch.object(self.store, '_load_intent', side_effect=PermissionError('unreadable')):
+            with self.assertRaises(PermissionError):
+                self.store.reconcile_unsubmitted_shutdown(expected, '2' * 64, lambda: True)
+        def raised_guard():
+            raise OSError('observation unavailable')
+        with self.assertRaises(OSError):
+            self.store.reconcile_unsubmitted_shutdown(expected, '2' * 64, raised_guard)
+        with patch('regear.delivery.dock_power_intent.os.fsync',
+                   side_effect=[OSError('durability'), None]):
+            with self.assertRaises(OSError):
+                self.store.reconcile_unsubmitted_shutdown(expected, '2' * 64, lambda: True)
+        self.assertEqual(self.path.read_bytes(), before)
+        self.assertEqual(self.claim.load(), expected)
+        self.assertFalse(self.claim.power_intent_absent(expected))
+        self.assertEqual(list(self.root.glob('unsubmitted-shutdown-*.json')), [])
+
+    def test_unsubmitted_shutdown_refuses_symlink_and_unsafe_permissions(self):
+        expected, before = self.shutdown_failure()
+        target = self.root / 'unrelated.json'
+        target.write_bytes(before)
+        self.path.unlink()
+        self.path.symlink_to(target)
+        with self.assertRaises(OSError):
+            self.store.reconcile_unsubmitted_shutdown(expected, '2' * 64, lambda: True)
+        self.assertTrue(self.path.is_symlink())
+        self.assertEqual(target.read_bytes(), before)
+        self.path.unlink()
+        self.path.write_bytes(before)
+        self.path.chmod(0o666)
+        self.assertFalse(self.store.reconcile_unsubmitted_shutdown(
+            expected, '2' * 64, lambda: True))
+        self.assertEqual(self.path.read_bytes(), before)
+        self.assertEqual(self.claim.load(), expected)
+
+    def test_unsubmitted_shutdown_durability_restoration_failure_keeps_claim(self):
+        expected, before = self.shutdown_failure()
+        with patch('regear.delivery.dock_power_intent.os.fsync',
+                   side_effect=OSError('durability unavailable')):
+            with self.assertRaisesRegex(OSError, 'unsubmitted_durability_unresolved'):
+                self.store.reconcile_unsubmitted_shutdown(expected, '2' * 64, lambda: True)
+        self.assertEqual(self.claim.load(), expected)
+        self.assertEqual(self.path.read_bytes(), before)
+
     def test_persists_once_and_preserves_claim(self):
         self.assertTrue(self.store.bind(*ARGS))
         self.assertFalse(self.store.bind(*ARGS))
