@@ -1,3 +1,4 @@
+import { shutdownUnplugWaiting } from "../../whole-dock-control-model";
 import { productionEgpuTiles } from "../../build-profile";
 import type { BuildProfile } from "../../build-profile";
 import {Tutorials} from './tutorials';
@@ -200,6 +201,7 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
     if(!record||status?.schema_version!==1||status.request_id!==record.request)return;
     const deauthorized=status.software_down===true&&status.safe_to_unplug===false
       &&((status.code==="dock_teardown.software_down"&&status.ok===true&&status.busy===false)
+        ||(record.intent==="shutdown"&&shutdownUnplugWaiting(status,record.request))
         ||(record.intent==="sleep"
           &&(status.code==="dock_power.unplug_required"
             ||status.code==="dock_power.unplug_request_expired")));

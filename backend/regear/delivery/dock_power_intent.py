@@ -75,8 +75,11 @@ class DockPowerIntentStore(WholeDockClaimStore):
         return DockPowerIntent(**{k: value[k] for k in fields})
 
     def _load_intent(self, directory, intent):
+        return self._load_intent_name(directory, self._filename(intent))
+
+    def _load_intent_name(self, directory, filename):
         try:
-            fd = os.open(self._filename(intent), os.O_RDONLY | os.O_NOFOLLOW |
+            fd = os.open(filename, os.O_RDONLY | os.O_NOFOLLOW |
                          os.O_NONBLOCK, dir_fd=directory)
         except FileNotFoundError:
             return None
@@ -130,6 +133,13 @@ class DockPowerIntentStore(WholeDockClaimStore):
         ``software_down`` claim. Validate the request before locking, then use
         only lock-local claim equality while publishing the exclusive intent.
         """
+        return self._bind_after_disconnect(expected_claim, 'sleep', session, requested_at, deadline)
+
+    def bind_shutdown_after_disconnect(self, expected_claim, session, requested_at, deadline):
+        """Bind one explicit shutdown to the retained exact disconnect claim."""
+        return self._bind_after_disconnect(expected_claim, 'shutdown', session, requested_at, deadline)
+
+    def _bind_after_disconnect(self, expected_claim, action, session, requested_at, deadline):
         if (type(expected_claim) is not WholeDockClaim
                 or expected_claim.stage != 'software_down'):
             return False
@@ -137,7 +147,7 @@ class DockPowerIntentStore(WholeDockClaimStore):
             expected_claim.operation,
             expected_claim.binding,
             expected_claim.generation,
-            'sleep',
+            action,
             session,
             requested_at,
             deadline,
@@ -223,6 +233,48 @@ class DockPowerIntentStore(WholeDockClaimStore):
         """Discard one exact unconsumed sleep after its unplug window expires."""
         return self._retire_exact_sleep_intent(
             expected_claim, session, requested_at, deadline, False, guard)
+
+    def release_bound_shutdown(self, expected_claim, session, requested_at, deadline, guard):
+        """Archive only an exact unconsumed shutdown on expiry or explicit cancel.
+
+        Claim/intent are reread under the secure lock. No consumed/ambiguous
+        attempt is discarded. Audit publication failure restores active intent.
+        The caller owns the live original request and retains admission/lease.
+        """
+        if (type(expected_claim) is not WholeDockClaim
+                or expected_claim.stage != 'software_down'
+                or type(session) is not str
+                or re.fullmatch('[0-9a-f]{64}:[0-9a-f]{32}', session) is None):
+            return False
+        expected = DockPowerIntent(expected_claim.operation, expected_claim.binding,
+            expected_claim.generation, 'shutdown', session, requested_at, deadline, False)
+        with self._locked() as directory:
+            if self._load(directory) != expected_claim:
+                return False
+            try:
+                if self._load_intent(directory, expected) != expected:
+                    return False
+            except ValueError:
+                return False
+            if guard() is not True or self._load(directory) != expected_claim:
+                return False
+            try:
+                if self._load_intent(directory, expected) != expected:
+                    return False
+            except ValueError:
+                return False
+            audit = 'unsubmitted-shutdown-wait-' + secrets.token_hex(16) + '.json'
+            _publish_exclusive(directory, self._filename(expected), audit)
+            try:
+                os.fsync(directory)
+            except OSError as failure:
+                try:
+                    _publish_exclusive(directory, audit, self._filename(expected))
+                    os.fsync(directory)
+                except OSError as restore_failure:
+                    raise OSError('dock_power.wait_durability_unresolved') from restore_failure
+                raise failure
+            return True
 
     def retire_observed_sleep(self, expected_claim, session, requested_at, deadline, guard):
         """Discard one exact consumed sleep after its cycle was observed."""
@@ -386,6 +438,52 @@ class DockPowerIntentStore(WholeDockClaimStore):
                 raise failure
             return True
 
+    def reconcile_stranded_shutdown_wait(self, expected_claim, live_session, guard):
+        """Archive an unconsumed completed-teardown wait whose session is gone.
+
+        Restart never recovers a saved request or extends its deadline. A live
+        worker holding admission cannot enter this caller's strict absence
+        reconciliation. Unlike attempted shutdown history, strictly unconsumed
+        waiting work needs no power-outcome proof; claim retirement remains
+        behind the existing full absence, helper and authorization guards.
+        """
+        pattern = '[0-9a-f]{64}:[0-9a-f]{32}'
+        if (type(expected_claim) is not WholeDockClaim
+                or expected_claim.stage != 'software_down'
+                or (live_session is not None and (type(live_session) is not str
+                    or re.fullmatch(pattern, live_session) is None))):
+            return False
+        with self._locked() as directory:
+            if self._load(directory) != expected_claim:
+                return False
+            try:
+                intent = self._load_intent(directory, expected_claim)
+            except ValueError:
+                return False
+            if (type(intent) is not DockPowerIntent or intent.action != 'shutdown'
+                    or intent.consumed is not False
+                    or (intent.operation, intent.binding, intent.generation) !=
+                    (expected_claim.operation, expected_claim.binding, expected_claim.generation)
+                    or re.fullmatch(pattern, intent.session) is None
+                    or live_session == intent.session):
+                return False
+            if guard() is not True or self._load(directory) != expected_claim:
+                return False
+            if self._load_intent(directory, expected_claim) != intent:
+                return False
+            audit = 'unsubmitted-shutdown-wait-' + secrets.token_hex(16) + '.json'
+            _publish_exclusive(directory, self._filename(intent), audit)
+            try:
+                os.fsync(directory)
+            except OSError as failure:
+                try:
+                    _publish_exclusive(directory, audit, self._filename(intent))
+                    os.fsync(directory)
+                except OSError as restore_failure:
+                    raise OSError('dock_power.wait_durability_unresolved') from restore_failure
+                raise failure
+            return True
+
     def reconcile_consumed_shutdown_after_absence(self, expected_claim, current_boot_hash, guard):
         """Archive exact attempted shutdown history after a verified later boot.
 
@@ -454,6 +552,27 @@ class DockPowerIntentStore(WholeDockClaimStore):
                 return False
             # Filename lookup needs only the already-validated operation.
             intent = self._load_intent(directory, expected_claim)
+            audit_source = None
+            if intent is None:
+                # An earlier strict absence pass may have archived the power
+                # proof without finishing authorization/claim retirement. Keep
+                # the attached recovery lane using that exact secure audit;
+                # never synthesize consumption from a missing active intent.
+                matches = []
+                names = os.listdir(directory)
+                if len(names) > 4096:
+                    return False
+                for name in names:
+                    if re.fullmatch('consumed-shutdown-absence-[0-9a-f]{32}\\.json', name) is None:
+                        continue
+                    candidate = self._load_intent_name(directory, name)
+                    if (type(candidate) is DockPowerIntent
+                            and (candidate.operation, candidate.binding, candidate.generation)
+                            == (expected_claim.operation, expected_claim.binding, expected_claim.generation)):
+                        matches.append((name, candidate))
+                if len(matches) != 1:
+                    return False
+                audit_source, intent = matches[0]
             if (intent is None or not intent.consumed or intent.action != 'shutdown'
                     or (intent.operation, intent.binding, intent.generation) !=
                     (expected_claim.operation, expected_claim.binding, expected_claim.generation)
@@ -462,7 +581,12 @@ class DockPowerIntentStore(WholeDockClaimStore):
                 return False
             if guard() is not True or self._load(directory) != expected_claim:
                 return False
-            if self._load_intent(directory, expected_claim) != intent:
+            if audit_source is None:
+                unchanged = self._load_intent(directory, expected_claim) == intent
+            else:
+                unchanged = (self._load_intent(directory, expected_claim) is None
+                    and self._load_intent_name(directory, audit_source) == intent)
+            if not unchanged:
                 return False
             audit = 'power-completed-whole-dock-' + secrets.token_hex(16) + '.json'
             from .whole_dock_claim import FILENAME

@@ -71,6 +71,96 @@ class IntentFilesystemTests(unittest.TestCase):
         os.close(self.fd)
         self.temp.cleanup()
 
+    def shutdown_wait(self):
+        self.claim.record(ARGS[0], 'software_down')
+        expected = self.claim.load()
+        session = '1' * 64 + ':' + '2' * 32
+        self.assertTrue(self.store.bind_shutdown_after_disconnect(expected, session, 10, 100))
+        return expected, session
+
+    def test_shutdown_after_disconnect_binds_once_without_replacing_history(self):
+        expected, session = self.shutdown_wait()
+        before = self.path.read_bytes()
+        self.assertFalse(self.store.bind_shutdown_after_disconnect(expected, session, 10, 100))
+        self.assertEqual(self.path.read_bytes(), before)
+        self.assertTrue(self.store.consume(*ARGS[:3], 'shutdown', session, 10, 100))
+        self.assertFalse(self.store.release_bound_shutdown(expected, session, 10, 100, lambda: True))
+        self.assertTrue(json.loads(self.path.read_bytes())['consumed'])
+
+    def test_shutdown_wait_cancellation_archives_exact_unconsumed_history(self):
+        expected, session = self.shutdown_wait()
+        before = self.path.read_bytes()
+        self.assertFalse(self.store.release_bound_shutdown(expected, session, 10, 100, lambda: False))
+        self.assertTrue(self.store.release_bound_shutdown(expected, session, 10, 100, lambda: True))
+        self.assertEqual(list(self.root.glob('unsubmitted-shutdown-wait-*.json'))[0].read_bytes(), before)
+        self.assertEqual(self.claim.load(), expected)
+        self.assertFalse(self.store.consume(*ARGS[:3], 'shutdown', session, 10, 100))
+
+    def test_shutdown_wait_cancel_rejects_identity_session_time_and_bool_confusion(self):
+        expected, session = self.shutdown_wait()
+        before = self.path.read_bytes()
+        for args in ((replace(expected, binding='different'), session, 10, 100),
+                     (expected, '3' * 64 + ':' + '2' * 32, 10, 100),
+                     (expected, session, 11, 100), (expected, session, 10, 99)):
+            self.assertFalse(self.store.release_bound_shutdown(*args, lambda: True))
+            self.assertEqual(self.path.read_bytes(), before)
+        self.assertFalse(self.store.release_bound_shutdown(expected, session, 10, 100, lambda: 1))
+
+    def test_shutdown_wait_publication_and_fsync_faults_preserve_active_proof(self):
+        expected, session = self.shutdown_wait()
+        before = self.path.read_bytes()
+        for target, effect in (('_publish_exclusive', OSError('publication')),
+                               ('os.fsync', [OSError('durability'), None])):
+            with patch('regear.delivery.dock_power_intent.' + target, side_effect=effect):
+                with self.assertRaises(OSError):
+                    self.store.release_bound_shutdown(expected, session, 10, 100, lambda: True)
+            self.assertEqual(self.path.read_bytes(), before)
+            self.assertEqual(self.claim.load(), expected)
+
+    def test_shutdown_wait_changed_intent_during_guard_is_never_archived(self):
+        expected, session = self.shutdown_wait()
+        def guard():
+            raw = json.loads(self.path.read_bytes())
+            raw['consumed'] = True
+            self.path.write_text(json.dumps(raw))
+            return True
+        self.assertFalse(self.store.release_bound_shutdown(expected, session, 10, 100, guard))
+        self.assertTrue(self.path.exists())
+        self.assertFalse(list(self.root.glob('unsubmitted-shutdown-wait-*.json')))
+
+    def test_dead_backend_wait_never_replays_and_requires_strict_different_session(self):
+        expected, session = self.shutdown_wait()
+        self.assertFalse(self.store.reconcile_stranded_shutdown_wait(expected, session, lambda: True))
+        self.assertFalse(self.store.reconcile_stranded_shutdown_wait(expected, '', lambda: True))
+        self.assertFalse(self.store.reconcile_stranded_shutdown_wait(expected, None, lambda: False))
+        self.assertTrue(self.store.reconcile_stranded_shutdown_wait(expected, None, lambda: True))
+        self.assertEqual(self.claim.load(), expected)
+        self.assertFalse(self.store.consume(*ARGS[:3], 'shutdown', session, 10, 100))
+
+    def test_consumed_absence_audit_keeps_connected_old_boot_retirement_available(self):
+        expected, session = self.shutdown_wait()
+        self.assertTrue(self.store.consume(*ARGS[:3], 'shutdown', session, 10, 100))
+        self.assertTrue(self.store.reconcile_consumed_shutdown_after_absence(expected, '3' * 64, lambda: True))
+        self.assertFalse(self.store.retire_after_boot(expected, '1' * 64, lambda: True))
+        self.assertFalse(self.store.retire_after_boot(expected, '3' * 64, lambda: False))
+        self.assertTrue(self.store.retire_after_boot(expected, '3' * 64, lambda: True))
+        self.assertIsNone(self.claim.load())
+
+    def test_connected_audit_fallback_refuses_ambiguous_or_changed_audits(self):
+        expected, session = self.shutdown_wait()
+        self.assertTrue(self.store.consume(*ARGS[:3], 'shutdown', session, 10, 100))
+        self.assertTrue(self.store.reconcile_consumed_shutdown_after_absence(expected, '3' * 64, lambda: True))
+        audit = list(self.root.glob('consumed-shutdown-absence-*.json'))[0]
+        duplicate = self.root / ('consumed-shutdown-absence-' + '4' * 32 + '.json')
+        duplicate.write_bytes(audit.read_bytes()); duplicate.chmod(0o600)
+        self.assertFalse(self.store.retire_after_boot(expected, '3' * 64, lambda: True))
+        duplicate.unlink()
+        def change():
+            raw = json.loads(audit.read_bytes()); raw['consumed'] = False
+            audit.write_text(json.dumps(raw)); return True
+        self.assertFalse(self.store.retire_after_boot(expected, '3' * 64, change))
+        self.assertEqual(self.claim.load(), expected)
+
     def test_old_boot_unsubmitted_shutdown_can_retire_without_touching_claim(self):
         args = (*ARGS[:4], '1' * 64 + ':' + 'b' * 32, *ARGS[5:])
         self.assertTrue(self.store.bind(*args))

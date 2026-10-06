@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import math
 import os
 import re
 import socket
@@ -63,7 +64,7 @@ from regear.delivery.device_authorization_hold import (  # noqa: E402
 )
 from regear.delivery.whole_dock_runtime import WholeDockRuntime, TUNNEL_SETTLE_REASONS  # noqa: E402
 from regear.delivery.dock_power_intent import DockPowerIntentStore  # noqa: E402
-from regear.delivery.dock_power_service import DockPowerRequest, create_power_request, continue_dock_power, dock_power_capabilities  # noqa: E402
+from regear.delivery.dock_power_service import DockPowerRequest, create_power_request, continue_dock_power, continue_shutdown_after_absence, dock_power_capabilities  # noqa: E402
 from regear.application.dock_power import DockPowerResult  # noqa: E402
 from regear.delivery.whole_dock_claim import WholeDockClaim, WholeDockClaimStore, inner_removal_records_absent  # noqa: E402
 from regear.delivery.whole_dock_completion import complete_record, observe_down_with_audit  # noqa: E402
@@ -2082,6 +2083,9 @@ class Plugin:
                         store.reconcile_stranded_sleep(
                             claim, live_session,
                             lambda: guard(require_power_intent=False))
+                        store.reconcile_stranded_shutdown_wait(
+                            claim, live_session,
+                            lambda: guard(require_power_intent=False))
                     except Exception:
                         # Reconciliation is best effort; the full guard below
                         # still owns archival admission.
@@ -2099,10 +2103,20 @@ class Plugin:
                     # A completed teardown from an attempted old-boot shutdown
                     # needs the same strict absence proof, not an attached dock.
                     # Consumption is retained as history, never poweroff proof.
+                    def consumed_absence_guard():
+                        # Do not remove the connected recovery lane's only
+                        # consumed proof when remembered authorization cannot
+                        # recover. Exact old-boot intent validation runs before
+                        # this callback, under the secure claim lock.
+                        proof = lambda: (guard(require_power_intent=False)
+                                         and read_boot_hash() == boot)
+                        return (proof() is True
+                            and self._restore_remembered_authorization_after_absence(
+                                claim, proof) is not None
+                            and proof() is True)
                     store.reconcile_consumed_shutdown_after_absence(
                         claim, boot,
-                        lambda: (guard(require_power_intent=False)
-                                 and read_boot_hash() == boot))
+                        consumed_absence_guard)
                 except Exception:
                     # Unknown intent/boot/storage remains inhibited below.
                     pass
@@ -2442,7 +2456,16 @@ class Plugin:
                                         power_store,
                                     )
                             else:
-                                result = self._submit_ordinary_shutdown(request)
+                                power_store = DockPowerIntentStore(RootOwnedRuntimeState().ensure())
+                                claim = WholeDockClaim(runtime._operation,
+                                    runtime.binding.binding, runtime.binding.generation, 'software_down')
+                                bound_request = self._dock_power_bound_request(request, claim.operation)
+                                if power_store.bind_shutdown_after_disconnect(claim,
+                                        bound_request.session, bound_request.requested_at,
+                                        bound_request.deadline) is not True:
+                                    raise ValueError('dock_power.intent_not_recorded')
+                                result = self._shutdown_after_physical_unplug(
+                                    bound_request, runtime, admission, power_store)
                             return DockPowerResult(result.code, result.requested, software_down=True)
                         finally:
                             admission['held'] = False
@@ -2826,6 +2849,158 @@ class Plugin:
                     admission['power_handoff'] = False
             time.sleep(0.25)
 
+    async def cancel_egpu_shutdown(self, request_id: str = '') -> dict[str, object]:
+        """Cancel only the live exact unplug wait, never an attempted poweroff.
+
+        Popup close/Hide/B never calls this. The waiter and consumption share
+        one lock; once consumption starts, cancellation cannot erase its proof.
+        """
+        wait = getattr(self, '_dock_shutdown_wait', None)
+        if (type(request_id) is not str or re.fullmatch('[0-9a-f]{32}', request_id) is None
+                or type(wait) is not dict or wait.get('request_id') != request_id):
+            return {'schema_version': 1, 'code': 'dock_power.cancel_unavailable',
+                'ok': False, 'request_id': request_id if type(request_id) is str
+                    and re.fullmatch('[0-9a-f]{32}', request_id) else ''}
+        # The submission critical section is short but may wait for systemctl.
+        # Do not block the event loop or wait until a power command completes.
+        if not wait['lock'].acquire(blocking=False):
+            return {'schema_version': 1, 'code': 'dock_power.already_consumed',
+                'ok': False, 'request_id': request_id}
+        try:
+            if wait.get('phase') != 'waiting':
+                code = 'dock_power.already_consumed' if wait.get('phase') == 'consuming' else 'dock_power.cancel_unavailable'
+                return {'schema_version': 1, 'code': code, 'ok': False, 'request_id': request_id}
+            wait['cancelled'] = True
+            return {'schema_version': 1, 'code': 'dock_power.cancel_pending',
+                'ok': True, 'request_id': request_id}
+        finally:
+            wait['lock'].release()
+
+    def _shutdown_after_physical_unplug(self, request, runtime, admission, power_store):
+        """Hold one prepared transaction until absence, expiry or explicit cancel.
+
+        Expiry/cancel permanently disables power, while the lease and admission
+        remain held until strict physical absence permits record-only cleanup.
+        No saved request is recovered by a new backend. UI receipt recovery is
+        observation only. Accepted/ambiguous submission keeps consumed history.
+        """
+        identity = getattr(self, '_dock_power_context', None)
+        public_id = identity[1] if identity is not None and identity[0] is request else ''
+        claim = WholeDockClaim(request.operation, runtime.binding.binding,
+            runtime.binding.generation, 'software_down')
+        wait = {'request_id': public_id, 'request': request, 'lock': threading.Lock(),
+            'phase': 'waiting', 'cancelled': False}
+        self._dock_shutdown_wait = wait
+
+        def owned(*, check_claim=True):
+            try:
+                return (type(request) is DockPowerRequest and request.action == 'shutdown'
+                    and admission.get('held') is True
+                    and not getattr(self, '_unloading', False)
+                    and self._dock_shutdown_wait is wait
+                    and reconnected is False
+                    and runtime._operation == request.operation
+                    and (not check_claim or power_store.load() == claim)
+                    and self._dock_power_session == request.session
+                    and re.fullmatch('[0-9a-f]{64}:[0-9a-f]{32}', request.session) is not None
+                    and read_boot_hash() == request.session.split(':', 1)[0]
+                    and self._whole_dock_trial_lease.status().active is True
+                    and self._dock_power_portable_verified() is True)
+            except Exception:
+                return False
+
+        def absence():
+            nonlocal transport_departed, reconnected
+            try:
+                topology = self._connection_topology.observe()
+                if topology.transport_present is False:
+                    transport_departed = True
+                elif topology.transport_present is True and transport_departed:
+                    reconnected = True
+                return (topology.transport_present is False
+                    and topology.transport_absent_verified is True
+                    and verified_transport_absent() is True)
+            except Exception:
+                return False
+
+        def proof(*, check_claim=True):
+            return (owned(check_claim=check_claim) is True and absence() is True
+                and owned(check_claim=check_claim) is True)
+
+        def publish(code, busy):
+            self._dock_sleep_status = {'schema_version': 1, 'code': code,
+                'request_id': public_id, 'route_action': 'whole_dock_shutdown',
+                'power_action': 'shutdown', 'power_requested': False,
+                'sleep_cycle_observed': False, 'software_down': True,
+                'unplug_required': True, 'safe_to_unplug': False,
+                'busy': busy, 'ok': False}
+
+        disabled = ''
+        transport_departed = False
+        reconnected = False
+        try:
+            if owned() is not True:
+                return DockPowerResult('dock_power.preflight_changed', software_down=True)
+            publish('dock_power.unplug_required', True)
+            while True:
+                if owned() is not True:
+                    return DockPowerResult('dock_power.preflight_changed', software_down=True)
+                now = time.monotonic()
+                if (type(now) not in (int, float) or not math.isfinite(now)
+                        or now < request.requested_at):
+                    return DockPowerResult('dock_power.preflight_changed', software_down=True)
+                with wait['lock']:
+                    if not disabled and (wait['cancelled'] is True or now >= request.deadline):
+                        disabled = ('dock_power.unplug_request_cancelled' if wait['cancelled'] is True
+                            else 'dock_power.unplug_request_expired')
+                        if power_store.release_bound_shutdown(claim, request.session,
+                                request.requested_at, request.deadline,
+                                lambda: (owned(check_claim=False) is True and (wait['cancelled'] is True
+                                    or time.monotonic() >= request.deadline))) is not True:
+                            return DockPowerResult('dock_power.preflight_changed', software_down=True)
+                        wait['phase'] = 'disabled'
+                        publish(disabled, True)
+                    if absence() is True:
+                        if disabled:
+                            if proof() is not True or power_store.power_intent_absent(claim) is not True:
+                                return DockPowerResult('dock_power.preflight_changed', software_down=True)
+                            hold = self._restore_remembered_authorization_after_absence(claim, proof)
+                            if hold is None or proof() is not True:
+                                return DockPowerResult('dock_power.preflight_changed', software_down=True)
+                            if (hold is not False and DeviceAuthorizationHoldStore(
+                                    DEFAULT_RUNTIME_STATE_ROOT).clear_after_absence(hold, proof) is not True):
+                                return DockPowerResult('dock_power.preflight_changed', software_down=True)
+                            retired = power_store.retire_physically_disconnected(claim,
+                                # The store owns exact claim equality before
+                                # publication; its post-publication guard sees
+                                # an archived claim and must still verify all
+                                # independent live absence/session/lease proof.
+                                lambda: proof(check_claim=False) is True
+                                    and power_store.power_intent_absent(claim) is True)
+                            if type(retired) is not str or not retired:
+                                return DockPowerResult('dock_power.preflight_changed', software_down=True)
+                            released = self._whole_dock_trial_lease.release()
+                            if getattr(released, 'active', True) is not False:
+                                return DockPowerResult('dock_power.preflight_changed', software_down=True)
+                            self._whole_dock_trial_runtime = None
+                            if re.fullmatch('[0-9a-f]{32}', public_id):
+                                self._whole_dock_physical_absence_verified_request = public_id
+                            publish(disabled, False)
+                            return DockPowerResult(disabled, software_down=True)
+                        wait['phase'] = 'consuming'
+                        return continue_shutdown_after_absence(request, expected_claim=claim,
+                            store=power_store, verify_absence=proof,
+                            power=SystemPowerCommandRunner(),
+                            admission_held=lambda: owned() is True,
+                            monotonic=time.monotonic)
+                time.sleep(0.25)
+        except Exception:
+            return DockPowerResult('dock_power.unresolved', software_down=True)
+        finally:
+            with wait['lock']:
+                if wait['phase'] != 'consuming':
+                    wait['phase'] = 'finished'
+
     def _dock_power_portable_verified(self):
         snapshot = SnapshotTransitionObservationAdapter(self._discovery).observe().snapshot
         return (not getattr(self, '_unloading', False)
@@ -3093,14 +3268,9 @@ class Plugin:
                     power_result = self._sleep_after_physical_unplug(
                         power_request, runtime, admission, power_store)
                     return DockPowerResult(power_result.code, power_result.requested, software_down=True)
-                def portable():
-                    snapshot = SnapshotTransitionObservationAdapter(self._discovery).observe().snapshot
-                    return (not getattr(self, '_unloading', False)
-                        and snapshot.game_state is GameState.IDLE
-                        and infer_operating_mode(snapshot).mode is OperatingMode.PORTABLE)
-                power_result = continue_dock_power(power_request, runtime=runtime, store=power_store,
-                    portable_verified=portable, power=SystemPowerCommandRunner(),
-                    admission_held=guarded_admission)
+                power_request = self._dock_power_bound_request(power_request, operation)
+                power_result = self._shutdown_after_physical_unplug(
+                    power_request, runtime, admission, power_store)
                 return DockPowerResult(power_result.code, power_result.requested,
                     software_down=True)
             except Exception:
@@ -3460,9 +3630,11 @@ class Plugin:
             if (in_flight
                     and type(power_progress) is dict
                     and power_progress.get("schema_version") == 1
-                    and power_progress.get("route_action") == "whole_dock_sleep"
+                    and (power_progress.get("route_action"), power_progress.get("power_action")) in (
+                        ("whole_dock_sleep", "sleep"), ("whole_dock_shutdown", "shutdown"))
                     and power_progress.get("code") in (
-                        "dock_power.unplug_required", "dock_power.unplug_request_expired")
+                        "dock_power.unplug_required", "dock_power.unplug_request_expired",
+                        "dock_power.unplug_request_cancelled")
                     and power_progress.get("busy") is True
                     and power_progress.get("software_down") is True
                     and power_progress.get("safe_to_unplug") is False
@@ -3582,12 +3754,25 @@ class Plugin:
                     == "dock_power.suspend_inhibited"
                 and not in_flight
             )
+            terminal_stopped_unplug_shutdown = (
+                result.get("schema_version") == 1
+                and result.get("code") in (
+                    "dock_power.unplug_request_expired", "dock_power.unplug_request_cancelled")
+                and result.get("route_action") == "whole_dock_shutdown"
+                and result.get("power_action") == "shutdown"
+                and result.get("busy") is False and result.get("ok") is False
+                and result.get("software_down") is True
+                and result.get("power_requested") is False
+                and result.get("unplug_required") is True
+                and result.get("safe_to_unplug") is False and not in_flight
+            )
             if (terminal_software_down or terminal_unresolved
                     or terminal_failed_connected_sleep
                     or terminal_completed_connected_sleep
                     or terminal_completed_unplug_sleep
                     or terminal_expired_unplug_sleep
-                    or terminal_refused_unplug_sleep):
+                    or terminal_refused_unplug_sleep
+                    or terminal_stopped_unplug_shutdown):
                 # Power results have their own durable presentation channel in
                 # _dock_sleep_status. An unresolved worker result is retained
                 # history once no worker or claim survives and a complete,
@@ -3910,6 +4095,11 @@ class Plugin:
                         payload['power_requested'] = getattr(result, 'requested', False) is True
                         payload['ok'] = payload['power_requested']
                         payload['power_action'] = power_request.action
+                        payload['unplug_required'] = result.code in {
+                            'dock_power.unplug_required',
+                            'dock_power.unplug_request_expired',
+                            'dock_power.unplug_request_cancelled',
+                        }
                         if power_request.action == 'sleep':
                             payload['sleep_cycle_observed'] = result.code == 'dock_power.sleep_cycle_observed'
                             payload['unplug_required'] = result.code in {
@@ -3973,7 +4163,7 @@ class Plugin:
                     payload['power_action'] = power_request.action
                     payload.setdefault('power_requested', False)
                     payload.setdefault('sleep_cycle_observed', False)
-                    if trial_action == 'whole_dock_sleep':
+                    if trial_action in ('whole_dock_sleep', 'whole_dock_shutdown'):
                         payload.setdefault('software_down', False)
                         payload.setdefault('unplug_required', False)
                         payload['in_flight'] = False

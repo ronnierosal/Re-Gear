@@ -60,32 +60,40 @@ class MainDockPowerTests(unittest.TestCase):
         self.plugin._run_whole_dock_trial.assert_called_once_with(
             request.operation, '', power_request=request)
 
-    def test_already_down_shutdown_verifies_release_without_repeating_removal(self):
+    def test_already_down_shutdown_binds_exact_claim_and_waits_without_repeating_removal(self):
         @contextmanager
-        def admit(**kwargs):
-            yield
+        def admit(**kwargs): yield
         self.plugin._dock_mutation_gate = lambda: NS(admit=admit)
         self.plugin._dock_power_portable_verified = lambda: True
         admission = {'held': False}
-        runtime = NS(_operation='original-disconnect', _owned=lambda stage: True,
+        runtime = NS(_operation='d' * 32, binding=NS(binding='binding', generation='generation'),
+            _owned=lambda stage: True,
             verify_power_continuation=Mock(side_effect=lambda *a, **k: admission['held']))
         self.plugin._whole_dock_trial_runtime = (runtime, admission)
         self.plugin._run_whole_dock_trial = Mock()
-        request = self.module.create_power_request('shutdown', 'session')
+        self.plugin._shutdown_after_physical_unplug = Mock(return_value=self.module.DockPowerResult(
+            'dock_power.unplug_required', software_down=True))
+        request = self.module.create_power_request('shutdown', 'b' * 64 + ':' + 'a' * 32)
         with patch.object(self.module, 'verified_transport_absent', return_value=False), \
+             patch.object(self.module, 'RootOwnedRuntimeState'), \
+             patch.object(self.module, 'DockPowerIntentStore') as store, \
              patch.object(self.module, 'SystemPowerCommandRunner') as runner:
-            runner.return_value.request_poweroff.return_value = NS(requested=True, code='accepted')
+            store.return_value.bind_shutdown_after_disconnect.return_value = True
             result = self.plugin._run_dock_power_request(request)
-            self.assertTrue(result.requested)
-            # This is the branch that bricked the control: a real poweroff is
-            # submitted, and the reply has to be one the frontend can settle or
-            # the pending record survives the reboot with nothing able to clear it.
-            self.assertEqual(result.code, 'dock_power.request_accepted_unverified')
+            self.assertFalse(result.requested)
+            self.assertEqual(result.code, 'dock_power.unplug_required')
             self.assertTrue(result.software_down)
             self.assertFalse(admission['held'])
-            runner.return_value.request_poweroff.assert_called_once()
+            runner.assert_not_called()
+            bound = self.plugin._shutdown_after_physical_unplug.call_args.args[0]
+            self.assertEqual(bound.operation, runtime._operation)
+            self.assertEqual((bound.session, bound.requested_at, bound.deadline),
+                (request.session, request.requested_at, request.deadline))
+            store.return_value.bind_shutdown_after_disconnect.assert_called_once_with(
+                self.module.WholeDockClaim(runtime._operation, 'binding', 'generation', 'software_down'),
+                request.session, request.requested_at, request.deadline)
         self.plugin._run_whole_dock_trial.assert_not_called()
-        runtime.verify_power_continuation.assert_called_once_with('original-disconnect',
+        runtime.verify_power_continuation.assert_called_once_with(runtime._operation,
             portable_verified=self.plugin._dock_power_portable_verified)
 
     def test_ordinary_shutdown_timeout_is_not_replayed(self):
@@ -476,7 +484,19 @@ class MainDockPowerTests(unittest.TestCase):
                 power.request_poweroff.side_effect = lambda: event('power', NS(requested=True))
                 lease.acquire.return_value.active = True
                 lease.status.side_effect = lambda: NS(active=inhibitor['active'])
-                request = self.module.create_power_request('shutdown', 'a' * 32)
+                request = self.module.create_power_request('shutdown', 'b' * 64 + ':' + 'a' * 32)
+                self.plugin._dock_power_session = request.session
+                runtime._operation = request.operation
+                store.load.return_value = self.module.WholeDockClaim(request.operation, binding.binding, binding.generation, 'software_down')
+                transport = {'present': True}
+                self.plugin._connection_topology = NS(observe=lambda: NS(transport_present=transport['present'], transport_absent_verified=not transport['present']))
+                def unplug(_):
+                    self.assertEqual(self.plugin._dock_sleep_status['code'], 'dock_power.unplug_required')
+                    event('unplug_prompt')
+                    power.request_poweroff.assert_not_called()
+                    store.consume.assert_not_called()
+                    transport['present'] = False
+                    event('physical_absence')
                 snapshot = NS(game_state=self.module.GameState.UNKNOWN if failure == 'unknown_game'
                     else self.module.GameState.IDLE)
                 self.plugin._discovery = Mock()
@@ -493,7 +513,9 @@ class MainDockPowerTests(unittest.TestCase):
                     patch.object(self.module, 'SnapshotTransitionObservationAdapter') as observer, \
                     patch.object(self.module, 'infer_operating_mode', return_value=NS(
                         mode=None if failure == 'tv' else self.module.OperatingMode.PORTABLE)), \
-                    patch.object(self.module, 'build_live_disconnect_runtime', return_value=release):
+                    patch.object(self.module, 'build_live_disconnect_runtime', return_value=release), \
+                    patch.object(self.module.time, 'sleep', side_effect=unplug), \
+                    patch.object(self.module, 'verified_transport_absent', return_value=True):
                     drm.return_value.scan.return_value = [NS(boot_vga=False, pci_bdf='gpu')]
                     observer.return_value.observe.return_value.snapshot = snapshot
                     if failure in ('bind', 'release', 'teardown', 'lease_lost_portable', 'unloading'):
@@ -517,7 +539,8 @@ class MainDockPowerTests(unittest.TestCase):
                 self.assertFalse(held)
                 if not failure:
                     self.assertEqual(events, ['portable', 'claim', 'bind', 'release',
-                        'verify_release', 'teardown', 'proof', 'consume', 'proof', 'power'])
+                        'verify_release', 'teardown', 'unplug_prompt', 'physical_absence', 'consume', 'power'])
+                    runtime.verify_power_continuation.assert_not_called()
 
 
 if __name__ == '__main__':

@@ -18,12 +18,14 @@ new Function("exports", compile(read("menu-visibility.ts")))(visibilityExports);
 const actionExports = {};
 new Function("exports", compile(read("test-build-actions.ts")))(actionExports);
 
+const modelExports = {};
+new Function("exports", compile(readFileSync(new URL("../src/whole-dock-control-model.ts", import.meta.url), "utf8")))(modelExports);
 const REQUEST = "a".repeat(32);
 
 function harness(pending = null, recoverTerminalDockReceipt = async () => null, realWarning = false) {
   const h = {
     cleanup: [], modals: [], sounds: [], timers: new Map(), intervals: new Map(),
-    nextTimer: 1, warningStopped: false, reads: 0,
+    nextTimer: 1, warningStopped: false, reads: 0, calls: [],
     status: { schema_version: 1, code: "dock_teardown.no_trial" },
   };
   const values = new Map(pending ? [["regear.whole-dock.pending-request", pending]] : []);
@@ -37,6 +39,7 @@ function harness(pending = null, recoverTerminalDockReceipt = async () => null, 
   const runtime = {
     ...visibilityExports,
     ...actionExports,
+    ...modelExports,
     createUnplugWarningCoordinator: ports => {
       h.warningPorts = ports;
       if (realWarning) {
@@ -71,7 +74,7 @@ function harness(pending = null, recoverTerminalDockReceipt = async () => null, 
     displayTargetActionTile: () => ({ id: "display-target", title: "Display Target", value: "Unavailable", detail: "Unavailable" }),
     callable: name => name === "get_egpu_disconnect_status"
       ? async () => { h.reads++; return h.status; }
-      : async () => null,
+      : async (...args) => { h.calls.push({ name, args }); return null; },
     GamepadButton: { DIR_UP: 9, DIR_DOWN: 10, DIR_LEFT: 11, DIR_RIGHT: 12 },
     EgpuConfirmModal: "confirm",
     parsePendingRecord: raw => {
@@ -352,3 +355,25 @@ test("an inline warning remains observed after the Command Center closes", async
   assert.equal(h.storage.getItem("regear.whole-dock.pending-request"), pending);
   h.menu.stop();
 });
+
+for (const code of ["dock_power.unplug_required", "dock_power.unplug_request_expired", "dock_power.unplug_request_cancelled"]) {
+  test("actual owner preserves shutdown warning across Hide/B/host close: " + code, async () => {
+    const pending = `v2:shutdown:backend-terminal:${REQUEST}`;
+    const h = harness(pending, undefined, true);
+    h.status = { schema_version: 1, request_id: REQUEST, code, busy: true, in_flight: true,
+      ok: false, software_down: true, safe_to_unplug: false, unplug_required: true,
+      power_action: "shutdown", power_requested: false, route_action: "whole_dock_shutdown", phase: "power_verification" };
+    h.modals.at(-1).options.fnOnClose();
+    await h.runOwnerPoll();
+    assert.equal(h.warning.read().phase, "prompt");
+    const popup = h.modals.at(-1);
+    popup.node.props.onOK(); popup.node.props.onCancel();
+    assert.equal(popup.closed, false);
+    popup.closed = true; popup.options.fnOnClose();
+    assert.equal(h.modals.at(-1).closed, false);
+    assert.equal(h.storage.getItem("regear.whole-dock.pending-request"), pending);
+    assert.ok(h.reads > 0);
+    assert.equal(h.calls.some(call => call.name === "cancel_egpu_shutdown" || call.name === "execute_egpu_disconnect"), false);
+    h.menu.stop();
+  });
+}

@@ -18,7 +18,7 @@ CONNECTION_AND_DISCONNECT_RPCS = frozenset({
     "get_snapshot",
     "get_automatic_dock_status",
     "get_link_recovery_status",
-    "get_egpu_disconnect_status", "execute_egpu_disconnect",
+    "get_egpu_disconnect_status", "execute_egpu_disconnect", "cancel_egpu_shutdown",
     "preview_presentation_preparation",
     "preview_supervised_tv_switch",
     "get_supervised_tv_switch_status",

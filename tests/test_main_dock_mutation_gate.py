@@ -1535,7 +1535,7 @@ class CompletedAttachmentAbsenceTests(unittest.TestCase):
         for options in (
             {'strict': False}, {'absent': False}, {'idle': False}, {'user_ok': False},
             {'settled': False}, {'inner': False}, {'journal_durable': False},
-            {'journal_owner': 'presentation'}, {'consumed': False}, {'worker': True},
+            {'journal_owner': 'presentation'}, {'worker': True},
             {'unloading': True}, {'capture': True}, {'stage': 'reauthorize_intent'},
             {'boot': '1' * 64}, {'boot': ''}, {'boot': None},
             {'boot': ['2' * 64, '3' * 64]},
@@ -1546,13 +1546,17 @@ class CompletedAttachmentAbsenceTests(unittest.TestCase):
 
     def test_consumed_power_audit_does_not_grant_claim_retirement_with_unknown_authorization(self):
         self.assertEqual(self.shutdown_absence_fixture(
-            stage='software_down', consumed=True, authorization=None), (False, 0, 1))
+            stage='software_down', consumed=True, authorization=None), (False, 0, 0))
+
+    def test_dead_unconsumed_shutdown_wait_retires_only_through_full_absence_workflow(self):
+        self.assertEqual(self.shutdown_absence_fixture(
+            stage='software_down', consumed=False), (True, 1, 1))
 
     def test_consumed_absence_reobserves_transport_before_and_after_power_archival(self):
         self.assertEqual(self.shutdown_absence_fixture(
             stage='software_down', consumed=True, strict=[True, False]), (False, 0, 0))
         self.assertEqual(self.shutdown_absence_fixture(
-            stage='software_down', consumed=True, strict=[True, True, False]), (False, 0, 1))
+            stage='software_down', consumed=True, strict=[True, True, False]), (False, 0, 0))
 
     def test_interrupted_absent_record_archives_without_claiming_success(self):
         original = {'code': 'dock_teardown.unresolved', 'request_id': 'a' * 32,

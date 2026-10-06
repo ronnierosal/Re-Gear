@@ -6,7 +6,7 @@ const js = ts.transpileModule(readFileSync(new URL("../src/whole-dock-control-mo
   compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 },
 }).outputText;
 const { dockControl, dockIntentControl, dockRequestAbandoned, dockRequestSettled, formatPendingRecord,
-  parsePendingRecord, shutdownRequested, sleepReceiptArchivedAfterAbsence, suspendRefusal } = await import("data:text/javascript;base64," + Buffer.from(js).toString("base64"));
+  parsePendingRecord, shutdownRequested, sleepReceiptArchivedAfterAbsence, shutdownUnplugWaiting, suspendRefusal } = await import("data:text/javascript;base64," + Buffer.from(js).toString("base64"));
 const idle = { schema_version: 3, game_state: "idle", egpu_link: { state: "up" }, observed_at: new Date().toISOString() };
 const fresh = { schema_version: 1, busy: false, safe_to_unplug: false, code: "dock_teardown.no_trial", attachment_token: "a".repeat(64)+":"+"b".repeat(64) };
 test("initial disconnect requires supported status and idle detected GPU", () => {
@@ -67,8 +67,8 @@ function harness(storage = new Map(), intent = "disconnect", startRequest, initi
     return {Close(){if(record.closed)return;record.closed=true;}};
   };
   const window={localStorage:{getItem:key=>storage.get(key)??null,setItem(key,value){if(h.failStorage)throw Error('storage denied');storage.set(key,value);},removeItem:key=>storage.delete(key)}};
-  const runtime = new Function('React','useState','useRef','useEffect','useSyncExternalStore','callable','DialogButton','showModal','EgpuConfirmModal','dockIntentControl','dockRequestAbandoned','dockRequestSettled','formatPendingRecord','parsePendingRecord','sleepReceiptArchivedAfterAbsence','window','crypto','setTimeout','clearTimeout', componentJs+'\nreturn {WholeDockControl,recoverTerminalDockReceipt};')(
-    React,useState,useRef,useEffect,useSyncExternalStore,callable,'button',showModal,'confirm',dockIntentControl,dockRequestAbandoned,dockRequestSettled,formatPendingRecord,parsePendingRecord,sleepReceiptArchivedAfterAbsence,window,
+  const runtime = new Function('React','useState','useRef','useEffect','useSyncExternalStore','callable','DialogButton','showModal','EgpuConfirmModal','dockIntentControl','dockRequestAbandoned','dockRequestSettled','formatPendingRecord','parsePendingRecord','sleepReceiptArchivedAfterAbsence','shutdownUnplugWaiting','window','crypto','setTimeout','clearTimeout', componentJs+'\nreturn {WholeDockControl,recoverTerminalDockReceipt};')(
+    React,useState,useRef,useEffect,useSyncExternalStore,callable,'button',showModal,'confirm',dockIntentControl,dockRequestAbandoned,dockRequestSettled,formatPendingRecord,parsePendingRecord,sleepReceiptArchivedAfterAbsence,shutdownUnplugWaiting,window,
     {randomUUID:()=> '12345678-1234-1234-1234-123456789abc'},
     fn=>{h.timers.set(++serial,fn);return serial;},id=>h.timers.delete(id));
   const Component=runtime.WholeDockControl;
