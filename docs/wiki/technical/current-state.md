@@ -5,12 +5,14 @@ Development build **0.3.183 is installed and loaded**, verified against source
 Two Safe Disconnect + Shutdown runs were user-observed successes; the first
 subsequent boot/TV reconnect was claim-free, while the final detached boot retained
 **`software_down`, not `none`**. This is bounded evidence, not complete Class D
-acceptance, general hardware support or a public release. See the
+acceptance or general hardware support. It is now a one-time authorized
+development-checkpoint prerelease, not general availability. See the
 [current-state authority](../../CURRENT_STATE.md#installed-03183-shutdown-checkpoint--october-6-2026-utc).
 
 ## For players — no technical background needed
 
-Re-Gear is still in development and has no supported public release.
+Re-Gear is still in development. The published 0.3.183 checkpoint is a prerelease
+with bounded evidence, not a generally supported release.
 
 On the recorded setup, Safe Disconnect + Shutdown powered off twice and the
 first reboot returned to a healthy TV connection. A final detached boot remained
@@ -61,16 +63,18 @@ button success does not establish a causal defect or broad controller acceptance
 [shutdown timeout FAIL](https://github.com/ronnierosal/Re-Gear/issues/18#issuecomment-6005442766)
 and ordinary OS recovery are not retroactively changed. 0.3.182 is intermediate
 source/artifact evidence. Eight ancestor PRs closed unmerged under #464 revision
-25 as source-superseded, not hardware PASS. The
-[#18 proposal](https://github.com/ronnierosal/Re-Gear/issues/464#issuecomment-6009420758)
-is historical supersession, not proof that the original ordinary shutdown hang
-was fixed or retested. See the [authority](../../CURRENT_STATE.md#installed-03183-shutdown-checkpoint--october-6-2026-utc)
+25 as source-superseded, not hardware PASS. [#18](https://github.com/ronnierosal/Re-Gear/issues/18) closed as superseded
+under #464 revision 29; [the preserved route distinction](https://github.com/ronnierosal/Re-Gear/issues/464#issuecomment-6009420758)
+means the original ordinary shutdown hang was not fixed or retested. See the [authority](../../CURRENT_STATE.md#installed-03183-shutdown-checkpoint--october-6-2026-utc)
 for preserved successor and independent obligations.
 
-The 183 CI development artifact is available, distinct from a public Release;
-no new tag/Release was created by this update. [Release gates](../../RELEASE_PIPELINE.md)
+[v0.3.183 is published as a development-checkpoint prerelease](https://github.com/ronnierosal/Re-Gear/releases/tag/v0.3.183),
+following Ronnie's explicit one-time publication exception at 04:43:27 UTC on
+October 6. Download-back source/size/hash matched the unchanged immutable artifact.
+This is not general availability, full certification or runtime merge authority;
+branch protections and safety checks are unchanged. [Release gates](../../RELEASE_PIPELINE.md)
 and full Class D/procedure, cleanup/power correlation, native F6/controller,
-fault and latency checks remain. No private raw topology or photos are published.
+fault and latency checks remain; no broader policy exception is granted. No private raw topology or photos are published.
 
 ### Installed 0.3.180: bounded working checkpoint
 

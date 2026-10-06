@@ -5,7 +5,7 @@
 [Exact checkpoint reconciliation](https://github.com/ronnierosal/Re-Gear/issues/464#issuecomment-6009350961)
 records installed disk, live backend and loaded frontend identity on the recorded
 Ally X + GPD G1 configuration. This is the latest bounded installed checkpoint,
-not complete hardware certification, runtime merge acceptance or a public release.
+not complete hardware certification, runtime merge acceptance or general availability.
 
 | Identity | Preserved value |
 |---|---|
@@ -50,13 +50,20 @@ with ordinary OS recovery. 0.3.182 is intermediate source/artifact evidence, not
 this installed 183 checkpoint. Eight ancestor PRs (#435/#436/#437/#438/#439/#440/
 #443/#453) closed **unmerged as source-superseded** under #464 revision 25;
 closure is source adoption, not hardware PASS, and their obligations/history remain.
-The [#18 supersession proposal](https://github.com/ronnierosal/Re-Gear/issues/464#issuecomment-6009420758)
-distinguishes these safe-shutdown runs from the original ordinary attached-shutdown
-hang: the original route/cause is unverified and the proposal is not closure proof.
+[#18](https://github.com/ronnierosal/Re-Gear/issues/18) is closed as superseded
+under #464 revision 29, carrying remaining obligations into the successor.
+[The route distinction](https://github.com/ronnierosal/Re-Gear/issues/464#issuecomment-6009420758)
+remains: these safe-shutdown runs did not fix or retest the original ordinary
+attached-shutdown hang; its route/cause is unverified.
 
-The exact 183 GitHub CI development artifact is available; an artifact is not a
-GitHub Release. No new tag or public Release was created by this update.
-[Release-pipeline](RELEASE_PIPELINE.md) hardware/certification gates still apply.
+The exact 183 CI development artifact is also published as
+[development-checkpoint prerelease v0.3.183](https://github.com/ronnierosal/Re-Gear/releases/tag/v0.3.183).
+At 04:43:27 UTC on October 6, Ronnie explicitly approved a **one-time publication
+exception for this exact checkpoint**. Download-back identity was verified;
+source, size and SHA-256 above are unchanged, with no rebuild. Publication is not
+general availability, full certification or runtime merge authority. Branch
+protections and safety checks are unchanged; [release-pipeline](RELEASE_PIPELINE.md)
+gates remain, with no broader exception granted.
 #464/#472 retain completed-record retirement, power correlation, missing terminal
 and timing evidence, native F6/controller/fault/latency and full Class D/procedure
 acceptance. Independent #19/#446/#448/#466/#136/#161 and #17/#428 obligations are
