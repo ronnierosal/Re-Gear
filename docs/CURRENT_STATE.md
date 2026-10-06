@@ -57,11 +57,15 @@ remains: these safe-shutdown runs did not fix or retest the original ordinary
 attached-shutdown hang; its route/cause is unverified.
 
 The exact 183 CI development artifact is also published as
-[development-checkpoint prerelease v0.3.183](https://github.com/ronnierosal/Re-Gear/releases/tag/v0.3.183).
-At 04:43:27 UTC on October 6, Ronnie explicitly approved a **one-time publication
-exception for this exact checkpoint**. Download-back identity was verified;
+[normal published version v0.3.183, marked Latest](https://github.com/ronnierosal/Re-Gear/releases/tag/v0.3.183).
+It was initially published as a development-checkpoint prerelease after Ronnie
+approved a **one-time publication exception** at 04:43:27 UTC on October 6.
+At 04:48:38 UTC Ronnie explicitly requested normal Live/Latest classification;
+at 04:49:43 UTC the release was verified non-prerelease and Latest.
+Download-back identity was verified;
 source, size and SHA-256 above are unchanged, with no rebuild. Publication is not
-general availability, full certification or runtime merge authority. Branch
+a guarantee of general hardware coverage, full certification or runtime merge
+authority. The normal release label does not expand the recorded test scope. Branch
 protections and safety checks are unchanged; [release-pipeline](RELEASE_PIPELINE.md)
 gates remain, with no broader exception granted.
 #464/#472 retain completed-record retirement, power correlation, missing terminal

@@ -6,7 +6,8 @@ Two Safe Disconnect + Shutdown runs were user-observed successes; the first
 subsequent boot/TV reconnect was claim-free, while the final detached boot retained
 **`software_down`, not `none`**. This is bounded evidence, not complete Class D
 acceptance or general hardware support. It is now a one-time authorized
-development-checkpoint prerelease, not general availability. See the
+normal published version marked Latest, with bounded validation rather than a
+guarantee of general hardware coverage. See the
 [current-state authority](../../CURRENT_STATE.md#installed-03183-shutdown-checkpoint--october-6-2026-utc).
 
 ## For players — no technical background needed
@@ -68,10 +69,14 @@ under #464 revision 29; [the preserved route distinction](https://github.com/ron
 means the original ordinary shutdown hang was not fixed or retested. See the [authority](../../CURRENT_STATE.md#installed-03183-shutdown-checkpoint--october-6-2026-utc)
 for preserved successor and independent obligations.
 
-[v0.3.183 is published as a development-checkpoint prerelease](https://github.com/ronnierosal/Re-Gear/releases/tag/v0.3.183),
-following Ronnie's explicit one-time publication exception at 04:43:27 UTC on
-October 6. Download-back source/size/hash matched the unchanged immutable artifact.
-This is not general availability, full certification or runtime merge authority;
+[v0.3.183 is a normal published version marked Latest](https://github.com/ronnierosal/Re-Gear/releases/tag/v0.3.183),
+initially published as a development-checkpoint prerelease under Ronnie's
+one-time exception at 04:43:27 UTC on October 6. Ronnie requested normal
+Live/Latest classification at 04:48:38 UTC; non-prerelease/Latest readback was
+verified at 04:49:43 UTC. Source, tag and assets are unchanged.
+Download-back source/size/hash matched the immutable artifact. Normal release
+classification is not full certification, general hardware coverage or runtime
+merge authority;
 branch protections and safety checks are unchanged. [Release gates](../../RELEASE_PIPELINE.md)
 and full Class D/procedure, cleanup/power correlation, native F6/controller,
 fault and latency checks remain; no broader policy exception is granted. No private raw topology or photos are published.
