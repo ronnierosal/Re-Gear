@@ -39,6 +39,24 @@ const strictInterruptedDisconnect = (status: any, request: string) => status?.sc
   && status.release?.filter_disarmed === true
   && status.claim_stage === "tunnel_remove_intent";
 
+const strictTerminalShutdownFailure = (status: any, request: string) => status?.schema_version === 1
+  && status.request_id === request
+  && status.code === "dock_power.disconnect_unverified"
+  && status.busy === false && status.in_flight === false && status.ok === false
+  && (status.software_down === undefined || status.software_down === false)
+  && status.safe_to_unplug === false
+  && status.power_action === "shutdown" && status.power_requested === false
+  && status.route_action === "whole_dock_shutdown"
+  && status.phase === "dock_teardown" && status.claim_stage === "tunnel_remove_intent"
+  && status.release_stage === "removed"
+  && status.release?.code === "live_disconnect.removed"
+  && status.release?.released === true && status.release?.display_released === true
+  && status.release?.filter_disarmed === true
+  && status.teardown?.code === "dock_teardown.unresolved"
+  && status.teardown?.tunnel_stage === "settle"
+  && status.teardown?.tunnel_code === "dock_teardown.tunnel_settle_unverified"
+  && status.teardown?.tunnel_reason === "dock_teardown.tunnel_settle_timeout";
+
 const strictTerminalSleepFailure = (status: any, request: string) => status?.schema_version === 1
   && status.request_id === request
   && status.code === "dock_power.disconnect_unverified"
@@ -92,11 +110,13 @@ export async function recoverTerminalDockReceipt(storage?: Pick<Storage, "getIte
     && strictInterruptedDisconnect(status, request);
   const sleepFailure = typeof request === "string" && submittedRequest.test(request)
     && strictTerminalSleepFailure(status, request);
+  const shutdownFailure = typeof request === "string" && submittedRequest.test(request)
+    && strictTerminalShutdownFailure(status, request);
   const sleepUnplug = typeof request === "string" && submittedRequest.test(request)
     && strictSleepUnplugState(status, request);
-  if (!terminal && !interrupted && !sleepFailure && !sleepUnplug) return null;
-  const intent: DockIntent = sleepFailure || sleepUnplug ? "sleep" : "disconnect_only";
-  const raw = formatPendingRecord(intent, terminal || sleepFailure || sleepUnplug ? recoveredPanel : interruptedPanel, request);
+  if (!terminal && !interrupted && !sleepFailure && !sleepUnplug && !shutdownFailure) return null;
+  const intent: DockIntent = shutdownFailure ? "shutdown" : sleepFailure || sleepUnplug ? "sleep" : "disconnect_only";
+  const raw = formatPendingRecord(intent, terminal || sleepFailure || sleepUnplug || shutdownFailure ? recoveredPanel : interruptedPanel, request);
   try {
     if (storage.getItem(pendingKey)) return null;
     storage.setItem(pendingKey, raw);
