@@ -94,6 +94,150 @@ class IntentFilesystemTests(unittest.TestCase):
         self.claim.record(ARGS[0], 'tunnel_remove_intent')
         return self.claim.load(), self.path.read_bytes()
 
+    def test_consumed_old_boot_shutdown_archives_only_exact_power_history(self):
+        args = (*ARGS[:4], '1' * 64 + ':' + 'b' * 32, *ARGS[5:])
+        self.assertTrue(self.store.bind(*args))
+        self.claim.record(ARGS[0], 'software_down')
+        self.assertTrue(self.store.consume(*args))
+        claim = self.claim.load()
+        before = self.path.read_bytes()
+        self.assertTrue(self.store.reconcile_consumed_shutdown_after_absence(
+            claim, '2' * 64, lambda: True))
+        self.assertEqual(self.claim.load(), claim)
+        self.assertTrue(self.claim.power_intent_absent(claim))
+        archives = list(self.root.glob('consumed-shutdown-absence-*.json'))
+        self.assertEqual(len(archives), 1)
+        self.assertEqual(archives[0].read_bytes(), before)
+        self.assertFalse(self.store.consume(*args))
+
+    def completed_shutdown(self):
+        args = (*ARGS[:4], '1' * 64 + ':' + 'b' * 32, *ARGS[5:])
+        self.assertTrue(self.store.bind(*args))
+        self.claim.record(ARGS[0], 'software_down')
+        self.assertTrue(self.store.consume(*args))
+        return self.claim.load(), self.path.read_bytes()
+
+    def test_consumed_absence_recovery_rejects_unknown_or_unrelated_history(self):
+        claim, before = self.completed_shutdown()
+        original = json.loads(before)
+        for changes in (
+            {'consumed': False}, {'consumed': 1}, {'consumed': 'true'},
+            {'action': 'sleep'}, {'operation': 'b' * 32}, {'binding': 'other'},
+            {'generation': 'other'}, {'session': 'legacy'},
+            {'session': '2' * 64 + ':' + 'a' * 32}, {'session': 'G' * 64 + ':' + 'a' * 32},
+            {'schema_version': True}, {'extra': 'unknown'},
+        ):
+            with self.subTest(changes=changes):
+                self.path.write_text(json.dumps(dict(original, **changes)))
+                raw = self.path.read_bytes()
+                self.assertFalse(self.store.reconcile_consumed_shutdown_after_absence(
+                    claim, '2' * 64, lambda: True))
+                self.assertEqual(self.path.read_bytes(), raw)
+                self.assertEqual(self.claim.load(), claim)
+        for raw in (b'{', b'{}', b'x' * 4097,
+                    before.replace(b'{', b'{"consumed":false,', 1)):
+            self.path.write_bytes(raw)
+            self.assertFalse(self.store.reconcile_consumed_shutdown_after_absence(
+                claim, '2' * 64, lambda: True))
+            self.assertEqual(self.path.read_bytes(), raw)
+        self.path.unlink()
+        self.assertFalse(self.store.reconcile_consumed_shutdown_after_absence(
+            claim, '2' * 64, lambda: True))
+        self.assertEqual(self.claim.load(), claim)
+        self.assertEqual(list(self.root.glob('consumed-shutdown-absence-*.json')), [])
+
+    def test_consumed_absence_requires_exact_completed_claim_boot_and_guard(self):
+        claim, before = self.completed_shutdown()
+        for expected, boot, guard in (
+            (claim, '1' * 64, lambda: True), (claim, '', lambda: True),
+            (claim, None, lambda: True), (claim, True, lambda: True),
+            (claim, '2' * 63, lambda: True), (claim, 'G' * 64, lambda: True),
+            (replace(claim, stage='tunnel_remove_intent'), '2' * 64, lambda: True),
+            (replace(claim, stage='reauthorize_intent'), '2' * 64, lambda: True),
+            (replace(claim, operation='b' * 32), '2' * 64, lambda: True),
+            (replace(claim, binding='other'), '2' * 64, lambda: True),
+            (replace(claim, generation='other'), '2' * 64, lambda: True),
+            (None, '2' * 64, lambda: True), (claim, '2' * 64, lambda: False),
+            (claim, '2' * 64, lambda: 1),
+        ):
+            with self.subTest(expected=expected, boot=boot):
+                self.assertFalse(self.store.reconcile_consumed_shutdown_after_absence(
+                    expected, boot, guard))
+                self.assertEqual(self.path.read_bytes(), before)
+                self.assertEqual(self.claim.load(), claim)
+
+    def test_consumed_absence_rechecks_exact_records_after_guard(self):
+        claim, before = self.completed_shutdown()
+        def change_intent():
+            raw = json.loads(before)
+            raw['session'] = '3' * 64 + ':' + 'c' * 32
+            self.path.write_text(json.dumps(raw))
+            return True
+        self.assertFalse(self.store.reconcile_consumed_shutdown_after_absence(
+            claim, '2' * 64, change_intent))
+        self.assertEqual(json.loads(self.path.read_bytes())['session'], '3' * 64 + ':' + 'c' * 32)
+        self.path.write_bytes(before)
+        changed = replace(claim, generation='other')
+        def change_claim():
+            (self.root / FILENAME).write_bytes(self.claim._encode(changed))
+            return True
+        self.assertFalse(self.store.reconcile_consumed_shutdown_after_absence(
+            claim, '2' * 64, change_claim))
+        self.assertEqual(self.claim.load(), changed)
+        self.assertEqual(self.path.read_bytes(), before)
+
+    def test_consumed_absence_unsafe_or_unreadable_storage_never_archives(self):
+        claim, before = self.completed_shutdown()
+        with patch.object(self.store, '_load_intent', side_effect=PermissionError('unreadable')):
+            with self.assertRaises(PermissionError):
+                self.store.reconcile_consumed_shutdown_after_absence(claim, '2' * 64, lambda: True)
+        target = self.root / 'unrelated.json'
+        target.write_bytes(before)
+        self.path.unlink()
+        self.path.symlink_to(target)
+        with self.assertRaises(OSError):
+            self.store.reconcile_consumed_shutdown_after_absence(claim, '2' * 64, lambda: True)
+        self.assertEqual(target.read_bytes(), before)
+        self.path.unlink()
+        self.path.write_bytes(before)
+        self.path.chmod(0o666)
+        self.assertFalse(self.store.reconcile_consumed_shutdown_after_absence(
+            claim, '2' * 64, lambda: True))
+        self.path.chmod(0o600)
+        os.link(self.path, self.root / 'alias')
+        self.assertFalse(self.store.reconcile_consumed_shutdown_after_absence(
+            claim, '2' * 64, lambda: True))
+        self.assertEqual(self.path.read_bytes(), before)
+        self.assertEqual(self.claim.load(), claim)
+
+    def test_consumed_absence_guard_and_publication_faults_keep_claim_and_intent(self):
+        claim, before = self.completed_shutdown()
+        def raised_guard():
+            raise OSError('observation unavailable')
+        with self.assertRaises(OSError):
+            self.store.reconcile_consumed_shutdown_after_absence(claim, '2' * 64, raised_guard)
+        with patch('regear.delivery.dock_power_intent._publish_exclusive',
+                   side_effect=OSError('publication unavailable')):
+            with self.assertRaises(OSError):
+                self.store.reconcile_consumed_shutdown_after_absence(claim, '2' * 64, lambda: True)
+        with patch('regear.delivery.dock_power_intent.os.fsync',
+                   side_effect=[OSError('durability'), None]):
+            with self.assertRaises(OSError):
+                self.store.reconcile_consumed_shutdown_after_absence(claim, '2' * 64, lambda: True)
+        self.assertEqual(self.path.read_bytes(), before)
+        self.assertEqual(self.claim.load(), claim)
+        self.assertFalse(self.claim.power_intent_absent(claim))
+        self.assertEqual(list(self.root.glob('consumed-shutdown-absence-*.json')), [])
+
+    def test_consumed_absence_restoration_fault_never_retires_completed_claim(self):
+        claim, before = self.completed_shutdown()
+        with patch('regear.delivery.dock_power_intent.os.fsync',
+                   side_effect=OSError('durability unavailable')):
+            with self.assertRaisesRegex(OSError, 'consumed_durability_unresolved'):
+                self.store.reconcile_consumed_shutdown_after_absence(claim, '2' * 64, lambda: True)
+        self.assertEqual(self.claim.load(), claim)
+        self.assertEqual(self.path.read_bytes(), before)
+
     def test_unsubmitted_shutdown_refuses_ambiguous_or_unrelated_intents(self):
         expected, before = self.shutdown_failure()
         original = json.loads(before)

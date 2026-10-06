@@ -1420,7 +1420,8 @@ class CompletedAttachmentAbsenceTests(unittest.TestCase):
                                  user_ok=True, settled=True, inner=True,
                                  journal_durable=True, journal_owner='none',
                                  consumed=False, boot='2' * 64, worker=False,
-                                 authorization=False, unloading=False, capture=False):
+                                 authorization=False, unloading=False, capture=False,
+                                 stage='tunnel_remove_intent'):
         import os
         import tempfile
         from pathlib import Path
@@ -1439,9 +1440,12 @@ class CompletedAttachmentAbsenceTests(unittest.TestCase):
             self.assertTrue(store.claim(op, 'dock', 'generation'))
             self.assertTrue(store.bind(op, 'dock', 'generation', 'shutdown',
                                       '1' * 64 + ':' + 'b' * 32, 10, 100))
-            store.record(op, 'tunnel_remove_intent')
+            store.record(op, stage)
             claim = store.load()
-            if consumed:
+            if consumed and stage == 'software_down':
+                self.assertTrue(store.consume(op, 'dock', 'generation', 'shutdown',
+                                              '1' * 64 + ':' + 'b' * 32, 10, 100))
+            elif consumed:
                 import json
                 path = Path(root) / ('dock-power-' + op + '.json')
                 raw = json.loads(path.read_bytes())
@@ -1470,7 +1474,9 @@ class CompletedAttachmentAbsenceTests(unittest.TestCase):
                 ('resolve_gamescope_user', NS(ok=user_ok, context=user if user_ok else None)),
                 ('resolve_runtime_profiles', NS(exact_host=True)),
             ):
-                stack.enter_context(patch.object(self.module, name, return_value=value))
+                mocked = stack.enter_context(patch.object(self.module, name, return_value=value))
+                if name == 'verified_transport_absent' and isinstance(value, list):
+                    mocked.side_effect = value
             boot_reader = stack.enter_context(patch.object(self.module, 'read_boot_hash'))
             if isinstance(boot, list):
                 boot_reader.side_effect = boot
@@ -1486,10 +1492,12 @@ class CompletedAttachmentAbsenceTests(unittest.TestCase):
             result = self.plugin._reconcile_physically_disconnected_dock()
             power_runner.assert_not_called()
             suspend_runner.assert_not_called()
-            audits = list(Path(root).glob('interrupted-absent-dock-*.json'))
+            prefix = 'completed-absent-dock-' if stage == 'software_down' else 'interrupted-absent-dock-'
+            audits = list(Path(root).glob(prefix + '*.json'))
             if audits:
                 self.assertEqual(audits[0].read_bytes(), WholeDockClaimStore._encode(claim))
             power_audits = list(Path(root).glob('unsubmitted-shutdown-*.json'))
+            power_audits += list(Path(root).glob('consumed-shutdown-absence-*.json'))
             if result:
                 self.assertIsNone(store.load())
                 with gate.admit():
@@ -1518,6 +1526,33 @@ class CompletedAttachmentAbsenceTests(unittest.TestCase):
 
     def test_power_archival_does_not_clear_claim_if_authorization_restore_is_unknown(self):
         self.assertEqual(self.shutdown_absence_fixture(authorization=None), (False, 0, 1))
+
+    def test_consumed_completed_shutdown_retires_through_production_absence_path(self):
+        self.assertEqual(self.shutdown_absence_fixture(
+            stage='software_down', consumed=True), (True, 1, 1))
+
+    def test_consumed_completed_shutdown_preserves_every_unmet_prerequisite(self):
+        for options in (
+            {'strict': False}, {'absent': False}, {'idle': False}, {'user_ok': False},
+            {'settled': False}, {'inner': False}, {'journal_durable': False},
+            {'journal_owner': 'presentation'}, {'consumed': False}, {'worker': True},
+            {'unloading': True}, {'capture': True}, {'stage': 'reauthorize_intent'},
+            {'boot': '1' * 64}, {'boot': ''}, {'boot': None},
+            {'boot': ['2' * 64, '3' * 64]},
+        ):
+            with self.subTest(options=options):
+                self.assertEqual(self.shutdown_absence_fixture(
+                    **dict(dict(stage='software_down', consumed=True), **options)), (False, 0, 0))
+
+    def test_consumed_power_audit_does_not_grant_claim_retirement_with_unknown_authorization(self):
+        self.assertEqual(self.shutdown_absence_fixture(
+            stage='software_down', consumed=True, authorization=None), (False, 0, 1))
+
+    def test_consumed_absence_reobserves_transport_before_and_after_power_archival(self):
+        self.assertEqual(self.shutdown_absence_fixture(
+            stage='software_down', consumed=True, strict=[True, False]), (False, 0, 0))
+        self.assertEqual(self.shutdown_absence_fixture(
+            stage='software_down', consumed=True, strict=[True, True, False]), (False, 0, 1))
 
     def test_interrupted_absent_record_archives_without_claiming_success(self):
         original = {'code': 'dock_teardown.unresolved', 'request_id': 'a' * 32,

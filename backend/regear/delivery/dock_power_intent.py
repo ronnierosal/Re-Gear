@@ -386,6 +386,54 @@ class DockPowerIntentStore(WholeDockClaimStore):
                 raise failure
             return True
 
+    def reconcile_consumed_shutdown_after_absence(self, expected_claim, current_boot_hash, guard):
+        """Archive exact attempted shutdown history after a verified later boot.
+
+        Consumption proves an attempt, never its power outcome. Caller holds
+        admission and repeatedly proves strict physical absence, stable boot
+        and settled session work. Retain ambiguous or same-boot history. This
+        touches only the power intent; existing guarded absence/authorization
+        reconciliation separately retires the completed software_down claim.
+        """
+        if (type(expected_claim) is not WholeDockClaim
+                or expected_claim.stage != 'software_down'
+                or type(current_boot_hash) is not str
+                or re.fullmatch('[0-9a-f]{64}', current_boot_hash) is None):
+            return False
+        with self._locked() as directory:
+            if self._load(directory) != expected_claim:
+                return False
+            try:
+                intent = self._load_intent(directory, expected_claim)
+            except ValueError:
+                return False
+            if (type(intent) is not DockPowerIntent
+                    or intent.action != 'shutdown' or intent.consumed is not True
+                    or (intent.operation, intent.binding, intent.generation) !=
+                    (expected_claim.operation, expected_claim.binding, expected_claim.generation)
+                    or re.fullmatch('[0-9a-f]{64}:[0-9a-f]{32}', intent.session) is None
+                    or intent.session.split(':', 1)[0] == current_boot_hash):
+                return False
+            if guard() is not True or self._load(directory) != expected_claim:
+                return False
+            try:
+                if self._load_intent(directory, expected_claim) != intent:
+                    return False
+            except ValueError:
+                return False
+            audit = 'consumed-shutdown-absence-' + secrets.token_hex(16) + '.json'
+            _publish_exclusive(directory, self._filename(intent), audit)
+            try:
+                os.fsync(directory)
+            except OSError as failure:
+                try:
+                    _publish_exclusive(directory, audit, self._filename(intent))
+                    os.fsync(directory)
+                except OSError as restore_failure:
+                    raise OSError('dock_power.consumed_durability_unresolved') from restore_failure
+                raise failure
+            return True
+
     def retire_after_boot(self, expected_claim, current_boot_hash, guard):
         """Archive a verified completed shutdown from an earlier boot only.
 

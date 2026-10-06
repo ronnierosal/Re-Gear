@@ -2096,6 +2096,13 @@ class Plugin:
                         claim, boot,
                         lambda: (guard(require_power_intent=False)
                                  and read_boot_hash() == boot))
+                    # A completed teardown from an attempted old-boot shutdown
+                    # needs the same strict absence proof, not an attached dock.
+                    # Consumption is retained as history, never poweroff proof.
+                    store.reconcile_consumed_shutdown_after_absence(
+                        claim, boot,
+                        lambda: (guard(require_power_intent=False)
+                                 and read_boot_hash() == boot))
                 except Exception:
                     # Unknown intent/boot/storage remains inhibited below.
                     pass
