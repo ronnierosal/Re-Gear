@@ -226,7 +226,7 @@ test("production read-only eGPU detail enters at the first reading and Back rest
  assert.equal(nestedNode.props.tabIndex,-1);
  const scrolling={scrollTop:240};contentNode.props.ref.current=scrolling;
  let focusOptions,backFocus=0,launcherFocus=0;
- const status={dataset:{ecControl:"nested-content"},focus(options){focusOptions=options;}};
+ const status={dataset:{ecControl:"nested-content"},querySelector(){return null;},focus(options){focusOptions=options;}};
  const launcher={dataset:{ecControl:"egpu"},querySelector(){return null;},matches(){return true;},focus(){launcherFocus++;},scrollIntoView(){}};
  panelNode.props.ref.current={querySelectorAll:()=>[status,launcher],querySelector:()=>({focus(){backFocus++;}})};
  app.restoreFocus();
@@ -235,6 +235,23 @@ test("production read-only eGPU detail enters at the first reading and Back rest
  nodes(tree).find(n=>n.props?.["data-ec-control"]==="nested-back").props.onClick();
  tree=app.render(props);app.restoreFocus();
  assert.equal(launcherFocus,1);
+});
+
+
+test("production native eGPU detail focuses its first registered reading before Back",async()=>{
+ const app=await fixture();
+ const props={policy:"production",native:true,tiles:{egpu:[{id:"egpu",title:"eGPU",value:"Unknown",detail:"Status unavailable"}]},renderDetail:()=>"Native reading fixture"};
+ let tree=app.render(props);nodes(tree).find(n=>n.props?.["data-ec-control"]==="egpu").props.onClick();tree=app.render(props);
+ const content=nodes(tree).find(n=>n.props?.className==="rg-expanded-content");
+ const panel=nodes(tree).find(n=>n.props?.["data-ec-panel"]!==undefined);
+ const scrolling={scrollTop:240};content.props.ref.current=scrolling;
+ let rootFocus=0,readingFocus=0,backFocus=0,launcherFocus=0;
+ const reading={focus(options){assert.deepEqual(options,{preventScroll:true});readingFocus++;},scrollIntoView(options){assert.deepEqual(options,{block:"nearest"});}};
+ const status={dataset:{ecControl:"nested-content"},querySelector(selector){assert.match(selector,/\.rg-egpu-reading/);return reading;},focus(){rootFocus++;}};
+ const launcher={dataset:{ecControl:"egpu"},querySelector(){return null;},matches(){return true;},focus(){launcherFocus++;},scrollIntoView(){}};
+ panel.props.ref.current={querySelectorAll:()=>[status,launcher],querySelector:()=>({focus(){backFocus++;}})};
+ app.restoreFocus();assert.equal(readingFocus,1);assert.equal(rootFocus,0);assert.equal(backFocus,0);assert.equal(scrolling.scrollTop,240);
+ nodes(tree).find(n=>n.props?.["data-ec-control"]==="nested-back").props.onClick();tree=app.render(props);app.restoreFocus();assert.equal(launcherFocus,1);
 });
 
 

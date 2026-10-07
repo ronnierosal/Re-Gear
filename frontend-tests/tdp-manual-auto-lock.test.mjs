@@ -26,12 +26,13 @@ function renderControls(controller) {
   const component = new Function(
     "React", "useState", "useEffect", "tdpControls", "tdpMessage", "tdpResultMessage",
     "ButtonItem", "DropdownItem", "PanelSection", "PanelSectionRow", "ToggleField",
-    "AutoTdpControls", "usePerformance", `${code};return SharedTdpControls;`,
+    "AutoTdpControls", "usePerformance", "ReadableBlock", `${code};return SharedTdpControls;`,
   )(
     { createElement: jsx, Fragment: "fragment" }, useState, useEffect,
     tdpControls, tdpMessage, tdpResultMessage,
     "ButtonItem", "DropdownItem", "PanelSection", "PanelSectionRow", "ToggleField",
     "AutoTdpControls", () => { throw new Error("unexpected standalone controller"); },
+    ({label,children})=>jsx("Field",{focusable:true,"aria-label":label},children),
   );
   return () => { cursor = 0; return component({ visible: true, controller, initiallyExpanded: true }); };
 }

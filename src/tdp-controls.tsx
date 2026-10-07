@@ -1,3 +1,4 @@
+import { ReadableBlock } from "./quick-access/readable-block";
 import { ButtonItem, DropdownItem, PanelSection, PanelSectionRow, ToggleField } from "@decky/ui";
 import { useEffect, useState } from "react";
 import { tdpControls, tdpMessage, tdpResultMessage } from "./tdp-ui";
@@ -26,11 +27,11 @@ function SharedTdpControls({ visible, controller, initiallyExpanded = false }: {
   return <PanelSection title="Handheld power">
     {!initiallyExpanded && <PanelSectionRow><ButtonItem layout="below" onClick={() => setExpanded(value => !value)}>{expanded ? "Hide power controls" : "Show power controls"}</ButtonItem></PanelSectionRow>}
     {expanded && <>
-      <PanelSectionRow>{busy ? "Checking power settings…" : tdpMessage(status)}</PanelSectionRow>
+      <ReadableBlock label="Power status"><PanelSectionRow>{busy ? "Checking power settings…" : tdpMessage(status)}</PanelSectionRow>
       {!busy && tdpResultMessage(status) && <PanelSectionRow>Last request: {tdpResultMessage(status)}</PanelSectionRow>}
-      <PanelSectionRow>{status?.current_watts != null ? `Last checked limit: ${status.current_watts} W` : "Last checked limit: unavailable"}</PanelSectionRow>
-      <PanelSectionRow><span style={{ fontSize: "12px", opacity: 0.75 }}>This is the configured limit, not measured power use. Enable only after resolving other power controllers.</span></PanelSectionRow>
-      {manualLocked && <PanelSectionRow><span style={{ fontSize: "12px", opacity: 0.75 }}>Stop Auto TDP to adjust manually.</span></PanelSectionRow>}
+      <PanelSectionRow>{status?.current_watts != null ? `Last checked limit: ${status.current_watts} W` : "Last checked limit: unavailable"}</PanelSectionRow></ReadableBlock>
+      <ReadableBlock label="Power status and guidance"><PanelSectionRow><span style={{ fontSize: "12px", opacity: 0.75 }}>This is the configured limit, not measured power use. Enable only after resolving other power controllers.</span></PanelSectionRow></ReadableBlock>
+      {manualLocked && <ReadableBlock label="Power status and guidance"><PanelSectionRow><span style={{ fontSize: "12px", opacity: 0.75 }}>Stop Auto TDP to adjust manually.</span></PanelSectionRow></ReadableBlock>}
       <ToggleField label="Use Re-Gear power control" checked={status?.enabled ?? false} disabled={busy || manualLocked || !controls.canToggle} onChange={(enabled) => { if (!manualLocked) void controller.setEnabled(enabled); }} />
       <DropdownItem label="Power limit" rgOptions={options} selectedOption={selected ?? undefined} disabled={busy || manualLocked || !controls.canApply} onChange={(option) => { if (!manualLocked && options.some(entry => entry.data === option.data)) setSelected(option.data as number); }} />
       <PanelSectionRow><ButtonItem layout="below" disabled={busy || manualLocked || !controls.canApply || selected === null} onClick={() => { if (!manualLocked && selected !== null) void controller.apply(selected); }}>Apply power limit</ButtonItem></PanelSectionRow>

@@ -18,7 +18,7 @@ import type { EgpuPresentation, Evidence } from "./egpu-presentation";
 
 const C = {
   cyan: "#39d8ff", text: "#f4f7fb", muted: "#9eb2ca",
-  border: "#294665", amber: "#ffc247", dim: "#5d7a99",
+  border: "#294665", amber: "#ffc247", dim: "#9fb4c7",
 };
 
 const SURFACE = "linear-gradient(135deg, rgba(19,36,58,.96), rgba(9,21,36,.98))";
