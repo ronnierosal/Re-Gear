@@ -1,5 +1,6 @@
 import {useEffect,useRef,useState} from 'react';
 import {DialogButton,Focusable,Navigation} from '@decky/ui';
+import {ReadableBlock} from '../readable-block';
 
 const guide='https://github.com/ronnierosal/Re-Gear/wiki/';
 /** Condensed from docs/wiki/player/tutorial-cards.md; labels match this build. */
@@ -38,6 +39,6 @@ export function Tutorials(){
  useEffect(()=>{root.current?.querySelector<HTMLElement>(selected?'[data-tutorial-back]':`[data-tutorial="${restore.current}"]`)?.focus();},[selected]);
  const back=()=>setSelected(null);
  return <div ref={root}><Focusable flow-children="vertical" noFocusRing {...(topic?{onCancelButton:(event:CustomEvent)=>{event.preventDefault();event.stopPropagation();back();}}:{})}>
-  {topic?<><DialogButton preferredFocus data-tutorial-back onClick={back}>Back to tutorials</DialogButton><h3>{topic.title}</h3><ol>{topic.steps.map(step=><li key={step}>{step}</li>)}</ol><DialogButton onClick={()=>Navigation.NavigateToExternalWeb(topic.source)}>Read the guide</DialogButton></>:<Focusable className="rg-expanded-grid" flow-children="grid" noFocusRing style={{gridTemplateColumns:'repeat(2,minmax(0,1fr))'}}>{tutorials.map(item=><DialogButton key={item.id} preferredFocus={item.id===restore.current} data-tutorial={item.id} className="rg-expanded-tile" onClick={()=>{restore.current=item.id;setSelected(item.id);}}>{item.title}</DialogButton>)}</Focusable>}
+  {topic?<><DialogButton preferredFocus data-tutorial-back onClick={back}>Back to tutorials</DialogButton><h3>{topic.title}</h3><ol>{topic.steps.map((step,index)=><li key={step}><ReadableBlock label={`${topic.title}, step ${index+1}`}>{step}</ReadableBlock></li>)}</ol><DialogButton onClick={()=>Navigation.NavigateToExternalWeb(topic.source)}>Read the guide</DialogButton></>:<Focusable className="rg-expanded-grid" flow-children="grid" noFocusRing style={{gridTemplateColumns:'repeat(2,minmax(0,1fr))'}}>{tutorials.map(item=><DialogButton key={item.id} preferredFocus={item.id===restore.current} data-tutorial={item.id} className="rg-expanded-tile" onClick={()=>{restore.current=item.id;setSelected(item.id);}}>{item.title}</DialogButton>)}</Focusable>}
  </Focusable></div>;
 }

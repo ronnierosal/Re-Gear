@@ -64,4 +64,16 @@ export const expandedStyles = `
 .rg-expanded-picker-tile .rg-expanded-picker-label{flex:0 0 auto;width:100%;font-weight:700;line-height:1.2}.rg-expanded-picker .rg-expanded-picker-tile small{flex:0 0 auto;margin:0;line-height:1.2}
 .rg-expanded-picker .rg-expanded-picker-tile[aria-pressed=true]{border-color:#39d8ff;background:linear-gradient(145deg,#17445b,#0b2b3c);box-shadow:inset 0 0 0 1px #39d8ff55}.rg-expanded-picker-tile[aria-pressed=true]:after{content:'✓';position:absolute;right:5px;top:4px;border-radius:50%;width:15px;height:15px;line-height:15px;background:#39d8ff;color:#042333;font-size:11px;font-weight:800}
 .rg-expanded-picker .rg-expanded-picker-tile:focus-visible,.rg-expanded-picker .rg-expanded-picker-tile.gpfocus{outline:2px solid #39d8ff;outline-offset:-3px;background:#17445b;box-shadow:0 0 0 2px #39d8ff33}
+/* Detail readability scales with available panel width, preserving the compact
+   grid/artwork composition. Information wraps rather than disappearing. */
+.rg-expanded{--rg-detail-body:clamp(12px,1.2cqw,15px)}
+@media(min-width:1600px){.rg-expanded{--rg-detail-body:15px}}
+.rg-expanded-detail-page{min-width:0;font-size:var(--rg-detail-body);line-height:1.45;overflow-wrap:anywhere}
+.rg-expanded .rg-expanded-detail-page h2{font-size:clamp(18px,2cqw,23px);line-height:1.25}
+.rg-expanded .rg-expanded-detail-page h3{font-size:clamp(16px,1.6cqw,20px);line-height:1.3}
+.rg-expanded-detail-page p{margin:6px 0 10px}.rg-expanded-detail-page ol{padding-left:24px}.rg-expanded-detail-page li{margin-bottom:8px}
+.rg-readable{min-width:0;line-height:1.45;overflow-wrap:anywhere;scroll-margin-block:4px}
+.rg-readable.gpfocus,.rg-readable:focus-visible,.rg-readable:focus-within{outline:2px solid #39d8ff;outline-offset:-2px;border-radius:7px;background:#103348}
+.rg-command-status>span,.rg-command-status>strong,.rg-command-status small,.rg-command-notice>div,.rg-command-control .rg-readable div{font-size:var(--rg-detail-body)!important;line-height:1.45!important}
+@container rg-menu (max-width:420px){.rg-command-status,.rg-command-control{grid-template-columns:minmax(0,1fr)!important}.rg-expanded-detail-page{overflow-wrap:anywhere}}
 `;

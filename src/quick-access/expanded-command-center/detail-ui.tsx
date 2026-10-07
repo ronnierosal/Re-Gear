@@ -1,4 +1,6 @@
 import type { CSSProperties, ReactNode } from "react";
+import { ReadableBlock } from "../readable-block";
+import { Focusable } from "@decky/ui";
 import { CommandCenterIcon, type CommandCenterIconId } from "../command-center-icons";
 
 /**
@@ -39,13 +41,13 @@ const section: CSSProperties = {
 };
 
 export function CommandDetailSurface({ children }: { children: ReactNode }) {
-  return <div style={surface}>{children}</div>;
+  return <Focusable flow-children="vertical" noFocusRing className="rg-command-detail" style={surface}>{children}</Focusable>;
 }
 
 export function CommandSection({ title, hint, children }: { title?: string; hint?: string; children: ReactNode }) {
   return <section style={section}>
     {title && <div style={{ fontSize: 12, fontWeight: 700, color: "#f4f7fb" }}>{title}</div>}
-    {hint && <div style={{ fontSize: 10.5, lineHeight: 1.35, color: "#9ec0d7" }}>{hint}</div>}
+    {hint && <div style={{ fontSize: 12, lineHeight: 1.35, color: "#9ec0d7" }}>{hint}</div>}
     {children}
   </section>;
 }
@@ -63,13 +65,13 @@ export function CommandStatusRow({
   icon?: CommandCenterIconId;
   detail?: string;
 }) {
-  return <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) auto", alignItems: "center", gap: "3px 10px", minWidth: 0, padding: "4px 0" }}>
-    <span style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0, fontSize: 11.5, color: "#dbeef9" }}>
-      {icon && <CommandCenterIcon id={icon} size={17}/>}<span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
+  return <ReadableBlock label={`${label}: ${value}${detail ? `. ${detail}` : ""}`}><div className="rg-command-status" style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", alignItems: "start", gap: "3px 10px", minWidth: 0, padding: "4px 0" }}>
+    <span style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0, fontSize: 12, color: "#dbeef9" }}>
+      {icon && <CommandCenterIcon id={icon} size={17}/>}<span style={{ overflowWrap: "anywhere" }}>{label}</span>
     </span>
-    <strong style={{ fontSize: 11.5, color: toneColor[tone], whiteSpace: "nowrap" }}>{value}</strong>
-    {detail && <small style={{ gridColumn: "1 / -1", fontSize: 9.5, lineHeight: 1.3, color: "#91b7d1" }}>{detail}</small>}
-  </div>;
+    <strong style={{ fontSize: 12, color: toneColor[tone], overflowWrap: "anywhere" }}>{value}</strong>
+    {detail && <small style={{ gridColumn: "1 / -1", fontSize: 12, lineHeight: 1.45, color: "#a8cbe0" }}>{detail}</small>}
+  </div></ReadableBlock>;
 }
 
 export function CommandNotice({
@@ -82,10 +84,10 @@ export function CommandNotice({
   children?: ReactNode;
 }) {
   const color = toneColor[tone];
-  return <div style={{ padding: "8px 10px", border: `1px solid ${color}55`, borderRadius: 9, background: "#071b2a", color: "#dbeef9" }}>
-    <div style={{ fontSize: 11.5, fontWeight: 700, color }}>{title}</div>
-    {children && <div style={{ marginTop: 3, fontSize: 10, lineHeight: 1.35, color: "#9ec0d7" }}>{children}</div>}
-  </div>;
+  return <ReadableBlock label={title}><div className="rg-command-notice" style={{ padding: "8px 10px", border: `1px solid ${color}55`, borderRadius: 9, background: "#071b2a", color: "#dbeef9" }}>
+    <div style={{ fontSize: 12, fontWeight: 700, color }}>{title}</div>
+    {children && <div style={{ marginTop: 3, fontSize: 12, lineHeight: 1.45, color: "#a8cbe0" }}>{children}</div>}
+  </div></ReadableBlock>;
 }
 
 export function CommandActionRow({ children }: { children: ReactNode }) {
@@ -93,8 +95,8 @@ export function CommandActionRow({ children }: { children: ReactNode }) {
 }
 
 export function CommandValue({ label, value, tone = "neutral" }: { label: string; value: string; tone?: DetailTone }) {
-  return <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
-    <span style={{ fontSize: 9.5, color: "#91b7d1" }}>{label}</span>
-    <strong style={{ fontSize: 16, lineHeight: 1.2, color: toneColor[tone], overflow: "hidden", textOverflow: "ellipsis" }}>{value}</strong>
-  </div>;
+  return <ReadableBlock label={`${label}: ${value}`}><div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
+    <span style={{ fontSize: 12, color: "#91b7d1" }}>{label}</span>
+    <strong style={{ fontSize: 16, lineHeight: 1.2, color: toneColor[tone], overflowWrap: "anywhere" }}>{value}</strong>
+  </div></ReadableBlock>;
 }

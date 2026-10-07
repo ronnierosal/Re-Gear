@@ -1,3 +1,4 @@
+import { ReadableBlock } from "./quick-access/readable-block";
 import { ButtonItem, DropdownItem, PanelSectionRow, ToggleField } from "@decky/ui";
 import { TdpBenchmarkControls } from "./tdp-benchmark-controls";
 import { AutoTdpPreferencesControls } from "./auto-tdp-preferences-controls";
@@ -27,16 +28,16 @@ export function AutoTdpControls({ controller }: { controller: PerformanceHandle 
   const locked = busy || manualBusy || status?.running === true;
   return <>
     <PanelSectionRow><strong>Auto TDP</strong></PanelSectionRow>
-    <PanelSectionRow>{busy ? (stopping ? "Stopping Auto TDP…" : "Checking Auto TDP…") : autoTdpMessage(status, manualMessage)}</PanelSectionRow>
-    {!busy && autoTdpActivity(status) && <PanelSectionRow>{autoTdpActivity(status)}</PanelSectionRow>}
+    <ReadableBlock label="Auto TDP status"><PanelSectionRow>{busy ? (stopping ? "Stopping Auto TDP…" : "Checking Auto TDP…") : autoTdpMessage(status, manualMessage)}</PanelSectionRow>
+    {!busy && autoTdpActivity(status) && <PanelSectionRow>{autoTdpActivity(status)}</PanelSectionRow>}</ReadableBlock>
     <DropdownItem label="Target frame rate" rgOptions={targets} selectedOption={target} disabled={locked} onChange={(option) => { if (targets.some((entry) => entry.data === option.data)) setTarget(option.data as number); }} />
     <DropdownItem label="Minimum power" rgOptions={watts} selectedOption={minimum ?? undefined} disabled={locked} onChange={(option) => { if (watts.some((entry) => entry.data === option.data)) setMinimum(option.data as number); }} />
     <DropdownItem label="Maximum power" rgOptions={watts} selectedOption={maximum ?? undefined} disabled={locked} onChange={(option) => { if (watts.some((entry) => entry.data === option.data)) setMaximum(option.data as number); }} />
-    {!valid && manual?.ready && <PanelSectionRow>Choose a range that includes the last checked limit of {manual.current_watts} W.</PanelSectionRow>}
+    {!valid && manual?.ready && <ReadableBlock label="Auto TDP status and guidance"><PanelSectionRow>Choose a range that includes the last checked limit of {manual.current_watts} W.</PanelSectionRow></ReadableBlock>}
     <PanelSectionRow><ButtonItem layout="below" disabled={locked || !status?.can_start || !valid} onClick={() => { if (!locked && status?.can_start && valid && minimum !== null && maximum !== null) void controller.start(target, minimum, maximum); }}>Start Auto TDP</ButtonItem></PanelSectionRow>
     <PanelSectionRow><ButtonItem layout="below" disabled={stopping || status?.stopping === true} onClick={() => void controller.stop()}>Stop Auto TDP</ButtonItem></PanelSectionRow>
     <PanelSectionRow><ButtonItem layout="below" disabled={busy} onClick={() => void controller.refresh()}>Refresh Auto TDP</ButtonItem></PanelSectionRow>
-    <PanelSectionRow><span style={{ fontSize: "12px", opacity: 0.75 }}>Stop keeps the current limit. Restore returns to saved settings. Manual Apply or Restore stops Auto TDP. Closing this panel keeps Auto TDP running.</span></PanelSectionRow>
+    <ReadableBlock label="Auto TDP status and guidance"><PanelSectionRow><span style={{ fontSize: "12px", opacity: 0.75 }}>Stop keeps the current limit. Restore returns to saved settings. Manual Apply or Restore stops Auto TDP. Closing this panel keeps Auto TDP running.</span></PanelSectionRow></ReadableBlock>
     <PanelSectionRow><ToggleField label="Show saved mode preferences" checked={preferencesVisible} onChange={setPreferencesVisible} /></PanelSectionRow>
     {preferencesVisible && <AutoTdpPreferencesControls target={target} minimum={minimum} maximum={maximum} canSave={!locked && valid} onLoad={row => { if (!locked) { setTarget(row.target_fps); setMinimum(row.minimum_watts); setMaximum(row.maximum_watts); } }} />}
     <PanelSectionRow><ToggleField label="Show collection benchmark" checked={benchmarkVisible} onChange={setBenchmarkVisible} /></PanelSectionRow>

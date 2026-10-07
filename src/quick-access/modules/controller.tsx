@@ -1,4 +1,6 @@
 import type { ControllerFact, ControllerPresentation } from "./controller-presentation";
+import { Focusable } from "@decky/ui";
+import { ReadableBlock } from "../readable-block";
 
 /** Controller module page: rendering only, no policy, no requests.
  *
@@ -13,29 +15,29 @@ import type { ControllerFact, ControllerPresentation } from "./controller-presen
 
 const C = {
   cyan: "#39d8ff", text: "#f4f7fb", muted: "#9eb2ca",
-  border: "#294665", amber: "#ffc247", dim: "#5d7a99",
+  border: "#294665", amber: "#ffc247", dim: "#9fb4c7",
 };
 
 function Row({ label, fact }: { label: string; fact: ControllerFact }) {
-  return <div style={{
+  return <ReadableBlock label={`${label}: ${fact.text}`}><div style={{
     display: "flex", justifyContent: "space-between", alignItems: "baseline",
     gap: 8, padding: "5px 0", borderBottom: `1px solid ${C.border}`, minWidth: 0,
   }}>
-    <span style={{ fontSize: 12, color: C.muted, flex: "0 1 auto" }}>{label}</span>
+    <span style={{ fontSize: "var(--rg-detail-body,12px)", color: C.muted, flex: "0 1 auto" }}>{label}</span>
     <span style={{
-      fontSize: 13, fontWeight: 700, textAlign: "right", minWidth: 0,
+      fontSize: "var(--rg-detail-body,13px)", fontWeight: 700, textAlign: "right", minWidth: 0,
       // An unknown reading is dimmed, never coloured as though it were a result.
       color: fact.known ? C.text : C.dim,
     }}>{fact.text}</span>
-  </div>;
+  </div></ReadableBlock>;
 }
 
 export function ControllerModule({ presentation }: { presentation: ControllerPresentation }) {
-  return <div style={{ color: C.text, minWidth: 0, margin: "0 2px" }}>
+  return <Focusable flow-children="vertical" noFocusRing style={{ color: C.text, minWidth: 0, margin: "0 2px" }}>
     {presentation.reason && (
-      <div style={{ fontSize: 12, lineHeight: "16px", color: C.amber, marginBottom: 8 }}>
+      <ReadableBlock label="Controller status"><div style={{ fontSize: "var(--rg-detail-body,12px)", lineHeight: 1.45, color: C.amber, marginBottom: 8 }}>
         {presentation.reason}
-      </div>
+      </div></ReadableBlock>
     )}
 
     <Row label="Built-in controls" fact={presentation.builtin} />
@@ -44,20 +46,20 @@ export function ControllerModule({ presentation }: { presentation: ControllerPre
     <Row label="Shortcut input" fact={presentation.shortcut} />
 
     {presentation.precisionNote && (
-      <div style={{ fontSize: 11, lineHeight: "15px", color: C.muted, marginTop: 8 }}>
+      <ReadableBlock label="Observation precision"><div style={{ fontSize: "var(--rg-detail-body,12px)", lineHeight: 1.45, color: C.muted, marginTop: 8 }}>
         {presentation.precisionNote}
-      </div>
+      </div></ReadableBlock>
     )}
 
-    <div style={{ marginTop: 12 }}>
-      <div style={{ fontSize: 12, fontWeight: 700, color: C.muted, marginBottom: 4 }}>
+    <ReadableBlock label="Not yet available"><div style={{ marginTop: 12 }}>
+      <div style={{ fontSize: "var(--rg-detail-body,12px)", fontWeight: 700, color: C.muted, marginBottom: 4 }}>
         Not yet available
       </div>
       {presentation.planned.map((feature) => (
-        <div key={feature} style={{ fontSize: 12, lineHeight: "17px", color: C.dim }}>
+        <div key={feature} style={{ fontSize: "var(--rg-detail-body,12px)", lineHeight: "17px", color: C.dim }}>
           {feature}
         </div>
       ))}
-    </div>
-  </div>;
+    </div></ReadableBlock>
+  </Focusable>;
 }
