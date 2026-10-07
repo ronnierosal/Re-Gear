@@ -77,6 +77,45 @@ class DockPowerIntentStore(WholeDockClaimStore):
     def _load_intent(self, directory, intent):
         return self._load_intent_name(directory, self._filename(intent))
 
+    def retained_shutdown_history(self, expected_claim, current_boot_hash):
+        """Read a bounded diagnostic category, never recovery authority.
+
+        No identifier, path, exception text or power outcome is returned. The
+        secure claim lock and repeated reads bound this observation, but it can
+        become stale after return. No mutation or guard uses its answer.
+        """
+        if type(expected_claim) is not WholeDockClaim:
+            return 'claim_changed'
+        try:
+            with self._locked() as directory:
+                if self._load(directory) != expected_claim:
+                    return 'claim_changed'
+                try:
+                    intent = self._load_intent(directory, expected_claim)
+                except ValueError:
+                    return 'intent_invalid'
+                if self._load(directory) != expected_claim:
+                    return 'claim_changed'
+                if self._load_intent(directory, expected_claim) != intent:
+                    return 'unknown_storage'
+                if intent is None:
+                    return 'intent_missing'
+                if (intent.operation, intent.binding, intent.generation) != (
+                        expected_claim.operation, expected_claim.binding, expected_claim.generation):
+                    return 'identity_mismatch'
+                if intent.action != 'shutdown':
+                    return 'non_shutdown'
+                if (type(current_boot_hash) is not str
+                        or re.fullmatch('[0-9a-f]{64}', current_boot_hash) is None):
+                    return 'boot_unknown'
+                if re.fullmatch('[0-9a-f]{64}:[0-9a-f]{32}', intent.session) is None:
+                    return 'session_invalid'
+                if intent.session.split(':', 1)[0] == current_boot_hash:
+                    return 'same_boot'
+                return 'consumed_old_boot' if intent.consumed is True else 'unconsumed_shutdown'
+        except Exception:
+            return 'unknown_storage'
+
     def _load_intent_name(self, directory, filename):
         try:
             fd = os.open(filename, os.O_RDONLY | os.O_NOFOLLOW |

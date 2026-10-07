@@ -78,6 +78,61 @@ class IntentFilesystemTests(unittest.TestCase):
         self.assertTrue(self.store.bind_shutdown_after_disconnect(expected, session, 10, 100))
         return expected, session
 
+    def test_retained_history_categories_do_not_change_durable_bytes(self):
+        expected, session = self.shutdown_wait()
+        before = {p.name: p.read_bytes() for p in self.root.iterdir()}
+        self.assertEqual(self.store.retained_shutdown_history(expected, '1' * 64), 'same_boot')
+        self.assertEqual(self.store.retained_shutdown_history(expected, '3' * 64), 'unconsumed_shutdown')
+        self.assertEqual(self.store.retained_shutdown_history(expected, ''), 'boot_unknown')
+        self.assertEqual({p.name: p.read_bytes() for p in self.root.iterdir()}, before)
+        self.assertTrue(self.store.consume(*ARGS[:3], 'shutdown', session, 10, 100))
+        before = {p.name: p.read_bytes() for p in self.root.iterdir()}
+        self.assertEqual(self.store.retained_shutdown_history(expected, '3' * 64), 'consumed_old_boot')
+        self.assertEqual({p.name: p.read_bytes() for p in self.root.iterdir()}, before)
+        self.assertFalse(self.store.consume(*ARGS[:3], 'shutdown', session, 10, 100))
+
+    def test_retained_history_rejects_unrelated_invalid_and_missing_records(self):
+        expected, _ = self.shutdown_wait()
+        original = self.path.read_bytes()
+        for delta, category in (({'binding': 'other'}, 'identity_mismatch'),
+                                ({'action': 'sleep'}, 'non_shutdown'),
+                                ({'session': 'session'}, 'session_invalid'),
+                                ({'consumed': 'true'}, 'intent_invalid')):
+            raw = dict(json.loads(original), **delta)
+            self.path.write_text(json.dumps(raw))
+            before = self.path.read_bytes()
+            self.assertEqual(self.store.retained_shutdown_history(expected, '3' * 64), category)
+            self.assertEqual(self.path.read_bytes(), before)
+        self.path.unlink()
+        self.assertEqual(self.store.retained_shutdown_history(expected, '3' * 64), 'intent_missing')
+        self.assertEqual(self.store.retained_shutdown_history(replace(expected, binding='other'), '3' * 64), 'claim_changed')
+        self.assertEqual(self.claim.load(), expected)
+
+    def test_retained_history_secure_storage_failures_are_private_and_read_only(self):
+        expected, _ = self.shutdown_wait()
+        before = self.path.read_bytes()
+        for method in ('_locked', '_load', '_load_intent'):
+            with patch.object(self.store, method, side_effect=OSError('private/path secret')):
+                self.assertEqual(self.store.retained_shutdown_history(expected, '3' * 64), 'unknown_storage')
+            self.assertEqual(self.path.read_bytes(), before)
+        self.path.unlink()
+        target = self.root / 'private-target'
+        target.write_bytes(before)
+        self.path.symlink_to(target)
+        self.assertEqual(self.store.retained_shutdown_history(expected, '3' * 64), 'unknown_storage')
+        self.assertEqual(target.read_bytes(), before)
+        self.assertTrue(self.path.is_symlink())
+
+    def test_retained_history_rechecks_claim_and_intent_under_secure_lock(self):
+        expected, session = self.shutdown_wait()
+        original = DockPowerIntent(*ARGS[:3], 'shutdown', session, 10, 100)
+        with patch.object(self.store, '_load', side_effect=[expected, replace(expected, stage='reauthorize_intent')]):
+            self.assertEqual(self.store.retained_shutdown_history(expected, '3' * 64), 'claim_changed')
+        with patch.object(self.store, '_load_intent', side_effect=[original, replace(original, consumed=True)]):
+            self.assertEqual(self.store.retained_shutdown_history(expected, '3' * 64), 'unknown_storage')
+        self.assertEqual(self.claim.load(), expected)
+        self.assertFalse(json.loads(self.path.read_bytes())['consumed'])
+
     def test_shutdown_after_disconnect_binds_once_without_replacing_history(self):
         expected, session = self.shutdown_wait()
         before = self.path.read_bytes()

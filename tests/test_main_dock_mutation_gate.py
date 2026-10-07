@@ -1531,6 +1531,64 @@ class CompletedAttachmentAbsenceTests(unittest.TestCase):
         self.assertEqual(self.shutdown_absence_fixture(
             stage='software_down', consumed=True), (True, 1, 1))
 
+    def test_retained_power_diagnostic_distinguishes_real_same_and_old_boot_refusals(self):
+        for options, category in (({'boot': '1' * 64}, 'same_boot'),
+                                  ({'authorization': None}, 'consumed_old_boot')):
+            with self.subTest(category=category):
+                self.plugin._archival_refusal = None
+                self.assertEqual(self.shutdown_absence_fixture(
+                    stage='software_down', consumed=True, **options), (False, 0, 0))
+                events = self.plugin._append_journey_event.call_args_list
+                primary = [x.kwargs['details'] for x in events
+                           if x.kwargs.get('code') == 'automatic_dock.archival_guard_unmet']
+                self.assertEqual(primary, [{'phase': 'guard', 'unmet': 'power_intent_absent'}])
+                history = [x.kwargs['details'] for x in events
+                           if x.kwargs.get('code') == 'automatic_dock.retained_power_history']
+                self.assertEqual(history, [{'category': category}])
+
+    def test_retained_power_diagnostic_never_runs_before_full_nonpower_guard(self):
+        for options in ({'strict': False}, {'settled': False}, {'inner': False}, {'worker': True}):
+            with self.subTest(options=options):
+                self.assertEqual(self.shutdown_absence_fixture(
+                    stage='software_down', consumed=True, **options), (False, 0, 0))
+                self.assertFalse(any(x.kwargs.get('code') == 'automatic_dock.retained_power_history'
+                                     for x in self.plugin._append_journey_event.call_args_list))
+
+    def test_retained_power_diagnostic_fault_cannot_replace_existing_refusal(self):
+        self.plugin._record_retained_power_history = Mock(side_effect=RuntimeError('private error'))
+        self.assertEqual(self.shutdown_absence_fixture(
+            stage='software_down', consumed=True, boot='1' * 64), (False, 0, 0))
+        primary = [x.kwargs['details'] for x in self.plugin._append_journey_event.call_args_list
+                   if x.kwargs.get('code') == 'automatic_dock.archival_guard_unmet']
+        self.assertEqual(primary, [{'phase': 'guard', 'unmet': 'power_intent_absent'}])
+
+    def test_retained_power_category_logging_is_private_separately_deduplicated_and_fault_isolated(self):
+        from regear.delivery.whole_dock_claim import WholeDockClaim
+        claim = WholeDockClaim('a' * 32, 'dock', 'generation', 'software_down')
+        store = NS(retained_shutdown_history=Mock(return_value='same_boot'))
+        self.plugin._append_journey_event = Mock()
+        with patch.object(self.module, 'read_boot_hash', return_value='1' * 64), \
+             patch.object(self.module.decky.logger, 'info') as logger:
+            self.plugin._record_retained_power_history(store, claim)
+            self.plugin._record_retained_power_history(store, claim)
+            self.assertEqual(logger.call_count, 1)
+            store.retained_shutdown_history.return_value = 'consumed_old_boot'
+            self.plugin._record_retained_power_history(store, claim)
+            self.assertEqual(logger.call_count, 2)
+            store.retained_shutdown_history.return_value = 'private/path secret'
+            self.plugin._record_retained_power_history(store, claim)
+            self.assertEqual(logger.call_args.args[1], 'unknown_storage')
+            self.assertEqual(self.plugin._append_journey_event.call_args.kwargs['details'],
+                             {'category': 'unknown_storage'})
+            logger.side_effect = OSError('private log fault')
+            store.retained_shutdown_history.return_value = 'same_boot'
+            self.plugin._record_retained_power_history(store, claim)
+            self.assertEqual(self.plugin._append_journey_event.call_count, 3)
+            logger.side_effect = None
+            self.plugin._append_journey_event.side_effect = RuntimeError('event failure')
+            self.plugin._record_retained_power_history(store, claim)
+            self.assertEqual(logger.call_args.args[1], 'same_boot')
+
     def test_consumed_completed_shutdown_preserves_every_unmet_prerequisite(self):
         for options in (
             {'strict': False}, {'absent': False}, {'idle': False}, {'user_ok': False},

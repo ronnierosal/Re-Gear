@@ -1972,6 +1972,34 @@ class Plugin:
             return None
         return hold
 
+    def _record_retained_power_history(self, store, claim):
+        """Best-effort private-category logging, never an admission input."""
+        try:
+            category = store.retained_shutdown_history(claim, read_boot_hash())
+        except Exception:
+            category = 'unknown_storage'
+        if type(category) is not str or category not in (
+                'unknown_storage', 'claim_changed', 'intent_missing', 'intent_invalid',
+                'identity_mismatch', 'non_shutdown', 'boot_unknown', 'session_invalid',
+                'same_boot', 'unconsumed_shutdown', 'consumed_old_boot'):
+            category = 'unknown_storage'
+        observation = (claim, category)
+        if getattr(self, '_retained_power_history_diagnostic', None) == observation:
+            return
+        try:
+            decky.logger.info(
+                'Re-Gear journey: code=automatic_dock.retained_power_history category=%s', category)
+        except Exception:
+            return
+        try:
+            self._append_journey_event(severity='info',
+                code='automatic_dock.retained_power_history',
+                component='connection', stage='admission',
+                details={'category': category}, create_timeline=False)
+        except Exception:
+            pass
+        self._retained_power_history_diagnostic = observation
+
     def _reconcile_physically_disconnected_dock(self):
         """Archive terminal or interrupted history after verified physical absence.
 
@@ -2128,7 +2156,14 @@ class Plugin:
                     pass
                 phase = 'guard'
                 if not guard():
-                    return refuse('guard', unmet[0] if unmet else 'unknown')
+                    reason = unmet[0] if unmet else 'unknown'
+                    refused = refuse('guard', reason)
+                    if reason == 'power_intent_absent':
+                        try:
+                            self._record_retained_power_history(store, claim)
+                        except Exception:
+                            pass  # Diagnostic faults cannot replace the refusal.
+                    return refused
                 phase = 'authorization_restore'
                 authorization_hold = self._restore_remembered_authorization_after_absence(
                     claim, guard
