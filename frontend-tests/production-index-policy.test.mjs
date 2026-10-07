@@ -54,7 +54,7 @@ test('real production eGPU detail mounts observations and only the existing guar
   function module(path){
     const exports={};
     const code=ts.transpileModule(readFileSync(new URL(path,import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX,target:ts.ScriptTarget.ES2022}}).outputText;
-    new Function('exports','require',code)(exports,name=>name==='react/jsx-runtime'?{jsx,jsxs:jsx}:{DialogButton:'button',Focusable:'focus'});
+    new Function('exports','require',code)(exports,name=>name==='react/jsx-runtime'?{jsx,jsxs:jsx}:{DialogButton:'button',Focusable:'focus',Field:'field'});
     return exports;
   }
   const {EgpuModule}=module('../src/quick-access/modules/egpu.tsx');
@@ -67,7 +67,9 @@ test('real production eGPU detail mounts observations and only the existing guar
     if(Array.isArray(node))return node.map(mount);
     if(!node||typeof node!=='object')return node;
     if(typeof node.type==='function')return mount(node.type(node.props));
-    assert.equal(Object.keys(node.props??{}).some(key=>/^on[A-Z]/.test(key)),false);
+    // Informational focus may reveal a reading. Activation/mutation remains absent.
+    assert.equal(Object.keys(node.props??{}).some(key=>/^on[A-Z]/.test(key)&&key!=='onGamepadFocus'),false);
+    if(node.props?.onGamepadFocus)assert.equal(node.type,'field');
     assert.notEqual(node.type,'button');
     return {...node,props:{...node.props,children:mount(node.props?.children)}};
   }

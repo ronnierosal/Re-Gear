@@ -1,4 +1,5 @@
-import { DialogButton, Focusable } from "@decky/ui";
+import { DialogButton, Field, Focusable } from "@decky/ui";
+import type { ReactNode } from "react";
 import type { EgpuPresentation, Evidence } from "./egpu-presentation";
 
 /** eGPU module page: rendering only, no policy, no requests, no device action.
@@ -22,8 +23,22 @@ const C = {
 
 const SURFACE = "linear-gradient(135deg, rgba(19,36,58,.96), rgba(9,21,36,.98))";
 
+function revealReading(event: Event) {
+  if (event.currentTarget instanceof HTMLElement) {
+    event.currentTarget.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }
+}
+
+/** Native informational leaf: directional focus reveals text; A performs nothing. */
+function ReadingFocus({ label, children }: { label: string; children: ReactNode }) {
+  return <Field focusable={true} padding="none" bottomSeparator="none" childrenLayout="below"
+    className="rg-egpu-reading" aria-label={label} onGamepadFocus={revealReading}>
+    <div role="group" aria-label={label}>{children}</div>
+  </Field>;
+}
+
 function Row({ label, value }: { label: string; value: Evidence }) {
-  return <div style={{
+  return <ReadingFocus label={`${label}: ${value.text}${value.known && !value.verified ? " · observed" : ""}`}><div style={{
     display: "flex", justifyContent: "space-between", alignItems: "baseline",
     gap: 8, padding: "5px 0", borderBottom: `1px solid ${C.border}`, minWidth: 0,
   }}>
@@ -40,7 +55,7 @@ function Row({ label, value }: { label: string; value: Evidence }) {
         <span style={{ fontSize: 11, fontWeight: 400, color: C.muted }}> · observed</span>
       )}
     </span>
-  </div>;
+  </div></ReadingFocus>;
 }
 
 export function EgpuModule({ presentation, onOpenRecovery }: {
@@ -50,7 +65,8 @@ export function EgpuModule({ presentation, onOpenRecovery }: {
   onOpenRecovery?(): void;
 }) {
   const p = presentation;
-  return <div style={{ color: C.text, minWidth: 0, margin: "0 2px" }}>
+  return <Focusable flow-children="vertical" noFocusRing style={{ color: C.text, minWidth: 0, margin: "0 2px" }}>
+    <style>{`.rg-egpu-reading.gpfocus,.rg-egpu-reading:focus-visible,.rg-egpu-reading:focus-within{outline:2px solid #39d8ff;outline-offset:-2px;border-radius:6px;background:#17445b}`}</style>
     {p.model && (
       <div style={{ fontSize: 13, fontWeight: 760, marginBottom: 6 }}>{p.model}</div>
     )}
@@ -64,7 +80,7 @@ export function EgpuModule({ presentation, onOpenRecovery }: {
     <Row label="Lifecycle" value={p.lifecycle} />
 
     {/* Unconditional. No combination of readings turns this into a safe claim. */}
-    <div style={{
+    <ReadingFocus label={`Safe disconnect status: ${p.disconnect.text}. ${p.disconnect.reason}`}><div style={{
       marginTop: 12, padding: "8px 10px", borderRadius: 10,
       background: SURFACE, border: `1px solid ${C.border}`,
     }}>
@@ -74,12 +90,12 @@ export function EgpuModule({ presentation, onOpenRecovery }: {
       <div style={{ fontSize: 12, lineHeight: "16px", color: C.muted }}>
         {p.disconnect.reason}
       </div>
-    </div>
+    </div></ReadingFocus>
 
     {p.recovery.note && (
-      <div style={{ fontSize: 12, lineHeight: "16px", color: C.muted, marginTop: 8 }}>
+      <ReadingFocus label={`Recovery: ${p.recovery.note}`}><div style={{ fontSize: 12, lineHeight: "16px", color: C.muted, marginTop: 8 }}>
         {p.recovery.note}
-      </div>
+      </div></ReadingFocus>
     )}
 
     {onOpenRecovery && (
@@ -95,5 +111,5 @@ export function EgpuModule({ presentation, onOpenRecovery }: {
         </DialogButton>
       </Focusable>
     )}
-  </div>;
+  </Focusable>;
 }

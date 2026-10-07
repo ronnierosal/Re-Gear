@@ -58,4 +58,10 @@ export const expandedStyles = `
 .rg-expanded-picker h4{font-size:11px;color:#87aabd;margin:10px 0 6px}.rg-expanded-picker section{margin:0 0 10px}
 
 .rg-expanded-picker-filters{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px;margin:0 0 8px}.rg-expanded-picker-filters button{padding:5px 8px;border-radius:14px;font-size:10px;text-align:center}.rg-expanded-picker-filters button[aria-pressed=true]{background:#17445b;border-color:#39d8ff}
+.rg-expanded-picker .rg-expanded-picker-tile{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;min-height:100px;text-align:center;background:linear-gradient(145deg,#143850,#0a2237 48%,#071a2b);border-color:#326987;box-shadow:inset 0 1px 0 #ffffff08}
+.rg-expanded-picker-tile .rg-expanded-picker-artwork{display:flex;align-items:center;justify-content:center;flex:0 1 44%;min-height:22px;width:100%;overflow:visible}
+.rg-expanded-picker-artwork .rg-v3-tile-artwork{position:static;display:block;width:100%;height:100%;max-height:42px;object-fit:contain;opacity:1;transform:none;pointer-events:none}.rg-expanded-picker-artwork svg{width:28px;height:28px}
+.rg-expanded-picker-tile .rg-expanded-picker-label{flex:0 0 auto;width:100%;font-weight:700;line-height:1.2}.rg-expanded-picker .rg-expanded-picker-tile small{flex:0 0 auto;margin:0;line-height:1.2}
+.rg-expanded-picker .rg-expanded-picker-tile[aria-pressed=true]{border-color:#39d8ff;background:linear-gradient(145deg,#17445b,#0b2b3c);box-shadow:inset 0 0 0 1px #39d8ff55}.rg-expanded-picker-tile[aria-pressed=true]:after{content:'✓';position:absolute;right:5px;top:4px;border-radius:50%;width:15px;height:15px;line-height:15px;background:#39d8ff;color:#042333;font-size:11px;font-weight:800}
+.rg-expanded-picker .rg-expanded-picker-tile:focus-visible,.rg-expanded-picker .rg-expanded-picker-tile.gpfocus{outline:2px solid #39d8ff;outline-offset:-3px;background:#17445b;box-shadow:0 0 0 2px #39d8ff33}
 `;
