@@ -470,9 +470,9 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
       <div ref={content} className="rg-expanded-content" id="ec-tabpanel" role="tabpanel" onFocusCapture={event => { if(tab === "settings") reveal(event.target as HTMLElement); }} aria-labelledby={`ec-tab-${tab}`}>
         {layoutError&&<p role="alert">{layoutError}</p>}
         {editMode==="move"&&<LayoutCustomizationBanner tab={tab} mode="move" selectedTitle={items.find(item=>item.id===selected)?.title}/>}
-        {nested && <><h2>{nested.title}</h2>
-        <p className="rg-expanded-context">{hasDetail && !productionStatusDetail ? "Settings and actions" : synthetic ? "Configuration preview · no changes are applied" : "Current status · no changes are applied"}</p></>}
-        {nested ? <section className="rg-expanded-detail-page">
+        {nested ? <section className="rg-expanded-detail-page" aria-label={nested.title}>
+          {!hasDetail && <h2>{nested.title}</h2>}
+          {productionStatusDetail && <p className="rg-expanded-context">Current status · no changes are applied</p>}
           {hasDetail ? <Container key={nested.id} data-ec-control="nested-content" data-ec-detail-content tabIndex={productionStatusDetail ? -1 : undefined} {...(native ? { "flow-children": "vertical", noFocusRing: true, preferredFocus: true } : {})}>
             {dockControl && <CommandNotice tone="warning" title="Keep the cable connected">Disconnect trial. Follow the guarded flow before any physical action.</CommandNotice>}
             {detailContent}</Container> : <>
@@ -524,9 +524,16 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
           </Container>
           {editMode==='customize'?pickerGroups.map(group=><section key={group.category} data-picker-category={group.category}>
             <Container className="rg-expanded-picker-grid" flow-children="grid" noFocusRing>
-              {group.entries.map(({origin,label,icon})=><Button key={origin.key} type="button" data-ec-control={`choice:${origin.key}`} className="rg-expanded-picker-tile" onClick={()=>chooseTile(origin)} aria-label={`${label}, ${group.label}`}><span className="rg-expanded-tile-heading"><Icon id={icon}/><span>{label}</span></span><small>{group.label}</small></Button>)}
+              {group.entries.map(({origin,canonicalId,label,icon})=><Button key={origin.key} type="button" data-ec-control={`choice:${origin.key}`} className="rg-expanded-picker-tile"
+                aria-pressed={items.some(item=>item.id===selected&&controlForKey(originFor(item).key)?.id===canonicalId)}
+                onClick={()=>chooseTile(origin)} aria-label={`${label}, ${group.label}`}>
+                <span className="rg-expanded-picker-artwork" aria-hidden="true">{v3ArtworkIdFor(canonicalId)?<V3Artwork controlId={canonicalId}/>:<Icon id={icon}/>}</span>
+                <span className="rg-expanded-picker-label">{label}</span><small>{group.label}</small></Button>)}
             </Container></section>):<section><Container className="rg-expanded-picker-grid" flow-children="grid" noFocusRing>
-              {rightChoices.map(def=><Button key={def.id} type="button" data-ec-control={`right-choice:${def.id}`} className="rg-expanded-picker-tile" onClick={()=>chooseRight(def.id as UtilityId)} aria-label={`${def.label}${utilityReadings?.[def.id as UtilityId]?.available?'':', unavailable action'}`}><span>{def.shortLabel}</span><small>{domainLabels[def.domain]}</small>{!utilityReadings?.[def.id as UtilityId]?.available&&<small>Unavailable</small>}</Button>)}
+              {rightChoices.map(def=><Button key={def.id} type="button" data-ec-control={`right-choice:${def.id}`} className="rg-expanded-picker-tile"
+                aria-pressed={savedLayout?.right[rightSlot]===def.id} onClick={()=>chooseRight(def.id as UtilityId)} aria-label={`${def.label}${utilityReadings?.[def.id as UtilityId]?.available?'':', unavailable action'}`}>
+                <span className="rg-expanded-picker-artwork" aria-hidden="true">{v3ArtworkIdFor(def.id)?<V3Artwork controlId={def.id}/>:<Icon id={def.icon}/>}</span>
+                <span className="rg-expanded-picker-label">{def.shortLabel}</span><small>{domainLabels[def.domain]}</small>{!utilityReadings?.[def.id as UtilityId]?.available&&<small>Unavailable</small>}</Button>)}
             </Container></section>}
           <Container className="rg-expanded-picker-grid" flow-children="grid" noFocusRing>
             <Button type="button" className="rg-expanded-picker-tile" data-ec-control="choice:remove" onClick={()=>{
