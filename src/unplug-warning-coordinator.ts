@@ -20,7 +20,7 @@ export type UnplugWarningPorts = {
 };
 
 const REQUEST_ID = /^[0-9a-f]{32}$/;
-const ESCALATE_AFTER_MS = 5000;
+const ESCALATE_AFTER_MS = 3000;
 const REPEAT_EVERY_MS = 2000;
 
 export function createUnplugWarningCoordinator(ports: UnplugWarningPorts) {

@@ -9,7 +9,7 @@ const NEXT = "b".repeat(32);
 test("exact terminal retirement stops alarm without asserting physical absence", () => {
   const h = harness();
   h.coordinator.observe({ requestId: REQUEST, deauthorized: true });
-  h.advance(5000);
+  h.advance(3000);
   h.coordinator.retire(NEXT);
   assert.equal(h.coordinator.read().phase, "alarm", "foreign retirement is ignored");
   h.coordinator.retire(REQUEST);
@@ -61,30 +61,36 @@ function harness() {
   };
 }
 
-test("deauthorization prompts immediately and escalates once after five seconds", () => {
+test("deauthorization prompts immediately, chimes at three seconds and repeats every two", () => {
   const h = harness();
   h.coordinator.observe({ requestId: REQUEST, deauthorized: true });
   assert.deepEqual(h.coordinator.read(), { phase: "prompt", requestId: REQUEST });
   assert.equal(h.timers(), 1);
 
-  h.advance(4999);
+  h.advance(2999);
   assert.equal(h.warnings(), 0);
   h.advance(1);
   assert.deepEqual(h.coordinator.read(), { phase: "alarm", requestId: REQUEST });
   assert.equal(h.warnings(), 1);
   assert.equal(h.timers(), 1, "only the repeating alarm remains");
-  h.advance(4000);
+  h.advance(1999);
+  assert.equal(h.warnings(), 1, "no early repeat");
+  h.advance(1);
+  assert.equal(h.warnings(), 2);
+  h.advance(1999);
+  assert.equal(h.warnings(), 2, "repeat cadence remains two seconds");
+  h.advance(1);
   assert.equal(h.warnings(), 3);
 });
 
 test("duplicate observations do not restart escalation or duplicate audio", () => {
   const h = harness();
   h.coordinator.observe({ requestId: REQUEST, deauthorized: true });
-  h.advance(4000);
+  h.advance(2000);
   h.coordinator.observe({ requestId: REQUEST, deauthorized: true });
   assert.equal(h.timers(), 1);
   h.advance(1000);
-  assert.equal(h.warnings(), 1, "the original five-second deadline survives rerender");
+  assert.equal(h.warnings(), 1, "the original three-second deadline survives rerender");
   h.coordinator.observe({ requestId: REQUEST, deauthorized: true });
   assert.equal(h.timers(), 1, "alarm polling does not duplicate the interval");
 });
@@ -92,7 +98,7 @@ test("duplicate observations do not restart escalation or duplicate audio", () =
 test("only exact correlated strict absence clears the warning", () => {
   const h = harness();
   h.coordinator.observe({ requestId: REQUEST, deauthorized: true });
-  h.advance(5000);
+  h.advance(3000);
 
   h.coordinator.observe({ requestId: NEXT, physicalAbsenceVerified: true });
   h.coordinator.observe({ requestId: REQUEST });
@@ -119,7 +125,7 @@ test("synchronous clear during escalation installs no sound or interval", () => 
     }
   });
   h.coordinator.observe({ requestId: REQUEST, deauthorized: true });
-  h.advance(5000);
+  h.advance(3000);
   assert.deepEqual(h.coordinator.read(), { phase: "cleared", requestId: REQUEST });
   assert.equal(h.warnings(), 0);
   assert.equal(h.timers(), 0);
@@ -168,11 +174,52 @@ test("a new request replaces old timers and stop tears everything down", () => {
   h.coordinator.observe({ requestId: NEXT, deauthorized: true });
   assert.deepEqual(h.coordinator.read(), { phase: "prompt", requestId: NEXT });
   assert.equal(h.timers(), 1);
-  h.advance(3000);
+  h.advance(2999);
   assert.equal(h.warnings(), 0, "the cancelled request cannot alarm");
-  h.advance(2000);
+  h.advance(1);
   assert.equal(h.warnings(), 1);
   h.coordinator.stop();
   assert.deepEqual(h.coordinator.read(), { phase: "idle", requestId: null });
   assert.equal(h.timers(), 0);
+});
+
+test("unverified or malformed observations never start a reminder", () => {
+  for (const observation of [
+    { requestId: REQUEST },
+    { requestId: REQUEST, deauthorized: false },
+    { requestId: REQUEST, deauthorized: "true" },
+    { requestId: "invalid", deauthorized: true },
+    { deauthorized: true },
+  ]) {
+    const h = harness();
+    h.coordinator.observe(observation);
+    h.advance(10000);
+    assert.deepEqual(h.coordinator.read(), { phase: "idle", requestId: null });
+    assert.equal(h.timers(), 0);
+    assert.equal(h.warnings(), 0);
+  }
+});
+
+test("exact absence, retirement and stop before the first chime cancel every timer", () => {
+  for (const end of ["absence", "retirement", "stop"]) {
+    const h = harness();
+    h.coordinator.observe({ requestId: REQUEST, deauthorized: true });
+    h.advance(2999);
+    h.coordinator.observe({ requestId: NEXT, physicalAbsenceVerified: true });
+    h.coordinator.retire(NEXT);
+    assert.equal(h.coordinator.read().phase, "prompt", "foreign proof or retirement is ignored");
+    if (end === "absence") {
+      h.coordinator.observe({ requestId: REQUEST, physicalAbsenceVerified: true });
+      assert.equal(h.coordinator.read().phase, "cleared");
+    } else if (end === "retirement") {
+      h.coordinator.retire(REQUEST);
+      assert.equal(h.coordinator.read().phase, "retired", "retirement never asserts physical absence");
+    } else {
+      h.coordinator.stop();
+      assert.deepEqual(h.coordinator.read(), { phase: "idle", requestId: null });
+    }
+    h.advance(10000);
+    assert.equal(h.warnings(), 0);
+    assert.equal(h.timers(), 0);
+  }
 });
