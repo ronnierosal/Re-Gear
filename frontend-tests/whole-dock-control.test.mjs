@@ -73,7 +73,7 @@ function harness(storage = new Map(), intent = "disconnect", startRequest, initi
     fn=>{h.timers.set(++serial,fn);return serial;},id=>h.timers.delete(id));
   const Component=runtime.WholeDockControl;
   h.recover=()=>runtime.recoverTerminalDockReceipt(window.localStorage);
-  h.render=()=>{index=0;h.tree=Component({intent:h.intent,readCurrentSnapshot:()=>h.snapshot,startRequest,statusOnly,onSettled,onResolvedAbsent});for(const fn of effects.splice(0))cleanups.push(fn());return h.tree;};
+  h.render=()=>{index=0;h.tree=Component({intent:h.intent,readCurrentSnapshot:()=>h.snapshot,startRequest,statusOnly,onSettled,onResolvedAbsent,unplugWarning:h.unplugWarning});for(const fn of effects.splice(0))cleanups.push(fn());return h.tree;};
   h.button=()=>h.render().props.children.find(child=>child?.type==='button');
   h.click=()=>{const button=h.button();assert.equal(button.props.disabled,false);button.props.onClick();};
   h.poll=()=>{const [id,fn]=h.timers.entries().next().value;h.timers.delete(id);fn();};
@@ -1002,4 +1002,36 @@ test('consumed but unsent direct activation survives unmount and requires explic
  assert.equal(state,'submitted');assert.equal(reopened.button(),undefined);
  reopened.poll();await settle();assert.equal(reopened.calls.length,1);
  reopened.unmount();
+});
+
+// Actual production TSX: visible warning copy is unique without losing route guidance.
+const visibleParagraphs = tree => tree.props.children.filter(n => n?.type === 'p')
+  .map(n => n.props.children.filter(v => typeof v === 'string').join(''));
+for (const phase of ['prompt','alarm']) test(`ordinary ${phase} renders one unplug instruction`,async()=>{
+ const request='b'.repeat(32),storage=new Map([['regear.whole-dock.pending-request',formatPendingRecord('disconnect_only','backend-terminal',request)]]);
+ const h=harness(storage,'disconnect_only',undefined,{...recoveredTerminal(request),hardware_write:false},undefined,true,()=>{});
+ h.unplugWarning={read:()=>({requestId:request,phase}),subscribe:()=>()=>{},observe(){}};
+ await settle();const tree=h.render(), paragraphs=visibleParagraphs(tree);
+ const message=phase==='alarm'?'Disconnect the eGPU cable now. The dock remains powered after software disconnect.':'Safe disconnect is complete. Physically unplug the eGPU now.';
+ assert.equal(paragraphs.filter(v=>v===message).length,1);
+ assert.equal(tree.props.children.find(n=>n?.type==='p').props.role,'status');
+ assert.equal(h.calls.length,0);h.unmount();
+});
+for (const expired of [false,true]) test(`sleep warning retains distinct guidance expired=${expired}`,async()=>{
+ const request='c'.repeat(32),storage=new Map([['regear.whole-dock.pending-request',formatPendingRecord('sleep','backend-terminal',request)]]);
+ const h=harness(storage,'sleep',undefined,recoveredSleepUnplug(request,expired),undefined,true);
+ await settle();const paragraphs=visibleParagraphs(h.render());
+ assert.equal(new Set(paragraphs).size,paragraphs.length);
+ assert.match(paragraphs.join(' '),expired?/Automatic sleep will not occur/:/Sleep waits for verified physical absence/);
+ assert.equal(h.calls.length,0);h.unmount();
+});
+for (const code of ['dock_power.unplug_required','dock_power.unplug_request_expired','dock_power.unplug_request_cancelled']) test(`shutdown warning retains distinct guidance ${code}`,async()=>{
+ const request='d'.repeat(32),storage=new Map([['regear.whole-dock.pending-request',formatPendingRecord('shutdown','backend-terminal',request)]]);
+ const status={...recoveredSleepUnplug(request),code,power_action:'shutdown',route_action:'whole_dock_shutdown'};
+ const h=harness(storage,'shutdown',undefined,status,undefined,true);
+ await settle();const tree=h.render(),paragraphs=visibleParagraphs(tree);
+ assert.equal(new Set(paragraphs).size,paragraphs.length);
+ assert.match(paragraphs.join(' '),code==='dock_power.unplug_required'?/Closing this popup does not cancel automatic shutdown/:/Automatic shutdown will not occur for this request/);
+ assert.equal(tree.props.children.some(n=>n?.type==='button'&&n.props.children.includes('Cancel automatic shutdown')),code==='dock_power.unplug_required');
+ assert.equal(h.calls.length,0);h.unmount();
 });

@@ -416,7 +416,7 @@ export function WholeDockControl({ readCurrentSnapshot, intent = "disconnect_onl
     }}>Cancel automatic shutdown</DialogButton>}
     {!startRequest && !statusOnly && <DialogButton style={{width:"100%",minWidth:0,padding:"8px",border:"1px solid #39d8ff",borderRadius:8,background:"#112434",color:"#f4f7fb"}} disabled={!view.action || busy || uncertain.current} onClick={()=>confirm()}>{busy ? "Working…" : uncertain.current ? "Checking previous request" : view.label}</DialogButton>}
     {recoveredShutdownUnplug && reading.status.code === "dock_power.unplug_required" && notice && <p role="status" style={{margin:"8px 0 0"}}>{notice}</p>}
-    <p style={{margin:"8px 0 0"}}>{recoveredShutdownUnplug
+    {(recoveredShutdownUnplug || recoveredSleepUnplug || !warningMessage) && <p style={{margin:"8px 0 0"}}>{recoveredShutdownUnplug
       ? reading.status.code === "dock_power.unplug_required"
         ? "Keep the eGPU disconnected after unplugging. Closing this popup does not cancel automatic shutdown."
         : "Automatic shutdown will not occur for this request. Physically unplug the eGPU to finish the disconnect."
@@ -428,6 +428,6 @@ export function WholeDockControl({ readCurrentSnapshot, intent = "disconnect_onl
       ? "Unplug the eGPU now. Do not leave the powered dock attached in this state."
       : intent === "sleep" && reading?.status?.code === "dock_power.unplug_required"
       ? "Unplug only after this prompt appears. Sleep waits for verified physical absence."
-      : "Keep the cable connected. Physical unplug is not yet verified.")}</p>
+      : "Keep the cable connected. Physical unplug is not yet verified.")}</p>}
   </div>;
 }
