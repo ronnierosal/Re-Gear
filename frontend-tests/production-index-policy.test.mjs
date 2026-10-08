@@ -54,7 +54,11 @@ test('real production eGPU detail mounts observations and only the existing guar
   function module(path){
     const exports={};
     const code=ts.transpileModule(readFileSync(new URL(path,import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX,target:ts.ScriptTarget.ES2022}}).outputText;
-    new Function('exports','require',code)(exports,name=>name==='react/jsx-runtime'?{jsx,jsxs:jsx}:{DialogButton:'button',Focusable:'focus',Field:'field'});
+    new Function('exports','require',code)(exports,name=>{
+      if(name==='react/jsx-runtime')return{jsx,jsxs:jsx};
+      if(name.startsWith('.'))return module(new URL(`${name}.tsx`,new URL(path,import.meta.url)));
+      return{DialogButton:'button',Focusable:'focus',Field:'field',GamepadButton:{DIR_UP:9,DIR_DOWN:10}};
+    });
     return exports;
   }
   const {EgpuModule}=module('../src/quick-access/modules/egpu.tsx');
@@ -63,19 +67,32 @@ test('real production eGPU detail mounts observations and only the existing guar
   const env={menuFresh:false,payload:{ignored:true},PanelSection:'section',EgpuModule,egpuPresentation,
     TransitionAcknowledgementControl:()=>{acknowledgementMounts++;return null;},
     React:{createElement:(type,props,...children)=>jsx(type,{...props,children})}};
+  let readingCount=0;
   function mount(node){
     if(Array.isArray(node))return node.map(mount);
     if(!node||typeof node!=='object')return node;
     if(typeof node.type==='function')return mount(node.type(node.props));
     // Informational focus may reveal a reading. Activation/mutation remains absent.
-    assert.equal(Object.keys(node.props??{}).some(key=>/^on[A-Z]/.test(key)&&key!=='onGamepadFocus'),false);
-    if(node.props?.onGamepadFocus)assert.equal(node.type,'field');
+    assert.equal(Object.keys(node.props??{}).some(key=>/^on[A-Z]/.test(key)&&!['onGamepadFocus','onGamepadDirection'].includes(key)),false);
+    if(node.props?.onGamepadFocus||node.props?.onGamepadDirection)assert.equal(node.type,'field');
+    if(node.props?.onGamepadDirection){
+      assert.equal(node.props.highlightOnFocus,false);readingCount++;
+      const previous=globalThis.HTMLElement;class Element{};globalThis.HTMLElement=Element;
+      try{
+        const area=new Element();area.scrollTop=53;area.getBoundingClientRect=()=>({top:0,bottom:100,height:100});
+        const target=new Element();target.closest=()=>area;target.getBoundingClientRect=()=>({top:57-area.scrollTop,bottom:77-area.scrollTop,height:20});area.querySelector=()=>readingCount===1?target:new Element();
+        let consumed=0;const event={currentTarget:target,detail:{button:9},preventDefault(){consumed++;},stopPropagation(){}};
+        assert.equal(node.props.onGamepadDirection(event),readingCount===1);assert.equal(area.scrollTop,readingCount===1?0:53);assert.equal(consumed,readingCount===1?1:0);
+        event.detail.button=10;assert.equal(node.props.onGamepadDirection(event),false,'Down does not activate or consume an ordinary row');
+      }finally{globalThis.HTMLElement=previous;}
+    }
     assert.notEqual(node.type,'button');
     return {...node,props:{...node.props,children:mount(node.props?.children)}};
   }
   const rendered=JSON.stringify(mount(evaluate(productionDetail,env)));
   assert.match(rendered,/Unknown/);
   assert.equal(acknowledgementMounts,1);
+  assert.equal(readingCount,8,'production still registers all seven readings plus safety information');
   assert.doesNotMatch(rendered,/Automatic TV docking|Configure docking|Troubleshoot|onClick|ToggleField|recovery is still available/);
 });
 test('development retains existing runtime views and actions',()=>{

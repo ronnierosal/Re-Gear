@@ -21,7 +21,7 @@ const toneColor: Record<DetailTone, string> = {
 };
 
 const popupStyles = `
-.rg-readable{min-width:0;line-height:1.45;overflow-wrap:anywhere}.rg-readable.gpfocus,.rg-readable:focus-visible,.rg-readable:focus-within{outline:2px solid #39d8ff;outline-offset:-2px;border-radius:7px;background:#103348}
+.rg-readable{min-width:0;line-height:1.45;overflow-wrap:anywhere}.rg-readable.gpfocus,.rg-readable:focus-visible,.rg-readable:focus-within{outline:none!important;box-shadow:none!important;background:transparent!important}
 @keyframes regearPopupPulse{0%,100%{transform:scale(.92);opacity:.58}50%{transform:scale(1.08);opacity:1}}
 @media (prefers-reduced-motion: reduce){[data-regear-popup-active]{animation:none!important}}
 [data-regear-popup-footer]{display:flex;align-items:center;justify-content:flex-end;gap:8px;padding:8px 12px;border-top:1px solid #294f68;background:#061521;flex-wrap:wrap}
