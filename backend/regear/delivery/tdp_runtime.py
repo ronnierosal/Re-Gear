@@ -14,6 +14,23 @@ from .auto_tdp_worker import AutoTdpWorker, AutoTdpWorkerStatus
 from .auto_tdp_benchmark import AutoTdpBenchmarkResult
 
 
+_MANUAL_PRESETS = (("low", 10), ("balanced", 15), ("high", 25))
+
+
+def _manual_presets(reading=None, *, ready: bool = False) -> list[dict[str, object]]:
+    presets = []
+    for preset_id, watts in _MANUAL_PRESETS:
+        admitted = False
+        if ready and reading is not None:
+            try:
+                reading.target_values(watts)
+                admitted = True
+            except ValueError:
+                pass
+        presets.append({"id": preset_id, "watts": watts, "admitted": admitted})
+    return presets
+
+
 class _AutoActuator:
     def __init__(self, runtime: TdpRuntime, admission: Callable[[], bool]):
         self._runtime = runtime
@@ -37,6 +54,7 @@ def unavailable_status(code: str = "tdp.runtime_unavailable") -> dict[str, objec
         "minimum_watts": None, "maximum_watts": None,
         "restore_available": False, "recovery_required": False,
         "auto_tdp_available": False, "last_result": None,
+        "manual_presets": _manual_presets(),
     }
 
 
@@ -149,12 +167,13 @@ class TdpRuntime:
                 if generation != self._auto_generation:
                     return None
                 self._auto_cancel.clear()
-            status = self._status()
+            status, reading = self._status_details()
             if not status["ready"]:
                 return None
             if (not isinstance(policy, AutoTdpPolicy)
                     or not status["minimum_watts"] <= policy.minimum_watts <= status["current_watts"]
-                    or not status["current_watts"] <= policy.maximum_watts <= status["maximum_watts"]):
+                    or not status["current_watts"] <= policy.maximum_watts <= status["maximum_watts"]
+                    or not self._range_expressible(reading, policy)):
                 return None
             if self._auto_worker is None or not self._auto_worker.status().running:
                 session = self._auto_factory(_AutoActuator(self, admitted), self._provider)
@@ -273,6 +292,20 @@ class TdpRuntime:
         return self._run(self._status)
 
     def _status(self) -> dict[str, object]:
+        return self._status_details()[0]
+
+    @staticmethod
+    def _range_expressible(reading, policy: AutoTdpPolicy) -> bool:
+        if reading is None:
+            return False
+        try:
+            reading.target_values(policy.minimum_watts)
+            reading.target_values(policy.maximum_watts)
+        except ValueError:
+            return False
+        return True
+
+    def _status_details(self):
         output = unavailable_status()
         output["auto_tdp_available"] = self._auto_factory is not None
         output["enabled"] = self._enabled
@@ -288,22 +321,22 @@ class TdpRuntime:
             record = self._journal.load()
         except Exception:
             output.update(code="tdp.journal_unavailable", recovery_required=True)
-            return output
+            return output, reading
         if record and record.phase != "active":
             output.update(code="tdp.previous_write_uncertain", recovery_required=True)
-            return output
+            return output, reading
         if record and reading != record.applied:
             output.update(code="tdp.external_change", recovery_required=True)
-            return output
+            return output, reading
         if guard != "tdp.ready":
             output["code"] = guard
-            return output
+            return output, reading
         if reading is None or observation.code not in ("tdp.ready", "tdp.ownership_unverified"):
             output["code"] = observation.code
-            return output
+            return output, reading
         if self._enabled and observation.code != "tdp.ready":
             output["code"] = observation.code
-            return output
+            return output, reading
         baseline = record.baseline if record else reading
         try:
             restorable = baseline.target_values(baseline.sustained.current) == baseline.values
@@ -311,11 +344,17 @@ class TdpRuntime:
             restorable = False
         if not restorable:
             output["code"] = "tdp.baseline_not_restorable"
-            return output
+            return output, reading
+        ready = self._enabled and self._lease.held
+        auto_status = self.auto_status()
+        manual_ready = ready and not (
+            auto_status is not None and (auto_status.running or auto_status.stopping)
+        )
         output.update(can_enable=True, ready=self._enabled and self._lease.held,
                       code="tdp.ready" if self._enabled and self._lease.held else "tdp.disabled",
-                      restore_available=record is not None)
-        return output
+                      restore_available=record is not None,
+                      manual_presets=_manual_presets(reading, ready=manual_ready))
+        return output, reading
 
     def set_enabled(self, enabled: bool) -> dict[str, object]:
         if type(enabled) is not bool:
