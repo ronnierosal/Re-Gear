@@ -396,7 +396,8 @@ def _save_root_facts(path: Path, roots: tuple[Path, ...]) -> SaveRootEvidence:
     configured = str(path)
     targets = []
     visited = set()
-    for _hop in range(MAX_LINK_HOPS):
+    # Inspect the terminal after the last permitted link, without following another.
+    for _hop in range(MAX_LINK_HOPS + 1):
         if not _confined(path, roots) or path in visited:
             return SaveRootEvidence(configured, tuple(targets), Reason.UNSAFE_LINK)
         visited.add(path)
@@ -410,6 +411,8 @@ def _save_root_facts(path: Path, roots: tuple[Path, ...]) -> SaveRootEvidence:
             return SaveRootEvidence(configured, tuple(targets), Reason.UNSAFE_LINK)
         if not stat.S_ISLNK(info.st_mode):
             return SaveRootEvidence(configured, tuple(targets))
+        if _hop == MAX_LINK_HOPS:
+            return SaveRootEvidence(configured, tuple(targets), Reason.UNSAFE_LINK)
         target = os.readlink(path)
         text(target)
         targets.append(target)

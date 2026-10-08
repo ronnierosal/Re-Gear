@@ -389,6 +389,34 @@ class ExplicitCaptureTests(unittest.TestCase):
         self.assertIs(evidence.reason, Reason.UNSAFE_LINK)
         self.assertEqual(len(evidence.link_targets), 16)
 
+    def test_sixteen_save_link_hops_inspect_terminal_and_seventeen_defer(self):
+        # In-memory lstat/readlink evidence exercises the boundary on every OS.
+        for count, expected in ((16, Reason.SAVE_PATH_UNVERIFIED), (17, Reason.UNSAFE_LINK)):
+            links = [self.root / ("bounded-link" + str(index)) for index in range(count)]
+            terminal = self.root / "bounded-terminal"
+            targets = {str(link): (links[index + 1].name if index + 1 < count else terminal.name)
+                       for index, link in enumerate(links)}
+
+            def fake_lstat(path):
+                mode = stat.S_IFLNK if str(path) in targets else stat.S_IFDIR
+                return SimpleNamespace(st_mode=mode, st_file_attributes=0)
+
+            with self.subTest(count=count), \
+                 patch.object(capture.os, "lstat", side_effect=fake_lstat) as stats, \
+                 patch.object(capture.os, "readlink", side_effect=lambda path: targets[str(path)]) as reads, \
+                 patch.object(capture.os, "open", side_effect=AssertionError("save target open")), \
+                 patch("builtins.open", side_effect=AssertionError("save payload open")):
+                evidence = capture._save_root(links[0], (self.root,))
+                self.assertIs(evidence.reason, expected)
+                self.assertEqual(len(evidence.link_targets), 16)
+                self.assertEqual(reads.call_count, 16)
+                inspected = [call.args[0] for call in stats.call_args_list]
+                if count == 16:
+                    self.assertIn(terminal, inspected)
+                else:
+                    self.assertIn(links[16], inspected)
+                    self.assertNotIn(terminal, inspected)
+
 
 if __name__ == "__main__":
     unittest.main()
