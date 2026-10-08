@@ -136,6 +136,99 @@ from regear.adapters.steamos.game_render_binding import (  # noqa: E402
 )
 from regear.adapters.steamos.game_scopes import SystemdGameScopeDiscovery  # noqa: E402
 from regear.adapters.steamos.version_info import SteamOsVersionDiscovery  # noqa: E402
+from regear.adapters.steamos.controller_catalog import COMPOSITE, DBUS, TARGETS, SOURCES, MANAGER, EPOCH, PATH, INTERFACE  # noqa: E402
+from regear.domain.controller_catalog import (  # noqa: E402
+    ControllerCatalog, DeviceObservation, DeviceKind, EvidenceState, CatalogCode,
+    Observation, ProviderInterface, RelationState,
+)
+
+# Separately owned live reader is bound only after its source handoff. No cache,
+# startup construction, provider activation, or request-supplied factory.
+_controller_catalog_factory = None
+
+
+def _observe_controller_catalog():
+    return None if _controller_catalog_factory is None else _controller_catalog_factory().collect_catalog()
+
+
+def controller_catalog_to_public_facts(catalog):
+    result = dict(schema_version=1, provider="unknown", profile_metadata="unknown",
+                  virtual_target="unknown", relationships="unknown")
+    if type(catalog) is not ControllerCatalog:
+        return result
+    if catalog.availability is EvidenceState.UNSUPPORTED:
+        result["provider"] = "unavailable"
+        return result
+    if (catalog.availability is not EvidenceState.KNOWN or
+            type(catalog.connection_epoch) is not str or not EPOCH.fullmatch(catalog.connection_epoch) or
+            type(catalog.enumeration_complete) is not bool or
+            type(catalog.devices) is not tuple or len(catalog.devices) > 128 or
+            type(catalog.interfaces) is not tuple or len(catalog.interfaces) > 128 or
+            type(catalog.issues) is not tuple or len(catalog.issues) > 128 or
+            any(type(i) is not CatalogCode for i in catalog.issues) or
+            any(i in (CatalogCode.MALFORMED, CatalogCode.BOUNDS) for i in catalog.issues)):
+        return result
+    interface_names = set()
+    for interface in catalog.interfaces:
+        if (type(interface) is not ProviderInterface or type(interface.name) is not str or
+                type(interface.state) is not EvidenceState or
+                not INTERFACE.fullmatch(interface.name) or interface.name in interface_names):
+            return result
+        interface_names.add(interface.name)
+    paths = set()
+    for device in catalog.devices:
+        if (type(device) is not DeviceObservation or type(device.kind) is not DeviceKind or
+                type(device.path) is not str or len(device.path) > 1024 or not PATH.fullmatch(device.path) or device.path in paths or
+                type(device.interfaces) is not tuple or len(device.interfaces) > 16 or
+                any(type(i) is not str or not INTERFACE.fullmatch(i) for i in device.interfaces) or
+                len(set(device.interfaces)) != len(device.interfaces)):
+            return result
+        roles = set()
+        interfaces = set(device.interfaces)
+        if COMPOSITE in interfaces: roles.add(DeviceKind.COMPOSITE)
+        if DBUS in interfaces: roles.add(DeviceKind.DBUS)
+        if interfaces & TARGETS: roles.add(DeviceKind.TARGET)
+        if interfaces & SOURCES: roles.add(DeviceKind.SOURCE)
+        expected = next(iter(roles)) if len(roles) == 1 else DeviceKind.UNMANAGED
+        if device.kind is not expected:
+            return result
+        paths.add(device.path)
+        for name in ("profile_name", "profile_path", "source_paths", "target_paths", "dbus_paths"):
+            value = getattr(device, name)
+            if type(value) is not Observation:
+                return result
+            if value.state is EvidenceState.KNOWN:
+                if name.startswith("profile"):
+                    if type(value.value) is not str or len(value.value) > 1024:
+                        return result
+                elif (type(value.value) is not tuple or len(value.value) > 256 or
+                      any(type(v) is not str or len(v) > 1024 for v in value.value)):
+                    return result
+    result["provider"] = "known"
+    states = {i.name: i.state for i in catalog.interfaces}
+    unsupported = lambda names: all(states.get(name) is EvidenceState.UNSUPPORTED for name in names)
+    composites = [d for d in catalog.devices if d.kind is DeviceKind.COMPOSITE]
+    ambiguous = any(d.kind is DeviceKind.UNMANAGED and set(d.interfaces) & (TARGETS | {COMPOSITE, DBUS}) for d in catalog.devices)
+    complete = catalog.enumeration_complete and not ambiguous
+    positives = [d for d in composites if any(o.state is EvidenceState.KNOWN and bool(o.value) for o in (d.profile_name, d.profile_path))]
+    if positives:
+        all_profiles = all(all(o.state is EvidenceState.KNOWN and bool(o.value) for o in (d.profile_name, d.profile_path)) for d in composites)
+        result["profile_metadata"] = "known" if complete and all_profiles else "partial"
+    elif unsupported({COMPOSITE}) or (composites and all(all(o.state is EvidenceState.UNSUPPORTED for o in (d.profile_name, d.profile_path)) for d in composites)):
+        result["profile_metadata"] = "unavailable"
+    if any(d.kind in (DeviceKind.TARGET, DeviceKind.DBUS) for d in catalog.devices):
+        result["virtual_target"] = "known" if complete else "partial"
+    elif unsupported(TARGETS | {DBUS}):
+        result["virtual_target"] = "unavailable"
+    edges = catalog.relationships()
+    if edges:
+        all_reads = all(all(o.state is EvidenceState.KNOWN for o in (d.source_paths, d.target_paths, d.dbus_paths)) for d in composites)
+        result["relationships"] = "known" if complete and all_reads and all(e.state is RelationState.RESOLVED for e in edges) else "partial"
+    elif unsupported({COMPOSITE}) or (composites and all(all(o.state is EvidenceState.UNSUPPORTED for o in (d.source_paths, d.target_paths, d.dbus_paths)) for d in composites)):
+        result["relationships"] = "unavailable"
+    return result
+
+
 from regear.adapters.steamos.peripherals import (  # noqa: E402
     SteamOsPeripheralObservationAdapter,
     peripheral_status_to_public_payload,
@@ -1125,14 +1218,27 @@ class Plugin:
     async def get_peripheral_status(self, _request: object = None) -> dict[str, object]:
         """Read identity-free controller/audio evidence without any handoff action."""
         try:
-            observed = await asyncio.to_thread(self._peripherals.observe)
-            return peripheral_status_to_public_payload(observed)
+            if self._unloading:
+                raise ValueError("unloading")
+            observer = getattr(self, "_peripherals", None)
+            if observer is None:
+                observer = SteamOsPeripheralObservationAdapter()
+            observed = await asyncio.to_thread(observer.observe)
+            payload = peripheral_status_to_public_payload(observed)
         except Exception:
-            return {
+            payload = {
                 "schema_version": 1,
                 "controller": {"complete": False, "exact": False, "builtin_available": None, "external_connected": None, "code": "controller.observation_unavailable"},
                 "audio": {"complete": False, "exact": False, "external_available": None, "portable_available": None, "code": "audio.observation_unavailable"},
             }
+        catalog = None
+        if not self._unloading:
+            try:
+                catalog = await asyncio.to_thread(_observe_controller_catalog)
+            except Exception:
+                pass
+        payload["catalog"] = controller_catalog_to_public_facts(catalog)
+        return payload
 
     async def get_action_history(self, _request: object = None) -> dict[str, object]:
         """Return the bounded, identity-free projection of existing Re-Gear events."""
