@@ -19,6 +19,7 @@ def metadata():
             "game_ids": ["ULUS00001"], "emulator": "ppsspp",
             "emulator_version": "fixture-v1", "native_format": "psp-savedata",
             "format_version": "fixture-format", "data_kind": "ordinary_save",
+            "game_ids_confirmed": True, "game_id_provenance": "fixture-game-metadata",
         },
         "launch": {
             "source": "emudeck-shortcut", "provenance": "fixture",
@@ -101,6 +102,7 @@ class EmulatorSaveFixtureTests(unittest.TestCase):
             lambda d: d["cloud_rule"].update(quota_bytes=True),
             lambda d: d["paths"].update(resolved=1),
             lambda d: d["binding"].update(emulator_version="x" * 1025),
+            lambda d: d["binding"].update(game_ids_confirmed=1),
         ):
             record = metadata()
             change(record)
@@ -135,6 +137,18 @@ class EmulatorSaveFixtureTests(unittest.TestCase):
         self.assertIn("launch_unknown", result.unknowns)
         self.assertIn("carrier_app_id_unknown", result.unknowns)
         self.assertIsNone(result.launch.carrier_app_id)
+
+    def test_rom_labels_and_directory_suffixes_are_not_inferred_as_game_ids(self):
+        for label in ("Renamed-ROM", "ULUS00001SAVE00"):
+            record = metadata()
+            record["binding"].update(unit_id=label, game_ids=[label])
+            with self.subTest(label=label), self.assertRaises(ValueError):
+                read_emulator_save_fixture(record, {"DATA": b"x"})
+        record = metadata()
+        record["binding"].update(game_ids_confirmed=None, game_id_provenance=None)
+        result = read_emulator_save_fixture(record, {"DATA": b"x"})
+        self.assertIn("game_identity_unconfirmed", result.unknowns)
+        self.assertIsNone(result.binding.game_ids_confirmed)
 
 
 if __name__ == "__main__":

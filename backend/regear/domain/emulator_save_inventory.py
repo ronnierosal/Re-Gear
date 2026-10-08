@@ -18,6 +18,8 @@ MAX_UNIT_BYTES = 128 * 1024 * 1024
 MAX_TEXT = 1024
 TOKEN = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,95}\Z")
 SHA256 = re.compile(r"[0-9a-f]{64}\Z")
+PSP_GAME_ID = re.compile(r"[A-Z]{4}[0-9]{5}\Z")
+PS2_DISC_ID = re.compile(r"[A-Z]{4}-[0-9]{5}\Z")
 
 
 def text(value: object, *, optional: bool = False) -> None:
@@ -61,6 +63,8 @@ class SaveBinding:
     native_format: str
     format_version: str | None
     data_kind: SaveDataKind = SaveDataKind.ORDINARY_SAVE
+    game_ids_confirmed: bool | None = None
+    game_id_provenance: str | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.kind, SaveUnitKind) or not isinstance(self.data_kind, SaveDataKind):
@@ -70,7 +74,7 @@ class SaveBinding:
         token(self.native_format)
         text(self.emulator_version, optional=True)
         text(self.format_version, optional=True)
-        if type(self.game_ids) is not tuple or len(self.game_ids) > 64:
+        if type(self.game_ids) is not tuple or not 1 <= len(self.game_ids) <= 64:
             raise ValueError("invalid game identities")
         for game_id in self.game_ids:
             token(game_id)
@@ -78,6 +82,16 @@ class SaveBinding:
             raise ValueError("duplicate game identity")
         if self.kind is SaveUnitKind.PSP_GAME_DIRECTORY and self.game_ids != (self.unit_id,):
             raise ValueError("PSP unit must be keyed by its game ID")
+        optional_bool(self.game_ids_confirmed)
+        text(self.game_id_provenance, optional=True)
+        if self.game_ids_confirmed is True:
+            if self.game_id_provenance is None:
+                raise ValueError("confirmed game identity requires provenance")
+            shape = PSP_GAME_ID if self.kind is SaveUnitKind.PSP_GAME_DIRECTORY else PS2_DISC_ID
+            if any(shape.fullmatch(game_id) is None for game_id in self.game_ids):
+                raise ValueError("confirmed game ID is not in canonical form")
+        # Shape alone never confirms identity. Noncanonical/homebrew labels may
+        # be inventoried unconfirmed; planning must defer until separately reviewed.
 
 
 @dataclass(frozen=True, slots=True)
@@ -248,6 +262,8 @@ class EmulatorSaveInventory:
     @property
     def unknowns(self) -> tuple[str, ...]:
         reasons = []
+        if self.binding.game_ids_confirmed is not True:
+            reasons.append("game_identity_unconfirmed")
         if self.binding.emulator_version is None or self.binding.format_version is None:
             reasons.append("version_unknown")
         if self.launch.source is None or self.launch.provenance is None:

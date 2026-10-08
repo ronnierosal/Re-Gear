@@ -21,6 +21,7 @@ def manifest(data=b"base", *, complete=True, **changes):
         kind=SaveUnitKind.PSP_GAME_DIRECTORY, unit_id="ULUS00001",
         game_ids=("ULUS00001",), emulator="ppsspp", emulator_version="fixture-v1",
         native_format="psp-savedata", format_version="fixture-format")
+    values.update(game_ids_confirmed=True, game_id_provenance="fixture-game-metadata")
     values.update(changes)
     return build_save_manifest(SaveBinding(**values), {"DATA": data}, complete=complete)
 
@@ -34,6 +35,24 @@ def evidence(native, carrier):
 
 
 class EmulatorSaveConflictTests(unittest.TestCase):
+    def test_unconfirmed_game_identity_never_reaches_import_or_export(self):
+        cases = (
+            (SaveUnitKind.PSP_GAME_DIRECTORY, "Renamed-ROM", ("Renamed-ROM",), "DATA"),
+            (SaveUnitKind.PS2_WHOLE_CARD, "shared-card", (), "card"),
+        )
+        for kind, unit_id, game_ids, member in cases:
+            for importing in (True, False):
+                with self.subTest(kind=kind, importing=importing):
+                    try:
+                        unit = SaveBinding(kind, unit_id, game_ids, "fixture-emulator", "v1", "fixture-format", "v1")
+                        prior = build_save_manifest(unit, {member: b"base"}, complete=True)
+                        changed = build_save_manifest(unit, {member: b"changed"}, complete=True)
+                        native, carrier = (prior, changed) if importing else (changed, prior)
+                        outcome = plan_save_reconciliation(native, carrier, confirmed(prior), evidence(native, carrier)).kind
+                    except ValueError:
+                        outcome = "rejected"
+                    self.assertIn(outcome, ("rejected", Kind.DEFERRED))
+
     def test_three_way_matrix_preserves_all_copies_and_never_advances_baseline(self):
         base = manifest()
         cases = (
@@ -82,6 +101,17 @@ class EmulatorSaveConflictTests(unittest.TestCase):
             self.assertEqual(result.kind, Kind.DEFERRED)
             self.assertEqual(result.reason, "copy_missing")
             self.assertTrue(result.preserve_both)
+
+    def test_valid_shape_alone_and_homebrew_names_remain_unconfirmed(self):
+        for label in ("ULUS00001", "Homebrew"):
+            for importing in (True, False):
+                unit = SaveBinding(SaveUnitKind.PSP_GAME_DIRECTORY, label, (label,), "ppsspp", "v1", "psp-savedata", "v1")
+                prior = build_save_manifest(unit, {"DATA": b"base"}, complete=True)
+                changed = build_save_manifest(unit, {"DATA": b"changed"}, complete=True)
+                native, carrier = (prior, changed) if importing else (changed, prior)
+                result = plan_save_reconciliation(native, carrier, confirmed(prior), evidence(native, carrier))
+                self.assertEqual(result.kind, Kind.DEFERRED)
+                self.assertEqual(result.reason, "game_identity_unconfirmed")
 
     def test_partial_native_carrier_or_baseline_defer(self):
         value, partial = manifest(), manifest(complete=False)
@@ -160,7 +190,8 @@ class EmulatorSaveConflictTests(unittest.TestCase):
     def test_whole_shared_ps2_card_conflicts_as_one_unit(self):
         unit = SaveBinding(
             SaveUnitKind.PS2_WHOLE_CARD, "shared-card", ("SLUS-00001", "SLUS-00002"),
-            "pcsx2", "fixture-v1", "ps2-card", "fixture-format")
+            "pcsx2", "fixture-v1", "ps2-card", "fixture-format",
+            game_ids_confirmed=True, game_id_provenance="fixture-game-metadata")
         base, native, carrier = (
             build_save_manifest(unit, {"card": data}, complete=True)
             for data in (b"base", b"game1 changed", b"game2 changed"))

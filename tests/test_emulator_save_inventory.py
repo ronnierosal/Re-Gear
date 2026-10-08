@@ -21,6 +21,7 @@ def binding(kind=SaveUnitKind.PSP_GAME_DIRECTORY, **changes):
         kind=kind, unit_id="ULUS00001", game_ids=("ULUS00001",),
         emulator="ppsspp", emulator_version="fixture-v1",
         native_format="psp-savedata", format_version="fixture-format",
+        game_ids_confirmed=True, game_id_provenance="fixture-game-metadata",
     )
     if kind is SaveUnitKind.PS2_WHOLE_CARD:
         values.update(
@@ -57,6 +58,19 @@ class EmulatorSaveInventoryTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "game ID"):
             binding(unit_id="Renamed-ROM")
         self.assertEqual(binding().unit_id, "ULUS00001")
+
+    def test_confirmed_identity_requires_canonical_shape_and_provenance(self):
+        for label in ("Renamed-ROM", "ulus00001", "ULUS0000", "ULUS00001SAVE00"):
+            with self.subTest(label=label), self.assertRaises(ValueError):
+                binding(unit_id=label, game_ids=(label,))
+        with self.assertRaises(ValueError):
+            binding(game_id_provenance=None)
+        with self.assertRaises(ValueError):
+            binding(SaveUnitKind.PS2_WHOLE_CARD, game_ids=())
+        with self.assertRaises(ValueError):
+            binding(SaveUnitKind.PS2_WHOLE_CARD, game_ids=("Renamed-ROM",))
+        unknown = binding(unit_id="Homebrew", game_ids=("Homebrew",), game_ids_confirmed=None, game_id_provenance=None)
+        self.assertIsNone(unknown.game_ids_confirmed)
 
     def test_manifest_is_immutable_and_does_not_retain_mutable_input(self):
         files = {"DATA.BIN": b"original"}

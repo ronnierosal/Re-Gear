@@ -34,11 +34,13 @@ def read_emulator_save_fixture(
     b = _object(root["binding"], {
         "kind", "unit_id", "game_ids", "emulator", "emulator_version",
         "native_format", "format_version", "data_kind",
+        "game_ids_confirmed", "game_id_provenance",
     }, "binding")
     binding = SaveBinding(
         SaveUnitKind(b["kind"]), b["unit_id"], _tuple(b["game_ids"], 64, "game IDs"),
         b["emulator"], b["emulator_version"], b["native_format"],
         b["format_version"], SaveDataKind(b["data_kind"]),
+        b["game_ids_confirmed"], b["game_id_provenance"],
     )
     launch = LaunchIdentity(**_object(root["launch"], {
         "source", "provenance", "shortcut_app_id", "emulator_app_id", "carrier_app_id",

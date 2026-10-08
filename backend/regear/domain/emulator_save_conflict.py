@@ -132,6 +132,8 @@ def plan_save_reconciliation(
     ):
         return defer("members_removed_without_decision")
     binding = native.binding
+    if binding.game_ids_confirmed is not True or binding.game_id_provenance is None:
+        return defer("game_identity_unconfirmed")
     if binding.data_kind is not SaveDataKind.ORDINARY_SAVE:
         return defer("save_state_out_of_scope")
     if binding.emulator_version is None or binding.format_version is None:
