@@ -268,11 +268,44 @@ class CurrentPowerEvidence:
 
 
 @dataclass(frozen=True, slots=True)
+class CatalogEvaluationProvenance:
+    catalog_version: int | None = None
+    evidence_id: str = ""
+    current_generation: int | None = None
+    observed_generation: int | None = None
+
+    def __post_init__(self) -> None:
+        if self.catalog_version is not None and (
+            type(self.catalog_version) is not int or self.catalog_version <= 0
+        ):
+            raise ValueError("evaluation catalog version is invalid")
+        generations = (self.current_generation, self.observed_generation)
+        if any(value is not None for value in generations):
+            if any(type(value) is not int or value <= 0 for value in generations):
+                raise ValueError("evaluation generations must be supplied together")
+            _text(self.evidence_id, "evaluation evidence ID")
+        elif self.evidence_id:
+            raise ValueError("evaluation evidence ID requires generations")
+
+
+@dataclass(frozen=True, slots=True)
 class PowerProfileResolution:
-    requested_mode: PowerMode
+    requested_mode: PowerMode | None
     profile: NativePowerProfile | None
     follow_system: bool
     code: str
+    provenance: CatalogEvaluationProvenance
+
+    def __post_init__(self) -> None:
+        if self.requested_mode is not None and type(self.requested_mode) is not PowerMode:
+            raise ValueError("resolution requested mode is invalid")
+        if self.profile is not None and type(self.profile) is not NativePowerProfile:
+            raise ValueError("resolution native profile is invalid")
+        if type(self.follow_system) is not bool:
+            raise ValueError("resolution system fallback flag is invalid")
+        _text(self.code, "resolution code")
+        if type(self.provenance) is not CatalogEvaluationProvenance:
+            raise ValueError("resolution provenance is invalid")
 
     @property
     def available(self) -> bool:
@@ -289,10 +322,25 @@ def resolve_power_profile(
     current: CurrentPowerEvidence,
 ) -> PowerProfileResolution:
     """Resolve one exact validated named target without deriving or clamping."""
-    declined = lambda code: PowerProfileResolution(requested_mode, None, True, code)
-    if type(catalog) is not PowerProfileCatalog or type(current) is not CurrentPowerEvidence:
+    valid_catalog = type(catalog) is PowerProfileCatalog
+    valid_current = type(current) is CurrentPowerEvidence
+    provenance = CatalogEvaluationProvenance(
+        catalog_version=catalog.version if valid_catalog else None,
+        evidence_id=current.evidence_id if valid_current else "",
+        current_generation=current.generation if valid_current else None,
+        observed_generation=current.observed_generation if valid_current else None,
+    )
+    valid_mode = type(requested_mode) is PowerMode
+    declined = lambda code: PowerProfileResolution(
+        requested_mode if valid_mode else None,
+        None,
+        True,
+        code,
+        provenance,
+    )
+    if not valid_catalog or not valid_current:
         return declined("power_profile.input_invalid")
-    if type(requested_mode) is not PowerMode:
+    if not valid_mode:
         return declined("power_profile.mode_invalid")
     if requested_mode is PowerMode.SYSTEM_CONTROL:
         return declined("power_profile.follow_system")
@@ -345,4 +393,5 @@ def resolve_power_profile(
         profile,
         False,
         "power_profile.exact_non_authorizing_match",
+        provenance,
     )

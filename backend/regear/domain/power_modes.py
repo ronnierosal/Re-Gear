@@ -207,13 +207,41 @@ def observe_passive_power_event(
     event: PassivePowerEvent,
     *,
     selected: PowerMode | None = None,
+    new_generation: int | None = None,
 ) -> PassivePowerUpdate:
-    """Apply passive presentation data without synthesizing a live request."""
+    """Apply passive data without synthesizing a live request.
+
+    Resume and context changes are admission boundaries.  They advance the
+    observed generation and discard current observations/verification while
+    retaining the player's selected/requested intent and historical restoration
+    baseline.  Fresh runtime evidence is required to claim an effective mode.
+    """
     if type(state) is not PowerModeState or type(event) is not PassivePowerEvent:
         raise ValueError("passive power update input is invalid")
     if selected is not None and type(selected) is not PowerMode:
         raise ValueError("passive selection is invalid")
     updated = replace(state, selected=selected) if selected is not None else state
+    invalidates_context = event in {
+        PassivePowerEvent.RESUMED,
+        PassivePowerEvent.CONTEXT_CHANGED,
+    }
+    if invalidates_context:
+        _positive_int(new_generation, "new context generation")
+        if new_generation <= state.generation:
+            raise ValueError("new context generation must advance")
+        updated = replace(
+            updated,
+            generation=new_generation,
+            phase=PowerModePhase.PAUSED,
+            observed_effective=None,
+            verified_effective=None,
+            configured_limit_watts=None,
+            measured_package_watts=None,
+            last_verified=None,
+            reason=f"power_mode.{event.value}_requires_fresh_evidence",
+        )
+    elif new_generation is not None:
+        raise ValueError("generation changes require a resume or context event")
     return PassivePowerUpdate(updated, event)
 
 

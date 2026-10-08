@@ -10,6 +10,7 @@ from regear.domain.control_plane import PlacementState  # noqa: E402
 from regear.domain.power_modes import PowerMode  # noqa: E402
 from regear.domain.power_profile_catalog import (  # noqa: E402
     CurrentPowerEvidence,
+    CatalogEvaluationProvenance,
     DeviceIdentity,
     DevicePowerProfile,
     DocumentedPowerRange,
@@ -104,6 +105,10 @@ class CatalogResolutionTests(unittest.TestCase):
         self.assertFalse(result.follow_system)
         self.assertFalse(result.authorizes_activation)
         self.assertEqual(result.code, "power_profile.exact_non_authorizing_match")
+        self.assertEqual(
+            result.provenance,
+            CatalogEvaluationProvenance(1, "current-5", 5, 5),
+        )
 
     def test_identity_model_variant_provider_power_source_and_placement_are_exact(self):
         base = catalog(native())
@@ -169,6 +174,28 @@ class CatalogResolutionTests(unittest.TestCase):
                 result = resolve_power_profile(catalog(native()), PowerMode.BALANCED, current(**changes))
                 self.assertFalse(result.available)
                 self.assertEqual(result.code, f"power_profile.{suffix}")
+                self.assertEqual(result.provenance.catalog_version, 1)
+                self.assertEqual(result.provenance.evidence_id, "current-5")
+                self.assertEqual(result.provenance.current_generation, 5)
+                self.assertEqual(
+                    result.provenance.observed_generation,
+                    changes.get("observed_generation", 5),
+                )
+
+    def test_resolution_provenance_changes_with_catalog_and_current_evidence(self):
+        profile = native()
+        first = resolve_power_profile(catalog(profile), PowerMode.BALANCED, current())
+        second_catalog = PowerProfileCatalog(2, catalog(profile).profiles)
+        second = resolve_power_profile(
+            second_catalog,
+            PowerMode.BALANCED,
+            current(generation=6, observed_generation=6, evidence_id="current-6"),
+        )
+        self.assertNotEqual(first.provenance, second.provenance)
+        self.assertEqual(second.provenance.catalog_version, 2)
+        self.assertEqual(second.provenance.evidence_id, "current-6")
+        self.assertEqual(second.provenance.current_generation, 6)
+        self.assertFalse(second.authorizes_activation)
 
     def test_unresolved_placement_system_and_auto_do_not_select_manual_profiles(self):
         for placement in (PlacementState.UNKNOWN, PlacementState.DEGRADED):

@@ -91,12 +91,60 @@ class PowerModeIntentTests(unittest.TestCase):
                     state,
                     event,
                     selected=PowerMode.AUTO if event is PassivePowerEvent.PREFERENCE_LOADED else None,
+                    new_generation=(4 if event in {
+                        PassivePowerEvent.RESUMED,
+                        PassivePowerEvent.CONTEXT_CHANGED,
+                    } else None),
                 )
                 self.assertIsNone(update.request)
                 self.assertFalse(update.authorizes_activation)
                 self.assertIsNone(update.state.requested)
                 self.assertIsNone(update.state.observed_effective)
                 self.assertIsNone(update.state.verified_effective)
+
+    def test_resume_and_context_change_invalidate_current_verified_claim(self):
+        baseline = RestorationBaseline(6, 13, "original")
+        receipt = LastVerifiedPowerReceipt("verified-6", 6, PowerMode.BALANCED, 15)
+        state = PowerModeState(
+            PowerMode.AUTO,
+            6,
+            phase=PowerModePhase.ACTIVE,
+            requested=PowerMode.AUTO,
+            observed_effective=PowerMode.BALANCED,
+            verified_effective=PowerMode.BALANCED,
+            configured_limit_watts=15,
+            measured_package_watts=12.5,
+            last_verified=receipt,
+            restoration_baseline=baseline,
+        )
+        for event in (PassivePowerEvent.RESUMED, PassivePowerEvent.CONTEXT_CHANGED):
+            with self.subTest(event=event):
+                update = observe_passive_power_event(state, event, new_generation=7)
+                self.assertEqual(update.state.generation, 7)
+                self.assertIs(update.state.phase, PowerModePhase.PAUSED)
+                self.assertIs(update.state.selected, PowerMode.AUTO)
+                self.assertIs(update.state.requested, PowerMode.AUTO)
+                self.assertIsNone(update.state.observed_effective)
+                self.assertIsNone(update.state.verified_effective)
+                self.assertIsNone(update.state.last_verified)
+                self.assertEqual(update.state.restoration_baseline, baseline)
+                self.assertIsNone(update.request)
+
+    def test_passive_generation_change_is_strict_and_context_bound(self):
+        state = PowerModeState(PowerMode.BALANCED, 3)
+        for generation in (None, True, 0, 3, 2, 3.5):
+            with self.subTest(generation=generation), self.assertRaises(ValueError):
+                observe_passive_power_event(
+                    state,
+                    PassivePowerEvent.CONTEXT_CHANGED,
+                    new_generation=generation,
+                )
+        with self.assertRaises(ValueError):
+            observe_passive_power_event(
+                state,
+                PassivePowerEvent.MENU_REFRESHED,
+                new_generation=4,
+            )
 
 
 class PowerModeStateTests(unittest.TestCase):
