@@ -2,6 +2,7 @@
 import copy
 import importlib.util
 import json
+import subprocess
 from pathlib import Path
 import unittest
 from unittest.mock import patch
@@ -245,7 +246,7 @@ class TaskTests(unittest.TestCase):
             calls = []
 
             def pages(self, path):
-                return [pr()]
+                return [pr()] if path == 'pulls?state=open' else []
 
             def tasks(self):
                 raise ValueError("bad managed record")
@@ -299,6 +300,112 @@ class TaskTests(unittest.TestCase):
         with patch.dict(c.os.environ, dict(env, GITHUB_REF="refs/heads/untrusted")):
             with self.assertRaisesRegex(ValueError, "default branch"):
                 c.apply_event(fake, event)
+
+
+class PublicationTests(unittest.TestCase):
+    class Fake:
+        def __init__(self, fail=(), inventory_error=None):
+            self.pulls = [pr(), pr(number=13, body='Task: #445', head={**pr()['head'], 'sha': 'c' * 40, 'ref': 'agent/other'})]
+            other = ready(branch='agent/other', scope=['docs/other.md'])
+            other.update(software=ev(head='c'*40), review=ev(head='c'*40, reviewer='other'))
+            self.records = [(444, ready()), (445, other)]
+            self.fail, self.inventory_error = fail, inventory_error
+            self.posts, self.checked = [], []
+            self.statuses = {}
+
+        def tasks(self):
+            if self.inventory_error:
+                raise self.inventory_error
+            return self.records
+
+        def pages(self, path):
+            if path == 'pulls?state=open':
+                return self.pulls
+            if path.startswith('statuses/'):
+                return self.statuses.get(path.split('/')[1], [])
+            if path.startswith('pulls/'):
+                number = int(path.split('/')[1])
+                self.checked.append(number)
+                return [{'filename': 'docs/example.md' if number == 12 else 'docs/other.md'}]
+            raise AssertionError(path)
+
+        def api(self, path, method='GET', payload=None):
+            if path.startswith('statuses/') and method == 'POST':
+                sha = path.split('/')[1]
+                self.posts.append((sha, payload))
+                if (sha, payload['state']) in self.fail:
+                    raise subprocess.CalledProcessError(1, ['gh', 'api'], stderr='gh: rejected (HTTP 422)')
+                self.statuses.setdefault(sha, []).insert(0, dict(payload))
+                return {}
+            if path.startswith('pulls/'):
+                return next(p for p in self.pulls if p['number'] == int(path.split('/')[1]))
+            if path.startswith('issues/'):
+                r = dict(self.records)[int(path.split('/')[1])]
+                return {'state': 'open', 'labels': [{'name': 'agent-task'}], 'body': '```regear-task\n'+json.dumps(r)+'\n```'}
+            raise AssertionError(path)
+
+    def test_failed_pending_post_does_not_strand_full_unrelated_validation(self):
+        fake = self.Fake(fail={(HEAD, 'pending')})
+        with self.assertRaisesRegex(Exception, 'pending'):
+            c.refresh(fake)
+        self.assertEqual(fake.checked, [12, 13])
+        self.assertIn(('c'*40, 'success'), [(sha, p['state']) for sha, p in fake.posts])
+
+    def test_failed_final_post_does_not_strand_next_pr(self):
+        fake = self.Fake(fail={(HEAD, 'success')})
+        with self.assertRaisesRegex(Exception, 'final'):
+            c.refresh(fake)
+        self.assertEqual(fake.checked, [12, 13])
+        self.assertEqual(fake.posts[-1][1]['state'], 'success')
+
+    def test_invalid_inventory_attempts_every_failure_and_never_success(self):
+        fake = self.Fake(fail={(HEAD, 'failure')}, inventory_error=ValueError('invalid record'))
+        with self.assertRaisesRegex(Exception, 'invalid record'):
+            c.refresh(fake)
+        self.assertEqual([p['state'] for _, p in fake.posts], ['pending', 'pending', 'failure', 'failure'])
+        self.assertFalse(fake.checked)
+
+    def test_real_validator_failure_remains_failure(self):
+        fake = self.Fake()
+        fake.records[1][1]['review']['reviewer'] = fake.records[1][1]['owner']
+        c.refresh(fake)
+        self.assertEqual(fake.posts[-1][1]['state'], 'failure')
+        self.assertIn('independent reviewer', fake.posts[-1][1]['description'])
+
+    def test_only_newest_exact_four_fields_deduplicates(self):
+        payload = dict(context='coordination/pr', state='failure', description='no evidence', target_url='https://example.org/pr')
+        for changes in ({}, {'state':'pending'}, {'context':'other'}, {'description':'different'}, {'target_url':None}):
+            with self.subTest(changes=changes):
+                fake = self.Fake()
+                fake.statuses[HEAD] = [dict(payload, **changes)] + ([] if 'context' in changes else [dict(payload)])
+                c.post_status(fake, HEAD, payload)
+                self.assertEqual(len(fake.posts), 0 if not changes else 1)
+
+    def test_newest_context_selection_and_absent_target(self):
+        fake = self.Fake()
+        payload = dict(context='coordination/pr', state='pending', description='refresh')
+        fake.statuses[HEAD] = [dict(payload, context='other'), dict(payload, target_url=None)]
+        c.post_status(fake, HEAD, payload)
+        self.assertFalse(fake.posts)
+
+    def test_status_read_failure_is_not_permission_to_post(self):
+        fake = self.Fake()
+        with patch.object(fake, 'pages', side_effect=subprocess.CalledProcessError(1, ['gh'])):
+            with self.assertRaises(subprocess.CalledProcessError):
+                c.post_status(fake, HEAD, dict(context='coordination/pr', state='pending', description='refresh'))
+        self.assertFalse(fake.posts)
+
+    def test_http_failure_exposes_bounded_sanitized_diagnostic(self):
+        error = subprocess.CalledProcessError(1, ['gh'], output='private response', stderr='Authorization: Bearer secret\ngh: Validation Failed (HTTP 422)\nhttps://host/private?token=secret\nghp_abcdefghijklmnopqrstuvwxyz0123456789\n')
+        with patch.object(c.subprocess, 'run', side_effect=error):
+            with self.assertRaises(subprocess.CalledProcessError) as raised:
+                c.GitHub('owner/repo').api('statuses/'+HEAD, 'POST', {'private':'secret'})
+        detail = str(raised.exception)
+        self.assertIn('HTTP 422', detail)
+        self.assertNotIn('secret', detail)
+        self.assertNotIn('private response', detail)
+        self.assertNotIn('ghp_', detail)
+        self.assertLess(len(detail), 1000)
 
 
 if __name__ == "__main__":
