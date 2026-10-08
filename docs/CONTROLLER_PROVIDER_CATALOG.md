@@ -65,10 +65,13 @@ names, versions, capability text, device labels, profile paths or identifiers.
 Physical origin, built-in/external identity and Steam order remain unknown;
 effective target verification remains false.
 
-Parser limits bound object/interface/property counts, list/string sizes, total
-UTF-8 text bytes, data nodes and depth; injected limits can only reduce the
-reviewed ceilings. Cycles, invalid UTF-8 and non-data objects are rejected. Oversized frames
-yield no catalog devices. Malformed per-object/property reads preserve other
+Parser limits bound object counts, interfaces per object, properties per
+interface, list/string sizes and depth. UTF-8 text-byte and data-node budgets
+are shared across the decoded `objects` and `interface_states` payloads.
+Envelope headers have separate categorical/type checks and an ASCII epoch
+ceiling of 128 characters. Injected limits can only reduce the reviewed payload
+ceilings. Cycles, invalid UTF-8 and non-data objects are rejected. Oversized
+payloads yield no catalog devices. Malformed per-object/property reads preserve other
 valid observations with categorical gaps; no values are silently truncated.
 `enumeration_complete` is false for a partial/malformed normalized frame.
 
