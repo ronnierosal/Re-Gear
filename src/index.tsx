@@ -1936,11 +1936,12 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
           name="System inhibitor"
           value={loading
             ? "Checking…"
-            : sleepGuard?.required
-              ? sleepGuard.active
-                ? "Active"
-                : "Inactive"
-              : "Not required"}
+            : !sleepGuard || !["verified", "observed"].includes(sleepGuard.confidence) || sleepGuard.error
+              ? "Unknown — protection unverified"
+              : sleepGuard.required
+                ? sleepGuard.active ? "Active" : "Inactive"
+                : sleepGuard.required === false && sleepGuard.confidence === "verified"
+                  ? "Not required" : "Unknown — protection unverified"}
         />
         <DiagnosticRow
           name="Steam preflight"

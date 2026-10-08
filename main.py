@@ -6612,8 +6612,16 @@ class Plugin:
 
 
 # Build identity is supplied by packaging, never by a player setting or RPC.
-# Private lifecycle/startup/recovery paths remain the existing implementation.
+# Host admission precedes product admission and all mutation-capable composition.
 from regear.delivery.build_profile_config import BUILD_PROFILE  # noqa: E402
 from regear.delivery.build_profile_policy import profiled_plugin  # noqa: E402
+from regear.delivery.observation_admission import observation_plugin  # noqa: E402
+
+Plugin = observation_plugin(
+    Plugin,
+    passive_api=lambda: DiagnosticsApi(SteamOsDiscovery()),
+    build_info=lambda: load_public_build_info(PLUGIN_ROOT),
+    render_snapshot=report_to_public_dict,
+)
 
 Plugin = profiled_plugin(Plugin, BUILD_PROFILE)

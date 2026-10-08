@@ -13,6 +13,15 @@ export interface DiagnosticOverlayRow {
   value: string;
 }
 
+export function sleepProtectionLabel(guard: SnapshotPayload["snapshot"]["sleep_guard"] | undefined): string {
+  if (!guard || !["verified", "observed"].includes(guard.confidence) || guard.error) {
+    return "Unknown — protection unverified";
+  }
+  if (guard.required === true) return guard.active === true ? "Active" : "Inactive";
+  return guard.required === false && guard.confidence === "verified"
+    ? "Not required" : "Unknown — protection unverified";
+}
+
 function humanize(value: string): string {
   return value.replaceAll("_", " ").replaceAll(".", " ");
 }
@@ -161,9 +170,7 @@ export function diagnosticOverlayRows(
     },
     {
       name: "Sleep flow",
-      value: snapshot.sleep_guard.required
-        ? snapshot.sleep_guard.active ? "guard active" : "guard required but inactive"
-        : "guard not required",
+      value: sleepProtectionLabel(snapshot.sleep_guard),
     },
     {
       name: "Disconnect scan",
