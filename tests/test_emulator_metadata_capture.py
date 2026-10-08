@@ -376,7 +376,7 @@ class ExplicitCaptureTests(unittest.TestCase):
             self.assertIs(evidence.reason, Reason.UNSAFE_LINK)
             link.unlink()
 
-    def test_missing_and_excessive_save_link_evidence_defer(self):
+    def test_missing_save_link_terminal_defers_as_read_unavailable(self):
         self.assertIs(capture._save_root(self.root / "missing", (self.root,)).reason, Reason.READ_UNAVAILABLE)
         links = [self.root / ("link" + str(index)) for index in range(17)]
         if not capture.safe_open_supported():
@@ -386,29 +386,34 @@ class ExplicitCaptureTests(unittest.TestCase):
             links[index].symlink_to(links[index + 1].name)
         with patch.object(capture.os, "open", side_effect=AssertionError("save target open")):
             evidence = capture._save_root(links[0], (self.root,))
-        self.assertIs(evidence.reason, Reason.UNSAFE_LINK)
-        self.assertEqual(len(evidence.link_targets), 16)
+        self.assertIs(evidence.reason, Reason.READ_UNAVAILABLE)
+        # Failed lstat evidence stays categorical; partial link facts are discarded.
+        self.assertEqual(evidence.link_targets, ())
 
     def test_sixteen_save_link_hops_inspect_terminal_and_seventeen_defer(self):
         # In-memory lstat/readlink evidence exercises the boundary on every OS.
-        for count, expected in ((16, Reason.SAVE_PATH_UNVERIFIED), (17, Reason.UNSAFE_LINK)):
+        for count, missing, expected in ((16, False, Reason.SAVE_PATH_UNVERIFIED),
+                                         (16, True, Reason.READ_UNAVAILABLE),
+                                         (17, False, Reason.UNSAFE_LINK)):
             links = [self.root / ("bounded-link" + str(index)) for index in range(count)]
             terminal = self.root / "bounded-terminal"
             targets = {str(link): (links[index + 1].name if index + 1 < count else terminal.name)
                        for index, link in enumerate(links)}
 
             def fake_lstat(path):
+                if missing and path == terminal:
+                    raise FileNotFoundError("synthetic missing terminal")
                 mode = stat.S_IFLNK if str(path) in targets else stat.S_IFDIR
                 return SimpleNamespace(st_mode=mode, st_file_attributes=0)
 
-            with self.subTest(count=count), \
+            with self.subTest(count=count, missing=missing), \
                  patch.object(capture.os, "lstat", side_effect=fake_lstat) as stats, \
                  patch.object(capture.os, "readlink", side_effect=lambda path: targets[str(path)]) as reads, \
                  patch.object(capture.os, "open", side_effect=AssertionError("save target open")), \
                  patch("builtins.open", side_effect=AssertionError("save payload open")):
                 evidence = capture._save_root(links[0], (self.root,))
                 self.assertIs(evidence.reason, expected)
-                self.assertEqual(len(evidence.link_targets), 16)
+                self.assertEqual(len(evidence.link_targets), 0 if missing else 16)
                 self.assertEqual(reads.call_count, 16)
                 inspected = [call.args[0] for call in stats.call_args_list]
                 if count == 16:
@@ -416,6 +421,25 @@ class ExplicitCaptureTests(unittest.TestCase):
                 else:
                     self.assertIn(links[16], inspected)
                     self.assertNotIn(terminal, inspected)
+
+    def test_real_sixteen_link_terminal_and_seventeen_link_bound(self):
+        if not capture.safe_open_supported():
+            self.assertIs(capture.capture_metadata(self.roots, (self.item,)).failure, Reason.UNSUPPORTED_SAFE_OPEN)
+            return
+        for count, expected in ((16, Reason.SAVE_PATH_UNVERIFIED), (17, Reason.UNSAFE_LINK)):
+            terminal = self.root / ("real-terminal" + str(count))
+            terminal.mkdir()
+            links = [self.root / ("real-link" + str(count) + "-" + str(index)) for index in range(count)]
+            for index, link in enumerate(links):
+                link.symlink_to(links[index + 1].name if index + 1 < count else terminal.name)
+            with self.subTest(count=count), \
+                 patch.object(capture.os, "readlink", wraps=capture.os.readlink) as reads, \
+                 patch.object(capture.os, "open", side_effect=AssertionError("save target open")), \
+                 patch("builtins.open", side_effect=AssertionError("save payload open")):
+                evidence = capture._save_root(links[0], (self.root,))
+                self.assertIs(evidence.reason, expected)
+                self.assertEqual(len(evidence.link_targets), 16)
+                self.assertEqual(reads.call_count, 16)
 
 
 if __name__ == "__main__":
