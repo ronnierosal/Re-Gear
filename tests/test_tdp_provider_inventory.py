@@ -69,9 +69,13 @@ class TdpProviderInventoryTests(unittest.TestCase):
         mutations = (
             (("schema_version",), 2, "tdp.fixture_signature_invalid"),
             (("provider", "name"), "PowerStation", "tdp.fixture_signature_invalid"),
+            (("provider", "name"), " power_station ", "tdp.fixture_signature_invalid"),
             (("provider", "signature"), POWER_STATION_SIGNATURE + ".v2", "tdp.fixture_signature_invalid"),
+            (("provider", "signature"), f" {POWER_STATION_SIGNATURE} ", "tdp.fixture_signature_invalid"),
             (("provider", "value_kind"), "measured_package_power", "tdp.fixture_signature_invalid"),
+            (("provider", "value_kind"), f" {CONFIGURED_LIMIT_KIND} ", "tdp.fixture_signature_invalid"),
             (("provider", "unit"), "milliwatts", "tdp.fixture_unit_invalid"),
+            (("provider", "unit"), " watts ", "tdp.fixture_unit_invalid"),
         )
         for path, value, code in mutations:
             with self.subTest(path=path):
@@ -135,6 +139,14 @@ class TdpProviderInventoryTests(unittest.TestCase):
         wrong["host_after"] = deepcopy(wrong["host_before"])
         self.assertEqual(
             interpret_tdp_provider_fixture(wrong).code,
+            "tdp.fixture_host_unverified",
+        )
+
+        wrong_board = provider_fixture()
+        wrong_board["host_before"]["board_name"] = "G1618-00"
+        wrong_board["host_after"] = deepcopy(wrong_board["host_before"])
+        self.assertEqual(
+            interpret_tdp_provider_fixture(wrong_board).code,
             "tdp.fixture_host_unverified",
         )
 

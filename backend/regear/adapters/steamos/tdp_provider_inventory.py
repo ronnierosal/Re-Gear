@@ -28,6 +28,7 @@ _MAX_FIXTURE_VALUE = 0xFFFFFFFF
 _WIN_MINI_IDENTITY = (
     "gpd",
     "g1617-01",
+    "g1617-01",
     "amd ryzen 7 7840u w/ radeon 780m graphics",
 )
 
@@ -50,6 +51,13 @@ def _token(value: object, code: str, *, allow_empty: bool = False) -> str:
     if not token and not allow_empty:
         raise _InvalidFixture(code)
     return token
+
+
+def _protocol_token(value: object, code: str) -> str:
+    """Return an exact wire token; protocol vocabulary is never normalized."""
+    if type(value) is not str or not value or len(value) > _MAX_TOKEN_LENGTH:
+        raise _InvalidFixture(code)
+    return value
 
 
 def _identity(value: object) -> TdpProviderHostIdentity:
@@ -115,7 +123,10 @@ def interpret_tdp_provider_fixture(fixture: object) -> TdpProviderEvidenceResult
             return _result("tdp.fixture_identity_changed", fixture_id, host=before)
         normalized_host = tuple(
             value.casefold()
-            for value in (before.sys_vendor, before.product_name, before.processor)
+            for value in (
+                before.sys_vendor, before.product_name, before.board_name,
+                before.processor,
+            )
         )
         if normalized_host != _WIN_MINI_IDENTITY:
             return _result("tdp.fixture_host_unverified", fixture_id, host=before)
@@ -125,10 +136,10 @@ def interpret_tdp_provider_fixture(fixture: object) -> TdpProviderEvidenceResult
             frozenset(("name", "signature", "value_kind", "unit", "current", "minimum", "maximum")),
             "tdp.fixture_provider_invalid",
         )
-        name = _token(provider["name"], "tdp.fixture_provider_invalid")
-        signature = _token(provider["signature"], "tdp.fixture_signature_invalid")
-        value_kind = _token(provider["value_kind"], "tdp.fixture_signature_invalid")
-        unit = _token(provider["unit"], "tdp.fixture_unit_invalid")
+        name = _protocol_token(provider["name"], "tdp.fixture_provider_invalid")
+        signature = _protocol_token(provider["signature"], "tdp.fixture_signature_invalid")
+        value_kind = _protocol_token(provider["value_kind"], "tdp.fixture_signature_invalid")
+        unit = _protocol_token(provider["unit"], "tdp.fixture_unit_invalid")
         common = dict(
             host=before, provider_name=name, provider_signature=signature,
             value_kind=value_kind, unit=unit,
