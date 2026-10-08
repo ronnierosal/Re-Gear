@@ -56,7 +56,7 @@ class _InvalidInput(Exception):
         self.code = code
 
 
-def _bounded(value: object, limits: CatalogLimits) -> None:
+def _bounded(objects: object, interface_states: object, limits: CatalogLimits) -> None:
     remaining = limits.max_nodes
     text_remaining = limits.max_text_bytes
     active: set[int] = set()
@@ -100,7 +100,8 @@ def _bounded(value: object, limits: CatalogLimits) -> None:
             active.remove(id(item))
         else:
             raise _InvalidInput(CatalogCode.MALFORMED)
-    visit(value, 0)
+    visit(objects, 0)
+    visit(interface_states, 0)
 
 
 def _error(code: CatalogCode) -> Observation:
@@ -160,8 +161,7 @@ def parse_provider_frame(frame: ProviderReadFrame, *, limits: CatalogLimits = Ca
             or type(frame.enumeration_complete) is not bool or type(frame.objects) is not dict):
         return failed(CatalogCode.MALFORMED)
     try:
-        _bounded(frame.objects, limits)
-        _bounded(frame.interface_states, limits)
+        _bounded(frame.objects, frame.interface_states, limits)
         if len(frame.objects) > limits.max_objects:
             raise _InvalidInput(CatalogCode.BOUNDS)
         for interfaces in frame.objects.values():

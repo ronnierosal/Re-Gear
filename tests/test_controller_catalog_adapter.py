@@ -235,6 +235,17 @@ class ControllerCatalogAdapterTests(unittest.TestCase):
                 self.assertFalse(catalog.enumeration_complete)
                 self.assertEqual(catalog.issues, (CatalogCode.BOUNDS,))
 
+    def test_objects_and_interface_states_share_total_frame_budgets(self):
+        frame = ProviderReadFrame("connection:1", {
+            "/source0": {EVENT: {"Name": known("x" * 50)}}
+        }, enumeration_complete=True, interface_states={EVENT: EvidenceState.KNOWN})
+        for limits in (CatalogLimits(max_nodes=10), CatalogLimits(max_text_bytes=120)):
+            with self.subTest(limits=limits):
+                catalog = parse_provider_frame(frame, limits=limits)
+                self.assertIs(catalog.availability, EvidenceState.ERROR)
+                self.assertEqual(catalog.devices, ())
+                self.assertEqual(catalog.issues, (CatalogCode.BOUNDS,))
+
     def test_limits_cannot_be_amplified_and_invalid_utf8_is_not_retained(self):
         for limits in ({"max_depth": 9}, {"max_items": 257}, {"max_nodes": True}):
             with self.assertRaises(ValueError):
