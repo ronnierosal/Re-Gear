@@ -407,6 +407,17 @@ class PublicationTests(unittest.TestCase):
         self.assertNotIn('ghp_', detail)
         self.assertLess(len(detail), 1000)
 
+    def test_http_diagnostic_never_preserves_api_controlled_credential_text(self):
+        for message in ('rejected {"token":"sensitive_value"}', 'credential=sensitive_value',
+                        'Authorization: Bearer sensitive_value', 'https://host/?private=sensitive_value'):
+            with self.subTest(message=message):
+                error = subprocess.CalledProcessError(1, ['gh'], stderr=f'gh: {message} (HTTP 422)')
+                with patch.object(c.subprocess, 'run', side_effect=error):
+                    with self.assertRaises(subprocess.CalledProcessError) as raised:
+                        c.GitHub('owner/repo').api('statuses/'+HEAD, 'POST', {})
+                self.assertIn('HTTP 422', str(raised.exception))
+                self.assertNotIn('sensitive_value', str(raised.exception))
+
 
 if __name__ == "__main__":
     unittest.main()

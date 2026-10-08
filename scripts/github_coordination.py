@@ -176,12 +176,17 @@ class GitHubAPIError(subprocess.CalledProcessError):
     def __init__(self, error, method, path):
         # gh emits the HTTP summary on stderr. Do not expose response bodies,
         # request payloads, headers, URLs, or arbitrary stderr lines.
-        summaries = re.findall(r"^gh: ([^\r\n]*\(HTTP [0-9]{3}\))", error.stderr or "", re.M)
-        summary = summaries[-1] if summaries else "HTTP summary unavailable"
-        summary = re.sub(r"https?://\S+", "[redacted URL]", summary)
-        summary = re.sub(r"\b(?:gh[pousr]_[A-Za-z0-9_]+|github_pat_[A-Za-z0-9_]+)\b", "[redacted token]", summary)
-        summary = re.sub(r"(?i)(authorization|bearer|token|password|secret)[=: ]+\S+", "[redacted credential]", summary)
-        summary = re.sub(r"[\x00-\x1f\x7f]", "", summary)[:400]
+        summaries = re.findall(r"^gh: ([^\r\n]*)\(HTTP ([0-9]{3})\)", error.stderr or "", re.M)
+        summary = "HTTP summary unavailable"
+        if summaries:
+            message, code = summaries[-1]
+            # Never retain arbitrary API-controlled prose, even after regex
+            # redaction: quoted/encoded credentials cannot be exhaustively
+            # recognized. Exact known reason strings are safe diagnostics.
+            reasons = {"Validation Failed", "Not Found", "Forbidden", "Bad credentials",
+                       "API rate limit exceeded", "Bad Request", "Internal Server Error"}
+            reason = message.strip()
+            summary = f"HTTP {code}" + (f": {reason}" if reason in reasons else "")
         super().__init__(error.returncode, ["gh", "api", method], stderr=summary)
         self.request_path = path.split("?", 1)[0]
 
@@ -335,10 +340,11 @@ def refresh(github):
         tasks = github.tasks()
     except (ValueError, KeyError, TypeError, subprocess.CalledProcessError) as exc:
         failures.append(f"Invalid task inventory: {exc}")
+        detail = ("Invalid task inventory: " + str(exc))[:140]
         for pr in prs:
             attempt(pr, "inventory failure publication", lambda pr=pr: post_status(github, pr['head']['sha'],
                     {"state": "failure", "context": "coordination/pr",
-                     "description": ("Invalid task inventory: " + str(exc))[:140]}))
+                     "description": detail}))
     else:
         for summary in prs:
             attempt(summary, "final evaluation/publication", lambda summary=summary:
