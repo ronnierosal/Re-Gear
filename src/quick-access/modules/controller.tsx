@@ -45,6 +45,13 @@ export function ControllerModule({ presentation }: { presentation: ControllerPre
     {/* Separated on purpose: this is Re-Gear's input source, not a controller. */}
     <Row label="Shortcut input" fact={presentation.shortcut} />
 
+    {presentation.catalog && <>
+      <Row label="Provider" fact={presentation.catalog.provider} />
+      <Row label="Profile metadata" fact={presentation.catalog.profile_metadata} />
+      <Row label="Virtual target" fact={presentation.catalog.virtual_target} />
+      <Row label="Relationships" fact={presentation.catalog.relationships} />
+    </>}
+
     {presentation.precisionNote && (
       <ReadableBlock label="Observation precision"><div style={{ fontSize: "var(--rg-detail-body,12px)", lineHeight: 1.45, color: C.muted, marginTop: 8 }}>
         {presentation.precisionNote}

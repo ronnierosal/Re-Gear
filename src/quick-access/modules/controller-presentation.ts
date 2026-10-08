@@ -38,6 +38,7 @@ export type ControllerPrecision = "exact" | "partial" | "unknown";
 export type ControllerPresentation = {
   /** True when any usable controller fact was reported. */
   available: boolean;
+  catalog: Record<"provider" | "profile_metadata" | "virtual_target" | "relationships", ControllerFact>;
   /** Why nothing can be shown, or null when something can. */
   reason: string | null;
   builtin: ControllerFact;
@@ -52,6 +53,29 @@ export type ControllerPresentation = {
 };
 
 const UNKNOWN: ControllerFact = { text: "Unknown", known: false };
+
+const CATALOG_KEYS = ["provider", "profile_metadata", "virtual_target", "relationships"] as const;
+
+function catalogPresentation(value: unknown): ControllerPresentation["catalog"] {
+  const result: ControllerPresentation["catalog"] = {
+    provider: UNKNOWN, profile_metadata: UNKNOWN, virtual_target: UNKNOWN, relationships: UNKNOWN,
+  };
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return result;
+  const prototype = Object.getPrototypeOf(value);
+  if (prototype !== Object.prototype && prototype !== null) return result;
+  const fields = Object.getOwnPropertyDescriptors(value);
+  if (fields.schema_version?.value !== 1 || Reflect.ownKeys(value).some(key =>
+    key !== "schema_version" && !CATALOG_KEYS.some(allowed => allowed === key))) return result;
+  // Read own data properties only; never execute accessors or display raw input.
+  for (const key of CATALOG_KEYS) {
+    switch (fields[key]?.value) {
+      case "known": result[key] = { text: "Known", known: true }; break;
+      case "partial": result[key] = { text: "Partial", known: true }; break;
+      case "unavailable": result[key] = { text: "Unavailable", known: true }; break;
+    }
+  }
+  return result;
+}
 
 /** Planned capabilities, listed so their absence is explicit rather than a gap
  * a player has to notice. Each is stated as not yet available. */
@@ -76,11 +100,16 @@ export type ControllerInput = {
 
 export function controllerPresentation(input: ControllerInput): ControllerPresentation {
   const controller = input.peripheral?.controller;
+  const peripheral = input.peripheral;
+  const plainReply = peripheral !== null && typeof peripheral === "object"
+    && (Object.getPrototypeOf(peripheral) === Object.prototype || Object.getPrototypeOf(peripheral) === null);
+  const catalog = catalogPresentation(plainReply
+    ? Object.getOwnPropertyDescriptor(peripheral, "catalog")?.value : undefined);
   const shortcut = fact(input.shortcutAvailable, "Available", "Unavailable");
 
   if (!controller) {
     return {
-      available: false,
+      catalog, available: false,
       reason: "Controller status unavailable. No peripheral reading has been received.",
       builtin: UNKNOWN, external: UNKNOWN, precision: "unknown", precisionNote: null,
       // The shortcut source is observed separately, so it can still be reported
@@ -98,7 +127,7 @@ export function controllerPresentation(input: ControllerInput): ControllerPresen
   const anyFact = builtin.known || external.known;
 
   return {
-    available: anyFact,
+    catalog, available: anyFact,
     reason: anyFact ? null
       : "Controller status unavailable. The reading contained no usable facts.",
     builtin, external, precision,

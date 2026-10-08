@@ -328,7 +328,18 @@ export interface DisconnectStatusPayload {
 
 export const getSnapshot = callable<[], SnapshotPayload>("get_snapshot");
 
+export type CatalogFactPayload = "known" | "partial" | "unknown" | "unavailable";
+
+export interface ControllerCatalogPayload {
+  schema_version: 1;
+  provider: CatalogFactPayload;
+  profile_metadata: CatalogFactPayload;
+  virtual_target: CatalogFactPayload;
+  relationships: CatalogFactPayload;
+}
+
 export interface PeripheralStatusPayload {
+  catalog?: ControllerCatalogPayload;
   schema_version: number;
   controller: { complete: boolean; exact: boolean; builtin_available: boolean | null; external_connected: boolean | null; code: string };
   audio: { complete: boolean; exact: boolean; external_available: boolean | null; portable_available: boolean | null; code: string };
