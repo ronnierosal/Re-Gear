@@ -22,12 +22,38 @@ STATES = ('todo', 'in_progress', 'blocked', 'review', 'done', 'cancelled')
 MAINTAINER = 'codex-01a080fd'
 MAINTENANCE_TASK = 'agent-hub-unavailable-owner-closeout-498'
 MAINTENANCE_ISSUE = 'https://github.com/ronnierosal/Re-Gear/issues/498'
-# These remain deliberately unset in the implementation candidate. A later,
-# separately reviewed change must compile the exact invocation approvals before
-# either command can mutate a hub.
-CLOSEOUT_EXECUTION_AUTHORIZATION = None
-RANGE_EXECUTION_AUTHORIZATION = None
-MAINTENANCE_ASSIGNMENT_DIGEST = '4b3643ddaced86da253f4b7050672ce5010709c7a208cf85598756de72a060f7'
+OPERATION_CONSENT = 'https://github.com/ronnierosal/Re-Gear/issues/498#issuecomment-6069197182'
+CLOSEOUT_EXECUTION_AUTHORIZATION = OPERATION_CONSENT
+RANGE_EXECUTION_AUTHORIZATION = OPERATION_CONSENT
+MAINTENANCE_ASSIGNMENT_DIGEST = '973b73c806f6b094316715fed1943147f95bfb92e00481a15f8e94fba677eecd'
+APPROVED_MAINTENANCE_ASSIGNMENT = {'id': 'agent-hub-unavailable-owner-closeout-498',
+ 'stream': 'coordination',
+ 'title': 'Agent hub: compiled unavailable-owner closeout and Auto TDP branch amendment',
+ 'owner': 'codex-01a080fd',
+ 'state': 'review',
+ 'branch': 'agent/codex-local/498-hub-unavailable-owner-closeout',
+ 'paths': '["scripts/agent_hub/hub.py", "tests/test_agent_hub.py"]',
+ 'dependencies': '[]',
+ 'evidence': 'Draft PR499 exact head 8453fb0855f32fd9523e75b0881e1b3b58c47281 on base '
+             'a9526fb6978cd1cc74a4a60a923be07833c0bfa4. Focused agent-hub suite 40/40 PASS on temporary '
+             'databases; architecture, compileall, golden49/49 across8, docs links262/0, diff check PASS. '
+             'Independent exact-head/base Codex re-review PASS with no findings. GitHub foundation, '
+             'development and production build profiles, and privileged-user-delivery SUCCESS. '
+             'Coordination/pr remains expected FAILURE because task is claimed and PR intentionally draft; '
+             'aggregate coordination gate also failed on unrelated PR428 publication. Full Windows backend '
+             'run: 4950 tests, 73 unrelated directory-handle/graphics-backup failures, 333 skipped. Both '
+             'maintenance operations remain fail-closed pending separately compiled invocation approvals. No '
+             'real hub operation, merge, adoption, device/TDP write, install, package, release, or hardware '
+             'claim.',
+ 'note': 'Implementation/review/draft-PR milestone complete for #498. Exact two-file scope preserved. '
+         'Reviewer blockers fixed by full #498 assignment digest binding and fail-closed unset execution '
+         'approvals. Keep PR draft; do not merge/adopt or invoke A/B. Future separately reviewed source '
+         'change must compile exact later invocation approvals against the then-current accepted assignment '
+         'state. RANGE #497 remains backlog/held. Documentation impact: none',
+ 'issue': 'https://github.com/ronnierosal/Re-Gear/issues/498',
+ 'pr': 'https://github.com/ronnierosal/Re-Gear/pull/499',
+ 'rev': 3,
+ 'updated': '2026-10-08T21:04:10+00:00'}
 RANGE_NEW_BRANCH = 'agent/codex-local/497-tdp-expressible-range-admission'
 APPROVED_TASKS = {'tdp-readiness-evidence-setup': {'id': 'tdp-readiness-evidence-setup',
                                   'stream': 'auto-tdp',
