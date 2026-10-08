@@ -124,9 +124,9 @@ class ControllerCatalog:
                                       (RelationKind.DBUS, device.dbus_paths)):
                 for path in observation.value or ():
                     edges.append((device.path, path, kind))
-        owners: dict[tuple[RelationKind, str], set[str]] = {}
-        for composite, path, kind in edges:
-            owners.setdefault((kind, path), set()).add(composite)
+        owners: dict[str, set[str]] = {}
+        for composite, path, _kind in edges:
+            owners.setdefault(path, set()).add(composite)
         result = []
         for composite, path, kind in edges:
             target = by_path.get(path)
@@ -136,7 +136,7 @@ class ControllerCatalog:
             state = RelationState.RESOLVED
             if target is None:
                 state = RelationState.MISSING
-            elif target.kind not in expected or len(owners[(kind, path)]) != 1:
+            elif target.kind not in expected or len(owners[path]) != 1:
                 state = RelationState.AMBIGUOUS
             result.append(CatalogRelationship(composite, path, kind, state))
         return tuple(result)

@@ -89,6 +89,14 @@ class ControllerCatalogAdapterTests(unittest.TestCase):
         self.assertEqual(len(catalog.devices), 3)
         self.assertTrue(all(r.state is RelationState.RESOLVED for r in catalog.relationships()))
 
+    def test_dbus_target_cannot_resolve_to_two_composites_through_different_views(self):
+        frame = fixture()
+        frame.objects["/target0"] = {DBUS: {}}
+        frame.objects["/composite1"] = {COMPOSITE: {"DbusDevices": known(["/target0"])}}
+        relations = [r for r in parse_provider_frame(frame).relationships() if r.device_path == "/target0"]
+        self.assertEqual(len(relations), 2)
+        self.assertTrue(all(r.state is RelationState.AMBIGUOUS for r in relations))
+
     def test_missing_objects_and_unknown_interfaces_are_retained_as_evidence_gaps(self):
         frame = fixture()
         del frame.objects["/source0"]
@@ -160,6 +168,14 @@ class ControllerCatalogAdapterTests(unittest.TestCase):
         self.assertEqual(node.bus_type.value, "0003")
         self.assertIs(node.transport.state, EvidenceState.UNKNOWN)
 
+    def test_present_null_udev_reply_is_malformed_not_missing(self):
+        frame = fixture()
+        frame.objects["/source0"][UDEV]["Properties"] = None
+        catalog = parse_provider_frame(frame)
+        self.assertIs(device(catalog, "/source0").transport.state, EvidenceState.ERROR)
+        self.assertIn(CatalogCode.MALFORMED, catalog.issues)
+        self.assertFalse(catalog.enumeration_complete)
+
     def test_partial_enumeration_is_explicit(self):
         catalog = parse_provider_frame(dataclasses.replace(fixture(), enumeration_complete=False))
         self.assertFalse(catalog.enumeration_complete)
@@ -202,6 +218,22 @@ class ControllerCatalogAdapterTests(unittest.TestCase):
             self.assertIs(catalog.availability, EvidenceState.ERROR)
             self.assertEqual(catalog.devices, ())
             self.assertIn(CatalogCode.BOUNDS, catalog.issues)
+
+    def test_interface_and_property_overflows_discard_the_entire_frame(self):
+        frames = [(fixture(), CatalogLimits(max_interfaces=1)),
+                  (fixture(), CatalogLimits(max_properties=2))]
+        too_many_interfaces = fixture()
+        too_many_interfaces.objects["/source0"] = {f"org.example.Interface{i}": {} for i in range(17)}
+        too_many_properties = fixture()
+        too_many_properties.objects["/source0"] = {EVENT: {f"Property{i}": known(1) for i in range(65)}}
+        frames.extend([(too_many_interfaces, CatalogLimits()), (too_many_properties, CatalogLimits())])
+        for frame, limits in frames:
+            with self.subTest(limits=limits):
+                catalog = parse_provider_frame(frame, limits=limits)
+                self.assertIs(catalog.availability, EvidenceState.ERROR)
+                self.assertEqual(catalog.devices, ())
+                self.assertFalse(catalog.enumeration_complete)
+                self.assertEqual(catalog.issues, (CatalogCode.BOUNDS,))
 
     def test_limits_cannot_be_amplified_and_invalid_utf8_is_not_retained(self):
         for limits in ({"max_depth": 9}, {"max_items": 257}, {"max_nodes": True}):

@@ -87,6 +87,14 @@ class ControllerCatalogTests(unittest.TestCase):
         self.assertEqual(len(catalog.relationships()), 2)
         self.assertTrue(all(r.state is RelationState.RESOLVED for r in catalog.relationships()))
 
+    def test_dbus_target_shared_across_property_views_is_ambiguous(self):
+        dbus = DeviceObservation("/dbus0", DeviceKind.DBUS, ())
+        catalog = self.catalog(
+            composite(sources=(), targets=("/dbus0",)),
+            composite("/composite1", sources=(), targets=(), dbus=("/dbus0",)), dbus)
+        self.assertEqual(len(catalog.relationships()), 2)
+        self.assertTrue(all(r.state is RelationState.AMBIGUOUS for r in catalog.relationships()))
+
     def test_capabilities_and_supported_key_metadata_do_not_grant_mapping_support(self):
         catalog = self.catalog(source(), composite(targets=()))
         projection = catalog.public_projection()

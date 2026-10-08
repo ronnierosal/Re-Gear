@@ -164,6 +164,14 @@ def parse_provider_frame(frame: ProviderReadFrame, *, limits: CatalogLimits = Ca
         _bounded(frame.interface_states, limits)
         if len(frame.objects) > limits.max_objects:
             raise _InvalidInput(CatalogCode.BOUNDS)
+        for interfaces in frame.objects.values():
+            if type(interfaces) is not dict:
+                continue
+            if len(interfaces) > limits.max_interfaces:
+                raise _InvalidInput(CatalogCode.BOUNDS)
+            if any(type(props) is dict and len(props) > limits.max_properties
+                   for props in interfaces.values()):
+                raise _InvalidInput(CatalogCode.BOUNDS)
     except _InvalidInput as error:
         return failed(error.code)
     issues = [] if frame.enumeration_complete else [CatalogCode.PARTIAL]
@@ -174,12 +182,11 @@ def parse_provider_frame(frame: ProviderReadFrame, *, limits: CatalogLimits = Ca
         issues.append(CatalogCode.MALFORMED)
     for path in sorted(path for path in frame.objects if type(path) is str):
         interfaces = frame.objects[path]
-        if (type(path) is not str or not PATH.fullmatch(path) or type(interfaces) is not dict
-                or len(interfaces) > limits.max_interfaces):
+        if (type(path) is not str or not PATH.fullmatch(path) or type(interfaces) is not dict):
             issues.append(CatalogCode.MALFORMED)
             continue
         if any(type(name) is not str or not INTERFACE.fullmatch(name) or type(props) is not dict
-               or len(props) > limits.max_properties or any(type(p) is not str for p in props)
+               or any(type(p) is not str for p in props)
                for name, props in interfaces.items()):
             issues.append(CatalogCode.MALFORMED)
             continue
@@ -205,8 +212,9 @@ def parse_provider_frame(frame: ProviderReadFrame, *, limits: CatalogLimits = Ca
         # Raw dictionaries never enter the pure immutable Observation contract.
         # Only explicitly reported ID_BUS is transport evidence, not IdBustype,
         # the device name, source order, or the presence of an external target.
-        raw_udev = interfaces.get(UDEV, {}).get("Properties")
-        if raw_udev is not None:
+        udev_properties = interfaces.get(UDEV, {})
+        if "Properties" in udev_properties:
+            raw_udev = udev_properties["Properties"]
             if type(raw_udev) is not PropertyRead or type(raw_udev.state) is not EvidenceState:
                 transport = _error(CatalogCode.MALFORMED)
             elif raw_udev.state is not EvidenceState.KNOWN:
