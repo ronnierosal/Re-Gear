@@ -5,17 +5,19 @@ import ts from 'typescript';
 
 // Execute the actual module at the native primitive boundary. Field registration
 // and focus events are checked here; Steam's spatial engine still needs device QA.
-function load(){
+function loadModule(url){
  const exports={};
  const jsx=(type,props)=>({type,props:props??{}});
- const code=ts.transpileModule(readFileSync(new URL('../src/quick-access/modules/egpu.tsx',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX,target:ts.ScriptTarget.ES2022}}).outputText;
+ const code=ts.transpileModule(readFileSync(url,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX,target:ts.ScriptTarget.ES2022}}).outputText;
  new Function('exports','require',code)(exports,name=>{
   if(name==='react/jsx-runtime')return{jsx,jsxs:jsx};
-  if(name==='@decky/ui')return{Field:'Field',Focusable:'Focusable',DialogButton:'DialogButton'};
+  if(name==='@decky/ui')return{Field:'Field',Focusable:'Focusable',DialogButton:'DialogButton',GamepadButton:{DIR_UP:9,DIR_DOWN:10}};
+  if(name.startsWith('.'))return loadModule(new URL(`${name}.tsx`,url));
   throw new Error(`Unexpected runtime dependency: ${name}`);
  });
- return exports.EgpuModule;
+ return exports;
 }
+const load=()=>loadModule(new URL('../src/quick-access/modules/egpu.tsx',import.meta.url)).EgpuModule;
 function mount(node){
  if(Array.isArray(node))return node.flatMap(mount);
  if(!node||typeof node!=='object')return[];
@@ -39,7 +41,9 @@ test('native eGPU status registers ordered read-only leaves above Configure dock
  assert.equal(controls[index].type,'Configure docking','Down returns to the action');
  for(const field of fields){
   assert.equal(field.props.focusable,true);
-  for(const handler of ['onClick','onOKButton','onActivate','onCancelButton','onGamepadDirection'])assert.equal(field.props[handler],undefined,handler);
+  assert.equal(field.props.highlightOnFocus,false);
+  assert.equal(typeof field.props.onGamepadDirection,'function','direction handler scrolls information only');
+  for(const handler of ['onClick','onOKButton','onActivate','onCancelButton'])assert.equal(field.props[handler],undefined,handler);
  }
  assert.equal(tree.type,'Focusable');assert.equal(tree.props['flow-children'],'vertical');
 });
@@ -48,13 +52,26 @@ test('every focused reading reveals itself without activating recovery or mutati
  let recovery=0;
  const fields=mount(load()({presentation,onOpenRecovery:()=>recovery++})).filter(n=>n.type==='Field');
  const previous=globalThis.HTMLElement;
- class Element{scrollIntoView(options){this.options=options;}}
+ class Element{closest(){return null;}scrollIntoView(options){this.options=options;}}
  globalThis.HTMLElement=Element;
  try{for(const field of fields){const target=new Element();field.props.onGamepadFocus({currentTarget:target});assert.deepEqual(target.options,{block:'nearest',inline:'nearest'});}}
  finally{globalThis.HTMLElement=previous;}
  assert.equal(recovery,0);assert.equal(presentation.disconnect.safeClaim,false);
  const buttons=mount(load()({presentation,onOpenRecovery:()=>recovery++})).filter(n=>n.type==='DialogButton');
  assert.equal(buttons.length,1);buttons[0].props.onClick();assert.equal(recovery,1,'touch/controller action remains explicit');
+});
+
+test('native eGPU first reading Up reveals its section title without adding a heading focus stop',()=>{
+ const fields=mount(load()({presentation})).filter(n=>n.type==='Field');assert.equal(fields.length,8);
+ const previous=globalThis.HTMLElement;class Element{};globalThis.HTMLElement=Element;
+ try{
+  const area=new Element();area.scrollTop=53;area.getBoundingClientRect=()=>({top:0,bottom:100,height:100});
+  const target=new Element();target.closest=()=>area;target.getBoundingClientRect=()=>({top:57-area.scrollTop,bottom:77-area.scrollTop,height:20});area.querySelector=()=>target;
+  let consumed=0;const event={currentTarget:target,detail:{button:9},preventDefault(){consumed++},stopPropagation(){}};
+  assert.equal(fields[0].props.onGamepadDirection(event),true);assert.equal(area.scrollTop,0);assert.equal(consumed,1);
+  assert.equal(fields[0].props.onGamepadDirection(event),false,'Up exits after title is visible');
+  event.detail.button=10;assert.equal(fields[0].props.onGamepadDirection(event),false,'Down retains ordinary next-reading navigation');
+ }finally{globalThis.HTMLElement=previous;}
 });
 
 test('unavailable and long unverified readings remain focusable and independently labeled',()=>{

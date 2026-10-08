@@ -19,14 +19,24 @@ export function scrollReadable(target: HTMLElement, direction: "up" | "down") {
   const area = target.closest<HTMLElement>(scrollSelector);
   if (!area) return false;
   const box = area.getBoundingClientRect(), row = target.getBoundingClientRect();
+  if (box.height <= 0) return false;
   const remaining = direction === "down" ? row.bottom - box.bottom : box.top - row.top;
-  if (box.height <= 0 || row.height <= box.height || remaining <= 2) return false;
-  area.scrollTop += (direction === "down" ? 1 : -1) * Math.min(remaining, box.height * .65);
-  return true;
+  if (row.height > box.height && remaining > 2) {
+    area.scrollTop += (direction === "down" ? 1 : -1) * Math.min(remaining, box.height * .65);
+    return true;
+  }
+  // Nearest row reveal can leave its preceding section title just out of view.
+  // At the first reading's upper edge, reveal that context before spatial exit.
+  if (direction === "up" && area.scrollTop > 0 && row.top >= box.top - 2 &&
+      area.querySelector(".rg-readable,.rg-egpu-reading") === target) {
+    area.scrollTop = Math.max(0, area.scrollTop - box.height * .65);
+    return true;
+  }
+  return false;
 }
 
 export function ReadableBlock({ label, children, className = "" }: { label: string; children: ReactNode; className?: string }) {
-  return <Field focusable padding="none" bottomSeparator="none" childrenLayout="below"
+  return <Field focusable highlightOnFocus={false} padding="none" bottomSeparator="none" childrenLayout="below"
     className={`rg-readable ${className}`} data-rg-readable aria-label={label}
     onGamepadFocus={(event: Event) => { if (event.currentTarget instanceof HTMLElement) revealReadable(event.currentTarget); }}
     onGamepadDirection={(event: CustomEvent<{ button: number }>) => {

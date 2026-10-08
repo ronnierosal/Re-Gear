@@ -1,4 +1,5 @@
-import { DialogButton, Field, Focusable } from "@decky/ui";
+import { DialogButton, Field, Focusable, GamepadButton } from "@decky/ui";
+import { revealReadable, scrollReadable } from "../readable-block";
 import type { ReactNode } from "react";
 import type { EgpuPresentation, Evidence } from "./egpu-presentation";
 
@@ -23,16 +24,16 @@ const C = {
 
 const SURFACE = "linear-gradient(135deg, rgba(19,36,58,.96), rgba(9,21,36,.98))";
 
-function revealReading(event: Event) {
-  if (event.currentTarget instanceof HTMLElement) {
-    event.currentTarget.scrollIntoView({ block: "nearest", inline: "nearest" });
-  }
-}
-
 /** Native informational leaf: directional focus reveals text; A performs nothing. */
 function ReadingFocus({ label, children }: { label: string; children: ReactNode }) {
-  return <Field focusable={true} padding="none" bottomSeparator="none" childrenLayout="below"
-    className="rg-egpu-reading" aria-label={label} onGamepadFocus={revealReading}>
+  return <Field focusable highlightOnFocus={false} padding="none" bottomSeparator="none" childrenLayout="below"
+    className="rg-egpu-reading" aria-label={label}
+    onGamepadFocus={(event: Event) => { if (event.currentTarget instanceof HTMLElement) revealReadable(event.currentTarget); }}
+    onGamepadDirection={(event: CustomEvent<{ button: number }>) => {
+      const direction = event.detail.button === GamepadButton.DIR_UP ? "up" : event.detail.button === GamepadButton.DIR_DOWN ? "down" : null;
+      if (!direction || !(event.currentTarget instanceof HTMLElement) || !scrollReadable(event.currentTarget, direction)) return false;
+      event.preventDefault(); event.stopPropagation(); return true;
+    }}>
     <div role="group" aria-label={label}>{children}</div>
   </Field>;
 }
@@ -66,7 +67,7 @@ export function EgpuModule({ presentation, onOpenRecovery }: {
 }) {
   const p = presentation;
   return <Focusable flow-children="vertical" noFocusRing style={{ color: C.text, minWidth: 0, margin: "0 2px" }}>
-    <style>{`.rg-egpu-reading.gpfocus,.rg-egpu-reading:focus-visible,.rg-egpu-reading:focus-within{outline:2px solid #39d8ff;outline-offset:-2px;border-radius:6px;background:#17445b}`}</style>
+    <style>{`.rg-egpu-reading.gpfocus,.rg-egpu-reading:focus-visible,.rg-egpu-reading:focus-within{outline:none!important;box-shadow:none!important;background:transparent!important}`}</style>
     {p.model && (
       <div style={{ fontSize: 13, fontWeight: 760, marginBottom: 6 }}>{p.model}</div>
     )}
