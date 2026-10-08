@@ -278,7 +278,10 @@ class ExplicitCaptureTests(unittest.TestCase):
         alias.unlink()
         self.metadata.unlink()
         os.mkfifo(self.metadata)
+        # The wrapping mock changes callable identity, so preserve the original
+        # descriptor-support capability in the test's patched support registry.
         with patch.object(capture.os, "open", wraps=capture.os.open) as opens, \
+             patch.object(capture.os, "supports_dir_fd", capture.os.supports_dir_fd | {opens}), \
              patch.object(capture.os, "read", side_effect=AssertionError("FIFO")):
             result = capture.capture_metadata(self.roots, (self.item,))
         self.assertIs(result.failure, Reason.UNSAFE_LINK)
