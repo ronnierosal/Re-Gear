@@ -171,6 +171,29 @@ def hardware(record, head, base):
     require(isinstance(hw.get("artifact"), str) and re.fullmatch(r"sha256:[0-9a-f]{64}", hw["artifact"]), "immutable hardware artifact required")
 
 
+class GitHubAPIError(subprocess.CalledProcessError):
+    """A failed gh request with only a bounded HTTP summary exposed."""
+    def __init__(self, error, method, path):
+        # gh emits the HTTP summary on stderr. Do not expose response bodies,
+        # request payloads, headers, URLs, or arbitrary stderr lines.
+        summaries = re.findall(r"^gh: ([^\r\n]*)\(HTTP ([0-9]{3})\)", error.stderr or "", re.M)
+        summary = "HTTP summary unavailable"
+        if summaries:
+            message, code = summaries[-1]
+            # Never retain arbitrary API-controlled prose, even after regex
+            # redaction: quoted/encoded credentials cannot be exhaustively
+            # recognized. Exact known reason strings are safe diagnostics.
+            reasons = {"Validation Failed", "Not Found", "Forbidden", "Bad credentials",
+                       "API rate limit exceeded", "Bad Request", "Internal Server Error"}
+            reason = message.strip()
+            summary = f"HTTP {code}" + (f": {reason}" if reason in reasons else "")
+        super().__init__(error.returncode, ["gh", "api", method], stderr=summary)
+        self.request_path = path.split("?", 1)[0]
+
+    def __str__(self):
+        return f"gh API {self.cmd[-1]} {self.request_path} failed (exit {self.returncode}): {self.stderr}"
+
+
 class GitHub:
     def __init__(self, repo):
         require(re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repo), "invalid repository")
@@ -180,8 +203,11 @@ class GitHub:
         args = ["gh", "api", f"repos/{self.repo}" + (f"/{path}" if path else ""), "--method", method]
         if payload is not None:
             args += ["--input", "-"]
-        result = subprocess.run(args, input=json.dumps(payload) if payload is not None else None,
-                                capture_output=True, text=True, encoding="utf-8", check=True)
+        try:
+            result = subprocess.run(args, input=json.dumps(payload) if payload is not None else None,
+                                    capture_output=True, text=True, encoding="utf-8", check=True)
+        except subprocess.CalledProcessError as exc:
+            raise GitHubAPIError(exc, method, path) from None
         return json.loads(result.stdout) if result.stdout.strip() else None
 
     def pages(self, path):
@@ -273,13 +299,24 @@ def check_pr(github, pr, tasks, open_prs=None):
     require(latest["state"] == "open" and latest["body"] == issue["body"], "task changed while checking")
 
 
+def post_status(github, sha, payload):
+    # GitHub lists newest first. Only the newest status for this exact context
+    # may suppress a write; a historical match cannot conceal a later change.
+    latest = next((s for s in github.pages(f"statuses/{sha}")
+                   if s["context"] == payload["context"]), None)
+    fields = ("context", "state", "description", "target_url")
+    if latest is not None and all(latest.get(k) == payload.get(k) for k in fields):
+        return
+    github.api(f"statuses/{sha}", "POST", payload)
+
+
 def publish(github, pr, tasks, open_prs=None):
     state, detail = "success", "Recorded gates pass; evidence truth and CI require independent verification"
     try:
         check_pr(github, pr, tasks, open_prs)
     except (ValueError, KeyError, TypeError) as exc:
         state, detail = "failure", str(exc)
-    github.api(f"statuses/{pr['head']['sha']}", "POST", {
+    post_status(github, pr['head']['sha'], {
         "state": state, "context": "coordination/pr", "description": detail[:140],
         "target_url": pr["html_url"],
     })
@@ -287,18 +324,33 @@ def publish(github, pr, tasks, open_prs=None):
 
 def refresh(github):
     prs = github.pages("pulls?state=open")
+    failures = []
+
+    def attempt(pr, phase, operation):
+        try:
+            operation()
+        except (ValueError, KeyError, TypeError, subprocess.CalledProcessError) as exc:
+            failures.append(f"PR #{pr['number']} {pr['head']['sha']} {phase}: {exc}")
+
     for pr in prs:
-        github.api(f"statuses/{pr['head']['sha']}", "POST", {"state": "pending", "context": "coordination/pr",
-                   "description": "Refreshing current task and revision evidence"})
+        attempt(pr, "pending publication", lambda pr=pr: post_status(github, pr['head']['sha'],
+                {"state": "pending", "context": "coordination/pr",
+                 "description": "Refreshing current task and revision evidence"}))
     try:
         tasks = github.tasks()
-    except (ValueError, KeyError, TypeError) as exc:
+    except (ValueError, KeyError, TypeError, subprocess.CalledProcessError) as exc:
+        failures.append(f"Invalid task inventory: {exc}")
+        detail = ("Invalid task inventory: " + str(exc))[:140]
         for pr in prs:
-            github.api(f"statuses/{pr['head']['sha']}", "POST", {"state": "failure", "context": "coordination/pr",
-                       "description": ("Invalid task inventory: " + str(exc))[:140]})
-        raise
-    for summary in prs:
-        publish(github, github.api(f"pulls/{summary['number']}"), tasks, prs)
+            attempt(pr, "inventory failure publication", lambda pr=pr: post_status(github, pr['head']['sha'],
+                    {"state": "failure", "context": "coordination/pr",
+                     "description": detail}))
+    else:
+        for summary in prs:
+            attempt(summary, "final evaluation/publication", lambda summary=summary:
+                    publish(github, github.api(f"pulls/{summary['number']}"), tasks, prs))
+    if failures:
+        raise ValueError("Refresh incomplete:\n" + "\n".join(failures))
 
 
 def trusted(github, event):
