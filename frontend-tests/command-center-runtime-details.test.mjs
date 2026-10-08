@@ -24,3 +24,14 @@ test('shutdown uses only the current available adapter and stops on owner loss',
  p.publish({...next,shutdown:{...next.shutdown,available:false}});p.source.requestShutdown();assert.equal(calls,1);
  p.publish(next);p.stop();p.source.requestShutdown();assert.equal(calls,1);
 });
+
+test('connection fact is optional presentation data and withdrawal preserves action ownership',()=>{
+ const p=createRuntimeDetailPublisher();let calls=0;
+ p.publish(state(true,()=>calls++));assert.equal(p.source.read().displayAction.egpuConnected,undefined);
+ p.publish({...state(false,()=>calls++),displayAction:{...state(false).displayAction,egpuConnected:true,request:()=>calls++}});
+ assert.equal(p.source.read().displayAction.egpuConnected,true);p.source.requestDisplayTarget();assert.equal(calls,0);
+ p.publish({...state(true,()=>calls++),displayAction:{...state(true).displayAction,egpuConnected:null,request:()=>calls++}});
+ assert.equal(p.source.read().displayAction.egpuConnected,null);p.source.requestDisplayTarget();assert.equal(calls,1);
+ p.publish(null);assert.equal(p.source.read(),null);p.source.requestDisplayTarget();assert.equal(calls,1);
+ p.publish({...state(true),displayAction:{...state(true).displayAction,egpuConnected:true}});p.stop();assert.equal(p.source.read(),null);
+});

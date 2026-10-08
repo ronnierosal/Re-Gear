@@ -1,5 +1,5 @@
 import { registerRuntimeHost,type RuntimeOwner } from "./quick-access/expanded-command-center/runtime-host";
-import { createRuntimeDetailPublisher } from "./quick-access/expanded-command-center/runtime-detail-source";
+import { createRuntimeDetailPublisher, egpuConnectionEvidence } from "./quick-access/expanded-command-center/runtime-detail-source";
 import { createRuntimeDetailRenderer } from "./quick-access/expanded-command-center/runtime-detail-renderer";
 import { ReGearLanding,ReGearAbout,ReGearHelp } from "./quick-access/expanded-command-center/landing";
 import { buildProfile } from "regear:build-profile";
@@ -2190,6 +2190,7 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
         pending:safeDisconnectBusy,message:safeDisconnectMessage,
         request:()=>{if(buildProfile === "development"&&!runtimeOwner.stopped&&menuFresh&&payload?.inference.mode==="portable")void executeSafeDisconnect(true);}},
       displayAction:{target:menuFresh?primaryDisplayAction.target:null,
+        egpuConnected:egpuConnectionEvidence(payload,menuFresh),
         available:menuFresh&&primaryDisplayAction.target!==null&&!primaryDisplayAction.disabled,
         reason:!menuFresh?"Current display status unavailable":primaryDisplayAction.description,
         request:()=>{if(!runtimeOwner.stopped&&menuFresh&&primaryDisplayAction.target!==null&&!primaryDisplayAction.disabled)activateDisplay();}},
