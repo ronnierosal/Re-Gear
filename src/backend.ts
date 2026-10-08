@@ -709,7 +709,15 @@ export const acknowledgeProcessRelease = callable<
   ProcessReleaseAcknowledgementPayload
 >("acknowledge_process_release");
 
+export type ManualTdpPresetId = "low" | "balanced" | "high";
+export interface ManualTdpPresetPayload {
+  id: ManualTdpPresetId;
+  watts: number;
+  admitted: boolean;
+}
+
 export interface TdpStatusPayload {
+  manual_presets?: readonly ManualTdpPresetPayload[] | null;
   schema_version: 1;
   enabled: boolean;
   can_enable: boolean;

@@ -2,13 +2,13 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
 import ts from "typescript";
-import { sanitizeTdpStatus, tdpControls } from "../src/tdp-ui.ts";
+import { sanitizeTdpStatus, tdpControls, manualPresetOptions } from "../src/tdp-ui.ts";
 import { sanitizeAutoTdpStatus, validAutoTdpRange } from "../src/auto-tdp-ui.ts";
 const source = readFileSync(new URL("../src/quick-access/use-performance.ts",import.meta.url),"utf8");
 const code=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2020}}).outputText
   .replace(/^import[^;]*;/gm,"").replace(/const backend = [^;]*;/,"const backend = {};");
-const {PerformanceController}=new Function("sanitizeTdpStatus","tdpControls","sanitizeAutoTdpStatus","validAutoTdpRange",
-  code.replace(/export /g,"")+";return {PerformanceController};")(sanitizeTdpStatus,tdpControls,sanitizeAutoTdpStatus,validAutoTdpRange);
+const {PerformanceController}=new Function("sanitizeTdpStatus","tdpControls","sanitizeAutoTdpStatus","validAutoTdpRange","manualPresetOptions",
+  code.replace(/export /g,"")+";return {PerformanceController};")(sanitizeTdpStatus,tdpControls,sanitizeAutoTdpStatus,validAutoTdpRange,manualPresetOptions);
 const manual={schema_version:1,enabled:true,can_enable:true,ready:true,code:"tdp.ready",current_watts:15,minimum_watts:7,maximum_watts:30,restore_available:true,recovery_required:false,auto_tdp_available:true,last_result:null};
 const off={schema_version:1,can_start:true,enabled:false,running:false,stopping:false,code:"auto_tdp.ready",activity_code:null,target_fps:null,minimum_watts:null,maximum_watts:null};
 const running={...off,can_start:false,enabled:true,running:true,target_fps:60,minimum_watts:7,maximum_watts:30};
@@ -103,4 +103,42 @@ test("expired availability refuses writes even when timer delivery is suspended"
   await c.apply(20);await c.start(60,7,30);await c.restore();await c.setEnabled(true);
   assert.equal(c.snapshot.manual,null);assert.equal(c.snapshot.auto,null);
   assert.deepEqual(calls.map(call=>call[0]),["getTdpStatus","getAutoTdpStatus"]);
+});
+
+test("shared controller refuses all manual mutation during running or either stopping state", async () => {
+  for (const state of ["running", "auto-stopping", "owner-stopping"]) {
+    const { controller: c, calls } = setup(); c.setVisible(true); await settle();
+    c.snapshot = { ...c.snapshot, auto: state === "running" ? running : { ...off, stopping: state === "auto-stopping" }, stopping: state === "owner-stopping" };
+    await c.apply(20); await c.restore(); await c.setEnabled(false); await c.setEnabled(true);
+    assert.deepEqual(calls.map(x => x[0]), ["getTdpStatus", "getAutoTdpStatus"]);
+  }
+});
+
+const manualWithPresets = () => ({ ...manual, manual_presets: [{ id: "low", watts: 10, admitted: true }, { id: "balanced", watts: 15, admitted: true }, { id: "high", watts: 25, admitted: true }] });
+test("shared preset Apply requires the exact current admission and submits only one existing RPC", async () => {
+  const { controller: c, calls } = setup({ getTdpStatus: async () => manualWithPresets() });
+  c.setVisible(true); await settle(); const current = c.snapshot.manual;
+  await c.apply(10, { id: "low", status: current });
+  assert.deepEqual(calls.filter(x => !["getTdpStatus", "getAutoTdpStatus"].includes(x[0])), [["applyTdpLimit", 10]]);
+  await c.apply(10, { id: "low", status: current });
+  assert.equal(calls.filter(x => x[0] === "applyTdpLimit").length, 1, "old selection cannot survive a new result");
+});
+test("shared preset dispatch rejects false/malformed/changed/stale evidence without blocking ordinary Manual", async () => {
+  for (const mode of ["denied", "missing", "invalid", "wrong-watts", "old-status", "expired", "hidden"]) {
+    const { controller: c, calls, time } = setup({ getTdpStatus: async () => manualWithPresets() });
+    c.setVisible(true); await settle(); const current = c.snapshot.manual;
+    let expected = current, watts = 10;
+    if (mode === "denied") current.manual_presets[0].admitted = false;
+    if (mode === "missing") delete current.manual_presets;
+    if (mode === "invalid") current.manual_presets[0].watts = 11;
+    if (mode === "wrong-watts") watts = 20;
+    if (mode === "old-status") expected = { ...current };
+    if (mode === "expired") time.advance(10000, false);
+    if (mode === "hidden") c.setVisible(false);
+    await c.apply(watts, { id: "low", status: expected });
+    assert.equal(calls.some(x => x[0] === "applyTdpLimit"), false, mode);
+    if (!["expired", "hidden"].includes(mode)) {
+      await c.apply(20); assert.equal(calls.filter(x => x[0] === "applyTdpLimit").length, 1, "ordinary Manual stays available");
+    }
+  }
 });
