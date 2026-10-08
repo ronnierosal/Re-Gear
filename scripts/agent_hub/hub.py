@@ -22,8 +22,12 @@ STATES = ('todo', 'in_progress', 'blocked', 'review', 'done', 'cancelled')
 MAINTAINER = 'codex-01a080fd'
 MAINTENANCE_TASK = 'agent-hub-unavailable-owner-closeout-498'
 MAINTENANCE_ISSUE = 'https://github.com/ronnierosal/Re-Gear/issues/498'
-CLOSEOUT_AUTHORIZATION = 'https://github.com/ronnierosal/Re-Gear/issues/498#issuecomment-6068778297'
-RANGE_AUTHORIZATION = 'https://github.com/ronnierosal/Re-Gear/issues/497'
+# These remain deliberately unset in the implementation candidate. A later,
+# separately reviewed change must compile the exact invocation approvals before
+# either command can mutate a hub.
+CLOSEOUT_EXECUTION_AUTHORIZATION = None
+RANGE_EXECUTION_AUTHORIZATION = None
+MAINTENANCE_ASSIGNMENT_DIGEST = '4b3643ddaced86da253f4b7050672ce5010709c7a208cf85598756de72a060f7'
 RANGE_NEW_BRANCH = 'agent/codex-local/497-tdp-expressible-range-admission'
 APPROVED_TASKS = {'tdp-readiness-evidence-setup': {'id': 'tdp-readiness-evidence-setup',
                                   'stream': 'auto-tdp',
@@ -424,10 +428,14 @@ class Hub:
             raise Conflict('This compiled maintenance operation is restricted to its designated maintainer')
         self.row(db, 'sessions', actor)
         task = self.row(db, 'tasks', MAINTENANCE_TASK)
-        if (task['owner'], task['issue'], task['branch']) != (
-                actor, MAINTENANCE_ISSUE,
-                'agent/codex-local/498-hub-unavailable-owner-closeout'):
+        if self._digest(task) != MAINTENANCE_ASSIGNMENT_DIGEST:
             raise Conflict('The canonical maintenance assignment no longer matches its approved binding')
+
+    @staticmethod
+    def _execution_authorization(reference, operation):
+        if not reference:
+            raise Conflict(f'{operation} is disabled until its separate invocation approval is compiled')
+        return reference
 
     @staticmethod
     def _approved_row(db, key):
@@ -446,6 +454,8 @@ class Hub:
         supporting = ('tdp-readiness-evidence-recovery-277', 'auto-tdp-suspend-integration-319')
         with self.connection(True) as db:
             self._maintenance_actor(db, actor)
+            authorization = self._execution_authorization(
+                CLOSEOUT_EXECUTION_AUTHORIZATION, 'close_approved_auto_tdp_records')
             before = {key: self._approved_row(db, key) for key in targets}
             for key in supporting:
                 row = self._approved_row(db, key)
@@ -458,7 +468,7 @@ class Hub:
                 db.execute("UPDATE tasks SET state='done', evidence=?, rev=rev+1, updated=? WHERE id=?",
                            (evidence, stamp, key))
                 after_digests[key] = self._digest(self.row(db, 'tasks', key))
-            detail = {'authorization': CLOSEOUT_AUTHORIZATION,
+            detail = {'authorization': authorization,
                       'before': {key: APPROVED_DIGESTS[key] for key in targets},
                       'after': after_digests}
             self.event(db, actor, 'close_approved_auto_tdp_records', ','.join(targets), detail)
@@ -470,12 +480,14 @@ class Hub:
         key = 'tdp-runtime-expressible-range-admission'
         with self.connection(True) as db:
             self._maintenance_actor(db, actor)
+            authorization = self._execution_authorization(
+                RANGE_EXECUTION_AUTHORIZATION, 'amend_approved_auto_tdp_range_branch')
             before = self._approved_row(db, key)
             stamp = now()
             db.execute('UPDATE tasks SET branch=?, rev=rev+1, updated=? WHERE id=?',
                        (RANGE_NEW_BRANCH, stamp, key))
             result = self.row(db, 'tasks', key)
-            detail = {'authorization': RANGE_AUTHORIZATION,
+            detail = {'authorization': authorization,
                       'before': APPROVED_DIGESTS[key], 'after': self._digest(result)}
             self.event(db, actor, 'amend_approved_auto_tdp_range_branch', key, detail)
             return {'task': result, 'audit': detail}

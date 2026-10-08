@@ -18,6 +18,10 @@ sys.path.remove(str(HUB_DIR))
 
 class CompiledMaintenanceTests(unittest.TestCase):
     def setUp(self):
+        self.old_authorizations = (hub.CLOSEOUT_EXECUTION_AUTHORIZATION,
+                                   hub.RANGE_EXECUTION_AUTHORIZATION)
+        hub.CLOSEOUT_EXECUTION_AUTHORIZATION = 'https://example.test/closeout-invocation-approval'
+        hub.RANGE_EXECUTION_AUTHORIZATION = 'https://example.test/range-invocation-approval'
         self.temp = tempfile.TemporaryDirectory()
         self.db = Path(self.temp.name) / 'hub.sqlite3'
         self.store = hub.Hub(self.db)
@@ -32,13 +36,19 @@ class CompiledMaintenanceTests(unittest.TestCase):
                 db.execute('INSERT OR IGNORE INTO streams(id,title) VALUES (?,?)', (stream, stream))
             for row in hub.APPROVED_TASKS.values():
                 self._insert(db, row)
-            db.execute('''INSERT INTO tasks(id,stream,title,owner,state,branch,paths,dependencies,evidence,note,issue,pr,rev,updated)
-                          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
-                       (hub.MAINTENANCE_TASK, 'coordination', 'maintenance', hub.MAINTAINER,
-                        'in_progress', 'agent/codex-local/498-hub-unavailable-owner-closeout', '[]', '[]', '', '',
-                        hub.MAINTENANCE_ISSUE, '', 2, hub.now()))
+            self._insert(db, {
+                'id': hub.MAINTENANCE_TASK, 'stream': 'coordination',
+                'title': 'Agent hub: compiled unavailable-owner closeout and Auto TDP branch amendment',
+                'owner': hub.MAINTAINER, 'state': 'in_progress',
+                'branch': 'agent/codex-local/498-hub-unavailable-owner-closeout',
+                'paths': '["scripts/agent_hub/hub.py", "tests/test_agent_hub.py"]',
+                'dependencies': '[]', 'evidence': '',
+                'note': 'Canonical #498 rev2 claimed to codex-01a080fd. Exact Class A two-file implementation only. Operation A exact two stale review records; operation B exact #497 range row branch-only CAS. Regression-first, independent review, software gates, draft PR. No helper execution, merge, device, TDP write, package/install/release. Documentation impact: none',
+                'issue': hub.MAINTENANCE_ISSUE, 'pr': '', 'rev': 2,
+                'updated': '2026-10-08T20:51:04+00:00'})
 
     def tearDown(self):
+        hub.CLOSEOUT_EXECUTION_AUTHORIZATION, hub.RANGE_EXECUTION_AUTHORIZATION = self.old_authorizations
         self.temp.cleanup()
 
     @staticmethod
@@ -99,6 +109,22 @@ class CompiledMaintenanceTests(unittest.TestCase):
             self.store.close_approved_auto_tdp_records(hub.MAINTAINER)
         self.assertEqual(self.rows_and_events(), changed)
 
+    def test_operations_fail_closed_without_separate_compiled_invocation_approval(self):
+        for name, operation in (
+                ('closeout', self.store.close_approved_auto_tdp_records),
+                ('range', self.store.amend_approved_auto_tdp_range_branch)):
+            with self.subTest(operation=name):
+                old = (hub.CLOSEOUT_EXECUTION_AUTHORIZATION, hub.RANGE_EXECUTION_AUTHORIZATION)
+                if name == 'closeout':
+                    hub.CLOSEOUT_EXECUTION_AUTHORIZATION = None
+                else:
+                    hub.RANGE_EXECUTION_AUTHORIZATION = None
+                snapshot = self.rows_and_events()
+                with self.assertRaises(hub.Conflict):
+                    operation(hub.MAINTAINER)
+                self.assertEqual(self.rows_and_events(), snapshot)
+                hub.CLOSEOUT_EXECUTION_AUTHORIZATION, hub.RANGE_EXECUTION_AUTHORIZATION = old
+
     def test_closeout_concurrency_has_one_success_and_one_clean_failure(self):
         outcomes = []
         def run():
@@ -146,9 +172,14 @@ class CompiledMaintenanceTests(unittest.TestCase):
                     where_key = changed if field == 'id' else key
                     db.execute(f'UPDATE tasks SET {field}=? WHERE id=?', (original, where_key))
         with self.store.connection(True) as db:
-            db.execute('UPDATE tasks SET owner=NULL WHERE id=?', (hub.MAINTENANCE_TASK,))
-        with self.assertRaises(hub.Conflict):
-            self.store.amend_approved_auto_tdp_range_branch(hub.MAINTAINER)
+            db.execute("UPDATE tasks SET state='cancelled', rev=99, paths='[\"unrelated/path\"]' WHERE id=?",
+                       (hub.MAINTENANCE_TASK,))
+        snapshot = self.rows_and_events()
+        for operation in (self.store.amend_approved_auto_tdp_range_branch,
+                          self.store.close_approved_auto_tdp_records):
+            with self.assertRaises(hub.Conflict):
+                operation(hub.MAINTAINER)
+            self.assertEqual(self.rows_and_events(), snapshot)
 
     def test_range_concurrency_and_operation_isolation(self):
         outcomes = []
@@ -169,8 +200,10 @@ class CompiledMaintenanceTests(unittest.TestCase):
         script = HUB_DIR / 'hub.py'
         result = subprocess.run([sys.executable, str(script), '--db', str(self.db),
                                  'amend-approved-auto-tdp-range-branch', '--session', hub.MAINTAINER],
-                                text=True, capture_output=True, check=True)
-        self.assertEqual(json.loads(result.stdout)['task']['branch'], hub.RANGE_NEW_BRANCH)
+                                text=True, capture_output=True)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn('disabled until its separate invocation approval is compiled',
+                      json.loads(result.stderr)['error'])
         help_text = subprocess.run([sys.executable, str(script), '--db', str(self.db),
                                     'close-approved-auto-tdp-records', '--help'],
                                    text=True, capture_output=True, check=True).stdout
