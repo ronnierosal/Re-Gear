@@ -20,6 +20,7 @@ import { loadMenuBinding, saveMenuBinding, menuBindingOptions, startMenuShortcut
 import type { MenuBinding } from "../../menu-shortcut";
 import { recoverTerminalDockReceipt, WholeDockControl, type DockSettlement } from "../../whole-dock-control";
 import { createUnplugWarningCoordinator } from "../../unplug-warning-coordinator";
+import { createUnplugWarningAudio } from "../../unplug-warning-audio";
 import { parsePendingRecord, type DockIntent } from "../../whole-dock-control-model";
 import { EgpuConfirmModal } from "../../egpu-confirm-modal";
 import { ExpandedCommandCenter } from "./shell";
@@ -124,12 +125,26 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
     ? host.setInterval.bind(host) : globalThis.setInterval;
   const clearWarningInterval = typeof host.clearInterval === "function"
     ? host.clearInterval.bind(host) : globalThis.clearInterval;
+  let warningAudio: ReturnType<typeof createUnplugWarningAudio> | undefined;
   const unplugWarning = createUnplugWarningCoordinator({
     schedule: setPendingTimeout,
     cancel: clearPendingTimeout,
     repeat: setWarningInterval,
     cancelRepeat: clearWarningInterval,
-    playWarning: () => playMenuFeedback("back"),
+    playWarning: () => {
+      const state = unplugWarning.read();
+      if (stopped || state.phase !== "alarm") return;
+      warningAudio ??= createUnplugWarningAudio({
+        createContext: () => {
+          const Constructor = (host as Window & { AudioContext?: typeof AudioContext }).AudioContext;
+          if (typeof Constructor !== "function") throw new Error("Web Audio unavailable");
+          return new Constructor();
+        },
+        fallback: () => playMenuFeedback("back"),
+      });
+      warningAudio.observe(state);
+      warningAudio.play();
+    },
   });
   let presentedDockSettlement: DockSettlement | null = null;
   const hideOperation=()=>{const previous=operation;operation=null;operationKind=null;operationGeneration++;previous?.Close();};
@@ -186,6 +201,7 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
       && warning.requestId===record?.request;
   };
   const warningSubscription=unplugWarning.subscribe(warning=>{
+    warningAudio?.observe(warning);
     if((warning.phase==="prompt"||warning.phase==="alarm")&&warning.requestId===pendingDockRecord()?.request){
       scheduleOwnerWarningPoll();
       return;
@@ -468,5 +484,5 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
     });
   };
   recoverMissingDockReceipt();
-  return { open, disconnect, Settings, visibility: visibility.source, available: shortcut.available, stop() { stopped = true; warningSubscription(); unplugWarning.stop(); if(recoveryTimer!==null)clearPendingTimeout(recoveryTimer as never);recoveryTimer=null;if(pendingStatusTimer!==null)clearPendingTimeout(pendingStatusTimer as never);pendingStatusTimer=null;if(ownerWarningTimer!==null)clearPendingTimeout(ownerWarningTimer as never);ownerWarningTimer=null;shortcut.stop(); close(); } };
+  return { open, disconnect, Settings, visibility: visibility.source, available: shortcut.available, stop() { stopped = true; warningSubscription(); warningAudio?.dispose(); unplugWarning.stop(); if(recoveryTimer!==null)clearPendingTimeout(recoveryTimer as never);recoveryTimer=null;if(pendingStatusTimer!==null)clearPendingTimeout(pendingStatusTimer as never);pendingStatusTimer=null;if(ownerWarningTimer!==null)clearPendingTimeout(ownerWarningTimer as never);ownerWarningTimer=null;shortcut.stop(); close(); } };
 }

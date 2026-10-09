@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
 import ts from "typescript";
+import { createUnplugWarningAudio } from "../src/unplug-warning-audio.ts";
 
 const read = path => readFileSync(new URL(`../src/quick-access/expanded-command-center/${path}`, import.meta.url), "utf8");
 const compile = source => ts.transpileModule(source, { compilerOptions: {
@@ -39,6 +40,7 @@ function harness(pendingRecord = null, recoverTerminalDockReceipt = async () => 
   const values = new Map(pendingRecord ? [["regear.whole-dock.pending-request", pendingRecord]] : []);
   h.storage = { getItem:key=>values.get(key)??null, setItem:(key,value)=>values.set(key,value), removeItem:key=>values.delete(key) };
   const runtime = {
+    createUnplugWarningAudio,
     createMenuVisibility, ...actionExports, ...warningExports, callable:()=>async()=>null,
     displayTargetActionTile: action => ({ id: "display-target", title: action?.target === "tv" ? "Switch to TV" : action?.target === "ally" ? "Switch to Handheld" : "Display Target", value: action?.available ? "Ready" : "Unavailable", detail: action?.reason ?? "Current display status unavailable" }),
     GamepadButton:{DIR_UP:9,DIR_DOWN:10,DIR_LEFT:11,DIR_RIGHT:12}, EgpuConfirmModal:"confirm",
