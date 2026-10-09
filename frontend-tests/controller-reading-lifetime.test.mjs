@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {readFileSync} from 'node:fs';
 import ts from 'typescript';
+import {SleepPreflightCoordinator} from '../src/sleep-preflight.ts';
 const source=readFileSync(new URL('../src/quick-access/expanded-command-center/controller-reading-lifetime.ts',import.meta.url),'utf8');
 const compiled=ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText;
 const {createControllerReadingLifetime}=await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`);
@@ -88,12 +89,19 @@ function contentHarness() {
   }
   const at = async stage => { await pending.get(stage)?.(); };
   const noop = () => {};
+  let admission = 'supported-runtime';
+  const preflight = new SleepPreflightCoordinator({
+    acquireBlocker: () => noop, observeSuspendRequests: () => noop,
+  }, noop);
+  preflight.start();
   const env = {
     controllerOwner: {current: {active: false, generation: 0}},
     controllerVisible: {current: true}, controllerLifetime: h.store,
     refreshInFlight: {current: null}, quickAccessVisible: false, expandedVisible: true,
     diagnosticsOnScreen: {current: false},
-    getSnapshot: async () => { await at('snapshot'); return {snapshot: {game_state: 'idle'}, journey: {}}; },
+    getSnapshot: async () => { await at('snapshot'); return {
+      runtime_admission: {schema_version: 1, sleep_interceptor_admission: admission},
+      snapshot: {schema_version: 3, observed_at: new Date().toISOString(), game_state: 'idle'}, journey: {}}; },
     getAutomaticDockStatus: async () => { await at('automatic'); return {}; },
     refreshTransitionJournal: async () => { await at('journal'); },
     getPeripheralStatus: async () => { rpc++; await at('peripheral'); return reading; },
@@ -102,7 +110,8 @@ function contentHarness() {
     collectOptionalDiagnostics: async () => Object.freeze({peripheralStatus: null}),
     getDockedIgpuStatus: noop, getDiagnosticLoggingStatus: noop, getActionHistory: noop,
     sanitizeJourneyStatus: x => x, lastSnapshotAt: {current: null},
-    preflight: {reconcile: noop}, preflightObservation: noop,
+    preflight, SNAPSHOT_STALE_AFTER_MS: 10000,
+    preflightObservation: () => ({kind:'fresh',guardRequired:false,guardConfidence:'verified',gameState:'idle',gameUsesEgpu:false}),
     setPayload: () => { published++; },
   };
   for (const name of ['setLoading','setError','setAutomaticDockStatus','setAutomaticDockMessage','setDockedIgpuStatus','setDiagnosticLoggingStatus','setPeripheralStatus','setActionHistory','setPreflightStatus']) env[name] = noop;
@@ -110,8 +119,17 @@ function contentHarness() {
     const js = ts.transpileModule(`const extracted = ${node.getText(tree)};`, {compilerOptions: {target: ts.ScriptTarget.ES2022}}).outputText;
     return new Function(...Object.keys(env), `${js}; return extracted;`)(...Object.values(env));
   }
-  return {...h, pause, refresh: execute(refreshNode), mount: execute(lifecycleNode), rpc: () => rpc, published: () => published};
+  return {...h, pause, refresh: execute(refreshNode), mount: execute(lifecycleNode), preflight,
+    setAdmission:value=>{admission=value;}, rpc: () => rpc, published: () => published};
 }
+
+test('Content cleanup rejects obsolete observation-only admission while the plugin coordinator survives',async()=>{
+  const h=contentHarness();const cleanup=h.mount();h.setAdmission('observation-only');
+  const gate=h.pause('snapshot');const pending=h.refresh();await gate.entered;
+  cleanup();gate.release();await pending;
+  assert.equal(h.preflight.isRetired(),false);assert.equal(h.preflight.status().blocking,true);
+  assert.equal(h.rpc(),0);assert.equal(h.published(),0);h.preflight.stop();
+});
 
 for (const stage of ['snapshot', 'automatic', 'journal', 'peripheral']) {
   test(`Content cleanup rejects pending ${stage} continuation with retained visibility`, async () => {

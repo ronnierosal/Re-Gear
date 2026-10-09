@@ -2288,8 +2288,10 @@ export default definePlugin(() => {
       if (warningTimer !== null) {
         window.clearTimeout(warningTimer);
       }
-      warningModal?.Close();
+      const previousModal = warningModal;
       warningModal = null;
+      try { previousModal?.Close(); }
+      catch (error) { preflight.reportWarningCleanupFailure(error); }
       if (runtimeOwner.stopped || preflight.isRetired()) return;
       // Steam closes the Power menu after dispatching OnSuspendRequest. Defer the
       // acknowledgement dialog so it is not discarded with that transient menu.
@@ -2305,7 +2307,10 @@ export default definePlugin(() => {
             });
             // Decky's host can synchronously retire us while creating a modal.
             if (runtimeOwner.stopped || preflight.isRetired()) {
-              if (!closed) modal.Close();
+              if (!closed) {
+                try { modal.Close(); }
+                catch (error) { preflight.reportWarningCleanupFailure(error); }
+              }
               return;
             }
             if (!closed) warningModal = modal;
@@ -2373,7 +2378,8 @@ export default definePlugin(() => {
     detailPublisher.publish(null);
     expandedMenu.stop();shortcut.stop();
     if(warningTimer!==null){window.clearTimeout(warningTimer);warningTimer=null;}
-    warningModal?.Close();warningModal=null;
+    const modal=warningModal;warningModal=null;
+    try{modal?.Close();}catch(error){preflight.reportWarningCleanupFailure(error);}
     authorization.stop();connection.stop();offlineFocusChecks.stop();
   };
   try{stopRuntime=registerRuntimeHost(routerHook,`Re-Gear-runtime-${Date.now()}-${Math.random().toString(36).slice(2)}`,Runtime,runtimeOwner);}

@@ -190,6 +190,17 @@ export class SleepPreflightCoordinator {
     return this.admission === "observation-only";
   }
 
+  // Host cleanup can complete after admission itself has returned. Record its
+  // uncertainty without retrying any consumed native release/unpatch handle.
+  reportWarningCleanupFailure(error: unknown): void {
+    this.recordCleanupFailure(`Sleep warning cleanup failed: ${messageFrom(error)}`);
+  }
+
+  private recordCleanupFailure(message: string): void {
+    this.cleanupUncertain = true;
+    this.lifecycleError = this.lifecycleError ? `${this.lifecycleError}; ${message}` : message;
+  }
+
   // Call only with a direct RPC reply after checking its current runtime generation.
   admitSnapshot(payload: unknown, nowMs: number, staleAfterMs: number): SleepPreflightStatus {
     if (this.stopped || this.admission !== null) return this.status();
@@ -198,7 +209,7 @@ export class SleepPreflightCoordinator {
     this.admission = admission; // Terminal before any potentially reentrant cleanup.
     if (this.isRetired()) {
       try { this.onRetired(); }
-      catch (error) { this.cleanupUncertain = true; this.lifecycleError = `Sleep warning cleanup failed: ${messageFrom(error)}`; }
+      catch (error) { this.reportWarningCleanupFailure(error); }
       this.releaseObserver();
       this.releaseBlocker();
     }
@@ -235,8 +246,7 @@ export class SleepPreflightCoordinator {
       try {
         releaseObserver();
       } catch (error) {
-        this.cleanupUncertain = true;
-        this.lifecycleError = `Failed to remove the Steam sleep warning hook: ${messageFrom(error)}`;
+        this.recordCleanupFailure(`Failed to remove the Steam sleep warning hook: ${messageFrom(error)}`);
       }
     }
   }
@@ -321,7 +331,7 @@ export class SleepPreflightCoordinator {
     } catch (error) {
       this.acquireFailed = true;
       this.blockerUncertain = true;
-      this.lifecycleError = `Steam preflight release failed: ${messageFrom(error)}`;
+      this.recordCleanupFailure(`Steam preflight release failed: ${messageFrom(error)}`);
     }
   }
 }

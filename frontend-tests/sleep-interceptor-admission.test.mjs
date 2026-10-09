@@ -116,7 +116,7 @@ test('disposed pending admission cannot retire, warn, or reacquire a new lifetim
 });
 
 // Exercise the real index host callbacks, rather than a copy of their logic.
-function nativeWarningHarness(retireAt) {
+function nativeWarningHarness(retireAt, closeThrows = false) {
   const source=readFileSync(new URL('../src/index.tsx',import.meta.url),'utf8');
   const tree=ts.createSourceFile('index.tsx',source,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
   let expression;
@@ -129,7 +129,7 @@ function nativeWarningHarness(retireAt) {
     createDeckySteamSuspendAdapter:()=>({acquireBlocker(){counts.acquire++;return()=>counts.release++;},observeSuspendRequests(handler){suspend=handler;return()=>counts.unpatch++;}}),
     window:{setTimeout(callback){timers.set(++serial,callback);return serial;},clearTimeout(id){timers.delete(id);}},
     toaster:{toast(){if(retireAt==='toast')retire();}},
-    showBlockedAttempt(_warning,onClose){counts.create++;if(retireAt==='modal')retire();return{Close(){counts.close++;onClose();}};},
+    showBlockedAttempt(_warning,onClose){counts.create++;if(retireAt==='modal')retire();return{Close(){counts.close++;if(closeThrows)throw Error('late modal close');onClose();}};},
   };
   const code=ts.transpileModule(`let warningModal=null;let warningTimer=null;const preflight=${expression.getText(tree)};`,{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;
   instance=new Function(...Object.keys(env),`${code};return {preflight, retained:()=>warningModal};`)(...Object.values(env));
@@ -146,4 +146,19 @@ test('real Decky modal boundary closes a handle returned after reentrant retirem
 test('real toast boundary cannot enqueue a warning after reentrant retirement',()=>{
   const h=nativeWarningHarness('toast');h.request();assert.equal(h.timers.size,0);h.fire();
   assert.equal(h.counts.create,0);assert.equal(h.counts.release,1);h.preflight.stop();
+});
+
+test('real late modal Close failure is degraded cleanup, never a successful retirement or retry',()=>{
+  const h=nativeWarningHarness('modal',true);h.request();h.fire();
+  const s=h.preflight.status();assert.equal(s.state,'unavailable');assert.equal(s.reason,'observation_only');assert.match(s.error,/late modal close/);
+  assert.equal(h.retained(),null);h.preflight.stop();h.request();h.fire();
+  assert.equal(h.counts.close,1);assert.equal(h.counts.release,1);assert.equal(h.counts.unpatch,1);
+});
+
+test('independent cleanup failures are all retained without retrying consumed operations',()=>{
+  const {coordinator:c,counts}=setup({retire:()=>{throw Error('modal error');},unpatch:()=>{throw Error('hook error');},release:()=>{throw Error('lease error');}});
+  const s=c.admitSnapshot(snapshot(),now,10000);c.stop();
+  assert.equal(s.state,'unavailable');assert.equal(s.blocking,null);
+  for(const message of ['modal error','hook error','lease error'])assert.ok(s.error.includes(message));
+  assert.equal(counts.release,1);assert.equal(counts.unpatch,1);assert.equal(counts.retire,1);
 });
