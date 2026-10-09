@@ -46,6 +46,109 @@ class FakeRunner:
 
 
 class ReaderTests(unittest.TestCase):
+    def expanded_runner(self, *, large=False):
+        runner = FakeRunner()
+        header = '<!DOCTYPE node PUBLIC "-//freedesktop//DTD D-BUS Object Introspection 1.0//EN" "http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd">'
+        def sized(body, size):
+            xml = header + '<node><!--PAD-->' + body + '</node>'
+            gap = size - len(reply('s', xml).encode())
+            self.assertGreaterEqual(gap, 0)
+            xml = xml.replace('PAD', 'PAD' + 'x'*gap, 1)
+            self.assertEqual(len(reply('s', xml).encode()), size)
+            return xml
+        event = '<interface name="org.shadowblip.Input.Source.EventDevice"><property name="Name" type="s" access="read"/></interface>'
+        if large:
+            # 3,836 additional elements bring the recursive root to the
+            # bridge's 3,848 element nodes, without exceeding child budgets.
+            methods = ('<method name="Fixture">' + '<annotation/>'*256 + '</method>')*14
+            methods += '<method name="Fixture">' + '<annotation/>'*237 + '</method>'
+            event = event.replace('</interface>', methods+'</interface>')
+        bodies = {
+            'CompositeDevice0': runner.xml[ROOT+'/CompositeDevice0'][6:-7],
+            'Manager': runner.xml[ROOT+'/Manager'][6:-7],
+            'devices': '<node name="EventDevice0">' + event + '</node>',
+        }
+        sizes = {'CompositeDevice0': 5497, 'Manager': 3614, 'devices': 444050}
+        runner.xml = {ROOT+'/'+name: sized(body, sizes[name]) if large else '<node>'+body+'</node>'
+                      for name, body in bodies.items()}
+        runner.xml[ROOT+'/devices/EventDevice0'] = '<node>'+event+'</node>'
+        body = ''.join('<node name="'+name+'">'+
+                       (runner.xml[ROOT+'/'+name][len(header+'<node>'):-7] if large else bodies[name])+
+                       '</node>' for name in bodies)
+        runner.xml[ROOT] = sized(body, 475649) if large else '<node>'+body+'</node>'
+        return runner
+
+    def test_expanded_byte_faithful_tree_fits_without_redundant_reads(self):
+        runner = self.expanded_runner(large=True)
+        lower_bound = 2 * sum(len(reply('s', runner.xml[p]).encode()) for p in
+                              (ROOT, ROOT+'/CompositeDevice0', ROOT+'/Manager', ROOT+'/devices'))
+        self.assertEqual(lower_bound, 1857620)
+        from xml.parsers import expat
+        from regear.adapters.steamos.inputplumber_catalog import _Read
+        root = _Read(runner, ReaderLimits(), expat).xml_root(runner.xml[ROOT])
+        pending, count = [root], 0
+        while pending:
+            node = pending.pop()
+            count += type(node.tag) is str
+            pending.extend(node)
+        self.assertEqual(count, 3848)
+        frame = InputPlumberReader(runner).read_snapshot()
+        self.assertEqual(frame.availability, EvidenceState.KNOWN)
+        self.assertTrue(frame.enumeration_complete)
+        paths = [c[len(InputPlumberReadCommandRunner.PREFIX)+2] for c in runner.calls
+                 if c[len(InputPlumberReadCommandRunner.PREFIX)+4] == 'Introspect']
+        self.assertEqual(paths, [ROOT, ROOT])
+        self.assertIn(ROOT+'/devices/EventDevice0', frame.objects)
+
+    def test_mixed_expanded_and_comment_only_stub_requires_fallback(self):
+        runner = self.expanded_runner()
+        runner.xml[ROOT] = runner.xml[ROOT].replace('<node>', '<node><node name="Empty"><!-- documentation --></node>', 1)
+        runner.xml[ROOT+'/Empty'] = '<node/>'
+        frame = InputPlumberReader(runner).read_snapshot()
+        self.assertTrue(frame.enumeration_complete)
+        paths = [c[len(InputPlumberReadCommandRunner.PREFIX)+2] for c in runner.calls
+                 if c[len(InputPlumberReadCommandRunner.PREFIX)+4] == 'Introspect']
+        self.assertEqual(paths, [ROOT, ROOT+'/Empty', ROOT, ROOT+'/Empty'])
+
+    def test_expanded_nested_topology_churn_discards_frame(self):
+        for old, new in (('EventDevice0', 'EventDevice1'),
+                         ('name="Name" type="s"', 'name="Name" type="as"')):
+            runner = self.expanded_runner()
+            seen = []
+            def hook(tail, result):
+                if tail[4] == 'Introspect' and tail[2] == ROOT:
+                    seen.append(1)
+                    if len(seen) == 2:
+                        xml = json.loads(result.stdout)['data'][0]
+                        self.assertIn(old, xml)
+                        return CommandResult(result.argv, 0, reply('s', xml.replace(old, new)), '')
+                return result
+            runner.hook = hook
+            self.assert_discarded(runner)
+
+    def test_embedded_node_names_and_declarations_remain_strict(self):
+        for bad in ('<node name="../escape"><interface name="org.example.Valid"/></node>',
+                    '<node name="Bad/Path"><interface name="org.example.Valid"/></node>',
+                    '<node name="Same"><interface name="org.example.Valid"/></node>'*2,
+                    '<node name="Child"><interface name="org.example.Duplicate"/>'
+                    '<interface name="org.example.Duplicate"/></node>',
+                    '<node name="Child"><interface name="org.example.Valid">'
+                    '<property name="X" type="s" access="read"/>'
+                    '<property name="X" type="s" access="read"/></interface></node>'):
+            runner = FakeRunner()
+            runner.xml[ROOT] = '<node><node name="Container">'+bad+'</node></node>'
+            self.assert_discarded(runner)
+
+    def test_expanded_objects_and_parse_budgets_are_not_relaxed(self):
+        runner = self.expanded_runner()
+        self.assert_discarded(runner, limits=ReaderLimits(max_objects=4))
+        runner = self.expanded_runner(large=True)
+        self.assert_discarded(runner, limits=ReaderLimits(max_bytes=950000))
+        runner = self.expanded_runner()
+        self.assert_discarded(runner, limits=ReaderLimits(max_nodes=16))
+        runner = self.expanded_runner()
+        self.assert_discarded(runner, limits=ReaderLimits(max_depth=3))
+
     def test_bundled_runtime_without_elementtree_still_enumerates(self):
         self.runtime_replay(False)
 
