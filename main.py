@@ -148,12 +148,16 @@ from regear.domain.controller_catalog import (  # noqa: E402
 class _ControllerReaderUnavailable(ImportError):
     """Optional reader cannot load in this runtime; not provider absence."""
 
-
-def _controller_catalog_factory():
+def InputPlumberReader(*args, **kwargs):
+    """Preserve the existing construction seam without startup imports."""
     try:
-        from regear.adapters.steamos.inputplumber_catalog import InputPlumberReader
+        from regear.adapters.steamos.inputplumber_catalog import InputPlumberReader as Reader
     except ImportError:
         raise _ControllerReaderUnavailable() from None
+    return Reader(*args, **kwargs)
+
+
+def _controller_catalog_factory():
     return InputPlumberCatalogAdapter(InputPlumberReader(InputPlumberReadCommandRunner()))
 
 
