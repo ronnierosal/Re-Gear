@@ -2,12 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
 import ts from "typescript";
+import { createUnplugWarningAudio } from "../src/unplug-warning-audio.ts";
 import { createUnplugWarningCoordinator as realWarningCoordinator } from "../src/unplug-warning-coordinator.ts";
 
-const read = path => readFileSync(
-  new URL(`../src/quick-access/expanded-command-center/${path}`, import.meta.url),
-  "utf8",
-);
+const read = path => readFileSync(new URL(`../src/quick-access/expanded-command-center/${path}`, import.meta.url), "utf8");
 const compile = source => ts.transpileModule(source, { compilerOptions: {
   target: ts.ScriptTarget.ES2022,
   module: ts.ModuleKind.CommonJS,
@@ -22,7 +20,7 @@ const modelExports = {};
 new Function("exports", compile(readFileSync(new URL("../src/whole-dock-control-model.ts", import.meta.url), "utf8")))(modelExports);
 const REQUEST = "a".repeat(32);
 
-function harness(pending = null, recoverTerminalDockReceipt = async () => null, realWarning = false) {
+function harness(pending = null, recoverTerminalDockReceipt = async () => null, realWarning = false, audioOptions = null) {
   const h = {
     cleanup: [], modals: [], sounds: [], timers: new Map(), intervals: new Map(),
     nextTimer: 1, warningStopped: false, reads: 0, calls: [],
@@ -37,6 +35,7 @@ function harness(pending = null, recoverTerminalDockReceipt = async () => null, 
   const warningListeners = new Set();
   let warningState = { phase: "idle", requestId: null };
   const runtime = {
+    createUnplugWarningAudio,
     ...visibilityExports,
     ...actionExports,
     ...modelExports,
@@ -111,6 +110,31 @@ function harness(pending = null, recoverTerminalDockReceipt = async () => null, 
     setInterval(callback) { const id = h.nextTimer++; h.intervals.set(id, callback); return id; },
     clearInterval(id) { h.intervals.delete(id); },
   };
+  h.audioContexts = [];
+  h.audioConstructors = 0;
+  if (audioOptions) Object.defineProperty(h.host, "AudioContext", {get() {
+    h.audioConstructors++;
+    return class {
+      constructor() { this.state = audioOptions.state ?? "running"; this.currentTime = 0;
+        this.destination = {}; this.tones = []; this.gains = []; this.closed = 0;
+        h.audioContexts.push(this); }
+      close() { this.closed++; return Promise.resolve(); }
+      createGain() {
+        const gain = { disconnected: false, values: [], gain: {
+          setValueAtTime(value, at) { gain.values.push([value, at]); },
+          linearRampToValueAtTime(value, at) { gain.values.push([value, at]); },
+        }, connect() {}, disconnect() { gain.disconnected = true; } };
+        this.gains.push(gain); return gain;
+      }
+      createOscillator() {
+        const tone = { onended: null, stopped: [], started: [], disconnected: false,
+          frequency: {setValueAtTime() {}}, connect() {},
+          start(at) { tone.started.push(at); }, stop(at) { tone.stopped.push(at); },
+          disconnect() { tone.disconnected = true; } };
+        this.tones.push(tone); return tone;
+      }
+    };
+  }});
   h.source = { read: () => ({ quick: [], egpu: [] }), subscribe: () => () => {} };
   h.menu = exports.createExpandedMenu(
     undefined, h.host, () => true, h.source,
@@ -126,6 +150,11 @@ function harness(pending = null, recoverTerminalDockReceipt = async () => null, 
     h.timers.delete(entry[0]);
     entry[1].callback();
     for (let index = 0; index < 8; index++) await Promise.resolve();
+  };
+  h.firstChime = () => {
+    const entry = [...h.timers].find(([,timer]) => timer.delay === 3000);
+    assert.ok(entry, "real coordinator schedules its original first chime");
+    h.timers.delete(entry[0]); entry[1].callback();
   };
   return h;
 }
@@ -176,12 +205,44 @@ test("all dock surfaces share one owner-lifetime warning coordinator", () => {
   const activeDock = active.props.children.find(child => child?.type === "dock");
   assert.equal(activeDock.props.unplugWarning, h.warning);
   assert.equal(h.warningPorts.playWarning instanceof Function, true);
+  h.emitWarning({ phase: "alarm", requestId: REQUEST });
   h.warningPorts.playWarning();
   assert.deepEqual(h.sounds, [2], "the alarm uses the existing Steam feedback channel");
 
   h.menu.stop();
   assert.equal(h.warningStopped, true);
   assert.equal(h.modals.at(-1).closed, true);
+});
+
+test("actual native owner lazily plays per-alert audio and stops it on exact absence", () => {
+  const h = harness(`v2:disconnect_only:panel:${REQUEST}`, undefined, true, {});
+  assert.equal(h.audioConstructors, 0, "startup must not resolve or construct Web Audio");
+  h.warning.observe({requestId:REQUEST,deauthorized:true});
+  assert.equal(h.audioConstructors, 0, "prompt preserves original three-second delay");
+  h.firstChime(); assert.equal(h.audioContexts.length, 1);
+  const c = h.audioContexts[0]; assert.equal(c.tones.length, 2);
+  assert.equal(Math.max(...c.gains[0].values.map(([value]) => value)), 0.12);
+  assert.deepEqual(h.sounds, [], "dedicated alert must not double Steam feedback");
+  h.warning.observe({requestId:"b".repeat(32),physicalAbsenceVerified:true});
+  assert.equal(c.closed, 0, "foreign absence cannot stop this alert");
+  h.warning.observe({requestId:REQUEST,physicalAbsenceVerified:true});
+  assert.equal(c.closed, 1); assert.ok(c.tones.every(tone => tone.disconnected));
+  assert.equal(h.intervals.size, 0); h.menu.stop(); assert.equal(c.closed, 1);
+});
+test("actual owner unload closes active alert and late callback cannot recreate it", () => {
+  const h = harness(null, undefined, true, {});
+  h.warning.observe({requestId:REQUEST,deauthorized:true}); h.firstChime();
+  const c = h.audioContexts[0], late = [...h.intervals.values()][0];
+  h.menu.stop(); assert.equal(c.closed, 1); late(); h.warningPorts.playWarning();
+  assert.equal(h.audioContexts.length, 1); assert.equal(h.intervals.size, 0);
+  assert.deepEqual(h.sounds, []);
+});
+test("actual owner falls back once per eligible warning on suspended Web Audio", () => {
+  const h = harness(null, undefined, true, {state:"suspended"});
+  h.warning.observe({requestId:REQUEST,deauthorized:true}); h.firstChime();
+  assert.equal(h.audioContexts.length, 1); assert.equal(h.audioContexts[0].closed, 1);
+  assert.equal(h.audioContexts[0].tones.length, 0); assert.deepEqual(h.sounds, [2]);
+  h.menu.stop();
 });
 
 test("Hide cannot clear an active warning; exact cleared state dismisses it", () => {
