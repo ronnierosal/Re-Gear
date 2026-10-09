@@ -188,6 +188,31 @@ class ControllerCatalogGetterTests(unittest.IsolatedAsyncioTestCase):
                 release.set()
             self.assertEqual(UNKNOWN, (await task)["catalog"])
 
+    async def test_unload_before_queued_worker_starts_never_constructs_reader(self):
+        module, plugin = self.plugin("development")
+        plugin._peripherals = observer()
+        queued, release = asyncio.Event(), asyncio.Event()
+        calls = 0
+
+        async def queued_thread(function, *args, **kwargs):
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                queued.set()
+                await release.wait()
+            return function(*args, **kwargs)
+
+        with patch.object(module.asyncio, "to_thread", queued_thread), \
+             patch.object(module, "_controller_catalog_factory", return_value=SimpleNamespace(collect_catalog=lambda: catalog())) as factory:
+            task = asyncio.create_task(plugin.get_peripheral_status())
+            try:
+                await asyncio.wait_for(queued.wait(), 1)
+                await plugin._unload()
+            finally:
+                release.set()
+            self.assertEqual(UNKNOWN, (await task)["catalog"])
+            factory.assert_not_called()
+
     async def test_cancelled_getter_leaves_only_deadline_bounded_read_and_reaps_child(self):
         module, plugin = self.plugin("development")
         plugin._peripherals = observer()

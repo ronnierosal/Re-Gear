@@ -1237,7 +1237,9 @@ class Plugin:
         catalog = None
         if not self._unloading:
             try:
-                catalog = await asyncio.to_thread(_observe_controller_catalog)
+                catalog = await asyncio.to_thread(
+                    lambda: None if self._unloading else _observe_controller_catalog()
+                )
             except Exception:
                 pass
         if self._unloading:
