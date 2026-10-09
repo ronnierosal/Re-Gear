@@ -1,5 +1,8 @@
 """Injected bus replies only; no bus or device is contacted."""
 import json
+import os
+import subprocess
+import sys
 import unittest
 
 from regear.adapters.steamos.commands import CommandResult, InputPlumberReadCommandRunner
@@ -43,6 +46,36 @@ class FakeRunner:
 
 
 class ReaderTests(unittest.TestCase):
+    def test_bundled_runtime_without_elementtree_still_enumerates(self):
+        self.runtime_replay(False)
+
+    def test_missing_expat_fails_closed_without_runner_calls(self):
+        self.runtime_replay(True)
+
+    def runtime_replay(self, missing_expat):
+        code = '''
+import importlib.abc, sys
+class MissingXML(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname.startswith('xml.etree') or (MISSING and (fullname in ('xml.parsers.expat', 'pyexpat'))):
+            raise ModuleNotFoundError(fullname, name=fullname)
+sys.meta_path.insert(0, MissingXML())
+from test_inputplumber_catalog import FakeRunner, InputPlumberReader, EvidenceState
+runner = FakeRunner()
+frame = InputPlumberReader(runner).read_snapshot()
+if MISSING:
+    assert frame.availability is EvidenceState.UNKNOWN
+    assert frame.objects == {} and frame.connection_epoch == ''
+    assert not frame.enumeration_complete and not runner.calls
+else:
+    assert frame.availability is EvidenceState.KNOWN and frame.enumeration_complete
+    assert frame.objects and runner.calls
+'''.replace('MISSING', repr(missing_expat))
+        env = dict(os.environ, PYTHONPATH=os.pathsep.join(['backend', 'tests']))
+        result = subprocess.run([sys.executable, '-c', code], capture_output=True,
+                                text=True, env=env, timeout=10)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_collects_private_frame_with_exact_reads(self):
         runner = FakeRunner()
         frame = InputPlumberReader(runner).read_snapshot()
@@ -175,16 +208,24 @@ class ReaderTests(unittest.TestCase):
 
     def test_zbus_5_12_standard_doctype_is_stripped_before_xml_parser(self):
         from unittest.mock import patch
-        from xml.etree import ElementTree
+        from xml.parsers import expat
         # Pinned zbus-5.12.0 object_server/node.rs:160-163 emits this header.
         doctype = '\n<!DOCTYPE node PUBLIC "-//freedesktop//DTD D-BUS Object Introspection 1.0//EN"\n "http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd">\n'
         runner = FakeRunner()
         runner.xml = {path: doctype+xml for path, xml in runner.xml.items()}
-        original = ElementTree.fromstring
-        def parse(xml, **kwargs):
-            self.assertNotIn('<!', xml)
-            return original(xml, **kwargs)
-        with patch('regear.adapters.steamos.inputplumber_catalog.ElementTree.fromstring', side_effect=parse):
+        original = expat.ParserCreate
+        case = self
+        class CheckedParser:
+            def __init__(self, **kwargs):
+                object.__setattr__(self, 'parser', original(**kwargs))
+            def __getattr__(self, name):
+                return getattr(self.parser, name)
+            def __setattr__(self, name, value):
+                setattr(self.parser, name, value)
+            def Parse(self, xml, final):
+                case.assertNotIn('<!', xml)
+                return self.parser.Parse(xml, final)
+        with patch('xml.parsers.expat.ParserCreate', side_effect=CheckedParser):
             frame = InputPlumberReader(runner).read_snapshot()
         self.assertEqual(frame.availability, EvidenceState.KNOWN)
         self.assertTrue(frame.enumeration_complete)
@@ -205,9 +246,44 @@ class ReaderTests(unittest.TestCase):
                 # declarations themselves must be rejected before parsing.
                 self.assert_discarded(runner)
             else:
-                with patch('regear.adapters.steamos.inputplumber_catalog.ElementTree.fromstring') as parse:
+                with patch('xml.parsers.expat.ParserCreate') as parse:
                     self.assert_discarded(runner)
                     parse.assert_not_called()
+
+    def test_expat_strict_syntax_and_retained_structure_budgets(self):
+        malformed = (
+            '<node><interface></node>', '<node/><node/>',
+            '<node name="a" name="b"/>', '<node name="unterminated/>',
+            '<node>&external;</node>', '<node>&#0;</node>',
+            '<node>&#xD800;</node>', '<node><!-- bad--comment --></node>',
+            '<node xmlns="urn:unexpected"/>', '<x:node/>',
+            '<node ' + ' '.join('a%d="v"' % i for i in range(9)) + '/>',
+            '<node><annotation value="' + 'x'*1025 + '"/></node>',
+            '<node>' + '<annotation/>'*257 + '</node>',
+            '<node>' + '<annotation>'*9 + '</annotation>'*9 + '</node>',
+        )
+        for xml in malformed:
+            with self.subTest(xml=xml[:80]):
+                runner = FakeRunner(); runner.xml[ROOT] = xml
+                self.assert_discarded(runner)
+                self.assertEqual(len(runner.calls), 3)
+        runner = FakeRunner()
+        runner.xml[ROOT] = '<node><annotation value="&lt;&gt;&amp;&quot;&apos;&#65;&#x42;"/></node>'
+        frame = InputPlumberReader(runner).read_snapshot()
+        self.assertTrue(frame.enumeration_complete)
+
+    def test_expat_handlers_block_declarations_even_if_prescan_misses(self):
+        from regear.adapters.steamos.inputplumber_catalog import _Read, _Invalid
+        from xml.parsers import expat
+        for xml in ('<!DOCTYPE node [<!ENTITY x "expanded">]><node>&x;</node>',
+                    '<!DOCTYPE node SYSTEM "file:///etc/passwd"><node/>'):
+            read = _Read(FakeRunner(), ReaderLimits(), expat)
+            # Directly exercise defense-in-depth by hiding declarations only
+            # from the lexical scan, while Expat receives the original XML.
+            class HiddenDeclarations(str):
+                def find(self, *args): return -1
+            with self.assertRaises(_Invalid):
+                read.xml_root(HiddenDeclarations(xml))
 
     def test_documentation_comments_are_bounded_and_accepted(self):
         header = '<!DOCTYPE node PUBLIC "-//freedesktop//DTD D-BUS Object Introspection 1.0//EN"\n "http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd">'
