@@ -21,11 +21,11 @@ export interface SteamSuspendAdapter {
 }
 
 export interface SleepPreflightStatus {
-  state: "active" | "inactive" | "unavailable";
-  blocking: boolean;
+  state: "active" | "inactive" | "unavailable" | "retired";
+  blocking: boolean | null;
   attemptWarningAvailable: boolean;
   blockedAttemptCount: number;
-  reason: PreflightObservation["kind"] | "required" | "verified_absent";
+  reason: PreflightObservation["kind"] | "required" | "verified_absent" | "observation_only";
   error: string;
 }
 
@@ -42,6 +42,29 @@ function messageFrom(error: unknown): string {
   return error instanceof Error && error.message
     ? error.message
     : "Unknown Steam preflight error";
+}
+
+// Admission must never execute a getter or borrow prototype data.
+function ownData(value: unknown, key: string): unknown {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const prototype = Object.getPrototypeOf(value);
+  if (prototype !== Object.prototype && prototype !== null) return undefined;
+  const descriptor = Object.getOwnPropertyDescriptor(value, key);
+  return descriptor && "value" in descriptor ? descriptor.value : undefined;
+}
+
+function snapshotAdmission(payload: unknown, nowMs: number, staleAfterMs: number): "supported-runtime" | "observation-only" | null {
+  try {
+    const snapshot = ownData(payload, "snapshot");
+    const timestamp = ownData(snapshot, "observed_at");
+    if (ownData(snapshot, "schema_version") !== 3 || typeof timestamp !== "string") return null;
+    const age = nowMs - Date.parse(timestamp);
+    if (!Number.isFinite(nowMs) || !Number.isFinite(staleAfterMs) || staleAfterMs <= 0 || !Number.isFinite(age) || age < 0 || age >= staleAfterMs) return null;
+    const admission = ownData(payload, "runtime_admission");
+    if (ownData(admission, "schema_version") !== 1) return null;
+    const value = ownData(admission, "sleep_interceptor_admission");
+    return value === "supported-runtime" || value === "observation-only" ? value : null;
+  } catch { return null; }
 }
 
 export function requiresPreflightBlocker(observation: PreflightObservation): boolean {
@@ -116,6 +139,7 @@ export function warningForBlockedAttempt(
 export class SleepPreflightCoordinator {
   private readonly adapter: SteamSuspendAdapter | null;
   private readonly onBlockedAttempt: (warning: BlockedAttemptWarning) => void;
+  private readonly onRetired: () => void;
   private blockerRelease: (() => void) | null = null;
   private observerRelease: (() => void) | null = null;
   private observation: PreflightObservation = { kind: "loading" };
@@ -124,17 +148,22 @@ export class SleepPreflightCoordinator {
   private acquireFailed = false;
   private lifecycleError = "";
   private blockedAttemptCount = 0;
+  private admission: "supported-runtime" | "observation-only" | null = null;
+  private blockerUncertain = false;
+  private cleanupUncertain = false;
 
   constructor(
     adapter: SteamSuspendAdapter | null,
     onBlockedAttempt: (warning: BlockedAttemptWarning) => void,
+    onRetired: () => void = () => {},
   ) {
     this.adapter = adapter;
     this.onBlockedAttempt = onBlockedAttempt;
+    this.onRetired = onRetired;
   }
 
   start(): SleepPreflightStatus {
-    if (this.started || this.stopped) {
+    if (this.started || this.stopped || this.isRetired()) {
       return this.status();
     }
     this.started = true;
@@ -144,7 +173,7 @@ export class SleepPreflightCoordinator {
     if (this.adapter && this.blockerRelease) {
       try {
         this.observerRelease = this.adapter.observeSuspendRequests(() => {
-          if (this.blockerRelease) {
+          if (!this.stopped && !this.isRetired() && this.blockerRelease) {
             this.blockedAttemptCount += 1;
             this.onBlockedAttempt(warningForBlockedAttempt(this.observation));
           }
@@ -156,8 +185,27 @@ export class SleepPreflightCoordinator {
     return this.status();
   }
 
+  isRetired(): boolean {
+    return this.admission === "observation-only";
+  }
+
+  // Call only with a direct RPC reply after checking its current runtime generation.
+  admitSnapshot(payload: unknown, nowMs: number, staleAfterMs: number): SleepPreflightStatus {
+    if (this.stopped || this.admission !== null) return this.status();
+    const admission = snapshotAdmission(payload, nowMs, staleAfterMs);
+    if (admission === null) return this.status();
+    this.admission = admission; // Terminal before any potentially reentrant cleanup.
+    if (this.isRetired()) {
+      try { this.onRetired(); }
+      catch (error) { this.cleanupUncertain = true; this.lifecycleError = `Sleep warning cleanup failed: ${messageFrom(error)}`; }
+      this.releaseObserver();
+      this.releaseBlocker();
+    }
+    return this.status();
+  }
+
   reconcile(observation: PreflightObservation): SleepPreflightStatus {
-    if (this.stopped) {
+    if (this.stopped || this.isRetired()) {
       return this.status();
     }
     this.observation = observation;
@@ -174,31 +222,40 @@ export class SleepPreflightCoordinator {
       return this.status();
     }
     this.stopped = true;
+    this.releaseObserver();
+    this.releaseBlocker();
+    return this.status();
+  }
 
+  private releaseObserver(): void {
     const releaseObserver = this.observerRelease;
     this.observerRelease = null;
     if (releaseObserver) {
       try {
         releaseObserver();
       } catch (error) {
+        this.cleanupUncertain = true;
         this.lifecycleError = `Failed to remove the Steam sleep warning hook: ${messageFrom(error)}`;
       }
     }
-    this.releaseBlocker();
-    return this.status();
   }
 
   status(): SleepPreflightStatus {
-    const reason = this.observation.kind === "fresh"
+    const reason = this.isRetired() ? "observation_only" : this.observation.kind === "fresh"
       ? this.observation.guardRequired
         ? "required"
         : "verified_absent"
       : this.observation.kind;
 
-    if (!this.adapter || this.acquireFailed) {
+    if (this.isRetired() && !this.acquireFailed && !this.cleanupUncertain) {
+      return { state: "retired", blocking: false, attemptWarningAvailable: false,
+        blockedAttemptCount: this.blockedAttemptCount, reason, error: "" };
+    }
+
+    if (!this.adapter || this.acquireFailed || this.cleanupUncertain) {
       return {
         state: "unavailable",
-        blocking: false,
+        blocking: this.blockerUncertain ? null : this.blockerRelease !== null,
         attemptWarningAvailable: false,
         blockedAttemptCount: this.blockedAttemptCount,
         reason,
@@ -229,6 +286,7 @@ export class SleepPreflightCoordinator {
     if (
       !this.started
       || this.stopped
+      || this.isRetired()
       || !this.adapter
       || this.blockerRelease
       || this.acquireFailed
@@ -245,6 +303,7 @@ export class SleepPreflightCoordinator {
       // Do not retry in the same plugin lifecycle: a failed call may have
       // incremented Steam's blocker count without returning its release handle.
       this.acquireFailed = true;
+      this.blockerUncertain = true;
       this.lifecycleError = `Steam preflight acquisition failed: ${messageFrom(error)}`;
     }
   }
@@ -259,6 +318,7 @@ export class SleepPreflightCoordinator {
       release();
     } catch (error) {
       this.acquireFailed = true;
+      this.blockerUncertain = true;
       this.lifecycleError = `Steam preflight release failed: ${messageFrom(error)}`;
     }
   }

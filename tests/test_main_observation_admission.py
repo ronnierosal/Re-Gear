@@ -11,6 +11,48 @@ from tests.test_main_process_delivery import load_main_module
 from regear.adapters.steamos.host import HostRecord
 from regear.delivery import build_profile_config
 from regear.delivery.observation_admission import ObservationDenied
+from regear.delivery.observation_admission import observation_plugin
+
+
+class InterceptorProvenanceTests(unittest.IsolatedAsyncioTestCase):
+    async def test_both_snapshot_dispatch_paths_report_literal_constructor_provenance(self):
+        ally = HostRecord("ASUSTeK COMPUTER INC.", "ROG Ally X RC72LA", "RC72LA")
+        mini = HostRecord("GPD", "G1617-01", "unknown")
+
+        class Producer:
+            def __init__(self):
+                self.composed = True
+                self._api = NS(get_snapshot_report=lambda: None)
+                self._build_info = {}
+
+            async def get_snapshot(self):
+                return {"snapshot": {"schema_version": 3}, "normal_producer": True}
+
+        def payload(_):
+            return {"diagnostics": {}, "snapshot": {
+                "sleep_guard": {}, "disconnect_readiness": {"ready": True}}}
+
+        for profile in ("development", "production"):
+            with self.subTest(profile=profile), patch.object(build_profile_config, "BUILD_PROFILE", profile):
+                guarded = observation_plugin(Producer, passive_api=lambda: NS(get_snapshot_report=lambda: None),
+                                             build_info=lambda: {}, render_snapshot=payload)
+                for initial, expected in ((mini, "observation-only"), (ally, "supported-runtime")):
+                    with patch("regear.adapters.steamos.host.HostDiscovery.scan", return_value=initial):
+                        plugin = guarded()
+                        result = await plugin.get_snapshot()
+                    self.assertEqual(1, result["runtime_admission"]["schema_version"])
+                    self.assertEqual(expected, result["runtime_admission"]["sleep_interceptor_admission"])
+                    with patch("regear.adapters.steamos.host.HostDiscovery.scan", return_value=mini):
+                        lost_evidence = await plugin.get_snapshot()
+                    self.assertEqual(expected, lost_evidence["runtime_admission"]["sleep_interceptor_admission"])
+                    if initial is mini:
+                        self.assertNotIn("composed", plugin.__dict__)
+
+    async def test_missing_or_nonliteral_constructor_provenance_never_grants_retirement(self):
+        from regear.delivery.observation_admission import interceptor_admission
+        for value in (None, 0, 1, "true", "false"):
+            plugin = NS(_observation_started=value)
+            self.assertEqual({}, interceptor_admission(plugin, {}))
 
 
 class ObservationAdmissionTests(unittest.IsolatedAsyncioTestCase):

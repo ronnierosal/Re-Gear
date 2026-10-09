@@ -833,6 +833,9 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
     try {
       const nextPayload = await getSnapshot();
       if (!isCurrentOwner()) return null;
+      // Only a direct current-generation reply may settle lifetime admission.
+      // Validate before other awaits can age the reply; never use menu/cache data.
+      setPreflightStatus(preflight.admitSnapshot(nextPayload, Date.now(), SNAPSHOT_STALE_AFTER_MS));
       try {
         const automaticStatus = await getAutomaticDockStatus();
         if (!isCurrentOwner()) return null;
@@ -1949,6 +1952,10 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
             ? preflightStatus.attemptWarningAvailable
               ? "Active"
               : "Blocked; warning unavailable"
+            : preflightStatus.state === "retired"
+              ? "Off — observation-only runtime; protection unavailable"
+            : preflightStatus.reason === "observation_only"
+              ? "Unknown — observation-only cleanup unconfirmed"
             : preflightStatus.state === "inactive"
               ? "Standby — eGPU verified absent"
               : "Unavailable"}
@@ -2261,6 +2268,7 @@ export default definePlugin(() => {
   const preflight = new SleepPreflightCoordinator(
     createDeckySteamSuspendAdapter(),
     (warning) => {
+      if (runtimeOwner.stopped || preflight.isRetired()) return;
       let toastDelivered = false;
       try {
         // Steam may silently discard a modal during the transient Power-menu
@@ -2285,6 +2293,7 @@ export default definePlugin(() => {
       // acknowledgement dialog so it is not discarded with that transient menu.
       warningTimer = window.setTimeout(() => {
         warningTimer = null;
+        if (runtimeOwner.stopped || preflight.isRetired()) return;
         deliverBlockedAttempt(warning, {
           showModal: () => {
             warningModal = showBlockedAttempt(warning, () => {
@@ -2303,6 +2312,15 @@ export default definePlugin(() => {
           },
         });
       }, BLOCKED_ATTEMPT_MODAL_DELAY_MS);
+    },
+    () => {
+      if (warningTimer !== null) {
+        window.clearTimeout(warningTimer);
+        warningTimer = null;
+      }
+      const modal = warningModal;
+      warningModal = null;
+      modal?.Close();
     },
   );
   preflight.start();
@@ -2337,13 +2355,15 @@ export default definePlugin(() => {
   const dispose=()=>{
     if(disposed)return;disposed=true;
     runtimeOwner.stopped=true;runtimeOwner.active=false;runtimeOwner.generation++;
+    // Native cleanup must not depend on modal/router disposal succeeding.
+    preflight.stop();
     try{stopRuntime?.();}catch{/* Continue retiring this instance if Decky's removal fails. */}
     runtimeDetails.stop();menuSnapshot=null;tilePublisher.publish({fresh:false});
     detailPublisher.publish(null);
     expandedMenu.stop();shortcut.stop();
     if(warningTimer!==null){window.clearTimeout(warningTimer);warningTimer=null;}
     warningModal?.Close();warningModal=null;
-    authorization.stop();connection.stop();offlineFocusChecks.stop();preflight.stop();
+    authorization.stop();connection.stop();offlineFocusChecks.stop();
   };
   try{stopRuntime=registerRuntimeHost(routerHook,`Re-Gear-runtime-${Date.now()}-${Math.random().toString(36).slice(2)}`,Runtime,runtimeOwner);}
   catch(error){dispose();throw error;}

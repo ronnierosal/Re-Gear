@@ -38,6 +38,19 @@ def unavailable():
     }
 
 
+def interceptor_admission(plugin, payload):
+    """Report immutable constructor provenance, never dynamic host/read evidence."""
+    provenance = object.__getattribute__(plugin, "__dict__").get("_observation_started")
+    if provenance is not True and provenance is not False:
+        return payload
+    admission = payload.setdefault("runtime_admission", {})
+    admission.update(
+        schema_version=1,
+        sleep_interceptor_admission=("observation-only" if provenance is True else "supported-runtime"),
+    )
+    return payload
+
+
 # Existing unload closes resources already owned by a known-host runtime. These
 # helpers cannot construct services, dispatch work or alter a durable record.
 _CLEANUP_HELPERS = frozenset({
@@ -82,7 +95,8 @@ def observation_plugin(plugin_class, *, passive_api, build_info, render_snapshot
                             return None
                         return await implementation(*args, **kwargs)
                     if mode(self) is RuntimeAdmission.PROFILE_GATED:
-                        return await implementation(*args, **kwargs)
+                        result = await implementation(*args, **kwargs)
+                        return interceptor_admission(self, result) if name == "get_snapshot" else result
                     if name == "_main":
                         return None
                     if name == "get_snapshot":
@@ -96,7 +110,7 @@ def observation_plugin(plugin_class, *, passive_api, build_info, render_snapshot
                             "mode": "observation-only", "mutation_allowed": False,
                             "sleep_protection": "unknown", "safe_to_unplug": False,
                         }
-                        return payload
+                        return interceptor_admission(self, payload)
                     if not name.startswith("_"):
                         if passive_rpc_allowed(name):
                             return await implementation(*args, **kwargs)
