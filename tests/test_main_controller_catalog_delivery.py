@@ -283,7 +283,8 @@ class ControllerCatalogGetterTests(unittest.IsolatedAsyncioTestCase):
                 with self.assertRaises(asyncio.CancelledError):
                     await task
                 for _ in range(200):
-                    if processes and processes[0].poll() is not None and processes[0].stdout.closed:
+                    if (processes and processes[0].poll() is not None
+                            and processes[0].stdout.closed and processes[0].stderr.closed):
                         break
                     await asyncio.sleep(.01)
                 self.assertEqual(1, len(processes))
