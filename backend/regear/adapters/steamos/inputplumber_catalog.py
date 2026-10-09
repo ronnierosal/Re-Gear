@@ -9,7 +9,6 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
-from xml.etree import ElementTree
 
 from .commands import CommandResult, InputPlumberReadCommandRunner as Transport
 from .controller_catalog import INTERFACE, PATH
@@ -36,6 +35,22 @@ class ReaderLimits:
 
 class _Invalid(Exception):
     pass
+
+
+_COMMENT = object()
+
+
+@dataclass(slots=True)
+class _Node:
+    tag: object
+    attrib: dict
+    children: list
+
+    def __iter__(self):
+        return iter(self.children)
+
+    def get(self, key, default=None):
+        return self.attrib.get(key, default)
 
 
 def _unique(pairs):
@@ -68,8 +83,9 @@ RELATIONS = frozenset({'GamepadOrder', 'SourceDevicePaths', 'TargetDevices', 'Db
 
 class _Read:
     """Budgets reset for every explicit request, including injected fake runners."""
-    def __init__(self, runner, limits):
+    def __init__(self, runner, limits, expat):
         self.runner, self.limits = runner, limits
+        self.expat = expat
         self.calls, self.bytes, self.nodes = limits.max_calls, limits.max_bytes, limits.max_nodes
 
     def call(self, tail):
@@ -172,10 +188,6 @@ class _Read:
             if xml.startswith('<!--', start):
                 end = xml.find('-->', start + 4)
                 if end < 0 or '--' in xml[start + 4:end]: raise _Invalid()
-                # Charge all comments here, including comments outside the
-                # document element which TreeBuilder does not retain.
-                self.nodes -= 1
-                if self.nodes < 0: raise _Invalid()
                 cursor = end + 3
             elif xml.startswith('<?', start):
                 end = xml.find('?>', start + 2)
@@ -193,35 +205,72 @@ class _Read:
         if declaration is not None:
             start, end = declaration
             xml = xml[:start] + xml[end:]
-        # Retain in-document comments as nodes so depth/item/node budgets also
-        # cover documentation. No external declaration reaches this parser.
-        parser = ElementTree.XMLParser(target=ElementTree.TreeBuilder(insert_comments=True))
-        return ElementTree.fromstring(xml, parser=parser)
+        # Expat validates XML syntax; this adapter only retains the structure
+        # needed by introspection. Enforce budgets before retaining each node.
+        parser = self.expat.ParserCreate(namespace_separator='}')
+        stack, roots = [], []
+
+        def retain(tag, attrs):
+            self.nodes -= 1
+            if self.nodes < 0 or len(stack) > self.limits.max_depth or len(attrs) > 8:
+                raise _Invalid()
+            if any(len(key) > self.limits.max_string or len(value) > self.limits.max_string
+                   for key, value in attrs.items()):
+                raise _Invalid()
+            node = _Node(tag, attrs, [])
+            if stack:
+                if len(stack[-1].children) >= self.limits.max_items: raise _Invalid()
+                stack[-1].children.append(node)
+            return node
+
+        def start(tag, attrs):
+            node = retain(tag, attrs)
+            if not stack: roots.append(node)
+            stack.append(node)
+
+        def end(tag):
+            if not stack or stack[-1].tag != tag: raise _Invalid()
+            stack.pop()
+
+        def forbidden(*args):
+            raise _Invalid()
+
+        parser.StartElementHandler = start
+        parser.EndElementHandler = end
+        # Includes prolog/trailing comments; in-document comments also consume
+        # the parent's child budget, exactly like other retained nodes.
+        parser.CommentHandler = lambda text: retain(_COMMENT, {})
+        parser.StartDoctypeDeclHandler = forbidden
+        parser.EntityDeclHandler = forbidden
+        parser.ExternalEntityRefHandler = forbidden
+        parser.NotationDeclHandler = forbidden
+        parser.SkippedEntityHandler = forbidden
+        parser.SetParamEntityParsing(self.expat.XML_PARAM_ENTITY_PARSING_NEVER)
+        parser.Parse(xml, True)
+        if stack or len(roots) != 1: raise _Invalid()
+        return roots[0]
 
     def topology(self, owner):
-        pending, result = [Transport.ROOT], {}
+        pending, result = [(Transport.ROOT, None)], {}
         while pending:
-            path = pending.pop(0)
+            path, root = pending.pop(0)
             if path in result or len(result) >= self.limits.max_objects: raise _Invalid()
-            xml = self.scalar(('call', owner, path, 'org.freedesktop.DBus.Introspectable', 'Introspect'))
-            root = self.xml_root(xml)
+            if root is None:
+                xml = self.scalar(('call', owner, path, 'org.freedesktop.DBus.Introspectable', 'Introspect'))
+                root = self.xml_root(xml)
             if root.tag != 'node': raise _Invalid()
-            stack = [(root, 0)]
-            while stack:
-                node, depth = stack.pop()
-                if node.tag is not ElementTree.Comment:
-                    self.nodes -= 1
-                if self.nodes < 0 or depth > self.limits.max_depth or len(node.attrib) > 8 or len(node) > self.limits.max_items:
-                    raise _Invalid()
-                stack.extend((child, depth+1) for child in node)
-            children, interfaces = [], {}
+            children, interfaces = {}, {}
             for node in root:
                 if node.tag == 'node':
                     name = node.get('name', '')
                     if not re.fullmatch(r'[A-Za-z0-9_]+', name) or len(name) > self.limits.max_string: raise _Invalid()
                     child = path + '/' + name
                     if child in children or not Transport.PATH.fullmatch(child) or len(child) > 512: raise _Invalid()
-                    children.append(child)
+                    # Recursive introspection already contains this object's
+                    # declarations. Only name-only/unexpanded stubs need an
+                    # additional call; comments alone do not prove expansion.
+                    expanded = any(part.tag in ('node', 'interface') for part in node)
+                    children[child] = node if expanded else None
                 elif node.tag == 'interface':
                     name = node.get('name', '')
                     if not INTERFACE.fullmatch(name) or len(name) > self.limits.max_string or name in interfaces: raise _Invalid()
@@ -235,7 +284,7 @@ class _Read:
                         properties[key] = (signature, access)
                     interfaces[name] = properties
             result[path] = (tuple(sorted(children)), interfaces)
-            pending.extend(sorted(children))
+            pending.extend(sorted(children.items()))
             if len(result) + len(pending) > self.limits.max_objects: raise _Invalid()
         return result
 
@@ -253,7 +302,10 @@ class InputPlumberReader:
     def read_snapshot(self):
         failed = ProviderReadFrame('', {}, EvidenceState.UNKNOWN, False)
         try:
-            read = _Read(self._runner, self._limits)
+            # Decky's frozen Python can omit ElementTree. Parser availability
+            # is checked only for explicit reads, before any transport call.
+            from xml.parsers import expat
+            read = _Read(self._runner, self._limits, expat)
             dbus = ('call', 'org.freedesktop.DBus', '/org/freedesktop/DBus', 'org.freedesktop.DBus')
             def identity():
                 bus = read.scalar(dbus + ('GetId',))
