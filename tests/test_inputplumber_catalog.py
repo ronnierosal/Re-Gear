@@ -181,15 +181,16 @@ class ReaderTests(unittest.TestCase):
         runner = FakeRunner()
         runner.xml = {path: doctype+xml for path, xml in runner.xml.items()}
         original = ElementTree.fromstring
-        def parse(xml):
+        def parse(xml, **kwargs):
             self.assertNotIn('<!', xml)
-            return original(xml)
+            return original(xml, **kwargs)
         with patch('regear.adapters.steamos.inputplumber_catalog.ElementTree.fromstring', side_effect=parse):
             frame = InputPlumberReader(runner).read_snapshot()
         self.assertEqual(frame.availability, EvidenceState.KNOWN)
         self.assertTrue(frame.enumeration_complete)
 
     def test_doctype_entities_and_alternate_external_ids_stay_rejected(self):
+        from unittest.mock import patch
         doctype = '<!DOCTYPE node PUBLIC "-//freedesktop//DTD D-BUS Object Introspection 1.0//EN" "http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd">'
         for xml in (doctype.replace('http://www.freedesktop.org', 'https://attacker.invalid')+'<node/>',
                     doctype[:-1]+' [<!ENTITY secret SYSTEM "file:///etc/passwd">]><node/>',
@@ -199,4 +200,45 @@ class ReaderTests(unittest.TestCase):
                     '<!DOCTYPE node SYSTEM "file:///etc/passwd"><node/>',
                     doctype+'<node>&secret;</node>'):
             runner = FakeRunner(); runner.xml[ROOT] = xml
-            self.assert_discarded(runner)
+            if '&secret;' in xml:
+                # Undefined references are rejected by the entity-free parser;
+                # declarations themselves must be rejected before parsing.
+                self.assert_discarded(runner)
+            else:
+                with patch('regear.adapters.steamos.inputplumber_catalog.ElementTree.fromstring') as parse:
+                    self.assert_discarded(runner)
+                    parse.assert_not_called()
+
+    def test_documentation_comments_are_bounded_and_accepted(self):
+        header = '<!DOCTYPE node PUBLIC "-//freedesktop//DTD D-BUS Object Introspection 1.0//EN"\n "http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd">'
+        runner = FakeRunner()
+        runner.xml = {path: '<!-- prolog documentation -->\n'+header+'\n'+xml.replace('<node>', '<node><!-- normal zbus documentation -->', 1)
+                      for path, xml in runner.xml.items()}
+        frame = InputPlumberReader(runner).read_snapshot()
+        self.assertTrue(frame.enumeration_complete)
+        self.assertEqual(frame.objects[ROOT+'/Manager'][MANAGER]['Version'].state, EvidenceState.KNOWN)
+        runner = FakeRunner()
+        runner.xml[ROOT] = '<node>' + '<!-- doc -->' * 257 + '</node>'
+        self.assert_discarded(runner)
+        runner.calls.clear()
+        runner.xml[ROOT] = '<node>' + '<annotation>' * 8 + '<!-- doc -->' + '</annotation>' * 8 + '</node>'
+        self.assert_discarded(runner)
+        self.assertEqual(len(runner.calls), 3)  # XML depth rejected at first introspection.
+        runner.xml[ROOT] = '<node/>' + '<!-- trailing -->' * 257
+        self.assert_discarded(runner, limits=ReaderLimits(max_nodes=256))
+        runner.xml[ROOT] = '<node><!-- unterminated</node>'
+        self.assert_discarded(runner)
+
+    def test_artificial_nested_variant_wrappers_are_rejected(self):
+        malformed = {'Version': ('s', ['fixture']), 'ProfileName': ('s', ['fixture']),
+                     'SourceDevicePaths': ('as', [[]])}
+        runner = FakeRunner()
+        def wrapped(tail, result):
+            if tail[4] != 'Get': return result
+            signature, data = malformed[tail[-1]]
+            return CommandResult(result.argv, 0, json.dumps({'type':'v', 'data':[{'type':signature, 'data':data}]}), '')
+        runner.hook = wrapped
+        frame = InputPlumberReader(runner).read_snapshot()
+        self.assertFalse(frame.enumeration_complete)
+        self.assertIsNone(frame.objects[ROOT+'/Manager'][MANAGER]['Version'].value)
+        self.assertIsNone(frame.objects[ROOT+'/CompositeDevice0'][COMPOSITE]['SourceDevicePaths'].value)

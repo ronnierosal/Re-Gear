@@ -162,22 +162,55 @@ class _Read:
         except _Invalid:
             return PropertyRead()
 
+    def xml_root(self, xml):
+        # Lex declarations before parsing. Comments are data, not declarations;
+        # permit bounded XML comments without permitting DTD/entity processing.
+        cursor, prolog, declaration = 0, True, None
+        while True:
+            start = xml.find('<', cursor)
+            if start < 0: break
+            if xml.startswith('<!--', start):
+                end = xml.find('-->', start + 4)
+                if end < 0 or '--' in xml[start + 4:end]: raise _Invalid()
+                # Charge all comments here, including comments outside the
+                # document element which TreeBuilder does not retain.
+                self.nodes -= 1
+                if self.nodes < 0: raise _Invalid()
+                cursor = end + 3
+            elif xml.startswith('<?', start):
+                end = xml.find('?>', start + 2)
+                if end < 0: raise _Invalid()
+                cursor = end + 2
+            elif xml.startswith('<!', start):
+                standard = STANDARD_DOCTYPE.match(xml[start:])
+                if not prolog or declaration is not None or standard is None: raise _Invalid()
+                end = start + standard.end()
+                declaration = (start, end)
+                cursor = end
+            else:
+                prolog = False
+                cursor = start + 1
+        if declaration is not None:
+            start, end = declaration
+            xml = xml[:start] + xml[end:]
+        # Retain in-document comments as nodes so depth/item/node budgets also
+        # cover documentation. No external declaration reaches this parser.
+        parser = ElementTree.XMLParser(target=ElementTree.TreeBuilder(insert_comments=True))
+        return ElementTree.fromstring(xml, parser=parser)
+
     def topology(self, owner):
         pending, result = [Transport.ROOT], {}
         while pending:
             path = pending.pop(0)
             if path in result or len(result) >= self.limits.max_objects: raise _Invalid()
             xml = self.scalar(('call', owner, path, 'org.freedesktop.DBus.Introspectable', 'Introspect'))
-            standard = STANDARD_DOCTYPE.match(xml)
-            if standard is not None:
-                xml = xml[standard.end():]
-            if '<!' in xml: raise _Invalid()
-            root = ElementTree.fromstring(xml)
+            root = self.xml_root(xml)
             if root.tag != 'node': raise _Invalid()
             stack = [(root, 0)]
             while stack:
                 node, depth = stack.pop()
-                self.nodes -= 1
+                if node.tag is not ElementTree.Comment:
+                    self.nodes -= 1
                 if self.nodes < 0 or depth > self.limits.max_depth or len(node.attrib) > 8 or len(node) > self.limits.max_items:
                     raise _Invalid()
                 stack.extend((child, depth+1) for child in node)
