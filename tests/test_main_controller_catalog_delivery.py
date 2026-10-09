@@ -37,7 +37,7 @@ class DeckyControllerImportTests(unittest.TestCase):
         script = r'''
 import asyncio, builtins, json, sys
 from pathlib import Path
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 from tests.test_main_process_delivery import load_main_module, SnapshotApi
 from regear.domain.serialization import snapshot_from_dict
 from regear.adapters.steamos.peripherals import (
@@ -46,13 +46,20 @@ from regear.adapters.steamos.peripherals import (
 from regear.delivery import build_profile_config
 original_import = builtins.__import__
 attempts = []
+deny_reader = False
+deny_expat = False
 def decky_import(name, *args, **kwargs):
     if name == 'xml.etree' or name.startswith('xml.etree.'):
         attempts.append(name)
         raise ModuleNotFoundError("No module named 'xml.etree'", name='xml.etree')
+    if deny_reader and name == 'regear.adapters.steamos.inputplumber_catalog':
+        raise ModuleNotFoundError('optional reader unavailable', name=name)
+    if deny_expat and name == 'xml.parsers':
+        raise ModuleNotFoundError('optional parser unavailable', name=name)
     return original_import(name, *args, **kwargs)
 builtins.__import__ = decky_import
 for profile in ('development', 'production'):
+    deny_reader = deny_expat = False
     build_profile_config.BUILD_PROFILE = profile
     module = load_main_module()
     assert not attempts, 'startup imported the optional controller reader'
@@ -65,10 +72,27 @@ for profile in ('development', 'production'):
     inventory = Mock()
     inventory.scan.return_value = PeripheralInventory(True, (), audio_complete=True)
     plugin._peripherals = SteamOsPeripheralObservationAdapter(inventory)
-    result = asyncio.run(plugin.get_peripheral_status())
+    from tests.test_inputplumber_catalog import FakeRunner
+    fake = FakeRunner()
+    with patch.object(module.InputPlumberReadCommandRunner, 'run', lambda runner, argv: fake.run(argv)):
+        result = asyncio.run(plugin.get_peripheral_status())
+    assert result['catalog'] == dict(schema_version=1, provider='known',
+        profile_metadata='partial', virtual_target='unknown', relationships='unknown'), result['catalog']
+    assert fake.calls and not attempts, 'functional read borrowed ElementTree'
+    deny_reader = True
+    with patch.object(module.InputPlumberReadCommandRunner, 'run') as run:
+        result = asyncio.run(plugin.get_peripheral_status())
+        run.assert_not_called()
     assert result['catalog'] == dict(schema_version=1, provider='unavailable',
         profile_metadata='unknown', virtual_target='unknown', relationships='unknown')
     assert 'xml' not in json.dumps(result)
+    deny_reader = False
+    deny_expat = True
+    with patch.object(module.InputPlumberReadCommandRunner, 'run') as run:
+        result = asyncio.run(plugin.get_peripheral_status())
+        run.assert_not_called()
+    assert result['catalog'] == dict(schema_version=1, provider='unknown',
+        profile_metadata='unknown', virtual_target='unknown', relationships='unknown')
     attempts.clear()
 '''
         result = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True, timeout=30)
