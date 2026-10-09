@@ -167,7 +167,7 @@ class TaskTests(unittest.TestCase):
 
     def test_gh_uses_json_stdin_and_argument_array(self):
         with patch.object(c.subprocess, "run") as run:
-            run.return_value.stdout = "{}"
+            run.return_value.stdout = "HTTP/2.0 200 OK\n\n{}"
             c.GitHub("owner/repo").api("issues/444", "PATCH", {"body": "$(evil)\n`evil`"})
             args, kwargs = run.call_args
             self.assertIsInstance(args[0], list)
@@ -256,7 +256,7 @@ class TaskTests(unittest.TestCase):
         fake = Fake()
         with self.assertRaises(ValueError):
             c.refresh(fake)
-        self.assertEqual([x["state"] for x in fake.calls], ["pending", "failure"])
+        self.assertEqual([x["state"] for x in fake.calls], ["failure"])
 
     def test_apply_creation_claim_readback_and_labels(self):
         class Fake:
@@ -344,12 +344,12 @@ class PublicationTests(unittest.TestCase):
                 return {'state': 'open', 'labels': [{'name': 'agent-task'}], 'body': '```regear-task\n'+json.dumps(r)+'\n```'}
             raise AssertionError(path)
 
-    def test_failed_pending_post_does_not_strand_full_unrelated_validation(self):
+    def test_rejected_pending_is_not_attempted_and_full_validation_runs(self):
         fake = self.Fake(fail={(HEAD, 'pending')})
-        with self.assertRaisesRegex(Exception, 'pending'):
-            c.refresh(fake)
+        c.refresh(fake)
         self.assertEqual(fake.checked, [12, 13])
         self.assertIn(('c'*40, 'success'), [(sha, p['state']) for sha, p in fake.posts])
+        self.assertNotIn('pending', [p['state'] for _, p in fake.posts])
 
     def test_failed_final_post_does_not_strand_next_pr(self):
         fake = self.Fake(fail={(HEAD, 'success')})
@@ -362,7 +362,7 @@ class PublicationTests(unittest.TestCase):
         fake = self.Fake(fail={(HEAD, 'failure')}, inventory_error=ValueError('invalid record'))
         with self.assertRaisesRegex(Exception, 'invalid record'):
             c.refresh(fake)
-        self.assertEqual([p['state'] for _, p in fake.posts], ['pending', 'pending', 'failure', 'failure'])
+        self.assertEqual([p['state'] for _, p in fake.posts], ['failure', 'failure'])
         self.assertFalse(fake.checked)
 
     def test_real_validator_failure_remains_failure(self):
@@ -417,6 +417,147 @@ class PublicationTests(unittest.TestCase):
                         c.GitHub('owner/repo').api('statuses/'+HEAD, 'POST', {})
                 self.assertIn('HTTP 422', str(raised.exception))
                 self.assertNotIn('sensitive_value', str(raised.exception))
+
+
+class SuccessorRegressionTests(unittest.TestCase):
+    def test_unchanged_final_success_revalidates_without_pending_or_posts(self):
+        fake = PublicationTests.Fake()
+        c.refresh(fake)
+        fake.posts.clear()
+        fake.checked.clear()
+        fake.fail = {(HEAD, 'pending'), ('c' * 40, 'pending')}
+        c.refresh(fake)
+        self.assertEqual(fake.checked, [12, 13])
+        self.assertEqual(fake.posts, [])
+
+    def test_unchanged_final_failure_revalidates_without_posts(self):
+        fake = PublicationTests.Fake()
+        fake.records[1][1]['review']['reviewer'] = fake.records[1][1]['owner']
+        c.refresh(fake)
+        fake.posts.clear()
+        fake.checked.clear()
+        with patch.object(c, 'check_pr', wraps=c.check_pr) as check:
+            c.refresh(fake)
+        self.assertEqual(check.call_count, 2)
+        self.assertEqual(fake.posts, [])
+
+    def test_changed_gate_publishes_failure_then_success_without_pending(self):
+        fake = PublicationTests.Fake()
+        c.refresh(fake)
+        fake.posts.clear()
+        fake.records[1][1]['review']['reviewer'] = fake.records[1][1]['owner']
+        c.refresh(fake)
+        self.assertEqual([(sha, p['state']) for sha, p in fake.posts], [('c' * 40, 'failure')])
+        fake.posts.clear()
+        fake.records[1][1]['review']['reviewer'] = 'independent'
+        c.refresh(fake)
+        self.assertEqual([(sha, p['state']) for sha, p in fake.posts], [('c' * 40, 'success')])
+
+    def test_evaluation_read_error_invalidates_old_success_and_aggregates(self):
+        fake = PublicationTests.Fake()
+        c.refresh(fake)
+        fake.posts.clear()
+        real_api = fake.api
+        def api(path, method='GET', payload=None):
+            if path == 'pulls/12':
+                raise subprocess.CalledProcessError(1, ['gh'])
+            return real_api(path, method, payload)
+        with patch.object(fake, 'api', side_effect=api):
+            with self.assertRaisesRegex(ValueError, 'evaluation'):
+                c.refresh(fake)
+        self.assertEqual(fake.statuses[HEAD][0]['state'], 'failure')
+        self.assertEqual(fake.statuses['c' * 40][0]['state'], 'success')
+        self.assertNotIn('pending', [p['state'] for _, p in fake.posts])
+
+    def test_incomplete_file_inventory_still_fails_closed(self):
+        fake = PublicationTests.Fake()
+        fake.pulls[0]['changed_files'] = 2
+        c.refresh(fake)
+        self.assertEqual(fake.statuses[HEAD][0]['state'], 'failure')
+        self.assertIn('incomplete PR file inventory', fake.statuses[HEAD][0]['description'])
+
+    def test_head_change_cannot_publish_success_for_the_old_head(self):
+        fake = PublicationTests.Fake()
+        real_api = fake.api
+        def api(path, method='GET', payload=None):
+            result = real_api(path, method, payload)
+            if path == 'pulls/12':
+                return dict(result, head=dict(result['head'], sha='d' * 40))
+            return result
+        with patch.object(fake, 'api', side_effect=api):
+            with self.assertRaisesRegex(ValueError, 'head changed'):
+                c.refresh(fake)
+        self.assertEqual(fake.statuses[HEAD][0]['state'], 'failure')
+        self.assertNotIn('d' * 40, fake.statuses)
+        self.assertEqual(fake.statuses['c' * 40][0]['state'], 'success')
+
+    def test_inventory_failure_overwrites_previous_success_and_aggregates(self):
+        fake = PublicationTests.Fake()
+        c.refresh(fake)
+        fake.posts.clear()
+        fake.inventory_error = ValueError('invalid managed record')
+        with self.assertRaisesRegex(ValueError, 'Invalid task inventory'):
+            c.refresh(fake)
+        self.assertEqual([p['state'] for _, p in fake.posts], ['failure', 'failure'])
+
+    def test_evaluation_and_failure_publication_errors_both_reported(self):
+        fake = PublicationTests.Fake(fail={(HEAD, 'failure')})
+        real_api = fake.api
+        def api(path, method='GET', payload=None):
+            if path == 'pulls/12':
+                raise subprocess.CalledProcessError(1, ['gh'])
+            return real_api(path, method, payload)
+        with patch.object(fake, 'api', side_effect=api):
+            with self.assertRaises(ValueError) as raised:
+                c.refresh(fake)
+        self.assertIn('final evaluation', str(raised.exception))
+        self.assertIn('final publication', str(raised.exception))
+        self.assertEqual(fake.statuses['c' * 40][0]['state'], 'success')
+
+    def test_header_success_is_stripped_before_json_and_requests_include(self):
+        reply = subprocess.CompletedProcess([], 0, 'HTTP/2.0 200 OK\nX-Private: secret\r\n\r\n{"ok":true}', '')
+        with patch.object(c.subprocess, 'run', return_value=reply) as run:
+            self.assertEqual(c.GitHub('owner/repo').api('issues/444'), {'ok': True})
+        self.assertIn('--include', run.call_args.args[0])
+
+    def test_interim_headers_empty_body_and_bounded_malformed_headers(self):
+        for text, expected in [('HTTP/1.1 100 Continue\r\n\r\nHTTP/2.0 204 No Content\r\nX: y\r\n\r\n', None),
+                               ('HTTP/2.0 200 OK\n\n{}', {})]:
+            with patch.object(c.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0, text, '')):
+                self.assertEqual(c.GitHub('owner/repo').api(''), expected)
+        for text in ['\n\n{}', 'HTTP/2.0 200 OK\nBroken header\n\n{}', 'HTTP/2.0 200 OK\nX: '+ 's' * 65536 + '\n\n{}',
+                     '{"private":"secret"}', 'HTTP/2.0 999 secret\n\n{}']:
+            with self.subTest(text=text[:25]), patch.object(c.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0, text, '')):
+                with self.assertRaisesRegex(ValueError, 'HTTP response') as raised:
+                    c.GitHub('owner/repo').api('')
+                self.assertNotIn('secret', str(raised.exception))
+
+    def test_header_error_without_cli_http_suffix_exposes_only_numeric_status(self):
+        error = subprocess.CalledProcessError(1, ['gh'], output='HTTP/2.0 422 Unprocessable Entity\nX-Private: secret\n\n{"message":"secret","errors":"private"}', stderr='gh: secret')
+        with patch.object(c.subprocess, 'run', side_effect=error):
+            with self.assertRaises(c.GitHubAPIError) as raised:
+                c.GitHub('owner/repo').api('statuses/'+HEAD, 'POST', {'token': 'secret'})
+        self.assertIn('HTTP 422', str(raised.exception))
+        self.assertNotIn('secret', repr(vars(raised.exception)))
+        self.assertIsNone(raised.exception.output)
+
+    def test_untrusted_body_cannot_forge_header_or_http_reason(self):
+        for body in ['{"private":"HTTP/2.0 422"}', 'HTTP/2.0 422 secret\nBad header\n\nsecret',
+                     'HTTP/2.0 422 secret\nX: '+ 's' * 65536 + '\n\nsecret']:
+            error = subprocess.CalledProcessError(1, ['gh'], output=body, stderr='private')
+            with patch.object(c.subprocess, 'run', side_effect=error):
+                with self.assertRaises(c.GitHubAPIError) as raised:
+                    c.GitHub('owner/repo').api('statuses/'+HEAD, 'POST', {})
+            self.assertIn('HTTP summary unavailable', str(raised.exception))
+            self.assertNotIn('secret', repr(vars(raised.exception)))
+
+    def test_included_code_wins_over_conflicting_stderr_summary(self):
+        error = subprocess.CalledProcessError(1, ['gh'], output='HTTP/2.0 403 Forbidden\n\n{}', stderr='gh: Validation Failed (HTTP 422)')
+        with patch.object(c.subprocess, 'run', side_effect=error):
+            with self.assertRaises(c.GitHubAPIError) as raised:
+                c.GitHub('owner/repo').api('statuses/'+HEAD, 'POST', {})
+        self.assertIn('HTTP 403', str(raised.exception))
+        self.assertNotIn('422', str(raised.exception))
 
 
 if __name__ == "__main__":
