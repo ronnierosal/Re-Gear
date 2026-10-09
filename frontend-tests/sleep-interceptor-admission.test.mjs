@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import {readFileSync} from 'node:fs';
+import ts from 'typescript';
 import { SleepPreflightCoordinator } from '../src/sleep-preflight.ts';
+import { deliverBlockedAttempt } from '../src/blocked-attempt-delivery.ts';
 
 const now = Date.parse('2026-10-09T04:00:00Z');
 const snapshot = (admission = 'observation-only', offset = 0) => ({
@@ -110,4 +113,37 @@ test('disposed pending admission cannot retire, warn, or reacquire a new lifetim
   const {coordinator:c,counts,request}=setup();c.stop();c.admitSnapshot(snapshot(),now,10000);request();c.start();
   assert.equal(counts.retire,0);assert.equal(counts.release,1);assert.equal(counts.warn,0);assert.equal(counts.acquire,1);
   const next=setup();assert.equal(next.coordinator.status().blocking,true);next.coordinator.stop();
+});
+
+// Exercise the real index host callbacks, rather than a copy of their logic.
+function nativeWarningHarness(retireAt) {
+  const source=readFileSync(new URL('../src/index.tsx',import.meta.url),'utf8');
+  const tree=ts.createSourceFile('index.tsx',source,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
+  let expression;
+  function visit(node){if(ts.isNewExpression(node)&&node.expression.getText(tree)==='SleepPreflightCoordinator')expression=node;ts.forEachChild(node,visit);}
+  visit(tree);assert.ok(expression);
+  const counts={acquire:0,release:0,unpatch:0,create:0,close:0};
+  const timers=new Map();let serial=0,suspend,instance;
+  const retire=()=>instance.preflight.admitSnapshot(snapshot(),now,10000);
+  const env={SleepPreflightCoordinator,deliverBlockedAttempt,BLOCKED_ATTEMPT_MODAL_DELAY_MS:750,runtimeOwner:{stopped:false},
+    createDeckySteamSuspendAdapter:()=>({acquireBlocker(){counts.acquire++;return()=>counts.release++;},observeSuspendRequests(handler){suspend=handler;return()=>counts.unpatch++;}}),
+    window:{setTimeout(callback){timers.set(++serial,callback);return serial;},clearTimeout(id){timers.delete(id);}},
+    toaster:{toast(){if(retireAt==='toast')retire();}},
+    showBlockedAttempt(_warning,onClose){counts.create++;if(retireAt==='modal')retire();return{Close(){counts.close++;onClose();}};},
+  };
+  const code=ts.transpileModule(`let warningModal=null;let warningTimer=null;const preflight=${expression.getText(tree)};`,{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;
+  instance=new Function(...Object.keys(env),`${code};return {preflight, retained:()=>warningModal};`)(...Object.values(env));
+  instance.preflight.start();
+  return {...instance,counts,timers,request:()=>suspend(),fire(){const callbacks=[...timers.values()];timers.clear();callbacks.forEach(callback=>callback());}};
+}
+
+test('real Decky modal boundary closes a handle returned after reentrant retirement instead of retaining it',()=>{
+  const h=nativeWarningHarness('modal');h.request();h.fire();
+  assert.equal(h.counts.create,1);assert.equal(h.counts.close,1);assert.equal(h.retained(),null);
+  assert.equal(h.counts.release,1);assert.equal(h.counts.unpatch,1);h.preflight.stop();
+});
+
+test('real toast boundary cannot enqueue a warning after reentrant retirement',()=>{
+  const h=nativeWarningHarness('toast');h.request();assert.equal(h.timers.size,0);h.fire();
+  assert.equal(h.counts.create,0);assert.equal(h.counts.release,1);h.preflight.stop();
 });
