@@ -30,6 +30,51 @@ UNKNOWN = {"schema_version": 1, "provider": "unknown", "profile_metadata": "unkn
            "virtual_target": "unknown", "relationships": "unknown"}
 
 
+class DeckyControllerImportTests(unittest.TestCase):
+    def test_missing_decky_xml_does_not_prevent_backend_or_snapshot_delivery(self):
+        # Fresh process: a cached host ElementTree/reader must not hide the
+        # actual Decky 3.11.7 missing-module startup failure.
+        script = r'''
+import asyncio, builtins, json, sys
+from pathlib import Path
+from unittest.mock import Mock
+from tests.test_main_process_delivery import load_main_module, SnapshotApi
+from regear.domain.serialization import snapshot_from_dict
+from regear.adapters.steamos.peripherals import (
+    PeripheralInventory, SteamOsPeripheralObservationAdapter,
+)
+from regear.delivery import build_profile_config
+original_import = builtins.__import__
+attempts = []
+def decky_import(name, *args, **kwargs):
+    if name == 'xml.etree' or name.startswith('xml.etree.'):
+        attempts.append(name)
+        raise ModuleNotFoundError("No module named 'xml.etree'", name='xml.etree')
+    return original_import(name, *args, **kwargs)
+builtins.__import__ = decky_import
+for profile in ('development', 'production'):
+    build_profile_config.BUILD_PROFILE = profile
+    module = load_main_module()
+    assert not attempts, 'startup imported the optional controller reader'
+    plugin = module.Plugin()
+    snapshot = snapshot_from_dict(json.loads(Path('tests/fixtures/portable.json').read_text()))
+    plugin._api = SnapshotApi(snapshot)
+    payload = asyncio.run(plugin.get_snapshot())
+    assert payload['snapshot']['schema_version'] == 3
+    assert payload['runtime_admission']['schema_version'] == 1
+    inventory = Mock()
+    inventory.scan.return_value = PeripheralInventory(True, (), audio_complete=True)
+    plugin._peripherals = SteamOsPeripheralObservationAdapter(inventory)
+    result = asyncio.run(plugin.get_peripheral_status())
+    assert result['catalog'] == dict(schema_version=1, provider='unavailable',
+        profile_metadata='unknown', virtual_target='unknown', relationships='unknown')
+    assert 'xml' not in json.dumps(result)
+    attempts.clear()
+'''
+        result = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True, timeout=30)
+        self.assertEqual(0, result.returncode, result.stderr)
+
+
 def observer():
     inventory = Mock()
     inventory.scan.return_value = PeripheralInventory(True, (), audio_complete=True)

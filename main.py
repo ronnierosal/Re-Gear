@@ -138,7 +138,6 @@ from regear.adapters.steamos.game_render_binding import (  # noqa: E402
 from regear.adapters.steamos.game_scopes import SystemdGameScopeDiscovery  # noqa: E402
 from regear.adapters.steamos.version_info import SteamOsVersionDiscovery  # noqa: E402
 from regear.adapters.steamos.controller_catalog import COMPOSITE, DBUS, TARGETS, SOURCES, MANAGER, EPOCH, PATH, INTERFACE, InputPlumberCatalogAdapter  # noqa: E402
-from regear.adapters.steamos.inputplumber_catalog import InputPlumberReader  # noqa: E402
 from regear.domain.controller_catalog import (  # noqa: E402
     ControllerCatalog, DeviceObservation, DeviceKind, EvidenceState, CatalogCode,
     Observation, ProviderInterface, RelationState,
@@ -146,7 +145,15 @@ from regear.domain.controller_catalog import (  # noqa: E402
 
 # Collection is reached only through the passive peripheral getter. Every
 # request gets one fresh aggregate budget; nothing is constructed at startup.
+class _ControllerReaderUnavailable(ImportError):
+    """Optional reader cannot load in this runtime; not provider absence."""
+
+
 def _controller_catalog_factory():
+    try:
+        from regear.adapters.steamos.inputplumber_catalog import InputPlumberReader
+    except ImportError:
+        raise _ControllerReaderUnavailable() from None
     return InputPlumberCatalogAdapter(InputPlumberReader(InputPlumberReadCommandRunner()))
 
 
@@ -1235,16 +1242,21 @@ class Plugin:
                 "audio": {"complete": False, "exact": False, "external_available": None, "portable_available": None, "code": "audio.observation_unavailable"},
             }
         catalog = None
+        reader_unavailable = False
         if not self._unloading:
             try:
                 catalog = await asyncio.to_thread(
                     lambda: None if self._unloading else _observe_controller_catalog()
                 )
+            except _ControllerReaderUnavailable:
+                reader_unavailable = True
             except Exception:
                 pass
         if self._unloading:
             catalog = None
         payload["catalog"] = controller_catalog_to_public_facts(catalog)
+        if reader_unavailable and not self._unloading:
+            payload["catalog"]["provider"] = "unavailable"
         return payload
 
     async def get_action_history(self, _request: object = None) -> dict[str, object]:
