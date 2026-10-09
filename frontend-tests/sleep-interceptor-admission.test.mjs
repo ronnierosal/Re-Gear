@@ -116,7 +116,7 @@ test('disposed pending admission cannot retire, warn, or reacquire a new lifetim
 });
 
 // Exercise the real index host callbacks, rather than a copy of their logic.
-function nativeWarningHarness(retireAt, closeThrows = false, timerThrows = false) {
+function nativeWarningHarness(retireAt, closeThrows = false, timerThrows = false, createThrows = false) {
   const source=readFileSync(new URL('../src/index.tsx',import.meta.url),'utf8');
   const tree=ts.createSourceFile('index.tsx',source,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
   let expression;
@@ -129,7 +129,7 @@ function nativeWarningHarness(retireAt, closeThrows = false, timerThrows = false
     createDeckySteamSuspendAdapter:()=>({acquireBlocker(){counts.acquire++;return()=>counts.release++;},observeSuspendRequests(handler){suspend=handler;return()=>counts.unpatch++;}}),
     window:{setTimeout(callback){timers.set(++serial,callback);return serial;},clearTimeout(id){timers.delete(id);if(timerThrows)throw Error('timer cleanup');}},
     toaster:{toast(){if(retireAt==='toast')retire();}},
-    showBlockedAttempt(_warning,onClose){counts.create++;closedCallbacks.push(onClose);if(retireAt==='modal')retire();return{Close(){counts.close++;if(closeThrows)throw Error('late modal close');onClose();}};},
+    showBlockedAttempt(_warning,onClose){counts.create++;closedCallbacks.push(onClose);if(retireAt==='modal')retire();if(createThrows)throw Error('modal host creation');return{Close(){counts.close++;if(closeThrows)throw Error('late modal close');onClose();}};},
   };
   const code=ts.transpileModule(`let warningModal=null;let warningTimer=null;const preflight=${expression.getText(tree)};`,{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;
   instance=new Function(...Object.keys(env),`${code};return {preflight, retained:()=>warningModal};`)(...Object.values(env));
@@ -174,6 +174,12 @@ test('an old modal close callback cannot erase the newer handle needed for retir
   const h=nativeWarningHarness(null);h.request();h.fire();h.request();h.fire();
   const current=h.retained();assert.ok(current);h.closedCallback(0);assert.equal(h.retained(),current);
   h.preflight.admitSnapshot(snapshot(),now,10000);assert.equal(h.counts.close,2);assert.equal(h.retained(),null);h.preflight.stop();
+});
+
+test('a modal host throwing after reentrant retirement cannot silently report confirmed cleanup',()=>{
+  const h=nativeWarningHarness('modal',false,false,true);h.request();h.fire();
+  assert.equal(h.preflight.status().state,'unavailable');assert.match(h.preflight.status().error,/modal host creation/);
+  h.preflight.stop();assert.equal(h.counts.create,1);assert.equal(h.counts.release,1);assert.equal(h.counts.unpatch,1);
 });
 
 test('observer creation failure cannot be presented as confirmed cleanup after retirement',()=>{

@@ -2305,10 +2305,15 @@ export default definePlugin(() => {
           showModal: () => {
             let closed = false;
             let modal: ReturnType<typeof showModal> | null = null;
-            modal = showBlockedAttempt(warning, () => {
-              closed = true;
-              if (warningModal === modal) warningModal = null;
-            });
+            try {
+              modal = showBlockedAttempt(warning, () => {
+                closed = true;
+                if (warningModal === modal) warningModal = null;
+              });
+            } catch (error) {
+              if (runtimeOwner.stopped || preflight.isRetired()) preflight.reportWarningCleanupFailure(error);
+              throw error; // Preserve the existing fallback for supported hosts.
+            }
             // Decky's host can synchronously retire us while creating a modal.
             if (runtimeOwner.stopped || preflight.isRetired()) {
               if (!closed) {
