@@ -170,7 +170,7 @@ export class SleepPreflightCoordinator {
 
     // The blocker must exist before any asynchronous snapshot request starts.
     this.acquireBlocker();
-    if (this.adapter && this.blockerRelease) {
+    if (!this.stopped && !this.isRetired() && this.adapter && this.blockerRelease) {
       try {
         this.observerRelease = this.adapter.observeSuspendRequests(() => {
           if (!this.stopped && !this.isRetired() && this.blockerRelease) {
@@ -178,6 +178,7 @@ export class SleepPreflightCoordinator {
             this.onBlockedAttempt(warningForBlockedAttempt(this.observation));
           }
         });
+        if (this.stopped || this.isRetired()) this.releaseObserver();
       } catch (error) {
         this.lifecycleError = `Sleep is blocked, but the attempted-action warning is unavailable: ${messageFrom(error)}`;
       }
@@ -299,6 +300,7 @@ export class SleepPreflightCoordinator {
         throw new Error("Steam did not return a suspend-blocker release callback");
       }
       this.blockerRelease = release;
+      if (this.stopped || this.isRetired()) this.releaseBlocker();
     } catch (error) {
       // Do not retry in the same plugin lifecycle: a failed call may have
       // incremented Steam's blocker count without returning its release handle.

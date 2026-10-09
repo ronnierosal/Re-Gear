@@ -13,7 +13,7 @@ function setup(options = {}) {
   let saved;
   let coordinator;
   const adapter = {
-    acquireBlocker() { counts.acquire++; return () => { counts.release++; options.release?.(coordinator, saved); }; },
+    acquireBlocker() { counts.acquire++; options.acquire?.(coordinator); return () => { counts.release++; options.release?.(coordinator, saved); }; },
     observeSuspendRequests(handler) { counts.patch++; saved=handler; return () => { counts.unpatch++; options.unpatch?.(coordinator, saved); }; },
   };
   coordinator = new SleepPreflightCoordinator(adapter, () => counts.warn++, () => { counts.retire++; options.retire?.(); });
@@ -84,6 +84,12 @@ test('terminal retirement precedes reentrant unpatch and release callbacks',()=>
   const {coordinator:c,counts}=setup({unpatch:reenter,release:reenter});
   c.admitSnapshot(snapshot(),now,10000);
   assert.deepEqual(counts,{acquire:1,release:1,patch:1,unpatch:1,warn:0,retire:1});
+});
+
+test('retirement during native acquisition cleans the returned lease without installing a late observer',()=>{
+  const {coordinator:c,counts}=setup({acquire:c=>c.admitSnapshot(snapshot(),now,10000)});
+  assert.equal(c.status().state,'retired');c.stop();
+  assert.equal(counts.acquire,1);assert.equal(counts.release,1);assert.equal(counts.patch,0);
 });
 
 test('throwing modal retirement and unpatch never prevent native release; uncertainty stays visible',()=>{
