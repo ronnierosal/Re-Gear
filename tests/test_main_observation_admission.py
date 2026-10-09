@@ -192,7 +192,9 @@ class ObservationAdmissionTests(unittest.IsolatedAsyncioTestCase):
                  patch.object(module, "DeviceAuthorizationFacade") as authorization, \
                  patch.object(module, "SleepGuardController") as inhibitor, \
                  patch.object(module, "RootOwnedRuntimeState") as root, \
-                 patch.object(module, "DiagnosticsApi") as passive:
+                 patch.object(module, "DiagnosticsApi") as passive, \
+                 patch.object(module, "InputPlumberReadCommandRunner") as catalog_runner, \
+                 patch.object(module, "InputPlumberReader") as catalog_reader:
                 plugin = module.Plugin()
                 await plugin._main()
                 await plugin._unload()
@@ -200,6 +202,8 @@ class ObservationAdmissionTests(unittest.IsolatedAsyncioTestCase):
                 inhibitor.assert_not_called()
                 root.assert_not_called()
                 passive.assert_called_once()
+                catalog_runner.assert_not_called()
+                catalog_reader.assert_not_called()
 
     async def test_initial_observation_mode_cannot_upgrade_on_later_identity(self):
         with patch.object(build_profile_config, "BUILD_PROFILE", "development"):
@@ -280,7 +284,9 @@ class ObservationAdmissionTests(unittest.IsolatedAsyncioTestCase):
             module, plugin = self.plugin(profile)
             plugin._api = NS(get_snapshot_report=Mock(return_value=SnapshotReport(snapshot, infer_operating_mode(snapshot))))
             plugin._build_info = {"version": "0.3.189"}
-            with patch.object(module, "RootOwnedRuntimeState") as root, patch.object(module.asyncio, "create_task") as schedule:
+            with patch.object(module, "RootOwnedRuntimeState") as root, patch.object(module.asyncio, "create_task") as schedule, \
+                 patch.object(module, "InputPlumberReadCommandRunner") as catalog_runner, \
+                 patch.object(module, "InputPlumberReader") as catalog_reader:
                 result = await plugin.get_snapshot()
                 self.assertEqual("unknown", result["snapshot"]["sleep_guard"]["confidence"])
                 self.assertFalse(result["snapshot"]["disconnect_readiness"]["ready"])
@@ -288,3 +294,5 @@ class ObservationAdmissionTests(unittest.IsolatedAsyncioTestCase):
                 self.assertFalse(result["runtime_admission"]["safe_to_unplug"])
                 root.assert_not_called()
                 schedule.assert_not_called()
+                catalog_runner.assert_not_called()
+                catalog_reader.assert_not_called()
