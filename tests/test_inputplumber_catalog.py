@@ -16,7 +16,7 @@ def reply(signature, *values):
 
 
 def variant(signature, *values):
-    return reply('v', {'type': signature, 'data': list(values)})
+    return reply('v', {'type': signature, 'data': values[0] if len(values) == 1 else list(values)})
 
 
 class FakeRunner:
@@ -157,3 +157,46 @@ class ReaderTests(unittest.TestCase):
         frame = reader.read_snapshot()
         self.assertEqual(set(frame.__dataclass_fields__), {'connection_epoch', 'objects', 'availability', 'enumeration_complete', 'interface_states'})
         self.assertFalse(any(hasattr(reader, name) for name in ('apply', 'set_profile', 'set_target', 'reopen', 'start')))
+
+    def test_busctl_native_variant_payloads_are_known(self):
+        # systemd busctl --json=short encodes a variant's inner data directly.
+        samples = {
+            'Version': '{"type":"v","data":[{"type":"s","data":"1.0"}]}',
+            'ProfileName': '{"type":"v","data":[{"type":"s","data":"Fixture Profile"}]}',
+            'SourceDevicePaths': '{"type":"v","data":[{"type":"as","data":[]}]}',
+        }
+        runner = FakeRunner()
+        runner.hook = lambda tail, r: CommandResult(r.argv, 0, samples[tail[-1]], '') if tail[4] == 'Get' else r
+        frame = InputPlumberReader(runner).read_snapshot()
+        self.assertTrue(frame.enumeration_complete)
+        self.assertEqual(frame.objects[ROOT+'/Manager'][MANAGER]['Version'].value, '1.0')
+        self.assertEqual(frame.objects[ROOT+'/CompositeDevice0'][COMPOSITE]['ProfileName'].value, 'Fixture Profile')
+        self.assertEqual(frame.objects[ROOT+'/CompositeDevice0'][COMPOSITE]['SourceDevicePaths'].value, ())
+
+    def test_zbus_5_12_standard_doctype_is_stripped_before_xml_parser(self):
+        from unittest.mock import patch
+        from xml.etree import ElementTree
+        # Pinned zbus-5.12.0 object_server/node.rs:160-163 emits this header.
+        doctype = '\n<!DOCTYPE node PUBLIC "-//freedesktop//DTD D-BUS Object Introspection 1.0//EN"\n "http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd">\n'
+        runner = FakeRunner()
+        runner.xml = {path: doctype+xml for path, xml in runner.xml.items()}
+        original = ElementTree.fromstring
+        def parse(xml):
+            self.assertNotIn('<!', xml)
+            return original(xml)
+        with patch('regear.adapters.steamos.inputplumber_catalog.ElementTree.fromstring', side_effect=parse):
+            frame = InputPlumberReader(runner).read_snapshot()
+        self.assertEqual(frame.availability, EvidenceState.KNOWN)
+        self.assertTrue(frame.enumeration_complete)
+
+    def test_doctype_entities_and_alternate_external_ids_stay_rejected(self):
+        doctype = '<!DOCTYPE node PUBLIC "-//freedesktop//DTD D-BUS Object Introspection 1.0//EN" "http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd">'
+        for xml in (doctype.replace('http://www.freedesktop.org', 'https://attacker.invalid')+'<node/>',
+                    doctype[:-1]+' [<!ENTITY secret SYSTEM "file:///etc/passwd">]><node/>',
+                    doctype+doctype+'<node/>',
+                    '<node>'+doctype+'</node>',
+                    doctype+'<!ENTITY secret "expanded"><node/>',
+                    '<!DOCTYPE node SYSTEM "file:///etc/passwd"><node/>',
+                    doctype+'<node>&secret;</node>'):
+            runner = FakeRunner(); runner.xml[ROOT] = xml
+            self.assert_discarded(runner)

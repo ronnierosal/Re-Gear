@@ -55,6 +55,14 @@ SIGNATURES = {
     'TargetCapabilities': 'as', 'OutputCapabilities': 'as', 'SupportedKeys': 'aq',
     'IdBustype': 's', 'Properties': 'a{ss}',
 }
+# Strip only the standard external identifier emitted by pinned zbus 5.12.0
+# (object_server/node.rs). The XML parser never receives a DTD or entity.
+STANDARD_DOCTYPE = re.compile(
+    r'\A[ \t\r\n]*<!DOCTYPE[ \t\r\n]+node[ \t\r\n]+PUBLIC[ \t\r\n]+'
+    r'"-//freedesktop//DTD D-BUS Object Introspection 1\.0//EN"[ \t\r\n]+'
+    r'"http://www\.freedesktop\.org/standards/dbus/1\.0/introspect\.dtd"[ \t\r\n]*>'
+)
+
 RELATIONS = frozenset({'GamepadOrder', 'SourceDevicePaths', 'TargetDevices', 'DbusDevices'})
 
 
@@ -115,12 +123,17 @@ class _Read:
         if value is None: raise _Invalid()
         return self.decode(value, 's')
 
-    def decode(self, envelope, signature):
+    def decode(self, envelope, signature, *, nested=False):
         if type(envelope) is not dict or set(envelope) != {'type', 'data'} or envelope['type'] != signature:
             raise _Invalid()
         data = envelope['data']
-        if type(data) is not list or len(data) != 1: raise _Invalid()
-        value = data[0]
+        # Top-level message data is a positional array. Inside a variant,
+        # busctl's typed value stores its payload directly (no message wrapper).
+        if nested:
+            value = data
+        else:
+            if type(data) is not list or len(data) != 1: raise _Invalid()
+            value = data[0]
         if signature == 's':
             if type(value) is not str: raise _Invalid()
         elif signature in ('as', 'ao', 'aq'):
@@ -141,7 +154,7 @@ class _Read:
         raw = self.call(tail)
         try:
             if raw is None: raise _Invalid()
-            decoded = self.decode(self.decode(raw, 'v'), signature)
+            decoded = self.decode(self.decode(raw, 'v'), signature, nested=True)
             self.bounded(list(decoded) if type(decoded) is tuple else decoded, 0)
             if prop in RELATIONS and (len(set(decoded)) != len(decoded) or any(not PATH.fullmatch(v) for v in decoded)):
                 raise _Invalid()
@@ -155,6 +168,9 @@ class _Read:
             path = pending.pop(0)
             if path in result or len(result) >= self.limits.max_objects: raise _Invalid()
             xml = self.scalar(('call', owner, path, 'org.freedesktop.DBus.Introspectable', 'Introspect'))
+            standard = STANDARD_DOCTYPE.match(xml)
+            if standard is not None:
+                xml = xml[standard.end():]
             if '<!' in xml: raise _Invalid()
             root = ElementTree.fromstring(xml)
             if root.tag != 'node': raise _Invalid()
