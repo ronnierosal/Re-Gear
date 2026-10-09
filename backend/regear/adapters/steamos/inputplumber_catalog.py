@@ -251,21 +251,26 @@ class _Read:
         return roots[0]
 
     def topology(self, owner):
-        pending, result = [Transport.ROOT], {}
+        pending, result = [(Transport.ROOT, None)], {}
         while pending:
-            path = pending.pop(0)
+            path, root = pending.pop(0)
             if path in result or len(result) >= self.limits.max_objects: raise _Invalid()
-            xml = self.scalar(('call', owner, path, 'org.freedesktop.DBus.Introspectable', 'Introspect'))
-            root = self.xml_root(xml)
+            if root is None:
+                xml = self.scalar(('call', owner, path, 'org.freedesktop.DBus.Introspectable', 'Introspect'))
+                root = self.xml_root(xml)
             if root.tag != 'node': raise _Invalid()
-            children, interfaces = [], {}
+            children, interfaces = {}, {}
             for node in root:
                 if node.tag == 'node':
                     name = node.get('name', '')
                     if not re.fullmatch(r'[A-Za-z0-9_]+', name) or len(name) > self.limits.max_string: raise _Invalid()
                     child = path + '/' + name
                     if child in children or not Transport.PATH.fullmatch(child) or len(child) > 512: raise _Invalid()
-                    children.append(child)
+                    # Recursive introspection already contains this object's
+                    # declarations. Only name-only/unexpanded stubs need an
+                    # additional call; comments alone do not prove expansion.
+                    expanded = any(part.tag in ('node', 'interface') for part in node)
+                    children[child] = node if expanded else None
                 elif node.tag == 'interface':
                     name = node.get('name', '')
                     if not INTERFACE.fullmatch(name) or len(name) > self.limits.max_string or name in interfaces: raise _Invalid()
@@ -279,7 +284,7 @@ class _Read:
                         properties[key] = (signature, access)
                     interfaces[name] = properties
             result[path] = (tuple(sorted(children)), interfaces)
-            pending.extend(sorted(children))
+            pending.extend(sorted(children.items()))
             if len(result) + len(pending) > self.limits.max_objects: raise _Invalid()
         return result
 
