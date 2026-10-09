@@ -108,6 +108,10 @@ export interface HardwareProfileDiagnostics {
 
 export interface SnapshotPayload {
   delivery_schema_version: number;
+  runtime_admission?: {
+    schema_version?: 1;
+    sleep_interceptor_admission?: "observation-only" | "supported-runtime";
+  } | null;
   snapshot: {
     schema_version: number;
     observed_at: string;
