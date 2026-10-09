@@ -2304,9 +2304,10 @@ export default definePlugin(() => {
         deliverBlockedAttempt(warning, {
           showModal: () => {
             let closed = false;
-            const modal = showBlockedAttempt(warning, () => {
+            let modal: ReturnType<typeof showModal> | null = null;
+            modal = showBlockedAttempt(warning, () => {
               closed = true;
-              warningModal = null;
+              if (warningModal === modal) warningModal = null;
             });
             // Decky's host can synchronously retire us while creating a modal.
             if (runtimeOwner.stopped || preflight.isRetired()) {
