@@ -40,7 +40,7 @@ function sleepRuntime(profile,options={}){
   const exports={};
   const coordinatorCode=ts.transpileModule(readFileSync(new URL('../src/sleep-preflight.ts',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;
   new Function('exports',coordinatorCode)(exports);
-  const counts={resolve:0,acquire:0,release:0,patch:0,unpatch:0,read:0,automatic:0,toast:0,modal:0};
+  const counts={resolve:0,acquire:0,release:0,patch:0,unpatch:0,read:0,automatic:0,toast:0,modal:0,close:0};
   const jobs=[];let suspend,reply,followup,clock=Date.parse('2026-10-09T04:00:00Z');
   const runtimeOwner={stopped:false};
   const startup=source.slice(source.indexOf('  let warningModal:'),source.indexOf('  const offlineFocusChecks',source.indexOf('  let warningModal:')));
@@ -52,7 +52,7 @@ function sleepRuntime(profile,options={}){
     toaster:{toast(){counts.toast++;}},
     window:{setTimeout(fn){jobs.push({fn,cancelled:false});return jobs.length;},clearTimeout(id){jobs[id-1].cancelled=true;}},
     deliverBlockedAttempt(warning,ports){ports.showModal();},
-    showBlockedAttempt(){counts.modal++;return{Close(){options.close?.();}};},
+    showBlockedAttempt(){counts.modal++;options.show?.();return{Close(){counts.close++;options.close?.();}};},
   };
   const startupCode=ts.transpileModule(startup,{compilerOptions:{jsx:ts.JsxEmit.React,target:ts.ScriptTarget.ES2022}}).outputText;
   const preflight=new Function(...Object.keys(env),`${startupCode};return preflight;`)(...Object.values(env));
@@ -127,6 +127,16 @@ test('actual composition keeps delayed/rejected protection and reports cleanup u
     assert.equal(app.counts.unpatch,1);assert.equal(app.counts.release,1);await app.finish(read);app.stop();app.suspend();
     assert.equal(app.counts.release,1);assert.equal(app.counts.unpatch,1);
   }
+});
+
+test('reentrant native modal creation closes the late handle after terminal retirement',()=>{
+  let app;
+  app=sleepRuntime('production',{show(){app.preflight.admitSnapshot(sleepReply(),Date.parse('2026-10-09T04:00:00Z'),10000);}});
+  app.suspend();app.jobs[0].fn();
+  assert.equal(app.preflight.isRetired(),true);
+  assert.equal(app.counts.modal,1);assert.equal(app.counts.release,1);assert.equal(app.counts.unpatch,1);
+  assert.equal(app.counts.close,1,'Decky returned after retirement: close rather than retain the late handle');
+  app.stop();assert.equal(app.counts.close,1);
 });
 test('production runtime publishes only eGPU content and denies retained hidden callbacks',()=>{
   const {value,calls}=state('production');
