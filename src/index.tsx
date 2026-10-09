@@ -2284,11 +2284,13 @@ export default definePlugin(() => {
       } catch {
         // The modal/fallback path below remains independently available.
       }
+      if (runtimeOwner.stopped || preflight.isRetired()) return;
       if (warningTimer !== null) {
         window.clearTimeout(warningTimer);
       }
       warningModal?.Close();
       warningModal = null;
+      if (runtimeOwner.stopped || preflight.isRetired()) return;
       // Steam closes the Power menu after dispatching OnSuspendRequest. Defer the
       // acknowledgement dialog so it is not discarded with that transient menu.
       warningTimer = window.setTimeout(() => {
@@ -2296,11 +2298,20 @@ export default definePlugin(() => {
         if (runtimeOwner.stopped || preflight.isRetired()) return;
         deliverBlockedAttempt(warning, {
           showModal: () => {
-            warningModal = showBlockedAttempt(warning, () => {
+            let closed = false;
+            const modal = showBlockedAttempt(warning, () => {
+              closed = true;
               warningModal = null;
             });
+            // Decky's host can synchronously retire us while creating a modal.
+            if (runtimeOwner.stopped || preflight.isRetired()) {
+              if (!closed) modal.Close();
+              return;
+            }
+            if (!closed) warningModal = modal;
           },
           showFallbackToast: (fallback) => {
+            if (runtimeOwner.stopped || preflight.isRetired()) return;
             if (!toastDelivered) {
               toaster.toast({
                 title: fallback.title,
