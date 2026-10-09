@@ -2286,7 +2286,10 @@ export default definePlugin(() => {
       }
       if (runtimeOwner.stopped || preflight.isRetired()) return;
       if (warningTimer !== null) {
-        window.clearTimeout(warningTimer);
+        const timer = warningTimer;
+        warningTimer = null;
+        try { window.clearTimeout(timer); }
+        catch (error) { preflight.reportWarningCleanupFailure(error); }
       }
       const previousModal = warningModal;
       warningModal = null;
@@ -2331,12 +2334,15 @@ export default definePlugin(() => {
     },
     () => {
       if (warningTimer !== null) {
-        window.clearTimeout(warningTimer);
+        const timer = warningTimer;
         warningTimer = null;
+        try { window.clearTimeout(timer); }
+        catch (error) { preflight.reportWarningCleanupFailure(error); }
       }
       const modal = warningModal;
       warningModal = null;
-      modal?.Close();
+      try { modal?.Close(); }
+      catch (error) { preflight.reportWarningCleanupFailure(error); }
     },
   );
   preflight.start();
@@ -2377,7 +2383,8 @@ export default definePlugin(() => {
     runtimeDetails.stop();menuSnapshot=null;tilePublisher.publish({fresh:false});
     detailPublisher.publish(null);
     expandedMenu.stop();shortcut.stop();
-    if(warningTimer!==null){window.clearTimeout(warningTimer);warningTimer=null;}
+    const timer=warningTimer;warningTimer=null;
+    try{if(timer!==null)window.clearTimeout(timer);}catch(error){preflight.reportWarningCleanupFailure(error);}
     const modal=warningModal;warningModal=null;
     try{modal?.Close();}catch(error){preflight.reportWarningCleanupFailure(error);}
     authorization.stop();connection.stop();offlineFocusChecks.stop();

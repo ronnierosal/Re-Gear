@@ -17,7 +17,7 @@ function setup(options = {}) {
   let coordinator;
   const adapter = {
     acquireBlocker() { counts.acquire++; options.acquire?.(coordinator); return () => { counts.release++; options.release?.(coordinator, saved); }; },
-    observeSuspendRequests(handler) { counts.patch++; saved=handler; return () => { counts.unpatch++; options.unpatch?.(coordinator, saved); }; },
+    observeSuspendRequests(handler) { counts.patch++; saved=handler; options.patch?.(); return () => { counts.unpatch++; options.unpatch?.(coordinator, saved); }; },
   };
   coordinator = new SleepPreflightCoordinator(adapter, () => counts.warn++, () => { counts.retire++; options.retire?.(); });
   coordinator.start();
@@ -116,7 +116,7 @@ test('disposed pending admission cannot retire, warn, or reacquire a new lifetim
 });
 
 // Exercise the real index host callbacks, rather than a copy of their logic.
-function nativeWarningHarness(retireAt, closeThrows = false) {
+function nativeWarningHarness(retireAt, closeThrows = false, timerThrows = false) {
   const source=readFileSync(new URL('../src/index.tsx',import.meta.url),'utf8');
   const tree=ts.createSourceFile('index.tsx',source,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
   let expression;
@@ -127,7 +127,7 @@ function nativeWarningHarness(retireAt, closeThrows = false) {
   const retire=()=>instance.preflight.admitSnapshot(snapshot(),now,10000);
   const env={SleepPreflightCoordinator,deliverBlockedAttempt,BLOCKED_ATTEMPT_MODAL_DELAY_MS:750,runtimeOwner:{stopped:false},
     createDeckySteamSuspendAdapter:()=>({acquireBlocker(){counts.acquire++;return()=>counts.release++;},observeSuspendRequests(handler){suspend=handler;return()=>counts.unpatch++;}}),
-    window:{setTimeout(callback){timers.set(++serial,callback);return serial;},clearTimeout(id){timers.delete(id);}},
+    window:{setTimeout(callback){timers.set(++serial,callback);return serial;},clearTimeout(id){timers.delete(id);if(timerThrows)throw Error('timer cleanup');}},
     toaster:{toast(){if(retireAt==='toast')retire();}},
     showBlockedAttempt(_warning,onClose){counts.create++;if(retireAt==='modal')retire();return{Close(){counts.close++;if(closeThrows)throw Error('late modal close');onClose();}};},
   };
@@ -161,4 +161,18 @@ test('independent cleanup failures are all retained without retrying consumed op
   assert.equal(s.state,'unavailable');assert.equal(s.blocking,null);
   for(const message of ['modal error','hook error','lease error'])assert.ok(s.error.includes(message));
   assert.equal(counts.release,1);assert.equal(counts.unpatch,1);assert.equal(counts.retire,1);
+});
+
+test('real timer cleanup failure cannot prevent native cleanup or resurrect warnings',()=>{
+  const h=nativeWarningHarness(null,false,true);h.request();
+  h.preflight.admitSnapshot(snapshot(),now,10000);h.preflight.stop();h.fire();
+  assert.equal(h.preflight.status().state,'unavailable');assert.match(h.preflight.status().error,/timer cleanup/);
+  assert.equal(h.counts.release,1);assert.equal(h.counts.unpatch,1);assert.equal(h.counts.create,0);
+});
+
+test('observer creation failure cannot be presented as confirmed cleanup after retirement',()=>{
+  const {coordinator:c,counts}=setup({patch:()=>{throw Error('partial native hook');}});
+  assert.equal(c.status().blocking,true);
+  const s=c.admitSnapshot(snapshot(),now,10000);c.stop();
+  assert.equal(s.state,'unavailable');assert.match(s.error,/partial native hook/);assert.equal(counts.release,1);
 });

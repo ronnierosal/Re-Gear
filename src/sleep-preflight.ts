@@ -151,6 +151,7 @@ export class SleepPreflightCoordinator {
   private admission: "supported-runtime" | "observation-only" | null = null;
   private blockerUncertain = false;
   private cleanupUncertain = false;
+  private observerUncertain = false;
 
   constructor(
     adapter: SteamSuspendAdapter | null,
@@ -180,6 +181,7 @@ export class SleepPreflightCoordinator {
         });
         if (this.stopped || this.isRetired()) this.releaseObserver();
       } catch (error) {
+        this.observerUncertain = true;
         this.lifecycleError = `Sleep is blocked, but the attempted-action warning is unavailable: ${messageFrom(error)}`;
       }
     }
@@ -258,12 +260,12 @@ export class SleepPreflightCoordinator {
         : "verified_absent"
       : this.observation.kind;
 
-    if (this.isRetired() && !this.acquireFailed && !this.cleanupUncertain) {
+    if (this.isRetired() && !this.acquireFailed && !this.cleanupUncertain && !this.observerUncertain) {
       return { state: "retired", blocking: false, attemptWarningAvailable: false,
         blockedAttemptCount: this.blockedAttemptCount, reason, error: "" };
     }
 
-    if (!this.adapter || this.acquireFailed || this.cleanupUncertain) {
+    if (!this.adapter || this.acquireFailed || this.cleanupUncertain || ((this.stopped || this.isRetired()) && this.observerUncertain)) {
       return {
         state: "unavailable",
         blocking: this.blockerUncertain ? null : this.blockerRelease !== null,
