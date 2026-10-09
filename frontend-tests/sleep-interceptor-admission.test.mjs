@@ -24,7 +24,9 @@ function setup(options = {}) {
 test('190 Mini regression: explicit fresh observation-only retires startup protection permanently', () => {
   const {coordinator:c,counts,request}=setup();
   assert.equal(c.status().blocking,true);
-  const status=c.admitSnapshot(snapshot(),now,10000);
+  const status=typeof c.admitSnapshot === 'function'
+    ? c.admitSnapshot(snapshot(),now,10000)
+    : c.reconcile({...absent,guardConfidence:'unknown'});
   assert.equal(status.state,'retired'); assert.equal(status.reason,'observation_only'); assert.equal(status.blocking,false);
   c.reconcile({kind:'unavailable'}); c.start(); c.admitSnapshot(snapshot('supported-runtime'),now,10000); request(); c.stop(); c.stop();
   assert.deepEqual(counts,{acquire:1,release:1,patch:1,unpatch:1,warn:0,retire:1});
