@@ -1,3 +1,5 @@
+import { createUsb4WaitingRuntime, showUsb4WaitingNotice, Usb4WaitingStatus } from "./usb4-waiting-runtime";
+import type { Usb4WaitingReceipt } from "./usb4-waiting-model";
 import { registerRuntimeHost,type RuntimeOwner } from "./quick-access/expanded-command-center/runtime-host";
 import { createRuntimeDetailPublisher } from "./quick-access/expanded-command-center/runtime-detail-source";
 import { createRuntimeDetailRenderer } from "./quick-access/expanded-command-center/runtime-detail-renderer";
@@ -57,7 +59,7 @@ import {
   acknowledgeSleepJournal,
   confirmDeviceAuthorization,
   declineDeviceAuthorization,
-  getSnapshot,
+  getSnapshot as getSnapshotRPC,
   getPeripheralStatus,
   getActionHistory,
   getAutomaticDockStatus,
@@ -585,7 +587,101 @@ function preflightObservation(payload: SnapshotPayload): PreflightObservation {
   }, Date.now(), SNAPSHOT_STALE_AFTER_MS);
 }
 
-function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAvailable, publishTiles, publishDetails, menuVisibility, publishMenuSnapshot, runtimeDetails, runtimeOwner, openDisconnect }: { preflight: SleepPreflightCoordinator; connection: ReturnType<typeof startConnectionMonitor>; shortcut: ReturnType<typeof createDisplayShortcutRuntime>; openExpanded(): void; menuShortcutAvailable: boolean; publishTiles(readings: Readings): void; publishDetails(state: NonEgpuDetailState | null): void; menuVisibility: MenuVisibility; publishMenuSnapshot(snapshot: SnapshotPayload["snapshot"] | null): void; runtimeDetails:ReturnType<typeof createRuntimeDetailPublisher>; runtimeOwner:RuntimeOwner; openDisconnect():void }) {
+function createUsb4WaitingSnapshotReader({ owner, runtime, read, now, setTimeout, clearTimeout }: {
+  owner: RuntimeOwner;
+  runtime: {observe(receipt: Usb4WaitingReceipt): void; withdraw(): void};
+  read(): Promise<SnapshotPayload>; now(): number;
+  setTimeout(callback: () => void, delay: number): number; clearTimeout(timer: number): void;
+}) {
+  // Suppression is monotonic for this plugin instance, independent of remounts
+  // and of the sleep coordinator's separate private admission latch.
+  let supportedUsb4NoticeLifetime = false;
+  let sequence = 0;
+  let stopped = false;
+  let expiry: number | null = null;
+  const own = (value: unknown, key: string): unknown => {
+    if (value === null || typeof value !== "object") return undefined;
+    const prototype = Object.getPrototypeOf(value);
+    if (prototype !== Object.prototype && prototype !== null) return undefined;
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    return descriptor && "value" in descriptor ? descriptor.value : undefined;
+  };
+  const withdraw = () => {
+    const timer = expiry;
+    expiry = null;
+    try { if (timer !== null) clearTimeout(timer); } catch { /* Continue withdrawing the surface. */ }
+    try { runtime.withdraw(); } catch { /* Native closure remains unverified; preserve the snapshot RPC. */ }
+  };
+  const readSnapshot = async () => {
+    const requestStartedAtMs = now();
+    const generation = owner.generation;
+    const requestSequence = ++sequence;
+    let responseReceived = false;
+    let response!: SnapshotPayload;
+    try {
+      const payload = await read();
+      response = payload;
+      responseReceived = true;
+      const receivedAtMs = now();
+      const currentOwner = !stopped && !owner.stopped && owner.active && owner.generation === generation;
+      if (!currentOwner) {
+        if (requestSequence === sequence) withdraw();
+        return payload;
+      }
+      const snapshot = own(payload, "snapshot");
+      const stamp = own(snapshot, "observed_at");
+      const observedAt = typeof stamp === "string" && stamp.includes("T") ? Date.parse(stamp) : NaN;
+      const admission = own(payload, "runtime_admission");
+      const fresh = own(snapshot, "schema_version") === 3 && Number.isFinite(observedAt)
+        && receivedAtMs >= requestStartedAtMs && receivedAtMs - requestStartedAtMs < 10000
+        && receivedAtMs >= observedAt && receivedAtMs - observedAt < 10000;
+      const provenance = own(admission, "sleep_interceptor_admission");
+      const admitted = own(admission, "schema_version") === 1;
+      // Even an older fresh supported reply can only suppress presentation.
+      if (fresh && admitted && provenance === "supported-runtime") {
+        supportedUsb4NoticeLifetime = true;
+        withdraw();
+      }
+      if (requestSequence !== sequence) return payload;
+      if (!fresh || !admitted || supportedUsb4NoticeLifetime || provenance !== "observation-only"
+          || own(admission, "mode") !== "observation-only" || own(admission, "mutation_allowed") !== false) {
+        withdraw();
+        return payload;
+      }
+      const wire = own(payload, "usb4_waiting");
+      const state = own(wire, "state");
+      const key = own(wire, "notice_key");
+      const wireValid = own(wire, "schema_version") === 1 && wire !== null && typeof wire === "object"
+        && Reflect.ownKeys(wire).length === 3 && ["none", "unauthorized", "authorized", "unknown", "ambiguous"].includes(state as string)
+        && (state === "unauthorized" ? typeof key === "string" && /^uw-[0-9a-f]{32}$/.test(key) : key === null);
+      if (!wireValid) { withdraw(); return payload; }
+      if (expiry !== null) clearTimeout(expiry);
+      const expiresAtMs = Math.min(requestStartedAtMs + 10000, observedAt + 10000);
+      runtime.observe(Object.freeze({payload, requestStartedAtMs, receivedAtMs, expiresAtMs, generation,
+        supportedLifetime: supportedUsb4NoticeLifetime}));
+      // The native host can dispose the plugin synchronously while showing.
+      if (stopped || owner.stopped || !owner.active || owner.generation !== generation) {
+        withdraw();
+        return payload;
+      }
+      expiry = setTimeout(() => {
+        expiry = null;
+        withdraw();
+      }, Math.max(0, expiresAtMs - now()));
+      return payload;
+    } catch (error) {
+      if (requestSequence === sequence) withdraw();
+      // This presentation lane must not interfere with existing snapshot
+      // consumers (including the separate sleep admission coordinator).
+      if (responseReceived) return response;
+      throw error;
+    }
+  };
+  return {read: readSnapshot, withdraw, stop() {stopped = true; ++sequence; withdraw();}};
+}
+
+function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAvailable, publishTiles, publishDetails, menuVisibility, publishMenuSnapshot, runtimeDetails, runtimeOwner, openDisconnect, snapshotReader, withdrawUsb4Waiting, usb4WaitingSource }: { preflight: SleepPreflightCoordinator; connection: ReturnType<typeof startConnectionMonitor>; shortcut: ReturnType<typeof createDisplayShortcutRuntime>; openExpanded(): void; menuShortcutAvailable: boolean; publishTiles(readings: Readings): void; publishDetails(state: NonEgpuDetailState | null): void; menuVisibility: MenuVisibility; publishMenuSnapshot(snapshot: SnapshotPayload["snapshot"] | null): void; runtimeDetails:ReturnType<typeof createRuntimeDetailPublisher>; runtimeOwner:RuntimeOwner; openDisconnect():void; snapshotReader?:typeof getSnapshotRPC; withdrawUsb4Waiting?():void; usb4WaitingSource?:ReturnType<typeof createUsb4WaitingRuntime>["source"] }) {
+  const getSnapshot = snapshotReader ?? getSnapshotRPC;
   const expandedVisible = useSyncExternalStore(menuVisibility.subscribe, menuVisibility.read, menuVisibility.read);
   const quickAccessVisible = expandedVisible;
   const runtimeSelection=useSyncExternalStore(runtimeDetails.source.subscribeSelection,runtimeDetails.source.readSelection,runtimeDetails.source.readSelection);
@@ -595,8 +691,11 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
   const controllerOwner = useRef(runtimeOwner);
   controllerVisible.current = quickAccessVisible || expandedVisible;
   useEffect(() => {
-    if (!quickAccessVisible && !expandedVisible) controllerLifetime.setEligible(false);
-  }, [quickAccessVisible, expandedVisible, controllerLifetime]);
+    if (!quickAccessVisible && !expandedVisible) {
+      controllerLifetime.setEligible(false);
+      withdrawUsb4Waiting?.();
+    }
+  }, [quickAccessVisible, expandedVisible, controllerLifetime, withdrawUsb4Waiting]);
   useEffect(() => {
     const owner = controllerOwner.current;
     if(owner.stopped)return;
@@ -610,6 +709,7 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
       if (owner.generation !== generation) return;
       owner.active = false;
       owner.generation++;
+      withdrawUsb4Waiting?.();
     };
   }, [controllerLifetime]);
   const statusAnchor = useRef<HTMLDivElement | null>(null);
@@ -1805,7 +1905,7 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
 
 
   const wrapDetail=(node:ReactNode)=><div ref={statusAnchor} tabIndex={-1}><style>{regearControlCss}</style>{node}</div>;
-  const productionEgpuDetail=<PanelSection title="eGPU status"><EgpuModule presentation={{...egpuPresentation(menuFresh ? payload : null),recovery:{reachable:true,note:null}}}/><TransitionAcknowledgementControl/></PanelSection>;
+  const productionEgpuDetail=<PanelSection title="eGPU status"><EgpuModule presentation={{...egpuPresentation(menuFresh ? payload : null),recovery:{reachable:true,note:null}}}/><TransitionAcknowledgementControl/>{usb4WaitingSource && <Usb4WaitingStatus source={usb4WaitingSource}/>}</PanelSection>;
   const egpuDetail=<>
       <PanelSection title="eGPU"><EgpuModule presentation={egpuPresentation(payload)} onOpenRecovery={toggleTroubleshooting} /></PanelSection>
       {payload?.connection_readiness && payload.connection_readiness.stage !== "disconnected" &&
@@ -2191,7 +2291,7 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
   const displayDetail=<DisplayPicker current={tiles.find(tile=>tile.id==="display")?.value.text??"Unknown"} action={primaryDisplayAction} onSwitch={activateDisplay} onConfigure={()=>runtimeDetails.source.navigate("egpu-config")}/>;
   useEffect(()=>{
     runtimeDetails.publish({
-      views:buildProfile === "production" ? {egpu:wrapDetail(productionEgpuDetail),"egpu-config":null,diagnostics:null,display:null} : {egpu:wrapDetail(<><PanelSection title="eGPU status"><EgpuModule presentation={egpuPresentation(payload)}/><TransitionAcknowledgementControl/></PanelSection><ButtonItem layout="below" onClick={()=>runtimeDetails.source.navigate("egpu-config")}>Configure docking</ButtonItem></>),"egpu-config":wrapDetail(egpuDetail),diagnostics:wrapDetail(diagnosticDetail),display:wrapDetail(displayDetail)},
+      views:buildProfile === "production" ? {egpu:wrapDetail(productionEgpuDetail),"egpu-config":null,diagnostics:null,display:null} : {egpu:wrapDetail(<><PanelSection title="eGPU status"><EgpuModule presentation={egpuPresentation(payload)}/><TransitionAcknowledgementControl/>{usb4WaitingSource && <Usb4WaitingStatus source={usb4WaitingSource}/>}</PanelSection><ButtonItem layout="below" onClick={()=>runtimeDetails.source.navigate("egpu-config")}>Configure docking</ButtonItem></>),"egpu-config":wrapDetail(egpuDetail),diagnostics:wrapDetail(diagnosticDetail),display:wrapDetail(displayDetail)},
       shutdown:{available:buildProfile === "development"&&menuFresh&&payload?.inference.mode==="portable"&&!safeDisconnectBusy&&!tvSwitchBusy,
         reason:!menuFresh?"Current status unavailable":payload?.inference.mode!=="portable"?"Return to Handheld first":safeDisconnectBusy||tvSwitchBusy?"Operation in progress":"Portable shutdown",
         pending:safeDisconnectBusy,message:safeDisconnectMessage,
@@ -2244,6 +2344,13 @@ export default definePlugin(() => {
   const runtimeDetails=createRuntimeDetailPublisher();
   const renderRuntimeDetail=createRuntimeDetailRenderer(runtimeDetails.source);
   const runtimeOwner:RuntimeOwner={active:false,generation:0,stopped:false};
+  const usb4Waiting = createUsb4WaitingRuntime({show:showUsb4WaitingNotice});
+  const usb4SnapshotReader = createUsb4WaitingSnapshotReader({
+    owner:runtimeOwner, runtime:usb4Waiting, read:getSnapshotRPC, now:()=>Date.now(),
+    setTimeout:(callback,delay)=>window.setTimeout(callback,delay),
+    clearTimeout:timer=>window.clearTimeout(timer),
+  });
+  const getSnapshot = usb4SnapshotReader.read;
   const renderDetail:ReturnType<typeof createNonEgpuDetailRenderer>=(tab,tile)=>tab==="settings"&&tile.id==="about"?<ReGearAbout/>:tab==="settings"&&tile.id==="help-guides"?<ReGearHelp/>:renderRuntimeDetail(tab,tile)??renderNonEgpuDetail(tab,tile);
   let menuSnapshot: SnapshotPayload["snapshot"] | null = null;
   const publishMenuSnapshot = (snapshot: SnapshotPayload["snapshot"] | null) => { if(!runtimeOwner.stopped)menuSnapshot = snapshot; };
@@ -2377,12 +2484,14 @@ export default definePlugin(() => {
 
   const publishRuntimeTiles=(readings:Readings)=>{if(!runtimeOwner.stopped)tilePublisher.publish(readings);};
   const publishRuntimeDetails=(state:NonEgpuDetailState|null)=>{if(!runtimeOwner.stopped)detailPublisher.publish(state);};
-  const Runtime=()=> <Content preflight={preflight} connection={connection} shortcut={shortcut} openExpanded={expandedMenu.open} openDisconnect={expandedMenu.disconnect} menuShortcutAvailable={expandedMenu.available} publishTiles={publishRuntimeTiles} publishDetails={publishRuntimeDetails} menuVisibility={expandedMenu.visibility} publishMenuSnapshot={publishMenuSnapshot} runtimeDetails={runtimeDetails} runtimeOwner={runtimeOwner}/>;
+  const Runtime=()=> <Content preflight={preflight} connection={connection} shortcut={shortcut} openExpanded={expandedMenu.open} openDisconnect={expandedMenu.disconnect} menuShortcutAvailable={expandedMenu.available} publishTiles={publishRuntimeTiles} publishDetails={publishRuntimeDetails} menuVisibility={expandedMenu.visibility} publishMenuSnapshot={publishMenuSnapshot} runtimeDetails={runtimeDetails} runtimeOwner={runtimeOwner} snapshotReader={usb4SnapshotReader.read} withdrawUsb4Waiting={usb4SnapshotReader.withdraw} usb4WaitingSource={usb4Waiting.source}/>;
   let stopRuntime:(()=>void)|undefined;
   let disposed=false;
   const dispose=()=>{
     if(disposed)return;disposed=true;
     runtimeOwner.stopped=true;runtimeOwner.active=false;runtimeOwner.generation++;
+    try {usb4SnapshotReader.stop();} catch {/* Continue independent native cleanup. */}
+    try {usb4Waiting.stop();} catch {/* Continue independent native cleanup. */}
     // Native cleanup must not depend on modal/router disposal succeeding.
     preflight.stop();
     try{stopRuntime?.();}catch{/* Continue retiring this instance if Decky's removal fails. */}

@@ -79,7 +79,7 @@ function contentHarness() {
   visit(content);
   assert.ok(refreshNode && lifecycleNode);
   const h = setup(); h.store.stop();
-  const pending = new Map(); let rpc = 0, published = 0;
+  const pending = new Map(); let rpc = 0, published = 0, withdrawals = 0;
   function pause(stage) {
     let release, enter;
     const wait = new Promise(resolve => { release = resolve; });
@@ -99,6 +99,7 @@ function contentHarness() {
     controllerVisible: {current: true}, controllerLifetime: h.store,
     refreshInFlight: {current: null}, quickAccessVisible: false, expandedVisible: true,
     diagnosticsOnScreen: {current: false},
+    withdrawUsb4Waiting: () => { withdrawals++; },
     getSnapshot: async () => { await at('snapshot'); return {
       runtime_admission: {schema_version: 1, sleep_interceptor_admission: admission},
       snapshot: {schema_version: 3, observed_at: new Date().toISOString(), game_state: 'idle'}, journey: {}}; },
@@ -120,13 +121,15 @@ function contentHarness() {
     return new Function(...Object.keys(env), `${js}; return extracted;`)(...Object.values(env));
   }
   return {...h, pause, refresh: execute(refreshNode), mount: execute(lifecycleNode), preflight,
-    setAdmission:value=>{admission=value;}, rpc: () => rpc, published: () => published};
+    setAdmission:value=>{admission=value;}, rpc: () => rpc, published: () => published,
+    withdrawals: () => withdrawals};
 }
 
 test('Content cleanup rejects obsolete observation-only admission while the plugin coordinator survives',async()=>{
   const h=contentHarness();const cleanup=h.mount();h.setAdmission('observation-only');
   const gate=h.pause('snapshot');const pending=h.refresh();await gate.entered;
   cleanup();gate.release();await pending;
+  assert.equal(h.withdrawals(),1);
   assert.equal(h.preflight.isRetired(),false);assert.equal(h.preflight.status().blocking,true);
   assert.equal(h.rpc(),0);assert.equal(h.published(),0);h.preflight.stop();
 });
@@ -135,6 +138,7 @@ for (const stage of ['snapshot', 'automatic', 'journal', 'peripheral']) {
   test(`Content cleanup rejects pending ${stage} continuation with retained visibility`, async () => {
     const h = contentHarness(); const cleanup = h.mount(); const gate = h.pause(stage);
     const result = h.refresh(); await gate.entered; cleanup(); gate.release(); await result;
+    assert.equal(h.withdrawals(),1);
     assert.equal(h.rpc(), stage === 'peripheral' ? 1 : 0);
     assert.equal(h.store.source.read(), null); assert.equal(h.timers.size, 0); assert.equal(h.published(), 0);
   });
@@ -143,6 +147,7 @@ for (const stage of ['snapshot', 'automatic', 'journal', 'peripheral']) {
 test('Content replacement admits new generation while old refresh is stalled and preserves serialization', async () => {
   const h = contentHarness(); const oldCleanup = h.mount(); const oldGate = h.pause('snapshot');
   const oldRequest = h.refresh(); await oldGate.entered; oldCleanup();
+  assert.equal(h.withdrawals(),1);
   const cleanup = h.mount(); const currentGate = h.pause('peripheral');
   const currentRequest = h.refresh(); await currentGate.entered;
   oldGate.release(); await oldRequest;
@@ -151,5 +156,7 @@ test('Content replacement admits new generation while old refresh is stalled and
   currentGate.release(); await currentRequest;
   assert.equal(h.store.source.read(), reading); assert.equal(h.timers.size, 1); assert.equal(h.published(), 1);
   oldCleanup(); assert.equal(h.store.source.read(), reading);
+  assert.equal(h.withdrawals(),1,'obsolete cleanup must not withdraw the new generation');
   cleanup(); assert.equal(h.store.source.read(), null); assert.equal(h.timers.size, 0);
+  assert.equal(h.withdrawals(),2);
 });

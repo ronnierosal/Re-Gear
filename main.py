@@ -1021,7 +1021,11 @@ class Plugin:
         )
 
     async def get_snapshot(self, _request: object = None) -> dict[str, object]:
-        """Return the existing privacy-safe, read-only diagnostics payload."""
+        """Direct RPC; its admission wrapper adds passive USB4 presentation."""
+        return await self._get_snapshot_payload()
+
+    async def _get_snapshot_payload(self) -> dict[str, object]:
+        """Existing diagnostics composition, without the direct-RPC projection."""
         report = await asyncio.to_thread(self._api.get_snapshot_report)
         payload = report_to_public_dict(report)
         payload["diagnostics"]["build"] = self._build_info
@@ -4867,7 +4871,7 @@ class Plugin:
 
     async def preview_support_bundle(self, _request: object = None) -> dict[str, object]:
         """Return a redacted preview and one-time approval token."""
-        report = await self.get_snapshot()
+        report = await self._get_snapshot_payload()
         peripheral_status = None
         try:
             peripheral = await asyncio.to_thread(self._peripherals.observe)
@@ -5673,7 +5677,7 @@ class Plugin:
             )
         try:
             await self._reconcile_sleep_guard()
-            payload = await self.get_snapshot()
+            payload = await self._get_snapshot_payload()
             snapshot = payload["snapshot"]
             inference = payload["inference"]
             blocker_codes = [item["code"] for item in snapshot["blockers"]]
@@ -6345,7 +6349,7 @@ class Plugin:
 
     def _support_versions(self) -> dict[str, str]:
         return {
-            "regear": "0.3.194",
+            "regear": "0.3.195",
             "decky": str(getattr(decky, "DECKY_VERSION", "unknown")),
             "steamos": self._version_info.steamos,
             "kernel": self._version_info.kernel,
@@ -6745,12 +6749,34 @@ class Plugin:
 from regear.delivery.build_profile_config import BUILD_PROFILE  # noqa: E402
 from regear.delivery.build_profile_policy import profiled_plugin  # noqa: E402
 from regear.delivery.observation_admission import observation_plugin  # noqa: E402
+from regear.delivery.usb4_waiting_observation import Usb4WaitingObservation  # noqa: E402
+
+
+async def _enrich_usb4_waiting_snapshot(plugin, payload):
+    """Lazy passive projection reached exclusively through a direct snapshot RPC.
+
+    Per-runtime state is volatile presentation binding, never authorization or
+    retained lifecycle state. No observer is constructed during startup.
+    """
+    try:
+        state = object.__getattribute__(plugin, "__dict__")
+        observer = state.get("_usb4_waiting_observation")
+        if observer is None:
+            observer = Usb4WaitingObservation()
+            state["_usb4_waiting_observation"] = observer
+        return await observer.enrich_snapshot(payload)
+    except Exception:
+        return {**payload, "usb4_waiting": {
+            "schema_version": 1, "state": "unknown", "notice_key": None,
+        }}
+
 
 Plugin = observation_plugin(
     Plugin,
     passive_api=lambda: DiagnosticsApi(SteamOsDiscovery()),
     build_info=lambda: load_public_build_info(PLUGIN_ROOT),
     render_snapshot=report_to_public_dict,
+    enrich_snapshot=_enrich_usb4_waiting_snapshot,
 )
 
 Plugin = profiled_plugin(Plugin, BUILD_PROFILE)

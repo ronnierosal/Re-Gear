@@ -48,6 +48,28 @@ class InterceptorProvenanceTests(unittest.IsolatedAsyncioTestCase):
                     if initial is mini:
                         self.assertNotIn("composed", plugin.__dict__)
 
+    async def test_optional_passive_enrichment_runs_on_both_dispatch_paths(self):
+        ally = HostRecord("ASUSTeK COMPUTER INC.", "ROG Ally X RC72LA", "RC72LA")
+        mini = HostRecord("GPD", "G1617-01", "unknown")
+        class Producer:
+            def __init__(self):
+                self._api = NS(get_snapshot_report=lambda: None)
+                self._build_info = {}
+            async def get_snapshot(self):
+                return {"snapshot": {"schema_version": 3}, "normal_producer": True}
+        def payload(_):
+            return {"diagnostics": {}, "snapshot": {"sleep_guard": {}, "disconnect_readiness": {"ready": True}}}
+        for host in (ally, mini):
+            enrich = AsyncMock(side_effect=lambda plugin, result: {**result, "usb4_waiting": {"state": "unknown"}})
+            guarded = observation_plugin(Producer, passive_api=lambda: NS(get_snapshot_report=lambda: None),
+                build_info=lambda: {}, render_snapshot=payload, enrich_snapshot=enrich)
+            with patch("regear.adapters.steamos.host.HostDiscovery.scan", return_value=host):
+                instance = guarded()
+                result = await instance.get_snapshot()
+            enrich.assert_awaited_once()
+            self.assertEqual({"state": "unknown"}, result["usb4_waiting"])
+            self.assertEqual(host is ally, result.get("normal_producer", False))
+
     async def test_missing_or_nonliteral_constructor_provenance_never_grants_retirement(self):
         from regear.delivery.observation_admission import interceptor_admission
         for value in (None, 0, 1, "true", "false"):
@@ -296,3 +318,68 @@ class ObservationAdmissionTests(unittest.IsolatedAsyncioTestCase):
                 schedule.assert_not_called()
                 catalog_runner.assert_not_called()
                 catalog_reader.assert_not_called()
+
+    async def test_usb4_projection_is_lazy_per_plugin_and_snapshot_only(self):
+        import json
+        from dataclasses import replace
+        from pathlib import Path
+        from regear.application.snapshot import SnapshotReport
+        from regear.domain.inference import infer_operating_mode
+        from regear.domain.serialization import snapshot_from_dict
+        snapshot = snapshot_from_dict(json.loads((Path(__file__).parent / "fixtures" / "portable.json").read_text()))
+        snapshot = replace(snapshot, host_profile="unknown")
+        wire = {"schema_version": 1, "state": "unauthorized", "notice_key": "uw-" + "a" * 32}
+        for profile in ("development", "production"):
+            with self.subTest(profile=profile), patch("regear.adapters.steamos.host.HostDiscovery.scan",
+                    return_value=HostRecord("GPD", "G1617-01", "unknown")):
+                module, plugin = self.plugin(profile)
+                plugin._observation_started = True
+                plugin._api = NS(get_snapshot_report=Mock(return_value=SnapshotReport(snapshot, infer_operating_mode(snapshot))))
+                plugin._build_info = {}
+                projector = NS(enrich_snapshot=AsyncMock(side_effect=lambda payload: {**payload, "usb4_waiting": wire}))
+                with patch.object(module, "Usb4WaitingObservation", return_value=projector, create=True) as factory, \
+                     patch.object(module, "RootOwnedRuntimeState") as root, \
+                     patch.object(module.asyncio, "create_task") as schedule, \
+                     patch.object(module, "BoltDeviceAuthorizationRunner") as authorize, \
+                     patch.object(module, "SystemPowerCommandRunner") as power:
+                    await plugin._main()
+                    await plugin.confirm_device_authorization("a" * 32, True, "authorize")
+                    factory.assert_not_called()
+                    first = await plugin.get_snapshot()
+                    second = await plugin.get_snapshot()
+                    self.assertEqual(wire, first.get("usb4_waiting"))
+                    self.assertEqual(wire, second.get("usb4_waiting"))
+                    self.assertEqual("observation-only", first["runtime_admission"]["sleep_interceptor_admission"])
+                    factory.assert_called_once_with()
+                    self.assertEqual(2, projector.enrich_snapshot.await_count)
+                    root.assert_not_called()
+                    schedule.assert_not_called()
+                    authorize.assert_not_called()
+                    power.assert_not_called()
+
+    async def test_supported_startup_never_constructs_direct_rpc_projection(self):
+        async def snapshot(self, *args, **kwargs):
+            return {"snapshot": {"blockers": [], "game_state": "idle", "support_tier": "certified"},
+                    "inference": {"mode": "portable"}}
+        ally = HostRecord("ASUSTeK COMPUTER INC.", "ROG Ally X RC72LA", "RC72LA")
+        for profile in ("development", "production"):
+            module, plugin = self.plugin(profile)
+            plugin._observation_started = False
+            plugin._observation_only = False
+            plugin._build_info = {}
+            plugin._events = Mock()
+            plugin._process_service = Mock(return_value=NS(recover_interrupted=lambda: NS(action_required=False)))
+            plugin._reconcile_sleep_guard = AsyncMock()
+            # Exercise the actual wrapped startup; stub only its unchanged
+            # diagnostics producer, then stop before existing background loops.
+            base = module.Plugin.__mro__[1]
+            seam = "_get_snapshot_payload" if hasattr(base, "_get_snapshot_payload") else "get_snapshot"
+            observer = NS(enrich_snapshot=AsyncMock(side_effect=lambda payload: payload))
+            with self.subTest(profile=profile), patch("regear.adapters.steamos.host.HostDiscovery.scan", return_value=ally), \
+                 patch.object(base, seam, snapshot), \
+                 patch.object(module, "Usb4WaitingObservation", return_value=observer) as factory, \
+                 patch.object(module, "LinuxTopologyWakeup", side_effect=RuntimeError("bounded startup stop")):
+                with self.assertRaisesRegex(RuntimeError, "bounded startup stop"):
+                    await plugin._main()
+                factory.assert_not_called()
+                observer.enrich_snapshot.assert_not_awaited()
