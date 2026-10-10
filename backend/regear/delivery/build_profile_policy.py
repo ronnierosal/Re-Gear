@@ -18,10 +18,11 @@ CONNECTION_AND_DISCONNECT_RPCS = frozenset({
     "get_snapshot",
     "get_automatic_dock_status",
     "get_link_recovery_status",
-    "get_egpu_disconnect_status", "execute_egpu_disconnect",
+    "get_egpu_disconnect_status", "execute_egpu_disconnect", "cancel_egpu_shutdown",
     "preview_presentation_preparation",
     "preview_supervised_tv_switch",
     "get_supervised_tv_switch_status",
+    "acknowledge_supervised_tv_switch",
     "get_sleep_readiness", "get_transition_journal_status", "acknowledge_sleep_journal",
     "get_process_release_status", "acknowledge_process_release",
 })
@@ -53,6 +54,9 @@ def rpc_allowed(profile: str, method: str, arguments: dict[str, Any]) -> bool:
         return False
     if method not in CONNECTION_AND_DISCONNECT_RPCS | DEVICE_AUTHORIZATION_RPCS | READ_RPCS:
         return False
+    if method == "acknowledge_supervised_tv_switch":
+        identity = arguments.get("acknowledgement_id")
+        return isinstance(identity, str) and re.fullmatch(r"[A-Za-z0-9_-]{8,64}", identity) is not None
     if method == "execute_egpu_disconnect":
         action = arguments.get("trial_action", "")
         return (

@@ -299,6 +299,9 @@ def main() -> int:
             # approval of its own. Neither is clearance to unplug.
             "get_egpu_disconnect_status",
             "execute_egpu_disconnect",
+            # Explicit exact-request cancellation while waiting for unplug;
+            # cannot cancel/erase an attempted shutdown or grant unplug authority.
+            "cancel_egpu_shutdown",
             # First-time USB4 trust: one read-only offer and an explicit
             # attachment-scoped response. Production admits only the explicit
             # one-shot authorize and remembered-enrolment choices.

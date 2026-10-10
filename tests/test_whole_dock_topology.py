@@ -11,6 +11,20 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 from regear.adapters.steamos import whole_dock_topology as m
 
 
+class RemainingPciEvidenceTests(unittest.TestCase):
+    def test_only_categories_are_retained_and_unreadable_is_not_absence(self):
+        paths = [Path('private-a'), Path('private-b'), Path('private-c')]
+        with patch.object(m, '_read', side_effect=['0x060400', '0x030000', OSError('secret')]):
+            error = m._remaining_pci_refusal(paths)
+        self.assertEqual(error.args, ('dock_topology.pci_branch_remains',))
+        self.assertEqual(error.remaining_pci, {'bridges': 1, 'endpoints': 1, 'unreadable': 1})
+
+    def test_invalid_class_is_unknown_not_a_verified_bridge(self):
+        with patch.object(m, '_read', return_value='not-a-class'):
+            error = m._remaining_pci_refusal([Path('private')])
+        self.assertEqual(error.remaining_pci, {'bridges': 0, 'endpoints': 0, 'unreadable': 1})
+
+
 @unittest.skipUnless(sys.platform == "linux", "Linux sysfs symlink fixtures")
 class TopologyTests(unittest.TestCase):
     def setUp(self):

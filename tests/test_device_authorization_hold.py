@@ -32,11 +32,11 @@ class BoltPolicyCommandTests(unittest.TestCase):
     def test_policy_argv_is_fixed_and_policy_is_allowlisted(self):
         self.assertEqual(
             self.runner.policy_argv(UUID),
-            ("/usr/bin/boltctl", "config", UUID, "device.policy"),
+            ("/usr/bin/boltctl", "config", "device.policy", UUID),
         )
         self.assertEqual(
             self.runner.set_policy_argv(UUID, "manual"),
-            ("/usr/bin/boltctl", "config", UUID, "device.policy", "manual"),
+            ("/usr/bin/boltctl", "config", "device.policy", UUID, "manual"),
         )
         for value in ("default", "auto; authorize", "", None):
             with self.assertRaises(ValueError):

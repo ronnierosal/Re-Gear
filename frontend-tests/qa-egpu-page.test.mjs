@@ -88,6 +88,31 @@ test("an inapplicable link reads unknown rather than down", () => {
   assert.equal(p.connection.known, false);
 });
 
+test("fresh Portable payload retains positive internal rendering and nonapplicable link", () => {
+  const portable = JSON.parse(readFileSync(new URL("../tests/fixtures/portable.json", import.meta.url), "utf8"));
+  portable.observed_at = new Date().toISOString();
+  portable.egpu_link = { applicable: false, state: "unknown", confidence: "unknown", reason: "", error: "" };
+  const input = { ...base(), snapshot: portable, inference: { mode: "portable", reasons: [] },
+    connection_readiness: readiness("disconnected"), whole_dock_lifecycle: { state: "unknown" } };
+  const p = egpuPresentation(input);
+  assert.deepEqual(p.renderGpu, { text: "Internal GPU", known: true, verified: true });
+  assert.equal(p.connection.text, "Not applicable");
+  assert.equal(p.connection.known, true);
+  assert.equal(p.connection.verified, false);
+  assert.equal(p.recovery.note, null);
+  assert.equal(p.lifecycle.known, false, "unresolved teardown remains independently Unknown");
+  assert.equal(p.disconnect.safeClaim, false);
+  portable.egpu_link.error = "egpu.link_bridge_identity_invalid";
+  assert.equal(egpuPresentation(input).connection.known, false);
+  portable.gpus[0].selected_for_render = null;
+  assert.equal(egpuPresentation(input).renderGpu.known, false);
+});
+
+test("ambiguous positive render selections remain unknown", () => {
+  const p = egpuPresentation(withSnapshot({ gpus: [gpu(), gpu({ role: "internal" })] }));
+  assert.equal(p.renderGpu.known, false);
+});
+
 test("confidence is carried, so observed is not presented as verified", () => {
   const p = egpuPresentation(withSnapshot({ egpu_link: link({ confidence: "observed" }) }));
   assert.equal(p.connection.known, true);

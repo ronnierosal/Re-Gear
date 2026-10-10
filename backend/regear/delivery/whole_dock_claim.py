@@ -278,15 +278,18 @@ class WholeDockClaimStore(AudioJournalFilesystem):
                                      'operator-physical-reset-')
 
     def retire_physically_disconnected(self, expected, guard):
-        """Archive completed software-down history after strict observed absence.
+        """Archive exact history after strict absence without inventing success.
 
-        Caller holds admission. The guard observes the host still present and
-        external transport absent, with no remaining removal or power work.
-        This records attachment absence, not enclosure power loss or unplug safety.
+        Caller holds admission and repeatedly proves transport absence, an idle
+        internal session, and no remaining removal or power work. The original
+        interrupted stage is retained in its audit; absence grants no clearance.
         """
-        if type(expected) is not WholeDockClaim or expected.stage != 'software_down':
+        if (type(expected) is not WholeDockClaim
+                or expected.stage not in ('software_down', 'tunnel_remove_intent')):
             raise ValueError('whole-dock absence stage refused')
-        return self._retire_observed(expected, guard, guard, 'completed-absent-dock-')
+        prefix = ('completed-absent-dock-' if expected.stage == 'software_down'
+                  else 'interrupted-absent-dock-')
+        return self._retire_observed(expected, guard, guard, prefix)
 
     def power_intent_absent(self, expected):
         """Check this claim's parent intent; unrelated retained history is inert.

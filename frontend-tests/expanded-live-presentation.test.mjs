@@ -161,7 +161,10 @@ test("application detail controls receive updated tiles and preserve pending and
   assert.equal(calls,0);
   nodes(tree).find(node=>node.props?.["data-ec-control"] === "auto").props.onClick();
   tree=app.render(props);
-  assert.match(text(tree),/Status and controls.*Settings and actions.*Action: Ready/);
+  assert.match(text(tree),/Status and controls.*Action: Ready/);
+  assert.doesNotMatch(text(tree),/Settings and actions/);
+  assert.equal(nodes(tree).some(node=>node.type==='h2'),false);
+  assert.equal(nodes(tree).find(node=>node.props?.className==='rg-expanded-detail-page').props['aria-label'],'Auto TDP');
   assert.doesNotMatch(text(tree),/No operation is available from this view/);
   nodes(tree).find(node=>node.props?.children?.[0] === "Action: Ready").props.onClick();
   assert.equal(calls,1);
@@ -306,6 +309,22 @@ const frame=tree=>nodes(tree).find(node=>node.props&&'data-ec-panel' in node.pro
 const card=(tree,id)=>nodes(tree).find(node=>node.props?.['data-ec-control']===id);
 const prefsProps=storage=>({native:true,layoutStorage:storage,editButtons:{x:3,y:4},directions:{up:9,down:10,left:11,right:12}});
 function yGesture(app,tree,ms=0){frame(tree).props.onButtonDown(nativeEvent(4));app.advance(ms);frame(tree).props.onButtonUp(nativeEvent(4));}
+test('picker artwork and selected state preserve native choices, Cancel and reopen',async()=>{
+ const app=await fixture(),storage=storageFixture(),props={...prefsProps(storage),tiles:{quick:[auto('Off','Configure')],performance:[auto('Off','Configure')]}};
+ let tree=app.render(props);yGesture(app,tree);tree=app.render(props);
+ const choices=nodes(tree).filter(node=>node.props?.['data-ec-control']?.startsWith('choice:')&&node.props?.['aria-label']?.startsWith('Auto TDP,'));
+ assert.equal(choices.length,1,'canonical aliases stay deduplicated');
+ const choice=choices[0];assert.equal(choice.props['aria-pressed'],true);
+ assert.ok(nodes(choice).some(node=>node.props?.className==='rg-expanded-picker-artwork'&&node.props['aria-hidden']==='true'));
+ assert.match(choice.props['aria-label'],/Auto TDP, Performance/);
+ frame(tree).props.onCancelButton(nativeEvent(2));tree=app.render(props);
+ assert.equal(storage.writes.length,0,'Cancel remains read-only');
+ assert.equal(nodes(tree).some(node=>node.props?.['data-ec-picker']),false);
+ yGesture(app,tree);tree=app.render(props);card(tree,choice.props['data-ec-control']).props.onClick();
+ tree=app.render(props);assert.equal(storage.writes.length,1);
+ assert.equal(storage.writes[0].quick[0],'performance:auto','activation retains the canonical mapping');
+ assert.equal(nodes(tree).some(node=>node.props?.['data-ec-picker']),false);
+});
 test('Y imported card resolves live original detail and withdraws unavailable origin',async()=>{
  const app=await fixture(),storage=storageFixture(),calls=[];
  const props={...prefsProps(storage),tiles:{quick:[auto('Off','current')],performance:[{id:'display',title:'Resolution',value:'1080',detail:'observed'}]},renderDetail:(tab,tile)=>{calls.push([tab,tile.value]);return 'live detail'}};

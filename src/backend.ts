@@ -108,6 +108,18 @@ export interface HardwareProfileDiagnostics {
 
 export interface SnapshotPayload {
   delivery_schema_version: number;
+  runtime_admission?: {
+    schema_version?: 1;
+    sleep_interceptor_admission?: "observation-only" | "supported-runtime";
+    mode?: string;
+    mutation_allowed?: boolean;
+  } | null;
+  usb4_waiting?: {
+    schema_version: 1;
+    state: "none" | "unauthorized" | "authorized" | "unknown" | "ambiguous";
+    /** Volatile presentation-only nonce; never an authorization token. */
+    notice_key: string | null;
+  } | null;
   snapshot: {
     schema_version: number;
     observed_at: string;
@@ -328,7 +340,18 @@ export interface DisconnectStatusPayload {
 
 export const getSnapshot = callable<[], SnapshotPayload>("get_snapshot");
 
+export type CatalogFactPayload = "known" | "partial" | "unknown" | "unavailable";
+
+export interface ControllerCatalogPayload {
+  schema_version: 1;
+  provider: CatalogFactPayload;
+  profile_metadata: CatalogFactPayload;
+  virtual_target: CatalogFactPayload;
+  relationships: CatalogFactPayload;
+}
+
 export interface PeripheralStatusPayload {
+  catalog?: ControllerCatalogPayload;
   schema_version: number;
   controller: { complete: boolean; exact: boolean; builtin_available: boolean | null; external_connected: boolean | null; code: string };
   audio: { complete: boolean; exact: boolean; external_available: boolean | null; portable_available: boolean | null; code: string };
@@ -698,7 +721,15 @@ export const acknowledgeProcessRelease = callable<
   ProcessReleaseAcknowledgementPayload
 >("acknowledge_process_release");
 
+export type ManualTdpPresetId = "low" | "balanced" | "high";
+export interface ManualTdpPresetPayload {
+  id: ManualTdpPresetId;
+  watts: number;
+  admitted: boolean;
+}
+
 export interface TdpStatusPayload {
+  manual_presets?: readonly ManualTdpPresetPayload[] | null;
   schema_version: 1;
   enabled: boolean;
   can_enable: boolean;

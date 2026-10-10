@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import {ReadableBlock} from "../readable-block";
 
 /** Shared layout; callers own the control, persistence and its error state. */
 export function ShortcutSettings({ control, available = true, error, preview = false }: {
@@ -9,10 +10,10 @@ export function ShortcutSettings({ control, available = true, error, preview = f
     <h3>Open Re-Gear</h3>
     <p className="rg-expanded-context">Choose your menu shortcut</p>
     <div data-ec-control="binding-menu" className="rg-expanded-shortcut-control">{control}</div>
-    <p className="rg-expanded-context rg-expanded-note">{available
+    <ReadableBlock label="Using the menu shortcut"><p className="rg-expanded-context rg-expanded-note">{available
       ? "Press both buttons together. Release both before opening again."
       : "Controller input is unavailable. Open Re-Gear from Steam's Quick Access menu."}</p>
     {!preview && <p className="rg-expanded-context rg-expanded-note">Saved on this Steam client. Steam or the game may also respond to these buttons.</p>}
-    {error && <p role="alert">{error}</p>}
+    {error && <p role="alert">{error}</p>}</ReadableBlock>
   </section>;
 }

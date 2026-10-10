@@ -1,4 +1,4 @@
-import type { TdpStatusPayload } from "./backend";
+import type { TdpStatusPayload, ManualTdpPresetId, ManualTdpPresetPayload } from "./backend";
 
 const reasons: Record<string, string> = {
   "tdp.disabled": "Power control is off.",
@@ -29,6 +29,42 @@ const known = (code: unknown): code is string => typeof code === "string" && Obj
 const watts = (value: unknown): value is number => typeof value === "number" && Number.isInteger(value) && value > 0 && value <= 0xFFFFFFFF;
 const object = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value);
 
+const MANUAL_PRESETS = [
+  { id: "low", watts: 10, label: "Chill" },
+  { id: "balanced", watts: 15, label: "Balanced" },
+  { id: "high", watts: 25, label: "Performance" },
+] as const;
+
+/** Optional evidence never invalidates otherwise usable legacy Manual status. */
+export function sanitizeManualPresets(value: unknown): ManualTdpPresetPayload[] | null {
+  if (!Array.isArray(value) || value.length !== 3
+    || Reflect.ownKeys(value).some(key => !["0", "1", "2", "length"].includes(String(key)) || typeof key !== "string")) return null;
+  const result: ManualTdpPresetPayload[] = [];
+  for (let index = 0; index < MANUAL_PRESETS.length; index++) {
+    const entry = Object.getOwnPropertyDescriptor(value, String(index))?.value;
+    if (!object(entry) || (Object.getPrototypeOf(entry) !== Object.prototype && Object.getPrototypeOf(entry) !== null)
+      || Reflect.ownKeys(entry).length !== 3 || Reflect.ownKeys(entry).some(key => !["id", "watts", "admitted"].includes(String(key)) || typeof key !== "string")) return null;
+    const fields = Object.getOwnPropertyDescriptors(entry);
+    const expected = MANUAL_PRESETS[index];
+    if (fields.id?.value !== expected.id || fields.watts?.value !== expected.watts
+      || typeof fields.admitted?.value !== "boolean") return null;
+    result.push({ id: expected.id, watts: expected.watts, admitted: fields.admitted.value });
+  }
+  return result;
+}
+
+export function manualPresetOptions(status: TdpStatusPayload | null) {
+  const value = status && Object.getOwnPropertyDescriptor(status, "manual_presets")?.value;
+  const presets = sanitizeManualPresets(value);
+  return MANUAL_PRESETS.map((preset, index) => ({ ...preset,
+    admitted: presets?.[index].admitted === true && tdpControls(status).canApply
+      && status?.minimum_watts != null && status.maximum_watts != null
+      && preset.watts >= status.minimum_watts && preset.watts <= status.maximum_watts,
+  }));
+}
+
+export type ManualPresetIntent = { id: ManualTdpPresetId; status: TdpStatusPayload };
+
 export function sanitizeTdpStatus(value: unknown): TdpStatusPayload | null {
   if (!object(value) || value.schema_version !== 1 || typeof value.auto_tdp_available !== "boolean" || !known(value.code)) return null;
   for (const field of ["enabled", "can_enable", "ready", "restore_available", "recovery_required"]) if (typeof value[field] !== "boolean") return null;
@@ -40,7 +76,15 @@ export function sanitizeTdpStatus(value: unknown): TdpStatusPayload | null {
   if ((value.ready && (!value.enabled || !value.can_enable || value.code !== "tdp.ready")) || (empty && (value.ready || value.can_enable || value.restore_available))) return null;
   const last = value.last_result;
   if (last !== null && (!object(last) || !["blocked", "unchanged", "applied", "restored", "recovery_required"].includes(last.state as string) || !known(last.code) || ![last.requested_watts, last.observed_watts].every((field) => field === null || watts(field)))) return null;
-  return value as unknown as TdpStatusPayload;
+  // Copy the established fields explicitly so an optional accessor is never run.
+  return {
+    schema_version: 1, enabled: value.enabled, can_enable: value.can_enable,
+    ready: value.ready, code: value.code, current_watts: value.current_watts,
+    minimum_watts: value.minimum_watts, maximum_watts: value.maximum_watts,
+    restore_available: value.restore_available, recovery_required: value.recovery_required,
+    auto_tdp_available: value.auto_tdp_available, last_result: value.last_result,
+    manual_presets: sanitizeManualPresets(Object.getOwnPropertyDescriptor(value, "manual_presets")?.value),
+  } as TdpStatusPayload;
 }
 
 export function tdpControls(status: TdpStatusPayload | null) {
@@ -69,4 +113,31 @@ export class TdpRequestGate {
     this.active = true;
     try { return await action(); } finally { this.active = false; }
   }
+}
+
+/** Local editing intent only; existing backend admission still gates every write. */
+export type CustomTdpDraft = Readonly<{ kind: "custom"; status: TdpStatusPayload; watts: number }>;
+const customDrafts = new WeakSet<CustomTdpDraft>();
+function customBounds(status: TdpStatusPayload | null): status is TdpStatusPayload {
+  return status !== null && tdpControls(status).canApply && status.can_enable === true && status.code === "tdp.ready"
+    && [status.current_watts, status.minimum_watts, status.maximum_watts].every(watts)
+    && status.minimum_watts! <= status.current_watts! && status.current_watts! <= status.maximum_watts!
+    && status.maximum_watts! - status.minimum_watts! <= 255;
+}
+export function createCustomTdpDraft(status: TdpStatusPayload | null, value = status?.current_watts): CustomTdpDraft | null {
+  if (!customBounds(status) || !Number.isInteger(value)
+    || status.minimum_watts == null || status.maximum_watts == null
+    || value == null || value < status.minimum_watts || value > status.maximum_watts) return null;
+  const draft = Object.freeze({ kind: "custom" as const, status, watts: value });
+  customDrafts.add(draft);
+  return draft;
+}
+export function validCustomTdpDraft(draft: CustomTdpDraft, status: TdpStatusPayload | null, value: number): boolean {
+  return customDrafts.has(draft) && draft.status === status && draft.watts === value
+    && customBounds(status) && Number.isInteger(value)
+    && status?.minimum_watts != null && status.maximum_watts != null
+    && value >= status.minimum_watts && value <= status.maximum_watts;
+}
+export function retireCustomTdpDraft(draft: CustomTdpDraft | null): void {
+  if (draft) customDrafts.delete(draft);
 }

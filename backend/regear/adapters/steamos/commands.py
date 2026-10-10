@@ -6,6 +6,9 @@ import os
 import math
 import re
 import subprocess
+import selectors
+import time
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Sequence
@@ -337,6 +340,157 @@ class ReadOnlyCommandRunner:
         )
 
 
+class InputPlumberReadCommandRunner:
+    """One bounded catalog read frame; never activates or modifies a provider.
+
+    Explicit Introspect calls permit bounded enumeration rather than busctl tree.
+    The reader verifies the bus/owner epoch before and after the frame.
+    """
+
+    PREFIX = ("/usr/bin/busctl", "--system", "--no-pager",
+              "--allow-interactive-authorization=no", "--auto-start=no",
+              "--timeout=3s", "--json=short")
+    SERVICE = "org.shadowblip.InputPlumber"
+    ROOT = "/org/shadowblip/InputPlumber"
+    OWNER = re.compile(r":[0-9]+\.[0-9]+\Z")
+    PATH = re.compile(r"/org/shadowblip/InputPlumber(?:/[A-Za-z0-9_]+)*\Z")
+    PROPERTIES = {
+        "org.shadowblip.InputManager": frozenset({"Version", "GamepadOrder"}),
+        "org.shadowblip.Input.CompositeDevice": frozenset({"Name", "PersistentId",
+            "ProfileName", "ProfilePath", "SourceDevicePaths", "TargetDevices",
+            "DbusDevices", "Capabilities", "TargetCapabilities", "OutputCapabilities"}),
+        "org.shadowblip.Input.Source.EventDevice": frozenset({"Name", "IdBustype", "SupportedKeys"}),
+        "org.shadowblip.Input.Source.UdevDevice": frozenset({"Name", "IdBustype", "Properties"}),
+        "org.shadowblip.Input.Source.HIDRawDevice": frozenset({"Name", "IdBustype"}),
+        "org.shadowblip.Input.Source.IIOIMUDevice": frozenset({"Name", "IdBustype"}),
+        "org.shadowblip.Input.Gamepad": frozenset({"Name"}),
+        "org.shadowblip.Input.Keyboard": frozenset({"Name"}),
+        "org.shadowblip.Input.Mouse": frozenset({"Name"}),
+        "org.shadowblip.Input.DBusDevice": frozenset({"Name"}),
+    }
+
+    def __init__(self, timeout_seconds: float = 3.0,
+                 max_output_bytes: int = 1048576, max_calls: int = 512) -> None:
+        if (type(timeout_seconds) not in (int, float) or
+                not math.isfinite(timeout_seconds) or not 0 < timeout_seconds <= 3 or
+                type(max_output_bytes) is not int or not 0 < max_output_bytes <= 1048576 or
+                type(max_calls) is not int or not 0 < max_calls <= 512):
+            raise ValueError("inputplumber limits invalid")
+        self._deadline = time.monotonic() + timeout_seconds
+        self._remaining_bytes = max_output_bytes
+        self._remaining_calls = max_calls
+        self._failed = False
+        self._lock = threading.Lock()
+
+    @classmethod
+    def validate(cls, argv: Sequence[str]) -> tuple[str, ...]:
+        if type(argv) not in (tuple, list) or any(type(a) is not str for a in argv):
+            raise ValueError("inputplumber command invalid")
+        a = tuple(argv)
+        if a[:len(cls.PREFIX)] != cls.PREFIX:
+            raise ValueError("inputplumber command invalid")
+        tail = a[len(cls.PREFIX):]
+        dbus = ("call", "org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus")
+        if tail in (dbus + ("GetId",), dbus + ("GetNameOwner", "s", cls.SERVICE)):
+            return a
+        if len(tail) < 3 or len(tail[1]) > 128 or not cls.OWNER.fullmatch(tail[1]):
+            raise ValueError("inputplumber owner invalid")
+        path = tail[2]
+        introspection_path = path in ("/", "/org", "/org/shadowblip") or cls.PATH.fullmatch(path)
+        if (len(path) <= 512 and introspection_path and
+                tail == ("call", tail[1], path, "org.freedesktop.DBus.Introspectable", "Introspect")):
+            return a
+        if (len(tail) == 8 and tail[0] == "call" and len(path) <= 512 and
+                tail[3:6] == ("org.freedesktop.DBus.Properties", "Get", "ss") and
+                cls.PATH.fullmatch(path) and tail[7] in cls.PROPERTIES.get(tail[6], ()) and
+                (tail[6] != "org.shadowblip.InputManager" or path == cls.ROOT + "/Manager")):
+            return a
+        raise ValueError("inputplumber command invalid")
+
+    @staticmethod
+    def _reap(process) -> bool:
+        try:
+            if process.poll() is None:
+                process.terminate()
+            try:
+                process.wait(timeout=0.1)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait(timeout=0.2)
+            return process.poll() is not None
+        except (OSError, subprocess.SubprocessError):
+            return False
+
+    def run(self, argv: Sequence[str]) -> CommandResult:
+        normalized = self.validate(argv)
+        if not self._lock.acquire(blocking=False):
+            return CommandResult(normalized, None, "", "", "inputplumber.busy")
+        process = None
+        error = ""
+        output = [bytearray(), bytearray()]
+        text = ""
+        try:
+            if self._failed or self._remaining_calls <= 0 or time.monotonic() >= self._deadline:
+                self._failed = True
+                return CommandResult(normalized, None, "", "", "inputplumber.budget_exhausted")
+            self._remaining_calls -= 1
+            process = subprocess.Popen(normalized, stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=False,
+                env=dict(ReadOnlyCommandRunner.CLEAN_ENVIRONMENT), close_fds=True)
+            with selectors.DefaultSelector() as selector:
+                for index, pipe in enumerate((process.stdout, process.stderr)):
+                    os.set_blocking(pipe.fileno(), False)
+                    selector.register(pipe, selectors.EVENT_READ, index)
+                while selector.get_map():
+                    remaining = self._deadline - time.monotonic()
+                    if remaining <= 0:
+                        error = "inputplumber.timeout"
+                        break
+                    for key, _ in selector.select(min(remaining, 0.05)):
+                        chunk = os.read(key.fd, min(65536, self._remaining_bytes + 1))
+                        if not chunk:
+                            selector.unregister(key.fileobj)
+                            continue
+                        self._remaining_bytes -= len(chunk)
+                        if self._remaining_bytes < 0:
+                            error = "inputplumber.output_limit"
+                            break
+                        output[key.data].extend(chunk)
+                    if error:
+                        break
+                if not error:
+                    try:
+                        process.wait(timeout=max(0, self._deadline - time.monotonic()))
+                    except subprocess.TimeoutExpired:
+                        error = "inputplumber.timeout"
+            if not error and process.returncode != 0:
+                error = "inputplumber.command_failed"
+            if not error:
+                try:
+                    text = output[0].decode("utf-8", errors="strict")
+                except UnicodeError:
+                    error = "inputplumber.output_invalid"
+        except (OSError, subprocess.SubprocessError, ValueError):
+            error = "inputplumber.command_unavailable"
+        finally:
+            if process is not None:
+                if not self._reap(process):
+                    error = "inputplumber.cleanup_unconfirmed"
+                    self._failed = True
+                for pipe in (process.stdout, process.stderr):
+                    if pipe is not None:
+                        try:
+                            pipe.close()
+                        except OSError:
+                            error = "inputplumber.cleanup_unconfirmed"
+                            self._failed = True
+            if error:
+                self._failed = True
+            self._lock.release()
+        return CommandResult(normalized, None if error else process.returncode,
+                             "" if error else text, "", error)
+
+
 class BrokerCaptureRestoreTimer:
     """Fixed system timer: restore Gaming Mode even if Steam/SSH/Decky exits."""
 
@@ -586,8 +740,12 @@ class SystemSuspendCommandRunner:
     explicit even for a privileged noninteractive caller. No wake action exists.
     """
 
-    COMMAND = ("/usr/bin/systemctl", "--no-block", "--no-ask-password",
-               "--check-inhibitors=yes", "suspend")
+    # systemctl's explicit inhibitor check also rejects the normal player
+    # session when called by root. Use login1 with ROOT_CHECK_INHIBITORS (0x01),
+    # never SKIP_INHIBITORS (0x10). A successful reply is not sleep proof.
+    COMMAND = ("/usr/bin/busctl", "--system", "--allow-interactive-authorization=no",
+               "call", "org.freedesktop.login1", "/org/freedesktop/login1",
+               "org.freedesktop.login1.Manager", "SuspendWithFlags", "t", "1")
     CLEAN_ENVIRONMENT = {"LANG": "C", "LC_ALL": "C", "PATH": "/usr/bin:/bin"}
 
     def __init__(self, timeout_seconds: float = 5.0, effective_uid=None) -> None:
@@ -613,7 +771,13 @@ class SystemSuspendCommandRunner:
             # something a caller can act on. Only the CATEGORY crosses --
             # the command's own output never does, here or anywhere.
             stderr = completed.stderr if type(completed.stderr) is bytes else b""
-            if b"inhibit" in stderr.lower():
+            # Exact login1 refusal variants from systemd v255-v258. Do not
+            # retry a broader access-denied or incidental inhibitor message.
+            if stderr.strip() in {
+                b"Call failed: Access denied to root due to active block inhibitor",
+                b"Call failed: Access denied due to active block inhibitor",
+                b"Call failed: Operation denied due to active block inhibitor",
+            }:
                 return SuspendResult(False, "dock_power.suspend_inhibited")
             return SuspendResult(False, "dock_power.suspend_failed")
         return SuspendResult(True, "dock_power.suspend_request_accepted_unverified")
@@ -1004,7 +1168,7 @@ class BoltDeviceAuthorizationRunner:
     def policy_argv(cls, uuid: str) -> tuple[str, ...]:
         if type(uuid) is not str or cls.UUID.fullmatch(uuid) is None:
             raise ValueError("device authorization uuid is invalid")
-        return (cls.BOLTCTL, "config", uuid, "device.policy")
+        return (cls.BOLTCTL, "config", "device.policy", uuid)
 
     @classmethod
     def set_policy_argv(cls, uuid: str, policy: str) -> tuple[str, ...]:
@@ -1012,7 +1176,7 @@ class BoltDeviceAuthorizationRunner:
             raise ValueError("device authorization uuid is invalid")
         if policy not in ("auto", "manual"):
             raise ValueError("device authorization policy is invalid")
-        return (cls.BOLTCTL, "config", uuid, "device.policy", policy)
+        return (cls.BOLTCTL, "config", "device.policy", uuid, policy)
 
     def policy(self, uuid: str) -> str | None:
         """Read one stored policy; malformed or unavailable output is unknown."""
