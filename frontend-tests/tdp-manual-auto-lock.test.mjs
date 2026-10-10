@@ -10,7 +10,7 @@ const flatten = node => [node, ...(node?.props?.children ?? []).flat(Infinity)
 const control = (tree, type, label) => flatten(tree)
   .find(node => node?.type === type && (node.props.label === label || node.props.children.join("") === label));
 
-function renderControls(controller) {
+function renderControls(controller, initiallyExpanded = true) {
   let cursor = 0;
   const values = [];
   const useState = initial => {
@@ -41,7 +41,7 @@ function renderControls(controller) {
     "AutoTdpControls", () => { throw new Error("unexpected standalone controller"); },
     ({label,children})=>jsx("Field",{focusable:true,"aria-label":label},children),
   );
-  return (visible = true) => { cursor = 0; effectCursor = 0; return component({ visible, controller, initiallyExpanded: true }); };
+  return (visible = true) => { cursor = 0; effectCursor = 0; return component({ visible, controller, initiallyExpanded }); };
 }
 
 const manual = {
@@ -230,4 +230,13 @@ test("Custom old handlers reject replaced hidden unavailable busy and Auto conte
     edit();apply();assert.deepEqual(subject.calls,[],change);
     if(!["freeform","preset"].includes(change)){open();assert.deepEqual(subject.calls,[],change);}
   }
+});
+
+test("collapsing power controls retires Custom and rejects captured editor callbacks",()=>{
+  const subject=controller({running:false});const render=renderControls(subject.value,false);
+  let tree=render();control(tree,"ButtonItem","Show power controls").props.onClick();render();tree=render();
+  const open=control(tree,"ButtonItem","Custom").props.onClick;open();tree=render();
+  const apply=control(tree,"ButtonItem","Apply Custom").props.onClick;
+  control(tree,"ButtonItem","Hide power controls").props.onClick();apply();render();open();apply();
+  assert.deepEqual(subject.calls,[]);
 });

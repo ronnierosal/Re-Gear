@@ -20,15 +20,15 @@ function SharedTdpControls({ visible, controller, initiallyExpanded = false }: {
   const [preset, setPreset] = useState<ManualPresetIntent | null>(null);
   const [custom, setCustom] = useState<CustomTdpDraft | null>(null);
   const customOwner = useRef<CustomTdpDraft | null>(null);
-  const context = useRef({ visible, controller });
-  context.current = { visible, controller };
+  const context = useRef({ visible, controller, expanded });
+  context.current = { visible, controller, expanded };
   const { manual: status, auto, busy } = controller;
   const closeCustom = () => { retireCustomTdpDraft(customOwner.current); customOwner.current = null; setCustom(null); };
-  useEffect(() => { closeCustom(); }, [status, visible, busy, auto?.running, auto?.stopping, controller.stopping]);
+  useEffect(() => { closeCustom(); }, [status, visible, expanded, busy, auto?.running, auto?.stopping, controller.stopping]);
   useEffect(() => () => { retireCustomTdpDraft(customOwner.current); customOwner.current = null; }, []);
   const customAvailable = () => {
     const current = context.current;
-    return current.visible && !current.controller.busy && !current.controller.stopping
+    return current.visible && current.expanded && !current.controller.busy && !current.controller.stopping
       && current.controller.auto?.running !== true && current.controller.auto?.stopping !== true;
   };
   const customCurrent = (draft: CustomTdpDraft) => customOwner.current === draft && customAvailable()
@@ -51,7 +51,7 @@ function SharedTdpControls({ visible, controller, initiallyExpanded = false }: {
     ? Array.from({ length: status.maximum_watts - status.minimum_watts + 1 }, (_, index) => ({ data: status.minimum_watts! + index, label: `${status.minimum_watts! + index} W` })) : [];
   if (!visible) return null;
   return <PanelSection title="Handheld power">
-    {!initiallyExpanded && <PanelSectionRow><ButtonItem layout="below" onClick={() => setExpanded(value => !value)}>{expanded ? "Hide power controls" : "Show power controls"}</ButtonItem></PanelSectionRow>}
+    {!initiallyExpanded && <PanelSectionRow><ButtonItem layout="below" onClick={() => { closeCustom(); setExpanded(value => !value); }}>{expanded ? "Hide power controls" : "Show power controls"}</ButtonItem></PanelSectionRow>}
     {expanded && <>
       <ReadableBlock label="Power status"><PanelSectionRow>{busy ? "Checking power settings…" : tdpMessage(status)}</PanelSectionRow>
       {!busy && tdpResultMessage(status) && <PanelSectionRow>Last request: {tdpResultMessage(status)}</PanelSectionRow>}
