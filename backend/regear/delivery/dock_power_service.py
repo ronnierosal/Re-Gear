@@ -133,3 +133,39 @@ def continue_dock_power(request, *, runtime, store, portable_verified, power,
         return coordinator.execute()
     except Exception:
         return DockPowerResult('dock_power.unresolved')
+
+
+def continue_shutdown_after_absence(request, *, expected_claim, store,
+                                    verify_absence, power, admission_held,
+                                    monotonic=time.monotonic):
+    """One original shutdown after strict absence, never attached-router proof.
+
+    The caller retains the transaction and proves current session, portable
+    state, exact owned lease and repeated complete physical transport absence.
+    Durable consumption precedes the fixed power command; ambiguous outcomes
+    retain their consumed record and cannot replay after restart.
+    """
+    from regear.delivery.whole_dock_claim import WholeDockClaim
+    if (type(request) is not DockPowerRequest or request.action != 'shutdown'
+            or type(expected_claim) is not WholeDockClaim
+            or expected_claim.stage != 'software_down'
+            or expected_claim.operation != request.operation
+            or re.fullmatch('[0-9a-f]{64}:[0-9a-f]{32}', request.session) is None):
+        return DockPowerResult('dock_power.invalid_intent')
+    try:
+        coordinator = DockPowerCoordinator(
+            operation_id=request.operation, action='shutdown',
+            requested_at=request.requested_at, deadline=request.deadline,
+            verify_down=lambda operation: (
+                operation == expected_claim.operation
+                and store.load() == expected_claim
+                and verify_absence() is True
+                and store.load() == expected_claim),
+            record_intent=lambda operation, action: store.consume(
+                operation, expected_claim.binding, expected_claim.generation,
+                action, request.session, request.requested_at, request.deadline),
+            request_power=lambda action: power.request_poweroff().requested is True,
+            admission_held=admission_held, monotonic=monotonic)
+        return coordinator.execute()
+    except Exception:
+        return DockPowerResult('dock_power.unresolved')

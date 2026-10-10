@@ -29,3 +29,10 @@ test('native membership includes About and diagnostics, preserves unknown produc
  const tiles=['shortcut','diagnostics','about','help-guides','future-setting'].map(id=>({id,title:id,value:'Unknown',detail:''}));
  assert.deepEqual(registryNativeTiles({settings:tiles}).settings.map(x=>x.id),['diagnostics','about','future-setting']);
 });
+
+test('Auto remains a picker navigation destination but is absent from both default grids',()=>{
+ const auto=controlForKey('performance:auto');assert.equal(auto,controlForKey('quick:auto'));assert.equal(auto.quickEligible,true);assert.equal(auto.type,'navigation');
+ const tile=id=>({id,title:id,value:'Unknown',detail:''});
+ const view=registryNativeTiles({quick:[tile('manual'),tile('auto')],performance:[tile('manual'),tile('auto')]});
+ assert.deepEqual(view.quick.map(x=>x.id),['manual']);assert.deepEqual(view.performance.map(x=>x.id),['manual']);
+});

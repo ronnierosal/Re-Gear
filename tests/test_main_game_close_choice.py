@@ -67,6 +67,13 @@ def load_main_module():
         module = importlib.util.module_from_spec(spec)
         assert spec.loader is not None
         spec.loader.exec_module(module)
+        # These legacy policy fixtures model an exact Ally, not the CI host.
+        # Production containment tests retain real host discovery/admission.
+        from regear.adapters.steamos.host import HostRecord
+        module.Plugin._runtime_host_record = staticmethod(lambda: HostRecord(
+            "ASUSTeK COMPUTER INC.", "ROG Ally X RC72LA", "RC72LA"))
+        module.Plugin._observation_only = False
+        module.Plugin._observation_started = False
         # These fixtures isolate game-close/relaunch policy from Linux admission.
         # Dedicated mutation-gate tests exercise the real fail-closed boundary.
         module.Plugin._dock_mutation_gate = staticmethod(

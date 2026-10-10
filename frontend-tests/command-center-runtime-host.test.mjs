@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {readFileSync} from 'node:fs';
 import ts from 'typescript';
+import {SleepPreflightCoordinator} from '../src/sleep-preflight.ts';
 const code=ts.transpileModule(readFileSync(new URL('../src/quick-access/expanded-command-center/runtime-host.ts',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.ES2022,target:ts.ScriptTarget.ES2022}}).outputText.replace(/^import .*;$/gm,'').replace(/export /g,'');
 function fixture(){let current;const register=new Function('createElement','useEffect','useState',code+';return registerRuntimeHost')((type)=>({type}),fn=>{if(!current.started){current.effects.push(fn);}},initial=>[current.state??initial,value=>current.state=value]);return {register,mount(Component){const state={effects:[]};return {render(){current=state;const node=Component();if(!state.started){state.started=true;state.cleanups=state.effects.map(fn=>fn());}return node;},unmount(){state.cleanups?.forEach(fn=>fn?.());}};}};}
 test('one global runtime mounts without a landing and survives landing lifetime; stop invalidates before deferred unmount',()=>{
@@ -57,12 +58,19 @@ function contentHarness() {
   }
   const at = async stage => { await pending.get(stage)?.(); };
   const noop = () => {};
+  let admission = 'supported-runtime';
+  const preflight = new SleepPreflightCoordinator({
+    acquireBlocker: () => noop, observeSuspendRequests: () => noop,
+  }, noop);
+  preflight.start();
   const env = {
     controllerOwner: {current: {active: false, generation: 0}},
     controllerVisible: {current: true}, controllerLifetime: h.store,
     refreshInFlight: {current: null}, quickAccessVisible: false, expandedVisible: true,
     diagnosticsOnScreen: {current: false},
-    getSnapshot: async () => { await at('snapshot'); return {snapshot: {game_state: 'idle'}, journey: {}}; },
+    getSnapshot: async () => { await at('snapshot'); return {
+      runtime_admission: {schema_version: 1, sleep_interceptor_admission: admission},
+      snapshot: {schema_version: 3, observed_at: new Date().toISOString(), game_state: 'idle'}, journey: {}}; },
     getAutomaticDockStatus: async () => { await at('automatic'); return {}; },
     refreshTransitionJournal: async () => { await at('journal'); },
     getPeripheralStatus: async () => { rpc++; await at('peripheral'); return reading; },
@@ -71,7 +79,8 @@ function contentHarness() {
     collectOptionalDiagnostics: async () => Object.freeze({peripheralStatus: null}),
     getDockedIgpuStatus: noop, getDiagnosticLoggingStatus: noop, getActionHistory: noop,
     sanitizeJourneyStatus: x => x, lastSnapshotAt: {current: null},
-    preflight: {reconcile: noop}, preflightObservation: noop,
+    preflight, SNAPSHOT_STALE_AFTER_MS: 10000,
+    preflightObservation: () => ({kind:'fresh',guardRequired:false,guardConfidence:'verified',gameState:'idle',gameUsesEgpu:false}),
     setPayload: () => { published++; },
   };
   for (const name of ['setLoading','setError','setAutomaticDockStatus','setAutomaticDockMessage','setDockedIgpuStatus','setDiagnosticLoggingStatus','setPeripheralStatus','setActionHistory','setPreflightStatus']) env[name] = noop;
@@ -79,8 +88,18 @@ function contentHarness() {
     const js = ts.transpileModule(`const extracted = ${node.getText(tree)};`, {compilerOptions: {target: ts.ScriptTarget.ES2022}}).outputText;
     return new Function(...Object.keys(env), `${js}; return extracted;`)(...Object.values(env));
   }
-  return {...h, pause, refresh: execute(refreshNode), mount: execute(lifecycleNode), invalidateHost(){env.controllerOwner.current.active=false;env.controllerOwner.current.generation++;env.controllerOwner.current.stopped=true;}, rpc: () => rpc, published: () => published};
+  return {...h, pause, refresh: execute(refreshNode), mount: execute(lifecycleNode), preflight,
+    setAdmission:value=>{admission=value;},
+    invalidateHost(){env.controllerOwner.current.active=false;env.controllerOwner.current.generation++;env.controllerOwner.current.stopped=true;}, rpc: () => rpc, published: () => published};
 }
+
+test('host invalidation rejects a late observation-only reply before real interceptor admission',async()=>{
+  const h=contentHarness();const cleanup=h.mount();h.setAdmission('observation-only');
+  const gate=h.pause('snapshot');const pending=h.refresh();await gate.entered;
+  h.invalidateHost();gate.release();await pending;
+  assert.equal(h.preflight.isRetired(),false);assert.equal(h.preflight.status().blocking,true);
+  assert.equal(h.rpc(),0);assert.equal(h.published(),0);cleanup();h.preflight.stop();
+});
 
 test('host invalidation before Content cleanup retires its timer and late reading',async()=>{
  const h=contentHarness();const cleanup=h.mount();await h.refresh();assert.equal(h.timers.size,1);

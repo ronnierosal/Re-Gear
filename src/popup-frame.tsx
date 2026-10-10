@@ -6,6 +6,7 @@ export type PopupState = "connecting" | "waiting" | "ready" | "attention" | "fai
 const stateLabels: Record<PopupState,string> = {connecting:"Connecting",waiting:"Waiting",ready:"Ready",attention:"Action required",failed:"Failed"};
 export const popupStyles = `
 .rg-popup-host{padding:0!important;background:transparent!important;border:0!important;box-shadow:none!important;max-height:82vh!important;max-width:94vw!important;min-height:0!important;overflow:hidden!important}
+.rg-popup-host.rg-usb4-waiting-host .rg-popup{margin-inline:auto}
 .rg-popup{box-sizing:border-box;width:min(440px,94vw);max-height:82vh;display:flex;flex-direction:column;overflow:hidden;border:1px solid #467a9b;border-radius:14px;background:linear-gradient(145deg,#112434,#05111b);color:#f4f7fb;font:13px/1.4 Arial,sans-serif;animation:rg-popup-enter .16s ease-out}
 .rg-popup *{box-sizing:border-box}.rg-popup-header,.rg-popup-footer{flex:0 0 auto;padding:10px 12px;min-height:0}
 .rg-popup-header{border-bottom:1px solid #294665}.rg-popup-brand{display:flex;align-items:center;gap:8px;color:#a8cbe5;font-size:12px}.rg-popup-brand img{width:28px;height:28px}.rg-popup h2{margin:6px 0 0;font-size:18px;line-height:1.25;overflow-wrap:normal}

@@ -22,6 +22,7 @@ async function fixture() {
     let fixtureTime=1000; const Date={now:()=>fixtureTime};
     const QuickActionRailEditor='right-editor';
     ${compile("../src/quick-access/expanded-command-center/model.ts")}
+    ${compile("../src/build-profile.ts")}
     ${compile("../src/quick-access/expanded-command-center/control-registry.ts")}
     ${compile("../src/quick-access/expanded-command-center/utility-layout.ts")}
     ${compile("../src/quick-access/expanded-command-center/layout-preferences.ts")}
@@ -99,7 +100,7 @@ test("nested Auto TDP follows changed and missing readings without stale Off cop
   const app = await fixture();
   const props = {tiles:{quick:[auto("Running", "Controller running")]}};
   let tree = app.render(props);
-  nodes(tree).find(node => node.props?.["data-ec-control"] === "auto").props.onClick();
+  nodes(tree).find(node => node.props?.["data-ec-control"] === "auto-settings").props.onClick();
   tree = app.render(props);
   assert.match(text(tree), /Controller running/);
   assert.doesNotMatch(text(tree), /off and not configured|Sample data/);
@@ -121,7 +122,7 @@ test("empty supplied tabs remain unavailable instead of falling back to sample v
 test("Back from a removed reading focuses the active tab when no controls remain", async () => {
   const app = await fixture();
   let tree=app.render({tiles:{quick:[auto("Running", "Controller running")]}});
-  nodes(tree).find(node=>node.props?.["data-ec-control"] === "auto").props.onClick();
+  nodes(tree).find(node=>node.props?.["data-ec-control"] === "auto-settings").props.onClick();
   tree=app.render({tiles:{quick:[]}});
   nodes(tree).find(node=>node.props?.["data-ec-control"] === "nested-back").props.onClick();
   tree=app.render({tiles:{quick:[]}});
@@ -154,14 +155,17 @@ test("application detail controls receive updated tiles and preserve pending and
   const app=await fixture();
   let calls=0;
   const props={tiles:{quick:[auto("Ready", "Configure")]},renderDetail:(tab,tile)=>{
-    assert.equal(tab,"quick");
+    assert.equal(tab,"performance");
     return {type:"button",props:{disabled:tile.value === "Pending",onClick(){calls++;},children:[`Action: ${tile.value}`]}};
   }};
   let tree=app.render(props);
   assert.equal(calls,0);
-  nodes(tree).find(node=>node.props?.["data-ec-control"] === "auto").props.onClick();
+  nodes(tree).find(node=>node.props?.["data-ec-control"] === "auto-settings").props.onClick();
   tree=app.render(props);
-  assert.match(text(tree),/Status and controls.*Settings and actions.*Action: Ready/);
+  assert.match(text(tree),/Status and controls.*Action: Ready/);
+  assert.doesNotMatch(text(tree),/Settings and actions/);
+  assert.equal(nodes(tree).some(node=>node.type==='h2'),false);
+  assert.equal(nodes(tree).find(node=>node.props?.className==='rg-expanded-detail-page').props['aria-label'],'Auto TDP');
   assert.doesNotMatch(text(tree),/No operation is available from this view/);
   nodes(tree).find(node=>node.props?.children?.[0] === "Action: Ready").props.onClick();
   assert.equal(calls,1);
@@ -179,7 +183,7 @@ test("sample and removed tiles never invoke application control content", async 
   let calls=0;
   const renderDetail=()=>{calls++;return "Control";};
   let tree=app.render({renderDetail});
-  nodes(tree).find(node=>node.props?.["data-ec-control"] === "auto").props.onClick();
+  nodes(tree).find(node=>node.props?.["data-ec-control"] === "auto-settings").props.onClick();
   app.render({renderDetail});
   assert.equal(calls,0);
   tree=app.render({renderDetail,tiles:{quick:[]}});
@@ -191,7 +195,7 @@ test("null detail content keeps unavailable reason readable", async () => {
   const app=await fixture();
   const props={tiles:{quick:[auto("Unknown", "Provider unavailable")]},renderDetail:()=>null};
   let tree=app.render(props);
-  nodes(tree).find(node=>node.props?.["data-ec-control"] === "auto").props.onClick();
+  nodes(tree).find(node=>node.props?.["data-ec-control"] === "auto-settings").props.onClick();
   tree=app.render(props);
   assert.match(text(tree),/Provider unavailable.*No operation is available/);
 });
@@ -209,7 +213,7 @@ test("a tabindex-bearing detail wrapper focuses its editor rather than itself", 
   const app=await fixture();
   const props={tiles:{quick:[auto("Ready", "Configure")]},renderDetail:()=>"Editor"};
   let tree=app.render(props);
-  nodes(tree).find(node=>node.props?.["data-ec-control"] === "auto").props.onClick();
+  nodes(tree).find(node=>node.props?.["data-ec-control"] === "auto-settings").props.onClick();
   tree=app.render(props);
   let focused;
   const editor={focus(){focused="editor";},scrollIntoView(){}};
@@ -224,7 +228,7 @@ test("withdrawn focused controls recover Back without stealing retained dialog f
     const app=await fixture();
     const props={tiles:{quick:[auto("Ready","Configure")]},renderDetail:()=>"Editor"};
     let tree=app.render(props);
-    nodes(tree).find(node=>node.props?.["data-ec-control"] === "auto").props.onClick();
+    nodes(tree).find(node=>node.props?.["data-ec-control"] === "auto-settings").props.onClick();
     tree=app.render(props);
     let panel=nodes(tree).find(node=>node.props && "data-ec-panel" in node.props);
     panel.props.onFocus({target:{closest:()=>({dataset:{ecControl:"nested-content"}})}});
@@ -262,7 +266,7 @@ test("Quick Access mounts both unavailable utility rails and details hide them",
  const app=await fixture(); const props={tiles:{quick:[auto('Unknown','No observation')]}};
  let tree=app.render(props);
  assert.deepEqual(nodes(tree).filter(node=>node.type==='utility-rail').map(node=>node.props.side),['left','right']);
- nodes(tree).find(node=>node.props?.['data-ec-control']==='auto').props.onClick();tree=app.render(props);
+ nodes(tree).find(node=>node.props?.['data-ec-control']==='auto-settings').props.onClick();tree=app.render(props);
  assert.equal(nodes(tree).filter(node=>node.type==='utility-rail').length,0);
 });
 
@@ -300,12 +304,28 @@ test("native LEFT enters Quick Access rail only from its first column",async()=>
  assert.equal(steamEvent(profile.props.onGamepadDirection,11).stopped,false);
 });
 
-function storageFixture(){const writes=[];let value=null;return {writes,getItem:()=>value,setItem:(_,next)=>{value=next;writes.push(JSON.parse(next));}};}
+function storageFixture(initial=null){const writes=[];let value=initial===null?null:JSON.stringify(initial);return {writes,getItem:()=>value,setItem:(_,next)=>{value=next;writes.push(JSON.parse(next));}};}
 const nativeEvent=button=>({detail:{button},preventDefault(){},stopPropagation(){}});
 const frame=tree=>nodes(tree).find(node=>node.props&&'data-ec-panel' in node.props);
 const card=(tree,id)=>nodes(tree).find(node=>node.props?.['data-ec-control']===id);
 const prefsProps=storage=>({native:true,layoutStorage:storage,editButtons:{x:3,y:4},directions:{up:9,down:10,left:11,right:12}});
 function yGesture(app,tree,ms=0){frame(tree).props.onButtonDown(nativeEvent(4));app.advance(ms);frame(tree).props.onButtonUp(nativeEvent(4));}
+test('picker artwork and selected state preserve native choices, Cancel and reopen',async()=>{
+ const app=await fixture(),storage=storageFixture({quick:['quick:auto']}),props={...prefsProps(storage),tiles:{quick:[auto('Off','Configure')],performance:[auto('Off','Configure')]}};
+ let tree=app.render(props);yGesture(app,tree);tree=app.render(props);
+ const choices=nodes(tree).filter(node=>node.props?.['data-ec-control']?.startsWith('choice:')&&node.props?.['aria-label']?.startsWith('Auto TDP,'));
+ assert.equal(choices.length,1,'canonical aliases stay deduplicated');
+ const choice=choices[0];assert.equal(choice.props['aria-pressed'],true);
+ assert.ok(nodes(choice).some(node=>node.props?.className==='rg-expanded-picker-artwork'&&node.props['aria-hidden']==='true'));
+ assert.match(choice.props['aria-label'],/Auto TDP, Performance/);
+ frame(tree).props.onCancelButton(nativeEvent(2));tree=app.render(props);
+ assert.equal(storage.writes.length,0,'Cancel remains read-only');
+ assert.equal(nodes(tree).some(node=>node.props?.['data-ec-picker']),false);
+ yGesture(app,tree);tree=app.render(props);card(tree,choice.props['data-ec-control']).props.onClick();
+ tree=app.render(props);assert.equal(storage.writes.length,1);
+ assert.equal(storage.writes[0].quick[0],'performance:auto','activation retains the canonical mapping');
+ assert.equal(nodes(tree).some(node=>node.props?.['data-ec-picker']),false);
+});
 test('Y imported card resolves live original detail and withdraws unavailable origin',async()=>{
  const app=await fixture(),storage=storageFixture(),calls=[];
  const props={...prefsProps(storage),tiles:{quick:[auto('Off','current')],performance:[{id:'display',title:'Resolution',value:'1080',detail:'observed'}]},renderDetail:(tab,tile)=>{calls.push([tab,tile.value]);return 'live detail'}};
@@ -330,7 +350,7 @@ test('empty Quick Access slots render as accessible outlines without visible cop
  assert.equal(text(empty),'');
 });
 test('hold Y moves draft only, B cancels, A places without dispatching the action',async()=>{
- const app=await fixture(),storage=storageFixture();let starts=0;
+ const app=await fixture(),storage=storageFixture({quick:['quick:disconnect','quick:auto']});let starts=0;
  const props={...prefsProps(storage),tiles:{quick:[{id:'disconnect',title:'Safe Disconnect',value:'Unknown',detail:''},auto('Off','')]},onDisconnect:()=>starts++};
  let tree=app.render(props);card(tree,'disconnect').props.onGamepadFocus();yGesture(app,tree,550);tree=app.render(props);
  card(tree,'disconnect').props.onGamepadDirection(nativeEvent(12));tree=app.render(props);
@@ -355,7 +375,7 @@ test('other tabs ignore Y tap and persist reorder without replacing membership',
  let tree=app.render(props);yGesture(app,tree);tree=app.render(props);
  assert.ok(!nodes(tree).some(node=>String(node.props?.['data-ec-control']).startsWith('choice:')));
  yGesture(app,tree,550);tree=app.render(props);card(tree,'profile').props.onGamepadDirection(nativeEvent(12));tree=app.render(props);card(tree,'profile').props.onClick();tree=app.render(props);
- assert.deepEqual(storage.writes.at(-1).order.performance,['fps','profile','manual','auto','display','refresh']);
+ assert.deepEqual(storage.writes.at(-1).order.performance,['fps','profile','manual','display','refresh']);
 });
 test('Y edits focused unavailable right slot without dispatch; X is unused',async()=>{
  const app=await fixture(),storage=storageFixture();let calls=0;
@@ -420,4 +440,13 @@ test('unavailable choices stay focusable for Y removal without dispatch',async()
  unavailable.props.onClick();assert.equal(actions,0);assert.equal(disconnects,0);
  unavailable.props.onGamepadFocus();yGesture(app,tree);tree=app.render(props);card(tree,'choice:remove').props.onClick();tree=app.render(props);
  assert.ok(storage.writes.at(-1).quick[0].startsWith('empty:'));assert.equal(actions,0);
+});
+
+test('TDP cycle projection uses original Quick Access alias, stays on tile for presets and opens Custom only',async()=>{
+ const app=await fixture(),storage=storageFixture();storage.setItem('regear.command-center-layout.v1',JSON.stringify({version:2,quick:['performance:manual']}));
+ let selected='Balanced',calls=[];
+ const props={...prefsProps(storage),tiles:{quick:[],performance:[{id:'manual',title:'Manual TDP',value:'15 W',detail:'Configured limit'}]},tdpCycle:{value:selected,detail:'Selected Balanced · Last checked: Chill 10 W'},onAction:(tab,tile)=>{calls.push([tab,tile.id]);return selected!=='Custom';},renderDetail:()=>({type:'compact-editor',props:{children:'Custom only'}})};
+ let tree=app.render(props),tile=card(tree,'custom:performance:manual');assert.match(text(tile),/TDP Mode/);assert.match(text(tile),/Balanced/);assert.match(text(tile),/Last checked: Chill 10 W/);tile.props.onClick();tree=app.render(props);assert.equal(nodes(tree).some(n=>n.props?.['data-ec-control']==='nested-back'),false);assert.deepEqual(calls,[['performance','manual']]);
+ selected='Custom';props.tdpCycle={value:selected,detail:'Selected Custom'};card(tree,'custom:performance:manual').props.onClick();tree=app.render(props);assert.match(text(tree),/Custom only/);
+ const prod=await fixture();tree=prod.render({...props,policy:'production'});assert.equal(nodes(tree).some(n=>n.props?.['data-ec-control']==='custom:performance:manual'),false);
 });

@@ -6,7 +6,7 @@ const js = ts.transpileModule(readFileSync(new URL("../src/whole-dock-control-mo
   compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 },
 }).outputText;
 const { dockControl, dockIntentControl, dockRequestAbandoned, dockRequestSettled, formatPendingRecord,
-  parsePendingRecord, shutdownRequested, suspendRefusal } = await import("data:text/javascript;base64," + Buffer.from(js).toString("base64"));
+  parsePendingRecord, shutdownRequested, sleepReceiptArchivedAfterAbsence, shutdownUnplugWaiting, suspendRefusal } = await import("data:text/javascript;base64," + Buffer.from(js).toString("base64"));
 const idle = { schema_version: 3, game_state: "idle", egpu_link: { state: "up" }, observed_at: new Date().toISOString() };
 const fresh = { schema_version: 1, busy: false, safe_to_unplug: false, code: "dock_teardown.no_trial", attachment_token: "a".repeat(64)+":"+"b".repeat(64) };
 test("initial disconnect requires supported status and idle detected GPU", () => {
@@ -49,15 +49,16 @@ const componentJs = ts.transpileModule(readFileSync(new URL("../src/whole-dock-c
   .replace(/export function WholeDockControl/, "function WholeDockControl");
 const deferred = () => { let resolve, reject; const promise = new Promise((yes,no) => {resolve=yes;reject=no;}); return {promise,resolve,reject}; };
 const settle = async () => { for(let n=0;n<12;n++) await Promise.resolve(); };
-function harness(storage = new Map(), intent = "disconnect", startRequest, initialStatus = fresh, initialRead, statusOnly = false, onSettled) {
-  const h = {status:{...initialStatus}, reads:[], readCount:0, calls:[], modals:[], timers:new Map(), failStorage:false, intent, snapshot: {...idle, schema_version:3}};
+function harness(storage = new Map(), intent = "disconnect", startRequest, initialStatus = fresh, initialRead, statusOnly = false, onSettled, onResolvedAbsent) {
+  const h = {status:{...initialStatus}, claim:null, power:null, reads:[], readCount:0, calls:[], modals:[], timers:new Map(), failStorage:false, intent, snapshot: {...idle, schema_version:3}};
   let slots=[], index=0, effects=[], cleanups=[], serial=0;
   const useState = value => { const slot=index++; if(!(slot in slots)) slots[slot]=value; return [slots[slot], value=>{slots[slot]=typeof value==='function'?value(slots[slot]):value;}]; };
   const useRef = value => {const slot=index++; if(!(slot in slots)) slots[slot]={current:value}; return slots[slot];};
   const useEffect = fn => {const slot=index++; if(!(slot in slots)){slots[slot]=true;effects.push(fn);}};
+  const useSyncExternalStore = (_subscribe, read) => read();
   const React={createElement:(type,props,...children)=>({type,props:{...props,children}})};
   const callable = name => (...args) => {
-    if(name==='get_egpu_disconnect_status') { h.readCount++; return h.reads.length ? h.reads.shift() : Promise.resolve(h.status); }
+    if(name==='get_egpu_disconnect_status') { h.readCount++; if(args[0]==='whole_dock_record')return Promise.resolve(h.claim);if(args[0]==='power_status')return Promise.resolve(h.power);return h.reads.length ? h.reads.shift() : Promise.resolve(h.status); }
     h.calls.push(args);
     return h.execute ? h.execute(args) : Promise.resolve({...fresh,code:'dock_teardown.software_down',software_down:true,ok:true,request_id:args.at(-1)});
   };
@@ -66,13 +67,13 @@ function harness(storage = new Map(), intent = "disconnect", startRequest, initi
     return {Close(){if(record.closed)return;record.closed=true;}};
   };
   const window={localStorage:{getItem:key=>storage.get(key)??null,setItem(key,value){if(h.failStorage)throw Error('storage denied');storage.set(key,value);},removeItem:key=>storage.delete(key)}};
-  const runtime = new Function('React','useState','useRef','useEffect','callable','DialogButton','showModal','EgpuConfirmModal','dockIntentControl','dockRequestAbandoned','dockRequestSettled','formatPendingRecord','parsePendingRecord','window','crypto','setTimeout','clearTimeout', componentJs+'\nreturn {WholeDockControl,recoverTerminalDockReceipt};')(
-    React,useState,useRef,useEffect,callable,'button',showModal,'confirm',dockIntentControl,dockRequestAbandoned,dockRequestSettled,formatPendingRecord,parsePendingRecord,window,
+  const runtime = new Function('React','useState','useRef','useEffect','useSyncExternalStore','callable','DialogButton','showModal','EgpuConfirmModal','dockIntentControl','dockRequestAbandoned','dockRequestSettled','formatPendingRecord','parsePendingRecord','sleepReceiptArchivedAfterAbsence','shutdownUnplugWaiting','window','crypto','setTimeout','clearTimeout', componentJs+'\nreturn {WholeDockControl,recoverTerminalDockReceipt};')(
+    React,useState,useRef,useEffect,useSyncExternalStore,callable,'button',showModal,'confirm',dockIntentControl,dockRequestAbandoned,dockRequestSettled,formatPendingRecord,parsePendingRecord,sleepReceiptArchivedAfterAbsence,shutdownUnplugWaiting,window,
     {randomUUID:()=> '12345678-1234-1234-1234-123456789abc'},
     fn=>{h.timers.set(++serial,fn);return serial;},id=>h.timers.delete(id));
   const Component=runtime.WholeDockControl;
   h.recover=()=>runtime.recoverTerminalDockReceipt(window.localStorage);
-  h.render=()=>{index=0;h.tree=Component({intent:h.intent,readCurrentSnapshot:()=>h.snapshot,startRequest,statusOnly,onSettled});for(const fn of effects.splice(0))cleanups.push(fn());return h.tree;};
+  h.render=()=>{index=0;h.tree=Component({intent:h.intent,readCurrentSnapshot:()=>h.snapshot,startRequest,statusOnly,onSettled,onResolvedAbsent,unplugWarning:h.unplugWarning});for(const fn of effects.splice(0))cleanups.push(fn());return h.tree;};
   h.button=()=>h.render().props.children.find(child=>child?.type==='button');
   h.click=()=>{const button=h.button();assert.equal(button.props.disabled,false);button.props.onClick();};
   h.poll=()=>{const [id,fn]=h.timers.entries().next().value;h.timers.delete(id);fn();};
@@ -90,6 +91,15 @@ const recoveredInterrupted = request => ({ ...fresh, code:'dock_teardown.unresol
   safe_to_unplug:false, phase:'dock_teardown', release_stage:'removed',
   release:{code:'live_disconnect.removed',released:true,display_released:true,filter_disarmed:true},
   claim_stage:'tunnel_remove_intent' });
+const recoveredSleepFailure = request => ({ ...fresh, code:'dock_power.disconnect_unverified',
+  request_id:request, busy:false, in_flight:false, ok:false, software_down:false,
+  safe_to_unplug:false, unplug_required:false, power_action:'sleep', power_requested:false,
+  route_action:'whole_dock_sleep', phase:'dock_teardown', claim_stage:'tunnel_remove_intent' });
+const recoveredSleepUnplug = (request,expired=false) => ({ ...fresh,
+  code:expired?'dock_power.unplug_request_expired':'dock_power.unplug_required',
+  request_id:request, busy:true, in_flight:true, ok:false, software_down:true,
+  safe_to_unplug:false, unplug_required:true, power_action:'sleep', power_requested:false,
+  route_action:'whole_dock_sleep', phase:'power_verification' });
 
 test('missing UI receipt is recovered from one exact backend terminal without dispatch',async()=>{
   const request='1'.repeat(32),storage=new Map();
@@ -148,6 +158,102 @@ test('terminal receipt recovery cannot overwrite a receipt created during its ba
   wait.resolve(recoveredTerminal(request));
   assert.equal(await recovery,null);assert.equal(storage.get('regear.whole-dock.pending-request'),newer);
   assert.equal(h.calls.length,0);h.unmount();
+});
+
+test('missing sleep receipt recovers its exact terminal failure without replaying an action',async()=>{
+  const request='d'.repeat(32),storage=new Map();
+  const h=harness(storage,'sleep',undefined,recoveredSleepFailure(request));
+  await settle();const before=h.readCount;
+  assert.deepEqual(await h.recover(),{intent:'sleep',request});
+  assert.equal(h.readCount,before+1);
+  assert.equal(storage.get('regear.whole-dock.pending-request'),
+    `v2:sleep:backend-terminal:${request}`);
+  assert.equal(h.calls.length,0,'recovery is presentation-only');
+  h.unmount();
+
+  const settlements=[];
+  const remount=harness(storage,'sleep',undefined,recoveredSleepFailure(request),undefined,true,
+    value=>settlements.push(value));
+  await settle();remount.poll();await settle();
+  assert.equal(remount.calls.length,0,'terminal sleep failure never replays disconnect or sleep');
+  assert.deepEqual(settlements,[{intent:'sleep',request},{intent:'sleep',request}]);
+  const text=JSON.stringify(remount.render());
+  assert.match(text,/Dock disconnect could not be verified; sleep was not requested/);
+  assert.match(text,/handheld remains awake/);
+  assert.doesNotMatch(text,/Unplug the eGPU now|Sleep cycle observed/);
+  remount.unmount();
+});
+
+test('sleep receipt recovery rejects near-miss terminal states',async()=>{
+  const request='e'.repeat(32),exact=recoveredSleepFailure(request);
+  for(const status of [
+    {...exact,request_id:'bad'}, {...exact,code:'dock_power.unresolved'},
+    {...exact,busy:true}, {...exact,in_flight:true}, {...exact,ok:true},
+    {...exact,software_down:true}, {...exact,safe_to_unplug:true},
+    {...exact,unplug_required:true}, {...exact,power_action:'shutdown'},
+    {...exact,power_requested:true}, {...exact,route_action:'whole_dock_disconnect'},
+    {...exact,phase:'power_request'}, {...exact,claim_stage:'software_down'},
+  ]) {
+    const storage=new Map(),h=harness(storage,'sleep',undefined,status);
+    await settle();assert.equal(await h.recover(),null);assert.equal(storage.size,0);
+    assert.equal(h.calls.length,0);h.unmount();
+  }
+});
+
+test('missing active sleep receipt restores the exact unplug prompt without replay',async()=>{
+  const request='f'.repeat(32),storage=new Map();
+  const h=harness(storage,'sleep',undefined,recoveredSleepUnplug(request));
+  await settle();
+  assert.deepEqual(await h.recover(),{intent:'sleep',request});
+  assert.equal(storage.get('regear.whole-dock.pending-request'),
+    `v2:sleep:backend-terminal:${request}`);
+  assert.equal(h.calls.length,0,'active recovery performs no route or completion call');
+  h.unmount();
+
+  const settlements=[];
+  const remount=harness(storage,'sleep',undefined,recoveredSleepUnplug(request),undefined,true,
+    value=>settlements.push(value));
+  await settle();remount.poll();await settle();
+  assert.equal(remount.calls.length,0);
+  assert.deepEqual(settlements,[],'an active request is never presented as settled');
+  assert.equal(dockIntentControl(recoveredSleepUnplug(request),idle,'sleep').label,'Unplug eGPU now');
+  const text=JSON.stringify(remount.render());
+  assert.match(text,/Safe disconnect is complete\. Physically unplug the eGPU now/);
+  assert.match(text,/Sleep waits for verified physical absence/);
+  assert.doesNotMatch(text,/Waiting to verify the previous request|Keep the cable connected/);
+  remount.unmount();
+});
+
+test('expired sleep unplug receipt restores warning without promising sleep',async()=>{
+  const request='0'.repeat(32),storage=new Map();
+  const h=harness(storage,'sleep',undefined,recoveredSleepUnplug(request,true));
+  await settle();
+  assert.deepEqual(await h.recover(),{intent:'sleep',request});
+  assert.equal(h.calls.length,0);
+  h.unmount();
+  const remount=harness(storage,'sleep',undefined,recoveredSleepUnplug(request,true),undefined,true);
+  await settle();
+  const text=JSON.stringify(remount.render());
+  assert.match(text,/not unplugged before the guarded request expired/);
+  assert.match(text,/handheld remains awake/);
+  assert.match(text,/Physically unplug the eGPU now/);
+  assert.doesNotMatch(text,/will wait.*sleep|Sleep cycle observed/i);
+  remount.unmount();
+});
+
+test('active sleep recovery rejects mismatched route and unsafe shapes',async()=>{
+  const request='a'.repeat(32),exact=recoveredSleepUnplug(request);
+  for(const status of [
+    {...exact,request_id:'bad'}, {...exact,busy:false}, {...exact,in_flight:false},
+    {...exact,safe_to_unplug:true}, {...exact,unplug_required:false},
+    {...exact,power_action:'shutdown'}, {...exact,power_requested:true},
+    {...exact,route_action:'whole_dock_disconnect'}, {...exact,phase:'dock_teardown'},
+    {...exact,ok:true},
+  ]) {
+    const storage=new Map(),h=harness(storage,'sleep',undefined,status);
+    await settle();assert.equal(await h.recover(),null);assert.equal(storage.size,0);
+    assert.equal(h.calls.length,0);h.unmount();
+  }
 });
 
 test('synthesized terminal receipt never invokes completion if status changes before remount',async()=>{
@@ -509,6 +615,44 @@ test('an idle backend retires a record left by a panel that did not survive', ()
     assert.equal(dockRequestAbandoned(idleBackend, parsePendingRecord(raw), 'live-panel'), true);
 });
 
+test('archived absent sleep receipt requires every fresh independent proof', () => {
+  const request='c'.repeat(32);
+  const record=parsePendingRecord(`v2:sleep:backend-terminal:${request}`);
+  const status={schema_version:1,code:'dock_teardown.no_trial',busy:false,in_flight:false,
+    safe_to_unplug:false,attachment_token:''};
+  const claim={schema_version:1,claim_stage:'none',safe_to_unplug:false};
+  const power={schema_version:1,code:'dock_power.idle',busy:false,power_requested:false};
+  const snapshot={schema_version:3,egpu_link:{state:'down'},observed_at:new Date().toISOString()};
+  assert.equal(sleepReceiptArchivedAfterAbsence(status,claim,power,snapshot,record),true);
+  for(const [changed,index] of [
+    [{...status,code:'dock_teardown.unresolved'},0], [{...status,in_flight:true},0],
+    [{...status,attachment_token:'present'},0], [{...claim,claim_stage:'software_down'},1],
+    [{...power,code:'dock_power.unplug_request_expired'},2],
+    [{...snapshot,egpu_link:{state:'up'}},3],
+    [{...snapshot,observed_at:new Date(Date.now()-20_000).toISOString()},3],
+    [{...record,panel:'old-panel'},4], [{...record,intent:'disconnect_only'},4],
+  ]) {
+    const values=[status,claim,power,snapshot,record];values[index]=changed;
+    assert.equal(sleepReceiptArchivedAfterAbsence(...values),false);
+  }
+});
+
+test('post-reboot verified absence retires only the stale UI receipt without replay',async()=>{
+  const request='c'.repeat(32),raw=`v2:sleep:backend-terminal:${request}`;
+  const storage=new Map([['regear.whole-dock.pending-request',raw]]),resolved=[];
+  const status={schema_version:1,code:'dock_teardown.no_trial',busy:false,in_flight:false,
+    safe_to_unplug:false,attachment_token:''};
+  const h=harness(storage,'sleep',undefined,status,undefined,true,undefined,value=>resolved.push(value));
+  h.claim={schema_version:1,claim_stage:'none',safe_to_unplug:false};
+  h.power={schema_version:1,code:'dock_power.idle',busy:false,power_requested:false};
+  h.snapshot={schema_version:3,game_state:'idle',egpu_link:{state:'down'},observed_at:new Date().toISOString()};
+  await settle();
+  assert.deepEqual(resolved,[{intent:'sleep',request}]);
+  assert.equal(storage.get('regear.whole-dock.pending-request'),raw,'native owner performs exact acknowledgement');
+  assert.equal(h.calls.length,0,'receipt cleanup never dispatches disconnect or sleep');
+  h.unmount();
+});
+
 test('a record this panel is still waiting on is never retired', () => {
   // The race the panel identity closes: a poll landing between writing the
   // record and the backend marking itself busy reads an idle backend, and
@@ -858,4 +1002,36 @@ test('consumed but unsent direct activation survives unmount and requires explic
  assert.equal(state,'submitted');assert.equal(reopened.button(),undefined);
  reopened.poll();await settle();assert.equal(reopened.calls.length,1);
  reopened.unmount();
+});
+
+// Actual production TSX: visible warning copy is unique without losing route guidance.
+const visibleParagraphs = tree => tree.props.children.filter(n => n?.type === 'p')
+  .map(n => n.props.children.filter(v => typeof v === 'string').join(''));
+for (const phase of ['prompt','alarm']) test(`ordinary ${phase} renders one unplug instruction`,async()=>{
+ const request='b'.repeat(32),storage=new Map([['regear.whole-dock.pending-request',formatPendingRecord('disconnect_only','backend-terminal',request)]]);
+ const h=harness(storage,'disconnect_only',undefined,{...recoveredTerminal(request),hardware_write:false},undefined,true,()=>{});
+ h.unplugWarning={read:()=>({requestId:request,phase}),subscribe:()=>()=>{},observe(){}};
+ await settle();const tree=h.render(), paragraphs=visibleParagraphs(tree);
+ const message=phase==='alarm'?'Disconnect the eGPU cable now. The dock remains powered after software disconnect.':'Safe disconnect is complete. Physically unplug the eGPU now.';
+ assert.equal(paragraphs.filter(v=>v===message).length,1);
+ assert.equal(tree.props.children.find(n=>n?.type==='p').props.role,'status');
+ assert.equal(h.calls.length,0);h.unmount();
+});
+for (const expired of [false,true]) test(`sleep warning retains distinct guidance expired=${expired}`,async()=>{
+ const request='c'.repeat(32),storage=new Map([['regear.whole-dock.pending-request',formatPendingRecord('sleep','backend-terminal',request)]]);
+ const h=harness(storage,'sleep',undefined,recoveredSleepUnplug(request,expired),undefined,true);
+ await settle();const paragraphs=visibleParagraphs(h.render());
+ assert.equal(new Set(paragraphs).size,paragraphs.length);
+ assert.match(paragraphs.join(' '),expired?/Automatic sleep will not occur/:/Sleep waits for verified physical absence/);
+ assert.equal(h.calls.length,0);h.unmount();
+});
+for (const code of ['dock_power.unplug_required','dock_power.unplug_request_expired','dock_power.unplug_request_cancelled']) test(`shutdown warning retains distinct guidance ${code}`,async()=>{
+ const request='d'.repeat(32),storage=new Map([['regear.whole-dock.pending-request',formatPendingRecord('shutdown','backend-terminal',request)]]);
+ const status={...recoveredSleepUnplug(request),code,power_action:'shutdown',route_action:'whole_dock_shutdown'};
+ const h=harness(storage,'shutdown',undefined,status,undefined,true);
+ await settle();const tree=h.render(),paragraphs=visibleParagraphs(tree);
+ assert.equal(new Set(paragraphs).size,paragraphs.length);
+ assert.match(paragraphs.join(' '),code==='dock_power.unplug_required'?/Closing this popup does not cancel automatic shutdown/:/Automatic shutdown will not occur for this request/);
+ assert.equal(tree.props.children.some(n=>n?.type==='button'&&n.props.children.includes('Cancel automatic shutdown')),code==='dock_power.unplug_required');
+ assert.equal(h.calls.length,0);h.unmount();
 });

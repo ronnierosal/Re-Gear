@@ -15,12 +15,13 @@ const actionExports={}; new Function("exports",compile(read("test-build-actions.
 const profileExports={};new Function("exports",compile(readFileSync(new URL("../src/build-profile.ts",import.meta.url),"utf8")))(profileExports);
 const utilityExports={};new Function("exports",compile(read("native-utilities.ts")))(utilityExports);
 const displayTargetExports={};new Function("exports",compile(read("display-target-action.ts")))(displayTargetExports);
+const warningExports={};new Function("exports",compile(read("../../unplug-warning-coordinator.ts")))(warningExports);
 function harness(pendingRecord = null, recoverTerminalDockReceipt = async () => null, policy = "production", system = {}, detailState) {
   const h = { modals: [], cleanup: [], timers: new Map(), nextTimer: 1, throwOpen: false, stopped: false, allowed: true };
   const values = new Map(pendingRecord ? [["regear.whole-dock.pending-request", pendingRecord]] : []);
   h.storage = { getItem:key=>values.get(key)??null, setItem:(key,value)=>values.set(key,value), removeItem:key=>values.delete(key) };
   const runtime = {
-    createMenuVisibility, ...actionExports, ...profileExports, ...displayTargetExports, createNativeUtilities:system=>{h.utilitiesCreated=true;return utilityExports.createNativeUtilities(system);}, GamepadButton:{DIR_UP:9,DIR_DOWN:10,DIR_LEFT:11,DIR_RIGHT:12}, EgpuConfirmModal:"confirm",
+    createMenuVisibility, ...actionExports, ...profileExports, ...displayTargetExports, ...warningExports, callable:()=>async()=>null, createNativeUtilities:system=>{h.utilitiesCreated=true;return utilityExports.createNativeUtilities(system);}, GamepadButton:{DIR_UP:9,DIR_DOWN:10,DIR_LEFT:11,DIR_RIGHT:12}, EgpuConfirmModal:"confirm",
     parsePendingRecord: raw => {
       const match = /^v2:(disconnect|disconnect_only|sleep|shutdown):([^:]+):([^:]+)$/.exec(raw ?? "");
       return match ? { intent: match[1], panel: match[2], request: match[3] } : null;
@@ -225,7 +226,7 @@ test("production read-only eGPU detail enters at the first reading and Back rest
  assert.equal(nestedNode.props.tabIndex,-1);
  const scrolling={scrollTop:240};contentNode.props.ref.current=scrolling;
  let focusOptions,backFocus=0,launcherFocus=0;
- const status={dataset:{ecControl:"nested-content"},focus(options){focusOptions=options;}};
+ const status={dataset:{ecControl:"nested-content"},querySelector(){return null;},focus(options){focusOptions=options;}};
  const launcher={dataset:{ecControl:"egpu"},querySelector(){return null;},matches(){return true;},focus(){launcherFocus++;},scrollIntoView(){}};
  panelNode.props.ref.current={querySelectorAll:()=>[status,launcher],querySelector:()=>({focus(){backFocus++;}})};
  app.restoreFocus();
@@ -234,6 +235,23 @@ test("production read-only eGPU detail enters at the first reading and Back rest
  nodes(tree).find(n=>n.props?.["data-ec-control"]==="nested-back").props.onClick();
  tree=app.render(props);app.restoreFocus();
  assert.equal(launcherFocus,1);
+});
+
+
+test("production native eGPU detail focuses its first registered reading before Back",async()=>{
+ const app=await fixture();
+ const props={policy:"production",native:true,tiles:{egpu:[{id:"egpu",title:"eGPU",value:"Unknown",detail:"Status unavailable"}]},renderDetail:()=>"Native reading fixture"};
+ let tree=app.render(props);nodes(tree).find(n=>n.props?.["data-ec-control"]==="egpu").props.onClick();tree=app.render(props);
+ const content=nodes(tree).find(n=>n.props?.className==="rg-expanded-content");
+ const panel=nodes(tree).find(n=>n.props?.["data-ec-panel"]!==undefined);
+ const scrolling={scrollTop:240};content.props.ref.current=scrolling;
+ let rootFocus=0,readingFocus=0,backFocus=0,launcherFocus=0;
+ const reading={focus(options){assert.deepEqual(options,{preventScroll:true});readingFocus++;},scrollIntoView(options){assert.deepEqual(options,{block:"nearest"});}};
+ const status={dataset:{ecControl:"nested-content"},querySelector(selector){assert.match(selector,/\.rg-egpu-reading/);return reading;},focus(){rootFocus++;}};
+ const launcher={dataset:{ecControl:"egpu"},querySelector(){return null;},matches(){return true;},focus(){launcherFocus++;},scrollIntoView(){}};
+ panel.props.ref.current={querySelectorAll:()=>[status,launcher],querySelector:()=>({focus(){backFocus++;}})};
+ app.restoreFocus();assert.equal(readingFocus,1);assert.equal(rootFocus,0);assert.equal(backFocus,0);assert.equal(scrolling.scrollTop,240);
+ nodes(tree).find(n=>n.props?.["data-ec-control"]==="nested-back").props.onClick();tree=app.render(props);app.restoreFocus();assert.equal(launcherFocus,1);
 });
 
 

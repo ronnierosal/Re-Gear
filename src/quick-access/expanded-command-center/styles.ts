@@ -58,4 +58,31 @@ export const expandedStyles = `
 .rg-expanded-picker h4{font-size:11px;color:#87aabd;margin:10px 0 6px}.rg-expanded-picker section{margin:0 0 10px}
 
 .rg-expanded-picker-filters{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px;margin:0 0 8px}.rg-expanded-picker-filters button{padding:5px 8px;border-radius:14px;font-size:10px;text-align:center}.rg-expanded-picker-filters button[aria-pressed=true]{background:#17445b;border-color:#39d8ff}
+.rg-expanded-picker .rg-expanded-picker-tile{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;min-height:100px;text-align:center;background:linear-gradient(145deg,#143850,#0a2237 48%,#071a2b);border-color:#326987;box-shadow:inset 0 1px 0 #ffffff08}
+.rg-expanded-picker-tile .rg-expanded-picker-artwork{display:flex;align-items:center;justify-content:center;flex:0 1 44%;min-height:22px;width:100%;overflow:visible}
+.rg-expanded-picker-artwork .rg-v3-tile-artwork{position:static;display:block;width:100%;height:100%;max-height:42px;object-fit:contain;opacity:1;transform:none;pointer-events:none}.rg-expanded-picker-artwork svg{width:28px;height:28px}
+.rg-expanded-picker-tile .rg-expanded-picker-label{flex:0 0 auto;width:100%;font-weight:700;line-height:1.2}.rg-expanded-picker .rg-expanded-picker-tile small{flex:0 0 auto;margin:0;line-height:1.2}
+.rg-expanded-picker .rg-expanded-picker-tile[aria-pressed=true]{border-color:#39d8ff;background:linear-gradient(145deg,#17445b,#0b2b3c);box-shadow:inset 0 0 0 1px #39d8ff55}.rg-expanded-picker-tile[aria-pressed=true]:after{content:'✓';position:absolute;right:5px;top:4px;border-radius:50%;width:15px;height:15px;line-height:15px;background:#39d8ff;color:#042333;font-size:11px;font-weight:800}
+.rg-expanded-picker .rg-expanded-picker-tile:focus-visible,.rg-expanded-picker .rg-expanded-picker-tile.gpfocus{outline:2px solid #39d8ff;outline-offset:-3px;background:#17445b;box-shadow:0 0 0 2px #39d8ff33}
+/* Detail readability scales with available panel width, preserving the compact
+   grid/artwork composition. Information wraps rather than disappearing. */
+.rg-expanded{--rg-detail-body:clamp(12px,1.2cqw,15px)}
+@media(min-width:1600px){.rg-expanded{--rg-detail-body:15px}}
+.rg-expanded-detail-page{min-width:0;font-size:var(--rg-detail-body);line-height:1.45;overflow-wrap:anywhere}
+.rg-expanded .rg-expanded-detail-page h2{font-size:clamp(18px,2cqw,23px);line-height:1.25}
+.rg-expanded .rg-expanded-detail-page h3{font-size:clamp(16px,1.6cqw,20px);line-height:1.3}
+.rg-expanded-detail-page p{margin:6px 0 10px}.rg-expanded-detail-page ol{padding-left:24px}.rg-expanded-detail-page li{margin-bottom:8px}
+.rg-readable{min-width:0;line-height:1.45;overflow-wrap:anywhere;scroll-margin-block:4px}
+.rg-readable.gpfocus,.rg-readable:focus-visible,.rg-readable:focus-within{outline:none!important;box-shadow:none!important;background:transparent!important}
+.rg-command-status>span,.rg-command-status>strong,.rg-command-status small,.rg-command-notice>div,.rg-command-control .rg-readable div{font-size:var(--rg-detail-body)!important;line-height:1.45!important}
+@container rg-menu (max-width:420px){.rg-command-status,.rg-command-control{grid-template-columns:minmax(0,1fr)!important}.rg-expanded-detail-page{overflow-wrap:anywhere}}
+/* Only the cycling TDP card uses a compact icon and the full copy width. */
+.rg-expanded .rg-expanded-tile.rg-tdp-mode-tile{height:auto!important;min-height:74px!important;max-height:none!important;overflow:visible}
+.rg-expanded .rg-tdp-mode-tile .rg-expanded-tile-body{width:100%;height:auto;justify-content:center}
+.rg-expanded .rg-tdp-mode-tile .rg-expanded-tile-heading{display:flex;align-items:center;gap:5px}
+.rg-expanded .rg-tdp-mode-tile .rg-expanded-tile-icon{margin:0;flex:0 0 16px}
+.rg-expanded .rg-tdp-mode-tile .rg-expanded-label,.rg-expanded .rg-tdp-mode-tile .rg-expanded-value{display:block;white-space:normal;overflow:visible;text-overflow:clip;-webkit-line-clamp:unset;overflow-wrap:anywhere}
+.rg-tdp-mode-status,.rg-tdp-mode-status *{min-width:0;max-width:100%;white-space:normal!important;overflow:visible!important;text-overflow:clip!important;-webkit-line-clamp:unset!important;overflow-wrap:anywhere}
+.rg-tdp-mode-status .rg-readable,.rg-tdp-mode-status [role=group]{width:100%;box-sizing:border-box}
+.rg-tdp-mode-status p{margin:8px 0;font-size:var(--rg-detail-body);line-height:1.45}
 `;

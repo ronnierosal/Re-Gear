@@ -11,6 +11,7 @@ import type { UtilityId } from "./utility-layout";
 import { UtilityIcon, UtilityRail } from "./utility-rail";
 import type { UtilityRailProps } from "./utility-rail";
 import { CommandNotice } from "./detail-ui";
+import { ReadableBlock, revealReadable, scrollReadable } from "../readable-block";
 import { useLayoutEffect, useRef, useState } from "react";
 import type { CSSProperties, KeyboardEvent, ReactNode, ElementType } from "react";
 import { CommandCenterIcon, type CommandCenterIconId } from "../command-center-icons";
@@ -28,6 +29,7 @@ import { RichTileArtwork, RichTileSprite, richTileArtworkId, richTileArtworkStyl
 // Keep that harness path inert while production always uses the imported layer.
 const RichArtwork = typeof RichTileArtwork === "undefined" ? () => null : RichTileArtwork;
 const RichArtworkSprite = typeof RichTileSprite === "undefined" ? () => null : RichTileSprite;
+const Reading = typeof ReadableBlock === "undefined" ? ({children}: {children: ReactNode}) => <div>{children}</div> : ReadableBlock;
 const artworkIdFor = typeof richTileArtworkId === "undefined" ? () => undefined : richTileArtworkId;
 const artworkStyles = typeof richTileArtworkStyles === "undefined" ? "" : richTileArtworkStyles;
 const V3Artwork = typeof V3TileArtwork === "undefined" ? () => null : V3TileArtwork;
@@ -45,7 +47,7 @@ const iconIds: Record<string, CommandCenterIconId> = {
 function Icon({ id }: { id: string }) { if(controlForKey(`utility:${id}`))return <UtilityIcon id={id as UtilityId}/>;return <CommandCenterIcon id={iconIds[id] ?? "status-unknown"} size={34}/>; }
 
 /** Shared synthetic presentation for browser preview and native Decky shell. */
-export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReasons = false, settings, native = false, primitives, previewColumns, tiles, catalogReadings, renderDetail, disconnectControl, utilityReadings, onUtilityRequest, directions, onDisconnect, unavailableActions = {}, layoutStorage, editButtons, onFeedback, onAction, policy = "development" }: {
+export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReasons = false, settings, native = false, primitives, previewColumns, tiles, catalogReadings, renderDetail, disconnectControl, utilityReadings, onUtilityRequest, directions, onDisconnect, unavailableActions = {}, layoutStorage, editButtons, onFeedback, onAction, tdpCycle, policy = "development" }: {
   policy?: BuildProfile;
   onClose(): void; initialTab?: Tab; longReasons?: boolean; settings?: ReactNode; native?: boolean;
   primitives?: { Button: ElementType; Focusable: ElementType };
@@ -66,6 +68,7 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
   directions?: UtilityRailProps["directions"];
   onDisconnect?:()=>void;
   onAction?:(tab:Tab,tile:Tile)=>boolean;
+  tdpCycle?: { value: string; detail: string };
   unavailableActions?:Record<string,string>;
   layoutStorage?:LayoutStorage;
   editButtons?:{y:number};
@@ -157,16 +160,20 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
   const supplied = tiles?.[tab];
   // A tab with real readings must stop describing itself as sample data.
   const synthetic = supplied === undefined;
-  const items = projection?.view[tab] ?? supplied ?? sampleTiles[tab];
+  const items = projection?.view[tab] ?? (supplied ?? sampleTiles[tab]).filter(item => controlForKey(`${tab}:${item.id}`)?.id !== 'auto-tdp');
+  // Keep configuration separate from the cycle, using the current source reading.
+  const autoTile=(rawSource.performance??[]).find(item=>item.id==='auto')??(rawSource.quick??[]).find(item=>item.id==='auto');
+  const autoSettingsId='auto-settings';
+  const autoSettingsOrigin:TileOrigin|null=autoTile?{key:'performance:auto',tab:'performance',tile:autoTile}:null;
   const originFor=(tile:Tile):TileOrigin=>projection?.resolve(tab,tile.id)??{key:`${tab}:${tile.id}`,tab,tile};
   // Retain the destination, never a copy of a reading that can become stale.
-  const nested = nestedId === null ? null : items.find(item => item.id === nestedId) ?? {
+  const nested = nestedId === null ? null : (nestedId===autoSettingsId?autoTile:items.find(item => item.id === nestedId)) ?? {
     id: nestedId, title: "Status unavailable", value: "Unknown",
     detail: "This reading is no longer available. Return to the menu for current status.",
   };
-  const detailTile = !synthetic && nestedId !== null ? items.find(item => item.id === nestedId) : undefined;
+  const detailTile = nestedId===autoSettingsId ? (tiles?autoTile:undefined) : !synthetic && nestedId !== null ? items.find(item => item.id === nestedId) : undefined;
   const dockControl = native && nestedId === "disconnect" && disconnectControl != null;
-  const detailOrigin=detailTile?originFor(detailTile):null;
+  const detailOrigin=detailTile?(nestedId===autoSettingsId?autoSettingsOrigin:originFor(detailTile)):null;
   const resetDetail=detailOrigin?.key==='settings:reset-layout'&&savedLayout?<div><p>Restore the default Quick Access buttons, right rail and tab order?</p>{layoutError&&<p role="alert">{layoutError}</p>}<Button type="button" onClick={()=>{if(commitLayout(normalizeLayout(null),'reset-layout'))setNested(null);}}>Reset layout</Button></div>:null;
   const detailContent = dockControl ? disconnectControl : resetDetail ?? ( detailOrigin?.tab==="settings"&&detailOrigin.tile.id==="shortcut"?settings:detailOrigin ? renderDetail?.(detailOrigin.tab, detailOrigin.tile) : null);
   const hasDetail = detailContent != null && detailContent !== false;
@@ -174,14 +181,14 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
   const gridColumns = columns;
   const focus = (id?: string) => {
     const target = Array.from(panel.current?.querySelectorAll<HTMLElement>("[data-ec-control]") ?? []).find(el => el.dataset.ecControl === id);
-    if (id === "nested-content" && productionStatusDetail && target) {
+    if (id === "nested-content" && productionStatusDetail && target && !target.querySelector('[data-rg-readable],.rg-egpu-reading')) {
       // Read-only status has no action to focus. Enter the status surface at its
       // beginning rather than scrolling past the readings to the Back button.
       target.focus({ preventScroll: true });
       if (content.current) content.current.scrollTop = 0;
       return;
     }
-    const child = target?.querySelector<HTMLElement>('button:not(:disabled),select:not(:disabled),input:not(:disabled),textarea:not(:disabled),[tabindex="0"]');
+    const child = target?.querySelector<HTMLElement>('button:not(:disabled),select:not(:disabled),input:not(:disabled),textarea:not(:disabled),[data-rg-readable],.rg-egpu-reading,[tabindex="0"]');
     // Native Focusable may itself have tabindex; an embedded editor should
     // receive focus before its wrapper.
     const interactive = id === "nested-content" ? child : target?.matches("button,select,input,textarea,[tabindex]") ? target : child;
@@ -214,6 +221,10 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
     return () => observer.disconnect();
   }, [previewColumns]);
   useLayoutEffect(() => {
+    if (nested && !hasDetail) {
+      const reading = content.current?.querySelector<HTMLElement>('[data-rg-readable]');
+      if (reading) { reading.focus({preventScroll:true}); if (typeof revealReadable === "function") revealReadable(reading); return; }
+    }
     focus(editMode==="customize" ? `choice:${pickerGroups[0]?.entries[0]?.origin.key}` : editMode==="quick-actions" ? `right-choice:${savedLayout?.right[rightSlot]??"mic"}` : editMode==="move" ? selected : nested ? (hasDetail ? "nested-content" : "nested-back") : pendingFocus.current ?? restoreTarget(controlIds(), memory.current[tab]));
     pendingFocus.current = undefined;
   }, [tab, nestedId, editMode, draft]);
@@ -290,15 +301,10 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
   function reveal(target: HTMLElement) {
     const section = target.closest<HTMLElement>("[data-settings-section]");
     if (!section || !content.current) return;
-    const controls = section.querySelectorAll("[data-ec-control]");
     const box = content.current.getBoundingClientRect();
     const r = target.getBoundingClientRect();
-    if (controls[0]?.contains(target) || r.top < box.top + 10 || r.bottom > box.bottom - 10) {
-      const anchor = section.querySelector<HTMLElement>(".rg-expanded-anchor");
-      if (!anchor) return;
-      const offset = section.dataset.settingsSection === "shortcut" ? 0 : content.current.scrollTop + anchor.getBoundingClientRect().top - box.top - 10;
-      content.current.scrollTop = Math.max(0, offset);
-      if (target.getBoundingClientRect().bottom > box.bottom - 10) target.scrollIntoView({block: "nearest"});
+    if (r.top < box.top + 10 || r.bottom > box.bottom - 10) {
+      target.scrollIntoView({block: "nearest", inline: "nearest"});
     }
   }
   function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
@@ -334,7 +340,7 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
       return;
     }
     if (event.key === "Tab") {
-      const buttons = Array.from(panel.current?.querySelectorAll<HTMLElement>("button:not(:disabled), select:not(:disabled), input:not(:disabled), textarea:not(:disabled)") ?? []);
+      const buttons = Array.from(panel.current?.querySelectorAll<HTMLElement>("button:not(:disabled), select:not(:disabled), input:not(:disabled), textarea:not(:disabled), [data-rg-readable], .rg-egpu-reading") ?? []);
       const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
       if ((event.shiftKey && index <= 0) || (!event.shiftKey && index === buttons.length - 1)) {
         event.preventDefault(); buttons[event.shiftKey ? buttons.length - 1 : 0]?.focus();
@@ -362,6 +368,9 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
     const target = event.target as HTMLElement;
     const tabTarget = target.closest<HTMLElement>("[data-ec-tab]");
     const direction = event.key.slice(5).toLowerCase() as "left" | "right" | "up" | "down";
+    if ((nested || target.closest('.rg-tdp-mode-status')) && target.matches('[data-rg-readable]') && (direction === "up" || direction === "down") && typeof scrollReadable === "function" && scrollReadable(target, direction)) {
+      event.preventDefault(); event.stopPropagation(); return;
+    }
     if (tabTarget) {
       event.preventDefault();
       if (direction === "down") focus(restoreTarget(controlIds(), memory.current[tab]));
@@ -381,24 +390,33 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
       }
       else {
         const next = moveInGrid(cells, target.dataset.ecControl, direction);
-        focus(next);
+        if(!production && editMode==='normal' && (tab==='quick'||tab==='performance') && direction==='down' && next===target.dataset.ecControl){
+          const reading=content.current?.querySelector<HTMLElement>('.rg-tdp-mode-status [data-rg-readable]');
+          if(reading){reading.focus({preventScroll:true});if(typeof revealReadable==='function')revealReadable(reading);}
+          else focus(autoTile?autoSettingsId:next);
+        }else focus(next);
       }
     } else {
       event.preventDefault(); event.stopPropagation();
-      const buttons = Array.from(panel.current?.querySelectorAll<HTMLElement>("button:not(:disabled), select:not(:disabled), input:not(:disabled), textarea:not(:disabled)") ?? []);
+      const scope = nested ? content.current : panel.current;
+      const buttons = Array.from(scope?.querySelectorAll<HTMLElement>("button:not(:disabled), select:not(:disabled), input:not(:disabled), textarea:not(:disabled), [data-rg-readable], .rg-egpu-reading") ?? []);
       const index = buttons.indexOf(target as HTMLButtonElement);
       const next = Math.max(0, Math.min(buttons.length - 1, index + (direction === "up" || direction === "left" ? -1 : 1)));
-      buttons[next]?.focus(); buttons[next]?.scrollIntoView({ block: "nearest" });
+      buttons[next]?.focus({preventScroll:true});
+      if (buttons[next] && typeof revealReadable === "function") revealReadable(buttons[next]);
+      else buttons[next]?.scrollIntoView({ block: "nearest" });
     }
   }
 
-  const hasTileDetails=(item:Tile)=>{const definition=controlForKey(originFor(item).key);return !definition||definition.type==='navigation'||definition.type==='status';};
+  const hasTileDetails=(item:Tile)=>{const origin=originFor(item);if(!production&&tdpCycle&&(origin.tab==="quick"||origin.tab==="performance")&&origin.tile.id==="manual")return false;const definition=controlForKey(originFor(item).key);return !definition||definition.type==='navigation'||definition.type==='status';};
   const renderTile = (item: Tile) => {
     const original=originFor(item);
+    const isTdpMode = !production && Boolean(tdpCycle) && (original.tab === "quick" || original.tab === "performance") && original.tile.id === "manual";
+    if (isTdpMode && tdpCycle) item = { ...item, title: "TDP Mode", value: tdpCycle.value, detail: tdpCycle.detail };
     const definition=controlForKey(original.key);
     const disabled=editMode==="normal"&&Boolean(unavailableActions[original.tile.id]||(definition?.rightEligible&&(!utilityReadings?.[definition.id as UtilityId]?.available||utilityReadings?.[definition.id as UtilityId]?.pending)));
     const activate=()=>{if(pickerOpen)return;if(editMode==="move"){if(draft)commitLayout(draft);return;}if(item.empty)return;if(definition?.type==='widget')return;if(unavailableActions[original.tile.id])return;if(definition?.rightEligible){const id=definition.id as UtilityId;if(!onUtilityRequest||!utilityReadings?.[id]?.available||utilityReadings?.[id]?.pending||utilityBusy.current.has(id))return;utilityErrorReadings.current.delete(id);setUtilityErrors(value=>({...value,[id]:undefined}));utilityBusy.current.add(id);void Promise.resolve().then(()=>onUtilityRequest(id)).catch(()=>{utilityErrorReadings.current.set(id,utilityReadings?.[id]);setUtilityErrors(value=>({...value,[id]:'Could not apply'}));}).finally(()=>utilityBusy.current.delete(id));return;}if(definition?.directAction==="disconnect"&&onDisconnect){onDisconnect();return;}if(onAction?.(original.tab,original.tile))return;launcher.current=item.id;setNested(item.id);};
-    const buttonProps={key:item.id,className:'rg-expanded-tile','data-ec-control':item.id,'data-tone':item.tone??'quiet','data-empty':item.empty||undefined,'aria-disabled':disabled,'data-move-selected':editMode==="move"&&selected===item.id||undefined,
+    const buttonProps={key:item.id,className:isTdpMode?'rg-expanded-tile rg-tdp-mode-tile':'rg-expanded-tile','data-ec-control':item.id,'data-tone':item.tone??'quiet','data-empty':item.empty||undefined,'aria-disabled':disabled,'data-move-selected':editMode==="move"&&selected===item.id||undefined,
       onGamepadDirection:native&&directions?(event:CustomEvent<{button:number}>)=>{const direction=Object.keys(directions).find(key=>directions[key as keyof typeof directions]===event.detail.button) as "up"|"down"|"left"|"right"|undefined;if(direction&&moveSelected(direction)){event.preventDefault();event.stopPropagation();return true;}if(event.detail.button===directions.left&&enterRail(item.id)){event.preventDefault();event.stopPropagation();return true;}return false;}:undefined,
       ...(native?{preferredFocus:item.id===restoreTarget(items.map(tile=>tile.id),memory.current[tab]),onGamepadFocus:()=>{memory.current[tab]=item.id;const target=panel.current?.querySelector<HTMLElement>(`[data-ec-control="${item.id}"]`);if(target){if(tab==="settings")reveal(target);else target.scrollIntoView({block:'nearest'});}}}:{}),
       'aria-label':`${editMode==="move"?'Move button. A to place. ':''}${item.title}: ${item.value}. ${item.detail}.${synthetic?' Sample data. ':''}${unavailableActions[original.tile.id]?unavailableActions[original.tile.id]:original.tile.id==='disconnect'&&onDisconnect?'Start guarded disconnect.':hasTileDetails(item)?'View details.':''}`,
@@ -424,13 +442,13 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
     const v3ControlId=item.artworkControlId??definition?.id??original.tile.id;
     const v3ArtworkId=v3ArtworkIdFor(v3ControlId);
     if(v3ArtworkId){
-      return <SharedTile {...buttonProps} key={item.id} Button={Button} buttonProps={buttonProps} label={item.title} artworkId={v3ArtworkId} artwork={<V3Artwork controlId={v3ControlId}/> }>
+      return <SharedTile {...buttonProps} key={item.id} Button={Button} buttonProps={buttonProps} label={item.title} artworkId={v3ArtworkId} artwork={isTdpMode?undefined:<V3Artwork controlId={v3ControlId}/> }>
         <span className="rg-expanded-value">{item.value}</span>
         <span className="rg-expanded-detail">{item.detail}{longReasons && item.tone === "unavailable" ? " — Provider observations are unavailable in this synthetic preview. No capability or successful operation can be inferred from the displayed sample." : ""}</span>
         {hasTileDetails(item) && !unavailableActions[original.tile.id] && <span className="rg-expanded-chevron" aria-hidden="true">›</span>}
       </SharedTile>;
     }
-    return <Button type="button" key={item.id} data-ec-control={item.id} data-tone={item.tone ?? "quiet"} className="rg-expanded-tile" data-empty={item.empty||undefined}
+    return <Button type="button" key={item.id} data-ec-control={item.id} data-tone={item.tone ?? "quiet"} className={isTdpMode?'rg-expanded-tile rg-tdp-mode-tile':'rg-expanded-tile'} data-empty={item.empty||undefined}
               aria-disabled={editMode==="normal"&&Boolean(unavailableActions[originFor(item).tile.id]||(controlForKey(originFor(item).key)?.rightEligible&&(!utilityReadings?.[controlForKey(originFor(item).key)!.id as UtilityId]?.available||utilityReadings?.[controlForKey(originFor(item).key)!.id as UtilityId]?.pending)))}
               data-move-selected={editMode==="move"&&selected===item.id || undefined}
               onGamepadDirection={native&&directions ? (event:CustomEvent<{button:number}>)=>{const direction=Object.keys(directions).find(key=>directions[key as keyof typeof directions]===event.detail.button) as "up"|"down"|"left"|"right"|undefined;if(direction&&moveSelected(direction)){event.preventDefault();event.stopPropagation();return true;}if(event.detail.button===directions.left&&enterRail(item.id)){event.preventDefault();event.stopPropagation();return true;}return false;} : undefined}
@@ -470,25 +488,27 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
       <div ref={content} className="rg-expanded-content" id="ec-tabpanel" role="tabpanel" onFocusCapture={event => { if(tab === "settings") reveal(event.target as HTMLElement); }} aria-labelledby={`ec-tab-${tab}`}>
         {layoutError&&<p role="alert">{layoutError}</p>}
         {editMode==="move"&&<LayoutCustomizationBanner tab={tab} mode="move" selectedTitle={items.find(item=>item.id===selected)?.title}/>}
-        {nested && <><h2>{nested.title}</h2>
-        <p className="rg-expanded-context">{hasDetail && !productionStatusDetail ? "Settings and actions" : synthetic ? "Configuration preview · no changes are applied" : "Current status · no changes are applied"}</p></>}
-        {nested ? <section className="rg-expanded-detail-page">
+        {nested ? <Container className="rg-expanded-detail-page" aria-label={nested.title} {...(native ? {"flow-children":"vertical",noFocusRing:true} : {})}>
+          {!hasDetail && <h2>{nested.title}</h2>}
+          {productionStatusDetail && <p className="rg-expanded-context">Current status · no changes are applied</p>}
           {hasDetail ? <Container key={nested.id} data-ec-control="nested-content" data-ec-detail-content tabIndex={productionStatusDetail ? -1 : undefined} {...(native ? { "flow-children": "vertical", noFocusRing: true, preferredFocus: true } : {})}>
             {dockControl && <CommandNotice tone="warning" title="Keep the cable connected">Disconnect trial. Follow the guarded flow before any physical action.</CommandNotice>}
             {detailContent}</Container> : <>
-          <h3>{nested.value}</h3>
+          <Reading label={`${nested.title}: ${nested.value}`}><h3>{nested.value}</h3>
           <p>{synthetic && nested.id === "auto" ? "Auto TDP is off and not configured. Target and limit selection must precede Start. This prototype cannot start, stop or tune the controller." : nested.detail}</p>
           {synthetic && nested.id === "auto" && <p><strong>State vocabulary:</strong> Off · Running · Stopping… · Unknown · Needs configuration</p>}
           <p>{synthetic ? "Sample data only. No hardware operation is available." : "Status details only. No operation is available from this view."}</p>
-          </>}
-          {nested.id === "disconnect" && !dockControl && <p><strong>No unplug clearance.</strong> {synthetic ? "Backend readiness and confirmation are not connected. " : "Readiness, confirmation and unplug clearance are separate. "}A display change, missing observation or successful command does not establish safety.</p>}
+          </Reading></>}
+          {nested.id === "disconnect" && !dockControl && <Reading label="No unplug clearance"><p><strong>No unplug clearance.</strong> {synthetic ? "Backend readiness and confirmation are not connected. " : "Readiness, confirmation and unplug clearance are separate. "}A display change, missing observation or successful command does not establish safety.</p></Reading>}
           <Button type="button" className="rg-expanded-back" data-ec-control="nested-back" {...(native ? { preferredFocus: !hasDetail } : {})} onClick={back}>Back to {tabLabels[tab]}</Button>
-        </section> : <>
+        </Container> : <>
           <Container data-layout-customizing={editMode==="move" || undefined} className={tab === "settings" ? "rg-expanded-grid rg-expanded-settings-list" : "rg-expanded-grid"} style={{ "--ec-columns": gridColumns } as CSSProperties} {...(native ? { "flow-children": "grid", preferredFocus: true, noFocusRing: true } : {})}>
             {items.map(item => tab === "settings" ? <section key={item.id} data-settings-section={item.id} className="rg-expanded-settings-section">
               <span className="rg-expanded-anchor" tabIndex={-1} aria-label={`${item.title} section`} />
               {renderTile(item)}</section> : renderTile(item))}
           </Container>
+          {!production && tdpCycle && items.some(item => { const origin = originFor(item); return (origin.tab === "quick" || origin.tab === "performance") && origin.tile.id === "manual"; }) && <div className="rg-tdp-mode-status"><Reading label="TDP mode status"><p role="status" data-tdp-cycle-status>{tdpCycle.detail}</p></Reading></div>}
+          {!production && autoTile && (tab==='quick'||tab==='performance') && editMode==='normal' && <Button type="button" className="rg-expanded-back" data-ec-control={autoSettingsId} onClick={()=>{launcher.current=autoSettingsId;setNested(autoSettingsId);}}>Auto settings</Button>}
           {synthetic ? <aside className="rg-expanded-info" aria-label="Sample status summary">
             <CommandCenterIcon id="status-unknown" size={22}/>
             <span><strong>{tab === "quick" || tab === "egpu" ? "eGPU connected · External controller active" : tab === "performance" ? "Performance preferences" : tab === "controllers" ? "External controller · Player 1" : "Make Re-Gear yours"}</strong>
@@ -524,9 +544,16 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
           </Container>
           {editMode==='customize'?pickerGroups.map(group=><section key={group.category} data-picker-category={group.category}>
             <Container className="rg-expanded-picker-grid" flow-children="grid" noFocusRing>
-              {group.entries.map(({origin,label,icon})=><Button key={origin.key} type="button" data-ec-control={`choice:${origin.key}`} className="rg-expanded-picker-tile" onClick={()=>chooseTile(origin)} aria-label={`${label}, ${group.label}`}><span className="rg-expanded-tile-heading"><Icon id={icon}/><span>{label}</span></span><small>{group.label}</small></Button>)}
+              {group.entries.map(({origin,canonicalId,label,icon})=><Button key={origin.key} type="button" data-ec-control={`choice:${origin.key}`} className="rg-expanded-picker-tile"
+                aria-pressed={items.some(item=>item.id===selected&&controlForKey(originFor(item).key)?.id===canonicalId)}
+                onClick={()=>chooseTile(origin)} aria-label={`${label}, ${group.label}`}>
+                <span className="rg-expanded-picker-artwork" aria-hidden="true">{v3ArtworkIdFor(canonicalId)?<V3Artwork controlId={canonicalId}/>:<Icon id={icon}/>}</span>
+                <span className="rg-expanded-picker-label">{label}</span><small>{group.label}</small></Button>)}
             </Container></section>):<section><Container className="rg-expanded-picker-grid" flow-children="grid" noFocusRing>
-              {rightChoices.map(def=><Button key={def.id} type="button" data-ec-control={`right-choice:${def.id}`} className="rg-expanded-picker-tile" onClick={()=>chooseRight(def.id as UtilityId)} aria-label={`${def.label}${utilityReadings?.[def.id as UtilityId]?.available?'':', unavailable action'}`}><span>{def.shortLabel}</span><small>{domainLabels[def.domain]}</small>{!utilityReadings?.[def.id as UtilityId]?.available&&<small>Unavailable</small>}</Button>)}
+              {rightChoices.map(def=><Button key={def.id} type="button" data-ec-control={`right-choice:${def.id}`} className="rg-expanded-picker-tile"
+                aria-pressed={savedLayout?.right[rightSlot]===def.id} onClick={()=>chooseRight(def.id as UtilityId)} aria-label={`${def.label}${utilityReadings?.[def.id as UtilityId]?.available?'':', unavailable action'}`}>
+                <span className="rg-expanded-picker-artwork" aria-hidden="true">{v3ArtworkIdFor(def.id)?<V3Artwork controlId={def.id}/>:<Icon id={def.icon}/>}</span>
+                <span className="rg-expanded-picker-label">{def.shortLabel}</span><small>{domainLabels[def.domain]}</small>{!utilityReadings?.[def.id as UtilityId]?.available&&<small>Unavailable</small>}</Button>)}
             </Container></section>}
           <Container className="rg-expanded-picker-grid" flow-children="grid" noFocusRing>
             <Button type="button" className="rg-expanded-picker-tile" data-ec-control="choice:remove" onClick={()=>{
