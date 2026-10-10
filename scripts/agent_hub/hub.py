@@ -5,6 +5,7 @@ import argparse
 from contextlib import contextmanager
 from datetime import datetime, timezone
 import html
+import hashlib
 import json
 from pathlib import Path
 import re
@@ -17,6 +18,302 @@ import uuid
 DEFAULT_DB = (Path(__file__).resolve().parent / 'data' / 'hub.sqlite3'
               if Path(__file__).resolve().parent.name == 'agent-hub' else None)
 STATES = ('todo', 'in_progress', 'blocked', 'review', 'done', 'cancelled')
+
+MAINTAINER = 'codex-01a080fd'
+MAINTENANCE_TASK = 'agent-hub-unavailable-owner-closeout-498'
+MAINTENANCE_ISSUE = 'https://github.com/ronnierosal/Re-Gear/issues/498'
+OPERATION_CONSENT = 'https://github.com/ronnierosal/Re-Gear/issues/498#issuecomment-6069197182'
+CLOSEOUT_EXECUTION_AUTHORIZATION = OPERATION_CONSENT
+RANGE_EXECUTION_AUTHORIZATION = OPERATION_CONSENT
+MAINTENANCE_ASSIGNMENT_DIGEST = '973b73c806f6b094316715fed1943147f95bfb92e00481a15f8e94fba677eecd'
+APPROVED_MAINTENANCE_ASSIGNMENT = {'id': 'agent-hub-unavailable-owner-closeout-498',
+ 'stream': 'coordination',
+ 'title': 'Agent hub: compiled unavailable-owner closeout and Auto TDP branch amendment',
+ 'owner': 'codex-01a080fd',
+ 'state': 'review',
+ 'branch': 'agent/codex-local/498-hub-unavailable-owner-closeout',
+ 'paths': '["scripts/agent_hub/hub.py", "tests/test_agent_hub.py"]',
+ 'dependencies': '[]',
+ 'evidence': 'Draft PR499 exact head 8453fb0855f32fd9523e75b0881e1b3b58c47281 on base '
+             'a9526fb6978cd1cc74a4a60a923be07833c0bfa4. Focused agent-hub suite 40/40 PASS on temporary '
+             'databases; architecture, compileall, golden49/49 across8, docs links262/0, diff check PASS. '
+             'Independent exact-head/base Codex re-review PASS with no findings. GitHub foundation, '
+             'development and production build profiles, and privileged-user-delivery SUCCESS. '
+             'Coordination/pr remains expected FAILURE because task is claimed and PR intentionally draft; '
+             'aggregate coordination gate also failed on unrelated PR428 publication. Full Windows backend '
+             'run: 4950 tests, 73 unrelated directory-handle/graphics-backup failures, 333 skipped. Both '
+             'maintenance operations remain fail-closed pending separately compiled invocation approvals. No '
+             'real hub operation, merge, adoption, device/TDP write, install, package, release, or hardware '
+             'claim.',
+ 'note': 'Implementation/review/draft-PR milestone complete for #498. Exact two-file scope preserved. '
+         'Reviewer blockers fixed by full #498 assignment digest binding and fail-closed unset execution '
+         'approvals. Keep PR draft; do not merge/adopt or invoke A/B. Future separately reviewed source '
+         'change must compile exact later invocation approvals against the then-current accepted assignment '
+         'state. RANGE #497 remains backlog/held. Documentation impact: none',
+ 'issue': 'https://github.com/ronnierosal/Re-Gear/issues/498',
+ 'pr': 'https://github.com/ronnierosal/Re-Gear/pull/499',
+ 'rev': 3,
+ 'updated': '2026-10-08T21:04:10+00:00'}
+RANGE_NEW_BRANCH = 'agent/codex-local/497-tdp-expressible-range-admission'
+APPROVED_TASKS = {'tdp-readiness-evidence-setup': {'id': 'tdp-readiness-evidence-setup',
+                                  'stream': 'auto-tdp',
+                                  'title': 'P0: Make manual and Auto TDP readiness evidence actionable',
+                                  'owner': 'claude-3e188980-234d-4e35-9a46-1b048630ba63',
+                                  'state': 'review',
+                                  'branch': 'claude/tdp-readiness-evidence-setup',
+                                  'paths': '["backend/regear/delivery/auto_tdp_status.py", '
+                                           '"scripts/probe_auto_tdp_context.py", '
+                                           '"tests/test_auto_tdp_status.py"]',
+                                  'dependencies': '[]',
+                                  'evidence': 'Commit f394344 on base ccbf275. PR '
+                                              'https://github.com/ronnierosal/Re-Gear/pull/277, draft. Gate: '
+                                              'architecture passed, 2894 tests OK with 109 skips, compileall '
+                                              'clean. Mutation check: replacing the expressible-range '
+                                              'computation with the naive sustained-only maximum fails 5 of '
+                                              'the 7 new tests. Existing probe test asserting exactly two '
+                                              'provider observe calls still passes, so no extra device reads '
+                                              'were added. Probe still runs standalone and degrades to null '
+                                              'evidence without a provider. Merge state: not merged.',
+                                  'note': 'Audit first, then one demonstrated gap fixed.\n'
+                                          'Demonstrated gap: readiness reports only the sustained register '
+                                          'range. A request maps onto the boost registers as max(watts, '
+                                          'register.minimum), so a boost ceiling below the sustained ceiling '
+                                          'narrows the usable range invisibly. TdpRuntime._status exposes '
+                                          'sustained min/max, validAutoTdpRange validates against those, '
+                                          'can_start goes true, and the session then refuses per-tick as '
+                                          'auto_tdp.readback_invalid. Correct but late and generic.\n'
+                                          'Result: the existing read-only probe now reports each register '
+                                          'range separately and the actually expressible sustained range, '
+                                          'with categorical codes for fully expressible, narrowed by boost '
+                                          'ceiling, and no expressible range. Evidence is reported even when '
+                                          'the host context is unusable, since such a device can still '
+                                          'explain why it will not start. Pinned against '
+                                          'TdpReading.target_values across the whole sustained range for '
+                                          'four register shapes, so reported bounds cannot drift from real '
+                                          'acceptance.\n'
+                                          'Behavior change: probe output gains registers and expressible '
+                                          'keys. No admission, no writes, no extra provider reads, no raw '
+                                          'provider identifier.\n'
+                                          'Remaining gaps, deliberately not in this slice: competing writer, '
+                                          'journal recovery state, render/game/placement eligibility, '
+                                          'thermal configuration and full-collector benchmark evidence. Most '
+                                          'already have categorical codes in the readiness chain; auditing '
+                                          'which are genuinely missing before adding, per '
+                                          'fix-only-demonstrated-gaps. Surfacing the boost limit in '
+                                          'can_start itself needs TdpRuntime._status or main.py; main.py is '
+                                          'a shared hotspot listed by three unowned eGPU tasks, so I did not '
+                                          'expand into it unilaterally. Recommend it as a follow-up task '
+                                          'with an agreed owner.\n'
+                                          'Known limitations: no device evidence. The narrowed register '
+                                          'shape is synthesised from provider semantics and has never been '
+                                          'observed on hardware.\n'
+                                          'Documentation impact: none\n'
+                                          'Next: review.',
+                                  'issue': '',
+                                  'pr': 'https://github.com/ronnierosal/Re-Gear/pull/277',
+                                  'rev': 3,
+                                  'updated': '2026-09-10T23:09:11+00:00'},
+ 'tdp-lifecycle-gap-verification': {'id': 'tdp-lifecycle-gap-verification',
+                                    'stream': 'auto-tdp',
+                                    'title': 'P0: Close demonstrated manual and Auto TDP lifecycle gaps',
+                                    'owner': 'claude-58d0fbe8-bd82-4bd1-ad84-6dd1d31e03b7',
+                                    'state': 'review',
+                                    'branch': 'claude/tdp-lifecycle-gap-verification',
+                                    'paths': '["backend/regear/delivery/auto_tdp_factory.py", '
+                                             '"tests/test_auto_tdp_factory.py", '
+                                             '"tests/test_auto_tdp_replays.py", '
+                                             '"tests/test_auto_tdp_session.py", "tests/test_tdp_control.py"]',
+                                    'dependencies': '[]',
+                                    'evidence': 'Revised head 697ffa8f67d597c2011f7cc7f0184b1796e9a48e on '
+                                                'base d5937c6 (origin/main moved past ab87e2e0 to 3c9d6db '
+                                                'and then d5937c6 during this cycle; branch carries a merge '
+                                                'of current main, not a rewrite - no force push was used). '
+                                                'PR https://github.com/ronnierosal/Re-Gear/pull/319 OPEN, '
+                                                'MERGEABLE/CLEAN, not merged. Gate on the revised head: '
+                                                'check_architecture passed; compileall clean; unittest '
+                                                'discover -s tests 3059 OK 109 skipped; '
+                                                'check_golden_behaviors 29/29 across 7 contracts. Final-head '
+                                                'CI: foundation pass, privileged-user-delivery pass. '
+                                                'MUTATION (source only, tests unchanged, both reverted): '
+                                                'reverting the default to time.monotonic fails 4 of 13; '
+                                                'making _session_clock suspend-blind fails 2 of 13, with the '
+                                                "end-to-end test failing 'tdp.readback_verified' != "
+                                                "'auto_tdp.sample_unavailable' - the pre-suspend streak "
+                                                'completing quorum and writing after an eight-hour sleep, '
+                                                'which is the defect itself. No hardware, install or release '
+                                                'action; no device evidence.',
+                                    'note': 'REVIEW FIX RETURNED. Primary review '
+                                            '8de50e2f09834022a2f1a3d0b782d8f6 accepted the clock diagnosis '
+                                            'and minimal seam and asked for one end-to-end regression on the '
+                                            "factory's DEFAULT clock. Added as "
+                                            'test_the_default_clock_composition_rejects_a_pre_suspend_streak: '
+                                            'composes the factory with clock omitted, models an awake '
+                                            'monotonic clock and a suspend-inclusive elapsed clock behind '
+                                            "the module's time, and reads frame and sensor timestamps from "
+                                            'whichever clock the composition selected, so the arms differ '
+                                            'only by the sleep and not by a mismatched fake epoch. Awake arm '
+                                            'still reaches its first verified write on the ordinary cadence; '
+                                            'sleep arm rejects the old evidence and settles fresh. Existing '
+                                            'injected-clock behaviour arms and the clock/fallback unit tests '
+                                            'are retained.\n'
+                                            'Monotonic fallback limitation recorded explicitly in the '
+                                            '_session_clock docstring: where CLOCK_BOOTTIME is unavailable '
+                                            'the suspend is invisible again. No blocking policy added - '
+                                            'refusing to run on an unobservable condition would be '
+                                            'speculation, not a guard.\n'
+                                            'HISTORY NOTE: I had rebased onto the advanced main, which made '
+                                            'the push non-fast-forward. Force pushes need human approval '
+                                            'under AGENTS.md, and the rewrite was avoidable, so I reset back '
+                                            'to the pushed commit, merged current origin/main and '
+                                            'cherry-picked the review fix. The branch history was never '
+                                            'rewritten and no approval was needed.\n'
+                                            'No whole-matrix rediscovery was repeated. Scope unchanged: no '
+                                            'main.py, suspend-observer, dock/eGPU or UI edit.\n'
+                                            'Documentation impact: none\n'
+                                            'Next: awaiting primary combined integration review. Then, per '
+                                            'the same message, claim '
+                                            'tdp-post-session-steam-resolution-feasibility under this ID in '
+                                            'a separate isolated worktree, without waiting for #277 '
+                                            'ownership recovery or #319 merge, consolidating the voice '
+                                            'requirements (mode-aware Steam resolution, supported managed '
+                                            'framegen, base vs generated FPS, permanent popup suppression) '
+                                            'into that task note on claim; the per-game settings guide is '
+                                            'the subsequent task.',
+                                    'issue': '',
+                                    'pr': 'https://github.com/ronnierosal/Re-Gear/pull/319',
+                                    'rev': 6,
+                                    'updated': '2026-09-13T16:51:59+00:00'},
+ 'tdp-readiness-evidence-recovery-277': {'id': 'tdp-readiness-evidence-recovery-277',
+                                         'stream': 'primary-auto-tdp',
+                                         'title': 'Recover, refresh, and integrate PR277 provider-range '
+                                                  'diagnostics',
+                                         'owner': 'codex-auto-tdp-01a097b0-ac26-7e92-915c-b5c68d2a1b13',
+                                         'state': 'done',
+                                         'branch': 'codex/integration-auto-tdp-277',
+                                         'paths': '[]',
+                                         'dependencies': '[]',
+                                         'evidence': 'PR277 merged by delegated closeout driver as squash '
+                                                     'commit 1ff4de5f43d8bab2defa20739c2d69f855087d88 from '
+                                                     'exact accepted head '
+                                                     'cc802b76fc0d5beaf5e19ce0c9ba766c4f251cae/base '
+                                                     'c75ff5ae6050d2f068d3e58ecd19f24bfefc3ea1. Final-head '
+                                                     'checks all passed; local exact-head gates: '
+                                                     'architecture/compile pass, backend 3668 OK/298 '
+                                                     'skipped, golden49/49 across8, frontend764 pass/1 '
+                                                     'existing skip, '
+                                                     'typecheck/build/plugin-package/diff/preflight pass; '
+                                                     'independent review no blockers with 11 focused tests. '
+                                                     'Post-merge CI run35553433335 SUCCESS and '
+                                                     'privileged-user-delivery run35553433343 SUCCESS at '
+                                                     'merge commit. Effective merged diff remains '
+                                                     'scripts/probe_auto_tdp_context.py and '
+                                                     'tests/test_auto_tdp_status.py diagnostic-only. No '
+                                                     'runtime admission, install, release, device, or '
+                                                     'hardware claim.',
+                                         'note': 'Recovery complete under Ronnie authorization message '
+                                                 '9f715e9539a04004ab38912f3c389287. Original ended-owner '
+                                                 'task tdp-readiness-evidence-setup is superseded for '
+                                                 'integration by this recovery record while its historical '
+                                                 'evidence remains preserved. Runtime expressible-range '
+                                                 'admission remains a separate follow-up. Documentation '
+                                                 'impact: none.',
+                                         'issue': '',
+                                         'pr': 'https://github.com/ronnierosal/Re-Gear/pull/277',
+                                         'rev': 4,
+                                         'updated': '2026-09-21T02:14:51+00:00'},
+ 'auto-tdp-suspend-integration-319': {'id': 'auto-tdp-suspend-integration-319',
+                                      'stream': 'primary-auto-tdp',
+                                      'title': 'Independently accept and integrate Auto TDP suspend clock '
+                                               'fix PR319',
+                                      'owner': 'codex-auto-tdp-01a097b0-ac26-7e92-915c-b5c68d2a1b13',
+                                      'state': 'done',
+                                      'branch': 'codex/integration-auto-tdp-suspend-319',
+                                      'paths': '[]',
+                                      'dependencies': '[]',
+                                      'evidence': 'PR319 merged ffd6c7a736ef5263e94eadaec1a3cabb5fc76d04. '
+                                                  'Accepted final head77d6b96/base15cdffe and combined '
+                                                  'cb26e43 all have '
+                                                  'tree2225df8065404d741533cf0a9b5b782da768a673; merged tree '
+                                                  'independently matched. Backend3068 OK/101 skips; '
+                                                  'frontend637 pass/1 existing skip; golden29/29; '
+                                                  'build,typecheck,architecture,compileall,package,diff/preflight '
+                                                  'pass. Final-head foundation + privileged CI pass. '
+                                                  'Independent reviewer /root/review319 accepted exact '
+                                                  'refreshed head. PR evidence '
+                                                  'https://github.com/ronnierosal/Re-Gear/pull/319#issuecomment-5655053391.',
+                                      'note': 'Integration acceptance complete; Claude retains task record '
+                                              'and was sent exact merge evidence for closeout. No '
+                                              'implementation rewriting or source-tree changes during final '
+                                              'branch refresh; all source trees matched. Rollback: new '
+                                              'reviewed revert of two-file change (restores known suspend '
+                                              'blindness); no deployed artifact changed. BOOTTIME fallback '
+                                              'remains suspend-blind when unavailable. Post-merge CI tracked '
+                                              'separately; no hardware/install/release. Next: owner closes '
+                                              'lifecycle record and continues authorized performance '
+                                              'feasibility; #277 recovery still separate.\n'
+                                              'Documentation impact: none',
+                                      'issue': '',
+                                      'pr': 'https://github.com/ronnierosal/Re-Gear/pull/319',
+                                      'rev': 3,
+                                      'updated': '2026-09-13T18:02:11+00:00'},
+ 'tdp-runtime-expressible-range-admission': {'id': 'tdp-runtime-expressible-range-admission',
+                                             'stream': 'auto-tdp',
+                                             'title': 'P0: Reject unrepresentable Auto TDP ranges before '
+                                                      'starting a worker',
+                                             'owner': None,
+                                             'state': 'todo',
+                                             'branch': 'claude/tdp-runtime-expressible-range-admission',
+                                             'paths': '["backend/regear/delivery/tdp_runtime.py", '
+                                                      '"tests/test_tdp_auto_lifecycle.py", '
+                                                      '"tests/test_tdp_runtime.py"]',
+                                             'dependencies': '["tdp-readiness-evidence-setup"]',
+                                             'evidence': '',
+                                             'note': 'Distinct follow-up to diagnostic-only PR277, not a '
+                                                     'replacement. Current da60e212 start_auto admits via '
+                                                     'sustained bounds; a narrower boost ceiling is rejected '
+                                                     'only at session tick. Scope: smallest runtime '
+                                                     'admission fix with successful representable startup '
+                                                     'preserved. First reproduce through real start_auto '
+                                                     'using existing fixtures: sustained max30/boost '
+                                                     'max25/request max30 should not start worker; valid '
+                                                     'max25 should start with unchanged settling. Test empty '
+                                                     'expressible intersection, differing boost minima, '
+                                                     'changed bounds between readiness/start, current limit '
+                                                     'inclusion, Stop and manual takeover. Do not add '
+                                                     'retries, delays, confirmation or a second writer. Keep '
+                                                     'existing final dispatch validation and pending journal '
+                                                     'protections. Proposed assignee Claude Auto TDP lead '
+                                                     'after readiness closure. Public minimum/maximum '
+                                                     'payload semantics are shared with UI: any change to '
+                                                     'that schema/meaning waits for UI primary agreement; '
+                                                     'prefer an internal admission fix if sufficient. No '
+                                                     'main.py/UI/eGPU edits without agreed overlap. Primary '
+                                                     'Auto TDP is intended final driver; shared contracts '
+                                                     'require same-candidate UI acceptance before '
+                                                     'integration. Focused tests during iteration; full '
+                                                     'backend/architecture/compile/golden/preflight/final-head '
+                                                     'CI at integration. Return exact head/base, '
+                                                     'failure-before/pass-after, preserved successful path '
+                                                     'and documentation impact. No install/device/release. '
+                                                     'Unclaimed; design/reproducer may be prepared, '
+                                                     'implementation waits for dependency and interface '
+                                                     'decision.\n'
+                                                     'Documentation impact: none',
+                                             'issue': '',
+                                             'pr': '',
+                                             'rev': 1,
+                                             'updated': '2026-09-13T14:44:37+00:00'}}
+APPROVED_DIGESTS = {
+    'tdp-readiness-evidence-setup': 'c4c1f37b712d211c13e3fb79ff7b18d7f93e70acef8d1a30740e6e2577dce5cd',
+    'tdp-lifecycle-gap-verification': 'de93c3a0e209a87a09e159e1d368289aea2199522951f19bde30a5d2172aeeb5',
+    'tdp-readiness-evidence-recovery-277': '4b0f201cf28590731d762642fad8fbd38fa5a065d29589ab17f556e94a59116d',
+    'auto-tdp-suspend-integration-319': 'fbeba200f43e861e61a1a20d20506e861f09be12aed4eb933559eec81188e3dc',
+    'tdp-runtime-expressible-range-admission': '161e34c5bbea86d7b59176aa9542cdf02a2ffaed177d3aba3f790a0e6944ad5f',
+}
+CLOSEOUT_EVIDENCE = {
+    'tdp-readiness-evidence-setup': 'Approved maintainer closeout: PR277 exact head cc802b76fc0d5beaf5e19ce0c9ba766c4f251cae / base c75ff5ae6050d2f068d3e58ecd19f24bfefc3ea1 / merge 1ff4de5f43d8bab2defa20739c2d69f855087d88 passed recorded software, independent-review, and post-merge checks. Runtime expressible-range admission remains separate and incomplete. No install, device, or hardware claim.',
+    'tdp-lifecycle-gap-verification': 'Approved maintainer closeout: PR319 exact head 77d6b96e1c33d5a00075d76ee57eeca4757df0bb / base 15cdffeb3c314c7209c26975673794ebaef86103 / merge ffd6c7a736ef5263e94eadaec1a3cabb5fc76d04 passed recorded software, independent-review, and post-merge checks. CLOCK_BOOTTIME fallback remains suspend-blind where unavailable; real SteamOS suspend remains unproven. No hardware-validation claim.',
+}
 
 
 class Conflict(ValueError):
@@ -145,6 +442,81 @@ class Hub:
     def event(db, actor, action, target, detail):
         db.execute('INSERT INTO events(actor,action,target,detail,created) VALUES (?,?,?,?,?)',
                    (actor, action, target, json.dumps(detail, ensure_ascii=False), now()))
+
+    @staticmethod
+    def _digest(row):
+        payload = json.dumps(dict(row), sort_keys=True, separators=(',', ':'),
+                             ensure_ascii=False).encode('utf-8')
+        return hashlib.sha256(payload).hexdigest()
+
+    def _maintenance_actor(self, db, actor):
+        if actor != MAINTAINER:
+            raise Conflict('This compiled maintenance operation is restricted to its designated maintainer')
+        self.row(db, 'sessions', actor)
+        task = self.row(db, 'tasks', MAINTENANCE_TASK)
+        if self._digest(task) != MAINTENANCE_ASSIGNMENT_DIGEST:
+            raise Conflict('The canonical maintenance assignment no longer matches its approved binding')
+
+    @staticmethod
+    def _execution_authorization(reference, operation):
+        if not reference:
+            raise Conflict(f'{operation} is disabled until its separate invocation approval is compiled')
+        return reference
+
+    @staticmethod
+    def _approved_row(db, key):
+        try:
+            row = Hub.row(db, 'tasks', key)
+        except ValueError as exc:
+            raise Conflict(f'Approved preimage mismatch for {key}') from exc
+        if row != APPROVED_TASKS[key] or Hub._digest(row) != APPROVED_DIGESTS[key]:
+            raise Conflict(f'Approved preimage mismatch for {key}')
+        return row
+
+    def close_approved_auto_tdp_records(self, actor):
+        """Atomically close the two frozen, accepted software records."""
+        identifier(actor)
+        targets = ('tdp-readiness-evidence-setup', 'tdp-lifecycle-gap-verification')
+        supporting = ('tdp-readiness-evidence-recovery-277', 'auto-tdp-suspend-integration-319')
+        with self.connection(True) as db:
+            self._maintenance_actor(db, actor)
+            authorization = self._execution_authorization(
+                CLOSEOUT_EXECUTION_AUTHORIZATION, 'close_approved_auto_tdp_records')
+            before = {key: self._approved_row(db, key) for key in targets}
+            for key in supporting:
+                row = self._approved_row(db, key)
+                if row['state'] != 'done':
+                    raise Conflict(f'Accepted integration record is incomplete: {key}')
+            stamp = now()
+            after_digests = {}
+            for key in targets:
+                evidence = before[key]['evidence'] + '\n' + CLOSEOUT_EVIDENCE[key]
+                db.execute("UPDATE tasks SET state='done', evidence=?, rev=rev+1, updated=? WHERE id=?",
+                           (evidence, stamp, key))
+                after_digests[key] = self._digest(self.row(db, 'tasks', key))
+            detail = {'authorization': authorization,
+                      'before': {key: APPROVED_DIGESTS[key] for key in targets},
+                      'after': after_digests}
+            self.event(db, actor, 'close_approved_auto_tdp_records', ','.join(targets), detail)
+            return {'tasks': [self.row(db, 'tasks', key) for key in targets], 'audit': detail}
+
+    def amend_approved_auto_tdp_range_branch(self, actor):
+        """Apply the frozen branch-only amendment for issue 497."""
+        identifier(actor)
+        key = 'tdp-runtime-expressible-range-admission'
+        with self.connection(True) as db:
+            self._maintenance_actor(db, actor)
+            authorization = self._execution_authorization(
+                RANGE_EXECUTION_AUTHORIZATION, 'amend_approved_auto_tdp_range_branch')
+            before = self._approved_row(db, key)
+            stamp = now()
+            db.execute('UPDATE tasks SET branch=?, rev=rev+1, updated=? WHERE id=?',
+                       (RANGE_NEW_BRANCH, stamp, key))
+            result = self.row(db, 'tasks', key)
+            detail = {'authorization': authorization,
+                      'before': APPROVED_DIGESTS[key], 'after': self._digest(result)}
+            self.event(db, actor, 'amend_approved_auto_tdp_range_branch', key, detail)
+            return {'task': result, 'audit': detail}
 
     def register(self, session, agent, label, worktree):
         identifier(session)
@@ -451,6 +823,10 @@ def main(argv=None):
     sub.add_parser('history')
     sub.add_parser('snapshot')
     sub.add_parser('docs-queue')
+    closeout = sub.add_parser('close-approved-auto-tdp-records')
+    closeout.add_argument('--session', required=True)
+    amend = sub.add_parser('amend-approved-auto-tdp-range-branch')
+    amend.add_argument('--session', required=True)
     register = sub.add_parser('register')
     register.add_argument('--session', required=True)
     register.add_argument('--agent', required=True)
@@ -470,6 +846,8 @@ def main(argv=None):
         elif args.command == 'status': result = hub.status()
         elif args.command == 'history': result = hub.history()
         elif args.command == 'docs-queue': result = hub.docs_queue()
+        elif args.command == 'close-approved-auto-tdp-records': result = hub.close_approved_auto_tdp_records(args.session)
+        elif args.command == 'amend-approved-auto-tdp-range-branch': result = hub.amend_approved_auto_tdp_range_branch(args.session)
         elif args.command == 'snapshot':
             print(hub.snapshot(), end='')
             return 0
