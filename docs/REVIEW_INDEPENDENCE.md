@@ -24,7 +24,7 @@ Historical Claude authorship and review evidence remain attributed accurately.
 
 ## Current and pending enforcement
 
-At main source `109a11b43373ae8a2a7197bf16ed9a6fa9432c6c`,
+At main source `88f7f832c2747e40103162e49ed6f5701c2aa1c4`,
 `scripts/github_coordination.py` requires a nonempty reviewer identity distinct
 from the task owner and exact PASS evidence. It does not require Claude or an
 opposite model family. Session independence is a cooperative recorded contract;
