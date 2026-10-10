@@ -26,6 +26,12 @@ function load(path, decky = {}) {
 }
 const path = new URL("../src/usb4-waiting-runtime.tsx", import.meta.url);
 const { createUsb4WaitingRuntime, Usb4WaitingPopup, Usb4WaitingStatus } = load(path);
+test("USB4 notice centers its frame inside a wider native content host without moving other popups", () => {
+  const popup = Usb4WaitingPopup({ onDismiss() {} });
+  assert.match(popup.props.className, /(?:^|\s)rg-usb4-waiting-host(?:\s|$)/);
+  const { popupStyles } = load(new URL("../src/popup-frame.tsx", import.meta.url));
+  assert.match(popupStyles, /\.rg-popup-host\.rg-usb4-waiting-host \.rg-popup\{margin-inline:auto\}/);
+});
 const key = n => `uw-${n.toString(16).padStart(32, "0")}`;
 const receipt = (n = 1, changes = {}) => Object.freeze({ payload: {
   snapshot: { schema_version: 3, observed_at: new Date(0).toISOString() },
