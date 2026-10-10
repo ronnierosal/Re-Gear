@@ -24,12 +24,15 @@ function nodes(t){return !t||typeof t!=='object'?[]:Array.isArray(t)?t.flatMap(n
 for(const profile of ['development','production'])test(`${profile} real eGPU Status publishes the existing guarded action directly`,()=>{
  const payload={snapshot:{schema_version:3},connection_readiness:{stage:'disconnected'}};
  const env={PanelSection:'panel',PanelSectionRow:'row',EgpuModule:'egpu',ButtonItem:'button',TransitionAcknowledgementControl:guarded,
+  usb4WaitingSource:{read:()=>null,subscribe:()=>()=>{}},Usb4WaitingStatus:'passive-usb4-status',
   egpuPresentation:p=>({hasReading:!!p}),payload,menuFresh:true,buildProfile:profile,
   wrapDetail:node=>node,egpuDetail:null,diagnosticDetail:null,displayDetail:null,runtimeDetails:{source:{navigate(){throw Error('unexpected navigation')}}}};
  env.productionEgpuDetail=evaluate(production,env);
  const status=evaluate(views,env).egpu;
  assert.equal(nodes(status).filter(n=>n.type===guarded).length,1,'status must mount the existing exact-ID guarded component');
  assert.equal(nodes(status).filter(n=>n.type==='egpu').length,1);
+ assert.equal(nodes(status).filter(n=>n.type==='passive-usb4-status').length,1);
+ assert.equal(nodes(status).find(n=>n.type==='passive-usb4-status').props.source,env.usb4WaitingSource);
  assert.equal(nodes(status).filter(n=>n.type===guarded)[0].props.onClick,undefined,'surface must not replace guarded activation');
  assert.match(source,/import\s*\{\s*TransitionAcknowledgementControl\s*\}\s*from\s*["']\.\/transition-acknowledgement-control/);
 });
