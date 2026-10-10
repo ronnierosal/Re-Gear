@@ -196,3 +196,50 @@ test("fresh older completion cannot overwrite the latest receipt unless suppress
   h.runtime.observe(receipt(1, { supportedLifetime: true }));
   assert.equal(h.modals[0].count, 1); assert.equal(h.runtime.source.read(), null);
 });
+test("native closure that stops presentation cannot republish or open replacement guidance", () => {
+  for (const state of ["unknown", "ambiguous", "unauthorized", "generation"]) {
+    let runtime, shows = 0;
+    runtime = createUsb4WaitingRuntime({ now: () => 0, show(closed) {
+      shows++; return { close() { closed(); runtime.stop(); } };
+    } });
+    runtime.observe(receipt(1));
+    const next = receipt(2, state === "generation" ? { generation: 1 } : {});
+    if (state === "unknown" || state === "ambiguous")
+      next.payload.usb4_waiting = { schema_version: 1, state, notice_key: null };
+    runtime.observe(next);
+    assert.equal(runtime.source.read(), null, state);
+    assert.equal(shows, 1, state);
+  }
+});
+test("native dismissal before showModal returns closes the eventual handle exactly once", () => {
+  const previous = globalThis.window; globalThis.window = {};
+  try {
+    let closes = 0, callbacks = 0;
+    const { showUsb4WaitingNotice } = load(path, { showModal(node) {
+      node.props.onDismiss();
+      return { Close() { closes++; } };
+    } });
+    const modal = showUsb4WaitingNotice(() => callbacks++);
+    modal.close();
+    assert.equal(closes, 1); assert.equal(callbacks, 1);
+  } finally { globalThis.window = previous; }
+});
+test("a newer observation during native closure retains its generation and guidance", () => {
+  let runtime, reenter = true;
+  runtime = createUsb4WaitingRuntime({ now: () => 0, show(closed) {
+    return { close() {
+      closed();
+      if (reenter) {
+        reenter = false;
+        const newer = receipt(3, { generation: 2 });
+        newer.payload.usb4_waiting = { schema_version: 1, state: "ambiguous", notice_key: null };
+        runtime.observe(newer);
+      }
+    } };
+  } });
+  runtime.observe(receipt(1));
+  runtime.observe(receipt(2, { generation: 1 }));
+  assert.equal(runtime.source.read().state, "ambiguous");
+  runtime.observe(receipt(4, { generation: 1 }));
+  assert.equal(runtime.source.read().state, "ambiguous");
+});

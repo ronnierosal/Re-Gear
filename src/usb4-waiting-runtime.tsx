@@ -39,16 +39,18 @@ export function Usb4WaitingPopup({ onDismiss }: { onDismiss(): void }) {
 }
 
 export function showUsb4WaitingNotice(onClosed: () => void): { close(): void } {
-  let modal: ReturnType<typeof showModal>;
-  let closed = false, closing = false;
+  let modal: ReturnType<typeof showModal> | undefined;
+  let closed = false, closing = false, closeRequested = false;
   const close = () => {
-    if (closed || closing) return;
+    closeRequested = true;
+    if (closed || closing || !modal) return;
     closing = true;
-    try { modal?.Close(); closed = true; onClosed(); }
+    try { modal.Close(); closed = true; onClosed(); }
     finally { closing = false; }
   };
   modal = showModal(<Usb4WaitingPopup onDismiss={close} />, window,
     { strTitle: "Re-Gear", bNeverPopOut: true });
+  if (closeRequested) close();
   return { close };
 }
 
@@ -103,17 +105,20 @@ export function createUsb4WaitingRuntime(deps: {
     if (receipt.generation === generation && receipt.requestStartedAtMs < startedAt) return;
     const turn = ++revision;
     if (receipt.generation > generation) closeActive();
+    if (stopped || turn !== revision) return;
     generation = receipt.generation;
     startedAt = receipt.requestStartedAtMs;
     const reading = usb4WaitingObservation(receipt.payload);
     if (!reading || reading.state === "none" || reading.state === "authorized") { withdraw(); return; }
     if (reading.state !== "unauthorized" || reading.noticeKey === null) {
       closeActive();
+      if (stopped || turn !== revision) return;
       publish({ state: reading.state, guidance: USB4_WAITING_UNAVAILABLE, automaticNoticeSuppressed: true });
       return;
     }
     if (active?.key === reading.noticeKey) return;
     closeActive();
+    if (stopped || turn !== revision) return;
     const claimed = memory.claim(reading.noticeKey);
     publish({ state: "unauthorized", guidance: USB4_WAITING_TEXT, automaticNoticeSuppressed: !claimed });
     if (!claimed || stopped || turn !== revision) return;
