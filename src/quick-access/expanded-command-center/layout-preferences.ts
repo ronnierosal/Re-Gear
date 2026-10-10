@@ -35,7 +35,9 @@ export function projectLayout(source:TileView,prefs:LayoutPreferences) {
  const native=registryNativeTiles(source);
  const view:TileView={},origins=new Map<string,TileOrigin>();
  for(const tab of tabs){
-  const originals=native[tab]??[];
+  // Explicit saved native placements remain choices, even when removed from defaults.
+  const requestedIds=prefs.order[tab]??[];
+  const originals=(source[tab]??[]).filter(tile=>(native[tab]??[]).includes(tile)||(tab==='performance'&&tile.id==='auto'&&requestedIds.includes(tile.id)));
   const base=originals.map(tile=>`${tab}:${tile.id}`);
   const requested=tab==='quick'?prefs.quick:(prefs.order[tab]??[]).map(id=>`${tab}:${id}`);
   const keys=[...new Set([...requested.filter(key=>byKey.has(key)&&(tab==='quick'||base.includes(key))),...base])];

@@ -160,16 +160,20 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
   const supplied = tiles?.[tab];
   // A tab with real readings must stop describing itself as sample data.
   const synthetic = supplied === undefined;
-  const items = projection?.view[tab] ?? supplied ?? sampleTiles[tab];
+  const items = projection?.view[tab] ?? (supplied ?? sampleTiles[tab]).filter(item => controlForKey(`${tab}:${item.id}`)?.id !== 'auto-tdp');
+  // Keep configuration separate from the cycle, using the current source reading.
+  const autoTile=(rawSource.performance??[]).find(item=>item.id==='auto')??(rawSource.quick??[]).find(item=>item.id==='auto');
+  const autoSettingsId='auto-settings';
+  const autoSettingsOrigin:TileOrigin|null=autoTile?{key:'performance:auto',tab:'performance',tile:autoTile}:null;
   const originFor=(tile:Tile):TileOrigin=>projection?.resolve(tab,tile.id)??{key:`${tab}:${tile.id}`,tab,tile};
   // Retain the destination, never a copy of a reading that can become stale.
-  const nested = nestedId === null ? null : items.find(item => item.id === nestedId) ?? {
+  const nested = nestedId === null ? null : (nestedId===autoSettingsId?autoTile:items.find(item => item.id === nestedId)) ?? {
     id: nestedId, title: "Status unavailable", value: "Unknown",
     detail: "This reading is no longer available. Return to the menu for current status.",
   };
-  const detailTile = !synthetic && nestedId !== null ? items.find(item => item.id === nestedId) : undefined;
+  const detailTile = nestedId===autoSettingsId ? (tiles?autoTile:undefined) : !synthetic && nestedId !== null ? items.find(item => item.id === nestedId) : undefined;
   const dockControl = native && nestedId === "disconnect" && disconnectControl != null;
-  const detailOrigin=detailTile?originFor(detailTile):null;
+  const detailOrigin=detailTile?(nestedId===autoSettingsId?autoSettingsOrigin:originFor(detailTile)):null;
   const resetDetail=detailOrigin?.key==='settings:reset-layout'&&savedLayout?<div><p>Restore the default Quick Access buttons, right rail and tab order?</p>{layoutError&&<p role="alert">{layoutError}</p>}<Button type="button" onClick={()=>{if(commitLayout(normalizeLayout(null),'reset-layout'))setNested(null);}}>Reset layout</Button></div>:null;
   const detailContent = dockControl ? disconnectControl : resetDetail ?? ( detailOrigin?.tab==="settings"&&detailOrigin.tile.id==="shortcut"?settings:detailOrigin ? renderDetail?.(detailOrigin.tab, detailOrigin.tile) : null);
   const hasDetail = detailContent != null && detailContent !== false;
@@ -364,7 +368,7 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
     const target = event.target as HTMLElement;
     const tabTarget = target.closest<HTMLElement>("[data-ec-tab]");
     const direction = event.key.slice(5).toLowerCase() as "left" | "right" | "up" | "down";
-    if (nested && target.matches('[data-rg-readable]') && (direction === "up" || direction === "down") && typeof scrollReadable === "function" && scrollReadable(target, direction)) {
+    if ((nested || target.closest('.rg-tdp-mode-status')) && target.matches('[data-rg-readable]') && (direction === "up" || direction === "down") && typeof scrollReadable === "function" && scrollReadable(target, direction)) {
       event.preventDefault(); event.stopPropagation(); return;
     }
     if (tabTarget) {
@@ -386,7 +390,11 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
       }
       else {
         const next = moveInGrid(cells, target.dataset.ecControl, direction);
-        focus(next);
+        if(!production && editMode==='normal' && (tab==='quick'||tab==='performance') && direction==='down' && next===target.dataset.ecControl){
+          const reading=content.current?.querySelector<HTMLElement>('.rg-tdp-mode-status [data-rg-readable]');
+          if(reading){reading.focus({preventScroll:true});if(typeof revealReadable==='function')revealReadable(reading);}
+          else focus(autoTile?autoSettingsId:next);
+        }else focus(next);
       }
     } else {
       event.preventDefault(); event.stopPropagation();
@@ -403,11 +411,12 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
   const hasTileDetails=(item:Tile)=>{const origin=originFor(item);if(!production&&tdpCycle&&(origin.tab==="quick"||origin.tab==="performance")&&origin.tile.id==="manual")return false;const definition=controlForKey(originFor(item).key);return !definition||definition.type==='navigation'||definition.type==='status';};
   const renderTile = (item: Tile) => {
     const original=originFor(item);
-    if (!production && tdpCycle && (original.tab === "quick" || original.tab === "performance") && original.tile.id === "manual") item = { ...item, title: "TDP Mode", value: tdpCycle.value, detail: tdpCycle.detail };
+    const isTdpMode = !production && Boolean(tdpCycle) && (original.tab === "quick" || original.tab === "performance") && original.tile.id === "manual";
+    if (isTdpMode && tdpCycle) item = { ...item, title: "TDP Mode", value: tdpCycle.value, detail: tdpCycle.detail };
     const definition=controlForKey(original.key);
     const disabled=editMode==="normal"&&Boolean(unavailableActions[original.tile.id]||(definition?.rightEligible&&(!utilityReadings?.[definition.id as UtilityId]?.available||utilityReadings?.[definition.id as UtilityId]?.pending)));
     const activate=()=>{if(pickerOpen)return;if(editMode==="move"){if(draft)commitLayout(draft);return;}if(item.empty)return;if(definition?.type==='widget')return;if(unavailableActions[original.tile.id])return;if(definition?.rightEligible){const id=definition.id as UtilityId;if(!onUtilityRequest||!utilityReadings?.[id]?.available||utilityReadings?.[id]?.pending||utilityBusy.current.has(id))return;utilityErrorReadings.current.delete(id);setUtilityErrors(value=>({...value,[id]:undefined}));utilityBusy.current.add(id);void Promise.resolve().then(()=>onUtilityRequest(id)).catch(()=>{utilityErrorReadings.current.set(id,utilityReadings?.[id]);setUtilityErrors(value=>({...value,[id]:'Could not apply'}));}).finally(()=>utilityBusy.current.delete(id));return;}if(definition?.directAction==="disconnect"&&onDisconnect){onDisconnect();return;}if(onAction?.(original.tab,original.tile))return;launcher.current=item.id;setNested(item.id);};
-    const buttonProps={key:item.id,className:'rg-expanded-tile','data-ec-control':item.id,'data-tone':item.tone??'quiet','data-empty':item.empty||undefined,'aria-disabled':disabled,'data-move-selected':editMode==="move"&&selected===item.id||undefined,
+    const buttonProps={key:item.id,className:isTdpMode?'rg-expanded-tile rg-tdp-mode-tile':'rg-expanded-tile','data-ec-control':item.id,'data-tone':item.tone??'quiet','data-empty':item.empty||undefined,'aria-disabled':disabled,'data-move-selected':editMode==="move"&&selected===item.id||undefined,
       onGamepadDirection:native&&directions?(event:CustomEvent<{button:number}>)=>{const direction=Object.keys(directions).find(key=>directions[key as keyof typeof directions]===event.detail.button) as "up"|"down"|"left"|"right"|undefined;if(direction&&moveSelected(direction)){event.preventDefault();event.stopPropagation();return true;}if(event.detail.button===directions.left&&enterRail(item.id)){event.preventDefault();event.stopPropagation();return true;}return false;}:undefined,
       ...(native?{preferredFocus:item.id===restoreTarget(items.map(tile=>tile.id),memory.current[tab]),onGamepadFocus:()=>{memory.current[tab]=item.id;const target=panel.current?.querySelector<HTMLElement>(`[data-ec-control="${item.id}"]`);if(target){if(tab==="settings")reveal(target);else target.scrollIntoView({block:'nearest'});}}}:{}),
       'aria-label':`${editMode==="move"?'Move button. A to place. ':''}${item.title}: ${item.value}. ${item.detail}.${synthetic?' Sample data. ':''}${unavailableActions[original.tile.id]?unavailableActions[original.tile.id]:original.tile.id==='disconnect'&&onDisconnect?'Start guarded disconnect.':hasTileDetails(item)?'View details.':''}`,
@@ -433,13 +442,13 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
     const v3ControlId=item.artworkControlId??definition?.id??original.tile.id;
     const v3ArtworkId=v3ArtworkIdFor(v3ControlId);
     if(v3ArtworkId){
-      return <SharedTile {...buttonProps} key={item.id} Button={Button} buttonProps={buttonProps} label={item.title} artworkId={v3ArtworkId} artwork={<V3Artwork controlId={v3ControlId}/> }>
+      return <SharedTile {...buttonProps} key={item.id} Button={Button} buttonProps={buttonProps} label={item.title} artworkId={v3ArtworkId} artwork={isTdpMode?undefined:<V3Artwork controlId={v3ControlId}/> }>
         <span className="rg-expanded-value">{item.value}</span>
         <span className="rg-expanded-detail">{item.detail}{longReasons && item.tone === "unavailable" ? " — Provider observations are unavailable in this synthetic preview. No capability or successful operation can be inferred from the displayed sample." : ""}</span>
         {hasTileDetails(item) && !unavailableActions[original.tile.id] && <span className="rg-expanded-chevron" aria-hidden="true">›</span>}
       </SharedTile>;
     }
-    return <Button type="button" key={item.id} data-ec-control={item.id} data-tone={item.tone ?? "quiet"} className="rg-expanded-tile" data-empty={item.empty||undefined}
+    return <Button type="button" key={item.id} data-ec-control={item.id} data-tone={item.tone ?? "quiet"} className={isTdpMode?'rg-expanded-tile rg-tdp-mode-tile':'rg-expanded-tile'} data-empty={item.empty||undefined}
               aria-disabled={editMode==="normal"&&Boolean(unavailableActions[originFor(item).tile.id]||(controlForKey(originFor(item).key)?.rightEligible&&(!utilityReadings?.[controlForKey(originFor(item).key)!.id as UtilityId]?.available||utilityReadings?.[controlForKey(originFor(item).key)!.id as UtilityId]?.pending)))}
               data-move-selected={editMode==="move"&&selected===item.id || undefined}
               onGamepadDirection={native&&directions ? (event:CustomEvent<{button:number}>)=>{const direction=Object.keys(directions).find(key=>directions[key as keyof typeof directions]===event.detail.button) as "up"|"down"|"left"|"right"|undefined;if(direction&&moveSelected(direction)){event.preventDefault();event.stopPropagation();return true;}if(event.detail.button===directions.left&&enterRail(item.id)){event.preventDefault();event.stopPropagation();return true;}return false;} : undefined}
@@ -498,7 +507,8 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
               <span className="rg-expanded-anchor" tabIndex={-1} aria-label={`${item.title} section`} />
               {renderTile(item)}</section> : renderTile(item))}
           </Container>
-          {!production && tdpCycle && items.some(item => { const origin = originFor(item); return (origin.tab === "quick" || origin.tab === "performance") && origin.tile.id === "manual"; }) && <Reading label="TDP mode status"><p role="status" data-tdp-cycle-status style={{ margin: "8px 0", fontSize: "var(--rg-detail-body)", lineHeight: 1.4 }}>{tdpCycle.detail}</p></Reading>}
+          {!production && tdpCycle && items.some(item => { const origin = originFor(item); return (origin.tab === "quick" || origin.tab === "performance") && origin.tile.id === "manual"; }) && <div className="rg-tdp-mode-status"><Reading label="TDP mode status"><p role="status" data-tdp-cycle-status>{tdpCycle.detail}</p></Reading></div>}
+          {!production && autoTile && (tab==='quick'||tab==='performance') && editMode==='normal' && <Button type="button" className="rg-expanded-back" data-ec-control={autoSettingsId} onClick={()=>{launcher.current=autoSettingsId;setNested(autoSettingsId);}}>Auto settings</Button>}
           {synthetic ? <aside className="rg-expanded-info" aria-label="Sample status summary">
             <CommandCenterIcon id="status-unknown" size={22}/>
             <span><strong>{tab === "quick" || tab === "egpu" ? "eGPU connected · External controller active" : tab === "performance" ? "Performance preferences" : tab === "controllers" ? "External controller · Player 1" : "Make Re-Gear yours"}</strong>

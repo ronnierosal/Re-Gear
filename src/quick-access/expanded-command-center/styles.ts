@@ -76,4 +76,13 @@ export const expandedStyles = `
 .rg-readable.gpfocus,.rg-readable:focus-visible,.rg-readable:focus-within{outline:none!important;box-shadow:none!important;background:transparent!important}
 .rg-command-status>span,.rg-command-status>strong,.rg-command-status small,.rg-command-notice>div,.rg-command-control .rg-readable div{font-size:var(--rg-detail-body)!important;line-height:1.45!important}
 @container rg-menu (max-width:420px){.rg-command-status,.rg-command-control{grid-template-columns:minmax(0,1fr)!important}.rg-expanded-detail-page{overflow-wrap:anywhere}}
+/* Only the cycling TDP card uses a compact icon and the full copy width. */
+.rg-expanded .rg-expanded-tile.rg-tdp-mode-tile{height:auto!important;min-height:74px!important;max-height:none!important;overflow:visible}
+.rg-expanded .rg-tdp-mode-tile .rg-expanded-tile-body{width:100%;height:auto;justify-content:center}
+.rg-expanded .rg-tdp-mode-tile .rg-expanded-tile-heading{display:flex;align-items:center;gap:5px}
+.rg-expanded .rg-tdp-mode-tile .rg-expanded-tile-icon{margin:0;flex:0 0 16px}
+.rg-expanded .rg-tdp-mode-tile .rg-expanded-label,.rg-expanded .rg-tdp-mode-tile .rg-expanded-value{display:block;white-space:normal;overflow:visible;text-overflow:clip;-webkit-line-clamp:unset;overflow-wrap:anywhere}
+.rg-tdp-mode-status,.rg-tdp-mode-status *{min-width:0;max-width:100%;white-space:normal!important;overflow:visible!important;text-overflow:clip!important;-webkit-line-clamp:unset!important;overflow-wrap:anywhere}
+.rg-tdp-mode-status .rg-readable,.rg-tdp-mode-status [role=group]{width:100%;box-sizing:border-box}
+.rg-tdp-mode-status p{margin:8px 0;font-size:var(--rg-detail-body);line-height:1.45}
 `;

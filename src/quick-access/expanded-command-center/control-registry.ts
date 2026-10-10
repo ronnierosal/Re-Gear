@@ -21,7 +21,7 @@ function entry(value:Omit<ControlDefinition,'reorder'|'replace'|'quickEligible'|
 export const controlRegistry:readonly ControlDefinition[]=[
  entry({id:'fps-target',sourceKeys:['performance:fps','quick:fps'],label:'FPS Target',shortLabel:'FPS Target',icon:'fps',domain:'performance',type:'navigation',nativeTab:'performance',capability:'performance-details',defaultQuick:true}),
  entry({id:'manual-tdp',sourceKeys:['performance:manual','quick:manual'],label:'Manual TDP',shortLabel:'Manual TDP',icon:'manual',domain:'performance',type:'navigation',nativeTab:'performance',capability:'performance-details',defaultQuick:true}),
- entry({id:'auto-tdp',sourceKeys:['performance:auto','quick:auto'],label:'Auto TDP',shortLabel:'Auto TDP',icon:'auto',domain:'performance',type:'navigation',nativeTab:'performance',capability:'performance-details',defaultQuick:true}),
+ entry({id:'auto-tdp',sourceKeys:['performance:auto','quick:auto'],label:'Auto TDP',shortLabel:'Auto TDP',icon:'auto',domain:'performance',type:'navigation',nativeTab:'performance',capability:'performance-details',nativeVisible:false,defaultQuick:false}),
  entry({id:'performance-profile',sourceKeys:['performance:profile'],label:'Performance Profile',shortLabel:'Profile',icon:'profile',domain:'performance',type:'navigation',nativeTab:'performance',capability:null}),
  entry({id:'performance-resolution',sourceKeys:['performance:display'],label:'Resolution',shortLabel:'Resolution',icon:'display',domain:'display',type:'navigation',nativeTab:'performance',capability:null}),
  entry({id:'refresh-rate',sourceKeys:['performance:refresh'],label:'Refresh Rate',shortLabel:'Refresh Rate',icon:'refresh',domain:'display',type:'navigation',nativeTab:'performance',capability:null}),

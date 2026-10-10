@@ -100,7 +100,7 @@ test("nested Auto TDP follows changed and missing readings without stale Off cop
   const app = await fixture();
   const props = {tiles:{quick:[auto("Running", "Controller running")]}};
   let tree = app.render(props);
-  nodes(tree).find(node => node.props?.["data-ec-control"] === "auto").props.onClick();
+  nodes(tree).find(node => node.props?.["data-ec-control"] === "auto-settings").props.onClick();
   tree = app.render(props);
   assert.match(text(tree), /Controller running/);
   assert.doesNotMatch(text(tree), /off and not configured|Sample data/);
@@ -122,7 +122,7 @@ test("empty supplied tabs remain unavailable instead of falling back to sample v
 test("Back from a removed reading focuses the active tab when no controls remain", async () => {
   const app = await fixture();
   let tree=app.render({tiles:{quick:[auto("Running", "Controller running")]}});
-  nodes(tree).find(node=>node.props?.["data-ec-control"] === "auto").props.onClick();
+  nodes(tree).find(node=>node.props?.["data-ec-control"] === "auto-settings").props.onClick();
   tree=app.render({tiles:{quick:[]}});
   nodes(tree).find(node=>node.props?.["data-ec-control"] === "nested-back").props.onClick();
   tree=app.render({tiles:{quick:[]}});
@@ -155,12 +155,12 @@ test("application detail controls receive updated tiles and preserve pending and
   const app=await fixture();
   let calls=0;
   const props={tiles:{quick:[auto("Ready", "Configure")]},renderDetail:(tab,tile)=>{
-    assert.equal(tab,"quick");
+    assert.equal(tab,"performance");
     return {type:"button",props:{disabled:tile.value === "Pending",onClick(){calls++;},children:[`Action: ${tile.value}`]}};
   }};
   let tree=app.render(props);
   assert.equal(calls,0);
-  nodes(tree).find(node=>node.props?.["data-ec-control"] === "auto").props.onClick();
+  nodes(tree).find(node=>node.props?.["data-ec-control"] === "auto-settings").props.onClick();
   tree=app.render(props);
   assert.match(text(tree),/Status and controls.*Action: Ready/);
   assert.doesNotMatch(text(tree),/Settings and actions/);
@@ -183,7 +183,7 @@ test("sample and removed tiles never invoke application control content", async 
   let calls=0;
   const renderDetail=()=>{calls++;return "Control";};
   let tree=app.render({renderDetail});
-  nodes(tree).find(node=>node.props?.["data-ec-control"] === "auto").props.onClick();
+  nodes(tree).find(node=>node.props?.["data-ec-control"] === "auto-settings").props.onClick();
   app.render({renderDetail});
   assert.equal(calls,0);
   tree=app.render({renderDetail,tiles:{quick:[]}});
@@ -195,7 +195,7 @@ test("null detail content keeps unavailable reason readable", async () => {
   const app=await fixture();
   const props={tiles:{quick:[auto("Unknown", "Provider unavailable")]},renderDetail:()=>null};
   let tree=app.render(props);
-  nodes(tree).find(node=>node.props?.["data-ec-control"] === "auto").props.onClick();
+  nodes(tree).find(node=>node.props?.["data-ec-control"] === "auto-settings").props.onClick();
   tree=app.render(props);
   assert.match(text(tree),/Provider unavailable.*No operation is available/);
 });
@@ -213,7 +213,7 @@ test("a tabindex-bearing detail wrapper focuses its editor rather than itself", 
   const app=await fixture();
   const props={tiles:{quick:[auto("Ready", "Configure")]},renderDetail:()=>"Editor"};
   let tree=app.render(props);
-  nodes(tree).find(node=>node.props?.["data-ec-control"] === "auto").props.onClick();
+  nodes(tree).find(node=>node.props?.["data-ec-control"] === "auto-settings").props.onClick();
   tree=app.render(props);
   let focused;
   const editor={focus(){focused="editor";},scrollIntoView(){}};
@@ -228,7 +228,7 @@ test("withdrawn focused controls recover Back without stealing retained dialog f
     const app=await fixture();
     const props={tiles:{quick:[auto("Ready","Configure")]},renderDetail:()=>"Editor"};
     let tree=app.render(props);
-    nodes(tree).find(node=>node.props?.["data-ec-control"] === "auto").props.onClick();
+    nodes(tree).find(node=>node.props?.["data-ec-control"] === "auto-settings").props.onClick();
     tree=app.render(props);
     let panel=nodes(tree).find(node=>node.props && "data-ec-panel" in node.props);
     panel.props.onFocus({target:{closest:()=>({dataset:{ecControl:"nested-content"}})}});
@@ -266,7 +266,7 @@ test("Quick Access mounts both unavailable utility rails and details hide them",
  const app=await fixture(); const props={tiles:{quick:[auto('Unknown','No observation')]}};
  let tree=app.render(props);
  assert.deepEqual(nodes(tree).filter(node=>node.type==='utility-rail').map(node=>node.props.side),['left','right']);
- nodes(tree).find(node=>node.props?.['data-ec-control']==='auto').props.onClick();tree=app.render(props);
+ nodes(tree).find(node=>node.props?.['data-ec-control']==='auto-settings').props.onClick();tree=app.render(props);
  assert.equal(nodes(tree).filter(node=>node.type==='utility-rail').length,0);
 });
 
@@ -304,14 +304,14 @@ test("native LEFT enters Quick Access rail only from its first column",async()=>
  assert.equal(steamEvent(profile.props.onGamepadDirection,11).stopped,false);
 });
 
-function storageFixture(){const writes=[];let value=null;return {writes,getItem:()=>value,setItem:(_,next)=>{value=next;writes.push(JSON.parse(next));}};}
+function storageFixture(initial=null){const writes=[];let value=initial===null?null:JSON.stringify(initial);return {writes,getItem:()=>value,setItem:(_,next)=>{value=next;writes.push(JSON.parse(next));}};}
 const nativeEvent=button=>({detail:{button},preventDefault(){},stopPropagation(){}});
 const frame=tree=>nodes(tree).find(node=>node.props&&'data-ec-panel' in node.props);
 const card=(tree,id)=>nodes(tree).find(node=>node.props?.['data-ec-control']===id);
 const prefsProps=storage=>({native:true,layoutStorage:storage,editButtons:{x:3,y:4},directions:{up:9,down:10,left:11,right:12}});
 function yGesture(app,tree,ms=0){frame(tree).props.onButtonDown(nativeEvent(4));app.advance(ms);frame(tree).props.onButtonUp(nativeEvent(4));}
 test('picker artwork and selected state preserve native choices, Cancel and reopen',async()=>{
- const app=await fixture(),storage=storageFixture(),props={...prefsProps(storage),tiles:{quick:[auto('Off','Configure')],performance:[auto('Off','Configure')]}};
+ const app=await fixture(),storage=storageFixture({quick:['quick:auto']}),props={...prefsProps(storage),tiles:{quick:[auto('Off','Configure')],performance:[auto('Off','Configure')]}};
  let tree=app.render(props);yGesture(app,tree);tree=app.render(props);
  const choices=nodes(tree).filter(node=>node.props?.['data-ec-control']?.startsWith('choice:')&&node.props?.['aria-label']?.startsWith('Auto TDP,'));
  assert.equal(choices.length,1,'canonical aliases stay deduplicated');
@@ -350,7 +350,7 @@ test('empty Quick Access slots render as accessible outlines without visible cop
  assert.equal(text(empty),'');
 });
 test('hold Y moves draft only, B cancels, A places without dispatching the action',async()=>{
- const app=await fixture(),storage=storageFixture();let starts=0;
+ const app=await fixture(),storage=storageFixture({quick:['quick:disconnect','quick:auto']});let starts=0;
  const props={...prefsProps(storage),tiles:{quick:[{id:'disconnect',title:'Safe Disconnect',value:'Unknown',detail:''},auto('Off','')]},onDisconnect:()=>starts++};
  let tree=app.render(props);card(tree,'disconnect').props.onGamepadFocus();yGesture(app,tree,550);tree=app.render(props);
  card(tree,'disconnect').props.onGamepadDirection(nativeEvent(12));tree=app.render(props);
@@ -375,7 +375,7 @@ test('other tabs ignore Y tap and persist reorder without replacing membership',
  let tree=app.render(props);yGesture(app,tree);tree=app.render(props);
  assert.ok(!nodes(tree).some(node=>String(node.props?.['data-ec-control']).startsWith('choice:')));
  yGesture(app,tree,550);tree=app.render(props);card(tree,'profile').props.onGamepadDirection(nativeEvent(12));tree=app.render(props);card(tree,'profile').props.onClick();tree=app.render(props);
- assert.deepEqual(storage.writes.at(-1).order.performance,['fps','profile','manual','auto','display','refresh']);
+ assert.deepEqual(storage.writes.at(-1).order.performance,['fps','profile','manual','display','refresh']);
 });
 test('Y edits focused unavailable right slot without dispatch; X is unused',async()=>{
  const app=await fixture(),storage=storageFixture();let calls=0;
