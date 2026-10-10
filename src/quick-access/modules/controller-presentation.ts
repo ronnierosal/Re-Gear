@@ -110,7 +110,7 @@ export function controllerPresentation(input: ControllerInput): ControllerPresen
   if (!controller) {
     return {
       catalog, available: false,
-      reason: "Controller status unavailable. No peripheral reading has been received.",
+      reason: "Built-in and external controller readings have not been received. Catalog and shortcut readings are shown separately.",
       builtin: UNKNOWN, external: UNKNOWN, precision: "unknown", precisionNote: null,
       // The shortcut source is observed separately, so it can still be reported
       // even when no peripheral reading exists.
@@ -129,7 +129,7 @@ export function controllerPresentation(input: ControllerInput): ControllerPresen
   return {
     catalog, available: anyFact,
     reason: anyFact ? null
-      : "Controller status unavailable. The reading contained no usable facts.",
+      : "Built-in and external controller availability is unverified. Catalog and shortcut readings are shown separately.",
     builtin, external, precision,
     precisionNote: precision === "exact" ? null
       : "This reading is incomplete; some controller details are unverified.",
