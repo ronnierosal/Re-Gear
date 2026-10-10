@@ -607,15 +607,21 @@ function createUsb4WaitingSnapshotReader({ owner, runtime, read, now, setTimeout
     return descriptor && "value" in descriptor ? descriptor.value : undefined;
   };
   const withdraw = () => {
-    if (expiry !== null) { clearTimeout(expiry); expiry = null; }
-    runtime.withdraw();
+    const timer = expiry;
+    expiry = null;
+    try { if (timer !== null) clearTimeout(timer); } catch { /* Continue withdrawing the surface. */ }
+    try { runtime.withdraw(); } catch { /* Native closure remains unverified; preserve the snapshot RPC. */ }
   };
   const readSnapshot = async () => {
     const requestStartedAtMs = now();
     const generation = owner.generation;
     const requestSequence = ++sequence;
+    let responseReceived = false;
+    let response!: SnapshotPayload;
     try {
       const payload = await read();
+      response = payload;
+      responseReceived = true;
       const receivedAtMs = now();
       const currentOwner = !stopped && !owner.stopped && owner.active && owner.generation === generation;
       if (!currentOwner) {
@@ -653,13 +659,21 @@ function createUsb4WaitingSnapshotReader({ owner, runtime, read, now, setTimeout
       const expiresAtMs = Math.min(requestStartedAtMs + 10000, observedAt + 10000);
       runtime.observe(Object.freeze({payload, requestStartedAtMs, receivedAtMs, expiresAtMs, generation,
         supportedLifetime: supportedUsb4NoticeLifetime}));
+      // The native host can dispose the plugin synchronously while showing.
+      if (stopped || owner.stopped || !owner.active || owner.generation !== generation) {
+        withdraw();
+        return payload;
+      }
       expiry = setTimeout(() => {
         expiry = null;
-        runtime.withdraw();
+        withdraw();
       }, Math.max(0, expiresAtMs - now()));
       return payload;
     } catch (error) {
       if (requestSequence === sequence) withdraw();
+      // This presentation lane must not interfere with existing snapshot
+      // consumers (including the separate sleep admission coordinator).
+      if (responseReceived) return response;
       throw error;
     }
   };
@@ -2336,6 +2350,7 @@ export default definePlugin(() => {
     setTimeout:(callback,delay)=>window.setTimeout(callback,delay),
     clearTimeout:timer=>window.clearTimeout(timer),
   });
+  const getSnapshot = usb4SnapshotReader.read;
   const renderDetail:ReturnType<typeof createNonEgpuDetailRenderer>=(tab,tile)=>tab==="settings"&&tile.id==="about"?<ReGearAbout/>:tab==="settings"&&tile.id==="help-guides"?<ReGearHelp/>:renderRuntimeDetail(tab,tile)??renderNonEgpuDetail(tab,tile);
   let menuSnapshot: SnapshotPayload["snapshot"] | null = null;
   const publishMenuSnapshot = (snapshot: SnapshotPayload["snapshot"] | null) => { if(!runtimeOwner.stopped)menuSnapshot = snapshot; };
@@ -2347,7 +2362,7 @@ export default definePlugin(() => {
     // below retain their existing approval/confirmation path.
     input: undefined,
     readContext: async () => {
-      const [snapshot, journal] = await Promise.all([usb4SnapshotReader.read(), getTransitionJournalStatus()]);
+      const [snapshot, journal] = await Promise.all([getSnapshot(), getTransitionJournalStatus()]);
       return { snapshot, journal };
     },
     show: showControllerDisplayConfirmation,
@@ -2456,7 +2471,7 @@ export default definePlugin(() => {
     read: async () => {
       authorization.refresh(getDeviceAuthorizationStatus);
       const [payload, automatic, journal] = await Promise.all([
-        usb4SnapshotReader.read(), getAutomaticDockStatus(), getTransitionJournalStatus(),
+        getSnapshot(), getAutomaticDockStatus(), getTransitionJournalStatus(),
       ]);
       return {payload, automatic, journal: journal.code};
     },

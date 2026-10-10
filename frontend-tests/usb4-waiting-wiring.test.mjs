@@ -15,7 +15,7 @@ function harness(){
  const reader=create({owner,runtime,read:()=>new Promise((resolve,reject)=>replies.push({resolve,reject})),now:()=>clock,
   setTimeout:(fn,delay)=>{timers.set(++nextTimer,{fn,at:clock+delay});return nextTimer;},clearTimeout:id=>timers.delete(id)});
  const payload=(admission='observation-only',stamp=clock)=>({snapshot:{schema_version:3,observed_at:new Date(stamp).toISOString()},runtime_admission:{schema_version:1,sleep_interceptor_admission:admission,mode:'observation-only',mutation_allowed:false},usb4_waiting:{schema_version:1,state:'unauthorized',notice_key:'uw-'+ 'a'.repeat(32)}});
- return {reader,owner,replies,seen,timers,payload,get withdrawals(){return withdrawals;},advance(ms){clock+=ms;for(const [id,t]of timers)if(t.at<=clock){timers.delete(id);t.fn();}},clock:()=>clock};
+ return {reader,runtime,owner,replies,seen,timers,payload,get withdrawals(){return withdrawals;},advance(ms){clock+=ms;for(const [id,t]of timers)if(t.at<=clock){timers.delete(id);t.fn();}},clock:()=>clock};
 }
 test('fresh direct same-response receipt, expiry and no additional requests',async()=>{
  const h=harness(),p=h.reader.read(),wire=h.payload();h.replies[0].resolve(wire);assert.equal(await p,wire);
@@ -58,10 +58,18 @@ test('unknown then supported then observation-only remains suppressed across rem
 test('error, generation change, inactive owner and stop retire without stale publication',async()=>{
  for(const kind of ['error','generation','inactive','stop']){const h=harness(),p=h.reader.read();if(kind==='error')h.replies[0].reject(Error('read'));else{if(kind==='generation')h.owner.generation++;if(kind==='inactive')h.owner.active=false;if(kind==='stop')h.reader.stop();h.replies[0].resolve(h.payload());}await p.catch(()=>{});assert.equal(h.seen.length,0,kind);assert.ok(h.withdrawals>=1,kind);assert.equal(h.timers.size,0,kind);}
 });
+test('synchronous presentation disposal cannot retain an expiry timer',async()=>{
+ const h=harness();h.runtime.observe=()=>h.reader.stop();const p=h.reader.read();h.replies[0].resolve(h.payload());await p;assert.equal(h.timers.size,0);
+});
+test('presentation failure cannot turn a successful snapshot into a rejected RPC',async()=>{
+ for(const port of ['observe','withdraw']){const h=harness();h.runtime[port]=()=>{throw Error('native presentation failure');};
+ const p=h.reader.read(),wire=port==='observe'?h.payload():h.payload('supported-runtime');h.replies[0].resolve(wire);assert.equal(await p,wire);assert.equal(h.timers.size,0);}
+});
 test('all three existing production snapshot callers use shared reader and cleanup',()=>{
  assert.match(source,/getSnapshot as getSnapshotRPC/);assert.match(source,/snapshotReader=\{usb4SnapshotReader\.read\}/);
- assert.match(source,/Promise\.all\(\[usb4SnapshotReader\.read\(\), getTransitionJournalStatus\(\)\]/);
- assert.match(source,/usb4SnapshotReader\.read\(\), getAutomaticDockStatus\(\)/);
+ assert.match(source,/const getSnapshot = usb4SnapshotReader\.read;/);
+ assert.match(source,/Promise\.all\(\[getSnapshot\(\), getTransitionJournalStatus\(\)\]/);
+ assert.match(source,/getSnapshot\(\), getAutomaticDockStatus\(\)/);
  assert.match(source,/usb4SnapshotReader\.stop\(\)/);assert.match(source,/withdrawUsb4Waiting\?\.\(\)/);
  assert.ok(source.includes("<Usb4WaitingStatus source={usb4WaitingSource}/>"));
 });
@@ -70,17 +78,22 @@ test('production snapshot reader drives the actual passive notice runtime and wi
  const modelExports={},runtimeExports={};
  const modelCode=ts.transpileModule(readFileSync(new URL('../src/usb4-waiting-model.ts',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;
  new Function('exports',modelCode)(modelExports);
- const runtimeCode=ts.transpileModule(readFileSync(new URL('../src/usb4-waiting-runtime.tsx',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.React}}).outputText;
+ const runtimeCode=ts.transpileModule(readFileSync(new URL('../src/usb4-waiting-runtime.tsx',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX}}).outputText;
  // No native host or security adapter is loaded. This executes the shipped
  // receipt/model/runtime composition with only its native show port substituted.
- const require=(name)=>name==='./usb4-waiting-model'?modelExports:{};
+ const jsx=(type,props)=>({type,props});
+ const require=(name)=>name==='./usb4-waiting-model'?modelExports:name==='react'?{useSyncExternalStore:(_subscribe,read)=>read()}:name==='react/jsx-runtime'?{jsx,jsxs:jsx}:name==='./quick-access/readable-block'?{ReadableBlock:'readonly-block'}:{};
  new Function('exports','require',runtimeCode)(runtimeExports,require);
  let clock=Date.parse('2026-10-10T01:00:00Z'),shown=0,closed=0,timer;
  const runtime=runtimeExports.createUsb4WaitingRuntime({now:()=>clock,show:()=>{shown++;return{close(){closed++;}};}});
  const payload={snapshot:{schema_version:3,observed_at:new Date(clock).toISOString()},runtime_admission:{schema_version:1,sleep_interceptor_admission:'observation-only',mode:'observation-only',mutation_allowed:false},usb4_waiting:{schema_version:1,state:'unauthorized',notice_key:'uw-'+ 'b'.repeat(32)}};
  const reader=create({owner:{active:true,generation:1,stopped:false},runtime,read:async()=>payload,now:()=>clock,setTimeout:fn=>{timer=fn;return 1;},clearTimeout:()=>{timer=undefined;}});
  await reader.read();assert.equal(shown,1);assert.equal(runtime.source.read()?.state,'unauthorized');
- clock+=10000;timer();assert.equal(closed,1);assert.equal(runtime.source.read(),null);
+ const rendered=runtimeExports.Usb4WaitingStatus({source:runtime.source});
+ assert.equal(rendered.type,'readonly-block');assert.equal(rendered.props.children.props.role,'status');
+ assert.equal(rendered.props.children.props.children,modelExports.USB4_WAITING_TEXT);
+ assert.equal(rendered.props.onClick,undefined);assert.equal(rendered.props.children.props.onClick,undefined);
+ clock+=10000;timer();assert.equal(closed,1);assert.equal(runtime.source.read(),null);assert.equal(runtimeExports.Usb4WaitingStatus({source:runtime.source}),null);
  payload.snapshot.observed_at=new Date(clock).toISOString();await reader.read();assert.equal(shown,1,'same key cannot reprompt after expiry');
  reader.stop();runtime.stop();assert.equal(runtime.source.read(),null);
 });
