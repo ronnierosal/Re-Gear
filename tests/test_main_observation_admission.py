@@ -356,3 +356,30 @@ class ObservationAdmissionTests(unittest.IsolatedAsyncioTestCase):
                     schedule.assert_not_called()
                     authorize.assert_not_called()
                     power.assert_not_called()
+
+    async def test_supported_startup_never_constructs_direct_rpc_projection(self):
+        async def snapshot(self, *args, **kwargs):
+            return {"snapshot": {"blockers": [], "game_state": "idle", "support_tier": "certified"},
+                    "inference": {"mode": "portable"}}
+        ally = HostRecord("ASUSTeK COMPUTER INC.", "ROG Ally X RC72LA", "RC72LA")
+        for profile in ("development", "production"):
+            module, plugin = self.plugin(profile)
+            plugin._observation_started = False
+            plugin._observation_only = False
+            plugin._build_info = {}
+            plugin._events = Mock()
+            plugin._process_service = Mock(return_value=NS(recover_interrupted=lambda: NS(action_required=False)))
+            plugin._reconcile_sleep_guard = AsyncMock()
+            # Exercise the actual wrapped startup; stub only its unchanged
+            # diagnostics producer, then stop before existing background loops.
+            base = module.Plugin.__mro__[1]
+            seam = "_get_snapshot_payload" if hasattr(base, "_get_snapshot_payload") else "get_snapshot"
+            observer = NS(enrich_snapshot=AsyncMock(side_effect=lambda payload: payload))
+            with self.subTest(profile=profile), patch("regear.adapters.steamos.host.HostDiscovery.scan", return_value=ally), \
+                 patch.object(base, seam, snapshot), \
+                 patch.object(module, "Usb4WaitingObservation", return_value=observer) as factory, \
+                 patch.object(module, "LinuxTopologyWakeup", side_effect=RuntimeError("bounded startup stop")):
+                with self.assertRaisesRegex(RuntimeError, "bounded startup stop"):
+                    await plugin._main()
+                factory.assert_not_called()
+                observer.enrich_snapshot.assert_not_awaited()

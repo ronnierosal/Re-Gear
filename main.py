@@ -1021,7 +1021,11 @@ class Plugin:
         )
 
     async def get_snapshot(self, _request: object = None) -> dict[str, object]:
-        """Return the existing privacy-safe, read-only diagnostics payload."""
+        """Direct RPC; its admission wrapper adds passive USB4 presentation."""
+        return await self._get_snapshot_payload()
+
+    async def _get_snapshot_payload(self) -> dict[str, object]:
+        """Existing diagnostics composition, without the direct-RPC projection."""
         report = await asyncio.to_thread(self._api.get_snapshot_report)
         payload = report_to_public_dict(report)
         payload["diagnostics"]["build"] = self._build_info
@@ -4867,7 +4871,7 @@ class Plugin:
 
     async def preview_support_bundle(self, _request: object = None) -> dict[str, object]:
         """Return a redacted preview and one-time approval token."""
-        report = await self.get_snapshot()
+        report = await self._get_snapshot_payload()
         peripheral_status = None
         try:
             peripheral = await asyncio.to_thread(self._peripherals.observe)
@@ -5673,7 +5677,7 @@ class Plugin:
             )
         try:
             await self._reconcile_sleep_guard()
-            payload = await self.get_snapshot()
+            payload = await self._get_snapshot_payload()
             snapshot = payload["snapshot"]
             inference = payload["inference"]
             blocker_codes = [item["code"] for item in snapshot["blockers"]]
