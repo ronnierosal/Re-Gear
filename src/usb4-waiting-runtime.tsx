@@ -24,7 +24,7 @@ export function Usb4WaitingStatus({ source }: { source: Usb4WaitingStatusSource 
 }
 
 export function Usb4WaitingPopup({ onDismiss }: { onDismiss(): void }) {
-  return <ModalRoot className="rg-popup-host" closeModal={onDismiss} bHideCloseIcon>
+  return <ModalRoot className="rg-popup-host rg-usb4-waiting-host" closeModal={onDismiss} bHideCloseIcon>
     <Focusable flow-children="vertical" noFocusRing
       onCancelButton={event => { event.preventDefault(); event.stopPropagation(); onDismiss(); }}
       onCancelActionDescription="Hide">
