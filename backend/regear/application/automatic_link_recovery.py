@@ -5,7 +5,7 @@ import math
 
 
 class AutomaticLinkRecovery:
-    """Ten-second settling and cooldown, two attempts, no replay after reload."""
+    """Ten-second attach settling and cooldown, two attempts, no replay after reload."""
 
     def __init__(self) -> None:
         self.armed = False
@@ -14,7 +14,6 @@ class AutomaticLinkRecovery:
         self.in_flight = False
         self.completed = False
         self.due: float | None = None
-        self.idle_since: float | None = None
         self.decision_code = "automatic_recovery.not_observed"
 
     def _decision(self, reason: str, ready: bool = False) -> bool:
@@ -36,7 +35,11 @@ class AutomaticLinkRecovery:
         if pci_complete:
             self.completed = True
         if not present or not identity.startswith("transport:") or identity == "transport:unresolved":
-            self.idle_since = None
+            # A lost or unresolved transport invalidates the physical attach
+            # settle, even when the same identity later returns. Keep the
+            # identity and attempt budget so this is not mistaken for a fresh
+            # verified detach, but require ten stable seconds after return.
+            self.due = None
             return self._decision("waiting_for_transport" if not present else "transport_unresolved")
         if not self.identity:
             self.identity = identity
@@ -44,16 +47,20 @@ class AutomaticLinkRecovery:
         if identity != self.identity:
             self.armed = False  # identity changes do not prove physical removal
             return self._decision("transport_changed")
+        if self.due is None:
+            self.due = now + 10
         if not enabled or not idle:
-            self.idle_since = None
             return self._decision("disabled" if not enabled else "waiting_for_idle")
-        if self.idle_since is None:
-            self.idle_since = now
         if self.completed:
             return self._decision("completed")
         if self.attempts >= 2:
             return self._decision("attempts_exhausted")
-        ready = self.due is not None and now >= self.due and now - self.idle_since >= 10
+        # The attachment/cooldown timer is the settle window. A transient
+        # non-idle sample must still block the current observation without
+        # starting another delay; transport loss above does restart the timer.
+        # The caller and reserved dispatch preflight both re-read the current
+        # game/session/identity evidence before any command runs.
+        ready = self.due is not None and now >= self.due
         return self._decision("ready" if ready else "settling", ready)
 
     def begin(self) -> None:
@@ -65,4 +72,3 @@ class AutomaticLinkRecovery:
     def finish(self, now: float) -> None:
         self.in_flight = False
         self.due = now + 10
-        self.idle_since = None
