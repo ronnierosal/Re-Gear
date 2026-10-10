@@ -126,7 +126,7 @@ test("current readiness, recovery and provider bounds override positive preset e
 });
 
 test("Custom drafts use only current ready integer bounds and have revocable local lifetime", () => {
-  for(const change of [{enabled:false,ready:false},{ready:false},{recovery_required:true},{current_watts:null,minimum_watts:null,maximum_watts:null}])
+  for(const change of [{enabled:false,ready:false},{ready:false},{recovery_required:true},{can_enable:false},{code:"tdp.conflict"},{minimum_watts:NaN},{minimum_watts:"7"},{maximum_watts:Infinity},{minimum_watts:18},{maximum_watts:16},{maximum_watts:9999},{current_watts:17.5},{current_watts:null,minimum_watts:null,maximum_watts:null}])
     assert.equal(createCustomTdpDraft({...ready,...change}),null);
   for(const value of [NaN,Infinity,6,31,15.5,"15",null]) assert.equal(createCustomTdpDraft(ready,value),null);
   for(const value of [7,17,30]) {
