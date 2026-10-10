@@ -1,6 +1,10 @@
 """Actual passive delivery and real private catalog reduction; no device commands."""
 
+import asyncio
 import json
+import subprocess
+import sys
+import threading
 import unittest
 from dataclasses import replace
 from types import SimpleNamespace
@@ -18,10 +22,81 @@ from regear.adapters.steamos.peripherals import (
 from regear.delivery import build_profile_config
 from regear.domain.controller_catalog import CatalogCode, ControllerCatalog, EvidenceState, DeviceObservation, DeviceKind, ProviderInterface
 from regear.ports.controller_catalog import PropertyRead, ProviderReadFrame
+from regear.adapters.steamos import commands
+from tests.test_inputplumber_catalog import FakeRunner
 
 
 UNKNOWN = {"schema_version": 1, "provider": "unknown", "profile_metadata": "unknown",
            "virtual_target": "unknown", "relationships": "unknown"}
+
+
+class DeckyControllerImportTests(unittest.TestCase):
+    def test_missing_decky_xml_does_not_prevent_backend_or_snapshot_delivery(self):
+        # Fresh process: a cached host ElementTree/reader must not hide the
+        # actual Decky 3.11.7 missing-module startup failure.
+        script = r'''
+import asyncio, builtins, json, sys
+from pathlib import Path
+from unittest.mock import Mock, patch
+from tests.test_main_process_delivery import load_main_module, SnapshotApi
+from regear.domain.serialization import snapshot_from_dict
+from regear.adapters.steamos.peripherals import (
+    PeripheralInventory, SteamOsPeripheralObservationAdapter,
+)
+from regear.delivery import build_profile_config
+original_import = builtins.__import__
+attempts = []
+deny_reader = False
+deny_expat = False
+def decky_import(name, *args, **kwargs):
+    if name == 'xml.etree' or name.startswith('xml.etree.'):
+        attempts.append(name)
+        raise ModuleNotFoundError("No module named 'xml.etree'", name='xml.etree')
+    if deny_reader and name == 'regear.adapters.steamos.inputplumber_catalog':
+        raise ModuleNotFoundError('optional reader unavailable', name=name)
+    if deny_expat and name == 'xml.parsers':
+        raise ModuleNotFoundError('optional parser unavailable', name=name)
+    return original_import(name, *args, **kwargs)
+builtins.__import__ = decky_import
+for profile in ('development', 'production'):
+    deny_reader = deny_expat = False
+    build_profile_config.BUILD_PROFILE = profile
+    module = load_main_module()
+    assert not attempts, 'startup imported the optional controller reader'
+    plugin = module.Plugin()
+    snapshot = snapshot_from_dict(json.loads(Path('tests/fixtures/portable.json').read_text()))
+    plugin._api = SnapshotApi(snapshot)
+    payload = asyncio.run(plugin.get_snapshot())
+    assert payload['snapshot']['schema_version'] == 3
+    assert payload['runtime_admission']['schema_version'] == 1
+    inventory = Mock()
+    inventory.scan.return_value = PeripheralInventory(True, (), audio_complete=True)
+    plugin._peripherals = SteamOsPeripheralObservationAdapter(inventory)
+    from tests.test_inputplumber_catalog import FakeRunner
+    fake = FakeRunner()
+    with patch.object(module.InputPlumberReadCommandRunner, 'run', lambda runner, argv: fake.run(argv)):
+        result = asyncio.run(plugin.get_peripheral_status())
+    assert result['catalog'] == dict(schema_version=1, provider='known',
+        profile_metadata='partial', virtual_target='unknown', relationships='unknown'), result['catalog']
+    assert fake.calls and not attempts, 'functional read borrowed ElementTree'
+    deny_reader = True
+    with patch.object(module.InputPlumberReadCommandRunner, 'run') as run:
+        result = asyncio.run(plugin.get_peripheral_status())
+        run.assert_not_called()
+    assert result['catalog'] == dict(schema_version=1, provider='unavailable',
+        profile_metadata='unknown', virtual_target='unknown', relationships='unknown')
+    assert 'xml' not in json.dumps(result)
+    deny_reader = False
+    deny_expat = True
+    with patch.object(module.InputPlumberReadCommandRunner, 'run') as run:
+        result = asyncio.run(plugin.get_peripheral_status())
+        run.assert_not_called()
+    assert result['catalog'] == dict(schema_version=1, provider='unknown',
+        profile_metadata='unknown', virtual_target='unknown', relationships='unknown')
+    attempts.clear()
+'''
+        result = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True, timeout=30)
+        self.assertEqual(0, result.returncode, result.stderr)
 
 
 def observer():
@@ -121,6 +196,131 @@ class ControllerCatalogGetterTests(unittest.IsolatedAsyncioTestCase):
         plugin._observation_started = True
         plugin._unloading = False
         return module, plugin
+
+    async def test_default_getter_composes_real_reader_with_fresh_bounded_runner(self):
+        ally = HostRecord("ASUSTeK COMPUTER INC.", "ROG Ally X RC72LA", "RC72LA")
+        mini = HostRecord("GPD", "G1617-01", "unknown")
+        for profile in ("development", "production"):
+            for host in (mini, ally):
+                with self.subTest(profile=profile, host=host.product_name):
+                    module, plugin = self.plugin(profile)
+                    plugin._observation_started = host is mini
+                    plugin._peripherals = observer()
+                    fake = FakeRunner()
+                    runners = []
+
+                    def read(runner, argv):
+                        if not any(runner is previous for previous in runners):
+                            runners.append(runner)
+                            self.assertEqual(512, runner._remaining_calls)
+                            self.assertEqual(1048576, runner._remaining_bytes)
+                            self.assertFalse(runner._failed)
+                        return fake.run(argv)
+
+                    with patch("regear.adapters.steamos.host.HostDiscovery.scan", return_value=host), \
+                         patch.object(commands.InputPlumberReadCommandRunner, "run", read), \
+                         patch.object(commands.subprocess, "Popen") as spawn, \
+                         patch.object(module, "RootOwnedRuntimeState") as root, \
+                         patch.object(module, "SystemPowerCommandRunner") as power, \
+                         patch.object(module.asyncio, "create_task") as schedule:
+                        for _ in range(2):
+                            result = await plugin.get_peripheral_status({"runner": "forged", "catalog": {"provider": "unavailable"}})
+                            self.assertEqual({**UNKNOWN, "provider": "known", "profile_metadata": "partial"}, result["catalog"])
+                            self.assertEqual(set(UNKNOWN), set(result["catalog"]))
+                        fake.hook = lambda tail, reply: commands.CommandResult(reply.argv, 1, "", "private failure")
+                        unavailable = await plugin.get_peripheral_status()
+                        self.assertEqual(UNKNOWN, unavailable["catalog"])
+                        self.assertNotIn("private", json.dumps(unavailable))
+                        spawn.assert_not_called()
+                        root.assert_not_called()
+                        power.assert_not_called()
+                        schedule.assert_not_called()
+                    self.assertEqual(3, len(runners))
+
+    async def test_unload_during_read_discards_late_catalog(self):
+        module, plugin = self.plugin("development")
+        plugin._peripherals = observer()
+        started, release = threading.Event(), threading.Event()
+
+        def collect():
+            started.set()
+            if not release.wait(2):
+                raise TimeoutError("test fixture was not released")
+            return catalog()
+
+        with patch.object(module, "_controller_catalog_factory", return_value=SimpleNamespace(collect_catalog=collect)):
+            task = asyncio.create_task(plugin.get_peripheral_status())
+            try:
+                self.assertTrue(await asyncio.to_thread(started.wait, 1))
+                await plugin._unload()
+            finally:
+                release.set()
+            self.assertEqual(UNKNOWN, (await task)["catalog"])
+
+    async def test_unload_before_queued_worker_starts_never_constructs_reader(self):
+        module, plugin = self.plugin("development")
+        plugin._peripherals = observer()
+        queued, release = asyncio.Event(), asyncio.Event()
+        calls = 0
+
+        async def queued_thread(function, *args, **kwargs):
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                queued.set()
+                await release.wait()
+            return function(*args, **kwargs)
+
+        with patch.object(module.asyncio, "to_thread", queued_thread), \
+             patch.object(module, "_controller_catalog_factory", return_value=SimpleNamespace(collect_catalog=lambda: catalog())) as factory:
+            task = asyncio.create_task(plugin.get_peripheral_status())
+            try:
+                await asyncio.wait_for(queued.wait(), 1)
+                await plugin._unload()
+            finally:
+                release.set()
+            self.assertEqual(UNKNOWN, (await task)["catalog"])
+            factory.assert_not_called()
+
+    async def test_cancelled_getter_leaves_only_deadline_bounded_read_and_reaps_child(self):
+        module, plugin = self.plugin("development")
+        plugin._peripherals = observer()
+        real_spawn = subprocess.Popen
+        runner_type = commands.InputPlumberReadCommandRunner
+        started = threading.Event()
+        processes = []
+
+        def spawn(argv, **kwargs):
+            runner_type.validate(argv)
+            self.assertEqual("GetId", argv[-1])
+            process = real_spawn((sys.executable, "-c", "import time; time.sleep(20)"), **kwargs)
+            processes.append(process)
+            started.set()
+            return process
+
+        with patch.object(module, "InputPlumberReadCommandRunner", side_effect=lambda: runner_type(timeout_seconds=.15), create=True), \
+             patch.object(commands.subprocess, "Popen", side_effect=spawn):
+            task = asyncio.create_task(plugin.get_peripheral_status())
+            try:
+                self.assertTrue(await asyncio.to_thread(started.wait, 1))
+                task.cancel()
+                with self.assertRaises(asyncio.CancelledError):
+                    await task
+                for _ in range(200):
+                    if (processes and processes[0].poll() is not None
+                            and processes[0].stdout.closed and processes[0].stderr.closed):
+                        break
+                    await asyncio.sleep(.01)
+                self.assertEqual(1, len(processes))
+                self.assertIsNotNone(processes[0].poll())
+                self.assertTrue(processes[0].stdout.closed)
+                self.assertTrue(processes[0].stderr.closed)
+            finally:
+                task.cancel()
+                for process in processes:
+                    if process.poll() is None:
+                        process.kill()
+                        process.wait()
 
     async def test_unknown_and_forced_modes_allow_only_passive_getter_composition(self):
         for profile in ("development", "production"):

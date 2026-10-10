@@ -27,6 +27,7 @@ from regear.adapters.steamos.commands import (  # noqa: E402
     BrokerCaptureRestoreTimer,
     HeldTrialLauncher,
     HeldTrialRestoreTimer,
+    InputPlumberReadCommandRunner,
 )
 
 from regear.adapters.steamos.discovery import SteamOsDiscovery  # noqa: E402
@@ -136,15 +137,28 @@ from regear.adapters.steamos.game_render_binding import (  # noqa: E402
 )
 from regear.adapters.steamos.game_scopes import SystemdGameScopeDiscovery  # noqa: E402
 from regear.adapters.steamos.version_info import SteamOsVersionDiscovery  # noqa: E402
-from regear.adapters.steamos.controller_catalog import COMPOSITE, DBUS, TARGETS, SOURCES, MANAGER, EPOCH, PATH, INTERFACE  # noqa: E402
+from regear.adapters.steamos.controller_catalog import COMPOSITE, DBUS, TARGETS, SOURCES, MANAGER, EPOCH, PATH, INTERFACE, InputPlumberCatalogAdapter  # noqa: E402
 from regear.domain.controller_catalog import (  # noqa: E402
     ControllerCatalog, DeviceObservation, DeviceKind, EvidenceState, CatalogCode,
     Observation, ProviderInterface, RelationState,
 )
 
-# Separately owned live reader is bound only after its source handoff. No cache,
-# startup construction, provider activation, or request-supplied factory.
-_controller_catalog_factory = None
+# Collection is reached only through the passive peripheral getter. Every
+# request gets one fresh aggregate budget; nothing is constructed at startup.
+class _ControllerReaderUnavailable(ImportError):
+    """Optional reader cannot load in this runtime; not provider absence."""
+
+def InputPlumberReader(*args, **kwargs):
+    """Preserve the existing construction seam without startup imports."""
+    try:
+        from regear.adapters.steamos.inputplumber_catalog import InputPlumberReader as Reader
+    except ImportError:
+        raise _ControllerReaderUnavailable() from None
+    return Reader(*args, **kwargs)
+
+
+def _controller_catalog_factory():
+    return InputPlumberCatalogAdapter(InputPlumberReader(InputPlumberReadCommandRunner()))
 
 
 def _observe_controller_catalog():
@@ -1232,12 +1246,21 @@ class Plugin:
                 "audio": {"complete": False, "exact": False, "external_available": None, "portable_available": None, "code": "audio.observation_unavailable"},
             }
         catalog = None
+        reader_unavailable = False
         if not self._unloading:
             try:
-                catalog = await asyncio.to_thread(_observe_controller_catalog)
+                catalog = await asyncio.to_thread(
+                    lambda: None if self._unloading else _observe_controller_catalog()
+                )
+            except _ControllerReaderUnavailable:
+                reader_unavailable = True
             except Exception:
                 pass
+        if self._unloading:
+            catalog = None
         payload["catalog"] = controller_catalog_to_public_facts(catalog)
+        if reader_unavailable and not self._unloading:
+            payload["catalog"]["provider"] = "unavailable"
         return payload
 
     async def get_action_history(self, _request: object = None) -> dict[str, object]:
@@ -6322,7 +6345,7 @@ class Plugin:
 
     def _support_versions(self) -> dict[str, str]:
         return {
-            "regear": "0.3.191",
+            "regear": "0.3.194",
             "decky": str(getattr(decky, "DECKY_VERSION", "unknown")),
             "steamos": self._version_info.steamos,
             "kernel": self._version_info.kernel,
