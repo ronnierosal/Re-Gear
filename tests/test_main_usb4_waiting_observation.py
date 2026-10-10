@@ -31,3 +31,11 @@ class SnapshotFacadeTests(unittest.IsolatedAsyncioTestCase):
         release.set()
         with self.assertRaises(asyncio.CancelledError): await first
         self.assertEqual((await second)['usb4_waiting']['state'],'unknown')
+
+    async def test_enrichment_does_not_create_asyncio_task(self):
+        from unittest.mock import patch
+        observer=Mock();observer.observe.return_value=Usb4AttachmentObservation('unknown')
+        facade=Usb4WaitingObservation(observer)
+        with patch('asyncio.create_task',side_effect=AssertionError('background scheduler')):
+            result=await facade.enrich_snapshot({'schema_version':3})
+        self.assertEqual(result['usb4_waiting']['state'],'unknown')

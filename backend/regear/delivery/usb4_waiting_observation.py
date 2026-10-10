@@ -37,7 +37,7 @@ class Usb4WaitingObservation:
 
     async def enrich_snapshot(self, snapshot):
         async with self._lock:
-            worker = asyncio.create_task(asyncio.to_thread(self.observe))
+            worker = asyncio.get_running_loop().run_in_executor(None, self.observe)
             try:
                 wire = await asyncio.shield(worker)
             except asyncio.CancelledError:
