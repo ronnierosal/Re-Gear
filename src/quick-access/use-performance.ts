@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { applyTdpLimit, getAutoTdpStatus, getTdpStatus, restoreTdpLimit, setTdpEnabled, startAutoTdp, stopAutoTdp, type AutoTdpStatusPayload, type TdpStatusPayload } from "../backend";
-import { sanitizeTdpStatus, tdpControls, manualPresetOptions, type ManualPresetIntent } from "../tdp-ui";
+import { sanitizeTdpStatus, tdpControls, manualPresetOptions, type ManualPresetIntent, type CustomTdpDraft, validCustomTdpDraft, retireCustomTdpDraft } from "../tdp-ui";
 import { sanitizeAutoTdpStatus, validAutoTdpRange } from "../auto-tdp-ui";
 
 export type PerformanceSnapshot = {
@@ -132,14 +132,17 @@ export class PerformanceController {
   private manualLocked() {
     return this.snapshot.stopping || this.snapshot.auto?.running === true || this.snapshot.auto?.stopping === true;
   }
-  apply = async (watts: number, preset?: ManualPresetIntent) => {
+  apply = async (watts: number, preset?: ManualPresetIntent | CustomTdpDraft) => {
     this.expire();
     const manual = this.snapshot.manual;
     if (this.manualLocked()) return;
-    if (preset && (preset.status !== manual || !manualPresetOptions(manual).some(option =>
-      option.id === preset.id && option.watts === watts && option.admitted))) return;
+    const custom = preset && "kind" in preset;
+    if (custom && !validCustomTdpDraft(preset as CustomTdpDraft, manual, watts)) return;
+    if (preset && !custom && (preset.status !== manual || !manualPresetOptions(manual).some(option =>
+      option.id === (preset as ManualPresetIntent).id && option.watts === watts && option.admitted))) return;
     if (!tdpControls(manual).canApply || !Number.isInteger(watts) || manual?.minimum_watts == null || manual.maximum_watts == null
       || watts < manual.minimum_watts || watts > manual.maximum_watts) return;
+    if (custom) retireCustomTdpDraft(preset as CustomTdpDraft);
     await this.manualRequest(() => this.port.applyTdpLimit(watts));
   };
   restore = async () => {

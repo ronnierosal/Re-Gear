@@ -1,7 +1,7 @@
 import { ReadableBlock } from "./quick-access/readable-block";
 import { ButtonItem, DropdownItem, PanelSection, PanelSectionRow, ToggleField } from "@decky/ui";
-import { useEffect, useState } from "react";
-import { tdpControls, tdpMessage, tdpResultMessage, manualPresetOptions, type ManualPresetIntent } from "./tdp-ui";
+import { useEffect, useState, useRef } from "react";
+import { tdpControls, tdpMessage, tdpResultMessage, manualPresetOptions, type ManualPresetIntent, createCustomTdpDraft, validCustomTdpDraft, retireCustomTdpDraft, type CustomTdpDraft } from "./tdp-ui";
 import { AutoTdpControls } from "./auto-tdp-controls";
 import { usePerformance, type PerformanceHandle } from "./quick-access/use-performance";
 
@@ -18,7 +18,27 @@ function SharedTdpControls({ visible, controller, initiallyExpanded = false }: {
   const [autoExpanded, setAutoExpanded] = useState(initiallyExpanded);
   const [selected, setSelected] = useState<number | null>(null);
   const [preset, setPreset] = useState<ManualPresetIntent | null>(null);
+  const [custom, setCustom] = useState<CustomTdpDraft | null>(null);
+  const customOwner = useRef<CustomTdpDraft | null>(null);
+  const context = useRef({ visible, controller });
+  context.current = { visible, controller };
   const { manual: status, auto, busy } = controller;
+  const closeCustom = () => { retireCustomTdpDraft(customOwner.current); customOwner.current = null; setCustom(null); };
+  useEffect(() => { closeCustom(); }, [status, visible, busy, auto?.running, auto?.stopping, controller.stopping]);
+  useEffect(() => () => { retireCustomTdpDraft(customOwner.current); customOwner.current = null; }, []);
+  const customAvailable = () => {
+    const current = context.current;
+    return current.visible && !current.controller.busy && !current.controller.stopping
+      && current.controller.auto?.running !== true && current.controller.auto?.stopping !== true;
+  };
+  const customCurrent = (draft: CustomTdpDraft) => customOwner.current === draft && customAvailable()
+    && validCustomTdpDraft(draft, context.current.controller.manual, draft.watts);
+  const editCustom = (draft: CustomTdpDraft, step: number) => {
+    if (!customCurrent(draft)) return;
+    const next = createCustomTdpDraft(context.current.controller.manual, draft.watts + step);
+    if (!next) return;
+    retireCustomTdpDraft(draft); customOwner.current = next; setCustom(next);
+  };
   useEffect(() => { setSelected(status?.current_watts ?? null); setPreset(null); }, [status, visible]);
   const controls = tdpControls(status);
   const manualLocked = auto?.running === true || auto?.stopping === true || controller.stopping;
@@ -45,10 +65,29 @@ function SharedTdpControls({ visible, controller, initiallyExpanded = false }: {
         onClick={() => {
           if (canMutate() && status === controller.manual
             && manualPresetOptions(controller.manual).some(current => current.id === option.id && current.admitted)) {
-            setSelected(option.watts); setPreset({ id: option.id, status: status! });
+            closeCustom(); setSelected(option.watts); setPreset({ id: option.id, status: status! });
           }
         }}>{`${option.label} · ${option.watts} W${preset?.status === status && preset.id === option.id ? " (selected)" : ""}`}</ButtonItem></PanelSectionRow>)}
-      <DropdownItem label="Power limit" rgOptions={options} selectedOption={selected ?? undefined} disabled={busy || manualLocked || !controls.canApply} onChange={(option) => { if (canMutate() && tdpControls(controller.manual).canApply && options.some(entry => entry.data === option.data)) { setSelected(option.data as number); setPreset(null); } }} />
+      <PanelSectionRow><ButtonItem layout="below" disabled={busy || manualLocked || !controls.canApply}
+        onClick={() => {
+          if (!customAvailable() || status !== context.current.controller.manual) return;
+          const draft = createCustomTdpDraft(context.current.controller.manual);
+          if (!draft) return;
+          closeCustom(); customOwner.current = draft; setCustom(draft);
+        }}>Custom</ButtonItem></PanelSectionRow>
+      {custom && customCurrent(custom) && <>
+        <ReadableBlock label="Custom power limit"><PanelSectionRow>{`Custom limit: ${custom.watts} W (${status!.minimum_watts}–${status!.maximum_watts} W)`}</PanelSectionRow></ReadableBlock>
+        <PanelSectionRow><div style={{ display: "flex", gap: 8, width: "100%" }}><ButtonItem layout="below" disabled={custom.watts <= status!.minimum_watts!} onClick={() => editCustom(custom, -1)}>−1 W</ButtonItem>
+        <ButtonItem layout="below" disabled={custom.watts >= status!.maximum_watts!} onClick={() => editCustom(custom, 1)}>+1 W</ButtonItem></div></PanelSectionRow>
+        <PanelSectionRow><div style={{ display: "flex", gap: 8, width: "100%" }}><ButtonItem layout="below" onClick={() => { if (customOwner.current === custom) closeCustom(); }}>Cancel</ButtonItem>
+        <ButtonItem layout="below" onClick={() => {
+          if (!customCurrent(custom)) return;
+          const owner = context.current.controller;
+          customOwner.current = null; setCustom(null);
+          void owner.apply(custom.watts, custom);
+        }}>Apply Custom</ButtonItem></div></PanelSectionRow>
+      </>}
+      <DropdownItem label="Power limit" rgOptions={options} selectedOption={selected ?? undefined} disabled={busy || manualLocked || !controls.canApply} onChange={(option) => { if (canMutate() && tdpControls(controller.manual).canApply && options.some(entry => entry.data === option.data)) { closeCustom(); setSelected(option.data as number); setPreset(null); } }} />
       <PanelSectionRow><ButtonItem layout="below" disabled={busy || manualLocked || !controls.canApply || selected === null || !presetValid} onClick={() => { if (canMutate() && selected !== null && tdpControls(controller.manual).canApply
         && options.some(option => option.data === selected)
         && (preset === null || (preset.status === controller.manual

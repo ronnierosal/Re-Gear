@@ -2,13 +2,13 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
 import ts from "typescript";
-import { sanitizeTdpStatus, tdpControls, manualPresetOptions } from "../src/tdp-ui.ts";
+import { sanitizeTdpStatus, tdpControls, manualPresetOptions, createCustomTdpDraft, validCustomTdpDraft, retireCustomTdpDraft } from "../src/tdp-ui.ts";
 import { sanitizeAutoTdpStatus, validAutoTdpRange } from "../src/auto-tdp-ui.ts";
 const source = readFileSync(new URL("../src/quick-access/use-performance.ts",import.meta.url),"utf8");
 const code=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2020}}).outputText
   .replace(/^import[^;]*;/gm,"").replace(/const backend = [^;]*;/,"const backend = {};");
-const {PerformanceController}=new Function("sanitizeTdpStatus","tdpControls","sanitizeAutoTdpStatus","validAutoTdpRange","manualPresetOptions",
-  code.replace(/export /g,"")+";return {PerformanceController};")(sanitizeTdpStatus,tdpControls,sanitizeAutoTdpStatus,validAutoTdpRange,manualPresetOptions);
+const {PerformanceController}=new Function("sanitizeTdpStatus","tdpControls","sanitizeAutoTdpStatus","validAutoTdpRange","manualPresetOptions","validCustomTdpDraft","retireCustomTdpDraft",
+  code.replace(/export /g,"")+";return {PerformanceController};")(sanitizeTdpStatus,tdpControls,sanitizeAutoTdpStatus,validAutoTdpRange,manualPresetOptions,validCustomTdpDraft,retireCustomTdpDraft);
 const manual={schema_version:1,enabled:true,can_enable:true,ready:true,code:"tdp.ready",current_watts:15,minimum_watts:7,maximum_watts:30,restore_available:true,recovery_required:false,auto_tdp_available:true,last_result:null};
 const off={schema_version:1,can_start:true,enabled:false,running:false,stopping:false,code:"auto_tdp.ready",activity_code:null,target_fps:null,minimum_watts:null,maximum_watts:null};
 const running={...off,can_start:false,enabled:true,running:true,target_fps:60,minimum_watts:7,maximum_watts:30};
@@ -140,5 +140,34 @@ test("shared preset dispatch rejects false/malformed/changed/stale evidence with
     if (!["expired", "hidden"].includes(mode)) {
       await c.apply(20); assert.equal(calls.filter(x => x[0] === "applyTdpLimit").length, 1, "ordinary Manual stays available");
     }
+  }
+});
+
+test("shared controller rejects unissued Custom intent instead of falling back to ordinary Manual", async () => {
+  const {controller:c,calls}=setup(); c.setVisible(true);await settle();
+  await c.apply(20,{kind:"custom",status:c.snapshot.manual,watts:20});
+  assert.equal(calls.some(x=>x[0]==="applyTdpLimit"),false);
+});
+
+test("shared Custom dispatch consumes one issued draft and uses exactly the existing Manual RPC",async()=>{
+  const {controller:c,calls}=setup();c.setVisible(true);await settle();
+  const draft=createCustomTdpDraft(c.snapshot.manual,20);
+  await c.apply(20,draft);await c.apply(20,draft);
+  assert.deepEqual(calls.filter(x=>x[0]==="applyTdpLimit"),[["applyTdpLimit",20]]);
+  assert.equal(calls.some(x=>["setTdpEnabled","stopAutoTdp","startAutoTdp"].includes(x[0])),false);
+});
+test("shared Custom dispatch rejects cancelled changed expired hidden or Auto-locked intent",async()=>{
+  for(const change of ["cancel","status","expired","hidden","running","auto-stopping","owner-stopping","wrong-watts"]){
+    const {controller:c,calls,time}=setup();c.setVisible(true);await settle();
+    const draft=createCustomTdpDraft(c.snapshot.manual,20);
+    if(change==="cancel")retireCustomTdpDraft(draft);
+    if(change==="status")await c.refresh();
+    if(change==="expired")time.advance(10000,false);
+    if(change==="hidden")c.setVisible(false);
+    if(change==="running")c.snapshot.auto=running;
+    if(change==="auto-stopping")c.snapshot.auto={...off,stopping:true};
+    if(change==="owner-stopping")c.snapshot.stopping=true;
+    await c.apply(change==="wrong-watts"?21:20,draft);
+    assert.equal(calls.some(x=>x[0]==="applyTdpLimit"),false,change);
   }
 });
