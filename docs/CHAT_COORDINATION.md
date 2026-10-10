@@ -51,3 +51,7 @@ For agent preflight, ownership, issue/PR handoffs, and integration review, follo
 [Agent coordination](AGENT_COORDINATION.md). Both documents apply; release
 coordination does not grant release or hardware authority. Routine merge
 standing authorization and its validation gates are defined in `AGENTS.md`.
+
+Code review uses [independent reviewer sessions](REVIEW_INDEPENDENCE.md), without
+a mandatory model-provider subscription. Exact-source evidence, CI, hardware
+validation and protected approval requirements remain in force.
