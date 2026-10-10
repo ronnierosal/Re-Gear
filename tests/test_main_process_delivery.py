@@ -225,7 +225,7 @@ async def support_snapshot():
     }
 
 
-def load_main_module(*, real_dock_gate=False):
+def load_main_module(*, real_dock_gate=False, real_host_admission=False):
     decky = types.ModuleType("decky")
     decky.DECKY_VERSION = "test"
     decky.DECKY_USER_HOME = str(ROOT)
@@ -237,6 +237,14 @@ def load_main_module(*, real_dock_gate=False):
         module = importlib.util.module_from_spec(spec)
         assert spec.loader is not None
         spec.loader.exec_module(module)
+        if not real_host_admission:
+            # Legacy RPC fixtures model an exact Ally, not the CI machine's DMI.
+            # New containment tests opt into actual host discovery/admission.
+            from regear.adapters.steamos.host import HostRecord
+            module.Plugin._runtime_host_record = staticmethod(lambda: HostRecord(
+                "ASUSTeK COMPUTER INC.", "ROG Ally X RC72LA", "RC72LA"))
+            module.Plugin._observation_only = False
+            module.Plugin._observation_started = False
         if not real_dock_gate:
             # These RPC unit fixtures isolate external filesystem dependencies.
             # Dedicated admission tests opt into the real factory explicitly.

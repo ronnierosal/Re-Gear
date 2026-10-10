@@ -200,7 +200,9 @@ class SteamOsDiscovery:
                 ),
             )
         disconnect_readiness = self._disconnect_readiness(g1, client_scan)
-        sleep_guard = self._build_sleep_guard(g1, self._sleep_guard_status())
+        sleep_guard = self._build_sleep_guard(
+            g1, self._sleep_guard_status(), exact_host=matches_ally_x(host)
+        )
 
         gpu_rows = self._build_gpus(cards, gamescope_scan, g1)
         display_rows = self._build_displays(cards, gamescope_scan, gpu_rows)
@@ -243,10 +245,10 @@ class SteamOsDiscovery:
 
     @staticmethod
     def _build_sleep_guard(
-        g1: GpdG1Match, status: InhibitorLeaseStatus
+        g1: GpdG1Match, status: InhibitorLeaseStatus, *, exact_host: bool = True
     ) -> SleepGuardObservation:
         required = g1.detected
-        confidence = (
+        confidence = Confidence.UNKNOWN if not exact_host or status.error else (
             Confidence.VERIFIED
             if (g1.verified and status.active) or not required
             else Confidence.OBSERVED
@@ -255,7 +257,8 @@ class SteamOsDiscovery:
             required=required,
             active=status.active,
             confidence=confidence,
-            reason=(
+            reason=("Sleep protection is unverified on this host."
+                if not exact_host else
                 "Sleep is blocked because the attached eGPU is known to wake this handheld immediately."
                 if required
                 else ""

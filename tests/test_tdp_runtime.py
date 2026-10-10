@@ -1,9 +1,11 @@
 import unittest
+from dataclasses import replace
 
 from test_tdp_control import MemoryJournal, Provider, reading
 from regear.application.tdp_control import TdpControlService
 from regear.delivery.tdp_runtime import TdpRuntime
 from regear.ports.tdp import TdpObservation
+from regear.ports.tdp import TdpRegister
 
 
 class Lease:
@@ -53,6 +55,40 @@ class TdpRuntimeTests(unittest.TestCase):
         self.assertFalse(self.lease.held)
         self.assertEqual(self.runtime.apply(20)["code"], "tdp.enable_required")
         self.assertEqual(self.provider.writes, [])
+
+    def test_manual_presets_are_fixed_ordered_and_independently_admitted(self):
+        self.runtime.set_enabled(True)
+        self.assertEqual(self.runtime.status()["manual_presets"], [
+            {"id": "low", "watts": 10, "admitted": True},
+            {"id": "balanced", "watts": 15, "admitted": True},
+            {"id": "high", "watts": 25, "admitted": True},
+        ])
+        self.provider.current = replace(
+            self.provider.current,
+            fast=TdpRegister(self.provider.current.fast.current,
+                             self.provider.current.fast.minimum, 20),
+        )
+        self.assertEqual([item["admitted"] for item in self.runtime.status()["manual_presets"]],
+                         [True, True, False])
+
+    def test_manual_presets_fail_closed_when_runtime_is_not_ready(self):
+        self.assertEqual(self.runtime.status()["manual_presets"], [
+            {"id": "low", "watts": 10, "admitted": False},
+            {"id": "balanced", "watts": 15, "admitted": False},
+            {"id": "high", "watts": 25, "admitted": False},
+        ])
+
+        self.runtime.set_enabled(True)
+        self.provider.behavior = "timeout"
+        failed = self.runtime.apply(20)
+        self.assertTrue(failed["recovery_required"])
+        self.assertFalse(any(item["admitted"] for item in failed["manual_presets"]))
+
+    def test_manual_presets_require_a_restorable_baseline(self):
+        self.provider.current = reading(15, 25, 30)
+        status = self.runtime.status()
+        self.assertEqual(status["code"], "tdp.baseline_not_restorable")
+        self.assertFalse(any(item["admitted"] for item in status["manual_presets"]))
 
     def test_enable_apply_disable_restores_original(self):
         self.assertTrue(self.runtime.set_enabled(True)["ready"])

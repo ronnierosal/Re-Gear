@@ -114,6 +114,7 @@ class DeckyContractTests(unittest.TestCase):
                 "acknowledge_process_release",
                 "get_egpu_disconnect_status",
                 "execute_egpu_disconnect",
+                "cancel_egpu_shutdown",
                 "remember_game_close_choice",
                 "forget_game_close_choice",
                 "take_pending_relaunch",

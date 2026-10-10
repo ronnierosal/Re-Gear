@@ -25,3 +25,6 @@ class TransitionJournalPort(Protocol):
 
     def clear_completed(self, operation_id: str) -> None:
         """Remove only a committed receipt matching the exact operation ID."""
+
+    def retire_after_boot(self, operation_id: str, origin_boot_id: str, current_boot_id: str) -> None:
+        """Archive an eligible stale acknowledgement before exact active removal."""
