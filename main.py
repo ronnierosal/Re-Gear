@@ -6745,12 +6745,34 @@ class Plugin:
 from regear.delivery.build_profile_config import BUILD_PROFILE  # noqa: E402
 from regear.delivery.build_profile_policy import profiled_plugin  # noqa: E402
 from regear.delivery.observation_admission import observation_plugin  # noqa: E402
+from regear.delivery.usb4_waiting_observation import Usb4WaitingObservation  # noqa: E402
+
+
+async def _enrich_usb4_waiting_snapshot(plugin, payload):
+    """Lazy passive projection reached exclusively through a direct snapshot RPC.
+
+    Per-runtime state is volatile presentation binding, never authorization or
+    retained lifecycle state. No observer is constructed during startup.
+    """
+    try:
+        state = object.__getattribute__(plugin, "__dict__")
+        observer = state.get("_usb4_waiting_observation")
+        if observer is None:
+            observer = Usb4WaitingObservation()
+            state["_usb4_waiting_observation"] = observer
+        return await observer.enrich_snapshot(payload)
+    except Exception:
+        return {**payload, "usb4_waiting": {
+            "schema_version": 1, "state": "unknown", "notice_key": None,
+        }}
+
 
 Plugin = observation_plugin(
     Plugin,
     passive_api=lambda: DiagnosticsApi(SteamOsDiscovery()),
     build_info=lambda: load_public_build_info(PLUGIN_ROOT),
     render_snapshot=report_to_public_dict,
+    enrich_snapshot=_enrich_usb4_waiting_snapshot,
 )
 
 Plugin = profiled_plugin(Plugin, BUILD_PROFILE)

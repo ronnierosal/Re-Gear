@@ -59,7 +59,7 @@ _CLEANUP_HELPERS = frozenset({
 })
 
 
-def observation_plugin(plugin_class, *, passive_api, build_info, render_snapshot):
+def observation_plugin(plugin_class, *, passive_api, build_info, render_snapshot, enrich_snapshot=None):
     """Wrap both build profiles, including methods added after class creation.
 
     Unknown hosts never compose the mutation-capable Plugin. Every later method
@@ -96,7 +96,11 @@ def observation_plugin(plugin_class, *, passive_api, build_info, render_snapshot
                         return await implementation(*args, **kwargs)
                     if mode(self) is RuntimeAdmission.PROFILE_GATED:
                         result = await implementation(*args, **kwargs)
-                        return interceptor_admission(self, result) if name == "get_snapshot" else result
+                        if name == "get_snapshot":
+                            if enrich_snapshot is not None:
+                                result = await enrich_snapshot(self, result)
+                            return interceptor_admission(self, result)
+                        return result
                     if name == "_main":
                         return None
                     if name == "get_snapshot":
@@ -110,6 +114,8 @@ def observation_plugin(plugin_class, *, passive_api, build_info, render_snapshot
                             "mode": "observation-only", "mutation_allowed": False,
                             "sleep_protection": "unknown", "safe_to_unplug": False,
                         }
+                        if enrich_snapshot is not None:
+                            payload = await enrich_snapshot(self, payload)
                         return interceptor_admission(self, payload)
                     if not name.startswith("_"):
                         if passive_rpc_allowed(name):
