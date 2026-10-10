@@ -2356,7 +2356,7 @@ export default definePlugin(() => {
   const publishMenuSnapshot = (snapshot: SnapshotPayload["snapshot"] | null) => { if(!runtimeOwner.stopped)menuSnapshot = snapshot; };
   const expandedMenu = createExpandedMenu(steamControllerInput(window), window, () =>
     !shortcut.modal.current && !shortcut.portableBusy.current && !shortcut.tvBusy.current && !warningModal,
-    tilePublisher.source, () => menuSnapshot, renderDetail, runtimeDetails.source, buildProfile);
+    tilePublisher.source, () => menuSnapshot, renderDetail, runtimeDetails.source, buildProfile, detailPublisher.source);
   const shortcut = createDisplayShortcutRuntime({
     // View+Y now belongs exclusively to the menu. Explicit display requests
     // below retain their existing approval/confirmation path.

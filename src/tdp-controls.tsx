@@ -75,18 +75,15 @@ function SharedTdpControls({ visible, controller, initiallyExpanded = false }: {
           if (!draft) return;
           closeCustom(); customOwner.current = draft; setCustom(draft);
         }}>Custom</ButtonItem></PanelSectionRow>
-      {custom && customCurrent(custom) && <>
-        <ReadableBlock label="Custom power limit"><PanelSectionRow>{`Custom limit: ${custom.watts} W (${status!.minimum_watts}–${status!.maximum_watts} W)`}</PanelSectionRow></ReadableBlock>
-        <PanelSectionRow><div style={{ display: "flex", gap: 8, width: "100%" }}><ButtonItem layout="below" disabled={custom.watts <= status!.minimum_watts!} onClick={() => editCustom(custom, -1)}>−1 W</ButtonItem>
-        <ButtonItem layout="below" disabled={custom.watts >= status!.maximum_watts!} onClick={() => editCustom(custom, 1)}>+1 W</ButtonItem></div></PanelSectionRow>
-        <PanelSectionRow><div style={{ display: "flex", gap: 8, width: "100%" }}><ButtonItem layout="below" onClick={() => { if (customOwner.current === custom) closeCustom(); }}>Cancel</ButtonItem>
-        <ButtonItem layout="below" onClick={() => {
+      {custom && customCurrent(custom) && customTdpEditor(custom,
+        step => editCustom(custom, step),
+        () => { if (customOwner.current === custom) closeCustom(); },
+        () => {
           if (!customCurrent(custom)) return;
           const owner = context.current.controller;
           customOwner.current = null; setCustom(null);
           void owner.apply(custom.watts, custom);
-        }}>Apply Custom</ButtonItem></div></PanelSectionRow>
-      </>}
+        })}
       <DropdownItem label="Power limit" rgOptions={options} selectedOption={selected ?? undefined} disabled={busy || manualLocked || !controls.canApply} onChange={(option) => { if (canMutate() && tdpControls(controller.manual).canApply && options.some(entry => entry.data === option.data)) { closeCustom(); setSelected(option.data as number); setPreset(null); } }} />
       <PanelSectionRow><ButtonItem layout="below" disabled={busy || manualLocked || !controls.canApply || selected === null || !presetValid} onClick={() => { if (canMutate() && selected !== null && tdpControls(controller.manual).canApply
         && options.some(option => option.data === selected)
@@ -100,4 +97,52 @@ function SharedTdpControls({ visible, controller, initiallyExpanded = false }: {
       {autoExpanded && <AutoTdpControls controller={controller} />}
     </>}
   </PanelSection>;
+}
+
+/** The cycle route exposes only a local integer draft and explicit Apply. */
+export function CompactCustomTdpEditor({ controller }: { controller: PerformanceHandle }) {
+  const [draft, setDraft] = useState<CustomTdpDraft | null>(null);
+  const owner = useRef<CustomTdpDraft | null>(null);
+  const current = useRef(controller);
+  current.current = controller;
+  const intent = controller.createCycleIntent();
+  const context = useRef(intent);
+  context.current = intent;
+  const close = () => { retireCustomTdpDraft(owner.current); owner.current = null; setDraft(null); };
+  useEffect(() => {
+    close();
+    const next = controller.createCycleDraft(controller.createCycleIntent());
+    owner.current = next; setDraft(next);
+    return () => { retireCustomTdpDraft(owner.current); owner.current = null; };
+  }, [controller.manual, controller.auto, controller.busy, controller.stopping, controller.cycleSelected]);
+  const edit = (captured: CustomTdpDraft, step: number) => {
+    if (owner.current !== captured || !validCustomTdpDraft(captured, current.current.manual, captured.watts)) return;
+    const next = current.current.createCycleDraft(context.current, captured.watts + step);
+    if (!next) return;
+    retireCustomTdpDraft(captured); owner.current = next; setDraft(next);
+  };
+  if (!draft || !validCustomTdpDraft(draft, controller.manual, draft.watts)) return <ReadableBlock label="Custom power unavailable"><PanelSectionRow>{controller.cycleReason ?? "Custom power status unavailable. Return to the menu and check again."}</PanelSectionRow></ReadableBlock>;
+  return <div data-tdp-custom-editor aria-label="Custom power limit">
+    {customTdpEditor(draft, step => edit(draft, step),
+      () => { if (owner.current === draft) close(); },
+      () => {
+        if (owner.current !== draft || !validCustomTdpDraft(draft, current.current.manual, draft.watts)) return;
+        owner.current = null; setDraft(null); void current.current.applyCycleDraft(draft);
+      }, controller.busy || controller.stopping)}
+  </div>;
+}
+
+/** Same compact controls for the existing Manual route and the cycle route. */
+function customTdpEditor(draft: CustomTdpDraft, edit: (step: number) => void, cancel: () => void, apply: () => void, disabled = false) {
+  return <>
+    <ReadableBlock label="Custom power limit"><PanelSectionRow>{`Custom limit: ${draft.watts} W (${draft.status.minimum_watts}–${draft.status.maximum_watts} W)`}</PanelSectionRow><PanelSectionRow>This is a configured limit, not measured power use.</PanelSectionRow></ReadableBlock>
+    <PanelSectionRow><div style={{ display: "flex", gap: 8, width: "100%" }}>
+      <ButtonItem layout="below" disabled={draft.watts <= draft.status.minimum_watts! || disabled} onClick={() => edit(-1)}>−1 W</ButtonItem>
+      <ButtonItem layout="below" disabled={draft.watts >= draft.status.maximum_watts! || disabled} onClick={() => edit(1)}>+1 W</ButtonItem>
+    </div></PanelSectionRow>
+    <PanelSectionRow><div style={{ display: "flex", gap: 8, width: "100%" }}>
+      <ButtonItem layout="below" onClick={cancel}>Cancel</ButtonItem>
+      <ButtonItem layout="below" disabled={disabled} onClick={apply}>Apply Custom</ButtonItem>
+    </div></PanelSectionRow>
+  </>;
 }

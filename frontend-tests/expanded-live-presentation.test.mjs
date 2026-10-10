@@ -22,6 +22,7 @@ async function fixture() {
     let fixtureTime=1000; const Date={now:()=>fixtureTime};
     const QuickActionRailEditor='right-editor';
     ${compile("../src/quick-access/expanded-command-center/model.ts")}
+    ${compile("../src/build-profile.ts")}
     ${compile("../src/quick-access/expanded-command-center/control-registry.ts")}
     ${compile("../src/quick-access/expanded-command-center/utility-layout.ts")}
     ${compile("../src/quick-access/expanded-command-center/layout-preferences.ts")}
@@ -439,4 +440,13 @@ test('unavailable choices stay focusable for Y removal without dispatch',async()
  unavailable.props.onClick();assert.equal(actions,0);assert.equal(disconnects,0);
  unavailable.props.onGamepadFocus();yGesture(app,tree);tree=app.render(props);card(tree,'choice:remove').props.onClick();tree=app.render(props);
  assert.ok(storage.writes.at(-1).quick[0].startsWith('empty:'));assert.equal(actions,0);
+});
+
+test('TDP cycle projection uses original Quick Access alias, stays on tile for presets and opens Custom only',async()=>{
+ const app=await fixture(),storage=storageFixture();storage.setItem('regear.command-center-layout.v1',JSON.stringify({version:2,quick:['performance:manual']}));
+ let selected='Balanced',calls=[];
+ const props={...prefsProps(storage),tiles:{quick:[],performance:[{id:'manual',title:'Manual TDP',value:'15 W',detail:'Configured limit'}]},tdpCycle:{value:selected,detail:'Selected Balanced · Last checked: Chill 10 W'},onAction:(tab,tile)=>{calls.push([tab,tile.id]);return selected!=='Custom';},renderDetail:()=>({type:'compact-editor',props:{children:'Custom only'}})};
+ let tree=app.render(props),tile=card(tree,'custom:performance:manual');assert.match(text(tile),/TDP Mode/);assert.match(text(tile),/Balanced/);assert.match(text(tile),/Last checked: Chill 10 W/);tile.props.onClick();tree=app.render(props);assert.equal(nodes(tree).some(n=>n.props?.['data-ec-control']==='nested-back'),false);assert.deepEqual(calls,[['performance','manual']]);
+ selected='Custom';props.tdpCycle={value:selected,detail:'Selected Custom'};card(tree,'custom:performance:manual').props.onClick();tree=app.render(props);assert.match(text(tree),/Custom only/);
+ const prod=await fixture();tree=prod.render({...props,policy:'production'});assert.equal(nodes(tree).some(n=>n.props?.['data-ec-control']==='custom:performance:manual'),false);
 });

@@ -141,3 +141,23 @@ export function validCustomTdpDraft(draft: CustomTdpDraft, status: TdpStatusPayl
 export function retireCustomTdpDraft(draft: CustomTdpDraft | null): void {
   if (draft) customDrafts.delete(draft);
 }
+
+export const TDP_CYCLE_MODES = ["Chill", "Balanced", "Performance", "Auto", "Custom"] as const;
+export type TdpCycleMode = typeof TDP_CYCLE_MODES[number];
+export type TdpCycleIntent = Readonly<{ manual: TdpStatusPayload | null; auto: import("./backend").AutoTdpStatusPayload | null }>;
+/** Configured limits only: this does not identify an OEM profile or measured power. */
+export function tdpCyclePresentation(state: { manual: TdpStatusPayload | null; auto: import("./backend").AutoTdpStatusPayload | null; busy: boolean; stopping: boolean; cycleSelected?: TdpCycleMode | null; cyclePending?: TdpCycleMode | null; cycleReason?: string | null }) {
+  const { manual, auto } = state;
+  let applied: TdpCycleMode | null = null;
+  if (!state.stopping && auto?.running && auto.enabled && !auto.stopping) applied = "Auto";
+  else if (!state.stopping && auto?.running === false && !auto.stopping && !auto.enabled && tdpControls(manual).canApply) {
+    applied = manual!.current_watts === 10 ? "Chill" : manual!.current_watts === 15 ? "Balanced" : manual!.current_watts === 25 ? "Performance" : "Custom";
+  }
+  const mode = state.cycleSelected ?? applied ?? "Unknown";
+  const value = state.cyclePending ? `Applying ${mode}` : state.cycleSelected && state.cycleReason ? `${mode} · Unavailable` : mode;
+  const detail = [state.cycleSelected ? `Selected ${state.cycleSelected}` : null,
+    state.cyclePending ? `Applying ${state.cyclePending}…` : null,
+    applied ? `Last checked: ${applied}${applied !== "Auto" ? ` ${manual!.current_watts} W` : ""}` : "Applied mode unavailable",
+    state.cycleReason ?? (!manual || !auto ? "Power status unavailable. Refresh to check admission." : null)].filter(Boolean).join(" · ");
+  return { value, detail, applied };
+}

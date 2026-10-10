@@ -47,7 +47,7 @@ const iconIds: Record<string, CommandCenterIconId> = {
 function Icon({ id }: { id: string }) { if(controlForKey(`utility:${id}`))return <UtilityIcon id={id as UtilityId}/>;return <CommandCenterIcon id={iconIds[id] ?? "status-unknown"} size={34}/>; }
 
 /** Shared synthetic presentation for browser preview and native Decky shell. */
-export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReasons = false, settings, native = false, primitives, previewColumns, tiles, catalogReadings, renderDetail, disconnectControl, utilityReadings, onUtilityRequest, directions, onDisconnect, unavailableActions = {}, layoutStorage, editButtons, onFeedback, onAction, policy = "development" }: {
+export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReasons = false, settings, native = false, primitives, previewColumns, tiles, catalogReadings, renderDetail, disconnectControl, utilityReadings, onUtilityRequest, directions, onDisconnect, unavailableActions = {}, layoutStorage, editButtons, onFeedback, onAction, tdpCycle, policy = "development" }: {
   policy?: BuildProfile;
   onClose(): void; initialTab?: Tab; longReasons?: boolean; settings?: ReactNode; native?: boolean;
   primitives?: { Button: ElementType; Focusable: ElementType };
@@ -68,6 +68,7 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
   directions?: UtilityRailProps["directions"];
   onDisconnect?:()=>void;
   onAction?:(tab:Tab,tile:Tile)=>boolean;
+  tdpCycle?: { value: string; detail: string };
   unavailableActions?:Record<string,string>;
   layoutStorage?:LayoutStorage;
   editButtons?:{y:number};
@@ -399,9 +400,10 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
     }
   }
 
-  const hasTileDetails=(item:Tile)=>{const definition=controlForKey(originFor(item).key);return !definition||definition.type==='navigation'||definition.type==='status';};
+  const hasTileDetails=(item:Tile)=>{const origin=originFor(item);if(!production&&tdpCycle&&(origin.tab==="quick"||origin.tab==="performance")&&origin.tile.id==="manual")return false;const definition=controlForKey(originFor(item).key);return !definition||definition.type==='navigation'||definition.type==='status';};
   const renderTile = (item: Tile) => {
     const original=originFor(item);
+    if (!production && tdpCycle && (original.tab === "quick" || original.tab === "performance") && original.tile.id === "manual") item = { ...item, title: "TDP Mode", value: tdpCycle.value, detail: tdpCycle.detail };
     const definition=controlForKey(original.key);
     const disabled=editMode==="normal"&&Boolean(unavailableActions[original.tile.id]||(definition?.rightEligible&&(!utilityReadings?.[definition.id as UtilityId]?.available||utilityReadings?.[definition.id as UtilityId]?.pending)));
     const activate=()=>{if(pickerOpen)return;if(editMode==="move"){if(draft)commitLayout(draft);return;}if(item.empty)return;if(definition?.type==='widget')return;if(unavailableActions[original.tile.id])return;if(definition?.rightEligible){const id=definition.id as UtilityId;if(!onUtilityRequest||!utilityReadings?.[id]?.available||utilityReadings?.[id]?.pending||utilityBusy.current.has(id))return;utilityErrorReadings.current.delete(id);setUtilityErrors(value=>({...value,[id]:undefined}));utilityBusy.current.add(id);void Promise.resolve().then(()=>onUtilityRequest(id)).catch(()=>{utilityErrorReadings.current.set(id,utilityReadings?.[id]);setUtilityErrors(value=>({...value,[id]:'Could not apply'}));}).finally(()=>utilityBusy.current.delete(id));return;}if(definition?.directAction==="disconnect"&&onDisconnect){onDisconnect();return;}if(onAction?.(original.tab,original.tile))return;launcher.current=item.id;setNested(item.id);};
@@ -496,6 +498,7 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
               <span className="rg-expanded-anchor" tabIndex={-1} aria-label={`${item.title} section`} />
               {renderTile(item)}</section> : renderTile(item))}
           </Container>
+          {!production && tdpCycle && items.some(item => { const origin = originFor(item); return (origin.tab === "quick" || origin.tab === "performance") && origin.tile.id === "manual"; }) && <Reading label="TDP mode status"><p role="status" data-tdp-cycle-status style={{ margin: "8px 0", fontSize: "var(--rg-detail-body)", lineHeight: 1.4 }}>{tdpCycle.detail}</p></Reading>}
           {synthetic ? <aside className="rg-expanded-info" aria-label="Sample status summary">
             <CommandCenterIcon id="status-unknown" size={22}/>
             <span><strong>{tab === "quick" || tab === "egpu" ? "eGPU connected · External controller active" : tab === "performance" ? "Performance preferences" : tab === "controllers" ? "External controller · Player 1" : "Make Re-Gear yours"}</strong>

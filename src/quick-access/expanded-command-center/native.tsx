@@ -10,6 +10,8 @@ import { testBuildTiles, unavailableTestActions } from "./test-build-actions";
 import { displayTargetActionTile } from "./display-target-action";
 import { createNativeUtilities } from "./native-utilities";
 import type { UtilityReadings, UtilitySystem } from "./native-utilities";
+import type { NonEgpuDetailSource } from "./non-egpu-detail-source";
+import { tdpCyclePresentation } from "../../tdp-ui";
 import type { NonEgpuDetailRenderer } from "./non-egpu-detail-renderer";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import type { ComponentProps } from "react";
@@ -97,8 +99,16 @@ function readFrom(source?: TileSource) {
   return cached;
 }
 
-export function createExpandedMenu(input: ControllerInputSource | undefined, host: Window, canOpen: () => boolean = () => true, source?: TileSource, readCurrentSnapshot: () => unknown = () => null, renderDetail?: NonEgpuDetailRenderer, runtimeDetails?:RuntimeDetailSource, policy: BuildProfile = "development") {
+export function createExpandedMenu(input: ControllerInputSource | undefined, host: Window, canOpen: () => boolean = () => true, source?: TileSource, readCurrentSnapshot: () => unknown = () => null, renderDetail?: NonEgpuDetailRenderer, runtimeDetails?:RuntimeDetailSource, policy: BuildProfile = "development", performanceDetails?: NonEgpuDetailSource) {
   const production = policy === "production";
+  // Withdrawal revokes editor intents synchronously, before React commits its
+  // subscription rerender. Reuse the existing publisher; no new status reader.
+  let publishedPerformance = performanceDetails?.read()?.performance;
+  const unsubscribePerformance = performanceDetails?.subscribe(() => {
+    const next = performanceDetails.read()?.performance;
+    if (publishedPerformance?.setCycleVisible !== next?.setCycleVisible) publishedPerformance?.setCycleVisible?.(false);
+    publishedPerformance = next;
+  });
   const system = (host as Window & { SteamClient?: { System?: UtilitySystem } }).SteamClient?.System;
   const utilities = system ? createNativeUtilities(system) : undefined;
   const storage = (() => { try { return host.localStorage; } catch { return undefined; } })();
@@ -166,6 +176,7 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
   let stopped = false;
   let generation = 0;
   const close = () => {
+    performanceDetails?.read()?.performance.setCycleVisible?.(false);
     hideOperation();
     const previous = modal;
     modal = null;
@@ -366,7 +377,6 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
     if(operationGeneration!==operationToken){opened.Close();return;}operation=opened;
   }
   function View({ token }: { token: number }) {
-    useEffect(() => () => { if (generation === token) { hideOperation();modal = null; generation++; utilities?.stop(); visibility.set(false);if(pendingDockIntent())scheduleOwnerWarningPoll(); } }, [token]);
     // Live subscription, not a read at open.
     //
     // Reading once when the menu opened left whatever was true at that moment
@@ -379,6 +389,15 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
     // end. The server snapshot is the same read: there is no server, and
     // returning a different value there would tear.
     const rawTiles = useSyncExternalStore(subscribeTo(source), readFrom(source), readFrom(source));
+    const performanceState = useSyncExternalStore(performanceDetails?.subscribe ?? noSubscribe, performanceDetails?.read ?? noRuntimeDetails, performanceDetails?.read ?? noRuntimeDetails);
+    const performanceHandle = performanceState?.performance;
+    useEffect(() => {
+      if (!production) performanceHandle?.setCycleVisible?.(true);
+      return () => performanceHandle?.setCycleVisible?.(false);
+    }, [performanceHandle?.setCycleVisible]);
+    useEffect(() => () => { if (generation === token) { performanceDetails?.read()?.performance.setCycleVisible?.(false);hideOperation();modal = null; generation++; utilities?.stop(); visibility.set(false);if(pendingDockIntent())scheduleOwnerWarningPoll(); } }, [token]);
+    const cycleIntent = production ? null : performanceHandle?.createCycleIntent?.() ?? null;
+    const cyclePresentation = performanceHandle ? tdpCyclePresentation(performanceHandle) : { value: "Unavailable", detail: "Power status unavailable. Refresh to check admission.", applied: null };
     const runtimeState=useSyncExternalStore(runtimeDetails?.subscribe??noSubscribe,runtimeDetails?.read??noRuntimeDetails,runtimeDetails?.read??noRuntimeDetails);
     const mappedTiles = rawTiles ? testBuildTiles(rawTiles) : undefined;
     const displayTarget=displayTargetActionTile(runtimeState?.displayAction);
@@ -392,13 +411,13 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
     // flip mid-confirmation aborts cleanly rather than dispatching the wrong route.
     const [dockIntent, setDockIntent] = useState<DockIntent>("disconnect_only");
     const utilityReadings = useSyncExternalStore(utilities?.subscribe ?? noSubscribe, utilities?.read ?? noUtilities, utilities?.read ?? noUtilities);
-    return <ExpandedCommandCenter policy={policy} onClose={close} native onFeedback={playMenuFeedback} onDisconnect={disconnect} disconnectControl={
+    return <ExpandedCommandCenter tdpCycle={production ? undefined : cyclePresentation} policy={policy} onClose={close} native onFeedback={playMenuFeedback} onDisconnect={disconnect} disconnectControl={
       <Focusable>
         {!production && <Dropdown menuLabel="Dock action" rgOptions={dockIntentOptions} selectedOption={dockIntent}
           onChange={option => { if (dockIntentOptions.some(item => item.data === option.data)) setDockIntent(option.data as DockIntent); }}/>}
         <WholeDockControl intent={production ? "disconnect_only" : dockIntent} readCurrentSnapshot={readCurrentSnapshot} onSettled={presentDockSettlement} unplugWarning={unplugWarning}/>
       </Focusable>
-    } directions={{up:GamepadButton.DIR_UP,down:GamepadButton.DIR_DOWN,left:GamepadButton.DIR_LEFT,right:GamepadButton.DIR_RIGHT}} unavailableActions={unavailable} onAction={(_tab,tile)=>{if(tile.id==="display-target"){runtimeDetails?.requestDisplayTarget();return true;}if(tile.id==="disconnect-sleep"){disconnect("sleep");return true;}if(tile.id==="disconnect-shutdown"){disconnect("shutdown");return true;}if(production)return false;if(tile.id==="portable-shutdown"){shutdown();return true;}if(tile.id==="switch-handheld"){runtimeDetails?.requestHandheld();return true;}return false;}} layoutStorage={production ? undefined : storage} editButtons={production ? undefined : {y:GamepadButton.OPTIONS}} primitives={{ Button: NativeMenuButton, Focusable }} settings={<Settings/>} tiles={production ? productionTiles : runtimeDetails?{...tiles,egpu:[...(tiles?.egpu??[]),{id:"portable-shutdown",title:"Shutdown",value:runtimeState?.shutdown?.pending?"Pending":runtimeState?.shutdown?.available?"Ready":"Unavailable",detail:runtimeState?.shutdown?.reason??"Current status unavailable"}],offline:offlineTabTiles,settings:[...(tiles?.settings??[]).filter(tile=>tile.id==='diagnostics'),{id:'reset-layout',title:'Reset Layout',value:'Configure',detail:'Restore default card positions'},{id:'tutorials',title:'Tutorials',value:'Open',detail:'Connection, disconnect and help'},{id:'about',title:'About',value:version,detail:'Version and credits'}]}:tiles} renderDetail={production ? ((tab,tile)=>tab==="egpu"&&(tile.id==="egpu"||tile.id==="disconnect") ? renderDetail?.(tab,tile) : null) : runtimeDetails?((tab,tile)=>tab==='settings'&&tile.id==='tutorials'?<Tutorials/>:renderDetail?.(tab,tile)):renderDetail} catalogReadings={production ? undefined : rawTiles} utilityReadings={utilityReadings} onUtilityRequest={utilities ? (id, percent) => {
+    } directions={{up:GamepadButton.DIR_UP,down:GamepadButton.DIR_DOWN,left:GamepadButton.DIR_LEFT,right:GamepadButton.DIR_RIGHT}} unavailableActions={unavailable} onAction={(_tab,tile)=>{if(!production&&(_tab==="quick"||_tab==="performance")&&tile.id==="manual"){if(generation!==token||stopped||!modal||performanceDetails?.read()?.performance.manual!==performanceHandle?.manual||performanceDetails?.read()?.performance.auto!==performanceHandle?.auto)return true;return !performanceHandle?.cycle?.(cycleIntent);}if(tile.id==="display-target"){runtimeDetails?.requestDisplayTarget();return true;}if(tile.id==="disconnect-sleep"){disconnect("sleep");return true;}if(tile.id==="disconnect-shutdown"){disconnect("shutdown");return true;}if(production)return false;if(tile.id==="portable-shutdown"){shutdown();return true;}if(tile.id==="switch-handheld"){runtimeDetails?.requestHandheld();return true;}return false;}} layoutStorage={production ? undefined : storage} editButtons={production ? undefined : {y:GamepadButton.OPTIONS}} primitives={{ Button: NativeMenuButton, Focusable }} settings={<Settings/>} tiles={production ? productionTiles : runtimeDetails?{...tiles,egpu:[...(tiles?.egpu??[]),{id:"portable-shutdown",title:"Shutdown",value:runtimeState?.shutdown?.pending?"Pending":runtimeState?.shutdown?.available?"Ready":"Unavailable",detail:runtimeState?.shutdown?.reason??"Current status unavailable"}],offline:offlineTabTiles,settings:[...(tiles?.settings??[]).filter(tile=>tile.id==='diagnostics'),{id:'reset-layout',title:'Reset Layout',value:'Configure',detail:'Restore default card positions'},{id:'tutorials',title:'Tutorials',value:'Open',detail:'Connection, disconnect and help'},{id:'about',title:'About',value:version,detail:'Version and credits'}]}:tiles} renderDetail={production ? ((tab,tile)=>tab==="egpu"&&(tile.id==="egpu"||tile.id==="disconnect") ? renderDetail?.(tab,tile) : null) : runtimeDetails?((tab,tile)=>tab==='settings'&&tile.id==='tutorials'?<Tutorials/>:renderDetail?.(tab,tile)):renderDetail} catalogReadings={production ? undefined : rawTiles} utilityReadings={utilityReadings} onUtilityRequest={utilities ? (id, percent) => {
       if (generation !== token || stopped) return Promise.reject(new Error("Menu closed"));
       if (production && id !== "brightness" && id !== "volume") throw new Error("Control unavailable");
       return utilities.request(id, percent);
@@ -468,5 +487,5 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
     });
   };
   recoverMissingDockReceipt();
-  return { open, disconnect, Settings, visibility: visibility.source, available: shortcut.available, stop() { stopped = true; warningSubscription(); unplugWarning.stop(); if(recoveryTimer!==null)clearPendingTimeout(recoveryTimer as never);recoveryTimer=null;if(pendingStatusTimer!==null)clearPendingTimeout(pendingStatusTimer as never);pendingStatusTimer=null;if(ownerWarningTimer!==null)clearPendingTimeout(ownerWarningTimer as never);ownerWarningTimer=null;shortcut.stop(); close(); } };
+  return { open, disconnect, Settings, visibility: visibility.source, available: shortcut.available, stop() { stopped = true; unsubscribePerformance?.(); publishedPerformance?.setCycleVisible?.(false); warningSubscription(); unplugWarning.stop(); if(recoveryTimer!==null)clearPendingTimeout(recoveryTimer as never);recoveryTimer=null;if(pendingStatusTimer!==null)clearPendingTimeout(pendingStatusTimer as never);pendingStatusTimer=null;if(ownerWarningTimer!==null)clearPendingTimeout(ownerWarningTimer as never);ownerWarningTimer=null;shortcut.stop(); close(); } };
 }
