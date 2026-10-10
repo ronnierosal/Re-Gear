@@ -114,3 +114,30 @@ export class TdpRequestGate {
     try { return await action(); } finally { this.active = false; }
   }
 }
+
+/** Local editing intent only; existing backend admission still gates every write. */
+export type CustomTdpDraft = Readonly<{ kind: "custom"; status: TdpStatusPayload; watts: number }>;
+const customDrafts = new WeakSet<CustomTdpDraft>();
+function customBounds(status: TdpStatusPayload | null): status is TdpStatusPayload {
+  return status !== null && tdpControls(status).canApply && status.can_enable === true && status.code === "tdp.ready"
+    && [status.current_watts, status.minimum_watts, status.maximum_watts].every(watts)
+    && status.minimum_watts! <= status.current_watts! && status.current_watts! <= status.maximum_watts!
+    && status.maximum_watts! - status.minimum_watts! <= 255;
+}
+export function createCustomTdpDraft(status: TdpStatusPayload | null, value = status?.current_watts): CustomTdpDraft | null {
+  if (!customBounds(status) || !Number.isInteger(value)
+    || status.minimum_watts == null || status.maximum_watts == null
+    || value == null || value < status.minimum_watts || value > status.maximum_watts) return null;
+  const draft = Object.freeze({ kind: "custom" as const, status, watts: value });
+  customDrafts.add(draft);
+  return draft;
+}
+export function validCustomTdpDraft(draft: CustomTdpDraft, status: TdpStatusPayload | null, value: number): boolean {
+  return customDrafts.has(draft) && draft.status === status && draft.watts === value
+    && customBounds(status) && Number.isInteger(value)
+    && status?.minimum_watts != null && status.maximum_watts != null
+    && value >= status.minimum_watts && value <= status.maximum_watts;
+}
+export function retireCustomTdpDraft(draft: CustomTdpDraft | null): void {
+  if (draft) customDrafts.delete(draft);
+}

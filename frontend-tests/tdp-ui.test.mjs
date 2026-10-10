@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { sanitizeTdpStatus, tdpControls, tdpMessage, tdpResultMessage, TdpRequestGate, sanitizeManualPresets, manualPresetOptions } from "../src/tdp-ui.ts";
+import { sanitizeTdpStatus, tdpControls, tdpMessage, tdpResultMessage, TdpRequestGate, sanitizeManualPresets, manualPresetOptions, createCustomTdpDraft, validCustomTdpDraft, retireCustomTdpDraft } from "../src/tdp-ui.ts";
 
 const ready = { schema_version: 1, enabled: true, can_enable: true, ready: true, code: "tdp.ready", current_watts: 17, minimum_watts: 7, maximum_watts: 30, restore_available: false, recovery_required: false, last_result: null, auto_tdp_available: false };
 
@@ -123,4 +123,18 @@ test("current readiness, recovery and provider bounds override positive preset e
     assert.deepEqual(manualPresetOptions(sanitizeTdpStatus({ ...ready, manual_presets: presets(), ...change })).map(x => x.admitted), [false, false, false]);
   }
   assert.deepEqual(manualPresetOptions(sanitizeTdpStatus({ ...ready, manual_presets: presets(), maximum_watts: 20 })).map(x => x.admitted), [true, true, false]);
+});
+
+test("Custom drafts use only current ready integer bounds and have revocable local lifetime", () => {
+  for(const change of [{enabled:false,ready:false},{ready:false},{recovery_required:true},{can_enable:false},{code:"tdp.conflict"},{minimum_watts:NaN},{minimum_watts:"7"},{maximum_watts:Infinity},{minimum_watts:18},{maximum_watts:16},{maximum_watts:9999},{current_watts:17.5},{current_watts:null,minimum_watts:null,maximum_watts:null}])
+    assert.equal(createCustomTdpDraft({...ready,...change}),null);
+  for(const value of [NaN,Infinity,6,31,15.5,"15",null]) assert.equal(createCustomTdpDraft(ready,value),null);
+  for(const value of [7,17,30]) {
+    const draft=createCustomTdpDraft(ready,value); assert.ok(Object.isFrozen(draft));
+    assert.equal(validCustomTdpDraft(draft,ready,value),true);
+    assert.equal(validCustomTdpDraft(draft,{...ready},value),false);
+    assert.equal(validCustomTdpDraft(draft,ready,value+1),false);
+    retireCustomTdpDraft(draft); assert.equal(validCustomTdpDraft(draft,ready,value),false);
+  }
+  assert.equal(validCustomTdpDraft({kind:"custom",status:ready,watts:17},ready,17),false);
 });

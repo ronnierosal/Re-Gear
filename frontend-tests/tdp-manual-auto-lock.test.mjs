@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
 import ts from "typescript";
-import { tdpControls, tdpMessage, tdpResultMessage, manualPresetOptions } from "../src/tdp-ui.ts";
+import { tdpControls, tdpMessage, tdpResultMessage, manualPresetOptions, createCustomTdpDraft, validCustomTdpDraft, retireCustomTdpDraft } from "../src/tdp-ui.ts";
 
 const jsx = (type, props, ...children) => ({ type, props: { ...props, children } });
 const flatten = node => [node, ...(node?.props?.children ?? []).flat(Infinity)
@@ -10,7 +10,7 @@ const flatten = node => [node, ...(node?.props?.children ?? []).flat(Infinity)
 const control = (tree, type, label) => flatten(tree)
   .find(node => node?.type === type && (node.props.label === label || node.props.children.join("") === label));
 
-function renderControls(controller) {
+function renderControls(controller, initiallyExpanded = true) {
   let cursor = 0;
   const values = [];
   const useState = initial => {
@@ -22,8 +22,9 @@ function renderControls(controller) {
   let effectCursor = 0;
   const useEffect = (effect, dependencies) => {
     const index = effectCursor++;
-    if (!effects[index] || dependencies.some((value, i) => value !== effects[index][i])) {
-      effects[index] = dependencies; effect();
+    if (!effects[index] || dependencies.some((value, i) => value !== effects[index].dependencies[i])) {
+      effects[index]?.cleanup?.();
+      effects[index] = { dependencies, cleanup: effect() };
     }
   };
   const source = readFileSync(new URL("../src/tdp-controls.tsx", import.meta.url), "utf8");
@@ -31,17 +32,19 @@ function renderControls(controller) {
     compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2020, jsx: ts.JsxEmit.React },
   }).outputText.replace(/^import[^;]*;/gm, "").replace(/export /g, "");
   const component = new Function(
-    "React", "useState", "useEffect", "tdpControls", "tdpMessage", "tdpResultMessage", "manualPresetOptions",
+    "React", "useState", "useEffect", "useRef", "tdpControls", "tdpMessage", "tdpResultMessage", "manualPresetOptions", "createCustomTdpDraft", "validCustomTdpDraft", "retireCustomTdpDraft",
     "ButtonItem", "DropdownItem", "PanelSection", "PanelSectionRow", "ToggleField",
     "AutoTdpControls", "usePerformance", "ReadableBlock", `${code};return SharedTdpControls;`,
   )(
-    { createElement: jsx, Fragment: "fragment" }, useState, useEffect,
-    tdpControls, tdpMessage, tdpResultMessage, manualPresetOptions,
+    { createElement: jsx, Fragment: "fragment" }, useState, useEffect, initial => useState({current:initial})[0],
+    tdpControls, tdpMessage, tdpResultMessage, manualPresetOptions, createCustomTdpDraft, validCustomTdpDraft, retireCustomTdpDraft,
     "ButtonItem", "DropdownItem", "PanelSection", "PanelSectionRow", "ToggleField",
     "AutoTdpControls", () => { throw new Error("unexpected standalone controller"); },
     ({label,children})=>jsx("Field",{focusable:true,"aria-label":label},children),
   );
-  return () => { cursor = 0; effectCursor = 0; return component({ visible: true, controller, initiallyExpanded: true }); };
+  const render = (visible = true) => { cursor = 0; effectCursor = 0; return component({ visible, controller, initiallyExpanded }); };
+  render.unmount = () => { for (const effect of effects) effect?.cleanup?.(); };
+  return render;
 }
 
 const manual = {
@@ -179,4 +182,71 @@ test("ordinary watt selection clears preset intent and uses only existing Apply"
   assert.ok(control(tree, "ButtonItem", "Chill · 10 W"));
   control(tree, "ButtonItem", "Apply power limit").props.onClick();
   assert.deepEqual(subject.calls, [["apply", 20]]);
+});
+
+test("Custom draft opens and edits locally; Cancel retires captured Apply", () => {
+  const subject = controller({ running: false });
+  const render = renderControls(subject.value); render(); let tree = render();
+  const open = control(tree, "ButtonItem", "Custom"); assert.ok(open, "actual Custom editor exists");
+  open.props.onClick(); tree = render();
+  const oldApply = control(tree, "ButtonItem", "Apply Custom").props.onClick;
+  control(tree, "ButtonItem", "+1 W").props.onClick(); tree = render();
+  assert.match(flatten(tree).filter(x=>typeof x==="string").join(" "), /16 W/);
+  assert.deepEqual(subject.calls, []);
+  control(tree, "ButtonItem", "Cancel").props.onClick(); oldApply();
+  assert.deepEqual(subject.calls, []);
+  open.props.onClick(); tree = render();
+  control(tree, "ButtonItem", "Apply Custom").props.onClick();
+  assert.equal(subject.calls.length, 1); assert.equal(subject.calls[0][0], "apply");
+  assert.equal(subject.calls[0][1], 15);
+});
+
+test("Custom edges and edited callbacks remain local until one explicit Apply", () => {
+  const subject=controller({running:false});subject.value.manual={...manual,current_watts:7,minimum_watts:7,maximum_watts:8};
+  const render=renderControls(subject.value);render();let tree=render();
+  control(tree,"ButtonItem","Custom").props.onClick();tree=render();
+  assert.equal(control(tree,"ButtonItem","−1 W").props.disabled,true);
+  control(tree,"ButtonItem","−1 W").props.onClick();
+  const oldApply=control(tree,"ButtonItem","Apply Custom").props.onClick;
+  control(tree,"ButtonItem","+1 W").props.onClick();oldApply();tree=render();
+  assert.deepEqual(subject.calls,[]);assert.equal(control(tree,"ButtonItem","+1 W").props.disabled,true);
+  control(tree,"ButtonItem","+1 W").props.onClick();
+  const apply=control(tree,"ButtonItem","Apply Custom").props.onClick;apply();apply();
+  assert.equal(subject.calls.length,1);assert.equal(subject.calls[0][1],8);
+});
+test("Custom old handlers reject replaced hidden unavailable busy and Auto contexts", () => {
+  for(const change of ["status","missing","recovery","busy","running","auto-stopping","owner-stopping","hidden","freeform","preset"]){
+    const subject=controller({running:false});subject.value.manual=presetStatus();
+    const render=renderControls(subject.value);render();let tree=render();
+    const open=control(tree,"ButtonItem","Custom").props.onClick;open();tree=render();
+    const apply=control(tree,"ButtonItem","Apply Custom").props.onClick,edit=control(tree,"ButtonItem","+1 W").props.onClick;
+    if(change==="status")subject.value.manual={...subject.value.manual};
+    if(change==="missing")subject.value.manual=null;
+    if(change==="recovery")subject.value.manual={...subject.value.manual,recovery_required:true};
+    if(change==="busy")subject.value.busy=true;
+    if(change==="running")subject.value.auto={running:true};
+    if(change==="auto-stopping")subject.value.auto={running:false,stopping:true};
+    if(change==="owner-stopping")subject.value.stopping=true;
+    if(change==="hidden")render(false);
+    if(change==="freeform")control(tree,"DropdownItem","Power limit").props.onChange({data:20});
+    if(change==="preset")control(tree,"ButtonItem","Chill · 10 W").props.onClick();
+    edit();apply();assert.deepEqual(subject.calls,[],change);
+    if(!["freeform","preset"].includes(change)){open();assert.deepEqual(subject.calls,[],change);}
+  }
+});
+
+test("collapsing power controls retires Custom and rejects captured editor callbacks",()=>{
+  const subject=controller({running:false});const render=renderControls(subject.value,false);
+  let tree=render();control(tree,"ButtonItem","Show power controls").props.onClick();render();tree=render();
+  const open=control(tree,"ButtonItem","Custom").props.onClick;open();tree=render();
+  const apply=control(tree,"ButtonItem","Apply Custom").props.onClick;
+  control(tree,"ButtonItem","Hide power controls").props.onClick();apply();render();open();apply();
+  assert.deepEqual(subject.calls,[]);
+});
+
+test("unmounted Custom owner retires draft and rejects retained open/edit/Apply callbacks",()=>{
+  const subject=controller({running:false});const render=renderControls(subject.value);render();let tree=render();
+  const open=control(tree,"ButtonItem","Custom").props.onClick;open();tree=render();
+  const apply=control(tree,"ButtonItem","Apply Custom").props.onClick,edit=control(tree,"ButtonItem","+1 W").props.onClick;
+  render.unmount();open();edit();apply();assert.deepEqual(subject.calls,[]);
 });
