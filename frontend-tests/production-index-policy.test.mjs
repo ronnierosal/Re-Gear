@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {readFileSync} from 'node:fs';
+import {readFileSync,existsSync} from 'node:fs';
 import ts from 'typescript';
 
 const source=readFileSync(new URL('../src/index.tsx',import.meta.url),'utf8');
@@ -29,7 +29,7 @@ function state(profile,target='ally'){
     setProductionActionRequest:()=>calls.push('sleep'),productionActionNonce:{current:0},
     productionEgpuDetail:'readonly-egpu',egpuDetail:'egpu',diagnosticDetail:'diagnostic',displayDetail:'display',wrapDetail:value=>value,
     React:{createElement:()=>({node:true}),Fragment:'fragment'},PanelSection:'section',EgpuModule:'egpu',
-    ButtonItem:'button',TransitionAcknowledgementControl:'guarded-display-ack',egpuPresentation:()=>({}),runtimeDetails:{source:{navigate:()=>{}}}};
+    ButtonItem:'button',TransitionAcknowledgementControl:'guarded-display-ack',Usb4WaitingStatus:'readonly-usb4-status',usb4WaitingSource:null,egpuPresentation:()=>({}),runtimeDetails:{source:{navigate:()=>{}}}};
   return {value:evaluate(publication,env),calls};
 }
 
@@ -163,15 +163,22 @@ test('real production eGPU detail mounts observations and only the existing guar
     const code=ts.transpileModule(readFileSync(new URL(path,import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX,target:ts.ScriptTarget.ES2022}}).outputText;
     new Function('exports','require',code)(exports,name=>{
       if(name==='react/jsx-runtime')return{jsx,jsxs:jsx};
-      if(name.startsWith('.'))return module(new URL(`${name}.tsx`,new URL(path,import.meta.url)));
+      if(name==='react')return{useSyncExternalStore:(_subscribe,read)=>read()};
+      if(name.endsWith('.svg'))return 'synthetic-asset';
+      if(name.startsWith('.')){
+        const candidate=new URL(`${name}.tsx`,new URL(path,import.meta.url));
+        return module(existsSync(candidate)?candidate:new URL(`${name}.ts`,new URL(path,import.meta.url)));
+      }
       return{DialogButton:'button',Focusable:'focus',Field:'field',GamepadButton:{DIR_UP:9,DIR_DOWN:10}};
     });
     return exports;
   }
   const {EgpuModule}=module('../src/quick-access/modules/egpu.tsx');
   const {egpuPresentation}=module('../src/quick-access/modules/egpu-presentation.ts');
+  const {Usb4WaitingStatus}=module('../src/usb4-waiting-runtime.tsx');
+  const {USB4_WAITING_TEXT,USB4_WAITING_UNAVAILABLE}=module('../src/usb4-waiting-model.ts');
   let acknowledgementMounts=0;
-  const env={menuFresh:false,payload:{ignored:true},PanelSection:'section',EgpuModule,egpuPresentation,
+  const env={menuFresh:false,payload:{ignored:true},PanelSection:'section',EgpuModule,egpuPresentation,Usb4WaitingStatus,usb4WaitingSource:null,
     TransitionAcknowledgementControl:()=>{acknowledgementMounts++;return null;},
     React:{createElement:(type,props,...children)=>jsx(type,{...props,children})}};
   let readingCount=0;
@@ -201,6 +208,21 @@ test('real production eGPU detail mounts observations and only the existing guar
   assert.equal(acknowledgementMounts,1);
   assert.equal(readingCount,8,'production still registers all seven readings plus safety information');
   assert.doesNotMatch(rendered,/Automatic TV docking|Configure docking|Troubleshoot|onClick|ToggleField|recovery is still available/);
+  // Mount the real passive component without changing existing row/action checks.
+  for(const status of [null,
+    Object.freeze({state:'unknown',guidance:USB4_WAITING_UNAVAILABLE,automaticNoticeSuppressed:true}),
+    Object.freeze({state:'unauthorized',guidance:USB4_WAITING_TEXT,automaticNoticeSuppressed:true})]){
+    readingCount=0;acknowledgementMounts=0;
+    let sourceReads=0;
+    env.usb4WaitingSource={read:()=>{sourceReads++;return status;},subscribe:()=>()=>{}};
+    const passive=JSON.stringify(mount(evaluate(productionDetail,env)));
+    assert.equal(sourceReads,1,'actual Usb4WaitingStatus consumes the supplied source');
+    assert.equal(acknowledgementMounts,1);
+    assert.equal(readingCount,status?9:8,'passive guidance adds one informational leaf only');
+    if(status){assert.ok(passive.includes(status.guidance));assert.match(passive,/"role":"status"/);}
+    else assert.doesNotMatch(passive,/USB4 authorization status/);
+    assert.doesNotMatch(passive,/Automatic TV docking|Configure docking|Troubleshoot|onClick|ToggleField|recovery is still available|uw-/);
+  }
 });
 test('development retains existing runtime views and actions',()=>{
   const {value,calls}=state('development');
