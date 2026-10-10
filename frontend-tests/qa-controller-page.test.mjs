@@ -14,10 +14,10 @@ const peripheral = (controller) => ({
   audio: { complete: true, exact: true, external_available: null, portable_available: null, code: "peripheral.ok" },
 });
 
-test("no peripheral reading says status unavailable", () => {
+test("no peripheral reading scopes the banner to missing built-in and external readings", () => {
   const p = controllerPresentation({ peripheral: null });
   assert.equal(p.available, false);
-  assert.match(p.reason, /unavailable/i);
+  assert.equal(p.reason, "Built-in and external controller readings have not been received. Catalog and shortcut readings are shown separately.");
   assert.equal(p.builtin.known, false);
   assert.equal(p.external.known, false);
 });
@@ -27,6 +27,7 @@ test("exact and complete facts are reported as facts", () => {
   assert.equal(p.available, true);
   assert.equal(p.precision, "exact");
   assert.equal(p.precisionNote, null);
+  assert.equal(p.reason, null);
   assert.deepEqual(p.builtin, { text: "Available", known: true });
   assert.deepEqual(p.external, { text: "Not connected", known: true });
 });
@@ -48,10 +49,10 @@ test("an incomplete reading shows what it knows and flags the caveat", () => {
   assert.equal(p.builtin.text, "Available");
 });
 
-test("a reading with no usable facts is unavailable, not silently empty", () => {
+test("unknown presence scopes the banner to unverified built-in and external availability", () => {
   const p = controllerPresentation({ peripheral: peripheral({ builtin_available: null, external_connected: null }) });
   assert.equal(p.available, false);
-  assert.match(p.reason, /no usable facts/i);
+  assert.equal(p.reason, "Built-in and external controller availability is unverified. Catalog and shortcut readings are shown separately.");
 });
 
 test("shortcut input is reported separately and is not controller presence", () => {
@@ -101,6 +102,46 @@ test("planned features are reported the same whatever the evidence says", () => 
 
 const catalog = (values = {}) => ({ schema_version: 1, provider: "known", profile_metadata: "partial", virtual_target: "unknown", relationships: "unavailable", ...values });
 const catalogTexts = (value) => Object.values(controllerPresentation({ peripheral: value }).catalog).map(f => f.text);
+test("usable catalog and shortcut readings do not establish unknown controller presence", () => {
+  const p = controllerPresentation({ peripheral: {
+    ...peripheral({ builtin_available: null, external_connected: null, complete: false }),
+    catalog: catalog({ virtual_target: "partial" }),
+  }, shortcutAvailable: true });
+  assert.equal(p.reason, "Built-in and external controller availability is unverified. Catalog and shortcut readings are shown separately.");
+  assert.equal(p.available, false);
+  assert.deepEqual(p.builtin, { text: "Unknown", known: false });
+  assert.deepEqual(p.external, { text: "Unknown", known: false });
+  assert.equal(p.precision, "partial");
+  assert.match(p.precisionNote, /incomplete/i);
+  assert.deepEqual(Object.values(p.catalog), [
+    { text: "Known", known: true }, { text: "Partial", known: true },
+    { text: "Partial", known: true }, { text: "Unavailable", known: true },
+  ]);
+  assert.deepEqual(p.shortcut, { text: "Available", known: true });
+});
+test("catalog-only readings preserve catalog facts while core presence is missing", () => {
+  const p = controllerPresentation({ peripheral: { catalog: catalog({ virtual_target: "partial" }) }, shortcutAvailable: true });
+  assert.equal(p.reason, "Built-in and external controller readings have not been received. Catalog and shortcut readings are shown separately.");
+  assert.equal(p.available, false);
+  assert.deepEqual(p.builtin, { text: "Unknown", known: false });
+  assert.deepEqual(p.external, { text: "Unknown", known: false });
+  assert.equal(p.precision, "unknown");
+  assert.equal(p.precisionNote, null);
+  assert.deepEqual(Object.values(p.catalog).map(f => f.text), ["Known", "Partial", "Partial", "Unavailable"]);
+  assert.deepEqual(p.shortcut, { text: "Available", known: true });
+});
+test("missing denied malformed and unavailable catalog readings never confer presence", () => {
+  for (const value of [null, {}, { catalog: catalog({ schema_version: 2 }) },
+    { catalog: catalog({ provider: "unavailable", profile_metadata: "unavailable", virtual_target: "unavailable", relationships: "unavailable" }) }]) {
+    const p = controllerPresentation({ peripheral: value });
+    assert.equal(p.available, false);
+    assert.deepEqual(p.builtin, { text: "Unknown", known: false });
+    assert.deepEqual(p.external, { text: "Unknown", known: false });
+    assert.equal(p.precision, "unknown");
+    assert.deepEqual(p.shortcut, { text: "Unknown", known: false });
+    assert.equal(p.reason, "Built-in and external controller readings have not been received. Catalog and shortcut readings are shown separately.");
+  }
+});
 test("frozen catalog facts are independent and legacy facts stay intact", () => {
   const value = { ...peripheral({}), catalog: catalog() };
   assert.deepEqual(catalogTexts(value), ["Known", "Partial", "Unknown", "Unavailable"]);
