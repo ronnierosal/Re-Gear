@@ -25,7 +25,7 @@ function SharedTdpControls({ visible, controller, initiallyExpanded = false }: {
   const { manual: status, auto, busy } = controller;
   const closeCustom = () => { retireCustomTdpDraft(customOwner.current); customOwner.current = null; setCustom(null); };
   useEffect(() => { closeCustom(); }, [status, visible, expanded, busy, auto?.running, auto?.stopping, controller.stopping]);
-  useEffect(() => () => { retireCustomTdpDraft(customOwner.current); customOwner.current = null; }, []);
+  useEffect(() => () => { context.current = { ...context.current, visible: false }; retireCustomTdpDraft(customOwner.current); customOwner.current = null; }, []);
   const customAvailable = () => {
     const current = context.current;
     return current.visible && current.expanded && !current.controller.busy && !current.controller.stopping

@@ -22,8 +22,9 @@ function renderControls(controller, initiallyExpanded = true) {
   let effectCursor = 0;
   const useEffect = (effect, dependencies) => {
     const index = effectCursor++;
-    if (!effects[index] || dependencies.some((value, i) => value !== effects[index][i])) {
-      effects[index] = dependencies; effect();
+    if (!effects[index] || dependencies.some((value, i) => value !== effects[index].dependencies[i])) {
+      effects[index]?.cleanup?.();
+      effects[index] = { dependencies, cleanup: effect() };
     }
   };
   const source = readFileSync(new URL("../src/tdp-controls.tsx", import.meta.url), "utf8");
@@ -41,7 +42,9 @@ function renderControls(controller, initiallyExpanded = true) {
     "AutoTdpControls", () => { throw new Error("unexpected standalone controller"); },
     ({label,children})=>jsx("Field",{focusable:true,"aria-label":label},children),
   );
-  return (visible = true) => { cursor = 0; effectCursor = 0; return component({ visible, controller, initiallyExpanded }); };
+  const render = (visible = true) => { cursor = 0; effectCursor = 0; return component({ visible, controller, initiallyExpanded }); };
+  render.unmount = () => { for (const effect of effects) effect?.cleanup?.(); };
+  return render;
 }
 
 const manual = {
@@ -239,4 +242,11 @@ test("collapsing power controls retires Custom and rejects captured editor callb
   const apply=control(tree,"ButtonItem","Apply Custom").props.onClick;
   control(tree,"ButtonItem","Hide power controls").props.onClick();apply();render();open();apply();
   assert.deepEqual(subject.calls,[]);
+});
+
+test("unmounted Custom owner retires draft and rejects retained open/edit/Apply callbacks",()=>{
+  const subject=controller({running:false});const render=renderControls(subject.value);render();let tree=render();
+  const open=control(tree,"ButtonItem","Custom").props.onClick;open();tree=render();
+  const apply=control(tree,"ButtonItem","Apply Custom").props.onClick,edit=control(tree,"ButtonItem","+1 W").props.onClick;
+  render.unmount();open();edit();apply();assert.deepEqual(subject.calls,[]);
 });
