@@ -111,6 +111,14 @@ export interface SnapshotPayload {
   runtime_admission?: {
     schema_version?: 1;
     sleep_interceptor_admission?: "observation-only" | "supported-runtime";
+    mode?: string;
+    mutation_allowed?: boolean;
+  } | null;
+  usb4_waiting?: {
+    schema_version: 1;
+    state: "none" | "unauthorized" | "authorized" | "unknown" | "ambiguous";
+    /** Volatile presentation-only nonce; never an authorization token. */
+    notice_key: string | null;
   } | null;
   snapshot: {
     schema_version: number;
