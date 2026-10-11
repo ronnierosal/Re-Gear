@@ -1,5 +1,5 @@
 import { DialogButton, Field, Focusable, GamepadButton } from "@decky/ui";
-import { revealReadable, scrollReadable } from "../readable-block";
+import { ReadingChrome, revealReadable, scrollReadable } from "../readable-block";
 import type { ReactNode } from "react";
 import type { EgpuPresentation, Evidence } from "./egpu-presentation";
 
@@ -67,7 +67,7 @@ export function EgpuModule({ presentation, onOpenRecovery }: {
 }) {
   const p = presentation;
   return <Focusable flow-children="vertical" noFocusRing style={{ color: C.text, minWidth: 0, margin: "0 2px" }}>
-    <style>{`.rg-egpu-reading.gpfocus,.rg-egpu-reading:focus-visible,.rg-egpu-reading:focus-within{outline:none!important;box-shadow:none!important;background:transparent!important}`}</style>
+    <ReadingChrome />
     {p.model && (
       <div style={{ fontSize: 13, fontWeight: 760, marginBottom: 6 }}>{p.model}</div>
     )}

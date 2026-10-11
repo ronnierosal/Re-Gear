@@ -1,7 +1,27 @@
-import { Field, GamepadButton } from "@decky/ui";
+import { Field, GamepadButton, scrollPanelClasses } from "@decky/ui";
 import type { ReactNode } from "react";
 
-const scrollSelector = ".rg-expanded-content,[data-regear-popup-body]";
+// Decky resolves these names from the current Steam build. Never target guessed
+// Steam hashes or unrelated scroll areas. Keep the native scrolling mechanism.
+const nativeScrollSelectors = Object.values(scrollPanelClasses ?? {})
+  .flatMap(value => value.split(/\s+/))
+  .filter(value => /^[a-zA-Z_][\w-]*$/.test(value)).map(value => `.${value}`);
+const scrollSelector = [".rg-expanded-content", "[data-regear-popup-body]", ...nativeScrollSelectors].join(",");
+
+/** Styles exist only while a reading is mounted; :has scopes chrome to its host.
+ * Native scrollbar arrows are scrollbar pseudo-elements, never action buttons.
+ * Warning panels inside the labeled group retain their own meaningful paint. */
+export function ReadingChrome() {
+  const hosts = scrollSelector.split(",").map(selector => `${selector}:has(.rg-readable,.rg-egpu-reading)`);
+  return <style>{`
+.rg-readable,.rg-egpu-reading,.rg-readable.gpfocus,.rg-egpu-reading.gpfocus,
+.rg-readable:focus-visible,.rg-egpu-reading:focus-visible,.rg-readable:focus-within,.rg-egpu-reading:focus-within{
+background:transparent!important;outline:none!important;box-shadow:none!important}
+${hosts.join(",")}{scrollbar-width:none!important}
+${hosts.map(selector => `${selector}::-webkit-scrollbar`).join(",")}{display:none!important;width:0!important;height:0!important}
+${hosts.map(selector => `${selector}::-webkit-scrollbar-button`).join(",")}{display:none!important}
+`}</style>;
+}
 
 /** Reveal information with the smallest scroll; never focus or activate an action. */
 export function revealReadable(target: HTMLElement) {
@@ -44,6 +64,7 @@ export function ReadableBlock({ label, children, className = "" }: { label: stri
       if (!direction || !(event.currentTarget instanceof HTMLElement) || !scrollReadable(event.currentTarget, direction)) return false;
       event.preventDefault(); event.stopPropagation(); return true;
     }}>
+    <ReadingChrome />
     <div role="group" aria-label={label}>{children}</div>
   </Field>;
 }

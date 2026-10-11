@@ -80,3 +80,14 @@ test('unavailable and long unverified readings remain focusable and independentl
  assert.equal(fields.length,9);assert.match(fields[0].props['aria-label'],/observed/i);
  assert.match(fields.at(-1).props['aria-label'],/Recovery/);
 });
+
+test('eGPU neutral wrapper preserves warning paint and explicit recovery action',()=>{
+ const nodes=mount(load()({presentation,onOpenRecovery:()=>{}}));
+ const css=nodes.find(n=>n.type==='style').props.children;
+ assert.match(css,/\.rg-egpu-reading[^{}]*\{[^}]*background:transparent!important/);
+ assert.doesNotMatch(css,/\.rg-egpu-reading\s+\*/,'no blanket descendant or action paint removal');
+ const groups=nodes.filter(n=>n.props.role==='group');
+ assert.match(groups.at(-1).props.children.props.style.background,/linear-gradient/);
+ const button=nodes.find(n=>n.type==='DialogButton');assert.match(button.props.style.background,/linear-gradient/);
+ assert.equal(typeof button.props.onClick,'function');
+});

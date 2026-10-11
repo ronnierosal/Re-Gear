@@ -8,7 +8,7 @@ const jsx=(type,props)=>({type,props:props??{}});
 function load(path){const exports={};const code=ts.transpileModule(readFileSync(path,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX,target:ts.ScriptTarget.ES2022}}).outputText;new Function('exports','require',code)(exports,name=>{
  if(name==='react/jsx-runtime')return{jsx,jsxs:jsx};
  if(name==='react')return{useEffect:()=>{},useRef:()=>({current:null}),useState:v=>[v,()=>{}]};
- if(name==='@decky/ui')return{Field:'Field',Focusable:'Focusable',GamepadButton:{DIR_UP:9,DIR_DOWN:10},DialogButton:'button',Navigation:{}};
+ if(name==='@decky/ui')return{Field:'Field',Focusable:'Focusable',GamepadButton:{DIR_UP:9,DIR_DOWN:10},DialogButton:'button',Navigation:{},scrollPanelClasses:{ScrollPanel:'native-scroll-panel',ScrollY:'native-scroll-y'}};
  if(name.startsWith('.')){const base=resolve(dirname(path),name);for(const ext of ['.tsx','.ts'])if(existsSync(base+ext))return load(base+ext);}
  throw Error(name);
 });return exports;}
@@ -19,6 +19,19 @@ test('informational native Fields disable highlighting without disabling focus o
  const field=mount(ReadableBlock({label:'Status',children:'Unknown'})).find(n=>n.type==='Field');
  assert.equal(field.props.focusable,true);assert.equal(field.props.highlightOnFocus,false);
  for(const key of ['onClick','onActivate','onOKButton','onCancelButton'])assert.equal(field.props[key],undefined);
+});
+
+test('reading chrome is neutral at rest and hides only scoped scrollbar paint',()=>{
+ const {ReadingChrome}=load(resolve(root,'quick-access/readable-block.tsx'));
+ assert.equal(typeof ReadingChrome,'function');
+ const css=mount(ReadingChrome()).find(n=>n.type==='style').props.children;
+ assert.match(css,/\.rg-readable[^{}]*\{[^}]*background:transparent!important/);
+ assert.match(css,/:has\(\.rg-readable,.rg-egpu-reading\)/);
+ assert.match(css,/scrollbar-width:none/);
+ assert.match(css,/::-webkit-scrollbar-button/);
+ assert.doesNotMatch(css,/overflow\s*:|pointer-events\s*:|(?:^|,)\s*button\s*\{/);
+ const nodes=mount(load(resolve(root,'quick-access/readable-block.tsx')).ReadableBlock({label:'Status',children:'Unknown'}));
+ assert.equal(nodes.filter(n=>n.type==='style').length,1);
 });
 
 test('first reading Up reveals the preceding heading in bounded steps then exits normally',()=>{
@@ -63,3 +76,13 @@ test('long reading scrolls in bounded steps before directional focus leaves it',
  for(const key of ['onClick','onActivate','onCancelButton'])assert.equal(field.props[key],undefined);
  }finally{globalThis.HTMLElement=previous;}
 });
+
+ test('native Steam scroll host supports heading reveal and bounded reading without changing overflow',()=>{
+ const {revealReadable,scrollReadable}=load(resolve(root,'quick-access/readable-block.tsx'));
+ const area={scrollTop:53,getBoundingClientRect:()=>({top:0,bottom:100,height:100}),querySelector:()=>target};
+ let selector;const target={closest(value){selector=value;return area;},getBoundingClientRect:()=>({top:57-area.scrollTop,bottom:77-area.scrollTop,height:20})};
+ revealReadable(target);assert.match(selector,/\.native-scroll-panel/);assert.match(selector,/\.native-scroll-y/);
+ assert.equal(scrollReadable(target,'up'),true);assert.equal(area.scrollTop,0);
+ assert.equal(scrollReadable(target,'up'),false);assert.equal(scrollReadable(target,'down'),false);
+ assert.equal(area.style,undefined,'no overflow or touch behavior mutation');
+ });
