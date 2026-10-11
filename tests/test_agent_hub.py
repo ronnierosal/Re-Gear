@@ -348,6 +348,152 @@ class RecoveryMirror497Tests(unittest.TestCase):
             self.assertNotIn(forbidden,help_result.stdout)
 
 
+class PowerUiTwoTestReleaseTests(unittest.TestCase):
+    """Exercise the supported operation only against disposable fixture hubs."""
+    def setUp(self):
+        from unittest.mock import patch
+        self.tmp = tempfile.TemporaryDirectory(); self.addCleanup(self.tmp.cleanup)
+        self.store = hub.Hub(Path(self.tmp.name) / 'fixture.sqlite3'); self.store.init()
+        self.actor = hub.POWER_UI_RELEASE_ACTOR; self.owner = hub.POWER_UI_RELEASE_OWNER
+        self.recipient = hub.POWER_UI_RELEASE_RECIPIENT; self.key = hub.POWER_UI_RELEASE_TASK
+        for session in (self.actor, self.owner, self.recipient, 'other'):
+            self.store.register(session, 'codex', session, 'fixture')
+        self.row = self.store.apply(self.owner, dict(op='create_task', id=self.key,
+            stream='quick-access', title='Retained legacy fixture', branch='unassigned',
+            paths=list(hub.POWER_UI_RELEASE_PATHS)+['src/retained.ts'],
+            note='Retain native obligations and prior scope', pr='https://example.test/pr'))
+        self.row = self.store.apply(self.owner, dict(op='claim_task', id=self.key, rev=1))
+        with self.store.connection(True) as db:
+            db.execute('UPDATE tasks SET rev=30 WHERE id=?', (self.key,))
+            self.row = self.store.row(db, 'tasks', self.key)
+        self.maintenance = self.store.apply(self.actor, dict(op='create_task',
+            id=hub.POWER_UI_RELEASE_MAINTENANCE_TASK, stream='coordination', title='Fixture maintenance',
+            branch='agent/codex-local/537-power-ui-test-release', paths=['scripts/agent_hub/hub.py'],
+            issue='https://github.com/ronnierosal/Re-Gear/issues/537'))
+        self.maintenance = self.store.apply(self.actor, dict(op='claim_task', id=self.maintenance['id'], rev=1))
+        self.canonical = dict(revision=43, status='in-progress', owner=self.recipient,
+                              scope=list(hub.POWER_UI_RELEASE_PATHS), validation='Native gates retained')
+        self.receipt = dict(issue=476, record=self.canonical, receipt=hub.POWER_UI_RELEASE_RECEIPT)
+        for name, value in {
+            'POWER_UI_RELEASE_PREIMAGE_DIGEST': hub.Hub._digest(self.row),
+            'POWER_UI_RELEASE_CANONICAL_DIGEST': hub.Hub._digest(self.canonical),
+            'POWER_UI_RELEASE_MAINTENANCE_DIGEST': hub.Hub._digest(self.maintenance),
+            'POWER_UI_RELEASE_EXECUTION_AUTHORIZATION': 'fixture-separate-live-approval',
+        }.items():
+            p = patch.object(hub, name, value); p.start(); self.addCleanup(p.stop)
+
+    def snapshot(self): return self.store.status(), self.store.history()
+    def invoke(self, actor=None, receipt=None):
+        return self.store.release_power_ui_two_test_claims(actor or self.actor,
+            self.receipt if receipt is None else receipt)
+    def refused(self, callback):
+        before = self.snapshot()
+        with self.assertRaises((hub.Conflict, ValueError)): callback()
+        self.assertEqual(before, self.snapshot())
+
+    def test_only_fixed_two_paths_and_revision_change_preserves_history_and_owner(self):
+        before = self.snapshot(); result = self.invoke(); after = result['task']
+        self.assertEqual(after, dict(self.row, paths=json.dumps(['src/retained.ts']), rev=31))
+        event = self.store.history()[0]
+        self.assertEqual((event['actor'], event['action'], event['target']),
+                         (self.actor, 'release_power_ui_two_test_claims', self.key))
+        detail = json.loads(event['detail'])
+        self.assertEqual(detail['released_paths'], list(hub.POWER_UI_RELEASE_PATHS))
+        self.assertEqual(detail['authorization'], 'fixture-separate-live-approval')
+        self.assertEqual(detail['before_digest'], hub.Hub._digest(self.row))
+        self.assertEqual(detail['after_digest'], hub.Hub._digest(after))
+        self.assertEqual(before[1], self.store.history()[1:])
+        self.assertEqual(before[0]['transfers'], self.store.status()['transfers'])
+        self.refused(self.invoke)  # Replay cannot release further scope.
+
+    def test_wrong_actor_receipt_and_every_canonical_field_refused(self):
+        self.refused(lambda: self.invoke(actor=self.owner))
+        for key in self.receipt:
+            altered = copy.deepcopy(self.receipt); altered[key] = None
+            self.refused(lambda: self.invoke(receipt=altered))
+        for key in self.canonical:
+            altered = copy.deepcopy(self.receipt); altered['record'][key] = None
+            self.refused(lambda: self.invoke(receipt=altered))
+        altered = dict(self.receipt, extra='no extensions')
+        self.refused(lambda: self.invoke(receipt=altered))
+        self.refused(lambda: self.invoke(receipt=dict(self.receipt, issue=True)))
+
+    def test_every_preimage_field_mutation_refused(self):
+        for key in self.row:
+            if key in ('id', 'stream', 'owner'): continue
+            old = self.row[key]; altered = old+1 if type(old) is int else old+'x'
+            with self.store.connection(True) as db:
+                db.execute(f'UPDATE tasks SET {key}=? WHERE id=?', (altered, self.key))
+            self.refused(self.invoke)
+            with self.store.connection(True) as db:
+                db.execute(f'UPDATE tasks SET {key}=? WHERE id=?', (old, self.key))
+        for key, value in (('owner', 'other'), ('state', 'done'), ('state', 'cancelled'),
+                           ('stream', 'coordination')):
+            with self.store.connection(True) as db:
+                db.execute(f'UPDATE tasks SET {key}=? WHERE id=?', (value, self.key))
+            self.refused(self.invoke)
+            with self.store.connection(True) as db:
+                db.execute(f'UPDATE tasks SET {key}=? WHERE id=?', (self.row[key], self.key))
+
+    def test_disabled_and_changed_maintenance_authority_refused(self):
+        from unittest.mock import patch
+        for name in ('POWER_UI_RELEASE_EXECUTION_AUTHORIZATION', 'POWER_UI_RELEASE_MAINTENANCE_DIGEST'):
+            with patch.object(hub, name, None): self.refused(self.invoke)
+        with self.store.connection(True) as db:
+            db.execute("UPDATE tasks SET note='changed assignment' WHERE id=?", (self.maintenance['id'],))
+        self.refused(self.invoke)
+
+    def test_pending_transfer_and_active_collision_refused(self):
+        transfer = self.store.apply(self.owner, dict(op='offer_transfer', kind='task', id=self.key,
+            rev=30, to=self.recipient, note='Authentic pending transfer fixture'))
+        self.refused(self.invoke)
+        self.store.apply(self.owner, dict(op='cancel_transfer', id=transfer['id']))
+        self.store.apply('other', dict(op='create_task', id='collision', stream='quick-access',
+            title='Fixture collision', branch='other/branch', paths=[hub.POWER_UI_RELEASE_PATHS[0]]))
+        # Only a synthetic fixture can install a colliding active claim.
+        with self.store.connection(True) as db:
+            db.execute("UPDATE tasks SET owner='other',state='in_progress' WHERE id='collision'")
+        self.refused(self.invoke)
+
+    def test_unregistered_recipient_refused(self):
+        with self.store.connection(True) as db:
+            db.execute('DELETE FROM sessions WHERE id=?', (self.recipient,))
+        self.refused(self.invoke)
+
+    def test_audit_or_cas_failure_rolls_back_all_changes(self):
+        from unittest.mock import patch
+        before = self.snapshot()
+        with patch.object(self.store, 'event', side_effect=RuntimeError('fixture audit failure')):
+            with self.assertRaises(RuntimeError): self.invoke()
+        self.assertEqual(before, self.snapshot())
+        with self.store.connection(True) as db:
+            db.execute("CREATE TRIGGER reject_release BEFORE UPDATE ON tasks BEGIN SELECT RAISE(IGNORE); END")
+        self.refused(self.invoke)
+
+    def test_two_concurrent_invocations_have_one_success(self):
+        results = []
+        def run():
+            try: self.invoke(); results.append('ok')
+            except hub.Conflict: results.append('conflict')
+        threads = [threading.Thread(target=run) for _ in range(2)]
+        for t in threads: t.start()
+        for t in threads: t.join()
+        self.assertCountEqual(results, ['ok', 'conflict'])
+
+    def test_cli_bounded_invalid_receipts_and_no_override_options(self):
+        receipt = Path(self.tmp.name) / 'receipt.json'
+        cmd = [sys.executable, str(HUB_DIR/'hub.py'), '--db', str(self.store.path),
+               'release-power-ui-two-test-claims', '--session', self.actor]
+        for content in (b'x'*65537, b'{', b'\xff', json.dumps(self.receipt).encode()):
+            receipt.write_bytes(content); before = self.snapshot()
+            result = subprocess.run(cmd+['--canonical-receipt', str(receipt)], capture_output=True, text=True)
+            self.assertEqual(result.returncode, 2); self.assertEqual(before, self.snapshot())
+        help_result = subprocess.run(cmd+['--help'], capture_output=True, text=True)
+        self.assertEqual(help_result.returncode, 0)
+        for forbidden in ('--owner', '--target', '--paths', '--force', '--authorization', '--skip'):
+            self.assertNotIn(forbidden, help_result.stdout)
+
+
 def load_tests(loader, tests, pattern):
     sys.path.insert(0, str(HUB_DIR))
     try:
@@ -357,6 +503,7 @@ def load_tests(loader, tests, pattern):
         suite = loader.loadTestsFromModule(module)
         suite.addTests(loader.loadTestsFromTestCase(CompiledMaintenanceTests))
         suite.addTests(loader.loadTestsFromTestCase(RecoveryMirror497Tests))
+        suite.addTests(loader.loadTestsFromTestCase(PowerUiTwoTestReleaseTests))
         return suite
     finally:
         sys.path.remove(str(HUB_DIR))
