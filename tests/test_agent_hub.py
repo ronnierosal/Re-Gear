@@ -368,17 +368,43 @@ class PowerUiTwoTestReleaseTests(unittest.TestCase):
             self.row = self.store.row(db, 'tasks', self.key)
         self.maintenance = self.store.apply(self.actor, dict(op='create_task',
             id=hub.POWER_UI_RELEASE_MAINTENANCE_TASK, stream='coordination', title='Fixture maintenance',
-            branch='agent/codex-local/537-power-ui-test-release', paths=['scripts/agent_hub/hub.py'],
-            issue='https://github.com/ronnierosal/Re-Gear/issues/537'))
+            branch='agent/codex-local/540-power-two-test-release-binding', paths=['scripts/agent_hub/hub.py'],
+            issue='https://github.com/ronnierosal/Re-Gear/issues/540'))
         self.maintenance = self.store.apply(self.actor, dict(op='claim_task', id=self.maintenance['id'], rev=1))
-        self.canonical = dict(revision=43, status='in-progress', owner=self.recipient,
-                              scope=list(hub.POWER_UI_RELEASE_PATHS), validation='Native gates retained')
-        self.receipt = dict(issue=476, record=self.canonical, receipt=hub.POWER_UI_RELEASE_RECEIPT)
+        self.destination = self.store.apply(self.recipient, dict(op='create_task',
+            id=hub.POWER_UI_RELEASE_DESTINATION_TASK, stream='quick-access', title='Two fixtures',
+            branch='agent/codex-local/476-test-fixtures-01a12b76', paths=list(hub.POWER_UI_RELEASE_PATHS),
+            issue='https://github.com/ronnierosal/Re-Gear/issues/539',
+            dependencies=[hub.POWER_UI_RELEASE_MAINTENANCE_TASK]))
+        self.canonical = dict(revision=2, status='claimed', owner=self.recipient,
+                              branch=self.destination['branch'], scope=list(hub.POWER_UI_RELEASE_PATHS))
+        self.ui = dict(revision=45, status='in-progress', owner=hub.POWER_UI_RELEASE_UI_OWNER,
+                       scope=['src/retained.ts'], validation='Native gates retained')
+        self.receipt = dict(issue=539, record=self.canonical, receipt=hub.POWER_UI_RELEASE_RECEIPT,
+                            ui_issue=476, ui_record=self.ui, ui_receipt=hub.POWER_UI_RELEASE_UI_RECEIPT)
+        with self.store.connection() as db:
+            self.registration = self.store.row(db, 'sessions', self.recipient)
+        bindings = dict(actor=self.actor, recipient=self.recipient,
+            paths=list(hub.POWER_UI_RELEASE_PATHS), maintenance_task=self.maintenance['id'],
+            destination_task=self.destination['id'], legacy_digest=hub.Hub._digest(self.row),
+            maintenance_digest=hub.Hub._digest(self.maintenance),
+            registration_digest=hub.Hub._digest(self.registration),
+            destination_digest=hub.Hub._digest(self.destination),
+            canonical539_digest=hub.Hub._digest(self.canonical), canonical476_digest=hub.Hub._digest(self.ui))
+        self.approval = dict(schema=1, operation='release_power_ui_two_test_claims', bindings=bindings,
+            evidence=[dict(request=dict(source_thread_id='fixture-thread', source_message_id=f'question-{i}',
+                                       role='assistant', text=f'Synthetic fixture question {i}'),
+                           approval=dict(source_thread_id='fixture-thread', source_message_id=f'answer-{i}',
+                                        role='user', text=f'Synthetic fixture consent {i}')) for i in range(3)])
+        self.receipt['approval'] = self.approval
         for name, value in {
             'POWER_UI_RELEASE_PREIMAGE_DIGEST': hub.Hub._digest(self.row),
             'POWER_UI_RELEASE_CANONICAL_DIGEST': hub.Hub._digest(self.canonical),
+            'POWER_UI_RELEASE_UI_DIGEST': hub.Hub._digest(self.ui),
+            'POWER_UI_RELEASE_DESTINATION_DIGEST': hub.Hub._digest(self.destination),
+            'POWER_UI_RELEASE_REGISTRATION_DIGEST': hub.Hub._digest(self.registration),
             'POWER_UI_RELEASE_MAINTENANCE_DIGEST': hub.Hub._digest(self.maintenance),
-            'POWER_UI_RELEASE_EXECUTION_AUTHORIZATION': 'fixture-separate-live-approval',
+            'POWER_UI_RELEASE_EXECUTION_AUTHORIZATION': hub.Hub._digest(self.approval),
         }.items():
             p = patch.object(hub, name, value); p.start(); self.addCleanup(p.stop)
 
@@ -399,7 +425,8 @@ class PowerUiTwoTestReleaseTests(unittest.TestCase):
                          (self.actor, 'release_power_ui_two_test_claims', self.key))
         detail = json.loads(event['detail'])
         self.assertEqual(detail['released_paths'], list(hub.POWER_UI_RELEASE_PATHS))
-        self.assertEqual(detail['authorization'], 'fixture-separate-live-approval')
+        self.assertEqual(detail['authorization'],
+                         dict(kind='private-user-approval-v1', sha256=hub.Hub._digest(self.approval)))
         self.assertEqual(detail['before_digest'], hub.Hub._digest(self.row))
         self.assertEqual(detail['after_digest'], hub.Hub._digest(after))
         self.assertEqual(before[1], self.store.history()[1:])
@@ -411,9 +438,10 @@ class PowerUiTwoTestReleaseTests(unittest.TestCase):
         for key in self.receipt:
             altered = copy.deepcopy(self.receipt); altered[key] = None
             self.refused(lambda: self.invoke(receipt=altered))
-        for key in self.canonical:
-            altered = copy.deepcopy(self.receipt); altered['record'][key] = None
-            self.refused(lambda: self.invoke(receipt=altered))
+        for record_key in ('record', 'ui_record'):
+            for key in self.receipt[record_key]:
+                altered = copy.deepcopy(self.receipt); altered[record_key][key] = None
+                self.refused(lambda: self.invoke(receipt=altered))
         altered = dict(self.receipt, extra='no extensions')
         self.refused(lambda: self.invoke(receipt=altered))
         self.refused(lambda: self.invoke(receipt=dict(self.receipt, issue=True)))
@@ -437,7 +465,9 @@ class PowerUiTwoTestReleaseTests(unittest.TestCase):
 
     def test_disabled_and_changed_maintenance_authority_refused(self):
         from unittest.mock import patch
-        for name in ('POWER_UI_RELEASE_EXECUTION_AUTHORIZATION', 'POWER_UI_RELEASE_MAINTENANCE_DIGEST'):
+        for name in ('POWER_UI_RELEASE_EXECUTION_AUTHORIZATION', 'POWER_UI_RELEASE_MAINTENANCE_DIGEST',
+                     'POWER_UI_RELEASE_DESTINATION_DIGEST', 'POWER_UI_RELEASE_REGISTRATION_DIGEST',
+                     'POWER_UI_RELEASE_UI_DIGEST'):
             with patch.object(hub, name, None): self.refused(self.invoke)
         with self.store.connection(True) as db:
             db.execute("UPDATE tasks SET note='changed assignment' WHERE id=?", (self.maintenance['id'],))
@@ -459,6 +489,69 @@ class PowerUiTwoTestReleaseTests(unittest.TestCase):
         with self.store.connection(True) as db:
             db.execute('DELETE FROM sessions WHERE id=?', (self.recipient,))
         self.refused(self.invoke)
+
+    def test_every_destination_registration_and_maintenance_field_refused(self):
+        for table, original in (('tasks', self.destination), ('sessions', self.registration),
+                                ('tasks', self.maintenance)):
+            for key, old in original.items():
+                if key == 'id': continue
+                if key == 'owner': altered = 'other'
+                elif key == 'stream': altered = 'coordination' if old != 'coordination' else 'quick-access'
+                elif key == 'state': altered = 'review'
+                elif type(old) is int: altered = old + 1
+                else: altered = (old or '') + 'x'
+                with self.store.connection(True) as db:
+                    db.execute(f'UPDATE {table} SET {key}=? WHERE id=?', (altered, original['id']))
+                self.refused(self.invoke)
+                with self.store.connection(True) as db:
+                    db.execute(f'UPDATE {table} SET {key}=? WHERE id=?', (old, original['id']))
+
+    def test_private_approval_contract_integrity_limits_and_order(self):
+        malformed = []
+        for key in self.approval:
+            altered = copy.deepcopy(self.approval); altered[key] = None; malformed.append(altered)
+        malformed.extend([dict(self.approval, schema=True), dict(self.approval, extra='forbidden'),
+                          'private-message-reference-is-not-evidence'])
+        for key in self.approval['bindings']:
+            altered = copy.deepcopy(self.approval); altered['bindings'][key] = None; malformed.append(altered)
+        for count in (0, 1, 2, 4):
+            altered = copy.deepcopy(self.approval)
+            altered['evidence'] = (altered['evidence'] * 2)[:count]; malformed.append(altered)
+        altered = copy.deepcopy(self.approval); altered['evidence'].reverse(); malformed.append(altered)
+        for index in range(3):
+            for kind in ('request', 'approval'):
+                for key in self.approval['evidence'][index][kind]:
+                    for value in (None, True, '', 'x' * (16385 if key == 'text' else 257)):
+                        altered = copy.deepcopy(self.approval)
+                        altered['evidence'][index][kind][key] = value; malformed.append(altered)
+                altered = copy.deepcopy(self.approval)
+                altered['evidence'][index][kind]['extra'] = 'forbidden'; malformed.append(altered)
+        altered = copy.deepcopy(self.approval)
+        altered['evidence'][0]['approval']['role'] = 'assistant'; malformed.append(altered)
+        for approval in malformed:
+            self.refused(lambda: self.invoke(receipt=dict(self.receipt, approval=approval)))
+
+    def test_private_approval_schema_limits_even_if_digest_is_rebound_in_fixture(self):
+        from unittest.mock import patch
+        for field, value in (('text', 'é' * 8193), ('source_message_id', 'é' * 129), ('role', 'assistant')):
+            altered = copy.deepcopy(self.approval); altered['evidence'][0]['approval'][field] = value
+            with patch.object(hub, 'POWER_UI_RELEASE_EXECUTION_AUTHORIZATION', hub.Hub._digest(altered)):
+                self.refused(lambda: self.invoke(receipt=dict(self.receipt, approval=altered)))
+
+    def test_cli_rejects_duplicate_keys_at_all_receipt_levels(self):
+        import io
+        from contextlib import redirect_stderr
+        receipt = Path(self.tmp.name) / 'duplicate.json'
+        serialized = json.dumps(self.receipt)
+        duplicates = [serialized.replace('"issue": 539', '"issue": 1, "issue": 539', 1),
+                      serialized.replace('"schema": 1', '"schema": 0, "schema": 1', 1),
+                      serialized.replace('"role": "user"', '"role": "assistant", "role": "user"', 1)]
+        for content in duplicates:
+            receipt.write_text(content, encoding='utf-8'); before = self.snapshot()
+            with redirect_stderr(io.StringIO()):
+                self.assertEqual(hub.main(['--db', str(self.store.path), 'release-power-ui-two-test-claims',
+                    '--session', self.actor, '--canonical-receipt', str(receipt)]), 2)
+            self.assertEqual(self.snapshot(), before)
 
     def test_audit_or_cas_failure_rolls_back_all_changes(self):
         from unittest.mock import patch
@@ -492,6 +585,26 @@ class PowerUiTwoTestReleaseTests(unittest.TestCase):
         self.assertEqual(help_result.returncode, 0)
         for forbidden in ('--owner', '--target', '--paths', '--force', '--authorization', '--skip'):
             self.assertNotIn(forbidden, help_result.stdout)
+
+    def test_supported_cli_success_then_replay_preserves_destination_and_registration(self):
+        import io
+        from contextlib import redirect_stdout
+        receipt = Path(self.tmp.name) / 'accepted.json'
+        receipt.write_text(json.dumps(self.receipt), encoding='utf-8')
+        args = ['--db', str(self.store.path), 'release-power-ui-two-test-claims',
+                '--session', self.actor, '--canonical-receipt', str(receipt)]
+        output = io.StringIO()
+        with redirect_stdout(output):
+            self.assertEqual(hub.main(args), 0)
+        self.assertEqual(json.loads(output.getvalue())['task']['rev'], 31)
+        with self.store.connection() as db:
+            self.assertEqual(self.store.row(db, 'tasks', self.destination['id']), self.destination)
+            self.assertEqual(self.store.row(db, 'sessions', self.recipient), self.registration)
+            self.assertEqual(self.store.row(db, 'tasks', self.maintenance['id']), self.maintenance)
+        before = self.snapshot()
+        with redirect_stdout(io.StringIO()):
+            self.assertEqual(hub.main(args), 2)
+        self.assertEqual(self.snapshot(), before)
 
 
 def load_tests(loader, tests, pattern):

@@ -322,22 +322,28 @@ class Conflict(ValueError):
 
 # Issue 532: source capability only. Adoption does not authorize invocation.
 RECOVERY497_ACTOR = 'codex-local-coordination-recovery-20261008'
-# Development approval for #537 is not live invocation authority. Keep both
-# invocation bindings unset until a separately reviewed, fresh approval.
+# Fixed #540 bindings follow explicit user consent and independent private
+# provenance verification. Changes require another reviewed binding and consent.
 POWER_UI_RELEASE_ACTOR = 'codex-local-coordination-recovery-20261008'
 POWER_UI_RELEASE_TASK = 'qa-brightness-volume-customization'
 POWER_UI_RELEASE_OWNER = 'codex-01a08c09-afcf-7c50-998d-760c7634fb01'
-POWER_UI_RELEASE_MAINTENANCE_TASK = 'agent-hub-power-ui-two-test-release-537'
+POWER_UI_RELEASE_MAINTENANCE_TASK = 'agent-hub-power-two-test-release-01a12b76'
 POWER_UI_RELEASE_PATHS = (
     'frontend-tests/expanded-live-presentation.test.mjs',
     'frontend-tests/layout-preferences.test.mjs',
 )
 POWER_UI_RELEASE_PREIMAGE_DIGEST = '073f1cb667a8243aa0d888a184c44d27e84e89343b97f28542428ae819f578ce'
-POWER_UI_RELEASE_CANONICAL_DIGEST = '6da06efced8512f0a1e47251b7a6733c385b8ff75124c25da84bacf1edae02b1'
-POWER_UI_RELEASE_RECIPIENT = 'codex-local-ui-worker-01a114be-9b27-70f1-9694-9ec91208200a'
-POWER_UI_RELEASE_MAINTENANCE_DIGEST = None
-POWER_UI_RELEASE_EXECUTION_AUTHORIZATION = None
-POWER_UI_RELEASE_RECEIPT = 'https://github.com/ronnierosal/Re-Gear/issues/476#issuecomment-6105998916'
+POWER_UI_RELEASE_CANONICAL_DIGEST = '6f3fb6f206a1f56e5ccb5d3e749e0990d62d1a13adbb49c8ec2c459e5c2e89fe'
+POWER_UI_RELEASE_RECIPIENT = 'codex-01a12b76-0163-71df-bae3-a70f85e6100b'
+POWER_UI_RELEASE_DESTINATION_TASK = 'power-ui-test-fixtures-476-01a12b76'
+POWER_UI_RELEASE_DESTINATION_DIGEST = '9fd561cc5d7fdb1499e1dc8350e0eae4a5f18dc75302f0729fc8e805ce981439'
+POWER_UI_RELEASE_REGISTRATION_DIGEST = 'fea37c1ebfdf839158b04a899589156245a9eb0f20ee30adfed729d08048dbb2'
+POWER_UI_RELEASE_UI_DIGEST = 'efa354c57dcf3ba77ef11d636e9a83b566f114aba0df93151c1d5b7e78575a3b'
+POWER_UI_RELEASE_UI_OWNER = 'codex-local-ui-worker-01a114be-9b27-70f1-9694-9ec91208200a'
+POWER_UI_RELEASE_UI_RECEIPT = 'https://github.com/ronnierosal/Re-Gear/issues/476#issuecomment-6110419690'
+POWER_UI_RELEASE_MAINTENANCE_DIGEST = '886c473de1d866617297f13846e1349727aa67ace5b1a66ebbe475e30da13bad'
+POWER_UI_RELEASE_EXECUTION_AUTHORIZATION = 'd307a5f748cf97ff444cfbf428f877527a434fd6ea73e51e90db2613506622c9'
+POWER_UI_RELEASE_RECEIPT = 'https://github.com/ronnierosal/Re-Gear/issues/539#issuecomment-6110484713'
 RECOVERY497_RECIPIENT = 'codex-cloud-lifecycle-director-20261003'
 RECOVERY497_TASK = 'tdp-runtime-expressible-range-admission'
 RECOVERY497_MAINTENANCE_TASK = 'agent-hub-maintainer-recovery-mirror-532'
@@ -612,39 +618,104 @@ class Hub:
             self.event(db, actor, 'mirror_accepted_497_recovery', RECOVERY497_TASK, detail)
             return {'task': after, 'audit': detail}
 
+    @staticmethod
+    def _power_ui_release_authorization(approval):
+        """Verify pinned private evidence integrity; provenance is independently reviewed."""
+        expected = {
+            'actor': POWER_UI_RELEASE_ACTOR, 'recipient': POWER_UI_RELEASE_RECIPIENT,
+            'paths': list(POWER_UI_RELEASE_PATHS),
+            'maintenance_task': POWER_UI_RELEASE_MAINTENANCE_TASK,
+            'destination_task': POWER_UI_RELEASE_DESTINATION_TASK,
+            'legacy_digest': POWER_UI_RELEASE_PREIMAGE_DIGEST,
+            'maintenance_digest': POWER_UI_RELEASE_MAINTENANCE_DIGEST,
+            'registration_digest': POWER_UI_RELEASE_REGISTRATION_DIGEST,
+            'destination_digest': POWER_UI_RELEASE_DESTINATION_DIGEST,
+            'canonical539_digest': POWER_UI_RELEASE_CANONICAL_DIGEST,
+            'canonical476_digest': POWER_UI_RELEASE_UI_DIGEST,
+        }
+        if (not isinstance(approval, dict)
+                or set(approval) != {'schema', 'operation', 'bindings', 'evidence'}
+                or type(approval['schema']) is not int or approval['schema'] != 1
+                or approval['operation'] != 'release_power_ui_two_test_claims'
+                or not isinstance(approval['bindings'], dict) or approval['bindings'] != expected):
+            raise Conflict('Power UI release private approval contract mismatch')
+        if any(not isinstance(value, str) or not re.fullmatch('[0-9a-f]{64}', value)
+               for key, value in expected.items() if key.endswith('_digest')):
+            raise Conflict('Power UI release private approval bindings are unset or invalid')
+        evidence = approval['evidence']
+        if not isinstance(evidence, list) or len(evidence) != 3:
+            raise Conflict('Power UI release requires three ordered approval pairs')
+        for pair in evidence:
+            if not isinstance(pair, dict) or set(pair) != {'request', 'approval'}:
+                raise Conflict('Power UI release private approval pair mismatch')
+            for kind, record in pair.items():
+                if (not isinstance(record, dict)
+                        or set(record) != {'source_thread_id', 'source_message_id', 'role', 'text'}):
+                    raise Conflict('Power UI release private approval evidence mismatch')
+                for key, value in record.items():
+                    limit = 16384 if key == 'text' else 256
+                    if not isinstance(value, str) or not value or len(value.encode('utf-8')) > limit:
+                        raise Conflict('Power UI release private approval field exceeds its contract')
+                if record['role'] not in (('user',) if kind == 'approval' else ('assistant', 'user')):
+                    raise Conflict('Power UI release requires genuine user approval context')
+        digest = Hub._digest(approval)
+        if (not POWER_UI_RELEASE_EXECUTION_AUTHORIZATION
+                or digest != POWER_UI_RELEASE_EXECUTION_AUTHORIZATION):
+            raise Conflict('Power UI release private approval is unpinned or disabled')
+        return {'kind': 'private-user-approval-v1', 'sha256': digest}
+
     def release_power_ui_two_test_claims(self, actor, canonical_receipt):
         """Release two compiled paths only; preserve the unavailable owner's task."""
         identifier(actor)
         if actor != POWER_UI_RELEASE_ACTOR:
             raise Conflict('Power UI release is restricted to its designated maintainer')
         if (not isinstance(canonical_receipt, dict)
-                or set(canonical_receipt) != {'issue', 'record', 'receipt'}
+                or set(canonical_receipt) != {'issue', 'record', 'receipt', 'ui_issue', 'ui_record', 'ui_receipt', 'approval'}
                 or type(canonical_receipt['issue']) is not int
-                or canonical_receipt['issue'] != 476
-                or canonical_receipt['receipt'] != POWER_UI_RELEASE_RECEIPT):
+                or canonical_receipt['issue'] != 539
+                or canonical_receipt['receipt'] != POWER_UI_RELEASE_RECEIPT
+                or type(canonical_receipt['ui_issue']) is not int
+                or canonical_receipt['ui_issue'] != 476
+                or canonical_receipt['ui_receipt'] != POWER_UI_RELEASE_UI_RECEIPT):
             raise Conflict('Power UI release canonical receipt mismatch')
         canonical = canonical_receipt['record']
         if (not isinstance(canonical, dict)
                 or self._digest(canonical) != POWER_UI_RELEASE_CANONICAL_DIGEST
                 or type(canonical.get('revision')) is not int
-                or canonical['revision'] != 43
-                or canonical.get('status') != 'in-progress'
+                or canonical['revision'] != 2
+                or canonical.get('status') != 'claimed'
                 or canonical.get('owner') != POWER_UI_RELEASE_RECIPIENT
-                or not isinstance(canonical.get('scope'), list)
-                or not all(path in canonical['scope'] for path in POWER_UI_RELEASE_PATHS)):
+                or canonical.get('branch') != 'agent/codex-local/476-test-fixtures-01a12b76'
+                or canonical.get('scope') != list(POWER_UI_RELEASE_PATHS)):
             raise Conflict('Power UI release accepted recipient record mismatch')
+        ui = canonical_receipt['ui_record']
+        if (not isinstance(ui, dict) or self._digest(ui) != POWER_UI_RELEASE_UI_DIGEST
+                or type(ui.get('revision')) is not int or ui['revision'] != 45
+                or ui.get('status') != 'in-progress' or ui.get('owner') != POWER_UI_RELEASE_UI_OWNER
+                or not isinstance(ui.get('scope'), list)
+                or any(path in ui['scope'] for path in POWER_UI_RELEASE_PATHS)):
+            raise Conflict('Power UI release retained UI owner record mismatch')
         with self.connection(True) as db:
-            authorization = self._execution_authorization(
-                POWER_UI_RELEASE_EXECUTION_AUTHORIZATION, 'release_power_ui_two_test_claims')
+            authorization = self._power_ui_release_authorization(canonical_receipt['approval'])
             if not POWER_UI_RELEASE_MAINTENANCE_DIGEST:
                 raise Conflict('Power UI release requires separate live maintenance binding')
             self.row(db, 'sessions', actor)
-            self.row(db, 'sessions', POWER_UI_RELEASE_RECIPIENT)
+            registration = self.row(db, 'sessions', POWER_UI_RELEASE_RECIPIENT)
+            if self._digest(registration) != POWER_UI_RELEASE_REGISTRATION_DIGEST:
+                raise Conflict('Power UI release recipient registration mismatch')
+            destination = self.row(db, 'tasks', POWER_UI_RELEASE_DESTINATION_TASK)
+            if (self._digest(destination) != POWER_UI_RELEASE_DESTINATION_DIGEST
+                    or destination['owner'] is not None or destination['state'] != 'todo'
+                    or destination['issue'] != 'https://github.com/ronnierosal/Re-Gear/issues/539'
+                    or destination['branch'] != canonical['branch']
+                    or scope_paths(json.loads(destination['paths'])) != list(POWER_UI_RELEASE_PATHS)
+                    or json.loads(destination['dependencies']) != [POWER_UI_RELEASE_MAINTENANCE_TASK]):
+                raise Conflict('Power UI release destination assignment mismatch')
             maintenance = self.row(db, 'tasks', POWER_UI_RELEASE_MAINTENANCE_TASK)
             if (self._digest(maintenance) != POWER_UI_RELEASE_MAINTENANCE_DIGEST
                     or maintenance['owner'] != actor
                     or maintenance['state'] not in ('in_progress', 'review')
-                    or maintenance['issue'] != 'https://github.com/ronnierosal/Re-Gear/issues/537'):
+                    or maintenance['issue'] != 'https://github.com/ronnierosal/Re-Gear/issues/540'):
                 raise Conflict('Power UI release maintenance assignment mismatch')
             before = self.row(db, 'tasks', POWER_UI_RELEASE_TASK)
             if (self._digest(before) != POWER_UI_RELEASE_PREIMAGE_DIGEST
@@ -673,6 +744,9 @@ class Hub:
             detail = {'kind': 'bounded-power-ui-two-test-claim-release',
                       'authorization': authorization, 'receipt': POWER_UI_RELEASE_RECEIPT,
                       'canonical_digest': POWER_UI_RELEASE_CANONICAL_DIGEST,
+                      'ui_digest': POWER_UI_RELEASE_UI_DIGEST, 'ui_receipt': POWER_UI_RELEASE_UI_RECEIPT,
+                      'registration_digest': POWER_UI_RELEASE_REGISTRATION_DIGEST,
+                      'destination_digest': POWER_UI_RELEASE_DESTINATION_DIGEST,
                       'maintenance_digest': POWER_UI_RELEASE_MAINTENANCE_DIGEST,
                       'original_owner': before['owner'], 'recipient': POWER_UI_RELEASE_RECIPIENT,
                       'released_paths': list(POWER_UI_RELEASE_PATHS),
@@ -1032,8 +1106,15 @@ def main(argv=None):
                 receipt_bytes = receipt_file.read(65537)
             if len(receipt_bytes) > 65536:
                 raise ValueError('Power UI release receipt exceeds its bounded input limit')
+            def unique_object(pairs):
+                result = {}
+                for key, value in pairs:
+                    if key in result:
+                        raise ValueError('Power UI release receipt contains duplicate JSON keys')
+                    result[key] = value
+                return result
             result = hub.release_power_ui_two_test_claims(
-                args.session, json.loads(receipt_bytes.decode('utf-8')))
+                args.session, json.loads(receipt_bytes.decode('utf-8'), object_pairs_hook=unique_object))
         elif args.command == 'register': result = hub.register(args.session, args.agent, args.label, args.worktree)
         elif args.command == 'inbox': result = hub.inbox(args.session)
         elif args.command == 'export': result = hub.export_html(args.output)
