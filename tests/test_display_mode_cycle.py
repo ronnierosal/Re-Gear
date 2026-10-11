@@ -74,3 +74,21 @@ class ControllerTests(unittest.TestCase):
         c,e,o=self.start();c.dispatch(e,10)
         with self.assertRaises(ValueError):c.readback(replace(e,available=False),Receipt('request',e.binding,o.target,11,2),11)
         self.assertEqual(c.operation.state,'recovery_required')
+    def test_external_change_cannot_rearm_through_new_receipt(self):
+        c,e,o=self.start();c.dispatch(e,10);after=replace(e,current=o.target,observed_at=11,sequence=2)
+        c.readback(after,Receipt('request',e.binding,o.target,11,2),11)
+        with self.assertRaises(ValueError):c.rollback(replace(after,current=e.modes[1],sequence=3),11)
+        later=replace(after,observed_at=12,sequence=4)
+        with self.assertRaises(ValueError):c.readback(later,Receipt('request',e.binding,o.target,12,4),12)
+        with self.assertRaises(ValueError):c.rollback(later,12)
+
+    def test_external_readback_and_provider_loss_revoke_receipt_recovery(self):
+        for changes in ({'current':evidence().modes[1]},{'available':False},{'binding':Binding('output','new-session','provider',1)}):
+            c,e,o=self.start();c.dispatch(e,10)
+            with self.assertRaises(ValueError):c.readback(replace(e,observed_at=11,sequence=2,**changes),Receipt('request',e.binding,o.target,11,2),11)
+            later=replace(e,current=o.target,observed_at=12,sequence=3)
+            with self.assertRaises(ValueError):c.readback(later,Receipt('request',e.binding,o.target,12,3),12)
+    def test_ambiguous_submission_can_only_resolve_by_owned_committed_readback(self):
+        c,e,o=self.start();c.dispatch(e,10);c.uncertain()
+        after=replace(e,current=o.target,observed_at=11,sequence=2)
+        self.assertEqual(c.readback(after,Receipt('request',e.binding,o.target,11,2),11).state,'committed')

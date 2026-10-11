@@ -13,6 +13,7 @@ class Operation:
     observed_at: float
     state: str = 'planned'
     restoring: bool = False
+    readback_allowed: bool = True
 
 
 @dataclass(frozen=True)
@@ -77,10 +78,18 @@ class CycleController:
     def readback(self, evidence: Observation, receipt: Receipt, now: float) -> Operation:
         if self.operation is None or self.operation.state not in ('pending', 'rollback_pending', 'recovery_required'):
             raise ValueError('operation.no_readback')
+        if not self.operation.readback_allowed:
+            raise ValueError('operation.ownership_revoked')
         rollback = self.operation.restoring
         expected = self.operation.previous if rollback else self.operation.target
         try:
             self._binding(evidence, now)
+            if evidence.current not in (self.operation.previous, self.operation.target):
+                raise ValueError('readback.external_change')
+        except ValueError:
+            self._operation = replace(self.operation, state='recovery_required', readback_allowed=False)
+            raise
+        try:
             if not isinstance(receipt, Receipt) or receipt.request != self.operation.request or receipt.binding != self.operation.binding or receipt.committed != expected or evidence.current != expected or not number(receipt.observed_at) or receipt.observed_at != evidence.observed_at or receipt.observed_at < self.operation.observed_at or type(receipt.sequence) is not int or receipt.sequence != evidence.sequence or receipt.sequence <= self.operation.sequence:
                 raise ValueError('readback.unverified')
         except ValueError:
@@ -97,7 +106,7 @@ class CycleController:
             if evidence.current != self.operation.target:
                 raise ValueError('rollback.external_change')
         except ValueError:
-            self._set('recovery_required')
+            self._operation = replace(self.operation, state='recovery_required', readback_allowed=False)
             raise
         if evidence.rollback_qualified is not True:
             raise ValueError('rollback.unqualified')
