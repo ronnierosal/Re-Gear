@@ -98,16 +98,16 @@ test("supplied observations never render fabricated summary identity or demo cla
 
 test("nested Auto TDP follows changed and missing readings without stale Off copy", async () => {
   const app = await fixture();
-  const props = {tiles:{quick:[auto("Running", "Controller running")]}};
+  const props = {initialTab:"performance",tiles:{performance:[auto("Running", "Controller running")]}};
   let tree = app.render(props);
-  nodes(tree).find(node => node.props?.["data-ec-control"] === "auto-settings").props.onClick();
+  nodes(tree).find(node => node.props?.["data-ec-control"] === "auto").props.onClick();
   tree = app.render(props);
   assert.match(text(tree), /Controller running/);
   assert.doesNotMatch(text(tree), /off and not configured|Sample data/);
-  tree = app.render({tiles:{quick:[auto("Stopping…", "Stop pending")]}});
+  tree = app.render({tiles:{performance:[auto("Stopping…", "Stop pending")]}});
   assert.match(text(tree), /Stopping….*Stop pending/);
   assert.doesNotMatch(text(tree), /Controller running/);
-  tree = app.render({tiles:{quick:[]}});
+  tree = app.render({tiles:{performance:[]}});
   assert.match(text(tree), /Status unavailable.*Unknown/);
   assert.doesNotMatch(text(tree), /Stopping|Controller running/);
   assert.ok(nodes(tree).find(node => node.props?.["data-ec-control"] === "nested-back"));
@@ -121,18 +121,18 @@ test("empty supplied tabs remain unavailable instead of falling back to sample v
 
 test("Back from a removed reading focuses the active tab when no controls remain", async () => {
   const app = await fixture();
-  let tree=app.render({tiles:{quick:[auto("Running", "Controller running")]}});
-  nodes(tree).find(node=>node.props?.["data-ec-control"] === "auto-settings").props.onClick();
-  tree=app.render({tiles:{quick:[]}});
+  let tree=app.render({initialTab:"performance",tiles:{performance:[auto("Running", "Controller running")]}});
+  nodes(tree).find(node=>node.props?.["data-ec-control"] === "auto").props.onClick();
+  tree=app.render({initialTab:"performance",tiles:{performance:[]}});
   nodes(tree).find(node=>node.props?.["data-ec-control"] === "nested-back").props.onClick();
-  tree=app.render({tiles:{quick:[]}});
+  tree=app.render({initialTab:"performance",tiles:{performance:[]}});
   let focused;
   nodes(tree).find(node=>node.props && "data-ec-panel" in node.props).props.ref.current={
     querySelectorAll:()=>[],
     querySelector:selector=>({focus(){focused=selector;}}),
   };
   app.restoreFocus();
-  assert.equal(focused, '[data-ec-tab="quick"]');
+  assert.equal(focused, '[data-ec-tab="performance"]');
 });
 
 test("unconnected preview tabs retain explicit sample labeling", async () => {
@@ -154,24 +154,24 @@ test("supplied disconnect readiness retains no clearance without claiming its so
 test("application detail controls receive updated tiles and preserve pending and error results", async () => {
   const app=await fixture();
   let calls=0;
-  const props={tiles:{quick:[auto("Ready", "Configure")]},renderDetail:(tab,tile)=>{
+  const props={initialTab:"performance",tiles:{performance:[auto("Ready", "Configure")]},renderDetail:(tab,tile)=>{
     assert.equal(tab,"performance");
     return {type:"button",props:{disabled:tile.value === "Pending",onClick(){calls++;},children:[`Action: ${tile.value}`]}};
   }};
   let tree=app.render(props);
   assert.equal(calls,0);
-  nodes(tree).find(node=>node.props?.["data-ec-control"] === "auto-settings").props.onClick();
+  nodes(tree).find(node=>node.props?.["data-ec-control"] === "auto").props.onClick();
   tree=app.render(props);
   assert.match(text(tree),/Status and controls.*Action: Ready/);
   assert.doesNotMatch(text(tree),/Settings and actions/);
   assert.equal(nodes(tree).some(node=>node.type==='h2'),false);
-  assert.equal(nodes(tree).find(node=>node.props?.className==='rg-expanded-detail-page').props['aria-label'],'Auto TDP');
+  assert.equal(nodes(tree).find(node=>node.props?.className==='rg-expanded-detail-page').props['aria-label'],'Power settings');
   assert.doesNotMatch(text(tree),/No operation is available from this view/);
   nodes(tree).find(node=>node.props?.children?.[0] === "Action: Ready").props.onClick();
   assert.equal(calls,1);
-  tree=app.render({...props,tiles:{quick:[auto("Pending", "Waiting")]}});
+  tree=app.render({...props,tiles:{performance:[auto("Pending", "Waiting")]}});
   assert.equal(nodes(tree).find(node=>node.props?.children?.[0] === "Action: Pending").props.disabled,true);
-  tree=app.render({...props,tiles:{quick:[auto("Failed", "Try again")]}});
+  tree=app.render({...props,tiles:{performance:[auto("Failed", "Try again")]}});
   assert.match(text(tree),/Action: Failed/);
   nodes(tree).find(node=>node.props?.["data-ec-control"] === "nested-back").props.onClick();
   app.render(props);
@@ -182,20 +182,20 @@ test("sample and removed tiles never invoke application control content", async 
   const app=await fixture();
   let calls=0;
   const renderDetail=()=>{calls++;return "Control";};
-  let tree=app.render({renderDetail});
-  nodes(tree).find(node=>node.props?.["data-ec-control"] === "auto-settings").props.onClick();
-  app.render({renderDetail});
+  let tree=app.render({initialTab:"performance",renderDetail});
+  nodes(tree).find(node=>node.props?.["data-ec-control"] === "auto").props.onClick();
+  app.render({initialTab:"performance",renderDetail});
   assert.equal(calls,0);
-  tree=app.render({renderDetail,tiles:{quick:[]}});
+  tree=app.render({renderDetail,tiles:{performance:[]}});
   assert.equal(calls,0);
   assert.doesNotMatch(text(tree),/Settings and actions/);
 });
 
 test("null detail content keeps unavailable reason readable", async () => {
   const app=await fixture();
-  const props={tiles:{quick:[auto("Unknown", "Provider unavailable")]},renderDetail:()=>null};
+  const props={initialTab:"performance",tiles:{performance:[auto("Unknown", "Provider unavailable")]},renderDetail:()=>null};
   let tree=app.render(props);
-  nodes(tree).find(node=>node.props?.["data-ec-control"] === "auto-settings").props.onClick();
+  nodes(tree).find(node=>node.props?.["data-ec-control"] === "auto").props.onClick();
   tree=app.render(props);
   assert.match(text(tree),/Provider unavailable.*No operation is available/);
 });
@@ -211,9 +211,9 @@ test("embedded editing keys are left to the input instead of switching tabs", as
 
 test("a tabindex-bearing detail wrapper focuses its editor rather than itself", async () => {
   const app=await fixture();
-  const props={tiles:{quick:[auto("Ready", "Configure")]},renderDetail:()=>"Editor"};
+  const props={initialTab:"performance",tiles:{performance:[auto("Ready", "Configure")]},renderDetail:()=>"Editor"};
   let tree=app.render(props);
-  nodes(tree).find(node=>node.props?.["data-ec-control"] === "auto-settings").props.onClick();
+  nodes(tree).find(node=>node.props?.["data-ec-control"] === "auto").props.onClick();
   tree=app.render(props);
   let focused;
   const editor={focus(){focused="editor";},scrollIntoView(){}};
@@ -226,9 +226,9 @@ test("a tabindex-bearing detail wrapper focuses its editor rather than itself", 
 test("withdrawn focused controls recover Back without stealing retained dialog focus", async () => {
   for (const removed of [false,true]) {
     const app=await fixture();
-    const props={tiles:{quick:[auto("Ready","Configure")]},renderDetail:()=>"Editor"};
+    const props={initialTab:"performance",tiles:{performance:[auto("Ready","Configure")]},renderDetail:()=>"Editor"};
     let tree=app.render(props);
-    nodes(tree).find(node=>node.props?.["data-ec-control"] === "auto-settings").props.onClick();
+    nodes(tree).find(node=>node.props?.["data-ec-control"] === "auto").props.onClick();
     tree=app.render(props);
     let panel=nodes(tree).find(node=>node.props && "data-ec-panel" in node.props);
     panel.props.onFocus({target:{closest:()=>({dataset:{ecControl:"nested-content"}})}});
@@ -241,7 +241,7 @@ test("withdrawn focused controls recover Back without stealing retained dialog f
     tree=app.render(props);
     app.recoverWithdrawnFocus();
     assert.equal(calls,0);
-    tree=app.render(removed?{...props,tiles:{quick:[]}}:{...props,renderDetail:()=>null});
+    tree=app.render(removed?{...props,tiles:{performance:[]}}:{...props,renderDetail:()=>null});
     // If native focus has already moved to a surviving control, keep it there.
     doc.activeElement={isConnected:true};
     app.recoverWithdrawnFocus();
@@ -263,10 +263,10 @@ test("compact cards present icon and label before the value and secondary detail
 });
 
 test("Quick Access mounts both unavailable utility rails and details hide them",async()=>{
- const app=await fixture(); const props={tiles:{quick:[auto('Unknown','No observation')]}};
+ const app=await fixture(); const props={tiles:{quick:[{id:'manual',title:'Manual TDP',value:'Unknown',detail:'No observation'}]}};
  let tree=app.render(props);
  assert.deepEqual(nodes(tree).filter(node=>node.type==='utility-rail').map(node=>node.props.side),['left','right']);
- nodes(tree).find(node=>node.props?.['data-ec-control']==='auto-settings').props.onClick();tree=app.render(props);
+ nodes(tree).find(node=>node.props?.['data-ec-control']==='manual').props.onClick();tree=app.render(props);
  assert.equal(nodes(tree).filter(node=>node.type==='utility-rail').length,0);
 });
 
@@ -375,7 +375,7 @@ test('other tabs ignore Y tap and persist reorder without replacing membership',
  let tree=app.render(props);yGesture(app,tree);tree=app.render(props);
  assert.ok(!nodes(tree).some(node=>String(node.props?.['data-ec-control']).startsWith('choice:')));
  yGesture(app,tree,550);tree=app.render(props);card(tree,'profile').props.onGamepadDirection(nativeEvent(12));tree=app.render(props);card(tree,'profile').props.onClick();tree=app.render(props);
- assert.deepEqual(storage.writes.at(-1).order.performance,['fps','profile','manual','display','refresh']);
+ assert.deepEqual(storage.writes.at(-1).order.performance,['fps','profile','manual','auto','display','refresh']);
 });
 test('Y edits focused unavailable right slot without dispatch; X is unused',async()=>{
  const app=await fixture(),storage=storageFixture();let calls=0;

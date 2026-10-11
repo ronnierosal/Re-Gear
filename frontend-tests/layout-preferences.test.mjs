@@ -53,9 +53,9 @@ test('padding never duplicates existing blank identities and withdrawn origins s
  assert.equal(view[0].id,'custom:performance:manual');assert.equal(view[0].value,'20 W');
 });
 
-test('default Auto removal preserves explicit aliases, Performance order, storage and reset',()=>{
+test('default Quick Auto removal and Performance settings preserve aliases, order, storage and reset',()=>{
  const tile=id=>({id,title:id,value:'Off',detail:'Current reading'});const source={quick:[tile('manual'),tile('auto')],performance:[tile('manual'),tile('auto')]};
- const defaults=api.projectLayout(source,api.normalizeLayout(null));assert.ok(!defaults.view.quick.some(x=>x.id==='auto'));assert.ok(!defaults.view.performance.some(x=>x.id==='auto'));assert.ok(defaults.catalog.some(x=>x.key==='performance:auto'));
+ const defaults=api.projectLayout(source,api.normalizeLayout(null));assert.ok(!defaults.view.quick.some(x=>x.id==='auto'));assert.equal(defaults.view.performance.filter(x=>x.id==='auto').length,1);assert.ok(defaults.catalog.some(x=>x.key==='performance:auto'));
  for(const key of ['quick:auto','performance:auto']){const prefs=api.normalizeLayout({quick:[key,'empty:user'],order:{performance:['auto','manual']}});const before=JSON.stringify(prefs);const view=api.projectLayout(source,prefs);assert.equal(view.resolve('quick',view.view.quick[0].id).key,key);assert.equal(view.view.quick[1].layoutKey,'empty:user');assert.deepEqual(view.view.performance.map(x=>x.id),['auto','manual']);assert.equal(JSON.stringify(prefs),before);}
- const reset=api.projectLayout(source,api.normalizeLayout(null));assert.ok(!reset.view.performance.some(x=>x.id==='auto'));
+ const reset=api.projectLayout(source,api.normalizeLayout(null));assert.equal(reset.view.performance.filter(x=>x.id==='auto').length,1);assert.ok(!reset.view.quick.some(x=>x.id==='auto'));
 });
