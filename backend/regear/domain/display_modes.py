@@ -62,6 +62,7 @@ class Observation:
     lifecycle_idle: bool | None
     admitted: bool | None
     rollback_qualified: bool | None = None
+    owned_request: str | None = None
 
     def validate(self, now: float, max_age: float = 2) -> None:
         if not isinstance(self.binding, Binding) or not number(now) or not number(self.observed_at) or not number(max_age) or not 0 <= now - self.observed_at <= max_age:

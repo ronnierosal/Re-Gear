@@ -1,7 +1,8 @@
 """Unbound injected observation/receipt port, not a live provider or effect API.
 
 M1 needs separately reviewed installed-provider identities, exact enumeration,
-coherent committed readback, ownership/revocation and qualified revert semantics.
+coherent committed readback, a fresh exact owned_request issuer, revocation and
+qualified revert semantics. A matching mode or accepted command cannot prove ownership.
 No setters are exposed in M0; Operation is a pure plan, not dispatch authority.
 """
 from typing import Protocol

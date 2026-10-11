@@ -103,8 +103,8 @@ class CycleController:
             raise ValueError('rollback.no_owned_committed_receipt')
         try:
             self._binding(evidence, now)
-            if evidence.current != self.operation.target:
-                raise ValueError('rollback.external_change')
+            if evidence.current != self.operation.target or evidence.owned_request != self.operation.request:
+                raise ValueError('rollback.external_change_or_ownership_unknown')
         except ValueError:
             self._operation = replace(self.operation, state='recovery_required', readback_allowed=False)
             raise

@@ -19,11 +19,11 @@ class ControllerTests(unittest.TestCase):
     def test_acceptance_is_not_commit_and_verified_readback(self):
         c,e,o=self.start();c.dispatch(e,10);self.assertEqual(c.operation.state,'pending')
         r=Receipt('request',e.binding,o.target,11,2)
-        self.assertEqual(c.readback(replace(e,current=o.target,observed_at=11,sequence=2),r,11).state,'committed')
+        self.assertEqual(c.readback(replace(e,current=o.target,observed_at=11,sequence=2,owned_request='request'),r,11).state,'committed')
     def test_wrong_request_or_readback_is_recovery(self):
         for request in ['wrong',None]:
             c,e,o=self.start();c.dispatch(e,10)
-            with self.assertRaises(ValueError):c.readback(replace(e,current=o.target,observed_at=11,sequence=2),Receipt(request,e.binding,o.target,11,2),11)
+            with self.assertRaises(ValueError):c.readback(replace(e,current=o.target,observed_at=11,sequence=2,owned_request='request'),Receipt(request,e.binding,o.target,11,2),11)
             self.assertEqual(c.operation.state,'recovery_required')
     def test_old_receipt_and_external_change(self):
         c,e,o=self.start();c.dispatch(e,10)
@@ -34,14 +34,14 @@ class ControllerTests(unittest.TestCase):
         self.assertEqual(c.operation.state,'recovery_required')
         with self.assertRaises(ValueError):c.rollback(replace(e,current=o.target),10)
     def test_verified_rollback_requires_qualified_fresh_ownership(self):
-        c,e,o=self.start();c.dispatch(e,10);after=replace(e,current=o.target,observed_at=11,sequence=2)
+        c,e,o=self.start();c.dispatch(e,10);after=replace(e,current=o.target,observed_at=11,sequence=2,owned_request='request')
         c.readback(after,Receipt('request',e.binding,o.target,11,2),11)
         with self.assertRaises(ValueError):c.rollback(replace(after,rollback_qualified=False),11)
         self.assertEqual(c.rollback(after,11).state,'rollback_pending')
         back=replace(e,observed_at=12,sequence=3)
         self.assertEqual(c.readback(back,Receipt('request',e.binding,o.previous,12,3),12).state,'rolled_back')
     def test_blind_restore_refused_after_external_change(self):
-        c,e,o=self.start();c.dispatch(e,10);after=replace(e,current=o.target,observed_at=11,sequence=2)
+        c,e,o=self.start();c.dispatch(e,10);after=replace(e,current=o.target,observed_at=11,sequence=2,owned_request='request')
         c.readback(after,Receipt('request',e.binding,o.target,11,2),11)
         with self.assertRaises(ValueError):c.rollback(replace(after,current=e.modes[1]),11)
     def test_cancel_before_and_after_dispatch(self):
@@ -53,13 +53,13 @@ class ControllerTests(unittest.TestCase):
         with self.assertRaises(ValueError):c.begin(e,'resolution','request',10)
 
     def test_ambiguous_rollback_retains_restore_intent(self):
-        c,e,o=self.start();c.dispatch(e,10);after=replace(e,current=o.target,observed_at=11,sequence=2)
+        c,e,o=self.start();c.dispatch(e,10);after=replace(e,current=o.target,observed_at=11,sequence=2,owned_request='request')
         c.readback(after,Receipt('request',e.binding,o.target,11,2),11);c.rollback(after,11);c.uncertain()
         with self.assertRaises(ValueError):c.readback(replace(after,observed_at=12,sequence=3),Receipt('request',e.binding,o.target,12,3),12)
         back=replace(e,observed_at=12,sequence=3)
         self.assertEqual(c.readback(back,Receipt('request',e.binding,o.previous,12,3),12).state,'rolled_back')
     def test_rollback_loss_cannot_be_rearmed_by_external_aba(self):
-        c,e,o=self.start();c.dispatch(e,10);after=replace(e,current=o.target,observed_at=11,sequence=2)
+        c,e,o=self.start();c.dispatch(e,10);after=replace(e,current=o.target,observed_at=11,sequence=2,owned_request='request')
         c.readback(after,Receipt('request',e.binding,o.target,11,2),11)
         with self.assertRaises(ValueError):c.rollback(replace(after,current=e.modes[1]),11)
         with self.assertRaises(ValueError):c.rollback(after,11)
@@ -75,7 +75,7 @@ class ControllerTests(unittest.TestCase):
         with self.assertRaises(ValueError):c.readback(replace(e,available=False),Receipt('request',e.binding,o.target,11,2),11)
         self.assertEqual(c.operation.state,'recovery_required')
     def test_external_change_cannot_rearm_through_new_receipt(self):
-        c,e,o=self.start();c.dispatch(e,10);after=replace(e,current=o.target,observed_at=11,sequence=2)
+        c,e,o=self.start();c.dispatch(e,10);after=replace(e,current=o.target,observed_at=11,sequence=2,owned_request='request')
         c.readback(after,Receipt('request',e.binding,o.target,11,2),11)
         with self.assertRaises(ValueError):c.rollback(replace(after,current=e.modes[1],sequence=3),11)
         later=replace(after,observed_at=12,sequence=4)
@@ -90,5 +90,16 @@ class ControllerTests(unittest.TestCase):
             with self.assertRaises(ValueError):c.readback(later,Receipt('request',e.binding,o.target,12,3),12)
     def test_ambiguous_submission_can_only_resolve_by_owned_committed_readback(self):
         c,e,o=self.start();c.dispatch(e,10);c.uncertain()
-        after=replace(e,current=o.target,observed_at=11,sequence=2)
+        after=replace(e,current=o.target,observed_at=11,sequence=2,owned_request='request')
         self.assertEqual(c.readback(after,Receipt('request',e.binding,o.target,11,2),11).state,'committed')
+
+    def test_rollback_requires_fresh_exact_request_ownership(self):
+        for owner in (None,'external-request'):
+            c,e,o=self.start();c.dispatch(e,10)
+            after=replace(e,current=o.target,observed_at=11,sequence=2)
+            c.readback(after,Receipt('request',e.binding,o.target,11,2),11)
+            with self.assertRaises(ValueError):c.rollback(replace(after,sequence=3,owned_request=owner),11)
+        c,e,o=self.start();c.dispatch(e,10)
+        after=replace(e,current=o.target,observed_at=11,sequence=2,owned_request='request')
+        c.readback(after,Receipt('request',e.binding,o.target,11,2),11)
+        self.assertEqual(c.rollback(replace(after,sequence=3),11).state,'rollback_pending')
