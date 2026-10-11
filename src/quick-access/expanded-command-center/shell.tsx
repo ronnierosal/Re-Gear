@@ -160,20 +160,17 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
   const supplied = tiles?.[tab];
   // A tab with real readings must stop describing itself as sample data.
   const synthetic = supplied === undefined;
-  const items = projection?.view[tab] ?? (supplied ?? sampleTiles[tab]).filter(item => controlForKey(`${tab}:${item.id}`)?.id !== 'auto-tdp');
-  // Keep configuration separate from the cycle, using the current source reading.
-  const autoTile=(rawSource.performance??[]).find(item=>item.id==='auto')??(rawSource.quick??[]).find(item=>item.id==='auto');
-  const autoSettingsId='auto-settings';
-  const autoSettingsOrigin:TileOrigin|null=autoTile?{key:'performance:auto',tab:'performance',tile:autoTile}:null;
+  const items = (projection?.view[tab] ?? (supplied ?? sampleTiles[tab]).filter(item => tab !== 'quick' || controlForKey(`${tab}:${item.id}`)?.id !== 'auto-tdp'))
+    .map(item => tab === 'performance' && (projection?.resolve(tab,item.id)?.tile.id ?? item.id) === 'auto' ? {...item,title:'Power settings'} : item);
   const originFor=(tile:Tile):TileOrigin=>projection?.resolve(tab,tile.id)??{key:`${tab}:${tile.id}`,tab,tile};
   // Retain the destination, never a copy of a reading that can become stale.
-  const nested = nestedId === null ? null : (nestedId===autoSettingsId?autoTile:items.find(item => item.id === nestedId)) ?? {
+  const nested = nestedId === null ? null : items.find(item => item.id === nestedId) ?? {
     id: nestedId, title: "Status unavailable", value: "Unknown",
     detail: "This reading is no longer available. Return to the menu for current status.",
   };
-  const detailTile = nestedId===autoSettingsId ? (tiles?autoTile:undefined) : !synthetic && nestedId !== null ? items.find(item => item.id === nestedId) : undefined;
+  const detailTile = !synthetic && nestedId !== null ? items.find(item => item.id === nestedId) : undefined;
   const dockControl = native && nestedId === "disconnect" && disconnectControl != null;
-  const detailOrigin=detailTile?(nestedId===autoSettingsId?autoSettingsOrigin:originFor(detailTile)):null;
+  const detailOrigin=detailTile?originFor(detailTile):null;
   const resetDetail=detailOrigin?.key==='settings:reset-layout'&&savedLayout?<div><p>Restore the default Quick Access buttons, right rail and tab order?</p>{layoutError&&<p role="alert">{layoutError}</p>}<Button type="button" onClick={()=>{if(commitLayout(normalizeLayout(null),'reset-layout'))setNested(null);}}>Reset layout</Button></div>:null;
   const detailContent = dockControl ? disconnectControl : resetDetail ?? ( detailOrigin?.tab==="settings"&&detailOrigin.tile.id==="shortcut"?settings:detailOrigin ? renderDetail?.(detailOrigin.tab, detailOrigin.tile) : null);
   const hasDetail = detailContent != null && detailContent !== false;
@@ -368,7 +365,7 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
     const target = event.target as HTMLElement;
     const tabTarget = target.closest<HTMLElement>("[data-ec-tab]");
     const direction = event.key.slice(5).toLowerCase() as "left" | "right" | "up" | "down";
-    if ((nested || target.closest('.rg-tdp-mode-status')) && target.matches('[data-rg-readable]') && (direction === "up" || direction === "down") && typeof scrollReadable === "function" && scrollReadable(target, direction)) {
+    if (nested && target.matches('[data-rg-readable]') && (direction === "up" || direction === "down") && typeof scrollReadable === "function" && scrollReadable(target, direction)) {
       event.preventDefault(); event.stopPropagation(); return;
     }
     if (tabTarget) {
@@ -390,11 +387,7 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
       }
       else {
         const next = moveInGrid(cells, target.dataset.ecControl, direction);
-        if(!production && editMode==='normal' && (tab==='quick'||tab==='performance') && direction==='down' && next===target.dataset.ecControl){
-          const reading=content.current?.querySelector<HTMLElement>('.rg-tdp-mode-status [data-rg-readable]');
-          if(reading){reading.focus({preventScroll:true});if(typeof revealReadable==='function')revealReadable(reading);}
-          else focus(autoTile?autoSettingsId:next);
-        }else focus(next);
+        focus(next);
       }
     } else {
       event.preventDefault(); event.stopPropagation();
@@ -507,8 +500,6 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
               <span className="rg-expanded-anchor" tabIndex={-1} aria-label={`${item.title} section`} />
               {renderTile(item)}</section> : renderTile(item))}
           </Container>
-          {!production && tdpCycle && items.some(item => { const origin = originFor(item); return (origin.tab === "quick" || origin.tab === "performance") && origin.tile.id === "manual"; }) && <div className="rg-tdp-mode-status"><Reading label="TDP mode status"><p role="status" data-tdp-cycle-status>{tdpCycle.detail}</p></Reading></div>}
-          {!production && autoTile && (tab==='quick'||tab==='performance') && editMode==='normal' && <Button type="button" className="rg-expanded-back" data-ec-control={autoSettingsId} onClick={()=>{launcher.current=autoSettingsId;setNested(autoSettingsId);}}>Auto settings</Button>}
           {synthetic ? <aside className="rg-expanded-info" aria-label="Sample status summary">
             <CommandCenterIcon id="status-unknown" size={22}/>
             <span><strong>{tab === "quick" || tab === "egpu" ? "eGPU connected · External controller active" : tab === "performance" ? "Performance preferences" : tab === "controllers" ? "External controller · Player 1" : "Make Re-Gear yours"}</strong>

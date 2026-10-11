@@ -14,7 +14,7 @@ function renderControls(controller) {
   const names=["React","useState","useEffect","autoTdpActivity","autoTdpMessage","validAutoTdpRange","tdpMessage","ButtonItem","DropdownItem","PanelSectionRow","ToggleField","TdpBenchmarkControls","AutoTdpPreferencesControls","ReadableBlock"];
   const reading=({label,children})=>jsx("Field",{focusable:true,"aria-label":label},children);
   const component=new Function(...names,code+";return AutoTdpControls;")({createElement:jsx,Fragment:"fragment"},useState,()=>{},autoTdpActivity,autoTdpMessage,validAutoTdpRange,tdpMessage,...names.slice(7,-1),reading);
-  return ()=>{cursor=0;return component({controller});};
+  return (advanced=true)=>{cursor=0;return component({controller,advanced});};
 }
 const flatten=node=>[node,...(node?.props?.children??[]).flat(Infinity).flatMap(child=>typeof child==="object"&&child!==null?flatten(child):[child])];
 const button=(tree,label)=>flatten(tree).find(node=>node?.type==="ButtonItem"&&node.props.children.join("")===label);
@@ -25,7 +25,7 @@ test("module has no collector and forwards the same shared handle",()=>{
   const source=readFileSync(new URL("../src/quick-access/modules/auto-tdp.tsx",import.meta.url),"utf8");
   const code=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2020,jsx:ts.JsxEmit.React}}).outputText.replace(/^import[^;]*;/gm,"").replace(/export /g,"");
   const module=new Function("React","TdpControls",code+";return AutoTdpModule;")({createElement:jsx},"TdpControls");
-  const controller=base(READY);const tree=module({controller});assert.equal(tree.props.controller,controller);assert.equal(tree.props.expanded,true);
+  const controller=base(READY);const tree=module({controller});assert.equal(tree.props.controller,controller);assert.equal(tree.props.expanded,true);assert.equal(tree.props.basic,true);
 });
 test("Start requires explicit range choices, and calls the shared guarded action",()=>{
   const calls=[];const controller={...base(READY),start:(...args)=>calls.push(args)};
@@ -53,4 +53,15 @@ test("recovery prevents Start; preference loading only edits form and benchmark 
   const preferences=flatten(tree).find(n=>n?.type==="AutoTdpPreferencesControls");assert.equal(preferences.props.canSave,false);
   preferences.props.onLoad({target_fps:40,minimum_watts:7,maximum_watts:30});assert.equal(starts,0);
   assert.match(flatten(tree).filter(n=>typeof n==="string").join(" "),/Stop keeps the current limit\. Restore returns to saved settings/);
+});
+
+test("Basic Auto view keeps Stop and unknown/running/stopping/recovery guidance visible without tuning",()=>{
+ for(const auto of [null,RUNNING,STOPPING,RUNNING_READBACK_INVALID,CLOCK_INVALID_TERMINAL]){
+  let stops=0;const controller={...base(auto),busy:true,stop:()=>stops++};const render=renderControls(controller);const tree=render(false);
+  assert.equal(dropdown(tree,"Target frame rate"),undefined);assert.equal(dropdown(tree,"Minimum power"),undefined);assert.equal(button(tree,"Start Auto TDP"),undefined);
+  const stop=button(tree,"Stop Auto TDP");assert.ok(stop);assert.equal(stop.props.disabled,auto?.stopping===true);
+  if(!stop.props.disabled){stop.props.onClick();assert.equal(stops,1);}
+  const words=flatten(tree).filter(n=>typeof n==="string").join(" ");assert.match(words,/Auto TDP:/);assert.ok(words.includes(autoTdpMessage(auto,tdpMessage(controller.manual))));
+  assert.equal(flatten(tree).some(n=>n?.props?.label==="Show saved mode preferences"),false);
+ }
 });

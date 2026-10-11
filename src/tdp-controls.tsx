@@ -1,19 +1,21 @@
 import { ReadableBlock } from "./quick-access/readable-block";
 import { ButtonItem, DropdownItem, PanelSection, PanelSectionRow, ToggleField } from "@decky/ui";
 import { useEffect, useState, useRef } from "react";
-import { tdpControls, tdpMessage, tdpResultMessage, manualPresetOptions, type ManualPresetIntent, createCustomTdpDraft, validCustomTdpDraft, retireCustomTdpDraft, type CustomTdpDraft } from "./tdp-ui";
+import { tdpControls, tdpMessage, tdpResultMessage, tdpCyclePresentation, manualPresetOptions, type ManualPresetIntent, createCustomTdpDraft, validCustomTdpDraft, retireCustomTdpDraft, type CustomTdpDraft } from "./tdp-ui";
 import { AutoTdpControls } from "./auto-tdp-controls";
 import { usePerformance, type PerformanceHandle } from "./quick-access/use-performance";
 
-export function TdpControls({ visible, controller, expanded = false }: { visible: boolean; controller?: PerformanceHandle; expanded?: boolean }) {
-  return controller ? <SharedTdpControls visible={visible} controller={controller} initiallyExpanded={expanded} />
+export function TdpControls({ visible, controller, expanded = false, basic = false }: { visible: boolean; controller?: PerformanceHandle; expanded?: boolean; basic?: boolean }) {
+  return controller ? <SharedTdpControls visible={visible} controller={controller} initiallyExpanded={expanded} basic={basic} />
     : <StandaloneTdpControls visible={visible} />;
 }
 function StandaloneTdpControls({ visible }: { visible: boolean }) {
   const controller = usePerformance(visible);
   return <SharedTdpControls visible={visible} controller={controller} />;
 }
-function SharedTdpControls({ visible, controller, initiallyExpanded = false }: { visible: boolean; controller: PerformanceHandle; initiallyExpanded?: boolean }) {
+function SharedTdpControls({ visible, controller, initiallyExpanded = false, basic = false }: { visible: boolean; controller: PerformanceHandle; initiallyExpanded?: boolean; basic?: boolean }) {
+  const [advanced, setAdvanced] = useState(false);
+  const showAdvanced = !basic || advanced;
   const [expanded, setExpanded] = useState(initiallyExpanded);
   const [autoExpanded, setAutoExpanded] = useState(initiallyExpanded);
   const [selected, setSelected] = useState<number | null>(null);
@@ -53,12 +55,15 @@ function SharedTdpControls({ visible, controller, initiallyExpanded = false }: {
   return <PanelSection title="Handheld power">
     {!initiallyExpanded && <PanelSectionRow><ButtonItem layout="below" onClick={() => { closeCustom(); setExpanded(value => !value); }}>{expanded ? "Hide power controls" : "Show power controls"}</ButtonItem></PanelSectionRow>}
     {expanded && <>
+      {basic && <ReadableBlock label="Power mode"><PanelSectionRow>{tdpCyclePresentation(controller).value}</PanelSectionRow><PanelSectionRow>{tdpCyclePresentation(controller).detail}</PanelSectionRow></ReadableBlock>}
       <ReadableBlock label="Power status"><PanelSectionRow>{busy ? "Checking power settings…" : tdpMessage(status)}</PanelSectionRow>
+      {basic && busy && <PanelSectionRow>{tdpMessage(status)}</PanelSectionRow>}
       {!busy && tdpResultMessage(status) && <PanelSectionRow>Last request: {tdpResultMessage(status)}</PanelSectionRow>}
       <PanelSectionRow>{status?.current_watts != null ? `Last checked limit: ${status.current_watts} W` : "Last checked limit: unavailable"}</PanelSectionRow></ReadableBlock>
       <ReadableBlock label="Power status and guidance"><PanelSectionRow><span style={{ fontSize: "12px", opacity: 0.75 }}>This is the configured limit, not measured power use. Enable only after resolving other power controllers.</span></PanelSectionRow></ReadableBlock>
       {manualLocked && <ReadableBlock label="Power status and guidance"><PanelSectionRow><span style={{ fontSize: "12px", opacity: 0.75 }}>Stop Auto TDP to adjust manually.</span></PanelSectionRow></ReadableBlock>}
       <ToggleField label="Use Re-Gear power control" checked={status?.enabled ?? false} disabled={busy || manualLocked || !controls.canToggle} onChange={(enabled) => { if (canMutate() && tdpControls(controller.manual).canToggle && (!enabled || controller.manual?.can_enable)) void controller.setEnabled(enabled); }} />
+      {showAdvanced && <>
       <ReadableBlock label="Power presets"><PanelSectionRow><span style={{ fontSize: "12px", opacity: 0.75 }}>Choose a preset, then Apply. These are configured limits, not measured power use.</span></PanelSectionRow></ReadableBlock>
       {presets.map(option => <PanelSectionRow key={option.id}><ButtonItem layout="below"
         disabled={busy || manualLocked || !option.admitted}
@@ -68,6 +73,7 @@ function SharedTdpControls({ visible, controller, initiallyExpanded = false }: {
             closeCustom(); setSelected(option.watts); setPreset({ id: option.id, status: status! });
           }
         }}>{`${option.label} · ${option.watts} W${preset?.status === status && preset.id === option.id ? " (selected)" : ""}`}</ButtonItem></PanelSectionRow>)}
+      </>}
       <PanelSectionRow><ButtonItem layout="below" disabled={busy || manualLocked || !controls.canApply}
         onClick={() => {
           if (!customAvailable() || status !== context.current.controller.manual) return;
@@ -84,6 +90,7 @@ function SharedTdpControls({ visible, controller, initiallyExpanded = false }: {
           customOwner.current = null; setCustom(null);
           void owner.apply(custom.watts, custom);
         })}
+      {showAdvanced && <>
       <DropdownItem label="Power limit" rgOptions={options} selectedOption={selected ?? undefined} disabled={busy || manualLocked || !controls.canApply} onChange={(option) => { if (canMutate() && tdpControls(controller.manual).canApply && options.some(entry => entry.data === option.data)) { closeCustom(); setSelected(option.data as number); setPreset(null); } }} />
       <PanelSectionRow><ButtonItem layout="below" disabled={busy || manualLocked || !controls.canApply || selected === null || !presetValid} onClick={() => { if (canMutate() && selected !== null && tdpControls(controller.manual).canApply
         && options.some(option => option.data === selected)
@@ -91,10 +98,12 @@ function SharedTdpControls({ visible, controller, initiallyExpanded = false }: {
           && manualPresetOptions(controller.manual).some(option => option.id === preset.id && option.watts === selected && option.admitted)))) {
         void controller.apply(selected, preset ?? undefined);
       } }}>Apply power limit</ButtonItem></PanelSectionRow>
-      <PanelSectionRow><ButtonItem layout="below" disabled={busy || manualLocked || !controls.canRestore} onClick={() => { if (canMutate() && tdpControls(controller.manual).canRestore) void controller.restore(); }}>Restore previous power settings</ButtonItem></PanelSectionRow>
+      </>}
+      {(showAdvanced || status?.recovery_required) && <PanelSectionRow><ButtonItem layout="below" disabled={busy || manualLocked || !controls.canRestore} onClick={() => { if (canMutate() && tdpControls(controller.manual).canRestore) void controller.restore(); }}>Restore previous power settings</ButtonItem></PanelSectionRow>}
       <PanelSectionRow><ButtonItem layout="below" disabled={busy} onClick={() => { void controller.refresh(); }}>Refresh power settings</ButtonItem></PanelSectionRow>
       {!initiallyExpanded && <PanelSectionRow><ButtonItem layout="below" onClick={() => setAutoExpanded(value => !value)}>{autoExpanded ? "Hide Auto TDP" : "Show Auto TDP"}</ButtonItem></PanelSectionRow>}
-      {autoExpanded && <AutoTdpControls controller={controller} />}
+      {autoExpanded && <AutoTdpControls controller={controller} advanced={showAdvanced} />}
+      {basic && <PanelSectionRow><ButtonItem layout="below" onClick={() => { closeCustom(); setAdvanced(value => !value); }}>{advanced ? "Basic" : "Advanced"}</ButtonItem></PanelSectionRow>}
     </>}
   </PanelSection>;
 }
