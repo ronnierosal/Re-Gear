@@ -320,6 +320,21 @@ class Conflict(ValueError):
     pass
 
 
+# Issue 532: source capability only. Adoption does not authorize invocation.
+RECOVERY497_ACTOR = 'codex-local-coordination-recovery-20261008'
+RECOVERY497_RECIPIENT = 'codex-cloud-lifecycle-director-20261003'
+RECOVERY497_TASK = 'tdp-runtime-expressible-range-admission'
+RECOVERY497_MAINTENANCE_TASK = 'agent-hub-maintainer-recovery-mirror-532'
+RECOVERY497_PREIMAGE_DIGEST = 'f707e3ec3849c9b655b6c8e46c76178bb81ebbac4107fae8e57c61982f6c5ba0'
+RECOVERY497_CANONICAL_DIGEST = 'a8080e03cab88f01a49c54687f5e8e6c54c327c0e040f771649ebf44ec594cec'
+RECOVERY497_MAINTENANCE_DIGEST = None
+RECOVERY497_EXECUTION_AUTHORIZATION = None
+RECOVERY497_RECEIPTS = [
+    'https://github.com/ronnierosal/Re-Gear/issues/497#issuecomment-6101936371',
+    'https://github.com/ronnierosal/Re-Gear/issues/497#issuecomment-6101972445',
+    'https://github.com/ronnierosal/Re-Gear/issues/497#issuecomment-6101984876',
+]
+
 def now():
     return datetime.now(timezone.utc).isoformat(timespec='seconds')
 
@@ -517,6 +532,69 @@ class Hub:
                       'before': APPROVED_DIGESTS[key], 'after': self._digest(result)}
             self.event(db, actor, 'amend_approved_auto_tdp_range_branch', key, detail)
             return {'task': result, 'audit': detail}
+
+    def mirror_accepted_497_recovery(self, actor, canonical_receipt):
+        """Mirror one approved canonical recovery; never fabricate an owner offer."""
+        identifier(actor)
+        if actor != RECOVERY497_ACTOR:
+            raise Conflict('Recovery 497 is restricted to its designated maintenance actor')
+        if (not isinstance(canonical_receipt, dict)
+                or set(canonical_receipt) != {'issue', 'record', 'receipts'}
+                or type(canonical_receipt['issue']) is not int
+                or canonical_receipt['issue'] != 497
+                or canonical_receipt['receipts'] != RECOVERY497_RECEIPTS):
+            raise Conflict('Recovery 497 canonical authority receipt mismatch')
+        canonical = canonical_receipt['record']
+        if (not isinstance(canonical, dict)
+                or self._digest(canonical) != RECOVERY497_CANONICAL_DIGEST
+                or type(canonical.get('revision')) is not int
+                or canonical['revision'] != 7
+                or canonical.get('status') != 'in-progress'
+                or canonical.get('owner') != RECOVERY497_RECIPIENT
+                or canonical.get('transfer') != {
+                    'from': 'codex-01a080fd', 'to': RECOVERY497_RECIPIENT, 'accepted': True}):
+            raise Conflict('Recovery 497 accepted canonical record mismatch')
+        with self.connection(True) as db:
+            authorization = self._execution_authorization(
+                RECOVERY497_EXECUTION_AUTHORIZATION, 'mirror_accepted_497_recovery')
+            if not RECOVERY497_MAINTENANCE_DIGEST:
+                raise Conflict('Recovery 497 requires separately approved maintenance assignment binding')
+            self.row(db, 'sessions', actor)
+            self.row(db, 'sessions', RECOVERY497_RECIPIENT)
+            maintenance = self.row(db, 'tasks', RECOVERY497_MAINTENANCE_TASK)
+            if (self._digest(maintenance) != RECOVERY497_MAINTENANCE_DIGEST
+                    or maintenance['owner'] != actor
+                    or maintenance['state'] not in ('in_progress', 'review')):
+                raise Conflict('Recovery 497 maintenance assignment mismatch')
+            before = self.row(db, 'tasks', RECOVERY497_TASK)
+            if (self._digest(before) != RECOVERY497_PREIMAGE_DIGEST
+                    or before['rev'] != 4 or before['owner'] != 'codex-01a080fd'
+                    or before['state'] != 'in_progress'):
+                raise Conflict('Recovery 497 complete local preimage mismatch')
+            if db.execute("SELECT 1 FROM transfers WHERE kind='task' AND target=? AND state='pending'",
+                          (RECOVERY497_TASK,)).fetchone():
+                raise Conflict('Recovery 497 has a pending authentic transfer')
+            paths = scope_paths(json.loads(before['paths']))
+            for other in db.execute("SELECT * FROM tasks WHERE id<>? AND state IN ('in_progress','blocked','review')",
+                                    (RECOVERY497_TASK,)):
+                if (other['branch'] == before['branch']
+                        or overlaps(paths, scope_paths(json.loads(other['paths'])))):
+                    raise Conflict('Recovery 497 overlaps another active local claim')
+            changed = db.execute('UPDATE tasks SET owner=?,rev=rev+1 WHERE id=? AND owner=? AND rev=?',
+                                 (RECOVERY497_RECIPIENT, RECOVERY497_TASK, before['owner'], before['rev']))
+            if changed.rowcount != 1:
+                raise Conflict('Recovery 497 compare-and-swap failed')
+            after = self.row(db, 'tasks', RECOVERY497_TASK)
+            if after != dict(before, owner=RECOVERY497_RECIPIENT, rev=5):
+                raise Conflict('Recovery 497 preservation check failed')
+            detail = {'kind': 'canonical-maintainer-recovery-mirror',
+                      'authorization': authorization, 'receipts': RECOVERY497_RECEIPTS,
+                      'canonical_digest': RECOVERY497_CANONICAL_DIGEST,
+                      'maintenance_digest': RECOVERY497_MAINTENANCE_DIGEST,
+                      'original_owner': before['owner'], 'recipient': RECOVERY497_RECIPIENT,
+                      'before_digest': RECOVERY497_PREIMAGE_DIGEST, 'after_digest': self._digest(after)}
+            self.event(db, actor, 'mirror_accepted_497_recovery', RECOVERY497_TASK, detail)
+            return {'task': after, 'audit': detail}
 
     def register(self, session, agent, label, worktree):
         identifier(session)
@@ -827,6 +905,9 @@ def main(argv=None):
     closeout.add_argument('--session', required=True)
     amend = sub.add_parser('amend-approved-auto-tdp-range-branch')
     amend.add_argument('--session', required=True)
+    recovery = sub.add_parser('mirror-accepted-497-recovery')
+    recovery.add_argument('--session', required=True)
+    recovery.add_argument('--canonical-receipt', type=Path, required=True)
     register = sub.add_parser('register')
     register.add_argument('--session', required=True)
     register.add_argument('--agent', required=True)
@@ -851,6 +932,13 @@ def main(argv=None):
         elif args.command == 'snapshot':
             print(hub.snapshot(), end='')
             return 0
+        elif args.command == 'mirror-accepted-497-recovery':
+            with args.canonical_receipt.open('rb') as receipt_file:
+                receipt_bytes = receipt_file.read(65537)
+            if len(receipt_bytes) > 65536:
+                raise ValueError('Recovery 497 receipt exceeds its bounded input limit')
+            result = hub.mirror_accepted_497_recovery(
+                args.session, json.loads(receipt_bytes.decode('utf-8')))
         elif args.command == 'register': result = hub.register(args.session, args.agent, args.label, args.worktree)
         elif args.command == 'inbox': result = hub.inbox(args.session)
         elif args.command == 'export': result = hub.export_html(args.output)
