@@ -224,3 +224,48 @@ compare every preserved field and recheck executor exclusivity before releasing
 #497 source work. A failed gate leaves that work held. No arbitrary task, owner,
 force, authorization, bypass or target option exists. This capability grants no
 TDP, runtime, device, install, package, release or hardware authority.
+
+## Disabled two-test Power UI claim release (#537)
+
+`release-power-ui-two-test-claims` releases exactly
+`frontend-tests/expanded-live-presentation.test.mjs` and
+`frontend-tests/layout-preferences.test.mjs` from
+`qa-brightness-volume-customization` for accepted #476 UI work. It changes only
+the retained task's paths and revision (30 to 31); the original owner, state,
+all other fields/paths, history and native obligations remain. Source delivery
+in PR357 and unanswered owner contact do not establish abandonment or completion.
+
+Ronnie approved development and independent review of this bounded repair.
+The source capability remains **disabled**: invocation approval and the complete
+live #537 maintenance-assignment digest are unset. No test uses the real hub.
+No generic owner, target, path, force or bypass option exists. The #497 recovery
+capability and ordinary owner/transfer rules are unchanged.
+
+A later, separately approved invocation requires fresh exact complete revision-30
+preimage and accepted #476 revision-43 record digests, the fixed public acceptance
+receipt, designated registered maintainer and recipient, and an active exact
+maintenance assignment. Changed records require reconciliation and another
+reviewed binding, not an automatic refresh. Fresh canonical readback, consistent
+backup and exclusive writer checks are external prerequisites; a receipt file
+does not certify current GitHub state. Adoption, merge and invocation are separate
+decisions, none granted by development approval.
+
+The receipt has exactly `issue` (476), `record` (the complete accepted object)
+and `receipt` (the pinned public #476 acceptance URL). The CLI bounds UTF-8 input
+to 65536 bytes. An immediate transaction refuses pending authentic transfers,
+other retained overlapping claims, stale/altered preimages, disabled authority
+and replay. Conditional update, complete preservation verification and actual
+maintainer audit insertion commit together; any failure rolls back. Audit includes
+both digests, authority, original owner, recipient and the fixed two paths.
+
+Only after separate approval, reviewed bindings and verified supported adoption:
+
+```text
+python -B hub.py --db <existing-shared-database> release-power-ui-two-test-claims --session codex-local-coordination-recovery-20261008 --canonical-receipt <verified-private-receipt.json>
+```
+
+Read back all fields and the audit, verify that exactly those two paths were
+removed and recheck UI executor exclusivity before allowing their edits. Preserve
+both UI files until actual supported release is verified. Never publish private
+hub rows or session metadata. No device, settings, access, deployment or hardware
+authority follows from this operation.

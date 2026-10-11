@@ -322,6 +322,22 @@ class Conflict(ValueError):
 
 # Issue 532: source capability only. Adoption does not authorize invocation.
 RECOVERY497_ACTOR = 'codex-local-coordination-recovery-20261008'
+# Development approval for #537 is not live invocation authority. Keep both
+# invocation bindings unset until a separately reviewed, fresh approval.
+POWER_UI_RELEASE_ACTOR = 'codex-local-coordination-recovery-20261008'
+POWER_UI_RELEASE_TASK = 'qa-brightness-volume-customization'
+POWER_UI_RELEASE_OWNER = 'codex-01a08c09-afcf-7c50-998d-760c7634fb01'
+POWER_UI_RELEASE_MAINTENANCE_TASK = 'agent-hub-power-ui-two-test-release-537'
+POWER_UI_RELEASE_PATHS = (
+    'frontend-tests/expanded-live-presentation.test.mjs',
+    'frontend-tests/layout-preferences.test.mjs',
+)
+POWER_UI_RELEASE_PREIMAGE_DIGEST = '073f1cb667a8243aa0d888a184c44d27e84e89343b97f28542428ae819f578ce'
+POWER_UI_RELEASE_CANONICAL_DIGEST = '6da06efced8512f0a1e47251b7a6733c385b8ff75124c25da84bacf1edae02b1'
+POWER_UI_RELEASE_RECIPIENT = 'codex-local-ui-worker-01a114be-9b27-70f1-9694-9ec91208200a'
+POWER_UI_RELEASE_MAINTENANCE_DIGEST = None
+POWER_UI_RELEASE_EXECUTION_AUTHORIZATION = None
+POWER_UI_RELEASE_RECEIPT = 'https://github.com/ronnierosal/Re-Gear/issues/476#issuecomment-6105998916'
 RECOVERY497_RECIPIENT = 'codex-cloud-lifecycle-director-20261003'
 RECOVERY497_TASK = 'tdp-runtime-expressible-range-admission'
 RECOVERY497_MAINTENANCE_TASK = 'agent-hub-maintainer-recovery-mirror-532'
@@ -594,6 +610,75 @@ class Hub:
                       'original_owner': before['owner'], 'recipient': RECOVERY497_RECIPIENT,
                       'before_digest': RECOVERY497_PREIMAGE_DIGEST, 'after_digest': self._digest(after)}
             self.event(db, actor, 'mirror_accepted_497_recovery', RECOVERY497_TASK, detail)
+            return {'task': after, 'audit': detail}
+
+    def release_power_ui_two_test_claims(self, actor, canonical_receipt):
+        """Release two compiled paths only; preserve the unavailable owner's task."""
+        identifier(actor)
+        if actor != POWER_UI_RELEASE_ACTOR:
+            raise Conflict('Power UI release is restricted to its designated maintainer')
+        if (not isinstance(canonical_receipt, dict)
+                or set(canonical_receipt) != {'issue', 'record', 'receipt'}
+                or type(canonical_receipt['issue']) is not int
+                or canonical_receipt['issue'] != 476
+                or canonical_receipt['receipt'] != POWER_UI_RELEASE_RECEIPT):
+            raise Conflict('Power UI release canonical receipt mismatch')
+        canonical = canonical_receipt['record']
+        if (not isinstance(canonical, dict)
+                or self._digest(canonical) != POWER_UI_RELEASE_CANONICAL_DIGEST
+                or type(canonical.get('revision')) is not int
+                or canonical['revision'] != 43
+                or canonical.get('status') != 'in-progress'
+                or canonical.get('owner') != POWER_UI_RELEASE_RECIPIENT
+                or not isinstance(canonical.get('scope'), list)
+                or not all(path in canonical['scope'] for path in POWER_UI_RELEASE_PATHS)):
+            raise Conflict('Power UI release accepted recipient record mismatch')
+        with self.connection(True) as db:
+            authorization = self._execution_authorization(
+                POWER_UI_RELEASE_EXECUTION_AUTHORIZATION, 'release_power_ui_two_test_claims')
+            if not POWER_UI_RELEASE_MAINTENANCE_DIGEST:
+                raise Conflict('Power UI release requires separate live maintenance binding')
+            self.row(db, 'sessions', actor)
+            self.row(db, 'sessions', POWER_UI_RELEASE_RECIPIENT)
+            maintenance = self.row(db, 'tasks', POWER_UI_RELEASE_MAINTENANCE_TASK)
+            if (self._digest(maintenance) != POWER_UI_RELEASE_MAINTENANCE_DIGEST
+                    or maintenance['owner'] != actor
+                    or maintenance['state'] not in ('in_progress', 'review')
+                    or maintenance['issue'] != 'https://github.com/ronnierosal/Re-Gear/issues/537'):
+                raise Conflict('Power UI release maintenance assignment mismatch')
+            before = self.row(db, 'tasks', POWER_UI_RELEASE_TASK)
+            if (self._digest(before) != POWER_UI_RELEASE_PREIMAGE_DIGEST
+                    or before['rev'] != 30 or before['owner'] != POWER_UI_RELEASE_OWNER
+                    or before['state'] != 'in_progress'):
+                raise Conflict('Power UI release complete preimage mismatch')
+            if db.execute("SELECT 1 FROM transfers WHERE kind='task' AND target=? AND state='pending'",
+                          (POWER_UI_RELEASE_TASK,)).fetchone():
+                raise Conflict('Power UI release has a pending authentic transfer')
+            paths = scope_paths(json.loads(before['paths']))
+            if not all(path in paths for path in POWER_UI_RELEASE_PATHS):
+                raise Conflict('Power UI release fixed paths are not retained')
+            for other in db.execute("SELECT * FROM tasks WHERE id<>? AND owner IS NOT NULL AND state NOT IN ('done','cancelled')",
+                                    (POWER_UI_RELEASE_TASK,)):
+                if overlaps(POWER_UI_RELEASE_PATHS, scope_paths(json.loads(other['paths']))):
+                    raise Conflict('Power UI release overlaps another active local claim')
+            remaining = [path for path in paths if path not in POWER_UI_RELEASE_PATHS]
+            changed = db.execute('UPDATE tasks SET paths=?,rev=rev+1 WHERE id=? AND owner=? AND rev=? AND paths=?',
+                                 (json.dumps(remaining), POWER_UI_RELEASE_TASK, before['owner'],
+                                  before['rev'], before['paths']))
+            if changed.rowcount != 1:
+                raise Conflict('Power UI release compare-and-swap failed')
+            after = self.row(db, 'tasks', POWER_UI_RELEASE_TASK)
+            if after != dict(before, paths=json.dumps(remaining), rev=31):
+                raise Conflict('Power UI release preservation check failed')
+            detail = {'kind': 'bounded-power-ui-two-test-claim-release',
+                      'authorization': authorization, 'receipt': POWER_UI_RELEASE_RECEIPT,
+                      'canonical_digest': POWER_UI_RELEASE_CANONICAL_DIGEST,
+                      'maintenance_digest': POWER_UI_RELEASE_MAINTENANCE_DIGEST,
+                      'original_owner': before['owner'], 'recipient': POWER_UI_RELEASE_RECIPIENT,
+                      'released_paths': list(POWER_UI_RELEASE_PATHS),
+                      'before_digest': POWER_UI_RELEASE_PREIMAGE_DIGEST,
+                      'after_digest': self._digest(after)}
+            self.event(db, actor, 'release_power_ui_two_test_claims', POWER_UI_RELEASE_TASK, detail)
             return {'task': after, 'audit': detail}
 
     def register(self, session, agent, label, worktree):
@@ -908,6 +993,9 @@ def main(argv=None):
     recovery = sub.add_parser('mirror-accepted-497-recovery')
     recovery.add_argument('--session', required=True)
     recovery.add_argument('--canonical-receipt', type=Path, required=True)
+    release = sub.add_parser('release-power-ui-two-test-claims')
+    release.add_argument('--session', required=True)
+    release.add_argument('--canonical-receipt', type=Path, required=True)
     register = sub.add_parser('register')
     register.add_argument('--session', required=True)
     register.add_argument('--agent', required=True)
@@ -938,6 +1026,13 @@ def main(argv=None):
             if len(receipt_bytes) > 65536:
                 raise ValueError('Recovery 497 receipt exceeds its bounded input limit')
             result = hub.mirror_accepted_497_recovery(
+                args.session, json.loads(receipt_bytes.decode('utf-8')))
+        elif args.command == 'release-power-ui-two-test-claims':
+            with args.canonical_receipt.open('rb') as receipt_file:
+                receipt_bytes = receipt_file.read(65537)
+            if len(receipt_bytes) > 65536:
+                raise ValueError('Power UI release receipt exceeds its bounded input limit')
+            result = hub.release_power_ui_two_test_claims(
                 args.session, json.loads(receipt_bytes.decode('utf-8')))
         elif args.command == 'register': result = hub.register(args.session, args.agent, args.label, args.worktree)
         elif args.command == 'inbox': result = hub.inbox(args.session)
