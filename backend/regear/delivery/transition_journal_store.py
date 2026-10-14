@@ -14,6 +14,7 @@ import secrets
 import threading
 from collections.abc import Callable
 from pathlib import Path
+from dataclasses import replace as replace_journal
 
 from ..domain.control_plane import PlacementState
 from ..domain.transition_journal import (
@@ -21,12 +22,16 @@ from ..domain.transition_journal import (
     TransitionJournal,
     journal_from_dict,
     journal_to_dict,
+    valid_boot_id,
 )
+from ..application.presentation_boot_retirement import eligible_boot_result
 
 
 MAX_JOURNAL_BYTES = 128 * 1024
 JOURNAL_FILENAME = "active-transition.json"
 COMPLETED_FILENAME = "completed-presentation.json"
+BOOT_RETIRED_FILENAME = "boot-retired-presentation.json"
+BOOT_ORIGIN_FILENAME = "presentation-origin-boot.json"
 TEMP_TOKEN_RE = re.compile(r"^[a-zA-Z0-9_-]{8,48}$")
 
 
@@ -43,6 +48,7 @@ class FileTransitionJournalStore:
         self._root = state_root
         self._target = state_root / JOURNAL_FILENAME
         self._completed = state_root / COMPLETED_FILENAME
+        self._origin = state_root / BOOT_ORIGIN_FILENAME
         self._replace = replace
         self._token_factory = token_factory or (lambda: secrets.token_hex(8))
         self._lock = threading.Lock()
@@ -58,6 +64,26 @@ class FileTransitionJournalStore:
             return journal
 
     def _load(self, path: Path) -> TransitionJournal | None:
+        value = self._read_payload(path)
+        if value is None:
+            return None
+        journal = journal_from_dict(value)
+        # Active/receipt schema stays readable by immutable older candidates.
+        # A separate bounded record is authority only for this exact operation,
+        # request and first persisted entry; it never retrofits another journal.
+        origin = self._read_payload(self._origin)
+        if origin is not None:
+            if (set(origin) != {"schema_version", "operation_id", "request_id", "started_at", "origin_boot_id"}
+                    or type(origin["schema_version"]) is not int or origin["schema_version"] != 1
+                    or not valid_boot_id(origin["origin_boot_id"])):
+                raise ValueError("presentation origin boot record is invalid")
+            if (journal.entries and origin["operation_id"] == journal.operation_id
+                    and origin["request_id"] == journal.request_id
+                    and origin["started_at"] == journal.entries[0].occurred_at):
+                journal = replace_journal(journal, origin_boot_id=origin["origin_boot_id"])
+        return journal
+
+    def _read_payload(self, path: Path) -> dict | None:
         self._validate_root()
         if path.is_symlink():
             raise ValueError("transition journal target cannot be a symlink")
@@ -76,7 +102,7 @@ class FileTransitionJournalStore:
             raise ValueError("transition journal JSON is invalid") from error
         if not isinstance(value, dict):
             raise ValueError("transition journal root must be an object")
-        return journal_from_dict(value)
+        return value
 
     def save(self, journal: TransitionJournal) -> None:
         with self._lock:
@@ -89,15 +115,24 @@ class FileTransitionJournalStore:
             return
         if current is not None:
             self._validate_progress(current, journal)
+        elif journal.origin_boot_id:
+            if not journal.entries:
+                raise ValueError("origin boot requires persisted request history")
+            self._write_payload({"schema_version": 1, "operation_id": journal.operation_id,
+                "request_id": journal.request_id, "started_at": journal.entries[0].occurred_at,
+                "origin_boot_id": journal.origin_boot_id}, self._origin, strict=True)
         self._write(journal, self._target)
 
     def _write(self, journal: TransitionJournal, path: Path) -> None:
+        self._write_payload(journal_to_dict(journal), path, strict=path == self._completed)
+
+    def _write_payload(self, payload: dict, path: Path, *, strict: bool) -> None:
         self._validate_root()
         if path.is_symlink():
             raise ValueError("transition journal target cannot be a symlink")
         data = (
             json.dumps(
-                journal_to_dict(journal),
+                payload,
                 sort_keys=True,
                 separators=(",", ":"),
                 ensure_ascii=True,
@@ -119,7 +154,7 @@ class FileTransitionJournalStore:
                 target.flush()
                 os.fsync(target.fileno())
             self._replace(temporary, path)
-            self._sync_directory(strict=path == self._completed)
+            self._sync_directory(strict=strict)
         except Exception:
             try:
                 temporary.unlink(missing_ok=True)
@@ -156,6 +191,37 @@ class FileTransitionJournalStore:
             self._validate_completed(completed)
             self._completed.unlink()
             self._sync_directory()
+
+    def retire_after_boot(self, operation_id: str, origin_boot_id: str, current_boot_id: str) -> None:
+        """Bounded audit precedes exact removal; no other safety store is erased."""
+        with self._lock:
+            current = self.load_current()
+            if (current is None or current.operation_id != operation_id
+                    or current.origin_boot_id != origin_boot_id
+                    or not valid_boot_id(current_boot_id) or current_boot_id == origin_boot_id
+                    or not eligible_boot_result(current)):
+                raise ValueError("boot retirement identity or result is unverified")
+            self._write_payload({
+                "schema_version": 1,
+                "reason": "presentation.new_boot_acknowledgement_retired",
+                "current_boot_id": current_boot_id,
+                "origin_boot_id": current.origin_boot_id,
+                "journal": journal_to_dict(current),
+            }, self._root / BOOT_RETIRED_FILENAME, strict=True)
+            try:
+                self._target.unlink()
+            except FileNotFoundError:
+                # A separately locked acknowledgement already removed it.
+                # This call did not unlink, so it must never resurrect it.
+                return
+            try:
+                self._sync_directory(strict=True)
+            except Exception:
+                # A post-unlink directory failure must not report retirement.
+                # Restore the active evidence when removal is already visible.
+                if self.load_current() is None:
+                    self._write_payload(journal_to_dict(current), self._target, strict=True)
+                raise
 
     @staticmethod
     def _validate_completed(journal: TransitionJournal) -> None:
@@ -208,6 +274,8 @@ class FileTransitionJournalStore:
             raise ValueError("cannot overwrite a different transition operation")
         if current.request_id != replacement.request_id:
             raise ValueError("transition journal request identity changed")
+        if current.origin_boot_id != replacement.origin_boot_id:
+            raise ValueError("transition journal origin boot identity changed")
         if current.terminal:
             raise ValueError("cannot overwrite a terminal transition journal")
         if len(replacement.entries) < len(current.entries):

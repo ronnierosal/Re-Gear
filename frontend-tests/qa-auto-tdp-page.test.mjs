@@ -11,8 +11,9 @@ function renderControls(controller) {
   const useState=initial=>{const i=cursor++;if(!(i in values)) values[i]=initial;return [values[i],v=>{values[i]=typeof v==="function"?v(values[i]):v;}];};
   const source=readFileSync(new URL("../src/auto-tdp-controls.tsx",import.meta.url),"utf8");
   const code=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2020,jsx:ts.JsxEmit.React}}).outputText.replace(/^import[^;]*;/gm,"").replace(/export /g,"");
-  const names=["React","useState","useEffect","autoTdpActivity","autoTdpMessage","validAutoTdpRange","tdpMessage","ButtonItem","DropdownItem","PanelSectionRow","ToggleField","TdpBenchmarkControls","AutoTdpPreferencesControls"];
-  const component=new Function(...names,code+";return AutoTdpControls;")({createElement:jsx,Fragment:"fragment"},useState,()=>{},autoTdpActivity,autoTdpMessage,validAutoTdpRange,tdpMessage,...names.slice(7));
+  const names=["React","useState","useEffect","autoTdpActivity","autoTdpMessage","validAutoTdpRange","tdpMessage","ButtonItem","DropdownItem","PanelSectionRow","ToggleField","TdpBenchmarkControls","AutoTdpPreferencesControls","ReadableBlock"];
+  const reading=({label,children})=>jsx("Field",{focusable:true,"aria-label":label},children);
+  const component=new Function(...names,code+";return AutoTdpControls;")({createElement:jsx,Fragment:"fragment"},useState,()=>{},autoTdpActivity,autoTdpMessage,validAutoTdpRange,tdpMessage,...names.slice(7,-1),reading);
   return ()=>{cursor=0;return component({controller});};
 }
 const flatten=node=>[node,...(node?.props?.children??[]).flat(Infinity).flatMap(child=>typeof child==="object"&&child!==null?flatten(child):[child])];

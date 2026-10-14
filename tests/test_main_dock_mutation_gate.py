@@ -1,12 +1,13 @@
 """RPC admission is exercised separately from unrelated mocked delivery tests."""
 import asyncio
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from types import SimpleNamespace as NS
 import unittest
 from unittest.mock import Mock, patch
 
 from tests.test_main_process_delivery import load_main_module
 from tests import test_main_link_recovery as recovery_fixtures
+from tests import test_main_physical_unplug_sleep as sleep_fixtures
 from regear.delivery.dock_mutation_gate import DockMutationDenied
 
 
@@ -179,6 +180,174 @@ class MainDockAdmissionTests(unittest.TestCase):
             self.assertFalse(status["safe_to_unplug"])
         asyncio.run(run())
 
+    def test_unresolved_tunnel_stage_is_returned_and_logged_immediately(self):
+        self.plugin._background_operations = set()
+        self.plugin._unloading = False
+        # Startup or an older attachment may already have supplied absence.
+        # Admitting this attempt must consume it so the same still-present
+        # attachment cannot immediately clear an unresolved result.
+        self.plugin._whole_dock_absence_observed = True
+        self.plugin._append_journey_event = Mock()
+        self.plugin._complete_interrupted_whole_dock_trial = Mock(return_value=None)
+        def unresolved(*_args):
+            self.plugin._whole_dock_trial_phase = 'dock_teardown'
+            return NS(code='dock_teardown.unresolved', software_down=False)
+        self.plugin._run_whole_dock_trial = Mock(side_effect=unresolved)
+        request = 'b' * 32
+        claim = self.module.WholeDockClaim(
+            request, 'c' * 64, 'd' * 64, 'tunnel_remove_intent')
+        with patch.object(self.module, 'WholeDockClaimStore') as store:
+            store.return_value.load.return_value = claim
+            result = asyncio.run(self.plugin.execute_egpu_disconnect(
+                trial_action='whole_dock_disconnect', release_display=True,
+                trial_confirmed=True, trial_request_id=request))
+        self.assertEqual(result['code'], 'dock_teardown.unresolved')
+        self.assertEqual(result['claim_stage'], 'tunnel_remove_intent')
+        self.assertFalse(result['ok'])
+        self.assertFalse(self.plugin._whole_dock_absence_observed)
+        self.plugin._append_journey_event.assert_called_once_with(
+            severity='warning',
+            code='dock_teardown.terminal_unresolved',
+            component='disconnect',
+            stage='dock_teardown',
+            details={
+                'phase': 'dock_teardown',
+                'claim_stage': 'tunnel_remove_intent',
+            },
+            create_timeline=False,
+        )
+
+    def test_new_sleep_binds_to_retained_disconnect_and_reaches_suspend(self):
+        fixture = sleep_fixtures.MainPhysicalUnplugSleepTests()
+        fixture.setUp()
+        plugin, module = fixture.plugin, fixture.module
+        old_operation = 'd' * 32
+        fixture.runtime._operation = old_operation
+        fixture.runtime._owned = lambda stage: stage == 'software_down'
+        fixture.runtime.verify_power_continuation = lambda *_args, **_kwargs: True
+        claim = module.WholeDockClaim(
+            old_operation,
+            fixture.runtime.binding.binding,
+            fixture.runtime.binding.generation,
+            'software_down',
+        )
+        fixture.store.load.return_value = claim
+        fixture.store.bind_sleep_after_disconnect.return_value = True
+        plugin._whole_dock_trial_runtime = (fixture.runtime, fixture.admission)
+        plugin._dock_mutation_gate = lambda: NS(admit=lambda **_kwargs: nullcontext())
+        plugin._connection_topology.observe.return_value = fixture._topology(
+            present=False, absent=True)
+        plugin._dock_power_portable_verified = Mock(return_value=True)
+        plugin._run_sleep_request = Mock(return_value=module.DockPowerResult(
+            'dock_power.request_unverified', requested=False))
+        plugin._dock_power_context = (fixture.request, 'e' * 32, 'whole_dock_sleep')
+
+        with patch.object(module, 'verified_transport_absent', side_effect=[False, True]), \
+                patch.object(module, 'SuspendObserver') as observer, \
+                patch.object(module, 'RootOwnedRuntimeState'), \
+                patch.object(module, 'DockPowerIntentStore', return_value=fixture.store), \
+                patch.object(module.time, 'monotonic', return_value=11):
+            observer.return_value.read.return_value = object()
+            result = plugin._run_dock_power_request(
+                fixture.request, keep_connected=False)
+
+        self.assertEqual(plugin._run_sleep_request.call_count, 1,
+                         f'Physical unplug never reached sleep: {result.code}')
+        bound_request = plugin._run_sleep_request.call_args.args[0]
+        self.assertEqual(bound_request.operation, old_operation)
+        self.assertEqual(plugin._dock_power_context,
+                         (bound_request, 'e' * 32, 'whole_dock_sleep'))
+        fixture.store.bind_sleep_after_disconnect.assert_called_once_with(
+            claim, fixture.request.session,
+            fixture.request.requested_at, fixture.request.deadline)
+
+    def test_definite_suspend_refusal_releases_intent_and_absent_claim(self):
+        fixture = sleep_fixtures.MainPhysicalUnplugSleepTests()
+        fixture.setUp()
+        plugin, module = fixture.plugin, fixture.module
+        plugin._connection_topology.observe.return_value = fixture._topology(
+            present=False, absent=True)
+        plugin._dock_power_portable_verified = Mock(return_value=True)
+        fixture.store.release_unsubmitted.return_value = True
+
+        def refused(request, **kwargs):
+            self.assertTrue(kwargs['consume'](request))
+            plugin._whole_dock_suspend_result = {
+                'requested': False,
+                'code': 'dock_power.suspend_inhibited',
+            }
+            return module.DockPowerResult('dock_power.request_unverified')
+
+        plugin._run_sleep_request = refused
+        with patch.object(module.time, 'monotonic', return_value=11), \
+                patch.object(module, 'verified_transport_absent', return_value=True):
+            result = plugin._sleep_after_physical_unplug(
+                fixture.request, fixture.runtime,
+                fixture.admission, fixture.store)
+
+        self.assertFalse(result.requested)
+        fixture.store.consume.assert_called_once()
+        fixture.store.release_unsubmitted.assert_called_once()
+        fixture.store.retire_physically_disconnected.assert_called_once()
+        plugin._whole_dock_trial_lease.release.assert_called_once()
+        self.assertIsNone(plugin._whole_dock_trial_runtime)
+
+    def test_ambiguous_suspend_timeout_retains_intent_claim_and_lease(self):
+        fixture = sleep_fixtures.MainPhysicalUnplugSleepTests()
+        fixture.setUp()
+        plugin, module = fixture.plugin, fixture.module
+        plugin._connection_topology.observe.return_value = fixture._topology(
+            present=False, absent=True)
+        plugin._dock_power_portable_verified = Mock(return_value=True)
+
+        def timed_out(request, **kwargs):
+            self.assertTrue(kwargs['consume'](request))
+            plugin._whole_dock_suspend_result = {
+                'requested': False,
+                'code': 'dock_power.suspend_timeout',
+            }
+            return module.DockPowerResult('dock_power.request_unverified')
+
+        plugin._run_sleep_request = timed_out
+        with patch.object(module.time, 'monotonic', return_value=11), \
+                patch.object(module, 'verified_transport_absent', return_value=True):
+            result = plugin._sleep_after_physical_unplug(
+                fixture.request, fixture.runtime,
+                fixture.admission, fixture.store)
+
+        self.assertEqual(result.code, 'dock_power.request_unverified')
+        fixture.store.consume.assert_called_once()
+        fixture.store.release_unsubmitted.assert_not_called()
+        fixture.store.retire_physically_disconnected.assert_not_called()
+        plugin._whole_dock_trial_lease.release.assert_not_called()
+        self.assertIsNotNone(plugin._whole_dock_trial_runtime)
+
+    def test_stale_inhibited_result_cannot_release_a_new_sleep_attempt(self):
+        fixture = sleep_fixtures.MainPhysicalUnplugSleepTests()
+        fixture.setUp()
+        plugin, module = fixture.plugin, fixture.module
+        plugin._connection_topology.observe.return_value = fixture._topology(
+            present=False, absent=True)
+        plugin._dock_power_portable_verified = Mock(return_value=True)
+        plugin._whole_dock_suspend_result = {
+            'requested': False,
+            'code': 'dock_power.suspend_inhibited',
+        }
+        plugin._run_sleep_request = Mock(return_value=module.DockPowerResult(
+            'dock_power.preflight_changed'))
+
+        with patch.object(module.time, 'monotonic', return_value=11), \
+                patch.object(module, 'verified_transport_absent', return_value=True):
+            result = plugin._sleep_after_physical_unplug(
+                fixture.request, fixture.runtime,
+                fixture.admission, fixture.store)
+
+        self.assertEqual(result.code, 'dock_power.preflight_changed')
+        self.assertEqual(plugin._whole_dock_suspend_result, {})
+        fixture.store.release_unsubmitted.assert_not_called()
+        fixture.store.retire_physically_disconnected.assert_not_called()
+        plugin._whole_dock_trial_lease.release.assert_not_called()
+
     def test_tv_one_button_disconnect_settles_restart_client_and_correlates_terminal(self):
         """The combined TV route must reach the same teardown as the manual pause.
 
@@ -288,6 +457,45 @@ class MainDockAdmissionTests(unittest.TestCase):
             trial_confirmed=True, trial_request_id=request))
         self.assertTrue(result['ok'])
         self.plugin._run_whole_dock_trial.assert_called_once_with(request, '')
+
+    def test_verified_absence_then_reconnect_rearms_and_dispatches_new_request(self):
+        plugin = self.plugin
+        plugin._background_operations = set()
+        plugin._unloading = False
+        plugin._whole_dock_trial_worker_alive = False
+        plugin._whole_dock_absence_observed = True
+        plugin._whole_dock_trial_status = {
+            'schema_version': 1,
+            'code': 'dock_teardown.trial_unresolved',
+            'busy': False,
+            'ok': False,
+            'safe_to_unplug': False,
+            'request_id': 'old-request',
+        }
+        plugin._complete_interrupted_whole_dock_trial = Mock(return_value=None)
+        plugin._run_whole_dock_trial = Mock(return_value=NS(
+            code='dock_teardown.software_down', software_down=True))
+        token = 'a' * 64 + ':' + 'b' * 64
+        request = 'c' * 32
+        with patch.object(self.module, 'WholeDockClaimStore') as store, \
+                patch.object(self.module, 'DrmDiscovery') as drm, \
+                patch.object(self.module, 'resolve_whole_dock', return_value=NS(
+                    binding='a' * 64, generation='b' * 64)):
+            store.return_value.load.return_value = None
+            drm.return_value.scan.return_value = [NS(
+                boot_vga=False, pci_bdf='gpu')]
+            status = asyncio.run(plugin.get_egpu_disconnect_status(
+                'whole_dock_trial'))
+            result = asyncio.run(plugin.execute_egpu_disconnect(
+                trial_action='whole_dock_disconnect', release_display=True,
+                trial_confirmed=True, trial_request_id=request,
+                trial_attachment_token=status['attachment_token']))
+
+        self.assertEqual(status['code'], 'dock_teardown.no_trial')
+        self.assertEqual(status['attachment_token'], token)
+        self.assertFalse(plugin._whole_dock_absence_observed)
+        self.assertTrue(result['ok'])
+        plugin._run_whole_dock_trial.assert_called_once_with(request, token)
 
     def test_correlated_late_completion_never_starts_another_teardown(self):
         self.plugin._background_operations = set()
@@ -1085,11 +1293,13 @@ class CompletedAttachmentAbsenceTests(unittest.TestCase):
                 capture=False, admission_error=None, load_error=None,
                 guard_error=None, audit_error=None, retire_error=None,
                 event_error=None, journal_error=None, journal_durable=True,
-                journal_owner='none', inner=True, unloading=False):
+                journal_owner='none', inner=True, unloading=False,
+                complete_interrupted=False):
         from contextlib import ExitStack
         plugin = self.plugin
         user = NS(uid=1000, username='deck')
-        claim = NS(stage=stage)
+        claim = NS(stage=stage, operation='a' * 32)
+        terminal_claim = NS(stage='software_down', operation=claim.operation)
         plugin._unloading = unloading
         plugin._discovery = object()
         plugin._append_journey_event = Mock(side_effect=event_error)
@@ -1129,10 +1339,38 @@ class CompletedAttachmentAbsenceTests(unittest.TestCase):
             # state instead of probing the production /run/regear store.
             hold_store = patcher('DeviceAuthorizationHoldStore').return_value
             hold_store.load_hold.return_value = None
+            current_claim = [claim if claim_present else None]
             if load_error is not None:
                 store.load.side_effect = load_error
             else:
-                store.load.return_value = claim if claim_present else None
+                store.load.side_effect = lambda: current_claim[0]
+            completion = plugin._complete_interrupted_whole_dock_trial = Mock()
+            if complete_interrupted:
+                def finish_interrupted(request):
+                    self.assertEqual(request, claim.operation)
+                    current_claim[0] = terminal_claim
+                    return {
+                        'schema_version': 1,
+                        'code': 'dock_teardown.software_down',
+                        'ok': True,
+                        'software_down': True,
+                        'safe_to_unplug': False,
+                        'hardware_write': False,
+                        'request_id': claim.operation,
+                        'claim_stage': 'software_down',
+                    }
+                completion.side_effect = finish_interrupted
+            else:
+                completion.return_value = {
+                    'schema_version': 1,
+                    'code': 'dock_teardown.trial_unresolved',
+                    'ok': False,
+                    'software_down': False,
+                    'safe_to_unplug': False,
+                    'hardware_write': False,
+                    'request_id': claim.operation,
+                    'claim_stage': stage,
+                }
             if session is not None:
                 plugin._dock_power_session = session
             intent_present = [parent_power]
@@ -1146,7 +1384,7 @@ class CompletedAttachmentAbsenceTests(unittest.TestCase):
                 store.reconcile_stranded_sleep.side_effect = reconcile
             store.power_intent_absent.side_effect = lambda expected:not intent_present[0]
             def retire(expected, guard):
-                self.assertIs(expected, claim)
+                self.assertIs(expected, current_claim[0])
                 self.assertTrue(held)
                 if retire_error is not None:
                     raise retire_error
@@ -1178,9 +1416,222 @@ class CompletedAttachmentAbsenceTests(unittest.TestCase):
     def test_completed_detached_attachment_is_archived_under_existing_admission(self):
         self.assertEqual(self.fixture(), (True, 1))
 
+    def shutdown_absence_fixture(self, *, strict=True, absent=True, idle=True,
+                                 user_ok=True, settled=True, inner=True,
+                                 journal_durable=True, journal_owner='none',
+                                 consumed=False, boot='2' * 64, worker=False,
+                                 authorization=False, unloading=False, capture=False,
+                                 stage='tunnel_remove_intent'):
+        import os
+        import tempfile
+        from pathlib import Path
+        from contextlib import ExitStack
+        from regear.delivery.dock_power_intent import DockPowerIntentStore
+        from regear.delivery.dock_mutation_gate import DockMutationGate
+        from regear.delivery.whole_dock_claim import WholeDockClaimStore
+        with tempfile.TemporaryDirectory() as root, ExitStack() as stack:
+            os.chmod(root, 0o700)
+            fd = os.open(root, os.O_RDONLY | os.O_DIRECTORY)
+            stack.callback(os.close, fd)
+            kwargs = dict(owner_uid=os.geteuid(), trusted_directory_fd=fd)
+            store = DockPowerIntentStore(root, **kwargs)
+            gate = DockMutationGate(root, **kwargs)
+            op = 'a' * 32
+            self.assertTrue(store.claim(op, 'dock', 'generation'))
+            self.assertTrue(store.bind(op, 'dock', 'generation', 'shutdown',
+                                      '1' * 64 + ':' + 'b' * 32, 10, 100))
+            store.record(op, stage)
+            claim = store.load()
+            if consumed and stage == 'software_down':
+                self.assertTrue(store.consume(op, 'dock', 'generation', 'shutdown',
+                                              '1' * 64 + ':' + 'b' * 32, 10, 100))
+            elif consumed:
+                import json
+                path = Path(root) / ('dock-power-' + op + '.json')
+                raw = json.loads(path.read_bytes())
+                raw['consumed'] = True
+                path.write_text(json.dumps(raw))
+            self.plugin._unloading = unloading
+            self.plugin._release_capture_task = NS(done=lambda: not capture)
+            self.plugin._discovery = object()
+            self.plugin._dock_mutation_gate = lambda: gate
+            self.plugin._connection_topology = NS(observe=lambda: NS(
+                transport_absent_verified=absent, transport_present=not absent))
+            self.plugin._transition_journal_service = lambda: NS(status=lambda: NS(
+                durable=journal_durable, owner=NS(value=journal_owner)))
+            self.plugin._whole_dock_trial_worker_alive = worker
+            self.plugin._append_journey_event = Mock()
+            self.plugin._restore_remembered_authorization_after_absence = Mock(return_value=authorization)
+            snapshot = NS(game_state=self.module.GameState.IDLE if idle else self.module.GameState.UNKNOWN,
+                          gamescope=NS(running=True),
+                          gpus=[NS(role=self.module.GpuRole.INTERNAL, present=True,
+                                   confidence=self.module.Confidence.VERIFIED)])
+            user = NS(uid=1000, username='deck')
+            for name, value in (
+                ('DockPowerIntentStore', store),
+                ('verified_transport_absent', strict),
+                ('inner_removal_records_absent', inner),
+                ('resolve_gamescope_user', NS(ok=user_ok, context=user if user_ok else None)),
+                ('resolve_runtime_profiles', NS(exact_host=True)),
+            ):
+                mocked = stack.enter_context(patch.object(self.module, name, return_value=value))
+                if name == 'verified_transport_absent' and isinstance(value, list):
+                    mocked.side_effect = value
+            boot_reader = stack.enter_context(patch.object(self.module, 'read_boot_hash'))
+            if isinstance(boot, list):
+                boot_reader.side_effect = boot
+            else:
+                boot_reader.return_value = boot
+            stack.enter_context(patch.object(self.module, 'GamescopeDiscovery'))
+            launcher = stack.enter_context(patch.object(self.module, 'HeldTrialLauncher'))
+            launcher.return_value.call.return_value = {'code': 'held_helper.settled', 'settled': settled}
+            adapter = stack.enter_context(patch.object(self.module, 'SnapshotTransitionObservationAdapter'))
+            adapter.return_value.observe.return_value = NS(snapshot=snapshot)
+            power_runner = stack.enter_context(patch.object(self.module, 'SystemPowerCommandRunner'))
+            suspend_runner = stack.enter_context(patch.object(self.module, 'SystemSuspendCommandRunner'))
+            result = self.plugin._reconcile_physically_disconnected_dock()
+            power_runner.assert_not_called()
+            suspend_runner.assert_not_called()
+            prefix = 'completed-absent-dock-' if stage == 'software_down' else 'interrupted-absent-dock-'
+            audits = list(Path(root).glob(prefix + '*.json'))
+            if audits:
+                self.assertEqual(audits[0].read_bytes(), WholeDockClaimStore._encode(claim))
+            power_audits = list(Path(root).glob('unsubmitted-shutdown-*.json'))
+            power_audits += list(Path(root).glob('consumed-shutdown-absence-*.json'))
+            if result:
+                self.assertIsNone(store.load())
+                with gate.admit():
+                    pass
+            else:
+                self.assertEqual(store.load(), claim)
+                with self.assertRaises(DockMutationDenied):
+                    with gate.admit():
+                        pass
+            return result, len(audits), len(power_audits)
+
+    def test_production_absence_reconciliation_archives_unsubmitted_shutdown(self):
+        self.assertEqual(self.shutdown_absence_fixture(), (True, 1, 1))
+
+    def test_production_shutdown_recovery_preserves_unresolved_prerequisites(self):
+        for options in (
+            {'strict': False}, {'absent': False}, {'idle': False}, {'user_ok': False},
+            {'settled': False}, {'inner': False}, {'journal_durable': False},
+            {'journal_owner': 'presentation'}, {'consumed': True}, {'worker': True},
+            {'unloading': True}, {'capture': True},
+            {'boot': '1' * 64}, {'boot': ''}, {'boot': None},
+            {'boot': ['2' * 64, '3' * 64]},
+        ):
+            with self.subTest(options=options):
+                self.assertEqual(self.shutdown_absence_fixture(**options), (False, 0, 0))
+
+    def test_power_archival_does_not_clear_claim_if_authorization_restore_is_unknown(self):
+        self.assertEqual(self.shutdown_absence_fixture(authorization=None), (False, 0, 1))
+
+    def test_consumed_completed_shutdown_retires_through_production_absence_path(self):
+        self.assertEqual(self.shutdown_absence_fixture(
+            stage='software_down', consumed=True), (True, 1, 1))
+
+    def test_retained_power_diagnostic_distinguishes_real_same_and_old_boot_refusals(self):
+        for options, category in (({'boot': '1' * 64}, 'same_boot'),
+                                  ({'authorization': None}, 'consumed_old_boot')):
+            with self.subTest(category=category):
+                self.plugin._archival_refusal = None
+                self.assertEqual(self.shutdown_absence_fixture(
+                    stage='software_down', consumed=True, **options), (False, 0, 0))
+                events = self.plugin._append_journey_event.call_args_list
+                primary = [x.kwargs['details'] for x in events
+                           if x.kwargs.get('code') == 'automatic_dock.archival_guard_unmet']
+                self.assertEqual(primary, [{'phase': 'guard', 'unmet': 'power_intent_absent'}])
+                history = [x.kwargs['details'] for x in events
+                           if x.kwargs.get('code') == 'automatic_dock.retained_power_history']
+                self.assertEqual(history, [{'category': category}])
+
+    def test_retained_power_diagnostic_never_runs_before_full_nonpower_guard(self):
+        for options in ({'strict': False}, {'settled': False}, {'inner': False}, {'worker': True}):
+            with self.subTest(options=options):
+                self.assertEqual(self.shutdown_absence_fixture(
+                    stage='software_down', consumed=True, **options), (False, 0, 0))
+                self.assertFalse(any(x.kwargs.get('code') == 'automatic_dock.retained_power_history'
+                                     for x in self.plugin._append_journey_event.call_args_list))
+
+    def test_retained_power_diagnostic_fault_cannot_replace_existing_refusal(self):
+        self.plugin._record_retained_power_history = Mock(side_effect=RuntimeError('private error'))
+        self.assertEqual(self.shutdown_absence_fixture(
+            stage='software_down', consumed=True, boot='1' * 64), (False, 0, 0))
+        primary = [x.kwargs['details'] for x in self.plugin._append_journey_event.call_args_list
+                   if x.kwargs.get('code') == 'automatic_dock.archival_guard_unmet']
+        self.assertEqual(primary, [{'phase': 'guard', 'unmet': 'power_intent_absent'}])
+
+    def test_retained_power_category_logging_is_private_separately_deduplicated_and_fault_isolated(self):
+        from regear.delivery.whole_dock_claim import WholeDockClaim
+        claim = WholeDockClaim('a' * 32, 'dock', 'generation', 'software_down')
+        store = NS(retained_shutdown_history=Mock(return_value='same_boot'))
+        self.plugin._append_journey_event = Mock()
+        with patch.object(self.module, 'read_boot_hash', return_value='1' * 64), \
+             patch.object(self.module.decky.logger, 'info') as logger:
+            self.plugin._record_retained_power_history(store, claim)
+            self.plugin._record_retained_power_history(store, claim)
+            self.assertEqual(logger.call_count, 1)
+            store.retained_shutdown_history.return_value = 'consumed_old_boot'
+            self.plugin._record_retained_power_history(store, claim)
+            self.assertEqual(logger.call_count, 2)
+            store.retained_shutdown_history.return_value = 'private/path secret'
+            self.plugin._record_retained_power_history(store, claim)
+            self.assertEqual(logger.call_args.args[1], 'unknown_storage')
+            self.assertEqual(self.plugin._append_journey_event.call_args.kwargs['details'],
+                             {'category': 'unknown_storage'})
+            logger.side_effect = OSError('private log fault')
+            store.retained_shutdown_history.return_value = 'same_boot'
+            self.plugin._record_retained_power_history(store, claim)
+            self.assertEqual(self.plugin._append_journey_event.call_count, 3)
+            logger.side_effect = None
+            self.plugin._append_journey_event.side_effect = RuntimeError('event failure')
+            self.plugin._record_retained_power_history(store, claim)
+            self.assertEqual(logger.call_args.args[1], 'same_boot')
+
+    def test_consumed_completed_shutdown_preserves_every_unmet_prerequisite(self):
+        for options in (
+            {'strict': False}, {'absent': False}, {'idle': False}, {'user_ok': False},
+            {'settled': False}, {'inner': False}, {'journal_durable': False},
+            {'journal_owner': 'presentation'}, {'worker': True},
+            {'unloading': True}, {'capture': True}, {'stage': 'reauthorize_intent'},
+            {'boot': '1' * 64}, {'boot': ''}, {'boot': None},
+            {'boot': ['2' * 64, '3' * 64]},
+        ):
+            with self.subTest(options=options):
+                self.assertEqual(self.shutdown_absence_fixture(
+                    **dict(dict(stage='software_down', consumed=True), **options)), (False, 0, 0))
+
+    def test_consumed_power_audit_does_not_grant_claim_retirement_with_unknown_authorization(self):
+        self.assertEqual(self.shutdown_absence_fixture(
+            stage='software_down', consumed=True, authorization=None), (False, 0, 0))
+
+    def test_dead_unconsumed_shutdown_wait_retires_only_through_full_absence_workflow(self):
+        self.assertEqual(self.shutdown_absence_fixture(
+            stage='software_down', consumed=False), (True, 1, 1))
+
+    def test_consumed_absence_reobserves_transport_before_and_after_power_archival(self):
+        self.assertEqual(self.shutdown_absence_fixture(
+            stage='software_down', consumed=True, strict=[True, False]), (False, 0, 0))
+        self.assertEqual(self.shutdown_absence_fixture(
+            stage='software_down', consumed=True, strict=[True, True, False]), (False, 0, 0))
+
+    def test_interrupted_absent_record_archives_without_claiming_success(self):
+        original = {'code': 'dock_teardown.unresolved', 'request_id': 'a' * 32,
+                    'software_down': False, 'safe_to_unplug': False}
+        self.plugin._whole_dock_trial_status = original.copy()
+        self.assertEqual(self.fixture(stage='tunnel_remove_intent'), (True, 1))
+        self.plugin._complete_interrupted_whole_dock_trial.assert_not_called()
+        self.assertEqual(self.plugin._whole_dock_trial_status, original)
+
+    def test_active_worker_keeps_interrupted_absence_claim(self):
+        self.plugin._whole_dock_trial_worker_alive = True
+        self.assertEqual(self.fixture(stage='tunnel_remove_intent'), (False, 0))
+        self.plugin._complete_interrupted_whole_dock_trial.assert_not_called()
+
     def test_attached_unknown_or_unfinished_work_never_retires_disconnect_history(self):
         for options in ({'absent':False}, {'strict':False}, {'parent_power':True},
-                        {'settled':False}, {'idle':False}, {'stage':'tunnel_remove_intent'},
+                        {'settled':False}, {'idle':False},
                         {'stage':'reauthorize_intent'}):
             with self.subTest(options=options):
                 self.assertEqual(self.fixture(**options), (False, 0))
@@ -1405,7 +1856,7 @@ class PortableBeforeDisconnectTests(unittest.TestCase):
 
     def fixture(self, *, already=False, ready=True, success=True, final_portable=True,
                 acknowledge=True, changed_user=False, changed_binding=False, foreign=False,
-                prior=None, blocked=None, failed=None, stale_attempts=0):
+                prior=None, blocked=None, failed=None, stale_attempts=0, service_override=None):
         from contextlib import ExitStack
         plugin = self.plugin
         plugin._discovery = object()
@@ -1442,6 +1893,8 @@ class PortableBeforeDisconnectTests(unittest.TestCase):
             service.execute.side_effect = ([stale] * stale_attempts
                 + [service.execute.return_value])
         service.acknowledge.return_value = acknowledge
+        if service_override is not None:
+            service = service_override
         modes = [self.module.OperatingMode.PORTABLE if already else self.module.OperatingMode.TV_DOCKED,
                  self.module.OperatingMode.PORTABLE if final_portable else self.module.OperatingMode.UNKNOWN,
                  self.module.OperatingMode.PORTABLE]

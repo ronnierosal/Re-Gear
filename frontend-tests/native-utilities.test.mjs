@@ -156,6 +156,8 @@ const catalog=await import(`data:text/javascript;base64,${Buffer.from(compile("b
 const Rail = loadComponent("utility-rail.tsx", "UtilityRail", { ...hooks, ...layout, ...registry, CommandCenterIcon: "icon" });
 const Shell = loadComponent("shell.tsx", "ExpandedCommandCenter", { ...hooks, ...model, ...registry, ...catalog, UtilityRail: Rail, CommandCenterIcon: "icon", expandedStyles: "", brandIcon: "brand" });
 const displayTargetActionTile = action => ({ id: "display-target", title: action?.target === "tv" ? "Switch to TV" : action?.target === "ally" ? "Switch to Handheld" : "Display Target", value: action?.available ? "Ready" : "Unavailable", detail: action?.reason ?? "Current display status unavailable" });
+const callable = () => async () => null;
+const createUnplugWarningCoordinator = () => { let state={phase:"idle",requestId:null}; const listeners=new Set(); return {read:()=>state,subscribe(fn){listeners.add(fn);return()=>listeners.delete(fn)},observe(){},stop(){state={phase:"idle",requestId:null};listeners.clear()}}; };
 
 test("shell forwards live readings and requests to real rail range handlers; arrows stay native", async () => {
   const calls = [], readings = { brightness: { available: true, value: "50%", percent: 50 }, volume: { available: true, value: "40%", percent: 40 } };
@@ -194,7 +196,7 @@ test("native menu forwards adapter state and calls into the real shell and rail"
   const h = systemHarness();
   let modalTree, closed = 0;
   const Native = loadComponent("native.tsx", "createExpandedMenu", {
-    ...hooks, createNativeUtilities, testBuildTiles, unavailableTestActions, displayTargetActionTile, GamepadButton, EgpuConfirmModal:"confirm", ExpandedCommandCenter: Shell,
+    ...hooks, callable, createNativeUtilities, createUnplugWarningCoordinator, testBuildTiles, unavailableTestActions, displayTargetActionTile, GamepadButton, EgpuConfirmModal:"confirm", ExpandedCommandCenter: Shell,
     createMenuVisibility: () => ({ source: {}, set() {} }),
     loadMenuBinding: () => "none", saveMenuBinding: () => true, menuBindingOptions: [],
     startMenuShortcut: () => ({ available: true, stop() {}, reset() {} }),

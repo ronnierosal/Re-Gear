@@ -11,6 +11,7 @@ const visibilityExports = {};
 new Function("exports", compile(read("menu-visibility.ts")))(visibilityExports);
 const { createMenuVisibility } = visibilityExports;
 const actionExports={}; new Function("exports",compile(read("test-build-actions.ts")))(actionExports);
+const warningExports={}; new Function("exports",compile(read("../../unplug-warning-coordinator.ts")))(warningExports);
 
 test('native Safe Disconnect activation opens one centered progress surface with a consumable start',()=>{
   const h=harness();h.menu.open();const view=h.mount();
@@ -38,7 +39,7 @@ function harness(pendingRecord = null, recoverTerminalDockReceipt = async () => 
   const values = new Map(pendingRecord ? [["regear.whole-dock.pending-request", pendingRecord]] : []);
   h.storage = { getItem:key=>values.get(key)??null, setItem:(key,value)=>values.set(key,value), removeItem:key=>values.delete(key) };
   const runtime = {
-    createMenuVisibility, ...actionExports,
+    createMenuVisibility, ...actionExports, ...warningExports, callable:()=>async()=>null,
     displayTargetActionTile: action => ({ id: "display-target", title: action?.target === "tv" ? "Switch to TV" : action?.target === "ally" ? "Switch to Handheld" : "Display Target", value: action?.available ? "Ready" : "Unavailable", detail: action?.reason ?? "Current display status unavailable" }),
     GamepadButton:{DIR_UP:9,DIR_DOWN:10,DIR_LEFT:11,DIR_RIGHT:12}, EgpuConfirmModal:"confirm",
     parsePendingRecord: raw => {
@@ -98,6 +99,86 @@ test('plugin remount reconstructs a missing exact terminal receipt as one status
   tree.props.onOK();
   assert.equal(h.storage.getItem('regear.whole-dock.pending-request'),null);
   h.menu.stop();
+});
+
+test('plugin remount presents recovered terminal sleep failure without replay',async()=>{
+  const request='d'.repeat(32);
+  const h=harness(null,async storage=>{
+    storage.setItem('regear.whole-dock.pending-request',`v2:sleep:backend-terminal:${request}`);
+    return {intent:'sleep',request};
+  });
+  await settle();
+  assert.equal(h.modals.length,1);
+  const tree=h.modals[0].node;
+  assert.equal(tree.props.strTitle,'Disconnect + Sleep status');
+  const control=tree.props.children.find(child=>child?.type==='dock');
+  assert.equal(control.props.intent,'sleep');
+  assert.equal(control.props.statusOnly,true);
+  assert.equal(control.props.startRequest,undefined,'recovery cannot replay the route');
+  control.props.onSettled({intent:'sleep',request});
+  assert.ok(h.storage.getItem('regear.whole-dock.pending-request'));
+  tree.props.onOK();
+  assert.equal(h.storage.getItem('regear.whole-dock.pending-request'),null);
+  h.menu.stop();
+});
+
+test('verified post-reboot absence closes the stale sleep popup and clears only its exact receipt',()=>{
+  const request='c'.repeat(32),pending=`v2:sleep:backend-terminal:${request}`;
+  const h=harness(pending);assert.equal(h.modals.length,1);
+  const tree=h.modals[0].node;
+  const control=tree.props.children.find(child=>child?.type==='dock');
+  assert.equal(typeof control.props.onResolvedAbsent,'function');
+  control.props.onResolvedAbsent({intent:'sleep',request:'d'.repeat(32)});
+  assert.equal(h.storage.getItem('regear.whole-dock.pending-request'),pending);
+  assert.equal(h.modals[0].closed,false);
+  control.props.onResolvedAbsent({intent:'sleep',request});
+  assert.equal(h.storage.getItem('regear.whole-dock.pending-request'),null);
+  assert.equal(h.modals[0].closed,true);
+  h.menu.stop();
+});
+
+test('delayed active sleep recovery opens status-only and cancels its timers on stop',async()=>{
+  const request='f'.repeat(32);let reads=0;
+  const h=harness(null,async storage=>{
+    reads++;
+    if(reads===1)return null;
+    storage.setItem('regear.whole-dock.pending-request',`v2:sleep:backend-terminal:${request}`);
+    return {intent:'sleep',request};
+  });
+  await settle();
+  assert.equal(h.modals.length,0);
+  h.runLatestTimer();
+  await settle();
+  assert.equal(reads,2);
+  assert.equal(h.modals.length,1);
+  const tree=h.modals[0].node;
+  assert.equal(tree.props.strTitle,'Disconnect + Sleep status');
+  const control=tree.props.children.find(child=>child?.type==='dock');
+  assert.equal(control.props.intent,'sleep');
+  assert.equal(control.props.statusOnly,true);
+  assert.equal(control.props.startRequest,undefined);
+  assert.ok(h.timers.size>=1,'recovery arms warning and delayed rebuild ownership');
+  h.menu.stop();
+  assert.equal(h.timers.size,0);
+});
+
+test('missing receipt recovery survives a Gamescope transition longer than one minute',async()=>{
+  const request='9'.repeat(32);let reads=0;
+  const h=harness(null,async storage=>{
+    reads++;
+    if(reads<=46)return null;
+    storage.setItem('regear.whole-dock.pending-request',`v2:sleep:backend-terminal:${request}`);
+    return {intent:'sleep',request};
+  });
+  await settle();
+  for(let attempt=1;attempt<=46;attempt++){h.runLatestTimer();await settle();}
+  assert.equal(reads,47,'recovery remains armed after 92 seconds of two-second reads');
+  assert.equal(h.modals.length,1);
+  const control=h.modals[0].node.props.children.find(child=>child?.type==='dock');
+  assert.equal(control.props.statusOnly,true);
+  assert.equal(control.props.startRequest,undefined);
+  h.menu.stop();
+  assert.equal(h.timers.size,0);
 });
 
 test('plugin remount restores pending sleep as status-only and never replays it',()=>{

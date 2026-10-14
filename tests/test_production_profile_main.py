@@ -104,7 +104,7 @@ class ProductionPluginTests(unittest.IsolatedAsyncioTestCase):
             ("execute_link_recovery", (True, "")),
             ("approve_supervised_tv_switch", ()),
             ("execute_supervised_tv_switch", ("unused-token",)),
-            ("acknowledge_supervised_tv_switch", ("unused-receipt",)),
+            ("acknowledge_supervised_tv_switch", ("bad/id",)),
             ("remember_game_close_choice", ("123", "disconnect", True, True)),
             ("forget_game_close_choice", ("123", "disconnect")),
             ("take_pending_relaunch", ()), ("take_pending_sleep", ()),
