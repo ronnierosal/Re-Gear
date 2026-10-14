@@ -34,8 +34,7 @@ class AutomaticRecoveryTests(unittest.TestCase):
         self.assertFalse(self.sample(100))
         self.policy.finish(100)
         self.assertFalse(self.sample(101))
-        self.assertFalse(self.sample(110))
-        self.assertTrue(self.sample(111))
+        self.assertTrue(self.sample(110))
         self.policy.begin(); self.policy.finish(120)
         self.assertFalse(self.sample(121))
         self.assertFalse(self.sample(10000))
@@ -45,11 +44,28 @@ class AutomaticRecoveryTests(unittest.TestCase):
         self.arm(); self.sample(5, pci_complete=True)
         self.assertFalse(self.sample(100))
 
-    def test_game_or_unknown_idle_evidence_restarts_settling(self):
-        self.arm(); self.sample(10, idle=False)
-        self.assertFalse(self.sample(11))
-        self.assertFalse(self.sample(20.9))
-        self.assertTrue(self.sample(21))
+    def test_current_non_idle_blocks_without_restarting_attachment_settle(self):
+        self.arm()
+        self.assertFalse(self.sample(10, idle=False))
+        self.assertEqual(self.policy.decision_code, "automatic_recovery.waiting_for_idle")
+        # Once the original attach deadline has passed, a fresh idle reading is
+        # sufficient. The caller still performs its second observation and the
+        # reserved dispatch preflight before any session command can run.
+        self.assertTrue(self.sample(11, idle=True))
+
+    def test_game_running_past_deadline_stays_blocked_until_currently_idle(self):
+        self.arm()
+        self.assertFalse(self.sample(100, idle=False))
+        self.assertEqual(self.policy.decision_code, "automatic_recovery.waiting_for_idle")
+        self.assertTrue(self.sample(101, idle=True))
+
+    def test_transport_loss_restarts_settle_for_same_identity_return(self):
+        self.arm()
+        self.assertFalse(self.sample(11, present=False))
+        self.assertEqual(self.policy.decision_code, "automatic_recovery.waiting_for_transport")
+        self.assertFalse(self.sample(11.1))
+        self.assertFalse(self.sample(21.099))
+        self.assertTrue(self.sample(21.1))
 
     def test_disabled_or_unresolved_transport_never_dispatches(self):
         for changes in [dict(enabled=False), dict(identity="transport:unresolved"), dict(present=False)]:
