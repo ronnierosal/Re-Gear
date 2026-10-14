@@ -1,0 +1,67 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import ts from 'typescript';
+import {readFileSync} from 'node:fs';
+import * as manualUi from '../src/tdp-ui.ts';
+import * as autoUi from '../src/auto-tdp-ui.ts';
+const src=readFileSync(new URL('../src/quick-access/use-performance.ts',import.meta.url),'utf8');
+const js=ts.transpileModule(src,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;
+const out={};
+new Function('require','exports',js)(path=>path.includes('auto-tdp-ui')?autoUi:path.includes('tdp-ui')?manualUi:{},out);
+const presets=[{id:'low',watts:10,admitted:true},{id:'balanced',watts:15,admitted:true},{id:'high',watts:25,admitted:true}];
+const manual={schema_version:1,enabled:true,can_enable:true,ready:true,code:'tdp.ready',current_watts:15,minimum_watts:7,maximum_watts:30,restore_available:true,recovery_required:false,auto_tdp_available:true,last_result:null,manual_presets:presets};
+const off={schema_version:1,can_start:true,enabled:false,running:false,stopping:false,code:'auto_tdp.ready',activity_code:null,target_fps:null,minimum_watts:null,maximum_watts:null};
+const settle=()=>new Promise(r=>setImmediate(r));
+async function setup(m=manual,a=off){let now=0;const calls=[];const port={getTdpStatus:async()=>m,getAutoTdpStatus:async()=>a,applyTdpLimit:async w=>{calls.push(['apply',w]);return {...m,current_watts:w};},startAutoTdp:async(...args)=>{calls.push(['start',...args]);return {...a,running:true,enabled:true,can_start:false};},stopAutoTdp:async()=>{calls.push(['stop']);return off;},setTdpEnabled:async()=>{calls.push(['enable']);return m;},restoreTdpLimit:async()=>m};const c=new out.PerformanceController(port,{now:()=>now,schedule:()=>()=>{}});c.setVisible(true);await settle();c.setCycleVisible(true);return {c,calls,port,advance:ms=>now+=ms};}
+test('actual controller advances fixed modes, presets apply once, Auto missing config stays selected unavailable, only Custom opens editor',async()=>{const {c,calls}=await setup();const first=c.createCycleIntent();assert.equal(c.cycle(first),false);await settle();assert.equal(c.snapshot.cycleSelected,'Performance');assert.deepEqual(calls,[['apply',25]]);assert.equal(c.cycle(first),false);assert.equal(c.cycle(c.createCycleIntent()),false);assert.equal(c.snapshot.cycleSelected,'Auto');assert.match(c.snapshot.cycleReason,/configuration/i);assert.equal(c.cycle(c.createCycleIntent()),true);assert.equal(c.snapshot.cycleSelected,'Custom');assert.equal(c.cycle(c.createCycleIntent()),false);await settle();assert.equal(c.snapshot.cycleSelected,'Chill');assert.deepEqual(calls,[['apply',25],['apply',10]]);});
+test('null admission leaves every mode visible without writes or invented applied state',async()=>{const {c,calls}=await setup(null,null);for(const mode of ['Chill','Balanced','Performance','Auto','Custom','Chill']){c.cycle(c.createCycleIntent());assert.equal(c.snapshot.cycleSelected,mode);assert.match(c.snapshot.cycleReason,/unavailable/i);}assert.deepEqual(calls,[]);assert.equal(manualUi.tdpCyclePresentation(c.snapshot).applied,null);});
+test('captured cycle handlers cannot survive close/reopen, changed status, expiry, or another selection',async()=>{for(const change of ['close','status','expiry','selection']){const {c,calls,advance}=await setup();const intent=c.createCycleIntent();if(change==='close'){c.setCycleVisible(false);c.setCycleVisible(true);}if(change==='status')await c.refresh();if(change==='expiry')advance(10000);if(change==='selection'){c.cycle(c.createCycleIntent());await settle();calls.length=0;}assert.equal(c.cycle(intent),false);assert.deepEqual(calls,[],change);}});
+test('Auto uses only actual configured target/range and never stops or enables implicitly',async()=>{const configured={...off,target_fps:60,minimum_watts:7,maximum_watts:30};const {c,calls}=await setup(manual,configured);c.snapshot.cycleSelected='Performance';c.cycle(c.createCycleIntent());await settle();assert.deepEqual(calls,[['start',60,7,30]]);assert.equal(manualUi.tdpCyclePresentation(c.snapshot).applied,'Auto');c.cycle(c.createCycleIntent());assert.deepEqual(calls,[['start',60,7,30]]);assert.match(c.snapshot.cycleReason,/Stop Auto/);});
+test('Auto locks Manual/Custom until separate Stop and confirmed off readback, never queues takeover',async()=>{for(const auto of [{...off,can_start:false,running:true,enabled:true,target_fps:60,minimum_watts:7,maximum_watts:30},{...off,can_start:false,running:true,enabled:false,stopping:true,target_fps:60,minimum_watts:7,maximum_watts:30}]){const {c,calls}=await setup(manual,auto);for(let i=0;i<5;i++)c.cycle(c.createCycleIntent());assert.deepEqual(calls,[]);assert.equal(c.createCycleDraft(c.createCycleIntent()),null);if(auto.stopping){await c.stop();assert.deepEqual(calls,[]);c.snapshot.auto={...off};}else{await c.stop();assert.deepEqual(calls,[['stop']]);}const before=[...calls];c.snapshot.cycleSelected='Custom';c.cycle(c.createCycleIntent());await settle();assert.deepEqual(calls,[...before,['apply',10]]);}});
+test('Custom cycle drafts reject close, cancelled, selection, changed Auto, status and expiry; apply exactly once',async()=>{for(const change of ['none','close','cancel','selection','auto','status','expiry']){const {c,calls,advance}=await setup();c.snapshot.cycleSelected='Auto';assert.equal(c.cycle(c.createCycleIntent()),true);const draft=c.createCycleDraft(c.createCycleIntent(),20);assert.ok(draft);assert.deepEqual(calls,[]);if(change==='close')c.setCycleVisible(false);if(change==='cancel')manualUi.retireCustomTdpDraft(draft);if(change==='selection'){c.cycle(c.createCycleIntent());await settle();calls.length=0;}if(change==='auto')c.snapshot.auto={...off,can_start:false,running:true,enabled:true,target_fps:60,minimum_watts:7,maximum_watts:30};if(change==='status')await c.refresh();if(change==='expiry')advance(10000);await c.applyCycleDraft(draft);await c.applyCycleDraft(draft);assert.deepEqual(calls,change==='none'?[['apply',20]]:[],change);}});
+test('pending selection never replaces configured readback and duplicate activation cannot write twice',async()=>{let resolve;const {c,calls,port}=await setup();port.applyTdpLimit=w=>{calls.push(['apply',w]);return new Promise(r=>resolve=r);};const intent=c.createCycleIntent();c.cycle(intent);assert.equal(c.snapshot.cyclePending,'Performance');let view=manualUi.tdpCyclePresentation(c.snapshot);assert.equal(view.value,'Applying Performance');assert.equal(view.applied,'Balanced');assert.match(view.detail,/Applying Performance/);c.cycle(intent);assert.deepEqual(calls,[['apply',25]]);resolve({...manual,current_watts:25});await settle();assert.equal(c.snapshot.cyclePending,null);assert.equal(manualUi.tdpCyclePresentation(c.snapshot).applied,'Performance');});
+
+function compileModule(path,runtime={}){const exports={};const code=ts.transpileModule(readFileSync(new URL(path,import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX}}).outputText;new Function('require','exports',code)(()=>runtime,exports);return exports;}
+function nativeHarness(c,policy='development'){
+ const visibility=compileModule('../src/quick-access/expanded-command-center/menu-visibility.ts');
+ const actions=compileModule('../src/quick-access/expanded-command-center/test-build-actions.ts');
+ const warnings=compileModule('../src/unplug-warning-coordinator.ts');
+ const profile=compileModule('../src/build-profile.ts');
+ const modals=[],effects=[],cleanups=[],pendingEffects=[];let cursor=0,state;
+ const handle=()=>({...c.snapshot,setCycleVisible:c.setCycleVisible,createCycleIntent:c.createCycleIntent,cycle:c.cycle});
+ const subscribers=new Set();const source={read:()=>state,subscribe:fn=>{subscribers.add(fn);return()=>subscribers.delete(fn);}};state={performance:handle()};
+ const runtime={...visibility,...actions,...warnings,...profile,...manualUi,callable:()=>async()=>null,
+  jsx:(type,props)=>({type,props}),jsxs:(type,props)=>({type,props}),ModalRoot:'modal',ExpandedCommandCenter:'expanded',Focusable:'focusable',Dropdown:'dropdown',Button:'button',GamepadButton:{DIR_UP:1,DIR_DOWN:2,DIR_LEFT:3,DIR_RIGHT:4},
+  useSyncExternalStore:(_subscribe,read)=>read(),useState:x=>[x,()=>{}],
+  useEffect(fn,deps){const i=cursor++;if(!effects[i]||deps.some((d,j)=>d!==effects[i][j])){effects[i]=deps;pendingEffects.push(()=>{cleanups[i]?.();cleanups[i]=fn();});}},
+  displayTargetActionTile:()=>({id:'display-target',value:'Unavailable',detail:''}),
+  loadMenuBinding:()=>null,startMenuShortcut:()=>({stop(){},available:false}),recoverTerminalDockReceipt:async()=>null,
+  parsePendingRecord:()=>null,showModal(node){const modal={node,Close(){}};modals.push(modal);return modal;}};
+ const native=compileModule('../src/quick-access/expanded-command-center/native.tsx',runtime);
+ const host={setTimeout:()=>1,clearTimeout(){},localStorage:{getItem:()=>null}};
+ const menu=native.createExpandedMenu(undefined,host,()=>true,{read:()=>({quick:[{id:'manual',value:'15 W',detail:''}]}),subscribe:()=>()=>{}},()=>null,undefined,undefined,policy,source);
+ return {menu,source,publish(){state={performance:handle()};},withdraw(){state=null;subscribers.forEach(fn=>fn());},mount(){cursor=0;const child=modals.at(-1).node.props.children.find(x=>typeof x?.type==='function');const view=child.type(child.props);pendingEffects.splice(0).forEach(fn=>fn());return view;},unmount(){cleanups.forEach(fn=>fn?.());}};
+}
+test('actual native dispatch consumes first-open unavailable intent, rerenders, guards origins and revokes captured close/withdrawal handlers',async()=>{
+ for(const change of ['close','withdraw','unmount','status']){const {c,calls}=await setup();c.setCycleVisible(false);const h=nativeHarness(c);h.menu.open();let view=h.mount();assert.equal(view.props.onAction('quick',{id:'manual'}),true);assert.deepEqual(calls,[]);h.publish();view=h.mount();assert.equal(view.props.onAction('egpu',{id:'manual'}),false);const old=view.props.onAction;
+ if(change==='close'){h.menu.open();view.props.onClose();h.menu.open();h.publish();h.mount();}
+ if(change==='withdraw'){h.withdraw();assert.equal(c.createCycleIntent(),null,'withdrawal revokes before React commit');h.mount();}
+ if(change==='unmount')h.unmount();
+ if(change==='status'){await c.refresh();h.publish();h.mount();}
+ assert.equal(old('performance',{id:'manual'}),true);assert.deepEqual(calls,[],change);h.menu.stop();}
+ const {c,calls}=await setup();c.setCycleVisible(false);const h=nativeHarness(c);h.menu.open();h.mount();h.publish();const view=h.mount();assert.equal(view.props.onAction('performance',{id:'manual'}),true);await settle();assert.deepEqual(calls,[['apply',25]]);h.menu.stop();
+ const prod=nativeHarness(c,'production');prod.menu.open();assert.equal(prod.mount().props.tdpCycle,undefined);assert.equal(prod.mount().props.onAction('performance',{id:'manual'}),false);prod.menu.stop();
+});
+function compactHarness(c){let cursor=0,effectCursor=0;const values=[],effects=[],jobs=[];let handle;
+ const runtime={...manualUi,jsx:(type,props)=>({type,props}),jsxs:(type,props)=>({type,props}),ButtonItem:'button',PanelSection:'section',PanelSectionRow:'row',ReadableBlock:'reading',
+ useState(initial){const i=cursor++;if(!(i in values))values[i]=initial;return [values[i],v=>values[i]=typeof v==='function'?v(values[i]):v];},useRef(initial){return this.useState({current:initial})[0];},
+ useEffect(fn,deps){const i=effectCursor++;if(!effects[i]||deps.some((d,j)=>d!==effects[i].deps[j])){jobs.push(()=>{effects[i]?.cleanup?.();effects[i]={deps,cleanup:fn()};});}}};
+ runtime.useRef=initial=>runtime.useState({current:initial})[0];
+ const {CompactCustomTdpEditor}=compileModule('../src/tdp-controls.tsx',runtime);
+ return {render(){cursor=0;effectCursor=0;handle={...c.snapshot,createCycleIntent:c.createCycleIntent,createCycleDraft:c.createCycleDraft,applyCycleDraft:c.applyCycleDraft};const tree=CompactCustomTdpEditor({controller:handle});jobs.splice(0).forEach(fn=>fn());return tree;},unmount(){effects.forEach(e=>e?.cleanup?.());}};
+}
+function editorNodes(x){if(Array.isArray(x))return x.flatMap(editorNodes);return x&&typeof x==='object'?[x,...editorNodes(x.props?.children)]:[];}
+function editorButton(tree,label){return editorNodes(tree).find(x=>x.type==='button'&&x.props.children===label);}
+test('actual compact Custom editor opens/edits/cancels locally and retires captured handlers on unmount/status/Auto/expiry',async()=>{for(const change of ['apply','cancel','unmount','status','auto','expiry','close']){const {c,calls,advance}=await setup();c.snapshot.cycleSelected='Auto';c.cycle(c.createCycleIntent());const h=compactHarness(c);h.render();let tree=h.render();assert.deepEqual(calls,[]);const oldApply=editorButton(tree,'Apply Custom').props.onClick;editorButton(tree,'+1 W').props.onClick();tree=h.render();assert.deepEqual(calls,[]);oldApply();assert.deepEqual(calls,[],'edited draft retires prior handler');const apply=editorButton(tree,'Apply Custom').props.onClick;
+ if(change==='cancel')editorButton(tree,'Cancel').props.onClick();if(change==='unmount')h.unmount();if(change==='status')await c.refresh();if(change==='auto')c.snapshot.auto={...off,can_start:false,running:true,enabled:true,target_fps:60,minimum_watts:7,maximum_watts:30};if(change==='expiry')advance(10000);if(change==='close')c.setCycleVisible(false);
+ apply();apply();await settle();assert.deepEqual(calls,change==='apply'?[['apply',16]]:[],change);h.unmount();}});

@@ -28,6 +28,22 @@ class ReconnectPending(TopologyRefused):
     """Same retained attachment, but authorization/enumeration is not ready."""
 
 
+def _remaining_pci_refusal(paths):
+    """Attach bounded category counts, never identities or authority, to refusal."""
+    error = TopologyRefused('dock_topology.pci_branch_remains')
+    counts = {'bridges': 0, 'endpoints': 0, 'unreadable': 0}
+    for path in paths:
+        try:
+            category = _read(path / 'class')
+            if not re.fullmatch(r'0x[0-9a-fA-F]{6}', category):
+                raise ValueError('invalid category')
+            counts['bridges' if category.lower() == '0x060400' else 'endpoints'] += 1
+        except (OSError, ValueError, UnicodeError):
+            counts['unreadable'] += 1
+    error.remaining_pci = counts
+    return error
+
+
 def usb_branch_is_hub_only(binding, reading) -> bool:
     """Accept only a complete inventory of pure hubs, never product-name guesses.
 
@@ -478,7 +494,7 @@ def revalidate_retained(binding: WholeDockBinding, *, gpu_removed: bool = False,
         expected = {_path(t) for t in binding.pci_targets if t.parts[-1] not in absent}
         if tunnel_down:
             if actual:
-                raise TopologyRefused("dock_topology.pci_branch_remains")
+                raise _remaining_pci_refusal(actual)
         else:
             if actual != expected:
                 raise TopologyRefused("dock_topology.pci_inventory_changed")
