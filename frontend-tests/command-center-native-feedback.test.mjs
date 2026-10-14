@@ -3,7 +3,7 @@ import test from 'node:test';
 import {readFileSync} from 'node:fs';
 import ts from 'typescript';
 const code=ts.transpileModule(readFileSync(new URL('../src/quick-access/expanded-command-center/native.tsx',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.ES2022,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.React}}).outputText.replace(/^import .*;$/gm,'').replace(/export /g,'');
-function fixture(find){return new Function('React','Button','findModuleExport',code+';return {createMenuFeedback,NativeMenuButton}')( {createElement:(type,props)=>({type,props})},'button',find);}
+function fixture(find){return new Function('React','Button','findModuleExport','callable',code+';return {createMenuFeedback,NativeMenuButton}')( {createElement:(type,props)=>({type,props})},'button',find,()=>async()=>null);}
 test('named Steam mapping preserves receiver and plays one select per native activation',()=>{
  const sounds={IntoGameDetail:101,DefaultOk:102,BasicNav:103},calls=[];
  const dispatcher={PlayNavSound(id){assert.equal(this,dispatcher);calls.push(id)}};

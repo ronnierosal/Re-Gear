@@ -20,6 +20,11 @@ MAX_JOURNAL_ENTRIES = 128
 MAX_DETAIL_ITEMS = 8
 MAX_CODE_LENGTH = 64
 SAFE_TOKEN = re.compile(r"^[a-zA-Z0-9_.:-]{1,96}$")
+BOOT_ID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+
+
+def valid_boot_id(value: str) -> bool:
+    return isinstance(value, str) and bool(BOOT_ID.fullmatch(value)) and value != "00000000-0000-0000-0000-000000000000"
 ALLOWED_DETAIL_KEYS = frozenset(
     {
         "blocker_code",
@@ -173,8 +178,11 @@ class TransitionJournal:
     request_id: str
     entries: tuple[JournalEntry, ...] = field(default_factory=tuple)
     schema_version: int = JOURNAL_SCHEMA_VERSION
+    origin_boot_id: str = ""
 
     def __post_init__(self) -> None:
+        if type(self.origin_boot_id) is not str or (self.origin_boot_id and not valid_boot_id(self.origin_boot_id)):
+            raise ValueError("transition journal boot identity is invalid")
         if self.schema_version != JOURNAL_SCHEMA_VERSION:
             raise ValueError("unsupported transition journal schema")
         if not SAFE_TOKEN.fullmatch(self.operation_id):
@@ -246,7 +254,7 @@ def journal_to_dict(journal: TransitionJournal) -> dict[str, Any]:
 
 
 def journal_from_dict(value: dict[str, Any]) -> TransitionJournal:
-    if set(value) != {"schema_version", "operation_id", "request_id", "entries"}:
+    if set(value) - {"origin_boot_id"} != {"schema_version", "operation_id", "request_id", "entries"}:
         raise ValueError("transition journal contains unknown or missing fields")
     entries_value = value["entries"]
     if not isinstance(entries_value, list):
@@ -278,6 +286,7 @@ def journal_from_dict(value: dict[str, Any]) -> TransitionJournal:
             )
         )
     return TransitionJournal(
+        origin_boot_id=value.get("origin_boot_id", ""),
         schema_version=int(value["schema_version"]),
         operation_id=str(value["operation_id"]),
         request_id=str(value["request_id"]),

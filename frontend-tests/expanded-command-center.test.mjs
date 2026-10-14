@@ -64,7 +64,9 @@ test("demo rendering import graph cannot reach backend or native runtime", () =>
 });
 
 const testActionsJs = ts.transpileModule(readFileSync(new URL("../src/quick-access/expanded-command-center/test-build-actions.ts", import.meta.url), "utf8"), {compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText
-  + `\nconst displayTargetActionTile = action => ({ id: "display-target", title: action?.target === "tv" ? "Switch to TV" : action?.target === "ally" ? "Switch to Handheld" : "Display Target", value: action?.available ? "Ready" : "Unavailable", detail: action?.reason ?? "Current display status unavailable" });`;
+  + `\nconst displayTargetActionTile = action => ({ id: "display-target", title: action?.target === "tv" ? "Switch to TV" : action?.target === "ally" ? "Switch to Handheld" : "Display Target", value: action?.available ? "Ready" : "Unavailable", detail: action?.reason ?? "Current display status unavailable" });
+const callable = () => async () => null;
+const createUnplugWarningCoordinator = () => { let state={phase:"idle",requestId:null}; const listeners=new Set(); return {read:()=>state,subscribe(fn){listeners.add(fn);return()=>listeners.delete(fn)},observe(){},stop(){state={phase:"idle",requestId:null};listeners.clear()}}; };`;
 
 test("native modal uses Decky controls without a second raw navigation listener", async () => {
   const nativeSource = readFileSync(new URL("../src/quick-access/expanded-command-center/native.tsx", import.meta.url), "utf8");

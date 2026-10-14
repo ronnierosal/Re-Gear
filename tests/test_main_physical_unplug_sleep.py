@@ -9,6 +9,78 @@ from unittest.mock import Mock, patch
 from tests.test_main_process_delivery import load_main_module
 
 
+class ArchivedOwnedLeaseTests(unittest.TestCase):
+    def fixture(self, *, runtime_request="a" * 32, release_error=False, **options):
+        from tests.test_main_dock_mutation_gate import CompletedAttachmentAbsenceTests
+        case = CompletedAttachmentAbsenceTests()
+        case.setUp()
+        self.addCleanup(case.doCleanups)
+        lease = Mock()
+        lease.status.return_value = SimpleNamespace(active=True, error="")
+        lease.release.return_value = SimpleNamespace(active=release_error, error="failed" if release_error else "")
+        case.plugin._whole_dock_trial_lease = lease
+        case.plugin._whole_dock_trial_runtime = (
+            SimpleNamespace(_operation=runtime_request), {"held": False})
+        terminal = {"schema_version": 1, "request_id": "a" * 32,
+                    "code": "dock_teardown.unresolved", "busy": False, "ok": False,
+                    "software_down": False, "safe_to_unplug": False}
+        case.plugin._whole_dock_trial_status = terminal
+        result = case.fixture(stage="tunnel_remove_intent", **options)
+        self.assertIs(case.plugin._whole_dock_trial_status, terminal)
+        self.assertFalse(terminal["safe_to_unplug"])
+        return case, lease, result
+
+    def test_actual_interrupted_absence_archival_releases_exact_owned_lease(self):
+        case, lease, result = self.fixture()
+        self.assertEqual(result, (True, 1))
+        lease.release.assert_called_once()
+        self.assertIsNone(case.plugin._whole_dock_trial_lease)
+
+    def test_unverified_absence_worker_or_foreign_runtime_keeps_lease(self):
+        for options in ({"absent": False}, {"strict": False}, {"settled": False},
+                        {"changed": True}, {"unloading": True},
+                        {"runtime_request": "b" * 32}):
+            with self.subTest(options=options):
+                _, lease, _ = self.fixture(**options)
+                lease.release.assert_not_called()
+
+    def test_failed_owned_release_can_retry_without_rearchiving_or_safe_claim(self):
+        case, lease, result = self.fixture(release_error=True)
+        self.assertEqual(result, (True, 1))
+        self.assertIs(case.plugin._whole_dock_trial_lease, lease)
+        lease.release.return_value = SimpleNamespace(active=False, error="")
+        with patch.object(case.module, "verified_transport_absent", return_value=True):
+            self.assertTrue(case.plugin._reconcile_physically_unplugged_trial_lease())
+        self.assertEqual(lease.release.call_count, 2)
+        self.assertIsNone(case.plugin._whole_dock_trial_lease)
+
+    def test_actual_early_portable_refusal_releases_only_acquired_local_lease(self):
+        from contextlib import ExitStack
+        from tests.test_main_disconnect_portable_order import MainDisconnectPortableOrderTests
+        case = MainDisconnectPortableOrderTests()
+        case.setUp()
+        self.addCleanup(case.doCleanups)
+        plugin, module = case.plugin, case.module
+        plugin._set_disconnect_phase = Mock()
+        plugin._return_portable_before_disconnect = Mock(side_effect=ValueError("portable.failed"))
+        lease = Mock()
+        lease.acquire.return_value = SimpleNamespace(active=True)
+        lease.status.return_value = SimpleNamespace(active=True)
+        with ExitStack() as stack:
+            drm = stack.enter_context(patch.object(module, "DrmDiscovery"))
+            drm.return_value.scan.return_value = [SimpleNamespace(boot_vga=False, pci_bdf="fixture")]
+            for name, value in (
+                ("resolve_whole_dock", Mock(return_value=SimpleNamespace(binding="b", generation="g", usb_bdf="u", router_id="r"))),
+                ("GamescopeDiscovery", Mock()),
+                ("resolve_gamescope_user", Mock(return_value=SimpleNamespace(context=SimpleNamespace(uid=1000, username="fixture")))),
+                ("Login1SleepInhibitor", Mock(return_value=lease)),
+            ):
+                stack.enter_context(patch.object(module, name, value))
+            with self.assertRaisesRegex(ValueError, "portable.failed"):
+                plugin._run_whole_dock_trial("a" * 32)
+        lease.release.assert_called_once()
+
+
 class MainPhysicalUnplugSleepTests(unittest.TestCase):
     def setUp(self):
         self.module = load_main_module(real_dock_gate=True)

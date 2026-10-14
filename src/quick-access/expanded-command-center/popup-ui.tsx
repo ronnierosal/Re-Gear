@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { CommandCenterIcon, type CommandCenterIconId } from "../command-center-icons";
 import type { DetailTone } from "./detail-ui";
+import {ReadableBlock} from '../readable-block';
 
 const toneIcon: Record<DetailTone, CommandCenterIconId> = {
   neutral: "status-unknown",
@@ -20,6 +21,7 @@ const toneColor: Record<DetailTone, string> = {
 };
 
 const popupStyles = `
+.rg-readable{min-width:0;line-height:1.45;overflow-wrap:anywhere}.rg-readable.gpfocus,.rg-readable:focus-visible,.rg-readable:focus-within{outline:none!important;box-shadow:none!important;background:transparent!important}
 @keyframes regearPopupPulse{0%,100%{transform:scale(.92);opacity:.58}50%{transform:scale(1.08);opacity:1}}
 @media (prefers-reduced-motion: reduce){[data-regear-popup-active]{animation:none!important}}
 [data-regear-popup-footer]{display:flex;align-items:center;justify-content:flex-end;gap:8px;padding:8px 12px;border-top:1px solid #294f68;background:#061521;flex-wrap:wrap}
@@ -57,13 +59,13 @@ export function PopupStatusRow({ label, value, tone = "neutral", active = false 
   label: string; value: string; tone?: DetailTone; active?: boolean;
 }) {
   const color = toneColor[tone];
-  return <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) auto", alignItems: "center", gap: 10, minHeight: 30, padding: "5px 7px", borderRadius: 8, background: active ? "#0c3145" : "transparent" }}>
-    <span style={{ fontSize: 10.5, color: active ? "#e9f7ff" : "#c8deeb", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{label}</span>
-    <span style={{ display: "inline-flex", alignItems: "center", gap: 5, color, fontSize: 10, fontWeight: 700 }}>
+  return <ReadableBlock label={`${label}: ${value}`}><div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", alignItems: "center", gap: 10, minHeight: 30, padding: "5px 7px", borderRadius: 8, background: active ? "#0c3145" : "transparent" }}>
+    <span style={{ fontSize: 12, color: active ? "#e9f7ff" : "#c8deeb", overflowWrap: "anywhere" }}>{label}</span>
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 5, color, fontSize: 12, fontWeight: 700, minWidth: 0, overflowWrap: "anywhere" }}>
       <span data-regear-popup-active={active ? "true" : undefined} style={{ display: "inline-grid", placeItems: "center", animation: active ? "regearPopupPulse 1.1s ease-in-out infinite" : undefined }}><CommandCenterIcon id={toneIcon[active ? "active" : tone]} size={14}/></span>
       {value}
     </span>
-  </div>;
+  </div></ReadableBlock>;
 }
 
 export function PopupDetailsToggle({ children }: { children: ReactNode }) {

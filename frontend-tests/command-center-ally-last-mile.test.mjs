@@ -37,7 +37,11 @@ test("rapid slider changes preserve the latest requested value", () => {
 
 const shell = readFileSync(new URL("../src/quick-access/expanded-command-center/shell.tsx", import.meta.url), "utf8");
 test("all top-level headings are absent and direct actions have no detail chevron", () => {
-  assert.match(shell, /nested && <><h2>/);
+  // Real controls identify their own sections; unavailable fallback pages still
+  // need a meaningful title, and every detail keeps its accessible page name.
+  assert.match(shell, /className="rg-expanded-detail-page" aria-label=\{nested.title\}/);
+  assert.match(shell, /!hasDetail && <h2>\{nested.title\}<\/h2>/);
+  assert.doesNotMatch(shell, /nested && <><h2>/);
   assert.match(shell, /!unavailableActions\[originFor\(item\).tile.id\] && !\(originFor\(item\).tile.id === "disconnect" && onDisconnect\)/);
   assert.match(styles, /rg-expanded-detail\{display:none;font-size:9px/);
   assert.match(styles, /height:79.2vh/);

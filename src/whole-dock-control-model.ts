@@ -9,6 +9,8 @@ const shutdownRefusals: Record<string, string> = {
   "dock_power.already_consumed": "The original shutdown request has already been used.",
   "dock_power.disconnect_unverified": "Dock disconnect could not be verified; shutdown was not requested.",
   "dock_power.invalid_intent": "The shutdown request was not accepted.",
+  "dock_power.unplug_request_expired": "The guarded shutdown request expired; automatic shutdown will not occur.",
+  "dock_power.unplug_request_cancelled": "Automatic shutdown was cancelled.",
   "dock_power.boot_unverified": "The current system session could not be verified.",
   "dock_power.busy": "Another power request is still in progress.",
   "dock_power.sleep_unverified": "Sleep with the dock connected is not available.",
@@ -130,6 +132,17 @@ function refusedBeforeCorrelation(status: any): boolean {
     && status.request_id === undefined && status.busy === undefined
     && preCorrelationRefusals.has(status.code);
 }
+/** Exact live shutdown receipt; presentation never authorizes a power write. */
+export function shutdownUnplugWaiting(status: any, request: string): boolean {
+  return /^[0-9a-f]{32}$/.test(request) && status?.schema_version === 1
+    && status.request_id === request && status.busy === true && status.in_flight === true
+    && status.ok === false && status.software_down === true
+    && status.safe_to_unplug === false && status.unplug_required === true
+    && status.power_action === "shutdown" && status.power_requested === false
+    && status.route_action === "whole_dock_shutdown" && status.phase === "power_verification"
+    && ["dock_power.unplug_required", "dock_power.unplug_request_expired",
+      "dock_power.unplug_request_cancelled"].includes(status.code);
+}
 export function shutdownRequested(status: any): boolean {
   return status?.schema_version === 1 && status.busy === false && status.safe_to_unplug === false
     && status.code === "dock_power.request_accepted_unverified" && status.power_action === "shutdown"
@@ -191,6 +204,27 @@ export function dockRequestAbandoned(status: any, record: PendingRecord | null, 
     && status.busy === false && status.safe_to_unplug === false
     && status.request_id !== record.request;
 }
+
+/** Retire only the stale UI receipt left after the backend has already
+ * archived a physically absent sleep request. Every independent surface must
+ * agree: there is no trial, no retained claim or power request, and the fresh
+ * runtime snapshot observes the eGPU link down. This never upgrades the old
+ * request to success and never authorizes another hardware action. */
+export function sleepReceiptArchivedAfterAbsence(status: any, claim: any, power: any,
+  snapshot: any, record: PendingRecord | null, now = Date.now()): boolean {
+  const observedAt = Date.parse(snapshot?.observed_at ?? "");
+  return record?.intent === "sleep" && record.panel === "backend-terminal"
+    && /^[0-9a-f]{32}$/.test(record.request)
+    && status?.schema_version === 1 && status.code === "dock_teardown.no_trial"
+    && status.busy === false && status.in_flight === false
+    && status.safe_to_unplug === false && status.attachment_token === ""
+    && claim?.schema_version === 1 && claim.claim_stage === "none"
+    && claim.safe_to_unplug === false
+    && power?.schema_version === 1 && power.code === "dock_power.idle"
+    && power.busy === false && power.power_requested === false
+    && snapshot?.schema_version === 3 && snapshot.egpu_link?.state === "down"
+    && Number.isFinite(observedAt) && observedAt <= now && now - observedAt < 10_000;
+}
 export function dockRequestSettled(status: any, request: string, intent: DockIntent): boolean {
   if (intent !== "disconnect" && intent !== "disconnect_only" && intent !== "shutdown" && intent !== "sleep") return false;
   // A pre-correlation refusal settles: the backend rejected it before minting
@@ -230,7 +264,8 @@ export function dockIntentControl(status: any, snapshot: any, intent: DockIntent
   if (intent === "sleep") {
     if (sleepObserved(status)) return { action: null, label: "Sleep cycle observed",
       message: "The eGPU was removed and the handheld completed the requested sleep cycle." };
-    if (status?.schema_version === 1 && status.power_action === "sleep"
+    if (status?.schema_version === 1 && status.code === "dock_power.unplug_required"
+        && status.power_action === "sleep"
         && status.software_down === true && status.unplug_required === true && status.busy === true) {
       return { action: null, label: "Unplug eGPU now",
         message: "Unplug the eGPU cable now. Re-Gear will wait for verified physical absence, then put the handheld to sleep." };
@@ -252,14 +287,29 @@ export function dockIntentControl(status: any, snapshot: any, intent: DockIntent
     };
   }
   if (intent !== "shutdown") return { action: null, label: "Action unavailable", message: "This action is not supported." };
-  if (shutdownRequested(status)) return { action: null, label: "Shutdown requested", message: "Shutdown was requested. Completion is not confirmed. Keep the cable connected." };
+  if (shutdownUnplugWaiting(status, status?.request_id ?? "")) {
+    const stopped = status.code !== "dock_power.unplug_required";
+    return { action: null, label: stopped ? "Automatic shutdown stopped" : "Unplug eGPU now",
+      message: stopped ? `${shutdownRefusals[status.code]} Physically unplug the eGPU now. The handheld remains awake.`
+        : "Safe disconnect is complete. Physically unplug the eGPU now. Shutdown waits for verified physical absence." };
+  }
+  if (status?.schema_version === 1 && status.busy === false && status.in_flight === false
+      && status.ok === false && status.safe_to_unplug === false
+      && status.power_action === "shutdown" && status.power_requested === false
+      && status.route_action === "whole_dock_shutdown"
+      && ["dock_power.unplug_request_expired", "dock_power.unplug_request_cancelled"].includes(status.code)) {
+    return { action: null, label: "Automatic shutdown stopped",
+      message: `${shutdownRefusals[status.code]} ${status.physical_absence_verified === true
+        ? "Physical absence was verified." : "The current connection state is not confirmed."} Do not repeat this request.` };
+  }
+  if (shutdownRequested(status)) return { action: null, label: "Shutdown requested", message: "Shutdown was requested. Completion is not confirmed." };
   if (snapshot?.schema_version !== 3) return { action: null, label: "Shutdown unavailable", message: "Current system status is unavailable. Refresh before continuing." };
   const view = dockControl(status, snapshot, now);
   return {
     action: view.action === "whole_dock_disconnect" ? "whole_dock_shutdown" : null,
     label: view.action === "whole_dock_disconnect" ? "Disconnect and shut down" : softwareDisconnected(status) ? "Shutdown unavailable" : view.label,
     message: view.action === "whole_dock_disconnect"
-      ? "Disconnect the dock in software, then request shutdown after verification."
+      ? "Return to the handheld, disconnect the eGPU in software, then unplug it when prompted. Shutdown starts only after physical absence is verified."
       : softwareDisconnected(status)
         ? "The dock is already disconnected in software. Shutdown continuation is unavailable; do not repeat the operation."
         : (shutdownRefusals[status?.code] ? shutdownRefusals[status.code] + " Keep the cable connected; do not repeat the operation." : view.message),

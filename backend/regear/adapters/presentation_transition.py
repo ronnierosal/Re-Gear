@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 import time
 from typing import Callable, Protocol
 
@@ -73,6 +74,7 @@ class PresentationTransitionMechanism:
         self._trial_schema_version = 1
         self._trial_layer_ready = trial_layer_ready
         self._trial_steam_waiter = trial_steam_waiter
+        self._recovery_restart = None
 
     def run_portable_trial(self, plan, orchestrator, *, schema_version=1):
         """Called only for a consumed trial-bound permit; reuse the same engine."""
@@ -134,6 +136,7 @@ class PresentationTransitionMechanism:
         binding: TransitionBinding | None,
         observation: ObservedSnapshot | None,
     ) -> MechanismResult:
+        self._recovery_restart = None
         # Revoke pending launch authority even if fresh recovery evidence is
         # unavailable. Otherwise a later session could execute the stale trial.
         try:
@@ -198,6 +201,17 @@ class PresentationTransitionMechanism:
             return MechanismResult(False, f"{prefix}.unit_unavailable")
         if not self._user_still_current(user):
             return MechanismResult(False, f"{prefix}.user_changed")
+        # Queue acceptance cannot prove completion. Capture the existing fixed,
+        # read-only service identity before this recovery's restart. Missing
+        # evidence does not prevent the established recovery attempt.
+        recovery_identity = None
+        recovery_boot = None
+        if prefix == "recovery":
+            try:
+                recovery_boot = self._read_boot_id()
+                recovery_identity = self._service_identity(user, timeout_seconds=0.25)
+            except Exception:
+                pass
         current = infer_placement(observation)
         if self._audio is not None and target is PlacementState.DOCKED_EGPU:
             prepared = self._audio.prepare_docked(user)
@@ -256,7 +270,61 @@ class PresentationTransitionMechanism:
                         False, f"{prefix}.config_rollback_failed"
                     )
                 return MechanismResult(False, audio_result.code)
+        if prefix == "recovery" and recovery_identity is not None:
+            self._recovery_restart = (
+                user, recovery_boot, target, binding, recovery_identity,
+            )
         return MechanismResult(True, f"{prefix}.restart_queued")
+
+    def recovery_restart_completed(self, observation, *, timeout_seconds) -> bool:
+        """Verify this recovery's new active invocation without another write."""
+        pending = self._recovery_restart
+        if pending is None:
+            return False
+        user, boot, target, binding, before = pending
+        try:
+            if (not self._user_still_current(user)
+                    or self._read_boot_id() != boot
+                    or infer_placement(observation) is not target
+                    or self._derive_binding(observation) != binding):
+                return False
+            after = self._service_identity(user, timeout_seconds=min(0.25, timeout_seconds))
+            return (after is not None and after[0] != before[0]
+                    and after[1] == before[1]
+                    and self._user_still_current(user)
+                    and self._read_boot_id() == boot)
+        except Exception:
+            return False
+
+    def _service_identity(self, user, *, timeout_seconds=None):
+        kwargs = {} if timeout_seconds is None else {"timeout_seconds": timeout_seconds}
+        result = self._commands.run(
+            UserServiceOperation.OBSERVE_FILTER_GAMESCOPE,
+            uid=user.uid, username=user.username, **kwargs,
+        )
+        if not result.ok:
+            return None
+        output = getattr(result, "output", None)
+        if type(output) is not str or len(output) > 4096:
+            return None
+        fields = {}
+        for line in output.splitlines():
+            key, separator, value = line.partition("=")
+            if not separator or key in fields:
+                return None
+            fields[key] = value
+        if set(fields) != {"MainPID", "InvocationID", "ActiveState", "ControlGroup"}:
+            return None
+        invocation = fields["InvocationID"]
+        group = fields["ControlGroup"]
+        if (fields["ActiveState"] != "active"
+                or not re.fullmatch(r"[1-9][0-9]{0,9}", fields["MainPID"])
+                or not re.fullmatch(r"[0-9a-f]{32}", invocation)
+                or invocation == "0" * 32
+                or not group.startswith("/") or group == "/"
+                or any(ord(char) < 32 for char in group)):
+            return None
+        return invocation, group
 
     def _user_still_current(self, expected) -> bool:
         try:
