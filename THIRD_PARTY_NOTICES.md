@@ -199,3 +199,15 @@ be supplied by the user and are not redistributed by Re-Gear. These credits do
 not establish production admission, license compatibility, or upstream
 endorsement. Detailed evidence and current limitations are recorded in
 [the frame-generation research note](docs/research/frame-generation.md).
+
+## Droid-Deck/DroidDeck development workflow inspiration
+
+Droid-Deck and the DroidDeck contributors informed Re-Gear's compact candidate
+handoff and test/preview/stable provenance procedure in `docs/DEVELOPMENT.md`
+and the existing `scripts/prepare_release_candidate.py` notes template.
+The reference revision is `799be037e51032748662d787e84511fd75d90fe8`:
+https://github.com/Droid-Deck/DroidDeck/tree/799be037e51032748662d787e84511fd75d90fe8
+Specific sources are `docs/development/discord-build-channels.md`,
+`.github/workflows/build.yml` and `.github/workflows/release.yml`.
+Reuse type: workflow inspiration only; no code or assets copied. Re-Gear retains
+independent review, blocking tests, ownership, rollback and native hardware gates.
