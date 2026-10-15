@@ -99,7 +99,28 @@ function readFrom(source?: TileSource) {
   return cached;
 }
 
+type MenuAttemptStage = "idle" | "input-unavailable" | "chord-reached" | "blocked-stopped" | "blocked-opening"
+  | "blocked-modal" | "blocked-guard" | "restored-operation" | "host-submitted" | "view-mounted" | "closed" | "host-error";
+type MenuAttemptDiagnostic = Readonly<{ schema_version: 1; input: "available" | "unavailable";
+  trigger: "none" | "explicit" | "shortcut"; stage: MenuAttemptStage;
+  host: "not-submitted" | "submitted" | "error"; view: "not-observed" | "mounted" | "unmounted" }>;
+
 export function createExpandedMenu(input: ControllerInputSource | undefined, host: Window, canOpen: () => boolean = () => true, source?: TileSource, readCurrentSnapshot: () => unknown = () => null, renderDetail?: NonEgpuDetailRenderer, runtimeDetails?:RuntimeDetailSource, policy: BuildProfile = "development", performanceDetails?: NonEgpuDetailSource) {
+  // One volatile record. Submission and React mount do not prove visibility.
+  let inputAvailable = false;
+  let attemptGeneration = 0;
+  let attempt: MenuAttemptDiagnostic = Object.freeze({ schema_version: 1, input: "unavailable", trigger: "none",
+    stage: "idle", host: "not-submitted", view: "not-observed" });
+  let modalAttempt: { token: number; attempt: number } | null = null;
+  const recordAttempt = (id: number, patch: Partial<MenuAttemptDiagnostic>) => {
+    if (id === attemptGeneration) attempt = Object.freeze({ ...attempt, ...patch });
+  };
+  const beginAttempt = (trigger: "explicit" | "shortcut") => {
+    const id = ++attemptGeneration;
+    attempt = Object.freeze({ schema_version: 1, input: inputAvailable ? "available" : "unavailable", trigger,
+      stage: trigger === "shortcut" ? "chord-reached" : "idle", host: "not-submitted", view: "not-observed" });
+    return id;
+  };
   const production = policy === "production";
   // Withdrawal revokes editor intents synchronously, before React commits its
   // subscription rerender. Reuse the existing publisher; no new status reader.
@@ -176,6 +197,8 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
   let stopped = false;
   let generation = 0;
   const close = () => {
+    if (modalAttempt) recordAttempt(modalAttempt.attempt, { stage: "closed" });
+    modalAttempt = null;
     performanceDetails?.read()?.performance.setCycleVisible?.(false);
     hideOperation();
     const previous = modal;
@@ -392,10 +415,20 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
     const performanceState = useSyncExternalStore(performanceDetails?.subscribe ?? noSubscribe, performanceDetails?.read ?? noRuntimeDetails, performanceDetails?.read ?? noRuntimeDetails);
     const performanceHandle = performanceState?.performance;
     useEffect(() => {
+      if (generation === token && modalAttempt?.token === token) {
+        recordAttempt(modalAttempt.attempt, { stage: "view-mounted", view: "mounted" });
+      }
       if (!production) performanceHandle?.setCycleVisible?.(true);
       return () => performanceHandle?.setCycleVisible?.(false);
     }, [performanceHandle?.setCycleVisible]);
-    useEffect(() => () => { if (generation === token) { performanceDetails?.read()?.performance.setCycleVisible?.(false);hideOperation();modal = null; generation++; utilities?.stop(); visibility.set(false);if(pendingDockIntent())scheduleOwnerWarningPoll(); } }, [token]);
+    useEffect(() => () => {
+      if (generation !== token) return;
+      if (modalAttempt?.token === token) recordAttempt(modalAttempt.attempt, { stage: "closed", view: "unmounted" });
+      modalAttempt = null;
+      performanceDetails?.read()?.performance.setCycleVisible?.(false);
+      hideOperation(); modal = null; generation++; utilities?.stop(); visibility.set(false);
+      if (pendingDockIntent()) scheduleOwnerWarningPoll();
+    }, [token]);
     const cycleIntent = production ? null : performanceHandle?.createCycleIntent?.() ?? null;
     const cyclePresentation = performanceHandle ? tdpCyclePresentation(performanceHandle) : { value: "Unavailable", detail: "Power status unavailable. Refresh to check admission.", applied: null };
     const runtimeState=useSyncExternalStore(runtimeDetails?.subscribe??noSubscribe,runtimeDetails?.read??noRuntimeDetails,runtimeDetails?.read??noRuntimeDetails);
@@ -436,27 +469,40 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
         onChange={option => { if (menuBindingOptions.some(item => item.data === option.data)) change(option.data as MenuBinding); }} />
     }/>;
   }
-  const open = () => {
-    if (stopped || opening || modal || !canOpen()) return;
+  const openAttempt = (trigger: "explicit" | "shortcut") => {
+    const id = beginAttempt(trigger);
+    if (stopped) { recordAttempt(id, { stage: "blocked-stopped" }); return; }
+    if (opening) { recordAttempt(id, { stage: "blocked-opening" }); return; }
+    if (modal) { recordAttempt(id, { stage: "blocked-modal" }); return; }
+    if (!canOpen()) { recordAttempt(id, { stage: "blocked-guard" }); return; }
     // A player may hide the status surface before the terminal read arrives.
     // Keep the durable receipt and restore that surface on the next explicit
     // Command Center open; this is presentation only and never dispatches.
     resumePendingOperation();
-    if (operation) return;
+    if (operation) { recordAttempt(id, { stage: "restored-operation" }); return; }
     const token = ++generation;
+    modalAttempt = { token, attempt: id };
     opening = true;
     try {
     utilities?.start();
-    const opened = showModal(<ModalRoot closeModal={close} bAllowFullSize bHideCloseIcon bDisableBackgroundDismiss className="rg-expanded-modal-root" modalClassName="rg-expanded-modal-frame">
+    const opened = showModal(<ModalRoot closeModal={() => { if (generation === token) close(); }} bAllowFullSize bHideCloseIcon bDisableBackgroundDismiss className="rg-expanded-modal-root" modalClassName="rg-expanded-modal-frame">
       <style>{`.rg-expanded-modal-root,.rg-expanded-modal-frame{position:fixed!important;inset:0!important;width:100vw!important;height:100vh!important;max-width:none!important;max-height:none!important;padding:0!important;margin:0!important;background:transparent!important;box-shadow:none!important}`}</style>
       <View token={token}/>
     </ModalRoot>, undefined, { strTitle: "Re-Gear Command Center", bNeverPopOut: true });
     if (generation !== token || stopped) { opened.Close(); return; }
     modal = opened;
+    recordAttempt(id, { host: "submitted", stage: attempt.view === "mounted" ? "view-mounted" : "host-submitted" });
     visibility.set(true);
-    } catch { utilities?.stop(); visibility.set(false); } finally { opening = false; }
+    } catch {
+      if (generation === token && !stopped) recordAttempt(id, { stage: "host-error", host: "error" });
+      modalAttempt = null; utilities?.stop(); visibility.set(false);
+    } finally { opening = false; }
   };
-  const shortcut = startMenuShortcut({ input, readBinding: () => binding, open });
+  const open = () => openAttempt("explicit");
+  const shortcut = startMenuShortcut({ input, readBinding: () => binding, open: () => openAttempt("shortcut") });
+  inputAvailable = shortcut.available;
+  attempt = Object.freeze({ ...attempt, input: inputAvailable ? "available" : "unavailable",
+    stage: inputAvailable ? "idle" : "input-unavailable" });
   // Gamescope may replace the entire Decky/React surface while the backend
   // continues a guarded dock request. Reconstruct only its read-only status
   // surface from the durable request record; never replay the action.
@@ -487,5 +533,5 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
     });
   };
   recoverMissingDockReceipt();
-  return { open, disconnect, Settings, visibility: visibility.source, available: shortcut.available, stop() { stopped = true; unsubscribePerformance?.(); publishedPerformance?.setCycleVisible?.(false); warningSubscription(); unplugWarning.stop(); if(recoveryTimer!==null)clearPendingTimeout(recoveryTimer as never);recoveryTimer=null;if(pendingStatusTimer!==null)clearPendingTimeout(pendingStatusTimer as never);pendingStatusTimer=null;if(ownerWarningTimer!==null)clearPendingTimeout(ownerWarningTimer as never);ownerWarningTimer=null;shortcut.stop(); close(); } };
+  return { open, disconnect, Settings, diagnostics: { read: () => attempt }, visibility: visibility.source, available: shortcut.available, stop() { stopped = true; unsubscribePerformance?.(); publishedPerformance?.setCycleVisible?.(false); warningSubscription(); unplugWarning.stop(); if(recoveryTimer!==null)clearPendingTimeout(recoveryTimer as never);recoveryTimer=null;if(pendingStatusTimer!==null)clearPendingTimeout(pendingStatusTimer as never);pendingStatusTimer=null;if(ownerWarningTimer!==null)clearPendingTimeout(ownerWarningTimer as never);ownerWarningTimer=null;shortcut.stop(); close(); } };
 }

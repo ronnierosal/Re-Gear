@@ -34,9 +34,10 @@ test('delayed close callback from an old operation cannot close the replacement'
   h.menu.stop();assert.equal(current.closed,true);
 });
 
-function harness(pendingRecord = null, recoverTerminalDockReceipt = async () => null) {
+function harness(pendingRecord = null, recoverTerminalDockReceipt = async () => null, options = {}) {
   const h = { modals: [], cleanup: [], timers: new Map(), nextTimer: 1, throwOpen: false, stopped: false, allowed: true };
   const values = new Map(pendingRecord ? [["regear.whole-dock.pending-request", pendingRecord]] : []);
+  h.storageValues = values;
   h.storage = { getItem:key=>values.get(key)??null, setItem:(key,value)=>values.set(key,value), removeItem:key=>values.delete(key) };
   const runtime = {
     createMenuVisibility, ...actionExports, ...warningExports, callable:()=>async()=>null,
@@ -52,7 +53,7 @@ function harness(pendingRecord = null, recoverTerminalDockReceipt = async () => 
     Button: "button", Focusable: "focusable", ModalRoot: "modal", Dropdown: "dropdown",
     ExpandedCommandCenter: "expanded", WholeDockControl: "dock", recoverTerminalDockReceipt, ShortcutSettings: "settings",
     loadMenuBinding: () => "view-y", saveMenuBinding: () => true, menuBindingOptions: [],
-    startMenuShortcut: options => { h.shortcutOpen = options.open; return { available: true, reset() {}, stop() { h.stopped = true; } }; },
+    startMenuShortcut: callbacks => { h.shortcutOpen = callbacks.open; return { available: options.inputAvailable !== false, reset() {}, stop() { h.stopped = true; } }; },
     showModal: (node,parent,options) => {
       if (h.throwOpen) throw Error("host unavailable");
       h.onHostOpen?.();
@@ -79,6 +80,78 @@ function harness(pendingRecord = null, recoverTerminalDockReceipt = async () => 
 }
 
 const settle = async () => { for(let n=0;n<12;n++) await Promise.resolve(); };
+
+test('attempt diagnostics separate host submission from mount and remain immutable and categorical',()=>{
+  const h=harness(); const idle=h.menu.diagnostics.read();
+  assert.equal(idle.stage,'idle'); assert.ok(Object.isFrozen(idle));
+  h.menu.open(); const submitted=h.menu.diagnostics.read();
+  assert.equal(submitted.stage,'host-submitted'); assert.equal(submitted.host,'submitted');
+  assert.equal(submitted.view,'not-observed'); assert.equal(idle.stage,'idle');
+  h.mount(); assert.equal(h.menu.diagnostics.read().stage,'view-mounted');
+  assert.equal(h.menu.diagnostics.read().view,'mounted');
+  assert.deepEqual(Object.keys(submitted).sort(),['host','input','schema_version','stage','trigger','view']);
+  h.modals[0].node.props.closeModal(); assert.equal(h.menu.diagnostics.read().stage,'closed');
+  h.menu.stop();
+});
+
+test('attempt diagnostics identify input, shortcut and each refused open without reopening',()=>{
+  const unavailable=harness(null,async()=>null,{inputAvailable:false});
+  assert.equal(unavailable.menu.diagnostics.read().stage,'input-unavailable');unavailable.menu.stop();
+  const h=harness();h.allowed=false;h.shortcutOpen();
+  assert.equal(h.menu.diagnostics.read().trigger,'shortcut');assert.equal(h.menu.diagnostics.read().stage,'blocked-guard');
+  h.allowed=true;h.menu.open();h.menu.open();
+  assert.equal(h.menu.diagnostics.read().stage,'blocked-modal');assert.equal(h.modals.length,1);
+  h.menu.stop();h.menu.open();assert.equal(h.menu.diagnostics.read().stage,'blocked-stopped');
+  const reentrant=harness();let inner;
+  reentrant.onHostOpen=()=>{reentrant.menu.open();inner=reentrant.menu.diagnostics.read();};
+  reentrant.menu.open();assert.equal(inner.stage,'blocked-opening');assert.equal(reentrant.modals.length,1);
+  reentrant.menu.stop();
+});
+
+test('host errors are categorical and diagnostics do not retry a stale non-mounted handle',()=>{
+  const h=harness();h.throwOpen=true;h.menu.open();
+  assert.equal(h.menu.diagnostics.read().stage,'host-error');
+  assert.doesNotMatch(JSON.stringify(h.menu.diagnostics.read()),/host unavailable|Error|stack/);
+  h.throwOpen=false;h.menu.open();h.shortcutOpen();
+  assert.equal(h.menu.diagnostics.read().stage,'blocked-modal');assert.equal(h.modals.length,1);
+  h.menu.stop();
+});
+
+test('stale mount, close and cleanup cannot overwrite a newer attempt or close its modal',()=>{
+  const h=harness();h.menu.open();const old=h.modals[0];h.mount();
+  const cleanup=[...h.cleanup];old.node.props.closeModal();h.menu.open();const current=h.modals[1];
+  const before=h.menu.diagnostics.read();
+  const oldView=old.node.props.children.find(child=>typeof child?.type==='function');oldView.type(oldView.props);
+  old.node.props.closeModal();for(const dispose of cleanup)dispose?.();
+  assert.strictEqual(h.menu.diagnostics.read(),before);assert.equal(current.closed,false);
+  h.mount();assert.equal(h.menu.diagnostics.read().stage,'view-mounted');h.menu.stop();
+});
+
+test('stop during host submission retires diagnostics and closes the late handle once',()=>{
+  const h=harness();h.onHostOpen=()=>h.menu.stop();h.menu.open();
+  assert.equal(h.modals.length,1);assert.equal(h.modals[0].closed,true);
+  assert.equal(h.menu.diagnostics.read().stage,'closed');assert.equal(h.menu.visibility.read(),false);
+  const throwing=harness();throwing.onHostOpen=()=>{throwing.menu.stop();throw Error('late private failure');};
+  throwing.menu.open();assert.equal(throwing.menu.diagnostics.read().stage,'closed');
+  assert.equal(throwing.menu.diagnostics.read().host,'not-submitted');
+});
+
+test('attempt readback stays bounded across duplicate input and pending status restoration',()=>{
+  const h=harness();h.shortcutOpen();
+  for(let n=0;n<200;n++)h.shortcutOpen();
+  const diagnostic=h.menu.diagnostics.read();
+  assert.equal(diagnostic.trigger,'shortcut');assert.equal(diagnostic.stage,'blocked-modal');
+  assert.equal(JSON.stringify(diagnostic).length<200,true);assert.equal(h.modals.length,1);
+  assert.deepEqual([...h.storageValues],[]);
+  h.menu.stop();
+  const request='7'.repeat(32);
+  const pending=harness(`v2:sleep:old-panel:${request}`);
+  const receipt=pending.storage.getItem('regear.whole-dock.pending-request');
+  pending.menu.open();
+  assert.equal(pending.menu.diagnostics.read().stage,'restored-operation');
+  assert.equal(pending.storage.getItem('regear.whole-dock.pending-request'),receipt);
+  assert.equal(pending.modals.length,1);pending.menu.stop();
+});
 
 test('plugin remount reconstructs a missing exact terminal receipt as one status-only popup',async()=>{
   const request='5'.repeat(32);
