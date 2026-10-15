@@ -36,6 +36,8 @@ test('delayed close callback from an old operation cannot close the replacement'
 
 function harness(pendingRecord = null, recoverTerminalDockReceipt = async () => null, options = {}) {
   const h = { modals: [], cleanup: [], timers: new Map(), nextTimer: 1, throwOpen: false, stopped: false, allowed: true };
+  const states = new Map();let rendering=null,cursor=0;
+  h.render = component => {const previous=rendering;rendering=states.get(component)??[];states.set(component,rendering);cursor=0;try{return component();}finally{rendering=previous;}};
   const values = new Map(pendingRecord ? [["regear.whole-dock.pending-request", pendingRecord]] : []);
   h.storageValues = values;
   h.storage = { getItem:key=>values.get(key)??null, setItem:(key,value)=>values.set(key,value), removeItem:key=>values.delete(key) };
@@ -48,7 +50,11 @@ function harness(pendingRecord = null, recoverTerminalDockReceipt = async () => 
       return match ? { intent: match[1], panel: match[2], request: match[3] } : null;
     },
     jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }),
-    useEffect: callback => h.cleanup.push(callback()), useState: value => [value, () => {}],
+    useEffect: callback => h.cleanup.push(callback()), useState: value => {
+      if(!rendering)return[value,()=>{}];const values=rendering,index=cursor++;
+      if(!(index in values))values[index]=value;
+      return[values[index],next=>{values[index]=next;}];
+    },
     useSyncExternalStore: (_subscribe, read) => read(),
     Button: "button", Focusable: "focusable", ModalRoot: "modal", Dropdown: "dropdown",
     ExpandedCommandCenter: "expanded", WholeDockControl: "dock", recoverTerminalDockReceipt, ShortcutSettings: "settings",
@@ -71,7 +77,7 @@ function harness(pendingRecord = null, recoverTerminalDockReceipt = async () => 
     setTimeout(callback) { const id=h.nextTimer++;h.timers.set(id,callback);return id; },
     clearTimeout(id) { h.timers.delete(id); }};
   h.runLatestTimer = () => { const entry=[...h.timers.entries()].at(-1);if(!entry)return;h.timers.delete(entry[0]);entry[1](); };
-  h.menu = exports.createExpandedMenu(undefined, h.host, () => h.allowed, h.source, h.snapshot, h.detail);
+  h.menu = exports.createExpandedMenu(undefined, h.host, () => h.allowed, h.source, h.snapshot, h.detail,undefined,options.policy??'development');
   h.mount = () => {
     const child = h.modals.at(-1).node.props.children.find(child => typeof child?.type === "function");
     return child.type(child.props);
@@ -80,6 +86,52 @@ function harness(pendingRecord = null, recoverTerminalDockReceipt = async () => 
 }
 
 const settle = async () => { for(let n=0;n<12;n++) await Promise.resolve(); };
+function nodes(tree){if(!tree||typeof tree!=='object')return[];return[tree,...[tree.props?.children].flat(Infinity).flatMap(nodes)];}
+function readAttemptButton(tree){return nodes(tree).find(node=>node.props?.children==='Read last menu attempt');}
+function settingsText(tree){return Array.isArray(tree)?tree.map(settingsText).join(''):typeof tree==='string'?tree:settingsTextChildren(tree);}
+function settingsTextChildren(tree){return tree&&typeof tree==='object'?settingsText(tree.props?.children):'';}
+
+test('landing-page readback preserves the failed shortcut without opening Command Center',()=>{
+  const h=harness();h.throwOpen=true;h.shortcutOpen();const failure=h.menu.diagnostics.read();
+  let settings=h.render(h.menu.Settings);
+  assert.equal(h.menu.diagnostics.read(),failure);assert.equal(h.modals.length,0);
+  assert.doesNotMatch(settingsText(settings),/Stage: host-error/);
+  const read=readAttemptButton(settings);assert.ok(read);read.props.onClick();
+  settings=h.render(h.menu.Settings);
+  assert.match(settingsText(settings),/Stage: host-error/);assert.match(settingsText(settings),/Trigger: shortcut/);
+  assert.match(settingsText(settings),/not prove visibility/);
+  assert.equal(h.menu.diagnostics.read(),failure);assert.equal(h.modals.length,0);
+  h.menu.stop();
+});
+
+test('repeated landing reads are explicit snapshots with no effects on attempts or pending receipts',()=>{
+  const request='8'.repeat(32),receipt=`v2:sleep:prior:${request}`;
+  const h=harness(receipt);h.menu.open();const attempt=h.menu.diagnostics.read();
+  const timers=[...h.timers],storage=[...h.storageValues],modals=h.modals.length;
+  for(let n=0;n<3;n++)readAttemptButton(h.render(h.menu.Settings)).props.onClick();
+  assert.equal(h.menu.diagnostics.read(),attempt);assert.deepEqual([...h.timers],timers);
+  assert.deepEqual([...h.storageValues],storage);assert.equal(h.modals.length,modals);
+  assert.match(settingsText(h.render(h.menu.Settings)),/Stage: restored-operation/);
+  h.menu.stop();
+});
+
+test('landing snapshot stays fixed until explicit refresh and stale callbacks cannot change its source',()=>{
+  const h=harness();h.menu.open();const old=h.modals[0];h.mount();old.node.props.closeModal();
+  h.throwOpen=true;h.shortcutOpen();readAttemptButton(h.render(h.menu.Settings)).props.onClick();
+  const failure=h.menu.diagnostics.read();old.node.props.closeModal();
+  assert.equal(h.menu.diagnostics.read(),failure);
+  h.throwOpen=false;h.menu.open();
+  assert.match(settingsText(h.render(h.menu.Settings)),/Stage: host-error/);
+  readAttemptButton(h.render(h.menu.Settings)).props.onClick();
+  assert.match(settingsText(h.render(h.menu.Settings)),/Stage: host-submitted/);h.menu.stop();
+});
+
+test('production Settings has no diagnostic readout or button',()=>{
+  const h=harness(null,async()=>null,{policy:'production'});
+  const settings=h.render(h.menu.Settings);assert.equal(settings.type,'settings');
+  assert.equal(readAttemptButton(settings),undefined);assert.doesNotMatch(settingsText(settings),/menu attempt|Stage:/);
+  h.menu.stop();
+});
 
 test('attempt diagnostics separate host submission from mount and remain immutable and categorical',()=>{
   const h=harness(); const idle=h.menu.diagnostics.read();

@@ -121,6 +121,7 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
       stage: trigger === "shortcut" ? "chord-reached" : "idle", host: "not-submitted", view: "not-observed" });
     return id;
   };
+  const diagnostics = { read: () => attempt };
   const production = policy === "production";
   // Withdrawal revokes editor intents synchronously, before React commits its
   // subscription rerender. Reuse the existing publisher; no new status reader.
@@ -450,25 +451,35 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
           onChange={option => { if (dockIntentOptions.some(item => item.data === option.data)) setDockIntent(option.data as DockIntent); }}/>}
         <WholeDockControl intent={production ? "disconnect_only" : dockIntent} readCurrentSnapshot={readCurrentSnapshot} onSettled={presentDockSettlement} unplugWarning={unplugWarning}/>
       </Focusable>
-    } directions={{up:GamepadButton.DIR_UP,down:GamepadButton.DIR_DOWN,left:GamepadButton.DIR_LEFT,right:GamepadButton.DIR_RIGHT}} unavailableActions={unavailable} onAction={(_tab,tile)=>{if(!production&&(_tab==="quick"||_tab==="performance")&&tile.id==="manual"){if(generation!==token||stopped||!modal||performanceDetails?.read()?.performance.manual!==performanceHandle?.manual||performanceDetails?.read()?.performance.auto!==performanceHandle?.auto)return true;return !performanceHandle?.cycle?.(cycleIntent);}if(tile.id==="display-target"){runtimeDetails?.requestDisplayTarget();return true;}if(tile.id==="disconnect-sleep"){disconnect("sleep");return true;}if(tile.id==="disconnect-shutdown"){disconnect("shutdown");return true;}if(production)return false;if(tile.id==="portable-shutdown"){shutdown();return true;}if(tile.id==="switch-handheld"){runtimeDetails?.requestHandheld();return true;}return false;}} layoutStorage={production ? undefined : storage} editButtons={production ? undefined : {y:GamepadButton.OPTIONS}} primitives={{ Button: NativeMenuButton, Focusable }} settings={<Settings/>} tiles={production ? productionTiles : runtimeDetails?{...tiles,egpu:[...(tiles?.egpu??[]),{id:"portable-shutdown",title:"Shutdown",value:runtimeState?.shutdown?.pending?"Pending":runtimeState?.shutdown?.available?"Ready":"Unavailable",detail:runtimeState?.shutdown?.reason??"Current status unavailable"}],offline:offlineTabTiles,settings:[...(tiles?.settings??[]).filter(tile=>tile.id==='diagnostics'),{id:'reset-layout',title:'Reset Layout',value:'Configure',detail:'Restore default card positions'},{id:'tutorials',title:'Tutorials',value:'Open',detail:'Connection, disconnect and help'},{id:'about',title:'About',value:version,detail:'Version and credits'}]}:tiles} renderDetail={production ? ((tab,tile)=>tab==="egpu"&&(tile.id==="egpu"||tile.id==="disconnect") ? renderDetail?.(tab,tile) : null) : runtimeDetails?((tab,tile)=>tab==='settings'&&tile.id==='tutorials'?<Tutorials/>:renderDetail?.(tab,tile)):renderDetail} catalogReadings={production ? undefined : rawTiles} utilityReadings={utilityReadings} onUtilityRequest={utilities ? (id, percent) => {
+    } directions={{up:GamepadButton.DIR_UP,down:GamepadButton.DIR_DOWN,left:GamepadButton.DIR_LEFT,right:GamepadButton.DIR_RIGHT}} unavailableActions={unavailable} onAction={(_tab,tile)=>{if(!production&&(_tab==="quick"||_tab==="performance")&&tile.id==="manual"){if(generation!==token||stopped||!modal||performanceDetails?.read()?.performance.manual!==performanceHandle?.manual||performanceDetails?.read()?.performance.auto!==performanceHandle?.auto)return true;return !performanceHandle?.cycle?.(cycleIntent);}if(tile.id==="display-target"){runtimeDetails?.requestDisplayTarget();return true;}if(tile.id==="disconnect-sleep"){disconnect("sleep");return true;}if(tile.id==="disconnect-shutdown"){disconnect("shutdown");return true;}if(production)return false;if(tile.id==="portable-shutdown"){shutdown();return true;}if(tile.id==="switch-handheld"){runtimeDetails?.requestHandheld();return true;}return false;}} layoutStorage={production ? undefined : storage} editButtons={production ? undefined : {y:GamepadButton.OPTIONS}} primitives={{ Button: NativeMenuButton, Focusable }} settings={<MenuSettings/>} tiles={production ? productionTiles : runtimeDetails?{...tiles,egpu:[...(tiles?.egpu??[]),{id:"portable-shutdown",title:"Shutdown",value:runtimeState?.shutdown?.pending?"Pending":runtimeState?.shutdown?.available?"Ready":"Unavailable",detail:runtimeState?.shutdown?.reason??"Current status unavailable"}],offline:offlineTabTiles,settings:[...(tiles?.settings??[]).filter(tile=>tile.id==='diagnostics'),{id:'reset-layout',title:'Reset Layout',value:'Configure',detail:'Restore default card positions'},{id:'tutorials',title:'Tutorials',value:'Open',detail:'Connection, disconnect and help'},{id:'about',title:'About',value:version,detail:'Version and credits'}]}:tiles} renderDetail={production ? ((tab,tile)=>tab==="egpu"&&(tile.id==="egpu"||tile.id==="disconnect") ? renderDetail?.(tab,tile) : null) : runtimeDetails?((tab,tile)=>tab==='settings'&&tile.id==='tutorials'?<Tutorials/>:renderDetail?.(tab,tile)):renderDetail} catalogReadings={production ? undefined : rawTiles} utilityReadings={utilityReadings} onUtilityRequest={utilities ? (id, percent) => {
       if (generation !== token || stopped) return Promise.reject(new Error("Menu closed"));
       if (production && id !== "brightness" && id !== "volume") throw new Error("Control unavailable");
       return utilities.request(id, percent);
     } : undefined}/>;
   }
-  function Settings() {
+  function useShortcutSettings(readback: boolean) {
     const selected=useSyncExternalStore(subscribeBinding,readBinding,readBinding);
     const [error, setError] = useState("");
+    const [lastAttempt, setLastAttempt] = useState<MenuAttemptDiagnostic | null>(null);
     function change(value: MenuBinding) {
       if(stopped)return;
       if (!saveMenuBinding(value, storage)) { setError("Could not save the shortcut. Your previous choice remains active."); return; }
       binding = value; shortcut.reset(); bindingListeners.forEach(listener=>listener()); setError("");
     }
-    return <ShortcutSettings available={shortcut.available} error={error} control={
+    const settings = <ShortcutSettings available={shortcut.available} error={error} control={
       <Dropdown menuLabel="Open Re-Gear" rgOptions={menuBindingOptions} selectedOption={selected}
         onChange={option => { if (menuBindingOptions.some(item => item.data === option.data)) change(option.data as MenuBinding); }} />
     }/>;
+    if (production || !readback) return settings;
+    return <>{settings}<section aria-label="Menu attempt diagnostics">
+      <NativeMenuButton onClick={() => setLastAttempt(diagnostics.read())}>Read last menu attempt</NativeMenuButton>
+      {lastAttempt ? <p role="status">Input: {lastAttempt.input}; Trigger: {lastAttempt.trigger}; Stage: {lastAttempt.stage}; Host: {lastAttempt.host}; View: {lastAttempt.view}</p>
+        : <p>No attempt read yet. Select Read after a failed shortcut.</p>}
+      <p>Submission and mounting do not prove visibility above a game. Another menu attempt replaces the record; reload loses it.</p>
+    </section></>;
   }
+  function Settings() { return useShortcutSettings(true); }
+  function MenuSettings() { return useShortcutSettings(false); }
   const openAttempt = (trigger: "explicit" | "shortcut") => {
     const id = beginAttempt(trigger);
     if (stopped) { recordAttempt(id, { stage: "blocked-stopped" }); return; }
@@ -533,5 +544,5 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
     });
   };
   recoverMissingDockReceipt();
-  return { open, disconnect, Settings, diagnostics: { read: () => attempt }, visibility: visibility.source, available: shortcut.available, stop() { stopped = true; unsubscribePerformance?.(); publishedPerformance?.setCycleVisible?.(false); warningSubscription(); unplugWarning.stop(); if(recoveryTimer!==null)clearPendingTimeout(recoveryTimer as never);recoveryTimer=null;if(pendingStatusTimer!==null)clearPendingTimeout(pendingStatusTimer as never);pendingStatusTimer=null;if(ownerWarningTimer!==null)clearPendingTimeout(ownerWarningTimer as never);ownerWarningTimer=null;shortcut.stop(); close(); } };
+  return { open, disconnect, Settings, diagnostics, visibility: visibility.source, available: shortcut.available, stop() { stopped = true; unsubscribePerformance?.(); publishedPerformance?.setCycleVisible?.(false); warningSubscription(); unplugWarning.stop(); if(recoveryTimer!==null)clearPendingTimeout(recoveryTimer as never);recoveryTimer=null;if(pendingStatusTimer!==null)clearPendingTimeout(pendingStatusTimer as never);pendingStatusTimer=null;if(ownerWarningTimer!==null)clearPendingTimeout(ownerWarningTimer as never);ownerWarningTimer=null;shortcut.stop(); close(); } };
 }
