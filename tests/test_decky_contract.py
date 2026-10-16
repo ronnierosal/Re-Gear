@@ -168,6 +168,7 @@ class DeckyContractTests(unittest.TestCase):
         )
         no_argument_rpcs = {
             "get_snapshot",
+            "get_usb4_native_diagnostic",
             "get_peripheral_status",
             "get_action_history",
             "get_automatic_dock_status",

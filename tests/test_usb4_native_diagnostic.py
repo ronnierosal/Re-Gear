@@ -14,7 +14,7 @@ class DiagnosticTests(unittest.TestCase):
     def test_import_or_reader_error_is_categorical_not_startup_failure(self):
         with patch('regear.delivery.usb4_native_diagnostic.create_reader',side_effect=ImportError('private path')):
             result=read_usb4_native_diagnostic()
-        self.assertEqual('evidence.error',result['code']);self.assertNotIn('private',repr(result))
+        self.assertEqual('usb4_diagnostic.reader_unavailable',result['code']);self.assertNotIn('private',repr(result))
     def test_unavailable_never_constructs_reader(self):
         with patch('regear.delivery.usb4_native_diagnostic.create_reader') as factory:
             result=unavailable();factory.assert_not_called()

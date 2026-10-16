@@ -45,6 +45,8 @@ def read_usb4_native_diagnostic(*, collector=None, clock=time.monotonic):
                 if type(fact) is Fact: result[name]=fact.value
         # Neither read success nor daemon ownership qualifies grant permission.
         return result
+    except ImportError:
+        return unavailable('usb4_diagnostic.reader_unavailable')
     except Exception:
         return unavailable('evidence.error')
     finally:

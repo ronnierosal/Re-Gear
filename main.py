@@ -720,7 +720,7 @@ class Plugin:
         except Exception:
             return self._device_authorization_unavailable()
 
-    async def get_usb4_native_diagnostic(self) -> dict[str, object]:
+    async def get_usb4_native_diagnostic(self, _request: object = None) -> dict[str, object]:
         """Explicit pure read in the plugin context; never reconciles a grant."""
         if BUILD_PROFILE != "development" or getattr(self, "_unloading", False):
             return usb4_native_diagnostic_unavailable()
