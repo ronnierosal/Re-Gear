@@ -46,7 +46,8 @@ class MainDeviceAuthorizationTests(unittest.TestCase):
             result = plugin._device_authorization.confirm('forged', consent=True, action='authorize')
         self.assertEqual('device_authorization.qualification_unavailable', result['code'])
         self.assertFalse(result['requested'])
-        self.assertEqual([], service.mock_calls)
+        service.withdraw_qualification.assert_called_once_with(present=True, uuid=DOCK_UUID)
+        service.confirm.assert_not_called()
 
     def test_status_reconciles_lifecycle_before_reading_facade(self):
         self.plugin._reconcile_device_authorization_disconnect = Mock()

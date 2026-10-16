@@ -544,11 +544,21 @@ class DeviceAuthorizationFacade:
     def _qualified_reading(self):
         if not callable(self._qualification):
             return None
+        reading = None
         try:
             reading = self._read()
-            return reading if self._qualification(reading) is True else None
+            if self._qualification(reading) is True:
+                return reading
         except Exception:
-            return None
+            pass
+        # Qualification loss withdraws consent, not a device or a player answer.
+        # Keep real absence/replacement observation and token invalidation under
+        # the service's single lock; never invent an unplug to revoke a token.
+        self._service.withdraw_qualification(
+            present=reading.present if reading is not None else None,
+            uuid=reading.uuid if reading is not None else '',
+        )
+        return None
 
     @staticmethod
     def _qualification_unavailable(*, answer=False, confirmation=False):

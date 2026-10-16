@@ -107,7 +107,10 @@ class QualificationBoundaryTests(unittest.TestCase):
                     self.assertEqual('', result['token'])
                     self.assertEqual('device_authorization.qualification_unavailable', result['code'])
                     self.assertNotIn('private', repr(result))
-                self.assertEqual([], service.mock_calls)
+                self.assertEqual(4, service.withdraw_qualification.call_count)
+                service.confirm.assert_not_called()
+                service.observe_and_snapshot.assert_not_called()
+                service.observe_and_answer.assert_not_called()
 
     def test_confirmation_requalifies_current_server_reading_before_dispatch(self):
         observer, port, service, facade = build()
@@ -123,6 +126,53 @@ class QualificationBoundaryTests(unittest.TestCase):
         self.assertFalse(result['requested'])
         self.assertEqual([], port.calls)
         self.assertEqual(DOCK_B, qualified[-1])
+
+    def test_rejected_absence_retires_old_consent_on_same_uuid_replug(self):
+        for acknowledged in (False, True):
+            with self.subTest(acknowledged=acknowledged):
+                observer, port, service, facade = build()
+                facade._qualification = lambda reading: reading.present is True
+                token = offer(facade)
+                if acknowledged:
+                    facade.acknowledge(token)
+                generation = service.generation
+                observer.scan = EMPTY
+                facade.status()
+                observer.scan = Scan()
+                result = facade.confirm(token, consent=True, action='authorize')
+                self.assertFalse(result['requested'])
+                self.assertEqual([], port.calls)
+                self.assertGreater(service.generation, generation)
+
+    def test_revoked_and_recovered_qualification_cannot_reuse_consent(self):
+        observer, port, service, facade = build()
+        allowed = True
+        facade._qualification = lambda reading: allowed
+        token = offer(facade)
+        facade.acknowledge(token)
+        allowed = False
+        self.assertEqual('device_authorization.qualification_unavailable', facade.status()['code'])
+        allowed = True
+        result = facade.confirm(token, consent=True, action='authorize')
+        self.assertFalse(result['requested'])
+        self.assertEqual([], port.calls)
+
+    def test_failed_then_recovered_qualification_requires_fresh_authority(self):
+        from unittest.mock import Mock
+        observer, port, service, facade = build()
+        qualifier = Mock(return_value=True)
+        facade._qualification = qualifier
+        token = offer(facade)
+        facade.acknowledge(token)
+        qualifier.side_effect = RuntimeError('private')
+        denied = facade.status()
+        self.assertEqual('', denied['token'])
+        self.assertNotIn('private', repr(denied))
+        qualifier.side_effect = None
+        result = facade.confirm(token, consent=True, action='authorize')
+        self.assertFalse(result['requested'])
+        self.assertEqual([], port.calls)
+        self.assertNotEqual(token, offer(facade))
 
 STATUS_KEYS = {
     "schema_version",
