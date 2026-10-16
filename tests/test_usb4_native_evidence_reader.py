@@ -118,7 +118,7 @@ class ReaderTests(unittest.TestCase):
             MANAGER.replace('<node>', '<node a="first"b="second">'),
             MANAGER.replace('<node>', '<node a=unquoted>'),
             MANAGER.replace('<node>', '<node a="unfinished>'),
-            '<!--comment-->'+MANAGER, '<?xml version="1.0"?>'+MANAGER,
+            '<!--malformed--comment-->'+MANAGER, '<?xml version="1.0"?>'+MANAGER,
             MANAGER.replace('</node>', '<?instruction?></node>'),
             MANAGER.replace('<node>', '<node>untrusted text'),
             MANAGER+'trailing', '\x00'+MANAGER, '\ufffe'+MANAGER,
@@ -141,6 +141,48 @@ class ReaderTests(unittest.TestCase):
             with self.subTest(length=len(xml)):
                 with self.assertRaises(NotImplementedError):
                     BoltNativeEvidenceReader._interface(xml,'org.freedesktop.bolt1.Manager')
+
+    def test_standard_gdbus_comment_header_is_inert_and_qualifies(self):
+        declaration='<!DOCTYPE node PUBLIC "-//freedesktop//DTD D-BUS Object Introspection 1.0//EN" "http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd">'
+        t=Transport()
+        t.manager=declaration+'\n<!-- GDBus 2.0 -->\n'+MANAGER
+        t.device=declaration+'\n<!-- GDBus 2.0 -->\n'+DEVICE
+        self.assertEqual('evidence.observed',self.collect(t).code)
+
+    def test_valid_comments_are_not_parsed_as_elements_or_declarations(self):
+        for comment in ('<!---->', '<!-- harmless -->', '<!-- <node/> -->',
+                        '<!-- <!ENTITY x SYSTEM "file:///private"> <?not-a-PI?> &unknown; -->'):
+            with self.subTest(comment=comment):
+                t=Transport()
+                t.manager=comment+MANAGER.replace('<method',comment+'<method')+comment
+                self.assertEqual('evidence.observed',self.collect(t).code)
+        t=Transport();t.manager=MANAGER.replace('type="ao"','type="s"')+'<!-- type="ao" -->'
+        self.assertEqual('evidence.unsupported',self.collect(t).code)
+
+    def test_malformed_comments_and_declarations_outside_comments_remain_unsupported(self):
+        invalid = ['<!-- missing end', '<!-- a--b -->', '<!-- ends--->',
+                   '<!-- nested <!-- comment -->', '<!--\x00-->',
+                   '<!--good--><!ENTITY x "value">', '<!--good--><?instruction?>',
+                   '<!--good--><![CDATA[value]]>', '<!--good--><!DOCTYPE node>',
+                   MANAGER.replace('<node>', '<node <!--not-attribute-->>'),
+                   '<!---->'*1025]
+        for prefix in invalid:
+            t=Transport();t.manager=prefix+MANAGER
+            self.assertEqual('evidence.unsupported',self.collect(t).code)
+
+    def test_comment_limit_is_finite_and_valid_xml_oracle_agrees(self):
+        from xml.etree import ElementTree
+        from regear.adapters.steamos.usb4_native_evidence import _introspection_tree
+        xml='<!---->'*1024+MANAGER
+        self.assertEqual(ElementTree.fromstring(xml).tag,_introspection_tree(xml)[0])
+        for body in ('a','-','--','a-b','a--b','<node/>','&name;','a-'):
+            xml='<!--'+body+'-->'+MANAGER
+            try:
+                tree=_introspection_tree(xml)
+            except NotImplementedError:
+                with self.assertRaises(ElementTree.ParseError):ElementTree.fromstring(xml)
+            else:
+                self.assertEqual(ElementTree.fromstring(xml).tag,tree[0])
 
     def test_duplicate_or_nested_contract_members_still_fail_exact_qualification(self):
         invalid_managers=[MANAGER.replace('</node>',MANAGER[6:-7]+'</node>'),

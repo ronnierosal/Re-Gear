@@ -91,6 +91,9 @@ def read(self,argv):
  device='<node><interface name="org.freedesktop.bolt1.Device"><method name="Authorize"><arg direction="in" type="s"/></method><property name="Uid" type="s" access="read"/><property name="Status" type="s" access="read"/><property name="Stored" type="b" access="read"/></interface></node>'
  if mode=='malformed':manager='<node>'
  if mode=='entity':manager='<!DOCTYPE node [<!ENTITY x SYSTEM "file:///private">]>'+manager
+ if mode=='gdbus_comment':
+  manager='<!-- GDBus 2.0 -->'+manager
+  device='<!-- GDBus 2.0 -->'+device
  if member=='GetNameOwner':value={'type':'s','data':[':1.42']}
  elif member=='Introspect':value={'type':'s','data':[manager if tail[2]=='/org/freedesktop/bolt' else device]}
  elif member=='ListDevices':value={'type':'ao','data':[['/org/freedesktop/bolt/devices/a']]}
@@ -114,12 +117,12 @@ print(json.dumps(dict(result=result,calls=len(calls))))
                     if '/backend/' in file.as_posix() and file.suffix=='.py':
                         z.writestr(archive_name(file),archive_bytes(file,profile='development'))
             with zipfile.ZipFile(archive) as z:z.extractall(root/'runtime')
-            for mode in ('valid','xml_missing','xml_family_missing','expat_missing','stale_commands','malformed','entity'):
+            for mode in ('valid','gdbus_comment','xml_missing','xml_family_missing','expat_missing','stale_commands','malformed','entity'):
                 with self.subTest(mode=mode):
                     run=subprocess.run([sys.executable,'-I','-S','-B','-c',child,str(root/'runtime/Re-Gear/backend'),mode],cwd=root,capture_output=True,text=True,timeout=15)
                     self.assertEqual(0,run.returncode,run.stderr);output=json.loads(run.stdout);result=output['result']
                     self.assertFalse(result['hardware_write']);self.assertFalse(result['mutation_allowed']);self.assertEqual('unknown',result['static_permission'])
-                    if mode in ('valid','xml_missing','xml_family_missing','expat_missing'):
+                    if mode in ('valid','gdbus_comment','xml_missing','xml_family_missing','expat_missing'):
                         self.assertEqual('evidence.observed',result['code']);self.assertEqual(8,output['calls'])
                         self.assertTrue(all(x['outcome']=='ready' for x in result['imports']))
                     elif mode=='stale_commands':

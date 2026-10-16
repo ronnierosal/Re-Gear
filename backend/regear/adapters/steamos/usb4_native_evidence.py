@@ -81,8 +81,8 @@ def _attribute(value):
 def _introspection_tree(xml):
     """Strict bounded D-Bus element-only subset, independent of optional XML.
 
-    Not a general XML parser: reject namespaces, PI, comments, CDATA and all
-    declarations except the exact inert standard DOCTYPE. Never resolves a DTD.
+    Not a general XML parser: reject namespaces, PI, CDATA and all declarations
+    except the exact inert standard DOCTYPE. Well-formed comments are inert.
     Input is capped before tree/attribute allocation; stack parsing is iterative.
     """
     if type(xml) is not str or len(xml) > 65536:
@@ -92,13 +92,22 @@ def _introspection_tree(xml):
     if len(xml.encode('utf-8')) > 65536:
         raise NotImplementedError
     xml = _STANDARD_DOCTYPE.sub('', xml, count=1)
-    if '<!' in xml or '<?' in xml: raise NotImplementedError
-    position = 0; root = None; stack = []; count = 0
+    position = 0; root = None; stack = []; count = 0; comments = 0
     while position < len(xml):
         space = _XML_SPACE.match(xml, position)
         if space:
             position = space.end()
             if position == len(xml): break
+        if xml.startswith('<!--', position):
+            comments += 1
+            if comments > 1024: raise NotImplementedError
+            end = xml.find('-->', position+4)
+            if end < 0: raise NotImplementedError
+            body = xml[position+4:end]
+            if '--' in body or body.endswith('-'): raise NotImplementedError
+            position = end+3
+            continue
+        # Other declarations/PI still cannot match the element-name grammar.
         if xml[position:position+1] != '<': raise NotImplementedError
         position += 1
         closing = xml[position:position+1] == '/'
