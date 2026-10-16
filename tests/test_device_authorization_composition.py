@@ -175,12 +175,9 @@ class ComposedCase(ObserverCase):
         super().setUp()
         # The real executor. `runner()` injects only the uid probe.
         self.service = DeviceAuthorizationService(runner())
-        # Two positional arguments and nothing else: the remembered grant is
-        # not on offer from an object built this way, so every case below is
-        # testing the arrangement the wiring is meant to build rather than a
-        # fixture that happens to be more permissive than it.
+        # Explicit synthetic qualification; native permission is not inferred.
         self.facade = DeviceAuthorizationFacade(
-            self.sysfs.observer(), self.service
+            self.sysfs.observer(), self.service, qualification=lambda reading: True
         )
         #: The id of the dock `armed()` drew the prompt for, read out of the
         #: tree rather than named. Empty until a prompt has been armed.

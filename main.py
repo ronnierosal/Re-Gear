@@ -562,6 +562,7 @@ class Plugin:
             self._device_authorization_observer,
             DeviceAuthorizationService(self._device_authorization_commands),
             remembered_grant_enabled=True,
+            qualification=self._retained_authorization_qualification,
         )
         self._sleep_guard = SleepGuardController()
         self._sleep_hardware = G1SleepGuardHardwareDiscovery()
@@ -651,6 +652,16 @@ class Plugin:
         self._benchmark_request_generation = 0
         self._auto_cancel_requested = threading.Event()
         self._auto_cancel_requested.set()
+
+    def _retained_authorization_qualification(self, reading):
+        """Recheck the existing admitted profile and this server-read identity.
+
+        This preserves the established profile only. It is not native capability
+        qualification for any additional host, including observation-only Mini.
+        """
+        return (observation_mode(self) is RuntimeAdmission.PROFILE_GATED
+                and reading.present is True and reading.identity_resolved is True
+                and bool(reading.uuid))
 
     @staticmethod
     def _device_authorization_unavailable(
@@ -6757,7 +6768,8 @@ from regear.delivery.usb4_native_diagnostic import (  # noqa: E402
     read_usb4_native_diagnostic, unavailable as usb4_native_diagnostic_unavailable,
 )
 from regear.delivery.build_profile_policy import profiled_plugin  # noqa: E402
-from regear.delivery.observation_admission import observation_plugin  # noqa: E402
+from regear.delivery.observation_admission import observation_plugin, mode as observation_mode  # noqa: E402
+from regear.domain.runtime_admission import RuntimeAdmission  # noqa: E402
 from regear.delivery.usb4_waiting_observation import Usb4WaitingObservation  # noqa: E402
 
 

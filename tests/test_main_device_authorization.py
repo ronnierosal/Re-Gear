@@ -24,6 +24,30 @@ class MainDeviceAuthorizationTests(unittest.TestCase):
         plugin = self.module.Plugin()
         self.assertIs(plugin._device_authorization._remembered_grant_enabled, True)
 
+    def test_retained_qualification_rechecks_host_and_private_reading(self):
+        plugin = self.module.Plugin()
+        reading = NS(present=True, identity_resolved=True, uuid=DOCK_UUID)
+        qualify = plugin._device_authorization._qualification
+        self.assertIs(qualify(reading), True)
+        self.assertIs(qualify(NS(present=True, identity_resolved=False, uuid=DOCK_UUID)), False)
+        self.assertIs(qualify(NS(present=True, identity_resolved=True, uuid='')), False)
+        with patch.object(self.module, 'observation_mode', return_value=self.module.RuntimeAdmission.OBSERVATION_ONLY):
+            self.assertIs(qualify(reading), False)
+
+    def test_real_composed_facade_denies_revoked_profile_before_observation(self):
+        plugin = self.module.Plugin()
+        plugin._device_authorization._observer = Mock()
+        plugin._device_authorization._observer.observe.return_value = NS(
+            present=True, identity_resolved=True, uuid=DOCK_UUID,
+            model='Synthetic Dock', vendor='Synthetic Vendor', authorized=False, enrolled=False)
+        service = Mock()
+        plugin._device_authorization._service = service
+        with patch.object(self.module, 'observation_mode', return_value=self.module.RuntimeAdmission.OBSERVATION_ONLY):
+            result = plugin._device_authorization.confirm('forged', consent=True, action='authorize')
+        self.assertEqual('device_authorization.qualification_unavailable', result['code'])
+        self.assertFalse(result['requested'])
+        self.assertEqual([], service.mock_calls)
+
     def test_status_reconciles_lifecycle_before_reading_facade(self):
         self.plugin._reconcile_device_authorization_disconnect = Mock()
         expected = {"schema_version": 1, "state": "offered", "token": "a" * 32}

@@ -282,9 +282,13 @@ class DeviceAuthorizationFacade:
         service: DeviceAuthorizationService,
         *,
         remembered_grant_enabled: bool = False,
+        qualification=None,
     ) -> None:
         self._observer = observer
         self._service = service
+        # Server-owned, fresh-reading predicate. No RPC can supply or replace it.
+        # Omission and anything other than literal True deny before service use.
+        self._qualification = qualification
         #: Whether the remembered grant (`enroll`) may be asked for at all.
         #: Off by default, and production wiring does not turn it on: the
         #: approved scope is a one-shot authorization, and a remembered grant
@@ -302,7 +306,9 @@ class DeviceAuthorizationFacade:
 
     def status(self) -> dict:
         """Observe, and say what there is to offer. Spends nothing."""
-        reading = self._read()
+        reading = self._qualified_reading()
+        if reading is None:
+            return self._qualification_unavailable()
         return self._payload(
             reading,
             self._service.observe_and_snapshot(
@@ -349,6 +355,9 @@ class DeviceAuthorizationFacade:
         payload that took its name from the second one announced a memory-access
         grant under the wrong device's name.
         """
+        qualified = self._qualified_reading()
+        if qualified is None:
+            return self._qualification_unavailable(confirmation=True)
         if action == "enroll" and not self._remembered_grant_enabled:
             # Refused before the executor is reachable, and before anything is
             # spent: the token stays live so the player can still be asked the
@@ -356,7 +365,7 @@ class DeviceAuthorizationFacade:
             # retained in the port and the runner, and is simply not on offer
             # from here -- so a caller that sends the wrong action string gets
             # a refusal rather than a stored grant of direct memory access.
-            refused = self._read()
+            refused = qualified
             state = self._service.observe_and_snapshot(
                 present=refused.present,
                 identity_resolved=refused.identity_resolved,
@@ -383,7 +392,8 @@ class DeviceAuthorizationFacade:
                 "confirmation_open": state.confirmation_open,
                 "generation": state.generation,
             }
-        acted = self._observe()
+        acted = qualified
+        self._service.observe_attachment(present=acted.present, uuid=acted.uuid)
         outcome = self._service.confirm(
             token,
             consent=consent,
@@ -515,7 +525,9 @@ class DeviceAuthorizationFacade:
         The reading travels in with the answer, so the latch this payload
         reports is the one this answer spent, on the device this reading named.
         """
-        reading = self._read()
+        reading = self._qualified_reading()
+        if reading is None:
+            return self._qualification_unavailable(answer=True)
         answer = self._service.observe_and_answer(
             token,
             accept=accept,
@@ -527,6 +539,29 @@ class DeviceAuthorizationFacade:
         )
         payload = self._payload(reading, answer.state)
         payload["accepted"] = answer.accepted is True
+        return payload
+
+    def _qualified_reading(self):
+        if not callable(self._qualification):
+            return None
+        try:
+            reading = self._read()
+            return reading if self._qualification(reading) is True else None
+        except Exception:
+            return None
+
+    @staticmethod
+    def _qualification_unavailable(*, answer=False, confirmation=False):
+        payload = dict(schema_version=SCHEMA_VERSION,
+            code='device_authorization.qualification_unavailable', token='',
+            vendor='', model='', already_offered=False, intentional_disconnect=False,
+            confirmation_open=False, generation=0)
+        if confirmation:
+            payload.update(requested=False, verified=None)
+        else:
+            payload['state'] = 'unavailable'
+            if answer:
+                payload['accepted'] = False
         return payload
 
     def _payload(
