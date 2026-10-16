@@ -11,13 +11,16 @@ DEVICE = '<node><interface name="org.freedesktop.bolt1.Device"><method name="Aut
 class Transport:
     def __init__(self):
         self.calls=[]; self.owners=iter((':1.42', ':1.42')); self.devices=['/org/freedesktop/bolt/devices/a']
-        self.manager=MANAGER; self.device=DEVICE; self.properties={'Uid':'private-binding','Status':'connected','Stored':False}
+        self.manager=MANAGER; self.device=DEVICE; self.properties={'Uid':'private-binding','Status':'connected','Stored':False}; self.statuses={}
     def __call__(self, request, budget):
         self.calls.append((request,budget))
         if request.member=='GetNameOwner': value=next(self.owners)
         elif request.member=='Introspect': value=self.manager if request.path=='/org/freedesktop/bolt' else self.device
         elif request.member=='ListDevices': value=self.devices
         elif request.member=='GetAll': value=self.properties
+        elif request.member=='Get':
+            assert request.arguments==('org.freedesktop.bolt1.Device','Status')
+            value=self.statuses.get(request.path,'unknown')
         else: raise AssertionError('unexpected operation')
         return json.dumps(value).encode()
 
@@ -53,6 +56,55 @@ class ReaderTests(unittest.TestCase):
             t=Transport();t.devices=devices;r=self.collect(t)
             self.assertIs(r.snapshot.attachment_state,expected);self.assertIsNone(r.snapshot.attachment)
             self.assertFalse(any(q.member=='GetAll' for q,_ in t.calls))
+
+    def test_current_and_remembered_objects_only_inspect_candidate_in_every_order(self):
+        import itertools
+        paths=['/org/freedesktop/bolt/devices/current','/org/freedesktop/bolt/devices/stored','/org/freedesktop/bolt/devices/host']
+        for count in (2,3):
+            for order in itertools.permutations(paths[:count]):
+                t=Transport();t.devices=list(order)
+                t.statuses={p:('connected' if p==paths[0] else 'disconnected') for p in paths[:count]}
+                report=self.collect(t)
+                self.assertEqual('evidence.observed',report.code)
+                self.assertIs(report.snapshot.api,Fact.OBSERVED)
+                self.assertIs(report.snapshot.attachment_state,Fact.UNKNOWN)
+                self.assertIs(report.snapshot.enrollment_store,Fact.UNKNOWN)
+                self.assertIs(report.snapshot.static_permission,Fact.UNKNOWN)
+                self.assertIsNone(report.snapshot.attachment)
+                self.assertFalse(any(q.member=='GetAll' for q,_ in t.calls))
+                inspected=[q.path for q,_ in t.calls if q.member=='Introspect' and q.path!='/org/freedesktop/bolt']
+                self.assertEqual([paths[0]],inspected)
+
+    def test_host_candidate_never_becomes_external_attachment_or_enrollment(self):
+        t=Transport();t.devices=['/host','/stored']
+        t.statuses={'/host':'authorized','/stored':'disconnected'}
+        r=self.collect(t)
+        self.assertIs(r.snapshot.api,Fact.OBSERVED)
+        self.assertIs(r.snapshot.attachment_state,Fact.UNKNOWN)
+        self.assertIs(r.snapshot.enrollment_store,Fact.UNKNOWN)
+        self.assertIsNone(r.snapshot.attachment)
+
+    def test_unresolved_inventory_never_selects_or_partially_inspects(self):
+        for statuses in (['connected','authorized'],['disconnected','disconnected'],
+                         ['connected','unknown'],['connected','connecting'],
+                         ['connected','authorizing'],['connected','unexpected'],
+                         ['connected',None],['connected',True]):
+            for order in (statuses,statuses[::-1]):
+                t=Transport();t.devices=['/a','/b'];t.statuses=dict(zip(t.devices,order))
+                r=self.collect(t)
+                self.assertIs(r.snapshot.attachment_state,Fact.AMBIGUOUS)
+                self.assertIs(r.snapshot.api,Fact.UNKNOWN)
+                self.assertIsNone(r.snapshot.attachment)
+                self.assertFalse(any(q.member=='Introspect' and q.path!='/org/freedesktop/bolt' for q,_ in t.calls))
+        t=Transport();t.devices=['/a','/b','/c','/d']
+        self.assertIs(self.collect(t).snapshot.attachment_state,Fact.AMBIGUOUS)
+        self.assertFalse(any(q.member in ('Get','GetAll') for q,_ in t.calls))
+
+    def test_candidate_owner_change_withdraws_all_evidence(self):
+        t=Transport();t.devices=['/a','/b'];t.statuses={'/a':'connected','/b':'disconnected'}
+        t.owners=iter((':1.42',':1.43'))
+        r=self.collect(t)
+        self.assertEqual('evidence.owner_changed',r.code);self.assertIsNone(r.snapshot)
     def test_denied_timeout_and_malformed_fail_closed(self):
         for error,code in [(PermissionError(),'denied'),(TimeoutError(),'timeout'),(ValueError('private detail'),'error')]:
             def fail(q,b):raise error

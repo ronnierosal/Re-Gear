@@ -30,6 +30,54 @@ class TransportTests(unittest.TestCase):
         for argv in self.runner.calls:
             self.assertIn('--auto-start=no',argv);self.assertIn('--allow-interactive-authorization=no',argv)
             self.assertNotIn('GetAll',argv);self.assertNotIn('Key',argv)
+
+    def test_candidate_status_is_one_fixed_scalar_read(self):
+        q=NativeRead(OWNER,PATH,'org.freedesktop.DBus.Properties','Get',('org.freedesktop.bolt1.Device','Status'))
+        self.assertEqual('connected',json.loads(self.transport(q,self.budget)))
+        self.assertEqual(1,len(self.runner.calls))
+        self.assertEqual('Status',self.runner.calls[0][-1])
+
+    def test_status_query_cannot_expand_to_other_properties_or_forged_types(self):
+        for prop in ('Uid','Stored','Key','Policy'):
+            q=NativeRead(OWNER,PATH,'org.freedesktop.DBus.Properties','Get',('org.freedesktop.bolt1.Device',prop))
+            with self.assertRaises(ValueError):self.transport(q,self.budget)
+        self.assertEqual([],self.runner.calls)
+        q=NativeRead(OWNER,PATH,'org.freedesktop.DBus.Properties','Get',('org.freedesktop.bolt1.Device','Status'))
+        for item in ({'type':'b','data':True},{'type':'s','data':False},{'type':'s','data':'connected','extra':'x'}):
+            self.runner.bad=json.dumps({'type':'v','data':[item]})
+            with self.assertRaises(ValueError):self.transport(q,self.budget)
+
+    def test_real_composition_keeps_two_three_candidate_reads_within_eight_calls(self):
+        from tests.test_usb4_native_evidence_reader import MANAGER,DEVICE
+        from regear.adapters.steamos.usb4_native_evidence import BoltNativeEvidenceReader
+        from regear.application.usb4_native_evidence import collect_native_evidence
+        from regear.ports.usb4_native_evidence import Fact,ReadLimits
+        for size in (2,3):
+            for selected in range(size):
+                paths=[ROOT+'/devices/candidate'+str(i) for i in range(size)]
+                calls=[]
+                class NativeFixture:
+                    def run(self,argv):
+                        argv=BoltNativeReadCommandRunner.validate(argv);calls.append(argv)
+                        if len(calls)>8:raise AssertionError('native call ceiling exceeded')
+                        tail=argv[len(BoltNativeReadCommandRunner.PREFIX):];member=tail[4]
+                        if member=='GetNameOwner':value={'type':'s','data':[OWNER]}
+                        elif member=='Introspect':value={'type':'s','data':[MANAGER if tail[2]==ROOT else DEVICE]}
+                        elif member=='ListDevices':value={'type':'ao','data':[paths]}
+                        else:
+                            if tail[-1]!='Status':raise AssertionError('nonstatus property reached')
+                            status='connected' if tail[2]==paths[selected] else 'disconnected'
+                            value={'type':'v','data':[{'type':'s','data':status}]}
+                        return CommandResult(argv,0,json.dumps(value),'')
+                transport=BoltNativeReadTransport(NativeFixture(),clock=lambda:10)
+                r=collect_native_evidence(BoltNativeEvidenceReader(transport,clock=lambda:10),clock=lambda:10,limits=ReadLimits(seconds=3))
+                self.assertEqual('evidence.observed',r.code)
+                self.assertIs(r.snapshot.api,Fact.OBSERVED)
+                self.assertIs(r.snapshot.attachment_state,Fact.UNKNOWN)
+                self.assertIs(r.snapshot.enrollment_store,Fact.UNKNOWN)
+                self.assertIsNone(r.snapshot.attachment)
+                self.assertEqual(size+5,len(calls))
+                self.assertTrue(all(a[-1] not in ('Uid','Stored','Key') for a in calls))
     def test_owner_and_inventory_envelopes(self):
         for request,expected in [(NativeRead('org.freedesktop.DBus','/org/freedesktop/DBus','org.freedesktop.DBus','GetNameOwner',('org.freedesktop.bolt',)),OWNER),(NativeRead(OWNER,ROOT,'org.freedesktop.bolt1.Manager','ListDevices'),[PATH])]:
             self.assertEqual(expected,json.loads(self.transport(request,self.budget)))

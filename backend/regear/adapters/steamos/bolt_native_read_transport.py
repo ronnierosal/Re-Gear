@@ -70,6 +70,11 @@ class BoltNativeReadTransport:
             expected='s' if q.member=='Introspect' else 'ao'
             if signature!=expected or (expected=='s' and type(value) is not str) or (expected=='ao' and (type(value) is not list or any(type(p) is not str for p in value))):
                 raise ValueError('native response invalid')
+        elif q.interface=='org.freedesktop.DBus.Properties' and q.member=='Get' and q.arguments==('org.freedesktop.bolt1.Device','Status'):
+            signature,item=call(q.interface,'Get','ss',q.arguments)
+            if signature!='v' or type(item) is not dict or set(item)!={'type','data'} or item['type']!='s' or type(item['data']) is not str:
+                raise ValueError('native status invalid')
+            value=item['data']
         elif q.interface=='org.freedesktop.DBus.Properties' and q.member=='GetAll' and q.arguments==('org.freedesktop.bolt1.Device',):
             value={}
             for name,expected in (('Uid','s'),('Status','s'),('Stored','b')):

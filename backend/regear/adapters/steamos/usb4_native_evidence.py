@@ -256,6 +256,25 @@ neither Status nor active service ownership authorizes a device.
             raise ValueError('native device inventory invalid')
         api = enrollment = Fact.UNKNOWN
         state = Fact.AMBIGUOUS if len(devices)>1 else Fact.UNKNOWN
+        if 1 < len(devices) <= 3:
+            # ListDevices includes stored objects, not just physical attachments.
+            # Inspect every status, never a first-object shortcut. With three
+            # candidates the transport uses at most eight calls including both
+            # owner reads. No Uid/Stored/Key is fetched in this branch.
+            candidates=[]; unresolved=False
+            for path in devices:
+                status=read(path,'org.freedesktop.DBus.Properties','Get',(_DEVICE,'Status'))
+                if type(status) is not str or status not in ('disconnected','connected','auth-error','authorized'):
+                    unresolved=True
+                elif status!='disconnected':
+                    candidates.append(path)
+            if not unresolved and len(candidates)==1:
+                introspect(candidates[0],_DEVICE,device=True)
+                api=Fact.OBSERVED
+                # This is only a candidate's interface, even if it is a host
+                # object. No topology, lifetime or external-device binding was
+                # established; attachment/enrollment stay UNKNOWN.
+                state=Fact.UNKNOWN
         if len(devices)==1:
             introspect(devices[0],_DEVICE,device=True)
             properties = read(devices[0],'org.freedesktop.DBus.Properties','GetAll',(_DEVICE,))
