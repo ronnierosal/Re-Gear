@@ -82,5 +82,12 @@ class ReaderTests(unittest.TestCase):
         self.assertNotIn(':1.42',repr(r))
         t=Transport();t.manager=MANAGER+' '*65500
         self.assertNotEqual('evidence.observed',self.collect(t).code)
+    def test_canonical_dbus_doctype_is_accepted_without_resolution(self):
+        declaration='<!DOCTYPE node PUBLIC "-//freedesktop//DTD D-BUS Object Introspection 1.0//EN" "http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd">'
+        t=Transport();t.manager=declaration+MANAGER;t.device=declaration+DEVICE
+        self.assertEqual('evidence.observed',self.collect(t).code)
+        for extra in ('<!ENTITY x "secret">', '<!DOCTYPE node SYSTEM "file:///private">', declaration.replace('1.0//EN','1.1//EN'),declaration+'<!DOCTYPE node>'):
+            t=Transport();t.manager=extra+MANAGER
+            self.assertEqual('evidence.unsupported',self.collect(t).code)
 
 if __name__=='__main__':unittest.main()

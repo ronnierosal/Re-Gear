@@ -491,6 +491,48 @@ class InputPlumberReadCommandRunner:
                              "" if error else text, "", error)
 
 
+class BoltNativeReadCommandRunner(InputPlumberReadCommandRunner):
+    """Request-local, fixed Bolt reads; reuse bounded execution/cleanup only.
+
+    No GetAll: Bolt's unrelated Key property is not diagnostic input. No grant,
+    policy, permission-check, service or activation operation is admitted.
+    """
+    PREFIX = ("/usr/bin/busctl", "--system", "--no-pager",
+              "--allow-interactive-authorization=no", "--auto-start=no",
+              "--timeout=2s", "--json=short")
+    ROOT = "/org/freedesktop/bolt"
+    DEVICE_PATH = re.compile(r"/org/freedesktop/bolt/devices/[A-Za-z0-9_]+\Z")
+
+    def __init__(self):
+        super().__init__(timeout_seconds=3, max_output_bytes=65536, max_calls=8)
+
+    @classmethod
+    def validate(cls, argv):
+        if type(argv) not in (tuple, list) or any(type(a) is not str for a in argv):
+            raise ValueError("bolt read invalid")
+        a = tuple(argv)
+        if a[:len(cls.PREFIX)] != cls.PREFIX:
+            raise ValueError("bolt read invalid")
+        tail = a[len(cls.PREFIX):]
+        if tail == ("call", "org.freedesktop.DBus", "/org/freedesktop/DBus",
+                    "org.freedesktop.DBus", "GetNameOwner", "s", "org.freedesktop.bolt"):
+            return a
+        if len(tail) < 5 or tail[0] != "call" or len(tail[1]) > 128 or not cls.OWNER.fullmatch(tail[1]):
+            raise ValueError("bolt read invalid")
+        path = tail[2]
+        if path != cls.ROOT and (len(path) > 1024 or not cls.DEVICE_PATH.fullmatch(path)):
+            raise ValueError("bolt path invalid")
+        operation = tail[3:]
+        if operation == ("org.freedesktop.DBus.Introspectable", "Introspect"):
+            return a
+        if path == cls.ROOT and operation == ("org.freedesktop.bolt1.Manager", "ListDevices"):
+            return a
+        if path != cls.ROOT and len(operation) == 5 and operation[:4] == (
+                "org.freedesktop.DBus.Properties", "Get", "ss", "org.freedesktop.bolt1.Device") and operation[4] in ("Uid", "Status", "Stored"):
+            return a
+        raise ValueError("bolt operation invalid")
+
+
 class BrokerCaptureRestoreTimer:
     """Fixed system timer: restore Gaming Mode even if Steam/SSH/Decky exits."""
 

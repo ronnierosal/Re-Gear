@@ -8,7 +8,8 @@ class RuntimeAdmission(StrEnum):
     PROFILE_GATED = "profile-gated"
 
 
-PASSIVE_RPCS = frozenset({"get_snapshot", "classify_offline_details", "get_peripheral_status"})
+PASSIVE_RPCS = frozenset({"get_snapshot", "classify_offline_details", "get_peripheral_status",
+    "get_usb4_native_diagnostic"})  # Development-only; delivery refuses production before composition.
 
 
 def runtime_admission(*, exact_host: object, observation_only: object) -> RuntimeAdmission:

@@ -38,6 +38,10 @@ _MANAGER = 'org.freedesktop.bolt1.Manager'
 _DEVICE = 'org.freedesktop.bolt1.Device'
 _OWNER = re.compile(r':[0-9]+\.[0-9]+')
 _PATH = re.compile(r'/(?:[A-Za-z0-9_]+/)*[A-Za-z0-9_]+')
+_STANDARD_DOCTYPE = re.compile(
+    r'\A[ \t\r\n]*<!DOCTYPE[ \t\r\n]+node[ \t\r\n]+PUBLIC[ \t\r\n]+'
+    r'"-//freedesktop//DTD D-BUS Object Introspection 1\.0//EN"[ \t\r\n]+'
+    r'"http://www\.freedesktop\.org/standards/dbus/1\.0/introspect\.dtd"[ \t\r\n]*>')
 
 
 class BoltNativeEvidenceReader:
@@ -100,7 +104,12 @@ neither Status nor active service ownership authorizes a device.
 
     @staticmethod
     def _interface(xml, name, *, device=False):
-        if type(xml) is not str or '<!' in xml:
+        if type(xml) is not str:
+            raise NotImplementedError
+        # Remove only the standard declaration; no DTD reaches the parser and
+        # no external resource is resolved. Other declarations/entities fail.
+        xml = _STANDARD_DOCTYPE.sub('', xml, count=1)
+        if '<!' in xml:
             raise NotImplementedError
         try: root = ElementTree.fromstring(xml)
         except ElementTree.ParseError: raise NotImplementedError from None

@@ -720,6 +720,12 @@ class Plugin:
         except Exception:
             return self._device_authorization_unavailable()
 
+    async def get_usb4_native_diagnostic(self) -> dict[str, object]:
+        """Explicit pure read in the plugin context; never reconciles a grant."""
+        if BUILD_PROFILE != "development" or getattr(self, "_unloading", False):
+            return usb4_native_diagnostic_unavailable()
+        return await asyncio.to_thread(read_usb4_native_diagnostic)
+
     async def acknowledge_device_authorization(
         self, token: str
     ) -> dict[str, object]:
@@ -6747,6 +6753,9 @@ class Plugin:
 # Build identity is supplied by packaging, never by a player setting or RPC.
 # Host admission precedes product admission and all mutation-capable composition.
 from regear.delivery.build_profile_config import BUILD_PROFILE  # noqa: E402
+from regear.delivery.usb4_native_diagnostic import (  # noqa: E402
+    read_usb4_native_diagnostic, unavailable as usb4_native_diagnostic_unavailable,
+)
 from regear.delivery.build_profile_policy import profiled_plugin  # noqa: E402
 from regear.delivery.observation_admission import observation_plugin  # noqa: E402
 from regear.delivery.usb4_waiting_observation import Usb4WaitingObservation  # noqa: E402
