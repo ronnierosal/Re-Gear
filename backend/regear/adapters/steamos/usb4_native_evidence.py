@@ -17,7 +17,6 @@ import json
 import math
 import re
 from typing import Callable
-from xml.etree import ElementTree
 
 from ...ports.usb4_native_evidence import Fact, NativeSnapshot, ReadBudget
 
@@ -42,6 +41,113 @@ _STANDARD_DOCTYPE = re.compile(
     r'\A[ \t\r\n]*<!DOCTYPE[ \t\r\n]+node[ \t\r\n]+PUBLIC[ \t\r\n]+'
     r'"-//freedesktop//DTD D-BUS Object Introspection 1\.0//EN"[ \t\r\n]+'
     r'"http://www\.freedesktop\.org/standards/dbus/1\.0/introspect\.dtd"[ \t\r\n]*>')
+
+_XML_SPACE = re.compile(r'[ \t\r\n]+')
+_XML_NAME = re.compile(r'[A-Za-z_][A-Za-z0-9_.-]*')
+_XML_REFERENCE = re.compile(r'&(amp|lt|gt|quot|apos|#[0-9]{1,7}|#x[0-9A-Fa-f]{1,6});')
+
+
+def _xml_character(value):
+    return value in (9, 10, 13) or 0x20 <= value <= 0xD7FF or 0xE000 <= value <= 0xFFFD or 0x10000 <= value <= 0x10FFFF
+
+
+def _attribute(value):
+    """Decode only XML's five predefined entities and valid character refs.
+
+    No entity table, recursion, external resource or second expansion pass.
+    XML1.0 attribute whitespace/reference rules: https://www.w3.org/TR/xml/
+    """
+    value = re.sub(r'\r\n?|\n|\t', ' ', value)
+    output = []; position = 0
+    while position < len(value):
+        end = value.find('&', position)
+        if end < 0:
+            output.append(value[position:]); break
+        output.append(value[position:end])
+        match = _XML_REFERENCE.match(value, end)
+        if match is None:
+            raise NotImplementedError
+        ref = match[1]
+        if ref.startswith('#'):
+            number = int(ref[2:], 16) if ref.startswith('#x') else int(ref[1:])
+            if not _xml_character(number): raise NotImplementedError
+            output.append(chr(number))
+        else:
+            output.append(dict(amp='&', lt='<', gt='>', quot='"', apos="'")[ref])
+        position = match.end()
+    return ''.join(output)
+
+
+def _introspection_tree(xml):
+    """Strict bounded D-Bus element-only subset, independent of optional XML.
+
+    Not a general XML parser: reject namespaces, PI, comments, CDATA and all
+    declarations except the exact inert standard DOCTYPE. Never resolves a DTD.
+    Input is capped before tree/attribute allocation; stack parsing is iterative.
+    """
+    if type(xml) is not str or len(xml) > 65536:
+        raise NotImplementedError
+    if any(not _xml_character(ord(c)) for c in xml):
+        raise NotImplementedError
+    if len(xml.encode('utf-8')) > 65536:
+        raise NotImplementedError
+    xml = _STANDARD_DOCTYPE.sub('', xml, count=1)
+    if '<!' in xml or '<?' in xml: raise NotImplementedError
+    position = 0; root = None; stack = []; count = 0
+    while position < len(xml):
+        space = _XML_SPACE.match(xml, position)
+        if space:
+            position = space.end()
+            if position == len(xml): break
+        if xml[position:position+1] != '<': raise NotImplementedError
+        position += 1
+        closing = xml[position:position+1] == '/'
+        if closing: position += 1
+        name = _XML_NAME.match(xml, position)
+        if name is None: raise NotImplementedError
+        tag = name[0]; position = name.end()
+        if closing:
+            space = _XML_SPACE.match(xml, position)
+            if space: position = space.end()
+            if xml[position:position+1] != '>' or not stack or stack[-1][0] != tag:
+                raise NotImplementedError
+            stack.pop(); position += 1; continue
+        count += 1
+        if count > 1024 or len(stack) >= 16: raise NotImplementedError
+        attributes = {}; children = []; node = (tag, attributes, children)
+        while True:
+            space = _XML_SPACE.match(xml, position)
+            if space: position = space.end()
+            if xml.startswith('/>', position):
+                position += 2; empty = True; break
+            if xml[position:position+1] == '>':
+                position += 1; empty = False; break
+            if not space or len(attributes) >= 32: raise NotImplementedError
+            attribute = _XML_NAME.match(xml, position)
+            if attribute is None or attribute[0] == 'xmlns' or attribute[0] in attributes:
+                raise NotImplementedError
+            key = attribute[0]; position = attribute.end()
+            space = _XML_SPACE.match(xml, position)
+            if space: position = space.end()
+            if xml[position:position+1] != '=': raise NotImplementedError
+            position += 1
+            space = _XML_SPACE.match(xml, position)
+            if space: position = space.end()
+            quote = xml[position:position+1]
+            if quote not in ('"', "'"): raise NotImplementedError
+            position += 1; end = xml.find(quote, position)
+            if end < 0 or '<' in xml[position:end]: raise NotImplementedError
+            attributes[key] = _attribute(xml[position:end]); position = end+1
+        if stack: stack[-1][2].append(node)
+        elif root is None: root = node
+        else: raise NotImplementedError
+        if not empty: stack.append(node)
+    if stack or root is None: raise NotImplementedError
+    return root
+
+
+def _children(node, tag, name=None):
+    return [child for child in node[2] if child[0] == tag and (name is None or child[1].get('name') == name)]
 
 
 class BoltNativeEvidenceReader:
@@ -104,29 +210,21 @@ neither Status nor active service ownership authorizes a device.
 
     @staticmethod
     def _interface(xml, name, *, device=False):
-        if type(xml) is not str:
-            raise NotImplementedError
-        # Remove only the standard declaration; no DTD reaches the parser and
-        # no external resource is resolved. Other declarations/entities fail.
-        xml = _STANDARD_DOCTYPE.sub('', xml, count=1)
-        if '<!' in xml:
-            raise NotImplementedError
-        try: root = ElementTree.fromstring(xml)
-        except ElementTree.ParseError: raise NotImplementedError from None
-        matches = root.findall(f"./interface[@name='{name}']")
-        if root.tag != 'node' or len(matches) != 1:
+        root = _introspection_tree(xml)
+        matches = _children(root, 'interface', name)
+        if root[0] != 'node' or len(matches) != 1:
             raise NotImplementedError
         interface = matches[0]
         method = 'Authorize' if device else 'ListDevices'
         expected = [('s', 'in')] if device else [('ao', 'out')]
-        methods = interface.findall(f"./method[@name='{method}']")
-        if len(methods) != 1 or [(a.get('type'), a.get('direction', 'in'))
-                for a in methods[0].findall('arg')] != expected:
+        methods = _children(interface, 'method', method)
+        if len(methods) != 1 or [(a[1].get('type'), a[1].get('direction', 'in'))
+                for a in _children(methods[0], 'arg')] != expected:
             raise NotImplementedError
         if device:
             for name, signature in [('Uid', 's'), ('Status', 's'), ('Stored', 'b')]:
-                properties = interface.findall(f"./property[@name='{name}']")
-                if len(properties) != 1 or properties[0].get('type') != signature or properties[0].get('access') not in ('read', 'readwrite'):
+                properties = _children(interface, 'property', name)
+                if len(properties) != 1 or properties[0][1].get('type') != signature or properties[0][1].get('access') not in ('read', 'readwrite'):
                     raise NotImplementedError
 
     def observe(self, owner, budget):

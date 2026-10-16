@@ -76,6 +76,10 @@ class MissingXml(importlib.abc.MetaPathFinder):
  def find_spec(self,fullname,path=None,target=None):
   if mode=='xml_missing' and fullname=='xml.etree.ElementTree':
    raise ModuleNotFoundError('/private/path must never be public',name=fullname)
+  if mode=='xml_family_missing' and (fullname=='xml' or fullname.startswith('xml.')):
+   raise ModuleNotFoundError('/private/path must never be public',name=fullname)
+  if mode=='expat_missing' and fullname in ('pyexpat','_elementtree','xml.parsers.expat'):
+   raise ModuleNotFoundError('/private/path must never be public',name=fullname)
 sys.meta_path.insert(0,MissingXml())
 from regear.delivery import usb4_native_diagnostic as facade
 from regear.adapters.steamos import commands
@@ -110,15 +114,17 @@ print(json.dumps(dict(result=result,calls=len(calls))))
                     if '/backend/' in file.as_posix() and file.suffix=='.py':
                         z.writestr(archive_name(file),archive_bytes(file,profile='development'))
             with zipfile.ZipFile(archive) as z:z.extractall(root/'runtime')
-            for mode in ('valid','xml_missing','stale_commands','malformed','entity'):
+            for mode in ('valid','xml_missing','xml_family_missing','expat_missing','stale_commands','malformed','entity'):
                 with self.subTest(mode=mode):
                     run=subprocess.run([sys.executable,'-I','-S','-B','-c',child,str(root/'runtime/Re-Gear/backend'),mode],cwd=root,capture_output=True,text=True,timeout=15)
                     self.assertEqual(0,run.returncode,run.stderr);output=json.loads(run.stdout);result=output['result']
                     self.assertFalse(result['hardware_write']);self.assertFalse(result['mutation_allowed']);self.assertEqual('unknown',result['static_permission'])
-                    if mode=='valid':self.assertEqual('evidence.observed',result['code']);self.assertEqual(8,output['calls'])
-                    elif mode in ('xml_missing','stale_commands'):
+                    if mode in ('valid','xml_missing','xml_family_missing','expat_missing'):
+                        self.assertEqual('evidence.observed',result['code']);self.assertEqual(8,output['calls'])
+                        self.assertTrue(all(x['outcome']=='ready' for x in result['imports']))
+                    elif mode=='stale_commands':
                         self.assertEqual('usb4_diagnostic.reader_unavailable',result['code']);self.assertEqual(0,output['calls'])
-                        self.assertTrue(any(x['failure']==('xml_runtime_unavailable' if mode=='xml_missing' else 'symbol_unavailable') for x in result['imports']))
+                        self.assertTrue(any(x['failure']=='symbol_unavailable' for x in result['imports']))
                     else:self.assertEqual('evidence.unsupported',result['code']);self.assertEqual(2,output['calls'])
 
 if __name__=='__main__':unittest.main()

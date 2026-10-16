@@ -90,4 +90,91 @@ class ReaderTests(unittest.TestCase):
             t=Transport();t.manager=extra+MANAGER
             self.assertEqual('evidence.unsupported',self.collect(t).code)
 
+    def test_representative_introspection_layout_and_safe_attribute_references(self):
+        t=Transport()
+        t.manager='''<node name="/org/freedesktop/bolt">
+          <interface name='org.freedesktop.DBus.Peer'><method name='Ping'/></interface>
+          <interface name="org.freedesktop.bolt1.Manager">
+            <annotation name="org.example.Note" value="a &amp; b &lt; c &gt; d &quot; e &apos; &#65; &#x42;"/>
+            <method name="ListDevices"><arg name="devices" type="a&#111;" direction="out" /></method>
+          </interface><node name="devices"/>
+        </node>'''
+        t.device=DEVICE.replace('direction="in" ', '').replace('access="read"','access="readwrite"')
+        self.assertEqual('evidence.observed',self.collect(t).code)
+
+    def test_malformed_or_unsupported_xml_never_qualifies(self):
+        invalid = [
+            MANAGER.replace('</node>', '</interface>'), MANAGER+MANAGER,
+            MANAGER.replace('<node>', '<node duplicate="a" duplicate="b">'),
+            MANAGER.replace('<node>', '<node xmlns="urn:fake">'),
+            MANAGER.replace('<node>', '<prefix:node>'),
+            MANAGER.replace('<node>', '<node a="&unknown;">'),
+            MANAGER.replace('<node>', '<node a="&#0;">'),
+            MANAGER.replace('<node>', '<node a="&#xD800;">'),
+            MANAGER.replace('<node>', '<node a="&#x110000;">'),
+            MANAGER.replace('<node>', '<node a="&#xFFFE;">'),
+            MANAGER.replace('<node>', '<node a="&amp">'),
+            MANAGER.replace('<node>', '<node a="raw<value">'),
+            MANAGER.replace('<node>', '<node a="first"b="second">'),
+            MANAGER.replace('<node>', '<node a=unquoted>'),
+            MANAGER.replace('<node>', '<node a="unfinished>'),
+            '<!--comment-->'+MANAGER, '<?xml version="1.0"?>'+MANAGER,
+            MANAGER.replace('</node>', '<?instruction?></node>'),
+            MANAGER.replace('<node>', '<node>untrusted text'),
+            MANAGER+'trailing', '\x00'+MANAGER, '\ufffe'+MANAGER,
+            '<!DOCTYPE node [<!ENTITY x "expanded">]>'+MANAGER,
+            '<!DOCTYPE node SYSTEM "https://example.invalid/dtd">'+MANAGER,
+        ]
+        for xml in invalid:
+            with self.subTest(xml=invalid.index(xml)):
+                t=Transport();t.manager=xml
+                report=self.collect(t)
+                self.assertEqual('evidence.unsupported',report.code)
+                self.assertIsNone(report.snapshot)
+                self.assertEqual(2,len(t.calls))
+
+    def test_parser_bounds_before_unbounded_tree_or_recursion(self):
+        for xml in ('<node>'*17+'</node>'*17,
+                    '<node>'+'<node/>'*1024+'</node>',
+                    '<node '+ ' '.join(f'a{i}="x"' for i in range(33)) +'/>',
+                    MANAGER+' '*65536, MANAGER+'\u0100'*33000):
+            with self.subTest(length=len(xml)):
+                with self.assertRaises(NotImplementedError):
+                    BoltNativeEvidenceReader._interface(xml,'org.freedesktop.bolt1.Manager')
+
+    def test_duplicate_or_nested_contract_members_still_fail_exact_qualification(self):
+        invalid_managers=[MANAGER.replace('</node>',MANAGER[6:-7]+'</node>'),
+            MANAGER.replace('</interface>','<method name="ListDevices"><arg type="ao" direction="out"/></method></interface>'),
+            MANAGER.replace('type="ao"','type="s"'),
+            MANAGER.replace('<method','<node><method').replace('</method>','</method></node>')]
+        for xml in invalid_managers:
+            t=Transport();t.manager=xml
+            self.assertEqual('evidence.unsupported',self.collect(t).code)
+
+    def test_subset_never_accepts_malformed_xml_in_deterministic_mutation_corpus(self):
+        # Independent stdlib oracle is test-only; not present in packaged runtime.
+        from xml.etree import ElementTree
+        from regear.adapters.steamos.usb4_native_evidence import _introspection_tree
+        checked=0
+        for position in range(len(MANAGER)):
+            variants=[MANAGER[:position]+MANAGER[position+1:]]
+            variants += [MANAGER[:position]+char+MANAGER[position:] for char in '<>&"\'/=:\x00']
+            for xml in variants:
+                try:
+                    root=_introspection_tree(xml)
+                except NotImplementedError:
+                    continue
+                reference=ElementTree.fromstring(xml)
+                self.assertEqual(reference.tag,root[0])
+                self.assertEqual(reference.attrib,root[1])
+                checked+=1
+        self.assertGreater(checked,10)
+
+    def test_duplicate_or_mismatched_device_properties_fail_qualification(self):
+        for xml in (DEVICE.replace('</interface>','<property name="Uid" type="s" access="read"/></interface>'),
+                    DEVICE.replace('access="read"','access="write"'),
+                    DEVICE.replace('type="s"','type="u"')):
+            t=Transport();t.device=xml
+            self.assertEqual('evidence.unsupported',self.collect(t).code)
+
 if __name__=='__main__':unittest.main()
