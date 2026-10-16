@@ -306,6 +306,7 @@ def main() -> int:
             # attachment-scoped response. Production admits only the explicit
             # one-shot authorize and remembered-enrolment choices.
             "get_device_authorization_status",
+            "get_usb4_native_diagnostic",  # Development-only pure read; production refuses before composition.
             "acknowledge_device_authorization",
             "decline_device_authorization",
             "confirm_device_authorization",
