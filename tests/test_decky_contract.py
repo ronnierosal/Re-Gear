@@ -59,6 +59,7 @@ class DeckyContractTests(unittest.TestCase):
             public_methods,
             {
                 "get_snapshot",
+                "get_usb4_native_diagnostic",  # Development-only pure-read RPC; production denies before composition.
                 "classify_offline_details",
                 "get_tdp_status",
                 "set_tdp_enabled",
