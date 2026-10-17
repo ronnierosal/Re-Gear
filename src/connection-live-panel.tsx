@@ -5,6 +5,7 @@ import { Focusable, ModalRoot, showModal } from "@decky/ui";
 import { createLiveStatusStore } from "./connection-live-status";
 import { connectionPanelCss } from "./connection-panel-style";
 import { LinkRecoveryControl } from "./link-recovery-control";
+import { TransitionAcknowledgementControl } from "./transition-acknowledgement-control";
 import type { BuildProfile } from "./build-profile";
 type Store = ReturnType<typeof createLiveStatusStore>;
 
@@ -62,10 +63,10 @@ export function LivePanel({store, close, switchTv, policy = "development"}: {sto
       onGamepadDirection={interacted} onButtonDown={interacted}
       onOptionsButton={toggleDetails} onOptionsActionDescription="Connection details">
     <ConnectionProgressOverlay {...connectionProgressViewModel(status)} onHide={hide} onSwitch={switchAction}
-      recoveryAction={policy === "development" ? <LinkRecoveryControl eligible={!stale && source.connected
+      recoveryAction={<><TransitionAcknowledgementControl/>{policy === "development" && <LinkRecoveryControl eligible={!stale && source.connected
         && source.phase === "checking" && source.seconds >= 120
         && source.rows.some(row => row.label === "GPU and driver" && row.state === "waiting")
-        && source.rows.some(row => row.label === "No game running" && row.state === "ready")} /> : undefined} />
+        && source.rows.some(row => row.label === "No game running" && row.state === "ready")} />}</>} />
     </Focusable>
   </ModalRoot>;
 }

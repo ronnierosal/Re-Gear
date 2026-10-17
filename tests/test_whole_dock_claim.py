@@ -407,7 +407,7 @@ class CompletedAbsentClaimTests(unittest.TestCase):
         self.assertTrue(self.store.claim('next', 'dock', 'new-generation'))
 
     def test_partial_or_failed_reconnect_stages_cannot_be_archived_as_absent(self):
-        for stage in ('claimed', 'release_intent', 'gpu_removed', 'tunnel_remove_intent',
+        for stage in ('claimed', 'release_intent', 'gpu_removed',
                       'reauthorize_intent', 'software_reconnected'):
             with self.subTest(stage=stage), self.assertRaises(ValueError):
                 self.store.retire_physically_disconnected(

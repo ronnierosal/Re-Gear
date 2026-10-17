@@ -176,6 +176,54 @@ def confirm(svc, token, **overrides):
     return svc.confirm(token, **call)
 
 
+class QualificationWithdrawalTests(unittest.TestCase):
+    def test_withdrawal_replaces_consent_without_fabricating_attachment_change(self):
+        svc, commands, token = armed()
+        svc.acknowledge(token)
+        generation = svc.generation
+        svc.withdraw_qualification(present=True, uuid=DOCK)
+        self.assertEqual(generation, svc.generation)
+        self.assertFalse(svc.confirmation_open)
+        fresh = svc.candidate_token(DOCK)
+        self.assertTrue(fresh)
+        self.assertNotEqual(token, fresh)
+        self.assertFalse(confirm(svc, token).requested)
+        self.assertEqual([], commands.calls)
+
+    def test_withdrawal_serializes_with_dispatch_and_preserves_consumed_binding(self):
+        started, release, withdrawn = threading.Event(), threading.Event(), threading.Event()
+        class BlockingCommands(FakeCommands):
+            def authorize(self, uuid):
+                started.set()
+                if not release.wait(2):
+                    raise AssertionError('fixture release timed out')
+                return super().authorize(uuid)
+        commands = BlockingCommands()
+        svc = DeviceAuthorizationService(commands)
+        svc.observe_attachment(present=True, uuid=DOCK)
+        token = svc.candidate_token(DOCK)
+        results = []
+        act = threading.Thread(target=lambda: results.append(confirm(svc, token, action='authorize')))
+        def withdraw():
+            svc.withdraw_qualification(present=True, uuid=DOCK)
+            withdrawn.set()
+        act.start()
+        self.assertTrue(started.wait(1))
+        revoke = threading.Thread(target=withdraw)
+        revoke.start()
+        self.assertFalse(withdrawn.wait(.05))
+        release.set()
+        act.join(2); revoke.join(2)
+        self.assertFalse(act.is_alive()); self.assertFalse(revoke.is_alive())
+        self.assertTrue(results[0].requested)
+        self.assertFalse(confirm(svc, token, action='authorize').requested)
+        replacement = svc.candidate_token(DOCK)
+        self.assertFalse(confirm(svc, replacement, action='authorize').requested)
+        self.assertEqual([('authorize', DOCK)], commands.calls)
+        self.assertIs(svc.record_verification(token, authorized=True, uuid=DOCK,
+            generation=svc.generation), True)
+
+
 class TheOfferIsOncePerAttachment(unittest.TestCase):
     def test_a_new_dock_is_offered(self):
         svc, _ = service()

@@ -411,6 +411,20 @@ class DeviceAuthorizationService:
         with self._lock:
             self._observe_locked(present=present, uuid=uuid)
 
+    def withdraw_qualification(self, *, present: bool | None, uuid: str) -> None:
+        """Withdraw outstanding consent using a real reading, not fake absence.
+
+        The same lock serializes this with dispatch. A completed/in-flight act's
+        consumed identity/generation remains intact: withdrawal cannot cancel it,
+        erase its readback binding or enable another act on that attachment.
+        """
+        with self._lock:
+            self._observe_locked(present=present, uuid=uuid)
+            self._token = ""
+            self._token_uuid = ""
+            self._acknowledged = False
+            self._offered = False
+
     def _observe_locked(self, *, present: bool | None, uuid: str) -> None:
         """`observe_attachment`'s body, with the lock already held.
 
