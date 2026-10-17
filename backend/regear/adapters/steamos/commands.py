@@ -533,6 +533,35 @@ class BoltNativeReadCommandRunner(InputPlumberReadCommandRunner):
         raise ValueError("bolt operation invalid")
 
 
+class BoltInventoryCaptureCommandRunner(BoltNativeReadCommandRunner):
+    """Separate inert capture boundary; never used by the installed reader.
+
+    Inherit cumulative eight-call/three-second/64KiB execution and cleanup.
+    No introspection, enrollment, identity, permission or mutation operations.
+    """
+
+    @classmethod
+    def validate(cls, argv):
+        if type(argv) not in (tuple, list) or any(type(a) is not str for a in argv):
+            raise ValueError('bolt capture invalid')
+        a=tuple(argv)
+        if a[:len(cls.PREFIX)]!=cls.PREFIX:
+            raise ValueError('bolt capture invalid')
+        tail=a[len(cls.PREFIX):]
+        owner=('call','org.freedesktop.DBus','/org/freedesktop/DBus',
+               'org.freedesktop.DBus','GetNameOwner','s','org.freedesktop.bolt')
+        if tail==owner:return a
+        if len(tail)<5 or tail[0]!='call' or len(tail[1])>128 or not cls.OWNER.fullmatch(tail[1]):
+            raise ValueError('bolt capture invalid')
+        if tail[2]==cls.ROOT and tail[3:]==('org.freedesktop.bolt1.Manager','ListDevices'):
+            return a
+        if (len(tail)==8 and len(tail[2])<=1024 and cls.DEVICE_PATH.fullmatch(tail[2])
+                and tail[3:7]==('org.freedesktop.DBus.Properties','Get','ss','org.freedesktop.bolt1.Device')
+                and tail[7] in ('Type','Status','SysfsPath')):
+            return a
+        raise ValueError('bolt capture operation invalid')
+
+
 class BrokerCaptureRestoreTimer:
     """Fixed system timer: restore Gaming Mode even if Steam/SSH/Decky exits."""
 
