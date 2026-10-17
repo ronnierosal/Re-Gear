@@ -580,6 +580,8 @@ class Plugin:
         self._last_completion_code = ""
         self._last_audio_readiness_code = ""
         self._automatic_dock = AutomaticDockCoordinator()
+        self._last_automatic_dock_decision_event = None
+        self._last_automatic_dock_observation_failure = None
         # One instance for the life of the plugin, deliberately. Its latch is
         # the whole point, and a service rebuilt per call would arrive with a
         # fresh latch every time and offer the same failed recovery forever.
@@ -5809,17 +5811,83 @@ class Plugin:
                 )
             await asyncio.sleep(delay_seconds)
 
+    def _record_automatic_dock_decision(self, decision, readiness=None) -> None:
+        """Observe the policy's result without collecting or deciding eligibility.
+
+        The existing exact-profile refusal combines host and eGPU checks. Do not
+        invent a particular missing axis, expose identities, or rearm its latch.
+        Logging is best effort and must never become a dispatch prerequisite.
+        """
+        try:
+            stage = decision.status.stage
+            if not isinstance(stage, AutomaticDockStage):
+                return
+            if decision.status.code == "automatic_dock.disabled":
+                reason = "disabled"
+            elif decision.should_switch:
+                reason = "dispatch_requested"
+            elif decision.status.code == "automatic_dock.waiting_for_exact_g1":
+                reason = "exact_profile_unverified"
+            elif decision.status.code == "automatic_dock.source_unverified":
+                reason = "source_unverified"
+            elif decision.status.code == "automatic_dock.suppressed_for_safe_disconnect":
+                reason = "suppressed"
+            else:
+                reason = stage.value
+            input_stage = getattr(readiness, "stage", None)
+            input_stage = (input_stage.value if isinstance(input_stage, ConnectionReadinessStage)
+                           else "unavailable")
+            key = (reason, stage.value, bool(decision.should_switch), input_stage)
+            if key == getattr(self, "_last_automatic_dock_decision_event", None):
+                return
+            self._last_automatic_dock_decision_event = key
+            self._append_journey_event(
+                severity="warning" if stage is AutomaticDockStage.ACTION_REQUIRED else "info",
+                code="automatic_dock.decision." + reason,
+                component="presentation", stage="automatic_dock_policy." + input_stage,
+                details={"policy_reason": reason, "coordinator_stage": stage.value,
+                         "dispatch_requested": bool(decision.should_switch),
+                         "readiness_stage": input_stage},
+                create_timeline=False,
+            )
+        except Exception:
+            pass
+
+    def _record_automatic_dock_observation_failure(self, stage: str) -> None:
+        """Record one finite failure stage, never raw exceptions or identifiers."""
+        try:
+            if stage not in {"observer_factory", "preferences", "snapshot",
+                             "connection_readiness", "link_recovery", "completion",
+                             "portable_audio", "saved_tv", "policy", "dispatch"}:
+                stage = "unknown"
+            if stage == getattr(self, "_last_automatic_dock_observation_failure", None):
+                return
+            self._last_automatic_dock_observation_failure = stage
+            self._append_journey_event(
+                severity="warning", code="automatic_dock.observation_failed",
+                component="presentation", stage=stage, create_timeline=False,
+            )
+        except Exception:
+            pass
+
     async def _automatic_dock_loop(self) -> None:
         """Submit one exact, idle attach request through the shared transition engine."""
-        observations = SnapshotTransitionObservationAdapter(self._discovery)
+        observations = None
         while not self._unloading:
             delay_seconds = self._automatic_dock_retry_seconds
+            observation_stage = "observer_factory"
             try:
+                if observations is None:
+                    observations = SnapshotTransitionObservationAdapter(self._discovery)
+                observation_stage = "preferences"
                 enabled = await asyncio.to_thread(
                     self._automatic_dock_preferences().load
                 )
+                observation_stage = "snapshot"
                 current = await asyncio.to_thread(observations.observe)
+                observation_stage = "connection_readiness"
                 connection = await self._observe_connection_readiness(current)
+                observation_stage = "link_recovery"
                 if await self._maybe_automatic_link_recovery(current, enabled):
                     continue  # recovery changes the session; obtain new observations
                 if connection.code != self._last_connection_readiness_code:
@@ -5845,6 +5913,7 @@ class Plugin:
             "checks_age_ms": max(0, int((time.monotonic() - getattr(self, "_connection_checks_at", 0.0)) * 1000)),
                         },
                     )
+                observation_stage = "completion"
                 completion = await asyncio.to_thread(
                     lambda: self._presentation_transition_service().reconcile_completion(current)
                 )
@@ -5859,6 +5928,7 @@ class Plugin:
                         code=completion.code, component="presentation", stage="completion",
                         create_timeline=False,
                     )
+                observation_stage = "portable_audio"
                 if _can_remember_portable_audio(current.snapshot):
                     resolution = await asyncio.to_thread(
                         lambda: resolve_gamescope_user(GamescopeDiscovery().scan())
@@ -5870,15 +5940,19 @@ class Plugin:
                 # Before the opt-in gate: a TV the player switched to by hand
                 # is intent too, and the record has to be re-armed when a dock
                 # ends whether or not automatic docking is enabled.
+                observation_stage = "saved_tv"
                 await self._update_saved_tv(current, connection)
                 # Disabled passes must reach the policy so toggling the opt-in
                 # resets its one-shot attempt. Existing durable holds above
                 # still suppress transitions; the disabled lane never dispatches.
+                observation_stage = "policy"
                 decision = self._automatic_dock.update(
                     enabled=enabled,
                     readiness=connection,
                     current=current,
                 )
+                self._record_automatic_dock_decision(decision, connection)
+                self._last_automatic_dock_observation_failure = None
                 if not enabled:
                     delay_seconds = 5.0
                     await self._wait_for_topology(delay_seconds)
@@ -5907,6 +5981,7 @@ class Plugin:
                 elif connection.stage is ConnectionReadinessStage.GAME_RUNNING:
                     delay_seconds = 5.0
                 if decision.should_switch:
+                    observation_stage = "dispatch"
                     self._record_connection_wake("automatic_transition_observation")
                     transition_started_ns = self._journey_now_ns()
                     self._append_journey_event(
@@ -5985,12 +6060,7 @@ class Plugin:
                 raise
             except Exception:
                 delay_seconds = 2.0
-                self._events.append(
-                    severity="warning",
-                    code="automatic_dock.observation_failed",
-                    component="presentation",
-                    stage="automatic_dock",
-                )
+                self._record_automatic_dock_observation_failure(observation_stage)
             if getattr(self, "_automatic_recovery_consent", False):
                 delay_seconds = min(delay_seconds, 1.0)
             await self._wait_for_topology(delay_seconds)
