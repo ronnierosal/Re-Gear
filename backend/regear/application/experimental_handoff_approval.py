@@ -1,6 +1,6 @@
 """Inert, one-use context envelope for a future supervised handoff facade.
 
-No runtime consumer, profile admission, collector or executor is provided here.
+No shipped runtime consumer, collector or native executor is provided here.
 Callers must independently verify context evidence. A matching envelope does not
 qualify hardware or authorize commands outside a reviewed transaction runner.
 """
@@ -112,6 +112,7 @@ class HandoffContext:
 class ApprovedHandoff:
     permit: ExperimentalTransitionPermit
     context: HandoffContext
+    request_id: str = ""
 
 
 class HandoffApprovalStore:
@@ -129,11 +130,14 @@ class HandoffApprovalStore:
             options["monotonic"] = monotonic
         self._approvals = ExperimentalTransitionApprovalStore(**options)
         self._lock = threading.Lock()
-        self._envelope: tuple[str, HandoffContext] | None = None
+        self._envelope: tuple[str, HandoffContext, str] | None = None
 
-    def issue(self, *, plan_id: str, context: HandoffContext, user_confirmed: object) -> str:
+    def issue(self, *, plan_id: str, context: HandoffContext, user_confirmed: object,
+              request_id: str = "") -> str:
         if user_confirmed is not True or type(context) is not HandoffContext:
             raise ValueError("handoff approval requires verified context and literal consent")
+        if type(request_id) is not str or (request_id and re.fullmatch(r"[A-Za-z0-9_.:-]{1,96}", request_id) is None):
+            raise ValueError("handoff request identity is invalid")
         with self._lock:
             token = self._approvals.issue(
                 plan_id=plan_id, observed_generation=context.snapshot_generation,
@@ -141,7 +145,7 @@ class HandoffApprovalStore:
                 egpu_profile_id=context.egpu_profile_id, egpu_stable_id=context.egpu_stable_id,
                 user_confirmed=True,
             )
-            self._envelope = token, context
+            self._envelope = token, context, request_id
             return token
 
     def consume(self, token: str, *, current: HandoffContext) -> ApprovedHandoff:
@@ -153,4 +157,4 @@ class HandoffApprovalStore:
             permit = self._approvals.consume(token)
             if envelope[0] != token or type(current) is not HandoffContext or envelope[1] != current:
                 raise ValueError("handoff approval context changed or is unavailable")
-            return ApprovedHandoff(permit, envelope[1])
+            return ApprovedHandoff(permit, envelope[1], envelope[2])

@@ -105,6 +105,19 @@ class HandoffApprovalTests(unittest.TestCase):
             with self.assertRaises(ValueError):store.consume(bad,current=current)
 
 
+class HandoffRequestBindingTests(unittest.TestCase):
+    def test_explicit_request_survives_one_consumption_and_invalid_values_deny(self):
+        store=HandoffApprovalStore();current=context()
+        token=store.issue(plan_id="fixture-plan",request_id="fixture-request",context=current,user_confirmed=True)
+        approved=store.consume(token,current=current)
+        self.assertEqual(approved.request_id,"fixture-request")
+        self.assertEqual(approved.permit.plan_id,"fixture-plan")
+        with self.assertRaises(ValueError):store.consume(token,current=current)
+        for request in (None,True,"../unsafe","x"*97):
+            with self.assertRaises(ValueError):
+                store.issue(plan_id="fixture-plan",request_id=request,context=current,user_confirmed=True)
+
+
 class AudioPermissionTests(unittest.TestCase):
     def permission(self):
         return HandoffAudioPermission("a"*64,"b"*64,"c"*64,tuple(HandoffAudioOperation))

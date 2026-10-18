@@ -1,4 +1,4 @@
-"""Local request-boundary tests; executor is deliberately absent."""
+"""Request boundaries and shared-engine fixtures; all device ports remain inert."""
 from contextlib import contextmanager, ExitStack
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
@@ -186,6 +186,225 @@ class FacadeContractTests(unittest.TestCase):
         result=self.facade.handle("execute_supervised_tv_switch",(self.token,),{})
         self.assertEqual(result["code"],"experimental_handoff.admission_unavailable")
         with self.assertRaises(ValueError):self.approvals.consume(self.token,current=self.current)
+
+
+class SharedEngineCompositionTests(unittest.TestCase):
+    """Real engine/mechanism; Linux uses real pinned journal/gate on temp files.
+
+    Windows substitutes only the unsupported filesystem/lease boundary. Commands,
+    config, sessions and discovery are inert everywhere; no native commands run.
+    """
+    def setUp(self):
+        import tempfile
+        from pathlib import Path
+        from test_presentation_transition import observed,FakeIntegration,FakeConfig,USER,BOOT_ID
+        from test_transition_orchestrator import FakeClockWaiter
+        from regear.adapters.transition_runtime import versioned_snapshot_observation
+        from regear.domain.models import SupportTier
+        from regear.delivery.experimental_handoff_runtime import SharedHandoffComposition
+        from regear.delivery.transition_journal_store import handoff_operation_id,FileTransitionJournalStore
+        self.events=[];self.clock=FakeClockWaiter();self.config=FakeConfig(self.events)
+        self.initial=replace(observed(),host_profile="gpd-win-mini-experimental",support_tier=SupportTier.EXPERIMENTAL)
+        self.target=replace(observed("tv-docked.json"),host_profile="gpd-win-mini-experimental",support_tier=SupportTier.EXPERIMENTAL)
+        self.state=self.initial;self.samples=0;self.invocation="a"*32;self.pid=self.initial.gamescope.pid;self.start=100
+        self.change_invocation=True;self.fail_restart=False;self.fail_persist=False;self.correlate_snapshot=True
+        generation=versioned_snapshot_observation(self.initial).generation
+        self.context=replace(context(),host_profile_id="gpd-win-mini-experimental",
+            egpu_profile_id="gpd-g1-rx7600mxt-titan-ridge",egpu_stable_id="gpd-g1:0123456789abcdef",
+            snapshot_generation=generation,internal_gpu_id="internal-gpu",internal_display_id="internal-panel",
+            external_display_id="external-tv",boot_id=BOOT_ID,session_unit="gamescope-session.service",
+            session_target="gamescope-session.target",source_invocation_id=self.invocation,source_main_pid=self.pid,
+            allowed_operations=tuple(__import__("regear.ports.presentation_activation",fromlist=["UserServiceOperation"]).UserServiceOperation(x)
+                for x in ("daemon_reload","verify_gamescope_unit","restart_gamescope_session","observe_filter_gamescope")))
+        self.approvals=HandoffApprovalStore()
+        plan=handoff_operation_id("fixture-request",BOOT_ID,generation)
+        self.token=self.approvals.issue(plan_id=plan,request_id="fixture-request",context=self.context,user_confirmed=True)
+        fixture=self
+        class Observations:
+            def observe(self):
+                fixture.samples+=1
+                value=replace(fixture.state,observed_at=f"2026-10-18T00:00:{fixture.samples:02d}Z")
+                return versioned_snapshot_observation(value)
+        class Commands:
+            def run(self,operation,**kwargs):
+                from regear.ports.presentation_activation import UserServiceOperation
+                fixture.events.append("command."+operation.value)
+                fixture.assertGreater(kwargs["timeout_seconds"],0)
+                if operation is UserServiceOperation.RESTART_GAMESCOPE_SESSION:
+                    if fixture.fail_restart:
+                        fixture.fail_restart=False
+                        return NS(ok=False)
+                    if fixture.change_invocation:
+                        fixture.invocation="b"*32 if fixture.invocation=="a"*32 else "c"*32
+                        fixture.pid+=1;fixture.start+=1
+                    fixture.state=fixture.target if fixture.config.targets[-1] is PlacementState.DOCKED_EGPU else fixture.initial
+                    if fixture.correlate_snapshot:
+                        fixture.state=replace(fixture.state,gamescope=replace(fixture.state.gamescope,pid=fixture.pid))
+                return NS(ok=True,output=f"MainPID={fixture.pid}\nInvocationID={fixture.invocation}\nActiveState=active\nControlGroup=/fixture-gamescope\n")
+        def session(*,timeout_seconds):
+            from regear.application.experimental_session_qualification import SessionEvidence
+            fixture.assertGreater(timeout_seconds,0)
+            c=fixture.context;t=fixture.clock.now_ms()/1000
+            return SessionEvidence(c.boot_id,c.user_uid,c.user_context_sha256,fixture.pid,fixture.start,fixture.start,
+                c.session_unit,(c.session_unit,),c.session_target,(c.session_unit,),fixture.pid,fixture.invocation,
+                True,True,c.session_definition_sha256,c.integration_sha256,True,t,t)
+        self.temp=tempfile.TemporaryDirectory();self.root=Path(self.temp.name);self.fd=None
+        if os.name=="posix":
+            from regear.delivery.dock_mutation_gate import DockMutationGate
+            self.fd=os.open(self.root,os.O_RDONLY|os.O_DIRECTORY)
+            self.gate=DockMutationGate(self.root,owner_uid=os.geteuid(),trusted_directory_fd=self.fd)
+            self.store=FileTransitionJournalStore(self.root)
+        else:
+            class Lease:
+                active=True
+                @contextmanager
+                def borrow(self,root):
+                    if not self.active:raise ValueError("fixture stale lease")
+                    yield None
+            class Gate:
+                @contextmanager
+                def admit(self):
+                    lease=Lease()
+                    try:yield lease
+                    finally:lease.active=False
+            class Store:
+                _root=fixture.root
+                current=None
+                def load_current(self):return self.current
+                def persist_admitted(self,journal,*,admission,generation):
+                    self.current=journal;store=self
+                    return NS(is_current=lambda:admission.active and store.current==journal)
+            self.gate=Gate();self.store=Store()
+        original=self.store.persist_admitted
+        def persist(*args,**kwargs):
+            if fixture.fail_persist:raise OSError("fixture uncertain persistence")
+            receipt=original(*args,**kwargs);fixture.events.append("durable."+args[0].entries[-1].kind.value)
+            return receipt
+        self.store.persist_admitted=persist
+        self.composition=SharedHandoffComposition(observations=Observations(),journal_store=self.store,
+            integration=FakeIntegration(events=self.events),config=self.config,commands=Commands(),
+            resolve_user=lambda:NS(ok=True,context=USER),read_session=session,clock=self.clock,waiter=self.clock)
+
+    def tearDown(self):
+        if self.fd is not None:os.close(self.fd)
+        self.temp.cleanup()
+
+    def execute(self,read_context=None):
+        approved=self.approvals.consume(self.token,current=self.context)
+        self.events.append("approval.consumed")
+        with self.gate.admit() as lease:
+            self.events.append("gate.enter")
+            result=self.composition.run(approved,lease,read_context=read_context or (lambda target:replace(self.context,
+                source_invocation_id=self.invocation,source_main_pid=self.pid,
+                snapshot_generation=__import__("regear.adapters.transition_runtime",fromlist=["versioned_snapshot_observation"])
+                    .versioned_snapshot_observation(self.state).generation)))
+        return result
+
+    def test_real_shared_engine_commits_with_durable_order_and_exact_ids(self):
+        from regear.domain.control_plane import TransitionOutcomeKind
+        result=self.execute()
+        self.assertEqual(result.outcome.kind,TransitionOutcomeKind.SUCCEEDED)
+        self.assertTrue(result.durable)
+        self.assertEqual(result.journal.request_id,"fixture-request")
+        self.assertEqual(result.journal.origin_boot_id,self.context.boot_id)
+        self.assertLess(self.events.index("approval.consumed"),self.events.index("gate.enter"))
+        self.assertLess(self.events.index("durable.step_started"),self.events.index("command.daemon_reload"))
+        self.assertEqual(self.events.count("command.restart_gamescope_session"),1)
+        self.assertIn("durable.committed",self.events)
+        with self.assertRaises(ValueError):self.approvals.consume(self.token,current=self.context)
+
+    def test_unchanged_invocation_cannot_be_restart_success(self):
+        from regear.domain.control_plane import TransitionOutcomeKind
+        self.change_invocation=False
+        result=self.execute()
+        self.assertIsNot(result.outcome.kind,TransitionOutcomeKind.SUCCEEDED)
+        self.assertLessEqual(self.events.count("command.restart_gamescope_session"),2)
+
+    def test_uncertain_persistence_and_changed_context_have_zero_commands(self):
+        self.fail_persist=True
+        result=self.execute()
+        self.assertFalse(result.durable)
+        self.assertFalse(any(e.startswith("command.") for e in self.events))
+
+    def test_changed_context_consumes_consent_and_refuses_before_effect(self):
+        with self.assertRaises(ValueError):self.execute(lambda target:None)
+        self.assertFalse(any(e.startswith("command.") for e in self.events))
+        with self.assertRaises(ValueError):self.approvals.consume(self.token,current=self.context)
+
+    def test_same_request_recovery_uses_durable_intent_and_bounded_restarts(self):
+        from regear.domain.control_plane import TransitionOutcomeKind
+        self.fail_restart=True
+        result=self.execute()
+        self.assertEqual(result.outcome.kind,TransitionOutcomeKind.RECOVERED)
+        self.assertEqual(self.events.count("command.restart_gamescope_session"),2)
+        second=self.events.index("command.restart_gamescope_session",self.events.index("command.restart_gamescope_session")+1)
+        self.assertLess(self.events.index("durable.recovery_started"),second)
+
+    def test_unknown_game_profile_or_changed_gpu_has_zero_native_commands(self):
+        from regear.domain.models import GameState
+        self.state=replace(self.initial,game_state=GameState.RUNNING)
+        from regear.adapters.transition_runtime import versioned_snapshot_observation
+        from regear.delivery.transition_journal_store import handoff_operation_id
+        self.context=replace(self.context,snapshot_generation=versioned_snapshot_observation(self.state).generation)
+        self.token=self.approvals.issue(plan_id=handoff_operation_id("fixture-request",self.context.boot_id,
+            self.context.snapshot_generation),request_id="fixture-request",context=self.context,user_confirmed=True)
+        with self.assertRaises(ValueError):self.execute()
+        self.assertFalse(any(e.startswith("command.") for e in self.events))
+
+    def test_unrelated_context_change_after_restart_cannot_commit(self):
+        from regear.domain.control_plane import TransitionOutcomeKind
+        from regear.adapters.transition_runtime import versioned_snapshot_observation
+        def fresh(target):
+            return replace(self.context,source_invocation_id=self.invocation,source_main_pid=self.pid,
+                snapshot_generation=versioned_snapshot_observation(self.state).generation,
+                integration_sha256="9"*64 if self.invocation!="a"*32 else self.context.integration_sha256)
+        result=self.execute(fresh)
+        self.assertIsNot(result.outcome.kind,TransitionOutcomeKind.SUCCEEDED)
+
+    def test_process_lifetime_change_during_observation_refuses_before_effect(self):
+        original=self.composition.observations.observe
+        def changed():
+            value=original();self.start+=1;return value
+        self.composition.observations.observe=changed
+        with self.assertRaises(ValueError):self.execute()
+        self.assertFalse(any(e.startswith("command.") for e in self.events))
+
+    def test_forward_render_from_different_gamescope_cannot_commit(self):
+        from regear.domain.control_plane import TransitionOutcomeKind
+        self.correlate_snapshot=False
+        result=self.execute()
+        self.assertIsNot(result.outcome.kind,TransitionOutcomeKind.SUCCEEDED)
+
+    def test_recovery_render_from_different_gamescope_is_not_verified(self):
+        from regear.domain.control_plane import TransitionOutcomeKind
+        self.fail_restart=True;self.correlate_snapshot=False
+        result=self.execute()
+        self.assertIsNot(result.outcome.kind,TransitionOutcomeKind.RECOVERED)
+
+    def test_unsupported_snapshot_does_not_fall_back_to_ally(self):
+        from regear.delivery.experimental_handoff_runtime import feature_handoff_profiles
+        from regear.domain.models import SupportTier
+        result=feature_handoff_profiles(self.context,replace(self.initial,host_profile="asus-rog-ally-x",
+                                                            support_tier=SupportTier.CERTIFIED))
+        self.assertFalse(result.exact_host)
+        self.assertFalse(result.exact_egpu)
+        other=replace(self.context,host_profile_id="unknown-handheld")
+        self.assertFalse(feature_handoff_profiles(other,replace(self.initial,host_profile=other.host_profile_id)).exact_host)
+        self.assertFalse(feature_handoff_profiles(replace(self.context,egpu_profile_id="unknown-egpu"),self.initial).exact_egpu)
+        feature=feature_handoff_profiles(self.context,self.initial)
+        from regear.domain.control_plane import CapabilitySupport,RemovalBehavior,SleepBehavior
+        self.assertEqual(feature.capabilities.display_handoff,CapabilitySupport.EXPERIMENTAL)
+        self.assertEqual(feature.capabilities.power_button_interception,CapabilitySupport.UNKNOWN)
+        self.assertEqual(feature.capabilities.removal_behavior,RemovalBehavior.UNKNOWN)
+        self.assertEqual(feature.capabilities.sleep_behavior,SleepBehavior.UNTESTED)
+
+    def test_expired_admission_and_consumed_composition_cannot_replay(self):
+        approved=self.approvals.consume(self.token,current=self.context)
+        with self.gate.admit() as lease:pass
+        with self.assertRaises(Exception):self.composition.run(approved,lease,read_context=lambda target:self.context)
+        with self.gate.admit() as lease:
+            with self.assertRaises(ValueError):self.composition.run(approved,lease,read_context=lambda target:self.context)
+        self.assertFalse(any(e.startswith("command.") for e in self.events))
 
 
 if __name__ == "__main__":unittest.main()

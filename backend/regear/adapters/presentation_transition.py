@@ -61,7 +61,9 @@ class PresentationTransitionMechanism:
         active_operation: Callable[[], str] = lambda: "",
         trial_layer_ready: Callable[[], bool] | None = None,
         trial_steam_waiter: Callable[[str], None] | None = None,
+        resolve_profiles=resolve_runtime_profiles,
     ) -> None:
+        self._resolve_profiles = resolve_profiles
         self._integration = integration
         self._config = config
         self._commands = commands
@@ -363,9 +365,8 @@ class PresentationTransitionMechanism:
         except Exception:
             return False
 
-    @staticmethod
-    def _derive_binding(snapshot: ObservedSnapshot) -> TransitionBinding | None:
-        resolved = resolve_runtime_profiles(snapshot)
+    def _derive_binding(self, snapshot: ObservedSnapshot) -> TransitionBinding | None:
+        resolved = self._resolve_profiles(snapshot)
         if not resolved.exact_host or not resolved.exact_egpu:
             return None
 

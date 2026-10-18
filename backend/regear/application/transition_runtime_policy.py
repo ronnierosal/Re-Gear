@@ -21,6 +21,10 @@ from ..profiles.registry import resolve_runtime_profiles
 class StrictRuntimeTransitionPolicy:
     """Revalidate every identity and safety fact immediately before mutation."""
 
+    def __init__(self, *, resolve_profiles=resolve_runtime_profiles):
+        # Constructor-only seam; ordinary callers retain the catalog policy.
+        self._resolve_profiles = resolve_profiles
+
     def blockers(
         self,
         plan: TransitionPlan,
@@ -40,7 +44,7 @@ class StrictRuntimeTransitionPolicy:
                 if snapshot.game_state is GameState.UNKNOWN
                 else "game.running"
             )
-        resolved = resolve_runtime_profiles(snapshot)
+        resolved = self._resolve_profiles(snapshot)
         if (
             not resolved.exact_host
             or resolved.capabilities.host_profile_id != binding.host_profile_id
