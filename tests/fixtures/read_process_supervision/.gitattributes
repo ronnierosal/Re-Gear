@@ -1,0 +1,3 @@
+read_process_supervision.py -text whitespace=cr-at-eol
+test_read_process_supervision.py -text whitespace=cr-at-eol
+README.md -text whitespace=cr-at-eol
