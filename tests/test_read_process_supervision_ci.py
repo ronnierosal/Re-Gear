@@ -15,9 +15,9 @@ import unittest
 
 ROOT = Path(__file__).resolve().parent / 'fixtures' / 'read_process_supervision'
 HASHES = {
-    'read_process_supervision.py': 'cd9387814b3385d882011e71c1b2b803a8c7b06c993486e770260f6a553e44b0',
-    'test_read_process_supervision.py': 'a1ae254acd242ba59818fa7405d41122d585b0b05de4d5cc4575476351c2ab9a',
-    'README.md': 'aa4ca058c235864a85731b514cb3257457ff3fb716306c3bac7641be55c31d3d',
+    'read_process_supervision.py': '7ae2ef035df71daaf3e710da868ddc0d2e15dc00a9d8458b006e6801bb8449a9',
+    'test_read_process_supervision.py': '07d2af6df398c4b30ee7965269acce4fe030ccbf98e52b2e4cd7e09195e3bfcb',
+    'README.md': '175067e8cc19e3916054c518340ea6514792726340a02400811ce5d49183d55e',
 }
 
 
@@ -64,7 +64,7 @@ def supervise_fixtures():
     spec = importlib.util.spec_from_file_location('generic_supervision', ROOT / 'read_process_supervision.py')
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    # Real failure cases qualify the enclosing boundary, separately from nine fixtures.
+    # Real failure cases qualify the enclosing boundary, separately from 21 fixtures.
     escaped = ('import os,time; r,w=os.pipe(); pid=os.fork(); '
                '\nif pid==0:\n os.close(r); os.setsid(); os.write(w,b"1"); '
                'os.close(w); time.sleep(10); os._exit(0)'
@@ -106,8 +106,8 @@ class ReadProcessSupervisionCITests(unittest.TestCase):
             print(name, digest)
         print(text, end='')
         self.assertEqual(result['returncode'], 0, text)
-        self.assertRegex(text, r'Ran 9 tests in [0-9.]+s\s+OK\s*\Z')
-        self.assertEqual(text.count(' ... ok\n'), 9, 'all nine fixtures must pass without skips')
+        self.assertRegex(text, r'Ran 21 tests in [0-9.]+s\s+OK\s*\Z')
+        self.assertEqual(text.count(' ... ok\n'), 21, 'all 21 fixtures must pass without skips')
 
 
 if __name__ == '__main__':

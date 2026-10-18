@@ -7,6 +7,7 @@ No worker is accepted until its process group AND adopted children are gone.
 import base64
 import ctypes
 import json
+import math
 import os
 import selectors
 import subprocess
@@ -15,6 +16,81 @@ import time
 
 
 class GuardFailure(Exception): pass
+
+
+FRAME_MAGIC=b'RPS1'
+FRAME_HEADER=8
+
+
+def frame_result(value,cap):
+    """One length-delimited result. Never use descendant-owned EOF as completion."""
+    try:
+        body=json.dumps({'ok':True,'value':value},separators=(',',':'),allow_nan=False).encode('utf-8')
+    except (ValueError,TypeError,UnicodeError,RecursionError):
+        body=b'{"ok":false,"error":"worker_failed"}'
+    if len(body)>cap:body=b'{"ok":false,"error":"output_bound"}'
+    if len(body)>cap:raise GuardFailure('output_bound')
+    return FRAME_MAGIC+len(body).to_bytes(4,'big')+body
+
+
+def frame_length(data,cap):
+    if len(data)<FRAME_HEADER:return None
+    if bytes(data[:4])!=FRAME_MAGIC:raise GuardFailure('result_frame_invalid')
+    size=int.from_bytes(data[4:8],'big')
+    if size==0 or size>cap:raise GuardFailure('output_bound')
+    total=FRAME_HEADER+size
+    if len(data)>total:raise GuardFailure('result_trailing')
+    return total
+
+
+def decode_result(data,cap):
+    total=frame_length(data,cap)
+    if total is None or len(data)!=total:raise GuardFailure('result_truncated')
+    def pairs(items):
+        result={}
+        for key,value in items:
+            if key in result:raise GuardFailure('result_malformed')
+            result[key]=value
+        return result
+    def finite_float(text):
+        value=float(text)
+        if not math.isfinite(value):raise GuardFailure('result_malformed')
+        return value
+    try:
+        text=bytes(data[FRAME_HEADER:]).decode('utf-8',errors='strict')
+        depth=0;quoted=False;escaped=False
+        for char in text:
+            if quoted:
+                if escaped:escaped=False
+                elif char=='\\':escaped=True
+                elif char=='"':quoted=False
+            elif char=='"':quoted=True
+            elif char in '[{':
+                depth+=1
+                if depth>32:raise GuardFailure('result_malformed')
+            elif char in ']}':depth-=1
+        decoder=json.JSONDecoder(object_pairs_hook=pairs,parse_float=finite_float,
+            parse_constant=lambda _: (_ for _ in ()).throw(GuardFailure('result_malformed')))
+        result,end=decoder.raw_decode(text)
+        if end!=len(text):raise GuardFailure('result_trailing')
+    except (ValueError,UnicodeError,RecursionError):raise GuardFailure('result_malformed') from None
+    if type(result) is not dict or type(result.get('ok')) is not bool:raise GuardFailure('result_malformed')
+    if result['ok']:
+        if set(result)!={'ok','value'}:raise GuardFailure('result_malformed')
+        return result['value']
+    if set(result)!={'ok','error'} or result['error'] not in ('worker_failed','output_bound'):
+        raise GuardFailure('result_malformed')
+    raise GuardFailure(result['error'])
+
+
+def drain_result_after_cleanup(read_fd,data,cap):
+    """All own writers must be gone before EOF and no trailing bytes are accepted."""
+    total=frame_length(data,cap)
+    if total is None or len(data)!=total:raise GuardFailure('result_truncated')
+    try:extra=os.read(read_fd,1)
+    except BlockingIOError:raise GuardFailure('result_pipe_unconfirmed') from None
+    if extra:raise GuardFailure('result_trailing')
+    return decode_result(data,cap)
 
 
 def set_subreaper():
@@ -64,6 +140,7 @@ def cleanup(pid,deadline):
 
 def guard_call(fn,total_seconds=3,cleanup_seconds=.5,cap=16384):
     """Fork with a parent watchdog; every post-fork path guarantees cleanup."""
+    if type(cap) is not int or not 64<=cap<=262144:raise GuardFailure('output_bound')
     started=time.monotonic();hard=started+total_seconds;work=hard-cleanup_seconds
     set_subreaper()
     if children():raise GuardFailure('supervisor_not_dedicated')
@@ -82,10 +159,10 @@ def guard_call(fn,total_seconds=3,cleanup_seconds=.5,cap=16384):
             try:
                 os.close(read_fd);sel.close();os.setsid()
                 signal.pthread_sigmask(signal.SIG_SETMASK,oldmask)
-                result=fn();raw=json.dumps({'ok':True,'value':result},separators=(',',':')).encode()
-                if len(raw)>cap:raw=b'{"ok":false,"error":"output_bound"}'
+                raw=frame_result(fn(),cap)
             except BaseException:
-                raw=b'{"ok":false,"error":"worker_failed"}'
+                error=b'{"ok":false,"error":"worker_failed"}'
+                raw=FRAME_MAGIC+len(error).to_bytes(4,'big')+error
             try:
                 sent=0
                 while sent<len(raw):
@@ -97,38 +174,48 @@ def guard_call(fn,total_seconds=3,cleanup_seconds=.5,cap=16384):
         os.close(write_fd);write_fd=None
         sel.register(read_fd,selectors.EVENT_READ)
         signal.pthread_sigmask(signal.SIG_SETMASK,oldmask)
-        eof=False
-        while not eof:
+        complete=False
+        while not complete:
             remaining=work-time.monotonic()
             if remaining<=0:raise GuardFailure('call_timeout')
             for _,_ in sel.select(timeout=min(.02,remaining)):
-                block=os.read(read_fd,min(512,cap+1-len(data)))
-                if not block:eof=True;break
+                block=os.read(read_fd,min(512,cap+FRAME_HEADER+1-len(data)))
+                if not block:raise GuardFailure('result_truncated')
                 data.extend(block)
-                if len(data)>cap:raise GuardFailure('output_bound')
+                total=frame_length(data,cap)
+                complete=total is not None and len(data)==total
+                if complete:break
     except BaseException as exc:failure=exc
     finally:
         # Mask repeated cancellation for finite teardown, then restore caller state.
         if oldmask is not None:signal.pthread_sigmask(signal.SIG_BLOCK,cancellation)
         try:
-            sel.close()
-            for fd in (read_fd,write_fd):
+            try:sel.close()
+            except BaseException:failure=GuardFailure('result_pipe_unconfirmed')
+            for fd in (write_fd,):
                 if fd is not None:
                     try:os.close(fd)
                     except OSError:pass
             if pid is not None and pid>0:
-                try:cleanup(pid,hard);confirmed=True
+                try:
+                    cleanup(pid,hard);confirmed=True
                 except BaseException:failure=GuardFailure('child_cleanup_unconfirmed')
+                if confirmed and failure is None:
+                    # Keep the reader through teardown: inherited writers cannot
+                    # delay completion, but bytes they emitted must not disappear.
+                    try:value=drain_result_after_cleanup(read_fd,data,cap)
+                    except GuardFailure as exc:failure=exc
+                    except BaseException:failure=GuardFailure('result_malformed')
         finally:
+            if read_fd is not None:
+                try:os.close(read_fd)
+                except OSError:pass
             for sig,handler in previous.items():signal.signal(sig,handler)
             if oldmask is not None:signal.pthread_sigmask(signal.SIG_SETMASK,oldmask)
     if pid is not None and not confirmed:raise GuardFailure('child_cleanup_unconfirmed')
     if failure:raise failure
     if time.monotonic()>hard:raise GuardFailure('call_timeout')
-    try:result=json.loads(data)
-    except (ValueError,UnicodeError):raise GuardFailure('worker_failed') from None
-    if not result.get('ok'):raise GuardFailure(result.get('error','worker_failed'))
-    return result['value']
+    return value
 
 
 class GuardedNative:
