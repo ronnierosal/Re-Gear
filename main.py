@@ -6862,12 +6862,21 @@ async def _enrich_usb4_waiting_snapshot(plugin, payload):
         }}
 
 
+from regear.profiles.win_mini import match_win_mini  # noqa: E402
+from regear.delivery.experimental_handoff_runtime import ExperimentalHandoffRuntime  # noqa: E402
+
+
 Plugin = observation_plugin(
     Plugin,
     passive_api=lambda: DiagnosticsApi(SteamOsDiscovery()),
     build_info=lambda: load_public_build_info(PLUGIN_ROOT),
     render_snapshot=report_to_public_dict,
     enrich_snapshot=_enrich_usb4_waiting_snapshot,
+    experimental_profile=BUILD_PROFILE,
+    experimental_match=lambda host: match_win_mini(host).exact,
+    # No qualified session reader, mutation gate or executor is installed by
+    # this local boundary slice. Unknown compatibility must remain a refusal.
+    experimental_factory=lambda: ExperimentalHandoffRuntime(read_context=lambda target: None),
 )
 
 Plugin = profiled_plugin(Plugin, BUILD_PROFILE)

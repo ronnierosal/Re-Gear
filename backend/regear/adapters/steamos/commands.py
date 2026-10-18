@@ -71,11 +71,12 @@ class PipeWireCommandRunner:
     def dump(self, user, *, timeout_seconds: float | None = None) -> AudioCommandResult:
         return self._run(user, (self.PW_DUMP,), capture=True, timeout_seconds=timeout_seconds)
 
-    def set_default(self, user, object_id: int) -> AudioCommandResult:
+    def set_default(self, user, object_id: int, *, timeout_seconds: float | None = None) -> AudioCommandResult:
         if type(object_id) is not int or object_id <= 0:
             return AudioCommandResult(False, code="audio.object_id_invalid")
         return self._run(
-            user, (self.WPCTL, "set-default", str(object_id)), capture=False
+            user, (self.WPCTL, "set-default", str(object_id)), capture=False,
+            timeout_seconds=timeout_seconds
         )
 
     def set_profile(self, user, object_id: int, profile_index: int, *, timeout_seconds=None) -> AudioCommandResult:

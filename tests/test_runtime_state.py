@@ -5,6 +5,8 @@ import stat
 import sys
 import tempfile
 import unittest
+from contextlib import ExitStack
+from unittest.mock import patch
 from pathlib import Path
 
 
@@ -143,6 +145,73 @@ class RuntimeStateTests(unittest.TestCase):
                     effective_uid=lambda: 0,
                     lstat=non_root_lstat,
                 ).ensure()
+
+
+class RuntimeStateInspectionTests(unittest.TestCase):
+    """No actual root directory, device or mutating filesystem access."""
+    target = ROOT / "fictional-runtime-parent" / "control"
+
+    @staticmethod
+    def metadata(mode=stat.S_IFDIR | 0o700, uid=0, inode=0):
+        return os.stat_result((mode,inode,1,1,uid,0,0,0,0,0))
+
+    def inspect(self, root=..., parent=..., *, platform="posix", uid=0):
+        root = self.metadata() if root is ... else root
+        parent = self.metadata() if parent is ... else parent
+        parents=iter(parent) if type(parent) is list else None
+        self.reads=[]
+        def lstat(path):
+            self.reads.append(path)
+            value=(next(parents) if parents is not None else parent) if path==self.target.parent else root
+            if isinstance(value,Exception):raise value
+            return value
+        with ExitStack() as stack:
+            sinks=[stack.enter_context(patch(name,side_effect=AssertionError("inspection mutated state")))
+                   for name in ("os.mkdir","os.chmod","os.open","os.fsync","os.rename","os.replace")]
+            try:
+                return RootOwnedRuntimeState(self.target,platform_name=platform,
+                    effective_uid=lambda:uid,lstat=lstat).inspect_existing()
+            finally:
+                for sink in sinks:sink.assert_not_called()
+
+    def test_inspects_existing_and_returns_none_only_for_absent_leaf(self):
+        self.assertEqual(self.inspect(),self.target)
+        self.assertEqual(self.reads,[self.target.parent,self.target,self.target.parent])
+        self.assertIsNone(self.inspect(root=FileNotFoundError()))
+        self.assertEqual(self.reads,[self.target.parent,self.target,self.target.parent])
+
+    def test_missing_leaf_never_skips_parent_or_privilege_validation(self):
+        for parent in (FileNotFoundError(), PermissionError(), self.metadata(uid=1000),
+                       self.metadata(stat.S_IFLNK|0o700), self.metadata(stat.S_IFDIR|0o777)):
+            with self.subTest(parent=type(parent).__name__), self.assertRaises(ValueError):
+                self.inspect(root=FileNotFoundError(),parent=parent)
+            self.assertEqual(self.reads,[self.target.parent])
+        for platform,uid in (("nt",0),("posix",1000)):
+            with self.assertRaises(ValueError):self.inspect(platform=platform,uid=uid)
+            self.assertEqual(self.reads,[])
+
+    def test_unsafe_or_denied_root_is_distinct_from_absence(self):
+        for root in (PermissionError(),OSError(), self.metadata(uid=1000),
+                     self.metadata(stat.S_IFREG|0o700),self.metadata(stat.S_IFLNK|0o700),
+                     self.metadata(stat.S_IFDIR|0o755)):
+            with self.subTest(root=type(root).__name__),self.assertRaises(ValueError):self.inspect(root=root)
+
+    def test_no_second_stat_can_validate_a_replacement_root(self):
+        # The inspected metadata is validated once, with no repair or retry that
+        # could turn an unsafe first reading into a different accepted object.
+        with self.assertRaises(ValueError):self.inspect(root=self.metadata(stat.S_IFLNK|0o700))
+        self.assertEqual(self.reads.count(self.target),1)
+
+    def test_parent_disappearance_or_replacement_never_reports_absent_root(self):
+        for after in (FileNotFoundError(),PermissionError(),self.metadata(inode=2),
+                      self.metadata(stat.S_IFLNK|0o700)):
+            with self.subTest(after=type(after).__name__),self.assertRaises(ValueError):
+                self.inspect(root=FileNotFoundError(),parent=[self.metadata(inode=1),after])
+
+    def test_missing_metadata_is_uncertainty_not_proven_absence(self):
+        for value in (None,{},object()):
+            with self.assertRaises(ValueError):self.inspect(root=value)
+            with self.assertRaises(ValueError):self.inspect(root=FileNotFoundError(),parent=value)
 
 
 if __name__ == "__main__":

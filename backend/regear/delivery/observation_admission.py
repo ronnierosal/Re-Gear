@@ -2,11 +2,13 @@
 
 import asyncio
 import inspect
+import threading
 from functools import wraps
 
 from ..adapters.steamos.host import HostDiscovery
 from ..domain.runtime_admission import RuntimeAdmission, passive_rpc_allowed, runtime_admission
 from ..profiles.ally_x import matches_ally_x
+from .experimental_handoff_runtime import HANDOFF_METHODS
 
 
 class ObservationDenied(ValueError):
@@ -14,9 +16,11 @@ class ObservationDenied(ValueError):
 
 
 def mode(plugin):
+    host = None
     try:
         reader = object.__getattribute__(plugin, "_runtime_host_record")
-        exact = matches_ally_x(reader())
+        host = reader()
+        exact = matches_ally_x(host)
     except Exception:
         exact = False
     try:
@@ -24,9 +28,23 @@ def mode(plugin):
     except AttributeError:
         forced = None
     # A runtime composed without mutation services cannot upgrade in place.
-    if getattr(plugin, "_observation_started", False) is True:
+    state = object.__getattribute__(plugin, "__dict__")
+    initial = state.get("_initial_runtime_admission")
+    if getattr(plugin, "_observation_started", False) is True and initial is not RuntimeAdmission.EXPERIMENTAL_HANDOFF:
         forced = True
-    return runtime_admission(exact_host=exact, observation_only=forced)
+    try:
+        experimental = object.__getattribute__(plugin, "_runtime_experimental_match")(host) is True
+        profile = object.__getattribute__(plugin, "_runtime_experimental_profile")
+    except Exception:
+        experimental, profile = False, None
+    current = runtime_admission(exact_host=exact, observation_only=forced,
+                                exact_experimental_host=experimental, build_profile=profile)
+    if initial is not None and current is not initial:
+        return RuntimeAdmission.OBSERVATION_ONLY
+    if (current is RuntimeAdmission.EXPERIMENTAL_HANDOFF and initial is None
+            and state.get("_initializing_runtime_admission") is not True):
+        return RuntimeAdmission.OBSERVATION_ONLY
+    return current
 
 
 def unavailable():
@@ -59,7 +77,8 @@ _CLEANUP_HELPERS = frozenset({
 })
 
 
-def observation_plugin(plugin_class, *, passive_api, build_info, render_snapshot, enrich_snapshot=None):
+def observation_plugin(plugin_class, *, passive_api, build_info, render_snapshot, enrich_snapshot=None,
+                       experimental_profile=None, experimental_match=None, experimental_factory=None):
     """Wrap both build profiles, including methods added after class creation.
 
     Unknown hosts never compose the mutation-capable Plugin. Every later method
@@ -68,14 +87,22 @@ def observation_plugin(plugin_class, *, passive_api, build_info, render_snapshot
     """
     class Guarded(plugin_class):
         _runtime_host_record = staticmethod(lambda: HostDiscovery().scan())
+        _runtime_experimental_match = staticmethod(experimental_match or (lambda host: False))
+        _runtime_experimental_profile = experimental_profile
 
         def __init__(self, *, observation_only=False):
             self._observation_only = observation_only
-            self._observation_started = mode(self) is RuntimeAdmission.OBSERVATION_ONLY
+            self._initializing_runtime_admission = True
+            initial = mode(self)
+            self._initializing_runtime_admission = False
+            self._initial_runtime_admission = initial
+            self._observation_started = initial is not RuntimeAdmission.PROFILE_GATED
             if self._observation_started:
                 self._unloading = False
                 self._api = passive_api()
                 self._build_info = build_info()
+                if initial is RuntimeAdmission.EXPERIMENTAL_HANDOFF:
+                    self._experimental_handoff_lock = threading.Lock()
                 return
             super().__init__()
 
@@ -101,6 +128,17 @@ def observation_plugin(plugin_class, *, passive_api, build_info, render_snapshot
                                 result = await enrich_snapshot(self, result)
                             return interceptor_admission(self, result)
                         return result
+                    if (mode(self) is RuntimeAdmission.EXPERIMENTAL_HANDOFF
+                            and name in HANDOFF_METHODS and experimental_factory is not None):
+                        state = object.__getattribute__(self, "__dict__")
+                        if state.get("_unloading") is not False:
+                            return unavailable()
+                        with state["_experimental_handoff_lock"]:
+                            facade = state.get("_experimental_handoff")
+                            if facade is None:
+                                facade = experimental_factory()
+                                state["_experimental_handoff"] = facade
+                        return await asyncio.to_thread(facade.handle, name, args, kwargs)
                     if name == "_main":
                         return None
                     if name == "get_snapshot":
@@ -126,7 +164,7 @@ def observation_plugin(plugin_class, *, passive_api, build_info, render_snapshot
 
             @wraps(implementation)
             def guarded(*args, **kwargs):
-                if mode(self) is RuntimeAdmission.OBSERVATION_ONLY:
+                if mode(self) is not RuntimeAdmission.PROFILE_GATED:
                     raise ObservationDenied("runtime.observation_only")
                 return implementation(*args, **kwargs)
             return guarded

@@ -7,6 +7,7 @@ qualify hardware or authorize commands outside a reviewed transaction runner.
 from dataclasses import dataclass, fields
 import re
 import threading
+from enum import StrEnum
 from typing import Callable
 
 from .experimental_transition import ExperimentalTransitionApprovalStore
@@ -22,6 +23,29 @@ _OPERATIONS = frozenset({
     UserServiceOperation.RESTART_GAMESCOPE_SESSION,
     UserServiceOperation.OBSERVE_FILTER_GAMESCOPE,
 })
+
+
+class HandoffAudioOperation(StrEnum):
+    DUMP = "dump"
+    SET_DEFAULT = "set_default"
+
+
+@dataclass(frozen=True, slots=True)
+class HandoffAudioPermission:
+    """Approved identities only; availability must be validated before each call."""
+    source_sink_sha256: str
+    target_sink_sha256: str
+    rollback_sink_sha256: str
+    operations: tuple[HandoffAudioOperation, ...]
+
+    def __post_init__(self):
+        for value in (self.source_sink_sha256, self.target_sink_sha256, self.rollback_sink_sha256):
+            if type(value) is not str or _HASH.fullmatch(value) is None:
+                raise ValueError("audio identity must be an exact digest")
+        if (type(self.operations) is not tuple or not self.operations
+                or any(type(op) is not HandoffAudioOperation for op in self.operations)
+                or len(set(self.operations)) != len(self.operations)):
+            raise ValueError("audio operation permission is invalid")
 
 
 @dataclass(frozen=True, slots=True)
@@ -48,8 +72,11 @@ class HandoffContext:
     source_main_pid: int
     allowed_operations: tuple[UserServiceOperation, ...]
     evidence_verified: bool
+    audio: HandoffAudioPermission | None = None
 
     def __post_init__(self) -> None:
+        if self.audio is not None and type(self.audio) is not HandoffAudioPermission:
+            raise ValueError("audio permission is invalid")
         if self.build_profile != "development" or self.evidence_verified is not True:
             raise ValueError("handoff context is not verified development evidence")
         placements = {PlacementState.PORTABLE, PlacementState.DOCKED_EGPU}
@@ -68,7 +95,7 @@ class HandoffContext:
                 or not set(operations).issubset(_OPERATIONS)):
             raise ValueError("handoff context operation set is invalid")
         excluded = {"source_placement", "target_placement", "user_uid", "source_main_pid",
-                    "allowed_operations", "evidence_verified"}
+                    "allowed_operations", "evidence_verified", "audio"}
         for field in fields(self):
             if field.name in excluded:
                 continue

@@ -6,7 +6,7 @@ import sys
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
-from regear.application.experimental_handoff_approval import HandoffContext, HandoffApprovalStore
+from regear.application.experimental_handoff_approval import HandoffContext, HandoffApprovalStore, HandoffAudioPermission, HandoffAudioOperation
 from regear.domain.control_plane import PlacementState
 from regear.ports.presentation_activation import UserServiceOperation
 
@@ -45,7 +45,10 @@ class HandoffApprovalTests(unittest.TestCase):
         for field in fields(HandoffContext):
             with self.subTest(field=field.name):
                 original = context(); value = getattr(original, field.name)
-                if field.name == "source_placement" or field.name == "target_placement":
+                if field.name == "audio":
+                    changed = replace(original, audio=HandoffAudioPermission("a"*64,"b"*64,"c"*64,
+                        (HandoffAudioOperation.DUMP,)))
+                elif field.name == "source_placement" or field.name == "target_placement":
                     changed = replace(original, source_placement=PlacementState.DOCKED_EGPU,
                                       target_placement=PlacementState.PORTABLE)
                 elif field.name in {"build_profile", "evidence_verified"}:
@@ -64,6 +67,7 @@ class HandoffApprovalTests(unittest.TestCase):
 
     def test_missing_malformed_or_unverified_fields_deny(self):
         for field in fields(HandoffContext):
+            if field.name == "audio":continue  # Optional permission defaults denied.
             with self.subTest(field=field.name), self.assertRaises(ValueError):
                 replace(context(), **{field.name: None})
         for name, value in (("build_profile", "production"), ("evidence_verified", False),
@@ -99,6 +103,29 @@ class HandoffApprovalTests(unittest.TestCase):
             store=self.store();current=context()
             store.issue(plan_id="fixture-plan-0001",context=current,user_confirmed=True)
             with self.assertRaises(ValueError):store.consume(bad,current=current)
+
+
+class AudioPermissionTests(unittest.TestCase):
+    def permission(self):
+        return HandoffAudioPermission("a"*64,"b"*64,"c"*64,tuple(HandoffAudioOperation))
+
+    def test_audio_fields_and_operation_changes_burn_approval(self):
+        original=replace(context(),audio=self.permission())
+        for field in fields(HandoffAudioPermission):
+            value=getattr(original.audio,field.name)
+            changed=replace(original.audio,**{field.name:(HandoffAudioOperation.DUMP,)
+                if field.name=="operations" else "d"*64})
+            store=HandoffApprovalStore();token=store.issue(plan_id="fixture-plan-audio",context=original,user_confirmed=True)
+            with self.assertRaises(ValueError):store.consume(token,current=replace(original,audio=changed))
+            with self.assertRaises(ValueError):store.consume(token,current=original)
+        self.assertIsNone(context().audio)
+        with self.assertRaises(ValueError):replace(context(),audio=True)
+
+    def test_malformed_audio_identity_and_permissions_refuse(self):
+        for bad in (None,True,"unknown","a"*63):
+            with self.assertRaises(ValueError):replace(self.permission(),target_sink_sha256=bad)
+        for bad in ((),[],("dump",),(HandoffAudioOperation.DUMP,)*2):
+            with self.assertRaises(ValueError):replace(self.permission(),operations=bad)
 
 
 if __name__ == "__main__":unittest.main()
