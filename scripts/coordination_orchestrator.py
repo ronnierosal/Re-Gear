@@ -18,7 +18,9 @@ REQUIRED_CHECKS = ("foundation", "privileged-user-delivery")
 COORDINATION_CHECKS = {"gate", "update", "reconcile"}
 HOLD_LABELS = {"merge-hold", "hold", "needs-decision", "blocked"}
 IMPLEMENTING = {"claimed", "in-progress"}
-REPAIR_STATES = {"pr-open", "software-validated", "ready-to-merge"}
+# Preserve stack compatibility without admitting a state into canonical policy.
+# Current main rejects review-requested; only a separate schema change may enable it.
+REPAIR_STATES = {"pr-open", "software-validated", "ready-to-merge", "review-requested"}
 PRIORITY = {"P0": 0, "P1": 1, "P2": 2, "P3": 3}
 MAX_CHECK_PAGES = 20
 
@@ -137,7 +139,7 @@ def next_actions(agent, session, tasks):
     if not busy:
         for t in sorted(mine, key=priority):
             r, pr = t["record"], t.get("pr")
-            if (r["agent"] != agent or r["status"] not in REPAIR_STATES
+            if (r["agent"] != agent or r["status"] not in REPAIR_STATES or r["status"] not in gc.ACTIVE
                     or HOLD_LABELS.intersection(t["labels"]) or not pr or pr.get("draft")
                     or pr.get("state") != "open" or pr["head"]["ref"] != r["branch"]):
                 continue

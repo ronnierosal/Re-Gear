@@ -102,6 +102,18 @@ class DiscoveryTests(unittest.TestCase):
         f = FakeGitHub(pr=pull(mergeable=False))
         self.assertEqual(["base refresh required"], self.actions(f)[0]["reasons"])
 
+    def test_review_requested_repair_requires_separately_admitted_canonical_state(self):
+        task = record(status="review-requested")
+        task["software"] = dict(result="PASS", head=HEAD, base=BASE, url="https://example.org/ci")
+        f = FakeGitHub(task, behind=1)
+        with self.assertRaises(ValueError):
+            self.actions(f)  # Current main has not admitted this canonical state.
+        # Compatibility with the preserved stack, not a production policy edit.
+        with patch.object(o.gc, "ACTIVE", o.gc.ACTIVE | {"review-requested"}):
+            [action] = self.actions(f)
+        self.assertEqual(("rework", HEAD, BASE), (action["kind"], action["head"], action["base"]))
+        self.assertEqual(["base refresh required"], action["reasons"])
+
     def test_pending_missing_unknown_and_mixed_running_checks_refuse_even_when_behind(self):
         for checks in ([], [run("foundation")], [run("foundation", None, "in_progress")],
                        [run("foundation", "failure"), run("privileged-user-delivery", None, "queued")],
