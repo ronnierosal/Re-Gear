@@ -1900,7 +1900,7 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
   const activateDisplay = () => {
     if (runtimeOwner.stopped||!menuFresh||primaryDisplayAction.disabled) return;
     if (primaryDisplayAction.target === "ally") requestControllerDisplaySwitch("ally");
-    else if (primaryDisplayAction.target === "tv") void executeTvSwitch();
+    else if (primaryDisplayAction.target === "tv") requestControllerDisplaySwitch("tv");
   };
 
 

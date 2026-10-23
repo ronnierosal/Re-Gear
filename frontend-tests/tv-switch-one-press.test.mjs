@@ -4,8 +4,8 @@ import { readFileSync } from "node:fs";
 
 const source = readFileSync(new URL("../src/index.tsx", import.meta.url), "utf8");
 
-test("TV switching has one visible activation control", () => {
-  assert.match(source, /else if \(primaryDisplayAction.target === "tv"\) void executeTvSwitch\(\);/);
+test("TV switching has one visible activation control followed by confirmation", () => {
+  assert.match(source, /else if \(primaryDisplayAction.target === "tv"\) requestControllerDisplaySwitch\("tv"\);/);
   assert.doesNotMatch(source, /showSupervisedTvSwitchConfirmation/);
   assert.doesNotMatch(source, /previewSupervisedTvSwitch/);
 });
