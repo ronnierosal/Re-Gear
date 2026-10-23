@@ -1,5 +1,6 @@
 import threading
 import unittest
+from dataclasses import replace
 from unittest.mock import patch
 
 import test_tdp_runtime as runtime_fixtures
@@ -10,6 +11,7 @@ from regear.delivery.tdp_runtime import TdpRuntime
 from regear.delivery.auto_tdp_worker import AutoTdpWorker
 from regear.domain.auto_tdp import AutoTdpPolicy
 from regear.ports.tdp import TdpWriteOutcome
+from regear.ports.tdp import TdpRegister
 
 
 class Provider(runtime_fixtures.GuardedProvider):
@@ -112,6 +114,48 @@ class AutoLifecycleTests(unittest.TestCase):
             self.assertIsNone(self.runtime.start_auto(policy))
         self.assertIsNone(self.session)
         self.assertEqual(self.provider.writes, [])
+
+    def test_start_rejects_range_unexpressible_by_boost_before_worker_creation(self):
+        self.provider.current = replace(
+            self.provider.current,
+            fast=TdpRegister(15, 15, 25),
+        )
+        self.runtime.set_enabled(True)
+        self.assertIsNone(self.runtime.start_auto(AutoTdpPolicy(7, 30, 60)))
+        self.assertIsNone(self.session)
+        self.assertIsNone(self.runtime.auto_status())
+        self.assertEqual(self.provider.writes, [])
+
+    def test_start_preserves_representable_twenty_five_watt_range(self):
+        self.provider.current = replace(
+            self.provider.current,
+            slow=TdpRegister(20, 20, 30),
+            fast=TdpRegister(25, 25, 25),
+        )
+        self.runtime.set_enabled(True)
+        status = self.runtime.start_auto(AutoTdpPolicy(7, 25, 60))
+        self.assertTrue(status.running)
+        self.assertIsNotNone(self.session)
+        self.assertEqual(self.provider.writes, [])
+
+    def test_start_uses_the_same_observation_for_readiness_and_range_admission(self):
+        admitted = replace(self.provider.current, fast=TdpRegister(15, 15, 30))
+        later = replace(admitted, fast=TdpRegister(15, 15, 25))
+        self.runtime.set_enabled(True)
+        self.provider.observations = [admitted, later]
+        status = self.runtime.start_auto(AutoTdpPolicy(7, 30, 60))
+        self.assertTrue(status.running)
+        self.assertEqual(self.provider.observations, [later])
+        self.assertEqual(self.provider.writes, [])
+
+    def test_manual_presets_are_withheld_while_auto_is_running_or_stopping(self):
+        self.runtime.set_enabled(True)
+        self.assertTrue(all(item["admitted"] for item in self.runtime.status()["manual_presets"]))
+        self.runtime.start_auto(self.policy)
+        self.assertFalse(any(item["admitted"] for item in self.runtime.status()["manual_presets"]))
+        stopped = self.runtime.stop_auto()
+        self.assertTrue(stopped.stopping)
+        self.assertFalse(any(item["admitted"] for item in self.runtime.status()["manual_presets"]))
 
     def test_rpc_admission_is_checked_again_at_final_dispatch(self):
         admitted = [True]
