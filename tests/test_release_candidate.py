@@ -52,13 +52,33 @@ class ReleaseCandidateTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             self.make_project(root)
-            result = release_candidate.prepare_release_candidate(self.make_archive(root), project_root=root)
+            archive = self.make_archive(root)
+            result = release_candidate.prepare_release_candidate(archive, project_root=root)
+            self.assertEqual(archive.stat().st_size, result["archive"]["size_bytes"])
         self.assertEqual("1.2.3", result["version"])
         self.assertEqual("a" * 40, result["build"]["source_revision"])
         self.assertEqual("manual_publication_required", result["publication"]["status"])
         self.assertEqual(64, len(result["archive"]["sha256"]))
         self.assertEqual("development", result["build"]["profile"]["profile"])
         self.assertIn("development", release_candidate._notes_template(result))
+
+    def test_generated_handoff_preserves_identity_and_pending_acceptance(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self.make_project(root)
+            candidate = release_candidate.prepare_release_candidate(self.make_archive(root), project_root=root)
+            notes = release_candidate._notes_template(candidate)
+        for identity in (candidate["build"]["source_revision"], candidate["archive"]["sha256"],
+                         candidate["archive"]["filename"], str(candidate["archive"]["size_bytes"])):
+            self.assertIn(identity, notes)
+        self.assertIn("Native evidence: NOT TESTED", notes)
+        self.assertIn("PR head / current base (full SHAs): TODO", notes)
+        self.assertIn("Independent reviewer session / exact head-base verdict / evidence URL: TODO", notes)
+        self.assertIn("verified SHA-256 / recovery procedure: TODO", notes)
+        self.assertIn("changed head, base or package", notes)
+        self.assertIn("scripts/verify_validation_artifact.py", notes)
+        self.assertIn("keep unmet Class C/D", notes)
+        self.assertEqual("not_published", candidate["publication"]["github_release"])
 
     def test_production_candidate_retains_approved_feature_identity(self):
         with tempfile.TemporaryDirectory() as temporary:

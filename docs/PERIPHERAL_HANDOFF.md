@@ -5,6 +5,9 @@ transition transaction. They are not a second mutation engine.
 
 ## Current implementation boundary
 
+The separate [read-only controller provider catalog](CONTROLLER_PROVIDER_CATALOG.md)
+records provider evidence and does not authorize handoff or mappings.
+
 R7a implements a pure, delivery-independent planning foundation:
 
 - schema-versioned controller/audio observations
