@@ -921,9 +921,9 @@ test('sleep intent offers the guarded route and still requires confirmation outs
   assert.equal(h.calls.length, 0);
   assert.equal(h.modals.length, 0);
   assert.equal(h.button().props.disabled, false);
-  assert.equal(h.button().props.children[0], 'Disconnect + Sleep');
+  assert.equal(h.button().props.children[0], 'Disconnect eGPU & Sleep');
   h.click();
-  assert.equal(h.modals.at(-1).view.props.strOKButtonText, 'Disconnect and sleep');
+  assert.equal(h.modals.at(-1).view.props.strOKButtonText, 'Disconnect eGPU & Sleep');
   h.unmount();
 });
 
@@ -937,7 +937,7 @@ test('sleep presents urgent unplug state and terminal refusal without another ac
     'dock_power.root_required', 'dock_power.suspend_brand_new']) {
     assert.match(view(refused(code)).message, /handheld remains awake/);
     assert.equal(view(refused(code)).action, null);
-    assert.equal(view(refused(code)).label, 'Disconnect + Sleep stopped');
+    assert.equal(view(refused(code)).label, 'Disconnect eGPU & Sleep stopped');
   }
   const unplug=view({...fresh,code:'dock_power.unplug_required',busy:true,ok:false,power_action:'sleep',software_down:true,unplug_required:true});
   assert.equal(unplug.label,'Unplug eGPU now');assert.match(unplug.message,/verified physical absence/);

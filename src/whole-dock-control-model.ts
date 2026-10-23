@@ -272,15 +272,15 @@ export function dockIntentControl(status: any, snapshot: any, intent: DockIntent
     }
     if (status?.schema_version === 1 && status.busy === false && status.ok === false
         && (Object.hasOwn(sleepRefusals, status.code) || shutdownTeardownRefusals.has(status.code))) {
-      return { action: null, label: "Disconnect + Sleep stopped",
+      return { action: null, label: "Disconnect eGPU & Sleep stopped",
         message: `${sleepRefusals[status.code] ?? "The dock disconnect could not be completed."} The handheld remains awake.` };
     }
-    if (snapshot?.schema_version !== 3) return { action: null, label: "Disconnect + Sleep unavailable",
+    if (snapshot?.schema_version !== 3) return { action: null, label: "Disconnect eGPU & Sleep unavailable",
       message: "Current system status is unavailable. Refresh before continuing." };
     const view = dockControl(status, snapshot, now);
     return {
       action: view.action === "whole_dock_disconnect" ? "whole_dock_sleep" : null,
-      label: view.action === "whole_dock_disconnect" ? "Disconnect + Sleep" : view.label,
+      label: view.action === "whole_dock_disconnect" ? "Disconnect eGPU & Sleep" : view.label,
       message: view.action === "whole_dock_disconnect"
         ? "Return to the handheld, disconnect the eGPU in software, then unplug it when Re-Gear asks. Sleep starts only after physical absence is verified."
         : view.message,
@@ -307,7 +307,7 @@ export function dockIntentControl(status: any, snapshot: any, intent: DockIntent
   const view = dockControl(status, snapshot, now);
   return {
     action: view.action === "whole_dock_disconnect" ? "whole_dock_shutdown" : null,
-    label: view.action === "whole_dock_disconnect" ? "Disconnect and shut down" : softwareDisconnected(status) ? "Shutdown unavailable" : view.label,
+    label: view.action === "whole_dock_disconnect" ? "Disconnect eGPU & Shut Down" : softwareDisconnected(status) ? "Shutdown unavailable" : view.label,
     message: view.action === "whole_dock_disconnect"
       ? "Return to the handheld, disconnect the eGPU in software, then unplug it when prompted. Shutdown starts only after physical absence is verified."
       : softwareDisconnected(status)

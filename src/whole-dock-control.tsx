@@ -342,17 +342,17 @@ export function WholeDockControl({ readCurrentSnapshot, intent = "disconnect_onl
     };
     // One press. `direct` is set only when a named tile activated this mount:
     // native.tsx passes a one-shot startRequest when the player presses
-    // "Safe Disconnect" or "Disconnect + Shutdown", so
+    // "Safe Disconnect" or "Disconnect eGPU & Shut Down", so
     // the press that opened this modal IS the explicit choice of this exact
     // action, and a second dialog asks the same question twice. The route
     // selector inside the Safe Disconnect detail passes no startRequest, so a
     // route chosen from a dropdown still confirms before anything happens.
     if(direct) { void run(); return; }
-    modal.current = showModal(<EgpuConfirmModal strTitle={action === "whole_dock_shutdown" ? "Disconnect, unplug, and shut down?" : action === "whole_dock_sleep" ? "Disconnect, unplug, and sleep?" : "Disconnect the dock in software?"}
+    modal.current = showModal(<EgpuConfirmModal strTitle={action === "whole_dock_shutdown" ? "Disconnect, unplug, and shut down?" : action === "whole_dock_sleep" ? "Disconnect, unplug, and sleep?" : "Disconnect eGPU in software?"}
       strDescription={action === "whole_dock_shutdown" ? "Re-Gear will return to the handheld and disconnect the eGPU in software. Keep the cable connected until the unplug prompt appears. Physically unplug the eGPU when prompted; shutdown starts only after physical absence is verified. Save your work first."
         : action === "whole_dock_sleep" ? "Re-Gear will return to the handheld and disconnect the eGPU in software. Keep the cable connected until the urgent unplug prompt appears. Sleep starts only after physical absence is verified."
         : "The TV will turn off and Gaming Mode may restart. Keep the dock cable connected for this trial. This is not permission to unplug."}
-      strOKButtonText={action === "whole_dock_shutdown" ? "Disconnect and shut down" : action === "whole_dock_sleep" ? "Disconnect and sleep" : "Disconnect"} strCancelButtonText="Cancel"
+      strOKButtonText={action === "whole_dock_shutdown" ? "Disconnect eGPU & Shut Down" : action === "whole_dock_sleep" ? "Disconnect eGPU & Sleep" : "Disconnect eGPU"} strCancelButtonText="Cancel"
       className="rg-whole-dock-confirm" bDestructiveWarning onOK={() => { void run(); }} onCancel={cancel} onEscKeypress={cancel}>
       <style>{`.rg-whole-dock-confirm{z-index:2147483647!important;position:fixed!important;left:50%!important;top:50%!important;right:auto!important;bottom:auto!important;margin:0!important;transform:translate(-50%,-50%)!important}`}</style>
     </EgpuConfirmModal>, undefined, { fnOnClose: cancel, bNeverPopOut: true });
@@ -397,7 +397,7 @@ export function WholeDockControl({ readCurrentSnapshot, intent = "disconnect_onl
       if (!mounted.current || !view.action || pending.current || uncertain.current || pendingRequest()) return;
       setInitialNotStarted(false);
       confirm(true,reading);
-    }}>{intent === "sleep" ? "Disconnect + Sleep" : intent === "shutdown" ? "Safe Disconnect + Shutdown" : "Safe Disconnect"}</DialogButton>}
+    }}>{intent === "sleep" ? "Disconnect eGPU & Sleep" : intent === "shutdown" ? "Disconnect eGPU & Shut Down" : "Safe Disconnect"}</DialogButton>}
     {recoveredShutdownUnplug && reading.status.code === "dock_power.unplug_required" && !cancellationPending && <DialogButton style={{width:"100%",minWidth:0,padding:"8px",border:"1px solid #39d8ff",borderRadius:8,background:"#112434",color:"#f4f7fb"}} disabled={busy} onClick={async () => {
       const record = parsePendingRecord(pendingRecord());
       if (!mounted.current || !record || record.intent !== "shutdown" || !shutdownUnplugWaiting(reading?.status, record.request)

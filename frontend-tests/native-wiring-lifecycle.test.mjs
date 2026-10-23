@@ -235,7 +235,7 @@ test('plugin remount presents recovered terminal sleep failure without replay',a
   await settle();
   assert.equal(h.modals.length,1);
   const tree=h.modals[0].node;
-  assert.equal(tree.props.strTitle,'Disconnect + Sleep status');
+  assert.equal(tree.props.strTitle,'Disconnect eGPU & Sleep status');
   const control=tree.props.children.find(child=>child?.type==='dock');
   assert.equal(control.props.intent,'sleep');
   assert.equal(control.props.statusOnly,true);
@@ -277,7 +277,7 @@ test('delayed active sleep recovery opens status-only and cancels its timers on 
   assert.equal(reads,2);
   assert.equal(h.modals.length,1);
   const tree=h.modals[0].node;
-  assert.equal(tree.props.strTitle,'Disconnect + Sleep status');
+  assert.equal(tree.props.strTitle,'Disconnect eGPU & Sleep status');
   const control=tree.props.children.find(child=>child?.type==='dock');
   assert.equal(control.props.intent,'sleep');
   assert.equal(control.props.statusOnly,true);
@@ -310,7 +310,7 @@ test('plugin remount restores pending sleep as status-only and never replays it'
   const h=harness('v2:sleep:retired-panel:request-1');
   assert.equal(h.modals.length,1);
   const tree=h.modals[0].node;
-  assert.equal(tree.props.strTitle,'Disconnect + Sleep status');
+  assert.equal(tree.props.strTitle,'Disconnect eGPU & Sleep status');
   const control=tree.props.children.find(child=>child?.type==='dock');
   assert.equal(control.props.intent,'sleep');
   assert.equal(control.props.statusOnly,true);

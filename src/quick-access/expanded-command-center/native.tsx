@@ -37,8 +37,8 @@ import { ShortcutSettings } from "./shortcut-settings";
  * control would share that record and the two would disable each other. */
 const dockIntentOptions: { label: string; data: DockIntent }[] = [
   { label: "Disconnect only", data: "disconnect_only" },
-  { label: "Disconnect and sleep", data: "sleep" },
-  { label: "Disconnect and shut down", data: "shutdown" },
+  { label: "Disconnect eGPU & Sleep", data: "sleep" },
+  { label: "Disconnect eGPU & Shut Down", data: "shutdown" },
 ];
 
 /** Named Steam navigation feedback; no guessed enums or separate audio player. */
@@ -296,7 +296,7 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
       }
     };
     const dismiss=()=>{if(warningBlocksDismiss())return;acknowledgeDockSettlement();hide();};
-    const title=intent==="shutdown"?"Safe Disconnect + Shutdown status":intent==="sleep"?"Disconnect + Sleep status":"Safe Disconnect status";
+    const title=intent==="shutdown"?"Disconnect eGPU & Shut Down status":intent==="sleep"?"Disconnect eGPU & Sleep status":"Safe Disconnect status";
     const opened=showModal(<EgpuConfirmModal strTitle={title} strOKButtonText="Hide" bAlertDialog onOK={dismiss} onCancel={dismiss} onEscKeypress={dismiss} className="rg-whole-dock-progress">
       <style>{`.rg-whole-dock-progress{position:fixed!important;left:50%!important;top:50%!important;right:auto!important;bottom:auto!important;margin:0!important;transform:translate(-50%,-50%)!important}`}</style>
       <WholeDockControl intent={intent} readCurrentSnapshot={readCurrentSnapshot} statusOnly onSettled={presentDockSettlement} onResolvedAbsent={resolveAbsentDockReceipt} unplugWarning={unplugWarning}/>
@@ -373,7 +373,7 @@ export function createExpandedMenu(input: ControllerInputSource | undefined, hos
     // erased the only durable receipt before the unplug popup could appear.
     // Only the later status-only surface may acknowledge the settlement.
     const dismiss=()=>{if(!warningBlocksDismiss())hide();};
-    const title=intent==="shutdown"?"Safe Disconnect + Shutdown":intent==="sleep"?"Disconnect + Sleep":"Safe Disconnect";
+    const title=intent==="shutdown"?"Disconnect eGPU & Shut Down":intent==="sleep"?"Disconnect eGPU & Sleep":"Safe Disconnect";
     const opened=showModal(<EgpuConfirmModal strTitle={title} strOKButtonText="Hide" bAlertDialog onOK={dismiss} onCancel={dismiss} onEscKeypress={dismiss} className="rg-whole-dock-progress">
       <style>{`.rg-whole-dock-progress{position:fixed!important;left:50%!important;top:50%!important;right:auto!important;bottom:auto!important;margin:0!important;transform:translate(-50%,-50%)!important}`}</style>
       <WholeDockControl intent={intent} readCurrentSnapshot={readCurrentSnapshot} startRequest={startRequest} onSettled={presentDockSettlement} unplugWarning={unplugWarning}/>
