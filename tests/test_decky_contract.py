@@ -59,6 +59,7 @@ class DeckyContractTests(unittest.TestCase):
             public_methods,
             {
                 "get_snapshot",
+                "get_usb4_native_diagnostic",  # Development-only pure-read RPC; production denies before composition.
                 "classify_offline_details",
                 "get_tdp_status",
                 "set_tdp_enabled",
@@ -114,6 +115,7 @@ class DeckyContractTests(unittest.TestCase):
                 "acknowledge_process_release",
                 "get_egpu_disconnect_status",
                 "execute_egpu_disconnect",
+                "cancel_egpu_shutdown",
                 "remember_game_close_choice",
                 "forget_game_close_choice",
                 "take_pending_relaunch",
@@ -166,6 +168,7 @@ class DeckyContractTests(unittest.TestCase):
         )
         no_argument_rpcs = {
             "get_snapshot",
+            "get_usb4_native_diagnostic",
             "get_peripheral_status",
             "get_action_history",
             "get_automatic_dock_status",

@@ -168,10 +168,17 @@ export function egpuPresentation(payload: SnapshotPayload | null | undefined): E
   // Each of the following reads exactly one source. Deliberately no cross-use.
   const connection = link && link.applicable
     ? evidence(LINK_TEXT[link.state] ?? null, link.confidence)
+    : link?.applicable === false && link.state === "unknown" && link.error === ""
+      ? evidence("Not applicable", link.confidence)
     : UNKNOWN;
 
   const rendering = external.find((gpu) => gpu.selected_for_render === true);
-  const renderGpu = external.length === 0 ? UNKNOWN
+  const selected = gpus.filter((gpu) => gpu.selected_for_render === true);
+  const internalRendering = selected.length === 1 && selected[0].role === "internal"
+    && selected[0].present === true;
+  const renderGpu = selected.length > 1 ? UNKNOWN
+    : internalRendering ? evidence("Internal GPU", selected[0].confidence)
+    : external.length === 0 ? UNKNOWN
     : rendering ? evidence("External GPU", rendering.confidence)
     : external.some((gpu) => gpu.selected_for_render === false)
       ? evidence("Internal GPU", external[0].confidence)

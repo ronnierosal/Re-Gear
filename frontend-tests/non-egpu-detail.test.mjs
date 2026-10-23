@@ -18,7 +18,7 @@ test("detail source updates independently of unchanged tile labels and clears on
   assert.equal(publisher.source.read(), publisher.source.read());
   publisher.publish(first);
   assert.equal(changes, 1);
-  const busy = { ...first, performance: { busy: true } };
+  const busy = { ...first, performance: { busy: true, cycleSelected: "Custom" } };
   publisher.publish(busy);
   assert.equal(publisher.source.read(), busy);
   publisher.publish(null);
@@ -43,10 +43,10 @@ test("only supported tab and tile pairs reach the existing detail modules", () =
 });
 
 test("renderer forwards the current owner handles without creating a collector", async () => {
-  let current = { performance: { busy: false, apply() {} }, controller: { reason: "Unknown" } };
+  let current = { performance: { busy: false, cycleSelected: "Custom", apply() {} }, controller: { reason: "Unknown" } };
   const runtime = {
     useSyncExternalStore: (_subscribe, read) => read(),
-    AutoTdpModule: function AutoTdpModule() {}, ControllerModule: function ControllerModule() {},
+    CompactCustomTdpEditor: function CompactCustomTdpEditor() {}, AutoTdpModule: function AutoTdpModule() {}, ControllerModule: function ControllerModule() {},
     jsx: (type, props) => ({ type, props }), nonEgpuDetailKind,
   };
   const rendererSource = readFileSync(new URL("../src/quick-access/expanded-command-center/non-egpu-detail-renderer.tsx", import.meta.url), "utf8");
@@ -56,8 +56,12 @@ test("renderer forwards the current owner handles without creating a collector",
   const render = exports.createNonEgpuDetailRenderer({ read: () => current, subscribe: () => () => {} });
   const element = render("quick", { id: "manual" });
   assert.equal(element.type(element.props).props.controller, current.performance);
-  current = { ...current, performance: { busy: true } };
+  current = { ...current, performance: { busy: true, cycleSelected: "Custom" } };
   assert.equal(element.type(element.props).props.controller, current.performance);
+  current = { ...current, performance: { ...current.performance, cycleSelected: "Balanced" } };
+  assert.equal(element.type(element.props), null, "preset modes never mount the full power menu");
+  const auto = render("performance", {id:"auto"});
+  assert.equal(auto.type(auto.props).type, runtime.AutoTdpModule, "Auto configuration remains separately available");
   const controller = render("controllers", { id: "priority" });
   assert.equal(controller.type(controller.props).props.presentation, current.controller);
   assert.equal(render("egpu", { id: "disconnect" }), null);

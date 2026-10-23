@@ -280,5 +280,124 @@ class TransitionJournalStoreTests(unittest.TestCase):
                 FileTransitionJournalStore(link.absolute()).load_current()
 
 
+
+
+class HandoffJournalBindingTests(unittest.TestCase):
+    def test_binding_is_strict_versioned_and_distinguishes_each_identity(self):
+        from regear.delivery.transition_journal_store import handoff_operation_id
+        boot="11111111-1111-1111-1111-111111111111"
+        first=handoff_operation_id("fixture-request",boot,"a"*64)
+        self.assertEqual(first,handoff_operation_id("fixture-request",boot,"a"*64))
+        self.assertEqual(len(first),64)  # Existing supervised acknowledgement bound.
+        for fields in (("other",boot,"a"*64),("fixture-request",boot,"b"*64),
+                       ("fixture-request","22222222-2222-2222-2222-222222222222","a"*64)):
+            self.assertNotEqual(first,handoff_operation_id(*fields))
+        for fields in ((True,boot,"a"*64),("request","unknown","a"*64),("request",boot,"bad")):
+            with self.assertRaises(ValueError):handoff_operation_id(*fields)
+
+
+@unittest.skipUnless(sys.platform=="linux","Linux descriptor-relative admission required")
+class AdmittedHandoffJournalTests(unittest.TestCase):
+    def setUp(self):
+        import os
+        from regear.delivery.dock_mutation_gate import DockMutationGate
+        from regear.delivery.transition_journal_store import handoff_operation_id
+        self.temp=tempfile.TemporaryDirectory();self.root=Path(self.temp.name)
+        self.fd=os.open(self.root,os.O_RDONLY|os.O_DIRECTORY)
+        self.options=dict(owner_uid=os.geteuid(),trusted_directory_fd=self.fd)
+        self.gate=DockMutationGate(self.root,**self.options)
+        self.store=FileTransitionJournalStore(self.root)
+        self.generation="a"*64;self.boot="11111111-1111-1111-1111-111111111111"
+        self.journal=append(TransitionJournal(handoff_operation_id("fixture-request",self.boot,self.generation),
+            "fixture-request",origin_boot_id=self.boot),JournalEventKind.REQUESTED,"request.accepted")
+
+    def tearDown(self):
+        import os
+        os.close(self.fd);self.temp.cleanup()
+
+    def persist(self,admission,journal=None,generation=None):
+        return self.store.persist_admitted(journal or self.journal,admission=admission,
+            generation=generation or self.generation)
+
+    def test_exact_readback_progression_and_lease_expiry(self):
+        with self.gate.admit() as lease:
+            evidence=self.persist(lease)
+            self.assertTrue(evidence.is_current())
+            updated=append(self.journal,JournalEventKind.OBSERVED,"snapshot.observed")
+            later=self.persist(lease,updated)
+            self.assertFalse(evidence.is_current())
+            self.assertTrue(later.is_current())
+        self.assertFalse(later.is_current())
+        with self.assertRaises(Exception):self.persist(lease)
+
+    def test_invalid_generation_request_boot_and_inhibited_admission_refuse(self):
+        with self.gate.admit() as lease:
+            for journal,generation in ((self.journal,"b"*64),
+                (replace(self.journal,request_id="other"),self.generation),
+                (replace(self.journal,origin_boot_id="22222222-2222-2222-2222-222222222222"),self.generation)):
+                with self.assertRaises(ValueError):self.persist(lease,journal,generation)
+        with self.gate.admit(allow_inhibited=True) as lease:
+            self.assertIsNone(lease)
+            with self.assertRaises(ValueError):self.persist(lease)
+        self.assertIsNone(self.store.load_current())
+
+    def test_file_fsync_failure_before_intent_has_no_fabricated_inhibition(self):
+        with self.gate.admit() as lease:
+            with patch("regear.delivery.transition_journal_store.os.fsync",side_effect=OSError("fixture")):
+                with self.assertRaises(OSError):self.persist(lease)
+        self.assertIsNone(self.store.load_current())
+
+    def test_partial_origin_persistence_refuses_retry_without_reconciliation(self):
+        import os
+        original=os.replace;calls=[]
+        def fail_second(*args,**kwargs):
+            calls.append(args)
+            if len(calls)==2:raise OSError("fixture second publication")
+            return original(*args,**kwargs)
+        with self.gate.admit() as lease:
+            with patch("regear.delivery.transition_journal_store.os.replace",side_effect=fail_second):
+                with self.assertRaises(OSError):self.persist(lease)
+            with self.assertRaisesRegex(ValueError,"orphan"):self.persist(lease)
+        self.assertIsNone(self.store.load_current())
+        self.assertTrue((self.root/"presentation-origin-boot.json").exists())
+
+    def test_root_replacement_and_competing_admission_refuse(self):
+        from regear.delivery.dock_mutation_gate import DockMutationGate,DockMutationDenied
+        moved=self.root.with_name(self.root.name+"-moved")
+        with self.gate.admit() as lease:
+            with self.assertRaises(DockMutationDenied):
+                with DockMutationGate(self.root,**self.options).admit():pass
+            self.root.rename(moved)
+            try:
+                self.root.mkdir(mode=0o700)
+                with self.assertRaises(DockMutationDenied):self.persist(lease)
+            finally:
+                self.root.rmdir();moved.rename(self.root)
+
+    def test_unsafe_symlink_target_and_sidecar_mismatch_refuse(self):
+        with self.gate.admit() as lease:
+            (self.root/JOURNAL_FILENAME).symlink_to("missing-fixture")
+            with self.assertRaises(OSError):self.persist(lease)
+            (self.root/JOURNAL_FILENAME).unlink()
+            self.persist(lease)
+            side=self.root/"presentation-origin-boot.json"
+            payload=json.loads(side.read_text());payload["request_id"]="other"
+            side.write_text(json.dumps(payload))
+            with self.assertRaises(ValueError):self.persist(lease)
+
+    def test_readback_mismatch_and_directory_fsync_failure_return_no_evidence(self):
+        from regear.delivery.transition_journal_store import _PinnedJournal
+        original=_PinnedJournal.load_current;calls=[]
+        def changed(store):
+            value=original(store);calls.append(True)
+            return None if len(calls)>=3 else value
+        with self.gate.admit() as lease:
+            with patch.object(_PinnedJournal,"load_current",changed):
+                with self.assertRaisesRegex(ValueError,"readback"):self.persist(lease)
+        self.assertEqual(self.store.load_current(),self.journal)
+        with self.gate.admit() as lease:
+            with patch("regear.delivery.transition_journal_store.os.fsync",side_effect=OSError("fixture")):
+                with self.assertRaises(OSError):self.persist(lease)
+
 if __name__ == "__main__":
     unittest.main()

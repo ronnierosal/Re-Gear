@@ -73,6 +73,107 @@ from regear.ports.device_authorization import (  # noqa: E402
 DOCK_A = "aaaaaaaa-1111-2222-3333-444444444444"
 DOCK_B = "bbbbbbbb-5555-6666-7777-888888888888"
 
+
+class QualificationBoundaryTests(unittest.TestCase):
+    def test_missing_qualification_denies_before_observer_service_or_writer(self):
+        from unittest.mock import Mock
+        observer, service = Mock(), Mock()
+        facade = DeviceAuthorizationFacade(observer, service)
+        for call in (facade.status, lambda: facade.acknowledge('forged'),
+                     lambda: facade.decline('forged'),
+                     lambda: facade.confirm('forged', consent=True, action='authorize')):
+            result = call()
+            self.assertEqual('device_authorization.qualification_unavailable', result['code'])
+            self.assertEqual('', result['token'])
+            self.assertFalse(result.get('requested', False))
+        observer.observe.assert_not_called()
+        self.assertEqual([], service.mock_calls)
+
+    def test_nonliteral_or_raising_qualification_never_reaches_service(self):
+        from unittest.mock import Mock
+        for value in (False, None, 1, 'qualified', {'qualified': True}, RuntimeError('private')):
+            with self.subTest(value=type(value).__name__):
+                service = Mock()
+                qualifier = Mock()
+                if isinstance(value, Exception):
+                    qualifier.side_effect = value
+                else:
+                    qualifier.return_value = value
+                facade = DeviceAuthorizationFacade(FakeObserver(), service, qualification=qualifier)
+                for call in (facade.status, lambda: facade.acknowledge('x'),
+                             lambda: facade.decline('x'),
+                             lambda: facade.confirm('x', consent=True, action='authorize')):
+                    result = call()
+                    self.assertEqual('', result['token'])
+                    self.assertEqual('device_authorization.qualification_unavailable', result['code'])
+                    self.assertNotIn('private', repr(result))
+                self.assertEqual(4, service.withdraw_qualification.call_count)
+                service.confirm.assert_not_called()
+                service.observe_and_snapshot.assert_not_called()
+                service.observe_and_answer.assert_not_called()
+
+    def test_confirmation_requalifies_current_server_reading_before_dispatch(self):
+        observer, port, service, facade = build()
+        qualified = []
+        def qualify(reading):
+            qualified.append(reading.uuid)
+            return reading.uuid == DOCK_A
+        facade._qualification = qualify
+        token = offer(facade)
+        observer.scan = replace(Scan(), uuid=DOCK_B)
+        result = facade.confirm(token, consent=True, action='authorize')
+        self.assertEqual('device_authorization.qualification_unavailable', result['code'])
+        self.assertFalse(result['requested'])
+        self.assertEqual([], port.calls)
+        self.assertEqual(DOCK_B, qualified[-1])
+
+    def test_rejected_absence_retires_old_consent_on_same_uuid_replug(self):
+        for acknowledged in (False, True):
+            with self.subTest(acknowledged=acknowledged):
+                observer, port, service, facade = build()
+                facade._qualification = lambda reading: reading.present is True
+                token = offer(facade)
+                if acknowledged:
+                    facade.acknowledge(token)
+                generation = service.generation
+                observer.scan = EMPTY
+                facade.status()
+                observer.scan = Scan()
+                result = facade.confirm(token, consent=True, action='authorize')
+                self.assertFalse(result['requested'])
+                self.assertEqual([], port.calls)
+                self.assertGreater(service.generation, generation)
+
+    def test_revoked_and_recovered_qualification_cannot_reuse_consent(self):
+        observer, port, service, facade = build()
+        allowed = True
+        facade._qualification = lambda reading: allowed
+        token = offer(facade)
+        facade.acknowledge(token)
+        allowed = False
+        self.assertEqual('device_authorization.qualification_unavailable', facade.status()['code'])
+        allowed = True
+        result = facade.confirm(token, consent=True, action='authorize')
+        self.assertFalse(result['requested'])
+        self.assertEqual([], port.calls)
+
+    def test_failed_then_recovered_qualification_requires_fresh_authority(self):
+        from unittest.mock import Mock
+        observer, port, service, facade = build()
+        qualifier = Mock(return_value=True)
+        facade._qualification = qualifier
+        token = offer(facade)
+        facade.acknowledge(token)
+        qualifier.side_effect = RuntimeError('private')
+        denied = facade.status()
+        self.assertEqual('', denied['token'])
+        self.assertNotIn('private', repr(denied))
+        qualifier.side_effect = None
+        result = facade.confirm(token, consent=True, action='authorize')
+        self.assertFalse(result['requested'])
+        self.assertEqual([], port.calls)
+        self.assertNotEqual(token, offer(facade))
+
 STATUS_KEYS = {
     "schema_version",
     "state",
@@ -218,21 +319,16 @@ def build(
     remembered_grant_enabled: object = _UNSET,
     **port_kwargs,
 ):
-    """The facade as production wires it, unless a test opts in explicitly.
-
-    Leaving `remembered_grant_enabled` alone constructs the facade with two
-    positional arguments and nothing else -- the same call `main.py` makes --
-    so every test that does not name the opt-in is testing the shipped object
-    rather than a fixture that happens to agree with it.
-    """
+    """Explicitly qualified synthetic attachment; native authority is not tested."""
     observer = FakeObserver(scan)
     port = SpyPort(**port_kwargs)
     service = DeviceAuthorizationService(port)
     if remembered_grant_enabled is _UNSET:
-        facade = DeviceAuthorizationFacade(observer, service)
+        facade = DeviceAuthorizationFacade(observer, service, qualification=lambda reading: True)
     else:
         facade = DeviceAuthorizationFacade(
-            observer, service, remembered_grant_enabled=remembered_grant_enabled
+            observer, service, remembered_grant_enabled=remembered_grant_enabled,
+            qualification=lambda reading: True,
         )
     return observer, port, service, facade
 
@@ -1648,7 +1744,7 @@ class TheRealObserverEndToEnd(unittest.TestCase):
     def facade(self) -> DeviceAuthorizationFacade:
         observer = DeviceAuthorizationObserver(self.thunderbolt, self.bolt)
         return DeviceAuthorizationFacade(
-            observer, DeviceAuthorizationService(SpyPort())
+            observer, DeviceAuthorizationService(SpyPort()), qualification=lambda reading: True
         )
 
     def test_an_ordinary_dock_is_offered_end_to_end(self):
@@ -1878,7 +1974,7 @@ class NoPayloadEverContradictsItself(unittest.TestCase):
         _, _, _, facade = build()
         before = dict(vars(facade))
         self.assertEqual(
-            set(before), {"_observer", "_service", "_remembered_grant_enabled"}
+            set(before), {"_observer", "_service", "_remembered_grant_enabled", "_qualification"}
         )
         token = offer(facade)
         facade.acknowledge(token)
@@ -2041,7 +2137,7 @@ class NoPayloadEverContradictsItself(unittest.TestCase):
             observer = self.PerThreadObserver(self.CLEAN)
             port = SpyPort()
             service = DeviceAuthorizationService(port)
-            facade = DeviceAuthorizationFacade(observer, service)
+            facade = DeviceAuthorizationFacade(observer, service, qualification=lambda reading: True)
             self.assertTrue(
                 facade.note_intentional_disconnect(True, uuid=self.DISOWNED.uuid)
             )

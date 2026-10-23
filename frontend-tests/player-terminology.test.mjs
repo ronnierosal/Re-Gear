@@ -18,12 +18,16 @@ const labelSources = [
   'src/build-profile.ts',
   'src/display-action.ts',
   'src/index.tsx',
+  'src/quick-access/expanded-command-center/native.tsx',
+  'src/whole-dock-control.tsx',
+  'src/whole-dock-control-model.ts',
 ];
 
 test('retired ambiguous labels do not return to player-facing label sources', () => {
   const retired = [
     // Does not say what is disconnected.
     /['"`]Disconnect \+ Sleep/, /Safe Disconnect \+ Shutdown/, /Disconnect \+ Shutdown/,
+    /['"]Disconnect and sleep['"]/, /['"]Disconnect and shut down['"]/, /Disconnect the dock in software\?/,
     // Device-specific wording for the handheld screen.
     /Return to Ally/, /returning to the Ally/,
     // Jargon title on a control that is either a status card or an action.
@@ -44,8 +48,11 @@ test('each guarded eGPU action has one canonical label everywhere it is defined'
   const actions = read('src/quick-access/expanded-command-center/test-build-actions.ts');
   const panel = read('src/quick-access/expanded-command-center/egpu-action-panel.tsx');
   const fallback = read('src/build-profile.ts');
+  const native = read('src/quick-access/expanded-command-center/native.tsx');
+  const control = read('src/whole-dock-control.tsx');
+  const model = read('src/whole-dock-control-model.ts');
   for (const label of ['Disconnect eGPU & Sleep', 'Disconnect eGPU & Shut Down']) {
-    for (const [name, source] of [['registry', registry], ['tiles', actions], ['eGPU panel', panel], ['production fallback', fallback]]) {
+    for (const [name, source] of [['registry', registry], ['tiles', actions], ['eGPU panel', panel], ['production fallback', fallback], ['native modal', native], ['whole-dock control', control], ['whole-dock model', model]]) {
       assert.ok(source.includes(label), `${name} is missing ${label}`);
     }
   }

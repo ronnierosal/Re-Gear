@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import sys
 import unittest
+from dataclasses import replace
 from pathlib import Path
 
 
@@ -12,6 +13,7 @@ sys.path.insert(0, str(ROOT / "backend"))
 from regear.application.transition_orchestrator import (  # noqa: E402
     TransitionOrchestrator,
 )
+from regear.adapters.transition_runtime import versioned_snapshot_observation  # noqa: E402
 from regear.domain.control_plane import (  # noqa: E402
     ExperimentalTransitionPermit,
     PlacementState,
@@ -482,6 +484,134 @@ class TransitionOrchestratorTests(unittest.TestCase):
         self.assertEqual(result.outcome.kind, TransitionOutcomeKind.FAILED)
         self.assertEqual(mechanism.recoveries, [])
         self.assertEqual(result.journal.entries[-1].kind, JournalEventKind.FAILED)
+
+
+class FreshRecoveryRuntimeTests(unittest.TestCase):
+    def run_recovery(self, *, interrupted=False, duplicate=False,
+                     duplicate_then_fresh=False, recovery_ok=True,
+                     recovery_duration=10, observation_duration=0,
+                     fail_kind=None, queued_restart=False, restarted=False):
+        source = snapshot("connected-internal.json")
+        scans = [versioned_snapshot_observation(replace(
+            source, observed_at=f"2026-10-02T16:00:{index:02d}Z"))
+            for index in range(4)]
+        self.assertEqual(len({scan.generation for scan in scans}), 1)
+        self.assertEqual(len({scan.sample_id for scan in scans}), 4)
+        if restarted:
+            scans[3] = versioned_snapshot_observation(replace(
+                scans[3].snapshot, gamescope=replace(source.gamescope, pid=9876)))
+            self.assertNotEqual(scans[2].generation, scans[3].generation)
+        plan = experimental_plan(source, scans[0].generation)
+        clock = FakeClockWaiter()
+
+        class Mechanism(FakeMechanism):
+            def recover(self, *args):
+                result = super().recover(*args)
+                clock.value += recovery_duration - 10
+                return result
+
+        class Observations(ScriptedObservations):
+            def observe(self):
+                if len(self.values) == 1:
+                    clock.value += observation_duration
+                return super().observe()
+
+        mechanism = Mechanism(clock,
+            apply=MechanismResult(False, "display.apply_failed"),
+            recover=MechanismResult(recovery_ok,
+                "recovery.restart_queued" if queued_restart else "recovery.result"))
+        journal = None
+        if interrupted:
+            journal = TransitionJournal(plan.plan_id, plan.request_id)
+            for kind, code in (
+                (JournalEventKind.REQUESTED, "request.accepted"),
+                (JournalEventKind.OBSERVED, "snapshot.observed"),
+                (JournalEventKind.VALIDATED, "plan.validated"),
+                (JournalEventKind.PLANNED, "plan.ready"),
+                (JournalEventKind.STEP_STARTED, "step.started"),
+            ):
+                journal = append_journal_entry(journal, kind=kind,
+                    occurred_at="2026-10-02T16:00:00Z",
+                    workflow_state=plan.workflow_state, placement=PlacementState.PORTABLE,
+                    code=code, details=(("step_code", "presentation.apply_docked_egpu"),)
+                    if kind is JournalEventKind.STEP_STARTED else ())
+        values = [scans[2]] if interrupted else scans[:3]
+        values += [scans[2]] if duplicate or duplicate_then_fresh else [scans[3]]
+        if duplicate_then_fresh:
+            values.append(scans[3])
+        store = MemoryJournalStore(current=journal, fail_kind=fail_kind)
+        service = orchestrator(Observations(*values), mechanism, store, clock)
+        result = (service.recover_interrupted(recovery_deadline_ms=300)
+                  if interrupted else service.run(plan))
+        self.assertEqual(len(mechanism.recoveries), 1)
+        self.assertEqual(len(mechanism.applied), 0 if interrupted else 1)
+        self.assertNotIn(JournalEventKind.COMMITTED,
+                         [entry.kind for entry in result.journal.entries])
+        return result, clock
+
+    def test_fresh_unchanged_source_verifies_normal_and_interrupted_recovery(self):
+        for interrupted in (False, True):
+            with self.subTest(interrupted=interrupted):
+                result, _ = self.run_recovery(interrupted=interrupted)
+                self.assertEqual(result.outcome.kind, TransitionOutcomeKind.RECOVERED)
+                self.assertTrue(result.outcome.recovery.verified)
+                self.assertTrue(result.durable)
+                self.assertEqual(result.journal.entries[-1].kind,
+                                 JournalEventKind.RECOVERY_VERIFIED)
+
+    def test_duplicate_source_sample_cannot_verify_recovery(self):
+        for interrupted in (False, True):
+            with self.subTest(interrupted=interrupted):
+                result, _ = self.run_recovery(interrupted=interrupted, duplicate=True)
+                self.assertEqual(result.outcome.kind, TransitionOutcomeKind.FAILED)
+                self.assertFalse(result.outcome.recovery.verified)
+
+    def test_duplicate_sample_waits_for_an_independently_fresh_source_scan(self):
+        result, clock = self.run_recovery(duplicate_then_fresh=True)
+        self.assertEqual(result.outcome.kind, TransitionOutcomeKind.RECOVERED)
+        self.assertEqual(clock.waits, [100])
+
+    def test_fresh_source_cannot_hide_failed_recovery_mechanism(self):
+        for interrupted in (False, True):
+            with self.subTest(interrupted=interrupted):
+                result, _ = self.run_recovery(interrupted=interrupted, recovery_ok=False)
+                self.assertEqual(result.outcome.kind, TransitionOutcomeKind.FAILED)
+                self.assertFalse(result.outcome.recovery.verified)
+
+    def test_fresh_source_cannot_hide_recovery_deadline_expiry(self):
+        for interrupted in (False, True):
+            for durations in ((301, 0), (10, 291)):
+                with self.subTest(interrupted=interrupted, durations=durations):
+                    result, _ = self.run_recovery(interrupted=interrupted,
+                        recovery_duration=durations[0], observation_duration=durations[1])
+                    self.assertEqual(result.outcome.kind, TransitionOutcomeKind.FAILED)
+                    self.assertFalse(result.outcome.recovery.verified)
+
+    def test_fresh_source_at_recovery_deadline_is_accepted(self):
+        result, _ = self.run_recovery(observation_duration=290)
+        self.assertEqual(result.outcome.kind, TransitionOutcomeKind.RECOVERED)
+
+    def test_fresh_recovery_cannot_hide_journal_verification_failure(self):
+        result, _ = self.run_recovery(fail_kind=JournalEventKind.RECOVERY_VERIFIED)
+        self.assertEqual(result.outcome.kind, TransitionOutcomeKind.FAILED)
+        self.assertTrue(result.outcome.recovery.verified)
+        self.assertFalse(result.durable)
+        self.assertEqual(result.outcome.failure.code, "journal.persist_failed")
+
+    def test_queued_restart_cannot_verify_unchanged_old_session(self):
+        for interrupted in (False, True):
+            with self.subTest(interrupted=interrupted):
+                result, _ = self.run_recovery(interrupted=interrupted, queued_restart=True)
+                self.assertEqual(result.outcome.kind, TransitionOutcomeKind.FAILED)
+                self.assertFalse(result.outcome.recovery.verified)
+
+    def test_queued_restart_verifies_fresh_changed_session_at_source(self):
+        for interrupted in (False, True):
+            with self.subTest(interrupted=interrupted):
+                result, _ = self.run_recovery(interrupted=interrupted,
+                    queued_restart=True, restarted=True)
+                self.assertEqual(result.outcome.kind, TransitionOutcomeKind.RECOVERED)
+                self.assertTrue(result.outcome.recovery.verified)
 
 
 if __name__ == "__main__":

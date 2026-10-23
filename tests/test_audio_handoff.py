@@ -556,5 +556,36 @@ class PipeWireCommandRunnerTests(unittest.TestCase):
         self.assertEqual(calls[0][-3:], ("/usr/bin/wpctl", "set-default", "101"))
 
 
+    def test_set_default_remaining_time_is_clipped_without_changing_argv(self):
+        from unittest.mock import patch
+        from types import SimpleNamespace
+        with patch("regear.adapters.steamos.commands.subprocess.run",
+                   return_value=SimpleNamespace(returncode=0,stdout=b"",stderr=b"")) as run:
+            runner=PipeWireCommandRunner(timeout_seconds=5,effective_uid=lambda:0)
+            for budget,expected in ((None,5),(.125,.125),(20,5)):
+                options={} if budget is None else dict(timeout_seconds=budget)
+                self.assertTrue(runner.set_default(USER,101,**options).ok)
+                self.assertEqual(run.call_args.kwargs["timeout"],expected)
+                self.assertEqual(run.call_args.args[0][-3:],("/usr/bin/wpctl","set-default","101"))
+                self.assertIs(run.call_args.kwargs["shell"],False)
+            for budget in (0,-1,True,float("nan"),float("inf"),"1"):
+                run.reset_mock()
+                self.assertEqual(runner.set_default(USER,101,timeout_seconds=budget).code,
+                                 "audio.deadline_expired")
+                run.assert_not_called()
+
+    def test_set_default_timeout_and_error_do_not_retry(self):
+        from unittest.mock import patch
+        import subprocess
+        for error,code in ((subprocess.TimeoutExpired("fixture",.1),"audio.command_timeout"),
+                           (OSError("fixture"),"audio.command_unavailable")):
+            with patch("regear.adapters.steamos.commands.subprocess.run",side_effect=error) as run:
+                result=PipeWireCommandRunner(effective_uid=lambda:0).set_default(
+                    USER,101,timeout_seconds=.1)
+                self.assertFalse(result.ok)
+                self.assertEqual(result.code,code)
+                self.assertEqual(run.call_count,1)
+
+
 if __name__ == "__main__":
     unittest.main()

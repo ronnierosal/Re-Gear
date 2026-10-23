@@ -11,6 +11,7 @@ const visibilityExports = {};
 new Function("exports", compile(read("menu-visibility.ts")))(visibilityExports);
 const { createMenuVisibility } = visibilityExports;
 const actionExports={}; new Function("exports",compile(read("test-build-actions.ts")))(actionExports);
+const warningExports={}; new Function("exports",compile(read("../../unplug-warning-coordinator.ts")))(warningExports);
 
 test('native Safe Disconnect activation opens one centered progress surface with a consumable start',()=>{
   const h=harness();h.menu.open();const view=h.mount();
@@ -33,12 +34,15 @@ test('delayed close callback from an old operation cannot close the replacement'
   h.menu.stop();assert.equal(current.closed,true);
 });
 
-function harness(pendingRecord = null, recoverTerminalDockReceipt = async () => null) {
+function harness(pendingRecord = null, recoverTerminalDockReceipt = async () => null, options = {}) {
   const h = { modals: [], cleanup: [], timers: new Map(), nextTimer: 1, throwOpen: false, stopped: false, allowed: true };
+  const states = new Map();let rendering=null,cursor=0;
+  h.render = component => {const previous=rendering;rendering=states.get(component)??[];states.set(component,rendering);cursor=0;try{return component();}finally{rendering=previous;}};
   const values = new Map(pendingRecord ? [["regear.whole-dock.pending-request", pendingRecord]] : []);
+  h.storageValues = values;
   h.storage = { getItem:key=>values.get(key)??null, setItem:(key,value)=>values.set(key,value), removeItem:key=>values.delete(key) };
   const runtime = {
-    createMenuVisibility, ...actionExports,
+    createMenuVisibility, ...actionExports, ...warningExports, callable:()=>async()=>null,
     displayTargetActionTile: action => ({ id: "display-target", title: action?.target === "tv" ? "Switch to TV" : action?.target === "ally" ? "Switch to Handheld" : "Display Target", value: action?.available ? "Ready" : "Unavailable", detail: action?.reason ?? "Current display status unavailable" }),
     GamepadButton:{DIR_UP:9,DIR_DOWN:10,DIR_LEFT:11,DIR_RIGHT:12}, EgpuConfirmModal:"confirm",
     parsePendingRecord: raw => {
@@ -46,12 +50,16 @@ function harness(pendingRecord = null, recoverTerminalDockReceipt = async () => 
       return match ? { intent: match[1], panel: match[2], request: match[3] } : null;
     },
     jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }),
-    useEffect: callback => h.cleanup.push(callback()), useState: value => [value, () => {}],
+    useEffect: callback => h.cleanup.push(callback()), useState: value => {
+      if(!rendering)return[value,()=>{}];const values=rendering,index=cursor++;
+      if(!(index in values))values[index]=value;
+      return[values[index],next=>{values[index]=next;}];
+    },
     useSyncExternalStore: (_subscribe, read) => read(),
     Button: "button", Focusable: "focusable", ModalRoot: "modal", Dropdown: "dropdown",
     ExpandedCommandCenter: "expanded", WholeDockControl: "dock", recoverTerminalDockReceipt, ShortcutSettings: "settings",
     loadMenuBinding: () => "view-y", saveMenuBinding: () => true, menuBindingOptions: [],
-    startMenuShortcut: options => { h.shortcutOpen = options.open; return { available: true, reset() {}, stop() { h.stopped = true; } }; },
+    startMenuShortcut: callbacks => { h.shortcutOpen = callbacks.open; return { available: options.inputAvailable !== false, reset() {}, stop() { h.stopped = true; } }; },
     showModal: (node,parent,options) => {
       if (h.throwOpen) throw Error("host unavailable");
       h.onHostOpen?.();
@@ -69,7 +77,7 @@ function harness(pendingRecord = null, recoverTerminalDockReceipt = async () => 
     setTimeout(callback) { const id=h.nextTimer++;h.timers.set(id,callback);return id; },
     clearTimeout(id) { h.timers.delete(id); }};
   h.runLatestTimer = () => { const entry=[...h.timers.entries()].at(-1);if(!entry)return;h.timers.delete(entry[0]);entry[1](); };
-  h.menu = exports.createExpandedMenu(undefined, h.host, () => h.allowed, h.source, h.snapshot, h.detail);
+  h.menu = exports.createExpandedMenu(undefined, h.host, () => h.allowed, h.source, h.snapshot, h.detail,undefined,options.policy??'development');
   h.mount = () => {
     const child = h.modals.at(-1).node.props.children.find(child => typeof child?.type === "function");
     return child.type(child.props);
@@ -78,6 +86,124 @@ function harness(pendingRecord = null, recoverTerminalDockReceipt = async () => 
 }
 
 const settle = async () => { for(let n=0;n<12;n++) await Promise.resolve(); };
+function nodes(tree){if(!tree||typeof tree!=='object')return[];return[tree,...[tree.props?.children].flat(Infinity).flatMap(nodes)];}
+function readAttemptButton(tree){return nodes(tree).find(node=>node.props?.children==='Read last menu attempt');}
+function settingsText(tree){return Array.isArray(tree)?tree.map(settingsText).join(''):typeof tree==='string'?tree:settingsTextChildren(tree);}
+function settingsTextChildren(tree){return tree&&typeof tree==='object'?settingsText(tree.props?.children):'';}
+
+test('landing-page readback preserves the failed shortcut without opening Command Center',()=>{
+  const h=harness();h.throwOpen=true;h.shortcutOpen();const failure=h.menu.diagnostics.read();
+  let settings=h.render(h.menu.Settings);
+  assert.equal(h.menu.diagnostics.read(),failure);assert.equal(h.modals.length,0);
+  assert.doesNotMatch(settingsText(settings),/Stage: host-error/);
+  const read=readAttemptButton(settings);assert.ok(read);read.props.onClick();
+  settings=h.render(h.menu.Settings);
+  assert.match(settingsText(settings),/Stage: host-error/);assert.match(settingsText(settings),/Trigger: shortcut/);
+  assert.match(settingsText(settings),/not prove visibility/);
+  assert.equal(h.menu.diagnostics.read(),failure);assert.equal(h.modals.length,0);
+  h.menu.stop();
+});
+
+test('repeated landing reads are explicit snapshots with no effects on attempts or pending receipts',()=>{
+  const request='8'.repeat(32),receipt=`v2:sleep:prior:${request}`;
+  const h=harness(receipt);h.menu.open();const attempt=h.menu.diagnostics.read();
+  const timers=[...h.timers],storage=[...h.storageValues],modals=h.modals.length;
+  for(let n=0;n<3;n++)readAttemptButton(h.render(h.menu.Settings)).props.onClick();
+  assert.equal(h.menu.diagnostics.read(),attempt);assert.deepEqual([...h.timers],timers);
+  assert.deepEqual([...h.storageValues],storage);assert.equal(h.modals.length,modals);
+  assert.match(settingsText(h.render(h.menu.Settings)),/Stage: restored-operation/);
+  h.menu.stop();
+});
+
+test('landing snapshot stays fixed until explicit refresh and stale callbacks cannot change its source',()=>{
+  const h=harness();h.menu.open();const old=h.modals[0];h.mount();old.node.props.closeModal();
+  h.throwOpen=true;h.shortcutOpen();readAttemptButton(h.render(h.menu.Settings)).props.onClick();
+  const failure=h.menu.diagnostics.read();old.node.props.closeModal();
+  assert.equal(h.menu.diagnostics.read(),failure);
+  h.throwOpen=false;h.menu.open();
+  assert.match(settingsText(h.render(h.menu.Settings)),/Stage: host-error/);
+  readAttemptButton(h.render(h.menu.Settings)).props.onClick();
+  assert.match(settingsText(h.render(h.menu.Settings)),/Stage: host-submitted/);h.menu.stop();
+});
+
+test('production Settings has no diagnostic readout or button',()=>{
+  const h=harness(null,async()=>null,{policy:'production'});
+  const settings=h.render(h.menu.Settings);assert.equal(settings.type,'settings');
+  assert.equal(readAttemptButton(settings),undefined);assert.doesNotMatch(settingsText(settings),/menu attempt|Stage:/);
+  h.menu.stop();
+});
+
+test('attempt diagnostics separate host submission from mount and remain immutable and categorical',()=>{
+  const h=harness(); const idle=h.menu.diagnostics.read();
+  assert.equal(idle.stage,'idle'); assert.ok(Object.isFrozen(idle));
+  h.menu.open(); const submitted=h.menu.diagnostics.read();
+  assert.equal(submitted.stage,'host-submitted'); assert.equal(submitted.host,'submitted');
+  assert.equal(submitted.view,'not-observed'); assert.equal(idle.stage,'idle');
+  h.mount(); assert.equal(h.menu.diagnostics.read().stage,'view-mounted');
+  assert.equal(h.menu.diagnostics.read().view,'mounted');
+  assert.deepEqual(Object.keys(submitted).sort(),['host','input','schema_version','stage','trigger','view']);
+  h.modals[0].node.props.closeModal(); assert.equal(h.menu.diagnostics.read().stage,'closed');
+  h.menu.stop();
+});
+
+test('attempt diagnostics identify input, shortcut and each refused open without reopening',()=>{
+  const unavailable=harness(null,async()=>null,{inputAvailable:false});
+  assert.equal(unavailable.menu.diagnostics.read().stage,'input-unavailable');unavailable.menu.stop();
+  const h=harness();h.allowed=false;h.shortcutOpen();
+  assert.equal(h.menu.diagnostics.read().trigger,'shortcut');assert.equal(h.menu.diagnostics.read().stage,'blocked-guard');
+  h.allowed=true;h.menu.open();h.menu.open();
+  assert.equal(h.menu.diagnostics.read().stage,'blocked-modal');assert.equal(h.modals.length,1);
+  h.menu.stop();h.menu.open();assert.equal(h.menu.diagnostics.read().stage,'blocked-stopped');
+  const reentrant=harness();let inner;
+  reentrant.onHostOpen=()=>{reentrant.menu.open();inner=reentrant.menu.diagnostics.read();};
+  reentrant.menu.open();assert.equal(inner.stage,'blocked-opening');assert.equal(reentrant.modals.length,1);
+  reentrant.menu.stop();
+});
+
+test('host errors are categorical and diagnostics do not retry a stale non-mounted handle',()=>{
+  const h=harness();h.throwOpen=true;h.menu.open();
+  assert.equal(h.menu.diagnostics.read().stage,'host-error');
+  assert.doesNotMatch(JSON.stringify(h.menu.diagnostics.read()),/host unavailable|Error|stack/);
+  h.throwOpen=false;h.menu.open();h.shortcutOpen();
+  assert.equal(h.menu.diagnostics.read().stage,'blocked-modal');assert.equal(h.modals.length,1);
+  h.menu.stop();
+});
+
+test('stale mount, close and cleanup cannot overwrite a newer attempt or close its modal',()=>{
+  const h=harness();h.menu.open();const old=h.modals[0];h.mount();
+  const cleanup=[...h.cleanup];old.node.props.closeModal();h.menu.open();const current=h.modals[1];
+  const before=h.menu.diagnostics.read();
+  const oldView=old.node.props.children.find(child=>typeof child?.type==='function');oldView.type(oldView.props);
+  old.node.props.closeModal();for(const dispose of cleanup)dispose?.();
+  assert.strictEqual(h.menu.diagnostics.read(),before);assert.equal(current.closed,false);
+  h.mount();assert.equal(h.menu.diagnostics.read().stage,'view-mounted');h.menu.stop();
+});
+
+test('stop during host submission retires diagnostics and closes the late handle once',()=>{
+  const h=harness();h.onHostOpen=()=>h.menu.stop();h.menu.open();
+  assert.equal(h.modals.length,1);assert.equal(h.modals[0].closed,true);
+  assert.equal(h.menu.diagnostics.read().stage,'closed');assert.equal(h.menu.visibility.read(),false);
+  const throwing=harness();throwing.onHostOpen=()=>{throwing.menu.stop();throw Error('late private failure');};
+  throwing.menu.open();assert.equal(throwing.menu.diagnostics.read().stage,'closed');
+  assert.equal(throwing.menu.diagnostics.read().host,'not-submitted');
+});
+
+test('attempt readback stays bounded across duplicate input and pending status restoration',()=>{
+  const h=harness();h.shortcutOpen();
+  for(let n=0;n<200;n++)h.shortcutOpen();
+  const diagnostic=h.menu.diagnostics.read();
+  assert.equal(diagnostic.trigger,'shortcut');assert.equal(diagnostic.stage,'blocked-modal');
+  assert.equal(JSON.stringify(diagnostic).length<200,true);assert.equal(h.modals.length,1);
+  assert.deepEqual([...h.storageValues],[]);
+  h.menu.stop();
+  const request='7'.repeat(32);
+  const pending=harness(`v2:sleep:old-panel:${request}`);
+  const receipt=pending.storage.getItem('regear.whole-dock.pending-request');
+  pending.menu.open();
+  assert.equal(pending.menu.diagnostics.read().stage,'restored-operation');
+  assert.equal(pending.storage.getItem('regear.whole-dock.pending-request'),receipt);
+  assert.equal(pending.modals.length,1);pending.menu.stop();
+});
 
 test('plugin remount reconstructs a missing exact terminal receipt as one status-only popup',async()=>{
   const request='5'.repeat(32);
@@ -100,11 +226,91 @@ test('plugin remount reconstructs a missing exact terminal receipt as one status
   h.menu.stop();
 });
 
+test('plugin remount presents recovered terminal sleep failure without replay',async()=>{
+  const request='d'.repeat(32);
+  const h=harness(null,async storage=>{
+    storage.setItem('regear.whole-dock.pending-request',`v2:sleep:backend-terminal:${request}`);
+    return {intent:'sleep',request};
+  });
+  await settle();
+  assert.equal(h.modals.length,1);
+  const tree=h.modals[0].node;
+  assert.equal(tree.props.strTitle,'Disconnect eGPU & Sleep status');
+  const control=tree.props.children.find(child=>child?.type==='dock');
+  assert.equal(control.props.intent,'sleep');
+  assert.equal(control.props.statusOnly,true);
+  assert.equal(control.props.startRequest,undefined,'recovery cannot replay the route');
+  control.props.onSettled({intent:'sleep',request});
+  assert.ok(h.storage.getItem('regear.whole-dock.pending-request'));
+  tree.props.onOK();
+  assert.equal(h.storage.getItem('regear.whole-dock.pending-request'),null);
+  h.menu.stop();
+});
+
+test('verified post-reboot absence closes the stale sleep popup and clears only its exact receipt',()=>{
+  const request='c'.repeat(32),pending=`v2:sleep:backend-terminal:${request}`;
+  const h=harness(pending);assert.equal(h.modals.length,1);
+  const tree=h.modals[0].node;
+  const control=tree.props.children.find(child=>child?.type==='dock');
+  assert.equal(typeof control.props.onResolvedAbsent,'function');
+  control.props.onResolvedAbsent({intent:'sleep',request:'d'.repeat(32)});
+  assert.equal(h.storage.getItem('regear.whole-dock.pending-request'),pending);
+  assert.equal(h.modals[0].closed,false);
+  control.props.onResolvedAbsent({intent:'sleep',request});
+  assert.equal(h.storage.getItem('regear.whole-dock.pending-request'),null);
+  assert.equal(h.modals[0].closed,true);
+  h.menu.stop();
+});
+
+test('delayed active sleep recovery opens status-only and cancels its timers on stop',async()=>{
+  const request='f'.repeat(32);let reads=0;
+  const h=harness(null,async storage=>{
+    reads++;
+    if(reads===1)return null;
+    storage.setItem('regear.whole-dock.pending-request',`v2:sleep:backend-terminal:${request}`);
+    return {intent:'sleep',request};
+  });
+  await settle();
+  assert.equal(h.modals.length,0);
+  h.runLatestTimer();
+  await settle();
+  assert.equal(reads,2);
+  assert.equal(h.modals.length,1);
+  const tree=h.modals[0].node;
+  assert.equal(tree.props.strTitle,'Disconnect eGPU & Sleep status');
+  const control=tree.props.children.find(child=>child?.type==='dock');
+  assert.equal(control.props.intent,'sleep');
+  assert.equal(control.props.statusOnly,true);
+  assert.equal(control.props.startRequest,undefined);
+  assert.ok(h.timers.size>=1,'recovery arms warning and delayed rebuild ownership');
+  h.menu.stop();
+  assert.equal(h.timers.size,0);
+});
+
+test('missing receipt recovery survives a Gamescope transition longer than one minute',async()=>{
+  const request='9'.repeat(32);let reads=0;
+  const h=harness(null,async storage=>{
+    reads++;
+    if(reads<=46)return null;
+    storage.setItem('regear.whole-dock.pending-request',`v2:sleep:backend-terminal:${request}`);
+    return {intent:'sleep',request};
+  });
+  await settle();
+  for(let attempt=1;attempt<=46;attempt++){h.runLatestTimer();await settle();}
+  assert.equal(reads,47,'recovery remains armed after 92 seconds of two-second reads');
+  assert.equal(h.modals.length,1);
+  const control=h.modals[0].node.props.children.find(child=>child?.type==='dock');
+  assert.equal(control.props.statusOnly,true);
+  assert.equal(control.props.startRequest,undefined);
+  h.menu.stop();
+  assert.equal(h.timers.size,0);
+});
+
 test('plugin remount restores pending sleep as status-only and never replays it',()=>{
   const h=harness('v2:sleep:retired-panel:request-1');
   assert.equal(h.modals.length,1);
   const tree=h.modals[0].node;
-  assert.equal(tree.props.strTitle,'Disconnect + Sleep status');
+  assert.equal(tree.props.strTitle,'Disconnect eGPU & Sleep status');
   const control=tree.props.children.find(child=>child?.type==='dock');
   assert.equal(control.props.intent,'sleep');
   assert.equal(control.props.statusOnly,true);

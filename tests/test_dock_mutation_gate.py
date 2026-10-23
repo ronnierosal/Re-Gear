@@ -38,6 +38,17 @@ class DockMutationGateTests(unittest.TestCase):
         os.close(self.fd)
         self.temp.cleanup()
 
+    def test_normal_admission_lease_expires_and_cannot_be_constructed(self):
+        from regear.delivery.dock_mutation_gate import DockMutationAdmission
+        with self.assertRaises(DockMutationDenied):DockMutationAdmission(self.gate,self.fd)
+        with self.gate.admit() as lease:
+            with lease.borrow(self.root) as descriptor:
+                self.assertEqual(os.fstat(descriptor).st_ino,os.fstat(self.fd).st_ino)
+        with self.assertRaises(DockMutationDenied):
+            with lease.borrow(self.root):pass
+        with self.gate.admit(allow_inhibited=True) as lease:
+            self.assertIsNone(lease)
+
     def test_instances_and_nested_entry_fail_immediately(self):
         with self.gate.admit():
             with self.assertRaises(DockMutationDenied):

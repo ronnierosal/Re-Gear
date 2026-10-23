@@ -50,7 +50,44 @@ class RootOwnedRuntimeState:
         self._validate_root()
         return self._root
 
-    def _validate_parent(self, parent: Path) -> None:
+    def inspect_existing(self) -> Path | None:
+        """Observe validated existing state without creation or repair.
+
+        This is advisory metadata, not a pinned directory capability. A later
+        reader/mutator must still perform its own secure open/admission checks.
+        Only an absent leaf under a still-valid unchanged parent returns None.
+        """
+        if self._platform_name != "posix" or self._effective_uid() != 0:
+            raise ValueError("runtime state root requires a POSIX root process")
+        def parent_metadata():
+            try:
+                value = self._validate_parent(self._root.parent)
+                if not isinstance(value, os.stat_result):
+                    raise ValueError("runtime state parent metadata is invalid")
+                return value
+            except (AttributeError, TypeError) as error:
+                raise ValueError("runtime state parent metadata is invalid") from error
+
+        before = parent_metadata()
+        absent = False
+        try:
+            metadata = self._lstat(self._root)
+        except FileNotFoundError:
+            metadata = None
+            absent = True
+        except OSError as error:
+            raise ValueError("runtime state root is unavailable") from error
+        if not absent:
+            if not isinstance(metadata, os.stat_result):
+                raise ValueError("runtime state root metadata is invalid")
+            self._validate_root_metadata(metadata)
+        after = parent_metadata()
+        identity = lambda item: (item.st_dev, item.st_ino, item.st_mtime, item.st_ctime)
+        if identity(before) != identity(after):
+            raise ValueError("runtime state parent changed during inspection")
+        return None if absent else self._root
+
+    def _validate_parent(self, parent: Path) -> os.stat_result:
         try:
             metadata = self._lstat(parent)
         except OSError as error:
@@ -61,12 +98,17 @@ class RootOwnedRuntimeState:
             raise ValueError("runtime state parent must be root owned")
         if metadata.st_mode & 0o022:
             raise ValueError("runtime state parent cannot be group/world writable")
+        return metadata
 
     def _validate_root(self) -> None:
         try:
             metadata = self._lstat(self._root)
         except OSError as error:
             raise ValueError("runtime state root is unavailable") from error
+        self._validate_root_metadata(metadata)
+
+    @staticmethod
+    def _validate_root_metadata(metadata: os.stat_result) -> None:
         if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISDIR(metadata.st_mode):
             raise ValueError("runtime state root must be a real directory")
         if metadata.st_uid != 0:

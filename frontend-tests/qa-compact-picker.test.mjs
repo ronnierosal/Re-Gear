@@ -8,6 +8,7 @@ const compile = (path, jsx = false) => ts.transpileModule(readFileSync(new URL(p
 }).outputText.replace(/^import[^;]*;$/gm, "");
 const mock = `const React = {createElement:(type,props,...children)=>({type,props:props??{},children:children.flat()})};
 const ButtonItem="ButtonItem",DropdownItem="DropdownItem",PanelSection="PanelSection",PanelSectionRow="PanelSectionRow";
+const ReadableBlock=({label,children})=>React.createElement("Field",{focusable:true,"aria-label":label},children);
 const useState=value=>[value,()=>{}],useEffect=()=>{};`;
 const code = mock + compile("../src/tdp-ui.ts") + compile("../src/quick-access/compact-picker.tsx");
 const { TdpPicker, DisplayPicker } = await import(`data:text/javascript;base64,${Buffer.from(code).toString("base64")}`);

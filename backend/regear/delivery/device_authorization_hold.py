@@ -98,9 +98,12 @@ class DeviceAuthorizationHoldStore(WholeDockClaimStore):
         hold = DeviceAuthorizationHold(operation, binding, generation, uuid)
         expected_claim = WholeDockClaim(operation, binding, generation,
                                         "tunnel_remove_intent")
+        # The caller holds mutation admission. Its full guard reads the claim
+        # through a separate descriptor, so evaluate it outside the file lock.
+        # Recheck the exact claim under the lock before publishing any record.
+        if guard() is not True:
+            return None
         with self._locked() as directory:
-            if self._load(directory) != expected_claim or guard() is not True:
-                return None
             if self._load(directory) != expected_claim:
                 return None
             existing = self._load_hold(directory)
@@ -120,10 +123,13 @@ class DeviceAuthorizationHoldStore(WholeDockClaimStore):
             return None
         expected_claim = WholeDockClaim(expected.operation, expected.binding,
                                         expected.generation, "tunnel_remove_intent")
+        # Preserve the full runtime guard without recursively locking its claim.
+        if guard() is not True:
+            return None
         with self._locked() as directory:
             current = self._load_hold(directory)
             if (current != expected or self._load(directory) != expected_claim
-                    or guard() is not True or self._load_hold(directory) != expected):
+                    or self._load_hold(directory) != expected):
                 return None
             if current.state == "manual":
                 return current

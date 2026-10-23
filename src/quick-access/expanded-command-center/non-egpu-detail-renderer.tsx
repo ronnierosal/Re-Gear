@@ -1,4 +1,5 @@
 import { useSyncExternalStore, type ReactNode } from "react";
+import { CompactCustomTdpEditor } from "../../tdp-controls";
 import { AutoTdpModule } from "../modules/auto-tdp";
 import { ControllerModule } from "../modules/controller";
 import { nonEgpuDetailKind, type NonEgpuDetailSource } from "./non-egpu-detail-source";
@@ -9,9 +10,10 @@ export type NonEgpuDetailRenderer = (tab: Tab, tile: Tile) => ReactNode;
 /** Reuse the existing configuration UI and its busy/availability/request gates.
  * Manual and Auto TDP share the same power module; controller facts remain
  * read-only. Neither tile tone nor its display text grants action authority. */
-function LiveDetail({ source, kind }: { source: NonEgpuDetailSource; kind: "power" | "controller" }) {
+function LiveDetail({ source, kind }: { source: NonEgpuDetailSource; kind: "power" | "controller" | "custom" }) {
   const state = useSyncExternalStore(source.subscribe, source.read, source.read);
   if (!state) return null;
+  if (kind === "custom") return state.performance.cycleSelected === "Custom" ? <CompactCustomTdpEditor controller={state.performance} /> : null;
   return kind === "power" ? <AutoTdpModule controller={state.performance} />
     : <ControllerModule presentation={state.controller} />;
 }
@@ -20,6 +22,6 @@ function LiveDetail({ source, kind }: { source: NonEgpuDetailSource; kind: "powe
 export function createNonEgpuDetailRenderer(source: NonEgpuDetailSource): NonEgpuDetailRenderer {
   return (tab, tile) => {
     const kind = nonEgpuDetailKind(tab, tile.id);
-    return kind ? <LiveDetail source={source} kind={kind} /> : null;
+    return kind ? <LiveDetail source={source} kind={kind === "power" && tile.id === "manual" ? "custom" : kind} /> : null;
   };
 }

@@ -25,7 +25,7 @@ test("display activation calls the existing guarded display owner", () => {
   assert.match(native, /tile\.id==="display-target"[\s\S]*runtimeDetails\?\.requestDisplayTarget\(\)/);
   assert.match(runtimeDetails, /requestDisplayTarget\(\)[\s\S]*state\?\.displayAction\.available[\s\S]*state\.displayAction\.request\(\)/);
   assert.match(index, /primaryDisplayAction\.target === "ally"[\s\S]*requestControllerDisplaySwitch\("ally"\)/);
-  assert.match(index, /primaryDisplayAction\.target === "tv"[\s\S]*executeTvSwitch\(\)/);
+  assert.match(index, /primaryDisplayAction\.target === "tv"[\s\S]*requestControllerDisplaySwitch\("tv"\)/);
 });
 
 test("production eGPU actions are exact and software reconnect is absent", () => {
