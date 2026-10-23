@@ -186,14 +186,21 @@ needed; existing task records and ownership behavior remain compatible.
 maintainer recovery, rather than an ordinary transfer offered by the old owner.
 Normal `offer_transfer` and `accept_transfer` semantics remain unchanged.
 
-The source capability is **disabled**: both the separate invocation approval and
-the exact live maintenance-assignment digest are unset. Testing and adopting this
-code grant no permission to invoke it. No source-development test uses the real
+The source capability added by terminal #532 is bound by successor #552 to its
+actual driver and frozen active maintenance assignment. The main project owner's
+separate one-time invocation authorization is recorded in #552; it does not claim
+that the user typed the command. The initial call refused a missing recipient
+registration without mutation. Canonical #497 revision 9 reconciles the intended
+recipient to the actual available driver; the local original-owner preimage is
+unchanged. Preserve the refused attempt and its marker. A further attempt needs
+explicit reconciled authorization, a newly verified backup and fresh gates.
+Testing and adopting this code alone do not
+satisfy the live-operation prerequisites. No source-development test uses the real
 workspace database; all recovery tests use temporary synthetic databases.
 
 A separately reviewed invocation requires the actual designated maintenance
 actor, a registered fixed recipient, the exact complete local revision-4 row
-hash, the exact accepted canonical #497 revision-7 record hash, and the fixed
+hash, the exact accepted canonical #497 revision-9 record hash, and the fixed
 public authority/acceptance/handoff receipt references. It rejects stale or
 altered bindings, replay, terminal records, pending authentic transfers and
 other active overlapping paths/branches. An immediate transaction, conditional
@@ -203,8 +210,8 @@ The result includes the complete row for private readback; do not publish privat
 row contents or local workspace/session metadata. The audit contains digests and
 public authority references and identifies the actual maintenance actor.
 
-Before a later invocation: obtain separate exact approval; review the live
-maintenance-assignment binding and compile it with that approval; verify supported
+Before invocation: verify the recorded exact approval and reviewed live
+maintenance-assignment binding; verify supported
 tool adoption, a consistent backup, fresh canonical evidence, full local preimage
 and exclusive-writer/executor/collision checks. Preserve the original workspace
 and old-head archive. A receipt file has exactly `issue` (497), `record` (the full
@@ -216,7 +223,7 @@ readback is the coordinator's separate prerequisite.
 Only after those separate decisions, the supported CLI form is:
 
 ```text
-python -B hub.py --db <existing-shared-database> mirror-accepted-497-recovery --session codex-local-coordination-recovery-20261008 --canonical-receipt <verified-private-receipt.json>
+python -B hub.py --db <existing-shared-database> mirror-accepted-497-recovery --session codex-cloud-continuity-01a13aab --canonical-receipt <verified-private-receipt.json>
 ```
 
 Read back the full row and actual-actor audit after a successful transaction,
@@ -245,7 +252,8 @@ corroborating the two-path release. No broader UI ownership is transferred.
 All complete record digests, recipient/maintainer identities, branches, scopes
 and canonical acceptance receipt URLs are compiled. Changed records require reconciliation
 and another independently reviewed amendment, never automatic refresh or a
-generic owner/target/path/force/authorization override. #497 stays disabled;
+generic owner/target/path/force/authorization override. The separately bound #497
+operation retains its own acceptance gates;
 ordinary owner/transfer rules remain unchanged. Tests use disposable hubs only.
 
 The bounded UTF-8 JSON receipt (at most65536 bytes) has exactly `issue` (539),

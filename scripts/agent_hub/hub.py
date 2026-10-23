@@ -320,8 +320,9 @@ class Conflict(ValueError):
     pass
 
 
-# Issue 532: source capability only. Adoption does not authorize invocation.
-RECOVERY497_ACTOR = 'codex-local-coordination-recovery-20261008'
+# Issue 552: bind the existing capability to the authorized actual successor.
+# Adoption alone never satisfies the separate live-operation prerequisites.
+RECOVERY497_ACTOR = 'codex-cloud-continuity-01a13aab'
 # Fixed #540 bindings follow explicit user consent and independent private
 # provenance verification. Changes require another reviewed binding and consent.
 POWER_UI_RELEASE_ACTOR = 'codex-local-coordination-recovery-20261008'
@@ -344,17 +345,19 @@ POWER_UI_RELEASE_UI_RECEIPT = 'https://github.com/ronnierosal/Re-Gear/issues/476
 POWER_UI_RELEASE_MAINTENANCE_DIGEST = '886c473de1d866617297f13846e1349727aa67ace5b1a66ebbe475e30da13bad'
 POWER_UI_RELEASE_EXECUTION_AUTHORIZATION = 'd307a5f748cf97ff444cfbf428f877527a434fd6ea73e51e90db2613506622c9'
 POWER_UI_RELEASE_RECEIPT = 'https://github.com/ronnierosal/Re-Gear/issues/539#issuecomment-6110484713'
-RECOVERY497_RECIPIENT = 'codex-cloud-lifecycle-director-20261003'
+RECOVERY497_RECIPIENT = 'codex-cloud-continuity-01a13aab'
 RECOVERY497_TASK = 'tdp-runtime-expressible-range-admission'
-RECOVERY497_MAINTENANCE_TASK = 'agent-hub-maintainer-recovery-mirror-532'
+RECOVERY497_MAINTENANCE_TASK = 'agent-hub-497-recovery-binding-552'
 RECOVERY497_PREIMAGE_DIGEST = 'f707e3ec3849c9b655b6c8e46c76178bb81ebbac4107fae8e57c61982f6c5ba0'
-RECOVERY497_CANONICAL_DIGEST = 'a8080e03cab88f01a49c54687f5e8e6c54c327c0e040f771649ebf44ec594cec'
-RECOVERY497_MAINTENANCE_DIGEST = None
-RECOVERY497_EXECUTION_AUTHORIZATION = None
+RECOVERY497_CANONICAL_DIGEST = '95d7b13683430c66f952b1b4683186d42e458983dd25c93b206cf0fd8a763303'
+RECOVERY497_MAINTENANCE_DIGEST = '5da7a73eaf749179dc3d758cbf44b3403b0afb6d49980e49cb45588891d6c1ce'
+RECOVERY497_EXECUTION_AUTHORIZATION = 'https://github.com/ronnierosal/Re-Gear/issues/552'
 RECOVERY497_RECEIPTS = [
     'https://github.com/ronnierosal/Re-Gear/issues/497#issuecomment-6101936371',
     'https://github.com/ronnierosal/Re-Gear/issues/497#issuecomment-6101972445',
     'https://github.com/ronnierosal/Re-Gear/issues/497#issuecomment-6101984876',
+    'https://github.com/ronnierosal/Re-Gear/issues/497#issuecomment-6372261189',
+    'https://github.com/ronnierosal/Re-Gear/actions/runs/40006082982',
 ]
 
 def now():
@@ -570,11 +573,11 @@ class Hub:
         if (not isinstance(canonical, dict)
                 or self._digest(canonical) != RECOVERY497_CANONICAL_DIGEST
                 or type(canonical.get('revision')) is not int
-                or canonical['revision'] != 7
+                or canonical['revision'] != 9
                 or canonical.get('status') != 'in-progress'
                 or canonical.get('owner') != RECOVERY497_RECIPIENT
                 or canonical.get('transfer') != {
-                    'from': 'codex-01a080fd', 'to': RECOVERY497_RECIPIENT, 'accepted': True}):
+                    'from': 'codex-cloud-lifecycle-director-20261003', 'to': RECOVERY497_RECIPIENT, 'accepted': True}):
             raise Conflict('Recovery 497 accepted canonical record mismatch')
         with self.connection(True) as db:
             authorization = self._execution_authorization(

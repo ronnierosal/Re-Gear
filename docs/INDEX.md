@@ -60,6 +60,7 @@ issue**. Architectural possibility is not support.
 
 ## Document map
 
+- Controller development: [inert, fixture-driven target-session contract](CONTROLLER_TARGET_SESSION.md)
 - Supervised disconnect launch trial: [Portable Vulkan trial](PORTABLE_VULKAN_TRIAL.md)
 - Display target versus render GPU: [display-only switching and internal-GPU TV
   output](DISPLAY_RENDER_MODE_CONTRACT.md) — capability/authority matrix, the one

@@ -259,7 +259,8 @@ class GitHub:
 
 
 def task_number(body):
-    numbers = re.findall(r"^Task: #([1-9][0-9]*)[ \t]*$", body or "", re.M)
+    body = (body or "").replace("\r\n", "\n").replace("\r", "\n")
+    numbers = re.findall(r"^Task: #([1-9][0-9]*)[ \t]*$", body, re.M)
     require(len(numbers) == 1, "PR requires exactly one Task: #N line")
     return int(numbers[0])
 

@@ -196,8 +196,8 @@ class RecoveryMirror497Tests(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.store = hub.Hub(Path(self.tmp.name) / 'fixture.sqlite3')
         self.store.init()
-        self.actor = 'codex-local-coordination-recovery-20261008'
-        self.recipient = 'codex-cloud-lifecycle-director-20261003'
+        self.actor = 'codex-cloud-continuity-01a13aab'
+        self.recipient = 'codex-cloud-continuity-01a13aab'
         for session in (self.actor, self.recipient, 'codex-01a080fd', 'other'):
             self.store.register(session, 'codex', session, 'fixture')
         self.key = 'tdp-runtime-expressible-range-admission'
@@ -210,17 +210,19 @@ class RecoveryMirror497Tests(unittest.TestCase):
         for _ in range(2):
             self.row = self.store.apply('codex-01a080fd', dict(op='update_task', id=self.key, rev=self.row['rev'], state='in_progress'))
         self.maintenance = self.store.apply(self.actor, dict(
-            op='create_task', id='agent-hub-maintainer-recovery-mirror-532', stream='coordination',
+            op='create_task', id='agent-hub-497-recovery-binding-552', stream='coordination',
             title='Fixture maintenance', branch='agent/codex-local/532-bounded-maintainer-recovery',
             paths=['scripts/agent_hub/hub.py']))
         self.maintenance = self.store.apply(self.actor, dict(op='claim_task', id=self.maintenance['id'], rev=1))
-        self.canonical = dict(revision=7, owner=self.recipient, status='in-progress',
+        self.canonical = dict(revision=9, owner=self.recipient, status='in-progress',
                               transfer=dict(from_='unused'))
-        self.canonical['transfer'] = {'from':'codex-01a080fd','to':self.recipient,'accepted':True}
+        self.canonical['transfer'] = {'from':'codex-cloud-lifecycle-director-20261003','to':self.recipient,'accepted':True}
         self.receipt = {'issue':497, 'record':self.canonical,
                         'receipts':['https://github.com/ronnierosal/Re-Gear/issues/497#issuecomment-6101936371',
                                     'https://github.com/ronnierosal/Re-Gear/issues/497#issuecomment-6101972445',
-                                    'https://github.com/ronnierosal/Re-Gear/issues/497#issuecomment-6101984876']}
+                                    'https://github.com/ronnierosal/Re-Gear/issues/497#issuecomment-6101984876',
+                                    'https://github.com/ronnierosal/Re-Gear/issues/497#issuecomment-6372261189',
+                                    'https://github.com/ronnierosal/Re-Gear/actions/runs/40006082982']}
         for name, value in {
             'RECOVERY497_PREIMAGE_DIGEST':hub.Hub._digest(self.row),
             'RECOVERY497_CANONICAL_DIGEST':hub.Hub._digest(self.canonical),
@@ -287,13 +289,41 @@ class RecoveryMirror497Tests(unittest.TestCase):
         with self.store.connection(True) as db:
             db.execute("UPDATE tasks SET state='cancelled' WHERE id='collision'")
             db.execute('DELETE FROM transfers')
-            db.execute('DELETE FROM sessions WHERE id=?',(self.recipient,))
-        self.refused_unchanged(self.invoke)
+        # Actor and recipient intentionally coincide in the accepted successor.
+        # Keep FK constraints intact and bind a separate synthetic missing recipient.
+        from unittest.mock import patch
+        missing=copy.deepcopy(self.receipt)
+        missing['record']['owner']='unregistered-recipient'
+        missing['record']['transfer']['to']='unregistered-recipient'
+        with patch.object(hub,'RECOVERY497_RECIPIENT','unregistered-recipient'), \
+                patch.object(hub,'RECOVERY497_CANONICAL_DIGEST',hub.Hub._digest(missing['record'])):
+            self.refused_unchanged(lambda:self.invoke(receipt=missing))
 
     def test_disabled_authority_and_maintenance_binding_refused(self):
         from unittest.mock import patch
         for name in ('RECOVERY497_EXECUTION_AUTHORIZATION','RECOVERY497_MAINTENANCE_DIGEST'):
             with patch.object(hub,name,None):self.refused_unchanged(self.invoke)
+
+    def test_retired_maintenance_actor_cannot_invoke_successor(self):
+        retired = 'codex-local-coordination-recovery-20261008'
+        self.store.register(retired, 'codex', 'Retired fixture actor', 'fixture')
+        self.refused_unchanged(lambda:self.invoke(actor=retired))
+
+    def test_old_canonical_recipient_record_refused(self):
+        from unittest.mock import patch
+        old=copy.deepcopy(self.receipt)
+        old['record'].update(revision=7,owner='codex-cloud-lifecycle-director-20261003',
+            transfer={'from':'codex-01a080fd','to':'codex-cloud-lifecycle-director-20261003','accepted':True})
+        with patch.object(hub,'RECOVERY497_CANONICAL_DIGEST',hub.Hub._digest(old['record'])):
+            self.refused_unchanged(lambda:self.invoke(receipt=old))
+
+    def test_terminal_successor_assignment_refused_even_with_matching_digest(self):
+        from unittest.mock import patch
+        with self.store.connection(True) as db:
+            db.execute("UPDATE tasks SET state='done' WHERE id=?",(self.maintenance['id'],))
+            terminal = self.store.row(db, 'tasks', self.maintenance['id'])
+        with patch.object(hub,'RECOVERY497_MAINTENANCE_DIGEST',hub.Hub._digest(terminal)):
+            self.refused_unchanged(self.invoke)
 
     def test_changed_owner_terminal_row_and_assignment_are_refused(self):
         for field,value in (('owner','other'),('state','done'),('state','cancelled')):
