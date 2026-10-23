@@ -859,5 +859,94 @@ class ReconcileTests(unittest.TestCase):
                          .split("def trusted", 1)[0])
 
 
+class OwnedRepairDiscoveryTests(unittest.TestCase):
+    """Issue 462: discover real owner repair work, never grant execution authority."""
+
+    def row(self, status="pr-open", **changes):
+        row = {"number": 7, "record": record(status=status), "labels": [],
+               "pr": pr(), "checks": GREEN, "behind_by": 0, "faults": []}
+        row.update(changes)
+        return row
+
+    def test_failed_ci_routes_owned_exact_candidate_and_suppresses_new_claim(self):
+        row = self.row(checks={"state": "failure"}, faults=["required CI failed"])
+        backlog = self.row(record=record(status="backlog", owner=None, revision=1,
+                                        branch="agent/claude/9-x", scope=["docs/other.md"]),
+                           number=9, pr=None)
+        before = copy.deepcopy([row, backlog])
+        [action] = o.next_actions("claude", OWNER, [row, backlog])
+        self.assertEqual(("repair", 7, 12, HEAD, BASE),
+                         tuple(action[k] for k in ("kind", "task", "pr", "head", "base")))
+        self.assertEqual(["required CI failed"], action["reasons"])
+        self.assertEqual(before, [row, backlog])
+
+    def test_stale_base_routes_later_waiting_states_with_exact_evidence(self):
+        for status in ("pr-open", "software-validated", "review-requested", "ready-to-merge"):
+            with self.subTest(status=status):
+                [action] = o.next_actions("claude", OWNER, [self.row(status, behind_by=2)])
+                self.assertEqual(["base refresh required"], action["reasons"])
+                self.assertEqual((HEAD, BASE), (action["head"], action["base"]))
+                self.assertIn("merge", action["detail"])
+                self.assertIn("review", action["detail"])
+
+    def test_pending_unknown_and_healthy_evidence_do_not_retry(self):
+        for changes in ({"checks": {"state": "pending"}}, {"checks": {}},
+                        {"behind_by": None}, {"behind_by": True}, {}):
+            self.assertEqual([], o.next_actions("claude", OWNER, [self.row(**changes)]))
+
+    def test_other_owner_draft_blocked_hold_or_busy_session_does_not_repair(self):
+        failed = self.row(checks={"state": "failure"})
+        cases = [self.row(record=record(owner="other"), checks={"state": "failure"}),
+                 self.row(record=record(agent="codex-cloud"), checks={"state": "failure"}),
+                 self.row("blocked", checks={"state": "failure"}),
+                 self.row(pr=pr(draft=True), checks={"state": "failure"})]
+        cases += [self.row(labels=[label], checks={"state": "failure"}) for label in o.HOLD_LABELS]
+        for row in cases:
+            self.assertEqual([], o.next_actions("claude", OWNER, [row]))
+        busy = self.row(record=record(status="in-progress"), number=8)
+        self.assertEqual(["implement"], [a["kind"] for a in o.next_actions("claude", OWNER, [failed, busy])])
+
+    def test_repair_priority_is_stable_and_only_one_owned_candidate_is_returned(self):
+        low = self.row(number=8, labels=["P2"], checks={"state": "failure"})
+        high = self.row(number=9, labels=["P1"], behind_by=1)
+        a = o.next_actions("claude", OWNER, [low, high])
+        self.assertEqual(a, o.next_actions("claude", OWNER, [high, low]))
+        self.assertEqual([9], [r["task"] for r in a])
+
+    def test_real_cli_discovers_failed_ci_and_stale_base_without_any_write(self):
+        import io
+        for failure, behind, reasons in ((True, 0, ["required CI failed"]),
+                                         (False, 1, ["base refresh required"]),
+                                         (True, 1, ["required CI failed", "base refresh required"])):
+            checks = [{"name": name, "status": "completed",
+                       "conclusion": "failure" if failure else "success", "html_url": "https://example.org/ci"}
+                      for name in o.REQUIRED_CHECKS]
+            fake = FakeGitHub(record(), pr(), checks=checks, behind_by=behind)
+            output = io.StringIO()
+            with patch.object(o.gc, "GitHub", return_value=fake), patch.object(o.sys, "argv", [
+                    "orchestrator", "next", "--repo", "owner/repo", "--agent", "claude", "--session", OWNER]), \
+                    patch("sys.stdout", output):
+                o.main()
+            [action] = json.loads(output.getvalue())
+            self.assertEqual(reasons, action["reasons"])
+            self.assertEqual((HEAD, BASE), (action["head"], action["base"]))
+            self.assertEqual([], fake.mutations)
+
+    def test_ambiguous_duplicate_prs_and_pr_hold_do_not_route_repair(self):
+        fake = FakeGitHub(record(), pr(labels=[{"name": "hold"}]), behind_by=1)
+        fake.pr_labels = [{"name": "hold"}]
+        self.assertEqual([], o.next_actions("claude", OWNER, o.gather_rows(fake, with_faults=True)))
+        original = fake.pages
+        fake.pages = lambda path: [pr(), pr(number=13)] if path == "pulls?state=open" else original(path)
+        self.assertEqual([], o.next_actions("claude", OWNER, o.gather_rows(fake, with_faults=True)))
+
+    def test_local_repair_does_not_also_route_the_same_candidate_for_integration(self):
+        task = record(agent="codex-local", branch="agent/codex-local/7-task", status="ready-to-merge", **{"class": "B"})
+        pull = pr()
+        pull["head"]["ref"] = task["branch"]
+        row = self.row(record=task, pr=pull, behind_by=1)
+        self.assertEqual(["repair"], [a["kind"] for a in o.next_actions("codex-local", OWNER, [row])])
+
+
 if __name__ == "__main__":
     unittest.main()

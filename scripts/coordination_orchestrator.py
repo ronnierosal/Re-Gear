@@ -428,7 +428,10 @@ def merge_decision(number, record, pr, facts):
 def next_actions(agent, session, tasks, now=None):
     """What a newly started agent session should do, most urgent first.
 
-    `tasks` rows: {number, record, labels, updated_at, pr}. No GitHub writes."""
+    `tasks` rows include exact-head checks and behind_by from gather_rows.
+    Repair is owner software work, never permission to mutate/merge or waive a
+    hold. New candidate evidence must be rebuilt and independently reviewed.
+    No GitHub writes."""
     work = []
     mine = [t for t in tasks if t["record"]["owner"] == session]
     for t in mine:
@@ -437,6 +440,35 @@ def next_actions(agent, session, tasks, now=None):
             work.append(dict(kind="rework", task=t["number"], detail=(r.get("review") or {}).get("url")))
         elif r["status"] in {"claimed", "in-progress"}:
             work.append(dict(kind="implement", task=t["number"], detail=r["branch"]))
+    # One repair consumes the implementation slot; do not pile a fresh claim
+    # behind it or preempt an existing implementation/rework task.
+    if not any(t["record"]["status"] in IMPLEMENTING for t in mine):
+        for t in sorted(mine, key=lambda t: (priority(t["labels"]), t["number"])):
+            r, pr = t["record"], t.get("pr")
+            if (r["agent"] != agent or r["status"] not in {
+                    "pr-open", "software-validated", "review-requested", "ready-to-merge"}
+                    or HOLD_LABELS.intersection(t["labels"]) or not pr or pr.get("draft")
+                    or pr.get("state", "open") != "open"
+                    or pr.get("head", {}).get("ref") != r["branch"]):
+                continue
+            head, base = candidate_of(pr)
+            if not all(isinstance(sha, str) and gc.SHA.fullmatch(sha) for sha in (head, base)):
+                continue
+            reasons = []
+            if ((t.get("checks") or {}).get("state") == "failure"
+                    or "required CI failed" in t.get("faults", [])):
+                reasons.append("required CI failed")
+            behind = t.get("behind_by")
+            if ((type(behind) is int and behind > 0)
+                    or "PR has merge conflicts" in t.get("faults", [])):
+                reasons.append("base refresh required")
+            if reasons:
+                work.append(dict(kind="repair", task=t["number"], pr=pr["number"], head=head, base=base,
+                                 reasons=reasons, detail=(
+                                     "Repair this owned software candidate; merge the current base normally "
+                                     "if needed (no rebase/force-push), then rerun checks and independent "
+                                     "exact-head/base review. Preserve ownership, holds and hardware gates.")))
+                break
     for t in tasks:
         r = t["record"]
         request = r.get("review_request") or {}
@@ -449,11 +481,12 @@ def next_actions(agent, session, tasks, now=None):
         if agent == "codex-local" and r["status"] == "hardware-required":
             work.append(dict(kind="hardware", task=t["number"], detail="python scripts/github_coordination.py queue"))
         if agent == "codex-local" and r["status"] == "ready-to-merge" and (
-                r["class"] not in AUTO_MERGE_CLASSES or r.get("auto_merge") is False):
+                r["class"] not in AUTO_MERGE_CLASSES or r.get("auto_merge") is False) and not any(
+                    w["kind"] == "repair" and w["task"] == t["number"] for w in work):
             work.append(dict(kind="integrate", task=t["number"], detail=f"class {r['class']} integration driver"))
     implementing = sum(t["record"]["status"] in IMPLEMENTING for t in mine)
     waiting = sum(t["record"]["status"] in WAITING for t in mine)
-    if implementing == 0 and waiting <= 1:
+    if implementing == 0 and waiting <= 1 and not any(w["kind"] == "repair" for w in work):
         active = [(t["number"], t["record"]) for t in tasks if t["record"]["status"] in gc.ACTIVE]
         for t in sorted(tasks, key=lambda t: (priority(t["labels"]), t["number"])):
             r = t["record"]
@@ -721,18 +754,26 @@ def gather_rows(github, with_faults=False):
                 rows.append({"number": issue["number"], "record": {"status": "invalid", "owner": None},
                              "labels": issue["labels"], "updated_at": None, "pr": None, "faults": [issue["error"]]})
             continue
-        pr = None
+        matches = []
         for candidate in open_prs:
             try:
                 if gc.task_number(candidate.get("body")) == issue["number"]:
-                    pr = candidate
+                    matches.append(candidate)
             except ValueError:
                 continue
+        pr = matches[0] if len(matches) == 1 else None
         row = {"number": issue["number"], "record": issue["record"], "labels": issue["labels"],
                "updated_at": issue["updated_at"], "pr": pr, "faults": []}
+        if len(matches) > 1:
+            row["faults"].append("multiple open PRs for task")
         if with_faults and pr is not None and issue["record"]["status"] in gc.ACTIVE:
             detail = github.api(f"pulls/{pr['number']}")
-            if facts_source.checks(detail["head"]["sha"])["state"] == "failure":
+            # Bind routing to the fresh detail, not the potentially stale list.
+            row["pr"] = detail
+            row["labels"] = sorted(set(issue["labels"]) | {l["name"] for l in detail.get("labels", [])})
+            row["checks"] = facts_source.checks(detail["head"]["sha"])
+            row["behind_by"] = github.api(f"compare/{detail['base']['sha']}...{detail['head']['sha']}").get("behind_by")
+            if row["checks"]["state"] == "failure":
                 row["faults"].append("required CI failed")
             if detail.get("mergeable") is False:
                 row["faults"].append("PR has merge conflicts")
@@ -762,7 +803,7 @@ def main():
         reconcile(github, dry_run=dry)
     elif args.command == "next":
         gc.require(args.agent and args.session and gc.ID.fullmatch(args.session), "--agent and --session required")
-        print(json.dumps(next_actions(args.agent, args.session, gather_rows(github)), indent=2))
+        print(json.dumps(next_actions(args.agent, args.session, gather_rows(github, with_faults=True)), indent=2))
     else:
         rows = watchdog(gather_rows(github, with_faults=True), datetime.now(timezone.utc))
         text = json.dumps(rows, indent=2)
