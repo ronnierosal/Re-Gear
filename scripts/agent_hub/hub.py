@@ -320,8 +320,9 @@ class Conflict(ValueError):
     pass
 
 
-# Issue 532: source capability only. Adoption does not authorize invocation.
-RECOVERY497_ACTOR = 'codex-local-coordination-recovery-20261008'
+# Issue 552: bind the existing capability to the authorized actual successor.
+# Adoption alone never satisfies the separate live-operation prerequisites.
+RECOVERY497_ACTOR = 'codex-cloud-continuity-01a13aab'
 # Fixed #540 bindings follow explicit user consent and independent private
 # provenance verification. Changes require another reviewed binding and consent.
 POWER_UI_RELEASE_ACTOR = 'codex-local-coordination-recovery-20261008'
@@ -346,11 +347,11 @@ POWER_UI_RELEASE_EXECUTION_AUTHORIZATION = 'd307a5f748cf97ff444cfbf428f877527a43
 POWER_UI_RELEASE_RECEIPT = 'https://github.com/ronnierosal/Re-Gear/issues/539#issuecomment-6110484713'
 RECOVERY497_RECIPIENT = 'codex-cloud-lifecycle-director-20261003'
 RECOVERY497_TASK = 'tdp-runtime-expressible-range-admission'
-RECOVERY497_MAINTENANCE_TASK = 'agent-hub-maintainer-recovery-mirror-532'
+RECOVERY497_MAINTENANCE_TASK = 'agent-hub-497-recovery-binding-552'
 RECOVERY497_PREIMAGE_DIGEST = 'f707e3ec3849c9b655b6c8e46c76178bb81ebbac4107fae8e57c61982f6c5ba0'
 RECOVERY497_CANONICAL_DIGEST = 'a8080e03cab88f01a49c54687f5e8e6c54c327c0e040f771649ebf44ec594cec'
-RECOVERY497_MAINTENANCE_DIGEST = None
-RECOVERY497_EXECUTION_AUTHORIZATION = None
+RECOVERY497_MAINTENANCE_DIGEST = '5da7a73eaf749179dc3d758cbf44b3403b0afb6d49980e49cb45588891d6c1ce'
+RECOVERY497_EXECUTION_AUTHORIZATION = 'https://github.com/ronnierosal/Re-Gear/issues/552'
 RECOVERY497_RECEIPTS = [
     'https://github.com/ronnierosal/Re-Gear/issues/497#issuecomment-6101936371',
     'https://github.com/ronnierosal/Re-Gear/issues/497#issuecomment-6101972445',
