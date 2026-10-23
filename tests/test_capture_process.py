@@ -4,6 +4,7 @@ No private packets, artifact downloads, bridge operation, SSH or native reads.
 Only synthetic Python children and fixture-owned temporary files are used.
 """
 import ast
+from contextlib import contextmanager, ExitStack
 import ctypes
 import hashlib
 import inspect
@@ -19,8 +20,9 @@ import sys
 import tempfile
 import threading
 import time
+from types import SimpleNamespace
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'backend'))
@@ -44,9 +46,97 @@ def normalized(node):
     return ast.dump(node,include_attributes=False)
 
 
+class CaptureIdentityOrderingTests(unittest.TestCase):
+    @contextmanager
+    def simulated(self, *, descendants=False, signal_failure=False):
+        """Exercise the real supervisor with no process creation or OS signal."""
+        state=SimpleNamespace(reaped=False,exited=not descendants,children=[456] if descendants else [],events=[])
+        process=Mock(pid=123,returncode=None)
+        def wait(**kwargs):
+            state.reaped=True;process.returncode=0;state.events.append('reap');return 0
+        process.wait.side_effect=wait
+        process.poll.side_effect=lambda:wait() if state.exited else None
+        def observe(*args):
+            if state.reaped:raise ChildProcessError()
+            return SimpleNamespace(si_pid=process.pid,si_code=1,si_status=0) if state.exited else None
+        def signal_group(pid,sig):
+            state.events.append(('signal',pid,sig,state.reaped))
+            if signal_failure:raise PermissionError('synthetic refusal')
+            state.exited=True
+            if sig==9:state.children=[]
+        def reap(exclude_pid=None):
+            if state.exited and exclude_pid!=process.pid:wait()
+        clock=[0.0]
+        def tick():clock[0]+=.05;return clock[0]
+        api=SimpleNamespace(Popen=Mock(return_value=process),DEVNULL=-3,PIPE=-1,TimeoutExpired=subprocess.TimeoutExpired)
+        selector=Mock();selector.get_map.return_value={}
+        with ExitStack() as stack:
+            for target,name,kwargs in (
+                (SUBJECT.ctypes,'CDLL',{'return_value':SimpleNamespace(prctl=lambda *args:0)}),
+                (SUBJECT.selectors,'DefaultSelector',{'return_value':selector}),
+                (SUBJECT.os,'waitid',{'create':True,'side_effect':observe}),
+                (SUBJECT.os,'killpg',{'create':True,'side_effect':signal_group}),
+                (SUBJECT.signal,'signal',{}),
+                (SUBJECT.time,'monotonic',{'side_effect':tick}),
+                (SUBJECT.time,'sleep',{}),
+                (SUBJECT,'group_alive',{'side_effect':lambda pid:bool(state.children)}),
+                (SUBJECT,'adopted_children',{'side_effect':lambda:([process.pid] if not state.reaped else [])+state.children}),
+                (SUBJECT,'reap_adopted',{'side_effect':reap}),
+                (SUBJECT,'kill_adopted',{'side_effect':lambda **kwargs:state.children.clear()}),
+            ):stack.enter_context(patch.object(target,name,**kwargs))
+            stack.enter_context(patch.multiple(SUBJECT.os,create=True,P_PID=1,WEXITED=4,WNOHANG=1,WNOWAIT=0x1000000,CLD_EXITED=1,CLD_KILLED=2,CLD_DUMPED=3))
+            stack.enter_context(patch.multiple(SUBJECT.signal,create=True,SIGHUP=1,SIGTERM=15,SIGINT=2,SIGKILL=9))
+            state.process=process;state.api=api
+            yield state
+
+    def test_success_keeps_launcher_identity_until_final_group_signal(self):
+        with self.simulated() as state:
+            result=SUBJECT.supervise(('synthetic',),cwd='.',environment={},validator=lambda raw,code:OBSERVED,process_api=state.api)
+            self.assertEqual(result,('bridge.completed',OBSERVED,True))
+            signals=[event for event in state.events if isinstance(event,tuple)]
+            self.assertTrue(signals)
+            self.assertTrue(all(not event[3] for event in signals),state.events)
+            self.assertEqual(state.events[-1],'reap')
+
+    def test_escalation_keeps_launcher_pinned_through_sigkill(self):
+        with self.simulated(descendants=True) as state:
+            self.assertTrue(SUBJECT.close_group(state.process))
+            signals=[event for event in state.events if isinstance(event,tuple)]
+            self.assertEqual([event[2] for event in signals],[15,9])
+            self.assertTrue(all(not event[3] for event in signals),state.events)
+            self.assertEqual(state.events[-1],'reap')
+
+    def test_lost_launcher_identity_refuses_numeric_group_signal(self):
+        with self.simulated() as state:
+            state.reaped=True;state.process.returncode=0
+            self.assertFalse(SUBJECT.close_group(state.process))
+            self.assertEqual(state.events,[])
+
+    def test_signal_refusal_withdraws_valid_capture(self):
+        with self.simulated(signal_failure=True) as state:
+            result=SUBJECT.supervise(('synthetic',),cwd='.',environment={},validator=lambda raw,code:OBSERVED,process_api=state.api)
+            self.assertEqual(result,('bridge.cleanup_unconfirmed',None,False))
+            self.assertFalse(state.reaped)
+
+    def test_final_wait_uncertainty_withdraws_valid_capture(self):
+        with self.simulated() as state:
+            state.process.wait.side_effect=subprocess.TimeoutExpired('synthetic',.1)
+            result=SUBJECT.supervise(('synthetic',),cwd='.',environment={},validator=lambda raw,code:OBSERVED,process_api=state.api)
+            self.assertEqual(result,('bridge.cleanup_unconfirmed',None,False))
+
+    def test_wrong_launcher_observation_never_signals_group(self):
+        with self.simulated() as state, patch.object(SUBJECT.os,'waitid',return_value=SimpleNamespace(si_pid=999,si_code=1,si_status=0)):
+            result=SUBJECT.supervise(('synthetic',),cwd='.',environment={},validator=lambda raw,code:OBSERVED,process_api=state.api)
+            self.assertEqual(result,('bridge.cleanup_unconfirmed',None,False))
+            self.assertEqual(state.events,[])
+
+
 class CaptureProcessTests(unittest.TestCase):
-    def test_retained_cleanup_algorithms_and_limits(self):
-        expected={'group_alive': '5a310c3057e7eca40919bdf843a3f3aa05d6cd3e90e4c5713c09a6421edd53ff', 'reap_adopted': '6ce3319b7e3e145f212acf10b2410b5f1c42746ff781145a8b4c7b867846d134', 'adopted_children': 'a67f0a303b278ce0f7360bbc151c8ff8d42fe49c991410f6e92d6f11d739c175', 'kill_adopted': '584324431d19d871957d9be1745790c45f32b1f41f14ced6d48c3b6c7dd08e7a', 'close_group': '3e26b11dcb31a58e4d601a00dc6c66da01eea8d7913e921aab5b25fd230aa399'}
+    def test_unchanged_cleanup_helpers_and_limits(self):
+        # The three reaping/signaling helpers intentionally diverge to retain
+        # launcher identity; their old hashes remain historical, not acceptance.
+        # Identity-order regressions above replace only those obsolete hashes.
+        expected={'group_alive': '5a310c3057e7eca40919bdf843a3f3aa05d6cd3e90e4c5713c09a6421edd53ff', 'adopted_children': 'a67f0a303b278ce0f7360bbc151c8ff8d42fe49c991410f6e92d6f11d739c175'}
         for name,digest in expected.items():
             node=ast.parse(inspect.getsource(getattr(SUBJECT,name))).body[0]
             self.assertEqual(digest,hashlib.sha256(normalized(node).encode()).hexdigest(),name)
@@ -67,7 +157,7 @@ class CaptureProcessTests(unittest.TestCase):
             process.stdout.close();process.stderr.close()
         self.assertEqual(0,process.returncode,(out+err).decode(errors='replace'))
         receipt=json.loads(out)
-        self.assertEqual(12,receipt['tests_run']);self.assertEqual(0,receipt['skipped'])
+        self.assertEqual(13,receipt['tests_run']);self.assertEqual(0,receipt['skipped'])
         self.assertEqual('PASS',receipt['result'],receipt)
         print('Device-free Linux containment: '+json.dumps(receipt,sort_keys=True))
 
@@ -175,6 +265,14 @@ def worker_main():
                 result=self.run_fixture('print('+repr(json.dumps(OBSERVED))+')\n')
             self.assertEqual(result,('bridge.cleanup_unconfirmed',None,False))
 
+        def test_real_child_signal_refusal_withdraws_capture(self):
+            source=self.synthetic('print('+repr(json.dumps(OBSERVED))+')\n')
+            with patch.object(SUBJECT.os,'killpg',side_effect=PermissionError('synthetic signal refusal')):
+                result=SUBJECT.supervise((sys.executable,'-I','-S','-B',str(source/'scripts/fixture_child.py')),cwd=source,environment={'PATH':'/usr/bin:/bin','LANG':'C','LC_ALL':'C'},validator=fixture_validator,process_api=subprocess)
+            self.assertEqual(result,('bridge.cleanup_unconfirmed',None,False))
+            self.emergency_fixture_reap()
+            self.assertEqual(SUBJECT.adopted_children(),[])
+
         def owned(self):
             home=self.root/'home';home.mkdir();root=home/'.capture-fixture.ABCD1234';root.mkdir(mode=0o700)
             return home,root
@@ -203,7 +301,7 @@ def worker_main():
             self.assertTrue((outside/'keep').exists())
     stream=io.StringIO()
     result=unittest.TextTestRunner(stream=stream,verbosity=2).run(unittest.defaultTestLoader.loadTestsFromTestCase(LinuxFixtures))
-    receipt=dict(tests_run=result.testsRun,failures=len(result.failures),errors=len(result.errors),skipped=len(result.skipped),result='PASS' if result.wasSuccessful() and result.testsRun==12 and not result.skipped else 'FAIL',python=platform.python_version(),kernel=platform.release(),device_contact=False)
+    receipt=dict(tests_run=result.testsRun,failures=len(result.failures),errors=len(result.errors),skipped=len(result.skipped),result='PASS' if result.wasSuccessful() and result.testsRun==13 and not result.skipped else 'FAIL',python=platform.python_version(),kernel=platform.release(),device_contact=False)
     if not result.wasSuccessful():receipt['fixture_log']=stream.getvalue()
     print(json.dumps(receipt,sort_keys=True))
     return 0 if receipt['result']=='PASS' else 1

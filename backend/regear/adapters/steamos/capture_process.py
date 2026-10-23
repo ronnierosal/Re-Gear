@@ -1,6 +1,8 @@
 """Generic, inert Linux process-supervision verification seam.
 
-The five descendant cleanup helpers retain the reviewed algorithm unchanged.
+Unchanged helpers retain their historical equivalence checks. The identity-pin
+correction intentionally changes reaping/group cleanup; private-wrapper parity
+is not claimed for those helpers. No private wrapper or route is changed.
 The launch seam substitutes an injected process API, trusted argv/cwd/environment and a result
 validator; owned-resource cleanup substitutes an explicit trusted parent/prefix.
 These are library/test seams, never a general remote operation. No consumer,
@@ -37,7 +39,16 @@ def group_alive(group):
         return False
 
 
-def reap_adopted():
+def reap_adopted(exclude_pid=None):
+    if exclude_pid is not None:
+        for pid in adopted_children():
+            if pid == exclude_pid:
+                continue
+            try:
+                os.waitpid(pid, os.WNOHANG)
+            except ChildProcessError as error:
+                raise Reject('child_identity') from error
+        return
     while True:
         try:
             pid, _ = os.waitpid(-1, os.WNOHANG)
@@ -58,8 +69,10 @@ def adopted_children():
     return children
 
 
-def kill_adopted():
+def kill_adopted(exclude_pid=None):
     for pid in adopted_children():
+        if pid == exclude_pid:
+            continue
         try:
             fd = os.pidfd_open(pid)
         except ProcessLookupError:
@@ -77,22 +90,49 @@ def kill_adopted():
             os.close(fd)
 
 
+def observe_exit(process):
+    """Observe this still-owned child without releasing its PID/group identity."""
+    if process.returncode is not None:
+        raise Reject('launcher_identity')
+    try:
+        result = os.waitid(os.P_PID, process.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT)
+    except (AttributeError, ChildProcessError) as error:
+        raise Reject('launcher_identity') from error
+    if result is None:
+        return None
+    if result.si_pid != process.pid:
+        raise Reject('launcher_identity')
+    if result.si_code == os.CLD_EXITED:
+        return result.si_status
+    if result.si_code in (os.CLD_KILLED, os.CLD_DUMPED):
+        return -result.si_status
+    raise Reject('launcher_identity')
+
+
 def close_group(process):
-    """Always terminate the entire launcher session, including on normal exit."""
+    """Keep the child unreaped until all group signals are finished."""
     for sig, seconds in ((signal.SIGTERM, TERM_SECONDS), (signal.SIGKILL, REAP_SECONDS)):
         try:
+            observe_exit(process)  # refuse numeric signaling after identity loss
             os.killpg(process.pid, sig)
         except ProcessLookupError:
             pass
+        except (OSError, Reject):
+            return False
         deadline = time.monotonic() + seconds
         while time.monotonic() < deadline:
-            process.poll()
-            if sig == signal.SIGKILL:
-                kill_adopted()  # includes a descendant that escaped using setsid/double-fork
-            reap_adopted()
-            if not group_alive(process.pid) and not adopted_children():
-                process.wait(timeout=.1)
-                return True
+            try:
+                exit_code = observe_exit(process)
+                if sig == signal.SIGKILL:
+                    kill_adopted(exclude_pid=process.pid)
+                reap_adopted(exclude_pid=process.pid)
+                remaining = [pid for pid in adopted_children() if pid != process.pid]
+                # Once the leader exits, its surviving descendants are adopted
+                # by this dedicated subreaper. The leader itself stays pinned.
+                if exit_code is not None and not remaining:
+                    return process.wait(timeout=.1) == exit_code
+            except (OSError, Reject):
+                return False
             time.sleep(.01)
     return False
 
@@ -126,7 +166,13 @@ def supervise(argv, *, cwd, environment, validator, process_api):
                 (out if key.data == 'out' else err).extend(b)
                 if len(out) > STDOUT_CAP or len(err) > STDERR_CAP or len(out) + len(err) > TOTAL_CAP:
                     raise Reject('output_bounds')
-        exit_code = p.wait(timeout=max(0, deadline - time.monotonic()))
+        exit_code = observe_exit(p)
+        while exit_code is None:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise Reject('timeout')
+            time.sleep(min(.01, remaining))
+            exit_code = observe_exit(p)
         capture = validator(bytes(out), exit_code)
         code = 'bridge.completed'
     except (Reject, OSError, process_api.TimeoutExpired, InterruptedError, KeyboardInterrupt):
@@ -138,7 +184,7 @@ def supervise(argv, *, cwd, environment, validator, process_api):
         if p is not None:
             try:
                 cleanup = close_group(p)
-            except (OSError, Reject):
+            except (OSError, Reject, process_api.TimeoutExpired):
                 cleanup = False
             for pipe in (p.stdout, p.stderr):
                 pipe.close()
