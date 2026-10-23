@@ -177,3 +177,133 @@ The shared repository `docs/DOCUMENTATION_WORKFLOW.md` defines layer triggers,
 validation, publication evidence and the standing routine-doc delegation. The
 queue neither schedules agents nor publishes to GitHub. No schema migration is
 needed; existing task records and ownership behavior remain compatible.
+
+
+## Bounded #497 canonical recovery mirror (#532)
+
+`mirror-accepted-497-recovery` is a single compiled maintenance capability for
+`tdp-runtime-expressible-range-admission`. It records an accepted canonical
+maintainer recovery, rather than an ordinary transfer offered by the old owner.
+Normal `offer_transfer` and `accept_transfer` semantics remain unchanged.
+
+The source capability added by terminal #532 is bound by successor #552 to its
+actual driver and frozen active maintenance assignment. The main project owner's
+separate one-time invocation authorization is recorded in #552; it does not claim
+that the user typed the command. The initial call refused a missing recipient
+registration without mutation. Canonical #497 revision 9 reconciles the intended
+recipient to the actual available driver; the local original-owner preimage is
+unchanged. Preserve the refused attempt and its marker. A further attempt needs
+explicit reconciled authorization, a newly verified backup and fresh gates.
+Testing and adopting this code alone do not
+satisfy the live-operation prerequisites. No source-development test uses the real
+workspace database; all recovery tests use temporary synthetic databases.
+
+A separately reviewed invocation requires the actual designated maintenance
+actor, a registered fixed recipient, the exact complete local revision-4 row
+hash, the exact accepted canonical #497 revision-9 record hash, and the fixed
+public authority/acceptance/handoff receipt references. It rejects stale or
+altered bindings, replay, terminal records, pending authentic transfers and
+other active overlapping paths/branches. An immediate transaction, conditional
+update and audit insertion make failures atomic. Only owner and revision change;
+all other local row fields, historical events and old-owner provenance remain.
+The result includes the complete row for private readback; do not publish private
+row contents or local workspace/session metadata. The audit contains digests and
+public authority references and identifies the actual maintenance actor.
+
+Before invocation: verify the recorded exact approval and reviewed live
+maintenance-assignment binding; verify supported
+tool adoption, a consistent backup, fresh canonical evidence, full local preimage
+and exclusive-writer/executor/collision checks. Preserve the original workspace
+and old-head archive. A receipt file has exactly `issue` (497), `record` (the full
+accepted canonical object), and `receipts` (the three fixed references in source),
+with a maximum UTF-8 encoded size of 65536 bytes. The helper compares pinned
+bindings locally; it does not fetch or certify live GitHub state. Fresh remote
+readback is the coordinator's separate prerequisite.
+
+Only after those separate decisions, the supported CLI form is:
+
+```text
+python -B hub.py --db <existing-shared-database> mirror-accepted-497-recovery --session codex-cloud-continuity-01a13aab --canonical-receipt <verified-private-receipt.json>
+```
+
+Read back the full row and actual-actor audit after a successful transaction,
+compare every preserved field and recheck executor exclusivity before releasing
+#497 source work. A failed gate leaves that work held. No arbitrary task, owner,
+force, authorization, bypass or target option exists. This capability grants no
+TDP, runtime, device, install, package, release or hardware authority.
+
+## Fixed dedicated-recipient two-test claim release (#540)
+
+`release-power-ui-two-test-claims` releases exactly
+`frontend-tests/expanded-live-presentation.test.mjs` and
+`frontend-tests/layout-preferences.test.mjs` from
+`qa-brightness-volume-customization`. Only paths and revision (30 to 31) change;
+the original owner, state, all other fields/paths, history and native obligations
+remain. PR357 delivery and unanswered contact never establish abandonment.
+
+The separately approved #540 amendment binds the actual self-registered laptop
+executor `codex-01a12b76-0163-71df-bae3-a70f85e6100b`, its complete registration,
+canonical #539 revision2/claimed and exact local revision1/todo/unowned task
+`power-ui-test-fixtures-476-01a12b76`. Its only dependency is the active frozen
+maintenance task `agent-hub-power-two-test-release-01a12b76`. Complete #476
+revision45 preserves the UI owner, its other35 paths and native gates while
+corroborating the two-path release. No broader UI ownership is transferred.
+
+All complete record digests, recipient/maintainer identities, branches, scopes
+and canonical acceptance receipt URLs are compiled. Changed records require reconciliation
+and another independently reviewed amendment, never automatic refresh or a
+generic owner/target/path/force/authorization override. The separately bound #497
+operation retains its own acceptance gates;
+ordinary owner/transfer rules remain unchanged. Tests use disposable hubs only.
+
+The bounded UTF-8 JSON receipt (at most65536 bytes) has exactly `issue` (539),
+`record` (complete accepted539 object), `receipt` (pinned539 acceptance URL),
+`ui_issue` (476), `ui_record` (complete accepted476 object), `ui_receipt`
+(pinned476 restoration/readback URL), and `approval`. Duplicate JSON keys at any
+level are refused. The private `approval` object has exactly `schema` (integer1,
+never boolean), `operation`, `bindings` and `evidence`. Bindings equal the compiled
+fixed manifest: actor, recipient, paths, maintenance/destination tasks and all six
+complete record digests. Evidence is exactly three ordered request/approval pairs
+(workflow, recipient, private-contract consent); each record within a pair contains exactly
+`source_thread_id`, `source_message_id`, `role`, `text`. Requests preserve their
+exact context; approvals have role `user`. Identifiers/roles are nonempty strings
+at most256 UTF-8 bytes; text at most16384 bytes. The complete input still must fit
+65536 bytes. The entire approval object's canonical SHA-256 must equal the single
+compiled authorization digest; unset or different bindings refuse. No alternate
+URL/reference authorization mode exists for this operation.
+
+A pinned digest verifies content integrity, not speaker authenticity. Independent
+provenance review against genuine authoritative messages, exact question/context
+and explicit user consent is mandatory before compiling the binding. A bare Yes,
+fabricated message ID, or another agent's judgement does not establish approval.
+Original/private clarification context stays with the authorized maintenance
+worker and independent reviewer. Never commit the real approval artifact, text or
+message identifiers. Audit records only the typed private approval descriptor and
+its digest; it does not copy approval text. Fixture tests use synthetic evidence.
+The evidence's `source_thread_id` is supplied coordination context; it does not
+prove a cryptographic association between platform messages and a cloud thread.
+Independent authoritative message readback verifies genuine message IDs, author,
+exact text, order and consent scope separately from the source/digest review.
+The shared authorization helper and all other maintenance capabilities are unchanged.
+
+A receipt does not certify current GitHub
+state. Fresh complete canonical/local readbacks, independent exact-head review,
+required CI, normal protected integration, consistent backup and verified helper
+adoption are prerequisites before invoking the separately authorized operation.
+
+An immediate transaction refuses altered complete bindings, pending authentic
+transfers, other active overlaps, stale preimages and replay. Conditional update,
+full preservation verification and actual-maintainer audit insertion commit
+together; any failure rolls back. Audit records all binding digests, authority,
+original owner, recipient and the fixed paths. Never publish private hub rows.
+
+```text
+python -B hub.py --db <existing-shared-database> release-power-ui-two-test-claims --session codex-local-coordination-recovery-20261008 --canonical-receipt <verified-private-receipt.json>
+```
+
+After the single supported release, read back every retained field and audit,
+verify all unrelated records/history are preserved, then complete the maintenance
+dependency normally. The actual worker alone claims its task with normal
+exclusivity/readback before edits. Retained #476 owner reviews/integrates its exact
+two-file commit. No device, settings, access, install, deployment, package, release
+or hardware authority follows from this coordination operation.
