@@ -189,13 +189,18 @@ Normal `offer_transfer` and `accept_transfer` semantics remain unchanged.
 The source capability added by terminal #532 is bound by successor #552 to its
 actual driver and frozen active maintenance assignment. The main project owner's
 separate one-time invocation authorization is recorded in #552; it does not claim
-that the user typed the command. Testing and adopting this code alone do not
+that the user typed the command. The initial call refused a missing recipient
+registration without mutation. Canonical #497 revision 9 reconciles the intended
+recipient to the actual available driver; the local original-owner preimage is
+unchanged. Preserve the refused attempt and its marker. A further attempt needs
+explicit reconciled authorization, a newly verified backup and fresh gates.
+Testing and adopting this code alone do not
 satisfy the live-operation prerequisites. No source-development test uses the real
 workspace database; all recovery tests use temporary synthetic databases.
 
 A separately reviewed invocation requires the actual designated maintenance
 actor, a registered fixed recipient, the exact complete local revision-4 row
-hash, the exact accepted canonical #497 revision-7 record hash, and the fixed
+hash, the exact accepted canonical #497 revision-9 record hash, and the fixed
 public authority/acceptance/handoff receipt references. It rejects stale or
 altered bindings, replay, terminal records, pending authentic transfers and
 other active overlapping paths/branches. An immediate transaction, conditional
