@@ -433,6 +433,7 @@ def next_actions(agent, session, tasks, now=None):
     hold. New candidate evidence must be rebuilt and independently reviewed.
     No GitHub writes."""
     work = []
+    repair_task = None
     mine = [t for t in tasks if t["record"]["owner"] == session]
     for t in mine:
         r = t["record"]
@@ -454,16 +455,22 @@ def next_actions(agent, session, tasks, now=None):
             head, base = candidate_of(pr)
             if not all(isinstance(sha, str) and gc.SHA.fullmatch(sha) for sha in (head, base)):
                 continue
+            checks = (t.get("checks") or {}).get("state")
+            if "checks" not in t and "required CI failed" in t.get("faults", []):
+                checks = "failure"  # legacy rows carrying an affirmative failed-CI fact
+            if checks not in {"success", "failure"}:
+                continue
             reasons = []
-            if ((t.get("checks") or {}).get("state") == "failure"
-                    or "required CI failed" in t.get("faults", [])):
+            if checks == "failure":
                 reasons.append("required CI failed")
             behind = t.get("behind_by")
             if ((type(behind) is int and behind > 0)
                     or "PR has merge conflicts" in t.get("faults", [])):
                 reasons.append("base refresh required")
             if reasons:
-                work.append(dict(kind="repair", task=t["number"], pr=pr["number"], head=head, base=base,
+                repair_task = t["number"]
+                # Reuse the adapter's established owner rework action contract.
+                work.append(dict(kind="rework", task=t["number"], pr=pr["number"], head=head, base=base,
                                  reasons=reasons, detail=(
                                      "Repair this owned software candidate; merge the current base normally "
                                      "if needed (no rebase/force-push), then rerun checks and independent "
@@ -481,12 +488,11 @@ def next_actions(agent, session, tasks, now=None):
         if agent == "codex-local" and r["status"] == "hardware-required":
             work.append(dict(kind="hardware", task=t["number"], detail="python scripts/github_coordination.py queue"))
         if agent == "codex-local" and r["status"] == "ready-to-merge" and (
-                r["class"] not in AUTO_MERGE_CLASSES or r.get("auto_merge") is False) and not any(
-                    w["kind"] == "repair" and w["task"] == t["number"] for w in work):
+                r["class"] not in AUTO_MERGE_CLASSES or r.get("auto_merge") is False) and t["number"] != repair_task:
             work.append(dict(kind="integrate", task=t["number"], detail=f"class {r['class']} integration driver"))
     implementing = sum(t["record"]["status"] in IMPLEMENTING for t in mine)
     waiting = sum(t["record"]["status"] in WAITING for t in mine)
-    if implementing == 0 and waiting <= 1 and not any(w["kind"] == "repair" for w in work):
+    if implementing == 0 and waiting <= 1 and repair_task is None:
         active = [(t["number"], t["record"]) for t in tasks if t["record"]["status"] in gc.ACTIVE]
         for t in sorted(tasks, key=lambda t: (priority(t["labels"]), t["number"])):
             r = t["record"]
@@ -768,6 +774,13 @@ def gather_rows(github, with_faults=False):
             row["faults"].append("multiple open PRs for task")
         if with_faults and pr is not None and issue["record"]["status"] in gc.ACTIVE:
             detail = github.api(f"pulls/{pr['number']}")
+            try:
+                gc.require(gc.task_number(detail.get("body")) == issue["number"], "PR linkage changed")
+            except ValueError:
+                row["pr"] = None
+                row["faults"].append("fresh PR no longer uniquely links this task")
+                rows.append(row)
+                continue
             # Bind routing to the fresh detail, not the potentially stale list.
             row["pr"] = detail
             row["labels"] = sorted(set(issue["labels"]) | {l["name"] for l in detail.get("labels", [])})

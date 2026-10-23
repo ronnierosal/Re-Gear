@@ -875,7 +875,7 @@ class OwnedRepairDiscoveryTests(unittest.TestCase):
                            number=9, pr=None)
         before = copy.deepcopy([row, backlog])
         [action] = o.next_actions("claude", OWNER, [row, backlog])
-        self.assertEqual(("repair", 7, 12, HEAD, BASE),
+        self.assertEqual(("rework", 7, 12, HEAD, BASE),
                          tuple(action[k] for k in ("kind", "task", "pr", "head", "base")))
         self.assertEqual(["required CI failed"], action["reasons"])
         self.assertEqual(before, [row, backlog])
@@ -893,6 +893,9 @@ class OwnedRepairDiscoveryTests(unittest.TestCase):
         for changes in ({"checks": {"state": "pending"}}, {"checks": {}},
                         {"behind_by": None}, {"behind_by": True}, {}):
             self.assertEqual([], o.next_actions("claude", OWNER, [self.row(**changes)]))
+        for state in ("pending", "unknown", None):
+            self.assertEqual([], o.next_actions("claude", OWNER, [self.row(
+                checks={"state": state}, behind_by=1)]))
 
     def test_other_owner_draft_blocked_hold_or_busy_session_does_not_repair(self):
         failed = self.row(checks={"state": "failure"})
@@ -945,7 +948,14 @@ class OwnedRepairDiscoveryTests(unittest.TestCase):
         pull = pr()
         pull["head"]["ref"] = task["branch"]
         row = self.row(record=task, pr=pull, behind_by=1)
-        self.assertEqual(["repair"], [a["kind"] for a in o.next_actions("codex-local", OWNER, [row])])
+        self.assertEqual(["rework"], [a["kind"] for a in o.next_actions("codex-local", OWNER, [row])])
+
+    def test_fresh_pr_detail_must_still_link_the_same_task(self):
+        fake = FakeGitHub(record(), pr(body="Task: #8"), behind_by=1)
+        original = fake.pages
+        fake.pages = lambda path: [pr()] if path == "pulls?state=open" else original(path)
+        self.assertEqual([], o.next_actions("claude", OWNER, o.gather_rows(fake, with_faults=True)))
+        self.assertEqual([], fake.mutations)
 
 
 if __name__ == "__main__":
