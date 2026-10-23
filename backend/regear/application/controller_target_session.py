@@ -64,7 +64,8 @@ class TargetSession:
 
     def prepare_apply(self) -> Request:
         with self._exclusive():
-            if self._phase is not Phase.STAGED or self._selection is None:
+            if (self._phase is not Phase.STAGED or self._selection is None
+                    or self._original is not None):
                 raise ValueError("stage before applying")
             start = self._now()
             frame = self._read(start, start + 10)
@@ -121,6 +122,8 @@ class TargetSession:
                     raise ValueError("selected target is no longer admissible")
             elif self._ambiguous or self._issued is None or frame.targets != self._issued.desired:
                 raise ValueError("restoration state changed")
+            if not request.started <= self._now() < request.deadline:
+                raise ValueError("request expired before submission")
         except Exception:
             if self._original is not None:
                 self._phase = Phase.RECOVERY_REQUIRED
@@ -128,15 +131,20 @@ class TargetSession:
         self._original = request.original
         self._issued = request
         # Record rollback before crossing the injected submission boundary.
+        self._phase = Phase.RECOVERY_REQUIRED
+        self._ambiguous = True
         try:
             result = self._writer.set_targets(request)
             now = self._now()
             if not request.started <= now < request.deadline or type(result) is not Dispatch:
                 raise ValueError("ambiguous or late writer completion")
-        except Exception:
-            self._ambiguous = True
-            self._phase = Phase.RECOVERY_REQUIRED
+        except BaseException as error:
+            # Cancellation and process-control exceptions propagate, but can never
+            # leave an invoked writer looking like an unsubmitted staged request.
+            if not isinstance(error, Exception):
+                raise
             return self._phase
+        self._ambiguous = False
         if result is Dispatch.REFUSED:
             if request.restoring:
                 self._phase = Phase.RECOVERY_REQUIRED

@@ -114,6 +114,18 @@ class RestoreTests(unittest.TestCase):
         self.assertTrue(f.session.rollback_retained)
         self.assertEqual(1, len(f.calls))
 
+    def test_restore_deadline_crossing_after_read_prevents_submission(self):
+        f = Fixture()
+        f.effective()
+        r = f.session.prepare_restore()
+        f.now = 109.9
+        f.observe()
+        times = iter((109.9, 110.0, 110.0))
+        f.session._clock = lambda: next(times)
+        with self.assertRaises(ValueError):
+            f.session.dispatch(r)
+        self.assertEqual(1, len(f.calls))
+
 
 if __name__ == "__main__":
     unittest.main()

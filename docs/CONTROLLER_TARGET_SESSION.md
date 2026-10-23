@@ -46,6 +46,8 @@ operations fail immediately with `RuntimeError`; invalid admission raises
 Only `Dispatch.REFUSED` explicitly guarantees no submission. It permits a new
 Apply request; the old request cannot be replayed. Writer exceptions, timeouts,
 late returns and unrecognized results are uncertain and require recovery.
+Cancellation propagates after marking recovery-required, so an interrupted
+writer can never leave the transaction eligible for another Apply.
 Rollback evidence is captured before submission and is retained on uncertainty.
 `SUBMITTED` yields `requested`, never effective. A separate `verify()` requires
 fresh valid identity/authority and the exact issued tuple to yield `effective`.

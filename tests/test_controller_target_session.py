@@ -231,6 +231,32 @@ class AdmissionTests(unittest.TestCase):
         f.dispatch = Dispatch.SUBMITTED
         self.assertEqual(Phase.REQUESTED, f.session.dispatch(f.prepare()))
 
+    def test_cancellation_after_writer_entry_retains_evidence_and_blocks_apply(self):
+        from asyncio import CancelledError
+        f = Fixture()
+        r = f.prepare()
+        def cancel():
+            raise CancelledError()
+        f.on_write = cancel
+        with self.assertRaises(CancelledError):
+            f.session.dispatch(r)
+        self.assertEqual(Phase.RECOVERY_REQUIRED, f.session.phase)
+        self.assertTrue(f.session.rollback_retained)
+        with self.assertRaises(ValueError):
+            f.session.prepare_apply()
+        self.assertEqual(1, len(f.calls))
+
+    def test_deadline_crossing_after_read_is_refused_before_writer(self):
+        f = Fixture()
+        r = f.prepare()
+        f.now = 109.9
+        f.observe()
+        times = iter((109.9, 110.0, 110.0))
+        f.session._clock = lambda: next(times)
+        with self.assertRaises(ValueError):
+            f.session.dispatch(r)
+        self.assertEqual([], f.calls)
+
 
 if __name__ == "__main__":
     unittest.main()
