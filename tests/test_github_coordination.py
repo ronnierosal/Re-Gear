@@ -40,6 +40,41 @@ def pr(**changes):
 
 
 class TaskTests(unittest.TestCase):
+    def test_task_linkage_accepts_ordinary_line_endings(self):
+        for ending in ("\n", "\r\n", "\r"):
+            with self.subTest(ending=repr(ending)):
+                self.assertEqual(c.task_number(ending.join(("Before", "Task: #444\t ", "After"))), 444)
+
+    def test_task_linkage_rejects_duplicates_and_malformed_lines_for_each_ending(self):
+        for ending in ("\n", "\r\n", "\r"):
+            for body in (ending.join(("Task: #444", "Task: #555")),
+                         "Task: #444\r\nTask: #555\n", "Task: #0", "Task: #0444",
+                         "Task: #444; echo example", "See Task: #444", "Task: #444 suffix",
+                         "No linkage", "Task: #444\vAfter", "Task: #444\fAfter"):
+                with self.subTest(ending=repr(ending), body=repr(body)):
+                    with self.assertRaisesRegex(ValueError, "exactly one Task"):
+                        c.task_number(ending.join(("Before", body, "After")))
+
+    def test_real_pr_gate_accepts_linkage_with_ordinary_line_endings(self):
+        class Fake:
+            def pages(self, path):
+                return [{"filename": "docs/example.md"}]
+
+            def api(self, path):
+                return {"state": "open", "labels": [{"name": "agent-task"}],
+                        "body": "```regear-task\n" + json.dumps(ready()) + "\n```"}
+
+        for ending in ("\n", "\r\n", "\r"):
+            with self.subTest(ending=repr(ending)):
+                candidate = pr(body=ending.join(("Before", "Task: #444", "After")))
+                self.assertEqual(c.status_payload(Fake(), candidate, [], [candidate])["state"], "success")
+
+    def test_real_pr_gate_counts_crlf_sibling_linkage(self):
+        candidate = pr()
+        sibling = pr(number=13, body="Task: #444\r\n", head=dict(pr()["head"], sha="c" * 40))
+        with self.assertRaisesRegex(ValueError, "exactly one open PR"):
+            c.check_pr(None, candidate, [], [candidate, sibling])
+
     def test_duplicate_json_owner_is_rejected(self):
         with self.assertRaisesRegex(ValueError, "duplicate JSON"):
             c.load_record('{"owner":"one","owner":"two"}')
